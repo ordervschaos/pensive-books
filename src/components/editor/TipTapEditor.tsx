@@ -37,22 +37,33 @@ export const TipTapEditor = ({
 
   const uploadImage = async (file: File) => {
     try {
+      console.log('Starting image upload...', { isPublic, bookId });
+      
       const fileExt = file.name.split('.').pop();
       const fileName = `${Math.random()}.${fileExt}`;
       const bucketName = isPublic ? 'public_images' : 'images';
       const filePath = `${bookId}/${fileName}`;
+
+      console.log('Uploading to bucket:', bucketName, 'path:', filePath);
 
       // First upload the file
       const { error: uploadError } = await supabase.storage
         .from(bucketName)
         .upload(filePath, file);
 
-      if (uploadError) throw uploadError;
+      if (uploadError) {
+        console.error('Upload error:', uploadError);
+        throw uploadError;
+      }
+
+      console.log('File uploaded successfully, getting public URL...');
 
       // Then get the public URL
       const { data: { publicUrl } } = supabase.storage
         .from(bucketName)
         .getPublicUrl(filePath);
+
+      console.log('Got public URL:', publicUrl);
 
       if (editor) {
         editor.chain().focus().setImage({ src: publicUrl }).run();
