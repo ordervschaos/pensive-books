@@ -109,7 +109,11 @@ const Index = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {notebooks.map((notebook) => (
-              <Card key={notebook.id} className="hover:shadow-lg transition-shadow cursor-pointer">
+              <Card 
+                key={notebook.id} 
+                className="hover:shadow-lg transition-shadow cursor-pointer"
+                onClick={() => navigate(`/book/${notebook.id}`)}
+              >
                 <CardHeader>
                   <CardTitle>{notebook.name}</CardTitle>
                   <CardDescription>
