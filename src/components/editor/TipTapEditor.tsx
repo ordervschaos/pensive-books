@@ -42,12 +42,14 @@ export const TipTapEditor = ({
       const bucketName = isPublic ? 'public_images' : 'images';
       const filePath = `${bookId}/${fileName}`;
 
-      const { error: uploadError, data } = await supabase.storage
+      // First upload the file
+      const { error: uploadError } = await supabase.storage
         .from(bucketName)
         .upload(filePath, file);
 
       if (uploadError) throw uploadError;
 
+      // Then get the public URL
       const { data: { publicUrl } } = supabase.storage
         .from(bucketName)
         .getPublicUrl(filePath);
