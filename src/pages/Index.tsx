@@ -29,7 +29,7 @@ const Index = () => {
   const fetchNotebooks = async () => {
     try {
       const { data, error } = await supabase
-        .from("notebooks")
+        .from("books")
         .select("*")
         .order("created_at", { ascending: false });
 
@@ -50,7 +50,7 @@ const Index = () => {
   const createNotebook = async () => {
     try {
       const { data, error } = await supabase
-        .from("notebooks")
+        .from("books")
         .insert([{ name: "Untitled Notebook" }])
         .select()
         .single();
