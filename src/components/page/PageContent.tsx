@@ -12,10 +12,15 @@ interface PageContentProps {
 
 export const PageContent = ({ content, onSave, saving }: PageContentProps) => {
   const [isEditing, setIsEditing] = useState(false);
+  const [currentContent, setCurrentContent] = useState(content);
 
   const handleSave = (html: string, json: any) => {
     onSave(html, json);
     setIsEditing(false);
+  };
+
+  const handleContentChange = (html: string, json: any) => {
+    setCurrentContent(html);
   };
 
   if (!content) {
@@ -59,13 +64,16 @@ export const PageContent = ({ content, onSave, saving }: PageContentProps) => {
             </Button>
           </div>
           <TipTapEditor 
-            content={content} 
-            onChange={handleSave}
+            content={currentContent} 
+            onChange={handleContentChange}
             editable={isEditing}
           />
           {isEditing && (
             <div className="flex justify-end">
-              <Button disabled={saving} onClick={() => handleSave(content, null)}>
+              <Button 
+                disabled={saving} 
+                onClick={() => handleSave(currentContent, null)}
+              >
                 {saving ? 'Saving...' : 'Save'}
                 {!saving && <Save className="ml-2 h-4 w-4" />}
               </Button>
