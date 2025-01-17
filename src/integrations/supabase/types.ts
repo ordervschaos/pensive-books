@@ -17,12 +17,14 @@ export type Database = {
           created_at: string | null
           digest_bookmarked_page_index: number | null
           id: number
+          is_public: boolean | null
           last_published_at: string | null
           last_read: string | null
           name: string | null
           owner_id: string | null
           page_ids: Json | null
           pinned: boolean | null
+          published_at: string | null
           updated_at: string | null
         }
         Insert: {
@@ -32,12 +34,14 @@ export type Database = {
           created_at?: string | null
           digest_bookmarked_page_index?: number | null
           id?: number
+          is_public?: boolean | null
           last_published_at?: string | null
           last_read?: string | null
           name?: string | null
           owner_id?: string | null
           page_ids?: Json | null
           pinned?: boolean | null
+          published_at?: string | null
           updated_at?: string | null
         }
         Update: {
@@ -47,12 +51,14 @@ export type Database = {
           created_at?: string | null
           digest_bookmarked_page_index?: number | null
           id?: number
+          is_public?: boolean | null
           last_published_at?: string | null
           last_read?: string | null
           name?: string | null
           owner_id?: string | null
           page_ids?: Json | null
           pinned?: boolean | null
+          published_at?: string | null
           updated_at?: string | null
         }
         Relationships: []

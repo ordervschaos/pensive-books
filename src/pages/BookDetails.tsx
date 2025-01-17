@@ -5,8 +5,8 @@ import { TopNav } from "@/components/TopNav";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useToast } from "@/components/ui/use-toast";
-import { ArrowLeft, BookOpen, Calendar, Clock } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { ArrowLeft, BookOpen, Calendar, Clock, Globe, Lock } from "lucide-react";
 
 const BookDetails = () => {
   const { id } = useParams();
@@ -15,6 +15,7 @@ const BookDetails = () => {
   const [book, setBook] = useState<any>(null);
   const [pages, setPages] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [publishing, setPublishing] = useState(false);
 
   useEffect(() => {
     fetchBookDetails();
@@ -22,7 +23,6 @@ const BookDetails = () => {
 
   const fetchBookDetails = async () => {
     try {
-      // Fetch book details
       const { data: bookData, error: bookError } = await supabase
         .from("books")
         .select("*")
@@ -32,7 +32,6 @@ const BookDetails = () => {
       if (bookError) throw bookError;
       setBook(bookData);
 
-      // Fetch pages
       const { data: pagesData, error: pagesError } = await supabase
         .from("pages")
         .select("*")
@@ -49,6 +48,44 @@ const BookDetails = () => {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const togglePublish = async () => {
+    try {
+      setPublishing(true);
+      const newPublishState = !book.is_public;
+      
+      const { error } = await supabase
+        .from("books")
+        .update({ 
+          is_public: newPublishState,
+          published_at: newPublishState ? new Date().toISOString() : null
+        })
+        .eq("id", id);
+
+      if (error) throw error;
+
+      setBook({
+        ...book,
+        is_public: newPublishState,
+        published_at: newPublishState ? new Date().toISOString() : null
+      });
+
+      toast({
+        title: newPublishState ? "Book Published" : "Book Unpublished",
+        description: newPublishState 
+          ? "Your book is now available to the public"
+          : "Your book is now private"
+      });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error updating book",
+        description: error.message
+      });
+    } finally {
+      setPublishing(false);
     }
   };
 
@@ -89,11 +126,36 @@ const BookDetails = () => {
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to Notebooks
           </Button>
+          <Button
+            onClick={togglePublish}
+            disabled={publishing}
+            variant={book.is_public ? "destructive" : "default"}
+          >
+            {book.is_public ? (
+              <>
+                <Lock className="mr-2 h-4 w-4" />
+                Make Private
+              </>
+            ) : (
+              <>
+                <Globe className="mr-2 h-4 w-4" />
+                Publish
+              </>
+            )}
+          </Button>
         </div>
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-2xl">{book.name}</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-2xl">{book.name}</CardTitle>
+              {book.is_public && (
+                <span className="text-sm text-muted-foreground flex items-center">
+                  <Globe className="mr-1 h-4 w-4" />
+                  Public
+                </span>
+              )}
+            </div>
             <div className="flex space-x-4 text-sm text-muted-foreground">
               <div className="flex items-center">
                 <Calendar className="mr-1 h-4 w-4" />
@@ -103,6 +165,12 @@ const BookDetails = () => {
                 <Clock className="mr-1 h-4 w-4" />
                 Last updated {new Date(book.updated_at).toLocaleDateString()}
               </div>
+              {book.published_at && (
+                <div className="flex items-center">
+                  <Globe className="mr-1 h-4 w-4" />
+                  Published {new Date(book.published_at).toLocaleDateString()}
+                </div>
+              )}
             </div>
           </CardHeader>
         </Card>
