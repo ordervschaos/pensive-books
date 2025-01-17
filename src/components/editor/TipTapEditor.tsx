@@ -63,23 +63,18 @@ export const TipTapEditor = ({
       const compressedFile = await compressImage(file);
       
       const fileExt = file.name.split('.').pop();
-      const fileName = `${Date.now()}.${fileExt}`;
+      const fileName = `${bookId}/${Date.now()}.${fileExt}`;
       const bucketName = isPublic ? 'public_images' : 'images';
-      const filePath = `${bookId}/${fileName}`;
 
-      console.log('Uploading to bucket:', bucketName, 'path:', filePath);
+      console.log('Uploading to bucket:', bucketName, 'path:', fileName);
 
-      // First upload the file
-      const { data, error: uploadError } = await supabase.storage
+      let { data, error } = await supabase.storage
         .from(bucketName)
-        .upload(filePath, compressedFile, {
-          cacheControl: '3600',
-          upsert: false
-        });
+        .upload(fileName, compressedFile);
 
-      if (uploadError) {
-        console.error('Upload error:', uploadError);
-        throw uploadError;
+      if (error) {
+        console.error('Upload error:', error);
+        throw error;
       }
 
       console.log('File uploaded successfully, getting public URL...');
@@ -87,7 +82,7 @@ export const TipTapEditor = ({
       // Then get the public URL
       const { data: { publicUrl } } = supabase.storage
         .from(bucketName)
-        .getPublicUrl(filePath);
+        .getPublicUrl(fileName);
 
       console.log('Got public URL:', publicUrl);
 
