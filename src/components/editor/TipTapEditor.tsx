@@ -2,10 +2,11 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Image from '@tiptap/extension-image';
 import { Button } from "@/components/ui/button";
-import { Bold, Italic, List, ListOrdered, ImagePlus } from "lucide-react";
+import { Bold, Italic, List, ListOrdered, ImagePlus, Eye, Pencil } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import imageCompression from 'browser-image-compression';
+import { useState } from 'react';
 
 interface TipTapEditorProps {
   content: string;
@@ -23,6 +24,7 @@ export const TipTapEditor = ({
   bookId 
 }: TipTapEditorProps) => {
   const { toast } = useToast();
+  const [isEditing, setIsEditing] = useState(false);
 
   const editor = useEditor({
     extensions: [
@@ -30,7 +32,7 @@ export const TipTapEditor = ({
       Image
     ],
     content,
-    editable,
+    editable: isEditing,
     onUpdate: ({ editor }) => {
       onChange(editor.getHTML(), editor.getJSON());
     },
@@ -123,49 +125,75 @@ export const TipTapEditor = ({
 
   return (
     <div className="border rounded-lg">
-      {editable && (
-        <div className="border-b p-2 flex gap-2">
+      <div className="border-b p-2 flex justify-between">
+        {isEditing ? (
+          <div className="flex gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => editor.chain().focus().toggleBold().run()}
+              className={editor.isActive('bold') ? 'bg-muted' : ''}
+            >
+              <Bold className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => editor.chain().focus().toggleItalic().run()}
+              className={editor.isActive('italic') ? 'bg-muted' : ''}
+            >
+              <Italic className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => editor.chain().focus().toggleBulletList().run()}
+              className={editor.isActive('bulletList') ? 'bg-muted' : ''}
+            >
+              <List className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => editor.chain().focus().toggleOrderedList().run()}
+              className={editor.isActive('orderedList') ? 'bg-muted' : ''}
+            >
+              <ListOrdered className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleImageUpload}
+            >
+              <ImagePlus className="h-4 w-4" />
+            </Button>
+          </div>
+        ) : (
+          <div /> {/* Empty div to maintain flex layout */}
+        )}
+        {editable && (
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => editor.chain().focus().toggleBold().run()}
-            className={editor.isActive('bold') ? 'bg-muted' : ''}
+            onClick={() => {
+              setIsEditing(!isEditing);
+              editor.setEditable(!isEditing);
+            }}
           >
-            <Bold className="h-4 w-4" />
+            {isEditing ? (
+              <>
+                <Eye className="mr-2 h-4 w-4" />
+                Preview
+              </>
+            ) : (
+              <>
+                <Pencil className="mr-2 h-4 w-4" />
+                Edit
+              </>
+            )}
           </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => editor.chain().focus().toggleItalic().run()}
-            className={editor.isActive('italic') ? 'bg-muted' : ''}
-          >
-            <Italic className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => editor.chain().focus().toggleBulletList().run()}
-            className={editor.isActive('bulletList') ? 'bg-muted' : ''}
-          >
-            <List className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => editor.chain().focus().toggleOrderedList().run()}
-            className={editor.isActive('orderedList') ? 'bg-muted' : ''}
-          >
-            <ListOrdered className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleImageUpload}
-          >
-            <ImagePlus className="h-4 w-4" />
-          </Button>
-        </div>
-      )}
+        )}
+      </div>
       <div className="prose max-w-none p-4">
         <EditorContent editor={editor} />
       </div>
