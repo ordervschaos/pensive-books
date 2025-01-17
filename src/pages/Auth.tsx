@@ -42,6 +42,8 @@ const Auth = () => {
             }
           }}
           providers={["google"]}
+          view="magic_link"
+          showLinks={true}
           redirectTo={`${window.location.origin}/auth/callback`}
           onError={(error) => {
             console.error("Auth error:", error);
