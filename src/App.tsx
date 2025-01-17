@@ -2,7 +2,7 @@ import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import BookDetails from "./pages/BookDetails";
-import { Toaster } from "./components/ui/toaster";
+import PageView from "./pages/PageView";
 
 function App() {
   return (
@@ -11,8 +11,8 @@ function App() {
         <Route path="/" element={<Index />} />
         <Route path="/auth" element={<Auth />} />
         <Route path="/book/:id" element={<BookDetails />} />
+        <Route path="/book/:bookId/page/:pageId" element={<PageView />} />
       </Routes>
-      <Toaster />
     </Router>
   );
 }

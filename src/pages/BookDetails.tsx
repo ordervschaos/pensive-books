@@ -187,7 +187,11 @@ const BookDetails = () => {
           ) : (
             <div className="grid gap-4">
               {pages.map((page) => (
-                <Card key={page.id} className="hover:shadow-md transition-shadow">
+                <Card 
+                  key={page.id} 
+                  className="hover:shadow-md transition-shadow cursor-pointer"
+                  onClick={() => navigate(`/book/${book.id}/page/${page.id}`)}
+                >
                   <CardHeader>
                     <CardTitle className="text-lg">
                       Page {page.page_index + 1}
