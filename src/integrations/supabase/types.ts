@@ -117,45 +117,6 @@ export type Database = {
           },
         ]
       }
-      habits: {
-        Row: {
-          created_at: string | null
-          description: string | null
-          id: number
-          name: string
-          notebooks: number[] | null
-          owner_id: string
-          points: number
-          suggested_times: Json | null
-          tags: string[] | null
-          updated_at: string | null
-        }
-        Insert: {
-          created_at?: string | null
-          description?: string | null
-          id?: number
-          name: string
-          notebooks?: number[] | null
-          owner_id?: string
-          points: number
-          suggested_times?: Json | null
-          tags?: string[] | null
-          updated_at?: string | null
-        }
-        Update: {
-          created_at?: string | null
-          description?: string | null
-          id?: number
-          name?: string
-          notebooks?: number[] | null
-          owner_id?: string
-          points?: number
-          suggested_times?: Json | null
-          tags?: string[] | null
-          updated_at?: string | null
-        }
-        Relationships: []
-      }
       leads: {
         Row: {
           created_at: string
@@ -414,56 +375,6 @@ export type Database = {
             columns: ["page_id"]
             isOneToOne: false
             referencedRelation: "pages"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      tasks: {
-        Row: {
-          created_at: string | null
-          date: string | null
-          details: Json | null
-          habit_id: number | null
-          id: string
-          name: string
-          owner_id: string | null
-          points: number
-          status: string | null
-          time: string | null
-          updated_at: string | null
-        }
-        Insert: {
-          created_at?: string | null
-          date?: string | null
-          details?: Json | null
-          habit_id?: number | null
-          id?: string
-          name: string
-          owner_id?: string | null
-          points: number
-          status?: string | null
-          time?: string | null
-          updated_at?: string | null
-        }
-        Update: {
-          created_at?: string | null
-          date?: string | null
-          details?: Json | null
-          habit_id?: number | null
-          id?: string
-          name?: string
-          owner_id?: string | null
-          points?: number
-          status?: string | null
-          time?: string | null
-          updated_at?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "tasks_habit_id_fkey"
-            columns: ["habit_id"]
-            isOneToOne: false
-            referencedRelation: "habits"
             referencedColumns: ["id"]
           },
         ]
