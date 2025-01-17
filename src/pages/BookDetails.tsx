@@ -120,6 +120,7 @@ const BookDetails = () => {
           isPublic={book.is_public}
           onTogglePublish={togglePublish}
           publishing={publishing}
+          bookId={book.id}
         />
 
         <BookInfo 
