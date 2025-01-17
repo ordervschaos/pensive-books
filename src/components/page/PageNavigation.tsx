@@ -12,6 +12,10 @@ interface PageNavigationProps {
 export const PageNavigation = ({ bookId, currentIndex, totalPages, onNavigate }: PageNavigationProps) => {
   const navigate = useNavigate();
 
+  // Handle case where there are no pages yet
+  const displayCurrentIndex = totalPages > 0 ? currentIndex + 1 : 0;
+  const displayTotalPages = Math.max(totalPages, 0);
+
   return (
     <div className="flex items-center justify-between">
       <Button variant="ghost" onClick={() => navigate(`/book/${bookId}`)}>
@@ -27,7 +31,7 @@ export const PageNavigation = ({ bookId, currentIndex, totalPages, onNavigate }:
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <span className="text-sm text-muted-foreground">
-          Page {currentIndex + 1} of {totalPages}
+          Page {displayCurrentIndex} of {displayTotalPages}
         </span>
         <Button
           variant="outline"

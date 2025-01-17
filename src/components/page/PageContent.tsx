@@ -12,7 +12,7 @@ interface PageContentProps {
 
 export const PageContent = ({ content, onSave, saving }: PageContentProps) => {
   const [isEditing, setIsEditing] = useState(false);
-  const [currentContent, setCurrentContent] = useState(content);
+  const [currentContent, setCurrentContent] = useState(content || '');
 
   const handleSave = (html: string, json: any) => {
     onSave(html, json);
@@ -30,7 +30,10 @@ export const PageContent = ({ content, onSave, saving }: PageContentProps) => {
           <BookOpen className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
           <p className="text-muted-foreground mb-4">This page is empty</p>
           <Button 
-            onClick={() => setIsEditing(true)}
+            onClick={() => {
+              setIsEditing(true);
+              setCurrentContent('');
+            }}
             className="flex items-center gap-2"
           >
             <Pencil className="h-4 w-4" />
