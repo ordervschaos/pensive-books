@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { BookOpen, Eye, Pencil, Save } from "lucide-react";
+import { Eye, Pencil } from "lucide-react";
 import { TipTapEditor } from "@/components/editor/TipTapEditor";
+import { debounce } from "lodash";
 
 interface PageContentProps {
   content: string;
@@ -15,14 +16,18 @@ export const PageContent = ({ content, onSave, saving }: PageContentProps) => {
   const [currentContent, setCurrentContent] = useState(content || '');
   const [editorJson, setEditorJson] = useState<any>(null);
 
-  const handleSave = () => {
-    onSave(currentContent, editorJson);
-    setIsEditing(false);
-  };
+  // Debounced save function
+  const debouncedSave = useCallback(
+    debounce((html: string, json: any) => {
+      onSave(html, json);
+    }, 1000),
+    [onSave]
+  );
 
   const handleContentChange = (html: string, json: any) => {
     setCurrentContent(html);
     setEditorJson(json);
+    debouncedSave(html, json);
   };
 
   const handleStartEditing = () => {
@@ -43,15 +48,6 @@ export const PageContent = ({ content, onSave, saving }: PageContentProps) => {
               onChange={handleContentChange}
               editable={true}
             />
-            <div className="flex justify-end">
-              <Button 
-                disabled={saving} 
-                onClick={handleSave}
-              >
-                {saving ? 'Saving...' : 'Save'}
-                {!saving && <Save className="ml-2 h-4 w-4" />}
-              </Button>
-            </div>
           </div>
         </CardContent>
       </Card>
@@ -85,17 +81,6 @@ export const PageContent = ({ content, onSave, saving }: PageContentProps) => {
             onChange={handleContentChange}
             editable={isEditing}
           />
-          {isEditing && (
-            <div className="flex justify-end">
-              <Button 
-                disabled={saving} 
-                onClick={handleSave}
-              >
-                {saving ? 'Saving...' : 'Save'}
-                {!saving && <Save className="ml-2 h-4 w-4" />}
-              </Button>
-            </div>
-          )}
         </div>
       </CardContent>
     </Card>
