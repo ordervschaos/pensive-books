@@ -153,6 +153,8 @@ const PageView = () => {
                 <TipTapEditor 
                   content={page.html_content || ''} 
                   onChange={(html, json) => handleSave(html, json)}
+                  isPublic={book.is_public}
+                  bookId={book.id}
                 />
                 <div className="flex justify-end">
                   <Button disabled={saving} onClick={() => handleSave(page.html_content, page.content)}>
