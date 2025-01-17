@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, ArrowRight, BookOpen, Save } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, Eye, Pencil } from "lucide-react";
 import { TipTapEditor } from "@/components/editor/TipTapEditor";
 
 const PageView = () => {
@@ -17,6 +17,7 @@ const PageView = () => {
   const [book, setBook] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
 
   useEffect(() => {
     fetchPageDetails();
@@ -71,6 +72,7 @@ const PageView = () => {
         title: "Page saved",
         description: "Your changes have been saved successfully"
       });
+      setIsEditing(false);
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -150,18 +152,31 @@ const PageView = () => {
           <CardContent className="pt-6">
             {page.html_content || page.content ? (
               <div className="space-y-4">
+                <div className="flex justify-end mb-4">
+                  <Button 
+                    variant="outline"
+                    onClick={() => setIsEditing(!isEditing)}
+                  >
+                    {isEditing ? (
+                      <>
+                        <Eye className="mr-2 h-4 w-4" />
+                        Preview
+                      </>
+                    ) : (
+                      <>
+                        <Pencil className="mr-2 h-4 w-4" />
+                        Edit
+                      </>
+                    )}
+                  </Button>
+                </div>
                 <TipTapEditor 
                   content={page.html_content || ''} 
                   onChange={(html, json) => handleSave(html, json)}
                   isPublic={book.is_public}
                   bookId={book.id}
+                  editable={isEditing}
                 />
-                <div className="flex justify-end">
-                  <Button disabled={saving} onClick={() => handleSave(page.html_content, page.content)}>
-                    {saving ? 'Saving...' : 'Save'}
-                    {!saving && <Save className="ml-2 h-4 w-4" />}
-                  </Button>
-                </div>
               </div>
             ) : (
               <div className="text-center py-12">
