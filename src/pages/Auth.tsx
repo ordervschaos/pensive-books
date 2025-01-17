@@ -23,6 +23,15 @@ const Auth = () => {
     return () => subscription.unsubscribe();
   }, [navigate]);
 
+  const handleError = (error: Error) => {
+    console.error("Auth error:", error);
+    toast({
+      title: "Authentication Error",
+      description: error.message,
+      variant: "destructive"
+    });
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="w-full max-w-md p-8 space-y-4 bg-white rounded-lg shadow-lg">
@@ -42,17 +51,10 @@ const Auth = () => {
             }
           }}
           providers={["google"]}
-          view="magic_link"
+          view="sign_in"
           showLinks={true}
+          otpType="email"
           redirectTo={`${window.location.origin}/auth/callback`}
-          onError={(error) => {
-            console.error("Auth error:", error);
-            toast({
-              title: "Authentication Error",
-              description: error.message,
-              variant: "destructive"
-            });
-          }}
         />
       </div>
     </div>
