@@ -23,7 +23,14 @@ export const PageContent = ({ content, onSave, saving }: PageContentProps) => {
       <Card>
         <CardContent className="text-center py-12">
           <BookOpen className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-          <p className="text-muted-foreground">No content available</p>
+          <p className="text-muted-foreground mb-4">This page is empty</p>
+          <Button 
+            onClick={() => setIsEditing(true)}
+            className="flex items-center gap-2"
+          >
+            <Pencil className="h-4 w-4" />
+            Start Writing
+          </Button>
         </CardContent>
       </Card>
     );
