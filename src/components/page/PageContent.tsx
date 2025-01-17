@@ -23,6 +23,14 @@ export const PageContent = ({ content, onSave, saving }: PageContentProps) => {
     setCurrentContent(html);
   };
 
+  const handleStartEditing = () => {
+    setIsEditing(true);
+    // If it's a new page, initialize with empty content
+    if (!content) {
+      setCurrentContent('');
+    }
+  };
+
   if (!content) {
     return (
       <Card>
@@ -30,10 +38,7 @@ export const PageContent = ({ content, onSave, saving }: PageContentProps) => {
           <BookOpen className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
           <p className="text-muted-foreground mb-4">This page is empty</p>
           <Button 
-            onClick={() => {
-              setIsEditing(true);
-              setCurrentContent('');
-            }}
+            onClick={handleStartEditing}
             className="flex items-center gap-2"
           >
             <Pencil className="h-4 w-4" />
