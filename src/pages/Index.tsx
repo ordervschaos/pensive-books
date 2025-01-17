@@ -6,6 +6,7 @@ import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/ca
 import { useToast } from "@/components/ui/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PlusCircle } from "lucide-react";
+import { TopNav } from "@/components/TopNav";
 
 const Index = () => {
   const [notebooks, setNotebooks] = useState<any[]>([]);
@@ -72,48 +73,54 @@ const Index = () => {
 
   if (loading) {
     return (
-      <div className="container mx-auto p-6 space-y-4">
-        <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold">My Notebooks</h1>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {[1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-[120px] w-full" />
-          ))}
+      <div className="min-h-screen flex flex-col">
+        <TopNav />
+        <div className="container mx-auto p-6 space-y-4">
+          <div className="flex justify-between items-center">
+            <h1 className="text-3xl font-bold">My Notebooks</h1>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {[1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-[120px] w-full" />
+            ))}
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="container mx-auto p-6 space-y-4">
-      <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold">My Notebooks</h1>
-        <Button onClick={createNotebook}>
-          <PlusCircle className="mr-2 h-4 w-4" />
-          New Notebook
-        </Button>
-      </div>
+    <div className="min-h-screen flex flex-col">
+      <TopNav />
+      <div className="container mx-auto p-6 space-y-4">
+        <div className="flex justify-between items-center">
+          <h1 className="text-3xl font-bold">My Notebooks</h1>
+          <Button onClick={createNotebook}>
+            <PlusCircle className="mr-2 h-4 w-4" />
+            New Notebook
+          </Button>
+        </div>
 
-      {notebooks.length === 0 ? (
-        <div className="text-center py-12">
-          <h2 className="text-xl font-semibold text-gray-600">No notebooks yet</h2>
-          <p className="text-gray-500 mt-2">Create your first notebook to get started</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {notebooks.map((notebook) => (
-            <Card key={notebook.id} className="hover:shadow-lg transition-shadow cursor-pointer">
-              <CardHeader>
-                <CardTitle>{notebook.name}</CardTitle>
-                <CardDescription>
-                  Created {new Date(notebook.created_at).toLocaleDateString()}
-                </CardDescription>
-              </CardHeader>
-            </Card>
-          ))}
-        </div>
-      )}
+        {notebooks.length === 0 ? (
+          <div className="text-center py-12">
+            <h2 className="text-xl font-semibold text-gray-600">No notebooks yet</h2>
+            <p className="text-gray-500 mt-2">Create your first notebook to get started</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {notebooks.map((notebook) => (
+              <Card key={notebook.id} className="hover:shadow-lg transition-shadow cursor-pointer">
+                <CardHeader>
+                  <CardTitle>{notebook.name}</CardTitle>
+                  <CardDescription>
+                    Created {new Date(notebook.created_at).toLocaleDateString()}
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 };

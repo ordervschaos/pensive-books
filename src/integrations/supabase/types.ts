@@ -9,139 +9,7 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
-      bookpages: {
-        Row: {
-          book_id: number
-          book_page_index: number | null
-          content: Json | null
-          created_at: string | null
-          html_content: string | null
-          id: number
-          last_published_at: string | null
-          owner_id: string
-          source_page_id: number | null
-          title: string | null
-          updated_at: string | null
-        }
-        Insert: {
-          book_id: number
-          book_page_index?: number | null
-          content?: Json | null
-          created_at?: string | null
-          html_content?: string | null
-          id?: number
-          last_published_at?: string | null
-          owner_id: string
-          source_page_id?: number | null
-          title?: string | null
-          updated_at?: string | null
-        }
-        Update: {
-          book_id?: number
-          book_page_index?: number | null
-          content?: Json | null
-          created_at?: string | null
-          html_content?: string | null
-          id?: number
-          last_published_at?: string | null
-          owner_id?: string
-          source_page_id?: number | null
-          title?: string | null
-          updated_at?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "bookpage_book_id_fkey"
-            columns: ["book_id"]
-            isOneToOne: false
-            referencedRelation: "books"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "bookpage_owner_id_fkey"
-            columns: ["owner_id"]
-            isOneToOne: false
-            referencedRelation: "user_data"
-            referencedColumns: ["user_id"]
-          },
-        ]
-      }
       books: {
-        Row: {
-          archived: boolean | null
-          created_at: string | null
-          id: number
-          last_published_at: string | null
-          name: string
-          owner_id: string
-          slug: string | null
-          source_notebook_id: number | null
-          updated_at: string | null
-        }
-        Insert: {
-          archived?: boolean | null
-          created_at?: string | null
-          id?: number
-          last_published_at?: string | null
-          name: string
-          owner_id: string
-          slug?: string | null
-          source_notebook_id?: number | null
-          updated_at?: string | null
-        }
-        Update: {
-          archived?: boolean | null
-          created_at?: string | null
-          id?: number
-          last_published_at?: string | null
-          name?: string
-          owner_id?: string
-          slug?: string | null
-          source_notebook_id?: number | null
-          updated_at?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "book_owner_id_fkey"
-            columns: ["owner_id"]
-            isOneToOne: false
-            referencedRelation: "user_data"
-            referencedColumns: ["user_id"]
-          },
-          {
-            foreignKeyName: "books_source_notebook_id_fkey"
-            columns: ["source_notebook_id"]
-            isOneToOne: true
-            referencedRelation: "notebooks"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      leads: {
-        Row: {
-          created_at: string
-          email: string
-          id: number
-          name: string | null
-          source: string | null
-        }
-        Insert: {
-          created_at?: string
-          email: string
-          id?: number
-          name?: string | null
-          source?: string | null
-        }
-        Update: {
-          created_at?: string
-          email?: string
-          id?: number
-          name?: string | null
-          source?: string | null
-        }
-        Relationships: []
-      }
-      notebooks: {
         Row: {
           archived: boolean | null
           book_id: number | null
@@ -186,6 +54,30 @@ export type Database = {
           page_ids?: Json | null
           pinned?: boolean | null
           updated_at?: string | null
+        }
+        Relationships: []
+      }
+      leads: {
+        Row: {
+          created_at: string
+          email: string
+          id: number
+          name: string | null
+          source: string | null
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          id?: number
+          name?: string | null
+          source?: string | null
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          id?: number
+          name?: string | null
+          source?: string | null
         }
         Relationships: []
       }
@@ -237,7 +129,7 @@ export type Database = {
             foreignKeyName: "notifications_journal_id_fkey"
             columns: ["notebook_id"]
             isOneToOne: false
-            referencedRelation: "notebooks"
+            referencedRelation: "books"
             referencedColumns: ["id"]
           },
           {
@@ -259,13 +151,13 @@ export type Database = {
       pages: {
         Row: {
           archived: boolean | null
+          book_id: number | null
           content: Json | null
           created_at: string | null
           embedding: string | null
           html_content: string | null
           id: number
           last_published_at: string | null
-          notebook_id: number | null
           old_content: string | null
           owner_id: string | null
           page_index: number | null
@@ -273,13 +165,13 @@ export type Database = {
         }
         Insert: {
           archived?: boolean | null
+          book_id?: number | null
           content?: Json | null
           created_at?: string | null
           embedding?: string | null
           html_content?: string | null
           id?: number
           last_published_at?: string | null
-          notebook_id?: number | null
           old_content?: string | null
           owner_id?: string | null
           page_index?: number | null
@@ -287,13 +179,13 @@ export type Database = {
         }
         Update: {
           archived?: boolean | null
+          book_id?: number | null
           content?: Json | null
           created_at?: string | null
           embedding?: string | null
           html_content?: string | null
           id?: number
           last_published_at?: string | null
-          notebook_id?: number | null
           old_content?: string | null
           owner_id?: string | null
           page_index?: number | null
@@ -301,10 +193,10 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "page_journal_id_fkey"
-            columns: ["notebook_id"]
+            foreignKeyName: "pages_book_id_fkey"
+            columns: ["book_id"]
             isOneToOne: false
-            referencedRelation: "notebooks"
+            referencedRelation: "books"
             referencedColumns: ["id"]
           },
         ]
@@ -312,10 +204,10 @@ export type Database = {
       reminders: {
         Row: {
           archived: boolean | null
+          book_id: number | null
           created_at: string | null
           id: number
           is_active: boolean | null
-          notebook_id: number | null
           owner_id: string | null
           page_id: number | null
           read_option: string | null
@@ -327,10 +219,10 @@ export type Database = {
         }
         Insert: {
           archived?: boolean | null
+          book_id?: number | null
           created_at?: string | null
           id?: number
           is_active?: boolean | null
-          notebook_id?: number | null
           owner_id?: string | null
           page_id?: number | null
           read_option?: string | null
@@ -342,10 +234,10 @@ export type Database = {
         }
         Update: {
           archived?: boolean | null
+          book_id?: number | null
           created_at?: string | null
           id?: number
           is_active?: boolean | null
-          notebook_id?: number | null
           owner_id?: string | null
           page_id?: number | null
           read_option?: string | null
@@ -356,13 +248,6 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: [
-          {
-            foreignKeyName: "notification_schedules_journal_id_fkey"
-            columns: ["notebook_id"]
-            isOneToOne: false
-            referencedRelation: "notebooks"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "notification_schedules_owner_id_fkey"
             columns: ["owner_id"]
@@ -375,6 +260,13 @@ export type Database = {
             columns: ["page_id"]
             isOneToOne: false
             referencedRelation: "pages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reminders_book_id_fkey"
+            columns: ["book_id"]
+            isOneToOne: false
+            referencedRelation: "books"
             referencedColumns: ["id"]
           },
         ]
@@ -415,7 +307,7 @@ export type Database = {
             foreignKeyName: "user_data_default_journal_fkey"
             columns: ["default_notebook"]
             isOneToOne: false
-            referencedRelation: "notebooks"
+            referencedRelation: "books"
             referencedColumns: ["id"]
           },
         ]
@@ -445,13 +337,13 @@ export type Database = {
         }
         Returns: {
           archived: boolean | null
+          book_id: number | null
           content: Json | null
           created_at: string | null
           embedding: string | null
           html_content: string | null
           id: number
           last_published_at: string | null
-          notebook_id: number | null
           old_content: string | null
           owner_id: string | null
           page_index: number | null
