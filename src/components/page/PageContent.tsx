@@ -13,14 +13,16 @@ interface PageContentProps {
 export const PageContent = ({ content, onSave, saving }: PageContentProps) => {
   const [isEditing, setIsEditing] = useState(false);
   const [currentContent, setCurrentContent] = useState(content || '');
+  const [editorJson, setEditorJson] = useState<any>(null);
 
-  const handleSave = (html: string, json: any) => {
-    onSave(html, json);
+  const handleSave = () => {
+    onSave(currentContent, editorJson);
     setIsEditing(false);
   };
 
   const handleContentChange = (html: string, json: any) => {
     setCurrentContent(html);
+    setEditorJson(json);
   };
 
   const handleStartEditing = () => {
@@ -28,6 +30,7 @@ export const PageContent = ({ content, onSave, saving }: PageContentProps) => {
     // If it's a new page, initialize with empty content
     if (!content) {
       setCurrentContent('');
+      setEditorJson(null);
     }
   };
 
@@ -80,7 +83,7 @@ export const PageContent = ({ content, onSave, saving }: PageContentProps) => {
             <div className="flex justify-end">
               <Button 
                 disabled={saving} 
-                onClick={() => handleSave(currentContent, null)}
+                onClick={handleSave}
               >
                 {saving ? 'Saving...' : 'Save'}
                 {!saving && <Save className="ml-2 h-4 w-4" />}
