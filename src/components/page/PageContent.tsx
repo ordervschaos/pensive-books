@@ -11,7 +11,7 @@ interface PageContentProps {
 }
 
 export const PageContent = ({ content, onSave, saving }: PageContentProps) => {
-  const [isEditing, setIsEditing] = useState(false);
+  const [isEditing, setIsEditing] = useState(!content);
   const [currentContent, setCurrentContent] = useState(content || '');
   const [editorJson, setEditorJson] = useState<any>(null);
 
@@ -27,7 +27,6 @@ export const PageContent = ({ content, onSave, saving }: PageContentProps) => {
 
   const handleStartEditing = () => {
     setIsEditing(true);
-    // If it's a new page, initialize with empty content
     if (!content) {
       setCurrentContent('');
       setEditorJson(null);
@@ -37,16 +36,23 @@ export const PageContent = ({ content, onSave, saving }: PageContentProps) => {
   if (!content) {
     return (
       <Card>
-        <CardContent className="text-center py-12">
-          <BookOpen className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-          <p className="text-muted-foreground mb-4">This page is empty</p>
-          <Button 
-            onClick={handleStartEditing}
-            className="flex items-center gap-2"
-          >
-            <Pencil className="h-4 w-4" />
-            Start Writing
-          </Button>
+        <CardContent className="pt-6">
+          <div className="space-y-4">
+            <TipTapEditor 
+              content={currentContent} 
+              onChange={handleContentChange}
+              editable={true}
+            />
+            <div className="flex justify-end">
+              <Button 
+                disabled={saving} 
+                onClick={handleSave}
+              >
+                {saving ? 'Saving...' : 'Save'}
+                {!saving && <Save className="ml-2 h-4 w-4" />}
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
     );
