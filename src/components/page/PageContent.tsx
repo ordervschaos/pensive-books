@@ -16,7 +16,6 @@ export const PageContent = ({ content, onSave, saving }: PageContentProps) => {
   const [currentContent, setCurrentContent] = useState(content || '');
   const [editorJson, setEditorJson] = useState<any>(null);
 
-  // Debounced save function
   const debouncedSave = useCallback(
     debounce((html: string, json: any) => {
       onSave(html, json);
@@ -30,58 +29,47 @@ export const PageContent = ({ content, onSave, saving }: PageContentProps) => {
     debouncedSave(html, json);
   };
 
-  const handleStartEditing = () => {
-    setIsEditing(true);
-    if (!content) {
-      setCurrentContent('');
-      setEditorJson(null);
-    }
-  };
-
   if (!content) {
     return (
-      <Card>
-        <CardContent className="pt-6">
-          <div className="space-y-4">
-            <TipTapEditor 
-              content={currentContent} 
-              onChange={handleContentChange}
-              editable={true}
-            />
-          </div>
+      <Card className="flex-1">
+        <CardContent className="p-0">
+          <TipTapEditor 
+            content={currentContent} 
+            onChange={handleContentChange}
+            editable={true}
+          />
         </CardContent>
       </Card>
     );
   }
 
   return (
-    <Card>
-      <CardContent className="pt-6">
-        <div className="space-y-4">
-          <div className="flex justify-end mb-4">
-            <Button
-              variant="outline"
-              onClick={() => setIsEditing(!isEditing)}
-            >
-              {isEditing ? (
-                <>
-                  <Eye className="mr-2 h-4 w-4" />
-                  Preview
-                </>
-              ) : (
-                <>
-                  <Pencil className="mr-2 h-4 w-4" />
-                  Edit
-                </>
-              )}
-            </Button>
-          </div>
-          <TipTapEditor 
-            content={currentContent} 
-            onChange={handleContentChange}
-            editable={isEditing}
-          />
+    <Card className="flex-1">
+      <CardContent className="p-0">
+        <div className="flex justify-end p-2 border-b">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsEditing(!isEditing)}
+          >
+            {isEditing ? (
+              <>
+                <Eye className="mr-2 h-4 w-4" />
+                Preview
+              </>
+            ) : (
+              <>
+                <Pencil className="mr-2 h-4 w-4" />
+                Edit
+              </>
+            )}
+          </Button>
         </div>
+        <TipTapEditor 
+          content={currentContent} 
+          onChange={handleContentChange}
+          editable={isEditing}
+        />
       </CardContent>
     </Card>
   );

@@ -20,7 +20,6 @@ export const TipTapEditor = ({ content, onChange, editable = true }: TipTapEdito
     },
   });
 
-  // Update editor's editable state when the prop changes
   useEffect(() => {
     if (editor) {
       editor.setEditable(editable);
@@ -32,7 +31,7 @@ export const TipTapEditor = ({ content, onChange, editable = true }: TipTapEdito
   }
 
   return (
-    <div className="border rounded-lg">
+    <div className="h-full flex flex-col">
       {editable && (
         <div className="border-b p-2 flex gap-2">
           <Button
@@ -69,7 +68,7 @@ export const TipTapEditor = ({ content, onChange, editable = true }: TipTapEdito
           </Button>
         </div>
       )}
-      <div className="prose max-w-none p-4">
+      <div className="prose max-w-none p-4 flex-1">
         <EditorContent editor={editor} />
       </div>
     </div>

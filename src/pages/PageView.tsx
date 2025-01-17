@@ -89,7 +89,7 @@ const PageView = () => {
     return (
       <div className="min-h-screen flex flex-col">
         <TopNav />
-        <div className="container mx-auto p-6">
+        <div className="flex-1 container max-w-4xl mx-auto px-4 py-4">
           <PageLoading />
         </div>
       </div>
@@ -100,7 +100,7 @@ const PageView = () => {
     return (
       <div className="min-h-screen flex flex-col">
         <TopNav />
-        <div className="container mx-auto p-6">
+        <div className="flex-1 container max-w-4xl mx-auto px-4 py-4">
           <PageNotFound bookId={bookId || ""} />
         </div>
       </div>
@@ -112,18 +112,20 @@ const PageView = () => {
   return (
     <div className="min-h-screen flex flex-col">
       <TopNav />
-      <div className="container mx-auto p-6 space-y-6">
+      <div className="flex-1 container max-w-4xl mx-auto px-4 py-4 flex flex-col gap-4">
         <PageNavigation
           bookId={bookId || ""}
           currentIndex={currentIndex}
           totalPages={book.page_ids?.length ?? 0}
           onNavigate={navigateToPage}
         />
-        <PageContent
-          content={page.html_content || ''}
-          onSave={handleSave}
-          saving={saving}
-        />
+        <div className="flex-1 flex flex-col">
+          <PageContent
+            content={page.html_content || ''}
+            onSave={handleSave}
+            saving={saving}
+          />
+        </div>
       </div>
     </div>
   );
