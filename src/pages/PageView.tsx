@@ -26,8 +26,8 @@ const PageView = () => {
       const { data: pageData, error: pageError } = await supabase
         .from("pages")
         .select("*")
-        .eq("id", pageId)
-        .eq("book_id", bookId)
+        .eq("id", parseInt(pageId || "0"))
+        .eq("book_id", parseInt(bookId || "0"))
         .single();
 
       if (pageError) throw pageError;
@@ -37,7 +37,7 @@ const PageView = () => {
       const { data: bookData, error: bookError } = await supabase
         .from("books")
         .select("*")
-        .eq("id", bookId)
+        .eq("id", parseInt(bookId || "0"))
         .single();
 
       if (bookError) throw bookError;
@@ -121,7 +121,7 @@ const PageView = () => {
           <CardContent className="pt-6">
             {page.html_content ? (
               <div 
-                className="prose max-w-none"
+                className="prose max-w-none dark:prose-invert"
                 dangerouslySetInnerHTML={{ __html: page.html_content }} 
               />
             ) : (

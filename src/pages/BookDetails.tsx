@@ -26,7 +26,7 @@ const BookDetails = () => {
       const { data: bookData, error: bookError } = await supabase
         .from("books")
         .select("*")
-        .eq("id", id)
+        .eq("id", parseInt(id || "0"))
         .single();
 
       if (bookError) throw bookError;
@@ -35,7 +35,7 @@ const BookDetails = () => {
       const { data: pagesData, error: pagesError } = await supabase
         .from("pages")
         .select("*")
-        .eq("book_id", id)
+        .eq("book_id", parseInt(id || "0"))
         .order("page_index", { ascending: true });
 
       if (pagesError) throw pagesError;
@@ -62,7 +62,7 @@ const BookDetails = () => {
           is_public: newPublishState,
           published_at: newPublishState ? new Date().toISOString() : null
         })
-        .eq("id", id);
+        .eq("id", parseInt(id || "0"));
 
       if (error) throw error;
 
