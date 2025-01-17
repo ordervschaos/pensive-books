@@ -70,7 +70,7 @@ export const TipTapEditor = ({
       console.log('Uploading to bucket:', bucketName, 'path:', filePath);
 
       // First upload the file
-      const { error: uploadError } = await supabase.storage
+      const { data, error: uploadError } = await supabase.storage
         .from(bucketName)
         .upload(filePath, compressedFile, {
           cacheControl: '3600',
