@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Bold, Italic, List, ListOrdered, ImagePlus } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import imageCompression from 'browser-image-compression';
 
 interface TipTapEditorProps {
   content: string;
@@ -35,12 +36,34 @@ export const TipTapEditor = ({
     },
   });
 
+  const compressImage = async (file: File) => {
+    const options = {
+      maxSizeMB: 1,
+      maxWidthOrHeight: 1920,
+      useWebWorker: true,
+    };
+
+    try {
+      return await imageCompression(file, options);
+    } catch (error) {
+      console.error('Error compressing image:', error);
+      return file;
+    }
+  };
+
   const uploadImage = async (file: File) => {
     try {
       console.log('Starting image upload...', { isPublic, bookId });
       
+      if (!bookId) {
+        throw new Error('Book ID is required for image upload');
+      }
+
+      // Compress the image first
+      const compressedFile = await compressImage(file);
+      
       const fileExt = file.name.split('.').pop();
-      const fileName = `${Math.random()}.${fileExt}`;
+      const fileName = `${Date.now()}.${fileExt}`;
       const bucketName = isPublic ? 'public_images' : 'images';
       const filePath = `${bookId}/${fileName}`;
 
@@ -49,7 +72,10 @@ export const TipTapEditor = ({
       // First upload the file
       const { error: uploadError } = await supabase.storage
         .from(bucketName)
-        .upload(filePath, file);
+        .upload(filePath, compressedFile, {
+          cacheControl: '3600',
+          upsert: false
+        });
 
       if (uploadError) {
         console.error('Upload error:', uploadError);
