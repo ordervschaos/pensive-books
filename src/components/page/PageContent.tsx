@@ -3,22 +3,25 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Eye, Pencil } from "lucide-react";
 import { TipTapEditor } from "@/components/editor/TipTapEditor";
+import { Input } from "@/components/ui/input";
 import { debounce } from "lodash";
 
 interface PageContentProps {
   content: string;
-  onSave: (html: string, json: any) => void;
+  title: string;
+  onSave: (html: string, json: any, title?: string) => void;
   saving: boolean;
 }
 
-export const PageContent = ({ content, onSave, saving }: PageContentProps) => {
+export const PageContent = ({ content, title, onSave, saving }: PageContentProps) => {
   const [isEditing, setIsEditing] = useState(!content);
   const [currentContent, setCurrentContent] = useState(content || '');
+  const [currentTitle, setCurrentTitle] = useState(title || 'Untitled');
   const [editorJson, setEditorJson] = useState<any>(null);
 
   const debouncedSave = useCallback(
-    debounce((html: string, json: any) => {
-      onSave(html, json);
+    debounce((html: string, json: any, title: string) => {
+      onSave(html, json, title);
     }, 1000),
     [onSave]
   );
@@ -26,27 +29,25 @@ export const PageContent = ({ content, onSave, saving }: PageContentProps) => {
   const handleContentChange = (html: string, json: any) => {
     setCurrentContent(html);
     setEditorJson(json);
-    debouncedSave(html, json);
+    debouncedSave(html, json, currentTitle);
   };
 
-  if (!content) {
-    return (
-      <Card className="flex-1">
-        <CardContent className="p-0">
-          <TipTapEditor 
-            content={currentContent} 
-            onChange={handleContentChange}
-            editable={true}
-          />
-        </CardContent>
-      </Card>
-    );
-  }
+  const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newTitle = e.target.value || 'Untitled';
+    setCurrentTitle(newTitle);
+    debouncedSave(currentContent, editorJson, newTitle);
+  };
 
   return (
-    <Card className="flex-1">
-      <CardContent className="p-0">
-        <div className="flex justify-end p-2 border-b">
+    <Card className="flex-1 flex flex-col">
+      <CardContent className="p-0 flex-1 flex flex-col">
+        <div className="flex justify-between items-center p-2 border-b">
+          <Input
+            value={currentTitle}
+            onChange={handleTitleChange}
+            placeholder="Untitled"
+            className="text-lg font-semibold border-none focus-visible:ring-0 max-w-md"
+          />
           <Button
             variant="ghost"
             size="sm"
@@ -65,11 +66,13 @@ export const PageContent = ({ content, onSave, saving }: PageContentProps) => {
             )}
           </Button>
         </div>
-        <TipTapEditor 
-          content={currentContent} 
-          onChange={handleContentChange}
-          editable={isEditing}
-        />
+        <div className="flex-1">
+          <TipTapEditor 
+            content={currentContent} 
+            onChange={handleContentChange}
+            editable={isEditing}
+          />
+        </div>
       </CardContent>
     </Card>
   );

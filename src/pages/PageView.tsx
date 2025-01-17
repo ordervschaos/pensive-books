@@ -51,7 +51,7 @@ const PageView = () => {
     }
   };
 
-  const handleSave = async (html: string, content: any) => {
+  const handleSave = async (html: string, content: any, title?: string) => {
     try {
       setSaving(true);
       const { error } = await supabase
@@ -59,6 +59,7 @@ const PageView = () => {
         .update({ 
           html_content: html,
           content: content,
+          title: title || 'Untitled',
           updated_at: new Date().toISOString()
         })
         .eq("id", parseInt(pageId || "0"));
@@ -122,6 +123,7 @@ const PageView = () => {
         <div className="flex-1 flex flex-col">
           <PageContent
             content={page.html_content || ''}
+            title={page.title || 'Untitled'}
             onSave={handleSave}
             saving={saving}
           />

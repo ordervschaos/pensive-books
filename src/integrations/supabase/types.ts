@@ -167,6 +167,7 @@ export type Database = {
           old_content: string | null
           owner_id: string | null
           page_index: number | null
+          title: string | null
           updated_at: string | null
         }
         Insert: {
@@ -181,6 +182,7 @@ export type Database = {
           old_content?: string | null
           owner_id?: string | null
           page_index?: number | null
+          title?: string | null
           updated_at?: string | null
         }
         Update: {
@@ -195,6 +197,7 @@ export type Database = {
           old_content?: string | null
           owner_id?: string | null
           page_index?: number | null
+          title?: string | null
           updated_at?: string | null
         }
         Relationships: [
@@ -353,6 +356,7 @@ export type Database = {
           old_content: string | null
           owner_id: string | null
           page_index: number | null
+          title: string | null
           updated_at: string | null
         }[]
       }
