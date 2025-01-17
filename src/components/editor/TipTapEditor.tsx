@@ -169,7 +169,8 @@ export const TipTapEditor = ({
             </Button>
           </div>
         ) : (
-          <div /> {/* Empty div to maintain flex layout */}
+          // Empty div to maintain flex layout
+          <div />
         )}
         {editable && (
           <Button
