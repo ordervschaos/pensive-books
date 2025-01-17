@@ -2,6 +2,7 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { Button } from "@/components/ui/button";
 import { Bold, Italic, List, ListOrdered } from "lucide-react";
+import { useEffect } from 'react';
 
 interface TipTapEditorProps {
   content: string;
@@ -18,6 +19,13 @@ export const TipTapEditor = ({ content, onChange, editable = true }: TipTapEdito
       onChange(editor.getHTML(), editor.getJSON());
     },
   });
+
+  // Update editor's editable state when the prop changes
+  useEffect(() => {
+    if (editor) {
+      editor.setEditable(editable);
+    }
+  }, [editor, editable]);
 
   if (!editor) {
     return null;
