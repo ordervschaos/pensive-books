@@ -18,11 +18,15 @@ export const TipTapEditor = ({ content, onChange, editable = true }: TipTapEdito
     onUpdate: ({ editor }) => {
       onChange(editor.getHTML(), editor.getJSON());
     },
+    autofocus: 'start',
   });
 
   useEffect(() => {
     if (editor) {
       editor.setEditable(editable);
+      if (editable) {
+        editor.commands.focus('start');
+      }
     }
   }, [editor, editable]);
 
@@ -68,7 +72,7 @@ export const TipTapEditor = ({ content, onChange, editable = true }: TipTapEdito
           </Button>
         </div>
       )}
-      <div className="prose max-w-none p-4 flex-1">
+      <div className="prose max-w-none p-4 flex-1 [&_.ProseMirror:focus]:outline-none">
         <EditorContent editor={editor} />
       </div>
     </div>
