@@ -32,7 +32,7 @@ export const PageNavigation = ({
       navigate(`/book/${bookId}`);
     } else {
       // Pass the exact next index without any additional increment
-      onNavigate(currentIndex + 1);
+      onNavigate(currentIndex);
     }
   };
 
