@@ -1,7 +1,7 @@
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { Button } from "@/components/ui/button";
-import { Bold, Italic, List, ListOrdered } from "lucide-react";
+import { Bold, Italic, Quote, Code2, Link2, List, ListOrdered, Image, History, Check } from "lucide-react";
 import { useEffect } from 'react';
 
 interface TipTapEditorProps {
@@ -37,7 +37,7 @@ export const TipTapEditor = ({ content, onChange, editable = true }: TipTapEdito
   return (
     <div className="h-full flex flex-col">
       {editable && (
-        <div className="border-b p-2 flex gap-2">
+        <div className="border-b bg-slate-50/80 p-2 flex gap-1 items-center flex-wrap">
           <Button
             variant="ghost"
             size="sm"
@@ -57,6 +57,22 @@ export const TipTapEditor = ({ content, onChange, editable = true }: TipTapEdito
           <Button
             variant="ghost"
             size="sm"
+            onClick={() => editor.chain().focus().toggleBlockquote().run()}
+            className={editor.isActive('blockquote') ? 'bg-muted' : ''}
+          >
+            <Quote className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => editor.chain().focus().toggleCode().run()}
+            className={editor.isActive('code') ? 'bg-muted' : ''}
+          >
+            <Code2 className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => editor.chain().focus().toggleBulletList().run()}
             className={editor.isActive('bulletList') ? 'bg-muted' : ''}
           >
@@ -70,9 +86,41 @@ export const TipTapEditor = ({ content, onChange, editable = true }: TipTapEdito
           >
             <ListOrdered className="h-4 w-4" />
           </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled
+          >
+            <Link2 className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled
+          >
+            <Image className="h-4 w-4" />
+          </Button>
+          <div className="ml-auto flex gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => editor.chain().focus().undo().run()}
+              disabled={!editor.can().undo()}
+            >
+              <History className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => editor.chain().focus().redo().run()}
+              disabled={!editor.can().redo()}
+            >
+              <Check className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       )}
-      <div className="prose max-w-none p-4 flex-1 [&_.ProseMirror:focus]:outline-none">
+      <div className="prose prose-slate max-w-none p-8 flex-1 [&_.ProseMirror:focus]:outline-none">
         <EditorContent editor={editor} />
       </div>
     </div>

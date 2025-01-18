@@ -16,7 +16,7 @@ interface PageContentProps {
 export const PageContent = ({ content, title, onSave, saving }: PageContentProps) => {
   const [isEditing, setIsEditing] = useState(!content);
   const [currentContent, setCurrentContent] = useState(content || '');
-  const [currentTitle, setCurrentTitle] = useState(title || 'Untitled');
+  const [currentTitle, setCurrentTitle] = useState(title || '');
   const [editorJson, setEditorJson] = useState<any>(null);
 
   const debouncedSave = useCallback(
@@ -39,19 +39,20 @@ export const PageContent = ({ content, title, onSave, saving }: PageContentProps
   };
 
   return (
-    <Card className="flex-1 flex flex-col">
+    <Card className="flex-1 flex flex-col bg-white">
       <CardContent className="p-0 flex-1 flex flex-col">
         <div className="flex justify-between items-center p-2 border-b">
           <Input
             value={currentTitle}
             onChange={handleTitleChange}
             placeholder="Untitled"
-            className="text-lg font-semibold border-none focus-visible:ring-0 max-w-md"
+            className="text-lg font-semibold border-none focus-visible:ring-0 max-w-md px-2"
           />
           <Button
             variant="ghost"
             size="sm"
             onClick={() => setIsEditing(!isEditing)}
+            className="ml-auto"
           >
             {isEditing ? (
               <>

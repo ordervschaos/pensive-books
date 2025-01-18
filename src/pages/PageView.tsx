@@ -111,9 +111,9 @@ const PageView = () => {
   const currentIndex = book.page_ids?.indexOf(page.id) ?? -1;
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col bg-slate-50">
       <TopNav />
-      <div className="flex-1 container max-w-4xl mx-auto px-4 py-4 flex flex-col gap-4">
+      <div className="flex-1 container max-w-5xl mx-auto px-4 py-4 flex flex-col gap-4">
         <PageNavigation
           bookId={bookId || ""}
           currentIndex={currentIndex}
