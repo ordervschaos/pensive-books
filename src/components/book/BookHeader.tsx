@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { ArrowLeft, Globe, Lock } from "lucide-react";
 
 interface BookHeaderProps {
@@ -17,23 +18,17 @@ export const BookHeader = ({ isPublic, onTogglePublish, publishing }: BookHeader
         <ArrowLeft className="mr-2 h-4 w-4" />
         Back to Notebooks
       </Button>
-      <Button
-        onClick={onTogglePublish}
-        disabled={publishing}
-        variant={isPublic ? "destructive" : "default"}
-      >
-        {isPublic ? (
-          <>
-            <Lock className="mr-2 h-4 w-4" />
-            Make Private
-          </>
-        ) : (
-          <>
-            <Globe className="mr-2 h-4 w-4" />
-            Publish
-          </>
-        )}
-      </Button>
+      <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2">
+          <Lock className="h-4 w-4 text-muted-foreground" />
+          <Switch
+            checked={isPublic}
+            onCheckedChange={onTogglePublish}
+            disabled={publishing}
+          />
+          <Globe className="h-4 w-4 text-muted-foreground" />
+        </div>
+      </div>
     </div>
   );
 };
