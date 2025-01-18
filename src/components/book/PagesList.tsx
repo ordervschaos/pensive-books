@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { FilePlus, GripVertical, Move } from "lucide-react";
+import { FilePlus, GripVertical, Move, LayoutList, LayoutGrid } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect } from "react";
@@ -111,6 +111,7 @@ export const PagesList = ({ pages, bookId, isReorderMode = false }: PagesListPro
   const { toast } = useToast();
   const [items, setItems] = useState<Page[]>([]);
   const [isReordering, setIsReordering] = useState(isReorderMode);
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
 
   useEffect(() => {
     const sortedPages = [...pages].sort((a, b) => a.page_index - b.page_index);
@@ -194,24 +195,32 @@ export const PagesList = ({ pages, bookId, isReorderMode = false }: PagesListPro
     <Card className="mt-6">
       <CardContent className="p-0">
         <div className="flex items-center justify-between p-4 border-b border-border">
-          <div className="flex gap-2">
-            <Button 
-              onClick={createNewPage}
-              variant="outline"
-              size="icon"
-              className="rounded-full"
-            >
-              <FilePlus className="h-4 w-4" />
-            </Button>
-            <Button
-              onClick={() => setIsReordering(!isReordering)}
-              variant={isReordering ? "default" : "outline"}
-              size="icon"
-              className="rounded-full"
-            >
-              <Move className="h-4 w-4" />
-            </Button>
-          </div>
+          <Button
+            variant={viewMode === 'list' ? "default" : "outline"}
+            size="icon"
+            onClick={() => setViewMode('list')}
+            className="rounded-full"
+          >
+            <LayoutList className="h-4 w-4" />
+          </Button>
+          
+          <Button 
+            onClick={createNewPage}
+            variant="outline"
+            size="icon"
+            className="rounded-full"
+          >
+            <FilePlus className="h-4 w-4" />
+          </Button>
+
+          <Button
+            onClick={() => setIsReordering(!isReordering)}
+            variant={isReordering ? "default" : "outline"}
+            size="icon"
+            className="rounded-full"
+          >
+            <Move className="h-4 w-4" />
+          </Button>
         </div>
 
         {items.length === 0 ? (
@@ -220,7 +229,7 @@ export const PagesList = ({ pages, bookId, isReorderMode = false }: PagesListPro
             <p className="text-muted-foreground">No pages yet</p>
           </div>
         ) : (
-          <div>
+          <div className={viewMode === 'grid' ? 'grid grid-cols-2 gap-4 p-4' : ''}>
             {isReordering ? (
               <DndContext
                 sensors={sensors}
