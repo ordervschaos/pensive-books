@@ -27,11 +27,20 @@ export const PageNavigation = ({
 
   const isLastPage = currentIndex >= totalPages - 1;
 
+  const handleNextClick = () => {
+    if (isLastPage) {
+      navigate(`/book/${bookId}`);
+    } else {
+      // Pass the exact next index without any additional increment
+      onNavigate(currentIndex + 1);
+    }
+  };
+
   return (
     <div className="flex items-center justify-center">
       <Button
         variant="outline"
-        onClick={() => isLastPage ? navigate(`/book/${bookId}`) : onNavigate(currentIndex + 1)}
+        onClick={handleNextClick}
         className="flex items-center gap-2 px-6 py-6 rounded-full bg-background border-border"
         disabled={currentIndex === -1}
       >
