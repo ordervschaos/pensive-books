@@ -111,7 +111,7 @@ const PageView = () => {
         .from("pages")
         .select("id")
         .eq("book_id", parseInt(bookId || "0"))
-        .eq("page_index", index)
+        .eq("page_index", index-1)
         .single();
 
       if (error) throw error;
