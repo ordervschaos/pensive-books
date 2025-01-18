@@ -27,6 +27,7 @@ interface Page {
   id: number;
   page_index: number;
   updated_at: string;
+  title: string;
 }
 
 interface PagesListProps {
@@ -66,7 +67,7 @@ const SortablePageItem = ({ page, bookId, onNavigate }: SortablePageItemProps) =
         </div>
         <div className="flex-1" onClick={() => onNavigate(page.id)}>
           <CardTitle className="text-lg">
-            Page {page.page_index + 1}
+            {page.title || `Untitled Page ${page.page_index + 1}`}
           </CardTitle>
           <p className="text-sm text-muted-foreground">
             Last modified {new Date(page.updated_at).toLocaleDateString()}
@@ -220,7 +221,7 @@ export const PagesList = ({ pages, bookId }: PagesListProps) => {
               >
                 <CardHeader>
                   <CardTitle className="text-lg">
-                    Page {page.page_index + 1}
+                    {page.title || `Untitled Page ${page.page_index + 1}`}
                   </CardTitle>
                   <p className="text-sm text-muted-foreground">
                     Last modified {new Date(page.updated_at).toLocaleDateString()}
