@@ -17,22 +17,8 @@ export const PageNavigation = ({ bookId, currentIndex, totalPages, onNavigate }:
   const displayTotalPages = Math.max(totalPages, 0);
 
   return (
-    <div className="flex items-center justify-between">
-      <Button variant="ghost" onClick={() => navigate(`/book/${bookId}`)}>
-        <ArrowLeft className="mr-2 h-4 w-4" />
-        Back to Book
-      </Button>
+    <div className="flex items-center justify-center">
       <div className="flex items-center gap-2">
-        <Button
-          variant="outline"
-          onClick={() => onNavigate(currentIndex - 1)}
-          disabled={currentIndex <= 0}
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <span className="text-sm text-muted-foreground">
-          Page {displayCurrentIndex} of {displayTotalPages}
-        </span>
         <Button
           variant="outline"
           onClick={() => onNavigate(currentIndex + 1)}

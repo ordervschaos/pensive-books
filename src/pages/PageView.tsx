@@ -125,12 +125,6 @@ const PageView = () => {
       <TopNav />
 
       <div className="flex-1 container max-w-5xl mx-auto px-4 py-4 flex flex-col gap-4">
-        <PageNavigation
-          bookId={bookId || ""}
-          currentIndex={currentIndex}
-          totalPages={book.page_ids?.length ?? 0}
-          onNavigate={navigateToPage}
-        />
         <div className="flex-1 flex flex-col">
           <PageContent
             content={page.html_content || ''}
@@ -139,6 +133,12 @@ const PageView = () => {
             saving={saving}
           />
         </div>
+        <PageNavigation
+          bookId={bookId || ""}
+          currentIndex={currentIndex}
+          totalPages={book.page_ids?.length ?? 0}
+          onNavigate={navigateToPage}
+        />
       </div>
     </div>
   );
