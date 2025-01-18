@@ -111,19 +111,32 @@ const Index = () => {
             {notebooks.map((notebook) => (
               <div key={notebook.id} className="flex flex-col">
                 <Card 
-                  className="hover:shadow-lg transition-shadow cursor-pointer overflow-hidden flex flex-col h-[280px]"
+                  className="hover:shadow-lg transition-shadow cursor-pointer overflow-hidden h-[280px]"
                   onClick={() => navigate(`/book/${notebook.id}`)}
                 >
-                  <div className="relative h-[200px] bg-muted flex items-center justify-center p-4">
-                    <h3 className="text-xl font-semibold text-center break-words">
-                      {notebook.name}
-                    </h3>
-                  </div>
-                  <CardHeader className="flex-1" />
+                  {notebook.cover_url ? (
+                    <div className="w-full h-full relative">
+                      <img 
+                        src={notebook.cover_url} 
+                        alt={notebook.name}
+                        className="w-full h-full object-cover"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end">
+                        <div className="p-4 text-white w-full">
+                          <h3 className="text-lg font-semibold truncate">
+                            {notebook.name}
+                          </h3>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="h-full flex items-center justify-center p-4 bg-muted">
+                      <h3 className="text-xl font-semibold text-center break-words">
+                        {notebook.name}
+                      </h3>
+                    </div>
+                  )}
                 </Card>
-                <p className="text-sm text-muted-foreground mt-2 text-center line-clamp-1">
-                  {notebook.name}
-                </p>
               </div>
             ))}
           </div>
