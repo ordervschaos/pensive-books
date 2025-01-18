@@ -123,38 +123,7 @@ const PageView = () => {
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <TopNav />
-      <div className="border-b bg-background">
-        <div className="container max-w-7xl mx-auto px-4">
-          <div className="flex items-center justify-between h-14">
-            <Breadcrumb>
-              <BreadcrumbList>
-                <BreadcrumbItem>
-                  <Link className="transition-colors hover:text-foreground text-muted-foreground" to="/">Books</Link>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator />
-                <BreadcrumbItem>
-                  <Link className="transition-colors hover:text-foreground text-muted-foreground" to={`/book/${bookId}`}>{book.name}</Link>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator />
-                <BreadcrumbItem>
-                  <BreadcrumbPage>{page.title || 'Untitled'}</BreadcrumbPage>
-                </BreadcrumbItem>
-              </BreadcrumbList>
-            </Breadcrumb>
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="icon">
-                <Search className="h-4 w-4" />
-              </Button>
-              <Button variant="ghost" size="icon">
-                <Maximize2 className="h-4 w-4" />
-              </Button>
-              <Button variant="ghost" size="icon">
-                <Settings className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        </div>
-      </div>
+
       <div className="flex-1 container max-w-5xl mx-auto px-4 py-4 flex flex-col gap-4">
         <PageNavigation
           bookId={bookId || ""}
