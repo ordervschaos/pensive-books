@@ -75,7 +75,7 @@ export const TipTapEditor = ({ content, onChange, editable = true }: TipTapEdito
   return (
     <div className="h-full flex flex-col">
       {editable && (
-        <div className="border-b bg-slate-50/80 p-2 flex gap-1 items-center flex-wrap">
+        <div className="border-b bg-muted/50 p-2 flex gap-1 items-center flex-wrap">
           <Button
             variant="ghost"
             size="sm"
@@ -159,7 +159,7 @@ export const TipTapEditor = ({ content, onChange, editable = true }: TipTapEdito
           </div>
         </div>
       )}
-      <div className="prose prose-slate max-w-none p-8 flex-1 [&_.ProseMirror:focus]:outline-none">
+      <div className="prose dark:prose-invert prose-slate max-w-none p-8 flex-1 [&_.ProseMirror:focus]:outline-none bg-background">
         <EditorContent editor={editor} />
       </div>
     </div>

@@ -98,7 +98,7 @@ const PageView = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex flex-col">
+      <div className="min-h-screen flex flex-col bg-background">
         <TopNav />
         <div className="flex-1 container max-w-4xl mx-auto px-4 py-4">
           <PageLoading />
@@ -109,7 +109,7 @@ const PageView = () => {
 
   if (!page || !book) {
     return (
-      <div className="min-h-screen flex flex-col">
+      <div className="min-h-screen flex flex-col bg-background">
         <TopNav />
         <div className="flex-1 container max-w-4xl mx-auto px-4 py-4">
           <PageNotFound bookId={bookId || ""} />
@@ -121,19 +121,19 @@ const PageView = () => {
   const currentIndex = book.page_ids?.indexOf(page.id) ?? -1;
 
   return (
-    <div className="min-h-screen flex flex-col bg-white">
+    <div className="min-h-screen flex flex-col bg-background">
       <TopNav />
-      <div className="border-b bg-white">
+      <div className="border-b bg-background">
         <div className="container max-w-7xl mx-auto px-4">
           <div className="flex items-center justify-between h-14">
             <Breadcrumb>
               <BreadcrumbList>
                 <BreadcrumbItem>
-                  <Link className="transition-colors hover:text-foreground" to="/">Books</Link>
+                  <Link className="transition-colors hover:text-foreground text-muted-foreground" to="/">Books</Link>
                 </BreadcrumbItem>
                 <BreadcrumbSeparator />
                 <BreadcrumbItem>
-                  <Link className="transition-colors hover:text-foreground" to={`/book/${bookId}`}>{book.name}</Link>
+                  <Link className="transition-colors hover:text-foreground text-muted-foreground" to={`/book/${bookId}`}>{book.name}</Link>
                 </BreadcrumbItem>
                 <BreadcrumbSeparator />
                 <BreadcrumbItem>

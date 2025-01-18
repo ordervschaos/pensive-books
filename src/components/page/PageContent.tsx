@@ -39,14 +39,14 @@ export const PageContent = ({ content, title, onSave, saving }: PageContentProps
   };
 
   return (
-    <Card className="flex-1 flex flex-col bg-white">
+    <Card className="flex-1 flex flex-col bg-background border">
       <CardContent className="p-0 flex-1 flex flex-col">
         <div className="flex justify-between items-center p-2 border-b">
           <Input
             value={currentTitle}
             onChange={handleTitleChange}
             placeholder="Untitled"
-            className="text-lg font-semibold border-none focus-visible:ring-0 max-w-md px-2"
+            className="text-lg font-semibold border-none focus-visible:ring-0 max-w-md px-2 bg-background"
           />
           <Button
             variant="ghost"
