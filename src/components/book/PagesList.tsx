@@ -174,6 +174,16 @@ export const PagesList = ({ pages, bookId, isReorderMode = false }: PagesListPro
 
       if (error) throw error;
 
+      // Update the book's page_ids array
+      const { error: bookError } = await supabase
+        .from('books')
+        .update({ 
+          page_ids: [...items.map(p => p.id), newPage.id]
+        })
+        .eq('id', bookId);
+
+      if (bookError) throw bookError;
+
       navigate(`/book/${bookId}/page/${newPage.id}`);
 
       toast({
@@ -200,16 +210,27 @@ export const PagesList = ({ pages, bookId, isReorderMode = false }: PagesListPro
       setItems(newItems);
 
       try {
+        // Update page indices
         const updates = newItems.map((page, index) => ({
           id: page.id,
           page_index: index
         }));
 
-        const { error } = await supabase
+        const { error: pagesError } = await supabase
           .from('pages')
           .upsert(updates);
 
-        if (error) throw error;
+        if (pagesError) throw pagesError;
+
+        // Update book's page_ids array to match the new order
+        const { error: bookError } = await supabase
+          .from('books')
+          .update({ 
+            page_ids: newItems.map(page => page.id)
+          })
+          .eq('id', bookId);
+
+        if (bookError) throw bookError;
 
         toast({
           title: "Pages reordered",
