@@ -128,6 +128,7 @@ const BookDetails = () => {
           createdAt={book.created_at}
           updatedAt={book.updated_at}
           publishedAt={book.published_at}
+          bookId={book.id}
         />
 
         <div className="space-y-4">
