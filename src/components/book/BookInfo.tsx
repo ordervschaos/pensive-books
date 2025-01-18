@@ -1,10 +1,13 @@
 import { useState } from "react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
-import { Calendar, Clock, Globe, Upload } from "lucide-react";
+import { Calendar, Clock, Globe, Upload, Image as ImageIcon } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { UnsplashPicker } from "./UnsplashPicker";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface BookInfoProps {
   name: string;
@@ -28,6 +31,7 @@ export const BookInfo = ({
   const [isEditing, setIsEditing] = useState(false);
   const [bookName, setBookName] = useState(name);
   const [uploading, setUploading] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
   const { toast } = useToast();
 
   const handleNameChange = async (newName: string) => {
@@ -61,7 +65,6 @@ export const BookInfo = ({
       const file = event.target.files?.[0];
       if (!file) return;
 
-      // Validate file type
       if (!file.type.startsWith('image/')) {
         toast({
           variant: "destructive",
@@ -71,37 +74,20 @@ export const BookInfo = ({
         return;
       }
 
-      // Generate a unique file name
       const fileExt = file.name.split('.').pop();
       const fileName = `${bookId}_${Math.random().toString(36).slice(2)}.${fileExt}`;
 
-      // Upload to Supabase Storage
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('public_images')
         .upload(fileName, file);
 
       if (uploadError) throw uploadError;
 
-      // Get the public URL
       const { data: { publicUrl } } = supabase.storage
         .from('public_images')
         .getPublicUrl(fileName);
 
-      // Update the book record with the new cover URL
-      const { error: updateError } = await supabase
-        .from('books')
-        .update({ cover_url: publicUrl })
-        .eq('id', bookId);
-
-      if (updateError) throw updateError;
-
-      toast({
-        title: "Cover updated",
-        description: "Your book cover has been successfully updated."
-      });
-
-      // Force reload to show new cover
-      window.location.reload();
+      await updateBookCover(publicUrl);
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -110,7 +96,40 @@ export const BookInfo = ({
       });
     } finally {
       setUploading(false);
+      setIsOpen(false);
     }
+  };
+
+  const handleUnsplashSelect = async (imageUrl: string) => {
+    try {
+      setUploading(true);
+      await updateBookCover(imageUrl);
+      setIsOpen(false);
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error setting cover",
+        description: error.message
+      });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const updateBookCover = async (url: string) => {
+    const { error: updateError } = await supabase
+      .from('books')
+      .update({ cover_url: url })
+      .eq('id', bookId);
+
+    if (updateError) throw updateError;
+
+    toast({
+      title: "Cover updated",
+      description: "Your book cover has been successfully updated."
+    });
+
+    window.location.reload();
   };
 
   return (
@@ -182,27 +201,42 @@ export const BookInfo = ({
                 className="w-32 h-32 object-cover rounded-lg shadow-md"
               />
             )}
-            <div className="relative">
-              <Input
-                type="file"
-                accept="image/*"
-                onChange={handleCoverUpload}
-                className="hidden"
-                id="cover-upload"
-                disabled={uploading}
-              />
-              <Button
-                variant="outline"
-                size="sm"
-                asChild
-                disabled={uploading}
-              >
-                <label htmlFor="cover-upload" className="cursor-pointer">
-                  <Upload className="mr-2 h-4 w-4" />
-                  {uploading ? "Uploading..." : "Upload Cover"}
-                </label>
-              </Button>
-            </div>
+            <Dialog open={isOpen} onOpenChange={setIsOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline" size="sm" disabled={uploading}>
+                  {uploading ? (
+                    "Updating..."
+                  ) : (
+                    <>
+                      <ImageIcon className="mr-2 h-4 w-4" />
+                      Update Cover
+                    </>
+                  )}
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Choose Cover Image</DialogTitle>
+                </DialogHeader>
+                <Tabs defaultValue="upload">
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="upload">Upload</TabsTrigger>
+                    <TabsTrigger value="unsplash">Unsplash</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="upload" className="space-y-4">
+                    <Input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleCoverUpload}
+                      disabled={uploading}
+                    />
+                  </TabsContent>
+                  <TabsContent value="unsplash">
+                    <UnsplashPicker onSelect={handleUnsplashSelect} />
+                  </TabsContent>
+                </Tabs>
+              </DialogContent>
+            </Dialog>
           </div>
         </div>
       </CardHeader>
