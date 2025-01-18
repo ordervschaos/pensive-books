@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Eye, Pencil } from "lucide-react";
@@ -13,89 +13,6 @@ interface PageContentProps {
   saving: boolean;
 }
 
-const getFirstNLines = (content: any, n: number) => {
-  return getLinesAfterFirstBlockFromJSON(content, n);
-};
-
-const getLinesAfterFirstBlockFromJSON = (data: any, n: number) => {
-  const lines: string[] = [];
-  let foundFirstBlock = false;
-
-  for (const node of data.content) {
-    if (!foundFirstBlock) {
-      if (node.type === "heading" || node.type === "paragraph") {
-        foundFirstBlock = true;
-      }
-      continue;
-    }
-
-    if (node.type === "paragraph" && node.content) {
-      const lineText = node.content
-        .map((contentNode: any) => contentNode.text)
-        .join(" ")
-        .trim();
-      if (lineText) {
-        lines.push(lineText);
-      }
-    }
-
-    if (lines.length >= n) {
-      break;
-    }
-  }
-
-  return lines.slice(0, n);
-};
-
-const getFirstParagraphContent = (data: any) => {
-  const firstNLines = getFirstNLines(data, 1);
-  return firstNLines[0];
-};
-
-const getFirstHeadingContent = (data: any) => {
-  const firstNode = data.content[0];
-
-  if (firstNode && firstNode.type === "heading" && firstNode.content) {
-    return firstNode.content
-      .filter((contentNode: any) => contentNode.type === 'text')
-      .map((contentNode: any) => contentNode.text)
-      .join(" ")
-      .trim();
-  }
-
-  return null;
-};
-
-const getPageTitleFromContent = (content: any) => {
-  if (!content) {
-    return "Untitled";
-  }
-  
-  let title = getFirstHeadingContent(content);
-
-  if (!title) {
-    title = getFirstParagraphContent(content);
-  }
-
-  if (!title) {
-    title = "Untitled";
-  }
-
-  return title;
-};
-
-const deriveTitle = (content: string): string => {
-  if (!content) return 'Untitled';
-  
-  try {
-    const jsonContent = JSON.parse(content);
-    return getPageTitleFromContent(jsonContent);
-  } catch (error) {
-    console.error('Error parsing content JSON:', error);
-    return 'Untitled';
-  }
-};
-
 export const PageContent = ({ content, title, onSave, saving }: PageContentProps) => {
   const [isEditing, setIsEditing] = useState(!content);
   const [currentContent, setCurrentContent] = useState(content || '');
@@ -108,16 +25,6 @@ export const PageContent = ({ content, title, onSave, saving }: PageContentProps
     }, 1000),
     [onSave]
   );
-
-  useEffect(() => {
-    if (currentTitle === 'Untitled' || !currentTitle.trim()) {
-      const derivedTitle = deriveTitle(JSON.stringify(editorJson));
-      if (derivedTitle !== 'Untitled') {
-        setCurrentTitle(derivedTitle);
-        debouncedSave(currentContent, editorJson, derivedTitle);
-      }
-    }
-  }, [currentContent, currentTitle, editorJson, debouncedSave]);
 
   const handleContentChange = (html: string, json: any) => {
     setCurrentContent(html);
