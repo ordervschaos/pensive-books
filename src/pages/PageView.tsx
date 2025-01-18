@@ -41,11 +41,14 @@ const PageView = () => {
       setBook(bookData);
 
       // Fetch next page title if not the last page
-      const pageIds = Array.isArray(bookData.page_ids) ? bookData.page_ids : [];
+      const pageIds = bookData.page_ids ? 
+        (Array.isArray(bookData.page_ids) ? bookData.page_ids : []) : 
+        [];
+      
       const currentIndex = pageIds.indexOf(parseInt(pageId || "0"));
       
       if (currentIndex < pageIds.length - 1) {
-        const nextPageId = pageIds[currentIndex + 1];
+        const nextPageId = Number(pageIds[currentIndex + 1]);
         const { data: nextPage, error: nextPageError } = await supabase
           .from("pages")
           .select("title")
@@ -128,8 +131,10 @@ const PageView = () => {
     );
   }
 
-  const pageIds = Array.isArray(book.page_ids) ? book.page_ids : [];
-  const currentIndex = pageIds.indexOf(page.id);
+  const pageIds = book.page_ids ? 
+    (Array.isArray(book.page_ids) ? book.page_ids : []) : 
+    [];
+  const currentIndex = pageIds.indexOf(Number(page.id));
 
   return (
     <div className="min-h-screen flex flex-col bg-background">

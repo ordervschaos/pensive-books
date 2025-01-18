@@ -140,10 +140,13 @@ const PageCard = ({ page, bookId, onNavigate }: SortablePageItemProps) => {
 export const PagesList = ({ pages, bookId, isReorderMode = false }: PagesListProps) => {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [items, setItems] = useState<Page[]>([]);
+  const [items, setItems] = useState<Page[]>(
+    [...pages].sort((a, b) => a.page_index - b.page_index)
+  );
   const [isReordering, setIsReordering] = useState(isReorderMode);
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
 
+  // Update items when pages prop changes
   useEffect(() => {
     const sortedPages = [...pages].sort((a, b) => a.page_index - b.page_index);
     setItems(sortedPages);
