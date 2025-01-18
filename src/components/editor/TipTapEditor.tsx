@@ -1,8 +1,11 @@
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
+import Link from '@tiptap/extension-link';
+import Image from '@tiptap/extension-image';
 import { Button } from "@/components/ui/button";
-import { Bold, Italic, Quote, Code2, Link2, List, ListOrdered, Image, History, Check } from "lucide-react";
+import { Bold, Italic, Quote, Code2, Link2, List, ListOrdered, Image as ImageIcon, History, Check } from "lucide-react";
 import { useEffect } from 'react';
+import { useToast } from "@/hooks/use-toast";
 
 interface TipTapEditorProps {
   content: string;
@@ -11,8 +14,23 @@ interface TipTapEditorProps {
 }
 
 export const TipTapEditor = ({ content, onChange, editable = true }: TipTapEditorProps) => {
+  const { toast } = useToast();
+
   const editor = useEditor({
-    extensions: [StarterKit],
+    extensions: [
+      StarterKit,
+      Link.configure({
+        openOnClick: false,
+        HTMLAttributes: {
+          class: 'text-blue-500 underline',
+        },
+      }),
+      Image.configure({
+        HTMLAttributes: {
+          class: 'max-w-full h-auto rounded-lg',
+        },
+      }),
+    ],
     content,
     editable,
     onUpdate: ({ editor }) => {
@@ -29,6 +47,26 @@ export const TipTapEditor = ({ content, onChange, editable = true }: TipTapEdito
       }
     }
   }, [editor, editable]);
+
+  const addLink = () => {
+    const url = window.prompt('Enter URL');
+    if (url) {
+      editor?.chain().focus().setLink({ href: url }).run();
+    }
+  };
+
+  const addImage = () => {
+    const url = window.prompt('Enter image URL');
+    if (url) {
+      editor?.chain().focus().setImage({ src: url }).run();
+    } else {
+      toast({
+        title: "Image URL required",
+        description: "Please provide a valid image URL",
+        variant: "destructive",
+      });
+    }
+  };
 
   if (!editor) {
     return null;
@@ -89,16 +127,17 @@ export const TipTapEditor = ({ content, onChange, editable = true }: TipTapEdito
           <Button
             variant="ghost"
             size="sm"
-            disabled
+            onClick={addLink}
+            className={editor.isActive('link') ? 'bg-muted' : ''}
           >
             <Link2 className="h-4 w-4" />
           </Button>
           <Button
             variant="ghost"
             size="sm"
-            disabled
+            onClick={addImage}
           >
-            <Image className="h-4 w-4" />
+            <ImageIcon className="h-4 w-4" />
           </Button>
           <div className="ml-auto flex gap-1">
             <Button
