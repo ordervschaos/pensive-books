@@ -18,9 +18,12 @@ const PageView = () => {
   const [nextPageTitle, setNextPageTitle] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [totalPages, setTotalPages] = useState(0);
+  const [currentIndex, setCurrentIndex] = useState(0);
 
   const fetchPageDetails = async () => {
     try {
+      // Fetch current page
       const { data: pageData, error: pageError } = await supabase
         .from("pages")
         .select("*")
@@ -31,6 +34,7 @@ const PageView = () => {
       if (pageError) throw pageError;
       setPage(pageData);
 
+      // Fetch book details
       const { data: bookData, error: bookError } = await supabase
         .from("books")
         .select("*")
@@ -40,25 +44,26 @@ const PageView = () => {
       if (bookError) throw bookError;
       setBook(bookData);
 
-      // Fetch next page title if not the last page
-      const pageIds = bookData.page_ids ? 
-        (Array.isArray(bookData.page_ids) ? bookData.page_ids : []) : 
-        [];
-      
-      const currentIndex = pageIds.indexOf(parseInt(pageId || "0"));
-      
-      if (currentIndex < pageIds.length - 1) {
-        const nextPageId = Number(pageIds[currentIndex + 1]);
-        const { data: nextPage, error: nextPageError } = await supabase
-          .from("pages")
-          .select("title")
-          .eq("id", nextPageId)
-          .single();
+      // Get total pages count and next page
+      const { data: pagesData, error: pagesError } = await supabase
+        .from("pages")
+        .select("id, title, page_index")
+        .eq("book_id", parseInt(bookId || "0"))
+        .eq("archived", false)
+        .order("page_index", { ascending: true });
 
-        if (!nextPageError && nextPage) {
-          setNextPageTitle(nextPage.title);
-        }
+      if (pagesError) throw pagesError;
+
+      setTotalPages(pagesData.length);
+      const currentPageIndex = pagesData.findIndex(p => p.id === parseInt(pageId || "0"));
+      setCurrentIndex(currentPageIndex);
+
+      // Get next page title if not the last page
+      if (currentPageIndex < pagesData.length - 1) {
+        const nextPage = pagesData[currentPageIndex + 1];
+        setNextPageTitle(nextPage.title || "Untitled");
       }
+
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -100,9 +105,26 @@ const PageView = () => {
     }
   };
 
-  const navigateToPage = (index: number) => {
-    if (!book?.page_ids || !book.page_ids[index]) return;
-    window.location.href = `/book/${bookId}/page/${book.page_ids[index]}`;
+  const navigateToPage = async (index: number) => {
+    try {
+      const { data: nextPage, error } = await supabase
+        .from("pages")
+        .select("id")
+        .eq("book_id", parseInt(bookId || "0"))
+        .eq("page_index", index)
+        .single();
+
+      if (error) throw error;
+      if (nextPage) {
+        window.location.href = `/book/${bookId}/page/${nextPage.id}`;
+      }
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error navigating to page",
+        description: error.message
+      });
+    }
   };
 
   useEffect(() => {
@@ -131,11 +153,6 @@ const PageView = () => {
     );
   }
 
-  const pageIds = book.page_ids ? 
-    (Array.isArray(book.page_ids) ? book.page_ids : []) : 
-    [];
-  const currentIndex = pageIds.indexOf(Number(page.id));
-
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <TopNav />
@@ -151,7 +168,7 @@ const PageView = () => {
         <PageNavigation
           bookId={bookId || ""}
           currentIndex={currentIndex}
-          totalPages={pageIds.length}
+          totalPages={totalPages}
           onNavigate={navigateToPage}
           nextPageTitle={nextPageTitle}
           bookTitle={book.name}

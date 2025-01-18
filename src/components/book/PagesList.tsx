@@ -146,7 +146,6 @@ export const PagesList = ({ pages, bookId, isReorderMode = false }: PagesListPro
   const [isReordering, setIsReordering] = useState(isReorderMode);
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
 
-  // Update items when pages prop changes
   useEffect(() => {
     const sortedPages = [...pages].sort((a, b) => a.page_index - b.page_index);
     setItems(sortedPages);
@@ -161,11 +160,13 @@ export const PagesList = ({ pages, bookId, isReorderMode = false }: PagesListPro
 
   const createNewPage = async () => {
     try {
+      const maxPageIndex = Math.max(...items.map(p => p.page_index), -1);
+      
       const { data: newPage, error } = await supabase
         .from('pages')
         .insert({
           book_id: bookId,
-          page_index: pages.length,
+          page_index: maxPageIndex + 1,
           content: {},
           html_content: ''
         })
@@ -173,16 +174,6 @@ export const PagesList = ({ pages, bookId, isReorderMode = false }: PagesListPro
         .single();
 
       if (error) throw error;
-
-      // Update the book's page_ids array
-      const { error: bookError } = await supabase
-        .from('books')
-        .update({ 
-          page_ids: [...items.map(p => p.id), newPage.id]
-        })
-        .eq('id', bookId);
-
-      if (bookError) throw bookError;
 
       navigate(`/book/${bookId}/page/${newPage.id}`);
 
@@ -216,21 +207,11 @@ export const PagesList = ({ pages, bookId, isReorderMode = false }: PagesListPro
           page_index: index
         }));
 
-        const { error: pagesError } = await supabase
+        const { error } = await supabase
           .from('pages')
           .upsert(updates);
 
-        if (pagesError) throw pagesError;
-
-        // Update book's page_ids array to match the new order
-        const { error: bookError } = await supabase
-          .from('books')
-          .update({ 
-            page_ids: newItems.map(page => page.id)
-          })
-          .eq('id', bookId);
-
-        if (bookError) throw bookError;
+        if (error) throw error;
 
         toast({
           title: "Pages reordered",
