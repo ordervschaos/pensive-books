@@ -14,6 +14,7 @@ export type Database = {
           archived: boolean | null
           book_id: number | null
           bookmarked_page_index: number | null
+          cover_url: string | null
           created_at: string | null
           digest_bookmarked_page_index: number | null
           id: number
@@ -31,6 +32,7 @@ export type Database = {
           archived?: boolean | null
           book_id?: number | null
           bookmarked_page_index?: number | null
+          cover_url?: string | null
           created_at?: string | null
           digest_bookmarked_page_index?: number | null
           id?: number
@@ -48,6 +50,7 @@ export type Database = {
           archived?: boolean | null
           book_id?: number | null
           bookmarked_page_index?: number | null
+          cover_url?: string | null
           created_at?: string | null
           digest_bookmarked_page_index?: number | null
           id?: number

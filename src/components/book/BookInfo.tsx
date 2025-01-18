@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
-import { Calendar, Clock, Globe } from "lucide-react";
+import { Calendar, Clock, Globe, Upload } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { Button } from "@/components/ui/button";
 
 interface BookInfoProps {
   name: string;
@@ -12,11 +13,21 @@ interface BookInfoProps {
   updatedAt: string;
   publishedAt: string | null;
   bookId: number;
+  coverUrl?: string | null;
 }
 
-export const BookInfo = ({ name, isPublic, createdAt, updatedAt, publishedAt, bookId }: BookInfoProps) => {
+export const BookInfo = ({ 
+  name, 
+  isPublic, 
+  createdAt, 
+  updatedAt, 
+  publishedAt, 
+  bookId,
+  coverUrl 
+}: BookInfoProps) => {
   const [isEditing, setIsEditing] = useState(false);
   const [bookName, setBookName] = useState(name);
+  const [uploading, setUploading] = useState(false);
   const { toast } = useToast();
 
   const handleNameChange = async (newName: string) => {
@@ -39,72 +50,160 @@ export const BookInfo = ({ name, isPublic, createdAt, updatedAt, publishedAt, bo
         title: "Error updating book name",
         description: error.message
       });
-      setBookName(name); // Reset to original name if update fails
+      setBookName(name);
     }
     setIsEditing(false);
+  };
+
+  const handleCoverUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      setUploading(true);
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        toast({
+          variant: "destructive",
+          title: "Invalid file type",
+          description: "Please upload an image file."
+        });
+        return;
+      }
+
+      // Generate a unique file name
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${bookId}_${Math.random().toString(36).slice(2)}.${fileExt}`;
+
+      // Upload to Supabase Storage
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('public_images')
+        .upload(fileName, file);
+
+      if (uploadError) throw uploadError;
+
+      // Get the public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('public_images')
+        .getPublicUrl(fileName);
+
+      // Update the book record with the new cover URL
+      const { error: updateError } = await supabase
+        .from('books')
+        .update({ cover_url: publicUrl })
+        .eq('id', bookId);
+
+      if (updateError) throw updateError;
+
+      toast({
+        title: "Cover updated",
+        description: "Your book cover has been successfully updated."
+      });
+
+      // Force reload to show new cover
+      window.location.reload();
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error uploading cover",
+        description: error.message
+      });
+    } finally {
+      setUploading(false);
+    }
   };
 
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
-          {isEditing ? (
-            <Input
-              value={bookName}
-              onChange={(e) => setBookName(e.target.value)}
-              onBlur={() => {
-                if (bookName !== name) {
-                  handleNameChange(bookName);
-                } else {
-                  setIsEditing(false);
-                }
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  if (bookName !== name) {
-                    handleNameChange(bookName);
-                  } else {
-                    setIsEditing(false);
-                  }
-                }
-                if (e.key === "Escape") {
-                  setBookName(name);
-                  setIsEditing(false);
-                }
-              }}
-              className="text-2xl font-semibold w-[300px]"
-              autoFocus
-            />
-          ) : (
-            <CardTitle 
-              className="text-2xl cursor-pointer hover:text-muted-foreground transition-colors"
-              onClick={() => setIsEditing(true)}
-            >
-              {bookName}
-            </CardTitle>
-          )}
-          {isPublic && (
-            <span className="text-sm text-muted-foreground flex items-center">
-              <Globe className="mr-1 h-4 w-4" />
-              Public
-            </span>
-          )}
-        </div>
-        <div className="flex space-x-4 text-sm text-muted-foreground">
-          <div className="flex items-center">
-            <Calendar className="mr-1 h-4 w-4" />
-            Created {new Date(createdAt).toLocaleDateString()}
-          </div>
-          <div className="flex items-center">
-            <Clock className="mr-1 h-4 w-4" />
-            Last updated {new Date(updatedAt).toLocaleDateString()}
-          </div>
-          {publishedAt && (
-            <div className="flex items-center">
-              <Globe className="mr-1 h-4 w-4" />
-              Published {new Date(publishedAt).toLocaleDateString()}
+        <div className="flex items-start justify-between">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              {isEditing ? (
+                <Input
+                  value={bookName}
+                  onChange={(e) => setBookName(e.target.value)}
+                  onBlur={() => {
+                    if (bookName !== name) {
+                      handleNameChange(bookName);
+                    } else {
+                      setIsEditing(false);
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      if (bookName !== name) {
+                        handleNameChange(bookName);
+                      } else {
+                        setIsEditing(false);
+                      }
+                    }
+                    if (e.key === "Escape") {
+                      setBookName(name);
+                      setIsEditing(false);
+                    }
+                  }}
+                  className="text-2xl font-semibold w-[300px]"
+                  autoFocus
+                />
+              ) : (
+                <CardTitle 
+                  className="text-2xl cursor-pointer hover:text-muted-foreground transition-colors"
+                  onClick={() => setIsEditing(true)}
+                >
+                  {bookName}
+                </CardTitle>
+              )}
+              {isPublic && (
+                <span className="text-sm text-muted-foreground flex items-center">
+                  <Globe className="mr-1 h-4 w-4" />
+                  Public
+                </span>
+              )}
             </div>
-          )}
+            <div className="flex space-x-4 text-sm text-muted-foreground">
+              <div className="flex items-center">
+                <Clock className="mr-1 h-4 w-4" />
+                Last updated {new Date(updatedAt).toLocaleDateString()}
+              </div>
+              {publishedAt && (
+                <div className="flex items-center">
+                  <Globe className="mr-1 h-4 w-4" />
+                  Published {new Date(publishedAt).toLocaleDateString()}
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="flex flex-col items-end space-y-4">
+            {coverUrl && (
+              <img 
+                src={coverUrl} 
+                alt="Book cover" 
+                className="w-32 h-32 object-cover rounded-lg shadow-md"
+              />
+            )}
+            <div className="relative">
+              <Input
+                type="file"
+                accept="image/*"
+                onChange={handleCoverUpload}
+                className="hidden"
+                id="cover-upload"
+                disabled={uploading}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                asChild
+                disabled={uploading}
+              >
+                <label htmlFor="cover-upload" className="cursor-pointer">
+                  <Upload className="mr-2 h-4 w-4" />
+                  {uploading ? "Uploading..." : "Upload Cover"}
+                </label>
+              </Button>
+            </div>
+          </div>
         </div>
       </CardHeader>
     </Card>
