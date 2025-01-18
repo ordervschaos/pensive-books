@@ -20,24 +20,35 @@ export const UnsplashPicker = ({ onSelect }: UnsplashPickerProps) => {
     
     setLoading(true);
     try {
-      // Get the Unsplash API key from Supabase secrets
-      const { data: { UNSPLASH_ACCESS_KEY }, error: secretError } = await supabase
+      console.log('Fetching Unsplash API keys...');
+      // Get both Unsplash API keys from Supabase secrets
+      const { data: secrets, error: secretError } = await supabase
         .functions.invoke('get-secret', {
-          body: { secretName: 'UNSPLASH_ACCESS_KEY' }
+          body: { 
+            secretNames: ['UNSPLASH_ACCESS_KEY', 'UNSPLASH_SECRET_KEY']
+          }
         });
 
-      if (secretError) throw secretError;
+      if (secretError) {
+        console.error('Error fetching secrets:', secretError);
+        throw secretError;
+      }
 
+      console.log('Creating Unsplash API client...');
       const unsplash = createApi({
-        accessKey: UNSPLASH_ACCESS_KEY,
+        accessKey: secrets.UNSPLASH_ACCESS_KEY,
+        // The secret key is not needed for client-side operations
+        // It's only used for server-side authentication
       });
 
+      console.log('Searching Unsplash images for query:', query);
       const result = await unsplash.search.getPhotos({
         query: query,
         perPage: 20,
       });
       
       if (result.response) {
+        console.log('Found', result.response.results.length, 'images');
         setImages(result.response.results);
       }
     } catch (error) {

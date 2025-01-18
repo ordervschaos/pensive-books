@@ -11,23 +11,30 @@ serve(async (req) => {
   }
 
   try {
-    const { secretName } = await req.json()
+    const { secretNames } = await req.json()
     
-    // Get the secret value
-    const secretValue = Deno.env.get(secretName)
+    // Handle both single secret name and array of secret names
+    const names = Array.isArray(secretNames) ? secretNames : [secretNames]
     
-    if (!secretValue) {
-      throw new Error(`Secret ${secretName} not found`)
-    }
+    // Get all requested secret values
+    const secrets = names.reduce((acc, name) => {
+      const value = Deno.env.get(name)
+      if (!value) {
+        throw new Error(`Secret ${name} not found`)
+      }
+      acc[name] = value
+      return acc
+    }, {})
 
     return new Response(
-      JSON.stringify({ [secretName]: secretValue }),
+      JSON.stringify(secrets),
       { 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,
       },
     )
   } catch (error) {
+    console.error('Error in get-secret function:', error);
     return new Response(
       JSON.stringify({ error: error.message }),
       { 
