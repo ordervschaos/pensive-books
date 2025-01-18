@@ -119,15 +119,18 @@ export function TopNav() {
       <div className="container max-w-7xl mx-auto px-4 h-full">
         <div className="flex items-center justify-between h-full">
           <div className="flex items-center gap-4">
-            {showBackButton && (
-              <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-            )}
+        
             
             {isBookRoute ? (
               <Breadcrumb>
                 <BreadcrumbList className="flex items-center space-x-1">
+                {showBackButton && (
+                  <BreadcrumbItem className="flex items-center">
+              <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
+                <ArrowLeft className="h-4 w-4" />
+              </Button>
+              </BreadcrumbItem>
+            )}
                   <BreadcrumbItem className="flex items-center">
                   <Link 
                           className="text-blue-500 hover:text-blue-600 transition-colors font-medium" 
