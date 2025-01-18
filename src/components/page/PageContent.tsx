@@ -24,8 +24,17 @@ const deriveTitle = (content: string): string => {
       (node: any) => node.type === 'heading' && node.attrs?.level === 1
     );
     
-    if (h1Node?.content?.[0]?.text) {
-      return h1Node.content[0].text.trim();
+    if (h1Node?.content) {
+      // Only get the text content from the heading, ignoring hardBreaks
+      const headingText = h1Node.content
+        .filter((content: any) => content.type === 'text')
+        .map((content: any) => content.text)
+        .join(' ')
+        .trim();
+      
+      if (headingText) {
+        return headingText;
+      }
     }
     
     // If no h1, look for the first paragraph with text
