@@ -27,6 +27,7 @@ interface Page {
   page_index: number;
   updated_at: string;
   title: string;
+  html_content?: string;
 }
 
 interface PagesListProps {
@@ -55,26 +56,53 @@ const SortablePageItem = ({ page, bookId, onNavigate }: SortablePageItemProps) =
     transition,
   } : undefined;
 
+  // Calculate word count from html_content
+  const wordCount = page.html_content ? 
+    page.html_content.replace(/<[^>]*>/g, '').trim().split(/\s+/).length : 
+    0;
+
   return (
     <div 
       ref={setNodeRef}
       style={style}
-      className="flex items-center gap-3 py-2 px-3 bg-background border border-border rounded-md hover:border-primary/50 transition-colors"
+      className="flex items-center gap-3 py-3 px-4 bg-background border-b border-border last:border-b-0 hover:bg-accent/5 transition-colors group"
     >
       <div {...attributes} {...listeners} className="cursor-grab hover:text-primary">
-        <GripVertical className="h-5 w-5" />
+        <GripVertical className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity" />
       </div>
       <div 
         className="flex-1 cursor-pointer"
         onClick={() => onNavigate(page.id)}
       >
-        <h3 className="font-medium">
-          {page.title || `Untitled Page ${page.page_index + 1}`}
-        </h3>
-        <p className="text-sm text-muted-foreground">
-          Last modified {new Date(page.updated_at).toLocaleDateString()}
-        </p>
+        <div className="flex items-center justify-between">
+          <h3 className="font-medium">
+            {page.title || `Untitled Page ${page.page_index + 1}`}
+          </h3>
+          <span className="text-sm text-muted-foreground">
+            {wordCount} words
+          </span>
+        </div>
       </div>
+    </div>
+  );
+};
+
+const RegularPageItem = ({ page, bookId, onNavigate }: SortablePageItemProps) => {
+  const wordCount = page.html_content ? 
+    page.html_content.replace(/<[^>]*>/g, '').trim().split(/\s+/).length : 
+    0;
+
+  return (
+    <div 
+      onClick={() => onNavigate(page.id)}
+      className="flex items-center justify-between py-3 px-4 border-b border-border last:border-b-0 hover:bg-accent/5 cursor-pointer transition-colors"
+    >
+      <h3 className="font-medium">
+        {page.title || `Untitled Page ${page.page_index + 1}`}
+      </h3>
+      <span className="text-sm text-muted-foreground">
+        {wordCount} words
+      </span>
     </div>
   );
 };
@@ -163,66 +191,58 @@ export const PagesList = ({ pages, bookId, isReorderMode = false }: PagesListPro
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <Button 
-          onClick={createNewPage}
-          className="flex items-center gap-2"
-        >
-          <FilePlus className="h-4 w-4" />
-          Add Page
-        </Button>
-      </div>
+    <Card className="mt-6">
+      <CardContent className="p-0">
+        <div className="p-4 border-b border-border">
+          <Button 
+            onClick={createNewPage}
+            className="w-full flex items-center justify-center gap-2"
+          >
+            <FilePlus className="h-4 w-4" />
+            Add Page
+          </Button>
+        </div>
 
-      {items.length === 0 ? (
-        <Card>
-          <CardContent className="text-center py-6">
+        {items.length === 0 ? (
+          <div className="text-center py-12">
             <BookOpen className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
             <p className="text-muted-foreground">No pages yet</p>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-2">
-          {isReorderMode ? (
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragEnd={handleDragEnd}
-            >
-              <SortableContext
-                items={items}
-                strategy={verticalListSortingStrategy}
+          </div>
+        ) : (
+          <div>
+            {isReorderMode ? (
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEnd}
               >
-                {items.map((page) => (
-                  <SortablePageItem
-                    key={page.id}
-                    page={page}
-                    bookId={bookId}
-                    onNavigate={(pageId) => navigate(`/book/${bookId}/page/${pageId}`)}
-                  />
-                ))}
-              </SortableContext>
-            </DndContext>
-          ) : (
-            items.map((page) => (
-              <div 
-                key={page.id}
-                onClick={() => navigate(`/book/${bookId}/page/${page.id}`)}
-                className="flex items-center justify-between py-2 px-3 border-b border-border hover:bg-accent/50 rounded cursor-pointer transition-colors"
-              >
-                <div>
-                  <h3 className="font-medium">
-                    {page.title || `Untitled Page ${page.page_index + 1}`}
-                  </h3>
-                  <p className="text-sm text-muted-foreground">
-                    Last modified {new Date(page.updated_at).toLocaleDateString()}
-                  </p>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      )}
-    </div>
+                <SortableContext
+                  items={items}
+                  strategy={verticalListSortingStrategy}
+                >
+                  {items.map((page) => (
+                    <SortablePageItem
+                      key={page.id}
+                      page={page}
+                      bookId={bookId}
+                      onNavigate={(pageId) => navigate(`/book/${bookId}/page/${pageId}`)}
+                    />
+                  ))}
+                </SortableContext>
+              </DndContext>
+            ) : (
+              items.map((page) => (
+                <RegularPageItem
+                  key={page.id}
+                  page={page}
+                  bookId={bookId}
+                  onNavigate={(pageId) => navigate(`/book/${bookId}/page/${pageId}`)}
+                />
+              ))
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 };

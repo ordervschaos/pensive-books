@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Card, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardHeader } from "@/components/ui/card";
 import { Calendar, Clock, Globe, Upload, Image as ImageIcon, Move } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
@@ -142,11 +142,27 @@ export const BookInfo = ({
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-start justify-between">
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
+    <Card className="bg-white shadow-sm">
+      <CardHeader className="space-y-6">
+        <div className="flex items-start gap-6">
+          {/* Left side - Cover image */}
+          <div className="w-48 h-48 relative rounded-lg overflow-hidden bg-blue-100">
+            {coverUrl ? (
+              <img 
+                src={coverUrl} 
+                alt="Book cover" 
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                <ImageIcon className="w-12 h-12 text-blue-300" />
+              </div>
+            )}
+          </div>
+
+          {/* Right side - Book info */}
+          <div className="flex-1 space-y-4">
+            <div className="space-y-2">
               {isEditing ? (
                 <Input
                   value={bookName}
@@ -171,25 +187,20 @@ export const BookInfo = ({
                       setIsEditing(false);
                     }
                   }}
-                  className="text-2xl font-semibold w-[300px]"
+                  className="text-2xl font-semibold"
                   autoFocus
                 />
               ) : (
-                <CardTitle 
-                  className="text-2xl cursor-pointer hover:text-muted-foreground transition-colors"
+                <h1 
+                  className="text-2xl font-semibold cursor-pointer hover:text-muted-foreground transition-colors"
                   onClick={() => setIsEditing(true)}
                 >
                   {bookName}
-                </CardTitle>
-              )}
-              {isPublic && (
-                <span className="text-sm text-muted-foreground flex items-center">
-                  <Globe className="mr-1 h-4 w-4" />
-                  Public
-                </span>
+                </h1>
               )}
             </div>
-            <div className="flex space-x-4 text-sm text-muted-foreground">
+
+            <div className="flex items-center space-x-4 text-sm text-muted-foreground">
               <div className="flex items-center">
                 <Clock className="mr-1 h-4 w-4" />
                 Last updated {new Date(updatedAt).toLocaleDateString()}
@@ -201,6 +212,7 @@ export const BookInfo = ({
                 </div>
               )}
             </div>
+
             <div className="flex items-center space-x-2">
               <Button
                 variant="ghost"
@@ -211,52 +223,44 @@ export const BookInfo = ({
               >
                 <Move className="h-4 w-4" />
               </Button>
+
+              <Dialog open={isOpen} onOpenChange={setIsOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm" disabled={uploading}>
+                    {uploading ? (
+                      "Updating..."
+                    ) : (
+                      <>
+                        <ImageIcon className="mr-2 h-4 w-4" />
+                        Update Cover
+                      </>
+                    )}
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Choose Cover Image</DialogTitle>
+                  </DialogHeader>
+                  <Tabs defaultValue="upload">
+                    <TabsList className="grid w-full grid-cols-2">
+                      <TabsTrigger value="upload">Upload</TabsTrigger>
+                      <TabsTrigger value="unsplash">Unsplash</TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="upload" className="space-y-4">
+                      <Input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleCoverUpload}
+                        disabled={uploading}
+                      />
+                    </TabsContent>
+                    <TabsContent value="unsplash">
+                      <UnsplashPicker onSelect={handleUnsplashSelect} />
+                    </TabsContent>
+                  </Tabs>
+                </DialogContent>
+              </Dialog>
             </div>
-          </div>
-          <div className="flex flex-col items-end space-y-4">
-            {coverUrl && (
-              <img 
-                src={coverUrl} 
-                alt="Book cover" 
-                className="w-32 h-32 object-cover rounded-lg shadow-md"
-              />
-            )}
-            <Dialog open={isOpen} onOpenChange={setIsOpen}>
-              <DialogTrigger asChild>
-                <Button variant="outline" size="sm" disabled={uploading}>
-                  {uploading ? (
-                    "Updating..."
-                  ) : (
-                    <>
-                      <ImageIcon className="mr-2 h-4 w-4" />
-                      Update Cover
-                    </>
-                  )}
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Choose Cover Image</DialogTitle>
-                </DialogHeader>
-                <Tabs defaultValue="upload">
-                  <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="upload">Upload</TabsTrigger>
-                    <TabsTrigger value="unsplash">Unsplash</TabsTrigger>
-                  </TabsList>
-                  <TabsContent value="upload" className="space-y-4">
-                    <Input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleCoverUpload}
-                      disabled={uploading}
-                    />
-                  </TabsContent>
-                  <TabsContent value="unsplash">
-                    <UnsplashPicker onSelect={handleUnsplashSelect} />
-                  </TabsContent>
-                </Tabs>
-              </DialogContent>
-            </Dialog>
           </div>
         </div>
       </CardHeader>
