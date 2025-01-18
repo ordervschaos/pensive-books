@@ -16,31 +16,43 @@ interface PageContentProps {
 const deriveTitle = (content: string): string => {
   if (!content) return 'Untitled';
   
-  // Try to find H1 tag content first
-  const h1Match = content.match(/<h1[^>]*>(.*?)<\/h1>/);
-  if (h1Match && h1Match[1]) {
-    const h1Content = h1Match[1].replace(/<[^>]*>/g, '').trim();
-    if (h1Content) return h1Content;
-  }
-  
-  // Remove all HTML tags
-  const plainText = content.replace(/<[^>]*>/g, '');
-  
-  // Try to get first non-empty line
-  const firstLine = plainText
-    .split('\n')
-    .map(line => line.trim())
-    .find(line => line.length > 0);
+  try {
+    const jsonContent = JSON.parse(content);
     
-  if (firstLine) {
-    // Take first 50 characters of first line, trim to last complete word
-    return firstLine.substring(0, 50).split(' ').slice(0, -1).join(' ');
-  }
-  
-  // If no first line, take first 25 characters of content
-  if (plainText.trim()) {
-    const truncated = plainText.trim().substring(0, 25);
-    return truncated + (plainText.length > 25 ? '...' : '');
+    // Look for the first heading level 1
+    const h1Node = jsonContent.content?.find(
+      (node: any) => node.type === 'heading' && node.attrs?.level === 1
+    );
+    
+    if (h1Node?.content?.[0]?.text) {
+      return h1Node.content[0].text.trim();
+    }
+    
+    // If no h1, look for the first paragraph with text
+    const firstParagraph = jsonContent.content?.find(
+      (node: any) => node.type === 'paragraph' && node.content?.[0]?.text
+    );
+    
+    if (firstParagraph?.content?.[0]?.text) {
+      const text = firstParagraph.content[0].text.trim();
+      // Take first 50 characters, trim to last complete word
+      return text.substring(0, 50).split(' ').slice(0, -1).join(' ');
+    }
+    
+    // If no paragraphs with text, take first 25 characters of any text content
+    const allText = jsonContent.content?.reduce((acc: string, node: any) => {
+      if (node.content?.[0]?.text) {
+        return acc + ' ' + node.content[0].text;
+      }
+      return acc;
+    }, '').trim();
+    
+    if (allText) {
+      const truncated = allText.substring(0, 25);
+      return truncated + (allText.length > 25 ? '...' : '');
+    }
+  } catch (error) {
+    console.error('Error parsing content JSON:', error);
   }
   
   return 'Untitled';
@@ -61,7 +73,7 @@ export const PageContent = ({ content, title, onSave, saving }: PageContentProps
 
   useEffect(() => {
     if (currentTitle === 'Untitled' || !currentTitle.trim()) {
-      const derivedTitle = deriveTitle(currentContent);
+      const derivedTitle = deriveTitle(JSON.stringify(editorJson));
       if (derivedTitle !== 'Untitled') {
         setCurrentTitle(derivedTitle);
         debouncedSave(currentContent, editorJson, derivedTitle);
