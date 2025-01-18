@@ -136,8 +136,9 @@ export function TopNav() {
                           className="text-blue-500 hover:text-blue-600 transition-colors font-medium" 
                           to={`/`}
                         >
-                    <Library className="h-5 w-5 mr-2" /> <span className="mx-2 text-muted-foreground">›</span>
+                    <Library className="h-5 w-5 mr-2" /> 
                     </Link>
+                    <span className="mx-2 text-muted-foreground">›</span>
                     {isPageRoute ? (
                       <>
                         <Link 
