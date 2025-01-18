@@ -15,6 +15,7 @@ const BookDetails = () => {
   const [pages, setPages] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [publishing, setPublishing] = useState(false);
+  const [isReorderMode, setIsReorderMode] = useState(false);
 
   useEffect(() => {
     fetchBookDetails();
@@ -117,53 +118,29 @@ const BookDetails = () => {
     <div className="min-h-screen flex flex-col bg-background">
       <TopNav />
       <div className="container mx-auto p-6">
-        <div className="max-w-4xl mx-auto">
+        <div className="max-w-4xl mx-auto space-y-6">
           <BookHeader 
             isPublic={book.is_public}
             onTogglePublish={togglePublish}
             publishing={publishing}
           />
 
-          <div className="mt-8 grid grid-cols-[300px,1fr] gap-8">
-            <div>
-              {book.cover_url ? (
-                <img 
-                  src={book.cover_url} 
-                  alt={book.name}
-                  className="w-full aspect-[3/4] object-cover rounded-lg shadow-lg mb-4"
-                />
-              ) : (
-                <div className="w-full aspect-[3/4] bg-muted rounded-lg shadow-lg mb-4 flex items-center justify-center">
-                  <span className="text-4xl font-serif">{book.name[0]}</span>
-                </div>
-              )}
-            </div>
+          <BookInfo 
+            name={book.name}
+            isPublic={book.is_public}
+            createdAt={book.created_at}
+            updatedAt={book.updated_at}
+            publishedAt={book.published_at}
+            bookId={book.id}
+            coverUrl={book.cover_url}
+            onReorderChange={setIsReorderMode}
+          />
 
-            <div className="space-y-6">
-              <div>
-                <h1 className="text-4xl font-bold mb-2">{book.name}</h1>
-                {book.owner_id && (
-                  <p className="text-muted-foreground">by {book.owner_id}</p>
-                )}
-              </div>
-
-              <div className="space-y-4">
-                {pages.map((page) => (
-                  <div 
-                    key={page.id}
-                    className="flex items-center justify-between py-2 border-b border-border hover:bg-accent/50 rounded px-2 transition-colors"
-                  >
-                    <span className="text-lg">{page.title || `Untitled Page ${page.page_index + 1}`}</span>
-                    <span className="text-sm text-muted-foreground">
-                      {page.html_content ? 
-                        `${page.html_content.split(' ').length} words` : 
-                        '0 words'}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+          <PagesList 
+            pages={pages}
+            bookId={parseInt(id || "0")}
+            isReorderMode={isReorderMode}
+          />
         </div>
       </div>
     </div>

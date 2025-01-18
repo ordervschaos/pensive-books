@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
-import { Calendar, Clock, Globe, Upload, Image as ImageIcon } from "lucide-react";
+import { Calendar, Clock, Globe, Upload, Image as ImageIcon, Move } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -17,6 +17,7 @@ interface BookInfoProps {
   publishedAt: string | null;
   bookId: number;
   coverUrl?: string | null;
+  onReorderChange?: (isReordering: boolean) => void;
 }
 
 export const BookInfo = ({ 
@@ -26,12 +27,14 @@ export const BookInfo = ({
   updatedAt, 
   publishedAt, 
   bookId,
-  coverUrl 
+  coverUrl,
+  onReorderChange 
 }: BookInfoProps) => {
   const [isEditing, setIsEditing] = useState(false);
   const [bookName, setBookName] = useState(name);
   const [uploading, setUploading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
+  const [isReordering, setIsReordering] = useState(false);
   const { toast } = useToast();
 
   const handleNameChange = async (newName: string) => {
@@ -132,6 +135,12 @@ export const BookInfo = ({
     window.location.reload();
   };
 
+  const toggleReorder = () => {
+    const newState = !isReordering;
+    setIsReordering(newState);
+    onReorderChange?.(newState);
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -191,6 +200,17 @@ export const BookInfo = ({
                   Published {new Date(publishedAt).toLocaleDateString()}
                 </div>
               )}
+            </div>
+            <div className="flex items-center space-x-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                className={`rounded-full ${isReordering ? 'bg-primary/10 text-primary hover:bg-primary/20' : 'hover:bg-accent'}`}
+                onClick={toggleReorder}
+                title={isReordering ? 'Exit Reorder Mode' : 'Reorder Pages'}
+              >
+                <Move className="h-4 w-4" />
+              </Button>
             </div>
           </div>
           <div className="flex flex-col items-end space-y-4">

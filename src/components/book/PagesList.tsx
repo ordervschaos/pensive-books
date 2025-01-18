@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { BookOpen, FilePlus, GripVertical, Move } from "lucide-react";
+import { BookOpen, FilePlus, GripVertical } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect } from "react";
@@ -32,6 +32,7 @@ interface Page {
 interface PagesListProps {
   pages: Page[];
   bookId: number;
+  isReorderMode?: boolean;
 }
 
 interface SortablePageItemProps {
@@ -78,10 +79,9 @@ const SortablePageItem = ({ page, bookId, onNavigate }: SortablePageItemProps) =
   );
 };
 
-export const PagesList = ({ pages, bookId }: PagesListProps) => {
+export const PagesList = ({ pages, bookId, isReorderMode = false }: PagesListProps) => {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [isReorderMode, setIsReorderMode] = useState(false);
   const [items, setItems] = useState<Page[]>([]);
 
   useEffect(() => {
@@ -171,15 +171,6 @@ export const PagesList = ({ pages, bookId }: PagesListProps) => {
         >
           <FilePlus className="h-4 w-4" />
           Add Page
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className={`rounded-full ${isReorderMode ? 'bg-primary/10 text-primary hover:bg-primary/20' : 'hover:bg-accent'}`}
-          onClick={() => setIsReorderMode(!isReorderMode)}
-          title={isReorderMode ? 'Exit Reorder Mode' : 'Reorder Pages'}
-        >
-          <Move className="h-4 w-4" />
         </Button>
       </div>
 
