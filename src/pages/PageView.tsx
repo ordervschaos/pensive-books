@@ -129,11 +129,11 @@ const PageView = () => {
             <Breadcrumb>
               <BreadcrumbList>
                 <BreadcrumbItem>
-                  <BreadcrumbLink as={Link} to="/">Books</BreadcrumbLink>
+                  <Link className="transition-colors hover:text-foreground" to="/">Books</Link>
                 </BreadcrumbItem>
                 <BreadcrumbSeparator />
                 <BreadcrumbItem>
-                  <BreadcrumbLink as={Link} to={`/book/${bookId}`}>{book.name}</BreadcrumbLink>
+                  <Link className="transition-colors hover:text-foreground" to={`/book/${bookId}`}>{book.name}</Link>
                 </BreadcrumbItem>
                 <BreadcrumbSeparator />
                 <BreadcrumbItem>
