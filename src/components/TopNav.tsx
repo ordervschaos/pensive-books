@@ -129,7 +129,12 @@ export function TopNav() {
               <Breadcrumb>
                 <BreadcrumbList className="flex items-center space-x-1">
                   <BreadcrumbItem className="flex items-center">
+                  <Link 
+                          className="text-blue-500 hover:text-blue-600 transition-colors font-medium" 
+                          to={`/`}
+                        >
                     <Library className="h-5 w-5 mr-2" />
+                    </Link>
                     {isPageRoute ? (
                       <>
                         <Link 
