@@ -13,29 +13,51 @@ interface PageContentProps {
   saving: boolean;
 }
 
-const getFirstParagraphContent = (data: any) => {
-  if (!data?.content?.[0]) return null;
-  
-  // Look for the first paragraph with text content
-  const firstParagraph = data.content.find(
-    (node: any) => node.type === 'paragraph' && node.content?.[0]?.text
-  );
-  
-  if (firstParagraph?.content?.[0]?.text) {
-    const text = firstParagraph.content[0].text.trim();
-    // Take first 50 characters, trim to last complete word
-    return text.substring(0, 50).split(' ').slice(0, -1).join(' ');
+const getFirstNLines = (content: any, n: number) => {
+  return getLinesAfterFirstBlockFromJSON(content, n);
+};
+
+const getLinesAfterFirstBlockFromJSON = (data: any, n: number) => {
+  const lines: string[] = [];
+  let foundFirstBlock = false;
+
+  for (const node of data.content) {
+    if (!foundFirstBlock) {
+      if (node.type === "heading" || node.type === "paragraph") {
+        foundFirstBlock = true;
+      }
+      continue;
+    }
+
+    if (node.type === "paragraph" && node.content) {
+      const lineText = node.content
+        .map((contentNode: any) => contentNode.text)
+        .join(" ")
+        .trim();
+      if (lineText) {
+        lines.push(lineText);
+      }
+    }
+
+    if (lines.length >= n) {
+      break;
+    }
   }
-  
-  return null;
+
+  return lines.slice(0, n);
+};
+
+const getFirstParagraphContent = (data: any) => {
+  const firstNLines = getFirstNLines(data, 1);
+  return firstNLines[0];
 };
 
 const getFirstHeadingContent = (data: any) => {
-  const firstNode = data.content?.[0];
+  const firstNode = data.content[0];
 
-  if (firstNode?.type === "heading" && firstNode.content) {
+  if (firstNode && firstNode.type === "heading" && firstNode.content) {
     return firstNode.content
-      .filter((content: any) => content.type === 'text')
+      .filter((contentNode: any) => contentNode.type === 'text')
       .map((contentNode: any) => contentNode.text)
       .join(" ")
       .trim();
