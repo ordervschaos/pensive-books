@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { TopNav } from "@/components/TopNav";
 import { useToast } from "@/hooks/use-toast";
@@ -7,6 +7,16 @@ import { PageNavigation } from "@/components/page/PageNavigation";
 import { PageContent } from "@/components/page/PageContent";
 import { PageLoading } from "@/components/page/PageLoading";
 import { PageNotFound } from "@/components/page/PageNotFound";
+import { 
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
+import { Maximize2, Search, Settings } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 const PageView = () => {
   const { bookId, pageId } = useParams();
@@ -15,10 +25,6 @@ const PageView = () => {
   const [book, setBook] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    fetchPageDetails();
-  }, [bookId, pageId]);
 
   const fetchPageDetails = async () => {
     try {
@@ -86,6 +92,10 @@ const PageView = () => {
     window.location.href = `/book/${bookId}/page/${book.page_ids[index]}`;
   };
 
+  useEffect(() => {
+    fetchPageDetails();
+  }, [bookId, pageId]);
+
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col">
@@ -111,8 +121,40 @@ const PageView = () => {
   const currentIndex = book.page_ids?.indexOf(page.id) ?? -1;
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50">
+    <div className="min-h-screen flex flex-col bg-white">
       <TopNav />
+      <div className="border-b bg-white">
+        <div className="container max-w-7xl mx-auto px-4">
+          <div className="flex items-center justify-between h-14">
+            <Breadcrumb>
+              <BreadcrumbList>
+                <BreadcrumbItem>
+                  <BreadcrumbLink as={Link} to="/">Books</BreadcrumbLink>
+                </BreadcrumbItem>
+                <BreadcrumbSeparator />
+                <BreadcrumbItem>
+                  <BreadcrumbLink as={Link} to={`/book/${bookId}`}>{book.name}</BreadcrumbLink>
+                </BreadcrumbItem>
+                <BreadcrumbSeparator />
+                <BreadcrumbItem>
+                  <BreadcrumbPage>{page.title || 'Untitled'}</BreadcrumbPage>
+                </BreadcrumbItem>
+              </BreadcrumbList>
+            </Breadcrumb>
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="icon">
+                <Search className="h-4 w-4" />
+              </Button>
+              <Button variant="ghost" size="icon">
+                <Maximize2 className="h-4 w-4" />
+              </Button>
+              <Button variant="ghost" size="icon">
+                <Settings className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
       <div className="flex-1 container max-w-5xl mx-auto px-4 py-4 flex flex-col gap-4">
         <PageNavigation
           bookId={bookId || ""}

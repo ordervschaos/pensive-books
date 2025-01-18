@@ -30,11 +30,11 @@ export function TopNav() {
   };
 
   return (
-    <nav className="border-b bg-background">
-      <div className="flex h-16 items-center px-4 container mx-auto justify-between">
-        <div className="text-xl font-semibold">My App</div>
-        <Button variant="ghost" onClick={handleLogout}>
-          <LogOut className="mr-2 h-4 w-4" />
+    <nav className="bg-white border-b h-14 flex items-center">
+      <div className="container max-w-7xl mx-auto px-4 flex justify-between items-center">
+        <div className="text-lg font-semibold">Writebook</div>
+        <Button variant="ghost" size="sm" onClick={handleLogout}>
+          <LogOut className="h-4 w-4 mr-2" />
           Logout
         </Button>
       </div>
