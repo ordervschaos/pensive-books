@@ -7,14 +7,6 @@ import { PageNavigation } from "@/components/page/PageNavigation";
 import { PageContent } from "@/components/page/PageContent";
 import { PageLoading } from "@/components/page/PageLoading";
 import { PageNotFound } from "@/components/page/PageNotFound";
-import { 
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
 import { Maximize2, Search, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -23,6 +15,7 @@ const PageView = () => {
   const { toast } = useToast();
   const [page, setPage] = useState<any>(null);
   const [book, setBook] = useState<any>(null);
+  const [nextPageTitle, setNextPageTitle] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -46,6 +39,21 @@ const PageView = () => {
 
       if (bookError) throw bookError;
       setBook(bookData);
+
+      // Fetch next page title if not the last page
+      const currentIndex = bookData.page_ids?.indexOf(parseInt(pageId || "0")) ?? -1;
+      if (currentIndex < (bookData.page_ids?.length ?? 0) - 1) {
+        const nextPageId = bookData.page_ids[currentIndex + 1];
+        const { data: nextPage, error: nextPageError } = await supabase
+          .from("pages")
+          .select("title")
+          .eq("id", nextPageId)
+          .single();
+
+        if (!nextPageError && nextPage) {
+          setNextPageTitle(nextPage.title);
+        }
+      }
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -123,7 +131,6 @@ const PageView = () => {
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <TopNav />
-
       <div className="flex-1 container max-w-5xl mx-auto px-4 py-4 flex flex-col gap-4">
         <div className="flex-1 flex flex-col">
           <PageContent
@@ -138,6 +145,7 @@ const PageView = () => {
           currentIndex={currentIndex}
           totalPages={book.page_ids?.length ?? 0}
           onNavigate={navigateToPage}
+          nextPageTitle={nextPageTitle}
         />
       </div>
     </div>

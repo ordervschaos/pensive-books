@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 interface PageNavigationProps {
@@ -7,26 +7,37 @@ interface PageNavigationProps {
   currentIndex: number;
   totalPages: number;
   onNavigate: (index: number) => void;
+  nextPageTitle?: string;
 }
 
-export const PageNavigation = ({ bookId, currentIndex, totalPages, onNavigate }: PageNavigationProps) => {
+export const PageNavigation = ({ 
+  bookId, 
+  currentIndex, 
+  totalPages, 
+  onNavigate,
+  nextPageTitle 
+}: PageNavigationProps) => {
   const navigate = useNavigate();
 
   // Handle case where there are no pages yet
   const displayCurrentIndex = totalPages > 0 ? currentIndex + 1 : 0;
   const displayTotalPages = Math.max(totalPages, 0);
 
+  const isLastPage = currentIndex >= totalPages - 1;
+
   return (
     <div className="flex items-center justify-center">
-      <div className="flex items-center gap-2">
-        <Button
-          variant="outline"
-          onClick={() => onNavigate(currentIndex + 1)}
-          disabled={currentIndex === -1 || currentIndex >= totalPages - 1}
-        >
-          <ArrowRight className="h-4 w-4" />
-        </Button>
-      </div>
+      <Button
+        variant="outline"
+        onClick={() => isLastPage ? navigate(`/book/${bookId}`) : onNavigate(currentIndex + 1)}
+        className="flex items-center gap-2 px-6 py-6 rounded-full bg-background border-border"
+        disabled={currentIndex === -1}
+      >
+        <span className="text-lg">
+          {isLastPage ? "Table of contents: The Prophet" : `Next: ${nextPageTitle || 'Untitled'}`}
+        </span>
+        <ArrowRight className="h-5 w-5" />
+      </Button>
     </div>
   );
 };
