@@ -16,21 +16,34 @@ interface PageContentProps {
 const deriveTitle = (content: string): string => {
   if (!content) return 'Untitled';
   
-  // Remove HTML tags
+  // Try to find H1 tag content first
+  const h1Match = content.match(/<h1[^>]*>(.*?)<\/h1>/);
+  if (h1Match && h1Match[1]) {
+    const h1Content = h1Match[1].replace(/<[^>]*>/g, '').trim();
+    if (h1Content) return h1Content;
+  }
+  
+  // Remove all HTML tags
   const plainText = content.replace(/<[^>]*>/g, '');
   
-  // Get first non-empty line
+  // Try to get first non-empty line
   const firstLine = plainText
     .split('\n')
     .map(line => line.trim())
     .find(line => line.length > 0);
     
-  if (!firstLine) return 'Untitled';
+  if (firstLine) {
+    // Take first 50 characters of first line, trim to last complete word
+    return firstLine.substring(0, 50).split(' ').slice(0, -1).join(' ');
+  }
   
-  // Take first 50 characters, trim to last complete word
-  const truncated = firstLine.substring(0, 50).split(' ').slice(0, -1).join(' ');
+  // If no first line, take first 25 characters of content
+  if (plainText.trim()) {
+    const truncated = plainText.trim().substring(0, 25);
+    return truncated + (plainText.length > 25 ? '...' : '');
+  }
   
-  return truncated || 'Untitled';
+  return 'Untitled';
 };
 
 export const PageContent = ({ content, title, onSave, saving }: PageContentProps) => {
