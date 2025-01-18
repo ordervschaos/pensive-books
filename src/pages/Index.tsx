@@ -119,11 +119,7 @@ const Index = () => {
                       {notebook.name}
                     </h3>
                   </div>
-                  <CardHeader className="flex-1">
-                    <CardDescription className="text-xs text-center">
-                      Created {new Date(notebook.created_at).toLocaleDateString()}
-                    </CardDescription>
-                  </CardHeader>
+                  <CardHeader className="flex-1" />
                 </Card>
                 <p className="text-sm text-muted-foreground mt-2 text-center line-clamp-1">
                   {notebook.name}
