@@ -151,6 +151,46 @@ export const BookInfo = ({
                 <ImageIcon className="w-16 h-16 text-blue-300" />
               </div>
             )}
+            <Dialog open={isOpen} onOpenChange={setIsOpen}>
+              <DialogTrigger asChild>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="absolute bottom-4 right-4 bg-white/90 backdrop-blur-sm hover:bg-white/95"
+                  disabled={uploading}
+                >
+                  {uploading ? (
+                    "Updating..."
+                  ) : (
+                    <>
+                      <ImageIcon className="h-4 w-4" />
+                    </>
+                  )}
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Choose Cover Image</DialogTitle>
+                </DialogHeader>
+                <Tabs defaultValue="upload">
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="upload">Upload</TabsTrigger>
+                    <TabsTrigger value="unsplash">Unsplash</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="upload" className="space-y-4">
+                    <Input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleCoverUpload}
+                      disabled={uploading}
+                    />
+                  </TabsContent>
+                  <TabsContent value="unsplash">
+                    <UnsplashPicker onSelect={handleUnsplashSelect} />
+                  </TabsContent>
+                </Tabs>
+              </DialogContent>
+            </Dialog>
           </div>
 
           {/* Right side - Book info */}
@@ -204,45 +244,6 @@ export const BookInfo = ({
                   Published {new Date(publishedAt).toLocaleDateString()}
                 </div>
               )}
-            </div>
-
-            <div className="flex items-center space-x-2 pt-4">
-              <Dialog open={isOpen} onOpenChange={setIsOpen}>
-                <DialogTrigger asChild>
-                  <Button variant="outline" size="sm" disabled={uploading}>
-                    {uploading ? (
-                      "Updating..."
-                    ) : (
-                      <>
-                        <ImageIcon className="mr-2 h-4 w-4" />
-                        Update Cover
-                      </>
-                    )}
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Choose Cover Image</DialogTitle>
-                  </DialogHeader>
-                  <Tabs defaultValue="upload">
-                    <TabsList className="grid w-full grid-cols-2">
-                      <TabsTrigger value="upload">Upload</TabsTrigger>
-                      <TabsTrigger value="unsplash">Unsplash</TabsTrigger>
-                    </TabsList>
-                    <TabsContent value="upload" className="space-y-4">
-                      <Input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleCoverUpload}
-                        disabled={uploading}
-                      />
-                    </TabsContent>
-                    <TabsContent value="unsplash">
-                      <UnsplashPicker onSelect={handleUnsplashSelect} />
-                    </TabsContent>
-                  </Tabs>
-                </DialogContent>
-              </Dialog>
             </div>
           </div>
         </div>

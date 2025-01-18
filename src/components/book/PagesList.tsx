@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { BookOpen, FilePlus, GripVertical } from "lucide-react";
+import { FilePlus, GripVertical, Move } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect } from "react";
@@ -110,6 +110,7 @@ export const PagesList = ({ pages, bookId, isReorderMode = false }: PagesListPro
   const navigate = useNavigate();
   const { toast } = useToast();
   const [items, setItems] = useState<Page[]>([]);
+  const [isReordering, setIsReordering] = useState(isReorderMode);
 
   useEffect(() => {
     const sortedPages = [...pages].sort((a, b) => a.page_index - b.page_index);
@@ -192,24 +193,35 @@ export const PagesList = ({ pages, bookId, isReorderMode = false }: PagesListPro
   return (
     <Card className="mt-6">
       <CardContent className="p-0">
-        <div className="p-4 border-b border-border">
-          <Button 
-            onClick={createNewPage}
-            className="w-full flex items-center justify-center gap-2"
-          >
-            <FilePlus className="h-4 w-4" />
-            Add Page
-          </Button>
+        <div className="flex items-center justify-between p-4 border-b border-border">
+          <div className="flex gap-2">
+            <Button 
+              onClick={createNewPage}
+              variant="outline"
+              size="icon"
+              className="rounded-full"
+            >
+              <FilePlus className="h-4 w-4" />
+            </Button>
+            <Button
+              onClick={() => setIsReordering(!isReordering)}
+              variant={isReordering ? "default" : "outline"}
+              size="icon"
+              className="rounded-full"
+            >
+              <Move className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
 
         {items.length === 0 ? (
           <div className="text-center py-12">
-            <BookOpen className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+            <FilePlus className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
             <p className="text-muted-foreground">No pages yet</p>
           </div>
         ) : (
           <div>
-            {isReorderMode ? (
+            {isReordering ? (
               <DndContext
                 sensors={sensors}
                 collisionDetection={closestCenter}
