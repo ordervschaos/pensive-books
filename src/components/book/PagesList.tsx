@@ -229,10 +229,14 @@ export const PagesList = ({ pages, bookId, isReorderMode = false }: PagesListPro
           <Button
             variant={viewMode === 'list' ? "default" : "outline"}
             size="icon"
-            onClick={() => setViewMode('list')}
+            onClick={() => setViewMode(viewMode === 'list' ? 'grid' : 'list')}
             className="rounded-full"
           >
-            <LayoutList className="h-4 w-4" />
+            {viewMode === 'list' ? (
+              <LayoutGrid className="h-4 w-4" />
+            ) : (
+              <LayoutList className="h-4 w-4" />
+            )}
           </Button>
           
           <Button 
@@ -260,7 +264,7 @@ export const PagesList = ({ pages, bookId, isReorderMode = false }: PagesListPro
             <p className="text-muted-foreground">No pages yet</p>
           </div>
         ) : (
-          <div className={viewMode === 'grid' ? 'grid grid-cols-2 gap-4 p-4' : ''}>
+          <div className={`${viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 gap-4 p-4' : ''}`}>
             {isReordering ? (
               <DndContext
                 sensors={sensors}
