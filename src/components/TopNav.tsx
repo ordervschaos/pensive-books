@@ -1,6 +1,6 @@
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { LogOut, Moon, Sun, ArrowLeft, Search, Settings, Maximize2 } from "lucide-react";
+import { LogOut, Moon, Sun, ArrowLeft, Search, Settings, Maximize2, Library } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { useTheme } from "@/components/theme/ThemeProvider";
@@ -127,31 +127,26 @@ export function TopNav() {
             
             {isBookRoute ? (
               <Breadcrumb>
-                <BreadcrumbList>
-                  <BreadcrumbItem>
-                    <Link className="transition-colors hover:text-foreground text-muted-foreground" to="/">Books</Link>
-                  </BreadcrumbItem>
-                  <BreadcrumbSeparator />
-                  {isPageRoute ? (
-                    <>
-                      <BreadcrumbItem>
+                <BreadcrumbList className="flex items-center space-x-1">
+                  <BreadcrumbItem className="flex items-center">
+                    <Library className="h-5 w-5 mr-2" />
+                    {isPageRoute ? (
+                      <>
                         <Link 
-                          className="transition-colors hover:text-foreground text-muted-foreground" 
+                          className="text-blue-500 hover:text-blue-600 transition-colors font-medium" 
                           to={`/book/${location.pathname.split('/')[2]}`}
                         >
                           {bookName}
                         </Link>
-                      </BreadcrumbItem>
-                      <BreadcrumbSeparator />
-                      <BreadcrumbItem>
-                        <BreadcrumbPage>{pageName}</BreadcrumbPage>
-                      </BreadcrumbItem>
-                    </>
-                  ) : (
-                    <BreadcrumbItem>
-                      <BreadcrumbPage>{bookName}</BreadcrumbPage>
-                    </BreadcrumbItem>
-                  )}
+                        <span className="mx-2 text-muted-foreground">›</span>
+                        <span className="text-foreground font-medium">
+                          {pageName}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-foreground font-medium">{bookName}</span>
+                    )}
+                  </BreadcrumbItem>
                 </BreadcrumbList>
               </Breadcrumb>
             ) : (
