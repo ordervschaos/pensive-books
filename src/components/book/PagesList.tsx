@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { BookOpen, FilePlus, GripVertical } from "lucide-react";
+import { BookOpen, FilePlus, GripVertical, ArrowUpDown } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Toggle } from "@/components/ui/toggle";
@@ -56,25 +56,26 @@ const SortablePageItem = ({ page, bookId, onNavigate }: SortablePageItemProps) =
   } : undefined;
 
   return (
-    <Card 
+    <div 
       ref={setNodeRef}
       style={style}
-      className="hover:shadow-md transition-shadow cursor-pointer"
+      className="flex items-center gap-3 py-2 px-3 bg-background border border-border rounded-md hover:border-primary/50 transition-colors"
     >
-      <CardHeader className="flex flex-row items-center gap-4">
-        <div {...attributes} {...listeners} className="cursor-grab">
-          <GripVertical className="h-5 w-5 text-muted-foreground" />
-        </div>
-        <div className="flex-1" onClick={() => onNavigate(page.id)}>
-          <CardTitle className="text-lg">
-            {page.title || `Untitled Page ${page.page_index + 1}`}
-          </CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Last modified {new Date(page.updated_at).toLocaleDateString()}
-          </p>
-        </div>
-      </CardHeader>
-    </Card>
+      <div {...attributes} {...listeners} className="cursor-grab hover:text-primary">
+        <GripVertical className="h-5 w-5" />
+      </div>
+      <div 
+        className="flex-1 cursor-pointer"
+        onClick={() => onNavigate(page.id)}
+      >
+        <h3 className="font-medium">
+          {page.title || `Untitled Page ${page.page_index + 1}`}
+        </h3>
+        <p className="text-sm text-muted-foreground">
+          Last modified {new Date(page.updated_at).toLocaleDateString()}
+        </p>
+      </div>
+    </div>
   );
 };
 
@@ -85,7 +86,6 @@ export const PagesList = ({ pages, bookId }: PagesListProps) => {
   const [items, setItems] = useState<Page[]>([]);
 
   useEffect(() => {
-    // Sort pages by page_index when they are received or updated
     const sortedPages = [...pages].sort((a, b) => a.page_index - b.page_index);
     setItems(sortedPages);
   }, [pages]);
@@ -137,7 +137,6 @@ export const PagesList = ({ pages, bookId }: PagesListProps) => {
       const newItems = arrayMove(items, oldIndex, newIndex);
       setItems(newItems);
 
-      // Update page indices in the database
       try {
         const updates = newItems.map((page, index) => ({
           id: page.id,
@@ -174,13 +173,15 @@ export const PagesList = ({ pages, bookId }: PagesListProps) => {
           <FilePlus className="h-4 w-4" />
           Add Page
         </Button>
-        <Toggle
-          pressed={isReorderMode}
-          onPressedChange={setIsReorderMode}
-          aria-label="Toggle reorder mode"
+        <Button
+          variant="outline"
+          size="sm"
+          className={`gap-2 ${isReorderMode ? 'bg-primary/10' : ''}`}
+          onClick={() => setIsReorderMode(!isReorderMode)}
         >
-          Reorder Mode
-        </Toggle>
+          <ArrowUpDown className="h-4 w-4" />
+          {isReorderMode ? 'Exit Reorder' : 'Reorder Pages'}
+        </Button>
       </div>
 
       {items.length === 0 ? (
@@ -191,7 +192,7 @@ export const PagesList = ({ pages, bookId }: PagesListProps) => {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-4">
+        <div className="space-y-2">
           {isReorderMode ? (
             <DndContext
               sensors={sensors}
@@ -214,20 +215,20 @@ export const PagesList = ({ pages, bookId }: PagesListProps) => {
             </DndContext>
           ) : (
             items.map((page) => (
-              <Card 
-                key={page.id} 
-                className="hover:shadow-md transition-shadow cursor-pointer"
+              <div 
+                key={page.id}
                 onClick={() => navigate(`/book/${bookId}/page/${page.id}`)}
+                className="flex items-center justify-between py-2 px-3 border-b border-border hover:bg-accent/50 rounded cursor-pointer transition-colors"
               >
-                <CardHeader>
-                  <CardTitle className="text-lg">
+                <div>
+                  <h3 className="font-medium">
                     {page.title || `Untitled Page ${page.page_index + 1}`}
-                  </CardTitle>
+                  </h3>
                   <p className="text-sm text-muted-foreground">
                     Last modified {new Date(page.updated_at).toLocaleDateString()}
                   </p>
-                </CardHeader>
-              </Card>
+                </div>
+              </div>
             ))
           )}
         </div>
