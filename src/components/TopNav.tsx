@@ -4,6 +4,7 @@ import { LogOut, Moon, Sun, ArrowLeft, Search, Settings, Maximize2 } from "lucid
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { useTheme } from "@/components/theme/ThemeProvider";
+import { useEffect, useState } from "react";
 import { 
   Breadcrumb,
   BreadcrumbItem,
@@ -18,6 +19,8 @@ export function TopNav() {
   const location = useLocation();
   const { toast } = useToast();
   const { theme, toggleTheme } = useTheme();
+  const [bookName, setBookName] = useState<string>("");
+  const [pageName, setPageName] = useState<string>("");
 
   const handleLogout = async () => {
     try {
@@ -40,7 +43,43 @@ export function TopNav() {
     }
   };
 
+  useEffect(() => {
+    const fetchDetails = async () => {
+      const match = location.pathname.match(/\/book\/(\d+)(?:\/page\/(\d+))?/);
+      if (match) {
+        const [, bookId, pageId] = match;
+        
+        try {
+          const { data: bookData, error: bookError } = await supabase
+            .from("books")
+            .select("name")
+            .eq("id", bookId)
+            .single();
+
+          if (bookError) throw bookError;
+          setBookName(bookData?.name || "Untitled");
+
+          if (pageId) {
+            const { data: pageData, error: pageError } = await supabase
+              .from("pages")
+              .select("title")
+              .eq("id", pageId)
+              .single();
+
+            if (pageError) throw pageError;
+            setPageName(pageData?.title || "Untitled");
+          }
+        } catch (error) {
+          console.error("Error fetching details:", error);
+        }
+      }
+    };
+
+    fetchDetails();
+  }, [location.pathname]);
+
   const isBookRoute = location.pathname.includes('/book/');
+  const isPageRoute = location.pathname.includes('/page/');
   const showBackButton = location.pathname !== '/';
 
   return (
@@ -61,9 +100,26 @@ export function TopNav() {
                     <Link className="transition-colors hover:text-foreground text-muted-foreground" to="/">Books</Link>
                   </BreadcrumbItem>
                   <BreadcrumbSeparator />
-                  <BreadcrumbItem>
-                    <BreadcrumbPage>Current Book</BreadcrumbPage>
-                  </BreadcrumbItem>
+                  {isPageRoute ? (
+                    <>
+                      <BreadcrumbItem>
+                        <Link 
+                          className="transition-colors hover:text-foreground text-muted-foreground" 
+                          to={`/book/${location.pathname.split('/')[2]}`}
+                        >
+                          {bookName}
+                        </Link>
+                      </BreadcrumbItem>
+                      <BreadcrumbSeparator />
+                      <BreadcrumbItem>
+                        <BreadcrumbPage>{pageName}</BreadcrumbPage>
+                      </BreadcrumbItem>
+                    </>
+                  ) : (
+                    <BreadcrumbItem>
+                      <BreadcrumbPage>{bookName}</BreadcrumbPage>
+                    </BreadcrumbItem>
+                  )}
                 </BreadcrumbList>
               </Breadcrumb>
             ) : (
