@@ -18,11 +18,32 @@ export const TipTapEditor = ({ content, onChange, editable = true }: TipTapEdito
 
   const editor = useEditor({
     extensions: [
-      StarterKit,
+      StarterKit.configure({
+        blockquote: {
+          HTMLAttributes: {
+            class: 'border-l-4 border-primary pl-4 my-4 italic',
+          },
+        },
+        bulletList: {
+          HTMLAttributes: {
+            class: 'list-disc list-outside ml-4 my-4 space-y-1',
+          },
+        },
+        orderedList: {
+          HTMLAttributes: {
+            class: 'list-decimal list-outside ml-4 my-4 space-y-1',
+          },
+        },
+        listItem: {
+          HTMLAttributes: {
+            class: 'pl-1',
+          },
+        },
+      }),
       Link.configure({
         openOnClick: false,
         HTMLAttributes: {
-          class: 'text-blue-500 underline',
+          class: 'text-blue-500 dark:text-blue-400 underline',
         },
       }),
       Image.configure({
@@ -159,7 +180,7 @@ export const TipTapEditor = ({ content, onChange, editable = true }: TipTapEdito
           </div>
         </div>
       )}
-      <div className="prose dark:prose-invert prose-slate max-w-none p-8 flex-1 [&_.ProseMirror:focus]:outline-none bg-background">
+      <div className="prose dark:prose-invert prose-slate max-w-none p-8 flex-1 [&_.ProseMirror:focus]:outline-none bg-background [&>div>ul]:list-disc [&>div>ul]:ml-4 [&>div>ol]:list-decimal [&>div>ol]:ml-4 [&>div>blockquote]:border-l-4 [&>div>blockquote]:border-primary [&>div>blockquote]:pl-4 [&>div>blockquote]:italic [&>div>blockquote]:my-4">
         <EditorContent editor={editor} />
       </div>
     </div>
