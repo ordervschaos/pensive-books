@@ -79,7 +79,7 @@ const Index = () => {
           <div className="flex justify-between items-center">
             <h1 className="text-3xl font-bold">My Notebooks</h1>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4">
             {[1, 2, 3].map((i) => (
               <Skeleton key={i} className="h-[120px] w-full" />
             ))}
@@ -88,6 +88,20 @@ const Index = () => {
       </div>
     );
   }
+
+  // Function to get a random placeholder image
+  const getPlaceholderImage = () => {
+    const placeholders = [
+      "photo-1649972904349-6e44c42644a7",
+      "photo-1488590528505-98d2b5aba04b",
+      "photo-1518770660439-4636190af475",
+      "photo-1461749280684-dccba630e2f6",
+      "photo-1486312338219-ce68d2c6f44d",
+      "photo-1581091226825-a6a2a5aee158"
+    ];
+    const randomIndex = Math.floor(Math.random() * placeholders.length);
+    return `https://images.unsplash.com/${placeholders[randomIndex]}?auto=format&fit=crop&w=200&h=120`;
+  };
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -107,19 +121,28 @@ const Index = () => {
             <p className="text-gray-500 mt-2">Create your first notebook to get started</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4">
             {notebooks.map((notebook) => (
               <Card 
                 key={notebook.id} 
-                className="hover:shadow-lg transition-shadow cursor-pointer"
+                className="hover:shadow-lg transition-shadow cursor-pointer overflow-hidden"
                 onClick={() => navigate(`/book/${notebook.id}`)}
               >
-                <CardHeader>
-                  <CardTitle>{notebook.name}</CardTitle>
-                  <CardDescription>
-                    Created {new Date(notebook.created_at).toLocaleDateString()}
-                  </CardDescription>
-                </CardHeader>
+                <div className="flex h-[120px]">
+                  <div className="w-[200px] h-full relative bg-muted">
+                    <img
+                      src={getPlaceholderImage()}
+                      alt={notebook.name}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <CardHeader className="flex-1">
+                    <CardTitle className="text-xl">{notebook.name}</CardTitle>
+                    <CardDescription>
+                      Created {new Date(notebook.created_at).toLocaleDateString()}
+                    </CardDescription>
+                  </CardHeader>
+                </div>
               </Card>
             ))}
           </div>
