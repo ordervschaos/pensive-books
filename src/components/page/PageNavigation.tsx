@@ -38,6 +38,7 @@ export const PageNavigation = ({
         <span className="text-lg">
           {isLastPage ? `Table of contents: ${bookTitle}` : `Next: ${nextPageTitle || 'Untitled'}`}
         </span>
+        {displayCurrentIndex}/{displayTotalPages}
         <ArrowRight className="h-5 w-5" />
       </Button>
     </div>
