@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { FilePlus, GripVertical, Move, LayoutList, LayoutGrid } from "lucide-react";
+import { FilePlus, GripVertical, Move, LayoutList, LayoutGrid, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect } from "react";
@@ -40,9 +40,10 @@ interface SortablePageItemProps {
   page: Page;
   bookId: number;
   onNavigate: (pageId: number) => void;
+  onDelete?: (pageId: number) => void;
 }
 
-const SortablePageItem = ({ page, bookId, onNavigate }: SortablePageItemProps) => {
+const SortablePageItem = ({ page, bookId, onNavigate, onDelete }: SortablePageItemProps) => {
   const {
     attributes,
     listeners,
@@ -86,27 +87,46 @@ const SortablePageItem = ({ page, bookId, onNavigate }: SortablePageItemProps) =
   );
 };
 
-const RegularPageItem = ({ page, bookId, onNavigate }: SortablePageItemProps) => {
+const RegularPageItem = ({ page, bookId, onNavigate, onDelete }: SortablePageItemProps) => {
   const wordCount = page.html_content ? 
     page.html_content.replace(/<[^>]*>/g, '').trim().split(/\s+/).length : 
     0;
 
   return (
     <div 
-      onClick={() => onNavigate(page.id)}
-      className="flex items-center justify-between py-4 px-6 hover:bg-accent/5 cursor-pointer transition-colors border-b border-border last:border-0"
+      className="flex items-center justify-between py-4 px-6 hover:bg-accent/5 transition-colors border-b border-border last:border-0"
     >
-      <h3 className="text-lg">
-        {page.title || `Untitled Page ${page.page_index + 1}`}
-      </h3>
-      <span className="text-sm text-muted-foreground">
-        {wordCount} words
-      </span>
+      <div 
+        className="flex-1 cursor-pointer"
+        onClick={() => onNavigate(page.id)}
+      >
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg">
+            {page.title || `Untitled Page ${page.page_index + 1}`}
+          </h3>
+          <span className="text-sm text-muted-foreground">
+            {wordCount} words
+          </span>
+        </div>
+      </div>
+      {onDelete && (
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete(page.id);
+          }}
+          className="ml-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      )}
     </div>
   );
 };
 
-const PageCard = ({ page, bookId, onNavigate }: SortablePageItemProps) => {
+const PageCard = ({ page, bookId, onNavigate, onDelete }: SortablePageItemProps) => {
   const wordCount = page.html_content ? 
     page.html_content.replace(/<[^>]*>/g, '').trim().split(/\s+/).length : 
     0;
@@ -117,10 +137,9 @@ const PageCard = ({ page, bookId, onNavigate }: SortablePageItemProps) => {
 
   return (
     <Card 
-      onClick={() => onNavigate(page.id)}
-      className="cursor-pointer hover:bg-accent/5 transition-colors"
+      className="cursor-pointer hover:bg-accent/5 transition-colors relative group"
     >
-      <CardContent className="p-6 space-y-4">
+      <CardContent className="p-6 space-y-4" onClick={() => onNavigate(page.id)}>
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-medium">
             {page.title || `Untitled Page ${page.page_index + 1}`}
@@ -133,6 +152,19 @@ const PageCard = ({ page, bookId, onNavigate }: SortablePageItemProps) => {
           {excerpt}
         </p>
       </CardContent>
+      {onDelete && (
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete(page.id);
+          }}
+          className="absolute top-2 right-2 text-destructive opacity-0 group-hover:opacity-100 transition-opacity hover:text-destructive hover:bg-destructive/10"
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      )}
     </Card>
   );
 };
@@ -144,6 +176,7 @@ export const PagesList = ({ pages, bookId, isReorderMode = false }: PagesListPro
     [...pages].sort((a, b) => a.page_index - b.page_index)
   );
   const [isReordering, setIsReordering] = useState(isReorderMode);
+  const [isDeleteMode, setIsDeleteMode] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
 
   useEffect(() => {
@@ -157,6 +190,30 @@ export const PagesList = ({ pages, bookId, isReorderMode = false }: PagesListPro
       coordinateGetter: sortableKeyboardCoordinates,
     })
   );
+
+  const handleDeletePage = async (pageId: number) => {
+    try {
+      const { error } = await supabase
+        .from('pages')
+        .update({ archived: true })
+        .eq('id', pageId);
+
+      if (error) throw error;
+
+      setItems(items.filter(page => page.id !== pageId));
+      
+      toast({
+        title: "Page deleted",
+        description: "The page has been moved to archive"
+      });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error deleting page",
+        description: error.message
+      });
+    }
+  };
 
   const createNewPage = async () => {
     try {
@@ -201,7 +258,6 @@ export const PagesList = ({ pages, bookId, isReorderMode = false }: PagesListPro
       setItems(newItems);
 
       try {
-        // Update page indices
         const updates = newItems.map((page, index) => ({
           id: page.id,
           page_index: index
@@ -231,19 +287,45 @@ export const PagesList = ({ pages, bookId, isReorderMode = false }: PagesListPro
     <Card className="mt-6">
       <CardContent className="p-0">
         <div className="flex items-center justify-between p-4 border-b border-border">
-          <Button
-            variant={viewMode === 'list' ? "default" : "outline"}
-            size="icon"
-            onClick={() => setViewMode(viewMode === 'list' ? 'grid' : 'list')}
-            className="rounded-full"
-          >
-            {viewMode === 'list' ? (
-              <LayoutGrid className="h-4 w-4" />
-            ) : (
-              <LayoutList className="h-4 w-4" />
-            )}
-          </Button>
-          
+          <div className="flex items-center gap-2">
+            <Button
+              variant={viewMode === 'list' ? "default" : "outline"}
+              size="icon"
+              onClick={() => setViewMode(viewMode === 'list' ? 'grid' : 'list')}
+              className="rounded-full"
+            >
+              {viewMode === 'list' ? (
+                <LayoutGrid className="h-4 w-4" />
+              ) : (
+                <LayoutList className="h-4 w-4" />
+              )}
+            </Button>
+            
+            <Button
+              onClick={() => {
+                setIsReordering(false);
+                setIsDeleteMode(!isDeleteMode);
+              }}
+              variant={isDeleteMode ? "destructive" : "outline"}
+              size="icon"
+              className="rounded-full"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+
+            <Button
+              onClick={() => {
+                setIsDeleteMode(false);
+                setIsReordering(!isReordering);
+              }}
+              variant={isReordering ? "default" : "outline"}
+              size="icon"
+              className="rounded-full"
+            >
+              <Move className="h-4 w-4" />
+            </Button>
+          </div>
+
           <Button 
             onClick={createNewPage}
             variant="outline"
@@ -251,15 +333,6 @@ export const PagesList = ({ pages, bookId, isReorderMode = false }: PagesListPro
             className="rounded-full"
           >
             <FilePlus className="h-4 w-4" />
-          </Button>
-
-          <Button
-            onClick={() => setIsReordering(!isReordering)}
-            variant={isReordering ? "default" : "outline"}
-            size="icon"
-            className="rounded-full"
-          >
-            <Move className="h-4 w-4" />
           </Button>
         </div>
 
@@ -298,6 +371,7 @@ export const PagesList = ({ pages, bookId, isReorderMode = false }: PagesListPro
                     page={page}
                     bookId={bookId}
                     onNavigate={(pageId) => navigate(`/book/${bookId}/page/${pageId}`)}
+                    onDelete={isDeleteMode ? handleDeletePage : undefined}
                   />
                 ) : (
                   <PageCard
@@ -305,6 +379,7 @@ export const PagesList = ({ pages, bookId, isReorderMode = false }: PagesListPro
                     page={page}
                     bookId={bookId}
                     onNavigate={(pageId) => navigate(`/book/${bookId}/page/${pageId}`)}
+                    onDelete={isDeleteMode ? handleDeletePage : undefined}
                   />
                 )
               ))
