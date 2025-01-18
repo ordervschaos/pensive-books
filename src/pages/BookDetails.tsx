@@ -23,26 +23,16 @@ const BookDetails = () => {
 
   const fetchBookDetails = async () => {
     try {
-      // First fetch book details with user data
+      // Fetch book details
       const { data: bookData, error: bookError } = await supabase
         .from("books")
-        .select(`
-          *,
-          owner:owner_id(
-            user_data (
-              username
-            )
-          )
-        `)
+        .select("*, user_data!books_owner_id_fkey(username)")
         .eq("id", parseInt(id || "0"))
         .single();
 
       if (bookError) throw bookError;
       setBook(bookData);
-      
-      // Set author from user data
-      const username = bookData?.owner?.user_data?.username;
-      setAuthor(username || "Anonymous");
+      setAuthor(bookData.user_data?.username || "Anonymous");
 
       // Fetch pages
       const { data: pagesData, error: pagesError } = await supabase
