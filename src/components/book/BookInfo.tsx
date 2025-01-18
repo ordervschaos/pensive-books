@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Card, CardHeader } from "@/components/ui/card";
-import { Calendar, Clock, Globe, Upload, Image as ImageIcon } from "lucide-react";
+import { Calendar, Clock, Globe, Upload, Image as ImageIcon, Lock } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { UnsplashPicker } from "./UnsplashPicker";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
 
 interface BookInfoProps {
   name: string;
@@ -236,36 +237,32 @@ export const BookInfo = ({
                     {bookName}
                   </h1>
                 )}
-                <Button
-                  variant={isPublic ? "default" : "outline"}
-                  size="sm"
-                  onClick={onTogglePublish}
-                  disabled={publishing}
-                  className="ml-4"
-                >
-                  {publishing ? (
-                    "Updating..."
-                  ) : (
-                    <>
-                      <Globe className="h-4 w-4 mr-2" />
-                      {isPublic ? "Published" : "Publish"}
-                    </>
-                  )}
-                </Button>
               </div>
             </div>
 
-            <div className="flex items-center space-x-4 text-sm text-muted-foreground">
-              <div className="flex items-center">
-                <Clock className="mr-1 h-4 w-4" />
-                Last updated {new Date(updatedAt).toLocaleDateString()}
-              </div>
-              {publishedAt && (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-4 text-sm text-muted-foreground">
                 <div className="flex items-center">
-                  <Globe className="mr-1 h-4 w-4" />
-                  Published {new Date(publishedAt).toLocaleDateString()}
+                  <Clock className="mr-1 h-4 w-4" />
+                  Last updated {new Date(updatedAt).toLocaleDateString()}
                 </div>
-              )}
+                {publishedAt && (
+                  <div className="flex items-center">
+                    <Globe className="mr-1 h-4 w-4" />
+                    Published {new Date(publishedAt).toLocaleDateString()}
+                  </div>
+                )}
+              </div>
+              
+              <div className="flex items-center gap-2">
+                <Lock className="h-4 w-4 text-muted-foreground" />
+                <Switch
+                  checked={isPublic}
+                  onCheckedChange={onTogglePublish}
+                  disabled={publishing}
+                />
+                <Globe className="h-4 w-4 text-muted-foreground" />
+              </div>
             </div>
           </div>
         </div>
