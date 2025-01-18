@@ -1,10 +1,9 @@
 import { useNavigate } from "react-router-dom";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { BookOpen, FilePlus, GripVertical, ArrowUpDown } from "lucide-react";
+import { BookOpen, FilePlus, GripVertical, Move } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { Toggle } from "@/components/ui/toggle";
 import { useState, useEffect } from "react";
 import {
   DndContext,
@@ -174,13 +173,13 @@ export const PagesList = ({ pages, bookId }: PagesListProps) => {
           Add Page
         </Button>
         <Button
-          variant="outline"
-          size="sm"
-          className={`gap-2 ${isReorderMode ? 'bg-primary/10' : ''}`}
+          variant="ghost"
+          size="icon"
+          className={`rounded-full ${isReorderMode ? 'bg-primary/10 text-primary hover:bg-primary/20' : 'hover:bg-accent'}`}
           onClick={() => setIsReorderMode(!isReorderMode)}
+          title={isReorderMode ? 'Exit Reorder Mode' : 'Reorder Pages'}
         >
-          <ArrowUpDown className="h-4 w-4" />
-          {isReorderMode ? 'Exit Reorder' : 'Reorder Pages'}
+          <Move className="h-4 w-4" />
         </Button>
       </div>
 
