@@ -118,10 +118,6 @@ const BookDetails = () => {
       <TopNav />
       <div className="container mx-auto p-6">
         <div className="max-w-7xl mx-auto space-y-6">
-          <div className="flex flex-col">
-            <h1 className="text-3xl font-bold">{book.name}</h1>
-            <p className="text-muted-foreground">37signals</p>
-          </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
             <div className="lg:col-span-1">
@@ -139,6 +135,10 @@ const BookDetails = () => {
             </div>
 
             <div className="lg:col-span-3">
+            <div className="flex flex-col">
+            <h1 className="text-3xl font-bold">{book.name}</h1>
+            <p className="text-muted-foreground">37signals</p>
+          </div>
               <PagesList 
                 pages={pages}
                 bookId={parseInt(id || "0")}
