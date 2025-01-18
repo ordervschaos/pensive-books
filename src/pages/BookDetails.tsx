@@ -118,29 +118,37 @@ const BookDetails = () => {
     <div className="min-h-screen flex flex-col bg-background">
       <TopNav />
       <div className="container mx-auto p-6">
-        <div className="max-w-4xl mx-auto space-y-6">
+        <div className="max-w-7xl mx-auto">
           <BookHeader 
             isPublic={book.is_public}
             onTogglePublish={togglePublish}
             publishing={publishing}
           />
 
-          <BookInfo 
-            name={book.name}
-            isPublic={book.is_public}
-            createdAt={book.created_at}
-            updatedAt={book.updated_at}
-            publishedAt={book.published_at}
-            bookId={book.id}
-            coverUrl={book.cover_url}
-            onReorderChange={setIsReorderMode}
-          />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+            <div className="space-y-6">
+              <BookInfo 
+                name={book.name}
+                isPublic={book.is_public}
+                createdAt={book.created_at}
+                updatedAt={book.updated_at}
+                publishedAt={book.published_at}
+                bookId={book.id}
+                coverUrl={book.cover_url}
+                onReorderChange={setIsReorderMode}
+                onTogglePublish={togglePublish}
+                publishing={publishing}
+              />
+            </div>
 
-          <PagesList 
-            pages={pages}
-            bookId={parseInt(id || "0")}
-            isReorderMode={isReorderMode}
-          />
+            <div className="space-y-6">
+              <PagesList 
+                pages={pages}
+                bookId={parseInt(id || "0")}
+                isReorderMode={isReorderMode}
+              />
+            </div>
+          </div>
         </div>
       </div>
     </div>

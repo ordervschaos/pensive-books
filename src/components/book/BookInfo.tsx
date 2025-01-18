@@ -18,6 +18,8 @@ interface BookInfoProps {
   bookId: number;
   coverUrl?: string | null;
   onReorderChange?: (isReordering: boolean) => void;
+  onTogglePublish: () => void;
+  publishing: boolean;
 }
 
 export const BookInfo = ({ 
@@ -28,7 +30,9 @@ export const BookInfo = ({
   publishedAt, 
   bookId,
   coverUrl,
-  onReorderChange 
+  onReorderChange,
+  onTogglePublish,
+  publishing
 }: BookInfoProps) => {
   const [isEditing, setIsEditing] = useState(false);
   const [bookName, setBookName] = useState(name);
@@ -196,41 +200,59 @@ export const BookInfo = ({
           {/* Right side - Book info */}
           <div className="flex-1 space-y-4">
             <div className="space-y-2">
-              {isEditing ? (
-                <Input
-                  value={bookName}
-                  onChange={(e) => setBookName(e.target.value)}
-                  onBlur={() => {
-                    if (bookName !== name) {
-                      handleNameChange(bookName);
-                    } else {
-                      setIsEditing(false);
-                    }
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
+              <div className="flex items-center justify-between">
+                {isEditing ? (
+                  <Input
+                    value={bookName}
+                    onChange={(e) => setBookName(e.target.value)}
+                    onBlur={() => {
                       if (bookName !== name) {
                         handleNameChange(bookName);
                       } else {
                         setIsEditing(false);
                       }
-                    }
-                    if (e.key === "Escape") {
-                      setBookName(name);
-                      setIsEditing(false);
-                    }
-                  }}
-                  className="text-3xl font-bold"
-                  autoFocus
-                />
-              ) : (
-                <h1 
-                  className="text-3xl font-bold cursor-pointer hover:text-muted-foreground transition-colors"
-                  onClick={() => setIsEditing(true)}
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        if (bookName !== name) {
+                          handleNameChange(bookName);
+                        } else {
+                          setIsEditing(false);
+                        }
+                      }
+                      if (e.key === "Escape") {
+                        setBookName(name);
+                        setIsEditing(false);
+                      }
+                    }}
+                    className="text-3xl font-bold"
+                    autoFocus
+                  />
+                ) : (
+                  <h1 
+                    className="text-3xl font-bold cursor-pointer hover:text-muted-foreground transition-colors"
+                    onClick={() => setIsEditing(true)}
+                  >
+                    {bookName}
+                  </h1>
+                )}
+                <Button
+                  variant={isPublic ? "default" : "outline"}
+                  size="sm"
+                  onClick={onTogglePublish}
+                  disabled={publishing}
+                  className="ml-4"
                 >
-                  {bookName}
-                </h1>
-              )}
+                  {publishing ? (
+                    "Updating..."
+                  ) : (
+                    <>
+                      <Globe className="h-4 w-4 mr-2" />
+                      {isPublic ? "Published" : "Publish"}
+                    </>
+                  )}
+                </Button>
+              </div>
             </div>
 
             <div className="flex items-center space-x-4 text-sm text-muted-foreground">
