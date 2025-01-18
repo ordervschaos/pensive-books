@@ -5,8 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
-import { PlusCircle } from "lucide-react";
+import { PlusCircle, Globe, Lock } from "lucide-react";
 import { TopNav } from "@/components/TopNav";
+import { Badge } from "@/components/ui/badge";
 
 const Index = () => {
   const [notebooks, setNotebooks] = useState<any[]>([]);
@@ -126,14 +127,36 @@ const Index = () => {
                           <h3 className="text-lg font-semibold truncate">
                             {notebook.name}
                           </h3>
+                          <Badge 
+                            variant={notebook.is_public ? "default" : "secondary"}
+                            className="mt-2"
+                          >
+                            {notebook.is_public ? (
+                              <Globe className="w-3 h-3 mr-1" />
+                            ) : (
+                              <Lock className="w-3 h-3 mr-1" />
+                            )}
+                            {notebook.is_public ? "Published" : "Private"}
+                          </Badge>
                         </div>
                       </div>
                     </div>
                   ) : (
-                    <div className="h-full flex items-center justify-center p-4 bg-muted">
-                      <h3 className="text-xl font-semibold text-center break-words">
+                    <div className="h-full flex flex-col items-center justify-center p-4 bg-muted">
+                      <h3 className="text-xl font-semibold text-center break-words mb-2">
                         {notebook.name}
                       </h3>
+                      <Badge 
+                        variant={notebook.is_public ? "default" : "secondary"}
+                        className="mt-2"
+                      >
+                        {notebook.is_public ? (
+                          <Globe className="w-3 h-3 mr-1" />
+                        ) : (
+                          <Lock className="w-3 h-3 mr-1" />
+                        )}
+                        {notebook.is_public ? "Published" : "Private"}
+                      </Badge>
                     </div>
                   )}
                 </Card>
