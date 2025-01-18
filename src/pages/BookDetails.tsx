@@ -4,7 +4,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { TopNav } from "@/components/TopNav";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { BookHeader } from "@/components/book/BookHeader";
 import { BookInfo } from "@/components/book/BookInfo";
 import { PagesList } from "@/components/book/PagesList";
 
@@ -118,15 +117,14 @@ const BookDetails = () => {
     <div className="min-h-screen flex flex-col bg-background">
       <TopNav />
       <div className="container mx-auto p-6">
-        <div className="max-w-7xl mx-auto">
-          <BookHeader 
-            isPublic={book.is_public}
-            onTogglePublish={togglePublish}
-            publishing={publishing}
-          />
+        <div className="max-w-7xl mx-auto space-y-6">
+          <div className="flex flex-col">
+            <h1 className="text-3xl font-bold">{book.name}</h1>
+            <p className="text-muted-foreground">37signals</p>
+          </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-            <div className="space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            <div className="lg:col-span-1">
               <BookInfo 
                 name={book.name}
                 isPublic={book.is_public}
@@ -135,13 +133,12 @@ const BookDetails = () => {
                 publishedAt={book.published_at}
                 bookId={book.id}
                 coverUrl={book.cover_url}
-                onReorderChange={setIsReorderMode}
                 onTogglePublish={togglePublish}
                 publishing={publishing}
               />
             </div>
 
-            <div className="space-y-6">
+            <div className="lg:col-span-3">
               <PagesList 
                 pages={pages}
                 bookId={parseInt(id || "0")}

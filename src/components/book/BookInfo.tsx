@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Card, CardHeader } from "@/components/ui/card";
-import { Calendar, Clock, Globe, Upload, Image as ImageIcon, Lock } from "lucide-react";
+import { Lock, Globe, Image as ImageIcon } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -18,53 +18,20 @@ interface BookInfoProps {
   publishedAt: string | null;
   bookId: number;
   coverUrl?: string | null;
-  onReorderChange?: (isReordering: boolean) => void;
   onTogglePublish: () => void;
   publishing: boolean;
 }
 
 export const BookInfo = ({ 
-  name, 
-  isPublic, 
-  createdAt, 
-  updatedAt, 
-  publishedAt, 
+  isPublic,
   bookId,
   coverUrl,
-  onReorderChange,
   onTogglePublish,
   publishing
 }: BookInfoProps) => {
-  const [isEditing, setIsEditing] = useState(false);
-  const [bookName, setBookName] = useState(name);
   const [uploading, setUploading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const { toast } = useToast();
-
-  const handleNameChange = async (newName: string) => {
-    try {
-      const { error } = await supabase
-        .from("books")
-        .update({ name: newName })
-        .eq("id", bookId);
-
-      if (error) throw error;
-
-      setBookName(newName);
-      toast({
-        title: "Book name updated",
-        description: "Your book name has been successfully updated."
-      });
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error updating book name",
-        description: error.message
-      });
-      setBookName(name);
-    }
-    setIsEditing(false);
-  };
 
   const handleCoverUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     try {
@@ -142,9 +109,9 @@ export const BookInfo = ({
   return (
     <Card className="bg-white shadow-sm">
       <CardHeader className="space-y-6">
-        <div className="flex items-start gap-8">
-          {/* Left side - Cover image */}
-          <div className="w-[300px] h-[400px] relative rounded-lg overflow-hidden bg-blue-100">
+        <div className="space-y-4">
+          {/* Cover image */}
+          <div className="w-full aspect-[3/4] relative rounded-lg overflow-hidden bg-blue-100">
             {coverUrl ? (
               <img 
                 src={coverUrl} 
@@ -198,72 +165,15 @@ export const BookInfo = ({
             </Dialog>
           </div>
 
-          {/* Right side - Book info */}
-          <div className="flex-1 space-y-4">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                {isEditing ? (
-                  <Input
-                    value={bookName}
-                    onChange={(e) => setBookName(e.target.value)}
-                    onBlur={() => {
-                      if (bookName !== name) {
-                        handleNameChange(bookName);
-                      } else {
-                        setIsEditing(false);
-                      }
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        if (bookName !== name) {
-                          handleNameChange(bookName);
-                        } else {
-                          setIsEditing(false);
-                        }
-                      }
-                      if (e.key === "Escape") {
-                        setBookName(name);
-                        setIsEditing(false);
-                      }
-                    }}
-                    className="text-3xl font-bold"
-                    autoFocus
-                  />
-                ) : (
-                  <h1 
-                    className="text-3xl font-bold cursor-pointer hover:text-muted-foreground transition-colors"
-                    onClick={() => setIsEditing(true)}
-                  >
-                    {bookName}
-                  </h1>
-                )}
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-4 text-sm text-muted-foreground">
-                <div className="flex items-center">
-                  <Clock className="mr-1 h-4 w-4" />
-                  Last updated {new Date(updatedAt).toLocaleDateString()}
-                </div>
-                {publishedAt && (
-                  <div className="flex items-center">
-                    <Globe className="mr-1 h-4 w-4" />
-                    Published {new Date(publishedAt).toLocaleDateString()}
-                  </div>
-                )}
-              </div>
-              
-              <div className="flex items-center gap-2">
-                <Lock className="h-4 w-4 text-muted-foreground" />
-                <Switch
-                  checked={isPublic}
-                  onCheckedChange={onTogglePublish}
-                  disabled={publishing}
-                />
-                <Globe className="h-4 w-4 text-muted-foreground" />
-              </div>
-            </div>
+          {/* Publish toggle */}
+          <div className="flex items-center justify-center gap-2">
+            <Lock className="h-4 w-4 text-muted-foreground" />
+            <Switch
+              checked={isPublic}
+              onCheckedChange={onTogglePublish}
+              disabled={publishing}
+            />
+            <Globe className="h-4 w-4 text-muted-foreground" />
           </div>
         </div>
       </CardHeader>
