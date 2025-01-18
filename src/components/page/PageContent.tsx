@@ -13,58 +13,65 @@ interface PageContentProps {
   saving: boolean;
 }
 
+const getFirstParagraphContent = (data: any) => {
+  if (!data?.content?.[0]) return null;
+  
+  // Look for the first paragraph with text content
+  const firstParagraph = data.content.find(
+    (node: any) => node.type === 'paragraph' && node.content?.[0]?.text
+  );
+  
+  if (firstParagraph?.content?.[0]?.text) {
+    const text = firstParagraph.content[0].text.trim();
+    // Take first 50 characters, trim to last complete word
+    return text.substring(0, 50).split(' ').slice(0, -1).join(' ');
+  }
+  
+  return null;
+};
+
+const getFirstHeadingContent = (data: any) => {
+  const firstNode = data.content?.[0];
+
+  if (firstNode?.type === "heading" && firstNode.content) {
+    return firstNode.content
+      .filter((content: any) => content.type === 'text')
+      .map((contentNode: any) => contentNode.text)
+      .join(" ")
+      .trim();
+  }
+
+  return null;
+};
+
+const getPageTitleFromContent = (content: any) => {
+  if (!content) {
+    return "Untitled";
+  }
+  
+  let title = getFirstHeadingContent(content);
+
+  if (!title) {
+    title = getFirstParagraphContent(content);
+  }
+
+  if (!title) {
+    title = "Untitled";
+  }
+
+  return title;
+};
+
 const deriveTitle = (content: string): string => {
   if (!content) return 'Untitled';
   
   try {
     const jsonContent = JSON.parse(content);
-    
-    // Look for the first heading level 1
-    const h1Node = jsonContent.content?.find(
-      (node: any) => node.type === 'heading' && node.attrs?.level === 1
-    );
-    
-    if (h1Node?.content) {
-      // Only get the text content from the heading, ignoring hardBreaks
-      const headingText = h1Node.content
-        .filter((content: any) => content.type === 'text')
-        .map((content: any) => content.text)
-        .join(' ')
-        .trim();
-      
-      if (headingText) {
-        return headingText;
-      }
-    }
-    
-    // If no h1, look for the first paragraph with text
-    const firstParagraph = jsonContent.content?.find(
-      (node: any) => node.type === 'paragraph' && node.content?.[0]?.text
-    );
-    
-    if (firstParagraph?.content?.[0]?.text) {
-      const text = firstParagraph.content[0].text.trim();
-      // Take first 50 characters, trim to last complete word
-      return text.substring(0, 50).split(' ').slice(0, -1).join(' ');
-    }
-    
-    // If no paragraphs with text, take first 25 characters of any text content
-    const allText = jsonContent.content?.reduce((acc: string, node: any) => {
-      if (node.content?.[0]?.text) {
-        return acc + ' ' + node.content[0].text;
-      }
-      return acc;
-    }, '').trim();
-    
-    if (allText) {
-      const truncated = allText.substring(0, 25);
-      return truncated + (allText.length > 25 ? '...' : '');
-    }
+    return getPageTitleFromContent(jsonContent);
   } catch (error) {
     console.error('Error parsing content JSON:', error);
+    return 'Untitled';
   }
-  
-  return 'Untitled';
 };
 
 export const PageContent = ({ content, title, onSave, saving }: PageContentProps) => {
