@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Eye, Pencil } from "lucide-react";
@@ -13,6 +13,26 @@ interface PageContentProps {
   saving: boolean;
 }
 
+const deriveTitle = (content: string): string => {
+  if (!content) return 'Untitled';
+  
+  // Remove HTML tags
+  const plainText = content.replace(/<[^>]*>/g, '');
+  
+  // Get first non-empty line
+  const firstLine = plainText
+    .split('\n')
+    .map(line => line.trim())
+    .find(line => line.length > 0);
+    
+  if (!firstLine) return 'Untitled';
+  
+  // Take first 50 characters, trim to last complete word
+  const truncated = firstLine.substring(0, 50).split(' ').slice(0, -1).join(' ');
+  
+  return truncated || 'Untitled';
+};
+
 export const PageContent = ({ content, title, onSave, saving }: PageContentProps) => {
   const [isEditing, setIsEditing] = useState(!content);
   const [currentContent, setCurrentContent] = useState(content || '');
@@ -25,6 +45,16 @@ export const PageContent = ({ content, title, onSave, saving }: PageContentProps
     }, 1000),
     [onSave]
   );
+
+  useEffect(() => {
+    if (currentTitle === 'Untitled' || !currentTitle.trim()) {
+      const derivedTitle = deriveTitle(currentContent);
+      if (derivedTitle !== 'Untitled') {
+        setCurrentTitle(derivedTitle);
+        debouncedSave(currentContent, editorJson, derivedTitle);
+      }
+    }
+  }, [currentContent, currentTitle, editorJson, debouncedSave]);
 
   const handleContentChange = (html: string, json: any) => {
     setCurrentContent(html);
