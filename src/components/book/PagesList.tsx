@@ -56,7 +56,6 @@ const SortablePageItem = ({ page, bookId, onNavigate }: SortablePageItemProps) =
     transition,
   } : undefined;
 
-  // Calculate word count from html_content
   const wordCount = page.html_content ? 
     page.html_content.replace(/<[^>]*>/g, '').trim().split(/\s+/).length : 
     0;
@@ -65,7 +64,7 @@ const SortablePageItem = ({ page, bookId, onNavigate }: SortablePageItemProps) =
     <div 
       ref={setNodeRef}
       style={style}
-      className="flex items-center gap-3 py-3 px-4 bg-background border-b border-border last:border-b-0 hover:bg-accent/5 transition-colors group"
+      className="flex items-center gap-3 py-4 px-6 hover:bg-accent/5 transition-colors group border-b border-border last:border-0"
     >
       <div {...attributes} {...listeners} className="cursor-grab hover:text-primary">
         <GripVertical className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -75,7 +74,7 @@ const SortablePageItem = ({ page, bookId, onNavigate }: SortablePageItemProps) =
         onClick={() => onNavigate(page.id)}
       >
         <div className="flex items-center justify-between">
-          <h3 className="font-medium">
+          <h3 className="text-lg">
             {page.title || `Untitled Page ${page.page_index + 1}`}
           </h3>
           <span className="text-sm text-muted-foreground">
@@ -95,9 +94,9 @@ const RegularPageItem = ({ page, bookId, onNavigate }: SortablePageItemProps) =>
   return (
     <div 
       onClick={() => onNavigate(page.id)}
-      className="flex items-center justify-between py-3 px-4 border-b border-border last:border-b-0 hover:bg-accent/5 cursor-pointer transition-colors"
+      className="flex items-center justify-between py-4 px-6 hover:bg-accent/5 cursor-pointer transition-colors border-b border-border last:border-0"
     >
-      <h3 className="font-medium">
+      <h3 className="text-lg">
         {page.title || `Untitled Page ${page.page_index + 1}`}
       </h3>
       <span className="text-sm text-muted-foreground">

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Card, CardHeader } from "@/components/ui/card";
-import { Calendar, Clock, Globe, Upload, Image as ImageIcon, Move } from "lucide-react";
+import { Calendar, Clock, Globe, Upload, Image as ImageIcon } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -34,7 +34,6 @@ export const BookInfo = ({
   const [bookName, setBookName] = useState(name);
   const [uploading, setUploading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
-  const [isReordering, setIsReordering] = useState(false);
   const { toast } = useToast();
 
   const handleNameChange = async (newName: string) => {
@@ -135,18 +134,12 @@ export const BookInfo = ({
     window.location.reload();
   };
 
-  const toggleReorder = () => {
-    const newState = !isReordering;
-    setIsReordering(newState);
-    onReorderChange?.(newState);
-  };
-
   return (
     <Card className="bg-white shadow-sm">
       <CardHeader className="space-y-6">
-        <div className="flex items-start gap-6">
+        <div className="flex items-start gap-8">
           {/* Left side - Cover image */}
-          <div className="w-48 h-48 relative rounded-lg overflow-hidden bg-blue-100">
+          <div className="w-[300px] h-[400px] relative rounded-lg overflow-hidden bg-blue-100">
             {coverUrl ? (
               <img 
                 src={coverUrl} 
@@ -155,7 +148,7 @@ export const BookInfo = ({
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center">
-                <ImageIcon className="w-12 h-12 text-blue-300" />
+                <ImageIcon className="w-16 h-16 text-blue-300" />
               </div>
             )}
           </div>
@@ -187,12 +180,12 @@ export const BookInfo = ({
                       setIsEditing(false);
                     }
                   }}
-                  className="text-2xl font-semibold"
+                  className="text-3xl font-bold"
                   autoFocus
                 />
               ) : (
                 <h1 
-                  className="text-2xl font-semibold cursor-pointer hover:text-muted-foreground transition-colors"
+                  className="text-3xl font-bold cursor-pointer hover:text-muted-foreground transition-colors"
                   onClick={() => setIsEditing(true)}
                 >
                   {bookName}
@@ -213,17 +206,7 @@ export const BookInfo = ({
               )}
             </div>
 
-            <div className="flex items-center space-x-2">
-              <Button
-                variant="ghost"
-                size="icon"
-                className={`rounded-full ${isReordering ? 'bg-primary/10 text-primary hover:bg-primary/20' : 'hover:bg-accent'}`}
-                onClick={toggleReorder}
-                title={isReordering ? 'Exit Reorder Mode' : 'Reorder Pages'}
-              >
-                <Move className="h-4 w-4" />
-              </Button>
-
+            <div className="flex items-center space-x-2 pt-4">
               <Dialog open={isOpen} onOpenChange={setIsOpen}>
                 <DialogTrigger asChild>
                   <Button variant="outline" size="sm" disabled={uploading}>
