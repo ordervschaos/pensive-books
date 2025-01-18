@@ -155,7 +155,7 @@ export function TopNav() {
                 </BreadcrumbList>
               </Breadcrumb>
             ) : (
-              <span className="text-lg font-semibold text-foreground">Writebook</span>
+              <span className="text-lg font-semibold text-foreground">Pensive</span>
             )}
           </div>
 
