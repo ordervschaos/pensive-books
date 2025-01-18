@@ -106,6 +106,37 @@ const RegularPageItem = ({ page, bookId, onNavigate }: SortablePageItemProps) =>
   );
 };
 
+const PageCard = ({ page, bookId, onNavigate }: SortablePageItemProps) => {
+  const wordCount = page.html_content ? 
+    page.html_content.replace(/<[^>]*>/g, '').trim().split(/\s+/).length : 
+    0;
+
+  const excerpt = page.html_content ? 
+    page.html_content.replace(/<[^>]*>/g, '').trim().slice(0, 100) + '...' : 
+    'No content';
+
+  return (
+    <Card 
+      onClick={() => onNavigate(page.id)}
+      className="cursor-pointer hover:bg-accent/5 transition-colors"
+    >
+      <CardContent className="p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-medium">
+            {page.title || `Untitled Page ${page.page_index + 1}`}
+          </h3>
+          <span className="text-sm text-muted-foreground">
+            {wordCount} words
+          </span>
+        </div>
+        <p className="text-sm text-muted-foreground line-clamp-3">
+          {excerpt}
+        </p>
+      </CardContent>
+    </Card>
+  );
+};
+
 export const PagesList = ({ pages, bookId, isReorderMode = false }: PagesListProps) => {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -252,12 +283,21 @@ export const PagesList = ({ pages, bookId, isReorderMode = false }: PagesListPro
               </DndContext>
             ) : (
               items.map((page) => (
-                <RegularPageItem
-                  key={page.id}
-                  page={page}
-                  bookId={bookId}
-                  onNavigate={(pageId) => navigate(`/book/${bookId}/page/${pageId}`)}
-                />
+                viewMode === 'list' ? (
+                  <RegularPageItem
+                    key={page.id}
+                    page={page}
+                    bookId={bookId}
+                    onNavigate={(pageId) => navigate(`/book/${bookId}/page/${pageId}`)}
+                  />
+                ) : (
+                  <PageCard
+                    key={page.id}
+                    page={page}
+                    bookId={bookId}
+                    onNavigate={(pageId) => navigate(`/book/${bookId}/page/${pageId}`)}
+                  />
+                )
               ))
             )}
           </div>
