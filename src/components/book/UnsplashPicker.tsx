@@ -4,10 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Search } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
-
-const unsplash = createApi({
-  accessKey: "YOUR_UNSPLASH_ACCESS_KEY",
-});
+import { supabase } from "@/integrations/supabase/client";
 
 interface UnsplashPickerProps {
   onSelect: (imageUrl: string) => void;
@@ -23,6 +20,18 @@ export const UnsplashPicker = ({ onSelect }: UnsplashPickerProps) => {
     
     setLoading(true);
     try {
+      // Get the Unsplash API key from Supabase secrets
+      const { data: { UNSPLASH_ACCESS_KEY }, error: secretError } = await supabase
+        .functions.invoke('get-secret', {
+          body: { secretName: 'UNSPLASH_ACCESS_KEY' }
+        });
+
+      if (secretError) throw secretError;
+
+      const unsplash = createApi({
+        accessKey: UNSPLASH_ACCESS_KEY,
+      });
+
       const result = await unsplash.search.getPhotos({
         query: query,
         perPage: 20,
