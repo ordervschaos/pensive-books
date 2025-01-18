@@ -21,7 +21,9 @@ export const PageContent = ({ content, title, onSave, saving }: PageContentProps
 
   const debouncedSave = useCallback(
     debounce((html: string, json: any, title: string) => {
-      onSave(html, json, title);
+      // Only save with 'Untitled' if the title is empty AND we're not currently editing it
+      const finalTitle = title.trim() || (document.activeElement !== document.getElementById('page-title') ? 'Untitled' : '');
+      onSave(html, json, finalTitle);
     }, 1000),
     [onSave]
   );
@@ -33,7 +35,7 @@ export const PageContent = ({ content, title, onSave, saving }: PageContentProps
   };
 
   const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newTitle = e.target.value || 'Untitled';
+    const newTitle = e.target.value;
     setCurrentTitle(newTitle);
     debouncedSave(currentContent, editorJson, newTitle);
   };
@@ -43,6 +45,7 @@ export const PageContent = ({ content, title, onSave, saving }: PageContentProps
       <CardContent className="p-0 flex-1 flex flex-col">
         <div className="flex justify-between items-center p-2 border-b">
           <Input
+            id="page-title"
             value={currentTitle}
             onChange={handleTitleChange}
             placeholder="Untitled"
