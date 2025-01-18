@@ -89,20 +89,6 @@ const Index = () => {
     );
   }
 
-  // Function to get a random placeholder image
-  const getPlaceholderImage = () => {
-    const placeholders = [
-      "photo-1649972904349-6e44c42644a7",
-      "photo-1488590528505-98d2b5aba04b",
-      "photo-1518770660439-4636190af475",
-      "photo-1461749280684-dccba630e2f6",
-      "photo-1486312338219-ce68d2c6f44d",
-      "photo-1581091226825-a6a2a5aee158"
-    ];
-    const randomIndex = Math.floor(Math.random() * placeholders.length);
-    return `https://images.unsplash.com/${placeholders[randomIndex]}?auto=format&fit=crop&w=280&h=400`;
-  };
-
   return (
     <div className="min-h-screen flex flex-col">
       <TopNav />
@@ -123,25 +109,26 @@ const Index = () => {
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
             {notebooks.map((notebook) => (
-              <Card 
-                key={notebook.id} 
-                className="hover:shadow-lg transition-shadow cursor-pointer overflow-hidden flex flex-col h-[280px]"
-                onClick={() => navigate(`/book/${notebook.id}`)}
-              >
-                <div className="relative h-[200px] bg-muted">
-                  <img
-                    src={getPlaceholderImage()}
-                    alt={notebook.name}
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-                <CardHeader className="flex-1">
-                  <CardTitle className="text-lg line-clamp-1">{notebook.name}</CardTitle>
-                  <CardDescription className="text-sm">
-                    Created {new Date(notebook.created_at).toLocaleDateString()}
-                  </CardDescription>
-                </CardHeader>
-              </Card>
+              <div key={notebook.id} className="flex flex-col">
+                <Card 
+                  className="hover:shadow-lg transition-shadow cursor-pointer overflow-hidden flex flex-col h-[280px]"
+                  onClick={() => navigate(`/book/${notebook.id}`)}
+                >
+                  <div className="relative h-[200px] bg-muted flex items-center justify-center p-4">
+                    <h3 className="text-xl font-semibold text-center break-words">
+                      {notebook.name}
+                    </h3>
+                  </div>
+                  <CardHeader className="flex-1">
+                    <CardDescription className="text-xs text-center">
+                      Created {new Date(notebook.created_at).toLocaleDateString()}
+                    </CardDescription>
+                  </CardHeader>
+                </Card>
+                <p className="text-sm text-muted-foreground mt-2 text-center line-clamp-1">
+                  {notebook.name}
+                </p>
+              </div>
             ))}
           </div>
         )}
