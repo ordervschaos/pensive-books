@@ -5,7 +5,7 @@ import { BookOpen, FilePlus, GripVertical } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Toggle } from "@/components/ui/toggle";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   DndContext,
   closestCenter,
@@ -81,7 +81,13 @@ export const PagesList = ({ pages, bookId }: PagesListProps) => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [isReorderMode, setIsReorderMode] = useState(false);
-  const [items, setItems] = useState(pages);
+  const [items, setItems] = useState<Page[]>([]);
+
+  useEffect(() => {
+    // Sort pages by page_index when they are received or updated
+    const sortedPages = [...pages].sort((a, b) => a.page_index - b.page_index);
+    setItems(sortedPages);
+  }, [pages]);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -176,7 +182,7 @@ export const PagesList = ({ pages, bookId }: PagesListProps) => {
         </Toggle>
       </div>
 
-      {pages.length === 0 ? (
+      {items.length === 0 ? (
         <Card>
           <CardContent className="text-center py-6">
             <BookOpen className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
