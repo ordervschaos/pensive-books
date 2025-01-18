@@ -13,7 +13,11 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 
-export function TopNav() {
+interface TopNavProps {
+  bookName?: string;
+}
+
+export function TopNav({ bookName }: TopNavProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
@@ -62,7 +66,7 @@ export function TopNav() {
                   </BreadcrumbItem>
                   <BreadcrumbSeparator />
                   <BreadcrumbItem>
-                    <BreadcrumbPage>Current Book</BreadcrumbPage>
+                    <BreadcrumbPage>{bookName || 'Current Book'}</BreadcrumbPage>
                   </BreadcrumbItem>
                 </BreadcrumbList>
               </Breadcrumb>

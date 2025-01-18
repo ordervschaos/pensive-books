@@ -15,6 +15,7 @@ const BookDetails = () => {
   const [loading, setLoading] = useState(true);
   const [publishing, setPublishing] = useState(false);
   const [isReorderMode, setIsReorderMode] = useState(false);
+  const [author, setAuthor] = useState<string>("");
 
   useEffect(() => {
     fetchBookDetails();
@@ -22,15 +23,18 @@ const BookDetails = () => {
 
   const fetchBookDetails = async () => {
     try {
+      // Fetch book details
       const { data: bookData, error: bookError } = await supabase
         .from("books")
-        .select("*")
+        .select("*, user_data!books_owner_id_fkey(username)")
         .eq("id", parseInt(id || "0"))
         .single();
 
       if (bookError) throw bookError;
       setBook(bookData);
+      setAuthor(bookData.user_data?.username || "Anonymous");
 
+      // Fetch pages
       const { data: pagesData, error: pagesError } = await supabase
         .from("pages")
         .select("*")
@@ -115,14 +119,9 @@ const BookDetails = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <TopNav />
+      <TopNav bookName={book.name} />
       <div className="container mx-auto p-6">
-        <div className="max-w-7xl mx-auto space-y-6">
-          <div className="flex flex-col">
-            <h1 className="text-3xl font-bold">{book.name}</h1>
-            <p className="text-muted-foreground">37signals</p>
-          </div>
-
+        <div className="max-w-7xl mx-auto">
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
             <div className="lg:col-span-1">
               <BookInfo 
@@ -138,7 +137,11 @@ const BookDetails = () => {
               />
             </div>
 
-            <div className="lg:col-span-3">
+            <div className="lg:col-span-3 space-y-6">
+              <div className="flex flex-col">
+                <h1 className="text-3xl font-bold">{book.name}</h1>
+                <p className="text-muted-foreground">{author}</p>
+              </div>
               <PagesList 
                 pages={pages}
                 bookId={parseInt(id || "0")}
