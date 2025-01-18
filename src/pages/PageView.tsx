@@ -41,9 +41,11 @@ const PageView = () => {
       setBook(bookData);
 
       // Fetch next page title if not the last page
-      const currentIndex = bookData.page_ids?.indexOf(parseInt(pageId || "0")) ?? -1;
-      if (currentIndex < (bookData.page_ids?.length ?? 0) - 1) {
-        const nextPageId = bookData.page_ids[currentIndex + 1];
+      const pageIds = Array.isArray(bookData.page_ids) ? bookData.page_ids : [];
+      const currentIndex = pageIds.indexOf(parseInt(pageId || "0"));
+      
+      if (currentIndex < pageIds.length - 1) {
+        const nextPageId = pageIds[currentIndex + 1];
         const { data: nextPage, error: nextPageError } = await supabase
           .from("pages")
           .select("title")
@@ -126,7 +128,8 @@ const PageView = () => {
     );
   }
 
-  const currentIndex = book.page_ids?.indexOf(page.id) ?? -1;
+  const pageIds = Array.isArray(book.page_ids) ? book.page_ids : [];
+  const currentIndex = pageIds.indexOf(page.id);
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -143,9 +146,10 @@ const PageView = () => {
         <PageNavigation
           bookId={bookId || ""}
           currentIndex={currentIndex}
-          totalPages={book.page_ids?.length ?? 0}
+          totalPages={pageIds.length}
           onNavigate={navigateToPage}
           nextPageTitle={nextPageTitle}
+          bookTitle={book.name}
         />
       </div>
     </div>

@@ -8,6 +8,7 @@ interface PageNavigationProps {
   totalPages: number;
   onNavigate: (index: number) => void;
   nextPageTitle?: string;
+  bookTitle?: string;
 }
 
 export const PageNavigation = ({ 
@@ -15,7 +16,8 @@ export const PageNavigation = ({
   currentIndex, 
   totalPages, 
   onNavigate,
-  nextPageTitle 
+  nextPageTitle,
+  bookTitle = 'Untitled'
 }: PageNavigationProps) => {
   const navigate = useNavigate();
 
@@ -34,7 +36,7 @@ export const PageNavigation = ({
         disabled={currentIndex === -1}
       >
         <span className="text-lg">
-          {isLastPage ? "Table of contents: The Prophet" : `Next: ${nextPageTitle || 'Untitled'}`}
+          {isLastPage ? `Table of contents: ${bookTitle}` : `Next: ${nextPageTitle || 'Untitled'}`}
         </span>
         <ArrowRight className="h-5 w-5" />
       </Button>
