@@ -53,7 +53,7 @@ export function TopNav() {
           const { data: bookData, error: bookError } = await supabase
             .from("books")
             .select("name")
-            .eq("id", bookId)
+            .eq("id", parseInt(bookId))
             .single();
 
           if (bookError) throw bookError;
@@ -63,7 +63,7 @@ export function TopNav() {
             const { data: pageData, error: pageError } = await supabase
               .from("pages")
               .select("title")
-              .eq("id", pageId)
+              .eq("id", parseInt(pageId))
               .single();
 
             if (pageError) throw pageError;
@@ -75,7 +75,39 @@ export function TopNav() {
       }
     };
 
-    fetchDetails();
+    // Set up real-time subscription for page title updates
+    const match = location.pathname.match(/\/book\/(\d+)(?:\/page\/(\d+))?/);
+    if (match && match[2]) { // If we have a page ID
+      const pageId = parseInt(match[2]);
+      
+      const subscription = supabase
+        .channel('page_changes')
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'pages',
+            filter: `id=eq.${pageId}`
+          },
+          (payload: any) => {
+            if (payload.new.title) {
+              setPageName(payload.new.title);
+            }
+          }
+        )
+        .subscribe();
+
+      // Fetch initial data
+      fetchDetails();
+
+      // Cleanup subscription
+      return () => {
+        subscription.unsubscribe();
+      };
+    } else {
+      fetchDetails();
+    }
   }, [location.pathname]);
 
   const isBookRoute = location.pathname.includes('/book/');
