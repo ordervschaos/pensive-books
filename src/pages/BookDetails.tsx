@@ -34,11 +34,13 @@ const BookDetails = () => {
       const { data: pagesData, error: pagesError } = await supabase
         .from("pages")
         .select("*")
-        .eq("book_id", parseInt(id || "0"))
-        .order("page_index", { ascending: true });
+        .eq("book_id", parseInt(id || "0"));
 
       if (pagesError) throw pagesError;
-      setPages(pagesData || []);
+      
+      // Sort pages by page_index before setting state
+      const sortedPages = (pagesData || []).sort((a, b) => a.page_index - b.page_index);
+      setPages(sortedPages);
     } catch (error: any) {
       toast({
         variant: "destructive",
