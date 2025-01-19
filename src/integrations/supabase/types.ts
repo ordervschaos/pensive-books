@@ -12,6 +12,7 @@ export type Database = {
       books: {
         Row: {
           archived: boolean | null
+          author: string | null
           book_id: number | null
           bookmarked_page_index: number | null
           cover_url: string | null
@@ -26,10 +27,12 @@ export type Database = {
           page_ids: Json | null
           pinned: boolean | null
           published_at: string | null
+          subtitle: string | null
           updated_at: string | null
         }
         Insert: {
           archived?: boolean | null
+          author?: string | null
           book_id?: number | null
           bookmarked_page_index?: number | null
           cover_url?: string | null
@@ -44,10 +47,12 @@ export type Database = {
           page_ids?: Json | null
           pinned?: boolean | null
           published_at?: string | null
+          subtitle?: string | null
           updated_at?: string | null
         }
         Update: {
           archived?: boolean | null
+          author?: string | null
           book_id?: number | null
           bookmarked_page_index?: number | null
           cover_url?: string | null
@@ -62,6 +67,7 @@ export type Database = {
           page_ids?: Json | null
           pinned?: boolean | null
           published_at?: string | null
+          subtitle?: string | null
           updated_at?: string | null
         }
         Relationships: []

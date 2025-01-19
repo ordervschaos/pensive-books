@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Globe } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,7 +17,18 @@ const BookEdit = () => {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    fetchBook();
+    if (id) {
+      fetchBook();
+    } else {
+      // Initialize new book
+      setBook({
+        name: "",
+        subtitle: "",
+        author: "",
+        is_public: false
+      });
+      setLoading(false);
+    }
   }, [id]);
 
   const fetchBook = async () => {
@@ -25,7 +36,7 @@ const BookEdit = () => {
       const { data, error } = await supabase
         .from("books")
         .select("*")
-        .eq("id", id)
+        .eq("id", parseInt(id || "0"))
         .single();
 
       if (error) throw error;
@@ -45,17 +56,34 @@ const BookEdit = () => {
     e.preventDefault();
     try {
       setSaving(true);
-      const { error } = await supabase
-        .from("books")
-        .update(book)
-        .eq("id", id);
+      
+      let response;
+      if (id) {
+        // Update existing book
+        response = await supabase
+          .from("books")
+          .update(book)
+          .eq("id", parseInt(id))
+          .select()
+          .single();
+      } else {
+        // Insert new book
+        response = await supabase
+          .from("books")
+          .insert(book)
+          .select()
+          .single();
+      }
 
-      if (error) throw error;
+      if (response.error) throw response.error;
 
       toast({
         title: "Success",
-        description: "Book details updated successfully"
+        description: id ? "Book updated successfully" : "Book created successfully"
       });
+
+      // Navigate to the book details page
+      navigate(`/book/${response.data.id}`);
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -83,20 +111,22 @@ const BookEdit = () => {
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <h1 className="text-2xl font-semibold">Edit Book</h1>
+          <h1 className="text-2xl font-semibold">{id ? 'Edit Book' : 'New Book'}</h1>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           <div>
-            <BookInfo 
-              {...book}
-              onTogglePublish={async () => {
-                const newValue = !book.is_public;
-                setBook({ ...book, is_public: newValue });
-                await handleSave({ preventDefault: () => {} } as React.FormEvent);
-              }}
-              publishing={saving}
-            />
+            {id && (
+              <BookInfo 
+                {...book}
+                onTogglePublish={async () => {
+                  const newValue = !book.is_public;
+                  setBook({ ...book, is_public: newValue });
+                  await handleSave({ preventDefault: () => {} } as React.FormEvent);
+                }}
+                publishing={saving}
+              />
+            )}
           </div>
 
           <form onSubmit={handleSave} className="space-y-6">
@@ -133,7 +163,7 @@ const BookEdit = () => {
             </div>
 
             <Button type="submit" disabled={saving}>
-              {saving ? "Saving..." : "Save changes"}
+              {saving ? "Saving..." : (id ? "Save changes" : "Create book")}
             </Button>
           </form>
         </div>

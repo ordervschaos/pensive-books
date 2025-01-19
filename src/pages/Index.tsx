@@ -1,33 +1,23 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { Skeleton } from "@/components/ui/skeleton";
-import { PlusCircle, Globe, Lock } from "lucide-react";
-import { TopNav } from "@/components/TopNav";
+import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
-const Index = () => {
-  const [notebooks, setNotebooks] = useState<any[]>([]);
+export default function Index() {
+  const [books, setBooks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const navigate = useNavigate();
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   useEffect(() => {
-    checkUser();
-    fetchNotebooks();
+    fetchBooks();
   }, []);
 
-  const checkUser = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-      navigate("/auth");
-    }
-  };
-
-  const fetchNotebooks = async () => {
+  const fetchBooks = async () => {
     try {
       const { data, error } = await supabase
         .from("books")
@@ -35,121 +25,67 @@ const Index = () => {
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-
-      setNotebooks(data || []);
+      setBooks(data || []);
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "Error fetching notebooks",
-        description: error.message
+        title: "Error fetching books",
+        description: error.message,
       });
     } finally {
       setLoading(false);
     }
   };
 
-  const createNotebook = async () => {
-    try {
-      const { data, error } = await supabase
-        .from("books")
-        .insert([{ name: "Untitled Notebook" }])
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      navigate(`/book/${data.id}/edit`);
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error creating notebook",
-        description: error.message
-      });
-    }
+  const handleCreateBook = () => {
+    navigate("/book/new/edit");
   };
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex flex-col">
-        <TopNav />
-        <div className="container mx-auto p-6 space-y-4">
-          <div className="flex justify-between items-center">
-            <h1 className="text-3xl font-bold">My Notebooks</h1>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
-            {[1, 2, 3].map((i) => (
-              <Skeleton key={i} className="h-[280px] w-full" />
-            ))}
-          </div>
-        </div>
-      </div>
-    );
+    return <div>Loading...</div>;
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <TopNav />
-      <div className="container mx-auto p-6 space-y-4">
-        <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold">My Notebooks</h1>
-          <Button onClick={createNotebook}>
-            <PlusCircle className="mr-2 h-4 w-4" />
-            New Notebook
-          </Button>
-        </div>
+    <div className="container mx-auto p-6">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold">Your Books</h1>
+        <Button onClick={handleCreateBook}>
+          <Plus className="mr-2 h-4 w-4" /> New notebook
+        </Button>
+      </div>
 
-        {notebooks.length === 0 ? (
-          <div className="text-center py-12">
-            <h2 className="text-xl font-semibold text-gray-600">No notebooks yet</h2>
-            <p className="text-gray-500 mt-2">Create your first notebook to get started</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
-            {notebooks.map((notebook) => (
-              <div key={notebook.id}>
-                <Card 
-                  className="hover:shadow-lg transition-shadow cursor-pointer"
-                  onClick={() => navigate(`/book/${notebook.id}`)}
-                >
-                  <div className="aspect-[3/4] relative">
-                    {notebook.cover_url ? (
-                      <img 
-                        src={notebook.cover_url} 
-                        alt={notebook.name}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center bg-muted">
-                        <h3 className="text-xl font-semibold text-center break-words px-4">
-                          {notebook.name}
-                        </h3>
-                      </div>
-                    )}
-                  </div>
-                </Card>
-                <div className="mt-2">
-                  <h3 className="text-sm text-muted-foreground truncate">
-                    {notebook.name}
-                  </h3>
-                  <Badge 
-                    variant={notebook.is_public ? "default" : "secondary"}
-                    className="inline-flex items-center mt-1 text-xs"
-                  >
-                    {notebook.is_public ? (
-                      <Globe className="w-3 h-3 mr-1" />
-                    ) : (
-                      <Lock className="w-3 h-3 mr-1" />
-                    )}
-                    {notebook.is_public ? "Published" : "Private"}
-                  </Badge>
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+        {books.map((book) => (
+          <div key={book.id} className="flex flex-col">
+            <Card
+              className="relative cursor-pointer group overflow-hidden aspect-[3/4]"
+              onClick={() => navigate(`/book/${book.id}`)}
+            >
+              {book.cover_url ? (
+                <img
+                  src={book.cover_url}
+                  alt={book.name}
+                  className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                />
+              ) : (
+                <div className="w-full h-full bg-muted flex items-center justify-center">
+                  <span className="text-muted-foreground">No cover</span>
                 </div>
-              </div>
-            ))}
+              )}
+            </Card>
+            <div className="mt-2 space-y-1">
+              <h3 className="text-sm text-muted-foreground font-medium truncate">
+                {book.name}
+              </h3>
+              {book.is_public && (
+                <Badge variant="secondary" className="text-xs">
+                  Public
+                </Badge>
+              )}
+            </div>
           </div>
-        )}
+        ))}
       </div>
     </div>
   );
-};
-
-export default Index;
+}
