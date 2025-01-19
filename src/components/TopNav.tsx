@@ -1,8 +1,8 @@
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { LogOut, Moon, Sun, ArrowLeft, Search, Settings, Maximize2, Library, Bell, BellDot } from "lucide-react";
+import { LogOut, Moon, Sun, ArrowLeft, Search, Settings, Maximize2, Library } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/components/ui/use-toast";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { useEffect, useState } from "react";
 import { SearchDialog } from "@/components/search/SearchDialog";
@@ -22,7 +22,6 @@ export function TopNav() {
   const [bookName, setBookName] = useState<string>("");
   const [pageName, setPageName] = useState<string>("");
   const [searchOpen, setSearchOpen] = useState(false);
-  const [hasPendingInvitations, setHasPendingInvitations] = useState(false);
 
   const handleLogout = async () => {
     try {
@@ -44,44 +43,6 @@ export function TopNav() {
       });
     }
   };
-
-  useEffect(() => {
-    const checkPendingInvitations = async () => {
-      try {
-        const { count, error } = await supabase
-          .from('book_access')
-          .select('*', { count: 'exact', head: true })
-          .eq('status', 'pending');
-
-        if (error) throw error;
-        setHasPendingInvitations(count ? count > 0 : false);
-      } catch (error) {
-        console.error('Error checking pending invitations:', error);
-      }
-    };
-
-    checkPendingInvitations();
-
-    // Set up real-time subscription for invitations
-    const subscription = supabase
-      .channel('book_access_changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'book_access'
-        },
-        () => {
-          checkPendingInvitations();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, []);
 
   useEffect(() => {
     const fetchDetails = async () => {
@@ -202,18 +163,6 @@ export function TopNav() {
           </div>
 
           <div className="flex items-center gap-2">
-            <Button 
-              variant="ghost" 
-              size="icon"
-              onClick={() => navigate('/invitations')}
-              className="relative"
-            >
-              {hasPendingInvitations ? (
-                <BellDot className="h-4 w-4" />
-              ) : (
-                <Bell className="h-4 w-4" />
-              )}
-            </Button>
             {isBookRoute && (
               <Button variant="ghost" size="icon" onClick={() => setSearchOpen(true)}>
                 <Search className="h-4 w-4" />
