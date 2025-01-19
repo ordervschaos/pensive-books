@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { FilePlus, GripVertical, Move, LayoutList, LayoutGrid, Trash2, Type, Section } from "lucide-react";
+import { GripVertical, Move, LayoutList, LayoutGrid, Trash2, Type, Section } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect } from "react";
@@ -21,12 +21,6 @@ import {
   useSortable,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 
 interface Page {
   id: number;
@@ -334,28 +328,29 @@ export const PagesList = ({ pages, bookId, isReorderMode = false }: PagesListPro
             </Button>
           </div>
 
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="icon" className="rounded-full">
-                <FilePlus className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => createNewPage('text')} className="gap-2">
-                <Type className="h-4 w-4" />
-                Text Page
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => createNewPage('section')} className="gap-2">
-                <Section className="h-4 w-4" />
-                Section Page
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => createNewPage('text')}
+              className="rounded-full"
+            >
+              <Type className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => createNewPage('section')}
+              className="rounded-full"
+            >
+              <Section className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
 
         {items.length === 0 ? (
           <div className="text-center py-12">
-            <FilePlus className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+            <Type className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
             <p className="text-muted-foreground">No pages yet</p>
           </div>
         ) : (
