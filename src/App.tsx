@@ -17,6 +17,7 @@ function App() {
     <Router>
       <ThemeProvider>
         <div className="min-h-screen bg-background">
+          <TopNav />
           <Routes>
             <Route path="/auth" element={<Auth />} />
             <Route path="/accept-invitation" element={<AcceptInvitation />} />
@@ -24,7 +25,6 @@ function App() {
               path="/"
               element={
                 <PrivateRoute>
-                  <TopNav />
                   <Outlet />
                 </PrivateRoute>
               }
