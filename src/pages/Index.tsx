@@ -14,35 +14,58 @@ export default function Index() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    fetchBooks();
-  }, []);
+    const checkAuthAndFetchBooks = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (!session) {
+          navigate("/auth");
+          return;
+        }
 
-  const fetchBooks = async () => {
-    try {
-      const { data, error } = await supabase
-        .from("books")
-        .select("*")
-        .order("created_at", { ascending: false });
+        const { data, error } = await supabase
+          .from("books")
+          .select("*")
+          .order("created_at", { ascending: false });
 
-      if (error) throw error;
-      setBooks(data || []);
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error fetching books",
-        description: error.message,
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
+        if (error) {
+          console.error("Error fetching books:", error);
+          throw error;
+        }
+
+        setBooks(data || []);
+      } catch (error: any) {
+        console.error("Detailed error:", error);
+        toast({
+          variant: "destructive",
+          title: "Error fetching books",
+          description: error.message,
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    checkAuthAndFetchBooks();
+  }, [navigate, toast]);
 
   const handleCreateBook = () => {
     navigate("/book/new");
   };
 
   if (loading) {
-    return <div>Loading...</div>;
+    return (
+      <div className="container mx-auto p-6">
+        <div className="animate-pulse space-y-6">
+          <div className="h-8 w-48 bg-muted rounded"></div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="aspect-[3/4] bg-muted rounded"></div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
   }
 
   const publishedBooks = books.filter((book) => book.is_public);
