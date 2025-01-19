@@ -176,6 +176,7 @@ export type Database = {
           old_content: string | null
           owner_id: string | null
           page_index: number | null
+          page_type: string
           title: string | null
           updated_at: string | null
         }
@@ -191,6 +192,7 @@ export type Database = {
           old_content?: string | null
           owner_id?: string | null
           page_index?: number | null
+          page_type?: string
           title?: string | null
           updated_at?: string | null
         }
@@ -206,6 +208,7 @@ export type Database = {
           old_content?: string | null
           owner_id?: string | null
           page_index?: number | null
+          page_type?: string
           title?: string | null
           updated_at?: string | null
         }
@@ -365,6 +368,7 @@ export type Database = {
           old_content: string | null
           owner_id: string | null
           page_index: number | null
+          page_type: string
           title: string | null
           updated_at: string | null
         }[]

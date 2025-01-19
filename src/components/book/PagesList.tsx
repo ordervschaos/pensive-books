@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { FilePlus, GripVertical, Move, LayoutList, LayoutGrid, Trash2 } from "lucide-react";
+import { FilePlus, GripVertical, Move, LayoutList, LayoutGrid, Trash2, Image, Type, Section } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect } from "react";
@@ -21,6 +21,12 @@ import {
   useSortable,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface Page {
   id: number;
@@ -28,6 +34,7 @@ interface Page {
   updated_at: string;
   title: string;
   html_content?: string;
+  page_type: 'text' | 'image' | 'section';
 }
 
 interface PagesListProps {
@@ -215,7 +222,7 @@ export const PagesList = ({ pages, bookId, isReorderMode = false }: PagesListPro
     }
   };
 
-  const createNewPage = async () => {
+  const createNewPage = async (pageType: 'text' | 'image' | 'section' = 'text') => {
     try {
       const maxPageIndex = Math.max(...items.map(p => p.page_index), -1);
       
@@ -225,7 +232,8 @@ export const PagesList = ({ pages, bookId, isReorderMode = false }: PagesListPro
           book_id: bookId,
           page_index: maxPageIndex + 1,
           content: {},
-          html_content: ''
+          html_content: '',
+          page_type: pageType
         })
         .select()
         .single();
@@ -235,7 +243,7 @@ export const PagesList = ({ pages, bookId, isReorderMode = false }: PagesListPro
       navigate(`/book/${bookId}/page/${newPage.id}`);
 
       toast({
-        title: "Page created",
+        title: `${pageType.charAt(0).toUpperCase() + pageType.slice(1)} page created`,
         description: "Your new page has been created"
       });
     } catch (error: any) {
@@ -326,14 +334,27 @@ export const PagesList = ({ pages, bookId, isReorderMode = false }: PagesListPro
             </Button>
           </div>
 
-          <Button 
-            onClick={createNewPage}
-            variant="outline"
-            size="icon"
-            className="rounded-full"
-          >
-            <FilePlus className="h-4 w-4" />
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="icon" className="rounded-full">
+                <FilePlus className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => createNewPage('text')}>
+                <Type className="h-4 w-4 mr-2" />
+                Text Page
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => createNewPage('image')}>
+                <Image className="h-4 w-4 mr-2" />
+                Image Page
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => createNewPage('section')}>
+                <Section className="h-4 w-4 mr-2" />
+                Section Page
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
         {items.length === 0 ? (
