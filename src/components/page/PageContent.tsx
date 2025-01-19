@@ -1,10 +1,9 @@
 import { useState, useCallback } from "react";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Eye, Pencil } from "lucide-react";
-import { TipTapEditor } from "@/components/editor/TipTapEditor";
-import { Input } from "@/components/ui/input";
 import { debounce } from "lodash";
+import { PageHeader } from "./PageHeader";
+import { SectionPageContent } from "./SectionPageContent";
+import { TextPageContent } from "./TextPageContent";
 
 interface PageContentProps {
   content: string;
@@ -14,7 +13,7 @@ interface PageContentProps {
   pageType?: 'text' | 'section';
 }
 
-export const PageContent = ({ content, title, onSave, saving, pageType = 'text' }: PageContentProps) => {
+export const PageContent = ({ content, title, onSave, pageType = 'text' }: PageContentProps) => {
   const [isEditing, setIsEditing] = useState(!content);
   const [currentContent, setCurrentContent] = useState(content || '');
   const [currentTitle, setCurrentTitle] = useState(title || '');
@@ -59,63 +58,25 @@ export const PageContent = ({ content, title, onSave, saving, pageType = 'text' 
   return (
     <Card className="flex-1 flex flex-col bg-background border">
       <CardContent className="p-0 flex-1 flex flex-col">
-        <div className="flex justify-between items-center p-2 border-b">
-          {isEditing ? (
-            <Input
-              id="page-title"
-              value={currentTitle}
-              onChange={handleTitleChange}
-              placeholder="Untitled"
-              className="text-lg font-semibold border-none focus-visible:ring-0 max-w-md px-2 bg-background"
-            />
-          ) : (
-            <h2 className="text-lg font-semibold px-2">
-              {currentTitle || 'Untitled'}
-            </h2>
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setIsEditing(!isEditing)}
-            className="ml-auto"
-          >
-            {isEditing ? (
-              <>
-                <Eye className="mr-2 h-4 w-4" />
-                Preview
-              </>
-            ) : (
-              <>
-                <Pencil className="mr-2 h-4 w-4" />
-                Edit
-              </>
-            )}
-          </Button>
-        </div>
+        <PageHeader
+          title={currentTitle}
+          isEditing={isEditing}
+          onTitleChange={handleTitleChange}
+          onToggleEdit={() => setIsEditing(!isEditing)}
+        />
         
         {pageType === 'section' ? (
-          <div className="flex-1 flex items-center justify-center">
-            {isEditing ? (
-              <Input
-                value={currentTitle}
-                onChange={handleTitleChange}
-                placeholder="Untitled Section"
-                className="text-4xl font-bold text-center py-8 border-none focus-visible:ring-0 bg-transparent w-auto"
-              />
-            ) : (
-              <h1 className="text-4xl font-bold text-center py-8">
-                {currentTitle || 'Untitled Section'}
-              </h1>
-            )}
-          </div>
+          <SectionPageContent
+            title={currentTitle}
+            isEditing={isEditing}
+            onTitleChange={handleTitleChange}
+          />
         ) : (
-          <div className="flex-1">
-            <TipTapEditor 
-              content={currentContent} 
-              onChange={handleContentChange}
-              editable={isEditing}
-            />
-          </div>
+          <TextPageContent
+            content={currentContent}
+            isEditing={isEditing}
+            onChange={handleContentChange}
+          />
         )}
       </CardContent>
     </Card>
