@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PlusCircle, Globe, Lock } from "lucide-react";
@@ -58,11 +58,7 @@ const Index = () => {
 
       if (error) throw error;
 
-      setNotebooks([data, ...notebooks]);
-      toast({
-        title: "Notebook created",
-        description: "Your new notebook is ready"
-      });
+      navigate(`/book/${data.id}/edit`);
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -131,15 +127,13 @@ const Index = () => {
                     )}
                   </div>
                 </Card>
-                <div className="mt-3 space-y-2">
-                  {notebook.cover_url && (
-                    <h3 className="font-semibold truncate">
-                      {notebook.name}
-                    </h3>
-                  )}
+                <div className="mt-2">
+                  <h3 className="text-sm text-muted-foreground truncate">
+                    {notebook.name}
+                  </h3>
                   <Badge 
                     variant={notebook.is_public ? "default" : "secondary"}
-                    className="inline-flex items-center"
+                    className="inline-flex items-center mt-1 text-xs"
                   >
                     {notebook.is_public ? (
                       <Globe className="w-3 h-3 mr-1" />

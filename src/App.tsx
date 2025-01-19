@@ -1,21 +1,25 @@
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
-import Index from "./pages/Index";
-import Auth from "./pages/Auth";
-import BookDetails from "./pages/BookDetails";
-import PageView from "./pages/PageView";
+import { Toaster } from "@/components/ui/toaster";
+import Index from "@/pages/Index";
+import Auth from "@/pages/Auth";
+import BookDetails from "@/pages/BookDetails";
+import BookEdit from "@/pages/BookEdit";
+import PageView from "@/pages/PageView";
 
 function App() {
   return (
-    <ThemeProvider defaultTheme="light">
+    <ThemeProvider>
       <Router>
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/auth" element={<Auth />} />
           <Route path="/book/:id" element={<BookDetails />} />
+          <Route path="/book/:id/edit" element={<BookEdit />} />
           <Route path="/book/:bookId/page/:pageId" element={<PageView />} />
         </Routes>
       </Router>
+      <Toaster />
     </ThemeProvider>
   );
 }
