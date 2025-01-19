@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { TopNav } from "@/components/TopNav";
 import { useToast } from "@/hooks/use-toast";
@@ -7,8 +7,6 @@ import { PageNavigation } from "@/components/page/PageNavigation";
 import { PageContent } from "@/components/page/PageContent";
 import { PageLoading } from "@/components/page/PageLoading";
 import { PageNotFound } from "@/components/page/PageNotFound";
-import { Maximize2, Search, Settings } from "lucide-react";
-import { Button } from "@/components/ui/button";
 
 const PageView = () => {
   const { bookId, pageId } = useParams();
@@ -163,6 +161,7 @@ const PageView = () => {
             title={page.title || 'Untitled'}
             onSave={handleSave}
             saving={saving}
+            pageType={page.page_type}
           />
         </div>
         <PageNavigation
