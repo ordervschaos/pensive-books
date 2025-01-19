@@ -60,13 +60,19 @@ export const PageContent = ({ content, title, onSave, saving, pageType = 'text' 
     <Card className="flex-1 flex flex-col bg-background border">
       <CardContent className="p-0 flex-1 flex flex-col">
         <div className="flex justify-between items-center p-2 border-b">
-          <Input
-            id="page-title"
-            value={currentTitle}
-            onChange={handleTitleChange}
-            placeholder="Untitled"
-            className="text-lg font-semibold border-none focus-visible:ring-0 max-w-md px-2 bg-background"
-          />
+          {isEditing ? (
+            <Input
+              id="page-title"
+              value={currentTitle}
+              onChange={handleTitleChange}
+              placeholder="Untitled"
+              className="text-lg font-semibold border-none focus-visible:ring-0 max-w-md px-2 bg-background"
+            />
+          ) : (
+            <h2 className="text-lg font-semibold px-2">
+              {currentTitle || 'Untitled'}
+            </h2>
+          )}
           <Button
             variant="ghost"
             size="sm"
@@ -86,18 +92,22 @@ export const PageContent = ({ content, title, onSave, saving, pageType = 'text' 
             )}
           </Button>
         </div>
+        
         {pageType === 'section' ? (
-          <div className={`flex-1 flex items-center justify-center ${!isEditing ? '' : 'hidden'}`}>
-            <h1 className="text-4xl font-bold text-center py-8">{currentTitle || 'Untitled Section'}</h1>
+          <div className="flex-1 flex items-center justify-center">
+            <h1 className="text-4xl font-bold text-center py-8">
+              {currentTitle || 'Untitled Section'}
+            </h1>
           </div>
-        ) : null}
-        <div className={`flex-1 ${pageType === 'section' && !isEditing ? 'hidden' : ''}`}>
-          <TipTapEditor 
-            content={currentContent} 
-            onChange={handleContentChange}
-            editable={isEditing}
-          />
-        </div>
+        ) : (
+          <div className="flex-1">
+            <TipTapEditor 
+              content={currentContent} 
+              onChange={handleContentChange}
+              editable={isEditing}
+            />
+          </div>
+        )}
       </CardContent>
     </Card>
   );
