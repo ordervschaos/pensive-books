@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { TopNav } from "@/components/TopNav";
 import { useToast } from "@/hooks/use-toast";
 import { PageNavigation } from "@/components/page/PageNavigation";
 import { PageContent } from "@/components/page/PageContent";
@@ -132,7 +131,6 @@ const PageView = () => {
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
-        <TopNav />
         <div className="flex-1 container max-w-4xl mx-auto px-4 py-4">
           <PageLoading />
         </div>
@@ -143,7 +141,6 @@ const PageView = () => {
   if (!page || !book) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
-        <TopNav />
         <div className="flex-1 container max-w-4xl mx-auto px-4 py-4">
           <PageNotFound bookId={bookId || ""} />
         </div>
@@ -153,7 +150,6 @@ const PageView = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <TopNav />
       <div className="flex-1 container max-w-5xl mx-auto px-4 py-4 flex flex-col gap-4">
         <div className="flex-1 flex flex-col">
           <PageContent
