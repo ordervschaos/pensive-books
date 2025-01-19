@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { BookInfo } from "@/components/book/BookInfo";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface Book {
   id?: number;
@@ -35,6 +37,8 @@ const BookEdit = () => {
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [accessLevel, setAccessLevel] = useState<"view" | "edit">("view");
 
   useEffect(() => {
     if (id) {
@@ -97,6 +101,36 @@ const BookEdit = () => {
     }
   };
 
+  const handleInvite = async () => {
+    if (!inviteEmail || !id) return;
+
+    try {
+      const { error } = await supabase
+        .from("book_access")
+        .insert({
+          book_id: parseInt(id),
+          user_id: null, // Will be updated when user accepts invitation
+          access_level: accessLevel,
+          created_by: (await supabase.auth.getUser()).data.user?.id
+        });
+
+      if (error) throw error;
+
+      toast({
+        title: "Invitation sent",
+        description: `Invitation sent to ${inviteEmail}`
+      });
+
+      setInviteEmail("");
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error sending invitation",
+        description: error.message
+      });
+    }
+  };
+
   if (loading) {
     return <div>Loading...</div>;
   }
@@ -104,16 +138,66 @@ const BookEdit = () => {
   return (
     <div className="min-h-screen bg-background">
       <div className="container mx-auto p-6">
-        <div className="flex items-center mb-8">
-          <Button 
-            variant="ghost" 
-            size="icon"
-            onClick={() => navigate(-1)}
-            className="mr-4"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <h1 className="text-2xl font-semibold">Edit Book</h1>
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center">
+            <Button 
+              variant="ghost" 
+              size="icon"
+              onClick={() => navigate(-1)}
+              className="mr-4"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <h1 className="text-2xl font-semibold">Edit Book</h1>
+          </div>
+
+          <Sheet>
+            <SheetTrigger asChild>
+              <Button variant="outline">
+                <UserPlus className="mr-2 h-4 w-4" />
+                Invite
+              </Button>
+            </SheetTrigger>
+            <SheetContent>
+              <SheetHeader>
+                <SheetTitle>Invite Collaborator</SheetTitle>
+              </SheetHeader>
+              <div className="space-y-4 mt-4">
+                <div>
+                  <Label htmlFor="email">Email address</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="collaborator@example.com"
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="access">Access level</Label>
+                  <Select
+                    value={accessLevel}
+                    onValueChange={(value: "view" | "edit") => setAccessLevel(value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select access level" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="view">View only</SelectItem>
+                      <SelectItem value="edit">Can edit</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button 
+                  className="w-full" 
+                  onClick={handleInvite}
+                  disabled={!inviteEmail}
+                >
+                  Send Invitation
+                </Button>
+              </div>
+            </SheetContent>
+          </Sheet>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
