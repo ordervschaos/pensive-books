@@ -14,7 +14,8 @@ export const SectionPageContent = ({ title, isEditing, onTitleChange }: SectionP
           value={title}
           onChange={onTitleChange}
           placeholder="Untitled Section"
-          className="text-4xl font-bold text-center py-8 border-none focus-visible:ring-0 bg-transparent w-auto"
+          className="text-4xl font-bold text-center py-8 border-none focus-visible:ring-0 bg-transparent w-auto min-w-[300px]"
+          style={{ fontSize: '2.25rem' }}  // This ensures exact size match
         />
       ) : (
         <h1 className="text-4xl font-bold text-center py-8">
