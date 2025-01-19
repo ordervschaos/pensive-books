@@ -82,7 +82,7 @@ const SortablePageItem = ({ page, bookId, onNavigate, onDelete }: SortablePageIt
         onClick={() => onNavigate(page.id)}
       >
         <div className="flex items-center justify-between">
-          <h3 className="text-lg">
+          <h3 className={`text-lg ${page.page_type === 'section' ? 'font-bold text-xl' : ''}`}>
             {page.title || `Untitled Page ${page.page_index + 1}`}
           </h3>
           <span className="text-sm text-muted-foreground">
@@ -108,7 +108,7 @@ const RegularPageItem = ({ page, bookId, onNavigate, onDelete }: SortablePageIte
         onClick={() => onNavigate(page.id)}
       >
         <div className="flex items-center justify-between">
-          <h3 className="text-lg">
+          <h3 className={`text-lg ${page.page_type === 'section' ? 'font-bold text-xl' : ''}`}>
             {page.title || `Untitled Page ${page.page_index + 1}`}
           </h3>
           <span className="text-sm text-muted-foreground">
@@ -148,7 +148,7 @@ const PageCard = ({ page, bookId, onNavigate, onDelete }: SortablePageItemProps)
     >
       <CardContent className="p-6 space-y-4" onClick={() => onNavigate(page.id)}>
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-medium">
+          <h3 className={`text-lg ${page.page_type === 'section' ? 'font-bold text-xl' : 'font-medium'}`}>
             {page.title || `Untitled Page ${page.page_index + 1}`}
           </h3>
           <span className="text-sm text-muted-foreground">
