@@ -23,6 +23,7 @@ export default function Index() {
           return;
         }
 
+        console.log("Fetching books for user:", session.user.id);
         const { data, error } = await supabase
           .from("books")
           .select("*")
@@ -33,6 +34,7 @@ export default function Index() {
           throw error;
         }
 
+        console.log("Books fetched successfully:", data);
         setBooks(data || []);
       } catch (error: any) {
         console.error("Detailed error:", error);
