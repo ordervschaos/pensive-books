@@ -58,12 +58,14 @@ export const PageContent = ({ content, title, onSave, pageType = 'text' }: PageC
   return (
     <Card className="flex-1 flex flex-col bg-background border">
       <CardContent className="p-0 flex-1 flex flex-col">
-        <PageHeader
-          title={currentTitle}
-          isEditing={isEditing}
-          onTitleChange={handleTitleChange}
-          onToggleEdit={() => setIsEditing(!isEditing)}
-        />
+        {pageType !== 'section' && (
+          <PageHeader
+            title={currentTitle}
+            isEditing={isEditing}
+            onTitleChange={handleTitleChange}
+            onToggleEdit={() => setIsEditing(!isEditing)}
+          />
+        )}
         
         {pageType === 'section' ? (
           <SectionPageContent
