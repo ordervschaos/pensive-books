@@ -45,15 +45,12 @@ export default function Index() {
     return <div>Loading...</div>;
   }
 
-  return (
-    <div className="container mx-auto p-6">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">Your Books</h1>
-        <Button onClick={handleCreateBook}>
-          <Plus className="mr-2 h-4 w-4" /> New notebook
-        </Button>
-      </div>
+  const publishedBooks = books.filter((book) => book.is_public);
+  const unpublishedBooks = books.filter((book) => !book.is_public);
 
+  const BookGrid = ({ books, title }: { books: any[], title: string }) => (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-semibold">{title}</h2>
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
         {books.map((book) => (
           <div key={book.id} className="flex flex-col">
@@ -75,7 +72,7 @@ export default function Index() {
                 </div>
               )}
             </Card>
-            <div className="mt-2 space-y-1">
+            <div className="mt-2 space-y-1 text-center">
               <h3 className="text-sm text-muted-foreground font-medium truncate">
                 {book.name}
               </h3>
@@ -87,6 +84,27 @@ export default function Index() {
             </div>
           </div>
         ))}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="container mx-auto p-6">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold">Your Books</h1>
+        <Button onClick={handleCreateBook}>
+          <Plus className="mr-2 h-4 w-4" /> New notebook
+        </Button>
+      </div>
+
+      <div className="space-y-12">
+        {publishedBooks.length > 0 && (
+          <BookGrid books={publishedBooks} title="Published Books" />
+        )}
+        <BookGrid 
+          books={unpublishedBooks} 
+          title={publishedBooks.length > 0 ? "Other Books" : "All Books"} 
+        />
       </div>
     </div>
   );
