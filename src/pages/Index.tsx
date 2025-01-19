@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PlusCircle, Globe, Lock } from "lucide-react";
@@ -112,43 +112,32 @@ const Index = () => {
             {notebooks.map((notebook) => (
               <div key={notebook.id} className="flex flex-col">
                 <Card 
-                  className="hover:shadow-lg transition-shadow cursor-pointer overflow-hidden h-[280px]"
+                  className="hover:shadow-lg transition-shadow cursor-pointer overflow-hidden"
                   onClick={() => navigate(`/book/${notebook.id}`)}
                 >
-                  {notebook.cover_url ? (
-                    <div className="w-full h-full relative">
+                  <div className="aspect-[3/4]">
+                    {notebook.cover_url ? (
                       <img 
                         src={notebook.cover_url} 
                         alt={notebook.name}
                         className="w-full h-full object-cover"
                       />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end">
-                        <div className="p-4 text-white w-full">
-                          <h3 className="text-lg font-semibold truncate">
-                            {notebook.name}
-                          </h3>
-                          <Badge 
-                            variant={notebook.is_public ? "default" : "secondary"}
-                            className="mt-2"
-                          >
-                            {notebook.is_public ? (
-                              <Globe className="w-3 h-3 mr-1" />
-                            ) : (
-                              <Lock className="w-3 h-3 mr-1" />
-                            )}
-                            {notebook.is_public ? "Published" : "Private"}
-                          </Badge>
-                        </div>
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center bg-muted">
+                        <h3 className="text-xl font-semibold text-center break-words px-4">
+                          {notebook.name}
+                        </h3>
                       </div>
-                    </div>
-                  ) : (
-                    <div className="h-full flex flex-col items-center justify-center p-4 bg-muted">
-                      <h3 className="text-xl font-semibold text-center break-words mb-2">
+                    )}
+                  </div>
+                  {notebook.cover_url && (
+                    <CardContent className="pt-4">
+                      <h3 className="font-semibold truncate mb-2">
                         {notebook.name}
                       </h3>
                       <Badge 
                         variant={notebook.is_public ? "default" : "secondary"}
-                        className="mt-2"
+                        className="inline-flex items-center"
                       >
                         {notebook.is_public ? (
                           <Globe className="w-3 h-3 mr-1" />
@@ -157,7 +146,22 @@ const Index = () => {
                         )}
                         {notebook.is_public ? "Published" : "Private"}
                       </Badge>
-                    </div>
+                    </CardContent>
+                  )}
+                  {!notebook.cover_url && (
+                    <CardContent className="pt-4">
+                      <Badge 
+                        variant={notebook.is_public ? "default" : "secondary"}
+                        className="inline-flex items-center"
+                      >
+                        {notebook.is_public ? (
+                          <Globe className="w-3 h-3 mr-1" />
+                        ) : (
+                          <Lock className="w-3 h-3 mr-1" />
+                        )}
+                        {notebook.is_public ? "Published" : "Private"}
+                      </Badge>
+                    </CardContent>
                   )}
                 </Card>
               </div>
