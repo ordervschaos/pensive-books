@@ -15,7 +15,7 @@ interface PageContentProps {
 }
 
 export const PageContent = ({ content, title, onSave, saving, pageType = 'text' }: PageContentProps) => {
-  const [isEditing, setIsEditing] = useState(!content && pageType === 'text');
+  const [isEditing, setIsEditing] = useState(!content);
   const [currentContent, setCurrentContent] = useState(content || '');
   const [currentTitle, setCurrentTitle] = useState(title || '');
   const [editorJson, setEditorJson] = useState<any>(null);
@@ -67,40 +67,37 @@ export const PageContent = ({ content, title, onSave, saving, pageType = 'text' 
             placeholder="Untitled"
             className="text-lg font-semibold border-none focus-visible:ring-0 max-w-md px-2 bg-background"
           />
-          {pageType === 'text' && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setIsEditing(!isEditing)}
-              className="ml-auto"
-            >
-              {isEditing ? (
-                <>
-                  <Eye className="mr-2 h-4 w-4" />
-                  Preview
-                </>
-              ) : (
-                <>
-                  <Pencil className="mr-2 h-4 w-4" />
-                  Edit
-                </>
-              )}
-            </Button>
-          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsEditing(!isEditing)}
+            className="ml-auto"
+          >
+            {isEditing ? (
+              <>
+                <Eye className="mr-2 h-4 w-4" />
+                Preview
+              </>
+            ) : (
+              <>
+                <Pencil className="mr-2 h-4 w-4" />
+                Edit
+              </>
+            )}
+          </Button>
         </div>
         {pageType === 'section' ? (
-          <div className="flex-1 flex items-center justify-center">
+          <div className={`flex-1 flex items-center justify-center ${!isEditing ? '' : 'hidden'}`}>
             <h1 className="text-4xl font-bold text-center py-8">{currentTitle || 'Untitled Section'}</h1>
           </div>
-        ) : (
-          <div className="flex-1">
-            <TipTapEditor 
-              content={currentContent} 
-              onChange={handleContentChange}
-              editable={isEditing}
-            />
-          </div>
-        )}
+        ) : null}
+        <div className={`flex-1 ${pageType === 'section' && !isEditing ? 'hidden' : ''}`}>
+          <TipTapEditor 
+            content={currentContent} 
+            onChange={handleContentChange}
+            editable={isEditing}
+          />
+        </div>
       </CardContent>
     </Card>
   );
