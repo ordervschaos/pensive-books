@@ -46,7 +46,7 @@ export default function Invitations() {
           created_at,
           book:books (
             name,
-            owner:owner_id (
+            owner:profiles (
               email
             )
           )
@@ -54,7 +54,7 @@ export default function Invitations() {
         .eq('status', 'pending');
 
       if (error) throw error;
-      setInvitations(invitationsData || []);
+      setInvitations(invitationsData as Invitation[] || []);
     } catch (error: any) {
       console.error('Error fetching invitations:', error);
       toast({

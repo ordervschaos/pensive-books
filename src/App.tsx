@@ -10,6 +10,7 @@ import BookDetails from "@/pages/BookDetails";
 import BookEdit from "@/pages/BookEdit";
 import PageView from "@/pages/PageView";
 import Invitations from "@/pages/Invitations";
+import AcceptInvitation from "@/pages/AcceptInvitation";
 
 function App() {
   return (
