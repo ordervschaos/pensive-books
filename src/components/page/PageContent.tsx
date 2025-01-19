@@ -95,9 +95,18 @@ export const PageContent = ({ content, title, onSave, saving, pageType = 'text' 
         
         {pageType === 'section' ? (
           <div className="flex-1 flex items-center justify-center">
-            <h1 className="text-4xl font-bold text-center py-8">
-              {currentTitle || 'Untitled Section'}
-            </h1>
+            {isEditing ? (
+              <Input
+                value={currentTitle}
+                onChange={handleTitleChange}
+                placeholder="Untitled Section"
+                className="text-4xl font-bold text-center py-8 border-none focus-visible:ring-0 bg-transparent w-auto"
+              />
+            ) : (
+              <h1 className="text-4xl font-bold text-center py-8">
+                {currentTitle || 'Untitled Section'}
+              </h1>
+            )}
           </div>
         ) : (
           <div className="flex-1">
