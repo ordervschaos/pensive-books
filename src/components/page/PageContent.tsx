@@ -11,18 +11,17 @@ interface PageContentProps {
   title: string;
   onSave: (html: string, json: any, title?: string) => void;
   saving: boolean;
-  pageType?: 'text' | 'image' | 'section';
+  pageType?: 'text' | 'section';
 }
 
 export const PageContent = ({ content, title, onSave, saving, pageType = 'text' }: PageContentProps) => {
-  const [isEditing, setIsEditing] = useState(!content);
+  const [isEditing, setIsEditing] = useState(!content && pageType === 'text');
   const [currentContent, setCurrentContent] = useState(content || '');
   const [currentTitle, setCurrentTitle] = useState(title || '');
   const [editorJson, setEditorJson] = useState<any>(null);
 
   const debouncedSave = useCallback(
     debounce((html: string, json: any, title: string) => {
-      // Only save with 'Untitled' if the title is empty AND we're not currently editing it
       const finalTitle = title.trim() || (document.activeElement !== document.getElementById('page-title') ? 'Untitled' : '');
       onSave(html, json, finalTitle);
     }, 1000),
@@ -40,7 +39,6 @@ export const PageContent = ({ content, title, onSave, saving, pageType = 'text' 
     setCurrentTitle(newTitle);
     
     if (pageType === 'section') {
-      // For section pages, convert title to TipTap format
       const sectionHtml = `<h1 class="text-4xl font-bold text-center py-8">${newTitle}</h1>`;
       const sectionJson = {
         type: 'doc',
@@ -69,7 +67,7 @@ export const PageContent = ({ content, title, onSave, saving, pageType = 'text' 
             placeholder="Untitled"
             className="text-lg font-semibold border-none focus-visible:ring-0 max-w-md px-2 bg-background"
           />
-          {pageType !== 'section' && (
+          {pageType === 'text' && (
             <Button
               variant="ghost"
               size="sm"

@@ -34,7 +34,7 @@ interface Page {
   updated_at: string;
   title: string;
   html_content?: string;
-  page_type: 'text' | 'image' | 'section';
+  page_type: 'text' | 'section';
 }
 
 interface PagesListProps {
@@ -222,7 +222,7 @@ export const PagesList = ({ pages, bookId, isReorderMode = false }: PagesListPro
     }
   };
 
-  const createNewPage = async (pageType: 'text' | 'image' | 'section' = 'text') => {
+  const createNewPage = async (pageType: 'text' | 'section' = 'text') => {
     try {
       const maxPageIndex = Math.max(...items.map(p => p.page_index), -1);
       
@@ -344,10 +344,6 @@ export const PagesList = ({ pages, bookId, isReorderMode = false }: PagesListPro
               <DropdownMenuItem onClick={() => createNewPage('text')}>
                 <Type className="h-4 w-4 mr-2" />
                 Text Page
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => createNewPage('image')}>
-                <Image className="h-4 w-4 mr-2" />
-                Image Page
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => createNewPage('section')}>
                 <Section className="h-4 w-4 mr-2" />
