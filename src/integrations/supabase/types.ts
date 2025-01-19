@@ -378,6 +378,7 @@ export type Database = {
           page_id: number
           highlighted_content: string
           notebook_id: number
+          title: string
         }[]
       }
       similarity_search: {

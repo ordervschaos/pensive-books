@@ -12,6 +12,7 @@ interface SearchResult {
   page_id: number;
   highlighted_content: string;
   notebook_id: number;
+  title: string;
 }
 
 interface SearchDialogProps {
@@ -99,6 +100,9 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
                   className="p-4 rounded-lg border hover:bg-accent cursor-pointer"
                   onClick={() => navigateToPage(result.page_id)}
                 >
+                  <h3 className="font-medium mb-2">
+                    {result.title || `Untitled Page`}
+                  </h3>
                   <div 
                     className="prose prose-sm dark:prose-invert"
                     dangerouslySetInnerHTML={{ 
