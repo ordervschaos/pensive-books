@@ -34,16 +34,15 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
       console.log("Searching for:", query, "in book:", bookId);
 
       const { data, error } = await supabase
-        .rpc('highlight_search_results_in_page', {
-          search_query: query.split(' ').join(' & ')
+        .rpc('search_book_contents', {
+          search_query: query.split(' ').join(' & '),
+          book_id: parseInt(bookId)
         });
 
       if (error) throw error;
 
-      // Filter results for current book
-      const bookResults = data?.filter(result => result.notebook_id === parseInt(bookId)) || [];
-      console.log("Search results:", bookResults);
-      setResults(bookResults);
+      console.log("Search results:", data);
+      setResults(data || []);
 
     } catch (error: any) {
       console.error("Search error:", error);
@@ -97,14 +96,7 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
                   onClick={() => navigateToPage(result.page_id)}
                 >
                   <div 
-                    className="prose prose-sm dark:prose-invert"
-                    style={{
-                      "& .highlighted_words": {
-                        backgroundColor: "#FEF7CD",
-                        borderRadius: "0.25rem",
-                        padding: "0.125rem 0.25rem",
-                      }
-                    }}
+                    className="prose prose-sm dark:prose-invert [&_.highlighted_words]:bg-[#FEF7CD] [&_.highlighted_words]:rounded [&_.highlighted_words]:px-1"
                     dangerouslySetInnerHTML={{ 
                       __html: result.highlighted_content 
                     }} 

@@ -369,6 +369,17 @@ export type Database = {
           updated_at: string | null
         }[]
       }
+      search_book_contents: {
+        Args: {
+          search_query: string
+          book_id: number
+        }
+        Returns: {
+          page_id: number
+          highlighted_content: string
+          notebook_id: number
+        }[]
+      }
       similarity_search: {
         Args: {
           query_embedding: string
