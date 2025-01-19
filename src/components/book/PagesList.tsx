@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { FilePlus, GripVertical, Move, LayoutList, LayoutGrid, Trash2, Image, Type, Section } from "lucide-react";
+import { FilePlus, GripVertical, Move, LayoutList, LayoutGrid, Trash2, Type, Section } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect } from "react";
@@ -341,12 +341,12 @@ export const PagesList = ({ pages, bookId, isReorderMode = false }: PagesListPro
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => createNewPage('text')}>
-                <Type className="h-4 w-4 mr-2" />
+              <DropdownMenuItem onClick={() => createNewPage('text')} className="gap-2">
+                <Type className="h-4 w-4" />
                 Text Page
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => createNewPage('section')}>
-                <Section className="h-4 w-4 mr-2" />
+              <DropdownMenuItem onClick={() => createNewPage('section')} className="gap-2">
+                <Section className="h-4 w-4" />
                 Section Page
               </DropdownMenuItem>
             </DropdownMenuContent>
