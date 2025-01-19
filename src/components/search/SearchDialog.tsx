@@ -100,7 +100,7 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
                   onClick={() => navigateToPage(result.page_id)}
                 >
                   <div 
-                    className="prose prose-sm dark:prose-invert [&_.highlighted_words]:bg-[#FEF7CD] [&_.highlighted_words]:rounded [&_.highlighted_words]:px-1"
+                    className="prose prose-sm dark:prose-invert"
                     dangerouslySetInnerHTML={{ 
                       __html: result.highlighted_content 
                     }} 
@@ -110,6 +110,23 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
             </div>
           )}
         </ScrollArea>
+
+        <style>
+          {`
+            .highlighted_words {
+              background-color: #FEF08A;
+              color: #1F2937;
+              padding: 0.125rem 0.25rem;
+              border-radius: 0.25rem;
+              margin: 0 -0.125rem;
+            }
+
+            .dark .highlighted_words {
+              background-color: #FBBF24;
+              color: #1F2937;
+            }
+          `}
+        </style>
       </DialogContent>
     </Dialog>
   );
