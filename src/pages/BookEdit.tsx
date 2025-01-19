@@ -15,6 +15,9 @@ interface Book {
   author: string | null;
   is_public: boolean;
   cover_url?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  published_at?: string | null;
 }
 
 const BookEdit = () => {
@@ -25,7 +28,10 @@ const BookEdit = () => {
     name: "",
     subtitle: "",
     author: "",
-    is_public: false
+    is_public: false,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    published_at: null
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -113,7 +119,13 @@ const BookEdit = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           <div>
             <BookInfo 
-              {...book}
+              name={book.name}
+              isPublic={book.is_public}
+              createdAt={book.created_at || new Date().toISOString()}
+              updatedAt={book.updated_at || new Date().toISOString()}
+              publishedAt={book.published_at}
+              bookId={book.id || 0}
+              coverUrl={book.cover_url}
               onTogglePublish={async () => {
                 const newValue = !book.is_public;
                 setBook({ ...book, is_public: newValue });
