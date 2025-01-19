@@ -42,7 +42,7 @@ export default function AcceptInvitation() {
         const { error: updateError } = await supabase
           .from("book_access")
           .update({ user_id: user.id })
-          .eq("book_id", bookId)
+          .eq("book_id", parseInt(bookId))
           .is("user_id", null);
 
         if (updateError) throw updateError;
