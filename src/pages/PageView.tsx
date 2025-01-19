@@ -20,15 +20,25 @@ const PageView = () => {
 
   const fetchPageDetails = async () => {
     try {
+      console.log('Fetching page details:', { bookId, pageId });
+      
       // Fetch current page
       const { data: pageData, error: pageError } = await supabase
         .from("pages")
         .select("*")
         .eq("id", parseInt(pageId || "0"))
         .eq("book_id", parseInt(bookId || "0"))
-        .single();
+        .maybeSingle();
 
       if (pageError) throw pageError;
+      if (!pageData) {
+        console.log('No page found:', { bookId, pageId });
+        setPage(null);
+        setLoading(false);
+        return;
+      }
+      
+      console.log('Page data found:', pageData);
       setPage(pageData);
 
       // Fetch book details
@@ -36,9 +46,17 @@ const PageView = () => {
         .from("books")
         .select("*")
         .eq("id", parseInt(bookId || "0"))
-        .single();
+        .maybeSingle();
 
       if (bookError) throw bookError;
+      if (!bookData) {
+        console.log('No book found:', { bookId });
+        setBook(null);
+        setLoading(false);
+        return;
+      }
+
+      console.log('Book data found:', bookData);
       setBook(bookData);
 
       // Get total pages count and next page
@@ -62,6 +80,7 @@ const PageView = () => {
       }
 
     } catch (error: any) {
+      console.error('Error fetching page details:', error);
       toast({
         variant: "destructive",
         title: "Error fetching page details",
@@ -108,8 +127,8 @@ const PageView = () => {
         .from("pages")
         .select("id")
         .eq("book_id", parseInt(bookId || "0"))
-        .eq("page_index", index-1)
-        .single();
+        .eq("page_index", index)
+        .maybeSingle();
 
       if (error) throw error;
       if (nextPage) {
