@@ -68,8 +68,10 @@ export default function Index() {
                   className="w-full h-full object-cover transition-transform group-hover:scale-105"
                 />
               ) : (
-                <div className="w-full h-full bg-muted flex items-center justify-center">
-                  <span className="text-muted-foreground">No cover</span>
+                <div className="w-full h-full bg-muted flex items-center justify-center p-4">
+                  <h2 className="text-xl md:text-2xl font-semibold text-center text-muted-foreground break-words">
+                    {book.name}
+                  </h2>
                 </div>
               )}
             </Card>
