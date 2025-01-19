@@ -1,14 +1,12 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, UserPlus } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { BookInfo } from "@/components/book/BookInfo";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { BookEditForm } from "@/components/book/BookEditForm";
+import { InviteCollaboratorSheet } from "@/components/book/InviteCollaboratorSheet";
 
 interface Book {
   id?: number;
@@ -22,7 +20,7 @@ interface Book {
   published_at?: string | null;
 }
 
-const BookEdit = () => {
+export default function BookEdit() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -37,8 +35,6 @@ const BookEdit = () => {
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [accessLevel, setAccessLevel] = useState<"view" | "edit">("view");
 
   useEffect(() => {
     if (id) {
@@ -101,36 +97,6 @@ const BookEdit = () => {
     }
   };
 
-  const handleInvite = async () => {
-    if (!inviteEmail || !id) return;
-
-    try {
-      const { error } = await supabase
-        .from("book_access")
-        .insert({
-          book_id: parseInt(id),
-          user_id: null, // Will be updated when user accepts invitation
-          access_level: accessLevel,
-          created_by: (await supabase.auth.getUser()).data.user?.id
-        });
-
-      if (error) throw error;
-
-      toast({
-        title: "Invitation sent",
-        description: `Invitation sent to ${inviteEmail}`
-      });
-
-      setInviteEmail("");
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error sending invitation",
-        description: error.message
-      });
-    }
-  };
-
   if (loading) {
     return <div>Loading...</div>;
   }
@@ -151,53 +117,7 @@ const BookEdit = () => {
             <h1 className="text-2xl font-semibold">Edit Book</h1>
           </div>
 
-          <Sheet>
-            <SheetTrigger asChild>
-              <Button variant="outline">
-                <UserPlus className="mr-2 h-4 w-4" />
-                Invite
-              </Button>
-            </SheetTrigger>
-            <SheetContent>
-              <SheetHeader>
-                <SheetTitle>Invite Collaborator</SheetTitle>
-              </SheetHeader>
-              <div className="space-y-4 mt-4">
-                <div>
-                  <Label htmlFor="email">Email address</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="collaborator@example.com"
-                    value={inviteEmail}
-                    onChange={(e) => setInviteEmail(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="access">Access level</Label>
-                  <Select
-                    value={accessLevel}
-                    onValueChange={(value: "view" | "edit") => setAccessLevel(value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select access level" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="view">View only</SelectItem>
-                      <SelectItem value="edit">Can edit</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button 
-                  className="w-full" 
-                  onClick={handleInvite}
-                  disabled={!inviteEmail}
-                >
-                  Send Invitation
-                </Button>
-              </div>
-            </SheetContent>
-          </Sheet>
+          {id && <InviteCollaboratorSheet bookId={parseInt(id)} />}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -219,47 +139,14 @@ const BookEdit = () => {
             />
           </div>
 
-          <form onSubmit={handleSave} className="space-y-6">
-            <div className="space-y-4">
-              <div>
-                <Label htmlFor="name">Book title</Label>
-                <Input
-                  id="name"
-                  value={book.name}
-                  onChange={(e) => setBook({ ...book, name: e.target.value })}
-                  placeholder="Enter book title"
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="subtitle">Subtitle</Label>
-                <Input
-                  id="subtitle"
-                  value={book.subtitle || ""}
-                  onChange={(e) => setBook({ ...book, subtitle: e.target.value })}
-                  placeholder="Enter subtitle"
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="author">Author</Label>
-                <Input
-                  id="author"
-                  value={book.author || ""}
-                  onChange={(e) => setBook({ ...book, author: e.target.value })}
-                  placeholder="Enter author name"
-                />
-              </div>
-            </div>
-
-            <Button type="submit" disabled={saving}>
-              {saving ? "Saving..." : "Save changes"}
-            </Button>
-          </form>
+          <BookEditForm
+            book={book}
+            onBookChange={setBook}
+            onSave={handleSave}
+            saving={saving}
+          />
         </div>
       </div>
     </div>
   );
-};
-
-export default BookEdit;
+}
