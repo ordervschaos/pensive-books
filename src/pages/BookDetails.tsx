@@ -18,30 +18,62 @@ const BookDetails = () => {
   const [isReorderMode, setIsReorderMode] = useState(false);
 
   useEffect(() => {
-    fetchBookDetails();
+    // Check authentication status before fetching data
+    const checkAuthAndFetch = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        toast({
+          variant: "destructive",
+          title: "Authentication required",
+          description: "Please sign in to view this book"
+        });
+        navigate('/');
+        return;
+      }
+      
+      fetchBookDetails();
+    };
+
+    checkAuthAndFetch();
   }, [id]);
 
   const fetchBookDetails = async () => {
     try {
+      console.log('Fetching book details for ID:', id);
+      
+      // First fetch the book to verify access
       const { data: bookData, error: bookError } = await supabase
         .from("books")
         .select("*")
         .eq("id", parseInt(id || "0"))
         .single();
 
-      if (bookError) throw bookError;
+      if (bookError) {
+        console.error('Error fetching book:', bookError);
+        throw bookError;
+      }
+      
+      console.log('Book data fetched:', bookData);
       setBook(bookData);
 
+      // Then fetch pages for the book
       const { data: pagesData, error: pagesError } = await supabase
         .from("pages")
         .select("*")
-        .eq("book_id", parseInt(id || "0"));
+        .eq("book_id", parseInt(id || "0"))
+        .eq("archived", false)
+        .order('page_index', { ascending: true });
 
-      if (pagesError) throw pagesError;
-      
-      const sortedPages = (pagesData || []).sort((a, b) => a.page_index - b.page_index);
-      setPages(sortedPages);
+      if (pagesError) {
+        console.error('Error fetching pages:', pagesError);
+        throw pagesError;
+      }
+
+      console.log('Pages fetched:', pagesData?.length);
+      setPages(pagesData || []);
     } catch (error: any) {
+      console.error('Error in fetchBookDetails:', error);
       toast({
         variant: "destructive",
         title: "Error fetching book details",
@@ -113,6 +145,7 @@ const BookDetails = () => {
         <TopNav />
         <div className="container mx-auto p-6 text-center">
           <h1 className="text-2xl font-bold mb-4">Book not found</h1>
+          <p className="text-muted-foreground">The book you're looking for doesn't exist or you don't have permission to view it.</p>
         </div>
       </div>
     );
