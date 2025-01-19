@@ -9,6 +9,41 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      book_access: {
+        Row: {
+          access_level: Database["public"]["Enums"]["book_access_level"]
+          book_id: number | null
+          created_at: string | null
+          created_by: string | null
+          id: number
+          user_id: string | null
+        }
+        Insert: {
+          access_level: Database["public"]["Enums"]["book_access_level"]
+          book_id?: number | null
+          created_at?: string | null
+          created_by?: string | null
+          id?: number
+          user_id?: string | null
+        }
+        Update: {
+          access_level?: Database["public"]["Enums"]["book_access_level"]
+          book_id?: number | null
+          created_at?: string | null
+          created_by?: string | null
+          id?: number
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "book_access_book_id_fkey"
+            columns: ["book_id"]
+            isOneToOne: false
+            referencedRelation: "books"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       books: {
         Row: {
           archived: boolean | null
@@ -415,7 +450,7 @@ export type Database = {
       }
     }
     Enums: {
-      [_ in never]: never
+      book_access_level: "view" | "edit"
     }
     CompositeTypes: {
       [_ in never]: never
