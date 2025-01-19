@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -20,14 +20,14 @@ interface SearchDialogProps {
 }
 
 export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
-  const { bookId } = useParams();
+  const { id: bookId } = useParams(); // Changed from bookId to id to match route param
   const { toast } = useToast();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
 
   const handleSearch = async () => {
-    if (!query.trim()) return;
+    if (!query.trim() || !bookId) return;
 
     try {
       setLoading(true);
@@ -41,7 +41,7 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
       if (error) throw error;
 
       // Filter results for current book
-      const bookResults = data?.filter(result => result.notebook_id === parseInt(bookId || "0")) || [];
+      const bookResults = data?.filter(result => result.notebook_id === parseInt(bookId)) || [];
       console.log("Search results:", bookResults);
       setResults(bookResults);
 
@@ -65,6 +65,7 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[600px]">
+        <DialogTitle>Search in current book</DialogTitle>
         <div className="flex gap-2 mb-4">
           <Input
             placeholder="Search in current book..."
