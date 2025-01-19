@@ -110,12 +110,12 @@ const Index = () => {
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
             {notebooks.map((notebook) => (
-              <div key={notebook.id} className="flex flex-col">
+              <div key={notebook.id}>
                 <Card 
-                  className="hover:shadow-lg transition-shadow cursor-pointer overflow-hidden"
+                  className="hover:shadow-lg transition-shadow cursor-pointer"
                   onClick={() => navigate(`/book/${notebook.id}`)}
                 >
-                  <div className="aspect-[3/4]">
+                  <div className="aspect-[3/4] relative">
                     {notebook.cover_url ? (
                       <img 
                         src={notebook.cover_url} 
@@ -130,40 +130,25 @@ const Index = () => {
                       </div>
                     )}
                   </div>
-                  {notebook.cover_url && (
-                    <CardContent className="pt-4">
-                      <h3 className="font-semibold truncate mb-2">
-                        {notebook.name}
-                      </h3>
-                      <Badge 
-                        variant={notebook.is_public ? "default" : "secondary"}
-                        className="inline-flex items-center"
-                      >
-                        {notebook.is_public ? (
-                          <Globe className="w-3 h-3 mr-1" />
-                        ) : (
-                          <Lock className="w-3 h-3 mr-1" />
-                        )}
-                        {notebook.is_public ? "Published" : "Private"}
-                      </Badge>
-                    </CardContent>
-                  )}
-                  {!notebook.cover_url && (
-                    <CardContent className="pt-4">
-                      <Badge 
-                        variant={notebook.is_public ? "default" : "secondary"}
-                        className="inline-flex items-center"
-                      >
-                        {notebook.is_public ? (
-                          <Globe className="w-3 h-3 mr-1" />
-                        ) : (
-                          <Lock className="w-3 h-3 mr-1" />
-                        )}
-                        {notebook.is_public ? "Published" : "Private"}
-                      </Badge>
-                    </CardContent>
-                  )}
                 </Card>
+                <div className="mt-3 space-y-2">
+                  {notebook.cover_url && (
+                    <h3 className="font-semibold truncate">
+                      {notebook.name}
+                    </h3>
+                  )}
+                  <Badge 
+                    variant={notebook.is_public ? "default" : "secondary"}
+                    className="inline-flex items-center"
+                  >
+                    {notebook.is_public ? (
+                      <Globe className="w-3 h-3 mr-1" />
+                    ) : (
+                      <Lock className="w-3 h-3 mr-1" />
+                    )}
+                    {notebook.is_public ? "Published" : "Private"}
+                  </Badge>
+                </div>
               </div>
             ))}
           </div>
