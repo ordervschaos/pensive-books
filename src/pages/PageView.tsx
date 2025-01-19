@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { TopNav } from "@/components/TopNav";
 import { useToast } from "@/hooks/use-toast";
 import { PageNavigation } from "@/components/page/PageNavigation";
 import { PageContent } from "@/components/page/PageContent";
@@ -20,25 +21,15 @@ const PageView = () => {
 
   const fetchPageDetails = async () => {
     try {
-      console.log('Fetching page details:', { bookId, pageId });
-      
       // Fetch current page
       const { data: pageData, error: pageError } = await supabase
         .from("pages")
         .select("*")
         .eq("id", parseInt(pageId || "0"))
         .eq("book_id", parseInt(bookId || "0"))
-        .maybeSingle();
+        .single();
 
       if (pageError) throw pageError;
-      if (!pageData) {
-        console.log('No page found:', { bookId, pageId });
-        setPage(null);
-        setLoading(false);
-        return;
-      }
-      
-      console.log('Page data found:', pageData);
       setPage(pageData);
 
       // Fetch book details
@@ -46,17 +37,9 @@ const PageView = () => {
         .from("books")
         .select("*")
         .eq("id", parseInt(bookId || "0"))
-        .maybeSingle();
+        .single();
 
       if (bookError) throw bookError;
-      if (!bookData) {
-        console.log('No book found:', { bookId });
-        setBook(null);
-        setLoading(false);
-        return;
-      }
-
-      console.log('Book data found:', bookData);
       setBook(bookData);
 
       // Get total pages count and next page
@@ -80,7 +63,6 @@ const PageView = () => {
       }
 
     } catch (error: any) {
-      console.error('Error fetching page details:', error);
       toast({
         variant: "destructive",
         title: "Error fetching page details",
@@ -127,8 +109,8 @@ const PageView = () => {
         .from("pages")
         .select("id")
         .eq("book_id", parseInt(bookId || "0"))
-        .eq("page_index", index)
-        .maybeSingle();
+        .eq("page_index", index-1)
+        .single();
 
       if (error) throw error;
       if (nextPage) {
@@ -150,6 +132,7 @@ const PageView = () => {
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
+        <TopNav />
         <div className="flex-1 container max-w-4xl mx-auto px-4 py-4">
           <PageLoading />
         </div>
@@ -160,6 +143,7 @@ const PageView = () => {
   if (!page || !book) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
+        <TopNav />
         <div className="flex-1 container max-w-4xl mx-auto px-4 py-4">
           <PageNotFound bookId={bookId || ""} />
         </div>
@@ -169,6 +153,7 @@ const PageView = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
+      <TopNav />
       <div className="flex-1 container max-w-5xl mx-auto px-4 py-4 flex flex-col gap-4">
         <div className="flex-1 flex flex-col">
           <PageContent

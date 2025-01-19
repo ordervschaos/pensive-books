@@ -10,14 +10,12 @@ import BookDetails from "@/pages/BookDetails";
 import BookEdit from "@/pages/BookEdit";
 import PageView from "@/pages/PageView";
 import Invitations from "@/pages/Invitations";
-import AcceptInvitation from "@/pages/AcceptInvitation";
 
 function App() {
   return (
     <Router>
       <ThemeProvider>
         <div className="min-h-screen bg-background">
-          <TopNav />
           <Routes>
             <Route path="/auth" element={<Auth />} />
             <Route path="/accept-invitation" element={<AcceptInvitation />} />
@@ -25,6 +23,7 @@ function App() {
               path="/"
               element={
                 <PrivateRoute>
+                  <TopNav />
                   <Outlet />
                 </PrivateRoute>
               }
