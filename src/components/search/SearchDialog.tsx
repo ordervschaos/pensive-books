@@ -20,7 +20,7 @@ interface SearchDialogProps {
 }
 
 export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
-  const { id: bookId } = useParams(); // Changed from bookId to id to match route param
+  const { id: bookId } = useParams();
   const { toast } = useToast();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -97,7 +97,7 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
                   onClick={() => navigateToPage(result.page_id)}
                 >
                   <div 
-                    className="prose prose-sm dark:prose-invert"
+                    className="prose prose-sm dark:prose-invert [&_.highlighted_words]:bg-[#FEF7CD] [&_.highlighted_words]:rounded [&_.highlighted_words]:px-1"
                     dangerouslySetInnerHTML={{ 
                       __html: result.highlighted_content 
                     }} 
