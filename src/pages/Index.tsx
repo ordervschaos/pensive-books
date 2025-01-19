@@ -38,7 +38,7 @@ export default function Index() {
   };
 
   const handleCreateBook = () => {
-    navigate("/book/new/edit");
+    navigate("/book/new");
   };
 
   if (loading) {
