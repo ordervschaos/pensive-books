@@ -13,9 +13,14 @@ export default function AcceptInvitation() {
   useEffect(() => {
     const acceptInvitation = async () => {
       try {
-        const bookId = searchParams.get("bookId");
-        if (!bookId) {
+        const bookIdStr = searchParams.get("bookId");
+        if (!bookIdStr) {
           throw new Error("No book ID provided in the invitation link");
+        }
+
+        const bookId = parseInt(bookIdStr, 10);
+        if (isNaN(bookId)) {
+          throw new Error("Invalid book ID format");
         }
 
         // Get current user
@@ -31,7 +36,26 @@ export default function AcceptInvitation() {
           return;
         }
 
-        // Check if invitation exists
+        // First check if user already has access to this book
+        const { data: existingAccess, error: existingAccessError } = await supabase
+          .from("book_access")
+          .select("*")
+          .eq("book_id", bookId)
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        if (existingAccessError) throw existingAccessError;
+
+        if (existingAccess) {
+          toast({
+            title: "Already have access",
+            description: "You already have access to this book"
+          });
+          navigate(`/book/${bookId}`);
+          return;
+        }
+
+        // Check if there's a pending invitation
         const { data: accessData, error: accessError } = await supabase
           .from("book_access")
           .select("*")
