@@ -35,11 +35,14 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
 
       const { data, error } = await supabase
         .rpc('search_book_contents', {
-          search_query: query.split(' ').join(' & '),
+          search_query: query,
           book_id: parseInt(bookId)
         });
 
-      if (error) throw error;
+      if (error) {
+        console.error("Search error:", error);
+        throw error;
+      }
 
       console.log("Search results:", data);
       setResults(data || []);
@@ -49,8 +52,9 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
       toast({
         variant: "destructive",
         title: "Search failed",
-        description: error.message
+        description: error.message || "Failed to perform search"
       });
+      setResults([]);
     } finally {
       setLoading(false);
     }
