@@ -19,9 +19,11 @@ serve(async (req) => {
   }
 
   try {
-    const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
-    if (!RESEND_API_KEY) {
-      throw new Error('Missing RESEND_API_KEY')
+    const MAILGUN_API_KEY = Deno.env.get('MAILGUN_API_KEY')
+    const MAILGUN_DOMAIN = Deno.env.get('MAILGUN_DOMAIN')
+    
+    if (!MAILGUN_API_KEY || !MAILGUN_DOMAIN) {
+      throw new Error('Missing Mailgun configuration')
     }
 
     const supabaseClient = createClient(
@@ -48,31 +50,34 @@ serve(async (req) => {
 
     if (userError) throw userError
 
-    // Send email using Resend
-    const res = await fetch('https://api.resend.com/emails', {
+    // Send email using Mailgun
+    const mailgunEndpoint = `https://api.mailgun.net/v3/${MAILGUN_DOMAIN}/messages`
+    const formData = new FormData()
+    formData.append('from', `Book Collaboration <mailgun@${MAILGUN_DOMAIN}>`)
+    formData.append('to', email)
+    formData.append('subject', `You've been invited to collaborate on "${book.name}"`)
+    formData.append('html', `
+      <p>Hello,</p>
+      <p>${user?.email} has invited you to collaborate on their book "${book.name}" with ${accessLevel} access.</p>
+      <p>Click the link below to accept the invitation:</p>
+      <p><a href="${Deno.env.get('PUBLIC_SITE_URL')}/accept-invitation?bookId=${bookId}&email=${email}">Accept Invitation</a></p>
+    `)
+
+    const res = await fetch(mailgunEndpoint, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${RESEND_API_KEY}`,
+        'Authorization': `Basic ${btoa(`api:${MAILGUN_API_KEY}`)}`,
       },
-      body: JSON.stringify({
-        from: 'Book Collaboration <onboarding@resend.dev>',
-        to: [email],
-        subject: `You've been invited to collaborate on "${book.name}"`,
-        html: `
-          <p>Hello,</p>
-          <p>${user?.email} has invited you to collaborate on their book "${book.name}" with ${accessLevel} access.</p>
-          <p>Click the link below to accept the invitation:</p>
-          <p><a href="${Deno.env.get('PUBLIC_SITE_URL')}/accept-invitation?bookId=${bookId}&email=${email}">Accept Invitation</a></p>
-        `,
-      }),
+      body: formData,
     })
 
-    const data = await res.json()
-
     if (!res.ok) {
-      throw new Error(data.message)
+      const errorData = await res.json()
+      throw new Error(errorData.message || 'Failed to send email')
     }
+
+    const data = await res.json()
+    console.log('Email sent successfully:', data)
 
     return new Response(JSON.stringify(data), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
