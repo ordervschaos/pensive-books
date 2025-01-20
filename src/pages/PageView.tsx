@@ -21,6 +21,9 @@ const PageView = () => {
 
   const fetchPageDetails = async () => {
     try {
+      setLoading(true);
+      console.log("Fetching page details for pageId:", pageId);
+      
       // Fetch current page
       const { data: pageData, error: pageError } = await supabase
         .from("pages")
@@ -30,6 +33,7 @@ const PageView = () => {
         .single();
 
       if (pageError) throw pageError;
+      console.log("Page data fetched:", pageData);
       setPage(pageData);
 
       // Fetch book details
@@ -40,6 +44,7 @@ const PageView = () => {
         .single();
 
       if (bookError) throw bookError;
+      console.log("Book data fetched:", bookData);
       setBook(bookData);
 
       // Get total pages count and next page
@@ -123,7 +128,9 @@ const PageView = () => {
     }
   };
 
+  // Add dependency on pageId to refetch when it changes
   useEffect(() => {
+    console.log("PageId changed, fetching new page details");
     fetchPageDetails();
   }, [bookId, pageId]);
 
