@@ -21,6 +21,9 @@ const PageView = () => {
 
   const fetchPageDetails = async () => {
     try {
+      setLoading(true);
+      console.log("Fetching page details for pageId:", pageId);
+
       // Fetch current page
       const { data: pageData, error: pageError } = await supabase
         .from("pages")
@@ -63,6 +66,7 @@ const PageView = () => {
       }
 
     } catch (error: any) {
+      console.error("Error fetching page details:", error);
       toast({
         variant: "destructive",
         title: "Error fetching page details",
@@ -105,6 +109,7 @@ const PageView = () => {
 
   const navigateToPage = async (index: number) => {
     try {
+      console.log("Navigating to page index:", index);
       const { data: nextPage, error } = await supabase
         .from("pages")
         .select("id")
@@ -117,6 +122,7 @@ const PageView = () => {
         navigate(`/book/${bookId}/page/${nextPage.id}`);
       }
     } catch (error: any) {
+      console.error("Navigation error:", error);
       toast({
         variant: "destructive",
         title: "Error navigating to page",
@@ -126,7 +132,10 @@ const PageView = () => {
   };
 
   useEffect(() => {
-    fetchPageDetails();
+    if (bookId && pageId) {
+      console.log("Fetching page details due to bookId/pageId change");
+      fetchPageDetails();
+    }
   }, [bookId, pageId]);
 
   if (loading) {
