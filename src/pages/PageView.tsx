@@ -87,11 +87,9 @@ const PageView = () => {
         .eq("id", parseInt(pageId || "0"));
 
       if (error) throw error;
+      
+      // Removed the success toast here
 
-      toast({
-        title: "Page saved",
-        description: "Your changes have been saved successfully"
-      });
     } catch (error: any) {
       toast({
         variant: "destructive",
