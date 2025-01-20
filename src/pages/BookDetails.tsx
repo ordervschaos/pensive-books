@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { TopNav } from "@/components/TopNav";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { BookInfo } from "@/components/book/BookInfo";
@@ -128,6 +129,7 @@ const BookDetails = () => {
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col">
+        <TopNav />
         <div className="container mx-auto p-6 space-y-6">
           <Skeleton className="h-8 w-48" />
           <Skeleton className="h-[200px] w-full" />
@@ -140,6 +142,7 @@ const BookDetails = () => {
   if (!book) {
     return (
       <div className="min-h-screen flex flex-col">
+        <TopNav />
         <div className="container mx-auto p-6 text-center">
           <h1 className="text-2xl font-bold mb-4">Book not found</h1>
           <p className="text-muted-foreground">The book you're looking for doesn't exist or you don't have permission to view it.</p>
@@ -150,6 +153,7 @@ const BookDetails = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
+      <TopNav />
       <div className="container mx-auto p-6">
         <div className="max-w-7xl mx-auto space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">

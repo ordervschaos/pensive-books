@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { TopNav } from "@/components/TopNav";
 import { useToast } from "@/hooks/use-toast";
 import { PageNavigation } from "@/components/page/PageNavigation";
 import { PageContent } from "@/components/page/PageContent";
@@ -9,7 +10,6 @@ import { PageNotFound } from "@/components/page/PageNotFound";
 
 const PageView = () => {
   const { bookId, pageId } = useParams();
-  const navigate = useNavigate();
   const { toast } = useToast();
   const [page, setPage] = useState<any>(null);
   const [book, setBook] = useState<any>(null);
@@ -21,9 +21,6 @@ const PageView = () => {
 
   const fetchPageDetails = async () => {
     try {
-      setLoading(true);
-      console.log("Fetching page details for pageId:", pageId);
-
       // Fetch current page
       const { data: pageData, error: pageError } = await supabase
         .from("pages")
@@ -66,7 +63,6 @@ const PageView = () => {
       }
 
     } catch (error: any) {
-      console.error("Error fetching page details:", error);
       toast({
         variant: "destructive",
         title: "Error fetching page details",
@@ -109,20 +105,18 @@ const PageView = () => {
 
   const navigateToPage = async (index: number) => {
     try {
-      console.log("Navigating to page index:", index);
       const { data: nextPage, error } = await supabase
         .from("pages")
         .select("id")
         .eq("book_id", parseInt(bookId || "0"))
-        .eq("page_index", index)
+        .eq("page_index", index-1)
         .single();
 
       if (error) throw error;
       if (nextPage) {
-        navigate(`/book/${bookId}/page/${nextPage.id}`);
+        window.location.href = `/book/${bookId}/page/${nextPage.id}`;
       }
     } catch (error: any) {
-      console.error("Navigation error:", error);
       toast({
         variant: "destructive",
         title: "Error navigating to page",
@@ -132,15 +126,13 @@ const PageView = () => {
   };
 
   useEffect(() => {
-    if (bookId && pageId) {
-      console.log("Fetching page details due to bookId/pageId change");
-      fetchPageDetails();
-    }
+    fetchPageDetails();
   }, [bookId, pageId]);
 
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
+        <TopNav />
         <div className="flex-1 container max-w-4xl mx-auto px-4 py-4">
           <PageLoading />
         </div>
@@ -151,6 +143,7 @@ const PageView = () => {
   if (!page || !book) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
+        <TopNav />
         <div className="flex-1 container max-w-4xl mx-auto px-4 py-4">
           <PageNotFound bookId={bookId || ""} />
         </div>
@@ -160,6 +153,7 @@ const PageView = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
+      <TopNav />
       <div className="flex-1 container max-w-5xl mx-auto px-4 py-4 flex flex-col gap-4">
         <div className="flex-1 flex flex-col">
           <PageContent
