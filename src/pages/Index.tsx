@@ -27,6 +27,7 @@ export default function Index() {
         const { data, error } = await supabase
           .from("books")
           .select("*")
+          .eq('owner_id', session.user.id)
           .order("created_at", { ascending: false });
 
         if (error) {
