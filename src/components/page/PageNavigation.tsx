@@ -31,7 +31,6 @@ export const PageNavigation = ({
     if (isLastPage) {
       navigate(`/book/${bookId}`);
     } else {
-      // Pass the exact next index without any additional increment
       onNavigate(currentIndex + 1);
     }
   };

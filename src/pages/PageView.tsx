@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { TopNav } from "@/components/TopNav";
 import { useToast } from "@/hooks/use-toast";
 import { PageNavigation } from "@/components/page/PageNavigation";
 import { PageContent } from "@/components/page/PageContent";
@@ -10,6 +9,7 @@ import { PageNotFound } from "@/components/page/PageNotFound";
 
 const PageView = () => {
   const { bookId, pageId } = useParams();
+  const navigate = useNavigate();
   const { toast } = useToast();
   const [page, setPage] = useState<any>(null);
   const [book, setBook] = useState<any>(null);
@@ -109,12 +109,12 @@ const PageView = () => {
         .from("pages")
         .select("id")
         .eq("book_id", parseInt(bookId || "0"))
-        .eq("page_index", index-1)
+        .eq("page_index", index)
         .single();
 
       if (error) throw error;
       if (nextPage) {
-        window.location.href = `/book/${bookId}/page/${nextPage.id}`;
+        navigate(`/book/${bookId}/page/${nextPage.id}`);
       }
     } catch (error: any) {
       toast({
@@ -132,7 +132,6 @@ const PageView = () => {
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
-        <TopNav />
         <div className="flex-1 container max-w-4xl mx-auto px-4 py-4">
           <PageLoading />
         </div>
@@ -143,7 +142,6 @@ const PageView = () => {
   if (!page || !book) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
-        <TopNav />
         <div className="flex-1 container max-w-4xl mx-auto px-4 py-4">
           <PageNotFound bookId={bookId || ""} />
         </div>
@@ -153,7 +151,6 @@ const PageView = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <TopNav />
       <div className="flex-1 container max-w-5xl mx-auto px-4 py-4 flex flex-col gap-4">
         <div className="flex-1 flex flex-col">
           <PageContent
