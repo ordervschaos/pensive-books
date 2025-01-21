@@ -38,7 +38,7 @@ export default function Index() {
           throw ownedError;
         }
 
-        // Fetch books shared with the user
+        // Fetch books shared with the user's email
         const { data: accessData, error: accessError } = await supabase
           .from("book_access")
           .select(`
@@ -46,7 +46,7 @@ export default function Index() {
             access_level,
             books (*)
           `)
-          .eq('user_id', session.user.id)
+          .eq('invited_email', session.user.email)
           .eq('status', 'accepted');
 
         if (accessError) {
