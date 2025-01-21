@@ -207,7 +207,8 @@ export const PagesList = ({ pages, bookId, isReorderMode = false, canEdit = fals
       const { error } = await supabase
         .from('pages')
         .update({ archived: true })
-        .eq('id', pageId);
+        .eq('id', pageId)
+        .eq('book_id', bookId); // Add book_id to the query
 
       if (error) throw error;
 
@@ -290,7 +291,8 @@ export const PagesList = ({ pages, bookId, isReorderMode = false, canEdit = fals
       try {
         const updates = newItems.map((page, index) => ({
           id: page.id,
-          page_index: index
+          page_index: index,
+          book_id: bookId // Add book_id to each update
         }));
 
         const { error } = await supabase
