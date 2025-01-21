@@ -156,7 +156,7 @@ const BookDetails = () => {
         <div className="max-w-7xl mx-auto space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
             <div className="lg:col-span-1">
-              {isOwner && (
+              {(isOwner || canEdit) ? (
                 <div onClick={handleEditClick} className="cursor-pointer">
                   <BookInfo 
                     name={book.name}
@@ -171,6 +171,19 @@ const BookDetails = () => {
                     canEdit={canEdit}
                   />
                 </div>
+              ) : (
+                <BookInfo 
+                  name={book.name}
+                  isPublic={book.is_public}
+                  createdAt={book.created_at}
+                  updatedAt={book.updated_at}
+                  publishedAt={book.published_at}
+                  bookId={book.id}
+                  coverUrl={book.cover_url}
+                  onTogglePublish={togglePublish}
+                  publishing={publishing}
+                  canEdit={false}
+                />
               )}
             </div>
 
