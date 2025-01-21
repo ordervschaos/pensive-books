@@ -29,12 +29,14 @@ export const PageContent = ({ content, title, onSave, pageType = 'text', editabl
   );
 
   const handleContentChange = (html: string, json: any) => {
+    if (!editable) return; // Don't update content if not editable
     setCurrentContent(html);
     setEditorJson(json);
     debouncedSave(html, json, currentTitle);
   };
 
   const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!editable) return; // Don't update title if not editable
     const newTitle = e.target.value;
     setCurrentTitle(newTitle);
     
