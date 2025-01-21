@@ -8,7 +8,7 @@ interface TextPageContentProps {
 
 export const TextPageContent = ({ content, isEditing, onChange }: TextPageContentProps) => {
   return (
-    <div className="flex-1">
+    <div className={`flex-1 ${!isEditing ? 'max-w-3xl mx-auto' : ''}`}>
       <TipTapEditor 
         content={content} 
         onChange={onChange}

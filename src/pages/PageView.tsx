@@ -6,6 +6,7 @@ import { PageNavigation } from "@/components/page/PageNavigation";
 import { PageContent } from "@/components/page/PageContent";
 import { PageLoading } from "@/components/page/PageLoading";
 import { PageNotFound } from "@/components/page/PageNotFound";
+import { useBookPermissions } from "@/hooks/use-book-permissions";
 
 const PageView = () => {
   const { bookId, pageId } = useParams();
@@ -18,6 +19,7 @@ const PageView = () => {
   const [saving, setSaving] = useState(false);
   const [totalPages, setTotalPages] = useState(0);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const { canEdit, loading: loadingPermissions } = useBookPermissions(bookId);
 
   const fetchPageDetails = async () => {
     try {
@@ -79,6 +81,15 @@ const PageView = () => {
   };
 
   const handleSave = async (html: string, content: any, title?: string) => {
+    if (!canEdit) {
+      toast({
+        variant: "destructive",
+        title: "Permission denied",
+        description: "You don't have permission to edit this page"
+      });
+      return;
+    }
+
     try {
       setSaving(true);
       const { error } = await supabase
@@ -92,9 +103,6 @@ const PageView = () => {
         .eq("id", parseInt(pageId || "0"));
 
       if (error) throw error;
-      
-      // Removed the success toast here
-
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -128,13 +136,12 @@ const PageView = () => {
     }
   };
 
-  // Add dependency on pageId to refetch when it changes
   useEffect(() => {
     console.log("PageId changed, fetching new page details");
     fetchPageDetails();
   }, [bookId, pageId]);
 
-  if (loading) {
+  if (loading || loadingPermissions) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
         <div className="flex-1 container max-w-4xl mx-auto px-4 py-4">
@@ -164,6 +171,7 @@ const PageView = () => {
             onSave={handleSave}
             saving={saving}
             pageType={page.page_type}
+            editable={canEdit}
           />
         </div>
         <PageNavigation

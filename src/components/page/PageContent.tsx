@@ -11,10 +11,11 @@ interface PageContentProps {
   onSave: (html: string, json: any, title?: string) => void;
   saving: boolean;
   pageType?: 'text' | 'section';
+  editable?: boolean;
 }
 
-export const PageContent = ({ content, title, onSave, pageType = 'text' }: PageContentProps) => {
-  const [isEditing, setIsEditing] = useState(!content);
+export const PageContent = ({ content, title, onSave, pageType = 'text', editable = false }: PageContentProps) => {
+  const [isEditing, setIsEditing] = useState(!content && editable);
   const [currentContent, setCurrentContent] = useState(content || '');
   const [currentTitle, setCurrentTitle] = useState(title || '');
   const [editorJson, setEditorJson] = useState<any>(null);
@@ -58,7 +59,7 @@ export const PageContent = ({ content, title, onSave, pageType = 'text' }: PageC
   return (
     <Card className="flex-1 flex flex-col bg-background border">
       <CardContent className="p-0 flex-1 flex flex-col">
-        {pageType !== 'section' && (
+        {pageType !== 'section' && editable && (
           <PageHeader
             title={currentTitle}
             isEditing={isEditing}
@@ -70,13 +71,13 @@ export const PageContent = ({ content, title, onSave, pageType = 'text' }: PageC
         {pageType === 'section' ? (
           <SectionPageContent
             title={currentTitle}
-            isEditing={isEditing}
+            isEditing={isEditing && editable}
             onTitleChange={handleTitleChange}
           />
         ) : (
           <TextPageContent
             content={currentContent}
-            isEditing={isEditing}
+            isEditing={isEditing && editable}
             onChange={handleContentChange}
           />
         )}
