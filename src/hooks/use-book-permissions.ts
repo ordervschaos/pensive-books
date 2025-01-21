@@ -18,7 +18,7 @@ export const useBookPermissions = (bookId: string | undefined) => {
         const { data: book } = await supabase
           .from("books")
           .select("owner_id")
-          .eq("id", bookId)
+          .eq("id", parseInt(bookId))
           .single();
 
         const { data: { user } } = await supabase.auth.getUser();
@@ -33,7 +33,7 @@ export const useBookPermissions = (bookId: string | undefined) => {
         const { data: access } = await supabase
           .from("book_access")
           .select("access_level")
-          .eq("book_id", bookId)
+          .eq("book_id", parseInt(bookId))
           .eq("invited_email", user?.email)
           .single();
 

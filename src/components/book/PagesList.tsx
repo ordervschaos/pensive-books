@@ -38,6 +38,13 @@ interface PagesListProps {
   canEdit?: boolean;
 }
 
+interface SortablePageItemProps {
+  page: Page;
+  bookId: number;
+  onNavigate: (pageId: number) => void;
+  onDelete?: (pageId: number) => void;
+}
+
 const SortablePageItem = ({ page, bookId, onNavigate, onDelete }: SortablePageItemProps) => {
   const {
     attributes,
