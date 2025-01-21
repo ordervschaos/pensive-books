@@ -23,11 +23,10 @@ export default function Index() {
           return;
         }
 
-        console.log("Fetching books for user:", session.user.id);
+        console.log("Fetching books...");
         const { data, error } = await supabase
           .from("books")
           .select("*")
-          .eq('owner_id', session.user.id)
           .order("created_at", { ascending: false });
 
         if (error) {
