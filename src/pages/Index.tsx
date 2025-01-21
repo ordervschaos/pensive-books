@@ -38,7 +38,7 @@ export default function Index() {
           throw ownedError;
         }
 
-        // Fetch books shared with the user's email, without status filter
+        // Fetch books shared with the user's email
         const { data: accessData, error: accessError } = await supabase
           .from("book_access")
           .select(`
@@ -53,8 +53,9 @@ export default function Index() {
           throw accessError;
         }
 
+        // Filter out any null books and transform the data
         const sharedBooksData = accessData
-          .filter(access => access.books)
+          .filter(access => access.books !== null)
           .map(access => ({
             ...access.books,
             access_level: access.access_level
@@ -62,7 +63,8 @@ export default function Index() {
 
         console.log("Books fetched successfully:", {
           owned: ownedBooks,
-          shared: sharedBooksData
+          shared: sharedBooksData,
+          rawAccessData: accessData // Log raw access data for debugging
         });
 
         setBooks(ownedBooks || []);
