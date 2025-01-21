@@ -32,7 +32,9 @@ export function InviteCollaboratorSheet({ bookId }: InviteCollaboratorSheetProps
           book_id: bookId,
           user_id: null, // Will be updated when user accepts invitation
           access_level: accessLevel,
-          created_by: (await supabase.auth.getUser()).data.user?.id
+          created_by: (await supabase.auth.getUser()).data.user?.id,
+          invited_email: inviteEmail, // Include the invited email
+          status: 'pending'
         });
 
       if (accessError) throw accessError;
