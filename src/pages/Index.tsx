@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 
 export default function Index() {
   const [books, setBooks] = useState<any[]>([]);
+  const [sharedBooks, setSharedBooks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -24,18 +25,49 @@ export default function Index() {
         }
 
         console.log("Fetching books...");
-        const { data, error } = await supabase
+        
+        // Fetch user's own books
+        const { data: ownedBooks, error: ownedError } = await supabase
           .from("books")
           .select("*")
+          .eq('owner_id', session.user.id)
           .order("created_at", { ascending: false });
 
-        if (error) {
-          console.error("Error fetching books:", error);
-          throw error;
+        if (ownedError) {
+          console.error("Error fetching owned books:", ownedError);
+          throw ownedError;
         }
 
-        console.log("Books fetched successfully:", data);
-        setBooks(data || []);
+        // Fetch books shared with the user
+        const { data: accessData, error: accessError } = await supabase
+          .from("book_access")
+          .select(`
+            book_id,
+            access_level,
+            books (*)
+          `)
+          .eq('user_id', session.user.id)
+          .eq('status', 'accepted');
+
+        if (accessError) {
+          console.error("Error fetching shared books:", accessError);
+          throw accessError;
+        }
+
+        const sharedBooksData = accessData
+          .filter(access => access.books)
+          .map(access => ({
+            ...access.books,
+            access_level: access.access_level
+          }));
+
+        console.log("Books fetched successfully:", {
+          owned: ownedBooks,
+          shared: sharedBooksData
+        });
+
+        setBooks(ownedBooks || []);
+        setSharedBooks(sharedBooksData || []);
       } catch (error: any) {
         console.error("Detailed error:", error);
         toast({
@@ -76,40 +108,51 @@ export default function Index() {
   const BookGrid = ({ books, title }: { books: any[], title: string }) => (
     <div className="space-y-6">
       <h2 className="text-2xl font-semibold">{title}</h2>
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-        {books.map((book) => (
-          <div key={book.id} className="flex flex-col">
-            <Card
-              className="relative cursor-pointer group overflow-hidden aspect-[3/4]"
-              onClick={() => navigate(`/book/${book.id}`)}
-            >
-              {book.cover_url ? (
-                <img
-                  src={book.cover_url}
-                  alt={book.name}
-                  className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                />
-              ) : (
-                <div className="w-full h-full bg-muted flex items-center justify-center p-4">
-                  <h2 className="text-xl md:text-2xl font-semibold text-center text-muted-foreground break-words">
-                    {book.name}
-                  </h2>
+      {books.length === 0 ? (
+        <p className="text-muted-foreground">No books found</p>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+          {books.map((book) => (
+            <div key={book.id} className="flex flex-col">
+              <Card
+                className="relative cursor-pointer group overflow-hidden aspect-[3/4]"
+                onClick={() => navigate(`/book/${book.id}`)}
+              >
+                {book.cover_url ? (
+                  <img
+                    src={book.cover_url}
+                    alt={book.name}
+                    className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                  />
+                ) : (
+                  <div className="w-full h-full bg-muted flex items-center justify-center p-4">
+                    <h2 className="text-xl md:text-2xl font-semibold text-center text-muted-foreground break-words">
+                      {book.name}
+                    </h2>
+                  </div>
+                )}
+              </Card>
+              <div className="mt-2 space-y-1 text-center">
+                <h3 className="text-sm text-muted-foreground font-medium truncate">
+                  {book.name}
+                </h3>
+                <div className="flex gap-2 justify-center">
+                  {book.is_public && (
+                    <Badge variant="secondary" className="text-xs">
+                      Public
+                    </Badge>
+                  )}
+                  {book.access_level && (
+                    <Badge variant="outline" className="text-xs">
+                      {book.access_level} access
+                    </Badge>
+                  )}
                 </div>
-              )}
-            </Card>
-            <div className="mt-2 space-y-1 text-center">
-              <h3 className="text-sm text-muted-foreground font-medium truncate">
-                {book.name}
-              </h3>
-              {book.is_public && (
-                <Badge variant="secondary" className="text-xs">
-                  Public
-                </Badge>
-              )}
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 
@@ -130,6 +173,9 @@ export default function Index() {
           books={unpublishedBooks} 
           title={publishedBooks.length > 0 ? "Other Books" : "All Books"} 
         />
+        {sharedBooks.length > 0 && (
+          <BookGrid books={sharedBooks} title="Shared with me" />
+        )}
       </div>
     </div>
   );
