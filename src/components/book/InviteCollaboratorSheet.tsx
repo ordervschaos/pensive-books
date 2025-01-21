@@ -25,29 +25,9 @@ export function InviteCollaboratorSheet({ bookId }: InviteCollaboratorSheetProps
       setSending(true);
       console.log("Sending invitation to:", inviteEmail, "for book:", bookId);
 
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        throw new Error("You must be logged in to invite collaborators");
-      }
-
-      // First create the book access record
-      const { error: accessError } = await supabase
-        .from("book_access")
-        .insert({
-          book_id: bookId,
-          access_level: accessLevel,
-          created_by: user.id,
-          invited_email: inviteEmail,
-          status: 'pending'
-        });
-
-      if (accessError) {
-        console.error("Error creating book access:", accessError);
-        throw accessError;
-      }
-
-      // Then send the invitation email
-      const { error: emailError } = await supabase.functions.invoke('send-book-invitation', {
+      // Send the invitation through the edge function which will handle both
+      // creating the book access record and sending the email
+      const { error: inviteError } = await supabase.functions.invoke('send-book-invitation', {
         body: {
           email: inviteEmail,
           bookId: bookId,
@@ -55,9 +35,9 @@ export function InviteCollaboratorSheet({ bookId }: InviteCollaboratorSheetProps
         }
       });
 
-      if (emailError) {
-        console.error("Error sending invitation email:", emailError);
-        throw emailError;
+      if (inviteError) {
+        console.error("Error sending invitation:", inviteError);
+        throw inviteError;
       }
 
       toast({
