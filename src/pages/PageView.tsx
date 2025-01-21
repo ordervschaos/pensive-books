@@ -19,22 +19,51 @@ const PageView = () => {
   const [saving, setSaving] = useState(false);
   const [totalPages, setTotalPages] = useState(0);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [error, setError] = useState<string | null>(null);
   const { canEdit, loading: loadingPermissions } = useBookPermissions(bookId);
 
   const fetchPageDetails = async () => {
     try {
       setLoading(true);
+      setError(null);
       console.log("Fetching page details for pageId:", pageId);
       
-      // Fetch current page
-      const { data: pageData, error: pageError } = await supabase
-        .from("pages")
-        .select("*")
-        .eq("id", parseInt(pageId || "0"))
-        .eq("book_id", parseInt(bookId || "0"))
-        .single();
+      // Fetch current page with retry logic
+      let pageData = null;
+      let attempts = 0;
+      const maxAttempts = 3;
+      
+      while (attempts < maxAttempts && !pageData) {
+        try {
+          const { data, error: pageError } = await supabase
+            .from("pages")
+            .select("*")
+            .eq("id", parseInt(pageId || "0"))
+            .eq("book_id", parseInt(bookId || "0"))
+            .single();
 
-      if (pageError) throw pageError;
+          if (pageError) {
+            console.error("Attempt", attempts + 1, "failed:", pageError);
+            attempts++;
+            if (attempts === maxAttempts) throw pageError;
+            await new Promise(resolve => setTimeout(resolve, 1000 * attempts)); // Exponential backoff
+            continue;
+          }
+          
+          pageData = data;
+          break;
+        } catch (err) {
+          console.error("Fetch attempt", attempts + 1, "failed:", err);
+          attempts++;
+          if (attempts === maxAttempts) throw err;
+          await new Promise(resolve => setTimeout(resolve, 1000 * attempts));
+        }
+      }
+
+      if (!pageData) {
+        throw new Error("Could not fetch page data after multiple attempts");
+      }
+
       console.log("Page data fetched:", pageData);
       setPage(pageData);
 
@@ -70,10 +99,12 @@ const PageView = () => {
       }
 
     } catch (error: any) {
+      console.error("Error fetching page details:", error);
+      setError("There was an error loading the page. Please try again.");
       toast({
         variant: "destructive",
-        title: "Error fetching page details",
-        description: error.message
+        title: "Error loading page",
+        description: "Please check your connection and try again"
       });
     } finally {
       setLoading(false);
@@ -81,14 +112,7 @@ const PageView = () => {
   };
 
   const handleSave = async (html: string, content: any, title?: string) => {
-    if (!canEdit) {
-      toast({
-        variant: "destructive",
-        title: "Permission denied",
-        description: "You don't have permission to edit this page"
-      });
-      return;
-    }
+    if (!canEdit) return;
 
     try {
       setSaving(true);
@@ -104,10 +128,11 @@ const PageView = () => {
 
       if (error) throw error;
     } catch (error: any) {
+      console.error("Error saving page:", error);
       toast({
         variant: "destructive",
         title: "Error saving page",
-        description: error.message
+        description: "Please check your connection and try again"
       });
     } finally {
       setSaving(false);
@@ -128,10 +153,11 @@ const PageView = () => {
         navigate(`/book/${bookId}/page/${nextPage.id}`);
       }
     } catch (error: any) {
+      console.error("Error navigating to page:", error);
       toast({
         variant: "destructive",
         title: "Error navigating to page",
-        description: error.message
+        description: "Please try again"
       });
     }
   };
