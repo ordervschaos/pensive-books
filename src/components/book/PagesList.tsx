@@ -35,13 +35,7 @@ interface PagesListProps {
   pages: Page[];
   bookId: number;
   isReorderMode?: boolean;
-}
-
-interface SortablePageItemProps {
-  page: Page;
-  bookId: number;
-  onNavigate: (pageId: number) => void;
-  onDelete?: (pageId: number) => void;
+  canEdit?: boolean;
 }
 
 const SortablePageItem = ({ page, bookId, onNavigate, onDelete }: SortablePageItemProps) => {
@@ -170,7 +164,7 @@ const PageCard = ({ page, bookId, onNavigate, onDelete }: SortablePageItemProps)
   );
 };
 
-export const PagesList = ({ pages, bookId, isReorderMode = false }: PagesListProps) => {
+export const PagesList = ({ pages, bookId, isReorderMode = false, canEdit = false }: PagesListProps) => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [items, setItems] = useState<Page[]>(
@@ -193,6 +187,15 @@ export const PagesList = ({ pages, bookId, isReorderMode = false }: PagesListPro
   );
 
   const handleDeletePage = async (pageId: number) => {
+    if (!canEdit) {
+      toast({
+        variant: "destructive",
+        title: "Permission denied",
+        description: "You don't have permission to delete pages in this book"
+      });
+      return;
+    }
+
     try {
       const { error } = await supabase
         .from('pages')
@@ -217,6 +220,15 @@ export const PagesList = ({ pages, bookId, isReorderMode = false }: PagesListPro
   };
 
   const createNewPage = async (pageType: 'text' | 'section' = 'text') => {
+    if (!canEdit) {
+      toast({
+        variant: "destructive",
+        title: "Permission denied",
+        description: "You don't have permission to create pages in this book"
+      });
+      return;
+    }
+
     try {
       const maxPageIndex = Math.max(...items.map(p => p.page_index), -1);
       
@@ -250,6 +262,15 @@ export const PagesList = ({ pages, bookId, isReorderMode = false }: PagesListPro
   };
 
   const handleDragEnd = async (event: DragEndEvent) => {
+    if (!canEdit) {
+      toast({
+        variant: "destructive",
+        title: "Permission denied",
+        description: "You don't have permission to reorder pages in this book"
+      });
+      return;
+    }
+
     const { active, over } = event;
 
     if (over && active.id !== over.id) {
@@ -303,55 +324,62 @@ export const PagesList = ({ pages, bookId, isReorderMode = false }: PagesListPro
               )}
             </Button>
             
-            <Button
-              onClick={() => {
-                setIsReordering(false);
-                setIsDeleteMode(!isDeleteMode);
-              }}
-              variant={isDeleteMode ? "destructive" : "outline"}
-              size="icon"
-              className="rounded-full"
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
+            {canEdit && (
+              <>
+                <Button
+                  onClick={() => {
+                    setIsReordering(false);
+                    setIsDeleteMode(!isDeleteMode);
+                  }}
+                  variant={isDeleteMode ? "destructive" : "outline"}
+                  size="icon"
+                  className="rounded-full"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
 
-            <Button
-              onClick={() => {
-                setIsDeleteMode(false);
-                setIsReordering(!isReordering);
-              }}
-              variant={isReordering ? "default" : "outline"}
-              size="icon"
-              className="rounded-full"
-            >
-              <Move className="h-4 w-4" />
-            </Button>
+                <Button
+                  onClick={() => {
+                    setIsDeleteMode(false);
+                    setIsReordering(!isReordering);
+                  }}
+                  variant={isReordering ? "default" : "outline"}
+                  size="icon"
+                  className="rounded-full"
+                >
+                  <Move className="h-4 w-4" />
+                </Button>
+              </>
+            )}
           </div>
 
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => createNewPage('text')}
-              className="rounded-full"
-            >
-              <Type className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => createNewPage('section')}
-              className="rounded-full"
-            >
-              <Section className="h-4 w-4" />
-            </Button>
-          </div>
+          {canEdit && (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => createNewPage('text')}
+                className="rounded-full"
+              >
+                <Type className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => createNewPage('section')}
+                className="rounded-full"
+              >
+                <Section className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
         </div>
 
         {items.length === 0 ? (
           <div className="text-center py-12">
             <Type className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
             <p className="text-muted-foreground">No pages yet</p>
+            {canEdit && <p className="text-muted-foreground text-sm">Click the buttons above to add a new page</p>}
           </div>
         ) : (
           <div className={`${viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 gap-4 p-4' : ''}`}>
@@ -383,7 +411,7 @@ export const PagesList = ({ pages, bookId, isReorderMode = false }: PagesListPro
                     page={page}
                     bookId={bookId}
                     onNavigate={(pageId) => navigate(`/book/${bookId}/page/${pageId}`)}
-                    onDelete={isDeleteMode ? handleDeletePage : undefined}
+                    onDelete={isDeleteMode && canEdit ? handleDeletePage : undefined}
                   />
                 ) : (
                   <PageCard
@@ -391,7 +419,7 @@ export const PagesList = ({ pages, bookId, isReorderMode = false }: PagesListPro
                     page={page}
                     bookId={bookId}
                     onNavigate={(pageId) => navigate(`/book/${bookId}/page/${pageId}`)}
-                    onDelete={isDeleteMode ? handleDeletePage : undefined}
+                    onDelete={isDeleteMode && canEdit ? handleDeletePage : undefined}
                   />
                 )
               ))
