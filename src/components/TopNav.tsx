@@ -26,7 +26,11 @@ export function TopNav() {
   const handleLogout = async () => {
     try {
       const { error } = await supabase.auth.signOut();
-      if (error) throw error;
+      
+      // If we get a session_not_found error, we can still proceed with local logout
+      if (error && error.message !== "Session from session_id claim in JWT does not exist") {
+        throw error;
+      }
       
       toast({
         title: "Logged out successfully",
@@ -36,9 +40,14 @@ export function TopNav() {
       navigate("/auth");
     } catch (error) {
       console.error("Logout error:", error);
+      
+      // Even if there's an error, we should still redirect to auth
+      // since the user intended to log out
+      navigate("/auth");
+      
       toast({
         variant: "destructive",
-        title: "Error logging out",
+        title: "Error during logout",
         description: error instanceof Error ? error.message : "An error occurred while logging out"
       });
     }
