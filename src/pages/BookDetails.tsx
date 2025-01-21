@@ -5,6 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { BookInfo } from "@/components/book/BookInfo";
 import { PagesList } from "@/components/book/PagesList";
+import { useBookPermissions } from "@/hooks/use-book-permissions";
 
 const BookDetails = () => {
   const { id } = useParams();
@@ -15,6 +16,7 @@ const BookDetails = () => {
   const [loading, setLoading] = useState(true);
   const [publishing, setPublishing] = useState(false);
   const [isReorderMode, setIsReorderMode] = useState(false);
+  const { canEdit, isOwner, loading: permissionsLoading } = useBookPermissions(id);
 
   useEffect(() => {
     // Check authentication status before fetching data
@@ -154,26 +156,29 @@ const BookDetails = () => {
         <div className="max-w-7xl mx-auto space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
             <div className="lg:col-span-1">
-              <div onClick={handleEditClick} className="cursor-pointer">
-                <BookInfo 
-                  name={book.name}
-                  isPublic={book.is_public}
-                  createdAt={book.created_at}
-                  updatedAt={book.updated_at}
-                  publishedAt={book.published_at}
-                  bookId={book.id}
-                  coverUrl={book.cover_url}
-                  onTogglePublish={togglePublish}
-                  publishing={publishing}
-                />
-              </div>
+              {isOwner && (
+                <div onClick={handleEditClick} className="cursor-pointer">
+                  <BookInfo 
+                    name={book.name}
+                    isPublic={book.is_public}
+                    createdAt={book.created_at}
+                    updatedAt={book.updated_at}
+                    publishedAt={book.published_at}
+                    bookId={book.id}
+                    coverUrl={book.cover_url}
+                    onTogglePublish={togglePublish}
+                    publishing={publishing}
+                    canEdit={canEdit}
+                  />
+                </div>
+              )}
             </div>
 
             <div className="lg:col-span-3">
               <div className="flex flex-col">
                 <h1 
-                  className="text-3xl font-bold cursor-pointer hover:text-blue-600 transition-colors"
-                  onClick={handleEditClick}
+                  className={`text-3xl font-bold ${canEdit ? 'cursor-pointer hover:text-blue-600 transition-colors' : ''}`}
+                  onClick={canEdit ? handleEditClick : undefined}
                 >
                   {book.name}
                 </h1>
@@ -183,6 +188,7 @@ const BookDetails = () => {
                 pages={pages}
                 bookId={parseInt(id || "0")}
                 isReorderMode={isReorderMode}
+                canEdit={canEdit}
               />
             </div>
           </div>

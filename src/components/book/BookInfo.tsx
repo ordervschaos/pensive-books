@@ -20,6 +20,7 @@ interface BookInfoProps {
   coverUrl?: string | null;
   onTogglePublish: () => void;
   publishing: boolean;
+  canEdit?: boolean;
 }
 
 export const BookInfo = ({ 
@@ -27,7 +28,8 @@ export const BookInfo = ({
   bookId,
   coverUrl,
   onTogglePublish,
-  publishing
+  publishing,
+  canEdit = false
 }: BookInfoProps) => {
   const [uploading, setUploading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
@@ -110,7 +112,6 @@ export const BookInfo = ({
     <Card className="bg-white shadow-sm">
       <CardHeader className="space-y-6">
         <div className="space-y-4">
-          {/* Cover image */}
           <div className="w-full aspect-[3/4] relative rounded-lg overflow-hidden bg-blue-100">
             {coverUrl ? (
               <img 
@@ -123,58 +124,55 @@ export const BookInfo = ({
                 <ImageIcon className="w-16 h-16 text-blue-300" />
               </div>
             )}
-            <Dialog open={isOpen} onOpenChange={setIsOpen}>
-              <DialogTrigger asChild>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  className="absolute bottom-4 right-4 bg-white/90 backdrop-blur-sm hover:bg-white/95"
-                  disabled={uploading}
-                >
-                  {uploading ? (
-                    "Updating..."
-                  ) : (
-                    <>
-                      <ImageIcon className="h-4 w-4" />
-                    </>
-                  )}
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Choose Cover Image</DialogTitle>
-                </DialogHeader>
-                <Tabs defaultValue="upload">
-                  <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="upload">Upload</TabsTrigger>
-                    <TabsTrigger value="unsplash">Unsplash</TabsTrigger>
-                  </TabsList>
-                  <TabsContent value="upload" className="space-y-4">
-                    <Input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleCoverUpload}
-                      disabled={uploading}
-                    />
-                  </TabsContent>
-                  <TabsContent value="unsplash">
-                    <UnsplashPicker onSelect={handleUnsplashSelect} />
-                  </TabsContent>
-                </Tabs>
-              </DialogContent>
-            </Dialog>
+            {canEdit && (
+              <Dialog open={isOpen} onOpenChange={setIsOpen}>
+                <DialogTrigger asChild>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="absolute bottom-4 right-4 bg-white/90 backdrop-blur-sm hover:bg-white/95"
+                    disabled={uploading}
+                  >
+                    {uploading ? "Updating..." : <ImageIcon className="h-4 w-4" />}
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Choose Cover Image</DialogTitle>
+                  </DialogHeader>
+                  <Tabs defaultValue="upload">
+                    <TabsList className="grid w-full grid-cols-2">
+                      <TabsTrigger value="upload">Upload</TabsTrigger>
+                      <TabsTrigger value="unsplash">Unsplash</TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="upload" className="space-y-4">
+                      <Input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleCoverUpload}
+                        disabled={uploading}
+                      />
+                    </TabsContent>
+                    <TabsContent value="unsplash">
+                      <UnsplashPicker onSelect={handleUnsplashSelect} />
+                    </TabsContent>
+                  </Tabs>
+                </DialogContent>
+              </Dialog>
+            )}
           </div>
 
-          {/* Publish toggle */}
-          <div className="flex items-center justify-center gap-2">
-            <Lock className="h-4 w-4 text-muted-foreground" />
-            <Switch
-              checked={isPublic}
-              onCheckedChange={onTogglePublish}
-              disabled={publishing}
-            />
-            <Globe className="h-4 w-4 text-muted-foreground" />
-          </div>
+          {canEdit && (
+            <div className="flex items-center justify-center gap-2">
+              <Lock className="h-4 w-4 text-muted-foreground" />
+              <Switch
+                checked={isPublic}
+                onCheckedChange={onTogglePublish}
+                disabled={publishing}
+              />
+              <Globe className="h-4 w-4 text-muted-foreground" />
+            </div>
+          )}
         </div>
       </CardHeader>
     </Card>

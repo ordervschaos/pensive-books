@@ -3,12 +3,14 @@ import { supabase } from "@/integrations/supabase/client";
 
 export const useBookPermissions = (bookId: string | undefined) => {
   const [canEdit, setCanEdit] = useState(false);
+  const [isOwner, setIsOwner] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const checkPermissions = async () => {
       if (!bookId) {
         setCanEdit(false);
+        setIsOwner(false);
         setLoading(false);
         return;
       }
@@ -25,6 +27,7 @@ export const useBookPermissions = (bookId: string | undefined) => {
         
         if (book?.owner_id === user?.id) {
           setCanEdit(true);
+          setIsOwner(true);
           setLoading(false);
           return;
         }
@@ -38,9 +41,11 @@ export const useBookPermissions = (bookId: string | undefined) => {
           .single();
 
         setCanEdit(access?.access_level === 'edit');
+        setIsOwner(false);
       } catch (error) {
         console.error("Error checking permissions:", error);
         setCanEdit(false);
+        setIsOwner(false);
       } finally {
         setLoading(false);
       }
@@ -49,5 +54,5 @@ export const useBookPermissions = (bookId: string | undefined) => {
     checkPermissions();
   }, [bookId]);
 
-  return { canEdit, loading };
+  return { canEdit, isOwner, loading };
 };
