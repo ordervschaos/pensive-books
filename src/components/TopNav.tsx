@@ -1,6 +1,6 @@
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { LogOut, Moon, Sun, ArrowLeft, Search, Settings, Maximize2, Library } from "lucide-react";
+import { LogOut, LogIn, Moon, Sun, ArrowLeft, Search, Settings, Maximize2, Library } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { useTheme } from "@/components/theme/ThemeProvider";
@@ -22,12 +22,26 @@ export function TopNav() {
   const [bookName, setBookName] = useState<string>("");
   const [pageName, setPageName] = useState<string>("");
   const [searchOpen, setSearchOpen] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+
+  useEffect(() => {
+    // Check current auth status
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setIsAuthenticated(!!session);
+    });
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      setIsAuthenticated(!!session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   const handleLogout = async () => {
     try {
       const { error } = await supabase.auth.signOut();
       
-      // If we get a session_not_found error, we can still proceed with local logout
       if (error && error.message !== "Session from session_id claim in JWT does not exist") {
         throw error;
       }
@@ -40,9 +54,6 @@ export function TopNav() {
       navigate("/auth");
     } catch (error) {
       console.error("Logout error:", error);
-      
-      // Even if there's an error, we should still redirect to auth
-      // since the user intended to log out
       navigate("/auth");
       
       toast({
@@ -51,6 +62,10 @@ export function TopNav() {
         description: error instanceof Error ? error.message : "An error occurred while logging out"
       });
     }
+  };
+
+  const handleLogin = () => {
+    navigate("/auth");
   };
 
   useEffect(() => {
@@ -87,7 +102,7 @@ export function TopNav() {
 
     // Set up real-time subscription for page title updates
     const match = location.pathname.match(/\/book\/(\d+)(?:\/page\/(\d+))?/);
-    if (match && match[2]) { // If we have a page ID
+    if (match && match[2]) {
       const pageId = parseInt(match[2]);
       
       const subscription = supabase
@@ -190,9 +205,15 @@ export function TopNav() {
                 <Sun className="h-4 w-4" />
               )}
             </Button>
-            <Button variant="ghost" size="icon" onClick={handleLogout}>
-              <LogOut className="h-4 w-4" />
-            </Button>
+            {isAuthenticated ? (
+              <Button variant="ghost" size="icon" onClick={handleLogout}>
+                <LogOut className="h-4 w-4" />
+              </Button>
+            ) : (
+              <Button variant="ghost" size="icon" onClick={handleLogin}>
+                <LogIn className="h-4 w-4" />
+              </Button>
+            )}
           </div>
         </div>
       </div>

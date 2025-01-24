@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { Toaster } from "@/components/ui/toaster";
 import { PrivateRoute } from "@/components/PrivateRoute";
+import { TopNav } from "@/components/TopNav";
 import Landing from "@/pages/Landing";
 import Auth from "@/pages/Auth";
 import MyBooks from "@/pages/MyBooks";
@@ -17,6 +18,7 @@ function App() {
     <ThemeProvider defaultTheme="light">
       <Router>
         <div className="min-h-screen bg-background">
+          <TopNav />
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/auth" element={<Auth />} />

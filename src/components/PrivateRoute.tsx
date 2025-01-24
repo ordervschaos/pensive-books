@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { Navigate, Outlet } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { TopNav } from "@/components/TopNav";
 
 export const PrivateRoute = () => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
@@ -33,10 +32,5 @@ export const PrivateRoute = () => {
   }
 
   // Render children if authenticated
-  return (
-    <>
-      <TopNav />
-      <Outlet />
-    </>
-  );
+  return <Outlet />;
 };
