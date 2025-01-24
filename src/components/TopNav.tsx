@@ -182,7 +182,9 @@ export function TopNav() {
                 </BreadcrumbList>
               </Breadcrumb>
             ) : (
+              <Link to={`/`}>
               <span className="text-lg font-semibold text-foreground">Pensive</span>
+              </Link>
             )}
           </div>
 
