@@ -1,0 +1,99 @@
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { TopNav } from "@/components/TopNav";
+
+export default function Library() {
+  const [books, setBooks] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const fetchPublishedBooks = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("books")
+          .select("*")
+          .eq("is_public", true)
+          .order("created_at", { ascending: false });
+
+        if (error) throw error;
+        setBooks(data || []);
+      } catch (error: any) {
+        console.error("Error fetching published books:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchPublishedBooks();
+  }, []);
+
+  if (loading) {
+    return (
+      <>
+        <TopNav />
+        <div className="container mx-auto p-6">
+          <div className="animate-pulse space-y-6">
+            <div className="h-8 w-48 bg-muted rounded"></div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="aspect-[3/4] bg-muted rounded"></div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <TopNav />
+      <div className="container mx-auto p-6">
+        <h1 className="text-3xl font-bold mb-6">Public Library</h1>
+        
+        {books.length === 0 ? (
+          <p className="text-muted-foreground">No published books found</p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+            {books.map((book) => (
+              <div key={book.id} className="flex flex-col">
+                <Card
+                  className="relative cursor-pointer group overflow-hidden aspect-[3/4]"
+                  onClick={() => navigate(`/book/${book.id}`)}
+                >
+                  {book.cover_url ? (
+                    <img
+                      src={book.cover_url}
+                      alt={book.name}
+                      className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                    />
+                  ) : (
+                    <div className="w-full h-full bg-muted flex items-center justify-center p-4">
+                      <h2 className="text-xl md:text-2xl font-semibold text-center text-muted-foreground break-words">
+                        {book.name}
+                      </h2>
+                    </div>
+                  )}
+                </Card>
+                <div className="mt-2 space-y-1 text-center">
+                  <h3 className="text-sm text-muted-foreground font-medium truncate">
+                    {book.name}
+                  </h3>
+                  {book.author && (
+                    <p className="text-xs text-muted-foreground">
+                      by {book.author}
+                    </p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
