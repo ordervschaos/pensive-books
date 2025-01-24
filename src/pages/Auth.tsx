@@ -21,10 +21,18 @@ export default function Auth() {
   const { toast } = useToast();
 
   useEffect(() => {
+    // Check if user is already logged in
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        console.log("User already logged in, redirecting to /my-books");
+        navigate("/my-books");
+      }
+    });
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "SIGNED_IN") {
-        // If there's a return URL, navigate to it, otherwise go to home
-        navigate(returnTo || "/");
+        // If there's a return URL, navigate to it, otherwise go to /my-books
+        navigate(returnTo || "/my-books");
       }
     });
 
