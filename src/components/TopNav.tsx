@@ -40,28 +40,12 @@ export function TopNav() {
 
   const handleLogout = async () => {
     try {
-      console.log("Attempting to sign out...");
       const { error } = await supabase.auth.signOut();
       
-      // If there's an error but it's just that the session wasn't found,
-      // treat it as a successful logout since the user is effectively signed out
-      if (error) {
-        console.log("Logout error:", error);
-        if (error.message === "Session from session_id claim in JWT does not exist") {
-          // Session already gone, just redirect to auth
-          setIsAuthenticated(false);
-          navigate("/auth");
-          toast({
-            title: "Logged out successfully",
-            description: "You have been logged out of your account"
-          });
-          return;
-        }
-        // For any other error, throw it to be caught below
+      if (error && error.message !== "Session from session_id claim in JWT does not exist") {
         throw error;
       }
       
-      setIsAuthenticated(false);
       toast({
         title: "Logged out successfully",
         description: "You have been logged out of your account"
@@ -70,9 +54,6 @@ export function TopNav() {
       navigate("/auth");
     } catch (error) {
       console.error("Logout error:", error);
-      
-      // Still navigate to auth page since the user should be logged out
-      setIsAuthenticated(false);
       navigate("/auth");
       
       toast({

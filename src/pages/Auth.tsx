@@ -27,10 +27,8 @@ export default function Auth() {
         
         if (session) {
           console.log("User is authenticated, redirecting to:", returnTo);
-          const redirectPath = window.location.hostname === "www.pensive.me" 
-            ? returnTo.replace("/auth", "") 
-            : returnTo;
-          navigate(redirectPath, { replace: true });
+          // Use replace to avoid adding to history stack
+          navigate(returnTo, { replace: true });
         }
       } catch (error) {
         console.error("Error checking auth state:", error);
@@ -45,10 +43,8 @@ export default function Auth() {
       
       if (event === 'SIGNED_IN' && session) {
         console.log("User signed in, redirecting to:", returnTo);
-        const redirectPath = window.location.hostname === "www.pensive.me" 
-          ? returnTo.replace("/auth", "") 
-          : returnTo;
-        navigate(redirectPath, { replace: true });
+        // Use replace to avoid adding to history stack
+        navigate(returnTo, { replace: true });
       }
     });
 
@@ -60,14 +56,10 @@ export default function Auth() {
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const redirectTo = window.location.hostname === "www.pensive.me"
-        ? `${window.location.origin}/auth/callback`
-        : `${window.location.origin}/auth/callback`;
-
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: {
-          emailRedirectTo: redirectTo,
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
           data: {
             returnTo: returnTo,
           }

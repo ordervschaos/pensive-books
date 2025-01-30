@@ -15,7 +15,7 @@ import AcceptInvitation from "@/pages/AcceptInvitation";
 
 function App() {
   // Get the basename from the current URL
-  const basename = window.location.hostname === "www.pensive.me" ? "/auth" : "/";
+  const basename = window.location.hostname === "www.pensive.me" ? "" : "/";
 
   return (
     <ThemeProvider defaultTheme="light">
@@ -24,7 +24,7 @@ function App() {
         <Routes>
           <Route path="/" element={<Landing />} />
           <Route path="/auth" element={<Auth />} />
-          <Route path="/callback" element={<Auth />} />
+          <Route path="/auth/callback" element={<Auth />} />
           <Route path="/library" element={<Library />} />
           <Route path="/accept-invitation" element={<AcceptInvitation />} />
           
