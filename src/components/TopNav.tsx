@@ -42,6 +42,7 @@ export function TopNav() {
     try {
       const { error } = await supabase.auth.signOut();
       
+      // Handle the specific session not found error gracefully
       if (error && error.message !== "Session from session_id claim in JWT does not exist") {
         throw error;
       }
