@@ -14,6 +14,18 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 
+interface PageChangePayload {
+  new: {
+    title: string;
+    [key: string]: any;
+  };
+  old: {
+    title: string;
+    [key: string]: any;
+  };
+  [key: string]: any;
+}
+
 export function TopNav() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -40,27 +52,35 @@ export function TopNav() {
 
   const handleLogout = async () => {
     try {
-      const { error } = await supabase.auth.signOut();
-      
-      if (error && error.message !== "Session from session_id claim in JWT does not exist") {
-        throw error;
+      // Clear local state first
+      setIsAuthenticated(false);
+
+      // Try local signout
+      try {
+        await supabase.auth.signOut();
+      } catch (e) {
+        console.warn("Signout failed:", e);
+      }
+
+      // Clear any remaining auth state immediately
+      const key = Object.keys(localStorage).find(key => key.startsWith('sb-') && key.endsWith('-auth-token'));
+      if (key) {
+        localStorage.removeItem(key);
       }
       
-      toast({
-        title: "Logged out successfully",
-        description: "You have been logged out of your account"
-      });
-      
-      navigate("/auth");
+      // Force reload and redirect to auth page
+      window.location.href = '/auth';
+
     } catch (error) {
       console.error("Logout error:", error);
-      navigate("/auth");
       
-      toast({
-        variant: "destructive",
-        title: "Error during logout",
-        description: error instanceof Error ? error.message : "An error occurred while logging out"
-      });
+      // Force clear local storage and reload on error
+      const key = Object.keys(localStorage).find(key => key.startsWith('sb-') && key.endsWith('-auth-token'));
+      if (key) {
+        localStorage.removeItem(key);
+      }
+      
+      window.location.href = '/auth';
     }
   };
 
@@ -115,7 +135,7 @@ export function TopNav() {
             table: 'pages',
             filter: `id=eq.${pageId}`
           },
-          (payload: any) => {
+          (payload: PageChangePayload) => {
             if (payload.new.title) {
               setPageName(payload.new.title);
             }
