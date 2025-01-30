@@ -14,9 +14,12 @@ import PageView from "@/pages/PageView";
 import AcceptInvitation from "@/pages/AcceptInvitation";
 
 function App() {
+  // Get the basename from the current URL
+  const basename = window.location.hostname === "www.pensive.me" ? "" : "/";
+
   return (
     <ThemeProvider defaultTheme="light">
-      <Router>
+      <Router basename={basename}>
         <TopNav />
         <Routes>
           <Route path="/" element={<Landing />} />
