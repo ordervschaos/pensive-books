@@ -2,7 +2,7 @@ import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { Toaster } from "@/components/ui/toaster";
 import { TopNav } from "@/components/TopNav";
-import PrivateRoute from "@/components/PrivateRoute";
+import { PrivateRoute } from "@/components/PrivateRoute";
 import Landing from "@/pages/Landing";
 import Auth from "@/pages/Auth";
 import Library from "@/pages/Library";
@@ -15,7 +15,7 @@ import AcceptInvitation from "@/pages/AcceptInvitation";
 
 function App() {
   return (
-    <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme">
+    <ThemeProvider defaultTheme="light">
       <Router>
         <TopNav />
         <Routes>
