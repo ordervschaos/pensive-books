@@ -1,8 +1,12 @@
 import { useEffect, useState } from "react";
-import { Navigate, Outlet } from "react-router-dom";
+import { Navigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 
-export const PrivateRoute = () => {
+interface PrivateRouteProps {
+  children: React.ReactNode;
+}
+
+export const PrivateRoute = ({ children }: PrivateRouteProps) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -32,5 +36,5 @@ export const PrivateRoute = () => {
   }
 
   // Render children if authenticated
-  return <Outlet />;
+  return <>{children}</>;
 };
