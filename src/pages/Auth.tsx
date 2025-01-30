@@ -15,32 +15,41 @@ export default function Auth() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
-  const returnTo = searchParams.get("returnTo");
+  const returnTo = location.state?.returnTo || searchParams.get("returnTo") || "/my-books";
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
   const [showOtpInput, setShowOtpInput] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
-    // Check if user is already logged in
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        console.log("User already logged in, redirecting to /my-books");
-        navigate("/my-books");
+    const handleAuthChange = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        console.log("Current session:", session);
+        
+        if (session) {
+          console.log("User is authenticated, redirecting to:", returnTo);
+          navigate(returnTo, { replace: true });
+        }
+      } catch (error) {
+        console.error("Error checking auth state:", error);
       }
-    });
+    };
 
-    // Listen for auth state changes
+    handleAuthChange();
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log("Auth state change event:", event);
-      if (event === "SIGNED_IN" && session) {
-        console.log("User signed in, redirecting to /my-books");
-        navigate("/my-books", { replace: true });
+      console.log("Auth state change:", event, session);
+      if (event === 'SIGNED_IN' && session) {
+        console.log("User signed in, redirecting to:", returnTo);
+        navigate(returnTo, { replace: true });
       }
     });
 
-    return () => subscription.unsubscribe();
-  }, [navigate]);
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [navigate, returnTo]);
 
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -48,7 +57,7 @@ export default function Auth() {
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: {
-          emailRedirectTo: `${window.location.origin}/my-books`,
+          emailRedirectTo: `${window.location.origin}${returnTo}`,
         },
       });
 
@@ -59,12 +68,12 @@ export default function Auth() {
         title: "Check your email",
         description: "We've sent you a login code.",
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error sending OTP:", error);
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Failed to send login code. Please try again.",
+        description: error.message || "Failed to send login code. Please try again.",
       });
     }
   };
@@ -84,12 +93,12 @@ export default function Auth() {
         title: "Success",
         description: "You've been successfully logged in.",
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error verifying OTP:", error);
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Invalid code. Please try again.",
+        description: error.message || "Invalid code. Please try again.",
       });
     }
   };
@@ -111,7 +120,7 @@ export default function Auth() {
               appearance={{ theme: ThemeSupa }}
               theme="light"
               providers={["google"]}
-              redirectTo={`${window.location.origin}/my-books`}
+              redirectTo={`${window.location.origin}${returnTo}`}
               onlyThirdPartyProviders
             />
           </TabsContent>
