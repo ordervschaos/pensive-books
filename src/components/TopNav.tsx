@@ -53,7 +53,6 @@ export function TopNav() {
   const handleLogout = async () => {
     try {
 
-      // Clear local state first
       setIsAuthenticated(false);
 
       // Try local signout
