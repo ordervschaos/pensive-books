@@ -14,8 +14,17 @@ import PageView from "@/pages/PageView";
 import AcceptInvitation from "@/pages/AcceptInvitation";
 
 function App() {
-  // Get the basename from the current URL
-  const basename = window.location.hostname === "www.pensive.me" ? "" : "/";
+  // Get the basename based on the environment
+  const isProd = window.location.hostname === "www.pensive.me";
+  const basename = isProd ? "" : "/";
+
+  // Log the current environment configuration for debugging
+  console.log("Current environment:", {
+    hostname: window.location.hostname,
+    isProd,
+    basename,
+    fullUrl: window.location.href
+  });
 
   return (
     <ThemeProvider defaultTheme="light">
