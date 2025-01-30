@@ -130,10 +130,10 @@ export function TopNav() {
     if (match && match[2]) {
       const pageId = parseInt(match[2]);
       
-      const subscription = supabase
+      const channel = supabase
         .channel('page_changes')
         .on(
-          'postgres_changes',
+          'postgres_changes' as const,
           {
             event: 'UPDATE',
             schema: 'public',
@@ -153,7 +153,7 @@ export function TopNav() {
 
       // Cleanup subscription
       return () => {
-        subscription.unsubscribe();
+        channel.unsubscribe();
       };
     } else {
       fetchDetails();
