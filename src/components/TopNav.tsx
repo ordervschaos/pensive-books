@@ -87,6 +87,7 @@ export function TopNav() {
       window.location.href = `${baseUrl}/auth`;
     }
   };
+  
 
   const handleLogin = () => {
     navigate("/auth");
