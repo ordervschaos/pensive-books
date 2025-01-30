@@ -52,7 +52,6 @@ export function TopNav() {
 
   const handleLogout = async () => {
     try {
-
       setIsAuthenticated(false);
 
       // Try local signout
@@ -68,8 +67,10 @@ export function TopNav() {
         localStorage.removeItem(key);
       }
       
-      // Force reload and redirect to auth page
-      window.location.href = '/auth';
+      // Use the correct URL based on environment
+      const isProd = window.location.hostname === "pensive.me";
+      const baseUrl = isProd ? "https://pensive.me" : "";
+      window.location.href = `${baseUrl}/auth`;
 
     } catch (error) {
       console.error("Logout error:", error);
@@ -80,7 +81,10 @@ export function TopNav() {
         localStorage.removeItem(key);
       }
       
-      window.location.href = '/auth';
+      // Use the correct URL based on environment
+      const isProd = window.location.hostname === "pensive.me";
+      const baseUrl = isProd ? "https://pensive.me" : "";
+      window.location.href = `${baseUrl}/auth`;
     }
   };
 
