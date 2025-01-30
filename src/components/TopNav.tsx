@@ -11,6 +11,7 @@ import {
   BreadcrumbItem,
   BreadcrumbList,
 } from "@/components/ui/breadcrumb";
+import { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 
 interface PageChangePayload {
   new: {
@@ -131,14 +132,14 @@ export function TopNav() {
       const channel = supabase
         .channel('page_changes')
         .on(
-          'postgres_changes' as 'postgres_changes',
+          'postgres_changes',
           {
             event: 'UPDATE',
             schema: 'public',
             table: 'pages',
             filter: `id=eq.${pageId}`
           },
-          (payload: PageChangePayload) => {
+          (payload: RealtimePostgresChangesPayload<PageChangePayload>) => {
             if (payload.new.title) {
               setPageName(payload.new.title);
             }
