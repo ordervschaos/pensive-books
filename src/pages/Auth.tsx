@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { Auth as SupabaseAuth } from "@supabase/auth-ui-react";
 import { ThemeSupa } from "@supabase/auth-ui-shared";
 import { supabase } from "@/integrations/supabase/client";
@@ -13,6 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 
 export default function Auth() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const returnTo = searchParams.get("returnTo");
   const [email, setEmail] = useState("");
@@ -29,10 +30,12 @@ export default function Auth() {
       }
     });
 
+    // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === "SIGNED_IN") {
-        console.log("Auth state changed: SIGNED_IN, redirecting to /my-books");
-        navigate("/my-books");
+      console.log("Auth state change event:", event);
+      if (event === "SIGNED_IN" && session) {
+        console.log("User signed in, redirecting to /my-books");
+        navigate("/my-books", { replace: true });
       }
     });
 
@@ -45,7 +48,7 @@ export default function Auth() {
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: {
-          emailRedirectTo: window.location.origin,
+          emailRedirectTo: `${window.location.origin}/my-books`,
         },
       });
 
@@ -109,6 +112,7 @@ export default function Auth() {
               theme="light"
               providers={["google"]}
               redirectTo={`${window.location.origin}/my-books`}
+              onlyThirdPartyProviders
             />
           </TabsContent>
 
