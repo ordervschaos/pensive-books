@@ -31,13 +31,13 @@ export default function Auth() {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "SIGNED_IN") {
-        // If there's a return URL, navigate to it, otherwise go to /my-books
-        navigate(returnTo || "/my-books");
+        console.log("Auth state changed: SIGNED_IN, redirecting to /my-books");
+        navigate("/my-books");
       }
     });
 
     return () => subscription.unsubscribe();
-  }, [navigate, returnTo]);
+  }, [navigate]);
 
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -98,7 +98,7 @@ export default function Auth() {
         
         <Tabs defaultValue="password" className="w-full">
           <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="password">Password</TabsTrigger>
+            <TabsTrigger value="password">Google</TabsTrigger>
             <TabsTrigger value="otp">Email Code</TabsTrigger>
           </TabsList>
 
@@ -107,6 +107,8 @@ export default function Auth() {
               supabaseClient={supabase} 
               appearance={{ theme: ThemeSupa }}
               theme="light"
+              providers={["google"]}
+              redirectTo={`${window.location.origin}/my-books`}
             />
           </TabsContent>
 
@@ -139,7 +141,7 @@ export default function Auth() {
                     render={({ slots }) => (
                       <InputOTPGroup className="gap-2">
                         {slots.map((slot, idx) => (
-                          <InputOTPSlot key={idx} {...slot} index={idx} />
+                          <InputOTPSlot key={idx} {...slot} />
                         ))}
                       </InputOTPGroup>
                     )}
