@@ -204,13 +204,21 @@ export const PagesList = ({ pages, bookId, isReorderMode = false, canEdit = fals
     }
 
     try {
+      console.log('Attempting to archive page:', {
+        pageId,
+        bookId,
+        userEmail: (await supabase.auth.getUser()).data.user?.email
+      });
+
       const { error } = await supabase
         .from('pages')
         .update({ archived: true })
-        .eq('id', pageId)
-        .eq('book_id', bookId); // Add book_id to the query
+        .eq('id', pageId);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error archiving page:', error);
+        throw error;
+      }
 
       setItems(items.filter(page => page.id !== pageId));
       
@@ -219,6 +227,7 @@ export const PagesList = ({ pages, bookId, isReorderMode = false, canEdit = fals
         description: "The page has been moved to archive"
       });
     } catch (error: any) {
+      console.error('Detailed error:', error);
       toast({
         variant: "destructive",
         title: "Error deleting page",
