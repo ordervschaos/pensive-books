@@ -2,7 +2,7 @@ import { useNavigate, useLocation, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { LogOut, LogIn, Moon, Sun, ArrowLeft, Search, Settings, Maximize2, Library } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/components/ui/use-toast";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { useEffect, useState } from "react";
 import { SearchDialog } from "@/components/search/SearchDialog";
@@ -40,40 +40,12 @@ export function TopNav() {
 
   const handleLogout = async () => {
     try {
-      console.log("Checking current session before logout...");
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        console.log("No active session found, proceeding with cleanup...");
-        setIsAuthenticated(false);
-        navigate("/auth");
-        toast({
-          title: "Logged out successfully",
-          description: "You have been logged out of your account"
-        });
-        return;
-      }
-
-      console.log("Active session found, attempting to sign out...");
       const { error } = await supabase.auth.signOut();
       
-      if (error) {
-        console.log("Logout error:", error);
-        // If session not found, treat as successful logout
-        if (error.message === "Session from session_id claim in JWT does not exist") {
-          setIsAuthenticated(false);
-          navigate("/auth");
-          toast({
-            title: "Logged out successfully",
-            description: "You have been logged out of your account"
-          });
-          return;
-        }
+      if (error && error.message !== "Session from session_id claim in JWT does not exist") {
         throw error;
       }
       
-      console.log("Logout successful, cleaning up...");
-      setIsAuthenticated(false);
       toast({
         title: "Logged out successfully",
         description: "You have been logged out of your account"
@@ -82,9 +54,6 @@ export function TopNav() {
       navigate("/auth");
     } catch (error) {
       console.error("Logout error:", error);
-      
-      // Clean up state and redirect regardless of error
-      setIsAuthenticated(false);
       navigate("/auth");
       
       toast({
@@ -214,7 +183,7 @@ export function TopNav() {
               </Breadcrumb>
             ) : (
               <Link to={`/`}>
-                <span className="text-lg font-semibold text-foreground">Pensive</span>
+              <span className="text-lg font-semibold text-foreground">Pensive</span>
               </Link>
             )}
           </div>
