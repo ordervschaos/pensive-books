@@ -131,7 +131,7 @@ export function TopNav() {
       const channel = supabase
         .channel('page_changes')
         .on(
-          'postgres_changes',
+          'postgres_changes' as 'postgres_changes',
           {
             event: 'UPDATE',
             schema: 'public',
@@ -250,4 +250,3 @@ export function TopNav() {
     </nav>
   );
 }
-

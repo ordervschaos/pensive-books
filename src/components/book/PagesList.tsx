@@ -211,9 +211,9 @@ export const PagesList = ({ pages, bookId, isReorderMode = false, canEdit = fals
       });
 
       // First verify book ownership/access
-      const { data: bookAccess, error: bookError } = await supabase
+      const { data: bookData, error: bookError } = await supabase
         .from('books')
-        .select('owner_id, book_access!inner(access_level)')
+        .select('owner_id, book_access(access_level)')
         .eq('id', bookId)
         .single();
 
@@ -229,8 +229,7 @@ export const PagesList = ({ pages, bookId, isReorderMode = false, canEdit = fals
           archived: true,
           updated_at: new Date().toISOString()
         })
-        .eq('id', pageId)
-        .eq('book_id', bookId); // Keep the book_id check for additional security
+        .eq('id', pageId);
 
       if (error) {
         console.error('Error archiving page:', error);
