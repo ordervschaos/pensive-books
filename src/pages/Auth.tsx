@@ -27,7 +27,6 @@ export default function Auth() {
         
         if (session) {
           console.log("User is authenticated, redirecting to:", returnTo);
-          // Use replace to avoid adding to history stack
           navigate(returnTo, { replace: true });
         }
       } catch (error) {
@@ -35,7 +34,32 @@ export default function Auth() {
       }
     };
 
+    // Handle the OAuth callback
+    const handleCallback = async () => {
+      if (location.pathname === "/auth/callback") {
+        try {
+          const { error } = await supabase.auth.getSession();
+          if (error) throw error;
+          
+          // Get the return URL from localStorage if it exists
+          const storedReturnTo = localStorage.getItem("returnTo");
+          const redirectTo = storedReturnTo || returnTo;
+          localStorage.removeItem("returnTo"); // Clean up
+          
+          navigate(redirectTo, { replace: true });
+        } catch (error) {
+          console.error("Error handling callback:", error);
+          toast({
+            variant: "destructive",
+            title: "Authentication Error",
+            description: "There was a problem signing you in. Please try again.",
+          });
+        }
+      }
+    };
+
     handleAuthChange();
+    handleCallback();
 
     // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
@@ -43,7 +67,6 @@ export default function Auth() {
       
       if (event === 'SIGNED_IN' && session) {
         console.log("User signed in, redirecting to:", returnTo);
-        // Use replace to avoid adding to history stack
         navigate(returnTo, { replace: true });
       }
     });
@@ -51,11 +74,14 @@ export default function Auth() {
     return () => {
       subscription.unsubscribe();
     };
-  }, [navigate, returnTo]);
+  }, [navigate, returnTo, location.pathname, toast]);
 
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      // Store the return URL before initiating the auth flow
+      localStorage.setItem("returnTo", returnTo);
+      
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: {
