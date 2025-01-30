@@ -210,19 +210,6 @@ export const PagesList = ({ pages, bookId, isReorderMode = false, canEdit = fals
         userEmail: (await supabase.auth.getUser()).data.user?.email
       });
 
-      // First verify book ownership/access
-      const { data: bookData, error: bookError } = await supabase
-        .from('books')
-        .select('owner_id, book_access(access_level)')
-        .eq('id', bookId)
-        .single();
-
-      if (bookError) {
-        console.error('Error checking book access:', bookError);
-        throw bookError;
-      }
-
-      // Then perform the update
       const { error } = await supabase
         .from('pages')
         .update({ 
@@ -239,14 +226,14 @@ export const PagesList = ({ pages, bookId, isReorderMode = false, canEdit = fals
       setItems(items.filter(page => page.id !== pageId));
       
       toast({
-        title: "Page deleted",
+        title: "Page archived",
         description: "The page has been moved to archive"
       });
     } catch (error: any) {
       console.error('Detailed error:', error);
       toast({
         variant: "destructive",
-        title: "Error deleting page",
+        title: "Error archiving page",
         description: error.message
       });
     }
