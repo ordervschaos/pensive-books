@@ -210,10 +210,27 @@ export const PagesList = ({ pages, bookId, isReorderMode = false, canEdit = fals
         userEmail: (await supabase.auth.getUser()).data.user?.email
       });
 
+      // First verify book ownership/access
+      const { data: bookAccess, error: bookError } = await supabase
+        .from('books')
+        .select('owner_id, book_access!inner(access_level)')
+        .eq('id', bookId)
+        .single();
+
+      if (bookError) {
+        console.error('Error checking book access:', bookError);
+        throw bookError;
+      }
+
+      // Then perform the update
       const { error } = await supabase
         .from('pages')
-        .update({ archived: true })
-        .eq('id', pageId);
+        .update({ 
+          archived: true,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', pageId)
+        .eq('book_id', bookId); // Keep the book_id check for additional security
 
       if (error) {
         console.error('Error archiving page:', error);

@@ -10,8 +10,6 @@ import {
   Breadcrumb,
   BreadcrumbItem,
   BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 
 interface PageChangePayload {
@@ -133,7 +131,7 @@ export function TopNav() {
       const channel = supabase
         .channel('page_changes')
         .on(
-          'postgres_changes' as const,
+          'postgres_changes',
           {
             event: 'UPDATE',
             schema: 'public',
@@ -252,3 +250,4 @@ export function TopNav() {
     </nav>
   );
 }
+
