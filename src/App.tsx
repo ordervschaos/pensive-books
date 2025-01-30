@@ -21,6 +21,7 @@ function App() {
         <Routes>
           <Route path="/" element={<Landing />} />
           <Route path="/auth" element={<Auth />} />
+          <Route path="/auth/callback" element={<Auth />} />
           <Route path="/library" element={<Library />} />
           <Route path="/accept-invitation" element={<AcceptInvitation />} />
           
