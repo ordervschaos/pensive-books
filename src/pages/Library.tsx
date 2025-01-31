@@ -34,7 +34,6 @@ export default function Library() {
   if (loading) {
     return (
       <>
-        <TopNav />
         <div className="container mx-auto p-6">
           <div className="animate-pulse space-y-6">
             <div className="h-8 w-48 bg-muted rounded"></div>
@@ -51,7 +50,6 @@ export default function Library() {
 
   return (
     <>
-      <TopNav />
       <div className="container mx-auto p-6">
         <h1 className="text-3xl font-bold mb-6">Public Library</h1>
         
