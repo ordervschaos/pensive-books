@@ -218,12 +218,6 @@ export function TopNav() {
                 <Search className="h-4 w-4" />
               </Button>
             )}
-            <Button variant="ghost" size="icon">
-              <Maximize2 className="h-4 w-4" />
-            </Button>
-            <Button variant="ghost" size="icon">
-              <Settings className="h-4 w-4" />
-            </Button>
             <Button variant="ghost" size="icon" onClick={toggleTheme}>
               {theme === "light" ? (
                 <Moon className="h-4 w-4" />

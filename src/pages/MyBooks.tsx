@@ -170,13 +170,14 @@ export default function Index() {
         {publishedBooks.length > 0 && (
           <BookGrid books={publishedBooks} title="Published Books" />
         )}
+         {sharedBooks.length > 0 && (
+          <BookGrid books={sharedBooks} title="Shared with me" />
+        )}
         <BookGrid 
           books={unpublishedBooks} 
           title={publishedBooks.length > 0 ? "Other Books" : "All Books"} 
         />
-        {sharedBooks.length > 0 && (
-          <BookGrid books={sharedBooks} title="Shared with me" />
-        )}
+       
       </div>
     </div>
   );
