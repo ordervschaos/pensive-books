@@ -7,6 +7,8 @@ import { useToast } from "@/hooks/use-toast";
 import { BookInfo } from "@/components/book/BookInfo";
 import { BookEditForm } from "@/components/book/BookEditForm";
 import { InviteCollaboratorSheet } from "@/components/book/InviteCollaboratorSheet";
+import { BookCoverEdit } from "@/components/book/BookCoverEdit";
+import { BookVisibilityToggle } from "@/components/book/BookVisibilityToggle";
 
 interface Book {
   id?: number;
@@ -35,6 +37,7 @@ export default function BookEdit() {
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [publishing, setPublishing] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -85,7 +88,6 @@ export default function BookEdit() {
         description: "Book updated successfully"
       });
 
-      navigate(`/book/${id}`);
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -94,6 +96,44 @@ export default function BookEdit() {
       });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const togglePublish = async () => {
+    try {
+      setPublishing(true);
+      const newPublishState = !book.is_public;
+      
+      const { error } = await supabase
+        .from("books")
+        .update({ 
+          is_public: newPublishState,
+          published_at: newPublishState ? new Date().toISOString() : null
+        })
+        .eq("id", parseInt(id || "0"));
+
+      if (error) throw error;
+
+      setBook({
+        ...book,
+        is_public: newPublishState,
+        published_at: newPublishState ? new Date().toISOString() : null
+      });
+
+      toast({
+        title: newPublishState ? "Book Published" : "Book Unpublished",
+        description: newPublishState 
+          ? "Your book is now available to the public"
+          : "Your book is now private"
+      });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error updating book",
+        description: error.message
+      });
+    } finally {
+      setPublishing(false);
     }
   };
 
@@ -117,25 +157,21 @@ export default function BookEdit() {
             <h1 className="text-2xl font-semibold">Edit Book</h1>
           </div>
 
-          {id && <InviteCollaboratorSheet bookId={parseInt(id)} />}
+          <div className="flex items-center gap-4">
+            <BookVisibilityToggle
+              isPublic={book.is_public}
+              onTogglePublish={togglePublish}
+              publishing={publishing}
+            />
+            {id && <InviteCollaboratorSheet bookId={parseInt(id)} />}
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <div>
-            <BookInfo 
-              name={book.name}
-              isPublic={book.is_public}
-              createdAt={book.created_at || new Date().toISOString()}
-              updatedAt={book.updated_at || new Date().toISOString()}
-              publishedAt={book.published_at}
+          <div className="space-y-8">
+            <BookCoverEdit 
               bookId={book.id || 0}
               coverUrl={book.cover_url}
-              onTogglePublish={async () => {
-                const newValue = !book.is_public;
-                setBook({ ...book, is_public: newValue });
-                await handleSave({ preventDefault: () => {} } as React.FormEvent);
-              }}
-              publishing={saving}
             />
           </div>
 

@@ -6,6 +6,9 @@ import { useToast } from "@/hooks/use-toast";
 import { BookInfo } from "@/components/book/BookInfo";
 import { PagesList } from "@/components/book/PagesList";
 import { useBookPermissions } from "@/hooks/use-book-permissions";
+import { BookVisibilityToggle } from "@/components/book/BookVisibilityToggle";
+import { Button } from "@/components/ui/button";
+import { Settings } from "lucide-react";
 
 const BookDetails = () => {
   const { id } = useParams();
@@ -157,7 +160,7 @@ const BookDetails = () => {
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
             <div className="lg:col-span-1">
               {(isOwner || canEdit) ? (
-                <div onClick={handleEditClick} className="cursor-pointer">
+                <div>
                   <BookInfo 
                     name={book.name}
                     isPublic={book.is_public}
@@ -170,6 +173,19 @@ const BookDetails = () => {
                     publishing={publishing}
                     canEdit={canEdit}
                   />
+                  {canEdit && (
+            <div className="flex justify-center my-4 gap-2 justify-between" >
+              <BookVisibilityToggle
+                isPublic={book.is_public}
+                onTogglePublish={togglePublish}
+                publishing={publishing}
+              />
+              {/* add a settings button to take user to edit page */}
+              <Button onClick={handleEditClick} variant="ghost">
+                <Settings className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
                 </div>
               ) : (
                 <BookInfo 
