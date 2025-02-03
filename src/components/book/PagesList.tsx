@@ -378,19 +378,23 @@ export const PagesList = ({ pages, bookId, isReorderMode = false, canEdit = fals
             <div className="flex items-center gap-2">
               <Button
                 variant="outline"
-                size="icon"
                 onClick={() => createNewPage('text')}
-                className="rounded-full"
+                className="flex items-center gap-2"
+                title="Add Text Page"
+                aria-label="Add Text Page"
               >
                 <Type className="h-4 w-4" />
+                <span>Add Page</span>
               </Button>
               <Button
                 variant="outline"
-                size="icon"
                 onClick={() => createNewPage('section')}
-                className="rounded-full"
+                className="flex items-center gap-2"
+                title="Add Section Header"
+                aria-label="Add Section Header"
               >
                 <Section className="h-4 w-4" />
+                <span>Add Section</span>
               </Button>
             </div>
           )}
