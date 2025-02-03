@@ -3,7 +3,7 @@ import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import Image from '@tiptap/extension-image';
 import { Button } from "@/components/ui/button";
-import { Bold, Italic, Quote, Code2, Link2, List, ListOrdered, Image as ImageIcon, History, Check } from "lucide-react";
+import { Bold, Italic, Quote, Code2, Link2, List, ListOrdered, Image as ImageIcon, History, Check, Undo, Redo } from "lucide-react";
 import { useEffect } from 'react';
 import { useToast } from "@/hooks/use-toast";
 
@@ -172,7 +172,7 @@ export const TipTapEditor = ({ content, onChange, editable = true }: TipTapEdito
               onClick={() => editor.chain().focus().undo().run()}
               disabled={!editor.can().undo()}
             >
-              <History className="h-4 w-4" />
+              <Undo className="h-4 w-4" />
             </Button>
             <Button
               variant="ghost"
@@ -180,7 +180,7 @@ export const TipTapEditor = ({ content, onChange, editable = true }: TipTapEdito
               onClick={() => editor.chain().focus().redo().run()}
               disabled={!editor.can().redo()}
             >
-              <Check className="h-4 w-4" />
+              <Redo className="h-4 w-4" />
             </Button>
           </div>
         </div>

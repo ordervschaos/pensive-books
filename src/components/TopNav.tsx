@@ -181,7 +181,7 @@ export function TopNav() {
                   <BreadcrumbItem className="flex items-center">
                     <Link 
                       className="text-blue-500 hover:text-blue-600 transition-colors font-medium" 
-                      to={`/`}
+                      to={`/my-books`}
                     >
                       <Library className="h-5 w-5 mr-2" /> 
                     </Link>
@@ -224,7 +224,7 @@ export function TopNav() {
               ) : (
                 <Sun className="h-4 w-4" />
               )}
-            </Button>
+            </Button> 
             {isAuthenticated ? (
               <Button variant="ghost" size="icon" onClick={handleLogout}>
                 <LogOut className="h-4 w-4" />
