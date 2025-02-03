@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { GripVertical, Move, LayoutList, LayoutGrid, Trash2, Type, Section } from "lucide-react";
+import { GripVertical, Move, LayoutList, LayoutGrid, Trash2, Type, Section, Plus } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect } from "react";
@@ -379,22 +379,28 @@ export const PagesList = ({ pages, bookId, isReorderMode = false, canEdit = fals
               <Button
                 variant="outline"
                 onClick={() => createNewPage('text')}
-                className="flex items-center gap-2"
+                className="flex items-center gap-2 relative"
                 title="Add Text Page"
                 aria-label="Add Text Page"
               >
                 <Type className="h-4 w-4" />
                 <span>Add Page</span>
+                <div className="absolute -top-2 -right-2 bg-green-500 rounded-full p-0.5 shadow-sm">
+                  <Plus className="h-3 w-3 text-white" />
+                </div>
               </Button>
               <Button
                 variant="outline"
                 onClick={() => createNewPage('section')}
-                className="flex items-center gap-2"
+                className="flex items-center gap-2 relative"
                 title="Add Section Header"
                 aria-label="Add Section Header"
               >
                 <Section className="h-4 w-4" />
-                <span>Add Section</span>
+                <span className="hidden sm:inline">Add Section</span>
+                <div className="absolute -top-2 -right-2 bg-green-500 rounded-full p-0.5 shadow-sm">
+                  <Plus className="h-3 w-3 text-white" />
+                </div>
               </Button>
             </div>
           )}
