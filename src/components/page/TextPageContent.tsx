@@ -13,7 +13,7 @@ export const TextPageContent = ({ content, isEditing, onChange, onTitleChange, t
   const initialContent = content || `<h1 class="page-title">${title}</h1><p></p>`;
 
   return (
-    <div className={`flex-1 ${!isEditing ? 'max-w-3xl mx-auto' : ''}`}>
+    <div className={`flex-1 ${!isEditing ? '' : ''}`}>
       <TipTapEditor 
         content={initialContent}
         onChange={onChange}

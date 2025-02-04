@@ -46,9 +46,7 @@ export const PageContent = ({ content, title, onSave, pageType = 'text', editabl
       <CardContent className="p-0 flex-1 flex flex-col">
         {pageType !== 'section' && editable && (
           <PageHeader
-            title={currentTitle}
             isEditing={isEditing}
-            onTitleChange={handleTitleChange}
             onToggleEdit={() => setIsEditing(!isEditing)}
           />
         )}
