@@ -114,40 +114,42 @@ export default function Index() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
           {books.map((book) => (
-            <div key={book.id} className="flex flex-col">
-              <Card
-                className="relative cursor-pointer group overflow-hidden aspect-[3/4]"
-                onClick={() => navigate(`/book/${book.id}`)}
-              >
-                {book.cover_url ? (
-                  <img
-                    src={book.cover_url}
-                    alt={book.name}
-                    className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                  />
-                ) : (
-                  <div className="w-full h-full bg-muted flex items-center justify-center p-4">
-                    <h2 className="text-xl md:text-2xl font-semibold text-center text-muted-foreground break-words">
-                      {book.name}
-                    </h2>
+            <div key={book.id} className="flex flex-col sm:block">
+              <div className="flex sm:block items-start gap-4 sm:gap-0">
+                <Card
+                  className="relative cursor-pointer group overflow-hidden w-24 sm:w-full aspect-[3/4]"
+                  onClick={() => navigate(`/book/${book.id}`)}
+                >
+                  {book.cover_url ? (
+                    <img
+                      src={book.cover_url}
+                      alt={book.name}
+                      className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                    />
+                  ) : (
+                    <div className="w-full h-full bg-muted flex items-center justify-center p-4">
+                      <h2 className="text-xl md:text-2xl font-semibold text-center text-muted-foreground break-words">
+                        {book.name}
+                      </h2>
+                    </div>
+                  )}
+                </Card>
+                <div className="flex-1 sm:mt-2 space-y-1 sm:text-center text-left">
+                  <h3 className="text-sm text-muted-foreground font-medium truncate">
+                    {book.name}
+                  </h3>
+                  <div className="flex gap-2 sm:justify-center justify-start">
+                    {book.is_public && (
+                      <Badge variant="secondary" className="text-xs">
+                        Public
+                      </Badge>
+                    )}
+                    {book.access_level && (
+                      <Badge variant="outline" className="text-xs">
+                        {book.access_level} access
+                      </Badge>
+                    )}
                   </div>
-                )}
-              </Card>
-              <div className="mt-2 space-y-1 text-center">
-                <h3 className="text-sm text-muted-foreground font-medium truncate">
-                  {book.name}
-                </h3>
-                <div className="flex gap-2 justify-center">
-                  {book.is_public && (
-                    <Badge variant="secondary" className="text-xs">
-                      Public
-                    </Badge>
-                  )}
-                  {book.access_level && (
-                    <Badge variant="outline" className="text-xs">
-                      {book.access_level} access
-                    </Badge>
-                  )}
                 </div>
               </div>
             </div>
