@@ -128,14 +128,14 @@ export default function Index() {
                     />
                   ) : (
                     <div className="w-full h-full bg-muted flex items-center justify-center p-4">
-                      <h2 className="text-xl md:text-2xl font-semibold text-center text-muted-foreground break-words">
+                      <h2 className="text-xs md:text-2xl  font-semibold text-center text-muted-foreground break-words line-clamp-3">
                         {book.name}
                       </h2>
                     </div>
                   )}
                 </Card>
                 <div className="flex-1 sm:mt-2 space-y-1 sm:text-center text-left">
-                  <h3 className="text-sm text-muted-foreground font-medium truncate">
+                  <h3 className="text-sm text-muted-foreground font-medium truncate cursor-pointer" onClick={() => navigate(`/book/${book.id}`)}>
                     {book.name}
                   </h3>
                   <div className="flex gap-2 sm:justify-center justify-start">
