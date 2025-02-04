@@ -4,19 +4,10 @@ import { ImageIcon } from "lucide-react";
 interface BookInfoProps {
   name: string;
   coverUrl?: string | null;
-  isPublic: boolean;
-  onTogglePublish: () => void;
-  publishing: boolean;
-  canEdit?: boolean;
 }
 
 export const BookInfo = ({ 
-  name,
   coverUrl,
-  isPublic,
-  onTogglePublish,
-  publishing,
-  canEdit = false
 }: BookInfoProps) => {
   return (
     <Card className="bg-white shadow-sm">

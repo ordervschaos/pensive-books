@@ -88,6 +88,8 @@ const BookDetails = () => {
     }
   };
 
+
+
   const togglePublish = async () => {
     try {
       setPublishing(true);
@@ -154,49 +156,29 @@ const BookDetails = () => {
   }
 
   const BookInfoSection =  ()=>{
-    return (isOwner || canEdit) ? (
-    <div>
-      <BookInfo 
-        name={book.name}
-        isPublic={book.is_public}
-        createdAt={book.created_at}
-        updatedAt={book.updated_at}
-        publishedAt={book.published_at}
-        bookId={book.id}
-        coverUrl={book.cover_url}
-        onTogglePublish={togglePublish}
-        publishing={publishing}
-        canEdit={canEdit}
-      />
-      {canEdit && (
-<div className="flex justify-center my-4 gap-2 justify-between" >
-  <BookVisibilityToggle
-    isPublic={book.is_public}
-    onTogglePublish={togglePublish}
-    publishing={publishing}
-  />
-  {/* add a settings button to take user to edit page */}
-  <Button onClick={handleEditClick} variant="ghost">
-    <Settings className="h-4 w-4" />
-  </Button>
-</div>
-)}
-    </div>
-  ) : (
-    <BookInfo 
+
+    return <BookInfo 
       name={book.name}
-      isPublic={book.is_public}
-      createdAt={book.created_at}
-      updatedAt={book.updated_at}
-      publishedAt={book.published_at}
-      bookId={book.id}
       coverUrl={book.cover_url}
-      onTogglePublish={togglePublish}
-      publishing={publishing}
-      canEdit={false}
+    
     />
-  )
   }
+
+  const BookActions = ()=>{
+    return canEdit && (
+      <div className="flex justify-center my-4 gap-2 justify-between" >
+        <BookVisibilityToggle
+          isPublic={book.is_public}
+          onTogglePublish={togglePublish}
+          publishing={publishing}
+        />
+        {/* add a settings button to take user to edit page */}
+        <Button onClick={handleEditClick} variant="ghost">
+          <Settings className="h-4 w-4" />
+        </Button>
+      </div>
+      )}
+
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -207,6 +189,7 @@ const BookDetails = () => {
             <div className="lg:hidden grid grid-cols-2 gap-4 col-span-full mb-6">
               <div className="col-span-1">
                 <BookInfoSection/>
+                
               </div>
               <div className="col-span-1">
                 <div className="flex flex-col">
@@ -218,12 +201,17 @@ const BookDetails = () => {
                   </h1>
                   <p className="text-muted-foreground">{book.author || "Unknown author"}</p>
                 </div>
+                <div className="lg:hidden flex flex-col">
+                  <BookActions/>
+                </div>
+                
               </div>
             </div>
 
             {/* Desktop layout */}
             <div className="hidden lg:block lg:col-span-1">
               <BookInfoSection/>
+                  <BookActions/>
             </div>
 
             <div className="lg:col-span-3">
@@ -235,7 +223,9 @@ const BookDetails = () => {
                   {book.name}
                 </h1>
                 <p className="text-muted-foreground">{book.author || "Unknown author"}</p>
+                
               </div>
+              
               <PagesList 
                 pages={pages}
                 bookId={parseInt(id || "0")}
