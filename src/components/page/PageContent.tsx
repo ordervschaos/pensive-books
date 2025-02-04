@@ -35,27 +35,10 @@ export const PageContent = ({ content, title, onSave, pageType = 'text', editabl
     debouncedSave(html, json, currentTitle);
   };
 
-  const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!editable) return; // Don't update title if not editable
-    const newTitle = e.target.value;
+  const handleTitleChange = (newTitle: string) => {
+    if (!editable) return;
     setCurrentTitle(newTitle);
-    
-    if (pageType === 'section') {
-      const sectionHtml = `<h1 class="text-4xl font-bold text-center py-8">${newTitle}</h1>`;
-      const sectionJson = {
-        type: 'doc',
-        content: [{
-          type: 'heading',
-          attrs: { level: 1 },
-          content: [{ type: 'text', text: newTitle }]
-        }]
-      };
-      setCurrentContent(sectionHtml);
-      setEditorJson(sectionJson);
-      debouncedSave(sectionHtml, sectionJson, newTitle);
-    } else {
-      debouncedSave(currentContent, editorJson, newTitle);
-    }
+    debouncedSave(currentContent, editorJson, newTitle);
   };
 
   return (
@@ -81,6 +64,8 @@ export const PageContent = ({ content, title, onSave, pageType = 'text', editabl
             content={currentContent}
             isEditing={isEditing && editable}
             onChange={handleContentChange}
+            onTitleChange={handleTitleChange}
+            title={currentTitle}
           />
         )}
       </CardContent>

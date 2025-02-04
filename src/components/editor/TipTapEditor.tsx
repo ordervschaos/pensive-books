@@ -6,18 +6,21 @@ import { Button } from "@/components/ui/button";
 import { Bold, Italic, Quote, Code2, Link2, List, ListOrdered, Image as ImageIcon, History, Check, Undo, Redo } from "lucide-react";
 import { useEffect } from 'react';
 import { useToast } from "@/hooks/use-toast";
+import { Title } from './extensions/Title';
 
 interface TipTapEditorProps {
   content: string;
   onChange: (html: string, json: any) => void;
+  onTitleChange?: (title: string) => void;
   editable?: boolean;
 }
 
-export const TipTapEditor = ({ content, onChange, editable = true }: TipTapEditorProps) => {
+export const TipTapEditor = ({ content, onChange, onTitleChange, editable = true }: TipTapEditorProps) => {
   const { toast } = useToast();
 
   const editor = useEditor({
     extensions: [
+      Title,
       StarterKit.configure({
         blockquote: {
           HTMLAttributes: {
@@ -44,6 +47,9 @@ export const TipTapEditor = ({ content, onChange, editable = true }: TipTapEdito
             class: 'rounded-md bg-muted px-[0.3rem] py-[0.2rem] font-mono text-sm',
           },
         },
+        heading: {
+          levels: [2, 3, 4, 5, 6],
+        },
       }),
       Link.configure({
         openOnClick: false,
@@ -61,6 +67,20 @@ export const TipTapEditor = ({ content, onChange, editable = true }: TipTapEdito
     editable,
     onUpdate: ({ editor }) => {
       onChange(editor.getHTML(), editor.getJSON());
+      
+      if (onTitleChange) {
+        const titleNode = editor.getJSON().content.find((node: any) => node.type === 'title');
+        const title = titleNode?.content?.[0]?.text || '';
+        onTitleChange(title);
+      }
+    },
+    editorProps: {
+      handleKeyDown: ({ event }) => {
+        if (editor?.isActive('title')) {
+          if (event.key === 'b' && (event.ctrlKey || event.metaKey)) return true;
+          if (event.key === 'i' && (event.ctrlKey || event.metaKey)) return true;
+        }
+      },
     },
     autofocus: 'start',
   });
