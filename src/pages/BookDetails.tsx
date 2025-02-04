@@ -202,13 +202,32 @@ const BookDetails = () => {
     <div className="min-h-screen flex flex-col bg-background">
       <div className="container mx-auto p-6">
         <div className="max-w-7xl mx-auto space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <div className="md:col-span-1 lg:col-span-1">
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            {/* Top section for small screens */}
+            <div className="lg:hidden grid grid-cols-2 gap-4 col-span-full mb-6">
+              <div className="col-span-1">
+                <BookInfoSection/>
+              </div>
+              <div className="col-span-1">
+                <div className="flex flex-col">
+                  <h1 
+                    className={`text-3xl font-bold ${canEdit ? 'cursor-pointer hover:text-blue-600 transition-colors' : ''}`}
+                    onClick={canEdit ? handleEditClick : undefined}
+                  >
+                    {book.name}
+                  </h1>
+                  <p className="text-muted-foreground">{book.author || "Unknown author"}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Desktop layout */}
+            <div className="hidden lg:block lg:col-span-1">
               <BookInfoSection/>
             </div>
 
-            <div className="md:col-span-2 lg:col-span-3">
-              <div className="flex flex-col">
+            <div className="lg:col-span-3">
+              <div className="hidden lg:flex flex-col">
                 <h1 
                   className={`text-3xl font-bold ${canEdit ? 'cursor-pointer hover:text-blue-600 transition-colors' : ''}`}
                   onClick={canEdit ? handleEditClick : undefined}
