@@ -153,57 +153,61 @@ const BookDetails = () => {
     );
   }
 
+  const BookInfoSection =  ()=>{
+    return (isOwner || canEdit) ? (
+    <div>
+      <BookInfo 
+        name={book.name}
+        isPublic={book.is_public}
+        createdAt={book.created_at}
+        updatedAt={book.updated_at}
+        publishedAt={book.published_at}
+        bookId={book.id}
+        coverUrl={book.cover_url}
+        onTogglePublish={togglePublish}
+        publishing={publishing}
+        canEdit={canEdit}
+      />
+      {canEdit && (
+<div className="flex justify-center my-4 gap-2 justify-between" >
+  <BookVisibilityToggle
+    isPublic={book.is_public}
+    onTogglePublish={togglePublish}
+    publishing={publishing}
+  />
+  {/* add a settings button to take user to edit page */}
+  <Button onClick={handleEditClick} variant="ghost">
+    <Settings className="h-4 w-4" />
+  </Button>
+</div>
+)}
+    </div>
+  ) : (
+    <BookInfo 
+      name={book.name}
+      isPublic={book.is_public}
+      createdAt={book.created_at}
+      updatedAt={book.updated_at}
+      publishedAt={book.published_at}
+      bookId={book.id}
+      coverUrl={book.cover_url}
+      onTogglePublish={togglePublish}
+      publishing={publishing}
+      canEdit={false}
+    />
+  )
+  }
+
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <div className="container mx-auto p-6">
         <div className="max-w-7xl mx-auto space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-            <div className="lg:col-span-1">
-              {(isOwner || canEdit) ? (
-                <div>
-                  <BookInfo 
-                    name={book.name}
-                    isPublic={book.is_public}
-                    createdAt={book.created_at}
-                    updatedAt={book.updated_at}
-                    publishedAt={book.published_at}
-                    bookId={book.id}
-                    coverUrl={book.cover_url}
-                    onTogglePublish={togglePublish}
-                    publishing={publishing}
-                    canEdit={canEdit}
-                  />
-                  {canEdit && (
-            <div className="flex justify-center my-4 gap-2 justify-between" >
-              <BookVisibilityToggle
-                isPublic={book.is_public}
-                onTogglePublish={togglePublish}
-                publishing={publishing}
-              />
-              {/* add a settings button to take user to edit page */}
-              <Button onClick={handleEditClick} variant="ghost">
-                <Settings className="h-4 w-4" />
-              </Button>
-            </div>
-          )}
-                </div>
-              ) : (
-                <BookInfo 
-                  name={book.name}
-                  isPublic={book.is_public}
-                  createdAt={book.created_at}
-                  updatedAt={book.updated_at}
-                  publishedAt={book.published_at}
-                  bookId={book.id}
-                  coverUrl={book.cover_url}
-                  onTogglePublish={togglePublish}
-                  publishing={publishing}
-                  canEdit={false}
-                />
-              )}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="md:col-span-1 lg:col-span-1">
+              <BookInfoSection/>
             </div>
 
-            <div className="lg:col-span-3">
+            <div className="md:col-span-2 lg:col-span-3">
               <div className="flex flex-col">
                 <h1 
                   className={`text-3xl font-bold ${canEdit ? 'cursor-pointer hover:text-blue-600 transition-colors' : ''}`}
