@@ -1,27 +1,65 @@
 import { Card, CardHeader } from "@/components/ui/card";
 import { ImageIcon, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 interface BookInfoProps {
   name: string;
   coverUrl?: string | null;
+  bookId: number;
 }
 
 export const BookInfo = ({ 
   name,
   coverUrl,
+  bookId,
 }: BookInfoProps) => {
+  const { toast } = useToast();
+
   const handleDownloadPDF = async () => {
     try {
+      // Fetch all pages for this book
+      const { data: pages, error } = await supabase
+        .from('pages')
+        .select('*')
+        .eq('book_id', bookId)
+        .eq('archived', false)
+        .order('page_index', { ascending: true });
+
+      if (error) throw error;
+
+      // Create the PDF content with styling
       const element = document.createElement('div');
       element.innerHTML = `
-        <h1 style="font-size: 24px; margin-bottom: 20px;">${name}</h1>
-        ${coverUrl ? `<img src="${coverUrl}" style="max-width: 300px; margin-bottom: 20px;" />` : ''}
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; padding: 40px; }
+          h1 { font-size: 32px; margin-bottom: 20px; text-align: center; }
+          .cover { max-width: 300px; margin: 20px auto; display: block; }
+          .page { margin-bottom: 40px; page-break-after: always; }
+          .page-title { font-size: 24px; margin-bottom: 20px; font-weight: bold; }
+          .page-content { font-size: 16px; }
+        </style>
+        <h1>${name}</h1>
+        ${coverUrl ? `<img src="${coverUrl}" class="cover" />` : ''}
+        ${pages?.map((page, index) => `
+          <div class="page">
+            <div class="page-title">${page.title || `Page ${index + 1}`}</div>
+            <div class="page-content">${page.html_content || ''}</div>
+          </div>
+        `).join('')}
       `;
       
       // Create a new window for PDF
       const win = window.open('', '_blank');
-      if (!win) return;
+      if (!win) {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Unable to open print window"
+        });
+        return;
+      }
       
       win.document.write(`
         <html>
@@ -39,8 +77,18 @@ export const BookInfo = ({
       win.focus();
       win.print();
       win.close();
-    } catch (error) {
+
+      toast({
+        title: "PDF Generated",
+        description: "Your book is ready to download"
+      });
+    } catch (error: any) {
       console.error('Error generating PDF:', error);
+      toast({
+        variant: "destructive",
+        title: "Error generating PDF",
+        description: error.message
+      });
     }
   };
 

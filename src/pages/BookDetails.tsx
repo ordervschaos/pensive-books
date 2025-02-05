@@ -157,6 +157,7 @@ const BookDetails = () => {
     return <BookInfo 
       name={book.name}
       coverUrl={book.cover_url}
+      bookId={parseInt(id || "0")}
     />;
   };
 
