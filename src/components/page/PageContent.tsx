@@ -1,80 +1,80 @@
-import { useEffect, useState } from "react";
+import { useState, useCallback } from "react";
+import { Card, CardContent } from "@/components/ui/card";
+import { debounce } from "lodash";
+import { SectionPageContent } from "./SectionPageContent";
+import { TextPageContent } from "./TextPageContent";
 
 interface PageContentProps {
   content: string;
   title: string;
-  onSave: (html: string, content: any, title?: string) => void;
-  saving?: boolean;
-  pageType?: string;
+  onSave: (html: string, json: any, title?: string) => void;
+  saving: boolean;
+  pageType?: 'text' | 'section';
   editable?: boolean;
   onEditingChange?: (isEditing: boolean) => void;
 }
 
-export function PageContent({ 
+export const PageContent = ({ 
   content, 
   title, 
   onSave, 
-  saving, 
-  pageType = 'text',
+  pageType = 'text', 
   editable = false,
-  onEditingChange
-}: PageContentProps) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [currentTitle, setCurrentTitle] = useState(title);
+  onEditingChange 
+}: PageContentProps) => {
+  const [isEditing, setIsEditing] = useState(!content && editable);
+  const [currentContent, setCurrentContent] = useState(content || '');
+  const [currentTitle, setCurrentTitle] = useState(title || '');
+  const [editorJson, setEditorJson] = useState<any>(null);
 
-  useEffect(() => {
-    setCurrentTitle(title);
-  }, [title]);
+  const debouncedSave = useCallback(
+    debounce((html: string, json: any, title: string) => {
+      const finalTitle = title.trim() || (document.activeElement !== document.getElementById('page-title') ? 'Untitled' : '');
+      onSave(html, json, finalTitle);
+    }, 1000),
+    [onSave]
+  );
 
-  const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newTitle = e.target.value;
-    setCurrentTitle(newTitle);
-    onSave(content, {}, newTitle);
+  const handleContentChange = (html: string, json: any) => {
+    if (!editable) return;
+    setCurrentContent(html);
+    setEditorJson(json);
+    debouncedSave(html, json, currentTitle);
   };
 
-  const handleSave = () => {
-    onSave(content, {}, currentTitle);
-    setIsEditing(false);
+  const handleTitleChange = (newTitle: string) => {
+    if (!editable) return;
+    setCurrentTitle(newTitle);
+    debouncedSave(currentContent, editorJson, newTitle);
+  };
+
+  const handleToggleEdit = () => {
+    const newEditingState = !isEditing;
+    setIsEditing(newEditingState);
     if (onEditingChange) {
-      onEditingChange(false);
+      onEditingChange(newEditingState);
     }
   };
 
   return (
-    <div className="page-content">
-      {isEditing ? (
-        <div>
-          <input 
-            type="text" 
-            value={currentTitle} 
-            onChange={handleTitleChange} 
-            className="title-input"
+    <Card className="flex-1 flex flex-col bg-background border">
+      <CardContent className="p-0 flex-1 flex flex-col">
+        {pageType === 'section' ? (
+          <SectionPageContent
+            title={currentTitle}
+            isEditing={isEditing && editable}
+            onTitleChange={handleTitleChange}
           />
-          <textarea 
-            value={content} 
-            onChange={(e) => onSave(e.target.value, {}, currentTitle)} 
-            className="content-textarea"
+        ) : (
+          <TextPageContent
+            content={currentContent}
+            isEditing={isEditing && editable}
+            onChange={handleContentChange}
+            onTitleChange={handleTitleChange}
+            title={currentTitle}
           />
-          <button onClick={handleSave} disabled={saving}>
-            {saving ? "Saving..." : "Save"}
-          </button>
-        </div>
-      ) : (
-        <div>
-          <h1>{title}</h1>
-          <div dangerouslySetInnerHTML={{ __html: content }} />
-          {editable && (
-            <button onClick={() => {
-              setIsEditing(true);
-              if (onEditingChange) {
-                onEditingChange(true);
-              }
-            }}>
-              Edit
-            </button>
-          )}
-        </div>
-      )}
-    </div>
+        )}
+      </CardContent>
+    </Card>
   );
-}
+};
