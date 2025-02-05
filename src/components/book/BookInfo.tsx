@@ -1,6 +1,11 @@
 import { useState } from "react";
+import { 
+  Card,
+  CardHeader 
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Download } from "lucide-react";
+import { ImageIcon, Download } from "lucide-react";
+
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -120,22 +125,32 @@ export const BookInfo = ({
   };
 
   return (
-    <div className="flex flex-col gap-4">
-      {coverUrl && (
-        <img 
-          src={coverUrl} 
-          alt={name}
-          className="w-full aspect-[3/4] object-cover rounded-lg"
-        />
-      )}
-      <Button 
-        variant="outline" 
-        className="w-full"
-        onClick={handleDownloadPDF}
-      >
-        <Download className="h-4 w-4 mr-2" />
-        Download PDF
-      </Button>
-    </div>
+    <Card className="bg-white shadow-sm">
+      <div className="flex flex-col gap-4">
+        <CardHeader className="space-y-6">
+          <div className="w-full aspect-[3/4] relative rounded-lg overflow-hidden bg-blue-100">
+            {coverUrl ? (
+              <img 
+                src={coverUrl} 
+                alt="Book cover"
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                <ImageIcon className="w-16 h-16 text-blue-300" />
+              </div>
+            )}
+          </div>
+          <Button
+            onClick={handleDownloadPDF}
+            variant="outline"
+            className="w-full"
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Download PDF
+          </Button>
+        </CardHeader>
+      </div>
+    </Card>
   );
 };
