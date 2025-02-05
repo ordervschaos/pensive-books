@@ -1,6 +1,6 @@
-import { Card, CardHeader } from "@/components/ui/card";
-import { ImageIcon, Download } from "lucide-react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Download } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -21,23 +21,35 @@ export const BookInfo = ({
 
   const handleDownloadPDF = async () => {
     try {
-      // Fetch all pages for this book
+      // Fetch all pages for the book
       const { data: pages, error } = await supabase
-        .from('pages')
-        .select('*')
-        .eq('book_id', bookId)
-        .eq('archived', false)
-        .order('page_index', { ascending: true });
+        .from("pages")
+        .select("*")
+        .eq("book_id", bookId)
+        .eq("archived", false)
+        .order("page_index", { ascending: true });
 
       if (error) throw error;
 
-      // Create the PDF content with styling
-      const element = document.createElement('div');
-      element.innerHTML = `
-        <style>
-          body { font-family: Arial, sans-serif; line-height: 1.6; padding: 40px; }
-          h1 { font-size: 32px; margin-bottom: 20px; text-align: center; }
-          .cover { max-width: 300px; margin: 20px auto; display: block; }
+      // Create a new window for the PDF content
+      const printWindow = window.open("", "_blank");
+      if (!printWindow) {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Please allow pop-ups to download the PDF"
+        });
+        return;
+      }
+
+      // Write the HTML content
+      printWindow.document.write(`
+        <html>
+        <head>
+          <title>${name}</title>
+          <style>
+          body { font-family: system-ui, -apple-system, sans-serif; line-height: 1.5; margin: 40px; }
+          .cover { max-width: 100%; max-height: 70vh; margin-bottom: 20px; }
           .page { margin-bottom: 40px; page-break-after: always; }
           .page-title { font-size: 24px; margin-bottom: 20px; font-weight: bold; }
           .page-content { font-size: 16px; }
@@ -52,54 +64,51 @@ export const BookInfo = ({
           }
           .book-title { font-size: 48px; margin-bottom: 20px; }
           .book-author { font-size: 24px; color: #666; }
-        </style>
-        <div class="cover-page">
-          ${coverUrl 
-            ? `<img src="${coverUrl}" class="cover" />`
-            : `<h1 class="book-title">${name}</h1>
-               ${author ? `<div class="book-author">by ${author}</div>` : ''}`
+          .section-page {
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            page-break-after: always;
           }
-        </div>
-        ${pages?.map((page, index) => `
-          <div class="page">
-            <div class="page-title">${page.title || `Page ${index + 1}`}</div>
-            <div class="page-content">${page.html_content || ''}</div>
+          .section-title {
+            font-size: 36px;
+            font-weight: bold;
+            color: #333;
+          }
+        </style>
+        </head>
+        <body>
+          <div class="cover-page">
+            ${coverUrl 
+              ? `<img src="${coverUrl}" class="cover" />`
+              : `<h1 class="book-title">${name}</h1>
+                 ${author ? `<div class="book-author">by ${author}</div>` : ''}`
+            }
           </div>
-        `).join('')}
-      `;
-      
-      // Create a new window for PDF
-      const win = window.open('', '_blank');
-      if (!win) {
-        toast({
-          variant: "destructive",
-          title: "Error",
-          description: "Unable to open print window"
-        });
-        return;
-      }
-      
-      win.document.write(`
-        <html>
-          <head>
-            <title>${name}</title>
-          </head>
-          <body>
-            ${element.innerHTML}
-          </body>
+          ${pages?.map((page, index) => 
+            page.page_type === 'section' 
+              ? `<div class="section-page">
+                  <h1 class="section-title">${page.title || `Section ${index + 1}`}</h1>
+                </div>`
+              : `<div class="page">
+                  <div class="page-title">${page.title || `Page ${index + 1}`}</div>
+                  <div class="page-content">${page.html_content || ''}</div>
+                </div>`
+          ).join('')}
+        </body>
         </html>
       `);
-      
-      // Trigger print dialog which can save as PDF
-      win.document.close();
-      win.focus();
-      win.print();
-      win.close();
 
-      toast({
-        title: "PDF Generated",
-        description: "Your book is ready to download"
-      });
+      // Trigger print dialog
+      printWindow.document.close();
+      printWindow.focus();
+      setTimeout(() => {
+        printWindow.print();
+        printWindow.close();
+      }, 250);
+
     } catch (error: any) {
       console.error('Error generating PDF:', error);
       toast({
@@ -111,32 +120,22 @@ export const BookInfo = ({
   };
 
   return (
-    <Card className="bg-white shadow-sm">
-      <CardHeader className="space-y-6">
-        <div className="space-y-4">
-          <div className="w-full aspect-[3/4] relative rounded-lg overflow-hidden bg-blue-100">
-            {coverUrl ? (
-              <img 
-                src={coverUrl} 
-                alt="Book cover" 
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center">
-                <ImageIcon className="w-16 h-16 text-blue-300" />
-              </div>
-            )}
-          </div>
-          <Button 
-            onClick={handleDownloadPDF}
-            variant="outline"
-            className="w-full"
-          >
-            <Download className="h-4 w-4 mr-2" />
-            Download PDF
-          </Button>
-        </div>
-      </CardHeader>
-    </Card>
+    <div className="flex flex-col gap-4">
+      {coverUrl && (
+        <img 
+          src={coverUrl} 
+          alt={name}
+          className="w-full aspect-[3/4] object-cover rounded-lg"
+        />
+      )}
+      <Button 
+        variant="outline" 
+        className="w-full"
+        onClick={handleDownloadPDF}
+      >
+        <Download className="h-4 w-4 mr-2" />
+        Download PDF
+      </Button>
+    </div>
   );
 };
