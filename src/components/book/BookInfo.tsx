@@ -8,12 +8,14 @@ interface BookInfoProps {
   name: string;
   coverUrl?: string | null;
   bookId: number;
+  author?: string | null;
 }
 
 export const BookInfo = ({ 
   name,
   coverUrl,
   bookId,
+  author,
 }: BookInfoProps) => {
   const { toast } = useToast();
 
@@ -39,9 +41,25 @@ export const BookInfo = ({
           .page { margin-bottom: 40px; page-break-after: always; }
           .page-title { font-size: 24px; margin-bottom: 20px; font-weight: bold; }
           .page-content { font-size: 16px; }
+          .cover-page { 
+            height: 100vh; 
+            display: flex; 
+            flex-direction: column; 
+            justify-content: center; 
+            align-items: center;
+            text-align: center;
+            page-break-after: always;
+          }
+          .book-title { font-size: 48px; margin-bottom: 20px; }
+          .book-author { font-size: 24px; color: #666; }
         </style>
-        <h1>${name}</h1>
-        ${coverUrl ? `<img src="${coverUrl}" class="cover" />` : ''}
+        <div class="cover-page">
+          ${coverUrl 
+            ? `<img src="${coverUrl}" class="cover" />`
+            : `<h1 class="book-title">${name}</h1>
+               ${author ? `<div class="book-author">by ${author}</div>` : ''}`
+          }
+        </div>
         ${pages?.map((page, index) => `
           <div class="page">
             <div class="page-title">${page.title || `Page ${index + 1}`}</div>
