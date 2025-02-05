@@ -1,7 +1,6 @@
 import { useState, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { debounce } from "lodash";
-import { PageHeader } from "./PageHeader";
 import { SectionPageContent } from "./SectionPageContent";
 import { TextPageContent } from "./TextPageContent";
 
@@ -12,9 +11,17 @@ interface PageContentProps {
   saving: boolean;
   pageType?: 'text' | 'section';
   editable?: boolean;
+  onEditingChange?: (isEditing: boolean) => void;
 }
 
-export const PageContent = ({ content, title, onSave, pageType = 'text', editable = false }: PageContentProps) => {
+export const PageContent = ({ 
+  content, 
+  title, 
+  onSave, 
+  pageType = 'text', 
+  editable = false,
+  onEditingChange 
+}: PageContentProps) => {
   const [isEditing, setIsEditing] = useState(!content && editable);
   const [currentContent, setCurrentContent] = useState(content || '');
   const [currentTitle, setCurrentTitle] = useState(title || '');
@@ -29,7 +36,7 @@ export const PageContent = ({ content, title, onSave, pageType = 'text', editabl
   );
 
   const handleContentChange = (html: string, json: any) => {
-    if (!editable) return; // Don't update content if not editable
+    if (!editable) return;
     setCurrentContent(html);
     setEditorJson(json);
     debouncedSave(html, json, currentTitle);
@@ -41,16 +48,17 @@ export const PageContent = ({ content, title, onSave, pageType = 'text', editabl
     debouncedSave(currentContent, editorJson, newTitle);
   };
 
+  const handleToggleEdit = () => {
+    const newEditingState = !isEditing;
+    setIsEditing(newEditingState);
+    if (onEditingChange) {
+      onEditingChange(newEditingState);
+    }
+  };
+
   return (
     <Card className="flex-1 flex flex-col bg-background border">
       <CardContent className="p-0 flex-1 flex flex-col">
-        {pageType !== 'section' && editable && (
-          <PageHeader
-            isEditing={isEditing}
-            onToggleEdit={() => setIsEditing(!isEditing)}
-          />
-        )}
-        
         {pageType === 'section' ? (
           <SectionPageContent
             title={currentTitle}

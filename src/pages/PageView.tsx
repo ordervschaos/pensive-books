@@ -7,6 +7,7 @@ import { PageContent } from "@/components/page/PageContent";
 import { PageLoading } from "@/components/page/PageLoading";
 import { PageNotFound } from "@/components/page/PageNotFound";
 import { useBookPermissions } from "@/hooks/use-book-permissions";
+import { TopNav } from "@/components/TopNav";
 
 const PageView = () => {
   const { bookId, pageId } = useParams();
@@ -19,6 +20,7 @@ const PageView = () => {
   const [saving, setSaving] = useState(false);
   const [totalPages, setTotalPages] = useState(0);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [isEditing, setIsEditing] = useState(false);
   const { canEdit, loading: loadingPermissions } = useBookPermissions(bookId);
 
   const fetchPageDetails = async () => {
@@ -144,6 +146,7 @@ const PageView = () => {
   if (loading || loadingPermissions) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
+        <TopNav />
         <div className="flex-1 container max-w-4xl mx-auto px-4 py-4">
           <PageLoading />
         </div>
@@ -154,6 +157,7 @@ const PageView = () => {
   if (!page || !book) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
+        <TopNav />
         <div className="flex-1 container max-w-4xl mx-auto px-4 py-4">
           <PageNotFound bookId={bookId || ""} />
         </div>
@@ -163,6 +167,11 @@ const PageView = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
+      <TopNav 
+        isEditing={isEditing}
+        onToggleEdit={() => setIsEditing(!isEditing)}
+        showEditButton={canEdit}
+      />
       <div className="flex-1 container max-w-5xl mx-auto px-4 py-4 flex flex-col gap-4">
         <div className="flex-1 flex flex-col">
           <PageContent
@@ -172,6 +181,7 @@ const PageView = () => {
             saving={saving}
             pageType={page.page_type}
             editable={canEdit}
+            onEditingChange={setIsEditing}
           />
         </div>
         <PageNavigation

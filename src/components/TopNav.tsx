@@ -1,6 +1,6 @@
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { LogOut, LogIn, Moon, Sun, ArrowLeft, Search, Settings, Maximize2, Library } from "lucide-react";
+import { LogOut, LogIn, Moon, Sun, ArrowLeft, Search, Eye, Pencil, Library } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { useTheme } from "@/components/theme/ThemeProvider";
@@ -25,7 +25,13 @@ interface PageChangePayload {
   [key: string]: any;
 }
 
-export function TopNav() {
+interface TopNavProps {
+  isEditing?: boolean;
+  onToggleEdit?: () => void;
+  showEditButton?: boolean;
+}
+
+export function TopNav({ isEditing, onToggleEdit, showEditButton }: TopNavProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
@@ -86,7 +92,6 @@ export function TopNav() {
       window.location.href = `${baseUrl}/auth`;
     }
   };
-  
 
   const handleLogin = () => {
     navigate("/auth");
@@ -207,12 +212,32 @@ export function TopNav() {
               </Breadcrumb>
             ) : (
               <Link to={`/`}>
-              <span className="text-lg font-semibold text-foreground">Pensive</span>
+                <span className="text-lg font-semibold text-foreground">Pensive</span>
               </Link>
             )}
           </div>
 
           <div className="flex items-center gap-2">
+            {showEditButton && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onToggleEdit}
+                className="gap-2"
+              >
+                {isEditing ? (
+                  <>
+                    <Eye className="h-4 w-4" />
+                    Preview
+                  </>
+                ) : (
+                  <>
+                    <Pencil className="h-4 w-4" />
+                    Edit
+                  </>
+                )}
+              </Button>
+            )}
             {isBookRoute && (
               <Button variant="ghost" size="icon" onClick={() => setSearchOpen(true)}>
                 <Search className="h-4 w-4" />
@@ -224,7 +249,7 @@ export function TopNav() {
               ) : (
                 <Sun className="h-4 w-4" />
               )}
-            </Button> 
+            </Button>
             {isAuthenticated ? (
               <Button variant="ghost" size="icon" onClick={handleLogout}>
                 <LogOut className="h-4 w-4" />
