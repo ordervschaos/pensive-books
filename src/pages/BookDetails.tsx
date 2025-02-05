@@ -88,8 +88,6 @@ const BookDetails = () => {
     }
   };
 
-
-
   const togglePublish = async () => {
     try {
       setPublishing(true);
@@ -155,16 +153,14 @@ const BookDetails = () => {
     );
   }
 
-  const BookInfoSection =  ()=>{
-
+  const BookInfoSection = () => {
     return <BookInfo 
       name={book.name}
       coverUrl={book.cover_url}
-    
-    />
-  }
+    />;
+  };
 
-  const BookActions = ()=>{
+  const BookActions = () => {
     return canEdit && (
       <div className="flex justify-center my-4 gap-2 justify-between" >
         <BookVisibilityToggle
@@ -172,13 +168,12 @@ const BookDetails = () => {
           onTogglePublish={togglePublish}
           publishing={publishing}
         />
-        {/* add a settings button to take user to edit page */}
         <Button onClick={handleEditClick} variant="ghost">
           <Settings className="h-4 w-4" />
         </Button>
       </div>
-      )}
-
+    );
+  };
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -189,7 +184,6 @@ const BookDetails = () => {
             <div className="lg:hidden grid grid-cols-2 gap-4 col-span-full mb-6">
               <div className="col-span-1">
                 <BookInfoSection/>
-                
               </div>
               <div className="col-span-1">
                 <div className="flex flex-col">
@@ -204,14 +198,13 @@ const BookDetails = () => {
                 <div className="lg:hidden flex flex-col">
                   <BookActions/>
                 </div>
-                
               </div>
             </div>
 
             {/* Desktop layout */}
             <div className="hidden lg:block lg:col-span-1">
               <BookInfoSection/>
-                  <BookActions/>
+              <BookActions/>
             </div>
 
             <div className="lg:col-span-3">
@@ -223,7 +216,6 @@ const BookDetails = () => {
                   {book.name}
                 </h1>
                 <p className="text-muted-foreground">{book.author || "Unknown author"}</p>
-                
               </div>
               
               <PagesList 
