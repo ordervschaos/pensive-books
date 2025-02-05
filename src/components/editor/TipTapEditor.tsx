@@ -7,6 +7,7 @@ import { Bold, Italic, Quote, Code2, Link2, List, ListOrdered, Image as ImageIco
 import { useEffect } from 'react';
 import { useToast } from "@/hooks/use-toast";
 import { Title } from './extensions/Title';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 interface TipTapEditorProps {
   content: string;
@@ -17,6 +18,7 @@ interface TipTapEditorProps {
 
 export const TipTapEditor = ({ content, onChange, onTitleChange, editable = true }: TipTapEditorProps) => {
   const { toast } = useToast();
+  const isMobile = useIsMobile();
 
   const editor = useEditor({
     extensions: [
@@ -205,7 +207,7 @@ export const TipTapEditor = ({ content, onChange, onTitleChange, editable = true
           </div>
         </div>
       )}
-      <div className="prose dark:prose-invert prose-slate w-full max-w-none p-8 flex-1 [&_.ProseMirror:focus]:outline-none bg-background">
+      <div className={`prose dark:prose-invert prose-slate w-full max-w-none p-8 flex-1 [&_.ProseMirror:focus]:outline-none bg-background ${isMobile ? 'text-base' : 'text-lg'}`}>
         <EditorContent editor={editor} className="[&>div>ul]:list-disc [&>div>ul]:ml-4 [&>div>ol]:list-decimal [&>div>ol]:ml-4 [&>div>blockquote]:border-l-4 [&>div>blockquote]:border-primary [&>div>blockquote]:pl-4 [&>div>blockquote]:italic [&>div>blockquote]:my-4 [&>div>p>code]:rounded-md [&>div>p>code]:bg-muted [&>div>p>code]:px-[0.3rem] [&>div>p>code]:py-[0.2rem] [&>div>p>code]:font-mono [&>div>p>code]:text-sm" />
       </div>
     </div>
