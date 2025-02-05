@@ -145,7 +145,7 @@ export function TopNav({ isEditing, onToggleEdit, showEditButton }: TopNavProps)
             filter: `id=eq.${pageId}`
           },
           (payload: RealtimePostgresChangesPayload<PageChangePayload>) => {
-            if (payload.new.title) {
+            if (payload.new && payload.new.title) {
               setPageName(payload.new.title);
             }
           }
