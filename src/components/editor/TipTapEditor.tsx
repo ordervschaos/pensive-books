@@ -79,7 +79,7 @@ export const TipTapEditor = ({ content, onChange, onTitleChange, editable = true
       }
     },
     editorProps: {
-      handleKeyDown: ({ event }) => {
+      handleKeyDown: (view, event) => {
         if (editor?.isActive('title')) {
           if (event.key === 'b' && (event.ctrlKey || event.metaKey)) return true;
           if (event.key === 'i' && (event.ctrlKey || event.metaKey)) return true;

@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, ChangeEvent } from "react";
 import { debounce } from "lodash";
 import { SectionPageContent } from "./SectionPageContent";
 import { TextPageContent } from "./TextPageContent";
@@ -27,14 +27,15 @@ export const PageContent = ({ content, title, onSave, pageType = 'text', editabl
   );
 
   const handleContentChange = (html: string, json: any) => {
-    if (!editable) return; // Don't update content if not editable
+    if (!editable) return;
     setCurrentContent(html);
     setEditorJson(json);
     debouncedSave(html, json, currentTitle);
   };
 
-  const handleTitleChange = (newTitle: string) => {
+  const handleTitleChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (!editable) return;
+    const newTitle = e.target.value;
     setCurrentTitle(newTitle);
     debouncedSave(currentContent, editorJson, newTitle);
   };

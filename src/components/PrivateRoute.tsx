@@ -27,7 +27,7 @@ export const PrivateRoute = ({ children }: PrivateRouteProps) => {
           const { data: book, error } = await supabase
             .from("books")
             .select("is_public")
-            .eq("id", bookId)
+            .eq("id", parseInt(bookId))
             .single();
 
           if (error) {
