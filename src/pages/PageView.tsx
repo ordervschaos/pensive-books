@@ -136,6 +136,18 @@ const PageView = () => {
     }
   };
 
+  // Handle keyboard navigation
+  useEffect(() => {
+    const handleKeyPress = (event: KeyboardEvent) => {
+      if (event.key === 'ArrowRight' && currentIndex < totalPages - 1) {
+        navigateToPage(currentIndex + 1);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [currentIndex, totalPages]);
+
   useEffect(() => {
     console.log("PageId changed, fetching new page details");
     fetchPageDetails();
