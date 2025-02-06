@@ -4,8 +4,7 @@ import {
   CardHeader 
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ImageIcon, Download } from "lucide-react";
-
+import { ImageIcon, Download, Book } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -124,6 +123,68 @@ export const BookInfo = ({
     }
   };
 
+  const handleDownloadEPUB = async () => {
+    try {
+      // Fetch all pages for the book
+      const { data: pages, error } = await supabase
+        .from("pages")
+        .select("*")
+        .eq("book_id", bookId)
+        .eq("archived", false)
+        .order("page_index", { ascending: true });
+
+      if (error) throw error;
+
+      // Create EPUB content
+      const epubContent = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+<head>
+  <title>${name}</title>
+  <meta charset="UTF-8"/>
+</head>
+<body>
+  <h1>${name}</h1>
+  ${author ? `<h2>by ${author}</h2>` : ''}
+  ${pages?.map((page) => `
+    ${page.page_type === 'section' 
+      ? `<h2>${page.title || 'Untitled Section'}</h2>`
+      : `
+        <div>
+          <h3>${page.title || 'Untitled Page'}</h3>
+          ${page.html_content || ''}
+        </div>
+      `}
+  `).join('\n')}
+</body>
+</html>`;
+
+      // Create blob and download
+      const blob = new Blob([epubContent], { type: 'application/epub+zip' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${name}.epub`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      toast({
+        title: "EPUB Generated",
+        description: "Your book has been downloaded as EPUB"
+      });
+
+    } catch (error: any) {
+      console.error('Error generating EPUB:', error);
+      toast({
+        variant: "destructive",
+        title: "Error generating EPUB",
+        description: error.message
+      });
+    }
+  };
+
   return (
     <Card className="bg-white shadow-sm">
       <div className="flex flex-col gap-4">
@@ -141,14 +202,24 @@ export const BookInfo = ({
               </div>
             )}
           </div>
-          <Button
-            onClick={handleDownloadPDF}
-            variant="outline"
-            className="w-full"
-          >
-            <Download className="h-4 w-4 mr-2" />
-            Download PDF
-          </Button>
+          <div className="flex flex-col gap-2">
+            <Button
+              onClick={handleDownloadPDF}
+              variant="outline"
+              className="w-full"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Download PDF
+            </Button>
+            <Button
+              onClick={handleDownloadEPUB}
+              variant="outline"
+              className="w-full"
+            >
+              <Book className="h-4 w-4 mr-2" />
+              Download EPUB
+            </Button>
+          </div>
         </CardHeader>
       </div>
     </Card>
