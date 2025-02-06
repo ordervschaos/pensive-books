@@ -40,7 +40,7 @@ export const PrivateRoute = ({ children }: PrivateRouteProps) => {
         }
 
         setLoading(false);
-      } catch (error) {
+      } catch (error: any) {
         console.error("Error in auth check:", error);
         setLoading(false);
       }
@@ -64,16 +64,19 @@ export const PrivateRoute = ({ children }: PrivateRouteProps) => {
 
   // If it's a book route and the book is public, allow access
   if (bookId && isPublicBook) {
+    console.log("Allowing access to public book");
     return <>{children}</>;
   }
 
   // If not authenticated and not a public book, redirect to login or show not found
   if (!isAuthenticated) {
     if (bookId) {
-      // If it's a book route but not public, show not found
-      return <PageNotFound bookId={bookId} />;
+      // If it's a book route but not public, redirect to auth
+      console.log("Redirecting to auth for private book");
+      return <Navigate to="/auth" replace state={{ returnTo: window.location.pathname }} />;
     }
     // For non-book routes, redirect to auth
+    console.log("Redirecting to auth for protected route");
     return <Navigate to="/auth" replace state={{ returnTo: window.location.pathname }} />;
   }
 

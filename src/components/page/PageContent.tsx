@@ -54,7 +54,9 @@ export const PageContent = ({ content, title, onSave, pageType = 'text', editabl
             content={currentContent}
             isEditing={isEditing && editable}
             onChange={handleContentChange}
-            onTitleChange={handleTitleChange}
+            onTitleChange={(title: string) => {
+              handleTitleChange({ target: { value: title } } as ChangeEvent<HTMLInputElement>);
+            }}
             title={currentTitle}
             onToggleEdit={() => setIsEditing(!isEditing)}
           />
