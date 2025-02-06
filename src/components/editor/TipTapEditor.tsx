@@ -125,7 +125,7 @@ export const TipTapEditor = ({ content, onChange, onTitleChange, editable = true
   return (
     <div className="h-full flex flex-col">
       {editable && (
-        <div className={`rounded-full flex gap-1 items-center p-1 z-10000000 flex-wrap ${isEditing ? 'bg-muted/50 sticky top-4' : ''}`}>
+        <div className={`rounded-full flex gap-1 items-center p-1 flex-wrap z-50 ${isEditing ? 'sticky top-4 bg-muted/50 shadow-sm backdrop-blur-sm' : ''}`}>
           {isEditing && (
             <>
               <Button
