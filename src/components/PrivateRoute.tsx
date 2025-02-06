@@ -11,7 +11,8 @@ export const PrivateRoute = ({ children }: PrivateRouteProps) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [isPublicBook, setIsPublicBook] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
-  const { id: bookId } = useParams();
+  const params = useParams();
+  const bookId = params.id || params.bookId; // Get either id or bookId parameter
 
   useEffect(() => {
     const checkAuth = async () => {
