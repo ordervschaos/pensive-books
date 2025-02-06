@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, useLocation } from "react-router-dom";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { Toaster } from "@/components/ui/toaster";
 import { TopNav } from "@/components/TopNav";
@@ -12,6 +12,18 @@ import BookDetails from "@/pages/BookDetails";
 import BookEdit from "@/pages/BookEdit";
 import PageView from "@/pages/PageView";
 import AcceptInvitation from "@/pages/AcceptInvitation";
+import { useEffect } from "react";
+
+// ScrollToTop component that scrolls the window up on route change
+function ScrollToTop() {
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
+
+  return null;
+}
 
 function App() {
   // Get the basename based on the environment
@@ -29,6 +41,7 @@ function App() {
   return (
     <ThemeProvider defaultTheme="light">
       <Router basename={basename}>
+        <ScrollToTop />
         <TopNav />
         <Routes>
           <Route path="/" element={<Landing />} />
