@@ -49,6 +49,9 @@ export const getEditorConfig = (content: string, onChange: (html: string, json: 
         HTMLAttributes: {
           class: 'relative rounded-md bg-muted/50 my-4',
         },
+        transformPastedText: true,
+        defaultLanguage: 'javascript',
+      }).extend({
         renderHTML({ node, HTMLAttributes }) {
           const languageClass = node.attrs.language ? ` language-${node.attrs.language}` : ''
           const codeBlockId = `code-block-${Math.random().toString(36).substr(2, 9)}`
@@ -78,6 +81,7 @@ export const getEditorConfig = (content: string, onChange: (html: string, json: 
           const code = document.createElement('code')
           code.className = `hljs${languageClass}`
           code.id = codeBlockId
+          code.innerHTML = node.textContent
           
           pre.appendChild(code)
           wrapper.appendChild(pre)
