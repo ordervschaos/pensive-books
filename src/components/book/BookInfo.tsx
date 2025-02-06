@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ImageIcon, Download, Book } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { generateEPUB } from "@/lib/epub";
 
 interface BookInfoProps {
   name: string;
@@ -135,133 +136,15 @@ export const BookInfo = ({
 
       if (error) throw error;
 
-      // Function to sanitize HTML content for XHTML
-      const sanitizeContent = (html: string) => {
-        return html
-          // Replace HTML entities with their XML equivalents
-          .replace(/&nbsp;/g, '&#160;')
-          .replace(/&ldquo;/g, '&#8220;')
-          .replace(/&rdquo;/g, '&#8221;')
-          .replace(/&lsquo;/g, '&#8216;')
-          .replace(/&rsquo;/g, '&#8217;')
-          .replace(/&mdash;/g, '&#8212;')
-          .replace(/&ndash;/g, '&#8211;')
-          .replace(/&hellip;/g, '&#8230;')
-          .replace(/&amp;/g, '&#38;')
-          .replace(/&lt;/g, '&#60;')
-          .replace(/&gt;/g, '&#62;')
-          .replace(/&quot;/g, '&#34;')
-          .replace(/&apos;/g, '&#39;')
-          // Ensure all tags are properly closed
-          .replace(/<br>/g, '<br/>')
-          .replace(/<hr>/g, '<hr/>')
-          .replace(/<img ([^>]*)>/g, '<img $1/>')
-          // Remove any script tags and their content
-          .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-          // Remove any style tags and their content
-          .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
-          // Remove any comments
-          .replace(/<!--[\s\S]*?-->/g, '');
-      };
-
-      // Create container.xml
-      const containerXml = `<?xml version="1.0" encoding="UTF-8"?>
-<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
-  <rootfiles>
-    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
-  </rootfiles>
-</container>`;
-
-      // Create content.opf with XML entities
-      const contentOpf = `<?xml version="1.0" encoding="UTF-8"?>
-<package version="3.0" unique-identifier="BookId" xmlns="http://www.idpf.org/2007/opf">
-  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
-    <dc:title>${name.replace(/&/g, '&#38;')}</dc:title>
-    ${author ? `<dc:creator>${author.replace(/&/g, '&#38;')}</dc:creator>` : ''}
-    <dc:language>en</dc:language>
-    <dc:identifier id="BookId">urn:uuid:${crypto.randomUUID()}</dc:identifier>
-    <meta property="dcterms:modified">${new Date().toISOString().split('.')[0]}Z</meta>
-  </metadata>
-  <manifest>
-    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
-    <item id="content" href="content.xhtml" media-type="application/xhtml+xml"/>
-  </manifest>
-  <spine>
-    <itemref idref="content"/>
-  </spine>
-</package>`;
-
-      // Create nav.xhtml (renamed from toc.xhtml for EPUB3 compatibility)
-      const navXhtml = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
-<head>
-  <title>Navigation</title>
-  <meta charset="UTF-8"/>
-</head>
-<body>
-  <nav epub:type="toc" id="toc">
-    <h1>Table of Contents</h1>
-    <ol>
-      ${pages?.map((page, index) => `
-        <li><a href="content.xhtml#page${index}">${(page.title || 'Untitled').replace(/&/g, '&#38;')}</a></li>
-      `).join('\n')}
-    </ol>
-  </nav>
-</body>
-</html>`;
-
-      // Create content.xhtml with sanitized content
-      const contentXhtml = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
-<head>
-  <title>${name.replace(/&/g, '&#38;')}</title>
-  <meta charset="UTF-8"/>
-</head>
-<body>
-  <h1>${name.replace(/&/g, '&#38;')}</h1>
-  ${author ? `<h2>by ${author.replace(/&/g, '&#38;')}</h2>` : ''}
-  ${pages?.map((page, index) => `
-    <section id="page${index}" epub:type="chapter">
-      ${page.page_type === 'section' 
-        ? `<h2>${(page.title || 'Untitled Section').replace(/&/g, '&#38;')}</h2>`
-        : `
-          <article>
-            <h3>${(page.title || 'Untitled Page').replace(/&/g, '&#38;')}</h3>
-            ${page.html_content ? sanitizeContent(page.html_content) : ''}
-          </article>
-        `}
-    </section>
-  `).join('\n')}
-</body>
-</html>`;
-
-      // Create mimetype file
-      const mimetype = 'application/epub+zip';
-
-      // Create a ZIP file containing all the EPUB components
-      const JSZip = (await import('jszip')).default;
-      const zip = new JSZip();
-
-      // Add mimetype file first (must be uncompressed)
-      zip.file('mimetype', mimetype, { compression: 'STORE' });
-
-      // Add META-INF directory
-      zip.file('META-INF/container.xml', containerXml);
-
-      // Add OEBPS directory
-      zip.file('OEBPS/content.opf', contentOpf);
-      zip.file('OEBPS/nav.xhtml', navXhtml);
-      zip.file('OEBPS/content.xhtml', contentXhtml);
-
-      // Generate the EPUB file
-      const epubBlob = await zip.generateAsync({
-        type: 'blob',
-        mimeType: 'application/epub+zip',
-        compression: 'DEFLATE',
-        compressionOptions: { level: 9 }
-      });
+      // Generate EPUB file using the utility functions
+      const epubBlob = await generateEPUB(
+        {
+          title: name,
+          author: author || undefined,
+          language: 'en'
+        },
+        pages || []
+      );
 
       // Download the file
       const url = window.URL.createObjectURL(epubBlob);
