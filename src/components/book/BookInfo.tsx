@@ -135,8 +135,55 @@ export const BookInfo = ({
 
       if (error) throw error;
 
-      // Create EPUB content
-      const epubContent = `<?xml version="1.0" encoding="UTF-8"?>
+      // Create container.xml
+      const containerXml = `<?xml version="1.0" encoding="UTF-8"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>`;
+
+      // Create content.opf
+      const contentOpf = `<?xml version="1.0" encoding="UTF-8"?>
+<package version="3.0" unique-identifier="BookId" xmlns="http://www.idpf.org/2007/opf">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
+    <dc:title>${name}</dc:title>
+    ${author ? `<dc:creator>${author}</dc:creator>` : ''}
+    <dc:language>en</dc:language>
+    <dc:identifier id="BookId">urn:uuid:${crypto.randomUUID()}</dc:identifier>
+  </metadata>
+  <manifest>
+    <item id="toc" href="toc.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+    <item id="content" href="content.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine>
+    <itemref idref="toc"/>
+    <itemref idref="content"/>
+  </spine>
+</package>`;
+
+      // Create toc.xhtml
+      const tocXhtml = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+<head>
+  <title>Table of Contents</title>
+  <meta charset="UTF-8"/>
+</head>
+<body>
+  <nav epub:type="toc">
+    <h1>Table of Contents</h1>
+    <ol>
+      ${pages?.map((page, index) => `
+        <li><a href="content.xhtml#page${index}">${page.title || 'Untitled'}</a></li>
+      `).join('\n')}
+    </ol>
+  </nav>
+</body>
+</html>`;
+
+      // Create content.xhtml
+      const contentXhtml = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
 <head>
@@ -146,22 +193,49 @@ export const BookInfo = ({
 <body>
   <h1>${name}</h1>
   ${author ? `<h2>by ${author}</h2>` : ''}
-  ${pages?.map((page) => `
-    ${page.page_type === 'section' 
-      ? `<h2>${page.title || 'Untitled Section'}</h2>`
-      : `
-        <div>
-          <h3>${page.title || 'Untitled Page'}</h3>
-          ${page.html_content || ''}
-        </div>
-      `}
+  ${pages?.map((page, index) => `
+    <section id="page${index}">
+      ${page.page_type === 'section' 
+        ? `<h2>${page.title || 'Untitled Section'}</h2>`
+        : `
+          <article>
+            <h3>${page.title || 'Untitled Page'}</h3>
+            ${page.html_content || ''}
+          </article>
+        `}
+    </section>
   `).join('\n')}
 </body>
 </html>`;
 
-      // Create blob and download
-      const blob = new Blob([epubContent], { type: 'application/epub+zip' });
-      const url = window.URL.createObjectURL(blob);
+      // Create mimetype file
+      const mimetype = 'application/epub+zip';
+
+      // Create a ZIP file containing all the EPUB components
+      const JSZip = (await import('jszip')).default;
+      const zip = new JSZip();
+
+      // Add mimetype file first (must be uncompressed)
+      zip.file('mimetype', mimetype, { compression: 'STORE' });
+
+      // Add META-INF directory
+      zip.file('META-INF/container.xml', containerXml);
+
+      // Add OEBPS directory
+      zip.file('OEBPS/content.opf', contentOpf);
+      zip.file('OEBPS/toc.xhtml', tocXhtml);
+      zip.file('OEBPS/content.xhtml', contentXhtml);
+
+      // Generate the EPUB file
+      const epubBlob = await zip.generateAsync({
+        type: 'blob',
+        mimeType: 'application/epub+zip',
+        compression: 'DEFLATE',
+        compressionOptions: { level: 9 }
+      });
+
+      // Download the file
+      const url = window.URL.createObjectURL(epubBlob);
       const a = document.createElement('a');
       a.href = url;
       a.download = `${name}.epub`;
