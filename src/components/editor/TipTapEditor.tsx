@@ -2,6 +2,8 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import Image from '@tiptap/extension-image';
+import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
+import { lowlight } from 'lowlight'
 import { Button } from "@/components/ui/button";
 import { Bold, Italic, Quote, Code2, Link2, List, ListOrdered, Image as ImageIcon, History, Check, Undo, Redo, Pencil, Eye, Copy } from "lucide-react";
 import { useEffect } from 'react';
@@ -51,13 +53,57 @@ export const TipTapEditor = ({ content, onChange, onTitleChange, editable = true
             class: 'rounded-md bg-muted px-[0.3rem] py-[0.2rem] font-mono text-sm',
           },
         },
-        codeBlock: {
-          HTMLAttributes: {
-            class: 'relative rounded-md bg-muted/50 p-4 font-mono text-sm my-4',
-          },
-        },
+        codeBlock: false, // Disable default code block
         heading: {
           levels: [2, 3, 4, 5, 6],
+        },
+      }),
+      CodeBlockLowlight.configure({
+        lowlight,
+        HTMLAttributes: {
+          class: 'relative rounded-md bg-muted/50 my-4 [&_pre]:p-0 [&_pre]:bg-transparent',
+        },
+        renderHTML({ node, HTMLAttributes }) {
+          return [
+            'div',
+            { class: 'group relative' },
+            [
+              'div',
+              { class: 'flex items-center justify-between bg-muted px-4 py-1.5 rounded-t-md border-b border-border' },
+              [
+                'span',
+                { class: 'text-xs text-muted-foreground' },
+                HTMLAttributes.language || 'typescript'
+              ],
+              [
+                'button',
+                { 
+                  class: 'copy-button hover:bg-muted-foreground/10 p-1 rounded-md',
+                  'data-code': node.textContent
+                },
+                [
+                  'svg',
+                  {
+                    xmlns: 'http://www.w3.org/2000/svg',
+                    width: '14',
+                    height: '14',
+                    viewBox: '0 0 24 24',
+                    fill: 'none',
+                    stroke: 'currentColor',
+                    'stroke-width': '2',
+                    'stroke-linecap': 'round',
+                    'stroke-linejoin': 'round',
+                    class: 'lucide lucide-copy'
+                  },
+                  [
+                    ['rect', { width: '14', height: '14', x: '8', y: '8', rx: '2', ry: '2' }],
+                    ['path', { d: 'M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2' }]
+                  ]
+                ]
+              ]
+            ],
+            ['pre', HTMLAttributes, 0]
+          ];
         },
       }),
       Link.configure({
@@ -90,13 +136,6 @@ export const TipTapEditor = ({ content, onChange, onTitleChange, editable = true
           if (event.key === 'i' && (event.ctrlKey || event.metaKey)) return true;
         }
       },
-      transformPastedHTML(html) {
-        // Add code block header with type and copy button
-        return html.replace(
-          /<pre><code>/g,
-          `<pre><div class="flex items-center justify-between bg-muted px-4 py-1.5 rounded-t-md border-b border-border"><span class="text-xs text-muted-foreground">typescript</span><button class="copy-button hover:bg-muted-foreground/10 p-1 rounded-md"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-copy"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></button></div><code>`
-        );
-      },
     },
     autofocus: 'start',
   });
@@ -113,16 +152,13 @@ export const TipTapEditor = ({ content, onChange, onTitleChange, editable = true
       copyButtons.forEach(button => {
         button.addEventListener('click', (e) => {
           e.preventDefault();
-          const pre = (e.currentTarget as HTMLElement).closest('pre');
-          if (pre) {
-            const code = pre.querySelector('code');
-            if (code) {
-              navigator.clipboard.writeText(code.textContent || '');
-              toast({
-                title: "Copied to clipboard",
-                duration: 1000,
-              });
-            }
+          const code = (e.currentTarget as HTMLElement).getAttribute('data-code');
+          if (code) {
+            navigator.clipboard.writeText(code);
+            toast({
+              title: "Copied to clipboard",
+              duration: 1000,
+            });
           }
         });
       });
@@ -186,8 +222,8 @@ export const TipTapEditor = ({ content, onChange, onTitleChange, editable = true
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => editor.chain().focus().toggleCode().run()}
-                className={editor.isActive('code') ? 'bg-muted' : ''}
+                onClick={() => editor.chain().focus().toggleCodeBlock().run()}
+                className={editor.isActive('codeBlock') ? 'bg-muted' : ''}
               >
                 <Code2 className="h-4 w-4" />
               </Button>
@@ -263,8 +299,8 @@ export const TipTapEditor = ({ content, onChange, onTitleChange, editable = true
           </Button>
         </div>
       )}
-      <div className={`prose dark:prose-invert prose-slate w-full max-w-none p-8 flex-1 [&_.ProseMirror:focus]:outline-none bg-background ${isMobile ? 'text-base' : 'text-lg'} [&_pre]:relative [&_pre]:p-0 [&_pre>code]:block [&_pre>code]:p-4 [&_pre>code]:pt-8`}>
-        <EditorContent editor={editor} className="[&>div>ul]:list-disc [&>div>ul]:ml-4 [&>div>ol]:list-decimal [&>div>ol]:ml-4 [&>div>blockquote]:border-l-4 [&>div>blockquote]:border-primary [&>div>blockquote]:pl-4 [&>div>blockquote]:italic [&>div>blockquote]:my-4 [&>div>p>code]:rounded-md [&>div>p>code]:bg-muted [&>div>p>code]:px-[0.3rem] [&>div>p>code]:py-[0.2rem] [&>div>p>code]:font-mono [&>div>p>code]:text-sm" />
+      <div className={`prose dark:prose-invert prose-slate w-full max-w-none p-8 flex-1 [&_.ProseMirror:focus]:outline-none bg-background ${isMobile ? 'text-base' : 'text-lg'}`}>
+        <EditorContent editor={editor} className="[&>div>ul]:list-disc [&>div>ul]:ml-4 [&>div>ol]:list-decimal [[&>div>blockquote]:border-l-4 [&>div>blockquote]:border-primary [&>div>blockquote]:pl-4 [&>div>blockquote]:italic [&>div>blockquote]:my-4 [&>div>p>code]:rounded-md [&>div>p>code]:bg-muted [&>div>p>code]:px-[0.3rem] [&>div>p>code]:py-[0.2rem] [&>div>p>code]:font-mono [&>div>p>code]:text-sm" />
       </div>
     </div>
   );
