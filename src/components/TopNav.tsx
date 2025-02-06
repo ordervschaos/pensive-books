@@ -140,7 +140,7 @@ export function TopNav() {
             filter: `id=eq.${pageId}`
           },
           (payload: RealtimePostgresChangesPayload<PageChangePayload>) => {
-            if (payload.new && payload.new.title) {
+            if (payload.new.title) {
               setPageName(payload.new.title);
             }
           }
