@@ -24,7 +24,7 @@ export default function Index() {
           return;
         }
 
-        console.log("Fetching books...");
+        console.log("Fetching books for user:", session.user.email);
         
         // Fetch user's own books
         const { data: ownedBooks, error: ownedError } = await supabase
@@ -38,39 +38,47 @@ export default function Index() {
           throw ownedError;
         }
 
-        // Fetch books shared with the user's email
-        const { data: accessData, error: accessError } = await supabase
+        // Fetch books shared with the user through book_access
+        const { data: sharedBooksData, error: sharedError } = await supabase
           .from("book_access")
           .select(`
-            book_id,
             access_level,
-            books (*)
+            books (
+              id,
+              name,
+              cover_url,
+              is_public,
+              created_at,
+              updated_at,
+              owner_id
+            )
           `)
-          .eq('invited_email', session.user.email);
+          .eq('invited_email', session.user.email)
+          .eq('status', 'accepted')
+          .not('books', 'is', null);
 
-        if (accessError) {
-          console.error("Error fetching shared books:", accessError);
-          throw accessError;
+        if (sharedError) {
+          console.error("Error fetching shared books:", sharedError);
+          throw sharedError;
         }
 
-        // Filter out any null books and transform the data
-        const sharedBooksData = accessData
-          .filter(access => access.books !== null)
-          .map(access => ({
-            ...access.books,
-            access_level: access.access_level
-          }));
+        // Transform shared books data to include access level
+        const transformedSharedBooks = sharedBooksData
+          ?.filter(item => item.books !== null)
+          .map(item => ({
+            ...item.books,
+            access_level: item.access_level
+          })) || [];
 
         console.log("Books fetched successfully:", {
-          owned: ownedBooks,
-          shared: sharedBooksData,
-          rawAccessData: accessData // Log raw access data for debugging
+          owned: ownedBooks?.length || 0,
+          shared: transformedSharedBooks?.length || 0
         });
 
         setBooks(ownedBooks || []);
-        setSharedBooks(sharedBooksData || []);
+        setSharedBooks(transformedSharedBooks);
       } catch (error: any) {
-        console.error("Detailed error:", error);
+        console.error("Error fetching books:", error);
         toast({
           variant: "destructive",
           title: "Error fetching books",
@@ -128,7 +136,7 @@ export default function Index() {
                     />
                   ) : (
                     <div className="w-full h-full bg-muted flex items-center justify-center p-4">
-                      <h2 className="text-xs md:text-2xl  font-semibold text-center text-muted-foreground break-words line-clamp-3">
+                      <h2 className="text-xs md:text-2xl font-semibold text-center text-muted-foreground break-words line-clamp-3">
                         {book.name}
                       </h2>
                     </div>
@@ -172,14 +180,13 @@ export default function Index() {
         {publishedBooks.length > 0 && (
           <BookGrid books={publishedBooks} title="Published Books" />
         )}
-         {sharedBooks.length > 0 && (
+        {sharedBooks.length > 0 && (
           <BookGrid books={sharedBooks} title="Shared with me" />
         )}
         <BookGrid 
           books={unpublishedBooks} 
           title={publishedBooks.length > 0 ? "Other Books" : "All Books"} 
         />
-       
       </div>
     </div>
   );
