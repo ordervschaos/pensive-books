@@ -1,7 +1,5 @@
 import { useState, useCallback } from "react";
-import { Card, CardContent } from "@/components/ui/card";
 import { debounce } from "lodash";
-import { PageHeader } from "./PageHeader";
 import { SectionPageContent } from "./SectionPageContent";
 import { TextPageContent } from "./TextPageContent";
 
@@ -44,13 +42,6 @@ export const PageContent = ({ content, title, onSave, pageType = 'text', editabl
   return (
     <div className="flex-1 flex flex-col bg-background">
       <div className="p-0 flex-1 flex flex-col">
-        {pageType !== 'section' && editable && (
-          <PageHeader
-            isEditing={isEditing}
-            onToggleEdit={() => setIsEditing(!isEditing)}
-          />
-        )}
-        
         {pageType === 'section' ? (
           <SectionPageContent
             title={currentTitle}
@@ -64,6 +55,7 @@ export const PageContent = ({ content, title, onSave, pageType = 'text', editabl
             onChange={handleContentChange}
             onTitleChange={handleTitleChange}
             title={currentTitle}
+            onToggleEdit={() => setIsEditing(!isEditing)}
           />
         )}
       </div>

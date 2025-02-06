@@ -6,9 +6,10 @@ interface TextPageContentProps {
   onChange: (html: string, json: any) => void;
   onTitleChange: (title: string) => void;
   title: string;
+  onToggleEdit?: () => void;
 }
 
-export const TextPageContent = ({ content, isEditing, onChange, onTitleChange, title }: TextPageContentProps) => {
+export const TextPageContent = ({ content, isEditing, onChange, onTitleChange, title, onToggleEdit }: TextPageContentProps) => {
   // Create initial content with title if it's empty
   const initialContent = content || `<h1 class="page-title">${title}</h1><p></p>`;
 
@@ -18,7 +19,9 @@ export const TextPageContent = ({ content, isEditing, onChange, onTitleChange, t
         content={initialContent}
         onChange={onChange}
         onTitleChange={onTitleChange}
-        editable={isEditing}
+        editable={true}
+        isEditing={isEditing}
+        onToggleEdit={onToggleEdit}
       />
     </div>
   );

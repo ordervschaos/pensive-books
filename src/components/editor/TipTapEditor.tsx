@@ -3,7 +3,7 @@ import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import Image from '@tiptap/extension-image';
 import { Button } from "@/components/ui/button";
-import { Bold, Italic, Quote, Code2, Link2, List, ListOrdered, Image as ImageIcon, History, Check, Undo, Redo } from "lucide-react";
+import { Bold, Italic, Quote, Code2, Link2, List, ListOrdered, Image as ImageIcon, History, Check, Undo, Redo, Pencil, Eye } from "lucide-react";
 import { useEffect } from 'react';
 import { useToast } from "@/hooks/use-toast";
 import { Title } from './extensions/Title';
@@ -14,9 +14,11 @@ interface TipTapEditorProps {
   onChange: (html: string, json: any) => void;
   onTitleChange?: (title: string) => void;
   editable?: boolean;
+  isEditing?: boolean;
+  onToggleEdit?: () => void;
 }
 
-export const TipTapEditor = ({ content, onChange, onTitleChange, editable = true }: TipTapEditorProps) => {
+export const TipTapEditor = ({ content, onChange, onTitleChange, editable = true, isEditing = true, onToggleEdit }: TipTapEditorProps) => {
   const { toast } = useToast();
   const isMobile = useIsMobile();
 
@@ -69,7 +71,7 @@ export const TipTapEditor = ({ content, onChange, onTitleChange, editable = true
     editable,
     onUpdate: ({ editor }) => {
       onChange(editor.getHTML(), editor.getJSON());
-      
+
       if (onTitleChange) {
         const titleNode = editor.getJSON().content.find((node: any) => node.type === 'title');
         const title = titleNode?.content?.[0]?.text || '';
@@ -123,88 +125,111 @@ export const TipTapEditor = ({ content, onChange, onTitleChange, editable = true
   return (
     <div className="h-full flex flex-col">
       {editable && (
-        <div className="border-b bg-muted/50 p-2 flex gap-1 items-center flex-wrap">
+        <div className={`rounded-full flex gap-1 items-center p-1 z-10000000 flex-wrap ${isEditing ? 'bg-muted/50 sticky top-4' : ''}`}>
+          {isEditing && (
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => editor.chain().focus().toggleBold().run()}
+                className={editor.isActive('bold') ? 'bg-muted' : ''}
+              >
+                <Bold className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => editor.chain().focus().toggleItalic().run()}
+                className={editor.isActive('italic') ? 'bg-muted' : ''}
+              >
+                <Italic className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => editor.chain().focus().toggleBlockquote().run()}
+                className={editor.isActive('blockquote') ? 'bg-muted' : ''}
+              >
+                <Quote className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => editor.chain().focus().toggleCode().run()}
+                className={editor.isActive('code') ? 'bg-muted' : ''}
+              >
+                <Code2 className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => editor.chain().focus().toggleBulletList().run()}
+                className={editor.isActive('bulletList') ? 'bg-muted' : ''}
+              >
+                <List className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => editor.chain().focus().toggleOrderedList().run()}
+                className={editor.isActive('orderedList') ? 'bg-muted' : ''}
+              >
+                <ListOrdered className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={addLink}
+                className={editor.isActive('link') ? 'bg-muted' : ''}
+              >
+                <Link2 className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={addImage}
+              >
+                <ImageIcon className="h-4 w-4" />
+              </Button>
+              <div className="ml-auto flex gap-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => editor.chain().focus().undo().run()}
+                  disabled={!editor.can().undo()}
+                >
+                  <Undo className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => editor.chain().focus().redo().run()}
+                  disabled={!editor.can().redo()}
+                >
+                  <Redo className="h-4 w-4" />
+                </Button>
+              </div>
+            </>
+          )}
+
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => editor.chain().focus().toggleBold().run()}
-            className={editor.isActive('bold') ? 'bg-muted' : ''}
+            onClick={onToggleEdit}
+            className="ml-auto"
           >
-            <Bold className="h-4 w-4" />
+            {isEditing ? (
+              <>
+                <Eye className="mr-2 h-4 w-4" />
+                Preview
+              </>
+            ) : (
+              <>
+                <Pencil className="mr-2 h-4 w-4" />
+                Edit
+              </>
+            )}
           </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => editor.chain().focus().toggleItalic().run()}
-            className={editor.isActive('italic') ? 'bg-muted' : ''}
-          >
-            <Italic className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => editor.chain().focus().toggleBlockquote().run()}
-            className={editor.isActive('blockquote') ? 'bg-muted' : ''}
-          >
-            <Quote className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => editor.chain().focus().toggleCode().run()}
-            className={editor.isActive('code') ? 'bg-muted' : ''}
-          >
-            <Code2 className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => editor.chain().focus().toggleBulletList().run()}
-            className={editor.isActive('bulletList') ? 'bg-muted' : ''}
-          >
-            <List className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => editor.chain().focus().toggleOrderedList().run()}
-            className={editor.isActive('orderedList') ? 'bg-muted' : ''}
-          >
-            <ListOrdered className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={addLink}
-            className={editor.isActive('link') ? 'bg-muted' : ''}
-          >
-            <Link2 className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={addImage}
-          >
-            <ImageIcon className="h-4 w-4" />
-          </Button>
-          <div className="ml-auto flex gap-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => editor.chain().focus().undo().run()}
-              disabled={!editor.can().undo()}
-            >
-              <Undo className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => editor.chain().focus().redo().run()}
-              disabled={!editor.can().redo()}
-            >
-              <Redo className="h-4 w-4" />
-            </Button>
-          </div>
         </div>
       )}
       <div className={`prose dark:prose-invert prose-slate w-full max-w-none p-8 flex-1 [&_.ProseMirror:focus]:outline-none bg-background ${isMobile ? 'text-base' : 'text-lg'}`}>
