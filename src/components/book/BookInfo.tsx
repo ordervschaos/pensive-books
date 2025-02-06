@@ -16,6 +16,14 @@ interface BookInfoProps {
   author?: string | null;
 }
 
+interface Page {
+  id: number;
+  title: string;
+  html_content: string;
+  page_type: 'section' | 'page';
+  // ... other page properties
+}
+
 export const BookInfo = ({ 
   name,
   coverUrl,
@@ -143,7 +151,10 @@ export const BookInfo = ({
           author: author || undefined,
           language: 'en'
         },
-        pages || []
+        pages?.map(page => ({
+          ...page,
+          page_type: page.page_type as 'section' | 'page'
+        })) || []
       );
 
       // Download the file

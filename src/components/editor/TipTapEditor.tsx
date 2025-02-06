@@ -3,13 +3,16 @@ import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import Image from '@tiptap/extension-image';
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
-import { lowlight } from 'lowlight'
+import { common, createLowlight } from 'lowlight'
 import { Button } from "@/components/ui/button";
 import { Bold, Italic, Quote, Code2, Link2, List, ListOrdered, Image as ImageIcon, History, Check, Undo, Redo, Pencil, Eye, Copy } from "lucide-react";
 import { useEffect } from 'react';
 import { useToast } from "@/hooks/use-toast";
 import { Title } from './extensions/Title';
 import { useIsMobile } from '@/hooks/use-mobile';
+
+// Create a new lowlight instance with common languages
+const lowlight = createLowlight(common)
 
 interface TipTapEditorProps {
   content: string;
@@ -53,7 +56,7 @@ export const TipTapEditor = ({ content, onChange, onTitleChange, editable = true
             class: 'rounded-md bg-muted px-[0.3rem] py-[0.2rem] font-mono text-sm',
           },
         },
-        codeBlock: false, // Disable default code block
+        codeBlock: false,
         heading: {
           levels: [2, 3, 4, 5, 6],
         },
@@ -62,48 +65,6 @@ export const TipTapEditor = ({ content, onChange, onTitleChange, editable = true
         lowlight,
         HTMLAttributes: {
           class: 'relative rounded-md bg-muted/50 my-4 [&_pre]:p-0 [&_pre]:bg-transparent',
-        },
-        renderHTML({ node, HTMLAttributes }) {
-          return [
-            'div',
-            { class: 'group relative' },
-            [
-              'div',
-              { class: 'flex items-center justify-between bg-muted px-4 py-1.5 rounded-t-md border-b border-border' },
-              [
-                'span',
-                { class: 'text-xs text-muted-foreground' },
-                HTMLAttributes.language || 'typescript'
-              ],
-              [
-                'button',
-                { 
-                  class: 'copy-button hover:bg-muted-foreground/10 p-1 rounded-md',
-                  'data-code': node.textContent
-                },
-                [
-                  'svg',
-                  {
-                    xmlns: 'http://www.w3.org/2000/svg',
-                    width: '14',
-                    height: '14',
-                    viewBox: '0 0 24 24',
-                    fill: 'none',
-                    stroke: 'currentColor',
-                    'stroke-width': '2',
-                    'stroke-linecap': 'round',
-                    'stroke-linejoin': 'round',
-                    class: 'lucide lucide-copy'
-                  },
-                  [
-                    ['rect', { width: '14', height: '14', x: '8', y: '8', rx: '2', ry: '2' }],
-                    ['path', { d: 'M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2' }]
-                  ]
-                ]
-              ]
-            ],
-            ['pre', HTMLAttributes, 0]
-          ];
         },
       }),
       Link.configure({
