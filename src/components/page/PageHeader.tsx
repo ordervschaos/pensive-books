@@ -9,7 +9,7 @@ interface PageHeaderProps {
 
 export const PageHeader = ({ isEditing, onToggleEdit }: PageHeaderProps) => {
   return (
-    <div className="flex justify-between items-center p-2 border-b">
+    <div className="flex justify-between items-center p-2">
       <Button
         variant="ghost"
         size="sm"

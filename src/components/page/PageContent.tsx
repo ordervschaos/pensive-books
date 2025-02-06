@@ -42,8 +42,8 @@ export const PageContent = ({ content, title, onSave, pageType = 'text', editabl
   };
 
   return (
-    <Card className="flex-1 flex flex-col bg-background border">
-      <CardContent className="p-0 flex-1 flex flex-col">
+    <div className="flex-1 flex flex-col bg-background">
+      <div className="p-0 flex-1 flex flex-col">
         {pageType !== 'section' && editable && (
           <PageHeader
             isEditing={isEditing}
@@ -66,7 +66,7 @@ export const PageContent = ({ content, title, onSave, pageType = 'text', editabl
             title={currentTitle}
           />
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 };
