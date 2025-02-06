@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Plus } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 interface PageNavigationProps {
@@ -9,6 +9,9 @@ interface PageNavigationProps {
   onNavigate: (index: number) => void;
   nextPageTitle?: string;
   bookTitle?: string;
+  isEditing?: boolean;
+  onNewPage?: () => void;
+  canEdit?: boolean;
 }
 
 export const PageNavigation = ({ 
@@ -17,7 +20,10 @@ export const PageNavigation = ({
   totalPages, 
   onNavigate,
   nextPageTitle,
-  bookTitle = 'Untitled'
+  bookTitle = 'Untitled',
+  isEditing = false,
+  onNewPage,
+  canEdit = false
 }: PageNavigationProps) => {
   const navigate = useNavigate();
 
@@ -36,12 +42,12 @@ export const PageNavigation = ({
   };
 
   return (
-    <div className="flex items-center justify-center">
+    <div className="flex items-center justify-center gap-2">
       <Button
         variant="outline"
         onClick={handleNextClick}
         className="flex items-center gap-2 px-6 py-6 rounded-full bg-background border-border"
-        disabled={currentIndex === -1}
+        disabled={currentIndex === -1 || isEditing}
       >
         <span className="text-lg">
           {isLastPage ? `Table of contents: ${bookTitle}` : `Next: ${nextPageTitle || 'Untitled'}`}
@@ -49,6 +55,17 @@ export const PageNavigation = ({
         {displayCurrentIndex}/{displayTotalPages}
         <ArrowRight className="h-5 w-5" />
       </Button>
+
+      {isEditing && canEdit && onNewPage && (
+        <Button
+          variant="outline"
+          onClick={onNewPage}
+          className="px-6 py-6 rounded-full bg-background border-border"
+          title="Add new page"
+        >
+          <Plus className="h-5 w-5" />
+        </Button>
+      )}
     </div>
   );
 };

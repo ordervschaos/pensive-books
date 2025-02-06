@@ -19,6 +19,7 @@ const PageView = () => {
   const [saving, setSaving] = useState(false);
   const [totalPages, setTotalPages] = useState(0);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [isEditing, setIsEditing] = useState(false);
   const { canEdit, loading: loadingPermissions } = useBookPermissions(bookId);
 
   const fetchPageDetails = async () => {
@@ -114,6 +115,48 @@ const PageView = () => {
     }
   };
 
+  const createNewPage = async () => {
+    if (!canEdit) {
+      toast({
+        variant: "destructive",
+        title: "Permission denied",
+        description: "You don't have permission to create pages in this book"
+      });
+      return;
+    }
+
+    try {
+      const maxPageIndex = currentIndex + 1;
+      
+      const { data: newPage, error } = await supabase
+        .from('pages')
+        .insert({
+          book_id: parseInt(bookId || "0"),
+          page_index: maxPageIndex,
+          content: {},
+          html_content: '',
+          page_type: 'text'
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      navigate(`/book/${bookId}/page/${newPage.id}`);
+
+      toast({
+        title: "Page created",
+        description: "Your new page has been created"
+      });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error creating page",
+        description: error.message
+      });
+    }
+  };
+
   const navigateToPage = async (index: number) => {
     try {
       const { data: nextPage, error } = await supabase
@@ -139,14 +182,15 @@ const PageView = () => {
   // Handle keyboard navigation
   useEffect(() => {
     const handleKeyPress = (event: KeyboardEvent) => {
-      if (event.key === 'ArrowRight' && currentIndex < totalPages - 1) {
+      // Only allow navigation if not editing
+      if (!isEditing && event.key === 'ArrowRight' && currentIndex < totalPages - 1) {
         navigateToPage(currentIndex + 1);
       }
     };
 
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [currentIndex, totalPages]);
+  }, [currentIndex, totalPages, isEditing]);
 
   useEffect(() => {
     console.log("PageId changed, fetching new page details");
@@ -184,6 +228,7 @@ const PageView = () => {
             saving={saving}
             pageType={page.page_type}
             editable={canEdit}
+            onEditingChange={setIsEditing}
           />
         </div>
         <PageNavigation
@@ -193,6 +238,9 @@ const PageView = () => {
           onNavigate={navigateToPage}
           nextPageTitle={nextPageTitle}
           bookTitle={book.name}
+          isEditing={isEditing}
+          onNewPage={createNewPage}
+          canEdit={canEdit}
         />
       </div>
     </div>

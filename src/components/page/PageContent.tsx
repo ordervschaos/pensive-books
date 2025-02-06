@@ -10,9 +10,17 @@ interface PageContentProps {
   saving: boolean;
   pageType?: 'text' | 'section';
   editable?: boolean;
+  onEditingChange?: (isEditing: boolean) => void;
 }
 
-export const PageContent = ({ content, title, onSave, pageType = 'text', editable = false }: PageContentProps) => {
+export const PageContent = ({ 
+  content, 
+  title, 
+  onSave, 
+  pageType = 'text', 
+  editable = false,
+  onEditingChange 
+}: PageContentProps) => {
   const [isEditing, setIsEditing] = useState(!content && editable);
   const [currentContent, setCurrentContent] = useState(content || '');
   const [currentTitle, setCurrentTitle] = useState(title || '');
@@ -40,6 +48,13 @@ export const PageContent = ({ content, title, onSave, pageType = 'text', editabl
     debouncedSave(currentContent, editorJson, newTitle);
   };
 
+  const handleEditingChange = (editing: boolean) => {
+    setIsEditing(editing);
+    if (onEditingChange) {
+      onEditingChange(editing);
+    }
+  };
+
   return (
     <div className="flex-1 flex flex-col bg-background">
       <div className="p-0 flex-1 flex flex-col">
@@ -58,7 +73,7 @@ export const PageContent = ({ content, title, onSave, pageType = 'text', editabl
               handleTitleChange({ target: { value: title } } as ChangeEvent<HTMLInputElement>);
             }}
             title={currentTitle}
-            onToggleEdit={() => setIsEditing(!isEditing)}
+            onToggleEdit={() => handleEditingChange(!isEditing)}
           />
         )}
       </div>
