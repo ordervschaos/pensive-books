@@ -26,16 +26,6 @@ const BookDetails = () => {
     const checkAuthAndFetch = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       
-      if (!session) {
-        toast({
-          variant: "destructive",
-          title: "Authentication required",
-          description: "Please sign in to view this book"
-        });
-        navigate('/');
-        return;
-      }
-      
       fetchBookDetails();
     };
 
