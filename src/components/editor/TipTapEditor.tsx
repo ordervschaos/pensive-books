@@ -1,9 +1,10 @@
+
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import Image from '@tiptap/extension-image';
-import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
-import { common, createLowlight } from 'lowlight'
+import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
+import { common, createLowlight } from 'lowlight';
 import { Button } from "@/components/ui/button";
 import { Bold, Italic, Quote, Code2, Link2, List, ListOrdered, Image as ImageIcon, History, Check, Undo, Redo, Pencil, Eye, Copy } from "lucide-react";
 import { useEffect } from 'react';
@@ -64,7 +65,60 @@ export const TipTapEditor = ({ content, onChange, onTitleChange, editable = true
       CodeBlockLowlight.configure({
         lowlight,
         HTMLAttributes: {
-          class: 'relative rounded-md bg-muted/50 my-4 [&_pre]:p-0 [&_pre]:bg-transparent',
+          class: 'relative rounded-md bg-muted/50 my-4',
+        },
+        addKeyboardShortcuts: () => ({}),
+        addAttributes() {
+          return {
+            ...this.parent?.(),
+            class: {
+              default: null,
+              parseHTML: element => element.getAttribute('class'),
+            },
+          }
+        },
+        renderHTML({ node, HTMLAttributes }) {
+          const languageClass = node.attrs.language ? ` language-${node.attrs.language}` : ''
+          const codeBlockId = `code-block-${Math.random().toString(36).substr(2, 9)}`
+          
+          // Create wrapper div for the entire code block
+          const wrapper = document.createElement('div')
+          wrapper.className = `relative rounded-md bg-muted/50 my-4 group ${HTMLAttributes.class || ''}`
+          
+          // Create header with language indicator and copy button
+          const header = document.createElement('div')
+          header.className = 'flex items-center justify-between px-4 py-2 border-b border-muted'
+          
+          // Add language indicator
+          const languageIndicator = document.createElement('span')
+          languageIndicator.className = 'text-sm text-muted-foreground'
+          languageIndicator.textContent = node.attrs.language || 'plain text'
+          header.appendChild(languageIndicator)
+          
+          // Add copy button
+          const copyButton = document.createElement('button')
+          copyButton.className = 'copy-button opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground'
+          copyButton.setAttribute('data-code', node.textContent)
+          copyButton.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>'
+          header.appendChild(copyButton)
+          
+          // Add header to wrapper
+          wrapper.appendChild(header)
+          
+          // Create pre element with proper styling
+          const pre = document.createElement('pre')
+          pre.className = 'overflow-x-auto p-4 text-sm'
+          
+          // Create code element with syntax highlighting classes
+          const code = document.createElement('code')
+          code.className = `hljs${languageClass}`
+          code.id = codeBlockId
+          
+          // Assemble the elements
+          pre.appendChild(code)
+          wrapper.appendChild(pre)
+          
+          return wrapper
         },
       }),
       Link.configure({
