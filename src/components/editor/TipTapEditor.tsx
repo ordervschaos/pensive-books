@@ -68,7 +68,7 @@ export const TipTapEditor = ({ content, onChange, onTitleChange, editable = true
       }),
     ],
     content,
-    editable,
+    editable: editable && isEditing,
     onUpdate: ({ editor }) => {
       onChange(editor.getHTML(), editor.getJSON());
 
@@ -91,12 +91,12 @@ export const TipTapEditor = ({ content, onChange, onTitleChange, editable = true
 
   useEffect(() => {
     if (editor) {
-      editor.setEditable(editable);
-      if (editable) {
+      editor.setEditable(editable && isEditing);
+      if (editable && isEditing) {
         editor.commands.focus('start');
       }
     }
-  }, [editor, editable]);
+  }, [editor, editable, isEditing]);
 
   const addLink = () => {
     const url = window.prompt('Enter URL');
