@@ -1,239 +1,173 @@
-import { useEditor, EditorContent } from '@tiptap/react';
+import { useEditor, EditorContent, Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import Link from '@tiptap/extension-link';
-import Image from '@tiptap/extension-image';
+import { useCallback, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
-import { Bold, Italic, Quote, Code2, Link2, List, ListOrdered, Image as ImageIcon, History, Check, Undo, Redo, Pencil, Eye } from "lucide-react";
-import { useEffect } from 'react';
-import { useToast } from "@/hooks/use-toast";
-import { Title } from './extensions/Title';
-import { useIsMobile } from '@/hooks/use-mobile';
+import { Bold, Italic, List, ListOrdered, Edit2 } from "lucide-react";
+import Title from '@tiptap/extension-heading';
+import Document from '@tiptap/extension-document';
+import Paragraph from '@tiptap/extension-paragraph';
+import Text from '@tiptap/extension-text';
+import Heading from '@tiptap/extension-heading';
+import BulletList from '@tiptap/extension-bullet-list';
+import OrderedList from '@tiptap/extension-ordered-list';
+import ListItem from '@tiptap/extension-list-item';
+import HardBreak from '@tiptap/extension-hard-break';
 
 interface TipTapEditorProps {
   content: string;
   onChange: (html: string, json: any) => void;
-  onTitleChange?: (title: string) => void;
+  onTitleChange: (title: string) => void;
   editable?: boolean;
   isEditing?: boolean;
   onToggleEdit?: () => void;
 }
 
-export const TipTapEditor = ({ content, onChange, onTitleChange, editable = true, isEditing = true, onToggleEdit }: TipTapEditorProps) => {
-  const { toast } = useToast();
-  const isMobile = useIsMobile();
+const CustomDocument = Document.extend({
+  content: 'title block+',
+});
 
+const Title = Heading.extend({
+  name: 'title',
+  group: 'title',
+  content: 'inline*',
+  defining: true,
+  parseHTML() {
+    return [{ tag: 'h1.page-title' }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ['h1', { class: 'page-title', ...HTMLAttributes }, 0];
+  },
+});
+
+export const TipTapEditor = ({ content, onChange, onTitleChange, editable = true, isEditing = true, onToggleEdit }: TipTapEditorProps) => {
   const editor = useEditor({
     extensions: [
+      CustomDocument,
       Title,
+      Paragraph,
+      Text,
+      BulletList,
+      OrderedList,
+      ListItem,
+      HardBreak,
       StarterKit.configure({
-        blockquote: {
-          HTMLAttributes: {
-            class: 'border-l-4 border-primary pl-4 my-4 italic',
-          },
-        },
-        bulletList: {
-          HTMLAttributes: {
-            class: 'list-disc list-outside ml-4 my-4 space-y-1',
-          },
-        },
-        orderedList: {
-          HTMLAttributes: {
-            class: 'list-decimal list-outside ml-4 my-4 space-y-1',
-          },
-        },
-        listItem: {
-          HTMLAttributes: {
-            class: 'pl-1',
-          },
-        },
-        code: {
-          HTMLAttributes: {
-            class: 'rounded-md bg-muted px-[0.3rem] py-[0.2rem] font-mono text-sm',
-          },
-        },
-        heading: {
-          levels: [2, 3, 4, 5, 6],
-        },
-      }),
-      Link.configure({
-        openOnClick: false,
-        HTMLAttributes: {
-          class: 'text-blue-500 dark:text-blue-400 underline',
-        },
-      }),
-      Image.configure({
-        HTMLAttributes: {
-          class: 'max-w-full h-auto rounded-lg',
-        },
+        document: false,
+        heading: false,
       }),
     ],
-    content,
-    editable: editable && isEditing,
-    onUpdate: ({ editor }) => {
-      onChange(editor.getHTML(), editor.getJSON());
-
-      if (onTitleChange) {
-        const titleNode = editor.getJSON().content.find((node: any) => node.type === 'title');
-        const title = titleNode?.content?.[0]?.text || '';
-        onTitleChange(title);
-      }
-    },
     editorProps: {
       handleKeyDown: (view, event) => {
         if (editor?.isActive('title')) {
           if (event.key === 'b' && (event.ctrlKey || event.metaKey)) return true;
           if (event.key === 'i' && (event.ctrlKey || event.metaKey)) return true;
+          if (event.key === 'Enter') {
+            editor?.chain().focus().setHardBreak().run();
+            return true;
+          }
         }
+        return false;
       },
     },
-    autofocus: 'start',
+    content,
+    editable: isEditing && editable,
+    onUpdate: ({ editor }) => {
+      const title = editor.getHTML().match(/<h1 class="page-title">(.*?)<\/h1>/)?.[1] || '';
+      onTitleChange(title);
+      onChange(editor.getHTML(), editor.getJSON());
+    },
   });
 
   useEffect(() => {
-    if (editor) {
-      editor.setEditable(editable && isEditing);
-      if (editable && isEditing) {
-        editor.commands.focus('start');
-      }
+    if (editor && content && editor.getHTML() !== content) {
+      editor.commands.setContent(content);
     }
-  }, [editor, editable, isEditing]);
+  }, [content, editor]);
 
-  const addLink = () => {
-    const url = window.prompt('Enter URL');
-    if (url) {
-      editor?.chain().focus().setLink({ href: url }).run();
+  const toggleBold = useCallback(() => {
+    if (!editor?.isActive('title')) {
+      editor?.chain().focus().toggleBold().run();
     }
-  };
+  }, [editor]);
 
-  const addImage = () => {
-    const url = window.prompt('Enter image URL');
-    if (url) {
-      editor?.chain().focus().setImage({ src: url }).run();
-    } else {
-      toast({
-        title: "Image URL required",
-        description: "Please provide a valid image URL",
-        variant: "destructive",
-      });
+  const toggleItalic = useCallback(() => {
+    if (!editor?.isActive('title')) {
+      editor?.chain().focus().toggleItalic().run();
     }
-  };
+  }, [editor]);
+
+  const toggleBulletList = useCallback(() => {
+    if (!editor?.isActive('title')) {
+      editor?.chain().focus().toggleBulletList().run();
+    }
+  }, [editor]);
+
+  const toggleOrderedList = useCallback(() => {
+    if (!editor?.isActive('title')) {
+      editor?.chain().focus().toggleOrderedList().run();
+    }
+  }, [editor]);
 
   if (!editor) {
     return null;
   }
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="flex-1 flex flex-col">
       {editable && (
-        <div className={`rounded-md flex gap-1 items-center p-1 flex-wrap z-50 ${isEditing ? 'sticky top-4 bg-muted/50 shadow-sm  backdrop-blur-sm' : ''}`}>
-          {isEditing && (
-            <>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => editor.chain().focus().toggleBold().run()}
-                className={editor.isActive('bold') ? 'bg-muted' : ''}
-              >
-                <Bold className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => editor.chain().focus().toggleItalic().run()}
-                className={editor.isActive('italic') ? 'bg-muted' : ''}
-              >
-                <Italic className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => editor.chain().focus().toggleBlockquote().run()}
-                className={editor.isActive('blockquote') ? 'bg-muted' : ''}
-              >
-                <Quote className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => editor.chain().focus().toggleCode().run()}
-                className={editor.isActive('code') ? 'bg-muted' : ''}
-              >
-                <Code2 className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => editor.chain().focus().toggleBulletList().run()}
-                className={editor.isActive('bulletList') ? 'bg-muted' : ''}
-              >
-                <List className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => editor.chain().focus().toggleOrderedList().run()}
-                className={editor.isActive('orderedList') ? 'bg-muted' : ''}
-              >
-                <ListOrdered className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={addLink}
-                className={editor.isActive('link') ? 'bg-muted' : ''}
-              >
-                <Link2 className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={addImage}
-              >
-                <ImageIcon className="h-4 w-4" />
-              </Button>
-              <div className="ml-auto flex gap-1">
+        <div className="border-b sticky top-0 bg-background z-10">
+          <div className="container max-w-4xl mx-auto px-4">
+            <div className="flex items-center justify-between py-2">
+              <div className="flex items-center gap-1">
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => editor.chain().focus().undo().run()}
-                  disabled={!editor.can().undo()}
+                  onClick={toggleBold}
+                  className={editor.isActive('bold') ? 'bg-accent' : ''}
+                  disabled={!isEditing || editor.isActive('title')}
                 >
-                  <Undo className="h-4 w-4" />
+                  <Bold className="h-4 w-4" />
                 </Button>
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => editor.chain().focus().redo().run()}
-                  disabled={!editor.can().redo()}
+                  onClick={toggleItalic}
+                  className={editor.isActive('italic') ? 'bg-accent' : ''}
+                  disabled={!isEditing || editor.isActive('title')}
                 >
-                  <Redo className="h-4 w-4" />
+                  <Italic className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={toggleBulletList}
+                  className={editor.isActive('bulletList') ? 'bg-accent' : ''}
+                  disabled={!isEditing || editor.isActive('title')}
+                >
+                  <List className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={toggleOrderedList}
+                  className={editor.isActive('orderedList') ? 'bg-accent' : ''}
+                  disabled={!isEditing || editor.isActive('title')}
+                >
+                  <ListOrdered className="h-4 w-4" />
                 </Button>
               </div>
-            </>
-          )}
-
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onToggleEdit}
-            className="ml-auto"
-          >
-            {isEditing ? (
-              <>
-                <Eye className="mr-2 h-4 w-4" />
-                Preview
-              </>
-            ) : (
-              <>
-                <Pencil className="mr-2 h-4 w-4" />
-                Edit
-              </>
-            )}
-          </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onToggleEdit}
+              >
+                <Edit2 className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
         </div>
       )}
-      <div className={`prose dark:prose-invert prose-slate w-full max-w-none p-8 flex-1 [&_.ProseMirror:focus]:outline-none bg-background ${isMobile ? 'text-base' : 'text-lg'}`}>
-        <EditorContent editor={editor} className="[&>div>ul]:list-disc [&>div>ul]:ml-4 [&>div>ol]:list-decimal [&>div>ol]:ml-4 [&>div>blockquote]:border-l-4 [&>div>blockquote]:border-primary [&>div>blockquote]:pl-4 [&>div>blockquote]:italic [&>div>blockquote]:my-4 [&>div>p>code]:rounded-md [&>div>p>code]:bg-muted [&>div>p>code]:px-[0.3rem] [&>div>p>code]:py-[0.2rem] [&>div>p>code]:font-mono [&>div>p>code]:text-sm" />
+      <div className={`container max-w-4xl mx-auto px-4 py-8 flex-1 ${!isEditing ? 'prose dark:prose-invert max-w-none' : ''}`}>
+        <EditorContent editor={editor} />
       </div>
     </div>
   );
