@@ -86,7 +86,6 @@ export function TopNav() {
       window.location.href = `${baseUrl}/auth`;
     }
   };
-  
 
   const handleLogin = () => {
     navigate("/auth");
@@ -99,27 +98,52 @@ export function TopNav() {
         const [, bookId, pageId] = match;
         
         try {
+          console.log("Fetching book details for ID:", bookId);
           const { data: bookData, error: bookError } = await supabase
             .from("books")
             .select("name")
             .eq("id", parseInt(bookId))
-            .single();
+            .maybeSingle();
 
-          if (bookError) throw bookError;
-          setBookName(bookData?.name || "Untitled");
+          if (bookError) {
+            console.error("Error fetching book:", bookError);
+            throw bookError;
+          }
+          
+          if (!bookData) {
+            console.log("No book found with ID:", bookId);
+            setBookName("Book not found");
+          } else {
+            setBookName(bookData.name || "Untitled");
+          }
 
           if (pageId) {
+            console.log("Fetching page details for ID:", pageId);
             const { data: pageData, error: pageError } = await supabase
               .from("pages")
               .select("title")
               .eq("id", parseInt(pageId))
-              .single();
+              .maybeSingle();
 
-            if (pageError) throw pageError;
-            setPageName(pageData?.title || "Untitled");
+            if (pageError) {
+              console.error("Error fetching page:", pageError);
+              throw pageError;
+            }
+
+            if (!pageData) {
+              console.log("No page found with ID:", pageId);
+              setPageName("Page not found");
+            } else {
+              setPageName(pageData.title || "Untitled");
+            }
           }
         } catch (error) {
           console.error("Error fetching details:", error);
+          toast({
+            variant: "destructive",
+            title: "Error",
+            description: "Failed to load page details"
+          });
         }
       }
     };
@@ -140,7 +164,7 @@ export function TopNav() {
             filter: `id=eq.${pageId}`
           },
           (payload: RealtimePostgresChangesPayload<PageChangePayload>) => {
-            if (payload.new.title) {
+            if (payload.new && payload.new.title) {
               setPageName(payload.new.title);
             }
           }
@@ -157,7 +181,7 @@ export function TopNav() {
     } else {
       fetchDetails();
     }
-  }, [location.pathname]);
+  }, [location.pathname, toast]);
 
   const isBookRoute = location.pathname.includes('/book/');
   const isPageRoute = location.pathname.includes('/page/');
