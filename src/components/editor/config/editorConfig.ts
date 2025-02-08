@@ -1,4 +1,3 @@
-
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import Image from '@tiptap/extension-image';
@@ -50,7 +49,6 @@ export const getEditorConfig = (content: string, onChange: (html: string, json: 
           class: 'relative rounded-md bg-muted/50 my-4',
         },
         languageClassPrefix: 'language-',
-        defaultLanguage: 'javascript',
       }).extend({
         addKeyboardShortcuts() {
           return {
@@ -64,41 +62,69 @@ export const getEditorConfig = (content: string, onChange: (html: string, json: 
           };
         },
         renderHTML({ node, HTMLAttributes }) {
-          const languageClass = node.attrs.language ? ` language-${node.attrs.language}` : ''
-          const codeBlockId = `code-block-${Math.random().toString(36).substr(2, 9)}`
+          const languageClass = node.attrs.language ? ` language-${node.attrs.language}` : '';
           
-          const wrapper = document.createElement('div')
-          wrapper.className = `relative rounded-md bg-muted/50 my-4 group ${HTMLAttributes.class || ''}`
-          
-          const header = document.createElement('div')
-          header.className = 'flex items-center justify-between px-4 py-2 border-b border-muted'
-          
-          const languageIndicator = document.createElement('span')
-          languageIndicator.className = 'text-sm text-muted-foreground'
-          languageIndicator.textContent = node.attrs.language || 'plain text'
-          header.appendChild(languageIndicator)
-          
-          const copyButton = document.createElement('button')
-          copyButton.className = 'copy-button opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground'
-          copyButton.setAttribute('data-code', node.textContent)
-          copyButton.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>'
-          header.appendChild(copyButton)
-          
-          wrapper.appendChild(header)
-          
-          const pre = document.createElement('pre')
-          pre.className = 'overflow-x-auto p-4 text-sm'
-          
-          const code = document.createElement('code')
-          code.className = `hljs${languageClass}`
-          code.id = codeBlockId
-          code.innerHTML = node.textContent
-          
-          pre.appendChild(code)
-          wrapper.appendChild(pre)
-          
-          return wrapper
-        },
+          return [
+            'div', 
+            { class: `relative rounded-md bg-muted/50 my-4 group ${HTMLAttributes.class || ''}` },
+            [
+              'div',
+              { class: 'flex items-center justify-between px-4 py-2 border-b border-muted' },
+              [
+                'span',
+                { class: 'text-sm text-muted-foreground' },
+                node.attrs.language || 'plain text'
+              ],
+              [
+                'button',
+                { 
+                  class: 'copy-button opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground',
+                  'data-code': node.textContent
+                },
+                [
+                  'svg',
+                  {
+                    xmlns: 'http://www.w3.org/2000/svg',
+                    width: '16',
+                    height: '16',
+                    viewBox: '0 0 24 24',
+                    fill: 'none',
+                    stroke: 'currentColor',
+                    'stroke-width': '2',
+                    'stroke-linecap': 'round',
+                    'stroke-linejoin': 'round'
+                  },
+                  [
+                    'rect',
+                    { 
+                      x: '9',
+                      y: '9',
+                      width: '13',
+                      height: '13',
+                      rx: '2',
+                      ry: '2'
+                    }
+                  ],
+                  [
+                    'path',
+                    { 
+                      d: 'M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1'
+                    }
+                  ]
+                ]
+              ]
+            ],
+            [
+              'pre',
+              { class: 'overflow-x-auto p-4 text-sm' },
+              [
+                'code',
+                { class: `hljs${languageClass}` },
+                0
+              ]
+            ]
+          ];
+        }
       }),
       Link.configure({
         openOnClick: false,
@@ -134,4 +160,3 @@ export const getEditorConfig = (content: string, onChange: (html: string, json: 
     autofocus: 'start' as const,
   };
 };
-
