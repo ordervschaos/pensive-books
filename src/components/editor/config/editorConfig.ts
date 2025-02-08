@@ -63,18 +63,13 @@ export const getEditorConfig = (content: string, onChange: (html: string, json: 
         },
         renderHTML({ node, HTMLAttributes }) {
           const languageClass = node.attrs.language ? ` language-${node.attrs.language}` : '';
-          
+
           return [
             'div', 
             { class: `relative rounded-md bg-muted/50 my-4 group ${HTMLAttributes.class || ''}` },
             [
               'div',
               { class: 'flex items-center justify-between px-4 py-2 border-b border-muted' },
-              [
-                'span',
-                { class: 'text-sm text-muted-foreground' },
-                node.attrs.language || 'plain text'
-              ],
               [
                 'button',
                 { 
