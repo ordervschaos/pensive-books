@@ -1,3 +1,4 @@
+
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { LogOut, LogIn, Moon, Sun, ArrowLeft, Search, Settings, Maximize2, Library } from "lucide-react";
@@ -164,8 +165,9 @@ export function TopNav() {
             filter: `id=eq.${pageId}`
           },
           (payload: RealtimePostgresChangesPayload<PageChangePayload>) => {
-            if (payload.new && payload.new.title !== undefined) {
-              setPageName(payload.new.title || "Untitled");
+            const newData = payload.new as PageChangePayload['new'];
+            if (newData && 'title' in newData) {
+              setPageName(newData.title || "Untitled");
             }
           }
         )
