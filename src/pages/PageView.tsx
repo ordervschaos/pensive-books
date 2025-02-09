@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -20,48 +21,71 @@ const PageView = () => {
   const [totalPages, setTotalPages] = useState(0);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isEditing, setIsEditing] = useState(false);
-  const { canEdit, loading: loadingPermissions } = useBookPermissions(bookId);
+  
+  // Extract numeric ID from URL parameter
+  const getNumericId = (param: string | undefined) => {
+    if (!param) return 0;
+    return parseInt(param.split('-')[0]);
+  };
+  
+  const numericBookId = getNumericId(bookId);
+  const numericPageId = getNumericId(pageId);
+  const { canEdit, loading: loadingPermissions } = useBookPermissions(numericBookId.toString());
 
   const fetchPageDetails = async () => {
     try {
       setLoading(true);
-      console.log("Fetching page details for pageId:", pageId);
+      console.log("Fetching page details for pageId:", numericPageId);
       
       // Fetch current page
       const { data: pageData, error: pageError } = await supabase
         .from("pages")
         .select("*")
-        .eq("id", parseInt(pageId || "0"))
-        .eq("book_id", parseInt(bookId || "0"))
+        .eq("id", numericPageId)
+        .eq("book_id", numericBookId)
         .single();
 
       if (pageError) throw pageError;
       console.log("Page data fetched:", pageData);
+      
+      // Update URL with slug if it exists
+      if (pageData && !pageId?.includes('-') && pageData.title) {
+        const slug = `${numericPageId}-${pageData.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+        navigate(`/book/${bookId}/page/${slug}`, { replace: true });
+      }
+      
       setPage(pageData);
 
       // Fetch book details
       const { data: bookData, error: bookError } = await supabase
         .from("books")
         .select("*")
-        .eq("id", parseInt(bookId || "0"))
+        .eq("id", numericBookId)
         .single();
 
       if (bookError) throw bookError;
       console.log("Book data fetched:", bookData);
+      
+      // Update book URL with slug if it exists
+      if (bookData && !bookId?.includes('-') && bookData.name) {
+        const slug = `${numericBookId}-${bookData.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+        navigate(`/book/${slug}/page/${pageId}`, { replace: true });
+      }
+      
       setBook(bookData);
 
       // Get total pages count and next page
       const { data: pagesData, error: pagesError } = await supabase
         .from("pages")
         .select("id, title, page_index")
-        .eq("book_id", parseInt(bookId || "0"))
+        .eq("book_id", numericBookId)
         .eq("archived", false)
         .order("page_index", { ascending: true });
 
       if (pagesError) throw pagesError;
 
       setTotalPages(pagesData.length);
-      const currentPageIndex = pagesData.findIndex(p => p.id === parseInt(pageId || "0"));
+      const currentPageIndex = pagesData.findIndex(p => p.id === numericPageId);
       setCurrentIndex(currentPageIndex);
 
       // Get next page title if not the last page
@@ -161,14 +185,17 @@ const PageView = () => {
     try {
       const { data: nextPage, error } = await supabase
         .from("pages")
-        .select("id")
-        .eq("book_id", parseInt(bookId || "0"))
+        .select("id, title")
+        .eq("book_id", numericBookId)
         .eq("page_index", index)
         .single();
 
       if (error) throw error;
       if (nextPage) {
-        navigate(`/book/${bookId}/page/${nextPage.id}`);
+        const slug = nextPage.title ? 
+          `${nextPage.id}-${nextPage.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}` : 
+          nextPage.id.toString();
+        navigate(`/book/${bookId}/page/${slug}`);
       }
     } catch (error: any) {
       toast({
@@ -222,11 +249,11 @@ const PageView = () => {
       <div className="flex-1 container max-w-5xl mx-auto px-4 py-4 flex flex-col gap-4">
         <div className="flex-1 flex flex-col">
           <PageContent
-            content={page.html_content || ''}
-            title={page.title || 'Untitled'}
+            content={page?.html_content || ''}
+            title={page?.title || 'Untitled'}
             onSave={handleSave}
             saving={saving}
-            pageType={page.page_type}
+            pageType={page?.page_type}
             editable={canEdit}
             onEditingChange={setIsEditing}
           />
@@ -237,7 +264,7 @@ const PageView = () => {
           totalPages={totalPages}
           onNavigate={navigateToPage}
           nextPageTitle={nextPageTitle}
-          bookTitle={book.name}
+          bookTitle={book?.name}
           isEditing={isEditing}
           onNewPage={createNewPage}
           canEdit={canEdit}
