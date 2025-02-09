@@ -1,8 +1,8 @@
-
 import { Editor } from '@tiptap/react';
 import { Bold, Italic, Quote, Code2, Link2, List, ListOrdered, Image as ImageIcon, Undo, Redo, Pencil, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { useSupabaseUpload } from "@/hooks/use-supabase-upload";
 
 interface EditorToolbarProps {
   editor: Editor | null;
@@ -13,6 +13,7 @@ interface EditorToolbarProps {
 
 export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable }: EditorToolbarProps) => {
   const { toast } = useToast();
+  const uploadImage = useSupabaseUpload();
 
   if (!editor) return null;
 
@@ -23,14 +24,26 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable }: Edi
     }
   };
 
-  const addImage = () => {
-    const url = window.prompt('Enter image URL');
-    if (url) {
-      editor.chain().focus().setImage({ src: url }).run();
-    } else {
+  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    
+    if (!file.type.startsWith('image/')) {
       toast({
-        title: "Image URL required",
-        description: "Please provide a valid image URL",
+        title: "Invalid file type",
+        description: "Please upload an image file",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const { default: url } = await uploadImage(file).upload();
+      editor.chain().focus().setImage({ src: url }).run();
+    } catch (error) {
+      toast({
+        title: "Upload failed",
+        description: "Failed to upload image",
         variant: "destructive",
       });
     }
@@ -96,13 +109,21 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable }: Edi
           >
             <Link2 className="h-4 w-4" />
           </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={addImage}
-          >
-            <ImageIcon className="h-4 w-4" />
-          </Button>
+          <div className="relative">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="relative"
+            >
+              <input
+                type="file"
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                onChange={handleImageUpload}
+                accept="image/*"
+              />
+              <ImageIcon className="h-4 w-4" />
+            </Button>
+          </div>
           <div className="ml-auto flex gap-1">
             <Button
               variant="ghost"

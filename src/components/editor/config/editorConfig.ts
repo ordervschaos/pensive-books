@@ -1,14 +1,17 @@
+
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import Image from '@tiptap/extension-image';
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
-import { common, createLowlight } from 'lowlight';
 import { Title } from '../extensions/Title';
+import { common, createLowlight } from 'lowlight';
+import { useSupabaseUpload } from '@/hooks/use-supabase-upload';
 
-// Create a new lowlight instance with common languages
 export const lowlight = createLowlight(common);
 
 export const getEditorConfig = (content: string, onChange: (html: string, json: any) => void, onTitleChange?: (title: string) => void, editable = true, isEditing = true) => {
+  const uploadImage = useSupabaseUpload();
+
   return {
     extensions: [
       Title,
@@ -131,6 +134,7 @@ export const getEditorConfig = (content: string, onChange: (html: string, json: 
         HTMLAttributes: {
           class: 'max-w-full h-auto rounded-lg',
         },
+        allowBase64: true,
       }),
     ],
     content,
@@ -145,11 +149,45 @@ export const getEditorConfig = (content: string, onChange: (html: string, json: 
       }
     },
     editorProps: {
-      handleKeyDown: (view: any, event: any) => {
-        if (view.state.selection.$anchor.parent.type.name === 'title') {
-          if (event.key === 'b' && (event.ctrlKey || event.metaKey)) return true;
-          if (event.key === 'i' && (event.ctrlKey || event.metaKey)) return true;
+      handleDrop: (view: any, event: any, slice: any, moved: boolean) => {
+        if (!moved && event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0]) {
+          const file = event.dataTransfer.files[0];
+          if (file.type.startsWith('image/')) {
+            event.preventDefault();
+            
+            uploadImage(file).upload().then(({ default: url }) => {
+              const { schema } = view.state;
+              const node = schema.nodes.image.create({ src: url });
+              const transaction = view.state.tr.replaceSelectionWith(node);
+              view.dispatch(transaction);
+            });
+            
+            return true;
+          }
         }
+        return false;
+      },
+      handlePaste: (view: any, event: any, slice: any) => {
+        const items = event.clipboardData?.items;
+        if (!items) return false;
+
+        for (const item of items) {
+          if (item.type.startsWith('image/')) {
+            event.preventDefault();
+            const file = item.getAsFile();
+            
+            uploadImage(file).upload().then(({ default: url }) => {
+              const { schema } = view.state;
+              const node = schema.nodes.image.create({ src: url });
+              const transaction = view.state.tr.replaceSelectionWith(node);
+              view.dispatch(transaction);
+            });
+            
+            return true;
+          }
+        }
+        
+        return false;
       },
     },
     autofocus: 'start' as const,
