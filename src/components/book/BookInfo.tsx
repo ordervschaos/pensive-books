@@ -1,32 +1,20 @@
+
 import { useState } from "react";
 import { 
   Card,
   CardHeader 
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ImageIcon, Download, Book, Share2, Copy, X } from "lucide-react";
+import { ImageIcon, Download, Book, Copy } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { generateEPUB } from "@/lib/epub";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 
 interface BookInfoProps {
   name: string;
   coverUrl?: string | null;
   bookId: number;
   author?: string | null;
-}
-
-interface Page {
-  id: number;
-  title: string;
-  html_content: string;
-  page_type: 'section' | 'page';
 }
 
 export const BookInfo = ({ 
@@ -37,31 +25,20 @@ export const BookInfo = ({
 }: BookInfoProps) => {
   const { toast } = useToast();
 
-  const handleShare = async (type: 'copy' | 'x') => {
+  const handleCopyLink = async () => {
     const bookUrl = window.location.href;
-    const bookTitle = `Check out "${name}"${author ? ` by ${author}` : ''}`;
-
-    switch (type) {
-      case 'copy':
-        try {
-          await navigator.clipboard.writeText(bookUrl);
-          toast({
-            title: "Link copied",
-            description: "Book link has been copied to clipboard",
-          });
-        } catch (err) {
-          toast({
-            variant: "destructive",
-            title: "Failed to copy",
-            description: "Could not copy the link to clipboard",
-          });
-        }
-        break;
-
-      case 'x':
-        const tweetText = encodeURIComponent(`${bookTitle}\n\n${bookUrl}`);
-        window.open(`https://twitter.com/intent/tweet?text=${tweetText}`, '_blank');
-        break;
+    try {
+      await navigator.clipboard.writeText(bookUrl);
+      toast({
+        title: "Link copied",
+        description: "Book link has been copied to clipboard",
+      });
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Failed to copy",
+        description: "Could not copy the link to clipboard",
+      });
     }
   };
 
@@ -226,27 +203,14 @@ export const BookInfo = ({
             )}
           </div>
           <div className="flex flex-col gap-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  className="w-full"
-                >
-                  <Share2 className="h-4 w-4 mr-2" />
-                  Share Book
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => handleShare('copy')}>
-                  <Copy className="h-4 w-4 mr-2" />
-                  Copy Link
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleShare('x')}>
-                  <X className="h-4 w-4 mr-2" />
-                  Share on X
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <Button
+              onClick={handleCopyLink}
+              variant="outline"
+              className="w-full"
+            >
+              <Copy className="h-4 w-4 mr-2" />
+              Copy Link
+            </Button>
             <Button
               onClick={handleDownloadPDF}
               variant="outline"
