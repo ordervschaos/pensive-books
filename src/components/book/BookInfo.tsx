@@ -15,6 +15,7 @@ interface BookInfoProps {
   coverUrl?: string | null;
   bookId: number;
   author?: string | null;
+  showTextOnCover?: boolean;
 }
 
 export const BookInfo = ({ 
@@ -22,6 +23,7 @@ export const BookInfo = ({
   coverUrl,
   bookId,
   author,
+  showTextOnCover = false
 }: BookInfoProps) => {
   const { toast } = useToast();
 
@@ -191,11 +193,25 @@ export const BookInfo = ({
         <CardHeader className="space-y-6">
           <div className="w-full aspect-[3/4] relative rounded-lg overflow-hidden bg-blue-100">
             {coverUrl ? (
-              <img 
-                src={coverUrl} 
-                alt="Book cover"
-                className="w-full h-full object-cover"
-              />
+              <div className="relative w-full h-full">
+                <img 
+                  src={coverUrl} 
+                  alt="Book cover"
+                  className="w-full h-full object-cover"
+                />
+                {showTextOnCover && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30 p-4">
+                    <h1 className="text-2xl font-bold text-white text-center mb-2">
+                      {name}
+                    </h1>
+                    {author && (
+                      <p className="text-lg text-white/90 text-center">
+                        by {author}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
             ) : (
               <div className="w-full h-full flex items-center justify-center">
                 <ImageIcon className="w-16 h-16 text-blue-300" />

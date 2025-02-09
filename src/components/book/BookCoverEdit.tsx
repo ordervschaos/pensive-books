@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Image as ImageIcon } from "lucide-react";
@@ -8,15 +9,27 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { UnsplashPicker } from "./UnsplashPicker";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 
 interface BookCoverEditProps {
   bookId: number;
   coverUrl?: string | null;
+  showTextOnCover?: boolean;
+  title?: string;
+  author?: string;
 }
 
-export const BookCoverEdit = ({ bookId, coverUrl }: BookCoverEditProps) => {
+export const BookCoverEdit = ({ 
+  bookId, 
+  coverUrl,
+  showTextOnCover = false,
+  title = "",
+  author = ""
+}: BookCoverEditProps) => {
   const [uploading, setUploading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
+  const [isShowingText, setIsShowingText] = useState(showTextOnCover);
   const { toast } = useToast();
 
   const handleCoverUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -92,17 +105,57 @@ export const BookCoverEdit = ({ bookId, coverUrl }: BookCoverEditProps) => {
     window.location.reload();
   };
 
+  const handleTextToggle = async () => {
+    try {
+      const newShowTextValue = !isShowingText;
+      setIsShowingText(newShowTextValue);
+      
+      const { error } = await supabase
+        .from('books')
+        .update({ show_text_on_cover: newShowTextValue })
+        .eq('id', bookId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Setting updated",
+        description: `Text overlay ${newShowTextValue ? 'enabled' : 'disabled'}`
+      });
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Error updating setting",
+        description: error instanceof Error ? error.message : "An error occurred"
+      });
+      setIsShowingText(!isShowingText); // Revert state on error
+    }
+  };
+
   return (
     <Card className="bg-white shadow-sm">
       <CardHeader className="space-y-6">
         <div className="space-y-4">
           <div className="w-full aspect-[3/4] relative rounded-lg overflow-hidden bg-blue-100">
             {coverUrl ? (
-              <img 
-                src={coverUrl} 
-                alt="Book cover" 
-                className="w-full h-full object-cover"
-              />
+              <div className="relative w-full h-full">
+                <img 
+                  src={coverUrl} 
+                  alt="Book cover" 
+                  className="w-full h-full object-cover"
+                />
+                {isShowingText && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30 p-4">
+                    <h1 className="text-2xl font-bold text-white text-center mb-2">
+                      {title || "Untitled"}
+                    </h1>
+                    {author && (
+                      <p className="text-lg text-white/90 text-center">
+                        by {author}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
             ) : (
               <div className="w-full h-full flex items-center justify-center">
                 <ImageIcon className="w-16 h-16 text-blue-300" />
@@ -142,6 +195,14 @@ export const BookCoverEdit = ({ bookId, coverUrl }: BookCoverEditProps) => {
                 </Tabs>
               </DialogContent>
             </Dialog>
+          </div>
+          <div className="flex items-center space-x-2">
+            <Switch
+              id="show-text"
+              checked={isShowingText}
+              onCheckedChange={handleTextToggle}
+            />
+            <Label htmlFor="show-text">Show title and author on cover</Label>
           </div>
         </div>
       </CardHeader>

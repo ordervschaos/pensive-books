@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
@@ -17,6 +18,7 @@ interface Book {
   author: string | null;
   is_public: boolean;
   cover_url?: string | null;
+  show_text_on_cover?: boolean;
   created_at?: string;
   updated_at?: string;
   published_at?: string | null;
@@ -172,6 +174,9 @@ export default function BookEdit() {
             <BookCoverEdit 
               bookId={book.id || 0}
               coverUrl={book.cover_url}
+              showTextOnCover={book.show_text_on_cover}
+              title={book.name}
+              author={book.author}
             />
           </div>
 

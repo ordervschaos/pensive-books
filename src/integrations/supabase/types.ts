@@ -68,6 +68,7 @@ export type Database = {
           page_ids: Json | null
           pinned: boolean | null
           published_at: string | null
+          show_text_on_cover: boolean | null
           slug: string | null
           subtitle: string | null
           updated_at: string | null
@@ -89,6 +90,7 @@ export type Database = {
           page_ids?: Json | null
           pinned?: boolean | null
           published_at?: string | null
+          show_text_on_cover?: boolean | null
           slug?: string | null
           subtitle?: string | null
           updated_at?: string | null
@@ -110,6 +112,7 @@ export type Database = {
           page_ids?: Json | null
           pinned?: boolean | null
           published_at?: string | null
+          show_text_on_cover?: boolean | null
           slug?: string | null
           subtitle?: string | null
           updated_at?: string | null
