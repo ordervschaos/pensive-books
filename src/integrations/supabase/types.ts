@@ -68,6 +68,7 @@ export type Database = {
           page_ids: Json | null
           pinned: boolean | null
           published_at: string | null
+          slug: string | null
           subtitle: string | null
           updated_at: string | null
         }
@@ -88,6 +89,7 @@ export type Database = {
           page_ids?: Json | null
           pinned?: boolean | null
           published_at?: string | null
+          slug?: string | null
           subtitle?: string | null
           updated_at?: string | null
         }
@@ -108,6 +110,7 @@ export type Database = {
           page_ids?: Json | null
           pinned?: boolean | null
           published_at?: string | null
+          slug?: string | null
           subtitle?: string | null
           updated_at?: string | null
         }
@@ -218,6 +221,7 @@ export type Database = {
           owner_id: string | null
           page_index: number | null
           page_type: string
+          slug: string | null
           title: string | null
           updated_at: string | null
         }
@@ -234,6 +238,7 @@ export type Database = {
           owner_id?: string | null
           page_index?: number | null
           page_type?: string
+          slug?: string | null
           title?: string | null
           updated_at?: string | null
         }
@@ -250,6 +255,7 @@ export type Database = {
           owner_id?: string | null
           page_index?: number | null
           page_type?: string
+          slug?: string | null
           title?: string | null
           updated_at?: string | null
         }
@@ -379,6 +385,12 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      generate_slug: {
+        Args: {
+          input_text: string
+        }
+        Returns: string
+      }
       highlight_search_results_in_page: {
         Args: {
           search_query: string
@@ -410,6 +422,7 @@ export type Database = {
           owner_id: string | null
           page_index: number | null
           page_type: string
+          slug: string | null
           title: string | null
           updated_at: string | null
         }[]
