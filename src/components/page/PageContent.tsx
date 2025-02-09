@@ -1,3 +1,4 @@
+
 import { useState, useCallback, ChangeEvent } from "react";
 import { debounce } from "lodash";
 import { SectionPageContent } from "./SectionPageContent";
@@ -22,22 +23,27 @@ export const PageContent = ({
   onEditingChange 
 }: PageContentProps) => {
   const [isEditing, setIsEditing] = useState(!content && editable);
+  const [initialLoad, setInitialLoad] = useState(true);
   const [currentContent, setCurrentContent] = useState(content || '');
   const [currentTitle, setCurrentTitle] = useState(title || '');
   const [editorJson, setEditorJson] = useState<any>(null);
 
   const debouncedSave = useCallback(
     debounce((html: string, json: any, title: string) => {
-      const finalTitle = title.trim() || (document.activeElement !== document.getElementById('page-title') ? 'Untitled' : '');
-      onSave(html, json, finalTitle);
+      // Only save if it's not the initial load
+      if (!initialLoad) {
+        const finalTitle = title.trim() || (document.activeElement !== document.getElementById('page-title') ? 'Untitled' : '');
+        onSave(html, json, finalTitle);
+      }
     }, 1000),
-    [onSave]
+    [onSave, initialLoad]
   );
 
   const handleContentChange = (html: string, json: any) => {
     if (!editable) return;
     setCurrentContent(html);
     setEditorJson(json);
+    setInitialLoad(false); // Mark that we've had a real change
     debouncedSave(html, json, currentTitle);
   };
 
@@ -45,6 +51,7 @@ export const PageContent = ({
     if (!editable) return;
     const newTitle = e.target.value;
     setCurrentTitle(newTitle);
+    setInitialLoad(false); // Mark that we've had a real change
     debouncedSave(currentContent, editorJson, newTitle);
   };
 
