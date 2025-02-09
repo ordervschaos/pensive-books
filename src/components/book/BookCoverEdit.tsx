@@ -17,6 +17,7 @@ interface BookCoverEditProps {
   coverUrl?: string | null;
   showTextOnCover?: boolean;
   title?: string;
+  subtitle?: string | null;
   author?: string;
 }
 
@@ -25,6 +26,7 @@ export const BookCoverEdit = ({
   coverUrl,
   showTextOnCover = false,
   title = "",
+  subtitle = "",
   author = ""
 }: BookCoverEditProps) => {
   const [uploading, setUploading] = useState(false);
@@ -148,6 +150,11 @@ export const BookCoverEdit = ({
                     <h1 className="text-2xl font-bold text-white text-center mb-2">
                       {title || "Untitled"}
                     </h1>
+                    {subtitle && (
+                      <p className="text-lg text-white/90 text-center mb-4">
+                        {subtitle}
+                      </p>
+                    )}
                     {author && (
                       <p className="text-lg text-white/90 text-center">
                         by {author}
@@ -208,4 +215,4 @@ export const BookCoverEdit = ({
       </CardHeader>
     </Card>
   );
-}; 
+};

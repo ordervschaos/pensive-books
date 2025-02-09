@@ -15,6 +15,7 @@ interface BookInfoProps {
   coverUrl?: string | null;
   bookId: number;
   author?: string | null;
+  subtitle?: string | null;
   showTextOnCover?: boolean;
 }
 
@@ -23,6 +24,7 @@ export const BookInfo = ({
   coverUrl,
   bookId,
   author,
+  subtitle,
   showTextOnCover = false
 }: BookInfoProps) => {
   const { toast } = useToast();
@@ -204,6 +206,11 @@ export const BookInfo = ({
                     <h1 className="text-2xl font-bold text-white text-center mb-2">
                       {name}
                     </h1>
+                    {subtitle && (
+                      <p className="text-lg text-white/90 text-center mb-4">
+                        {subtitle}
+                      </p>
+                    )}
                     {author && (
                       <p className="text-lg text-white/90 text-center">
                         by {author}
