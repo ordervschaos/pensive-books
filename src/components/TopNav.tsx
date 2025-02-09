@@ -15,11 +15,11 @@ import { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 
 interface PageChangePayload {
   new: {
-    title: string;
+    title: string | null;
     [key: string]: any;
   };
   old: {
-    title: string;
+    title: string | null;
     [key: string]: any;
   };
   [key: string]: any;
@@ -164,8 +164,8 @@ export function TopNav() {
             filter: `id=eq.${pageId}`
           },
           (payload: RealtimePostgresChangesPayload<PageChangePayload>) => {
-            if (payload.new && payload.new.title) {
-              setPageName(payload.new.title);
+            if (payload.new && payload.new.title !== undefined) {
+              setPageName(payload.new.title || "Untitled");
             }
           }
         )
