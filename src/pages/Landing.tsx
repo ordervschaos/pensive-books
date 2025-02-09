@@ -145,7 +145,7 @@ export default function Landing() {
             <Button size="lg" onClick={() => navigate("/auth")}>
               Start Writing
             </Button>
-            <Button size="lg" variant="outline" onClick={() => window.open("https://github.com/yourusername/pensive", "_blank")}>
+            <Button size="lg" variant="outline" onClick={() => window.open("https://github.com/ordervschaos/pensive-books", "_blank")}>
               View on GitHub
             </Button>
           </div>
