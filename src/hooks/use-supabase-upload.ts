@@ -12,7 +12,8 @@ class SupabaseUploadAdapter {
     const compressedFile = await this.compressImage(this.file);
 
     const fileExt = compressedFile.name.split(".").pop();
-    const fileName = `${Date.now()}.${fileExt}`;
+    // Generate a random UUID for the filename
+    const fileName = `${crypto.randomUUID()}.${fileExt}`;
 
     const { data, error } = await supabase.storage
       .from("images")
@@ -55,3 +56,4 @@ class SupabaseUploadAdapter {
 export const useSupabaseUpload = () => {
   return (file: File) => new SupabaseUploadAdapter(file);
 };
+
