@@ -4,16 +4,10 @@ import {
   CardHeader 
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ImageIcon, Download, Book, Share2, Copy, Mail, Twitter } from "lucide-react";
+import { ImageIcon, Download, Book } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { generateEPUB } from "@/lib/epub";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 
 interface BookInfoProps {
   name: string;
@@ -27,6 +21,7 @@ interface Page {
   title: string;
   html_content: string;
   page_type: 'section' | 'page';
+  // ... other page properties
 }
 
 export const BookInfo = ({ 
@@ -37,30 +32,9 @@ export const BookInfo = ({
 }: BookInfoProps) => {
   const { toast } = useToast();
 
-  const handleCopyLink = async () => {
-    const url = window.location.href;
-    await navigator.clipboard.writeText(url);
-    toast({
-      title: "Link copied",
-      description: "The book URL has been copied to your clipboard"
-    });
-  };
-
-  const handleEmailShare = () => {
-    const url = window.location.href;
-    const subject = encodeURIComponent(`Check out this book: ${name}`);
-    const body = encodeURIComponent(`I thought you might be interested in this book: ${name}\n\n${url}`);
-    window.open(`mailto:?subject=${subject}&body=${body}`);
-  };
-
-  const handleTwitterShare = () => {
-    const url = window.location.href;
-    const text = encodeURIComponent(`Check out this book: ${name}`);
-    window.open(`https://twitter.com/intent/tweet?text=${text}&url=${url}`);
-  };
-
   const handleDownloadPDF = async () => {
     try {
+      // Fetch all pages for the book
       const { data: pages, error } = await supabase
         .from("pages")
         .select("*")
@@ -70,6 +44,7 @@ export const BookInfo = ({
 
       if (error) throw error;
 
+      // Create a new window for the PDF content
       const printWindow = window.open("", "_blank");
       if (!printWindow) {
         toast({
@@ -80,6 +55,7 @@ export const BookInfo = ({
         return;
       }
 
+      // Write the HTML content
       printWindow.document.write(`
         <html>
         <head>
@@ -138,6 +114,7 @@ export const BookInfo = ({
         </html>
       `);
 
+      // Trigger print dialog
       printWindow.document.close();
       printWindow.focus();
       setTimeout(() => {
@@ -157,6 +134,7 @@ export const BookInfo = ({
 
   const handleDownloadEPUB = async () => {
     try {
+      // Fetch all pages for the book
       const { data: pages, error } = await supabase
         .from("pages")
         .select("*")
@@ -166,6 +144,7 @@ export const BookInfo = ({
 
       if (error) throw error;
 
+      // Generate EPUB file using the utility functions
       const epubBlob = await generateEPUB(
         {
           title: name,
@@ -178,6 +157,7 @@ export const BookInfo = ({
         })) || []
       );
 
+      // Download the file
       const url = window.URL.createObjectURL(epubBlob);
       const a = document.createElement('a');
       a.href = url;
@@ -236,28 +216,6 @@ export const BookInfo = ({
               <Book className="h-4 w-4 mr-2" />
               Download EPUB
             </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="w-full">
-                  <Share2 className="h-4 w-4 mr-2" />
-                  Share
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-[200px]">
-                <DropdownMenuItem onClick={handleCopyLink}>
-                  <Copy className="h-4 w-4 mr-2" />
-                  Copy Link
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleEmailShare}>
-                  <Mail className="h-4 w-4 mr-2" />
-                  Share via Email
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleTwitterShare}>
-                  <Twitter className="h-4 w-4 mr-2" />
-                  Share on Twitter
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
           </div>
         </CardHeader>
       </div>
