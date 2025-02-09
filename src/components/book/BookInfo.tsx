@@ -1,11 +1,10 @@
-
 import { useState } from "react";
 import { 
   Card,
   CardHeader 
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ImageIcon, Download, Book, Share2, Copy, Mail, Twitter } from "lucide-react";
+import { ImageIcon, Download, Book, Share2, Copy, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { generateEPUB } from "@/lib/epub";
@@ -38,7 +37,7 @@ export const BookInfo = ({
 }: BookInfoProps) => {
   const { toast } = useToast();
 
-  const handleShare = async (type: 'copy' | 'email' | 'twitter') => {
+  const handleShare = async (type: 'copy' | 'x') => {
     const bookUrl = window.location.href;
     const bookTitle = `Check out "${name}"${author ? ` by ${author}` : ''}`;
 
@@ -59,13 +58,7 @@ export const BookInfo = ({
         }
         break;
 
-      case 'email':
-        const emailSubject = encodeURIComponent(bookTitle);
-        const emailBody = encodeURIComponent(`${bookTitle}\n\n${bookUrl}`);
-        window.open(`mailto:?subject=${emailSubject}&body=${emailBody}`);
-        break;
-
-      case 'twitter':
+      case 'x':
         const tweetText = encodeURIComponent(`${bookTitle}\n\n${bookUrl}`);
         window.open(`https://twitter.com/intent/tweet?text=${tweetText}`, '_blank');
         break;
@@ -74,7 +67,6 @@ export const BookInfo = ({
 
   const handleDownloadPDF = async () => {
     try {
-      // Fetch all pages for the book
       const { data: pages, error } = await supabase
         .from("pages")
         .select("*")
@@ -84,7 +76,6 @@ export const BookInfo = ({
 
       if (error) throw error;
 
-      // Create a new window for the PDF content
       const printWindow = window.open("", "_blank");
       if (!printWindow) {
         toast({
@@ -95,7 +86,6 @@ export const BookInfo = ({
         return;
       }
 
-      // Write the HTML content
       printWindow.document.write(`
         <html>
         <head>
@@ -154,7 +144,6 @@ export const BookInfo = ({
         </html>
       `);
 
-      // Trigger print dialog
       printWindow.document.close();
       printWindow.focus();
       setTimeout(() => {
@@ -174,7 +163,6 @@ export const BookInfo = ({
 
   const handleDownloadEPUB = async () => {
     try {
-      // Fetch all pages for the book
       const { data: pages, error } = await supabase
         .from("pages")
         .select("*")
@@ -184,7 +172,6 @@ export const BookInfo = ({
 
       if (error) throw error;
 
-      // Generate EPUB file using the utility functions
       const epubBlob = await generateEPUB(
         {
           title: name,
@@ -197,7 +184,6 @@ export const BookInfo = ({
         })) || []
       );
 
-      // Download the file
       const url = window.URL.createObjectURL(epubBlob);
       const a = document.createElement('a');
       a.href = url;
@@ -255,13 +241,9 @@ export const BookInfo = ({
                   <Copy className="h-4 w-4 mr-2" />
                   Copy Link
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleShare('email')}>
-                  <Mail className="h-4 w-4 mr-2" />
-                  Share via Email
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleShare('twitter')}>
-                  <Twitter className="h-4 w-4 mr-2" />
-                  Share on Twitter
+                <DropdownMenuItem onClick={() => handleShare('x')}>
+                  <X className="h-4 w-4 mr-2" />
+                  Share on X
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
