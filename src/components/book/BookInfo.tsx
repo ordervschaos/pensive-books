@@ -1,13 +1,20 @@
+
 import { useState } from "react";
 import { 
   Card,
   CardHeader 
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ImageIcon, Download, Book } from "lucide-react";
+import { ImageIcon, Download, Book, Share2, Copy, Mail, Twitter } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { generateEPUB } from "@/lib/epub";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface BookInfoProps {
   name: string;
@@ -21,7 +28,6 @@ interface Page {
   title: string;
   html_content: string;
   page_type: 'section' | 'page';
-  // ... other page properties
 }
 
 export const BookInfo = ({ 
@@ -31,6 +37,40 @@ export const BookInfo = ({
   author,
 }: BookInfoProps) => {
   const { toast } = useToast();
+
+  const handleShare = async (type: 'copy' | 'email' | 'twitter') => {
+    const bookUrl = window.location.href;
+    const bookTitle = `Check out "${name}"${author ? ` by ${author}` : ''}`;
+
+    switch (type) {
+      case 'copy':
+        try {
+          await navigator.clipboard.writeText(bookUrl);
+          toast({
+            title: "Link copied",
+            description: "Book link has been copied to clipboard",
+          });
+        } catch (err) {
+          toast({
+            variant: "destructive",
+            title: "Failed to copy",
+            description: "Could not copy the link to clipboard",
+          });
+        }
+        break;
+
+      case 'email':
+        const emailSubject = encodeURIComponent(bookTitle);
+        const emailBody = encodeURIComponent(`${bookTitle}\n\n${bookUrl}`);
+        window.open(`mailto:?subject=${emailSubject}&body=${emailBody}`);
+        break;
+
+      case 'twitter':
+        const tweetText = encodeURIComponent(`${bookTitle}\n\n${bookUrl}`);
+        window.open(`https://twitter.com/intent/tweet?text=${tweetText}`, '_blank');
+        break;
+    }
+  };
 
   const handleDownloadPDF = async () => {
     try {
@@ -200,6 +240,31 @@ export const BookInfo = ({
             )}
           </div>
           <div className="flex flex-col gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  className="w-full"
+                >
+                  <Share2 className="h-4 w-4 mr-2" />
+                  Share Book
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => handleShare('copy')}>
+                  <Copy className="h-4 w-4 mr-2" />
+                  Copy Link
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleShare('email')}>
+                  <Mail className="h-4 w-4 mr-2" />
+                  Share via Email
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleShare('twitter')}>
+                  <Twitter className="h-4 w-4 mr-2" />
+                  Share on Twitter
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button
               onClick={handleDownloadPDF}
               variant="outline"
