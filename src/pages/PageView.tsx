@@ -37,15 +37,21 @@ const PageView = () => {
       setLoading(true);
       console.log("Fetching page details for pageId:", numericPageId);
       
-      // Fetch current page
+      // Fetch current page using maybeSingle() instead of single()
       const { data: pageData, error: pageError } = await supabase
         .from("pages")
         .select("*")
         .eq("id", numericPageId)
         .eq("book_id", numericBookId)
-        .single();
+        .eq("archived", false)
+        .maybeSingle();
 
       if (pageError) throw pageError;
+      if (!pageData) {
+        console.log("Page not found:", numericPageId);
+        return;
+      }
+      
       console.log("Page data fetched:", pageData);
       
       // Update URL with slug if it exists
@@ -56,14 +62,20 @@ const PageView = () => {
       
       setPage(pageData);
 
-      // Fetch book details
+      // Fetch book details using maybeSingle()
       const { data: bookData, error: bookError } = await supabase
         .from("books")
         .select("*")
         .eq("id", numericBookId)
-        .single();
+        .eq("archived", false)
+        .maybeSingle();
 
       if (bookError) throw bookError;
+      if (!bookData) {
+        console.log("Book not found:", numericBookId);
+        return;
+      }
+      
       console.log("Book data fetched:", bookData);
       
       // Update book URL with slug if it exists
@@ -275,3 +287,4 @@ const PageView = () => {
 };
 
 export default PageView;
+
