@@ -8,8 +8,10 @@ import { useToast } from "@/hooks/use-toast";
 import { BookInfo } from "@/components/book/BookInfo";
 import { BookEditForm } from "@/components/book/BookEditForm";
 import { InviteCollaboratorSheet } from "@/components/book/InviteCollaboratorSheet";
+import { ManageCollaboratorsSheet } from "@/components/book/ManageCollaboratorsSheet";
 import { BookCoverEdit } from "@/components/book/BookCoverEdit";
 import { BookVisibilityToggle } from "@/components/book/BookVisibilityToggle";
+import { useBookPermissions } from "@/hooks/use-book-permissions";
 
 interface Book {
   id?: number;
@@ -28,6 +30,7 @@ export default function BookEdit() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { isOwner, loading: permissionsLoading } = useBookPermissions(id);
   const [book, setBook] = useState<Book>({
     name: "",
     subtitle: "",
@@ -139,7 +142,7 @@ export default function BookEdit() {
     }
   };
 
-  if (loading) {
+  if (loading || permissionsLoading) {
     return <div>Loading...</div>;
   }
 
@@ -165,7 +168,12 @@ export default function BookEdit() {
               onTogglePublish={togglePublish}
               publishing={publishing}
             />
-            {id && <InviteCollaboratorSheet bookId={parseInt(id)} />}
+            {isOwner && id && (
+              <>
+                <InviteCollaboratorSheet bookId={parseInt(id)} />
+                <ManageCollaboratorsSheet bookId={parseInt(id)} />
+              </>
+            )}
           </div>
         </div>
 

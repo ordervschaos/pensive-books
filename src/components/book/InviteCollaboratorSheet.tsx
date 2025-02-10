@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,7 @@ interface InviteCollaboratorSheetProps {
 
 export function InviteCollaboratorSheet({ bookId }: InviteCollaboratorSheetProps) {
   const { toast } = useToast();
+  const [open, setOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [accessLevel, setAccessLevel] = useState<"view" | "edit">("view");
   const [sending, setSending] = useState(false);
@@ -46,6 +48,7 @@ export function InviteCollaboratorSheet({ bookId }: InviteCollaboratorSheetProps
       });
 
       setInviteEmail("");
+      setOpen(false);
     } catch (error: any) {
       console.error("Error sending invitation:", error);
       toast({
@@ -59,7 +62,7 @@ export function InviteCollaboratorSheet({ bookId }: InviteCollaboratorSheetProps
   };
 
   return (
-    <Sheet>
+    <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
         <Button variant="outline">
           <UserPlus className="mr-2 h-4 w-4" />
