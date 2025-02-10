@@ -42,7 +42,7 @@ export const PageNavigation = ({
   };
 
   return (
-    <div className="flex items-center justify-center gap-2">
+    <div className="flex max-w-screen-lg items-center justify-center gap-2">
       <Button
         variant="outline"
         onClick={handleNextClick}

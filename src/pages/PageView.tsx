@@ -200,6 +200,7 @@ const PageView = () => {
         .select("id, title")
         .eq("book_id", numericBookId)
         .eq("page_index", index)
+        .eq("archived", false)
         .single();
 
       if (error) throw error;
