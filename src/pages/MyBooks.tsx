@@ -38,27 +38,15 @@ export default function Index() {
           throw ownedError;
         }
 
-        // Fetch books shared with the user through book_access
-        const { data: sharedBooksData, error: sharedError } = await supabase
+        // Updated query to get shared books - now directly querying the books table
+        const { data: sharedBooksAccess, error: sharedError } = await supabase
           .from("book_access")
           .select(`
             access_level,
-            books (
-              id,
-              name,
-              cover_url,
-              is_public,
-              created_at,
-              updated_at,
-              owner_id,
-              show_text_on_cover,
-              subtitle,
-              author
-            )
+            books (*)
           `)
           .eq('invited_email', session.user.email)
-          .eq('status', 'accepted')
-          .not('books', 'is', null);
+          .eq('status', 'accepted');
 
         if (sharedError) {
           console.error("Error fetching shared books:", sharedError);
@@ -66,7 +54,7 @@ export default function Index() {
         }
 
         // Transform shared books data to include access level
-        const transformedSharedBooks = sharedBooksData
+        const transformedSharedBooks = sharedBooksAccess
           ?.filter(item => item.books !== null)
           .map(item => ({
             ...item.books,
@@ -193,21 +181,27 @@ export default function Index() {
     <div className="container mx-auto p-6">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">Your Books</h1>
-        <Button onClick={handleCreateBook}>
+        <Button onClick={() => navigate("/book/new")}>
           <Plus className="mr-2 h-4 w-4" /> New book
         </Button>
       </div>
 
       <div className="space-y-12">
-        {publishedBooks.length > 0 && (
-          <BookGrid books={publishedBooks} title="Published Books" />
+        {books.filter(book => book.is_public).length > 0 && (
+          <BookGrid 
+            books={books.filter(book => book.is_public)} 
+            title="Published Books" 
+          />
         )}
         {sharedBooks.length > 0 && (
-          <BookGrid books={sharedBooks} title="Shared with me" />
+          <BookGrid 
+            books={sharedBooks} 
+            title="Shared with me" 
+          />
         )}
         <BookGrid 
-          books={unpublishedBooks} 
-          title={publishedBooks.length > 0 ? "Other Books" : "All Books"} 
+          books={books.filter(book => !book.is_public)} 
+          title={books.filter(book => book.is_public).length > 0 ? "Other Books" : "All Books"} 
         />
       </div>
     </div>
