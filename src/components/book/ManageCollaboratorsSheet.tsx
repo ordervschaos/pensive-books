@@ -1,9 +1,9 @@
-
 import { useState, useEffect } from "react";
 import { Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -22,6 +22,7 @@ export function ManageCollaboratorsSheet({ bookId }: ManageCollaboratorsSheetPro
   const { toast } = useToast();
   const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
   const [loading, setLoading] = useState(true);
+  const [updating, setUpdating] = useState<number | null>(null);
 
   useEffect(() => {
     fetchCollaborators();
@@ -72,6 +73,36 @@ export function ManageCollaboratorsSheet({ bookId }: ManageCollaboratorsSheetPro
     }
   };
 
+  const handleAccessLevelChange = async (collaboratorId: number, newAccessLevel: "view" | "edit") => {
+    try {
+      setUpdating(collaboratorId);
+      const { error } = await supabase
+        .from("book_access")
+        .update({ access_level: newAccessLevel })
+        .eq("id", collaboratorId);
+
+      if (error) throw error;
+
+      setCollaborators(collaborators.map(c => 
+        c.id === collaboratorId ? { ...c, access_level: newAccessLevel } : c
+      ));
+
+      toast({
+        title: "Access level updated",
+        description: `Collaborator access level changed to ${newAccessLevel}`
+      });
+    } catch (error: any) {
+      console.error("Error updating access level:", error);
+      toast({
+        variant: "destructive",
+        title: "Error updating access level",
+        description: error.message
+      });
+    } finally {
+      setUpdating(null);
+    }
+  };
+
   return (
     <Sheet>
       <SheetTrigger asChild>
@@ -98,14 +129,32 @@ export function ManageCollaboratorsSheet({ bookId }: ManageCollaboratorsSheetPro
                 >
                   <div className="space-y-1">
                     <div>{collaborator.invited_email}</div>
-                    <Badge variant="secondary">
-                      {collaborator.access_level} access
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      <Select
+                        value={collaborator.access_level}
+                        onValueChange={(value: "view" | "edit") => 
+                          handleAccessLevelChange(collaborator.id, value)
+                        }
+                        disabled={updating === collaborator.id}
+                      >
+                        <SelectTrigger className="w-[100px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="view">View</SelectItem>
+                          <SelectItem value="edit">Edit</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Badge variant="secondary">
+                        {updating === collaborator.id ? "Updating..." : "access"}
+                      </Badge>
+                    </div>
                   </div>
                   <Button
                     variant="destructive"
                     size="sm"
                     onClick={() => handleRevokeAccess(collaborator.id)}
+                    disabled={updating === collaborator.id}
                   >
                     Revoke
                   </Button>
