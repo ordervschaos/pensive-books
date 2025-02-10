@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Image as ImageIcon } from "lucide-react";
@@ -11,6 +10,7 @@ import { UnsplashPicker } from "./UnsplashPicker";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 
 interface BookCoverEditProps {
   bookId: number;
@@ -134,10 +134,10 @@ export const BookCoverEdit = ({
   };
 
   return (
-    <Card className="bg-white shadow-sm">
+    <Card className="border bg-card">
       <CardHeader className="space-y-6">
         <div className="space-y-4">
-          <div className="w-full aspect-[3/4] relative rounded-lg overflow-hidden bg-blue-100">
+          <div className="w-full aspect-[3/4] relative rounded-lg overflow-hidden bg-muted">
             {coverUrl ? (
               <div className="relative w-full h-full">
                 <img 
@@ -146,7 +146,7 @@ export const BookCoverEdit = ({
                   className="w-full h-full object-cover"
                 />
                 {isShowingText && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30 p-4">
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/40 p-4">
                     <h1 className="text-2xl font-bold text-white text-center mb-2">
                       {title || "Untitled"}
                     </h1>
@@ -165,7 +165,7 @@ export const BookCoverEdit = ({
               </div>
             ) : (
               <div className="w-full h-full flex items-center justify-center">
-                <ImageIcon className="w-16 h-16 text-blue-300" />
+                <ImageIcon className="w-16 h-16 text-muted-foreground" />
               </div>
             )}
             <Dialog open={isOpen} onOpenChange={setIsOpen}>
@@ -173,7 +173,10 @@ export const BookCoverEdit = ({
                 <Button 
                   variant="outline" 
                   size="sm" 
-                  className="absolute bottom-4 right-4 bg-white/90 backdrop-blur-sm hover:bg-white/95"
+                  className={cn(
+                    "absolute bottom-4 right-4",
+                    "bg-background/90 backdrop-blur-sm hover:bg-background/95"
+                  )}
                   disabled={uploading}
                 >
                   {uploading ? "Updating..." : <ImageIcon className="h-4 w-4" />}
