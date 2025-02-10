@@ -50,7 +50,10 @@ export default function Index() {
               is_public,
               created_at,
               updated_at,
-              owner_id
+              owner_id,
+              show_text_on_cover,
+              subtitle,
+              author
             )
           `)
           .eq('invited_email', session.user.email)
@@ -129,11 +132,30 @@ export default function Index() {
                   onClick={() => navigate(`/book/${book.id}`)}
                 >
                   {book.cover_url ? (
-                    <img
-                      src={book.cover_url}
-                      alt={book.name}
-                      className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                    />
+                    <div className="relative w-full h-full">
+                      <img
+                        src={book.cover_url}
+                        alt={book.name}
+                        className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                      />
+                      {book.show_text_on_cover && (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30 p-4">
+                          <h2 className="text-xl font-semibold text-white text-center mb-2">
+                            {book.name}
+                          </h2>
+                          {book.subtitle && (
+                            <p className="text-sm text-white/90 text-center mb-2">
+                              {book.subtitle}
+                            </p>
+                          )}
+                          {book.author && (
+                            <p className="text-sm text-white/90 text-center">
+                              by {book.author}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   ) : (
                     <div className="w-full h-full bg-muted flex items-center justify-center p-4">
                       <h2 className="text-xs md:text-2xl font-semibold text-center text-muted-foreground break-words line-clamp-3">

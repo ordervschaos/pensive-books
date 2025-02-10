@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -146,9 +147,11 @@ const BookDetails = () => {
   const BookInfoSection = () => {
     return <BookInfo 
       name={book.name}
+      subtitle={book.subtitle}
       coverUrl={book.cover_url}
       bookId={parseInt(id || "0")}
       author={book.author}
+      showTextOnCover={book.show_text_on_cover}
     />;
   };
 
