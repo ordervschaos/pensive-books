@@ -193,41 +193,41 @@ export function TopNav() {
   return (
     <nav className="bg-background border-b h-14">
       <div className="container max-w-7xl mx-auto px-4 h-full">
-        <div className="flex items-center justify-between h-full">
-          <div className="flex items-center gap-4 min-w-0">
+        <div className="flex items-center justify-between h-full gap-4">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
             {isBookRoute ? (
               <Breadcrumb>
-                <BreadcrumbList className="flex flex-wrap items-center space-x-1 min-w-0">
+                <BreadcrumbList className="flex items-center space-x-1 min-w-0">
                   {showBackButton && (
-                    <BreadcrumbItem className="flex items-center shrink-0">
+                    <BreadcrumbItem className="shrink-0">
                       <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
                         <ArrowLeft className="h-4 w-4" />
                       </Button>
                     </BreadcrumbItem>
                   )}
-                  <BreadcrumbItem className="flex flex-wrap items-center min-w-0">
+                  <BreadcrumbItem className="flex items-center min-w-0">
                     <Link 
                       className="text-blue-500 hover:text-blue-600 transition-colors font-medium shrink-0" 
                       to={`/my-books`}
                     >
-                      <Library className="h-5 w-5 mr-2" /> 
+                      <Library className="h-5 w-5" />
                     </Link>
                     <span className="mx-2 text-muted-foreground shrink-0">›</span>
                     {isPageRoute ? (
                       <>
                         <Link 
-                          className="text-blue-500 hover:text-blue-600 transition-colors font-medium truncate"
+                          className="text-blue-500 hover:text-blue-600 transition-colors font-medium truncate max-w-[120px] md:max-w-[200px]"
                           to={`/book/${location.pathname.split('/')[2]}`}
                         >
                           {bookName}
                         </Link>
                         <span className="mx-2 text-muted-foreground shrink-0">›</span>
-                        <span className="text-foreground font-medium truncate">
+                        <span className="text-foreground font-medium truncate max-w-[120px] md:max-w-[200px]">
                           {pageName}
                         </span>
                       </>
                     ) : (
-                      <span className="text-foreground font-medium truncate">{bookName}</span>
+                      <span className="text-foreground font-medium truncate max-w-[300px]">{bookName}</span>
                     )}
                   </BreadcrumbItem>
                 </BreadcrumbList>
@@ -243,7 +243,7 @@ export function TopNav() {
             {showLibraryLink && (
               <Link 
                 to="/library" 
-                className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
+                className="hidden sm:flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
               >
                 <Store className="h-4 w-4" />
                 <span>Library</span>
