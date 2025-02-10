@@ -188,14 +188,22 @@ const PageView = () => {
         .select("id, title")
         .eq("book_id", numericBookId)
         .eq("page_index", index)
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
+      
       if (nextPage) {
         const slug = nextPage.title ? 
           `${nextPage.id}-${nextPage.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}` : 
           nextPage.id.toString();
         navigate(`/book/${bookId}/page/${slug}`);
+      } else {
+        // Handle case where page is not found
+        toast({
+          variant: "destructive",
+          title: "Page not found",
+          description: "The requested page could not be found"
+        });
       }
     } catch (error: any) {
       toast({
