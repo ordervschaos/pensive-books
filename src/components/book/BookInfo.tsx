@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { 
   Card,
@@ -203,16 +202,16 @@ export const BookInfo = ({
                 />
                 {showTextOnCover && (
                   <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30 p-4">
-                    <h1 className="text-2xl font-bold text-white text-center mb-2">
+                    <h1 className="text-base sm:text-2xl font-bold text-white text-center mb-1 sm:mb-2">
                       {name}
                     </h1>
                     {subtitle && (
-                      <p className="text-lg text-white/90 text-center mb-4">
+                      <p className="text-xs sm:text-lg text-white/90 text-center mb-1 sm:mb-4">
                         {subtitle}
                       </p>
                     )}
                     {author && (
-                      <p className="text-lg text-white/90 text-center">
+                      <p className="text-xs sm:text-lg text-white/90 text-center">
                         by {author}
                       </p>
                     )}

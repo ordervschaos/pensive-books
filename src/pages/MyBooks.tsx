@@ -140,16 +140,16 @@ export default function Index() {
                       />
                       {book.show_text_on_cover && (
                         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30 p-4">
-                          <h2 className="text-xl font-semibold text-white text-center mb-2">
+                          <h2 className="text-base sm:text-xl font-semibold text-white text-center mb-1 sm:mb-2">
                             {book.name}
                           </h2>
                           {book.subtitle && (
-                            <p className="text-sm text-white/90 text-center mb-2">
+                            <p className="text-xs sm:text-sm text-white/90 text-center mb-1 sm:mb-2">
                               {book.subtitle}
                             </p>
                           )}
                           {book.author && (
-                            <p className="text-sm text-white/90 text-center">
+                            <p className="text-xs sm:text-sm text-white/90 text-center">
                               by {book.author}
                             </p>
                           )}
