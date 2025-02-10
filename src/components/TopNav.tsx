@@ -1,3 +1,4 @@
+
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { LogOut, LogIn, Moon, Sun, ArrowLeft, Search, Store, Library } from "lucide-react";
@@ -193,40 +194,40 @@ export function TopNav() {
     <nav className="bg-background border-b h-14">
       <div className="container max-w-7xl mx-auto px-4 h-full">
         <div className="flex items-center justify-between h-full">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 min-w-0">
             {isBookRoute ? (
               <Breadcrumb>
-                <BreadcrumbList className="flex items-center space-x-1">
+                <BreadcrumbList className="flex flex-wrap items-center space-x-1 min-w-0">
                   {showBackButton && (
-                    <BreadcrumbItem className="flex items-center">
+                    <BreadcrumbItem className="flex items-center shrink-0">
                       <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
                         <ArrowLeft className="h-4 w-4" />
                       </Button>
                     </BreadcrumbItem>
                   )}
-                  <BreadcrumbItem className="flex items-center">
+                  <BreadcrumbItem className="flex flex-wrap items-center min-w-0">
                     <Link 
-                      className="text-blue-500 hover:text-blue-600 transition-colors font-medium" 
+                      className="text-blue-500 hover:text-blue-600 transition-colors font-medium shrink-0" 
                       to={`/my-books`}
                     >
                       <Library className="h-5 w-5 mr-2" /> 
                     </Link>
-                    <span className="mx-2 text-muted-foreground">›</span>
+                    <span className="mx-2 text-muted-foreground shrink-0">›</span>
                     {isPageRoute ? (
                       <>
                         <Link 
-                          className="text-blue-500 hover:text-blue-600 transition-colors font-medium" 
+                          className="text-blue-500 hover:text-blue-600 transition-colors font-medium truncate"
                           to={`/book/${location.pathname.split('/')[2]}`}
                         >
                           {bookName}
                         </Link>
-                        <span className="mx-2 text-muted-foreground">›</span>
-                        <span className="text-foreground font-medium">
+                        <span className="mx-2 text-muted-foreground shrink-0">›</span>
+                        <span className="text-foreground font-medium truncate">
                           {pageName}
                         </span>
                       </>
                     ) : (
-                      <span className="text-foreground font-medium">{bookName}</span>
+                      <span className="text-foreground font-medium truncate">{bookName}</span>
                     )}
                   </BreadcrumbItem>
                 </BreadcrumbList>
@@ -238,7 +239,7 @@ export function TopNav() {
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             {showLibraryLink && (
               <Link 
                 to="/library" 
