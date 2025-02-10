@@ -1,7 +1,24 @@
+
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { GripVertical, Move, LayoutList, LayoutGrid, Trash2, Type, Section, Plus } from "lucide-react";
+import { 
+  GripVertical, 
+  Move, 
+  LayoutList, 
+  LayoutGrid, 
+  Trash2, 
+  Type, 
+  Section, 
+  Plus,
+  MoreVertical
+} from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect } from "react";
@@ -346,31 +363,35 @@ export const PagesList = ({ pages, bookId, isReorderMode = false, canEdit = fals
             </Button>
             
             {canEdit && (
-              <>
-                <Button
-                  onClick={() => {
-                    setIsReordering(false);
-                    setIsDeleteMode(!isDeleteMode);
-                  }}
-                  variant={isDeleteMode ? "destructive" : "outline"}
-                  size="icon"
-                  className="rounded-full"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-
-                <Button
-                  onClick={() => {
-                    setIsDeleteMode(false);
-                    setIsReordering(!isReordering);
-                  }}
-                  variant={isReordering ? "default" : "outline"}
-                  size="icon"
-                  className="rounded-full"
-                >
-                  <Move className="h-4 w-4" />
-                </Button>
-              </>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="icon" className="rounded-full">
+                    <MoreVertical className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-40">
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setIsReordering(false);
+                      setIsDeleteMode(!isDeleteMode);
+                    }}
+                    className="flex items-center gap-2"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    <span>{isDeleteMode ? 'Exit Delete Mode' : 'Delete Pages'}</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setIsDeleteMode(false);
+                      setIsReordering(!isReordering);
+                    }}
+                    className="flex items-center gap-2"
+                  >
+                    <Move className="h-4 w-4" />
+                    <span>{isReordering ? 'Exit Reorder Mode' : 'Reorder Pages'}</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
           </div>
 
