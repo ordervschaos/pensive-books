@@ -1,6 +1,6 @@
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { LogOut, LogIn, Moon, Sun, ArrowLeft, Search, Settings, Maximize2, Library } from "lucide-react";
+import { LogOut, LogIn, Moon, Sun, ArrowLeft, Search, Store, Library } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { useTheme } from "@/components/theme/ThemeProvider";
@@ -244,7 +244,7 @@ export function TopNav() {
                 to="/library" 
                 className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
               >
-                <Settings className="h-4 w-4" />
+                <Store className="h-4 w-4" />
                 <span>Library</span>
               </Link>
             )}

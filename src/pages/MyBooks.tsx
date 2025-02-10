@@ -194,7 +194,7 @@ export default function Index() {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">Your Books</h1>
         <Button onClick={handleCreateBook}>
-          <Plus className="mr-2 h-4 w-4" /> New notebook
+          <Plus className="mr-2 h-4 w-4" /> New book
         </Button>
       </div>
 

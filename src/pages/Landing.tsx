@@ -29,7 +29,7 @@ export default function Landing() {
               Start Writing
             </Button>
             <Button size="lg" variant="outline" onClick={() => navigate("/library")}>
-              Browse Books
+              Browse Library
             </Button>
           </div>
         </div>
