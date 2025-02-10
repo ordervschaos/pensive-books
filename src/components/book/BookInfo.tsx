@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { 
   Card,
@@ -189,7 +190,7 @@ export const BookInfo = ({
   };
 
   return (
-    <Card className="bg-white shadow-sm">
+    <Card className="bg-white shadow-sm w-full lg:max-w-[300px]">
       <div className="flex flex-col gap-4">
         <CardHeader className="space-y-6">
           <div className="w-full aspect-[3/4] relative rounded-lg overflow-hidden bg-blue-100">
@@ -202,16 +203,16 @@ export const BookInfo = ({
                 />
                 {showTextOnCover && (
                   <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30 p-4">
-                    <h1 className="text-base sm:text-2xl font-bold text-white text-center mb-1 sm:mb-2">
+                    <h1 className="text-sm sm:text-base lg:text-2xl font-bold text-white text-center mb-1 sm:mb-2">
                       {name}
                     </h1>
                     {subtitle && (
-                      <p className="text-xs sm:text-lg text-white/90 text-center mb-1 sm:mb-4">
+                      <p className="text-xs sm:text-sm lg:text-lg text-white/90 text-center mb-1 sm:mb-4">
                         {subtitle}
                       </p>
                     )}
                     {author && (
-                      <p className="text-xs sm:text-lg text-white/90 text-center">
+                      <p className="text-xs sm:text-sm lg:text-lg text-white/90 text-center">
                         by {author}
                       </p>
                     )}
@@ -224,11 +225,11 @@ export const BookInfo = ({
               </div>
             )}
           </div>
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col sm:flex-row lg:flex-col gap-2">
             <Button
               onClick={handleCopyLink}
               variant="outline"
-              className="w-full"
+              className="w-full text-xs sm:text-sm"
             >
               <Copy className="h-4 w-4 mr-2" />
               Copy Link
@@ -236,7 +237,7 @@ export const BookInfo = ({
             <Button
               onClick={handleDownloadPDF}
               variant="outline"
-              className="w-full"
+              className="w-full text-xs sm:text-sm"
             >
               <Download className="h-4 w-4 mr-2" />
               Download PDF
@@ -244,7 +245,7 @@ export const BookInfo = ({
             <Button
               onClick={handleDownloadEPUB}
               variant="outline"
-              className="w-full"
+              className="w-full text-xs sm:text-sm"
             >
               <Book className="h-4 w-4 mr-2" />
               Download EPUB
