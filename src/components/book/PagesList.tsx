@@ -347,7 +347,7 @@ export const PagesList = ({ pages, bookId, isReorderMode = false, canEdit = fals
   return (
     <Card className="mt-6">
       <CardContent className="p-0">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 border-b border-border gap-4">
+        <div className="flex flex-row sm:flex-row items-start sm:items-center justify-between p-4 border-b border-border gap-4">
           <div className="flex items-center gap-2">
             <Button
               variant={viewMode === 'list' ? "default" : "outline"}
@@ -396,7 +396,7 @@ export const PagesList = ({ pages, bookId, isReorderMode = false, canEdit = fals
           </div>
 
           {canEdit && (
-            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+            <div className="flex flex-wrap items-center gap-2 ">
               <Button
                 variant="outline"
                 onClick={() => createNewPage('text')}
@@ -418,7 +418,7 @@ export const PagesList = ({ pages, bookId, isReorderMode = false, canEdit = fals
                 aria-label="Add Section Header"
               >
                 <Section className="h-4 w-4" />
-                <span>Add Section</span>
+                <span className="hidden md:block">Add Section</span>
                 <div className="absolute -top-2 -right-2 bg-green-500 rounded-full p-0.5 shadow-sm">
                   <Plus className="h-3 w-3 text-white" />
                 </div>
