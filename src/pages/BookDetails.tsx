@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -23,7 +22,6 @@ const BookDetails = () => {
   const { canEdit, isOwner, loading: permissionsLoading } = useBookPermissions(id);
 
   useEffect(() => {
-    // Check authentication status before fetching data
     const checkAuthAndFetch = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       
@@ -37,7 +35,6 @@ const BookDetails = () => {
     try {
       console.log('Fetching book details for ID:', id);
       
-      // First fetch the book to verify access
       const { data: bookData, error: bookError } = await supabase
         .from("books")
         .select("*")
@@ -52,7 +49,6 @@ const BookDetails = () => {
       console.log('Book data fetched:', bookData);
       setBook(bookData);
 
-      // Then fetch pages for the book
       const { data: pagesData, error: pagesError } = await supabase
         .from("pages")
         .select("*")
@@ -124,7 +120,7 @@ const BookDetails = () => {
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col">
-        <div className="container mx-auto p-6 space-y-6">
+        <div className="container mx-auto px-4 py-6 space-y-6">
           <Skeleton className="h-8 w-48" />
           <Skeleton className="h-[200px] w-full" />
           <Skeleton className="h-[400px] w-full" />
@@ -136,7 +132,7 @@ const BookDetails = () => {
   if (!book) {
     return (
       <div className="min-h-screen flex flex-col">
-        <div className="container mx-auto p-6 text-center">
+        <div className="container mx-auto px-4 py-6 text-center">
           <h1 className="text-2xl font-bold mb-4">Book not found</h1>
           <p className="text-muted-foreground">The book you're looking for doesn't exist or you don't have permission to view it.</p>
         </div>
@@ -157,7 +153,7 @@ const BookDetails = () => {
 
   const BookActions = () => {
     return canEdit && (
-      <div className="flex justify-center my-4 gap-2 justify-between" >
+      <div className="flex justify-center my-4 gap-2 justify-between">
         <BookVisibilityToggle
           isPublic={book.is_public}
           onTogglePublish={togglePublish}
@@ -172,38 +168,29 @@ const BookDetails = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <div className="container mx-auto p-6">
+      <div className="container mx-auto px-4 py-6">
         <div className="max-w-7xl mx-auto space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-            {/* Top section for small screens */}
-            <div className="lg:hidden grid grid-cols-2 gap-4 col-span-full mb-6">
-              <div className="col-span-1">
-                <BookInfoSection/>
-              </div>
-              <div className="col-span-1">
-                <div className="flex flex-col">
-                  <h1 
-                    className={`text-3xl font-bold ${canEdit ? 'cursor-pointer hover:text-blue-600 transition-colors' : ''}`}
-                    onClick={canEdit ? handleEditClick : undefined}
-                  >
-                    {book.name}
-                  </h1>
-                  <p className="text-muted-foreground">{book.author || "Unknown author"}</p>
-                </div>
-                <div className="lg:hidden flex flex-col">
-                  <BookActions/>
-                </div>
+            <div className="lg:hidden col-span-full">
+              <h1 
+                className={`text-2xl font-bold mb-2 ${canEdit ? 'cursor-pointer hover:text-blue-600 transition-colors' : ''}`}
+                onClick={canEdit ? handleEditClick : undefined}
+              >
+                {book.name}
+              </h1>
+              <p className="text-muted-foreground mb-4">{book.author || "Unknown author"}</p>
+              {canEdit && <BookActions />}
+            </div>
+
+            <div className="col-span-full lg:col-span-1">
+              <BookInfoSection />
+              <div className="hidden lg:block">
+                {canEdit && <BookActions />}
               </div>
             </div>
 
-            {/* Desktop layout */}
-            <div className="hidden lg:block lg:col-span-1">
-              <BookInfoSection/>
-              <BookActions/>
-            </div>
-
-            <div className="lg:col-span-3">
-              <div className="hidden lg:flex flex-col">
+            <div className="col-span-full lg:col-span-3">
+              <div className="hidden lg:block mb-6">
                 <h1 
                   className={`text-3xl font-bold ${canEdit ? 'cursor-pointer hover:text-blue-600 transition-colors' : ''}`}
                   onClick={canEdit ? handleEditClick : undefined}
