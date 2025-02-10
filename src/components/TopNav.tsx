@@ -1,7 +1,6 @@
-
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { LogOut, LogIn, Moon, Sun, ArrowLeft, Search, Store, Library } from "lucide-react";
+import { LogOut, LogIn, Moon, Sun, ArrowLeft, Search, Store, Library, MoreVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { useTheme } from "@/components/theme/ThemeProvider";
@@ -13,6 +12,12 @@ import {
   BreadcrumbList,
 } from "@/components/ui/breadcrumb";
 import { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface PageChangePayload {
   new: {
@@ -193,11 +198,11 @@ export function TopNav() {
   return (
     <nav className="bg-background border-b h-14">
       <div className="container max-w-7xl mx-auto px-4 h-full">
-        <div className="flex items-center justify-between h-full gap-4">
-          <div className="flex items-center gap-2 min-w-0 flex-1">
+        <div className="flex flex-row items-center justify-between h-full gap-4">
+          <div className="flex flex-row items-center gap-2 min-w-0 flex-1">
             {isBookRoute ? (
               <Breadcrumb>
-                <BreadcrumbList className="flex items-center space-x-1 min-w-0">
+                <BreadcrumbList className="flex flex-row items-center space-x-1 min-w-0">
                   {showBackButton && (
                     <BreadcrumbItem className="shrink-0">
                       <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
@@ -207,7 +212,7 @@ export function TopNav() {
                   )}
                   <BreadcrumbItem className="flex items-center min-w-0">
                     <Link 
-                      className="text-blue-500 hover:text-blue-600 transition-colors font-medium shrink-0" 
+                      className="text-blue-500 hover:text-blue-600  transition-colors font-medium shrink-0" 
                       to={`/my-books`}
                     >
                       <Library className="h-5 w-5" />
@@ -249,27 +254,82 @@ export function TopNav() {
                 <span>Library</span>
               </Link>
             )}
-            {isBookRoute && (
-              <Button variant="ghost" size="icon" onClick={() => setSearchOpen(true)}>
-                <Search className="h-4 w-4" />
-              </Button>
-            )}
-            <Button variant="ghost" size="icon" onClick={toggleTheme}>
-              {theme === "light" ? (
-                <Moon className="h-4 w-4" />
-              ) : (
-                <Sun className="h-4 w-4" />
+
+            {/* Desktop buttons */}
+            <div className="hidden sm:flex items-center gap-2">
+              {isBookRoute && (
+                <Button variant="ghost" size="icon" onClick={() => setSearchOpen(true)}>
+                  <Search className="h-4 w-4" />
+                </Button>
               )}
-            </Button> 
-            {isAuthenticated ? (
-              <Button variant="ghost" size="icon" onClick={handleLogout}>
-                <LogOut className="h-4 w-4" />
-              </Button>
-            ) : (
-              <Button variant="ghost" size="icon" onClick={handleLogin}>
-                <LogIn className="h-4 w-4" />
-              </Button>
-            )}
+              <Button variant="ghost" size="icon" onClick={toggleTheme}>
+                {theme === "light" ? (
+                  <Moon className="h-4 w-4" />
+                ) : (
+                  <Sun className="h-4 w-4" />
+                )}
+              </Button> 
+              {isAuthenticated ? (
+                <Button variant="ghost" size="icon" onClick={handleLogout}>
+                  <LogOut className="h-4 w-4" />
+                </Button>
+              ) : (
+                <Button variant="ghost" size="icon" onClick={handleLogin}>
+                  <LogIn className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+
+            {/* Mobile menu */}
+            <div className="sm:hidden">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon">
+                    <MoreVertical className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {showLibraryLink && (
+                    <DropdownMenuItem asChild>
+                      <Link to="/library" className="flex items-center gap-2 w-full">
+                        <Store className="h-4 w-4" />
+                        <span>Library</span>
+                      </Link>
+                    </DropdownMenuItem>
+                  )}
+                  {isBookRoute && (
+                    <DropdownMenuItem onClick={() => setSearchOpen(true)}>
+                      <Search className="h-4 w-4 mr-2" />
+                      <span>Search</span>
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuItem onClick={toggleTheme}>
+                    {theme === "light" ? (
+                      <>
+                        <Moon className="h-4 w-4 mr-2" />
+                        <span>Dark mode</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sun className="h-4 w-4 mr-2" />
+                        <span>Light mode</span>
+                      </>
+                    )}
+                  </DropdownMenuItem>
+                  {isAuthenticated ? (
+                    <DropdownMenuItem onClick={handleLogout}>
+                      <LogOut className="h-4 w-4 mr-2" />
+                      <span>Logout</span>
+                    </DropdownMenuItem>
+                  ) : (
+                    <DropdownMenuItem onClick={handleLogin}>
+                      <LogIn className="h-4 w-4 mr-2" />
+                      <span>Login</span>
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
         </div>
       </div>
