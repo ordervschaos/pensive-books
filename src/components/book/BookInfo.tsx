@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { 
   Card,
@@ -190,10 +189,10 @@ export const BookInfo = ({
   };
 
   return (
-    <Card className="bg-white shadow-sm w-full lg:max-w-[300px]">
+    <Card className="bg-background shadow-sm w-full lg:max-w-[300px]">
       <div className="flex flex-col gap-4">
         <CardHeader className="space-y-6">
-          <div className="w-full aspect-[3/4] relative rounded-lg overflow-hidden bg-blue-100">
+          <div className="w-full aspect-[3/4] relative rounded-lg overflow-hidden bg-muted">
             {coverUrl ? (
               <div className="relative w-full h-full">
                 <img 
@@ -221,7 +220,7 @@ export const BookInfo = ({
               </div>
             ) : (
               <div className="w-full h-full flex items-center justify-center">
-                <ImageIcon className="w-16 h-16 text-blue-300" />
+                <ImageIcon className="w-16 h-16 text-muted-foreground" />
               </div>
             )}
           </div>
