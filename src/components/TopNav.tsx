@@ -188,6 +188,7 @@ export function TopNav() {
   const isBookRoute = location.pathname.includes('/book/');
   const isPageRoute = location.pathname.includes('/page/');
   const showBackButton = location.pathname !== '/';
+  const showLibraryLink = !isBookRoute && !isPageRoute;
 
   return (
     <nav className="bg-background border-b h-14">
@@ -232,9 +233,20 @@ export function TopNav() {
                 </BreadcrumbList>
               </Breadcrumb>
             ) : (
-              <Link to={`/`}>
-              <span className="text-lg font-semibold text-foreground">Pensive</span>
-              </Link>
+              <div className="flex items-center gap-4">
+                <Link to={`/`}>
+                  <span className="text-lg font-semibold text-foreground">Pensive</span>
+                </Link>
+                {showLibraryLink && (
+                  <Link 
+                    to="/library" 
+                    className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <Library className="h-4 w-4" />
+                    <span className="hidden sm:inline">Library</span>
+                  </Link>
+                )}
+              </div>
             )}
           </div>
 
