@@ -1,4 +1,3 @@
-
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { LogOut, LogIn, Moon, Sun, ArrowLeft, Search, Settings, Maximize2, Library } from "lucide-react";
@@ -233,24 +232,22 @@ export function TopNav() {
                 </BreadcrumbList>
               </Breadcrumb>
             ) : (
-              <div className="flex items-center gap-4">
-                <Link to={`/`}>
-                  <span className="text-lg font-semibold text-foreground">Pensive</span>
-                </Link>
-                {showLibraryLink && (
-                  <Link 
-                    to="/library" 
-                    className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    <Library className="h-4 w-4" />
-                    <span className="hidden sm:inline">Library</span>
-                  </Link>
-                )}
-              </div>
+              <Link to={`/`}>
+                <span className="text-lg font-semibold text-foreground">Pensive</span>
+              </Link>
             )}
           </div>
 
           <div className="flex items-center gap-2">
+            {showLibraryLink && (
+              <Link 
+                to="/library" 
+                className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <Settings className="h-4 w-4" />
+                <span>Library</span>
+              </Link>
+            )}
             {isBookRoute && (
               <Button variant="ghost" size="icon" onClick={() => setSearchOpen(true)}>
                 <Search className="h-4 w-4" />
