@@ -103,7 +103,7 @@ const PageView = () => {
       // Get next page title if not the last page
       if (currentPageIndex < pagesData.length - 1) {
         const nextPage = pagesData[currentPageIndex + 1];
-        setNextPageTitle(nextPage.title || "Untitled");
+        setNextPageTitle(nextPage.title || "");
       }
 
     } catch (error: any) {
