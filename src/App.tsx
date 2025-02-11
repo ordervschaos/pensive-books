@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route, useLocation } from "react-route
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { Toaster } from "@/components/ui/toaster";
 import { TopNav } from "@/components/TopNav";
+import { Footer } from "@/components/Footer";
 import { PrivateRoute } from "@/components/PrivateRoute";
 import Landing from "@/pages/Landing";
 import Auth from "@/pages/Auth";
@@ -12,6 +13,8 @@ import BookDetails from "@/pages/BookDetails";
 import BookEdit from "@/pages/BookEdit";
 import PageView from "@/pages/PageView";
 import AcceptInvitation from "@/pages/AcceptInvitation";
+import PrivacyPolicy from "@/pages/PrivacyPolicy";
+import Terms from "@/pages/Terms";
 import { useEffect } from "react";
 
 // ScrollToTop component that scrolls the window up on route change
@@ -41,57 +44,64 @@ function App() {
   return (
     <ThemeProvider defaultTheme="light">
       <Router basename={basename}>
-        <ScrollToTop />
-        <TopNav />
-        <Routes>
-          <Route path="/" element={<Landing />} />
-          <Route path="/auth" element={<Auth />} />
-          <Route path="/auth/callback" element={<Auth />} />
-          <Route path="/library" element={<Library />} />
-          <Route path="/accept-invitation" element={<AcceptInvitation />} />
-          
-          {/* Protected Routes */}
-          <Route
-            path="/my-books"
-            element={
-              <PrivateRoute>
-                <MyBooks />
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/book/new"
-            element={
-              <PrivateRoute>
-                <NewBook />
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/book/:id"
-            element={
-              <PrivateRoute>
-                <BookDetails />
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/book/:id/edit"
-            element={
-              <PrivateRoute>
-                <BookEdit />
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/book/:bookId/page/:pageId"
-            element={
-              <PrivateRoute>
-                <PageView />
-              </PrivateRoute>
-            }
-          />
-        </Routes>
+        <div className="min-h-screen flex flex-col">
+          <ScrollToTop />
+          <TopNav />
+          <main className="flex-1">
+            <Routes>
+              <Route path="/" element={<Landing />} />
+              <Route path="/auth" element={<Auth />} />
+              <Route path="/auth/callback" element={<Auth />} />
+              <Route path="/library" element={<Library />} />
+              <Route path="/accept-invitation" element={<AcceptInvitation />} />
+              <Route path="/privacy" element={<PrivacyPolicy />} />
+              <Route path="/terms" element={<Terms />} />
+              
+              {/* Protected Routes */}
+              <Route
+                path="/my-books"
+                element={
+                  <PrivateRoute>
+                    <MyBooks />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/book/new"
+                element={
+                  <PrivateRoute>
+                    <NewBook />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/book/:id"
+                element={
+                  <PrivateRoute>
+                    <BookDetails />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/book/:id/edit"
+                element={
+                  <PrivateRoute>
+                    <BookEdit />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/book/:bookId/page/:pageId"
+                element={
+                  <PrivateRoute>
+                    <PageView />
+                  </PrivateRoute>
+                }
+              />
+            </Routes>
+          </main>
+          <Footer />
+        </div>
         <Toaster />
       </Router>
     </ThemeProvider>
