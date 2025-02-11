@@ -1,4 +1,3 @@
-
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -87,7 +86,7 @@ const SortablePageItem = ({ page, bookId, onNavigate, onDelete }: SortablePageIt
       className="flex items-center gap-3 py-4 px-6 hover:bg-accent/5 transition-colors group border-b border-border last:border-0"
     >
       <div {...attributes} {...listeners} className="cursor-grab hover:text-primary">
-        <GripVertical className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity" />
+        <GripVertical className="h-5 w-5 transition-opacity" />
       </div>
       <div 
         className="flex-1 cursor-pointer"
@@ -318,15 +317,29 @@ export const PagesList = ({ pages, bookId, isReorderMode = false, canEdit = fals
       setItems(newItems);
 
       try {
-        const updates = newItems.map((page, index) => ({
+        // First, update all pages to have temporary indices that won't conflict
+        const tempUpdates = items.map((page, index) => ({
+          id: page.id,
+          page_index: -(index + 1000), // Use negative numbers to avoid conflicts
+          book_id: bookId
+        }));
+
+        let { error: tempError } = await supabase
+          .from('pages')
+          .upsert(tempUpdates);
+
+        if (tempError) throw tempError;
+
+        // Then, update to the final indices
+        const finalUpdates = newItems.map((page, index) => ({
           id: page.id,
           page_index: index,
-          book_id: bookId // Add book_id to each update
+          book_id: bookId
         }));
 
         const { error } = await supabase
           .from('pages')
-          .upsert(updates);
+          .upsert(finalUpdates);
 
         if (error) throw error;
 
@@ -334,12 +347,16 @@ export const PagesList = ({ pages, bookId, isReorderMode = false, canEdit = fals
           title: "Pages reordered",
           description: "The page order has been updated"
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
+        const err = error as { message: string };
         toast({
           variant: "destructive",
           title: "Error updating page order",
-          description: error.message
+          description: err.message || "Failed to update page order"
         });
+        
+        // Revert the items state on error
+        setItems(items);
       }
     }
   };
