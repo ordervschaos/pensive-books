@@ -13,9 +13,7 @@ export const PrivateRoute = ({ children }: PrivateRouteProps) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [isPublicBook, setIsPublicBook] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
-  const [termsAccepted, setTermsAccepted] = useState(() => {
-    return localStorage.getItem("termsAccepted") === "true";
-  });
+  const [termsAccepted, setTermsAccepted] = useState<boolean>(false);
   const params = useParams();
   const bookId = params.id || params.bookId;
 
@@ -26,6 +24,12 @@ export const PrivateRoute = ({ children }: PrivateRouteProps) => {
         const { data: { session } } = await supabase.auth.getSession();
         console.log("Auth session check:", !!session);
         setIsAuthenticated(!!session);
+
+        // Check terms acceptance from user metadata
+        if (session?.user) {
+          const { user_metadata } = session.user;
+          setTermsAccepted(!!user_metadata?.terms_accepted);
+        }
 
         // If we're on a book route, check if it's public
         if (bookId) {
@@ -55,17 +59,36 @@ export const PrivateRoute = ({ children }: PrivateRouteProps) => {
     checkAuth();
 
     // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log("Auth state change:", event, !!session);
       setIsAuthenticated(!!session);
+      
+      // Update terms acceptance state when auth changes
+      if (session?.user) {
+        const { user_metadata } = session.user;
+        setTermsAccepted(!!user_metadata?.terms_accepted);
+      } else {
+        setTermsAccepted(false);
+      }
     });
 
     return () => subscription.unsubscribe();
   }, [bookId]);
 
-  const handleAcceptTerms = () => {
-    localStorage.setItem("termsAccepted2", "true");
-    setTermsAccepted(true);
+  const handleAcceptTerms = async () => {
+    try {
+      const { data: { user }, error } = await supabase.auth.updateUser({
+        data: { terms_accepted: true }
+      });
+
+      if (error) throw error;
+      
+      if (user) {
+        setTermsAccepted(true);
+      }
+    } catch (error) {
+      console.error("Error updating terms acceptance:", error);
+    }
   };
 
   const handleLogout = async () => {
