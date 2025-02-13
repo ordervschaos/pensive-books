@@ -143,8 +143,24 @@ export const getEditorConfig = (content: string, onChange: (html: string, json: 
       onChange(editor.getHTML(), editor.getJSON());
 
       if (onTitleChange) {
-        const titleNode = editor.getJSON().content.find((node: any) => node.type === 'title');
-        const title = titleNode?.content?.[0]?.text || '';
+        // Find the first heading node
+        const content = editor.getJSON().content;
+        console.log('Editor content:', content);
+        
+        const firstHeading = content?.find(
+          (node: any) => node.type === 'heading' && node.attrs?.level === 1
+        );
+        console.log('First heading:', firstHeading);
+
+        let title = '';
+        if (firstHeading?.content) {
+          title = firstHeading.content
+            .filter((node: any) => node.type === 'text')
+            .map((node: any) => node.text)
+            .join('');
+        }
+        console.log('Extracted title:', title);
+        
         onTitleChange(title);
       }
     },
