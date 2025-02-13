@@ -70,6 +70,7 @@ export const TipTapEditor = ({
           [&>div>ol]:list-decimal 
           [&>div>blockquote]:border-l-4 [&>div>blockquote]:border-primary [&>div>blockquote]:pl-4 [&>div>blockquote]:italic [&>div>blockquote]:my-4 
           [&>div>p>code]:rounded-md [&>div>p>code]:bg-muted [&>div>p>code]:px-[0.3rem] [&>div>p>code]:py-[0.2rem] [&>div>p>code]:font-mono [&>div>p>code]:text-sm
+          [&>div>h1]:text-4xl [&>div>h1]:font-bold [&>div>h1]:mb-8 [&>div>h1]:mt-0
           [&>div>h2]:text-3xl [&>div>h2]:font-bold [&>div>h2]:mt-8 [&>div>h2]:mb-4
           [&>div>h3]:text-2xl [&>div>h3]:font-bold [&>div>h3]:mt-6 [&>div>h3]:mb-3
           [&>div>h4]:text-xl [&>div>h4]:font-bold [&>div>h4]:mt-5 [&>div>h4]:mb-2

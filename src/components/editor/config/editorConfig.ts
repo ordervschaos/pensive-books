@@ -1,4 +1,3 @@
-
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import Image from '@tiptap/extension-image';
@@ -16,6 +15,7 @@ export const getEditorConfig = (content: string, onChange: (html: string, json: 
     extensions: [
       Title,
       StarterKit.configure({
+        document: false,
         blockquote: {
           HTMLAttributes: {
             class: 'border-l-4 border-primary pl-4 my-4 italic',
@@ -43,7 +43,7 @@ export const getEditorConfig = (content: string, onChange: (html: string, json: 
         },
         codeBlock: false,
         heading: {
-          levels: [2, 3, 4, 5, 6],
+          levels: [1, 2, 3, 4, 5, 6],
         },
       }),
       CodeBlockLowlight.configure({
