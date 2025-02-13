@@ -99,7 +99,17 @@ export function TopNav() {
 
   useEffect(() => {
     const fetchDetails = async () => {
+      setBookName(""); // Reset book name by default
+      setPageName(""); // Reset page name by default
+      
       const match = location.pathname.match(/\/book\/(\d+)(?:\/page\/(\d+))?/);
+      const isNewBook = location.pathname.endsWith('/book/new');
+      
+      if (isNewBook) {
+        setBookName("New Book");
+        return;
+      }
+      
       if (match) {
         const [, bookId, pageId] = match;
         
@@ -193,6 +203,7 @@ export function TopNav() {
   const isBookRoute = location.pathname.includes('/book/');
   const isPageRoute = location.pathname.includes('/page/');
   const isBookEditRoute = location.pathname.endsWith('/edit');
+  const isNewBookRoute = location.pathname.endsWith('/book/new');
   const showBackButton = location.pathname !== '/';
   const showLibraryLink = !isBookRoute && !isPageRoute;
 
@@ -245,6 +256,8 @@ export function TopNav() {
                             <span className="mx-2 text-muted-foreground shrink-0">›</span>
                             <span className="text-foreground font-medium">Edit Book</span>
                           </>
+                        ) : isNewBookRoute ? (
+                          <span className="text-foreground font-medium">New Book</span>
                         ) : (
                           <span className="text-foreground font-medium truncate max-w-[300px]">{bookName}</span>
                         )}

@@ -72,7 +72,7 @@ export const getEditorConfig = (content: string, onChange: (html: string, json: 
             { class: `relative rounded-md bg-muted/50 my-4 group ${HTMLAttributes.class || ''}` },
             [
               'div',
-              { class: 'flex items-center justify-between px-4 py-2 border-b border-muted' },
+              { class: 'flex items-center  headingjustify-between px-4 py-2 border-b border-muted' },
               [
                 'button',
                 { 

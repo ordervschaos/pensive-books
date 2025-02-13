@@ -380,35 +380,66 @@ export const PagesList = ({ pages, bookId, isReorderMode = false, canEdit = fals
             </Button>
             
             {canEdit && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="icon" className="rounded-full">
-                    <MoreVertical className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-40">
-                  <DropdownMenuItem
-                    onClick={() => {
-                      setIsReordering(false);
-                      setIsDeleteMode(!isDeleteMode);
-                    }}
-                    className="flex items-center gap-2"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    <span>{isDeleteMode ? 'Exit Delete Mode' : 'Delete Pages'}</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => {
-                      setIsDeleteMode(false);
-                      setIsReordering(!isReordering);
-                    }}
-                    className="flex items-center gap-2"
-                  >
-                    <Move className="h-4 w-4" />
-                    <span>{isReordering ? 'Exit Reorder Mode' : 'Reorder Pages'}</span>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <>
+                <div className="sm:hidden">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="icon" className="rounded-full">
+                      <MoreVertical className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-40">
+                    <DropdownMenuItem
+                      onClick={() => {
+                        setIsReordering(false);
+                        setIsDeleteMode(!isDeleteMode);
+                      }}
+                      className="flex items-center gap-2"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      <span>{isDeleteMode ? 'Exit Delete Mode' : 'Delete Pages'}</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        setIsDeleteMode(false);
+                        setIsReordering(!isReordering);
+                      }}
+                      className="flex items-center gap-2"
+                    >
+                      <Move className="h-4 w-4" />
+                      <span>{isReordering ? 'Exit Reorder Mode' : 'Reorder Pages'}</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+
+              <div className="hidden sm:flex items-center gap-2">
+                <Button
+                  variant={isDeleteMode ? "secondary" : "outline"}
+                  size="sm"
+                  className="flex items-center gap-2"
+                  onClick={() => {
+                    setIsReordering(false);
+                    setIsDeleteMode(!isDeleteMode);
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  <span>{isDeleteMode ? 'Exit Delete' : 'Delete'}</span>
+                </Button>
+                <Button
+                  variant={isReordering ? "secondary" : "outline"}
+                  size="sm"
+                  className="flex items-center gap-2"
+                  onClick={() => {
+                    setIsDeleteMode(false);
+                    setIsReordering(!isReordering);
+                  }}
+                >
+                  <Move className="h-4 w-4" />
+                  <span>{isReordering ? 'Exit Reorder' : 'Reorder'}</span>
+                </Button>
+              </div>
+              </>
             )}
           </div>
 
