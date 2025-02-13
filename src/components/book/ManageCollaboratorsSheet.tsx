@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react";
-import { Users, UserPlus } from "lucide-react";
+import { Users, UserPlus, Mail, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -155,16 +156,19 @@ export function ManageCollaboratorsSheet({ bookId }: ManageCollaboratorsSheetPro
           Manage Access
         </Button>
       </SheetTrigger>
-      <SheetContent>
+      <SheetContent className="sm:max-w-md">
         <SheetHeader>
           <SheetTitle>Manage Collaborators</SheetTitle>
         </SheetHeader>
-        <div className="mt-4 space-y-6">
+        <div className="mt-6 space-y-6">
           {/* Invite Section */}
-          <div className="space-y-4 pb-6 border-b">
-            <h3 className="font-medium">Invite New Collaborator</h3>
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <UserPlus className="h-4 w-4 text-muted-foreground" />
+              <h3 className="font-medium">Invite New Collaborator</h3>
+            </div>
             <div className="space-y-4">
-              <div>
+              <div className="space-y-2">
                 <Label htmlFor="email">Email address</Label>
                 <Input
                   id="email"
@@ -174,7 +178,7 @@ export function ManageCollaboratorsSheet({ bookId }: ManageCollaboratorsSheetPro
                   onChange={(e) => setInviteEmail(e.target.value)}
                 />
               </div>
-              <div>
+              <div className="space-y-2">
                 <Label htmlFor="access">Access level</Label>
                 <Select
                   value={inviteAccessLevel}
@@ -199,23 +203,35 @@ export function ManageCollaboratorsSheet({ bookId }: ManageCollaboratorsSheetPro
             </div>
           </div>
 
+          <Separator />
+
           {/* Existing Collaborators Section */}
           <div className="space-y-4">
-            <h3 className="font-medium">Current Collaborators</h3>
+            <div className="flex items-center gap-2">
+              <Users className="h-4 w-4 text-muted-foreground" />
+              <h3 className="font-medium">Current Collaborators</h3>
+            </div>
+            
             {loading ? (
-              <div className="text-muted-foreground">Loading collaborators...</div>
+              <div className="text-muted-foreground text-sm">Loading collaborators...</div>
             ) : collaborators.length === 0 ? (
-              <div className="text-muted-foreground">No collaborators yet</div>
+              <div className="text-muted-foreground text-sm">No collaborators yet</div>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {collaborators.map((collaborator) => (
                   <div
                     key={collaborator.id}
-                    className="flex items-center justify-between p-4 border rounded-lg"
+                    className="flex items-center justify-between p-3 bg-muted/50 rounded-lg hover:bg-muted/80 transition-colors"
                   >
-                    <div className="space-y-1">
-                      <div>{collaborator.invited_email}</div>
-                      <div className="flex items-center gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Mail className="h-4 w-4 text-muted-foreground shrink-0" />
+                        <span className="font-medium truncate">{collaborator.invited_email}</span>
+                        {/* <Badge variant="secondary" className="shrink-0">
+                          {collaborator.status === 'pending' ? 'Pending' : 'Joined'}
+                        </Badge> */}
+                      </div>
+                      <div className="flex items-center gap-3">
                         <Select
                           value={collaborator.access_level}
                           onValueChange={(value: "view" | "edit") => 
@@ -223,24 +239,28 @@ export function ManageCollaboratorsSheet({ bookId }: ManageCollaboratorsSheetPro
                           }
                           disabled={updating === collaborator.id}
                         >
-                          <SelectTrigger className="w-[100px]">
+                          <SelectTrigger className="h-8">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="view">View</SelectItem>
-                            <SelectItem value="edit">Edit</SelectItem>
+                            <SelectItem value="view">View only</SelectItem>
+                            <SelectItem value="edit">Can edit</SelectItem>
                           </SelectContent>
                         </Select>
-                        <Badge variant="secondary">
-                          {updating === collaborator.id ? "Updating..." : "access"}
-                        </Badge>
+                        {updating === collaborator.id && (
+                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                            <Clock className="h-3 w-3 animate-spin" />
+                            <span>Updating...</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                     <Button
-                      variant="destructive"
+                      variant="ghost"
                       size="sm"
                       onClick={() => handleRevokeAccess(collaborator.id)}
                       disabled={updating === collaborator.id}
+                      className="text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
                     >
                       Revoke
                     </Button>
