@@ -53,6 +53,20 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable }: Edi
     <div className={`rounded-md flex gap-1 items-center p-1 flex-wrap z-50 ${isEditing ? 'sticky top-4 bg-muted/50 shadow-sm backdrop-blur-sm' : ''}`}>
       {isEditing && (
         <>
+          <div className="flex gap-1">
+            {[2, 3, 4, 5, 6].map((level) => (
+              <Button
+                key={level}
+                variant="ghost"
+                size="sm"
+                onClick={() => editor.chain().focus().toggleHeading({ level: level as 2 | 3 | 4 | 5 | 6 }).run()}
+                className={editor.isActive('heading', { level: level as 2 | 3 | 4 | 5 | 6 }) ? 'bg-muted' : ''}
+              >
+                h{level}
+              </Button>
+            ))}
+          </div>
+          <div className="w-px h-4 bg-border mx-1" />
           <Button
             variant="ghost"
             size="sm"
