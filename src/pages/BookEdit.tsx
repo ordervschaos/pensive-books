@@ -6,7 +6,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { BookInfo } from "@/components/book/BookInfo";
 import { BookEditForm } from "@/components/book/BookEditForm";
-import { InviteCollaboratorSheet } from "@/components/book/InviteCollaboratorSheet";
 import { ManageCollaboratorsSheet } from "@/components/book/ManageCollaboratorsSheet";
 import { BookCoverEdit } from "@/components/book/BookCoverEdit";
 import { BookVisibilityToggle } from "@/components/book/BookVisibilityToggle";
@@ -153,19 +152,7 @@ export default function BookEdit() {
   return (
     <div className="min-h-screen bg-background">
       <div className="container mx-auto p-6">
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center">
-            <Button 
-              variant="ghost" 
-              size="icon"
-              onClick={() => navigate(-1)}
-              className="mr-4"
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-            <h1 className="text-2xl font-semibold">Edit Book</h1>
-          </div>
-
+        <div className="flex justify-end mb-8">
           <div className="flex items-center gap-4">
             <BookVisibilityToggle
               isPublic={book.is_public}
@@ -173,10 +160,7 @@ export default function BookEdit() {
               publishing={publishing}
             />
             {isOwner && id && (
-              <>
-                <InviteCollaboratorSheet bookId={parseInt(id)} />
-                <ManageCollaboratorsSheet bookId={parseInt(id)} />
-              </>
+              <ManageCollaboratorsSheet bookId={parseInt(id)} />
             )}
           </div>
         </div>

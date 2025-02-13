@@ -192,6 +192,7 @@ export function TopNav() {
 
   const isBookRoute = location.pathname.includes('/book/');
   const isPageRoute = location.pathname.includes('/page/');
+  const isBookEditRoute = location.pathname.endsWith('/edit');
   const showBackButton = location.pathname !== '/';
   const showLibraryLink = !isBookRoute && !isPageRoute;
 
@@ -232,7 +233,22 @@ export function TopNav() {
                         </span>
                       </>
                     ) : (
-                      <span className="text-foreground font-medium truncate max-w-[300px]">{bookName}</span>
+                      <>
+                        {isBookEditRoute ? (
+                          <>
+                            <Link 
+                              className="text-blue-500 hover:text-blue-600 transition-colors font-medium truncate max-w-[300px]"
+                              to={`/book/${location.pathname.split('/')[2]}`}
+                            >
+                              {bookName}
+                            </Link>
+                            <span className="mx-2 text-muted-foreground shrink-0">›</span>
+                            <span className="text-foreground font-medium">Edit Book</span>
+                          </>
+                        ) : (
+                          <span className="text-foreground font-medium truncate max-w-[300px]">{bookName}</span>
+                        )}
+                      </>
                     )}
                   </BreadcrumbItem>
                 </BreadcrumbList>
