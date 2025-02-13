@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -8,6 +7,7 @@ import { PageContent } from "@/components/page/PageContent";
 import { PageLoading } from "@/components/page/PageLoading";
 import { PageNotFound } from "@/components/page/PageNotFound";
 import { useBookPermissions } from "@/hooks/use-book-permissions";
+import { setPageTitle } from "@/utils/pageTitle";
 
 const PageView = () => {
   const { bookId, pageId } = useParams();
@@ -236,6 +236,13 @@ const PageView = () => {
     console.log("PageId changed, fetching new page details");
     fetchPageDetails();
   }, [bookId, pageId]);
+
+  // Add effect to update page title when page or book data changes
+  useEffect(() => {
+    if (page && book) {
+      setPageTitle(`${page.title} - ${book.name}`);
+    }
+  }, [page?.title, book?.name]);
 
   if (loading || loadingPermissions) {
     return (

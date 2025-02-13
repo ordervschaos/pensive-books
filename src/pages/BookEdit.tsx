@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
@@ -12,6 +11,7 @@ import { ManageCollaboratorsSheet } from "@/components/book/ManageCollaboratorsS
 import { BookCoverEdit } from "@/components/book/BookCoverEdit";
 import { BookVisibilityToggle } from "@/components/book/BookVisibilityToggle";
 import { useBookPermissions } from "@/hooks/use-book-permissions";
+import { setPageTitle } from "@/utils/pageTitle";
 
 interface Book {
   id?: number;
@@ -51,6 +51,10 @@ export default function BookEdit() {
       setLoading(false);
     }
   }, [id]);
+
+  useEffect(() => {
+    setPageTitle(book.name ? `Edit ${book.name}` : 'Edit Book');
+  }, [book.name]);
 
   const fetchBook = async () => {
     try {

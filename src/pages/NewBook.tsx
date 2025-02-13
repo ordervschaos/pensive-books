@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { setPageTitle } from "@/utils/pageTitle";
 
 interface NewBookForm {
   name: string;
@@ -22,6 +23,10 @@ const NewBook = () => {
     subtitle: "",
     author: ""
   });
+
+  useEffect(() => {
+    setPageTitle('New Book');
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

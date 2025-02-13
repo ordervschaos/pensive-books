@@ -9,6 +9,7 @@ import { useBookPermissions } from "@/hooks/use-book-permissions";
 import { BookVisibilityToggle } from "@/components/book/BookVisibilityToggle";
 import { Button } from "@/components/ui/button";
 import { Settings } from "lucide-react";
+import { setPageTitle } from "@/utils/pageTitle";
 
 const BookDetails = () => {
   const { id } = useParams();
@@ -48,6 +49,7 @@ const BookDetails = () => {
       
       console.log('Book data fetched:', bookData);
       setBook(bookData);
+      setPageTitle(bookData.name);
 
       const { data: pagesData, error: pagesError } = await supabase
         .from("pages")
