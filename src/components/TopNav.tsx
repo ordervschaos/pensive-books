@@ -104,15 +104,17 @@ export function TopNav() {
     const fetchBookDetails = async () => {
       const match = location.pathname.match(/\/book\/(\d+)/);
       const isNewBook = location.pathname.endsWith('/book/new');
-      
-      setBookName(""); // Reset book name
 
       if (isNewBook) {
         setBookName("New Book");
         return;
       }
       
-      if (!match) return;
+      if (!match) {
+        setBookName(""); // Only reset if not on a book route
+        return;
+      }
+
       const bookId = match[1];
 
       try {
@@ -151,9 +153,11 @@ export function TopNav() {
     const fetchPageDetails = async () => {
       const match = location.pathname.match(/\/page\/(\d+)/);
       
-      setPageName(""); // Reset page name
-      
-      if (!match) return;
+      if (!match) {
+        setPageName(""); // Only reset if not on a page route
+        return;
+      }
+
       const pageId = match[1];
 
       try {
