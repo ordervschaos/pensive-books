@@ -97,64 +97,101 @@ export function TopNav() {
     navigate("/auth");
   };
 
+  // Effect for fetching book details
   useEffect(() => {
-    const fetchDetails = async () => {
-      setBookName(""); // Reset book name by default
-      setPageName(""); // Reset page name by default
-      
-      const match = location.pathname.match(/\/book\/(\d+)(?:\/page\/(\d+))?/);
+    let isSubscribed = true;
+
+    const fetchBookDetails = async () => {
+      const match = location.pathname.match(/\/book\/(\d+)/);
       const isNewBook = location.pathname.endsWith('/book/new');
       
+      setBookName(""); // Reset book name
+
       if (isNewBook) {
         setBookName("New Book");
         return;
       }
       
-      if (match) {
-        const [, bookId, pageId] = match;
+      if (!match) return;
+      const bookId = match[1];
+
+      try {
+        const { data: bookData, error } = await supabase
+          .from("books")
+          .select("name")
+          .eq("id", parseInt(bookId))
+          .single();
+
+        if (error) throw error;
         
-        try {
-          console.log("Fetching book details for ID:", bookId);
-          const { data: bookData, error: bookError } = await supabase
-            .from("books")
-            .select("name")
-            .eq("id", parseInt(bookId))
-            .maybeSingle();
+        if (isSubscribed) {
+          setBookName(bookData?.name || "Untitled");
+        }
+      } catch (error) {
+        console.error("Error fetching book:", error);
+        if (isSubscribed) {
+          toast({
+            variant: "destructive",
+            title: "Error",
+            description: "Failed to load book details"
+          });
+        }
+      }
+    };
 
-          if (bookError) {
-            console.error("Error fetching book:", bookError);
-            throw bookError;
-          }
-          
-          if (!bookData) {
-            console.log("No book found with ID:", bookId);
-            setBookName("Book not found");
-          } else {
-            setBookName(bookData.name || "Untitled");
-          }
+    fetchBookDetails();
+    return () => { isSubscribed = false; };
+  }, [location.pathname, toast]);
 
-          if (pageId) {
-            console.log("Fetching page details for ID:", pageId);
-            const { data: pageData, error: pageError } = await supabase
-              .from("pages")
-              .select("title")
-              .eq("id", parseInt(pageId))
-              .maybeSingle();
+  // Separate effect for fetching and subscribing to page details
+  useEffect(() => {
+    let isSubscribed = true;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
 
-            if (pageError) {
-              console.error("Error fetching page:", pageError);
-              throw pageError;
+    const fetchPageDetails = async () => {
+      const match = location.pathname.match(/\/page\/(\d+)/);
+      
+      setPageName(""); // Reset page name
+      
+      if (!match) return;
+      const pageId = match[1];
+
+      try {
+        // Fetch initial page data
+        const { data: pageData, error } = await supabase
+          .from("pages")
+          .select("title")
+          .eq("id", parseInt(pageId))
+          .single();
+
+        if (error) throw error;
+
+        if (isSubscribed) {
+          setPageName(pageData?.title || "Untitled");
+        }
+
+        // Set up real-time subscription
+        channel = supabase
+          .channel(`page_changes_${pageId}`)
+          .on(
+            'postgres_changes',
+            {
+              event: 'UPDATE',
+              schema: 'public',
+              table: 'pages',
+              filter: `id=eq.${pageId}`
+            },
+            (payload: RealtimePostgresChangesPayload<PageChangePayload>) => {
+              if (isSubscribed && payload.new && 'title' in payload.new) {
+                setPageName(payload.new.title || "Untitled");
+              }
             }
+          )
+          .subscribe();
 
-            if (!pageData) {
-              console.log("No page found with ID:", pageId);
-              setPageName("Page not found");
-            } else {
-              setPageName(pageData.title || "Untitled");
-            }
-          }
-        } catch (error) {
-          console.error("Error fetching details:", error);
+      } catch (error) {
+        console.error("Error fetching page:", error);
+        if (isSubscribed) {
           toast({
             variant: "destructive",
             title: "Error",
@@ -164,40 +201,14 @@ export function TopNav() {
       }
     };
 
-    // Set up real-time subscription for page title updates
-    const match = location.pathname.match(/\/book\/(\d+)(?:\/page\/(\d+))?/);
-    if (match && match[2]) {
-      const pageId = parseInt(match[2]);
-      
-      const channel = supabase
-        .channel('page_changes')
-        .on(
-          'postgres_changes',
-          {
-            event: 'UPDATE',
-            schema: 'public',
-            table: 'pages',
-            filter: `id=eq.${pageId}`
-          },
-          (payload: RealtimePostgresChangesPayload<PageChangePayload>) => {
-            const newData = payload.new as PageChangePayload['new'];
-            if (newData && 'title' in newData) {
-              setPageName(newData.title || "Untitled");
-            }
-          }
-        )
-        .subscribe();
+    fetchPageDetails();
 
-      // Fetch initial data
-      fetchDetails();
-
-      // Cleanup subscription
-      return () => {
+    return () => {
+      isSubscribed = false;
+      if (channel) {
         channel.unsubscribe();
-      };
-    } else {
-      fetchDetails();
-    }
+      }
+    };
   }, [location.pathname, toast]);
 
   const isBookRoute = location.pathname.includes('/book/');
