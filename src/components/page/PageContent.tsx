@@ -35,7 +35,7 @@ export const PageContent = ({
         const finalTitle = title.trim() || (document.activeElement !== document.getElementById('page-title') ? 'Untitled' : '');
         onSave(html, json, finalTitle);
       }
-    }, 1000),
+    }, 200),
     [onSave, initialLoad]
   );
 
