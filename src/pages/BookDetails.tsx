@@ -8,7 +8,7 @@ import { PagesList } from "@/components/book/PagesList";
 import { useBookPermissions } from "@/hooks/use-book-permissions";
 import { BookVisibilityToggle } from "@/components/book/BookVisibilityToggle";
 import { Button } from "@/components/ui/button";
-import { Settings } from "lucide-react";
+import { Copy, Settings } from "lucide-react";
 import { setPageTitle } from "@/utils/pageTitle";
 
 const BookDetails = () => {
@@ -22,10 +22,28 @@ const BookDetails = () => {
   const [isReorderMode, setIsReorderMode] = useState(false);
   const { canEdit, isOwner, loading: permissionsLoading } = useBookPermissions(id);
 
+  const handleCopyLink = async () => {
+    const bookUrl = window.location.href;
+    try {
+      await navigator.clipboard.writeText(bookUrl);
+      toast({
+        title: "Link copied",
+        description: "Book link has been copied to clipboard",
+      });
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Failed to copy",
+        description: "Could not copy the link to clipboard",
+      });
+    }
+  };
+
+
   useEffect(() => {
     const checkAuthAndFetch = async () => {
       const { data: { session } } = await supabase.auth.getSession();
-      
+
       fetchBookDetails();
     };
 
@@ -35,7 +53,7 @@ const BookDetails = () => {
   const fetchBookDetails = async () => {
     try {
       console.log('Fetching book details for ID:', id);
-      
+
       const { data: bookData, error: bookError } = await supabase
         .from("books")
         .select("*")
@@ -46,7 +64,7 @@ const BookDetails = () => {
         console.error('Error fetching book:', bookError);
         throw bookError;
       }
-      
+
       console.log('Book data fetched:', bookData);
       setBook(bookData);
       setPageTitle(bookData.name);
@@ -81,10 +99,10 @@ const BookDetails = () => {
     try {
       setPublishing(true);
       const newPublishState = !book.is_public;
-      
+
       const { error } = await supabase
         .from("books")
-        .update({ 
+        .update({
           is_public: newPublishState,
           published_at: newPublishState ? new Date().toISOString() : null
         })
@@ -100,7 +118,7 @@ const BookDetails = () => {
 
       toast({
         title: newPublishState ? "Book Published" : "Book Unpublished",
-        description: newPublishState 
+        description: newPublishState
           ? "Your book is now available to the public"
           : "Your book is now private"
       });
@@ -143,7 +161,7 @@ const BookDetails = () => {
   }
 
   const BookInfoSection = () => {
-    return <BookInfo 
+    return <BookInfo
       name={book.name}
       subtitle={book.subtitle}
       coverUrl={book.cover_url}
@@ -168,13 +186,38 @@ const BookDetails = () => {
     );
   };
 
+  const ShareBookLink = () => {
+    return (
+      <>
+      {book.is_public && (
+        <div className="mt-4 space-y-2">
+          <p className="text-sm font-medium">Share this book</p>
+          <div className="flex items-center gap-2 p-2 rounded-md bg-muted text-sm">
+            <span className="truncate flex-1">
+              {window.location.href}
+            </span>
+            <Button
+              onClick={handleCopyLink}
+              variant="ghost"
+              size="sm"
+              className="shrink-0"
+            >
+              <Copy className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
+      </>
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <div className="container mx-auto px-4 py-6">
         <div className="max-w-7xl mx-auto space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
             <div className="lg:hidden col-span-full">
-              <h1 
+              <h1
                 className={`text-2xl font-bold mb-2 ${canEdit ? 'cursor-pointer hover:text-blue-600 transition-colors' : ''}`}
                 onClick={canEdit ? handleEditClick : undefined}
               >
@@ -182,18 +225,20 @@ const BookDetails = () => {
               </h1>
               <p className="text-muted-foreground mb-4">{book.author || "Unknown author"}</p>
               {canEdit && <BookActions />}
+              <ShareBookLink />
             </div>
 
             <div className="col-span-full lg:col-span-1">
               <BookInfoSection />
               <div className="hidden lg:block">
                 {canEdit && <BookActions />}
+                <ShareBookLink />
               </div>
             </div>
 
             <div className="col-span-full lg:col-span-3">
               <div className="hidden lg:block mb-6">
-                <h1 
+                <h1
                   className={`text-3xl font-bold ${canEdit ? 'cursor-pointer hover:text-blue-600 transition-colors' : ''}`}
                   onClick={canEdit ? handleEditClick : undefined}
                 >
@@ -201,8 +246,8 @@ const BookDetails = () => {
                 </h1>
                 <p className="text-muted-foreground">{book.author || "Unknown author"}</p>
               </div>
-              
-              <PagesList 
+
+              <PagesList
                 pages={pages}
                 bookId={parseInt(id || "0")}
                 isReorderMode={isReorderMode}

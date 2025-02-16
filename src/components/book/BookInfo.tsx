@@ -1,10 +1,10 @@
-import { useState } from "react";
+
 import { 
   Card,
   CardHeader 
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ImageIcon, Download, Book, Copy } from "lucide-react";
+import { ImageIcon, Download, Book } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { generateEPUB } from "@/lib/epub";
@@ -28,23 +28,7 @@ export const BookInfo = ({
 }: BookInfoProps) => {
   const { toast } = useToast();
 
-  const handleCopyLink = async () => {
-    const bookUrl = window.location.href;
-    try {
-      await navigator.clipboard.writeText(bookUrl);
-      toast({
-        title: "Link copied",
-        description: "Book link has been copied to clipboard",
-      });
-    } catch (err) {
-      toast({
-        variant: "destructive",
-        title: "Failed to copy",
-        description: "Could not copy the link to clipboard",
-      });
-    }
-  };
-
+ 
   const handleDownloadPDF = async () => {
     try {
       const { data: pages, error } = await supabase
@@ -225,14 +209,7 @@ export const BookInfo = ({
             )}
           </div>
           <div className="flex flex-col sm:flex-row lg:flex-col gap-2">
-            <Button
-              onClick={handleCopyLink}
-              variant="outline"
-              className="w-full text-xs sm:text-sm"
-            >
-              <Copy className="h-4 w-4 mr-2" />
-              Copy Link
-            </Button>
+           
             <Button
               onClick={handleDownloadPDF}
               variant="outline"
