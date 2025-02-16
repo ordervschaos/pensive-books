@@ -444,21 +444,8 @@ export const PagesList = ({ pages, bookId, isReorderMode = false, canEdit = fals
           </div>
 
           {canEdit && (
-            <div className="flex flex-wrap items-center gap-2 ">
-              <Button
-                variant="outline"
-                onClick={() => createNewPage('text')}
-                className="flex items-center gap-2 relative flex-1 sm:flex-initial justify-center"
-                title="Add Text Page"
-                aria-label="Add Text Page"
-              >
-                <Type className="h-4 w-4" />
-                <span>Add Page</span>
-                <div className="absolute -top-2 -right-2 bg-green-500 rounded-full p-0.5 shadow-sm">
-                  <Plus className="h-3 w-3 text-white" />
-                </div>
-              </Button>
-              <Button
+            <div className="flex flex-wrap items-center gap-4 ">
+                <Button
                 variant="outline"
                 onClick={() => createNewPage('section')}
                 className="flex items-center gap-2 relative flex-1 sm:flex-initial justify-center"
@@ -471,6 +458,20 @@ export const PagesList = ({ pages, bookId, isReorderMode = false, canEdit = fals
                   <Plus className="h-3 w-3 text-white" />
                 </div>
               </Button>
+              <Button
+                // variant="outline"
+                onClick={() => createNewPage('text')}
+                className="flex items-center gap-2 relative flex-1 sm:flex-initial justify-center"
+                title="Add Text Page"
+                aria-label="Add Text Page"
+              >
+                <Type className="h-4 w-4" />
+                <span>Add Page</span>
+                <div className="absolute -top-2 -right-2 bg-green-500 rounded-full p-0.5 shadow-sm">
+                  <Plus className="h-3 w-3 text-white" />
+                </div>
+              </Button>
+            
             </div>
           )}
         </div>
