@@ -55,6 +55,7 @@ This project uses Supabase as its database provider. To set up your own instance
    SUPABASE_URL=your-project-url
    SUPABASE_ANON_KEY=your-anon-key
    ```
+   Rest of the environment variables are to be set up in the Supabase. Check the "Managing Secrets" section below.
 
 ### Environment Variables and API Keys
 
