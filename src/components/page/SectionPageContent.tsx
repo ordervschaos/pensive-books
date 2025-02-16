@@ -1,28 +1,94 @@
 import { Input } from "@/components/ui/input";
 import { ChangeEvent } from "react";
+import { TipTapEditor } from "@/components/editor/TipTapEditor";
+import { getEditorConfig } from "../editor/config/editorConfig";
+import StarterKit from '@tiptap/starter-kit';
+import { SectionDocument } from "../editor/extensions/SectionDocument";
+import { Button } from "@/components/ui/button";
+import { Pencil, Eye, EyeOff } from "lucide-react";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 interface SectionPageContentProps {
   title: string;
   isEditing: boolean;
-  onTitleChange: (e: ChangeEvent<HTMLInputElement>) => void;
+  onChange: (html: string, json: any) => void;
+  content: string;
+  onToggleEdit?: () => void;
 }
 
-export const SectionPageContent = ({ title, isEditing, onTitleChange }: SectionPageContentProps) => {
+export const SectionPageContent = ({ 
+  title, 
+  isEditing, 
+  onChange,
+  content,
+  onToggleEdit 
+}: SectionPageContentProps) => {
+  const isMobile = useIsMobile();
+  const initialContent = content || `<h1 class="page-title">${title}</h1>`;
+
+  const sectionEditorConfig = {
+    ...getEditorConfig(initialContent, onChange),
+    extensions: [
+      SectionDocument,
+      StarterKit.configure({
+        document: false,
+        heading: {
+          levels: [1],
+          HTMLAttributes: {
+            class: 'text-4xl font-bold text-center',
+          }
+        },
+        // Disable all other nodes/marks
+        paragraph: false,
+        text: true,
+        bold: false,
+        italic: false,
+        strike: false,
+        bulletList: false,
+        orderedList: false,
+        listItem: false,
+        code: false,
+        codeBlock: false,
+        blockquote: false,
+        horizontalRule: false,
+        hardBreak: false,
+      }),
+    ],
+  };
+
   return (
     <div className="flex-1 flex items-center justify-center">
-      {isEditing ? (
-        <Input
-          value={title}
-          onChange={onTitleChange}
-          placeholder="Untitled Section"
-          className="text-4xl font-bold text-center py-8 border-none focus-visible:ring-0 bg-transparent w-auto min-w-[300px]"
-          style={{ fontSize: '2.25rem' }}
+      <div className="w-full max-w-3xl relative group">
+        {onToggleEdit && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onToggleEdit}
+            className={`absolute right-4 top-4 ${
+              isMobile || isEditing
+                ? 'opacity-100' 
+                : 'opacity-0 group-hover:opacity-100 transition-opacity'
+            }`}
+            title={isEditing ? "Preview" : "Edit"}
+          >
+            {isEditing ? (
+              <Eye className="h-4 w-4" />
+            ) : (
+              <Pencil className="h-4 w-4" />
+            )}
+          </Button>
+        )}
+        <TipTapEditor 
+          content={initialContent}
+          onChange={onChange}
+          editable={true}
+          isEditing={isEditing}
+          onToggleEdit={onToggleEdit}
+          editorConfig={sectionEditorConfig}
+          hideToolbar
+          className="min-h-[200px] flex items-center justify-center"
         />
-      ) : (
-        <h1 className="text-4xl font-bold text-center py-8">
-          {title || 'Untitled Section'}
-        </h1>
-      )}
+      </div>
     </div>
   );
 };

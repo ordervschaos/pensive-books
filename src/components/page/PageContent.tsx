@@ -75,9 +75,11 @@ export const PageContent = ({
       <div className="p-0 flex-1 flex flex-col">
         {pageType === 'section' ? (
           <SectionPageContent
+            content={currentContent}
             title={currentTitle}
             isEditing={isEditing && editable}
-            onTitleChange={handleTitleChange}
+            onChange={handleContentChange}
+            onToggleEdit={() => handleEditingChange(!isEditing)}
           />
         ) : (
           <TextPageContent

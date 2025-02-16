@@ -8,7 +8,7 @@ import { useSupabaseUpload } from '@/hooks/use-supabase-upload';
 
 export const lowlight = createLowlight(common);
 
-export const getEditorConfig = (content: string, onChange: (html: string, json: any) => void, onTitleChange?: (title: string) => void, editable = true, isEditing = true) => {
+export const getEditorConfig = (content: string, onChange: (html: string, json: any) => void, editable = true, isEditing = true) => {
   const uploadImage = useSupabaseUpload();
 
   return {
@@ -141,28 +141,6 @@ export const getEditorConfig = (content: string, onChange: (html: string, json: 
     editable: editable && isEditing,
     onUpdate: ({ editor }) => {
       onChange(editor.getHTML(), editor.getJSON());
-
-      if (onTitleChange) {
-        // Find the first heading node
-        const content = editor.getJSON().content;
-        console.log('Editor content:', content);
-        
-        const firstHeading = content?.find(
-          (node: any) => node.type === 'heading' && node.attrs?.level === 1
-        );
-        console.log('First heading:', firstHeading);
-
-        let title = '';
-        if (firstHeading?.content) {
-          title = firstHeading.content
-            .filter((node: any) => node.type === 'text')
-            .map((node: any) => node.text)
-            .join('');
-        }
-        console.log('Extracted title:', title);
-        
-        onTitleChange(title);
-      }
     },
     editorProps: {
       handleDrop: (view: any, event: any, slice: any, moved: boolean) => {
