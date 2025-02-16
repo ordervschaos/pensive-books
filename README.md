@@ -115,69 +115,7 @@ The project uses Supabase Edge Functions to securely handle API keys and perform
    supabase secrets set --env-file .env.production
    ```
 
-#### Available Edge Functions
 
-1. **get-secret**
-   - Purpose: Securely retrieve API keys and secrets
-   - Usage: 
-     ```typescript
-     const { data: secrets } = await supabase.functions.invoke('get-secret', {
-       body: { secretNames: ['API_KEY_NAME'] }
-     });
-     ```
-
-2. **send-book-invitation**
-   - Purpose: Send email invitations for book collaboration
-   - Uses: Mailgun API for email delivery
-   - Automatically creates book access records
-   - Definition:
-     ```typescript
-     // supabase/functions/send-book-invitation/index.ts
-     interface EmailRequest {
-       email: string;
-       bookId: number;
-       accessLevel: "view" | "edit";
-     }
-
-     // Function implementation
-     serve(async (req) => {
-       const { email, bookId, accessLevel }: EmailRequest = await req.json()
-       
-       // Create book access record
-       const { error: accessError } = await supabaseClient
-         .from('book_access')
-         .insert({
-           book_id: bookId,
-           access_level: accessLevel,
-           created_by: user.id,
-           invited_email: email,
-           status: 'pending'
-         })
-
-       // Send email using Mailgun
-       const mailgunEndpoint = `https://api.mailgun.net/v3/${MAILGUN_DOMAIN}/messages`
-       // ... email sending logic
-     })
-     ```
-   - Usage:
-     ```typescript
-     const { data, error } = await supabase.functions.invoke('send-book-invitation', {
-       body: { 
-         email: 'user@example.com',
-         bookId: 123,
-         accessLevel: 'edit'
-       }
-     });
-     ```
-   - Required Secrets:
-     ```bash
-     # Set up Mailgun credentials
-     supabase secrets set MAILGUN_API_KEY=your_api_key
-     supabase secrets set MAILGUN_DOMAIN=your_domain
-     
-     # Set up Supabase service role key (if not already set)
-     supabase secrets set SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
-     ```
 
 #### Local Development
 
@@ -265,3 +203,5 @@ The database implements Row Level Security to ensure data privacy and access con
 For the complete set of security policies and their SQL implementations, refer to the `schema.sql` file.
 
 ## How can I deploy this project?
+Easiest way is to deploy to Netlify or Vercel.
+
