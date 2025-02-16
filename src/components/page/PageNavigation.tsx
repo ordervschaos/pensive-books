@@ -47,7 +47,7 @@ export const PageNavigation = ({
         variant="outline"
         onClick={handleNextClick}
         className="flex items-center gap-2 px-6 py-6 rounded-full bg-background border-border"
-        disabled={currentIndex === -1 || isEditing}
+        disabled={currentIndex === -1}
       >
         <span className="text-lg">
           {isLastPage ? `Table of contents: ${bookTitle}` : `Next: ${nextPageTitle || 'Untitled'}`}
