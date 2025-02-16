@@ -172,7 +172,6 @@ CREATE TABLE IF NOT EXISTS "public"."pages" (
     "archived" boolean DEFAULT false,
     "last_published_at" timestamp without time zone,
     "page_index" integer,
-    "embedding" "extensions"."vector",
     "content" "jsonb" DEFAULT '{}'::"jsonb",
     "html_content" "text",
     "title" "text" DEFAULT ''::"text",
@@ -181,21 +180,6 @@ CREATE TABLE IF NOT EXISTS "public"."pages" (
 );
 
 ALTER TABLE "public"."pages" OWNER TO "postgres";
-
-CREATE OR REPLACE FUNCTION "public"."match_documents"("query_embedding" "extensions"."vector", "match_threshold" double precision, "match_count" integer, "min_content_length" integer, "owner_id" "uuid") RETURNS SETOF "public"."pages"
-    LANGUAGE "plpgsql"
-    AS $$BEGIN
-  RETURN QUERY
-  SELECT *
-  FROM pages
-  WHERE (pages.embedding <#> query_embedding) < match_threshold
-    AND LENGTH(pages.content) >= min_content_length
-    AND pages.owner_id = match_documents.owner_id
-  ORDER BY pages.embedding <#> query_embedding
-  LIMIT match_count;
-END;$$;
-
-ALTER FUNCTION "public"."match_documents"("query_embedding" "extensions"."vector", "match_threshold" double precision, "match_count" integer, "min_content_length" integer, "owner_id" "uuid") OWNER TO "postgres";
 
 CREATE OR REPLACE FUNCTION "public"."search_book_contents"("search_query" "text", "book_id" integer) RETURNS TABLE("page_id" integer, "highlighted_content" "text", "notebook_id" integer, "title" "text")
     LANGUAGE "plpgsql"
@@ -558,8 +542,6 @@ CREATE INDEX "idx_books_is_public" ON "public"."books" USING "btree" ("is_public
 CREATE UNIQUE INDEX "unique_book_page_index" ON "public"."pages" USING "btree" ("book_id", "page_index") WHERE ("archived" = false);
 
 CREATE OR REPLACE TRIGGER "archive_notebook_data" AFTER UPDATE OF "archived" ON "public"."books" FOR EACH ROW WHEN ((("new"."archived" = true) AND ("old"."archived" IS DISTINCT FROM "new"."archived"))) EXECUTE FUNCTION "public"."archive_associated_data"();
-
-CREATE OR REPLACE TRIGGER "generate_embeddings_on_page_update_or_insert" AFTER INSERT OR UPDATE ON "public"."pages" FOR EACH ROW EXECUTE FUNCTION "supabase_functions"."http_request"('https://qiqeyirtpstdjkkeyfss.supabase.co/functions/v1/generate_embeddings', 'POST', '{"Content-type":"application/json","Authorization":"Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFpcWV5aXJ0cHN0ZGpra2V5ZnNzIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTcwMTkxOTc3MSwiZXhwIjoyMDE3NDk1NzcxfQ.oVHh4fcB9hiLw8pn2iIGsq5PN8_-kdwpf5GnOH6eBMU"}', '{}', '1000');
 
 CREATE OR REPLACE TRIGGER "trigger_update_notebook_on_page_change" AFTER INSERT OR UPDATE ON "public"."pages" FOR EACH ROW EXECUTE FUNCTION "public"."update_notebook_on_page_change"();
 

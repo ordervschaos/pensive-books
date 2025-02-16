@@ -2,10 +2,10 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-const SUPABASE_URL = "https://qiqeyirtpstdjkkeyfss.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFpcWV5aXJ0cHN0ZGpra2V5ZnNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MDE5MTk3NzEsImV4cCI6MjAxNzQ5NTc3MX0.j8M8cY3vzCr2pheahK-7MhpPqeTyJW9Lsl9a-4hSrt0";
+const SUPABASE_URL = `https://${Deno.env.get('SUPABASE_PROJECT_ID')}.supabase.co`;
+const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY');
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 
-export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY);
