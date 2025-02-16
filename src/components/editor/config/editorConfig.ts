@@ -132,9 +132,10 @@ export const getEditorConfig = (content: string, onChange: (html: string, json: 
       }),
       Image.configure({
         HTMLAttributes: {
-          class: 'max-w-full h-auto rounded-lg',
+          class: 'max-w-full h-auto rounded-lg preserve-animation',
         },
         allowBase64: true,
+        inline: false,
       }),
     ],
     content,
@@ -149,7 +150,8 @@ export const getEditorConfig = (content: string, onChange: (html: string, json: 
           if (file.type.startsWith('image/')) {
             event.preventDefault();
             
-            uploadImage(file).upload().then(({ default: url }) => {
+            const isGif = file.type === 'image/gif';
+            uploadImage(file).upload({ preserveAnimation: isGif }).then(({ default: url }) => {
               const { schema } = view.state;
               const node = schema.nodes.image.create({ src: url });
               const transaction = view.state.tr.replaceSelectionWith(node);
@@ -170,7 +172,8 @@ export const getEditorConfig = (content: string, onChange: (html: string, json: 
             event.preventDefault();
             const file = item.getAsFile();
             
-            uploadImage(file).upload().then(({ default: url }) => {
+            const isGif = item.type === 'image/gif';
+            uploadImage(file).upload({ preserveAnimation: isGif }).then(({ default: url }) => {
               const { schema } = view.state;
               const node = schema.nodes.image.create({ src: url });
               const transaction = view.state.tr.replaceSelectionWith(node);
