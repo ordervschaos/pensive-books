@@ -25,7 +25,8 @@ const PageView = () => {
   // Extract numeric ID from URL parameter
   const getNumericId = (param: string | undefined) => {
     if (!param) return 0;
-    return parseInt(param.split('-')[0]);
+    const match = param.match(/^(\d+)/);
+    return match ? parseInt(match[1]) : 0;
   };
   
   const numericBookId = getNumericId(bookId);

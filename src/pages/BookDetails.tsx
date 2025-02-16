@@ -22,6 +22,12 @@ const BookDetails = () => {
   const [isReorderMode, setIsReorderMode] = useState(false);
   const { canEdit, isOwner, loading: permissionsLoading } = useBookPermissions(id);
 
+  const getNumericId = (param: string | undefined) => {
+    if (!param) return 0;
+    const match = param.match(/^(\d+)/);
+    return match ? parseInt(match[1]) : 0;
+  };
+
   const handleCopyLink = async () => {
     const bookUrl = window.location.href;
     try {
@@ -52,17 +58,23 @@ const BookDetails = () => {
 
   const fetchBookDetails = async () => {
     try {
-      console.log('Fetching book details for ID:', id);
+      const numericId = getNumericId(id);
+      console.log('Fetching book details for ID:', numericId);
 
       const { data: bookData, error: bookError } = await supabase
         .from("books")
         .select("*")
-        .eq("id", parseInt(id || "0"))
+        .eq("id", numericId)
         .single();
 
       if (bookError) {
         console.error('Error fetching book:', bookError);
         throw bookError;
+      }
+
+      if (bookData && !id?.includes('-') && bookData.name) {
+        const slug = `${numericId}-${bookData.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+        navigate(`/book/${slug}`, { replace: true });
       }
 
       console.log('Book data fetched:', bookData);
@@ -72,7 +84,7 @@ const BookDetails = () => {
       const { data: pagesData, error: pagesError } = await supabase
         .from("pages")
         .select("*")
-        .eq("book_id", parseInt(id || "0"))
+        .eq("book_id", numericId)
         .eq("archived", false)
         .order('page_index', { ascending: true });
 
