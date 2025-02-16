@@ -56,7 +56,7 @@ export const PageNavigation = ({
         <ArrowRight className="h-5 w-5" />
       </Button>
 
-      {isEditing && canEdit && onNewPage && (
+      {canEdit && onNewPage && (
         <Button
           variant="outline"
           onClick={onNewPage}
