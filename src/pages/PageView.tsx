@@ -266,7 +266,7 @@ const PageView = () => {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <div className="min-h-[calc(100vh-56px)] flex flex-col bg-background">
       <div className="flex-1 container max-w-5xl mx-auto px-4 py-4 flex flex-col gap-4">
         <div className="flex-1 flex flex-col">
           <PageContent
@@ -278,7 +278,6 @@ const PageView = () => {
             editable={canEdit}
             onEditingChange={setIsEditing}
           />
-        </div>
         <PageNavigation
           bookId={bookId || ""}
           currentIndex={currentIndex}
@@ -290,6 +289,7 @@ const PageView = () => {
           onNewPage={createNewPage}
           canEdit={canEdit}
         />
+        </div>
       </div>
     </div>
   );
