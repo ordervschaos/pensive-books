@@ -1,4 +1,18 @@
 # Welcome to Pensive Books
+
+
+## What technologies are used for this project?
+
+This project is built with .
+
+- Vite
+- TypeScript
+- React
+- shadcn-ui
+- Tailwind CSS
+- Supabase (Database & Authentication)
+
+
 ## How to run the project locally
 Follow these steps:
 
@@ -17,16 +31,6 @@ npm run dev
 ```
 
 
-## What technologies are used for this project?
-
-This project is built with .
-
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-- Supabase (Database & Authentication)
 
 ## Database Setup
 
