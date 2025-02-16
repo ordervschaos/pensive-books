@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useParams } from "react-router-dom";
+import { useLocation } from "react-router-dom";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -21,7 +21,11 @@ interface SearchDialogProps {
 }
 
 export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
-  const { id: bookId } = useParams();
+  const location = useLocation();
+  const bookId = location.pathname.split('/').find((segment, index, arr) => 
+    arr[index - 1] === 'book' && /^\d+/.test(segment)
+  )?.match(/^\d+/)?.[0];
+
   const { toast } = useToast();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -45,7 +49,6 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
         throw error;
       }
 
-      console.log("Search results:", data);
       setResults(data || []);
 
     } catch (error: any) {
