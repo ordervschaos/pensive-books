@@ -16,9 +16,9 @@ export const Title = Document.extend({
           const { doc, tr } = newState;
           const firstNode = doc.firstChild;
 
-          // If first node is not a heading or not level 1
-          if (!firstNode || firstNode.type.name !== 'heading' || firstNode.attrs.level !== 1) {
-            console.log('No H1 found, inserting empty H1');
+          // Only insert 'Untitled' if the document is completely empty
+          if (!firstNode || doc.childCount === 0) {
+            console.log('Document is empty, inserting empty H1');
             const transaction = tr.insert(0, newState.schema.nodes.heading.create(
               { level: 1 },
               newState.schema.text('Untitled')
