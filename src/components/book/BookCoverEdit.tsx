@@ -19,6 +19,8 @@ interface BookCoverEditProps {
   title?: string;
   subtitle?: string | null;
   author?: string;
+  onCoverChange?: (url: string) => void;
+  onShowTextChange?: (showText: boolean) => void;
 }
 
 export const BookCoverEdit = ({ 
@@ -27,7 +29,9 @@ export const BookCoverEdit = ({
   showTextOnCover = false,
   title = "",
   subtitle = "",
-  author = ""
+  author = "",
+  onCoverChange,
+  onShowTextChange
 }: BookCoverEditProps) => {
   const [uploading, setUploading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
@@ -50,7 +54,7 @@ export const BookCoverEdit = ({
       }
 
       const fileExt = file.name.split('.').pop();
-      const fileName = `${bookId}_${Math.random().toString(36).slice(2)}.${fileExt}`;
+      const fileName = `${bookId || 'new'}_${Math.random().toString(36).slice(2)}.${fileExt}`;
 
       const { error: uploadError } = await supabase.storage
         .from('public_images')
@@ -92,19 +96,30 @@ export const BookCoverEdit = ({
   };
 
   const updateBookCover = async (url: string) => {
-    const { error: updateError } = await supabase
-      .from('books')
-      .update({ cover_url: url })
-      .eq('id', bookId);
+    try {
+      if (bookId === 0) {
+        // For new book, just update the parent state
+        onCoverChange?.(url);
+      } else {
+        // For existing book, update in database
+        const { error: updateError } = await supabase
+          .from('books')
+          .update({ cover_url: url })
+          .eq('id', bookId);
 
-    if (updateError) throw updateError;
+        if (updateError) throw updateError;
 
-    toast({
-      title: "Cover updated",
-      description: "Your book cover has been successfully updated."
-    });
+        // If parent provided onCoverChange, call it
+        onCoverChange?.(url);
+      }
 
-    window.location.reload();
+      toast({
+        title: "Cover updated",
+        description: "Your book cover has been successfully updated."
+      });
+    } catch (error) {
+      throw error;
+    }
   };
 
   const handleTextToggle = async () => {
@@ -112,12 +127,21 @@ export const BookCoverEdit = ({
       const newShowTextValue = !isShowingText;
       setIsShowingText(newShowTextValue);
       
-      const { error } = await supabase
-        .from('books')
-        .update({ show_text_on_cover: newShowTextValue })
-        .eq('id', bookId);
+      if (bookId === 0) {
+        // For new book, just update the parent state
+        onShowTextChange?.(newShowTextValue);
+      } else {
+        // For existing book, update in database
+        const { error } = await supabase
+          .from('books')
+          .update({ show_text_on_cover: newShowTextValue })
+          .eq('id', bookId);
 
-      if (error) throw error;
+        if (error) throw error;
+
+        // If parent provided onShowTextChange, call it
+        onShowTextChange?.(newShowTextValue);
+      }
 
       toast({
         title: "Setting updated",

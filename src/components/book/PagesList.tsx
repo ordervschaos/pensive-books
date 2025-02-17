@@ -153,6 +153,7 @@ const PageCard = ({ page, bookId, onNavigate, onDelete }: SortablePageItemProps)
 
   return (
     <Card 
+      onClick={() => onNavigate(page.id)}
       className="cursor-pointer hover:bg-accent/5 transition-colors relative group overflow-hidden"
     >
       <div className="aspect-[3/4] relative">

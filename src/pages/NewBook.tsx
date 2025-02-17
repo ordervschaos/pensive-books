@@ -7,21 +7,30 @@ import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { setPageTitle } from "@/utils/pageTitle";
+import { BookCoverEdit } from "@/components/book/BookCoverEdit";
+import { BookEditForm } from "@/components/book/BookEditForm";
 
-interface NewBookForm {
+interface Book {
+  id?: number;
   name: string;
-  subtitle: string;
-  author: string;
+  subtitle: string | null;
+  author: string | null;
+  is_public: boolean;
+  cover_url?: string | null;
+  show_text_on_cover?: boolean;
 }
 
 const NewBook = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [saving, setSaving] = useState(false);
-  const [formData, setFormData] = useState<NewBookForm>({
+  const [book, setBook] = useState<Book>({
     name: "",
-    subtitle: "",
-    author: ""
+    subtitle: null,
+    author: null,
+    is_public: false,
+    cover_url: null,
+    show_text_on_cover: true
   });
 
   useEffect(() => {
@@ -36,10 +45,12 @@ const NewBook = () => {
       const { data, error } = await supabase
         .from("books")
         .insert({
-          name: formData.name,
-          subtitle: formData.subtitle || null,
-          author: formData.author || null,
-          is_public: false
+          name: book.name,
+          subtitle: book.subtitle,
+          author: book.author,
+          is_public: false,
+          cover_url: book.cover_url,
+          show_text_on_cover: book.show_text_on_cover
         })
         .select()
         .single();
@@ -52,15 +63,24 @@ const NewBook = () => {
       });
 
       navigate(`/book/${data.id}`);
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
       toast({
         variant: "destructive",
         title: "Error creating book",
-        description: error.message
+        description: errorMessage
       });
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleCoverChange = (url: string) => {
+    setBook(prev => ({ ...prev, cover_url: url }));
+  };
+
+  const handleShowTextChange = (showText: boolean) => {
+    setBook(prev => ({ ...prev, show_text_on_cover: showText }));
   };
 
   return (
@@ -78,45 +98,28 @@ const NewBook = () => {
           <h1 className="text-2xl font-semibold">Create New Book</h1>
         </div>
 
-        <div className="max-w-2xl mx-auto">
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="space-y-4">
-              <div>
-                <Label htmlFor="name">Book title</Label>
-                <Input
-                  id="name"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="Enter book title"
-                  required
-                />
-              </div>
+        <div className="grid grid-cols-1 lg:grid-cols-6 gap-8">
+          <div className="w-full lg:col-span-2">
+            <BookCoverEdit 
+              bookId={0}
+              coverUrl={book.cover_url}
+              showTextOnCover={book.show_text_on_cover}
+              title={book.name}
+              subtitle={book.subtitle}
+              author={book.author}
+              onCoverChange={handleCoverChange}
+              onShowTextChange={handleShowTextChange}
+            />
+          </div>
 
-              <div>
-                <Label htmlFor="subtitle">Subtitle</Label>
-                <Input
-                  id="subtitle"
-                  value={formData.subtitle}
-                  onChange={(e) => setFormData({ ...formData, subtitle: e.target.value })}
-                  placeholder="Enter subtitle"
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="author">Author</Label>
-                <Input
-                  id="author"
-                  value={formData.author}
-                  onChange={(e) => setFormData({ ...formData, author: e.target.value })}
-                  placeholder="Enter author name"
-                />
-              </div>
-            </div>
-
-            <Button type="submit" disabled={saving}>
-              {saving ? "Creating..." : "Create book"}
-            </Button>
-          </form>
+          <div className="lg:col-span-4">
+            <BookEditForm
+              book={book}
+              onBookChange={setBook}
+              onSave={handleSubmit}
+              saving={saving}
+            />
+          </div>
         </div>
       </div>
     </div>
