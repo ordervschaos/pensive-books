@@ -225,8 +225,12 @@ export function TopNav() {
   return (
     <nav className="bg-background border-b h-14">
       <div className="container max-w-7xl mx-auto px-4 h-full">
-        <div className="flex flex-row items-center justify-between h-full gap-4">
-          <div className="flex flex-row items-center gap-2 min-w-0 flex-1">
+        <div className="flex flex-row items-center h-full gap-4">
+          {/* Left spacer to help with centering */}
+          <div className="w-[120px] shrink-0" />
+
+          {/* Center content */}
+          <div className="flex-1 flex justify-center min-w-0">
             {isBookRoute ? (
               <Breadcrumb>
                 <BreadcrumbList className="flex flex-row items-center space-x-1 min-w-0">
@@ -283,12 +287,13 @@ export function TopNav() {
               </Breadcrumb>
             ) : (
               <Link to={`/`}>
-                <span className="text-lg font-semibold text-foreground">Pensive</span>
+                <span className="text-lg font-semibold text-foreground">Pensive Books</span>
               </Link>
             )}
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          {/* Right actions - using fixed width to match left spacer */}
+          <div className="w-[120px] flex items-center gap-2 justify-end shrink-0">
             {showLibraryLink && (
               <Link 
                 to="/library" 
