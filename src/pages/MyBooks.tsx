@@ -145,10 +145,20 @@ export default function Index() {
                       )}
                     </div>
                   ) : (
-                    <div className="w-full h-full bg-muted flex items-center justify-center p-4">
-                      <h2 className="text-xs md:text-2xl font-semibold text-center text-muted-foreground break-words line-clamp-3">
+                        <div className="absolute inset-0 flex flex-col items-center md:justify-center bg-muted p-4">
+                      <h2 className="text-xs md:text-2xl font-semibold text-center text-white break-words line-clamp-3">
                         {book.name}
                       </h2>
+                      {book.subtitle && (
+                            <p className="text-xs sm:text-sm text-white/90 text-center mb-1 sm:mb-2">
+                              {book.subtitle}
+                            </p>
+                          )}
+                          {book.author && (
+                            <p className="text-xs sm:text-sm text-white/90 text-center">
+                              by {book.author}
+                            </p>
+                          )}
                     </div>
                   )}
                 </Card>
