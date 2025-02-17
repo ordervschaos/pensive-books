@@ -268,7 +268,8 @@ export const PagesList = ({
         userEmail: (await supabase.auth.getUser()).data.user?.email
       });
 
-      const { error } = await supabase
+      // First archive the page
+      const { error: archiveError } = await supabase
         .from('pages')
         .update({ 
           archived: true,
@@ -276,12 +277,31 @@ export const PagesList = ({
         })
         .eq('id', pageId);
 
-      if (error) {
-        console.error('Error archiving page:', error);
-        throw error;
+      if (archiveError) {
+        console.error('Error archiving page:', archiveError);
+        throw archiveError;
       }
 
-      setItems(items.filter(page => page.id !== pageId));
+      // Get the remaining pages and update their indices
+      const remainingPages = items.filter(page => page.id !== pageId);
+      const updatedPages = remainingPages.map((page, index) => ({
+        id: page.id,
+        page_index: index,
+        book_id: bookId
+      }));
+
+      // Update the indices of remaining pages
+      const { error: updateError } = await supabase
+        .from('pages')
+        .upsert(updatedPages);
+
+      if (updateError) {
+        console.error('Error updating page indices:', updateError);
+        throw updateError;
+      }
+
+      // Update local state
+      setItems(remainingPages);
       
       toast({
         title: "Page archived",
