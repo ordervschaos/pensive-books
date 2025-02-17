@@ -10,7 +10,7 @@ export const Terms = () => {
 
           <section className="mb-8">
             <h2 className="text-2xl font-semibold mb-4">1. Acceptance of Terms</h2>
-            <p>By accessing and using Pensive Books, you accept and agree to be bound by these Terms and Conditions. If you do not agree to these terms, please do not use our service.</p>
+            <p>By accessing and using Pensive, you accept and agree to be bound by these Terms and Conditions. If you do not agree to these terms, please do not use our service.</p>
           </section>
 
           <section className="mb-8">

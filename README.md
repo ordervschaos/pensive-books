@@ -1,4 +1,4 @@
-# Welcome to Pensive Books
+# Welcome to Pensive
 
 
 ## What technologies are used for this project?

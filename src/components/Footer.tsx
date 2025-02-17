@@ -6,7 +6,7 @@ export function Footer() {
       <div className="container max-w-7xl mx-auto px-4 py-6">
         <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
           <div className="text-sm text-muted-foreground">
-            © {new Date().getFullYear()} Pensive Books. All rights reserved.
+            © {new Date().getFullYear()} Pensive. All rights reserved.
           </div>
           <nav className="flex items-center gap-6">
             <Link 

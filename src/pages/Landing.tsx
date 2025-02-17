@@ -13,7 +13,7 @@ export default function Landing() {
         <div className="text-center space-y-6 max-w-4xl mx-auto">
           <div className="space-y-4">
             <h1 className="text-4xl md:text-6xl font-serif font-bold tracking-tight">
-              Pensive Books – Write, Publish, and Share Your Books with Ease
+              Pensive – Write, Publish, and Share Your Books with Ease
             </h1>
             <p className="text-xl text-muted-foreground">
               Publish your own books on the web—free, open, and simple.
@@ -28,7 +28,7 @@ export default function Landing() {
           </div>
           <p className="text-lg text-muted-foreground leading-relaxed">
             Writing online is easy, but publishing a whole book shouldn't be hard either. 
-            Pensive Books makes it effortless to create, organize, and publish books in a beautiful, 
+            Pensive makes it effortless to create, organize, and publish books in a beautiful, 
             readable format—whether for yourself, your audience, or the world.
           </p>
           <div className="flex gap-4 justify-center">
@@ -132,9 +132,9 @@ export default function Landing() {
         {/* What You Can Publish */}
         <section className="space-y-12">
           <div className="text-center">
-            <h2 className="text-3xl font-serif font-bold">What Can You Publish on Pensive Books?</h2>
+            <h2 className="text-3xl font-serif font-bold">What Can You Publish on Pensive?</h2>
             <p className="mt-4 text-lg text-muted-foreground">
-              If you've written it, it's ready for Pensive Books. No middlemen, no approval process—just publish.
+              If you've written it, it's ready for Pensive. No middlemen, no approval process—just publish.
             </p>
           </div>
           <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
@@ -157,7 +157,7 @@ export default function Landing() {
         <section className="text-center space-y-6">
           <h2 className="text-3xl font-serif font-bold">Open-Source & Self-Hostable</h2>
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-            Unlike closed platforms, Pensive Books is open-source, meaning you can host your own version, 
+            Unlike closed platforms, Pensive is open-source, meaning you can host your own version, 
             customize it, and retain full control over your books. Or, use our hosted service for 
             a hassle-free experience.
           </p>

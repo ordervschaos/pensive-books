@@ -126,7 +126,7 @@ export const PrivateRoute = ({ children }: PrivateRouteProps) => {
           <CardHeader>
             <CardTitle>Accept Terms & Privacy Policy</CardTitle>
             <CardDescription>
-              Please review and accept our terms to continue using Pensive Books
+              Please review and accept our terms to continue using Pensive
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
