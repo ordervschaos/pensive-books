@@ -70,8 +70,26 @@ export const Terms = () => {
             <p>We reserve the right to modify these terms at any time. We will notify users of significant changes via email or through the service.</p>
           </section>
 
-          <section>
-            <h2 className="text-2xl font-semibold mb-4">8. Contact Information</h2>
+          <section className="mb-8">
+            <h2 className="text-2xl font-semibold mb-4">8. License Agreement</h2>
+            <p className="mt-4">
+              Users are granted permission to install, use, and modify one instance of the Software for personal use. 
+              This license does not grant rights to publish, distribute, sublicense, or sell the Software, its source code, 
+              or any derivative works.
+            </p>
+            <p className="mt-4 uppercase text-sm">
+              THE SOFTWARE IS PROVIDED "AS IS", WITHOUT ANY WARRANTIES OR GUARANTEES, WHETHER EXPRESS OR IMPLIED, INCLUDING 
+              BUT NOT LIMITED TO MERCHANTABILITY, FITNESS FOR PURPOSE AND NON-INFRINGEMENT. THE AUTHORS AND COPYRIGHT HOLDERS 
+              SHALL NOT BE LIABLE FOR ANY CLAIMS, DAMAGES OR OTHER LIABILITY ARISING FROM THE USE OR DISTRIBUTION OF THE SOFTWARE.
+            </p>
+            <p className="mt-4">
+              By using the Software, users agree to comply with all applicable laws and regulations regarding its download 
+              and use.
+            </p>
+          </section>
+
+          <section className="mb-8">
+            <h2 className="text-2xl font-semibold mb-4">9. Contact Information</h2>
             <p>For questions about these Terms and Conditions, please contact us at:</p>
             <p className="mt-2">Email: toanzalansari@gmail.com</p>
           </section>
