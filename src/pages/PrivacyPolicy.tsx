@@ -68,7 +68,7 @@ export const PrivacyPolicy = () => {
           <section>
             <h2 className="text-2xl font-semibold mb-4">6. Contact Us</h2>
             <p>If you have questions about this Privacy Policy, please contact us at:</p>
-            <p className="mt-2">Email: support@pensivebooks.com</p>
+            <p className="mt-2">Email: toanzalansari@gmail.com</p>
           </section>
         </CardContent>
       </Card>
