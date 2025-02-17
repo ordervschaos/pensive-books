@@ -132,7 +132,7 @@ export const getEditorConfig = (content: string, onChange: (html: string, json: 
       }),
       Image.configure({
         HTMLAttributes: {
-          class: 'max-w-full h-auto rounded-lg preserve-animation',
+          class: 'max-w-full h-auto rounded-lg preserve-animation mx-auto block',
         },
         allowBase64: true,
         inline: false,

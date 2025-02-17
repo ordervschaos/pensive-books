@@ -75,7 +75,7 @@ export const TipTapEditor = ({
           editable={editable}
         />
       )}
-      <div className={`prose dark:prose-invert prose-slate w-full max-w-none p-8 flex-1 [&_.ProseMirror:focus]:outline-none bg-background ${isMobile ? 'text-base' : 'text-lg'} ${className}`}>
+      <div className={`prose dark:prose-invert prose-slate w-full max-w-none p-8 flex-1 [&_.ProseMirror:focus]:outline-none bg-background ${isMobile ? 'text-base' : 'text-lg'} ${className} [&_img]:mx-auto [&_img]:block`}>
         <EditorContent editor={editor} className="
           [&>div>h1]:text-4xl [&>div>h1]:font-bold [&>div>h1]:mb-8 [&>div>h1]:mt-0
         " />
