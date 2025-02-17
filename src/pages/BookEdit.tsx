@@ -174,6 +174,8 @@ export default function BookEdit() {
               title={book.name}
               subtitle={book.subtitle}
               author={book.author}
+              onCoverChange={(url) => setBook({ ...book, cover_url: url })}
+              onShowTextChange={(showText) => setBook({ ...book, show_text_on_cover: showText })}
             />
           </div>
 
