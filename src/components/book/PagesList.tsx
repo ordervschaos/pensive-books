@@ -75,7 +75,7 @@ const SortablePageItem = ({ page, bookId, onNavigate, onDelete }: SortablePageIt
     transition,
   } : undefined;
 
-  const wordCount = page.html_content ? 
+  const wordCount = page.html_content && page.page_type === 'text' ? 
     page.html_content.replace(/<[^>]*>/g, '').trim().split(/\s+/).length : 
     0;
 
@@ -92,13 +92,15 @@ const SortablePageItem = ({ page, bookId, onNavigate, onDelete }: SortablePageIt
         className="flex-1 cursor-pointer"
         onClick={() => onNavigate(page.id)}
       >
-        <div className="flex items-center justify-between">
-          <h3 className={`text-lg ${page.page_type === 'section' ? 'font-bold text-xl' : ''}`}>
+        <div className={`flex items-center ${page.page_type === 'section' ? 'justify-center min-h-[60px]' : 'justify-between'}`}>
+          <h3 className={`text-lg ${page.page_type === 'section' ? 'font-bold text-xl text-center' : ''}`}>
             {page.title || `Untitled Page ${page.page_index + 1}`}
           </h3>
-          <span className="text-sm text-muted-foreground">
-            {wordCount} words
-          </span>
+          {page.page_type === 'text' && (
+            <span className="text-sm text-muted-foreground">
+              {wordCount} words
+            </span>
+          )}
         </div>
       </div>
     </div>
@@ -106,7 +108,7 @@ const SortablePageItem = ({ page, bookId, onNavigate, onDelete }: SortablePageIt
 };
 
 const RegularPageItem = ({ page, bookId, onNavigate, onDelete }: SortablePageItemProps) => {
-  const wordCount = page.html_content ? 
+  const wordCount = page.html_content && page.page_type === 'text' ? 
     page.html_content.replace(/<[^>]*>/g, '').trim().split(/\s+/).length : 
     0;
 
@@ -118,13 +120,15 @@ const RegularPageItem = ({ page, bookId, onNavigate, onDelete }: SortablePageIte
         className="flex-1 cursor-pointer"
         onClick={() => onNavigate(page.id)}
       >
-        <div className="flex items-center justify-between">
-          <h3 className={`text-lg ${page.page_type === 'section' ? 'font-bold text-xl' : ''}`}>
+        <div className={`flex items-center ${page.page_type === 'section' ? 'justify-center min-h-[60px]' : 'justify-between'}`}>
+          <h3 className={`text-lg ${page.page_type === 'section' ? 'font-bold text-xl text-center' : ''}`}>
             {page.title || `Untitled Page ${page.page_index + 1}`}
           </h3>
-          <span className="text-sm text-muted-foreground">
-            {wordCount} words
-          </span>
+          {page.page_type === 'text' && (
+            <span className="text-sm text-muted-foreground">
+              {wordCount} words
+            </span>
+          )}
         </div>
       </div>
       {onDelete && (
@@ -145,7 +149,7 @@ const RegularPageItem = ({ page, bookId, onNavigate, onDelete }: SortablePageIte
 };
 
 const PageCard = ({ page, bookId, onNavigate, onDelete }: SortablePageItemProps) => {
-  const wordCount = page.html_content ? 
+  const wordCount = page.html_content && page.page_type === 'text' ? 
     page.html_content.replace(/<[^>]*>/g, '').trim().split(/\s+/).length : 
     0;
 
@@ -159,27 +163,28 @@ const PageCard = ({ page, bookId, onNavigate, onDelete }: SortablePageItemProps)
       <div className="aspect-[3/4] relative">
         <CardContent className="absolute inset-0 p-4 flex flex-col overflow-hidden">
           {/* Page Header */}
-          <div className="mb-3 pb-3 border-b border-border/50">
-            <h3 className={`${page.page_type === 'section' ? 'text-xl font-bold' : 'text-base font-medium'} line-clamp-2`}>
+          <div className={`mb-3 pb-3 border-b border-border/50 ${page.page_type === 'section' ? 'flex-1 flex items-center justify-center' : ''}`}>
+            <h3 className={`${page.page_type === 'section' ? 'text-xl font-bold text-center' : 'text-base font-medium'} line-clamp-2`}>
               {page.title || `Untitled Page ${page.page_index + 1}`}
             </h3>
           </div>
           
-          {/* Page Content Preview */}
-          <div className="flex-1 relative">
-            <div className="text-xs prose text-muted-foreground space-y-2 overflow-hidden"
-            dangerouslySetInnerHTML={{ __html: excerpt }}
-            >
-             
+          {/* Page Content Preview - Only show for text pages */}
+          {page.page_type === 'text' && (
+            <div className="flex-1 relative">
+              <div className="text-xs prose text-muted-foreground space-y-2 overflow-hidden"
+                dangerouslySetInnerHTML={{ __html: excerpt }}
+              >
+              </div>
+              {/* Gradient fade out effect */}
+              <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-background to-transparent" />
             </div>
-            {/* Gradient fade out effect */}
-            <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-background to-transparent" />
-          </div>
+          )}
 
           {/* Footer */}
           <div className="mt-auto pt-2 flex items-center justify-between text-xs text-muted-foreground">
-            <span>{wordCount} words</span>
-            <span>Page {page.page_index + 1}</span>
+            {page.page_type === 'text' && <span>{wordCount} words</span>}
+            <span className={`${page.page_type === 'section' ? 'mx-auto' : 'ml-auto'}`}>Page {page.page_index + 1}</span>
           </div>
         </CardContent>
       </div>
