@@ -83,6 +83,7 @@ export const TipTapEditor = ({
           [&>div>h4]:text-xl [&>div>h4]:font-bold [&>div>h4]:mb-4 [&>div>h4]:mt-6
           [&>div>h5]:text-lg [&>div>h5]:font-bold [&>div>h5]:mb-4 [&>div>h5]:mt-6
           [&>div>h6]:text-base [&>div>h6]:font-bold [&>div>h6]:mb-4 [&>div>h6]:mt-6
+          [&>div>h1,h2,h3,h4,h5,h6]:tracking-tight [&>div>h1,h2,h3,h4,h5,h6]:text-foreground
         " />
       </div>
     </div>
