@@ -129,6 +129,19 @@ export default function Landing() {
           </div>
         </section>
 
+        {/* Manual Link */}
+        <div className="text-center bg-primary/5 rounded-lg py-8 px-4 border border-primary/20">
+          <h3 className="text-2xl font-medium mb-3">Want to learn more?</h3>
+          <a 
+            href="https://www.pensive.me/book/658-the-pensive-manual"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 text-2xl font-medium text-primary hover:text-primary/90 hover:underline bg-background px-6 py-3 rounded-lg shadow-sm"
+          >
+            📖 Read the Complete Pensive Manual →
+          </a>
+        </div>
+
         {/* What You Can Publish */}
         <section className="space-y-12">
           <div className="text-center">
