@@ -149,27 +149,40 @@ const PageCard = ({ page, bookId, onNavigate, onDelete }: SortablePageItemProps)
     page.html_content.replace(/<[^>]*>/g, '').trim().split(/\s+/).length : 
     0;
 
-  const excerpt = page.html_content ? 
-    page.html_content.replace(/<[^>]*>/g, '').trim().slice(0, 100) + '...' : 
-    'No content';
+  const excerpt = page.html_content ? page.html_content.replace(/<h1[^>]*>.*?<\/h1>/g, '') : ''
 
   return (
     <Card 
-      className="cursor-pointer hover:bg-accent/5 transition-colors relative group"
+      className="cursor-pointer hover:bg-accent/5 transition-colors relative group overflow-hidden"
     >
-      <CardContent className="p-6 space-y-4" onClick={() => onNavigate(page.id)}>
-        <div className="flex items-center justify-between">
-          <h3 className={`text-lg ${page.page_type === 'section' ? 'font-bold text-xl' : 'font-medium'}`}>
-            {page.title || `Untitled Page ${page.page_index + 1}`}
-          </h3>
-          <span className="text-sm text-muted-foreground">
-            {wordCount} words
-          </span>
-        </div>
-        <p className="text-sm text-muted-foreground line-clamp-3">
-          {excerpt}
-        </p>
-      </CardContent>
+      <div className="aspect-[3/4] relative">
+        <CardContent className="absolute inset-0 p-4 flex flex-col overflow-hidden">
+          {/* Page Header */}
+          <div className="mb-3 pb-3 border-b border-border/50">
+            <h3 className={`${page.page_type === 'section' ? 'text-xl font-bold' : 'text-base font-medium'} line-clamp-2`}>
+              {page.title || `Untitled Page ${page.page_index + 1}`}
+            </h3>
+          </div>
+          
+          {/* Page Content Preview */}
+          <div className="flex-1 relative">
+            <div className="text-xs prose text-muted-foreground space-y-2 overflow-hidden"
+            dangerouslySetInnerHTML={{ __html: excerpt }}
+            >
+             
+            </div>
+            {/* Gradient fade out effect */}
+            <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-background to-transparent" />
+          </div>
+
+          {/* Footer */}
+          <div className="mt-auto pt-2 flex items-center justify-between text-xs text-muted-foreground">
+            <span>{wordCount} words</span>
+            <span>Page {page.page_index + 1}</span>
+          </div>
+        </CardContent>
+      </div>
+
       {onDelete && (
         <Button
           variant="ghost"
@@ -483,7 +496,7 @@ export const PagesList = ({ pages, bookId, isReorderMode = false, canEdit = fals
             {canEdit && <p className="text-muted-foreground text-sm">Click the buttons above to add a new page</p>}
           </div>
         ) : (
-          <div className={`${viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 gap-4 p-4' : ''}`}>
+          <div className={`${viewMode === 'grid' ? 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 p-4' : ''}`}>
             {isReordering ? (
               <DndContext
                 sensors={sensors}
