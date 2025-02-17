@@ -72,17 +72,10 @@ export default function Landing() {
             </p>
           </Card>
           <Card className="p-6 space-y-2 bg-card/50">
-            <Globe className="h-6 w-6 mb-2" />
-            <h3 className="font-medium">Share</h3>
-            <p className="text-sm text-muted-foreground">
-              Share with the world or keep it private
-            </p>
-          </Card>
-          <Card className="p-6 space-y-2 bg-card/50">
             <Server className="h-6 w-6 mb-2" />
-            <h3 className="font-medium">Self-host</h3>
+            <h3 className="font-medium">Self-host or use our service</h3>
             <p className="text-sm text-muted-foreground">
-              Host it yourself or use our open-source platform
+              Host it yourself or use our hosted service
             </p>
           </Card>
         </div>
