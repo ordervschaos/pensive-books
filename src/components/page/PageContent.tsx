@@ -43,10 +43,12 @@ export const PageContent = ({
             .join('');
         }
 
-        onSave(html, json, extractedTitle.trim() || 'Untitled');
+        // Only use 'Untitled' if there's no title content
+        const finalTitle = extractedTitle.trim() || title || 'Untitled';
+        onSave(html, json, finalTitle);
       }
     }, 200),
-    [onSave, initialLoad]
+    [onSave, initialLoad, title]
   );
 
   const handleContentChange = (html: string, json: any) => {

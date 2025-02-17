@@ -24,14 +24,17 @@ export const getEditorConfig = (content: string, onChange: (html: string, json: 
         heading: {
           levels: [1, 2, 3, 4, 5, 6],
           HTMLAttributes: {
-            class: 'font-bold',
-            level: {
-              1: 'text-4xl mb-8 mt-0',
-              2: 'text-3xl mb-6 mt-8',
-              3: 'text-2xl mb-4 mt-6',
-              4: 'text-xl mb-4 mt-6',
-              5: 'text-lg mb-4 mt-6',
-              6: 'text-base mb-4 mt-6'
+            class: ({ level }) => {
+              const baseClass = 'font-bold';
+              const levelClasses = {
+                1: 'text-4xl mb-8 mt-0',
+                2: 'text-3xl mb-6 mt-8',
+                3: 'text-2xl mb-4 mt-6',
+                4: 'text-xl mb-4 mt-6',
+                5: 'text-lg mb-4 mt-6',
+                6: 'text-base mb-4 mt-6'
+              };
+              return `${baseClass} ${levelClasses[level] || ''}`;
             }
           }
         },
