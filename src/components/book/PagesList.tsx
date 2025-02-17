@@ -51,7 +51,9 @@ interface PagesListProps {
   pages: Page[];
   bookId: number;
   isReorderMode?: boolean;
+  isDeleteMode?: boolean;
   canEdit?: boolean;
+  onDeleteModeChange?: (isDelete: boolean) => void;
 }
 
 interface SortablePageItemProps {
@@ -206,16 +208,36 @@ const PageCard = ({ page, bookId, onNavigate, onDelete }: SortablePageItemProps)
   );
 };
 
-export const PagesList = ({ pages, bookId, isReorderMode = false, canEdit = false }: PagesListProps) => {
+export const PagesList = ({ 
+  pages, 
+  bookId, 
+  isReorderMode = false, 
+  isDeleteMode = false, 
+  canEdit = false,
+  onDeleteModeChange 
+}: PagesListProps) => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [items, setItems] = useState<Page[]>(
     [...pages].sort((a, b) => a.page_index - b.page_index)
   );
   const [isReordering, setIsReordering] = useState(isReorderMode);
-  const [isDeleteMode, setIsDeleteMode] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('grid');
   const [previousViewMode, setPreviousViewMode] = useState<'list' | 'grid'>('grid');
+
+  useEffect(() => {
+    setIsReordering(isReorderMode);
+  }, [isReorderMode]);
+
+  // Force list view when in delete mode or reorder mode
+  useEffect(() => {
+    if (isDeleteMode || isReorderMode) {
+      setPreviousViewMode(viewMode);
+      setViewMode('list');
+    } else {
+      setViewMode(previousViewMode);
+    }
+  }, [isDeleteMode, isReorderMode]);
 
   useEffect(() => {
     const sortedPages = [...pages].sort((a, b) => a.page_index - b.page_index);
@@ -413,7 +435,7 @@ export const PagesList = ({ pages, bookId, isReorderMode = false, canEdit = fals
                     <DropdownMenuItem
                       onClick={() => {
                         setIsReordering(false);
-                        setIsDeleteMode(!isDeleteMode);
+                        onDeleteModeChange?.(!isDeleteMode);
                       }}
                       className="flex items-center gap-2"
                     >
@@ -422,7 +444,7 @@ export const PagesList = ({ pages, bookId, isReorderMode = false, canEdit = fals
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onClick={() => {
-                        setIsDeleteMode(false);
+                        onDeleteModeChange?.(false);
                         if (!isReordering) {
                           setPreviousViewMode(viewMode);
                           setViewMode('list');
@@ -447,7 +469,7 @@ export const PagesList = ({ pages, bookId, isReorderMode = false, canEdit = fals
                   className="flex items-center gap-2"
                   onClick={() => {
                     setIsReordering(false);
-                    setIsDeleteMode(!isDeleteMode);
+                    onDeleteModeChange?.(!isDeleteMode);
                   }}
                 >
                   <Trash2 className="h-4 w-4" />
@@ -458,7 +480,7 @@ export const PagesList = ({ pages, bookId, isReorderMode = false, canEdit = fals
                   size="sm"
                   className="flex items-center gap-2"
                   onClick={() => {
-                    setIsDeleteMode(false);
+                    onDeleteModeChange?.(false);
                     if (!isReordering) {
                       setPreviousViewMode(viewMode);
                       setViewMode('list');

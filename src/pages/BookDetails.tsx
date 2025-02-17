@@ -20,6 +20,7 @@ const BookDetails = () => {
   const [loading, setLoading] = useState(true);
   const [publishing, setPublishing] = useState(false);
   const [isReorderMode, setIsReorderMode] = useState(false);
+  const [isDeleteMode, setIsDeleteMode] = useState(false);
   const { canEdit, isOwner, loading: permissionsLoading } = useBookPermissions(id);
 
   const getNumericId = (param: string | undefined) => {
@@ -263,7 +264,9 @@ const BookDetails = () => {
                 pages={pages}
                 bookId={parseInt(id || "0")}
                 isReorderMode={isReorderMode}
+                isDeleteMode={isDeleteMode}
                 canEdit={canEdit}
+                onDeleteModeChange={(isDelete) => setIsDeleteMode(isDelete)}
               />
             </div>
           </div>
