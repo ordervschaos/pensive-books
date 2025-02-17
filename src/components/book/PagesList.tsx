@@ -209,6 +209,7 @@ export const PagesList = ({ pages, bookId, isReorderMode = false, canEdit = fals
   const [isReordering, setIsReordering] = useState(isReorderMode);
   const [isDeleteMode, setIsDeleteMode] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('grid');
+  const [previousViewMode, setPreviousViewMode] = useState<'list' | 'grid'>('grid');
 
   useEffect(() => {
     const sortedPages = [...pages].sort((a, b) => a.page_index - b.page_index);
@@ -384,6 +385,7 @@ export const PagesList = ({ pages, bookId, isReorderMode = false, canEdit = fals
               size="icon"
               onClick={() => setViewMode(viewMode === 'list' ? 'grid' : 'list')}
               className="rounded-full"
+              disabled={isReordering}
             >
               {viewMode === 'list' ? (
                 <LayoutGrid className="h-4 w-4" />
@@ -415,6 +417,12 @@ export const PagesList = ({ pages, bookId, isReorderMode = false, canEdit = fals
                     <DropdownMenuItem
                       onClick={() => {
                         setIsDeleteMode(false);
+                        if (!isReordering) {
+                          setPreviousViewMode(viewMode);
+                          setViewMode('list');
+                        } else {
+                          setViewMode(previousViewMode);
+                        }
                         setIsReordering(!isReordering);
                       }}
                       className="flex items-center gap-2"
@@ -445,6 +453,12 @@ export const PagesList = ({ pages, bookId, isReorderMode = false, canEdit = fals
                   className="flex items-center gap-2"
                   onClick={() => {
                     setIsDeleteMode(false);
+                    if (!isReordering) {
+                      setPreviousViewMode(viewMode);
+                      setViewMode('list');
+                    } else {
+                      setViewMode(previousViewMode);
+                    }
                     setIsReordering(!isReordering);
                   }}
                 >
