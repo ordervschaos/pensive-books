@@ -21,6 +21,18 @@ export const getEditorConfig = (content: string, onChange: (html: string, json: 
             class: 'border-l-4 border-primary pl-4 my-4 italic',
           },
         },
+        heading: {
+          levels: [1, 2, 3, 4, 5, 6],
+          HTMLAttributes: {
+            class: 'font-bold',
+            1: { class: 'text-4xl mb-8 mt-0' },
+            2: { class: 'text-3xl mb-6 mt-8' },
+            3: { class: 'text-2xl mb-4 mt-6' },
+            4: { class: 'text-xl mb-4 mt-6' },
+            5: { class: 'text-lg mb-4 mt-6' },
+            6: { class: 'text-base mb-4 mt-6' }
+          }
+        },
         bulletList: {
           HTMLAttributes: {
             class: 'list-disc list-outside ml-4 my-4 space-y-1',
@@ -42,9 +54,6 @@ export const getEditorConfig = (content: string, onChange: (html: string, json: 
           },
         },
         codeBlock: false,
-        heading: {
-          levels: [1, 2, 3, 4, 5, 6],
-        },
       }),
       CodeBlockLowlight.configure({
         lowlight,
