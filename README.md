@@ -52,8 +52,8 @@ This project uses Supabase as its database provider. To set up your own instance
 
 4. Set up your environment variables:
    ```
-   SUPABASE_URL=your-project-url
-   SUPABASE_ANON_KEY=your-anon-key
+   VITE_SUPABASE_URL=your-project-url
+   VITE_SUPABASE_ANON_KEY=your-anon-key
    ```
    Rest of the environment variables are to be set up in the Supabase. Check the "Managing Secrets" section below.
 
@@ -61,16 +61,11 @@ This project uses Supabase as its database provider. To set up your own instance
 
 The project uses several external services that require API keys. These are securely stored in Supabase:
 
-1. **Supabase Configuration**
-   - `SUPABASE_URL`: Your Supabase project URL
-   - `SUPABASE_ANON_KEY`: Your project's anon/public key
-   - `SUPABASE_SERVICE_ROLE_KEY`: For Edge Functions
-
-2. **Image Services**
+1. **Image Services**
    - `UNSPLASH_ACCESS_KEY`: For Unsplash image search
    - `UNSPLASH_SECRET_KEY`: Unsplash API secret key
 
-3. **Email Services**
+2. **Email Services**
    - `MAILGUN_API_KEY`: For sending emails
    - `MAILGUN_DOMAIN`: Your Mailgun domain
 
