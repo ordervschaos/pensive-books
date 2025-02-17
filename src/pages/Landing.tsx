@@ -85,15 +85,15 @@ export default function Landing() {
           <div className="text-center">
             <h2 className="text-3xl font-serif font-bold">How it Works</h2>
           </div>
-          <div className="grid gap-12 md:grid-cols-2">
-            <div className="space-y-8">
+          <div className="flex flex-col gap-12">
+            <div className="grid gap-8 md:grid-cols-2">
               <div className="space-y-4">
                 <h3 className="text-xl font-medium">1. Start your book</h3>
                 <p className="text-muted-foreground">Create a new book and customize its details.</p>
                 <img
                   src="/homepage_images/new_book.png"
                   alt="Create a New Book"
-                  className="rounded-lg shadow-md"
+                  className="rounded-lg shadow-md w-full"
                 />
               </div>
               <div className="space-y-4">
@@ -102,18 +102,18 @@ export default function Landing() {
                 <img
                   src="/homepage_images/editor_ui.png"
                   alt="Editor Interface"
-                  className="rounded-lg shadow-md"
+                  className="rounded-lg shadow-md w-full"
                 />
               </div>
             </div>
-            <div className="space-y-8">
+            <div className="grid gap-8 md:grid-cols-2">
               <div className="space-y-4">
                 <h3 className="text-xl font-medium">3. Organize Your Book</h3>
                 <p className="text-muted-foreground">Structure your book with chapters and pages.</p>
                 <img
                   src="/homepage_images/book_page.png"
                   alt="Book Page Structure"
-                  className="rounded-lg shadow-md"
+                  className="rounded-lg shadow-md w-full"
                 />
               </div>
               <div className="space-y-4">
@@ -122,7 +122,7 @@ export default function Landing() {
                 <img
                   src="/homepage_images/invite_as_many_people_as_you_want.png"
                   alt="Collaboration Features"
-                  className="rounded-lg shadow-md"
+                  className="rounded-lg shadow-md w-full"
                 />
               </div>
             </div>
