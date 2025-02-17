@@ -195,7 +195,7 @@ export const PagesList = ({ pages, bookId, isReorderMode = false, canEdit = fals
   );
   const [isReordering, setIsReordering] = useState(isReorderMode);
   const [isDeleteMode, setIsDeleteMode] = useState(false);
-  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('grid');
 
   useEffect(() => {
     const sortedPages = [...pages].sort((a, b) => a.page_index - b.page_index);
