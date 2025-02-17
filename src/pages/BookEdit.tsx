@@ -165,8 +165,8 @@ export default function BookEdit() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <div className="space-y-8">
+        <div className="grid grid-cols-1 lg:grid-cols-6 gap-8">
+          <div className="w-full lg:col-span-2">
             <BookCoverEdit 
               bookId={book.id || 0}
               coverUrl={book.cover_url}
@@ -177,12 +177,14 @@ export default function BookEdit() {
             />
           </div>
 
-          <BookEditForm
-            book={book}
-            onBookChange={setBook}
-            onSave={handleSave}
-            saving={saving}
-          />
+          <div className="lg:col-span-4">
+            <BookEditForm
+              book={book}
+              onBookChange={setBook}
+              onSave={handleSave}
+              saving={saving}
+            />
+          </div>
         </div>
       </div>
     </div>

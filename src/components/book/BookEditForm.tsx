@@ -20,40 +20,48 @@ interface BookEditFormProps {
 
 export function BookEditForm({ book, onBookChange, onSave, saving }: BookEditFormProps) {
   return (
-    <form onSubmit={onSave} className="space-y-6">
-      <div className="space-y-4">
-        <div>
-          <Label htmlFor="name">Book title</Label>
+    <form onSubmit={onSave} className="space-y-8">
+      <div className="space-y-6">
+        <div className="space-y-2">
+          <Label htmlFor="name" className="text-sm font-medium">Book title</Label>
           <Input
             id="name"
             value={book.name}
             onChange={(e) => onBookChange({ ...book, name: e.target.value })}
             placeholder="Enter book title"
+            style={{ 
+              fontSize: 'clamp(1.5rem, 4vw, 2.5rem)'
+            }}
+            className="h-14 sm:h-16 md:h-20 px-3 sm:px-4 py-4 sm:py-6 font-bold w-full"
           />
         </div>
 
-        <div>
-          <Label htmlFor="subtitle">Subtitle</Label>
-          <Input
-            id="subtitle"
-            value={book.subtitle || ""}
-            onChange={(e) => onBookChange({ ...book, subtitle: e.target.value })}
-            placeholder="Enter subtitle"
-          />
-        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-2">
+            <Label htmlFor="subtitle">Subtitle</Label>
+            <Input
+              id="subtitle"
+              value={book.subtitle || ""}
+              onChange={(e) => onBookChange({ ...book, subtitle: e.target.value })}
+              placeholder="Enter subtitle"
+              className="w-full"
+            />
+          </div>
 
-        <div>
-          <Label htmlFor="author">Author</Label>
-          <Input
-            id="author"
-            value={book.author || ""}
-            onChange={(e) => onBookChange({ ...book, author: e.target.value })}
-            placeholder="Enter author name"
-          />
+          <div className="space-y-2">
+            <Label htmlFor="author">Author</Label>
+            <Input
+              id="author"
+              value={book.author || ""}
+              onChange={(e) => onBookChange({ ...book, author: e.target.value })}
+              placeholder="Enter author name"
+              className="w-full"
+            />
+          </div>
         </div>
       </div>
 
-      <Button type="submit" disabled={saving}>
+      <Button type="submit" disabled={saving} className="w-full sm:w-auto">
         {saving ? "Saving..." : "Save changes"}
       </Button>
     </form>
