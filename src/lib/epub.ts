@@ -115,7 +115,6 @@ export const generateContentXhtml = (metadata: EPUBMetadata, pages: Page[]): str
         ? `<h2>${escapeXml(page.title || 'Untitled Section')}</h2>`
         : `
           <article>
-            <h3>${escapeXml(page.title || 'Untitled Page')}</h3>
             ${page.html_content ? sanitizeContent(page.html_content) : ''}
           </article>
         `}
