@@ -10,7 +10,7 @@ export default function Landing() {
     <div className="min-h-screen bg-background">
       <main className="container mx-auto px-6 py-16 space-y-24">
         {/* Hero Section */}
-        <div className="text-center space-y-6 max-w-3xl mx-auto">
+        <div className="text-center space-y-6 max-w-4xl mx-auto">
           <div className="space-y-4">
             <h1 className="text-4xl md:text-6xl font-serif font-bold tracking-tight">
               Pensive Books – Write, Publish, and Share Your Books with Ease
@@ -18,6 +18,13 @@ export default function Landing() {
             <p className="text-xl text-muted-foreground">
               Publish your own books on the web—free, open, and simple.
             </p>
+          </div>
+          <div className="relative">
+            <img
+              src="/homepage_images/book_page.png"
+              alt="Book page"
+              className="rounded-lg shadow-xl mx-auto mb-8"
+            />
           </div>
           <p className="text-lg text-muted-foreground leading-relaxed">
             Writing online is easy, but publishing a whole book shouldn't be hard either. 
@@ -85,26 +92,46 @@ export default function Landing() {
           <div className="text-center">
             <h2 className="text-3xl font-serif font-bold">How it Works</h2>
           </div>
-          <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
-            <div className="space-y-4">
-              <h3 className="text-xl font-medium">Start your book</h3>
-              <p className="text-muted-foreground">Give it a title and upload a cover.</p>
+          <div className="grid gap-12 md:grid-cols-2">
+            <div className="space-y-8">
+              <div className="space-y-4">
+                <h3 className="text-xl font-medium">1. Start your book</h3>
+                <p className="text-muted-foreground">Create a new book and customize its details.</p>
+                <img
+                  src="/homepage_images/new_book.png"
+                  alt="Create a New Book"
+                  className="rounded-lg shadow-md"
+                />
+              </div>
+              <div className="space-y-4">
+                <h3 className="text-xl font-medium">2. Write and Edit</h3>
+                <p className="text-muted-foreground">Use our powerful editor to write your content.</p>
+                <img
+                  src="/homepage_images/editor_ui.png"
+                  alt="Editor Interface"
+                  className="rounded-lg shadow-md"
+                />
+              </div>
             </div>
-            <div className="space-y-4">
-              <h3 className="text-xl font-medium">Add content</h3>
-              <p className="text-muted-foreground">Write chapters, insert images, and structure your ideas.</p>
-            </div>
-            <div className="space-y-4">
-              <h3 className="text-xl font-medium">Organize effortlessly</h3>
-              <p className="text-muted-foreground">Drag and rearrange pages as your story unfolds.</p>
-            </div>
-            <div className="space-y-4">
-              <h3 className="text-xl font-medium">Collaborate</h3>
-              <p className="text-muted-foreground">Invite co-authors to contribute or readers to review.</p>
-            </div>
-            <div className="space-y-4">
-              <h3 className="text-xl font-medium">Publish with one click</h3>
-              <p className="text-muted-foreground">Make it private, share with select people, or go fully public.</p>
+            <div className="space-y-8">
+              <div className="space-y-4">
+                <h3 className="text-xl font-medium">3. Organize Your Book</h3>
+                <p className="text-muted-foreground">Structure your book with chapters and pages.</p>
+                <img
+                  src="/homepage_images/book_page.png"
+                  alt="Book Page Structure"
+                  className="rounded-lg shadow-md"
+                />
+              </div>
+              <div className="space-y-4">
+                <h3 className="text-xl font-medium">4. Collaborate and Share</h3>
+                <p className="text-muted-foreground">Invite co-authors or share with readers.</p>
+                <img
+                  src="/homepage_images/invite_as_many_people_as_you_want.png"
+                  alt="Collaboration Features"
+                  className="rounded-lg shadow-md"
+                />
+              </div>
             </div>
           </div>
         </section>
