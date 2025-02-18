@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
-import { Code, Book, Users, Rocket, Globe, Server } from "lucide-react";
+import { Code, Book, Users, Rocket, Download, Server } from "lucide-react";
 
 export default function Landing() {
   const navigate = useNavigate();
@@ -76,6 +76,13 @@ export default function Landing() {
             <h3 className="font-medium">Self-host or use our service</h3>
             <p className="text-sm text-muted-foreground">
               Host it yourself or use our hosted service
+            </p>
+          </Card>
+          <Card className="p-6 space-y-2 bg-card/50">
+            <Download className="h-6 w-6 mb-2" />
+            <h3 className="font-medium">Download & Read offline</h3>
+            <p className="text-sm text-muted-foreground">
+              Download books in EPUB format to read on any device
             </p>
           </Card>
         </div>
