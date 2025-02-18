@@ -18,6 +18,7 @@ export default function Library() {
           .from("books")
           .select("*")
           .eq("is_public", true)
+          .eq("is_archived", false)
           .order("created_at", { ascending: false });
 
         if (error) throw error;
