@@ -10,6 +10,12 @@ export function Footer() {
           </div>
           <nav className="flex items-center gap-6">
             <Link 
+              to="/contact"
+              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Contact Us
+            </Link>
+            <Link 
               to="/privacy" 
               className="text-sm text-muted-foreground hover:text-foreground transition-colors"
             >

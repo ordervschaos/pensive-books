@@ -15,6 +15,7 @@ import PageView from "@/pages/PageView";
 import AcceptInvitation from "@/pages/AcceptInvitation";
 import PrivacyPolicy from "@/pages/PrivacyPolicy";
 import Terms from "@/pages/Terms";
+import Contact from "@/pages/Contact";
 import { useEffect } from "react";
 
 // ScrollToTop component that scrolls the window up on route change
@@ -56,6 +57,7 @@ function App() {
               <Route path="/accept-invitation" element={<AcceptInvitation />} />
               <Route path="/privacy" element={<PrivacyPolicy />} />
               <Route path="/terms" element={<Terms />} />
+              <Route path="/contact" element={<Contact />} />
               
               {/* Protected Routes */}
               <Route
