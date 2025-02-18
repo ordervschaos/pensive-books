@@ -290,7 +290,7 @@ export function TopNav() {
                   </BreadcrumbList>
                 </Breadcrumb>
               ) : (
-                <Link to={`/`}>
+                <Link to={`/my-books`}>
                   <span className="text-lg font-semibold text-foreground">Pensive</span>
                 </Link>
               )}
