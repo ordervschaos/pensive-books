@@ -76,8 +76,7 @@ serve(async (req) => {
     formData.append('html', `
       <p>Hello,</p>
       <p>${user.email} has invited you to collaborate on their book "${book.name}" with ${accessLevel} access.</p>
-      <p>Click the link below to accept the invitation:</p>
-      <p><a href="${Deno.env.get('PUBLIC_SITE_URL')}/accept-invitation?bookId=${bookId}&email=${email}">Accept Invitation</a></p>
+      <p><a href="${Deno.env.get('PUBLIC_SITE_URL')}/book/${bookId}">View Book</a></p>
     `)
 
     const res = await fetch(mailgunEndpoint, {
