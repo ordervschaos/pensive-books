@@ -277,18 +277,19 @@ const PageView = () => {
             pageType={page?.page_type}
             editable={canEdit}
             onEditingChange={setIsEditing}
+            canEdit={canEdit}
           />
-        <PageNavigation
-          bookId={bookId || ""}
-          currentIndex={currentIndex}
-          totalPages={totalPages}
-          onNavigate={navigateToPage}
-          nextPageTitle={nextPageTitle}
-          bookTitle={book?.name}
-          isEditing={isEditing}
-          onNewPage={createNewPage}
-          canEdit={canEdit}
-        />
+          <PageNavigation
+            bookId={bookId || ""}
+            currentIndex={currentIndex}
+            totalPages={totalPages}
+            onNavigate={navigateToPage}
+            nextPageTitle={nextPageTitle}
+            bookTitle={book?.name}
+            isEditing={isEditing}
+            onNewPage={createNewPage}
+            canEdit={canEdit}
+          />
         </div>
       </div>
     </div>

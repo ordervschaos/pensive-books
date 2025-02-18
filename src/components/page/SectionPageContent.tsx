@@ -14,6 +14,7 @@ interface SectionPageContentProps {
   onChange: (html: string, json: any) => void;
   content: string;
   onToggleEdit?: () => void;
+  canEdit?: boolean;
 }
 
 export const SectionPageContent = ({ 
@@ -21,7 +22,8 @@ export const SectionPageContent = ({
   isEditing, 
   onChange,
   content,
-  onToggleEdit 
+  onToggleEdit,
+  canEdit = false
 }: SectionPageContentProps) => {
   const isMobile = useIsMobile();
   const initialContent = content || `<h1 class="page-title">${title}</h1>`;
@@ -59,7 +61,7 @@ export const SectionPageContent = ({
   return (
     <div className="flex-1 flex items-center justify-center">
       <div className="w-full max-w-3xl relative group">
-        {onToggleEdit && (
+        {canEdit && onToggleEdit && (
           <Button
             variant="ghost"
             size="icon"
@@ -81,7 +83,7 @@ export const SectionPageContent = ({
         <TipTapEditor 
           content={initialContent}
           onChange={onChange}
-          editable={true}
+          editable={canEdit}
           isEditing={isEditing}
           onToggleEdit={onToggleEdit}
           editorConfig={sectionEditorConfig}

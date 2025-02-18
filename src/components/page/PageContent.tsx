@@ -11,6 +11,7 @@ interface PageContentProps {
   pageType?: 'text' | 'section';
   editable?: boolean;
   onEditingChange?: (isEditing: boolean) => void;
+  canEdit?: boolean;
 }
 
 export const PageContent = ({ 
@@ -19,9 +20,10 @@ export const PageContent = ({
   onSave, 
   pageType = 'text', 
   editable = false,
-  onEditingChange 
+  onEditingChange,
+  canEdit = false
 }: PageContentProps) => {
-  const [isEditing, setIsEditing] = useState(!content && editable);
+  const [isEditing, setIsEditing] = useState(!content && editable && canEdit);
   const [initialLoad, setInitialLoad] = useState(true);
   const [currentContent, setCurrentContent] = useState(content || '');
   const [currentTitle, setCurrentTitle] = useState(title || '');
@@ -82,6 +84,7 @@ export const PageContent = ({
             isEditing={isEditing && editable}
             onChange={handleContentChange}
             onToggleEdit={() => handleEditingChange(!isEditing)}
+            canEdit={canEdit}
           />
         ) : (
           <TextPageContent
@@ -90,6 +93,7 @@ export const PageContent = ({
             onChange={handleContentChange}
             title={currentTitle}
             onToggleEdit={() => handleEditingChange(!isEditing)}
+            canEdit={canEdit}
           />
         )}
       </div>
