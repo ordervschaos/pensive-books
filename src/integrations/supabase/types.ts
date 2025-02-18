@@ -52,7 +52,7 @@ export type Database = {
       }
       books: {
         Row: {
-          archived: boolean | null
+          is_archived: boolean | null
           author: string | null
           book_id: number | null
           bookmarked_page_index: number | null
@@ -74,7 +74,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
-          archived?: boolean | null
+          is_archived?: boolean | null
           author?: string | null
           book_id?: number | null
           bookmarked_page_index?: number | null
@@ -96,7 +96,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
-          archived?: boolean | null
+          is_archived?: boolean | null
           author?: string | null
           book_id?: number | null
           bookmarked_page_index?: number | null

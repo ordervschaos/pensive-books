@@ -68,7 +68,7 @@ const PageView = () => {
         .from("books")
         .select("*")
         .eq("id", numericBookId)
-        .eq("archived", false)
+        .eq("is_archived", false)
         .maybeSingle();
 
       if (bookError) throw bookError;
