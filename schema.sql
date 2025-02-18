@@ -1,4 +1,3 @@
-
 SET statement_timeout = 0;
 SET lock_timeout = 0;
 SET idle_in_transaction_session_timeout = 0;
@@ -602,13 +601,24 @@ CREATE POLICY "Enable insert for users based on user_id" ON "public"."leads" FOR
 
 CREATE POLICY "Users can create books" ON "public"."books" FOR INSERT TO "authenticated" WITH CHECK (("owner_id" = "auth"."uid"()));
 
-CREATE POLICY "Users can delete their own book access records" ON "public"."book_access" FOR DELETE USING (("auth"."uid"() = "created_by"));
+DROP POLICY IF EXISTS "Users can update book access records" ON "public"."book_access";
+
+CREATE POLICY "Invited users can update book access records to accept the invite" ON "public"."book_access"
+FOR UPDATE TO public
+USING (
+  (auth.uid() = created_by) OR
+  (invited_email = (auth.jwt() ->> 'email'::text) AND user_id IS NULL AND status = 'pending')
+)
+WITH CHECK (
+  (auth.uid() = created_by) OR 
+  (
+    invited_email = (auth.jwt() ->> 'email'::text) AND
+    user_id = auth.uid() AND
+    status = 'accepted'
+  )
+);
 
 CREATE POLICY "Users can delete their own books" ON "public"."books" FOR DELETE TO "authenticated" USING (("owner_id" = "auth"."uid"()));
-
-CREATE POLICY "Users can update their own book access records" ON "public"."book_access" FOR UPDATE USING (("auth"."uid"() = "created_by")) WITH CHECK (("auth"."uid"() = "created_by"));
-
-CREATE POLICY "Users can update their own books" ON "public"."books" FOR UPDATE TO "authenticated" USING (("owner_id" = "auth"."uid"()));
 
 CREATE POLICY "Users can view their own access" ON "public"."book_access" FOR SELECT TO "authenticated" USING ((("invited_email" = ("auth"."jwt"() ->> 'email'::"text")) OR ("user_id" = "auth"."uid"())));
 

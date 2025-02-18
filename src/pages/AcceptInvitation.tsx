@@ -78,7 +78,7 @@ export default function AcceptInvitation() {
         // Update the book access record with the user's ID
         const { error: updateError } = await supabase
           .from("book_access")
-          .update({ user_id: user.id })
+          .update({ status: "accepted" })
           .eq("id", accessData.id);
 
         if (updateError) throw updateError;
