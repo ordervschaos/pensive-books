@@ -48,7 +48,8 @@ export const BookInfo = ({
       bookId, 
       name, 
       author,
-      coverUrl
+      coverUrl,
+      showTextOnCover
     });
     
     if (result.success) {

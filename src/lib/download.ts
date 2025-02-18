@@ -12,6 +12,7 @@ interface DownloadOptions {
   name: string;
   author?: string | null;
   coverUrl?: string | null;
+  showTextOnCover?: boolean;
 }
 
 interface GenerateResult {
@@ -308,7 +309,7 @@ export const generateAndDownloadEPUB = async (
       coverUrl: options.coverUrl
     };
 
-    const epubBlob = await generateEPUB(epubOptions, processedPages, images);
+    const epubBlob = await generateEPUB(epubOptions, processedPages, images, options.showTextOnCover);
 
     const url = window.URL.createObjectURL(epubBlob);
     const a = document.createElement('a');

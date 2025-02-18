@@ -110,7 +110,7 @@ export const generateNavXhtml = (pages: Page[]): string => `<?xml version="1.0" 
 </html>`;
 
 // Generate content.xhtml content
-export const generateContentXhtml = (metadata: EPUBMetadata, pages: Page[]): string => `<?xml version="1.0" encoding="UTF-8"?>
+export const generateContentXhtml = (metadata: EPUBMetadata, pages: Page[], show_text_on_cover: boolean = true): string => `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
 <head>
@@ -119,11 +119,24 @@ export const generateContentXhtml = (metadata: EPUBMetadata, pages: Page[]): str
   <link rel="stylesheet" type="text/css" href="styles.css"/>
 </head>
 <body>
-  <div class="cover-page">
-    ${metadata.coverUrl ? `<img src="cover.jpg" alt="Book cover" class="cover-image"/>` : ''}
-    <h1 class="book-title">${escapeXml(metadata.title)}</h1>
-    ${metadata.author ? `<h2 class="book-author">by ${escapeXml(metadata.author)}</h2>` : ''}
+  ${metadata.coverUrl ? `
+  <div class="cover-page" style="background-image: url('cover.jpg');">
+    <div class="cover-overlay"></div>
+    ${show_text_on_cover ? `
+      <div class="cover-content">
+        <h1 class="book-title">${escapeXml(metadata.title)}</h1>
+        ${metadata.author ? `<h2 class="book-author">by ${escapeXml(metadata.author)}</h2>` : ''}
+      </div>
+    ` : ''}
   </div>
+  ` : `
+  <div class="cover-page">
+    ${show_text_on_cover ? `
+      <h1 class="book-title">${escapeXml(metadata.title)}</h1>
+      ${metadata.author ? `<h2 class="book-author">by ${escapeXml(metadata.author)}</h2>` : ''}
+    ` : ''}
+  </div>
+  `}
   ${pages.map((page, index) => `
     <section id="page${index}" epub:type="chapter" class="${page.page_type === 'section' ? 'section-page' : 'content-page'}">
       ${page.page_type === 'section' 
@@ -142,7 +155,8 @@ export const generateContentXhtml = (metadata: EPUBMetadata, pages: Page[]): str
 // Generate CSS styles
 export const generateStyles = (): string => `
 @page {
-  margin: 20mm;
+  margin: 0;
+  padding: 0;
 }
 
 body {
@@ -153,27 +167,52 @@ body {
 }
 
 .cover-page {
+  height: 100vh;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   text-align: center;
-  margin: 3em 0;
   page-break-after: always;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  position: relative;
 }
 
-.cover-image {
-  max-width: 70%;
-  margin-bottom: 2em;
+.cover-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.7));
+  z-index: 1;
+}
+
+.cover-content {
+  position: relative;
+  z-index: 2;
+  padding: 2em;
+  width: 80%;
+  max-width: 600px;
 }
 
 .book-title {
   font-size: 2.5em;
   font-weight: bold;
   margin: 0.5em 0;
-  color: #333;
+  color: #fff;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
 }
 
 .book-author {
   font-size: 1.5em;
-  color: #666;
+  color: #fff;
   margin: 0.5em 0 2em;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
 }
 
 .section-page {
@@ -268,7 +307,8 @@ th {
 export const generateEPUB = async (
   metadata: EPUBMetadata,
   pages: Page[],
-  images: EPUBImage[] = []
+  images: EPUBImage[] = [],
+  show_text_on_cover: boolean = true
 ): Promise<Blob> => {
   const zip = new JSZip();
 
@@ -281,7 +321,7 @@ export const generateEPUB = async (
   // Add OEBPS directory
   zip.file('OEBPS/content.opf', generateContentOpf(metadata, images));
   zip.file('OEBPS/nav.xhtml', generateNavXhtml(pages));
-  zip.file('OEBPS/content.xhtml', generateContentXhtml(metadata, pages));
+  zip.file('OEBPS/content.xhtml', generateContentXhtml(metadata, pages, show_text_on_cover));
   zip.file('OEBPS/styles.css', generateStyles());
 
   // Add cover image if provided
