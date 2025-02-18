@@ -103,19 +103,11 @@ export const BookInfo = ({
           </div>
           <div className="flex flex-col sm:flex-row lg:flex-col gap-2">
             <Button
-              onClick={handleDownloadPDF}
-              variant="outline"
-              className="w-full text-xs sm:text-sm"
-            >
-              <Download className="h-4 w-4 mr-2" />
-              Download PDF
-            </Button>
-            <Button
               onClick={handleDownloadEPUB}
               variant="outline"
               className="w-full text-xs sm:text-sm"
             >
-              <Book className="h-4 w-4 mr-2" />
+              <Download className="h-4 w-4 mr-2" />
               Download EPUB
             </Button>
           </div>
