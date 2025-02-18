@@ -1,17 +1,12 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, MoreVertical, Archive } from "lucide-react";
+import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+
 
 export default function Index() {
   const [books, setBooks] = useState<any[]>([]);
@@ -91,36 +86,6 @@ export default function Index() {
     checkAuthAndFetchBooks();
   }, [navigate, toast]);
 
-  const handleCreateBook = () => {
-    navigate("/book/new");
-  };
-
-  const handleArchiveBook = async (bookId: string) => {
-    try {
-      const { error } = await supabase
-        .from("books")
-        .update({ is_archived: true })
-        .eq('id', bookId);
-
-      if (error) throw error;
-
-      // Update local state
-      setBooks(books.filter(book => book.id !== bookId));
-      setSharedBooks(sharedBooks.filter(book => book.id !== bookId));
-
-      toast({
-        title: "Book archived",
-        description: "The book has been moved to archive",
-      });
-    } catch (error: any) {
-      console.error("Error archiving book:", error);
-      toast({
-        variant: "destructive",
-        title: "Error archiving book",
-        description: error.message,
-      });
-    }
-  };
 
   if (loading) {
     return (
@@ -153,30 +118,6 @@ export default function Index() {
                 <Card
                   className="relative cursor-pointer group overflow-hidden w-24 sm:w-full aspect-[3/4]"
                 >
-                  <div 
-                    className="absolute top-2 right-2 z-10"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          className="h-8 w-8 p-0 hover:bg-background/80"
-                        >
-                          <MoreVertical className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={() => handleArchiveBook(book.id)}
-                          className="text-destructive"
-                        >
-                          <Archive className="mr-2 h-4 w-4" />
-                          Archive
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
                   <div 
                     className="w-full h-full"
                     onClick={() => navigate(`/book/${book.id}`)}
