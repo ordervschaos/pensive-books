@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Archive } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -11,6 +11,8 @@ import { BookCoverEdit } from "@/components/book/BookCoverEdit";
 import { BookVisibilityToggle } from "@/components/book/BookVisibilityToggle";
 import { useBookPermissions } from "@/hooks/use-book-permissions";
 import { setPageTitle } from "@/utils/pageTitle";
+import { Card } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 
 interface Book {
   id?: number;
@@ -145,6 +147,44 @@ export default function BookEdit() {
     }
   };
 
+  const handleArchiveBook = async () => {
+    if (!isOwner) {
+      toast({
+        variant: "destructive",
+        title: "Permission denied",
+        description: "Only the book owner can archive books"
+      });
+      return;
+    }
+
+    if (!confirm("Are you sure you want to archive this book? This action cannot be undone.")) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from("books")
+        .update({ is_archived: true })
+        .eq("id", parseInt(id || "0"));
+
+      if (error) throw error;
+
+      toast({
+        title: "Book archived",
+        description: "The book has been moved to archive"
+      });
+
+      navigate("/my-books");
+    } catch (error: any) {
+      console.error("Error archiving book:", error);
+      toast({
+        variant: "destructive",
+        title: "Error archiving book",
+        description: error.message
+      });
+    }
+  };
+
   if (loading || permissionsLoading) {
     return <div>Loading...</div>;
   }
@@ -186,6 +226,31 @@ export default function BookEdit() {
               onSave={handleSave}
               saving={saving}
             />
+
+            {isOwner && (
+              <div className="mt-12">
+                <Separator className="my-6" />
+                <h2 className="text-xl font-semibold text-destructive mb-4">Danger Zone</h2>
+                <Card className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-medium">Archive Book</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Archive this book and all its contents. This action cannot be undone.
+                      </p>
+                    </div>
+                    <Button 
+                      onClick={handleArchiveBook}
+                      variant="destructive"
+                      className="ml-4"
+                    >
+                      <Archive className="h-4 w-4 mr-2" />
+                      Archive Book
+                    </Button>
+                  </div>
+                </Card>
+              </div>
+            )}
           </div>
         </div>
       </div>

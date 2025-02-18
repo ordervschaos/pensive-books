@@ -66,6 +66,7 @@ const BookDetails = () => {
         .from("books")
         .select("*")
         .eq("id", numericId)
+        .eq("is_archived", false)
         .single();
 
       if (bookError) {

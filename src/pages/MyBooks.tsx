@@ -1,11 +1,17 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus } from "lucide-react";
+import { Plus, MoreVertical, Archive } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 export default function Index() {
   const [books, setBooks] = useState<any[]>([]);
@@ -31,6 +37,7 @@ export default function Index() {
           .from("books")
           .select("*")
           .eq('owner_id', session.user.id)
+          .eq('is_archived', false)
           .order("created_at", { ascending: false });
 
         if (ownedError) {
@@ -43,10 +50,11 @@ export default function Index() {
           .from("book_access")
           .select(`
             access_level,
-            books (*)
+            books!inner (*)
           `)
           .eq('invited_email', session.user.email)
-          .eq('status', 'accepted');
+          .eq('status', 'accepted')
+          .eq('books.is_archived', false);
 
         if (sharedError) {
           console.error("Error fetching shared books:", sharedError);
@@ -87,6 +95,33 @@ export default function Index() {
     navigate("/book/new");
   };
 
+  const handleArchiveBook = async (bookId: string) => {
+    try {
+      const { error } = await supabase
+        .from("books")
+        .update({ is_archived: true })
+        .eq('id', bookId);
+
+      if (error) throw error;
+
+      // Update local state
+      setBooks(books.filter(book => book.id !== bookId));
+      setSharedBooks(sharedBooks.filter(book => book.id !== bookId));
+
+      toast({
+        title: "Book archived",
+        description: "The book has been moved to archive",
+      });
+    } catch (error: any) {
+      console.error("Error archiving book:", error);
+      toast({
+        variant: "destructive",
+        title: "Error archiving book",
+        description: error.message,
+      });
+    }
+  };
+
   if (loading) {
     return (
       <div className="container mx-auto p-6">
@@ -117,50 +152,78 @@ export default function Index() {
               <div className="flex sm:block items-start gap-4 sm:gap-0">
                 <Card
                   className="relative cursor-pointer group overflow-hidden w-24 sm:w-full aspect-[3/4]"
-                  onClick={() => navigate(`/book/${book.id}`)}
                 >
-                  {book.cover_url ? (
-                    <div className="relative w-full h-full">
-                      <img
-                        src={book.cover_url}
-                        alt={book.name}
-                        className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                      />
-                      {book.show_text_on_cover && (
-                        <div className="absolute inset-0 flex flex-col items-center md:justify-center bg-black/30 p-4">
-                          <h2 className="text-base sm:text-xl font-semibold text-white text-center mb-1 sm:mb-2">
-                            {book.name}
-                          </h2>
-                          {book.subtitle && (
-                            <p className="text-xs sm:text-sm text-white/90 text-center mb-1 sm:mb-2">
-                              {book.subtitle}
-                            </p>
-                          )}
-                          {book.author && (
-                            <p className="text-xs sm:text-sm text-white/90 text-center">
-                              by {book.author}
-                            </p>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                        <div className="absolute inset-0 flex flex-col items-center md:justify-center bg-muted p-4">
-                      <h2 className="text-xs md:text-2xl font-semibold text-center text-white break-words line-clamp-3">
-                        {book.name}
-                      </h2>
-                      {book.subtitle && (
-                            <p className="text-xs sm:text-sm text-white/90 text-center mb-1 sm:mb-2">
-                              {book.subtitle}
-                            </p>
-                          )}
-                          {book.author && (
-                            <p className="text-xs sm:text-sm text-white/90 text-center">
-                              by {book.author}
-                            </p>
-                          )}
-                    </div>
-                  )}
+                  <div 
+                    className="absolute top-2 right-2 z-10"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          className="h-8 w-8 p-0 hover:bg-background/80"
+                        >
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          onClick={() => handleArchiveBook(book.id)}
+                          className="text-destructive"
+                        >
+                          <Archive className="mr-2 h-4 w-4" />
+                          Archive
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                  <div 
+                    className="w-full h-full"
+                    onClick={() => navigate(`/book/${book.id}`)}
+                  >
+                    {book.cover_url ? (
+                      <div className="relative w-full h-full">
+                        <img
+                          src={book.cover_url}
+                          alt={book.name}
+                          className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                        />
+                        {book.show_text_on_cover && (
+                          <div className="absolute inset-0 flex flex-col items-center md:justify-center bg-black/30 p-4">
+                            <h2 className="text-base sm:text-xl font-semibold text-white text-center mb-1 sm:mb-2">
+                              {book.name}
+                            </h2>
+                            {book.subtitle && (
+                              <p className="text-xs sm:text-sm text-white/90 text-center mb-1 sm:mb-2">
+                                {book.subtitle}
+                              </p>
+                            )}
+                            {book.author && (
+                              <p className="text-xs sm:text-sm text-white/90 text-center">
+                                by {book.author}
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="absolute inset-0 flex flex-col items-center md:justify-center bg-muted p-4">
+                        <h2 className="text-xs md:text-2xl font-semibold text-center text-white break-words line-clamp-3">
+                          {book.name}
+                        </h2>
+                        {book.subtitle && (
+                          <p className="text-xs sm:text-sm text-white/90 text-center mb-1 sm:mb-2">
+                            {book.subtitle}
+                          </p>
+                        )}
+                        {book.author && (
+                          <p className="text-xs sm:text-sm text-white/90 text-center">
+                            by {book.author}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </Card>
                 <div className="flex-1 sm:mt-2 space-y-1 sm:text-center text-left">
                   <h3 className="text-sm text-muted-foreground font-medium truncate cursor-pointer" onClick={() => navigate(`/book/${book.id}`)}>
