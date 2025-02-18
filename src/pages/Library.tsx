@@ -51,9 +51,7 @@ export default function Library() {
 
   return (
     <>
-      <div className="container mx-auto p-6">
-        <h1 className="text-3xl font-bold mb-6">Public Library</h1>
-        
+      <div className="container mx-auto p-6">        
         {books.length === 0 ? (
           <p className="text-muted-foreground">No published books found</p>
         ) : (

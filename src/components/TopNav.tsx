@@ -18,6 +18,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
 
 interface PageChangePayload {
   new: {
@@ -220,173 +221,189 @@ export function TopNav() {
   const isBookEditRoute = location.pathname.endsWith('/edit');
   const isNewBookRoute = location.pathname.endsWith('/book/new');
   const showBackButton = location.pathname !== '/';
-  const showLibraryLink = !isBookRoute && !isPageRoute;
+  const isLibraryActive = location.pathname === '/library';
+  const isMyBooksActive = location.pathname === '/my-books';
+  const showTabs = isLibraryActive || isMyBooksActive;
 
   return (
-    <nav className="bg-background border-b h-14">
-      <div className="container max-w-7xl mx-auto px-4 h-full">
-        <div className="flex flex-row items-center h-full gap-4">
-          {/* Left spacer to help with centering */}
-          <div className="w-[120px] shrink-0" />
+    <>
+      <nav className="bg-background border-b h-14">
+        <div className="container max-w-7xl mx-auto px-4 h-full">
+          <div className="flex flex-row items-center h-full gap-4">
+            {/* Left spacer to help with centering */}
+            <div className="w-[120px] shrink-0" />
 
-          {/* Center content */}
-          <div className="flex-1 flex justify-center min-w-0">
-            {isBookRoute ? (
-              <Breadcrumb>
-                <BreadcrumbList className="flex flex-row items-center space-x-1 min-w-0">
-                  {showBackButton && (
-                    <BreadcrumbItem className="shrink-0">
-                      <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
-                        <ArrowLeft className="h-4 w-4" />
-                      </Button>
-                    </BreadcrumbItem>
-                  )}
-                  <BreadcrumbItem className="flex items-center min-w-0">
-                    <Link 
-                      className="text-blue-500 hover:text-blue-600  transition-colors font-medium shrink-0" 
-                      to={`/my-books`}
-                    >
-                      <Library className="h-5 w-5" />
-                    </Link>
-                    <span className="mx-2 text-muted-foreground shrink-0">›</span>
-                    {isPageRoute ? (
-                      <>
-                        <Link 
-                          className="text-blue-500 hover:text-blue-600 transition-colors font-medium truncate max-w-[120px] md:max-w-[200px]"
-                          to={`/book/${location.pathname.split('/')[2]}`}
-                        >
-                          {bookName}
-                        </Link>
-                        <span className="mx-2 text-muted-foreground shrink-0">›</span>
-                        <span className="text-foreground font-medium truncate max-w-[120px] md:max-w-[200px]">
-                          {pageName}
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        {isBookEditRoute ? (
-                          <>
-                            <Link 
-                              className="text-blue-500 hover:text-blue-600 transition-colors font-medium truncate max-w-[300px]"
-                              to={`/book/${location.pathname.split('/')[2]}`}
-                            >
-                              {bookName}
-                            </Link>
-                            <span className="mx-2 text-muted-foreground shrink-0">›</span>
-                            <span className="text-foreground font-medium">Edit Book</span>
-                          </>
-                        ) : isNewBookRoute ? (
-                          <span className="text-foreground font-medium">New Book</span>
-                        ) : (
-                          <span className="text-foreground font-medium truncate max-w-[300px]">{bookName}</span>
-                        )}
-                      </>
+            {/* Center content */}
+            <div className="flex-1 flex justify-center min-w-0">
+              {isBookRoute ? (
+                <Breadcrumb>
+                  <BreadcrumbList className="flex flex-row items-center space-x-1 min-w-0">
+                    {showBackButton && (
+                      <BreadcrumbItem className="shrink-0">
+                        <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
+                          <ArrowLeft className="h-4 w-4" />
+                        </Button>
+                      </BreadcrumbItem>
                     )}
-                  </BreadcrumbItem>
-                </BreadcrumbList>
-              </Breadcrumb>
-            ) : (
-              <Link to={`/`}>
-                <span className="text-lg font-semibold text-foreground">Pensive</span>
-              </Link>
-            )}
-          </div>
-
-          {/* Right actions - using fixed width to match left spacer */}
-          <div className="w-[120px] flex items-center gap-2 justify-end shrink-0">
-            {showLibraryLink && (
-              <Link 
-                to="/library" 
-                className="hidden sm:flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
-              >
-                <Store className="h-4 w-4" />
-                <span>Library</span>
-              </Link>
-            )}
-
-            {/* Desktop buttons */}
-            <div className="hidden sm:flex items-center gap-2">
-              {isBookRoute && (
-                <Button variant="ghost" size="icon" onClick={() => setSearchOpen(true)}>
-                  <Search className="h-4 w-4" />
-                </Button>
-              )}
-              <Button variant="ghost" size="icon" onClick={toggleTheme}>
-                {theme === "light" ? (
-                  <Moon className="h-4 w-4" />
-                ) : (
-                  <Sun className="h-4 w-4" />
-                )}
-              </Button> 
-              {isAuthenticated ? (
-                <Button variant="ghost" size="icon" onClick={handleLogout}>
-                  <LogOut className="h-4 w-4" />
-                </Button>
+                    <BreadcrumbItem className="flex items-center min-w-0">
+                      <Link 
+                        className="text-blue-500 hover:text-blue-600  transition-colors font-medium shrink-0" 
+                        to={`/my-books`}
+                      >
+                        <Library className="h-5 w-5" />
+                      </Link>
+                      <span className="mx-2 text-muted-foreground shrink-0">›</span>
+                      {isPageRoute ? (
+                        <>
+                          <Link 
+                            className="text-blue-500 hover:text-blue-600 transition-colors font-medium truncate max-w-[120px] md:max-w-[200px]"
+                            to={`/book/${location.pathname.split('/')[2]}`}
+                          >
+                            {bookName}
+                          </Link>
+                          <span className="mx-2 text-muted-foreground shrink-0">›</span>
+                          <span className="text-foreground font-medium truncate max-w-[120px] md:max-w-[200px]">
+                            {pageName}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          {isBookEditRoute ? (
+                            <>
+                              <Link 
+                                className="text-blue-500 hover:text-blue-600 transition-colors font-medium truncate max-w-[300px]"
+                                to={`/book/${location.pathname.split('/')[2]}`}
+                              >
+                                {bookName}
+                              </Link>
+                              <span className="mx-2 text-muted-foreground shrink-0">›</span>
+                              <span className="text-foreground font-medium">Edit Book</span>
+                            </>
+                          ) : isNewBookRoute ? (
+                            <span className="text-foreground font-medium">New Book</span>
+                          ) : (
+                            <span className="text-foreground font-medium truncate max-w-[300px]">{bookName}</span>
+                          )}
+                        </>
+                      )}
+                    </BreadcrumbItem>
+                  </BreadcrumbList>
+                </Breadcrumb>
               ) : (
-                <Button variant="ghost" size="icon" onClick={handleLogin}>
-                  <LogIn className="h-4 w-4" />
-                </Button>
+                <Link to={`/`}>
+                  <span className="text-lg font-semibold text-foreground">Pensive</span>
+                </Link>
               )}
             </div>
 
-            {/* Mobile menu */}
-            <div className="sm:hidden">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon">
-                    <MoreVertical className="h-4 w-4" />
+            {/* Right actions - using fixed width to match left spacer */}
+            <div className="w-[120px] flex items-center gap-2 justify-end shrink-0">
+              {/* Desktop buttons */}
+              <div className="hidden sm:flex items-center gap-2">
+                {isBookRoute && (
+                  <Button variant="ghost" size="icon" onClick={() => setSearchOpen(true)}>
+                    <Search className="h-4 w-4" />
                   </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  {showLibraryLink && (
-                    <DropdownMenuItem asChild>
-                      <Link to="/library" className="flex items-center gap-2 w-full">
-                        <Store className="h-4 w-4" />
-                        <span>Library</span>
-                      </Link>
-                    </DropdownMenuItem>
-                  )}
-                  {isBookRoute && (
-                    <DropdownMenuItem onClick={() => setSearchOpen(true)}>
-                      <Search className="h-4 w-4 mr-2" />
-                      <span>Search</span>
-                    </DropdownMenuItem>
-                  )}
-                  <DropdownMenuItem onClick={toggleTheme}>
-                    {theme === "light" ? (
-                      <>
-                        <Moon className="h-4 w-4 mr-2" />
-                        <span>Dark mode</span>
-                      </>
-                    ) : (
-                      <>
-                        <Sun className="h-4 w-4 mr-2" />
-                        <span>Light mode</span>
-                      </>
-                    )}
-                  </DropdownMenuItem>
-                  {isAuthenticated ? (
-                    <DropdownMenuItem onClick={handleLogout}>
-                      <LogOut className="h-4 w-4 mr-2" />
-                      <span>Logout</span>
-                    </DropdownMenuItem>
+                )}
+                <Button variant="ghost" size="icon" onClick={toggleTheme}>
+                  {theme === "light" ? (
+                    <Moon className="h-4 w-4" />
                   ) : (
-                    <DropdownMenuItem onClick={handleLogin}>
-                      <LogIn className="h-4 w-4 mr-2" />
-                      <span>Login</span>
-                    </DropdownMenuItem>
+                    <Sun className="h-4 w-4" />
                   )}
-                </DropdownMenuContent>
-              </DropdownMenu>
+                </Button> 
+                {isAuthenticated ? (
+                  <Button variant="ghost" size="icon" onClick={handleLogout}>
+                    <LogOut className="h-4 w-4" />
+                  </Button>
+                ) : (
+                  <Button variant="ghost" size="icon" onClick={handleLogin}>
+                    <LogIn className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+
+              {/* Mobile menu */}
+              <div className="sm:hidden">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon">
+                      <MoreVertical className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {isBookRoute && (
+                      <DropdownMenuItem onClick={() => setSearchOpen(true)}>
+                        <Search className="h-4 w-4 mr-2" />
+                        <span>Search</span>
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem onClick={toggleTheme}>
+                      {theme === "light" ? (
+                        <>
+                          <Moon className="h-4 w-4 mr-2" />
+                          <span>Dark mode</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sun className="h-4 w-4 mr-2" />
+                          <span>Light mode</span>
+                        </>
+                      )}
+                    </DropdownMenuItem>
+                    {isAuthenticated ? (
+                      <DropdownMenuItem onClick={handleLogout}>
+                        <LogOut className="h-4 w-4 mr-2" />
+                        <span>Logout</span>
+                      </DropdownMenuItem>
+                    ) : (
+                      <DropdownMenuItem onClick={handleLogin}>
+                        <LogIn className="h-4 w-4 mr-2" />
+                        <span>Login</span>
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <SearchDialog 
-        open={searchOpen} 
-        onOpenChange={setSearchOpen}
-      />
-    </nav>
+        <SearchDialog 
+          open={searchOpen} 
+          onOpenChange={setSearchOpen}
+        />
+      </nav>
+
+      {/* Tabs below top nav */}
+      {showTabs && (
+        <div className="bg-background border-b">
+          <div className="container max-w-7xl mx-auto">
+            <div className="flex space-x-4">
+              <Link
+                to="/my-books"
+                className={cn(
+                  "px-4 py-2 text-sm font-medium transition-colors relative",
+                  isMyBooksActive ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+                  isMyBooksActive && "after:absolute after:bottom-0 after:left-0 after:w-full after:h-0.5 after:bg-foreground"
+                )}
+              >
+                My Books
+              </Link>
+              <Link
+                to="/library"
+                className={cn(
+                  "px-4 py-2 text-sm font-medium transition-colors relative",
+                  isLibraryActive ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+                  isLibraryActive && "after:absolute after:bottom-0 after:left-0 after:w-full after:h-0.5 after:bg-foreground"
+                )}
+              >
+                Library
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
