@@ -1,6 +1,7 @@
 import { Database } from '@/types/supabase';
 import { supabase } from '@/integrations/supabase/client';
 import { generateEPUB } from './epub';
+import { prepareEPUBContent, EPUBOptions } from './epub-generator';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 
@@ -21,7 +22,7 @@ interface GenerateResult {
   };
 }
 
-// Process HTML content for PDF/EPUB
+// Process HTML content for PDF
 const processContent = (html: string): string => {
   if (!html) return '';
   
@@ -71,7 +72,6 @@ export const generatePDF = async (
 
     // Create a temporary container for rendering
     const container = document.createElement('div');
-    container.style.visibility = 'hidden';
     container.style.position = 'absolute';
     container.style.left = '-9999px';
     container.style.width = '794px'; // A4 width in pixels at 96 DPI
@@ -80,20 +80,38 @@ export const generatePDF = async (
     // Function to add a page to PDF
     const addPageToPDF = async (content: string) => {
       container.innerHTML = content;
+
+      // Wait for images to load
+      const images = container.getElementsByTagName('img');
+      await Promise.all(
+        Array.from(images).map(
+          img => 
+            new Promise((resolve, reject) => {
+              if (img.complete) resolve(null);
+              img.onload = () => resolve(null);
+              img.onerror = reject;
+            })
+        )
+      );
+
       const canvas = await html2canvas(container, {
         scale: 2,
         useCORS: true,
         logging: false,
         allowTaint: true,
-        backgroundColor: '#ffffff'
+        backgroundColor: '#ffffff',
+        windowWidth: 794,
+        windowHeight: 1123 // A4 height in pixels at 96 DPI
       });
 
       const imgData = canvas.toDataURL('image/jpeg', 1.0);
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
       
+      if (pdf.getNumberOfPages() > 0) {
+        pdf.addPage();
+      }
       pdf.addImage(imgData, 'JPEG', 0, 0, pageWidth, pageHeight);
-      pdf.addPage();
     };
 
     // Add cover page
@@ -105,11 +123,12 @@ export const generatePDF = async (
             line-height: 1.5;
             color: #333;
             padding: 40px;
-            min-height: 100vh;
+            min-height: 1123px;
             box-sizing: border-box;
+            background: white;
           }
           .cover-page {
-            height: 100vh;
+            min-height: 1043px;
             display: flex;
             flex-direction: column;
             justify-content: center;
@@ -119,6 +138,7 @@ export const generatePDF = async (
           .cover-image {
             max-width: 70%;
             margin-bottom: 30px;
+            display: block;
           }
           .book-title {
             font-size: 48px;
@@ -149,11 +169,12 @@ export const generatePDF = async (
                 line-height: 1.5;
                 color: #333;
                 padding: 40px;
-                min-height: 100vh;
+                min-height: 1123px;
                 box-sizing: border-box;
+                background: white;
               }
               .section-page {
-                height: 100vh;
+                min-height: 1043px;
                 display: flex;
                 align-items: center;
                 justify-content: center;
@@ -179,7 +200,9 @@ export const generatePDF = async (
                 line-height: 1.5;
                 color: #333;
                 padding: 40px;
+                min-height: 1123px;
                 box-sizing: border-box;
+                background: white;
               }
               .page-title {
                 font-size: 24px;
@@ -194,10 +217,15 @@ export const generatePDF = async (
                 height: auto !important;
                 page-break-inside: avoid;
                 margin: 10px 0;
+                display: block;
               }
               pre, code {
                 white-space: pre-wrap;
                 word-wrap: break-word;
+                background: #f5f5f5;
+                padding: 0.2em 0.4em;
+                border-radius: 3px;
+                font-family: monospace;
               }
               table {
                 width: 100%;
@@ -224,9 +252,6 @@ export const generatePDF = async (
         `);
       }
     }
-
-    // Remove the last blank page
-    pdf.deletePage(pdf.getNumberOfPages());
 
     // Clean up
     document.body.removeChild(container);
@@ -274,53 +299,16 @@ export const generateAndDownloadEPUB = async (
 ): Promise<GenerateResult> => {
   try {
     const pages = await fetchBookPages(options.bookId);
+    const { processedPages, images } = await prepareEPUBContent(pages);
 
-    // Process and download images
-    const imagePromises = pages.flatMap(page => 
-      extractImageUrls(page.html_content || '').map(async url => ({
-        url,
-        blob: await downloadImage(url)
-      }))
-    );
+    const epubOptions: EPUBOptions = {
+      title: options.name,
+      author: options.author || undefined,
+      language: 'en',
+      coverUrl: options.coverUrl
+    };
 
-    const images = (await Promise.all(imagePromises))
-      .filter(img => img.blob !== null)
-      .map((img, index) => ({
-        id: `img-${index}`,
-        url: img.url,
-        blob: img.blob as Blob
-      }));
-
-    // Create image map for replacement
-    const imageMap = new Map(images.map(img => [img.url, img.id]));
-
-    // Process pages and replace image URLs with IDs
-    const processedPages = pages.map(page => ({
-      ...page,
-      html_content: page.html_content 
-        ? processContent(page.html_content).replace(
-            /<img[^>]+src="([^"]+)"[^>]*>/g,
-            (match, url) => {
-              const imgId = imageMap.get(url);
-              return imgId 
-                ? match.replace(url, `images/${imgId}`) 
-                : match;
-            }
-          )
-        : null,
-      page_type: page.page_type as 'section' | 'page'
-    }));
-
-    const epubBlob = await generateEPUB(
-      {
-        title: options.name,
-        author: options.author || undefined,
-        language: 'en',
-        coverUrl: options.coverUrl
-      },
-      processedPages,
-      images
-    );
+    const epubBlob = await generateEPUB(epubOptions, processedPages, images);
 
     const url = window.URL.createObjectURL(epubBlob);
     const a = document.createElement('a');
