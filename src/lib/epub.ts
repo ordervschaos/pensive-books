@@ -128,8 +128,10 @@ export const generateContentXhtml = (metadata: EPUBMetadata, pages: Page[], show
     <div class="cover-overlay"></div>
     ${show_text_on_cover ? `
       <div class="cover-content">
-        <h1 class="book-title">${escapeXml(metadata.title)}</h1>
-        ${metadata.subtitle ? `<h2 class="book-subtitle">${escapeXml(metadata.subtitle)}</h2>` : ''}
+        <div class="title-group">
+          <h1 class="book-title">${escapeXml(metadata.title)}</h1>
+          ${metadata.subtitle ? `<h2 class="book-subtitle">${escapeXml(metadata.subtitle)}</h2>` : ''}
+        </div>
         ${metadata.author ? `<h3 class="book-author">by ${escapeXml(metadata.author)}</h3>` : ''}
       </div>
     ` : ''}
@@ -137,8 +139,10 @@ export const generateContentXhtml = (metadata: EPUBMetadata, pages: Page[], show
   ` : `
   <div class="cover-page">
     ${show_text_on_cover ? `
-      <h1 class="book-title">${escapeXml(metadata.title)}</h1>
-      ${metadata.subtitle ? `<h2 class="book-subtitle">${escapeXml(metadata.subtitle)}</h2>` : ''}
+      <div class="title-group">
+        <h1 class="book-title">${escapeXml(metadata.title)}</h1>
+        ${metadata.subtitle ? `<h2 class="book-subtitle">${escapeXml(metadata.subtitle)}</h2>` : ''}
+      </div>
       ${metadata.author ? `<h3 class="book-author">by ${escapeXml(metadata.author)}</h3>` : ''}
     ` : ''}
   </div>
@@ -194,7 +198,11 @@ body {
   left: 0;
   right: 0;
   bottom: 0;
-  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.7));
+  background: linear-gradient(to bottom, 
+    rgba(0, 0, 0, 0.4) 0%,
+    rgba(0, 0, 0, 0.6) 50%,
+    rgba(0, 0, 0, 0.8) 100%
+  );
   z-index: 1;
 }
 
@@ -202,32 +210,47 @@ body {
   position: relative;
   z-index: 2;
   padding: 2em;
-  width: 80%;
-  max-width: 600px;
+  width: 85%;
+  max-width: 800px;
+  display: flex;
+  flex-direction: column;
+  gap: 2em;
+}
+
+.title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5em;
 }
 
 .book-title {
-  font-size: 2.5em;
+  font-size: 3.2em;
   font-weight: bold;
-  margin: 0.5em 0;
+  margin: 0;
   color: #fff;
   text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+  line-height: 1.2;
+  letter-spacing: -0.02em;
 }
 
 .book-subtitle {
   font-size: 1.8em;
-  color: #fff;
-  margin: 0.5em 0;
-  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+  color: rgba(255, 255, 255, 0.9);
+  margin: 0;
   font-weight: normal;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+  line-height: 1.4;
+  font-style: italic;
 }
 
 .book-author {
-  font-size: 1.5em;
-  color: #fff;
-  margin: 0.5em 0 2em;
-  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+  font-size: 1.4em;
+  color: rgba(255, 255, 255, 0.95);
+  margin: 0;
   font-weight: normal;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .section-page {
