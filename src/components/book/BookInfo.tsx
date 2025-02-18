@@ -47,6 +47,7 @@ export const BookInfo = ({
     const result = await generateAndDownloadEPUB({ 
       bookId, 
       name, 
+      subtitle,
       author,
       coverUrl,
       showTextOnCover

@@ -15,6 +15,7 @@ interface EPUBImage {
 
 interface EPUBMetadata {
   title: string;
+  subtitle?: string | null;
   author?: string | null;
   language?: string;
   identifier?: string;
@@ -71,6 +72,9 @@ export const generateContentOpf = (metadata: EPUBMetadata, images: EPUBImage[]):
 <package version="3.0" unique-identifier="BookId" xmlns="http://www.idpf.org/2007/opf">
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
     <dc:title>${escapeXml(metadata.title)}</dc:title>
+    ${metadata.subtitle ? `<meta property="title-type" refines="#title">main</meta>
+    <dc:title id="subtitle">${escapeXml(metadata.subtitle)}</dc:title>
+    <meta property="title-type" refines="#subtitle">subtitle</meta>` : ''}
     ${metadata.author ? `<dc:creator>${escapeXml(metadata.author)}</dc:creator>` : ''}
     <dc:language>${metadata.language || 'en'}</dc:language>
     <dc:identifier id="BookId">urn:uuid:${metadata.identifier || crypto.randomUUID()}</dc:identifier>
@@ -125,7 +129,8 @@ export const generateContentXhtml = (metadata: EPUBMetadata, pages: Page[], show
     ${show_text_on_cover ? `
       <div class="cover-content">
         <h1 class="book-title">${escapeXml(metadata.title)}</h1>
-        ${metadata.author ? `<h2 class="book-author">by ${escapeXml(metadata.author)}</h2>` : ''}
+        ${metadata.subtitle ? `<h2 class="book-subtitle">${escapeXml(metadata.subtitle)}</h2>` : ''}
+        ${metadata.author ? `<h3 class="book-author">by ${escapeXml(metadata.author)}</h3>` : ''}
       </div>
     ` : ''}
   </div>
@@ -133,7 +138,8 @@ export const generateContentXhtml = (metadata: EPUBMetadata, pages: Page[], show
   <div class="cover-page">
     ${show_text_on_cover ? `
       <h1 class="book-title">${escapeXml(metadata.title)}</h1>
-      ${metadata.author ? `<h2 class="book-author">by ${escapeXml(metadata.author)}</h2>` : ''}
+      ${metadata.subtitle ? `<h2 class="book-subtitle">${escapeXml(metadata.subtitle)}</h2>` : ''}
+      ${metadata.author ? `<h3 class="book-author">by ${escapeXml(metadata.author)}</h3>` : ''}
     ` : ''}
   </div>
   `}
@@ -208,11 +214,20 @@ body {
   text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
 }
 
+.book-subtitle {
+  font-size: 1.8em;
+  color: #fff;
+  margin: 0.5em 0;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+  font-weight: normal;
+}
+
 .book-author {
   font-size: 1.5em;
   color: #fff;
   margin: 0.5em 0 2em;
   text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+  font-weight: normal;
 }
 
 .section-page {
