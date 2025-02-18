@@ -27,7 +27,12 @@ export const BookInfo = ({
   const { toast } = useToast();
 
   const handleDownloadPDF = async () => {
-    const result = await generatePDF({ bookId, name, author });
+    const result = await generatePDF({ 
+      bookId, 
+      name, 
+      author,
+      coverUrl
+    });
     
     if (!result.success) {
       toast({
@@ -39,7 +44,12 @@ export const BookInfo = ({
   };
 
   const handleDownloadEPUB = async () => {
-    const result = await generateAndDownloadEPUB({ bookId, name, author });
+    const result = await generateAndDownloadEPUB({ 
+      bookId, 
+      name, 
+      author,
+      coverUrl
+    });
     
     if (result.success) {
       toast({
