@@ -95,7 +95,7 @@ export default function Landing() {
             How it Works
           </h2>
 
-          <div className="grid gap-12 md:grid-cols-2">
+          <div className="grid gap-12 md:grid-cols-2 lg:grid-cols-3">
             {[
               {
                 title: "1. Start your book",
@@ -116,6 +116,11 @@ export default function Landing() {
                 title: "4. Collaborate and Share",
                 desc: "Invite co-authors or share with readers.",
                 img: "/homepage_images/invite_as_many_people_as_you_want.png"
+              },
+              {
+                title: "5. Publish",
+                desc: "Just flip a switch to make your book public. It's that simple.",
+                img: "/homepage_images/publish.gif"
               }
             ].map((step, index) => (
               <div key={index} className="space-y-4">
