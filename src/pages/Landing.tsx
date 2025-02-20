@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Code, Book, Users, Rocket, Download, Server } from "lucide-react";
 import { motion, useScroll, useTransform } from "framer-motion";
-import { useRef } from "react";
+import { useRef, useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
 
 export default function Landing() {
   const navigate = useNavigate();
@@ -16,6 +17,16 @@ export default function Landing() {
   const opacity = useTransform(scrollYProgress, [0, 0.5], [1, 0]);
   const scale = useTransform(scrollYProgress, [0, 0.5], [1, 0.8]);
   const y = useTransform(scrollYProgress, [0, 0.5], [0, -100]);
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        navigate('/my-books', { replace: true });
+      }
+    };
+    checkAuth();
+  }, [navigate]);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background via-background/95 to-background relative overflow-hidden" ref={targetRef}>
