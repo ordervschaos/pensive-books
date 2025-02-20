@@ -132,19 +132,19 @@ export default function Landing() {
             </div>
 
             {/* Final Publishing Step */}
-            <div className="max-w-3xl mx-auto text-center space-y-6 border-t pt-16">
-              <h3 className="text-3xl font-medium text-primary">
+            <div className="max-w-3xl mx-auto text-center space-y-6 border-t pt-12">
+              <h3 className="text-3xl font-medium text-primary px-4">
                 5. Ready to Share? Just Hit Publish
               </h3>
-              <p className="text-lg text-muted-foreground">
+              <p className="text-lg text-muted-foreground px-4">
                 No complex process, no gatekeepers. Just flip a switch to make your book public. 
                 It's that simple.
               </p>
-              <div className="bg-card rounded-xl p-8 border">
+              <div className="bg-card rounded-xl p-4 md:p-8 border mx-4">
                 <img
                   src="/homepage_images/publish.gif"
                   alt="Publishing is as simple as flipping a switch"
-                  className="max-w-lg mx-auto rounded-lg"
+                  className="w-full max-w-lg mx-auto rounded-lg"
                 />
               </div>
             </div>
