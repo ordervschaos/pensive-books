@@ -95,44 +95,59 @@ export default function Landing() {
             How it Works
           </h2>
 
-          <div className="grid gap-12 md:grid-cols-2 lg:grid-cols-3">
-            {[
-              {
-                title: "1. Start your book",
-                desc: "Create a new book and customize its details.",
-                img: "/homepage_images/new_book.png"
-              },
-              {
-                title: "2. Write and Edit",
-                desc: "Use our powerful editor to write your content.",
-                img: "/homepage_images/editor_ui.png"
-              },
-              {
-                title: "3. Organize Your Book",
-                desc: "Structure your book with chapters and pages.",
-                img: "/homepage_images/book_page.png"
-              },
-              {
-                title: "4. Collaborate and Share",
-                desc: "Invite co-authors or share with readers.",
-                img: "/homepage_images/invite_as_many_people_as_you_want.png"
-              },
-              {
-                title: "5. Publish",
-                desc: "Just flip a switch to make your book public. It's that simple.",
-                img: "/homepage_images/publish.gif"
-              }
-            ].map((step, index) => (
-              <div key={index} className="space-y-4">
-                <h3 className="text-2xl font-medium text-primary">{step.title}</h3>
-                <p className="text-muted-foreground">{step.desc}</p>
+          <div className="space-y-16">
+            <div className="grid gap-12 md:grid-cols-2">
+              {[
+                {
+                  title: "1. Start your book",
+                  desc: "Create a new book and customize its details.",
+                  img: "/homepage_images/new_book.png"
+                },
+                {
+                  title: "2. Write and Edit",
+                  desc: "Use our powerful editor to write your content.",
+                  img: "/homepage_images/editor_ui.png"
+                },
+                {
+                  title: "3. Organize Your Book",
+                  desc: "Structure your book with chapters and pages.",
+                  img: "/homepage_images/book_page.png"
+                },
+                {
+                  title: "4. Collaborate and Share",
+                  desc: "Invite co-authors or share with readers.",
+                  img: "/homepage_images/invite_as_many_people_as_you_want.png"
+                }
+              ].map((step, index) => (
+                <div key={index} className="space-y-4">
+                  <h3 className="text-2xl font-medium text-primary">{step.title}</h3>
+                  <p className="text-muted-foreground">{step.desc}</p>
+                  <img
+                    src={step.img}
+                    alt={step.title}
+                    className="w-full rounded-lg border border-border"
+                  />
+                </div>
+              ))}
+            </div>
+
+            {/* Final Publishing Step */}
+            <div className="max-w-3xl mx-auto text-center space-y-6 border-t pt-16">
+              <h3 className="text-3xl font-medium text-primary">
+                5. Ready to Share? Just Hit Publish
+              </h3>
+              <p className="text-lg text-muted-foreground">
+                No complex process, no gatekeepers. Just flip a switch to make your book public. 
+                It's that simple.
+              </p>
+              <div className="bg-card rounded-xl p-8 border">
                 <img
-                  src={step.img}
-                  alt={step.title}
-                  className="w-full rounded-lg border border-border"
+                  src="/homepage_images/publish.gif"
+                  alt="Publishing is as simple as flipping a switch"
+                  className="max-w-lg mx-auto rounded-lg"
                 />
               </div>
-            ))}
+            </div>
           </div>
         </section>
 
