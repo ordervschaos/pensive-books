@@ -33,7 +33,7 @@ export default function Landing() {
               Pensive
             </h1>
             <p className="text-2xl md:text-3xl text-primary/90">
-              Write, Publish, and Share Your Books with Ease
+              Write, publish, and share your books with ease
             </p>
           </motion.div>
           <p className="text-lg text-muted-foreground">
@@ -58,7 +58,7 @@ export default function Landing() {
               onClick={() => navigate("/auth")}
               className="text-lg px-8 py-6"
             >
-              Start Writing
+              Start writing
             </Button>
             <Button 
               size="lg" 
@@ -66,7 +66,7 @@ export default function Landing() {
               onClick={() => navigate("/library")}
               className="text-lg px-8 py-6"
             >
-              Browse Library
+              Browse library
             </Button>
           </div>
         </div>
@@ -74,12 +74,12 @@ export default function Landing() {
         {/* Features Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {[
-            { icon: Book, title: "Write & Edit", desc: "Write, edit, and structure your book with ease" },
+            { icon: Book, title: "Write and edit", desc: "Write, edit, and structure your book with ease" },
             { icon: Code, title: "Customize", desc: "Customize covers, layouts, and content seamlessly" },
             { icon: Users, title: "Collaborate", desc: "Collaborate with co-authors or invite readers" },
             { icon: Rocket, title: "Publish", desc: "Publish instantly—no publisher, no gatekeepers" },
             { icon: Server, title: "Self-host or use our service", desc: "Host it yourself or use our hosted service" },
-            { icon: Download, title: "Download & Read offline", desc: "Download books in EPUB format" }
+            { icon: Download, title: "Download and read offline", desc: "Download books in EPUB format" }
           ].map((feature, index) => (
             <Card key={index} className="p-6 space-y-3">
               <feature.icon className="h-6 w-6 text-primary" />
@@ -92,7 +92,7 @@ export default function Landing() {
         {/* How it Works Section */}
         <section className="space-y-12">
           <h2 className="text-4xl font-serif font-bold text-primary text-center">
-            How it Works
+            How it works
           </h2>
 
           <div className="space-y-16">
@@ -104,17 +104,17 @@ export default function Landing() {
                   img: "/homepage_images/new_book.png"
                 },
                 {
-                  title: "2. Write and Edit",
+                  title: "2. Write and edit",
                   desc: "Use our powerful editor to write your content.",
                   img: "/homepage_images/editor_ui.png"
                 },
                 {
-                  title: "3. Organize Your Book",
+                  title: "3. Organize your book",
                   desc: "Structure your book with chapters and pages.",
                   img: "/homepage_images/book_page.png"
                 },
                 {
-                  title: "4. Collaborate and Share",
+                  title: "4. Collaborate and share",
                   desc: "Invite co-authors or share with readers.",
                   img: "/homepage_images/invite_as_many_people_as_you_want.png"
                 }
@@ -134,7 +134,7 @@ export default function Landing() {
             {/* Final Publishing Step */}
             <div className="max-w-3xl mx-auto text-center space-y-6 border-t pt-12">
               <h3 className="text-3xl font-medium text-primary px-4">
-                5. Ready to Share? Just Hit Publish
+                5. Ready to share? Just hit publish
               </h3>
               <p className="text-lg text-muted-foreground px-4">
                 No complex process, no gatekeepers. Just flip a switch to make your book public. 
@@ -161,7 +161,7 @@ export default function Landing() {
             className="inline-flex items-center gap-3 text-xl font-medium text-primary hover:text-primary/90"
           >
             <span>📖</span>
-            <span>Read the Complete Pensive Manual</span>
+            <span>Read the complete Pensive manual</span>
             <span>→</span>
           </a>
         </div>
@@ -170,7 +170,7 @@ export default function Landing() {
         <section className="space-y-12">
           <div className="text-center">
             <h2 className="text-4xl font-serif font-bold text-primary mb-4">
-              What Can You Publish on Pensive?
+              What can you publish on Pensive?
             </h2>
             <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
               If you've written it, it's ready for Pensive. No middlemen, no approval process—just publish.
@@ -181,17 +181,17 @@ export default function Landing() {
             {[
               {
                 icon: "📚",
-                title: "Fiction & Nonfiction",
+                title: "Fiction and nonfiction",
                 desc: "Novels, memoirs, essays, poetry, and more."
               },
               {
                 icon: "📖",
-                title: "Instruction Manuals",
+                title: "Instruction manuals",
                 desc: "Document your software, hardware, or workflows."
               },
               {
                 icon: "🖼️",
-                title: "Graphic Novels & Picture Books",
+                title: "Graphic novels and picture books",
                 desc: "Use images to tell compelling stories."
               }
             ].map((item, index) => (
@@ -207,7 +207,7 @@ export default function Landing() {
         {/* Open Source Section */}
         <section className="text-center border rounded-lg p-12 space-y-8">
           <h2 className="text-4xl font-serif font-bold text-primary">
-            Open-Source & Self-Hostable
+            Open-source and self-hostable
           </h2>
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
             Unlike closed platforms, Pensive is open-source, meaning you can host your own version, 
@@ -220,7 +220,7 @@ export default function Landing() {
               onClick={() => navigate("/auth")}
               className="text-lg px-8 py-6"
             >
-              Start Writing
+              Start writing
             </Button>
             <Button 
               size="lg" 
