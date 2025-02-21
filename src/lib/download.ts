@@ -1,4 +1,4 @@
-import { Database } from '@/types/supabase';
+import { Database } from '@/integrations/supabase/types';
 import { supabase } from '@/integrations/supabase/client';
 import { generateEPUB } from './epub';
 import { prepareEPUBContent, EPUBOptions } from './epub-generator';
@@ -65,204 +65,142 @@ export const generatePDF = async (
   try {
     const pages = await fetchBookPages(options.bookId);
     
-    // Initialize PDF
+    // Initialize PDF with A4 format
     const pdf = new jsPDF({
       unit: 'mm',
       format: 'a4',
       orientation: 'portrait'
     });
 
-    // Create a temporary container for rendering
-    const container = document.createElement('div');
-    container.style.position = 'absolute';
-    container.style.left = '-9999px';
-    container.style.width = '794px'; // A4 width in pixels at 96 DPI
-    document.body.appendChild(container);
-
-    // Function to add a page to PDF
-    const addPageToPDF = async (content: string) => {
-      container.innerHTML = content;
-
-      // Wait for images to load
-      const images = container.getElementsByTagName('img');
-      await Promise.all(
-        Array.from(images).map(
-          img => 
-            new Promise((resolve, reject) => {
-              if (img.complete) resolve(null);
-              img.onload = () => resolve(null);
-              img.onerror = reject;
-            })
-        )
-      );
-
-      const canvas = await html2canvas(container, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        allowTaint: true,
-        backgroundColor: '#ffffff',
-        windowWidth: 794,
-        windowHeight: 1123 // A4 height in pixels at 96 DPI
-      });
-
-      const imgData = canvas.toDataURL('image/jpeg', 1.0);
+    // Helper function to add page content
+    const addPage = (content: string) => {
+      // Calculate page dimensions
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 20; // 20mm margins
+      const contentWidth = pageWidth - (2 * margin);
       
-      if (pdf.getNumberOfPages() > 0) {
+      // Add content
+      pdf.setFont('helvetica');
+      pdf.setFontSize(11);
+      
+      const splitText = pdf.splitTextToSize(content, contentWidth);
+      let yPosition = margin;
+      
+      // Add new page if we're not at the beginning
+      if (pdf.internal.getCurrentPageInfo().pageNumber !== 1) {
         pdf.addPage();
       }
-      pdf.addImage(imgData, 'JPEG', 0, 0, pageWidth, pageHeight);
+      
+      // Add content with proper line breaks
+      splitText.forEach((line: string) => {
+        if (yPosition > pageHeight - margin) {
+          pdf.addPage();
+          yPosition = margin;
+        }
+        pdf.text(line, margin, yPosition);
+        yPosition += 7; // Line height
+      });
     };
 
     // Add cover page
-    await addPageToPDF(`
-      <div class="pdf-container">
-        <style>
-          .pdf-container {
-            font-family: system-ui, -apple-system, sans-serif;
-            line-height: 1.5;
-            color: #333;
-            padding: 40px;
-            min-height: 1123px;
-            box-sizing: border-box;
-            background: white;
-          }
-          .cover-page {
-            min-height: 1043px;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            text-align: center;
-          }
-          .cover-image {
-            max-width: 70%;
-            margin-bottom: 30px;
-            display: block;
-          }
-          .book-title {
-            font-size: 48px;
-            margin-bottom: 20px;
-            font-weight: bold;
-          }
-          .book-author {
-            font-size: 24px;
-            color: #666;
-          }
-        </style>
-        <div class="cover-page">
-          ${options.coverUrl ? `<img src="${options.coverUrl}" alt="Book cover" class="cover-image">` : ''}
-          <h1 class="book-title">${options.name}</h1>
-          ${options.author ? `<div class="book-author">by ${options.author}</div>` : ''}
-        </div>
-      </div>
-    `);
+    if (options.coverUrl) {
+      try {
+        const coverImg = await loadImage(options.coverUrl);
+        const coverAspectRatio = coverImg.height / coverImg.width;
+        const pageWidth = pdf.internal.pageSize.getWidth();
+        const maxHeight = pdf.internal.pageSize.getHeight() - 40; // Leave margin
+        let imgWidth = pageWidth - 40; // 20mm margins on each side
+        let imgHeight = imgWidth * coverAspectRatio;
 
-    // Add each page
-    for (const page of pages) {
-      if (page.page_type === 'section') {
-        await addPageToPDF(`
-          <div class="pdf-container">
-            <style>
-              .pdf-container {
-                font-family: system-ui, -apple-system, sans-serif;
-                line-height: 1.5;
-                color: #333;
-                padding: 40px;
-                min-height: 1123px;
-                box-sizing: border-box;
-                background: white;
-              }
-              .section-page {
-                min-height: 1043px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                text-align: center;
-              }
-              .section-title {
-                font-size: 36px;
-                font-weight: bold;
-                color: #333;
-              }
-            </style>
-            <div class="section-page">
-              <h1 class="section-title">${page.title || `Section ${page.page_index + 1}`}</h1>
-            </div>
-          </div>
-        `);
-      } else {
-        await addPageToPDF(`
-          <div class="pdf-container">
-            <style>
-              .pdf-container {
-                font-family: system-ui, -apple-system, sans-serif;
-                line-height: 1.5;
-                color: #333;
-                padding: 40px;
-                min-height: 1123px;
-                box-sizing: border-box;
-                background: white;
-              }
-              .page-title {
-                font-size: 24px;
-                margin-bottom: 20px;
-                font-weight: bold;
-              }
-              .page-content {
-                font-size: 16px;
-              }
-              img {
-                max-width: 100% !important;
-                height: auto !important;
-                page-break-inside: avoid;
-                margin: 10px 0;
-                display: block;
-              }
-              pre, code {
-                white-space: pre-wrap;
-                word-wrap: break-word;
-                background: #f5f5f5;
-                padding: 0.2em 0.4em;
-                border-radius: 3px;
-                font-family: monospace;
-              }
-              table {
-                width: 100%;
-                border-collapse: collapse;
-                margin: 10px 0;
-              }
-              th, td {
-                border: 1px solid #ddd;
-                padding: 8px;
-                text-align: left;
-              }
-              blockquote {
-                margin: 10px 0;
-                padding-left: 20px;
-                border-left: 4px solid #ddd;
-                color: #666;
-              }
-            </style>
-            <div class="page">
-              <div class="page-title">${page.title || `Page ${page.page_index + 1}`}</div>
-              <div class="page-content">${page.html_content ? processContent(page.html_content) : ''}</div>
-            </div>
-          </div>
-        `);
+        // Adjust if height exceeds page
+        if (imgHeight > maxHeight) {
+          imgHeight = maxHeight;
+          imgWidth = imgHeight / coverAspectRatio;
+        }
+
+        const xPos = (pageWidth - imgWidth) / 2;
+        pdf.addImage(coverImg, 'JPEG', xPos, 20, imgWidth, imgHeight);
+      } catch (error) {
+        console.warn('Failed to add cover image:', error);
       }
     }
 
-    // Clean up
-    document.body.removeChild(container);
+    // Add title page
+    pdf.addPage();
+    pdf.setFontSize(24);
+    pdf.setFont('helvetica', 'bold');
+    const titleWidth = pdf.getTextWidth(options.name);
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    pdf.text(options.name, (pageWidth - titleWidth) / 2, 60);
+
+    if (options.author) {
+      pdf.setFontSize(16);
+      pdf.setFont('helvetica', 'normal');
+      const authorText = `by ${options.author}`;
+      const authorWidth = pdf.getTextWidth(authorText);
+      pdf.text(authorText, (pageWidth - authorWidth) / 2, 80);
+    }
+
+    // Add table of contents
+    pdf.addPage();
+    pdf.setFontSize(20);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('Table of Contents', 20, 30);
+    
+    let tocY = 50;
+    const sections = pages.filter(p => p.page_type === 'section');
+    sections.forEach((section, index) => {
+      pdf.setFontSize(12);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(`${index + 1}. ${section.title || `Section ${index + 1}`}`, 25, tocY);
+      tocY += 10;
+    });
+
+    // Process and add each page
+    for (const page of pages) {
+      pdf.addPage();
+
+      if (page.page_type === 'section') {
+        // Section page
+        pdf.setFontSize(24);
+        pdf.setFont('helvetica', 'bold');
+        const title = page.title || `Section ${page.page_index + 1}`;
+        const titleWidth = pdf.getTextWidth(title);
+        pdf.text(title, (pageWidth - titleWidth) / 2, 60);
+      } else {
+        // Regular page
+        pdf.setFontSize(16);
+        pdf.setFont('helvetica', 'bold');
+        const title = page.title || `Page ${page.page_index + 1}`;
+        pdf.text(title, 20, 30);
+
+        // Convert HTML content to plain text and add it
+        if (page.html_content) {
+          const plainText = stripHtmlAndFormatText(page.html_content);
+          pdf.setFontSize(11);
+          pdf.setFont('helvetica', 'normal');
+          const splitText = pdf.splitTextToSize(plainText, pageWidth - 40);
+          let yPosition = 50;
+
+          splitText.forEach((line: string) => {
+            if (yPosition > pdf.internal.pageSize.getHeight() - 20) {
+              pdf.addPage();
+              yPosition = 20;
+            }
+            pdf.text(line, 20, yPosition);
+            yPosition += 7;
+          });
+        }
+      }
+    }
 
     // Save PDF
     pdf.save(`${options.name}.pdf`);
 
     return { success: true };
   } catch (error) {
+    console.error('Error generating PDF:', error);
     return {
       success: false,
       error: {
@@ -271,6 +209,41 @@ export const generatePDF = async (
       }
     };
   }
+};
+
+// Helper function to strip HTML and format text
+const stripHtmlAndFormatText = (html: string): string => {
+  const temp = document.createElement('div');
+  temp.innerHTML = html;
+  
+  // Handle lists
+  temp.querySelectorAll('li').forEach(li => {
+    li.textContent = `• ${li.textContent}`;
+  });
+  
+  // Handle headers
+  temp.querySelectorAll('h1,h2,h3,h4,h5,h6').forEach(header => {
+    header.textContent = `\n${header.textContent}\n`;
+  });
+  
+  // Handle paragraphs
+  temp.querySelectorAll('p').forEach(p => {
+    p.textContent = `${p.textContent}\n`;
+  });
+  
+  // Remove remaining HTML tags and decode entities
+  return temp.textContent || temp.innerText || '';
+};
+
+// Helper function to load images
+const loadImage = (url: string): Promise<HTMLImageElement> => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = url;
+  });
 };
 
 // Download and process images for EPUB
