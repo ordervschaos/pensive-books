@@ -1,9 +1,10 @@
+
 import { 
   Card,
   CardHeader 
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ImageIcon, Download, Book } from "lucide-react";
+import { ImageIcon, Download, FileText } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { generatePDF, generateAndDownloadEPUB } from "@/lib/download";
 
@@ -39,6 +40,11 @@ export const BookInfo = ({
         variant: "destructive",
         title: "Error generating PDF",
         description: result.error?.message
+      });
+    } else {
+      toast({
+        title: "PDF Generated",
+        description: "Your book has been downloaded as PDF"
       });
     }
   };
@@ -111,6 +117,14 @@ export const BookInfo = ({
             >
               <Download className="h-4 w-4 mr-2" />
               Download EPUB
+            </Button>
+            <Button
+              onClick={handleDownloadPDF}
+              variant="outline"
+              className="w-full text-xs sm:text-sm"
+            >
+              <FileText className="h-4 w-4 mr-2" />
+              Download PDF
             </Button>
           </div>
         </CardHeader>

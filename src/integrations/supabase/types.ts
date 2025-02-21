@@ -52,7 +52,6 @@ export type Database = {
       }
       books: {
         Row: {
-          is_archived: boolean | null
           author: string | null
           book_id: number | null
           bookmarked_page_index: number | null
@@ -60,6 +59,7 @@ export type Database = {
           created_at: string | null
           digest_bookmarked_page_index: number | null
           id: number
+          is_archived: boolean | null
           is_public: boolean | null
           last_published_at: string | null
           last_read: string | null
@@ -74,7 +74,6 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
-          is_archived?: boolean | null
           author?: string | null
           book_id?: number | null
           bookmarked_page_index?: number | null
@@ -82,6 +81,7 @@ export type Database = {
           created_at?: string | null
           digest_bookmarked_page_index?: number | null
           id?: number
+          is_archived?: boolean | null
           is_public?: boolean | null
           last_published_at?: string | null
           last_read?: string | null
@@ -96,7 +96,6 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
-          is_archived?: boolean | null
           author?: string | null
           book_id?: number | null
           bookmarked_page_index?: number | null
@@ -104,6 +103,7 @@ export type Database = {
           created_at?: string | null
           digest_bookmarked_page_index?: number | null
           id?: number
+          is_archived?: boolean | null
           is_public?: boolean | null
           last_published_at?: string | null
           last_read?: string | null
