@@ -357,13 +357,57 @@ export const generatePDF = async (
     // Add table of contents
     pdf.addPage();
     pdf.setFont('times', 'bold');
-    pdf.setFontSize(24); // Increased from 20
+    pdf.setFontSize(24);
     pdf.text('Table of Contents', margin, margin + 20);
 
     let tocY = margin + 60;
     let currentSection = '';
     let sectionCount = 0;
     let pageCount = 0;
+    let pdfPageCount = options.coverUrl ? 1 : 0; // Start at 1 if there's a cover, 0 if not
+    const tocPageNumbers: { [key: string]: number } = {}; // Store page numbers for each entry
+
+    // First pass: calculate PDF page numbers for each content page
+    pdfPageCount++; // Add one for TOC page
+    
+    for (const page of pages) {
+      pdfPageCount++; // Each content page starts on a new page
+      tocPageNumbers[page.id] = pdfPageCount; // Store the page number before processing content
+
+      if (page.page_type === 'page' && page.html_content) {
+        // Process content to count potential page breaks
+        const contentData = processHtmlContent(page.html_content);
+        let y = margin + 45; // Initial y position after title
+
+        // Calculate height needed for content
+        for (const line of contentData.lines) {
+          if (line.trim()) {
+            const wrappedLines = pdf.splitTextToSize(line, contentWidth);
+            y += wrappedLines.length * baseLineHeight;
+          } else {
+            y += paragraphSpacing;
+          }
+
+          // Check for images and add their height
+          const imageToInsert = contentData.images.find(img => img.afterLine === contentData.lines.indexOf(line));
+          if (imageToInsert) {
+            // Estimate image height (this is approximate since we don't have the actual image yet)
+            const estimatedHeight = pageHeight * 0.5; // Assume average image height
+            y += estimatedHeight + paragraphSpacing;
+          }
+
+          // If content exceeds page height, increment page count
+          if (y > pageHeight - margin) {
+            pdfPageCount++;
+            y = margin;
+          }
+        }
+      }
+    }
+
+    // Reset for actual TOC generation
+    pdfPageCount = options.coverUrl ? 1 : 0;
+    pdfPageCount++; // Add one for TOC page
 
     // Process pages for TOC
     pages.forEach((page, index) => {
@@ -372,22 +416,56 @@ export const generatePDF = async (
         tocY = margin + 20;
       }
 
+      const pageNum = tocPageNumbers[page.id];
+      
       if (page.page_type === 'section') {
         // Add section with larger font and bold
         sectionCount++;
         currentSection = page.title || `Section ${sectionCount}`;
         pdf.setFont('times', 'bold');
-        pdf.setFontSize(18); // Increased from 14
+        pdf.setFontSize(18);
+        
+        // Add section text
         pdf.text(`${sectionCount}. ${currentSection}`, margin, tocY);
-        tocY += 30; // Increased from 25
+        
+        // Add page number
+        const pageNumText = pageNum.toString();
+        const pageNumWidth = pdf.getStringUnitWidth(pageNumText) * pdf.getFontSize();
+        pdf.text(pageNumText, pageWidth - margin - pageNumWidth, tocY);
+        
+        // Add link
+        pdf.link(margin, tocY - 15, pageWidth - (2 * margin), 20, { pageNumber: pageNum });
+        
+        tocY += 30;
       } else {
         // Add page under current section with smaller font and indentation
         pageCount++;
         pdf.setFont('times', 'normal');
-        pdf.setFontSize(14); // Increased from 12
+        pdf.setFontSize(14);
         const title = page.title || `Page ${pageCount}`;
+        
+        // Add title text
         pdf.text(`${title}`, margin + 20, tocY);
-        tocY += 25; // Increased from 20
+        
+        // Add dotted line
+        const titleWidth = pdf.getStringUnitWidth(title) * pdf.getFontSize();
+        const pageNumText = pageNum.toString();
+        const pageNumWidth = pdf.getStringUnitWidth(pageNumText) * pdf.getFontSize();
+        const dotsStart = margin + 20 + titleWidth + 10;
+        const dotsEnd = pageWidth - margin - pageNumWidth - 10;
+        
+        pdf.setFont('times', 'normal');
+        for (let x = dotsStart; x < dotsEnd; x += 5) {
+          pdf.text('.', x, tocY);
+        }
+        
+        // Add page number
+        pdf.text(pageNumText, pageWidth - margin - pageNumWidth, tocY);
+        
+        // Add link
+        pdf.link(margin + 20, tocY - 15, pageWidth - (2 * margin) - 20, 20, { pageNumber: pageNum });
+        
+        tocY += 25;
       }
     });
 
@@ -396,17 +474,38 @@ export const generatePDF = async (
       pdf.addPage();
       let y = margin;
 
-      // Add page title
-      pdf.setFont('times', 'bold');
-      pdf.setFontSize(20); // Increased from 16
-      const title = page.title || `Page ${page.page_index + 1}`;
-      pdf.text(title, margin, y);
-      y += 45; // Increased from 40
-
       if (page.page_type === 'section') {
-        // Section page - only show title
+        // Section page - center title both vertically and horizontally
+        pdf.setFont('times', 'bold');
+        pdf.setFontSize(32); // Larger font for section pages
+        const title = page.title || `Section ${sectionCount + 1}`;
+        
+        // Split title into lines if it's too long
+        const titleLines = pdf.splitTextToSize(title, contentWidth);
+        
+        // Calculate total height of all lines
+        const lineHeight = 40;
+        const totalHeight = titleLines.length * lineHeight;
+        
+        // Center vertically
+        const centerY = (pageHeight - totalHeight) / 2;
+        
+        // Add each line centered
+        titleLines.forEach((line, index) => {
+          const textWidth = pdf.getStringUnitWidth(line) * pdf.getFontSize();
+          const centerX = (pageWidth - textWidth) / 2;
+          pdf.text(line, centerX, centerY + (index * lineHeight));
+        });
+        
         continue;
       }
+
+      // Regular page title
+      pdf.setFont('times', 'bold');
+      pdf.setFontSize(20);
+      const title = page.title || `Page ${page.page_index + 1}`;
+      pdf.text(title, margin, y);
+      y += 45;
 
       // Process content
       pdf.setFont('times', 'normal');
