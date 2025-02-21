@@ -197,45 +197,116 @@ export const generatePDF = async (
       try {
         const coverImg = await loadImage(options.coverUrl);
         const coverAspectRatio = coverImg.height / coverImg.width;
-        let imgWidth = pageWidth - (2 * margin);
+        
+        // Make image cover the entire page
+        let imgWidth = pageWidth;
         let imgHeight = imgWidth * coverAspectRatio;
 
-        // Adjust if height exceeds page
-        if (imgHeight > pageHeight - (2 * margin)) {
-          imgHeight = pageHeight - (2 * margin);
+        // If height is too short, scale by height instead
+        if (imgHeight < pageHeight) {
+          imgHeight = pageHeight;
           imgWidth = imgHeight / coverAspectRatio;
         }
 
+        // Center the image if it's wider than the page
         const xPos = (pageWidth - imgWidth) / 2;
-        const yPos = (pageHeight - imgHeight) / 2;
+        const yPos = 0; // Start from top of page
+
+        // Add the cover image
         pdf.addImage(coverImg, 'JPEG', xPos, yPos, imgWidth, imgHeight);
+
+        // Always add dark overlay for better text visibility
+        pdf.setFillColor(0, 0, 0);
+        pdf.setGlobalAlpha(0.6);
+        pdf.rect(0, 0, pageWidth, pageHeight, 'F');
+        pdf.setGlobalAlpha(1);
+
+        // Add title text
+        pdf.setTextColor(255, 255, 255);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(36);
+
+        const titleLines = pdf.splitTextToSize(options.name, pageWidth * 0.8);
+        let textY = pageHeight * 0.4;
+
+        // Center and add title lines
+        titleLines.forEach(line => {
+          const textWidth = pdf.getStringUnitWidth(line) * pdf.getFontSize();
+          const textX = (pageWidth - textWidth) / 2;
+          pdf.text(line, textX, textY);
+          textY += 50;
+        });
+
+        // Add subtitle if available
+        if (options.subtitle) {
+          textY += 20;
+          pdf.setFontSize(24);
+          pdf.setFont('helvetica', 'italic');
+          const subtitleLines = pdf.splitTextToSize(options.subtitle, pageWidth * 0.8);
+          subtitleLines.forEach(line => {
+            const textWidth = pdf.getStringUnitWidth(line) * pdf.getFontSize();
+            const textX = (pageWidth - textWidth) / 2;
+            pdf.text(line, textX, textY);
+            textY += 35;
+          });
+        }
+
+        // Add author if available
+        if (options.author) {
+          textY += 40;
+          pdf.setFontSize(20);
+          pdf.setFont('helvetica', 'normal');
+          const authorText = `by ${options.author}`;
+          const textWidth = pdf.getStringUnitWidth(authorText) * pdf.getFontSize();
+          const textX = (pageWidth - textWidth) / 2;
+          pdf.text(authorText, textX, textY);
+        }
       } catch (error) {
         console.warn('Failed to add cover image:', error);
       }
-    }
+    } else {
+      // If no cover image, create a plain dark background cover
+      pdf.setFillColor(20, 20, 20); // Dark background
+      pdf.rect(0, 0, pageWidth, pageHeight, 'F');
 
-    // Add title page
-    pdf.addPage();
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(24);
+      // Add title text
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(36);
 
-    const titleLines = pdf.splitTextToSize(options.name, contentWidth);
-    let yPos = 150;
-    
-    titleLines.forEach((line: string) => {
-      const textWidth = pdf.getStringUnitWidth(line) * pdf.getFontSize();
-      const xPos = (pageWidth - textWidth) / 2;
-      pdf.text(line, xPos, yPos);
-      yPos += 30;
-    });
+      const titleLines = pdf.splitTextToSize(options.name, pageWidth * 0.8);
+      let textY = pageHeight * 0.4;
 
-    if (options.author) {
-      yPos += 20;
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(16);
-      const authorText = `by ${options.author}`;
-      const authorWidth = pdf.getStringUnitWidth(authorText) * pdf.getFontSize();
-      pdf.text(authorText, (pageWidth - authorWidth) / 2, yPos);
+      // Center and add title lines
+      titleLines.forEach(line => {
+        const textWidth = pdf.getStringUnitWidth(line) * pdf.getFontSize();
+        const textX = (pageWidth - textWidth) / 2;
+        pdf.text(line, textX, textY);
+        textY += 50;
+      });
+
+      if (options.subtitle) {
+        textY += 20;
+        pdf.setFontSize(24);
+        pdf.setFont('helvetica', 'italic');
+        const subtitleLines = pdf.splitTextToSize(options.subtitle, pageWidth * 0.8);
+        subtitleLines.forEach(line => {
+          const textWidth = pdf.getStringUnitWidth(line) * pdf.getFontSize();
+          const textX = (pageWidth - textWidth) / 2;
+          pdf.text(line, textX, textY);
+          textY += 35;
+        });
+      }
+
+      if (options.author) {
+        textY += 40;
+        pdf.setFontSize(20);
+        pdf.setFont('helvetica', 'normal');
+        const authorText = `by ${options.author}`;
+        const textWidth = pdf.getStringUnitWidth(authorText) * pdf.getFontSize();
+        const textX = (pageWidth - textWidth) / 2;
+        pdf.text(authorText, textX, textY);
+      }
     }
 
     // Add table of contents
@@ -245,17 +316,34 @@ export const generatePDF = async (
     pdf.text('Table of Contents', margin, margin + 20);
 
     let tocY = margin + 60;
-    const sections = pages.filter(p => p.page_type === 'section');
-    
-    sections.forEach((section, index) => {
+    let currentSection = '';
+    let sectionCount = 0;
+    let pageCount = 0;
+
+    // Process pages for TOC
+    pages.forEach((page, index) => {
       if (tocY > pageHeight - margin) {
         pdf.addPage();
         tocY = margin + 20;
       }
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(12);
-      pdf.text(`${index + 1}. ${section.title || `Section ${index + 1}`}`, margin, tocY);
-      tocY += 20;
+
+      if (page.page_type === 'section') {
+        // Add section with larger font and bold
+        sectionCount++;
+        currentSection = page.title || `Section ${sectionCount}`;
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(14);
+        pdf.text(`${sectionCount}. ${currentSection}`, margin, tocY);
+        tocY += 25;
+      } else {
+        // Add page under current section with smaller font and indentation
+        pageCount++;
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(12);
+        const title = page.title || `Page ${pageCount}`;
+        pdf.text(`${title}`, margin + 20, tocY);
+        tocY += 20;
+      }
     });
 
     // Process each page

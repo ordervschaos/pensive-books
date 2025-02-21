@@ -82,14 +82,19 @@ export const generateContentOpf = (metadata: EPUBMetadata, images: EPUBImage[]):
   </metadata>
   <manifest>
     <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
     <item id="content" href="content.xhtml" media-type="application/xhtml+xml"/>
     <item id="css" href="styles.css" media-type="text/css"/>
     ${metadata.coverUrl ? '<item id="cover" href="cover.jpg" media-type="image/jpeg" properties="cover-image"/>' : ''}
     ${images.map(img => `<item id="${img.id}" href="images/${img.id}" media-type="${img.blob.type}"/>`).join('\n    ')}
   </manifest>
-  <spine>
+  <spine toc="ncx">
+    <itemref idref="nav"/>
     <itemref idref="content"/>
   </spine>
+  <guide>
+    <reference type="toc" title="Table of Contents" href="nav.xhtml"/>
+  </guide>
 </package>`;
 
 // Generate nav.xhtml content
@@ -97,7 +102,7 @@ export const generateNavXhtml = (pages: Page[]): string => `<?xml version="1.0" 
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
 <head>
-  <title>Navigation</title>
+  <title>Table of Contents</title>
   <meta charset="UTF-8"/>
   <link rel="stylesheet" type="text/css" href="styles.css"/>
 </head>
@@ -105,13 +110,102 @@ export const generateNavXhtml = (pages: Page[]): string => `<?xml version="1.0" 
   <nav epub:type="toc" id="toc">
     <h1>Table of Contents</h1>
     <ol>
-      ${pages.map((page, index) => `
-        <li><a href="content.xhtml#page${index}">${escapeXml(page.title || 'Untitled')}</a></li>
-      `).join('\n')}
+      ${(() => {
+        let currentSection = '';
+        let sectionCount = 0;
+        let pageCount = 0;
+        let html = '';
+
+        pages.forEach((page, index) => {
+          if (page.page_type === 'section') {
+            // Close previous section's nested list if exists
+            if (currentSection) {
+              html += '</ol></li>';
+            }
+            // Start new section
+            sectionCount++;
+            currentSection = page.title || `Section ${sectionCount}`;
+            html += `
+              <li>
+                <a href="content.xhtml#page${index}">${escapeXml(currentSection)}</a>
+                <ol>`;
+          } else {
+            // Add page under current section
+            pageCount++;
+            const title = page.title || `Page ${pageCount}`;
+            html += `
+              <li>
+                <a href="content.xhtml#page${index}">${escapeXml(title)}</a>
+              </li>`;
+          }
+        });
+
+        // Close last section if exists
+        if (currentSection) {
+          html += '</ol></li>';
+        }
+
+        return html;
+      })()}
     </ol>
   </nav>
 </body>
 </html>`;
+
+// Generate NCX content for backward compatibility
+export const generateTocNcx = (metadata: EPUBMetadata, pages: Page[]): string => `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE ncx PUBLIC "-//NISO//DTD ncx 2005-1//EN" "http://www.daisy.org/z3986/2005/ncx-2005-1.dtd">
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+  <head>
+    <meta name="dtb:uid" content="urn:uuid:${metadata.identifier || crypto.randomUUID()}"/>
+    <meta name="dtb:depth" content="2"/>
+    <meta name="dtb:totalPageCount" content="0"/>
+    <meta name="dtb:maxPageNumber" content="0"/>
+  </head>
+  <docTitle>
+    <text>${escapeXml(metadata.title)}</text>
+  </docTitle>
+  ${metadata.author ? `<docAuthor><text>${escapeXml(metadata.author)}</text></docAuthor>` : ''}
+  <navMap>
+    ${(() => {
+      let currentSection = '';
+      let sectionCount = 0;
+      let pageCount = 0;
+      let playOrder = 1;
+      let navPoints = '';
+
+      pages.forEach((page, index) => {
+        if (page.page_type === 'section') {
+          sectionCount++;
+          currentSection = page.title || `Section ${sectionCount}`;
+          navPoints += `
+            <navPoint id="section${sectionCount}" playOrder="${playOrder++}">
+              <navLabel>
+                <text>${escapeXml(currentSection)}</text>
+              </navLabel>
+              <content src="content.xhtml#page${index}"/>`;
+        } else {
+          pageCount++;
+          const title = page.title || `Page ${pageCount}`;
+          navPoints += `
+            <navPoint id="page${pageCount}" playOrder="${playOrder++}">
+              <navLabel>
+                <text>${escapeXml(title)}</text>
+              </navLabel>
+              <content src="content.xhtml#page${index}"/>
+            </navPoint>`;
+        }
+      });
+
+      // Close any open section navPoints
+      if (currentSection) {
+        navPoints += '</navPoint>';
+      }
+
+      return navPoints;
+    })()}
+  </navMap>
+</ncx>`;
 
 // Generate content.xhtml content
 export const generateContentXhtml = (metadata: EPUBMetadata, pages: Page[], show_text_on_cover: boolean = true): string => `<?xml version="1.0" encoding="UTF-8"?>
@@ -359,6 +453,7 @@ export const generateEPUB = async (
   // Add OEBPS directory
   zip.file('OEBPS/content.opf', generateContentOpf(metadata, images));
   zip.file('OEBPS/nav.xhtml', generateNavXhtml(pages));
+  zip.file('OEBPS/toc.ncx', generateTocNcx(metadata, pages));
   zip.file('OEBPS/content.xhtml', generateContentXhtml(metadata, pages, show_text_on_cover));
   zip.file('OEBPS/styles.css', generateStyles());
 
