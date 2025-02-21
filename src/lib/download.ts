@@ -189,8 +189,8 @@ export const generatePDF = async (
     const pageHeight = pdf.internal.pageSize.height;
     const margin = 50; // 50pt margins
     const contentWidth = pageWidth - (2 * margin);
-    const baseLineHeight = 16; // Base line height
-    const paragraphSpacing = 24; // Space between paragraphs
+    const baseLineHeight = 20; // Increased from 16 for better readability
+    const paragraphSpacing = 30; // Increased from 24 for better spacing
 
     // Add cover page if available
     if (options.coverUrl) {
@@ -223,8 +223,8 @@ export const generatePDF = async (
 
         // Add title text with white color and ensure it's on top
         pdf.setTextColor(255, 255, 255);
-        pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(36);
+        pdf.setFont('helvetica', 'bold'); // Keep Helvetica for cover - it looks better
+        pdf.setFontSize(42); // Increased from 36
 
         const titleLines = pdf.splitTextToSize(options.name, pageWidth * 0.8);
         let textY = pageHeight * 0.4;
@@ -242,13 +242,13 @@ export const generatePDF = async (
           pdf.setTextColor(255, 255, 255);
           pdf.text(line, textX, textY);
           
-          textY += 50;
+          textY += 60; // Increased from 50
         });
 
         // Add subtitle if available
         if (options.subtitle) {
-          textY += 20;
-          pdf.setFontSize(24);
+          textY += 25; // Increased from 20
+          pdf.setFontSize(28); // Increased from 24
           pdf.setFont('helvetica', 'italic');
           const subtitleLines = pdf.splitTextToSize(options.subtitle, pageWidth * 0.8);
           subtitleLines.forEach(line => {
@@ -263,14 +263,14 @@ export const generatePDF = async (
             pdf.setTextColor(255, 255, 255);
             pdf.text(line, textX, textY);
             
-            textY += 35;
+            textY += 40; // Increased from 35
           });
         }
 
         // Add author if available
         if (options.author) {
-          textY += 40;
-          pdf.setFontSize(20);
+          textY += 45; // Increased from 40
+          pdf.setFontSize(24); // Increased from 20
           pdf.setFont('helvetica', 'normal');
           const authorText = `by ${options.author}`;
           const textWidth = pdf.getStringUnitWidth(authorText) * pdf.getFontSize();
@@ -339,9 +339,8 @@ export const generatePDF = async (
 
     // Add table of contents
     pdf.addPage();
-    pdf.setTextColor(0, 0, 0); // Reset text color to black for content pages
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(20);
+    pdf.setFont('times', 'bold');
+    pdf.setFontSize(24); // Increased from 20
     pdf.text('Table of Contents', margin, margin + 20);
 
     let tocY = margin + 60;
@@ -360,18 +359,18 @@ export const generatePDF = async (
         // Add section with larger font and bold
         sectionCount++;
         currentSection = page.title || `Section ${sectionCount}`;
-        pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(14);
+        pdf.setFont('times', 'bold');
+        pdf.setFontSize(18); // Increased from 14
         pdf.text(`${sectionCount}. ${currentSection}`, margin, tocY);
-        tocY += 25;
+        tocY += 30; // Increased from 25
       } else {
         // Add page under current section with smaller font and indentation
         pageCount++;
-        pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(12);
+        pdf.setFont('times', 'normal');
+        pdf.setFontSize(14); // Increased from 12
         const title = page.title || `Page ${pageCount}`;
         pdf.text(`${title}`, margin + 20, tocY);
-        tocY += 20;
+        tocY += 25; // Increased from 20
       }
     });
 
@@ -381,11 +380,11 @@ export const generatePDF = async (
       let y = margin;
 
       // Add page title
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(16);
+      pdf.setFont('times', 'bold');
+      pdf.setFontSize(20); // Increased from 16
       const title = page.title || `Page ${page.page_index + 1}`;
       pdf.text(title, margin, y);
-      y += 40;
+      y += 45; // Increased from 40
 
       if (page.page_type === 'section') {
         // Section page - only show title
@@ -393,8 +392,8 @@ export const generatePDF = async (
       }
 
       // Process content
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(12);
+      pdf.setFont('times', 'normal');
+      pdf.setFontSize(14); // Increased from 12
 
       let contentLines: string[] = [];
       if (page.html_content) {
