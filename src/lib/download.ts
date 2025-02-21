@@ -4,9 +4,10 @@ import { supabase } from '@/integrations/supabase/client';
 import { generateEPUB } from './epub';
 import { prepareEPUBContent, EPUBOptions } from './epub-generator';
 import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
 
-type Page = Database['public']['Tables']['pages']['Row'];
+type Page = Database['public']['Tables']['pages']['Row'] & {
+  page_type: 'section' | 'page';
+};
 
 interface DownloadOptions {
   bookId: number;
@@ -25,7 +26,18 @@ interface GenerateResult {
   };
 }
 
-const fetchBookPages = async (bookId: number) => {
+// Helper function to load images
+const loadImage = (url: string): Promise<HTMLImageElement> => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = url;
+  });
+};
+
+const fetchBookPages = async (bookId: number): Promise<Page[]> => {
   const { data: pages, error } = await supabase
     .from("pages")
     .select("*")
@@ -37,7 +49,7 @@ const fetchBookPages = async (bookId: number) => {
     throw new Error(`Failed to fetch pages: ${error.message}`);
   }
 
-  return pages;
+  return (pages || []) as Page[];
 };
 
 // Process HTML content to extract formatted text
@@ -51,9 +63,9 @@ const processHtmlContent = (html: string): string[] => {
   
   // Process headings
   div.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach(heading => {
-    lines.push(''); // Add space before heading
-    lines.push(heading.textContent || '');
-    lines.push(''); // Add space after heading
+    lines.push('\n'); // Add space before heading
+    lines.push(heading.textContent?.trim() || '');
+    lines.push('\n'); // Add space after heading
   });
 
   // Process paragraphs
@@ -61,45 +73,34 @@ const processHtmlContent = (html: string): string[] => {
     const text = p.textContent?.trim();
     if (text) {
       lines.push(text);
-      lines.push(''); // Add blank line after paragraph
+      lines.push('\n'); // Add blank line after paragraph
     }
   });
 
   // Process lists
   div.querySelectorAll('ul, ol').forEach(list => {
-    lines.push(''); // Add space before list
+    lines.push('\n'); // Add space before list
     list.querySelectorAll('li').forEach(li => {
       lines.push(`• ${li.textContent?.trim()}`);
+      lines.push('\n');
     });
-    lines.push(''); // Add space after list
   });
 
   // Process blockquotes
   div.querySelectorAll('blockquote').forEach(quote => {
-    lines.push('');
+    lines.push('\n');
     lines.push(`"${quote.textContent?.trim()}"`);
-    lines.push('');
+    lines.push('\n');
   });
 
   // Process code blocks
   div.querySelectorAll('pre, code').forEach(code => {
-    lines.push('');
+    lines.push('\n');
     lines.push(code.textContent?.trim() || '');
-    lines.push('');
+    lines.push('\n');
   });
 
   return lines.filter(line => line !== undefined);
-};
-
-// Helper function to load images
-const loadImage = (url: string): Promise<HTMLImageElement> => {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => resolve(img);
-    img.onerror = reject;
-    img.src = url;
-  });
 };
 
 export const generatePDF = async (
@@ -269,17 +270,6 @@ const stripHtmlAndFormatText = (html: string): string => {
   return temp.textContent || temp.innerText || '';
 };
 
-// Helper function to load images
-const loadImage = (url: string): Promise<HTMLImageElement> => {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => resolve(img);
-    img.onerror = reject;
-    img.src = url;
-  });
-};
-
 // Download and process images for EPUB
 const downloadImage = async (url: string): Promise<Blob | null> => {
   try {
@@ -340,158 +330,3 @@ export const generateAndDownloadEPUB = async (
     };
   }
 };
-
-const examplePageContent= {
-  "type": "doc",
-  "content": [
-    {
-      "type": "heading",
-      "attrs": {
-        "level": "[object Object]"
-      },
-      "content": [
-        {
-          "text": "Organize your book",
-          "type": "text"
-        }
-      ]
-    },
-    {
-      "type": "paragraph"
-    },
-    {
-      "type": "paragraph",
-      "content": [
-        {
-          "text": "Sections",
-          "type": "text",
-          "marks": [
-            {
-              "type": "bold"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "type": "paragraph",
-      "content": [
-        {
-          "text": "From the book page, you can add sections to structure your content.",
-          "type": "text"
-        }
-      ]
-    },
-    {
-      "type": "paragraph"
-    },
-    {
-      "type": "image",
-      "attrs": {
-        "alt": null,
-        "src": "https://qiqeyirtpstdjkkeyfss.supabase.co/storage/v1/object/public/images/178a3b0e-a9ec-4291-8829-f27b857dbd4c.png",
-        "title": null
-      }
-    },
-    {
-      "type": "paragraph"
-    },
-    {
-      "type": "paragraph"
-    },
-    {
-      "type": "paragraph",
-      "content": [
-        {
-          "text": "Re-order",
-          "type": "text",
-          "marks": [
-            {
-              "type": "bold"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "type": "paragraph",
-      "content": [
-        {
-          "text": "You can re-order the pages and sections by entering the ",
-          "type": "text"
-        },
-        {
-          "text": "Re-order Mode.",
-          "type": "text",
-          "marks": [
-            {
-              "type": "italic"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "type": "paragraph"
-    },
-    {
-      "type": "image",
-      "attrs": {
-        "alt": null,
-        "src": "https://qiqeyirtpstdjkkeyfss.supabase.co/storage/v1/object/public/images/ea8b77a2-56f3-4757-acd9-e69b84fc4272.gif",
-        "title": null
-      }
-    },
-    {
-      "type": "paragraph"
-    },
-    {
-      "type": "paragraph"
-    },
-    {
-      "type": "paragraph",
-      "content": [
-        {
-          "text": "Delete",
-          "type": "text",
-          "marks": [
-            {
-              "type": "bold"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "type": "paragraph",
-      "content": [
-        {
-          "text": "You can delete book from the ",
-          "type": "text"
-        },
-        {
-          "text": "Delete Mode.",
-          "type": "text",
-          "marks": [
-            {
-              "type": "italic"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "type": "paragraph"
-    },
-    {
-      "type": "image",
-      "attrs": {
-        "alt": null,
-        "src": "https://qiqeyirtpstdjkkeyfss.supabase.co/storage/v1/object/public/images/2f8a3a9d-7090-447a-bdce-9cb5e052fd4b.gif",
-        "title": null
-      }
-    }
-  ]
-}
-
-const examplePageContentHTML = `<h1 class="font-bold" level="[object Object]">Organize your book</h1><p></p><p><strong>Sections</strong></p><p>From the book page, you can add sections to structure your content.</p><p></p><img class="max-w-full h-auto rounded-lg preserve-animation mx-auto block" src="https://qiqeyirtpstdjkkeyfss.supabase.co/storage/v1/object/public/images/178a3b0e-a9ec-4291-8829-f27b857dbd4c.png"><p></p><p></p><p><strong>Re-order</strong></p><p>You can re-order the pages and sections by entering the <em>Re-order Mode.</em></p><p></p><img class="max-w-full h-auto rounded-lg preserve-animation mx-auto block" src="https://qiqeyirtpstdjkkeyfss.supabase.co/storage/v1/object/public/images/ea8b77a2-56f3-4757-acd9-e69b84fc4272.gif"><p></p><p></p><p><strong>Delete</strong></p><p>You can delete book from the <em>Delete Mode.</em></p><p></p><img class="max-w-full h-auto rounded-lg preserve-animation mx-auto block" src="https://qiqeyirtpstdjkkeyfss.supabase.co/storage/v1/object/public/images/2f8a3a9d-7090-447a-bdce-9cb5e052fd4b.gif">`
