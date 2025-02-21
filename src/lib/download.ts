@@ -215,13 +215,13 @@ export const generatePDF = async (
         // Add the cover image
         pdf.addImage(coverImg, 'JPEG', xPos, yPos, imgWidth, imgHeight);
 
-        // Always add dark overlay for better text visibility
+        // Add a single light overlay for better text visibility
         pdf.setFillColor(0, 0, 0);
-        pdf.setGlobalAlpha(0.6);
+        pdf.setGState(new pdf.GState({ opacity: 0.4 }));
         pdf.rect(0, 0, pageWidth, pageHeight, 'F');
-        pdf.setGlobalAlpha(1);
+        pdf.setGState(new pdf.GState({ opacity: 1 }));
 
-        // Add title text
+        // Add title text with white color and ensure it's on top
         pdf.setTextColor(255, 255, 255);
         pdf.setFont('helvetica', 'bold');
         pdf.setFontSize(36);
@@ -229,11 +229,19 @@ export const generatePDF = async (
         const titleLines = pdf.splitTextToSize(options.name, pageWidth * 0.8);
         let textY = pageHeight * 0.4;
 
-        // Center and add title lines
+        // Center and add title lines with slight shadow effect for better visibility
         titleLines.forEach(line => {
           const textWidth = pdf.getStringUnitWidth(line) * pdf.getFontSize();
           const textX = (pageWidth - textWidth) / 2;
+          
+          // Add shadow effect
+          pdf.setTextColor(0, 0, 0);
+          pdf.text(line, textX + 2, textY + 2);
+          
+          // Add main text
+          pdf.setTextColor(255, 255, 255);
           pdf.text(line, textX, textY);
+          
           textY += 50;
         });
 
@@ -246,7 +254,15 @@ export const generatePDF = async (
           subtitleLines.forEach(line => {
             const textWidth = pdf.getStringUnitWidth(line) * pdf.getFontSize();
             const textX = (pageWidth - textWidth) / 2;
+            
+            // Add shadow effect
+            pdf.setTextColor(0, 0, 0);
+            pdf.text(line, textX + 1, textY + 1);
+            
+            // Add main text
+            pdf.setTextColor(255, 255, 255);
             pdf.text(line, textX, textY);
+            
             textY += 35;
           });
         }
@@ -259,8 +275,16 @@ export const generatePDF = async (
           const authorText = `by ${options.author}`;
           const textWidth = pdf.getStringUnitWidth(authorText) * pdf.getFontSize();
           const textX = (pageWidth - textWidth) / 2;
+          
+          // Add shadow effect
+          pdf.setTextColor(0, 0, 0);
+          pdf.text(authorText, textX + 1, textY + 1);
+          
+          // Add main text
+          pdf.setTextColor(255, 255, 255);
           pdf.text(authorText, textX, textY);
         }
+
       } catch (error) {
         console.warn('Failed to add cover image:', error);
       }
@@ -269,7 +293,7 @@ export const generatePDF = async (
       pdf.setFillColor(20, 20, 20); // Dark background
       pdf.rect(0, 0, pageWidth, pageHeight, 'F');
 
-      // Add title text
+      // Add title text with white color
       pdf.setTextColor(255, 255, 255);
       pdf.setFont('helvetica', 'bold');
       pdf.setFontSize(36);
@@ -309,8 +333,13 @@ export const generatePDF = async (
       }
     }
 
+    // Reset text color and opacity for content pages
+    pdf.setTextColor(0, 0, 0);
+    pdf.setGState(new pdf.GState({ opacity: 1 }));
+
     // Add table of contents
     pdf.addPage();
+    pdf.setTextColor(0, 0, 0); // Reset text color to black for content pages
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(20);
     pdf.text('Table of Contents', margin, margin + 20);
