@@ -203,11 +203,15 @@ export const generatePDF = async (
 
     const pageWidth = pdf.internal.pageSize.width;
     const pageHeight = pdf.internal.pageSize.height;
-    const margin = 50; // 50pt margins
+    const margin = 50;
     const contentWidth = pageWidth - (2 * margin);
     const baseLineHeight = 20;
     const paragraphSpacing = 30;
-    const maxImageHeight = pageHeight * 0.7; // Maximum 70% of page height for images
+    const maxImageHeight = pageHeight * 0.7;
+
+    // Store actual page numbers for TOC
+    const tocPageNumbers: { [key: string]: number } = {};
+    let currentPdfPage = 0;
 
     // Add cover page if available
     if (options.coverUrl) {
@@ -302,6 +306,7 @@ export const generatePDF = async (
           pdf.text(authorText, textX, textY);
         }
 
+        currentPdfPage++;
       } catch (error) {
         console.warn('Failed to add cover image:', error);
       }
@@ -354,143 +359,32 @@ export const generatePDF = async (
     pdf.setTextColor(0, 0, 0);
     pdf.setGState(new pdf.GState({ opacity: 1 }));
 
-    // Add table of contents
+    // Add TOC placeholder page - we'll come back to fill it later
     pdf.addPage();
-    pdf.setFont('times', 'bold');
-    pdf.setFontSize(24);
-    pdf.text('Table of Contents', margin, margin + 20);
+    currentPdfPage++;
+    const tocPageNumber = currentPdfPage;
 
-    let tocY = margin + 60;
-    let currentSection = '';
-    let sectionCount = 0;
-    let pageCount = 0;
-    let pdfPageCount = options.coverUrl ? 1 : 0; // Start at 1 if there's a cover, 0 if not
-    const tocPageNumbers: { [key: string]: number } = {}; // Store page numbers for each entry
-
-    // First pass: calculate PDF page numbers for each content page
-    pdfPageCount++; // Add one for TOC page
-    
-    for (const page of pages) {
-      pdfPageCount++; // Each content page starts on a new page
-      tocPageNumbers[page.id] = pdfPageCount; // Store the page number before processing content
-
-      if (page.page_type === 'page' && page.html_content) {
-        // Process content to count potential page breaks
-        const contentData = processHtmlContent(page.html_content);
-        let y = margin + 45; // Initial y position after title
-
-        // Calculate height needed for content
-        for (const line of contentData.lines) {
-          if (line.trim()) {
-            const wrappedLines = pdf.splitTextToSize(line, contentWidth);
-            y += wrappedLines.length * baseLineHeight;
-          } else {
-            y += paragraphSpacing;
-          }
-
-          // Check for images and add their height
-          const imageToInsert = contentData.images.find(img => img.afterLine === contentData.lines.indexOf(line));
-          if (imageToInsert) {
-            // Estimate image height (this is approximate since we don't have the actual image yet)
-            const estimatedHeight = pageHeight * 0.5; // Assume average image height
-            y += estimatedHeight + paragraphSpacing;
-          }
-
-          // If content exceeds page height, increment page count
-          if (y > pageHeight - margin) {
-            pdfPageCount++;
-            y = margin;
-          }
-        }
-      }
-    }
-
-    // Reset for actual TOC generation
-    pdfPageCount = options.coverUrl ? 1 : 0;
-    pdfPageCount++; // Add one for TOC page
-
-    // Process pages for TOC
-    pages.forEach((page, index) => {
-      if (tocY > pageHeight - margin) {
-        pdf.addPage();
-        tocY = margin + 20;
-      }
-
-      const pageNum = tocPageNumbers[page.id];
-      
-      if (page.page_type === 'section') {
-        // Add section with larger font and bold
-        sectionCount++;
-        currentSection = page.title || `Section ${sectionCount}`;
-        pdf.setFont('times', 'bold');
-        pdf.setFontSize(18);
-        
-        // Add section text
-        pdf.text(`${sectionCount}. ${currentSection}`, margin, tocY);
-        
-        // Add page number
-        const pageNumText = pageNum.toString();
-        const pageNumWidth = pdf.getStringUnitWidth(pageNumText) * pdf.getFontSize();
-        pdf.text(pageNumText, pageWidth - margin - pageNumWidth, tocY);
-        
-        // Add link
-        pdf.link(margin, tocY - 15, pageWidth - (2 * margin), 20, { pageNumber: pageNum });
-        
-        tocY += 30;
-      } else {
-        // Add page under current section with smaller font and indentation
-        pageCount++;
-        pdf.setFont('times', 'normal');
-        pdf.setFontSize(14);
-        const title = page.title || `Page ${pageCount}`;
-        
-        // Add title text
-        pdf.text(`${title}`, margin + 20, tocY);
-        
-        // Add dotted line
-        const titleWidth = pdf.getStringUnitWidth(title) * pdf.getFontSize();
-        const pageNumText = pageNum.toString();
-        const pageNumWidth = pdf.getStringUnitWidth(pageNumText) * pdf.getFontSize();
-        const dotsStart = margin + 20 + titleWidth + 10;
-        const dotsEnd = pageWidth - margin - pageNumWidth - 10;
-        
-        pdf.setFont('times', 'normal');
-        for (let x = dotsStart; x < dotsEnd; x += 5) {
-          pdf.text('.', x, tocY);
-        }
-        
-        // Add page number
-        pdf.text(pageNumText, pageWidth - margin - pageNumWidth, tocY);
-        
-        // Add link
-        pdf.link(margin + 20, tocY - 15, pageWidth - (2 * margin) - 20, 20, { pageNumber: pageNum });
-        
-        tocY += 25;
-      }
-    });
-
-    // Process each page
+    // First pass: Generate content and track actual page numbers
     for (const page of pages) {
       pdf.addPage();
+      currentPdfPage++;
+      
+      // Store the starting page number for this entry
+      tocPageNumbers[page.id] = currentPdfPage;
+
       let y = margin;
 
       if (page.page_type === 'section') {
         // Section page - center title both vertically and horizontally
         pdf.setFont('times', 'bold');
-        pdf.setFontSize(32); // Larger font for section pages
+        pdf.setFontSize(32);
         const title = page.title || `Section ${sectionCount + 1}`;
         
-        // Split title into lines if it's too long
         const titleLines = pdf.splitTextToSize(title, contentWidth);
-        
-        // Calculate total height of all lines
         const lineHeight = 40;
         const totalHeight = titleLines.length * lineHeight;
-        
-        // Center vertically
         const centerY = (pageHeight - totalHeight) / 2;
         
-        // Add each line centered
         titleLines.forEach((line, index) => {
           const textWidth = pdf.getStringUnitWidth(line) * pdf.getFontSize();
           const centerX = (pageWidth - textWidth) / 2;
@@ -519,15 +413,14 @@ export const generatePDF = async (
       // Add content with proper line breaks and images
       let lineCount = 0;
       for (const line of contentData.lines) {
-        // Check if there's an image to insert after this line
         const imageToInsert = contentData.images.find(img => img.afterLine === lineCount);
         
-        // Add the text line first
         if (line.trim()) {
           const wrappedLines = pdf.splitTextToSize(line, contentWidth);
           wrappedLines.forEach((textLine: string) => {
             if (y > pageHeight - margin) {
               pdf.addPage();
+              currentPdfPage++;
               y = margin;
             }
             const isIndented = textLine.startsWith('  ');
@@ -539,34 +432,26 @@ export const generatePDF = async (
           y += paragraphSpacing;
         }
 
-        // Insert image if present at this position
         if (imageToInsert) {
           try {
             const img = await loadImage(imageToInsert.url);
             
-            // Calculate image dimensions to fit within page width while maintaining aspect ratio
             let imgWidth = contentWidth;
             let imgHeight = (img.height / img.width) * imgWidth;
 
-            // If image height is too large, scale it down
             if (imgHeight > maxImageHeight) {
               imgHeight = maxImageHeight;
               imgWidth = (img.width / img.height) * imgHeight;
             }
 
-            // Check if we need a new page for the image
             if (y + imgHeight > pageHeight - margin) {
               pdf.addPage();
+              currentPdfPage++;
               y = margin;
             }
 
-            // Center the image horizontally
             const xPos = (pageWidth - imgWidth) / 2;
-            
-            // Add the image
             pdf.addImage(img, 'PNG', xPos, y, imgWidth, imgHeight);
-            
-            // Move position after image
             y += imgHeight + paragraphSpacing;
           } catch (error) {
             console.warn('Failed to add image to PDF:', error);
@@ -576,6 +461,74 @@ export const generatePDF = async (
         lineCount++;
       }
     }
+
+    // Go back to TOC page and generate it with correct page numbers
+    pdf.setPage(tocPageNumber);
+    pdf.setFont('times', 'bold');
+    pdf.setFontSize(24);
+    pdf.text('Table of Contents', margin, margin + 20);
+
+    let tocY = margin + 60;
+    let sectionCount = 0;
+    let pageCount = 0;
+
+    // Generate TOC with accurate page numbers
+    pages.forEach((page, index) => {
+      if (tocY > pageHeight - margin) {
+        pdf.addPage();
+        currentPdfPage++;
+        tocY = margin + 20;
+      }
+
+      const pageNum = tocPageNumbers[page.id];
+      
+      if (page.page_type === 'section') {
+        sectionCount++;
+        const title = page.title || `Section ${sectionCount}`;
+        pdf.setFont('times', 'bold');
+        pdf.setFontSize(18);
+        
+        // Add section text
+        pdf.text(`${sectionCount}. ${title}`, margin, tocY);
+        
+        // Add page number
+        const pageNumText = pageNum.toString();
+        const pageNumWidth = pdf.getStringUnitWidth(pageNumText) * pdf.getFontSize();
+        pdf.text(pageNumText, pageWidth - margin - pageNumWidth, tocY);
+        
+        // Add link
+        pdf.link(margin, tocY - 15, pageWidth - (2 * margin), 20, { pageNumber: pageNum });
+        
+        tocY += 30;
+      } else {
+        pageCount++;
+        pdf.setFont('times', 'normal');
+        pdf.setFontSize(14);
+        const title = page.title || `Page ${pageCount}`;
+        
+        // Add title text
+        pdf.text(`${title}`, margin + 20, tocY);
+        
+        // Add dotted line
+        const titleWidth = pdf.getStringUnitWidth(title) * pdf.getFontSize();
+        const pageNumText = pageNum.toString();
+        const pageNumWidth = pdf.getStringUnitWidth(pageNumText) * pdf.getFontSize();
+        const dotsStart = margin + 20 + titleWidth + 10;
+        const dotsEnd = pageWidth - margin - pageNumWidth - 10;
+        
+        for (let x = dotsStart; x < dotsEnd; x += 5) {
+          pdf.text('.', x, tocY);
+        }
+        
+        // Add page number
+        pdf.text(pageNumText, pageWidth - margin - pageNumWidth, tocY);
+        
+        // Add link
+        pdf.link(margin + 20, tocY - 15, pageWidth - (2 * margin) - 20, 20, { pageNumber: pageNum });
+        
+        tocY += 25;
+      }
+    });
 
     // Save PDF
     pdf.save(`${options.name}.pdf`);
