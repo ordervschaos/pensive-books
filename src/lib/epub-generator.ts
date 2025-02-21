@@ -1,4 +1,4 @@
-import { Database } from '@/types/supabase';
+import { Database } from '@/integrations/supabase/types';
 
 type Page = Database['public']['Tables']['pages']['Row'];
 
@@ -10,9 +10,11 @@ export interface EPUBImage {
 
 export interface EPUBOptions {
   title: string;
+  subtitle?: string | null;
   author?: string | null;
   language?: string;
   coverUrl?: string | null;
+  identifier?: string;
 }
 
 // Process HTML content for EPUB
@@ -101,4 +103,4 @@ export const prepareEPUBContent = async (
   }));
 
   return { processedPages, images };
-}; 
+};

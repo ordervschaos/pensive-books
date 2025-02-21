@@ -1,3 +1,4 @@
+
 import { Database } from '@/integrations/supabase/types';
 import { supabase } from '@/integrations/supabase/client';
 import { generateEPUB } from './epub';
@@ -24,26 +25,6 @@ interface GenerateResult {
   };
 }
 
-// Process HTML content for PDF
-const processContent = (html: string): string => {
-  if (!html) return '';
-  
-  // Create a temporary div to parse HTML
-  const div = document.createElement('div');
-  div.innerHTML = html;
-  
-  // Process images
-  div.querySelectorAll('img').forEach(img => {
-    img.setAttribute('style', 'max-width: 100%; height: auto; page-break-inside: avoid; margin: 10px 0;');
-    img.removeAttribute('class');
-  });
-
-  // Remove interactive elements
-  div.querySelectorAll('button, script').forEach(el => el.remove());
-  
-  return div.innerHTML;
-};
-
 const fetchBookPages = async (bookId: number) => {
   const { data: pages, error } = await supabase
     .from("pages")
@@ -59,68 +40,103 @@ const fetchBookPages = async (bookId: number) => {
   return pages;
 };
 
+// Process HTML content to extract formatted text
+const processHtmlContent = (html: string): string[] => {
+  if (!html) return [];
+
+  const div = document.createElement('div');
+  div.innerHTML = html;
+
+  const lines: string[] = [];
+  
+  // Process headings
+  div.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach(heading => {
+    lines.push(''); // Add space before heading
+    lines.push(heading.textContent || '');
+    lines.push(''); // Add space after heading
+  });
+
+  // Process paragraphs
+  div.querySelectorAll('p').forEach(p => {
+    const text = p.textContent?.trim();
+    if (text) {
+      lines.push(text);
+      lines.push(''); // Add blank line after paragraph
+    }
+  });
+
+  // Process lists
+  div.querySelectorAll('ul, ol').forEach(list => {
+    lines.push(''); // Add space before list
+    list.querySelectorAll('li').forEach(li => {
+      lines.push(`• ${li.textContent?.trim()}`);
+    });
+    lines.push(''); // Add space after list
+  });
+
+  // Process blockquotes
+  div.querySelectorAll('blockquote').forEach(quote => {
+    lines.push('');
+    lines.push(`"${quote.textContent?.trim()}"`);
+    lines.push('');
+  });
+
+  // Process code blocks
+  div.querySelectorAll('pre, code').forEach(code => {
+    lines.push('');
+    lines.push(code.textContent?.trim() || '');
+    lines.push('');
+  });
+
+  return lines.filter(line => line !== undefined);
+};
+
+// Helper function to load images
+const loadImage = (url: string): Promise<HTMLImageElement> => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = url;
+  });
+};
+
 export const generatePDF = async (
   options: DownloadOptions
 ): Promise<GenerateResult> => {
   try {
     const pages = await fetchBookPages(options.bookId);
     
-    // Initialize PDF with A4 format
+    // Initialize PDF
     const pdf = new jsPDF({
-      unit: 'mm',
+      unit: 'pt',
       format: 'a4',
       orientation: 'portrait'
     });
 
-    // Helper function to add page content
-    const addPage = (content: string) => {
-      // Calculate page dimensions
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      const margin = 20; // 20mm margins
-      const contentWidth = pageWidth - (2 * margin);
-      
-      // Add content
-      pdf.setFont('helvetica');
-      pdf.setFontSize(11);
-      
-      const splitText = pdf.splitTextToSize(content, contentWidth);
-      let yPosition = margin;
-      
-      // Add new page if we're not at the beginning
-      if (pdf.internal.getCurrentPageInfo().pageNumber !== 1) {
-        pdf.addPage();
-      }
-      
-      // Add content with proper line breaks
-      splitText.forEach((line: string) => {
-        if (yPosition > pageHeight - margin) {
-          pdf.addPage();
-          yPosition = margin;
-        }
-        pdf.text(line, margin, yPosition);
-        yPosition += 7; // Line height
-      });
-    };
+    const pageWidth = pdf.internal.pageSize.width;
+    const pageHeight = pdf.internal.pageSize.height;
+    const margin = 50; // 50pt margins
+    const contentWidth = pageWidth - (2 * margin);
 
-    // Add cover page
+    // Add cover page if available
     if (options.coverUrl) {
       try {
         const coverImg = await loadImage(options.coverUrl);
         const coverAspectRatio = coverImg.height / coverImg.width;
-        const pageWidth = pdf.internal.pageSize.getWidth();
-        const maxHeight = pdf.internal.pageSize.getHeight() - 40; // Leave margin
-        let imgWidth = pageWidth - 40; // 20mm margins on each side
+        let imgWidth = pageWidth - (2 * margin);
         let imgHeight = imgWidth * coverAspectRatio;
 
         // Adjust if height exceeds page
-        if (imgHeight > maxHeight) {
-          imgHeight = maxHeight;
+        if (imgHeight > pageHeight - (2 * margin)) {
+          imgHeight = pageHeight - (2 * margin);
           imgWidth = imgHeight / coverAspectRatio;
         }
 
         const xPos = (pageWidth - imgWidth) / 2;
-        pdf.addImage(coverImg, 'JPEG', xPos, 20, imgWidth, imgHeight);
+        const yPos = (pageHeight - imgHeight) / 2;
+        pdf.addImage(coverImg, 'JPEG', xPos, yPos, imgWidth, imgHeight);
       } catch (error) {
         console.warn('Failed to add cover image:', error);
       }
@@ -128,76 +144,94 @@ export const generatePDF = async (
 
     // Add title page
     pdf.addPage();
-    pdf.setFontSize(24);
     pdf.setFont('helvetica', 'bold');
-    const titleWidth = pdf.getTextWidth(options.name);
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    pdf.text(options.name, (pageWidth - titleWidth) / 2, 60);
+    pdf.setFontSize(24);
+
+    const titleLines = pdf.splitTextToSize(options.name, contentWidth);
+    let yPos = 150;
+    
+    titleLines.forEach((line: string) => {
+      const textWidth = pdf.getStringUnitWidth(line) * pdf.getFontSize();
+      const xPos = (pageWidth - textWidth) / 2;
+      pdf.text(line, xPos, yPos);
+      yPos += 30;
+    });
 
     if (options.author) {
-      pdf.setFontSize(16);
+      yPos += 20;
       pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(16);
       const authorText = `by ${options.author}`;
-      const authorWidth = pdf.getTextWidth(authorText);
-      pdf.text(authorText, (pageWidth - authorWidth) / 2, 80);
+      const authorWidth = pdf.getStringUnitWidth(authorText) * pdf.getFontSize();
+      pdf.text(authorText, (pageWidth - authorWidth) / 2, yPos);
     }
 
     // Add table of contents
     pdf.addPage();
-    pdf.setFontSize(20);
     pdf.setFont('helvetica', 'bold');
-    pdf.text('Table of Contents', 20, 30);
-    
-    let tocY = 50;
+    pdf.setFontSize(20);
+    pdf.text('Table of Contents', margin, margin + 20);
+
+    let tocY = margin + 60;
     const sections = pages.filter(p => p.page_type === 'section');
+    
     sections.forEach((section, index) => {
-      pdf.setFontSize(12);
+      if (tocY > pageHeight - margin) {
+        pdf.addPage();
+        tocY = margin + 20;
+      }
       pdf.setFont('helvetica', 'normal');
-      pdf.text(`${index + 1}. ${section.title || `Section ${index + 1}`}`, 25, tocY);
-      tocY += 10;
+      pdf.setFontSize(12);
+      pdf.text(`${index + 1}. ${section.title || `Section ${index + 1}`}`, margin, tocY);
+      tocY += 20;
     });
 
-    // Process and add each page
+    // Process each page
     for (const page of pages) {
       pdf.addPage();
+      let y = margin;
+
+      // Add page title
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(16);
+      const title = page.title || `Page ${page.page_index + 1}`;
+      pdf.text(title, margin, y);
+      y += 40;
 
       if (page.page_type === 'section') {
-        // Section page
-        pdf.setFontSize(24);
-        pdf.setFont('helvetica', 'bold');
-        const title = page.title || `Section ${page.page_index + 1}`;
-        const titleWidth = pdf.getTextWidth(title);
-        pdf.text(title, (pageWidth - titleWidth) / 2, 60);
-      } else {
-        // Regular page
-        pdf.setFontSize(16);
-        pdf.setFont('helvetica', 'bold');
-        const title = page.title || `Page ${page.page_index + 1}`;
-        pdf.text(title, 20, 30);
-
-        // Convert HTML content to plain text and add it
-        if (page.html_content) {
-          const plainText = stripHtmlAndFormatText(page.html_content);
-          pdf.setFontSize(11);
-          pdf.setFont('helvetica', 'normal');
-          const splitText = pdf.splitTextToSize(plainText, pageWidth - 40);
-          let yPosition = 50;
-
-          splitText.forEach((line: string) => {
-            if (yPosition > pdf.internal.pageSize.getHeight() - 20) {
-              pdf.addPage();
-              yPosition = 20;
-            }
-            pdf.text(line, 20, yPosition);
-            yPosition += 7;
-          });
-        }
+        // Section page - only show title
+        continue;
       }
+
+      // Process content
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(12);
+      const lineHeight = 16;
+
+      let contentLines: string[] = [];
+      if (page.html_content) {
+        contentLines = processHtmlContent(page.html_content);
+      }
+
+      // Add content with proper line breaks
+      contentLines.forEach(line => {
+        const textLines = pdf.splitTextToSize(line, contentWidth);
+        
+        textLines.forEach((textLine: string) => {
+          if (y > pageHeight - margin) {
+            pdf.addPage();
+            y = margin;
+          }
+          if (textLine.trim()) {
+            pdf.text(textLine, margin, y);
+          }
+          y += lineHeight;
+        });
+      });
     }
 
     // Save PDF
     pdf.save(`${options.name}.pdf`);
-
     return { success: true };
   } catch (error) {
     console.error('Error generating PDF:', error);
