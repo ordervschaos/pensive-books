@@ -1,4 +1,3 @@
-
 import { Database } from '@/integrations/supabase/types';
 import { supabase } from '@/integrations/supabase/client';
 import { generateEPUB } from './epub';
@@ -62,59 +61,115 @@ const processHtmlContent = (html: string): string[] => {
   const div = document.createElement('div');
   div.innerHTML = html;
 
-  const lines: string[] = [];
-  
-  // Process headings
-  div.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach(heading => {
-    lines.push(''); // Empty line before heading
-    lines.push(heading.textContent?.trim() || '');
-    lines.push(''); // Empty line after heading
+  // First replace all <br> tags with newlines in the HTML content
+  div.querySelectorAll('br').forEach(br => {
+    br.replaceWith('\n');
   });
 
-  // Process paragraphs
+  const lines: string[] = [];
+  
+  // Process headings with more spacing
+  div.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach(heading => {
+    lines.push('\n'); // Extra line break before heading
+    lines.push(heading.textContent?.trim() || '');
+    lines.push('\n'); // Extra line break after heading
+  });
+
+  // Process paragraphs with proper spacing
   div.querySelectorAll('p').forEach(p => {
     const text = p.textContent?.trim();
     if (text) {
-      lines.push(text);
-      lines.push(''); // Empty line after paragraph
+      lines.push('\n'); // Line break before paragraph
+      // Split paragraph into individual lines to preserve manual line breaks
+      text.split('\n').forEach(line => {
+        if (line.trim()) {
+          lines.push(line.trim());
+        } else {
+          // Add empty line for <br> tags that resulted in empty lines
+          lines.push('');
+        }
+      });
+      lines.push('\n'); // Line break after paragraph
     }
   });
 
-  // Process lists
+  // Process lists with proper indentation and spacing
   div.querySelectorAll('ul, ol').forEach(list => {
-    lines.push(''); // Empty line before list
+    lines.push('\n'); // Line break before list
     list.querySelectorAll('li').forEach(li => {
-      lines.push(`  • ${li.textContent?.trim()}`);
+      const text = li.textContent?.trim();
+      if (text) {
+        // Handle multi-line list items
+        text.split('\n').forEach((line, index) => {
+          if (line.trim()) {
+            if (index === 0) {
+              lines.push(`  • ${line.trim()}`);
+            } else {
+              lines.push(`    ${line.trim()}`); // Extra indent for wrapped lines
+            }
+          } else {
+            // Add empty line for <br> tags in list items
+            lines.push('');
+          }
+        });
+      }
     });
-    lines.push(''); // Empty line after list
+    lines.push('\n'); // Line break after list
   });
 
-  // Process blockquotes
+  // Process blockquotes with proper formatting
   div.querySelectorAll('blockquote').forEach(quote => {
-    lines.push('');
-    lines.push(`  "${quote.textContent?.trim()}"`);
-    lines.push('');
+    lines.push('\n'); // Line break before quote
+    const text = quote.textContent?.trim();
+    if (text) {
+      text.split('\n').forEach(line => {
+        if (line.trim()) {
+          lines.push(`  "${line.trim()}"`);
+        } else {
+          // Add empty line for <br> tags in quotes
+          lines.push('');
+        }
+      });
+    }
+    lines.push('\n'); // Line break after quote
   });
 
-  // Process code blocks
+  // Process code blocks with proper formatting and spacing
   div.querySelectorAll('pre, code').forEach(code => {
-    lines.push('');
-    const codeText = code.textContent?.trim() || '';
-    codeText.split('\n').forEach(line => {
-      lines.push(`  ${line}`);
-    });
-    lines.push('');
+    lines.push('\n'); // Line break before code block
+    const text = code.textContent?.trim();
+    if (text) {
+      text.split('\n').forEach(line => {
+        if (line.trim()) {
+          lines.push(`  ${line}`);
+        } else {
+          // Add empty line for <br> tags in code blocks
+          lines.push('');
+        }
+      });
+    }
+    lines.push('\n'); // Line break after code block
   });
 
-  // Filter out empty lines at the beginning and end
-  while (lines.length > 0 && !lines[0].trim()) {
-    lines.shift();
+  // Filter out consecutive empty lines
+  const filteredLines = lines.reduce((acc: string[], line: string) => {
+    const lastLine = acc[acc.length - 1];
+    // Only add line if it's not creating more than two consecutive empty lines
+    if (!(line.trim() === '' && lastLine?.trim() === '' && acc[acc.length - 2]?.trim() === '')) {
+      acc.push(line);
+    }
+    return acc;
+  }, []);
+
+  // Remove empty lines at the beginning and end while preserving intentional spacing
+  while (filteredLines.length > 0 && !filteredLines[0].trim()) {
+    filteredLines.shift();
   }
-  while (lines.length > 0 && !lines[lines.length - 1].trim()) {
-    lines.pop();
+  while (filteredLines.length > 0 && !filteredLines[filteredLines.length - 1].trim()) {
+    filteredLines.pop();
   }
 
-  return lines;
+  return filteredLines;
 };
 
 export const generatePDF = async (
@@ -231,27 +286,39 @@ export const generatePDF = async (
 
       // Add content with proper line breaks
       contentLines.forEach(line => {
-        // Create proper spacing for different elements
-        const isEmptyLine = !line.trim();
-        if (isEmptyLine) {
+        // Check if this is an empty line (just \n)
+        if (!line.trim()) {
           y += paragraphSpacing;
           return;
         }
 
-        const textLines = pdf.splitTextToSize(line, contentWidth);
-        textLines.forEach((textLine: string) => {
+        // Split long lines to fit page width
+        const wrappedLines = pdf.splitTextToSize(line, contentWidth);
+        
+        // Add each line with proper spacing
+        wrappedLines.forEach((textLine: string) => {
+          // Check if we need to add a new page
           if (y > pageHeight - margin) {
             pdf.addPage();
             y = margin;
           }
+
+          // Only add non-empty lines
           if (textLine.trim()) {
-            pdf.text(textLine, margin, y);
+            // Handle indentation for lists and quotes
+            const isIndented = textLine.startsWith('  ');
+            const xOffset = isIndented ? margin + 20 : margin;
+            pdf.text(textLine.trimStart(), xOffset, y);
           }
+          
+          // Move to next line with proper spacing
           y += baseLineHeight;
         });
 
-        // Add extra spacing after each block of text
-        y += baseLineHeight / 2;
+        // Add extra spacing after certain elements (lists, quotes, code blocks)
+        if (line.startsWith('  •') || line.startsWith('  "') || line.match(/^  [^•"]/)) {
+          y += baseLineHeight / 2;
+        }
       });
     }
 
