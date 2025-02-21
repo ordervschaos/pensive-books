@@ -49,7 +49,10 @@ const fetchBookPages = async (bookId: number): Promise<Page[]> => {
     throw new Error(`Failed to fetch pages: ${error.message}`);
   }
 
-  return (pages || []) as Page[];
+  return (pages || []).map(page => ({
+    ...page,
+    page_type: page.page_type as 'section' | 'page'
+  }));
 };
 
 // Process HTML content to extract formatted text
@@ -63,9 +66,9 @@ const processHtmlContent = (html: string): string[] => {
   
   // Process headings
   div.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach(heading => {
-    lines.push('\n'); // Add space before heading
+    lines.push(''); // Empty line before heading
     lines.push(heading.textContent?.trim() || '');
-    lines.push('\n'); // Add space after heading
+    lines.push(''); // Empty line after heading
   });
 
   // Process paragraphs
@@ -73,34 +76,45 @@ const processHtmlContent = (html: string): string[] => {
     const text = p.textContent?.trim();
     if (text) {
       lines.push(text);
-      lines.push('\n'); // Add blank line after paragraph
+      lines.push(''); // Empty line after paragraph
     }
   });
 
   // Process lists
   div.querySelectorAll('ul, ol').forEach(list => {
-    lines.push('\n'); // Add space before list
+    lines.push(''); // Empty line before list
     list.querySelectorAll('li').forEach(li => {
-      lines.push(`• ${li.textContent?.trim()}`);
-      lines.push('\n');
+      lines.push(`  • ${li.textContent?.trim()}`);
     });
+    lines.push(''); // Empty line after list
   });
 
   // Process blockquotes
   div.querySelectorAll('blockquote').forEach(quote => {
-    lines.push('\n');
-    lines.push(`"${quote.textContent?.trim()}"`);
-    lines.push('\n');
+    lines.push('');
+    lines.push(`  "${quote.textContent?.trim()}"`);
+    lines.push('');
   });
 
   // Process code blocks
   div.querySelectorAll('pre, code').forEach(code => {
-    lines.push('\n');
-    lines.push(code.textContent?.trim() || '');
-    lines.push('\n');
+    lines.push('');
+    const codeText = code.textContent?.trim() || '';
+    codeText.split('\n').forEach(line => {
+      lines.push(`  ${line}`);
+    });
+    lines.push('');
   });
 
-  return lines.filter(line => line !== undefined);
+  // Filter out empty lines at the beginning and end
+  while (lines.length > 0 && !lines[0].trim()) {
+    lines.shift();
+  }
+  while (lines.length > 0 && !lines[lines.length - 1].trim()) {
+    lines.pop();
+  }
+
+  return lines;
 };
 
 export const generatePDF = async (
@@ -120,6 +134,8 @@ export const generatePDF = async (
     const pageHeight = pdf.internal.pageSize.height;
     const margin = 50; // 50pt margins
     const contentWidth = pageWidth - (2 * margin);
+    const baseLineHeight = 16; // Base line height
+    const paragraphSpacing = 24; // Space between paragraphs
 
     // Add cover page if available
     if (options.coverUrl) {
@@ -207,7 +223,6 @@ export const generatePDF = async (
       // Process content
       pdf.setFont('helvetica', 'normal');
       pdf.setFontSize(12);
-      const lineHeight = 16;
 
       let contentLines: string[] = [];
       if (page.html_content) {
@@ -216,8 +231,14 @@ export const generatePDF = async (
 
       // Add content with proper line breaks
       contentLines.forEach(line => {
+        // Create proper spacing for different elements
+        const isEmptyLine = !line.trim();
+        if (isEmptyLine) {
+          y += paragraphSpacing;
+          return;
+        }
+
         const textLines = pdf.splitTextToSize(line, contentWidth);
-        
         textLines.forEach((textLine: string) => {
           if (y > pageHeight - margin) {
             pdf.addPage();
@@ -226,8 +247,11 @@ export const generatePDF = async (
           if (textLine.trim()) {
             pdf.text(textLine, margin, y);
           }
-          y += lineHeight;
+          y += baseLineHeight;
         });
+
+        // Add extra spacing after each block of text
+        y += baseLineHeight / 2;
       });
     }
 
