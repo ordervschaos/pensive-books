@@ -55,19 +55,35 @@ const fetchBookPages = async (bookId: number): Promise<Page[]> => {
 };
 
 // Process HTML content to extract formatted text
-const processHtmlContent = (html: string): string[] => {
-  if (!html) return [];
+const processHtmlContent = (html: string): { lines: string[]; images: Array<{ url: string; afterLine: number }> } => {
+  if (!html) return { lines: [], images: [] };
 
   const div = document.createElement('div');
   div.innerHTML = html;
 
+  const lines: string[] = [];
+  const images: Array<{ url: string; afterLine: number }> = [];
+  
   // First replace all <br> tags with newlines in the HTML content
   div.querySelectorAll('br').forEach(br => {
     br.replaceWith('\n');
   });
 
-  const lines: string[] = [];
-  
+  // Track images and their positions
+  div.querySelectorAll('img').forEach(img => {
+    const src = img.getAttribute('src');
+    if (src) {
+      // Store the image URL and the current line count
+      images.push({
+        url: src,
+        afterLine: lines.length
+      });
+      // Add extra spacing for the image
+      lines.push('\n');
+      lines.push('\n');
+    }
+  });
+
   // Process headings with more spacing
   div.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach(heading => {
     lines.push('\n'); // Extra line break before heading
@@ -169,7 +185,7 @@ const processHtmlContent = (html: string): string[] => {
     filteredLines.pop();
   }
 
-  return filteredLines;
+  return { lines: filteredLines, images };
 };
 
 export const generatePDF = async (
@@ -189,8 +205,9 @@ export const generatePDF = async (
     const pageHeight = pdf.internal.pageSize.height;
     const margin = 50; // 50pt margins
     const contentWidth = pageWidth - (2 * margin);
-    const baseLineHeight = 20; // Increased from 16 for better readability
-    const paragraphSpacing = 30; // Increased from 24 for better spacing
+    const baseLineHeight = 20;
+    const paragraphSpacing = 30;
+    const maxImageHeight = pageHeight * 0.7; // Maximum 70% of page height for images
 
     // Add cover page if available
     if (options.coverUrl) {
@@ -393,49 +410,72 @@ export const generatePDF = async (
 
       // Process content
       pdf.setFont('times', 'normal');
-      pdf.setFontSize(14); // Increased from 12
+      pdf.setFontSize(14);
 
-      let contentLines: string[] = [];
+      let contentData = { lines: [], images: [] };
       if (page.html_content) {
-        contentLines = processHtmlContent(page.html_content);
+        contentData = processHtmlContent(page.html_content);
       }
 
-      // Add content with proper line breaks
-      contentLines.forEach(line => {
-        // Check if this is an empty line (just \n)
-        if (!line.trim()) {
-          y += paragraphSpacing;
-          return;
-        }
-
-        // Split long lines to fit page width
-        const wrappedLines = pdf.splitTextToSize(line, contentWidth);
+      // Add content with proper line breaks and images
+      let lineCount = 0;
+      for (const line of contentData.lines) {
+        // Check if there's an image to insert after this line
+        const imageToInsert = contentData.images.find(img => img.afterLine === lineCount);
         
-        // Add each line with proper spacing
-        wrappedLines.forEach((textLine: string) => {
-          // Check if we need to add a new page
-          if (y > pageHeight - margin) {
-            pdf.addPage();
-            y = margin;
-          }
-
-          // Only add non-empty lines
-          if (textLine.trim()) {
-            // Handle indentation for lists and quotes
+        // Add the text line first
+        if (line.trim()) {
+          const wrappedLines = pdf.splitTextToSize(line, contentWidth);
+          wrappedLines.forEach((textLine: string) => {
+            if (y > pageHeight - margin) {
+              pdf.addPage();
+              y = margin;
+            }
             const isIndented = textLine.startsWith('  ');
             const xOffset = isIndented ? margin + 20 : margin;
             pdf.text(textLine.trimStart(), xOffset, y);
-          }
-          
-          // Move to next line with proper spacing
-          y += baseLineHeight;
-        });
-
-        // Add extra spacing after certain elements (lists, quotes, code blocks)
-        if (line.startsWith('  •') || line.startsWith('  "') || line.match(/^  [^•"]/)) {
-          y += baseLineHeight / 2;
+            y += baseLineHeight;
+          });
+        } else {
+          y += paragraphSpacing;
         }
-      });
+
+        // Insert image if present at this position
+        if (imageToInsert) {
+          try {
+            const img = await loadImage(imageToInsert.url);
+            
+            // Calculate image dimensions to fit within page width while maintaining aspect ratio
+            let imgWidth = contentWidth;
+            let imgHeight = (img.height / img.width) * imgWidth;
+
+            // If image height is too large, scale it down
+            if (imgHeight > maxImageHeight) {
+              imgHeight = maxImageHeight;
+              imgWidth = (img.width / img.height) * imgHeight;
+            }
+
+            // Check if we need a new page for the image
+            if (y + imgHeight > pageHeight - margin) {
+              pdf.addPage();
+              y = margin;
+            }
+
+            // Center the image horizontally
+            const xPos = (pageWidth - imgWidth) / 2;
+            
+            // Add the image
+            pdf.addImage(img, 'PNG', xPos, y, imgWidth, imgHeight);
+            
+            // Move position after image
+            y += imgHeight + paragraphSpacing;
+          } catch (error) {
+            console.warn('Failed to add image to PDF:', error);
+          }
+        }
+
+        lineCount++;
+      }
     }
 
     // Save PDF
