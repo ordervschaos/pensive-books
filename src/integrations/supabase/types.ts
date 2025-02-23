@@ -421,6 +421,13 @@ export type Database = {
       }
     }
     Functions: {
+      check_book_access: {
+        Args: {
+          book_id: number
+          user_email: string
+        }
+        Returns: boolean
+      }
       generate_slug: {
         Args: {
           input_text: string
