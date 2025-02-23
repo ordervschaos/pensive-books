@@ -30,7 +30,10 @@ export const Terms = () => {
               <li>You own or have the necessary rights to the content you create</li>
               <li>Your content does not violate any third-party rights</li>
               <li>You grant us a license to host and share your content</li>
-              <li>We may remove content that violates these terms</li>
+              <li>You are responsible for the content you post</li>
+              <li>Your content is not unsafe or harmful to others</li>
+              <li>Your content is not vulgar or sexually explicit</li>
+              <li>We may remove content that violates these terms or is otherwise inappropriate</li>
             </ul>
           </section>
 
