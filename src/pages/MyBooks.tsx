@@ -33,9 +33,7 @@ export default function Index() {
           .eq('user_id', session.user.id)
           .single();
         
-        if (userData?.username) {
-          setUsername(userData.username);
-        }
+        setUsername(userData?.username || null);
 
         console.log("Fetching books for user:", session.user.email);
         
@@ -98,6 +96,18 @@ export default function Index() {
     checkAuthAndFetchBooks();
   }, [navigate, toast]);
 
+  const handleViewProfile = () => {
+    if (!username) {
+      toast({
+        title: "Username Required",
+        description: "You need to set a username before viewing your public profile.",
+      });
+      navigate("/my-books"); // We'll update this to the username setting page when it's created
+      return;
+    }
+    window.open(`/@${username}`, '_blank');
+  };
+
   if (loading) {
     return (
       <div className="container mx-auto p-6">
@@ -120,15 +130,13 @@ export default function Index() {
     <div className="space-y-6">
       <div className="flex items-center gap-2">
         <h2 className="text-2xl font-semibold">{title}</h2>
-        {title === "Published Books" && username && (
-          <a 
-            href={`/@${username}`}
-            target="_blank"
-            rel="noopener noreferrer"
+        {title === "Published Books" && (
+          <button 
+            onClick={handleViewProfile}
             className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground"
           >
             View public profile <ExternalLink className="ml-1 h-3 w-3" />
-          </a>
+          </button>
         )}
       </div>
       {books.length === 0 ? (
