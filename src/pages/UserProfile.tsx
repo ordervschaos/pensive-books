@@ -19,9 +19,9 @@ export default function UserProfile() {
   useEffect(() => {
     const fetchUserData = async () => {
       try {
-        // First fetch user data based on username
+        // First fetch user data based on username from the public view
         const { data: userDataResult, error: userError } = await supabase
-          .from("user_data")
+          .from("public_user_profiles")
           .select("*")
           .eq("username", username)
           .single();
@@ -74,7 +74,7 @@ export default function UserProfile() {
       <div className="max-w-5xl mx-auto">
         <header className="mb-12">
           <h1 className="text-4xl font-bold mb-2">
-            {userData.email?.split('@')[0]}'s Books
+            @{username}'s Books
           </h1>
           <p className="text-muted-foreground">
             Published books by @{username}
