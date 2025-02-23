@@ -61,7 +61,10 @@ export default function JoinBook() {
               invitation_token: token
             });
 
-          if (accessError) throw accessError;
+          if (accessError) {
+            console.error("Error creating access:", accessError);
+            throw new Error("Failed to accept invitation. Please try again.");
+          }
         }
 
         toast({
