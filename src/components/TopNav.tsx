@@ -229,16 +229,13 @@ export function TopNav() {
     <>
       <nav className="bg-background border-b h-14">
         <div className="container max-w-7xl mx-auto px-4 h-full">
-          <div className="flex flex-row items-center h-full gap-4">
-            {/* Left spacer to help with centering */}
-            <div className="w-[120px] shrink-0" />
-
+          <div className="flex flex-row items-center h-full justify-between">
             {/* Center content */}
-            <div className="flex-1 flex justify-center min-w-0">
+            <div className="flex-1 flex min-w-0">
               {isBookRoute ? (
                 <Breadcrumb>
-                  <BreadcrumbList className="flex flex-row items-center space-x-1 min-w-0">
-                    <div className="flex items-center gap-1">
+                  <BreadcrumbList className="flex flex-row items-center min-w-0">
+                    <div className="flex items-center">
                       {showBackButton && (
                         <BreadcrumbItem className="shrink-0">
                           <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
