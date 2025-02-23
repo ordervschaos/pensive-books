@@ -60,7 +60,7 @@ function App() {
               <Route path="/privacy" element={<PrivacyPolicy />} />
               <Route path="/terms" element={<Terms />} />
               <Route path="/contact" element={<Contact />} />
-              <Route path="/@:username" element={<UserProfile />} />
+              <Route path="/@:username/*" element={<UserProfile />} />
               
               {/* Protected Routes */}
               <Route
