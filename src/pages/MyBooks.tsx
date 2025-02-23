@@ -1,17 +1,18 @@
+
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus } from "lucide-react";
+import { Plus, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
-
 export default function Index() {
   const [books, setBooks] = useState<any[]>([]);
   const [sharedBooks, setSharedBooks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [username, setUsername] = useState<string | null>(null);
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -23,6 +24,17 @@ export default function Index() {
         if (!session) {
           navigate("/auth");
           return;
+        }
+
+        // Fetch user's username
+        const { data: userData } = await supabase
+          .from('user_data')
+          .select('username')
+          .eq('user_id', session.user.id)
+          .single();
+        
+        if (userData?.username) {
+          setUsername(userData.username);
         }
 
         console.log("Fetching books for user:", session.user.email);
@@ -86,7 +98,6 @@ export default function Index() {
     checkAuthAndFetchBooks();
   }, [navigate, toast]);
 
-
   if (loading) {
     return (
       <div className="container mx-auto p-6">
@@ -107,7 +118,19 @@ export default function Index() {
 
   const BookGrid = ({ books, title }: { books: any[], title: string }) => (
     <div className="space-y-6">
-      <h2 className="text-2xl font-semibold">{title}</h2>
+      <div className="flex items-center gap-2">
+        <h2 className="text-2xl font-semibold">{title}</h2>
+        {title === "Published Books" && username && (
+          <a 
+            href={`/@${username}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground"
+          >
+            View public profile <ExternalLink className="ml-1 h-3 w-3" />
+          </a>
+        )}
+      </div>
       {books.length === 0 ? (
         <p className="text-muted-foreground">No books found</p>
       ) : (
