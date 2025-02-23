@@ -75,18 +75,17 @@ export default function Library() {
                             <h2 className="text-base sm:text-xl font-semibold text-white text-center mb-1 sm:mb-2">
                               {book.name}
                             </h2>
-                            <div className="hidden sm:flex">
+
                             {book.subtitle && (
-                              <p className="text-xs sm:text-sm text-white/90 text-center mb-1 sm:mb-2">
+                              <p className="text-xs hidden sm:block sm:text-sm text-white/90 text-center mb-1 sm:mb-2">
                                 {book.subtitle}
                               </p>
                             )}
                             {book.author && (
-                              <p className="text-xs sm:text-sm text-white/90 text-center">
+                              <p className="text-xs hidden sm:block sm:text-sm text-white/90 text-center">
                                 by {book.author}
                               </p>
                             )}
-                            </div>
                           </div>
                         )}
                       </div>
