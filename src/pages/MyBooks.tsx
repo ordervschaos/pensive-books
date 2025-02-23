@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Plus, ExternalLink } from "lucide-react";
@@ -98,11 +97,7 @@ export default function Index() {
 
   const handleViewProfile = () => {
     if (!username) {
-      toast({
-        title: "Username Required",
-        description: "You need to set a username before viewing your public profile.",
-      });
-      navigate("/my-books"); // We'll update this to the username setting page when it's created
+      navigate("/set-username");
       return;
     }
     window.open(`/@${username}`, '_blank');

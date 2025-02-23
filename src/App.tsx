@@ -18,6 +18,7 @@ import PrivacyPolicy from "@/pages/PrivacyPolicy";
 import Terms from "@/pages/Terms";
 import Contact from "@/pages/Contact";
 import UserProfile from "@/pages/UserProfile";
+import SetUsername from "@/pages/SetUsername";
 import { useEffect } from "react";
 
 // ScrollToTop component that scrolls the window up on route change
@@ -35,14 +36,6 @@ function App() {
   // Get the basename based on the environment
   const isProd = window.location.hostname === "www.pensive.me";
   const basename = isProd ? "" : "/";
-
-  // Log the current environment configuration for debugging
-  console.log("Current environment:", {
-    hostname: window.location.hostname,
-    isProd,
-    basename,
-    fullUrl: window.location.href
-  });
 
   return (
     <ThemeProvider defaultTheme="light">
@@ -63,6 +56,14 @@ function App() {
               <Route path="/privacy" element={<PrivacyPolicy />} />
               <Route path="/terms" element={<Terms />} />
               <Route path="/contact" element={<Contact />} />
+              <Route
+                path="/set-username"
+                element={
+                  <PrivateRoute>
+                    <SetUsername />
+                  </PrivateRoute>
+                }
+              />
               
               {/* Protected Routes */}
               <Route
