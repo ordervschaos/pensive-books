@@ -1,3 +1,4 @@
+
 import { BrowserRouter as Router, Routes, Route, useLocation } from "react-router-dom";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { Toaster } from "@/components/ui/toaster";
@@ -16,6 +17,7 @@ import AcceptInvitation from "@/pages/AcceptInvitation";
 import PrivacyPolicy from "@/pages/PrivacyPolicy";
 import Terms from "@/pages/Terms";
 import Contact from "@/pages/Contact";
+import UserProfile from "@/pages/UserProfile";
 import { useEffect } from "react";
 
 // ScrollToTop component that scrolls the window up on route change
@@ -58,6 +60,7 @@ function App() {
               <Route path="/privacy" element={<PrivacyPolicy />} />
               <Route path="/terms" element={<Terms />} />
               <Route path="/contact" element={<Contact />} />
+              <Route path="/@:username" element={<UserProfile />} />
               
               {/* Protected Routes */}
               <Route
