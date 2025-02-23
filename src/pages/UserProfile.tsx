@@ -12,13 +12,28 @@ export default function UserProfile() {
   const [books, setBooks] = useState<any[]>([]);
   const [userData, setUserData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const { username } = useParams();
+  const { username: encodedUsername } = useParams();
   const { toast } = useToast();
   const navigate = useNavigate();
+
+  // Decode the username to handle dots and special characters
+  const username = encodedUsername ? decodeURIComponent(encodedUsername) : null;
 
   useEffect(() => {
     const fetchUserData = async () => {
       try {
+        if (!username) {
+          toast({
+            variant: "destructive",
+            title: "Invalid username",
+            description: "No username provided in the URL.",
+          });
+          navigate("/");
+          return;
+        }
+
+        console.log("Fetching user data for:", username);
+
         // First fetch user data based on username from the public view
         const { data: userDataResult, error: userError } = await supabase
           .from("public_user_profiles")
