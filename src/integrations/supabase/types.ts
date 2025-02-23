@@ -323,6 +323,13 @@ export type Database = {
             foreignKeyName: "notification_schedules_owner_id_fkey"
             columns: ["owner_id"]
             isOneToOne: false
+            referencedRelation: "public_user_profiles"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "notification_schedules_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
             referencedRelation: "user_data"
             referencedColumns: ["user_id"]
           },
@@ -385,7 +392,24 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      public_user_profiles: {
+        Row: {
+          updated_at: string | null
+          user_id: string | null
+          username: string | null
+        }
+        Insert: {
+          updated_at?: string | null
+          user_id?: string | null
+          username?: string | null
+        }
+        Update: {
+          updated_at?: string | null
+          user_id?: string | null
+          username?: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       generate_slug: {
