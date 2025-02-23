@@ -238,55 +238,57 @@ export function TopNav() {
               {isBookRoute ? (
                 <Breadcrumb>
                   <BreadcrumbList className="flex flex-row items-center space-x-1 min-w-0">
-                    {showBackButton && (
-                      <BreadcrumbItem className="shrink-0">
-                        <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
-                          <ArrowLeft className="h-4 w-4" />
-                        </Button>
-                      </BreadcrumbItem>
-                    )}
-                    <BreadcrumbItem className="flex items-center min-w-0">
-                      <Link 
-                        className="text-blue-500 hover:text-blue-600  transition-colors font-medium shrink-0" 
-                        to={`/my-books`}
-                      >
-                        <Library className="h-5 w-5" />
-                      </Link>
-                      <span className="mx-2 text-muted-foreground shrink-0">›</span>
-                      {isPageRoute ? (
-                        <>
-                          <Link 
-                            className="text-blue-500 hover:text-blue-600 transition-colors font-medium truncate max-w-[120px] md:max-w-[200px]"
-                            to={`/book/${location.pathname.split('/')[2]}`}
-                          >
-                            {bookName}
-                          </Link>
-                          <span className="mx-2 text-muted-foreground shrink-0">›</span>
-                          <span className="text-foreground font-medium truncate max-w-[120px] md:max-w-[200px]">
-                            {pageName}
-                          </span>
-                        </>
-                      ) : (
-                        <>
-                          {isBookEditRoute ? (
-                            <>
-                              <Link 
-                                className="text-blue-500 hover:text-blue-600 transition-colors font-medium truncate max-w-[300px]"
-                                to={`/book/${location.pathname.split('/')[2]}`}
-                              >
-                                {bookName}
-                              </Link>
-                              <span className="mx-2 text-muted-foreground shrink-0">›</span>
-                              <span className="text-foreground font-medium">Edit Book</span>
-                            </>
-                          ) : isNewBookRoute ? (
-                            <span className="text-foreground font-medium">New Book</span>
-                          ) : (
-                            <span className="text-foreground font-medium truncate max-w-[300px]">{bookName}</span>
-                          )}
-                        </>
+                    <div className="flex items-center gap-1">
+                      {showBackButton && (
+                        <BreadcrumbItem className="shrink-0">
+                          <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
+                            <ArrowLeft className="h-4 w-4" />
+                          </Button>
+                        </BreadcrumbItem>
                       )}
-                    </BreadcrumbItem>
+                      <BreadcrumbItem className="flex items-center min-w-0">
+                        <Link 
+                          className="text-blue-500 hover:text-blue-600 transition-colors font-medium shrink-0" 
+                          to={`/my-books`}
+                        >
+                          <Library className="h-5 w-5" />
+                        </Link>
+                        <span className="mx-2 text-muted-foreground shrink-0">›</span>
+                        {isPageRoute ? (
+                          <>
+                            <Link 
+                              className="text-blue-500 hover:text-blue-600 transition-colors font-medium truncate max-w-[120px] md:max-w-[200px]"
+                              to={`/book/${location.pathname.split('/')[2]}`}
+                            >
+                              {bookName}
+                            </Link>
+                            <span className="mx-2 text-muted-foreground shrink-0">›</span>
+                            <span className="text-foreground font-medium truncate max-w-[120px] md:max-w-[200px]">
+                              {pageName}
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            {isBookEditRoute ? (
+                              <>
+                                <Link 
+                                  className="text-blue-500 hover:text-blue-600 transition-colors font-medium truncate max-w-[300px]"
+                                  to={`/book/${location.pathname.split('/')[2]}`}
+                                >
+                                  {bookName}
+                                </Link>
+                                <span className="mx-2 text-muted-foreground shrink-0">›</span>
+                                <span className="text-foreground font-medium">Edit Book</span>
+                              </>
+                            ) : isNewBookRoute ? (
+                              <span className="text-foreground font-medium">New Book</span>
+                            ) : (
+                              <span className="text-foreground font-medium truncate max-w-[300px]">{bookName}</span>
+                            )}
+                          </>
+                        )}
+                      </BreadcrumbItem>
+                    </div>
                   </BreadcrumbList>
                 </Breadcrumb>
               ) : (
