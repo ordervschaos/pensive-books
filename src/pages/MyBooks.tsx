@@ -156,10 +156,11 @@ export default function Index() {
                           className="w-full h-full object-cover transition-transform group-hover:scale-105"
                         />
                         {book.show_text_on_cover && (
-                          <div className="absolute inset-0 flex flex-col items-center md:justify-center bg-black/30 p-4">
+                          <div className="absolute inset-0  flex-col items-center justify-center bg-black/30 p-4">
                             <h2 className="text-base sm:text-xl font-semibold text-white text-center mb-1 sm:mb-2">
                               {book.name}
                             </h2>
+                            <div className="hidden sm:flex">
                             {book.subtitle && (
                               <p className="text-xs sm:text-sm text-white/90 text-center mb-1 sm:mb-2">
                                 {book.subtitle}
@@ -170,6 +171,7 @@ export default function Index() {
                                 by {book.author}
                               </p>
                             )}
+                            </div>
                           </div>
                         )}
                       </div>
