@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Archive } from "lucide-react";
+import { ArrowLeft, Archive, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -14,6 +14,7 @@ import { useBookPermissions } from "@/hooks/use-book-permissions";
 import { setPageTitle } from "@/utils/pageTitle";
 import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
 interface Book {
   id?: number;
@@ -237,25 +238,34 @@ export default function BookEdit() {
             {isOwner && (
               <div className="mt-12">
                 <Separator className="my-6" />
-                <h2 className="text-xl font-semibold text-destructive mb-4">Danger Zone</h2>
-                <Card className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="font-medium">Archive Book</h3>
-                      <p className="text-sm text-muted-foreground">
-                        Archive this book and all its contents. This action cannot be undone.
-                      </p>
-                    </div>
-                    <Button 
-                      onClick={handleArchiveBook}
-                      variant="destructive"
-                      className="ml-4"
-                    >
-                      <Archive className="h-4 w-4 mr-2" />
-                      Archive Book
+                <Collapsible>
+                  <CollapsibleTrigger asChild>
+                    <Button variant="ghost" className="flex items-center gap-2 text-destructive hover:text-destructive hover:bg-destructive/10">
+                      <h2 className="text-xl font-semibold">Danger Zone</h2>
+                      <ChevronDown className="h-4 w-4" />
                     </Button>
-                  </div>
-                </Card>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <Card className="p-6 mt-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="font-medium">Archive Book</h3>
+                          <p className="text-sm text-muted-foreground">
+                            Archive this book and all its contents. This action cannot be undone.
+                          </p>
+                        </div>
+                        <Button 
+                          onClick={handleArchiveBook}
+                          variant="destructive"
+                          className="ml-4"
+                        >
+                          <Archive className="h-4 w-4 mr-2" />
+                          Archive Book
+                        </Button>
+                      </div>
+                    </Card>
+                  </CollapsibleContent>
+                </Collapsible>
               </div>
             )}
           </div>
