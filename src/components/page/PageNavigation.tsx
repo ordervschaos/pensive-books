@@ -50,30 +50,29 @@ export const PageNavigation = ({
         <Button
           variant="outline"
           onClick={handleNextClick}
-        className="flex items-center gap-2 px-6 py-6 rounded-full bg-background border-border"
-        disabled={currentIndex === -1}
-      >
-        <span className="text-lg">
-          {isLastPage ? `Table of contents: ${bookTitle}` : `Next: ${nextPageTitle || 'Untitled'}`}
-        </span>
-        {isLastPage ? (
-          <Undo2 className="h-5 w-5" />
-        ) : (
-          <ArrowRight className="h-5 w-5" />
-        )}
-        
-      </Button>
-
-      {canEdit && onNewPage && (
-        <Button
-          variant="outline"
-          onClick={onNewPage}
-          className="px-6 py-6 rounded-full bg-background border-border"
-          title="Add new page"
+          className="flex items-center gap-2 px-6 py-6 rounded-full bg-background border-border max-w-[80vw]"
+          disabled={currentIndex === -1}
         >
-          <Plus className="h-5 w-5" />
+          <span className="text-lg truncate">
+            {isLastPage ? `Table of contents: ${bookTitle}` : `Next: ${nextPageTitle || 'Untitled'}`}
+          </span>
+          {isLastPage ? (
+            <Undo2 className="h-5 w-5 flex-shrink-0" />
+          ) : (
+            <ArrowRight className="h-5 w-5 flex-shrink-0" />
+          )}
         </Button>
-      )}
+
+        {canEdit && onNewPage && (
+          <Button
+            variant="outline"
+            onClick={onNewPage}
+            className="px-6 py-6 rounded-full bg-background border-border"
+            title="Add new page"
+          >
+            <Plus className="h-5 w-5" />
+          </Button>
+        )}
       </div>
     </div>
   );
