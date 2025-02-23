@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
-import { ArrowRight, Plus } from "lucide-react";
+import { ArrowRight, Plus, Undo2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+
 
 interface PageNavigationProps {
   bookId: string;
@@ -42,18 +43,25 @@ export const PageNavigation = ({
   };
 
   return (
-    <div className="flex max-w-screen-lg items-center justify-center gap-2">
-      <Button
-        variant="outline"
-        onClick={handleNextClick}
+    <div className="flex max-w-screen-lg items-center justify-center gap-2 flex-col">
+      <span className="text-sm text-muted-foreground"> Page {displayCurrentIndex}/{displayTotalPages} </span>
+      
+      <div className="flex flex-row items-center gap-2 justify-center w-full">
+        <Button
+          variant="outline"
+          onClick={handleNextClick}
         className="flex items-center gap-2 px-6 py-6 rounded-full bg-background border-border"
         disabled={currentIndex === -1}
       >
         <span className="text-lg">
           {isLastPage ? `Table of contents: ${bookTitle}` : `Next: ${nextPageTitle || 'Untitled'}`}
         </span>
-        {displayCurrentIndex}/{displayTotalPages}
-        <ArrowRight className="h-5 w-5" />
+        {isLastPage ? (
+          <Undo2 className="h-5 w-5" />
+        ) : (
+          <ArrowRight className="h-5 w-5" />
+        )}
+        
       </Button>
 
       {canEdit && onNewPage && (
@@ -66,6 +74,7 @@ export const PageNavigation = ({
           <Plus className="h-5 w-5" />
         </Button>
       )}
+      </div>
     </div>
   );
 };
