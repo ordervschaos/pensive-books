@@ -156,22 +156,20 @@ export default function Index() {
                           className="w-full h-full object-cover transition-transform group-hover:scale-105"
                         />
                         {book.show_text_on_cover && (
-                          <div className="absolute inset-0  flex-col items-center justify-center bg-black/30 p-4">
+                          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30 p-4">
                             <h2 className="text-base sm:text-xl font-semibold text-white text-center mb-1 sm:mb-2">
                               {book.name}
                             </h2>
-                            <div className="hidden sm:flex">
                             {book.subtitle && (
-                              <p className="text-xs sm:text-sm text-white/90 text-center mb-1 sm:mb-2">
+                              <p className="text-xs hidden sm:block sm:text-sm text-white/90 text-center mb-1 sm:mb-2">
                                 {book.subtitle}
                               </p>
                             )}
                             {book.author && (
-                              <p className="text-xs sm:text-sm text-white/90 text-center">
+                              <p className="text-xs hidden sm:block sm:text-sm text-white/90 text-center">
                                 by {book.author}
                               </p>
                             )}
-                            </div>
                           </div>
                         )}
                       </div>
@@ -181,12 +179,12 @@ export default function Index() {
                           {book.name}
                         </h2>
                         {book.subtitle && (
-                          <p className="text-xs sm:text-sm text-white/90 text-center mb-1 sm:mb-2">
+                          <p className="text-xs hidden sm:block sm:text-sm text-white/90 text-center mb-1 sm:mb-2">
                             {book.subtitle}
                           </p>
                         )}
                         {book.author && (
-                          <p className="text-xs sm:text-sm text-white/90 text-center">
+                          <p className="text-xs hidden sm:block sm:text-sm text-white/90 text-center">
                             by {book.author}
                           </p>
                         )}
@@ -198,6 +196,16 @@ export default function Index() {
                   <h3 className="text-sm text-muted-foreground font-medium truncate cursor-pointer" onClick={() => navigate(`/book/${book.id}`)}>
                     {book.name}
                   </h3>
+                  {book.subtitle && (
+                    <p className="text-xs text-muted-foreground truncate sm:hidden">
+                      {book.subtitle}
+                    </p>
+                  )}
+                  {book.author && (
+                    <p className="text-xs text-muted-foreground truncate sm:hidden">
+                      by {book.author}
+                    </p>
+                  )}
                   <div className="flex gap-2 sm:justify-center justify-start">
                     {book.is_public && (
                       <Badge variant="secondary" className="text-xs">
