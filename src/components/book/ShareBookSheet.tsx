@@ -1,17 +1,19 @@
 import { useState, useEffect } from "react";
-import { Users, UserPlus, Mail, Clock } from "lucide-react";
+import { Copy, Link, Users, UserPlus, Mail, Clock, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
-interface ManageCollaboratorsSheetProps {
+interface ShareBookSheetProps {
   bookId: number;
+  viewToken: string;
+  editToken: string;
 }
 
 interface Collaborator {
@@ -21,8 +23,9 @@ interface Collaborator {
   status: string;
 }
 
-export function ManageCollaboratorsSheet({ bookId }: ManageCollaboratorsSheetProps) {
+export function ShareBookSheet({ bookId, viewToken, editToken }: ShareBookSheetProps) {
   const { toast } = useToast();
+  const [accessType, setAccessType] = useState<"view" | "edit">("view");
   const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState<number | null>(null);
@@ -52,6 +55,28 @@ export function ManageCollaboratorsSheet({ bookId }: ManageCollaboratorsSheetPro
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const getShareLink = (type: "view" | "edit") => {
+    const token = type === "view" ? viewToken : editToken;
+    return `${window.location.origin}/book/${bookId}/join?token=${token}&access=${type}`;
+  };
+
+  const handleCopyLink = async () => {
+    const link = getShareLink(accessType);
+    try {
+      await navigator.clipboard.writeText(link);
+      toast({
+        title: "Link copied",
+        description: "Share link has been copied to clipboard"
+      });
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Failed to copy",
+        description: "Please try copying the link manually"
+      });
     }
   };
 
@@ -151,16 +176,57 @@ export function ManageCollaboratorsSheet({ bookId }: ManageCollaboratorsSheetPro
   return (
     <Sheet>
       <SheetTrigger asChild>
-        <Button variant="outline">
-          <Users className="mr-2 h-4 w-4" />
-          Manage Access
+        <Button variant="outline" className="flex items-center gap-2">
+          <Users className="h-4 w-4" />
+          Share & Manage Access
         </Button>
       </SheetTrigger>
       <SheetContent className="sm:max-w-md">
         <SheetHeader>
-          <SheetTitle>Manage Collaborators</SheetTitle>
+          <SheetTitle>Share & Manage Access</SheetTitle>
         </SheetHeader>
+        
         <div className="mt-6 space-y-6">
+          {/* Share Link Section */}
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <Link className="h-4 w-4 text-muted-foreground" />
+              <h3 className="font-medium">Share via Link</h3>
+            </div>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Access type</Label>
+                <Select 
+                  value={accessType} 
+                  onValueChange={(value: "view" | "edit") => setAccessType(value)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="view">Can view</SelectItem>
+                    <SelectItem value="edit">Can edit</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Share link</Label>
+                <div className="flex gap-2">
+                  <Input 
+                    value={getShareLink(accessType)}
+                    readOnly
+                  />
+                  <Button onClick={handleCopyLink}>
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <Separator />
+
           {/* Invite Section */}
           <div className="space-y-4">
             <div className="flex items-center gap-2">
@@ -227,9 +293,6 @@ export function ManageCollaboratorsSheet({ bookId }: ManageCollaboratorsSheetPro
                       <div className="flex items-center gap-2 mb-2">
                         <Mail className="h-4 w-4 text-muted-foreground shrink-0" />
                         <span className="font-medium truncate">{collaborator.invited_email}</span>
-                        {/* <Badge variant="secondary" className="shrink-0">
-                          {collaborator.status === 'pending' ? 'Pending' : 'Joined'}
-                        </Badge> */}
                       </div>
                       <div className="flex items-center gap-3">
                         <Select

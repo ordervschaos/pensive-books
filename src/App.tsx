@@ -1,3 +1,4 @@
+
 import { BrowserRouter as Router, Routes, Route, useLocation } from "react-router-dom";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { Toaster } from "@/components/ui/toaster";
@@ -18,6 +19,7 @@ import Terms from "@/pages/Terms";
 import Contact from "@/pages/Contact";
 import UserProfile from "@/pages/UserProfile";
 import SetUsername from "@/pages/SetUsername";
+import JoinBook from "@/pages/JoinBook";
 import { useEffect } from "react";
 import { useGoogleAnalytics } from "@/hooks/useGoogleAnalytics";
 
@@ -57,6 +59,7 @@ function App() {
               <Route path="/privacy" element={<PrivacyPolicy />} />
               <Route path="/terms" element={<Terms />} />
               <Route path="/contact" element={<Contact />} />
+              <Route path="/book/:id/join" element={<JoinBook />} />
               <Route
                 path="/set-username"
                 element={
