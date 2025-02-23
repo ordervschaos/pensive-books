@@ -52,6 +52,9 @@ function App() {
           <TopNav />
           <main className="flex-1">
             <Routes>
+              {/* Place the @ route before other routes to ensure proper matching */}
+              <Route path="/:username" element={<UserProfile />} />
+              
               <Route path="/" element={<Landing />} />
               <Route path="/auth" element={<Auth />} />
               <Route path="/auth/callback" element={<Auth />} />
@@ -60,7 +63,6 @@ function App() {
               <Route path="/privacy" element={<PrivacyPolicy />} />
               <Route path="/terms" element={<Terms />} />
               <Route path="/contact" element={<Contact />} />
-              <Route path="/@:username/*" element={<UserProfile />} />
               
               {/* Protected Routes */}
               <Route

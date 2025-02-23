@@ -12,12 +12,14 @@ export default function UserProfile() {
   const [books, setBooks] = useState<any[]>([]);
   const [userData, setUserData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const { username: encodedUsername } = useParams();
+  const { username: paramUsername } = useParams();
   const { toast } = useToast();
   const navigate = useNavigate();
 
-  // Decode the username to handle dots and special characters
-  const username = encodedUsername ? decodeURIComponent(encodedUsername) : null;
+  // Remove @ prefix if present and decode the username
+  const username = paramUsername ? 
+    decodeURIComponent(paramUsername.startsWith('@') ? paramUsername.slice(1) : paramUsername) 
+    : null;
 
   useEffect(() => {
     const fetchUserData = async () => {
