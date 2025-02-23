@@ -16,6 +16,7 @@ export type Database = {
           created_at: string | null
           created_by: string | null
           id: number
+          invitation_token: string | null
           invited_email: string | null
           status: string | null
           user_id: string | null
@@ -26,6 +27,7 @@ export type Database = {
           created_at?: string | null
           created_by?: string | null
           id?: number
+          invitation_token?: string | null
           invited_email?: string | null
           status?: string | null
           user_id?: string | null
@@ -36,6 +38,7 @@ export type Database = {
           created_at?: string | null
           created_by?: string | null
           id?: number
+          invitation_token?: string | null
           invited_email?: string | null
           status?: string | null
           user_id?: string | null
@@ -58,6 +61,7 @@ export type Database = {
           cover_url: string | null
           created_at: string | null
           digest_bookmarked_page_index: number | null
+          edit_invitation_token: string | null
           id: number
           is_archived: boolean | null
           is_public: boolean | null
@@ -72,6 +76,7 @@ export type Database = {
           slug: string | null
           subtitle: string | null
           updated_at: string | null
+          view_invitation_token: string | null
         }
         Insert: {
           author?: string | null
@@ -80,6 +85,7 @@ export type Database = {
           cover_url?: string | null
           created_at?: string | null
           digest_bookmarked_page_index?: number | null
+          edit_invitation_token?: string | null
           id?: number
           is_archived?: boolean | null
           is_public?: boolean | null
@@ -94,6 +100,7 @@ export type Database = {
           slug?: string | null
           subtitle?: string | null
           updated_at?: string | null
+          view_invitation_token?: string | null
         }
         Update: {
           author?: string | null
@@ -102,6 +109,7 @@ export type Database = {
           cover_url?: string | null
           created_at?: string | null
           digest_bookmarked_page_index?: number | null
+          edit_invitation_token?: string | null
           id?: number
           is_archived?: boolean | null
           is_public?: boolean | null
@@ -116,6 +124,7 @@ export type Database = {
           slug?: string | null
           subtitle?: string | null
           updated_at?: string | null
+          view_invitation_token?: string | null
         }
         Relationships: []
       }

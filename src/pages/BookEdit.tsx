@@ -7,6 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { BookInfo } from "@/components/book/BookInfo";
 import { BookEditForm } from "@/components/book/BookEditForm";
 import { ManageCollaboratorsSheet } from "@/components/book/ManageCollaboratorsSheet";
+import { ShareBookSheet } from "@/components/book/ShareBookSheet";
 import { BookCoverEdit } from "@/components/book/BookCoverEdit";
 import { BookVisibilityToggle } from "@/components/book/BookVisibilityToggle";
 import { useBookPermissions } from "@/hooks/use-book-permissions";
@@ -25,6 +26,8 @@ interface Book {
   created_at?: string;
   updated_at?: string;
   published_at?: string | null;
+  view_invitation_token?: string;
+  edit_invitation_token?: string;
 }
 
 export default function BookEdit() {
@@ -199,8 +202,15 @@ export default function BookEdit() {
               onTogglePublish={togglePublish}
               publishing={publishing}
             />
-            {isOwner && id && (
-              <ManageCollaboratorsSheet bookId={parseInt(id)} />
+            {isOwner && id && book.view_invitation_token && book.edit_invitation_token && (
+              <>
+                <ShareBookSheet
+                  bookId={parseInt(id)}
+                  viewToken={book.view_invitation_token}
+                  editToken={book.edit_invitation_token}
+                />
+                <ManageCollaboratorsSheet bookId={parseInt(id)} />
+              </>
             )}
           </div>
         </div>
