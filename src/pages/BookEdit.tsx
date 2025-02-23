@@ -203,14 +203,11 @@ export default function BookEdit() {
               publishing={publishing}
             />
             {isOwner && id && book.view_invitation_token && book.edit_invitation_token && (
-              <>
-                <ShareBookSheet
-                  bookId={parseInt(id)}
-                  viewToken={book.view_invitation_token}
-                  editToken={book.edit_invitation_token}
-                />
-                <ManageCollaboratorsSheet bookId={parseInt(id)} />
-              </>
+              <ShareBookSheet
+                bookId={parseInt(id)}
+                viewToken={book.view_invitation_token}
+                editToken={book.edit_invitation_token}
+              />
             )}
           </div>
         </div>
