@@ -1,4 +1,3 @@
-
 import { BrowserRouter as Router, Routes, Route, useLocation } from "react-router-dom";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { Toaster } from "@/components/ui/toaster";
@@ -20,10 +19,12 @@ import Contact from "@/pages/Contact";
 import UserProfile from "@/pages/UserProfile";
 import SetUsername from "@/pages/SetUsername";
 import { useEffect } from "react";
+import { useGoogleAnalytics } from "@/hooks/useGoogleAnalytics";
 
 // ScrollToTop component that scrolls the window up on route change
 function ScrollToTop() {
   const { pathname } = useLocation();
+  useGoogleAnalytics();
 
   useEffect(() => {
     window.scrollTo(0, 0);
