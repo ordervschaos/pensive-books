@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -14,7 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 interface GeneratedPage {
   title: string;
   content: string;
-  type: "text" | "section";
+  pageType: "text" | "section";
 }
 
 export default function GenerateBook() {
@@ -55,32 +54,32 @@ export default function GenerateBook() {
         "generate-book-content",
         {
           body: {
-            prompt,
-            pageType,
+            prompt
           },
         }
       );
 
       if (generateError) throw generateError;
+      if (!generatedData?.pages || !Array.isArray(generatedData.pages)) {
+        throw new Error("Invalid response format from content generation");
+      }
 
       const pages = generatedData.pages as GeneratedPage[];
-      
-
       
       // Create pages in sequence
       for (let i = 0; i < pages.length; i++) {
         const page = pages[i];
-        // add title as h1 to the beginning of the content
-
-        await supabase
+        const { error: pageError } = await supabase
           .from("pages")
           .insert({
             book_id: bookData.id,
             title: page.title,
             html_content: page.content,
-            page_type: page.type,
+            page_type: page.pageType,
             page_index: i,
           });
+          
+        if (pageError) throw pageError;
       }
 
       toast({
@@ -128,33 +127,6 @@ export default function GenerateBook() {
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="pageType">Page Type</Label>
-              <Select value={pageType} onValueChange={(value: "text" | "section") => setPageType(value)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="text">
-                    <div className="flex items-center gap-2">
-                      <BookText className="h-4 w-4" />
-                      <span>Text Pages</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="section">
-                    <div className="flex items-center gap-2">
-                      <BookText className="h-4 w-4" />
-                      <span>Section Pages</span>
-                    </div>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-sm text-muted-foreground">
-                {pageType === "text" 
-                  ? "Text pages are best for long-form content with rich formatting."
-                  : "Section pages are ideal for chapter titles or section breaks."}
-              </p>
-            </div>
 
             <div className="space-y-2">
               <Label htmlFor="prompt">Prompt</Label>
