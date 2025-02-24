@@ -22,7 +22,7 @@ serve(async (req) => {
       : "You are an assistant that generates section titles for books. Each section should be a single h1 heading in HTML format, focused on being concise and impactful.";
 
     const formatInstructions = pageType === "text"
-      ? "Generate multiple pages. For each page, provide a title and HTML content. The content should use proper HTML formatting with tags like <h2>, <p>, <ul>, <ol>, <blockquote>, etc."
+      ? "Generate multiple pages. For each page, provide a title and HTML content. The content should use proper HTML formatting with tags like <h1>, <h2>, <p>, <ul>, <ol>, <blockquote>, etc. The first line of the content is the title and it's an h1 tag."
       : "Generate multiple section titles, each as an <h1> tag. These should be structured as chapter or section headings.";
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {

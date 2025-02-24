@@ -64,10 +64,14 @@ export default function GenerateBook() {
       if (generateError) throw generateError;
 
       const pages = generatedData.pages as GeneratedPage[];
+      
 
+      
       // Create pages in sequence
       for (let i = 0; i < pages.length; i++) {
         const page = pages[i];
+        // add title as h1 to the beginning of the content
+
         await supabase
           .from("pages")
           .insert({
@@ -85,7 +89,7 @@ export default function GenerateBook() {
       });
 
       // Navigate to the book edit page
-      navigate(`/book/${bookData.id}/edit`);
+      navigate(`/book/${bookData.id}`);
     } catch (error: any) {
       console.error("Error generating book:", error);
       toast({
