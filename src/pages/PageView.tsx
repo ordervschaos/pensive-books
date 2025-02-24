@@ -118,7 +118,15 @@ const PageView = () => {
     }
   };
 
-  const handleSave = async (html: string, content: any, title?: string) => {
+  const getTitleFromHtml = (html: string) => {
+    // the first line of the html content is the title and it's an h1 tag
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const h1 = doc.querySelector('h1');
+    const title = h1?.textContent?.trim() || 'Untitled';
+    return title;
+  }
+
+  const handleSave = async (html: string) => {
     if (!canEdit) {
       toast({
         variant: "destructive",
@@ -134,8 +142,7 @@ const PageView = () => {
         .from("pages")
         .update({ 
           html_content: html,
-          content: content,
-          title: title || 'Untitled',
+          title: getTitleFromHtml(html),
           updated_at: new Date().toISOString()
         })
         .eq("id", parseInt(pageId || "0"));

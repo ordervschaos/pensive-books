@@ -30,24 +30,24 @@ export const PageContent = ({
   const [editorJson, setEditorJson] = useState<any>(null);
 
   const debouncedSave = useCallback(
-    debounce((html: string, json: any) => {
+    debounce((html: string) => {
       if (!initialLoad) {
         // Extract title from the first h1 in the content
-        const firstHeading = json.content?.find(
-          (node: any) => node.type === 'heading' && node.attrs?.level === 1
-        );
+        // const firstHeading = editorJson.content?.find(
+        //   (node: any) => node.type === 'heading' && node.attrs?.level === 1
+        // );
 
-        let extractedTitle = '';
-        if (firstHeading?.content) {
-          extractedTitle = firstHeading.content
-            .filter((node: any) => node.type === 'text')
-            .map((node: any) => node.text)
-            .join('');
-        }
+        // let extractedTitle = '';
+        // if (firstHeading?.content) {
+        //   extractedTitle = firstHeading.content
+        //     .filter((node: any) => node.type === 'text')
+        //     .map((node: any) => node.text)
+        //     .join('');
+        // }
 
-        // Only use 'Untitled' if there's no title content
-        const finalTitle = extractedTitle.trim() || title || 'Untitled';
-        onSave(html, json, finalTitle);
+        // // Only use 'Untitled' if there's no title content
+        // const finalTitle = extractedTitle.trim() || title || 'Untitled';
+        onSave(html);
       }
     }, 200),
     [onSave, initialLoad, title]
