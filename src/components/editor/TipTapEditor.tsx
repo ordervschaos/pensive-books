@@ -8,7 +8,7 @@ import { EditorToolbar } from './EditorToolbar';
 
 interface TipTapEditorProps {
   content: string;
-  onChange: (html: string) => void;
+  onChange: (html: string, json?: any) => void;
   onTitleChange?: (title: string) => void;
   editable?: boolean;
   isEditing?: boolean;
