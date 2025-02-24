@@ -20,6 +20,7 @@ import UserProfile from "@/pages/UserProfile";
 import SetUsername from "@/pages/SetUsername";
 import JoinBook from "@/pages/JoinBook";
 import GenerateBook from "./pages/GenerateBook";
+import KindleSettings from "@/pages/KindleSettings";
 import { useEffect } from "react";
 import { useGoogleAnalytics } from "@/hooks/useGoogleAnalytics";
 
@@ -57,6 +58,14 @@ export default function App() {
               <Route path="/terms" element={<Terms />} />
               <Route path="/contact" element={<Contact />} />
               <Route path="/book/:id/join" element={<JoinBook />} />
+              <Route
+                path="/settings/kindle"
+                element={
+                  <PrivateRoute>
+                    <KindleSettings />
+                  </PrivateRoute>
+                }
+              />
               <Route
                 path="/set-username"
                 element={

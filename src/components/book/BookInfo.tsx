@@ -1,12 +1,12 @@
-
 import { 
   Card,
   CardHeader 
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ImageIcon, Download, FileText } from "lucide-react";
+import { ImageIcon, Download, FileText, Tablet } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { generatePDF, generateAndDownloadEPUB } from "@/lib/download";
+import { useNavigate } from "react-router-dom";
 
 interface BookInfoProps {
   name: string;
@@ -26,6 +26,7 @@ export const BookInfo = ({
   showTextOnCover = false
 }: BookInfoProps) => {
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   const handleDownloadPDF = async () => {
     const result = await generatePDF({ 
@@ -71,6 +72,10 @@ export const BookInfo = ({
         description: result.error?.message
       });
     }
+  };
+
+  const handleSendToKindle = () => {
+    navigate("/settings/kindle");
   };
 
   return (
@@ -125,6 +130,14 @@ export const BookInfo = ({
             >
               <FileText className="h-4 w-4 mr-2" />
               Download PDF
+            </Button>
+            <Button
+              onClick={handleSendToKindle}
+              variant="outline"
+              className="w-full text-xs sm:text-sm"
+            >
+              <Tablet className="h-4 w-4 mr-2" />
+              Send to Kindle
             </Button>
           </div>
         </CardHeader>
