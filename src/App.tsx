@@ -1,4 +1,3 @@
-
 import { BrowserRouter as Router, Routes, Route, useLocation } from "react-router-dom";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { Toaster } from "@/components/ui/toaster";
@@ -20,10 +19,10 @@ import Contact from "@/pages/Contact";
 import UserProfile from "@/pages/UserProfile";
 import SetUsername from "@/pages/SetUsername";
 import JoinBook from "@/pages/JoinBook";
+import GenerateBook from "./pages/GenerateBook";
 import { useEffect } from "react";
 import { useGoogleAnalytics } from "@/hooks/useGoogleAnalytics";
 
-// ScrollToTop component that scrolls the window up on route change
 function ScrollToTop() {
   const { pathname } = useLocation();
   useGoogleAnalytics();
@@ -35,8 +34,7 @@ function ScrollToTop() {
   return null;
 }
 
-function App() {
-  // Get the basename based on the environment
+export default function App() {
   const isProd = window.location.hostname === "www.pensive.me";
   const basename = isProd ? "" : "/";
 
@@ -48,7 +46,6 @@ function App() {
           <TopNav />
           <main className="flex-1">
             <Routes>
-              {/* Place the @ route before other routes to ensure proper matching */}
               <Route path="/:username" element={<UserProfile />} />
               
               <Route path="/" element={<Landing />} />
@@ -69,7 +66,6 @@ function App() {
                 }
               />
               
-              {/* Protected Routes */}
               <Route
                 path="/my-books"
                 element={
@@ -110,6 +106,14 @@ function App() {
                   </PrivateRoute>
                 }
               />
+              <Route
+                path="/generate-book"
+                element={
+                  <PrivateRoute>
+                    <GenerateBook />
+                  </PrivateRoute>
+                }
+              />
             </Routes>
           </main>
           <Footer />
@@ -119,5 +123,3 @@ function App() {
     </ThemeProvider>
   );
 }
-
-export default App;
