@@ -2,7 +2,7 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
-const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
+const deepseekApiKey = Deno.env.get('DEEPSEEK_API_KEY');
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -25,14 +25,14 @@ serve(async (req) => {
       ? "Generate multiple pages. For each page, provide a title and HTML content. The content should use proper HTML formatting with tags like <h2>, <p>, <ul>, <ol>, <blockquote>, etc."
       : "Generate multiple section titles, each as an <h1> tag. These should be structured as chapter or section headings.";
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${openAIApiKey}`,
+        'Authorization': `Bearer ${deepseekApiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: "deepseek-chat",
         messages: [
           { 
             role: 'system', 
@@ -43,11 +43,19 @@ serve(async (req) => {
             content: prompt 
           }
         ],
-        response_format: { type: "json_object" }
+        response_format: { type: "json_object" },
+        temperature: 0.7,
+        max_tokens: 4000
       }),
     });
 
     const data = await response.json();
+    console.log('DeepSeek API response:', data); // For debugging
+
+    if (data.error) {
+      throw new Error(data.error.message || 'Error from DeepSeek API');
+    }
+
     const generatedContent = JSON.parse(data.choices[0].message.content);
 
     // Ensure each page has the correct type
