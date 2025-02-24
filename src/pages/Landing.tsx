@@ -113,53 +113,57 @@ export default function Landing() {
             <h2 className="text-4xl font-serif font-bold text-primary text-center">
               Featured Books
             </h2>
-            <Carousel className="w-full max-w-5xl mx-auto">
-              <CarouselContent className="-ml-2 md:-ml-4">
-                {publicBooks.map((book) => (
-                  <CarouselItem key={book.id} className="pl-2 md:pl-4 sm:basis-1/2 md:basis-1/3 lg:basis-1/4">
-                    <Card
-                      className="relative cursor-pointer group overflow-hidden aspect-[3/4]"
-                      onClick={() => navigate(`/book/${book.id}`)}
-                    >
-                      {book.cover_url ? (
-                        <div className="relative w-full h-full">
-                          <img
-                            src={book.cover_url}
-                            alt={book.name}
-                            className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                          />
-                          {book.show_text_on_cover && (
-                            <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30 p-4">
-                              <h3 className="text-base sm:text-xl font-semibold text-white text-center mb-1 sm:mb-2">
-                                {book.name}
-                              </h3>
-                              {book.subtitle && (
-                                <p className="text-xs sm:text-sm text-white/90 text-center mb-1 sm:mb-2">
-                                  {book.subtitle}
-                                </p>
-                              )}
-                              {book.author && (
-                                <p className="text-xs sm:text-sm text-white/90 text-center">
-                                  by {book.author}
-                                </p>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="w-full h-full bg-muted flex items-center justify-center p-4">
-                          <h3 className="text-xs md:text-2xl font-semibold text-center text-muted-foreground break-words line-clamp-3">
-                            {book.name}
-                          </h3>
-                        </div>
-                      )}
-                    </Card>
-                  </CarouselItem>
-                ))}
-              </CarouselContent>
-              <CarouselPrevious />
-              <CarouselNext />
-            </Carousel>
+            <div className="relative px-8">
+              <Carousel className="w-full max-w-5xl mx-auto">
+                <CarouselContent className="-ml-2 md:-ml-4">
+                  {publicBooks.map((book) => (
+                    <CarouselItem key={book.id} className="pl-2 md:pl-4 basis-full sm:basis-1/2 md:basis-1/3 lg:basis-1/4">
+                      <Card
+                        className="relative cursor-pointer group overflow-hidden aspect-[3/4]"
+                        onClick={() => navigate(`/book/${book.id}`)}
+                      >
+                        {book.cover_url ? (
+                          <div className="relative w-full h-full">
+                            <img
+                              src={book.cover_url}
+                              alt={book.name}
+                              className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                            />
+                            {book.show_text_on_cover && (
+                              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30 p-4">
+                                <h3 className="text-base sm:text-xl font-semibold text-white text-center mb-1 sm:mb-2">
+                                  {book.name}
+                                </h3>
+                                {book.subtitle && (
+                                  <p className="text-xs sm:text-sm text-white/90 text-center mb-1 sm:mb-2">
+                                    {book.subtitle}
+                                  </p>
+                                )}
+                                {book.author && (
+                                  <p className="text-xs sm:text-sm text-white/90 text-center">
+                                    by {book.author}
+                                  </p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="w-full h-full bg-muted flex items-center justify-center p-4">
+                            <h3 className="text-xs md:text-2xl font-semibold text-center text-muted-foreground break-words line-clamp-3">
+                              {book.name}
+                            </h3>
+                          </div>
+                        )}
+                      </Card>
+                    </CarouselItem>
+                  ))}
+                </CarouselContent>
+                <div className="hidden sm:block">
+                  <CarouselPrevious className="left-4" />
+                  <CarouselNext className="right-4" />
+                </div>
+              </Carousel>
+            </div>
           </section>
         )}
 
