@@ -49,18 +49,18 @@ export const BookGrid = ({ books, title, showBadges = false }: BookGridProps) =>
                           className="w-full h-full object-cover transition-transform group-hover:scale-105"
                         />
                         {book.show_text_on_cover && (
-                          <div className="absolute inset-0  flex-col items-center justify-center bg-black/30 p-4">
-                            <h2 className="text-base sm:text-xl font-semibold text-white text-center mb-1 sm:mb-2">
+                          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/60 p-4">
+                            <h2 className="text-base sm:text-xl font-semibold text-slate-50 text-center mb-1 sm:mb-2">
                               {book.name}
                             </h2>
                             <div className="hidden sm:flex flex-col">
                             {book.subtitle && (
-                              <p className="text-xs sm:text-sm text-white/90 text-center mb-1 sm:mb-2">
+                              <p className="text-xs sm:text-sm text-slate-100 text-center mb-1 sm:mb-2">
                                 {book.subtitle}
                               </p>
                             )}
                             {book.author && (
-                              <p className="text-xs sm:text-sm text-white/90 text-center">
+                              <p className="text-xs sm:text-sm text-slate-100 text-center">
                                 by {book.author}
                               </p>
                             )}
@@ -69,17 +69,17 @@ export const BookGrid = ({ books, title, showBadges = false }: BookGridProps) =>
                         )}
                       </div>
                     ) : (
-                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-muted p-4">
-                        <h2 className="text-xs md:text-2xl font-semibold text-center text-white break-words line-clamp-3">
+                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-800 p-4">
+                        <h2 className="text-xs md:text-2xl font-semibold text-center text-slate-50 break-words line-clamp-3">
                           {book.name}
                         </h2>
                         {book.subtitle && (
-                          <p className="hidden sm:block text-xs sm:text-sm text-white/90 text-center mb-1 sm:mb-2">
+                          <p className="hidden sm:block text-xs sm:text-sm text-slate-100 text-center mb-1 sm:mb-2">
                             {book.subtitle}
                           </p>
                         )}
                         {book.author && (
-                          <p className="hidden sm:block text-xs sm:text-sm text-white/90 text-center">
+                          <p className="hidden sm:block text-xs sm:text-sm text-slate-100 text-center">
                             by {book.author}
                           </p>
                         )}
