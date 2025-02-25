@@ -4,9 +4,15 @@ import { generateEPUB } from './epub';
 import { prepareEPUBContent, EPUBOptions } from './epub-generator';
 import jsPDF from 'jspdf';
 
-type Page = Database['public']['Tables']['pages']['Row'] & {
+type BasePage = {
+  id: number;
+  title: string | null;
+  html_content: string | null;
   page_type: 'section' | 'page';
+  page_index: number | null;
 };
+
+type Page = BasePage & Database['public']['Tables']['pages']['Row'];
 
 interface DownloadOptions {
   bookId: number;
@@ -37,11 +43,7 @@ const loadImage = (url: string): Promise<HTMLImageElement> => {
   });
 };
 
-interface PageData extends Database['public']['Tables']['pages']['Row'] {
-  page_type: 'section' | 'page';
-}
-
-const fetchBookPages = async (bookId: number): Promise<PageData[]> => {
+const fetchBookPages = async (bookId: number): Promise<Page[]> => {
   const { data: pages, error } = await supabase
     .from("pages")
     .select("*")
@@ -179,6 +181,7 @@ export const generatePDF = async (
   options: DownloadOptions
 ): Promise<GenerateResult> => {
   try {
+    let sectionCount = 0;
     const pages = await fetchBookPages(options.bookId);
     
     const pdf = new jsPDF({
@@ -340,6 +343,7 @@ export const generatePDF = async (
         pdf.setFont('times', 'bold');
         pdf.setFontSize(32);
         const title = page.title || `Section ${sectionCount + 1}`;
+        sectionCount++;
         
         const titleLines = pdf.splitTextToSize(title, contentWidth);
         const lineHeight = 40;
