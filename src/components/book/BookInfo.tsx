@@ -1,3 +1,4 @@
+
 import { 
   Card,
   CardHeader 
@@ -104,7 +105,22 @@ export const BookInfo = ({
         return;
       }
 
-      // Send EPUB directly using the edge function
+      // Generate EPUB content
+      const result = await generateAndDownloadEPUB({ 
+        bookId, 
+        name, 
+        subtitle,
+        author,
+        coverUrl,
+        showTextOnCover,
+        returnBlob: true // Just get the blob, don't trigger download
+      });
+
+      if (!result.success || !result.blob) {
+        throw new Error('Failed to generate EPUB');
+      }
+
+      // Send to Kindle
       const { error: sendError } = await supabase.functions.invoke('send-to-kindle', {
         body: { 
           bookId,
