@@ -8,8 +8,10 @@ import { PagesList } from "@/components/book/PagesList";
 import { useBookPermissions } from "@/hooks/use-book-permissions";
 import { BookVisibilityToggle } from "@/components/book/BookVisibilityToggle";
 import { Button } from "@/components/ui/button";
-import { Copy, Settings } from "lucide-react";
+import { Copy, Settings, ArrowRight } from "lucide-react";
 import { setPageTitle } from "@/utils/pageTitle";
+
+const LOCALSTORAGE_BOOKMARKS_KEY = 'bookmarked_pages';
 
 const BookDetails = () => {
   const { id } = useParams();
@@ -21,6 +23,7 @@ const BookDetails = () => {
   const [publishing, setPublishing] = useState(false);
   const [isReorderMode, setIsReorderMode] = useState(false);
   const [isDeleteMode, setIsDeleteMode] = useState(false);
+  const [bookmarkedPageIndex, setBookmarkedPageIndex] = useState<number | null>(null);
   const { canEdit, isOwner, loading: permissionsLoading } = useBookPermissions(id);
 
   const getNumericId = (param: string | undefined) => {
@@ -46,11 +49,75 @@ const BookDetails = () => {
     }
   };
 
+  const fetchBookmarkedPage = async (session: any) => {
+    try {
+      const numericId = getNumericId(id);
+      if (session) {
+        const { data: userData, error } = await supabase
+          .from('user_data')
+          .select('bookmarked_pages')
+          .eq('user_id', session.user.id)
+          .single();
+
+        if (error) throw error;
+        
+        const bookmarks = userData?.bookmarked_pages || {};
+        setBookmarkedPageIndex(bookmarks[numericId] ?? null);
+      } else {
+        const storedBookmarks = localStorage.getItem(LOCALSTORAGE_BOOKMARKS_KEY);
+        const bookmarks = storedBookmarks ? JSON.parse(storedBookmarks) : {};
+        setBookmarkedPageIndex(bookmarks[numericId] ?? null);
+      }
+    } catch (error: any) {
+      console.error('Error fetching bookmarked page:', error);
+    }
+  };
+
+  const updateBookmark = async (pageIndex: number | null) => {
+    try {
+      const numericId = getNumericId(id);
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (session) {
+        const { data: userData, error: fetchError } = await supabase
+          .from('user_data')
+          .select('bookmarked_pages')
+          .eq('user_id', session.user.id)
+          .single();
+
+        if (fetchError) throw fetchError;
+
+        const bookmarks = userData?.bookmarked_pages || {};
+        const updatedBookmarks = { ...bookmarks, [numericId]: pageIndex };
+
+        const { error: updateError } = await supabase
+          .from('user_data')
+          .update({ bookmarked_pages: updatedBookmarks })
+          .eq('user_id', session.user.id);
+
+        if (updateError) throw updateError;
+      } else {
+        const storedBookmarks = localStorage.getItem(LOCALSTORAGE_BOOKMARKS_KEY);
+        const bookmarks = storedBookmarks ? JSON.parse(storedBookmarks) : {};
+        const updatedBookmarks = { ...bookmarks, [numericId]: pageIndex };
+        localStorage.setItem(LOCALSTORAGE_BOOKMARKS_KEY, JSON.stringify(updatedBookmarks));
+      }
+
+      setBookmarkedPageIndex(pageIndex);
+    } catch (error: any) {
+      console.error('Error updating bookmark:', error);
+      toast({
+        variant: "destructive",
+        title: "Error updating bookmark",
+        description: error.message
+      });
+    }
+  };
 
   useEffect(() => {
     const checkAuthAndFetch = async () => {
       const { data: { session } } = await supabase.auth.getSession();
-
+      fetchBookmarkedPage(session);
       fetchBookDetails();
     };
 
@@ -151,27 +218,26 @@ const BookDetails = () => {
     navigate(`/book/${id}/edit`);
   };
 
+  const handleContinueReading = () => {
+    const numericId = getNumericId(id);
+    if (!pages.length) return;
+
+    const pageToRead = bookmarkedPageIndex !== null ? 
+      pages[bookmarkedPageIndex] : 
+      pages[0];
+
+    if (pageToRead) {
+      updateBookmark(bookmarkedPageIndex === null ? 0 : bookmarkedPageIndex);
+      navigate(`/book/${numericId}/page/${pageToRead.id}`);
+    }
+  };
+
   if (loading) {
-    return (
-      <div className="min-h-screen flex flex-col">
-        <div className="container mx-auto px-4 py-6 space-y-6">
-          <Skeleton className="h-8 w-48" />
-          <Skeleton className="h-[200px] w-full" />
-          <Skeleton className="h-[400px] w-full" />
-        </div>
-      </div>
-    );
+    return null;
   }
 
   if (!book) {
-    return (
-      <div className="min-h-screen flex flex-col">
-        <div className="container mx-auto px-4 py-6 text-center">
-          <h1 className="text-2xl font-bold mb-4">Book not found</h1>
-          <p className="text-muted-foreground">The book you're looking for doesn't exist or you don't have permission to view it.</p>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   const BookInfoSection = () => {
@@ -238,13 +304,31 @@ const BookDetails = () => {
                 {book.name}
               </h1>
               <p className="text-muted-foreground mb-4">{book.author || "Unknown author"}</p>
+              {pages.length > 0 && (
+                <Button 
+                  onClick={handleContinueReading}
+                  className="w-full mb-4"
+                >
+                  {bookmarkedPageIndex !== null ? 'Continue reading' : 'Start reading'}
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              )}
               {canEdit && <BookActions />}
               <ShareBookLink />
             </div>
 
             <div className="col-span-full lg:col-span-1">
               <BookInfoSection />
-              <div className="hidden lg:block">
+              <div className="hidden lg:block space-y-4">
+                {pages.length > 0 && (
+                  <Button 
+                    onClick={handleContinueReading}
+                    className="w-full"
+                  >
+                    {bookmarkedPageIndex !== null ? 'Continue reading' : 'Start reading'}
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                )}
                 {canEdit && <BookActions />}
                 <ShareBookLink />
               </div>

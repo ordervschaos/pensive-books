@@ -360,6 +360,7 @@ export type Database = {
       }
       user_data: {
         Row: {
+          bookmarked_pages: Json | null
           created_at: string | null
           default_notebook: number | null
           email: string | null
@@ -374,6 +375,7 @@ export type Database = {
           username: string | null
         }
         Insert: {
+          bookmarked_pages?: Json | null
           created_at?: string | null
           default_notebook?: number | null
           email?: string | null
@@ -388,6 +390,7 @@ export type Database = {
           username?: string | null
         }
         Update: {
+          bookmarked_pages?: Json | null
           created_at?: string | null
           default_notebook?: number | null
           email?: string | null
