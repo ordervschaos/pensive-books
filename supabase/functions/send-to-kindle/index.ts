@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.4";
 import { corsHeaders } from "../_shared/cors.ts";
@@ -41,11 +40,15 @@ serve(async (req) => {
     }
 
     // Get request data
-    const { bookId, title, kindle_email } = await req.json();
+    const { bookId, title, kindle_email, epub_data } = await req.json();
     
-    if (!bookId || !title || !kindle_email) {
+    if (!bookId || !title || !kindle_email || !epub_data) {
       throw new Error('Missing required fields');
     }
+
+    // Convert base64 to Blob
+    const binaryData = Uint8Array.from(atob(epub_data), c => c.charCodeAt(0));
+    const blob = new Blob([binaryData], { type: 'application/epub+zip' });
 
     // Create form data for the email
     const formData = new FormData();
@@ -53,6 +56,7 @@ serve(async (req) => {
     formData.append('to', kindle_email);
     formData.append('subject', title);
     formData.append('text', `Your book "${title}" is attached.`);
+    formData.append('attachment', blob, `${title}.epub`);
 
     // Send the email through Mailgun
     const res = await fetch(mailgunEndpoint, {

@@ -112,19 +112,36 @@ export const BookInfo = ({
         author,
         coverUrl,
         showTextOnCover,
-        returnBlob: true // Just get the blob, don't trigger download
+        returnBlob: true
       });
 
       if (!result.success || !result.blob) {
         throw new Error('Failed to generate EPUB');
       }
 
+      // Convert blob to base64
+      const base64Data = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          if (typeof reader.result === 'string') {
+            // Remove the data URL prefix
+            const base64 = reader.result.split(',')[1];
+            resolve(base64);
+          } else {
+            reject(new Error('Failed to convert file to base64'));
+          }
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(result.blob);
+      });
+
       // Send to Kindle
       const { error: sendError } = await supabase.functions.invoke('send-to-kindle', {
         body: { 
           bookId,
           title: name,
-          kindle_email: userData.kindle_email
+          kindle_email: userData.kindle_email,
+          epub_data: base64Data
         },
         headers: {
           Authorization: `Bearer ${session.access_token}`
