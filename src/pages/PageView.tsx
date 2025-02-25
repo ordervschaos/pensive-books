@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -8,6 +9,8 @@ import { PageLoading } from "@/components/page/PageLoading";
 import { PageNotFound } from "@/components/page/PageNotFound";
 import { useBookPermissions } from "@/hooks/use-book-permissions";
 import { setPageTitle } from "@/utils/pageTitle";
+
+const LOCALSTORAGE_BOOKMARKS_KEY = 'bookmarked_pages';
 
 const PageView = () => {
   const { bookId, pageId } = useParams();
@@ -22,7 +25,6 @@ const PageView = () => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isEditing, setIsEditing] = useState(false);
   
-  // Extract numeric ID from URL parameter
   const getNumericId = (param: string | undefined) => {
     if (!param) return 0;
     const match = param.match(/^(\d+)/);
@@ -33,12 +35,49 @@ const PageView = () => {
   const numericPageId = getNumericId(pageId);
   const { canEdit, loading: loadingPermissions } = useBookPermissions(numericBookId.toString());
 
+  const updateBookmark = async (pageIndex: number) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (session) {
+        const { data: userData, error: fetchError } = await supabase
+          .from('user_data')
+          .select('bookmarked_pages')
+          .eq('user_id', session.user.id)
+          .maybeSingle();
+
+        if (fetchError) throw fetchError;
+
+        const bookmarks = (userData?.bookmarked_pages as Record<string, number>) || {};
+        const updatedBookmarks = { ...bookmarks, [numericBookId]: pageIndex };
+
+        const { error: updateError } = await supabase
+          .from('user_data')
+          .update({ bookmarked_pages: updatedBookmarks })
+          .eq('user_id', session.user.id);
+
+        if (updateError) throw updateError;
+      } else {
+        const storedBookmarks = localStorage.getItem(LOCALSTORAGE_BOOKMARKS_KEY);
+        const bookmarks = storedBookmarks ? JSON.parse(storedBookmarks) : {};
+        const updatedBookmarks = { ...bookmarks, [numericBookId]: pageIndex };
+        localStorage.setItem(LOCALSTORAGE_BOOKMARKS_KEY, JSON.stringify(updatedBookmarks));
+      }
+    } catch (error: any) {
+      console.error('Error updating bookmark:', error);
+      toast({
+        variant: "destructive",
+        title: "Error updating bookmark",
+        description: error.message
+      });
+    }
+  };
+
   const fetchPageDetails = async () => {
     try {
       setLoading(true);
       console.log("Fetching page details for pageId:", numericPageId);
       
-      // Fetch current page using maybeSingle() instead of single()
       const { data: pageData, error: pageError } = await supabase
         .from("pages")
         .select("*")
@@ -55,7 +94,6 @@ const PageView = () => {
       
       console.log("Page data fetched:", pageData);
       
-      // Update URL with slug if it exists
       if (pageData && !pageId?.includes('-') && pageData.title) {
         const slug = `${numericPageId}-${pageData.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
         navigate(`/book/${bookId}/page/${slug}`, { replace: true });
@@ -63,7 +101,6 @@ const PageView = () => {
       
       setPage(pageData);
 
-      // Fetch book details using maybeSingle()
       const { data: bookData, error: bookError } = await supabase
         .from("books")
         .select("*")
@@ -79,7 +116,6 @@ const PageView = () => {
       
       console.log("Book data fetched:", bookData);
       
-      // Update book URL with slug if it exists
       if (bookData && !bookId?.includes('-') && bookData.name) {
         const slug = `${numericBookId}-${bookData.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
         navigate(`/book/${slug}/page/${pageId}`, { replace: true });
@@ -87,7 +123,6 @@ const PageView = () => {
       
       setBook(bookData);
 
-      // Get total pages count and next page
       const { data: pagesData, error: pagesError } = await supabase
         .from("pages")
         .select("id, title, page_index")
@@ -100,6 +135,11 @@ const PageView = () => {
       setTotalPages(pagesData.length);
       const currentPageIndex = pagesData.findIndex(p => p.id === numericPageId);
       setCurrentIndex(currentPageIndex);
+
+      // Update bookmark when page loads
+      if (currentPageIndex !== -1) {
+        updateBookmark(currentPageIndex);
+      }
 
       // Get next page title if not the last page
       if (currentPageIndex < pagesData.length - 1) {
@@ -213,6 +253,9 @@ const PageView = () => {
 
       if (error) throw error;
       if (nextPage) {
+        // Update bookmark when navigating to a new page
+        updateBookmark(index);
+        
         const slug = nextPage.title ? 
           `${nextPage.id}-${nextPage.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}` : 
           nextPage.id.toString();
@@ -304,4 +347,3 @@ const PageView = () => {
 };
 
 export default PageView;
-
