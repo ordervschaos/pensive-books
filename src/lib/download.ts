@@ -15,17 +15,18 @@ interface DownloadOptions {
   coverUrl?: string | null;
   subtitle?: string | null;
   showTextOnCover?: boolean;
+  returnBlob?: boolean;
 }
 
 interface GenerateResult {
   success: boolean;
+  blob?: Blob;
   error?: {
     message: string;
     details?: unknown;
   };
 }
 
-// Helper function to load images
 const loadImage = (url: string): Promise<HTMLImageElement> => {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -54,7 +55,6 @@ const fetchBookPages = async (bookId: number): Promise<Page[]> => {
   }));
 };
 
-// Process HTML content to extract formatted text
 const processHtmlContent = (html: string): { lines: string[]; images: Array<{ url: string; afterLine: number }> } => {
   if (!html) return { lines: [], images: [] };
 
@@ -64,120 +64,102 @@ const processHtmlContent = (html: string): { lines: string[]; images: Array<{ ur
   const lines: string[] = [];
   const images: Array<{ url: string; afterLine: number }> = [];
   
-  // First replace all <br> tags with newlines in the HTML content
   div.querySelectorAll('br').forEach(br => {
     br.replaceWith('\n');
   });
 
-  // Track images and their positions
   div.querySelectorAll('img').forEach(img => {
     const src = img.getAttribute('src');
     if (src) {
-      // Store the image URL and the current line count
       images.push({
         url: src,
         afterLine: lines.length
       });
-      // Add extra spacing for the image
       lines.push('\n');
       lines.push('\n');
     }
   });
 
-  // Process headings with more spacing
   div.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach(heading => {
-    lines.push('\n'); // Extra line break before heading
+    lines.push('\n');
     lines.push(heading.textContent?.trim() || '');
-    lines.push('\n'); // Extra line break after heading
+    lines.push('\n');
   });
 
-  // Process paragraphs with proper spacing
   div.querySelectorAll('p').forEach(p => {
     const text = p.textContent?.trim();
     if (text) {
-      lines.push('\n'); // Line break before paragraph
-      // Split paragraph into individual lines to preserve manual line breaks
+      lines.push('\n');
       text.split('\n').forEach(line => {
         if (line.trim()) {
           lines.push(line.trim());
         } else {
-          // Add empty line for <br> tags that resulted in empty lines
           lines.push('');
         }
       });
-      lines.push('\n'); // Line break after paragraph
+      lines.push('\n');
     }
   });
 
-  // Process lists with proper indentation and spacing
   div.querySelectorAll('ul, ol').forEach(list => {
-    lines.push('\n'); // Line break before list
+    lines.push('\n');
     list.querySelectorAll('li').forEach(li => {
       const text = li.textContent?.trim();
       if (text) {
-        // Handle multi-line list items
         text.split('\n').forEach((line, index) => {
           if (line.trim()) {
             if (index === 0) {
               lines.push(`  • ${line.trim()}`);
             } else {
-              lines.push(`    ${line.trim()}`); // Extra indent for wrapped lines
+              lines.push(`    ${line.trim()}`);
             }
           } else {
-            // Add empty line for <br> tags in list items
             lines.push('');
           }
         });
       }
     });
-    lines.push('\n'); // Line break after list
+    lines.push('\n');
   });
 
-  // Process blockquotes with proper formatting
   div.querySelectorAll('blockquote').forEach(quote => {
-    lines.push('\n'); // Line break before quote
+    lines.push('\n');
     const text = quote.textContent?.trim();
     if (text) {
       text.split('\n').forEach(line => {
         if (line.trim()) {
           lines.push(`  "${line.trim()}"`);
         } else {
-          // Add empty line for <br> tags in quotes
           lines.push('');
         }
       });
     }
-    lines.push('\n'); // Line break after quote
+    lines.push('\n');
   });
 
-  // Process code blocks with proper formatting and spacing
   div.querySelectorAll('pre, code').forEach(code => {
-    lines.push('\n'); // Line break before code block
+    lines.push('\n');
     const text = code.textContent?.trim();
     if (text) {
       text.split('\n').forEach(line => {
         if (line.trim()) {
           lines.push(`  ${line}`);
         } else {
-          // Add empty line for <br> tags in code blocks
           lines.push('');
         }
       });
     }
-    lines.push('\n'); // Line break after code block
+    lines.push('\n');
   });
 
-  // Filter out consecutive empty lines
   const filteredLines = lines.reduce((acc: string[], line: string) => {
     const lastLine = acc[acc.length - 1];
-    // Only add line if it's not creating more than two consecutive empty lines
     if (!(line.trim() === '' && lastLine?.trim() === '' && acc[acc.length - 2]?.trim() === '')) {
       acc.push(line);
     }
     return acc;
   }, []);
 
-  // Remove empty lines at the beginning and end while preserving intentional spacing
   while (filteredLines.length > 0 && !filteredLines[0].trim()) {
     filteredLines.shift();
   }
@@ -194,7 +176,6 @@ export const generatePDF = async (
   try {
     const pages = await fetchBookPages(options.bookId);
     
-    // Initialize PDF
     const pdf = new jsPDF({
       unit: 'pt',
       format: 'a4',
@@ -209,99 +190,82 @@ export const generatePDF = async (
     const paragraphSpacing = 30;
     const maxImageHeight = pageHeight * 0.7;
 
-    // Store actual page numbers for TOC
     const tocPageNumbers: { [key: string]: number } = {};
     let currentPdfPage = 0;
 
-    // Add cover page if available
     if (options.coverUrl) {
       try {
         const coverImg = await loadImage(options.coverUrl);
         const coverAspectRatio = coverImg.height / coverImg.width;
         
-        // Make image cover the entire page
         let imgWidth = pageWidth;
         let imgHeight = imgWidth * coverAspectRatio;
 
-        // If height is too short, scale by height instead
         if (imgHeight < pageHeight) {
           imgHeight = pageHeight;
           imgWidth = imgHeight / coverAspectRatio;
         }
 
-        // Center the image if it's wider than the page
         const xPos = (pageWidth - imgWidth) / 2;
-        const yPos = 0; // Start from top of page
+        const yPos = 0;
 
-        // Add the cover image
         pdf.addImage(coverImg, 'JPEG', xPos, yPos, imgWidth, imgHeight);
 
-        // Add a single light overlay for better text visibility
         pdf.setFillColor(0, 0, 0);
         pdf.setGState(new pdf.GState({ opacity: 0.4 }));
         pdf.rect(0, 0, pageWidth, pageHeight, 'F');
         pdf.setGState(new pdf.GState({ opacity: 1 }));
 
-        // Add title text with white color and ensure it's on top
         pdf.setTextColor(255, 255, 255);
-        pdf.setFont('helvetica', 'bold'); // Keep Helvetica for cover - it looks better
-        pdf.setFontSize(42); // Increased from 36
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(42);
 
         const titleLines = pdf.splitTextToSize(options.name, pageWidth * 0.8);
         let textY = pageHeight * 0.4;
 
-        // Center and add title lines with slight shadow effect for better visibility
         titleLines.forEach(line => {
           const textWidth = pdf.getStringUnitWidth(line) * pdf.getFontSize();
           const textX = (pageWidth - textWidth) / 2;
           
-          // Add shadow effect
           pdf.setTextColor(0, 0, 0);
           pdf.text(line, textX + 2, textY + 2);
           
-          // Add main text
           pdf.setTextColor(255, 255, 255);
           pdf.text(line, textX, textY);
           
-          textY += 60; // Increased from 50
+          textY += 60;
         });
 
-        // Add subtitle if available
         if (options.subtitle) {
-          textY += 25; // Increased from 20
-          pdf.setFontSize(28); // Increased from 24
+          textY += 25;
+          pdf.setFontSize(28);
           pdf.setFont('helvetica', 'italic');
           const subtitleLines = pdf.splitTextToSize(options.subtitle, pageWidth * 0.8);
           subtitleLines.forEach(line => {
             const textWidth = pdf.getStringUnitWidth(line) * pdf.getFontSize();
             const textX = (pageWidth - textWidth) / 2;
             
-            // Add shadow effect
             pdf.setTextColor(0, 0, 0);
             pdf.text(line, textX + 1, textY + 1);
             
-            // Add main text
             pdf.setTextColor(255, 255, 255);
             pdf.text(line, textX, textY);
             
-            textY += 40; // Increased from 35
+            textY += 40;
           });
         }
 
-        // Add author if available
         if (options.author) {
-          textY += 45; // Increased from 40
-          pdf.setFontSize(24); // Increased from 20
+          textY += 45;
+          pdf.setFontSize(24);
           pdf.setFont('helvetica', 'normal');
           const authorText = `by ${options.author}`;
           const textWidth = pdf.getStringUnitWidth(authorText) * pdf.getFontSize();
           const textX = (pageWidth - textWidth) / 2;
           
-          // Add shadow effect
           pdf.setTextColor(0, 0, 0);
           pdf.text(authorText, textX + 1, textY + 1);
           
-          // Add main text
           pdf.setTextColor(255, 255, 255);
           pdf.text(authorText, textX, textY);
         }
@@ -311,11 +275,9 @@ export const generatePDF = async (
         console.warn('Failed to add cover image:', error);
       }
     } else {
-      // If no cover image, create a plain dark background cover
-      pdf.setFillColor(20, 20, 20); // Dark background
+      pdf.setFillColor(20, 20, 20);
       pdf.rect(0, 0, pageWidth, pageHeight, 'F');
 
-      // Add title text with white color
       pdf.setTextColor(255, 255, 255);
       pdf.setFont('helvetica', 'bold');
       pdf.setFontSize(36);
@@ -323,7 +285,6 @@ export const generatePDF = async (
       const titleLines = pdf.splitTextToSize(options.name, pageWidth * 0.8);
       let textY = pageHeight * 0.4;
 
-      // Center and add title lines
       titleLines.forEach(line => {
         const textWidth = pdf.getStringUnitWidth(line) * pdf.getFontSize();
         const textX = (pageWidth - textWidth) / 2;
@@ -355,27 +316,22 @@ export const generatePDF = async (
       }
     }
 
-    // Reset text color and opacity for content pages
     pdf.setTextColor(0, 0, 0);
     pdf.setGState(new pdf.GState({ opacity: 1 }));
 
-    // Add TOC placeholder page - we'll come back to fill it later
     pdf.addPage();
     currentPdfPage++;
     const tocPageNumber = currentPdfPage;
 
-    // First pass: Generate content and track actual page numbers
     for (const page of pages) {
       pdf.addPage();
       currentPdfPage++;
       
-      // Store the starting page number for this entry
       tocPageNumbers[page.id] = currentPdfPage;
 
       let y = margin;
 
       if (page.page_type === 'section') {
-        // Section page - center title both vertically and horizontally
         pdf.setFont('times', 'bold');
         pdf.setFontSize(32);
         const title = page.title || `Section ${sectionCount + 1}`;
@@ -394,23 +350,17 @@ export const generatePDF = async (
         continue;
       }
 
-      // Regular page title
       pdf.setFont('times', 'bold');
       pdf.setFontSize(20);
       const title = page.title || `Page ${page.page_index + 1}`;
       pdf.text(title, margin, y);
       y += 45;
 
-      // Process content
-      pdf.setFont('times', 'normal');
-      pdf.setFontSize(14);
-
       let contentData = { lines: [], images: [] };
       if (page.html_content) {
         contentData = processHtmlContent(page.html_content);
       }
 
-      // Add content with proper line breaks and images
       let lineCount = 0;
       for (const line of contentData.lines) {
         const imageToInsert = contentData.images.find(img => img.afterLine === lineCount);
@@ -462,7 +412,6 @@ export const generatePDF = async (
       }
     }
 
-    // Go back to TOC page and generate it with correct page numbers
     pdf.setPage(tocPageNumber);
     pdf.setFont('times', 'bold');
     pdf.setFontSize(24);
@@ -472,7 +421,6 @@ export const generatePDF = async (
     let sectionCount = 0;
     let pageCount = 0;
 
-    // Generate TOC with accurate page numbers
     pages.forEach((page, index) => {
       if (tocY > pageHeight - margin) {
         pdf.addPage();
@@ -488,15 +436,12 @@ export const generatePDF = async (
         pdf.setFont('times', 'bold');
         pdf.setFontSize(18);
         
-        // Add section text
         pdf.text(`${sectionCount}. ${title}`, margin, tocY);
         
-        // Add page number
         const pageNumText = pageNum.toString();
         const pageNumWidth = pdf.getStringUnitWidth(pageNumText) * pdf.getFontSize();
         pdf.text(pageNumText, pageWidth - margin - pageNumWidth, tocY);
         
-        // Add link
         pdf.link(margin, tocY - 15, pageWidth - (2 * margin), 20, { pageNumber: pageNum });
         
         tocY += 30;
@@ -506,10 +451,8 @@ export const generatePDF = async (
         pdf.setFontSize(14);
         const title = page.title || `Page ${pageCount}`;
         
-        // Add title text
         pdf.text(`${title}`, margin + 20, tocY);
         
-        // Add dotted line
         const titleWidth = pdf.getStringUnitWidth(title) * pdf.getFontSize();
         const pageNumText = pageNum.toString();
         const pageNumWidth = pdf.getStringUnitWidth(pageNumText) * pdf.getFontSize();
@@ -520,18 +463,27 @@ export const generatePDF = async (
           pdf.text('.', x, tocY);
         }
         
-        // Add page number
         pdf.text(pageNumText, pageWidth - margin - pageNumWidth, tocY);
         
-        // Add link
         pdf.link(margin + 20, tocY - 15, pageWidth - (2 * margin) - 20, 20, { pageNumber: pageNum });
         
         tocY += 25;
       }
     });
 
-    // Save PDF
-    pdf.save(`${options.name}.pdf`);
+    if (options.returnBlob) {
+      return { success: true, blob: pdf.output('blob') };
+    }
+
+    const url = window.URL.createObjectURL(pdf.output('blob'));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${options.name}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+
     return { success: true };
   } catch (error) {
     console.error('Error generating PDF:', error);
@@ -545,31 +497,25 @@ export const generatePDF = async (
   }
 };
 
-// Helper function to strip HTML and format text
 const stripHtmlAndFormatText = (html: string): string => {
   const temp = document.createElement('div');
   temp.innerHTML = html;
   
-  // Handle lists
   temp.querySelectorAll('li').forEach(li => {
     li.textContent = `• ${li.textContent}`;
   });
   
-  // Handle headers
   temp.querySelectorAll('h1,h2,h3,h4,h5,h6').forEach(header => {
     header.textContent = `\n${header.textContent}\n`;
   });
   
-  // Handle paragraphs
   temp.querySelectorAll('p').forEach(p => {
     p.textContent = `${p.textContent}\n`;
   });
   
-  // Remove remaining HTML tags and decode entities
   return temp.textContent || temp.innerText || '';
 };
 
-// Download and process images for EPUB
 const downloadImage = async (url: string): Promise<Blob | null> => {
   try {
     const response = await fetch(url);
@@ -581,7 +527,6 @@ const downloadImage = async (url: string): Promise<Blob | null> => {
   }
 };
 
-// Extract image URLs from HTML content
 const extractImageUrls = (html: string): string[] => {
   if (!html) return [];
   const div = document.createElement('div');
@@ -609,6 +554,10 @@ export const generateAndDownloadEPUB = async (
 
     const epubBlob = await generateEPUB(epubOptions, processedPages, images, options.showTextOnCover);
 
+    if (options.returnBlob) {
+      return { success: true, blob: epubBlob };
+    }
+
     const url = window.URL.createObjectURL(epubBlob);
     const a = document.createElement('a');
     a.href = url;
@@ -620,6 +569,7 @@ export const generateAndDownloadEPUB = async (
 
     return { success: true };
   } catch (error) {
+    console.error('Error generating EPUB:', error);
     return {
       success: false,
       error: {
