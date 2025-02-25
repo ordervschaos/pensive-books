@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -57,7 +58,7 @@ const BookDetails = () => {
           .from('user_data')
           .select('bookmarked_pages')
           .eq('user_id', session.user.id)
-          .single();
+          .maybeSingle();
 
         if (error) throw error;
         
@@ -83,11 +84,11 @@ const BookDetails = () => {
           .from('user_data')
           .select('bookmarked_pages')
           .eq('user_id', session.user.id)
-          .single();
+          .maybeSingle();
 
         if (fetchError) throw fetchError;
 
-        const bookmarks = userData?.bookmarked_pages || {};
+        const bookmarks = (userData?.bookmarked_pages as Record<string, number>) || {};
         const updatedBookmarks = { ...bookmarks, [numericId]: pageIndex };
 
         const { error: updateError } = await supabase
@@ -222,14 +223,25 @@ const BookDetails = () => {
     const numericId = getNumericId(id);
     if (!pages.length) return;
 
-    const pageToRead = bookmarkedPageIndex !== null ? 
-      pages[bookmarkedPageIndex] : 
-      pages[0];
+    const pageToNavigate = bookmarkedPageIndex !== null && bookmarkedPageIndex < pages.length
+      ? pages[bookmarkedPageIndex]
+      : pages[0];
 
-    if (pageToRead) {
-      updateBookmark(bookmarkedPageIndex === null ? 0 : bookmarkedPageIndex);
-      navigate(`/book/${numericId}/page/${pageToRead.id}`);
+    if (pageToNavigate) {
+      const newIndex = bookmarkedPageIndex === null ? 0 : bookmarkedPageIndex;
+      updateBookmark(newIndex);
+      navigate(`/book/${numericId}/page/${pageToNavigate.id}`);
     }
+  };
+
+  const getContinueReadingText = () => {
+    if (!pages.length) return "No pages available";
+    
+    if (bookmarkedPageIndex !== null && bookmarkedPageIndex < pages.length) {
+      return `Continue reading (Page ${bookmarkedPageIndex + 1} of ${pages.length})`;
+    }
+    
+    return `Start reading (Page 1 of ${pages.length})`;
   };
 
   if (loading) {
@@ -289,7 +301,7 @@ const BookDetails = () => {
       )}
       </>
     );
-  }
+  };
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -309,7 +321,7 @@ const BookDetails = () => {
                   onClick={handleContinueReading}
                   className="w-full mb-4"
                 >
-                  {bookmarkedPageIndex !== null ? 'Continue reading' : 'Start reading'}
+                  {getContinueReadingText()}
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
               )}
@@ -325,7 +337,7 @@ const BookDetails = () => {
                     onClick={handleContinueReading}
                     className="w-full"
                   >
-                    {bookmarkedPageIndex !== null ? 'Continue reading' : 'Start reading'}
+                    {getContinueReadingText()}
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
                 )}
