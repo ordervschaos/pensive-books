@@ -1,3 +1,4 @@
+
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import Image from '@tiptap/extension-image';
@@ -8,7 +9,7 @@ import { useSupabaseUpload } from '@/hooks/use-supabase-upload';
 
 export const lowlight = createLowlight(common);
 
-export const getEditorConfig = (content: string, onChange: (html: string) => void, editable = true, isEditing = true) => {
+export const getEditorConfig = (content: string, onChange: (html: string, json?: any) => void, editable = true, isEditing = true) => {
   const uploadImage = useSupabaseUpload();
 
   return {
@@ -95,7 +96,7 @@ export const getEditorConfig = (content: string, onChange: (html: string) => voi
     content,
     editable: editable && isEditing,
     onUpdate: ({ editor }) => {
-      onChange(editor.getHTML());
+      onChange(editor.getHTML(), editor.getJSON());
     },
     editorProps: {
       handleDrop: (view: any, event: any, slice: any, moved: boolean) => {

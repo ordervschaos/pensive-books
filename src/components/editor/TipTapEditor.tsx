@@ -1,3 +1,4 @@
+
 import { useEditor, EditorContent } from '@tiptap/react';
 import { useEffect } from 'react';
 import { useToast } from "@/hooks/use-toast";
@@ -7,7 +8,7 @@ import { EditorToolbar } from './EditorToolbar';
 
 interface TipTapEditorProps {
   content: string;
-  onChange: (html: string, json: any) => void;
+  onChange: (html: string, json?: any) => void;
   onTitleChange?: (title: string) => void;
   editable?: boolean;
   isEditing?: boolean;
@@ -19,8 +20,8 @@ interface TipTapEditorProps {
 
 export const TipTapEditor = ({ 
   content, 
-  onChange, 
-  onTitleChange, 
+  onChange,
+  onTitleChange,
   editable = true, 
   isEditing = true, 
   onToggleEdit,

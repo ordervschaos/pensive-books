@@ -71,10 +71,7 @@ export const generateContainerXml = (): string => `<?xml version="1.0" encoding=
 export const generateContentOpf = (metadata: EPUBMetadata, images: EPUBImage[]): string => `<?xml version="1.0" encoding="UTF-8"?>
 <package version="3.0" unique-identifier="BookId" xmlns="http://www.idpf.org/2007/opf">
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
-    <dc:title>${escapeXml(metadata.title)}</dc:title>
-    ${metadata.subtitle ? `<meta property="title-type" refines="#title">main</meta>
-    <dc:title id="subtitle">${escapeXml(metadata.subtitle)}</dc:title>
-    <meta property="title-type" refines="#subtitle">subtitle</meta>` : ''}
+    <dc:title>${escapeXml(metadata.subtitle ? `${metadata.title}: ${metadata.subtitle}` : metadata.title)}</dc:title>
     ${metadata.author ? `<dc:creator>${escapeXml(metadata.author)}</dc:creator>` : ''}
     <dc:language>${metadata.language || 'en'}</dc:language>
     <dc:identifier id="BookId">urn:uuid:${metadata.identifier || crypto.randomUUID()}</dc:identifier>
