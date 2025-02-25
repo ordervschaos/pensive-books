@@ -68,6 +68,8 @@ const processHtmlContent = (html: string): { lines: string[]; images: Array<{ ur
     br.replaceWith('\n');
   });
 
+  let sectionCount = 0;
+
   div.querySelectorAll('img').forEach(img => {
     const src = img.getAttribute('src');
     if (src) {
@@ -180,7 +182,7 @@ export const generatePDF = async (
       unit: 'pt',
       format: 'a4',
       orientation: 'portrait'
-    });
+    }) as any;
 
     const pageWidth = pdf.internal.pageSize.width;
     const pageHeight = pdf.internal.pageSize.height;
