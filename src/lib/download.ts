@@ -15,10 +15,12 @@ interface DownloadOptions {
   coverUrl?: string | null;
   subtitle?: string | null;
   showTextOnCover?: boolean;
+  returnBlob?: boolean;
 }
 
 interface GenerateResult {
   success: boolean;
+  blob?: Blob;
   error?: {
     message: string;
     details?: unknown;
@@ -609,6 +611,11 @@ export const generateAndDownloadEPUB = async (
 
     const epubBlob = await generateEPUB(epubOptions, processedPages, images, options.showTextOnCover);
 
+    if (options.returnBlob) {
+      return { success: true, blob: epubBlob };
+    }
+
+    // Only trigger download if returnBlob is false
     const url = window.URL.createObjectURL(epubBlob);
     const a = document.createElement('a');
     a.href = url;

@@ -1,4 +1,3 @@
-
 import { 
   Card,
   CardHeader 
@@ -138,12 +137,12 @@ export const BookInfo = ({
         title: "Book Sent to Kindle",
         description: "Your book will appear on your Kindle shortly"
       });
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error sending to Kindle:', error);
       toast({
         variant: "destructive",
         title: "Error Sending to Kindle",
-        description: error.message || 'An unexpected error occurred'
+        description: error instanceof Error ? error.message : 'An unexpected error occurred'
       });
     } finally {
       setSending(false);
