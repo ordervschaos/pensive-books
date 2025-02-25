@@ -37,7 +37,11 @@ const loadImage = (url: string): Promise<HTMLImageElement> => {
   });
 };
 
-const fetchBookPages = async (bookId: number): Promise<Page[]> => {
+interface PageData extends Database['public']['Tables']['pages']['Row'] {
+  page_type: 'section' | 'page';
+}
+
+const fetchBookPages = async (bookId: number): Promise<PageData[]> => {
   const { data: pages, error } = await supabase
     .from("pages")
     .select("*")
@@ -63,12 +67,11 @@ const processHtmlContent = (html: string): { lines: string[]; images: Array<{ ur
 
   const lines: string[] = [];
   const images: Array<{ url: string; afterLine: number }> = [];
-  
+  let sectionCount = 0;
+
   div.querySelectorAll('br').forEach(br => {
     br.replaceWith('\n');
   });
-
-  let sectionCount = 0;
 
   div.querySelectorAll('img').forEach(img => {
     const src = img.getAttribute('src');

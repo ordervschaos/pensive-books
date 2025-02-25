@@ -1,92 +1,93 @@
 
-import { useEffect, useState } from "react";
-import { useNavigate, useSearchParams, useParams } from "react-router-dom";
-import { Loader2 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
-import { useToast } from "@/hooks/use-toast";
-
+import { useEffect, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { supabase } from '@/integrations/supabase/client';
+import { PageLoading } from '@/components/page/PageLoading';
+import { useToast } from '@/hooks/use-toast';
 
 export default function JoinBook() {
-  const [searchParams] = useSearchParams();
+  const { token } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
-  const {id:bookId} = useParams();
-  console.log(bookId);
 
   useEffect(() => {
     const joinBook = async () => {
-      try {
-        const token = searchParams.get("token");
-        const access = searchParams.get("access");
-        const { data: { session } } = await supabase.auth.getSession();
+      if (!token) {
+        navigate('/');
+        return;
+      }
 
+      try {
+        // Get the invitation details
+        const { data: invitation, error: inviteError } = await supabase
+          .from('book_access')
+          .select('*')
+          .eq('invitation_token', token)
+          .single();
+
+        if (inviteError || !invitation) {
+          throw new Error('Invalid or expired invitation');
+        }
+
+        // Get the book details
+        const { data: book } = await supabase
+          .from('books')
+          .select('id, name')
+          .eq('id', invitation.book_id)
+          .single();
+
+        if (!book) {
+          throw new Error('Book not found');
+        }
+
+        // Get current user
+        const { data: { session } } = await supabase.auth.getSession();
         if (!session) {
-          // Store the join URL in localStorage to redirect back after auth
-          localStorage.setItem("returnTo", window.location.pathname + window.location.search);
-          navigate("/auth");
+          // Store the token to use after authentication
+          localStorage.setItem('pendingInvitation', token);
+          navigate('/auth');
           return;
         }
 
-        if (!token || !access) {
-          throw new Error("Invalid invitation link");
-        }
+        // Update the invitation with the user's ID
+        const { error: updateError } = await supabase
+          .from('book_access')
+          .update({ 
+            user_id: session.user.id,
+            status: 'accepted'
+          })
+          .eq('invitation_token', token);
 
-        // Check if user already has access
-        const { data: existingAccess } = await supabase
-          .from("book_access")
-          .select("id")
-          .eq("book_id", bookId)
-          .eq("invited_email", session.user.email)
-          .single();
-
-        if (!existingAccess) {
-          // Create book access entry
-          const { error: accessError } = await supabase
-            .from("book_access")
-            .insert({
-              book_id: bookId,
-              invited_email: session.user.email,
-              user_id: session.user.id,
-              access_level: access as "view" | "edit",
-              status: "accepted",
-              invitation_token: token
-            });
-
-          if (accessError) {
-            console.error("Error creating access:", accessError);
-            throw new Error("Failed to accept invitation. Please try again.");
-          }
+        if (updateError) {
+          throw updateError;
         }
 
         toast({
-          title: "Success",
-          description: "You now have access to this book"
+          title: "Success!",
+          description: `You have been added to "${book.name}"`
         });
 
-        navigate(`/book/${bookId}`);
+        // Redirect to the book
+        navigate(`/book/${book.id}`);
       } catch (error: any) {
-        console.error("Error joining book:", error);
+        console.error('Error joining book:', error);
         toast({
           variant: "destructive",
-          title: "Error joining book",
-          description: error.message
+          title: "Error",
+          description: error.message || "Failed to join book"
         });
-        navigate("/");
+        navigate('/');
       } finally {
         setLoading(false);
       }
     };
 
     joinBook();
-  }, [navigate, searchParams, toast]);
+  }, [token, navigate, toast]);
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="h-8 w-8 animate-spin" />
-      </div>
-    );
+    return <PageLoading />;
   }
 
   return null;
