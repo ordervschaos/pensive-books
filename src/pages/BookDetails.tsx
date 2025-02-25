@@ -2,14 +2,13 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { BookInfo } from "@/components/book/BookInfo";
 import { PagesList } from "@/components/book/PagesList";
 import { useBookPermissions } from "@/hooks/use-book-permissions";
-import { BookVisibilityToggle } from "@/components/book/BookVisibilityToggle";
-import { Button } from "@/components/ui/button";
-import { Copy, Settings, ArrowRight } from "lucide-react";
+import { BookActionsBar } from "@/components/book/BookActionsBar";
+import { ShareBookButton } from "@/components/book/ShareBookButton";
+import { ContinueReadingButton } from "@/components/book/ContinueReadingButton";
 import { setPageTitle } from "@/utils/pageTitle";
 
 const LOCALSTORAGE_BOOKMARKS_KEY = 'bookmarked_pages';
@@ -31,23 +30,6 @@ const BookDetails = () => {
     if (!param) return 0;
     const match = param.match(/^(\d+)/);
     return match ? parseInt(match[1]) : 0;
-  };
-
-  const handleCopyLink = async () => {
-    const bookUrl = window.location.href;
-    try {
-      await navigator.clipboard.writeText(bookUrl);
-      toast({
-        title: "Link copied",
-        description: "Book link has been copied to clipboard",
-      });
-    } catch (err) {
-      toast({
-        variant: "destructive",
-        title: "Failed to copy",
-        description: "Could not copy the link to clipboard",
-      });
-    }
   };
 
   const fetchBookmarkedPage = async (session: any) => {
@@ -234,74 +216,9 @@ const BookDetails = () => {
     }
   };
 
-  const getContinueReadingText = () => {
-    if (!pages.length) return "No pages available";
-    
-    if (bookmarkedPageIndex !== null && bookmarkedPageIndex < pages.length) {
-      return `Continue reading (Page ${bookmarkedPageIndex + 1} of ${pages.length})`;
-    }
-    
-    return `Start reading (Page 1 of ${pages.length})`;
-  };
-
-  if (loading) {
+  if (loading || !book) {
     return null;
   }
-
-  if (!book) {
-    return null;
-  }
-
-  const BookInfoSection = () => {
-    return <BookInfo
-      name={book.name}
-      subtitle={book.subtitle}
-      coverUrl={book.cover_url}
-      bookId={parseInt(id || "0")}
-      author={book.author}
-      showTextOnCover={book.show_text_on_cover}
-    />;
-  };
-
-  const BookActions = () => {
-    return canEdit && (
-      <div className="flex justify-center my-4 gap-2 justify-between">
-        <BookVisibilityToggle
-          isPublic={book.is_public}
-          onTogglePublish={togglePublish}
-          publishing={publishing}
-        />
-        <Button onClick={handleEditClick} variant="ghost">
-          <Settings className="h-4 w-4" />
-        </Button>
-      </div>
-    );
-  };
-
-  const ShareBookLink = () => {
-    return (
-      <>
-      {book.is_public && (
-        <div className="mt-4 space-y-2">
-          <p className="text-sm font-medium">Share this book</p>
-          <div className="flex items-center gap-2 p-2 rounded-md bg-muted text-sm">
-            <span className="truncate flex-1">
-              {window.location.href}
-            </span>
-            <Button
-              onClick={handleCopyLink}
-              variant="ghost"
-              size="sm"
-              className="shrink-0"
-            >
-              <Copy className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      )}
-      </>
-    );
-  };
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -316,33 +233,60 @@ const BookDetails = () => {
                 {book.name}
               </h1>
               <p className="text-muted-foreground mb-4">{book.author || "Unknown author"}</p>
-              {pages.length > 0 && (
-                <Button 
-                  onClick={handleContinueReading}
-                  className="w-full mb-4"
-                >
-                  {getContinueReadingText()}
-                  <ArrowRight className="ml-2 h-4 w-4" />
-                </Button>
+              
+              <ContinueReadingButton
+                onClick={handleContinueReading}
+                bookmarkedPageIndex={bookmarkedPageIndex}
+                totalPages={pages.length}
+                className="w-full mb-4"
+              />
+
+              {canEdit && (
+                <BookActionsBar
+                  isPublic={book.is_public}
+                  onTogglePublish={togglePublish}
+                  publishing={publishing}
+                  onEditClick={handleEditClick}
+                />
               )}
-              {canEdit && <BookActions />}
-              <ShareBookLink />
+              
+              <ShareBookButton
+                isPublic={book.is_public}
+                url={window.location.href}
+              />
             </div>
 
             <div className="col-span-full lg:col-span-1">
-              <BookInfoSection />
+              <BookInfo
+                name={book.name}
+                subtitle={book.subtitle}
+                coverUrl={book.cover_url}
+                bookId={parseInt(id || "0")}
+                author={book.author}
+                showTextOnCover={book.show_text_on_cover}
+              />
+              
               <div className="hidden lg:block space-y-4">
-                {pages.length > 0 && (
-                  <Button 
-                    onClick={handleContinueReading}
-                    className="w-full"
-                  >
-                    {getContinueReadingText()}
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
+                <ContinueReadingButton
+                  onClick={handleContinueReading}
+                  bookmarkedPageIndex={bookmarkedPageIndex}
+                  totalPages={pages.length}
+                  className="w-full"
+                />
+
+                {canEdit && (
+                  <BookActionsBar
+                    isPublic={book.is_public}
+                    onTogglePublish={togglePublish}
+                    publishing={publishing}
+                    onEditClick={handleEditClick}
+                  />
                 )}
-                {canEdit && <BookActions />}
-                <ShareBookLink />
+                
+                <ShareBookButton
+                  isPublic={book.is_public}
+                  url={window.location.href}
+                />
               </div>
             </div>
 
