@@ -1,11 +1,12 @@
+
+import { useState, useCallback } from "react";
 import { Input } from "@/components/ui/input";
-import { ChangeEvent } from "react";
 import { TipTapEditor } from "@/components/editor/TipTapEditor";
 import { getEditorConfig } from "../editor/config/editorConfig";
 import StarterKit from '@tiptap/starter-kit';
 import { SectionDocument } from "../editor/extensions/SectionDocument";
 import { Button } from "@/components/ui/button";
-import { Pencil, Eye, EyeOff } from "lucide-react";
+import { Pencil, Eye } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 
 interface SectionPageContentProps {
@@ -40,7 +41,6 @@ export const SectionPageContent = ({
             class: 'text-4xl font-bold text-center',
           }
         },
-        // Disable all other nodes/marks
         paragraph: false,
         text: true,
         bold: false,

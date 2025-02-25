@@ -1,3 +1,4 @@
+
 import { Database } from '@/integrations/supabase/types';
 import { supabase } from '@/integrations/supabase/client';
 import { generateEPUB } from './epub';
@@ -54,7 +55,7 @@ const fetchBookPages = async (bookId: number): Promise<Page[]> => {
 
   return (pages || []).map(page => ({
     ...page,
-    page_type: page.page_type as PageType
+    page_type: page.page_type === 'section' ? 'section' : 'page'
   }));
 };
 
@@ -548,7 +549,12 @@ export const generateAndDownloadEPUB = async (
 ): Promise<GenerateResult> => {
   try {
     const pages = await fetchBookPages(options.bookId);
-    const { processedPages, images } = await prepareEPUBContent(pages);
+    const processedPages = pages.map(page => ({
+      ...page,
+      page_type: page.page_type === 'section' ? 'section' : 'page'
+    }));
+    
+    const { processedPages: epubPages, images } = await prepareEPUBContent(processedPages);
 
     const epubOptions: EPUBOptions = {
       title: options.name,
