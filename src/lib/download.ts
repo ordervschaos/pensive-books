@@ -4,15 +4,12 @@ import { generateEPUB } from './epub';
 import { prepareEPUBContent, EPUBOptions } from './epub-generator';
 import jsPDF from 'jspdf';
 
-type BasePage = {
-  id: number;
-  title: string | null;
-  html_content: string | null;
-  page_type: 'section' | 'page';
-  page_index: number | null;
-};
+type PageRow = Database['public']['Tables']['pages']['Row'];
+type PageType = 'section' | 'page';
 
-type Page = BasePage & Database['public']['Tables']['pages']['Row'];
+type Page = Omit<PageRow, 'page_type'> & {
+  page_type: PageType;
+};
 
 interface DownloadOptions {
   bookId: number;
@@ -57,7 +54,7 @@ const fetchBookPages = async (bookId: number): Promise<Page[]> => {
 
   return (pages || []).map(page => ({
     ...page,
-    page_type: page.page_type as 'section' | 'page'
+    page_type: page.page_type as PageType
   }));
 };
 
@@ -181,9 +178,9 @@ export const generatePDF = async (
   options: DownloadOptions
 ): Promise<GenerateResult> => {
   try {
-    let sectionCount = 0;
     const pages = await fetchBookPages(options.bookId);
-    
+    let globalSectionCount = 0;
+
     const pdf = new jsPDF({
       unit: 'pt',
       format: 'a4',
@@ -342,8 +339,8 @@ export const generatePDF = async (
       if (page.page_type === 'section') {
         pdf.setFont('times', 'bold');
         pdf.setFontSize(32);
-        const title = page.title || `Section ${sectionCount + 1}`;
-        sectionCount++;
+        const title = page.title || `Section ${globalSectionCount + 1}`;
+        globalSectionCount++;
         
         const titleLines = pdf.splitTextToSize(title, contentWidth);
         const lineHeight = 40;
@@ -427,7 +424,7 @@ export const generatePDF = async (
     pdf.text('Table of Contents', margin, margin + 20);
 
     let tocY = margin + 60;
-    let sectionCount = 0;
+    let tocSectionCount = 0;
     let pageCount = 0;
 
     pages.forEach((page, index) => {
@@ -440,12 +437,12 @@ export const generatePDF = async (
       const pageNum = tocPageNumbers[page.id];
       
       if (page.page_type === 'section') {
-        sectionCount++;
-        const title = page.title || `Section ${sectionCount}`;
+        tocSectionCount++;
+        const title = page.title || `Section ${tocSectionCount}`;
         pdf.setFont('times', 'bold');
         pdf.setFontSize(18);
         
-        pdf.text(`${sectionCount}. ${title}`, margin, tocY);
+        pdf.text(`${tocSectionCount}. ${title}`, margin, tocY);
         
         const pageNumText = pageNum.toString();
         const pageNumWidth = pdf.getStringUnitWidth(pageNumText) * pdf.getFontSize();
