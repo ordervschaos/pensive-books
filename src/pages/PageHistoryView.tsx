@@ -1,11 +1,11 @@
 import { useParams, useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { format } from "date-fns";
 import { ArrowLeft } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { TipTapEditor } from "@/components/editor/TipTapEditor";
 import { useToast } from "@/hooks/use-toast";
 
@@ -21,23 +21,12 @@ export default function PageHistoryView() {
   const { pageId, bookId } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [selectedVersion, setSelectedVersion] = useState<PageVersion | null>(null);
+  const [displayContent, setDisplayContent] = useState<string>('');
 
-  const { data: versions } = useQuery({
-    queryKey: ['page-history', pageId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('page_history')
-        .select('*')
-        .eq('page_id', parseInt(pageId || '0'))
-        .order('created_at', { ascending: false });
-      
-      if (error) throw error;
-      return data as PageVersion[];
-    }
-  });
-
-  const { data: currentPage } = useQuery({
+  // First fetch the current page
+  const { data: currentPage, isLoading: isLoadingPage } = useQuery({
     queryKey: ['page', pageId],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -50,6 +39,41 @@ export default function PageHistoryView() {
       return data;
     }
   });
+
+  // Then fetch versions only after we have the current page
+  const { data: versions, isLoading: isLoadingVersions } = useQuery({
+    queryKey: ['page-history', pageId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('page_history')
+        .select('*')
+        .eq('page_id', parseInt(pageId || '0'))
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      return data as PageVersion[];
+    },
+    enabled: !!currentPage
+  });
+
+  const isLoading = isLoadingPage || isLoadingVersions;
+
+  // Handle version selection
+  const handleVersionSelect = (version: PageVersion | null) => {
+    setSelectedVersion(version);
+    if (version) {
+      setDisplayContent(version.html_content || '');
+    } else if (currentPage) {
+      setDisplayContent(currentPage.html_content || '');
+    }
+  };
+
+  // Set initial content when page loads
+  useEffect(() => {
+    if (!selectedVersion && currentPage) {
+      setDisplayContent(currentPage.html_content || '');
+    }
+  }, [currentPage]);
 
   const handleRestore = async () => {
     if (!selectedVersion || !pageId) return;
@@ -97,13 +121,6 @@ export default function PageHistoryView() {
     }
   };
 
-  const getDisplayContent = () => {
-    if (selectedVersion) {
-      return selectedVersion.html_content || '';
-    }
-    return currentPage?.html_content || '';
-  };
-
   return (
     <div className="min-h-screen flex">
       {/* Sidebar with versions */}
@@ -121,26 +138,32 @@ export default function PageHistoryView() {
         </div>
         <ScrollArea className="h-[calc(100vh-8rem)]">
           <div className="p-4 space-y-4">
-            <div 
-              className={`p-4 border rounded-lg cursor-pointer transition-colors hover:bg-accent ${!selectedVersion ? 'bg-accent' : ''}`}
-              onClick={() => setSelectedVersion(null)}
-            >
-              <div className="font-medium">Current Version</div>
-              <div className="text-sm text-muted-foreground">
-                {currentPage?.updated_at ? format(new Date(currentPage.updated_at), 'PPpp') : 'Unknown date'}
-              </div>
-            </div>
-            {versions?.map((version) => (
-              <div
-                key={version.id}
-                className={`p-4 border rounded-lg cursor-pointer transition-colors hover:bg-accent ${selectedVersion?.id === version.id ? 'bg-accent' : ''}`}
-                onClick={() => setSelectedVersion(version)}
-              >
-                <div className="text-sm text-muted-foreground">
-                  {format(new Date(version.created_at), 'PPpp')}
+            {isLoading ? (
+              <div className="p-4 text-muted-foreground">Loading...</div>
+            ) : (
+              <>
+                <div 
+                  className={`p-4 border rounded-lg cursor-pointer transition-colors hover:bg-accent ${!selectedVersion ? 'bg-accent' : ''}`}
+                  onClick={() => handleVersionSelect(null)}
+                >
+                  <div className="font-medium">Current Version</div>
+                  <div className="text-sm text-muted-foreground">
+                    {currentPage?.updated_at ? format(new Date(currentPage.updated_at), 'PPpp') : 'Unknown date'}
+                  </div>
                 </div>
-              </div>
-            ))}
+                {versions?.map((version) => (
+                  <div
+                    key={version.id}
+                    className={`p-4 border rounded-lg cursor-pointer transition-colors hover:bg-accent ${selectedVersion?.id === version.id ? 'bg-accent' : ''}`}
+                    onClick={() => handleVersionSelect(version)}
+                  >
+                    <div className="text-sm text-muted-foreground">
+                      {format(new Date(version.created_at), 'PPpp')}
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
           </div>
         </ScrollArea>
       </div>
@@ -166,15 +189,19 @@ export default function PageHistoryView() {
           )}
         </div>
         <div className="flex-1 overflow-auto">
-          {getDisplayContent() && (
-            <TipTapEditor
-              key={selectedVersion?.id || 'current'}
-              content={getDisplayContent()}
-              onChange={() => {}}
-              editable={false}
-              isEditing={false}
-              hideToolbar
-            />
+          {isLoading ? (
+            <div className="p-8 text-muted-foreground">Loading...</div>
+          ) : (
+            displayContent && (
+              <TipTapEditor
+                key={`${selectedVersion?.id || 'current'}-${displayContent.length}`}
+                content={displayContent}
+                onChange={() => {}}
+                editable={false}
+                isEditing={false}
+                hideToolbar
+              />
+            )
           )}
         </div>
       </div>
