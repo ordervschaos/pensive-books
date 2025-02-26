@@ -5,29 +5,30 @@ import { useToast } from "@/hooks/use-toast";
 import { useIsMobile } from '@/hooks/use-mobile';
 import { getEditorConfig } from './config/editorConfig';
 import { EditorToolbar } from './EditorToolbar';
+import { cn } from "@/lib/utils";
 
 interface TipTapEditorProps {
   content: string;
-  onChange: (html: string, json?: any) => void;
-  onTitleChange?: (title: string) => void;
+  onChange: (html: string, json: any) => void;
   editable?: boolean;
   isEditing?: boolean;
   onToggleEdit?: () => void;
   editorConfig?: Record<string, unknown>;
   hideToolbar?: boolean;
   className?: string;
+  customButtons?: React.ReactNode;
 }
 
 export const TipTapEditor = ({ 
   content, 
   onChange,
-  onTitleChange,
   editable = true, 
   isEditing = true, 
   onToggleEdit,
   editorConfig,
   hideToolbar = false,
-  className = ''
+  className = '',
+  customButtons
 }: TipTapEditorProps) => {
   const { toast } = useToast();
   const isMobile = useIsMobile();
@@ -74,9 +75,10 @@ export const TipTapEditor = ({
           isEditing={isEditing} 
           onToggleEdit={onToggleEdit}
           editable={editable}
+          customButtons={customButtons}
         />
       )}
-      <div className={`prose dark:prose-invert prose-slate w-full max-w-none p-8 flex-1 [&_.ProseMirror:focus]:outline-none bg-background ${isMobile ? 'text-xl' : 'text-2xl'} ${className} [&_img]:mx-auto [&_img]:block [&_p]:text-xl [&_p]:md:text-2xl [&_p]:leading-relaxed [&_p]:mb-6`}>
+      <div className={cn(`prose dark:prose-invert prose-slate w-full max-w-none p-8 flex-1 [&_.ProseMirror:focus]:outline-none bg-background ${isMobile ? 'text-xl' : 'text-2xl'} ${className} [&_img]:mx-auto [&_img]:block [&_p]:text-xl [&_p]:md:text-2xl [&_p]:leading-relaxed [&_p]:mb-6`)}>
         <EditorContent editor={editor} className="
           [&>div>h1]:text-4xl [&>div>h1]:font-bold [&>div>h1]:mb-8 [&>div>h1]:mt-0
           [&>div>h2]:text-3xl [&>div>h2]:font-bold [&>div>h2]:mb-6 [&>div>h2]:mt-8
