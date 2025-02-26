@@ -14,6 +14,7 @@ interface PageVersion {
   id: number;
   page_id: number;
   html_content: string;
+  content?: any;
   created_at: string;
 }
 
@@ -55,6 +56,16 @@ export default function PageHistoryView() {
     if (!selectedVersion || !pageId) return;
 
     try {
+      // Save current version to history before restoring
+      await supabase
+        .from('page_history')
+        .insert({
+          page_id: parseInt(pageId),
+          html_content: currentPage?.html_content,
+          created_by: currentPage?.owner_id
+        });
+
+      // Then update the current page with the selected version
       const { error } = await supabase
         .from('pages')
         .update({ 
@@ -64,15 +75,6 @@ export default function PageHistoryView() {
         .eq('id', parseInt(pageId));
 
       if (error) throw error;
-
-      // Save current version to history before restoring
-      await supabase
-        .from('page_history')
-        .insert({
-          page_id: parseInt(pageId),
-          html_content: currentPage?.html_content,
-          created_by: currentPage?.owner_id
-        });
 
       toast({
         title: "Version restored",
@@ -88,6 +90,13 @@ export default function PageHistoryView() {
         description: "Failed to restore the selected version."
       });
     }
+  };
+
+  const getDisplayContent = () => {
+    if (selectedVersion) {
+      return selectedVersion.html_content || '';
+    }
+    return currentPage?.html_content || '';
   };
 
   return (
@@ -152,13 +161,15 @@ export default function PageHistoryView() {
           )}
         </div>
         <div className="flex-1 overflow-auto">
-          <TipTapEditor
-            content={selectedVersion?.html_content || currentPage?.html_content || ''}
-            onChange={() => {}}
-            editable={false}
-            isEditing={false}
-            hideToolbar
-          />
+          {getDisplayContent() && (
+            <TipTapEditor
+              content={getDisplayContent()}
+              onChange={() => {}}
+              editable={false}
+              isEditing={false}
+              hideToolbar
+            />
+          )}
         </div>
       </div>
     </div>
