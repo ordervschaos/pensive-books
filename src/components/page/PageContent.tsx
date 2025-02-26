@@ -1,9 +1,10 @@
 
-import { useState, useCallback, ChangeEvent } from "react";
+import { useState, useCallback } from "react";
 import { debounce } from "lodash";
 import { SectionPageContent } from "./SectionPageContent";
 import { TextPageContent } from "./TextPageContent";
 import { supabase } from "@/integrations/supabase/client";
+import { useParams } from "react-router-dom";
 
 interface PageContentProps {
   content: string;
@@ -31,8 +32,11 @@ export const PageContent = ({
   const [currentTitle, setCurrentTitle] = useState(title || '');
   const [editorJson, setEditorJson] = useState<any>(null);
   const [lastSaveTime, setLastSaveTime] = useState<Date | null>(null);
+  const { id: pageId } = useParams();
 
   const saveHistory = async (html: string) => {
+    if (!pageId) return;
+    
     // Only save history if more than 5 minutes have passed since last save
     const now = new Date();
     if (lastSaveTime && now.getTime() - lastSaveTime.getTime() < 5 * 60 * 1000) {
@@ -59,7 +63,7 @@ export const PageContent = ({
         saveHistory(html);
       }
     }, 200),
-    [onSave, initialLoad]
+    [onSave, initialLoad, saveHistory]
   );
 
   const handleContentChange = (html: string, json: any) => {
@@ -93,7 +97,6 @@ export const PageContent = ({
             onChange={handleContentChange}
             onToggleEdit={() => handleEditingChange(!isEditing)}
             canEdit={canEdit}
-            onRevert={handleRevertToVersion}
           />
         ) : (
           <TextPageContent

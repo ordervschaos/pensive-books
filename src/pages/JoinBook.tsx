@@ -11,9 +11,8 @@ export default function JoinBook() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
-  const {id:bookId} = useParams();
-  console.log(bookId);
-
+  const { id } = useParams();
+  
   useEffect(() => {
     const joinBook = async () => {
       try {
@@ -22,14 +21,18 @@ export default function JoinBook() {
         const { data: { session } } = await supabase.auth.getSession();
 
         if (!session) {
-          // Store the join URL in localStorage to redirect back after auth
           localStorage.setItem("returnTo", window.location.pathname + window.location.search);
           navigate("/auth");
           return;
         }
 
-        if (!token || !access) {
+        if (!token || !access || !id) {
           throw new Error("Invalid invitation link");
+        }
+
+        const bookId = parseInt(id);
+        if (isNaN(bookId)) {
+          throw new Error("Invalid book ID");
         }
 
         // Check if user already has access
@@ -79,7 +82,7 @@ export default function JoinBook() {
     };
 
     joinBook();
-  }, [navigate, searchParams, toast]);
+  }, [navigate, searchParams, toast, id]);
 
   if (loading) {
     return (
