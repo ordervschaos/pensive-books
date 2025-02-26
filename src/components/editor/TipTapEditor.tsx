@@ -1,9 +1,11 @@
+
 import { useEditor, EditorContent } from '@tiptap/react';
 import { useEffect } from 'react';
 import { useToast } from "@/hooks/use-toast";
 import { useIsMobile } from '@/hooks/use-mobile';
 import { getEditorConfig } from './config/editorConfig';
 import { EditorToolbar } from './EditorToolbar';
+import { cn } from "@/lib/utils";
 
 interface TipTapEditorProps {
   content: string;
