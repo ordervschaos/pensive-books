@@ -107,6 +107,7 @@ export const PageContent = ({
             onToggleEdit={() => handleEditingChange(!isEditing)}
             canEdit={canEdit}
             onRevert={handleRevertToVersion}
+            pageId={pageId}
           />
         )}
       </div>

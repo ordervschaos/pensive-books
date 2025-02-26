@@ -10,6 +10,7 @@ interface TextPageContentProps {
   onToggleEdit?: () => void;
   canEdit?: boolean;
   onRevert: (content: string) => Promise<void>;
+  pageId?: string;
 }
 
 export const TextPageContent = ({ 
@@ -19,7 +20,8 @@ export const TextPageContent = ({
   title, 
   onToggleEdit,
   canEdit = false,
-  onRevert
+  onRevert,
+  pageId
 }: TextPageContentProps) => {
   const initialContent = content || `<h1 class="page-title">${title}</h1><p></p>`;
 
@@ -31,7 +33,7 @@ export const TextPageContent = ({
         editable={canEdit}
         isEditing={isEditing}
         onToggleEdit={canEdit ? onToggleEdit : undefined}
-        customButtons={canEdit ? <PageHistory pageId={pageId} currentContent={content} onRevert={onRevert} /> : undefined}
+        customButtons={canEdit && pageId ? <PageHistory pageId={pageId} currentContent={content} onRevert={onRevert} /> : undefined}
       />
     </div>
   );
