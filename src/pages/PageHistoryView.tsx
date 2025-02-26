@@ -58,11 +58,17 @@ export default function PageHistoryView() {
       // Save current version to history before restoring
       await supabase
         .from('page_history')
-        .insert({
-          page_id: parseInt(pageId),
-          html_content: currentPage?.html_content,
-          created_by: currentPage?.owner_id
-        });
+        .upsert(
+          {
+            page_id: parseInt(pageId),
+            html_content: currentPage?.html_content,
+            created_by: currentPage?.owner_id,
+            created_at: new Date().toISOString()
+          },
+          {
+            onConflict: 'page_id,created_at_minute'
+          }
+        );
 
       // Then update the current page with the selected version
       const { error } = await supabase

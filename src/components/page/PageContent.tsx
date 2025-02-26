@@ -1,4 +1,3 @@
-
 import { useState, useCallback, ChangeEvent } from "react";
 import { debounce } from "lodash";
 import { SectionPageContent } from "./SectionPageContent";
@@ -39,13 +38,19 @@ export const PageContent = ({
     debounce(async (html: string, json: any) => {
       if (!initialLoad && pageId) {
         try {
-          // Save the current version to history before updating
+          // Upsert the history - will update if entry exists within last minute
           await supabase
             .from('page_history')
-            .insert({
-              page_id: parseInt(pageId),
-              html_content: content // Save the previous content
-            });
+            .upsert(
+              {
+                page_id: parseInt(pageId),
+                html_content: content,
+                created_at: new Date().toISOString()
+              },
+              {
+                onConflict: 'page_id,created_at_minute'
+              }
+            );
           
           // Then save the new content
           onSave(html, json);
