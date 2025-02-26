@@ -1,4 +1,3 @@
-
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -163,6 +162,7 @@ export default function PageHistoryView() {
         <div className="flex-1 overflow-auto">
           {getDisplayContent() && (
             <TipTapEditor
+              key={selectedVersion?.id || 'current'}
               content={getDisplayContent()}
               onChange={() => {}}
               editable={false}

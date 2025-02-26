@@ -159,9 +159,6 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
             </Button>
             {customButtons}
           </div>
-          <div className="ml-auto">
-            {customButtons}
-          </div>
         </>
       )}
 
