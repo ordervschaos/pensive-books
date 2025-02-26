@@ -60,7 +60,7 @@ export const PageContent = ({
       } else {
         onSave(html, json);
       }
-    }, 1000),
+    }, 200),
     [onSave, initialLoad, content, pageId]
   );
 
