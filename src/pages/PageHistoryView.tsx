@@ -23,7 +23,6 @@ export default function PageHistoryView() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [selectedVersion, setSelectedVersion] = useState<PageVersion | null>(null);
-  const [displayContent, setDisplayContent] = useState<string>('');
 
   // First fetch the current page
   const { data: currentPage, isLoading: isLoadingPage } = useQuery({
@@ -31,13 +30,14 @@ export default function PageHistoryView() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('pages')
-        .select('*')
+        .select('*, owner_id')
         .eq('id', parseInt(pageId || '0'))
         .maybeSingle();
       
       if (error) throw error;
       return data;
-    }
+    },
+    staleTime: 0 // Always fetch fresh data
   });
 
   // Then fetch versions only after we have the current page
@@ -53,46 +53,42 @@ export default function PageHistoryView() {
       if (error) throw error;
       return data as PageVersion[];
     },
-    enabled: !!currentPage
+    enabled: !!currentPage,
+    staleTime: 0 // Always fetch fresh data
   });
 
   const isLoading = isLoadingPage || isLoadingVersions;
 
+  // Compute the current display content based on selection
+  const displayContent = selectedVersion 
+    ? selectedVersion.html_content || ''
+    : currentPage?.html_content || '';
+
   // Handle version selection
   const handleVersionSelect = (version: PageVersion | null) => {
     setSelectedVersion(version);
-    if (version) {
-      setDisplayContent(version.html_content || '');
-    } else if (currentPage) {
-      setDisplayContent(currentPage.html_content || '');
-    }
   };
 
-  // Set initial content when page loads
-  useEffect(() => {
-    if (!selectedVersion && currentPage) {
-      setDisplayContent(currentPage.html_content || '');
-    }
-  }, [currentPage]);
-
   const handleRestore = async () => {
-    if (!selectedVersion || !pageId) return;
+    if (!selectedVersion || !pageId || !currentPage?.owner_id) return;
 
     try {
       // Save current version to history before restoring
-      await supabase
+      const { error: historyError } = await supabase
         .from('page_history')
         .upsert(
           {
             page_id: parseInt(pageId),
             html_content: currentPage?.html_content,
-            created_by: currentPage?.owner_id,
+            created_by: currentPage.owner_id,
             created_at: new Date().toISOString()
           },
           {
             onConflict: 'page_id,created_at_minute'
           }
         );
+
+      if (historyError) throw historyError;
 
       // Then update the current page with the selected version
       const { error } = await supabase
@@ -104,6 +100,12 @@ export default function PageHistoryView() {
         .eq('id', parseInt(pageId));
 
       if (error) throw error;
+
+      // Invalidate queries to ensure fresh data
+      await Promise.all([
+        queryClient.invalidateQueries(['page', pageId]),
+        queryClient.invalidateQueries(['page-history', pageId])
+      ]);
 
       toast({
         title: "Version restored",

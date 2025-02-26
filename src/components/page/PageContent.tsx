@@ -38,6 +38,10 @@ export const PageContent = ({
     debounce(async (html: string, json: any) => {
       if (!initialLoad && pageId) {
         try {
+          // Get the current user's ID
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user?.id) throw new Error('User not authenticated');
+
           // Upsert the history - will update if entry exists within last minute
           await supabase
             .from('page_history')
@@ -45,6 +49,7 @@ export const PageContent = ({
               {
                 page_id: parseInt(pageId),
                 html_content: content,
+                created_by: user.id,
                 created_at: new Date().toISOString()
               },
               {
