@@ -37,23 +37,23 @@ export const PageContent = ({
 
   const debouncedSave = useCallback(
     debounce(async (html: string, json: any) => {
-      if (!initialLoad) {
+      if (!initialLoad && pageId) {
         try {
           // Save the current version to history before updating
-          if (pageId) {
-            await supabase
-              .from('page_history')
-              .insert({
-                page_id: parseInt(pageId),
-                html_content: content // Save the previous content
-              });
-          }
+          await supabase
+            .from('page_history')
+            .insert({
+              page_id: parseInt(pageId),
+              html_content: content // Save the previous content
+            });
           
           // Then save the new content
           onSave(html, json);
         } catch (error) {
           console.error('Error saving history:', error);
         }
+      } else {
+        onSave(html, json);
       }
     }, 1000),
     [onSave, initialLoad, content, pageId]

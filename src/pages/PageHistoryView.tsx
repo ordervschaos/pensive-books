@@ -10,11 +10,18 @@ import { useState } from "react";
 import { TipTapEditor } from "@/components/editor/TipTapEditor";
 import { useToast } from "@/hooks/use-toast";
 
+interface PageVersion {
+  id: number;
+  page_id: number;
+  html_content: string;
+  created_at: string;
+}
+
 export default function PageHistoryView() {
   const { pageId, bookId } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [selectedVersion, setSelectedVersion] = useState<any>(null);
+  const [selectedVersion, setSelectedVersion] = useState<PageVersion | null>(null);
 
   const { data: versions } = useQuery({
     queryKey: ['page-history', pageId],
@@ -22,11 +29,11 @@ export default function PageHistoryView() {
       const { data, error } = await supabase
         .from('page_history')
         .select('*')
-        .eq('page_id', pageId)
+        .eq('page_id', parseInt(pageId || '0'))
         .order('created_at', { ascending: false });
       
       if (error) throw error;
-      return data;
+      return data as PageVersion[];
     }
   });
 
@@ -36,8 +43,8 @@ export default function PageHistoryView() {
       const { data, error } = await supabase
         .from('pages')
         .select('*')
-        .eq('id', pageId)
-        .single();
+        .eq('id', parseInt(pageId || '0'))
+        .maybeSingle();
       
       if (error) throw error;
       return data;
@@ -45,7 +52,7 @@ export default function PageHistoryView() {
   });
 
   const handleRestore = async () => {
-    if (!selectedVersion) return;
+    if (!selectedVersion || !pageId) return;
 
     try {
       const { error } = await supabase
@@ -54,9 +61,18 @@ export default function PageHistoryView() {
           html_content: selectedVersion.html_content,
           updated_at: new Date().toISOString()
         })
-        .eq('id', pageId);
+        .eq('id', parseInt(pageId));
 
       if (error) throw error;
+
+      // Save current version to history before restoring
+      await supabase
+        .from('page_history')
+        .insert({
+          page_id: parseInt(pageId),
+          html_content: currentPage?.html_content,
+          created_by: currentPage?.owner_id
+        });
 
       toast({
         title: "Version restored",
