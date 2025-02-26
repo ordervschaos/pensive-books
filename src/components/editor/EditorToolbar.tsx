@@ -1,184 +1,163 @@
 import { Editor } from '@tiptap/react';
-import { Bold, Italic, Quote, Code2, Link2, List, ListOrdered, Image as ImageIcon, Undo, Redo, Pencil, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useToast } from "@/hooks/use-toast";
-import { useSupabaseUpload } from "@/hooks/use-supabase-upload";
+import { 
+  Bold, 
+  Italic, 
+  List, 
+  ListOrdered, 
+  Quote, 
+  Undo, 
+  Redo,
+  Heading1,
+  Heading2,
+  Heading3,
+  Code,
+  Image as ImageIcon,
+  Link,
+  Eye,
+  Pencil,
+} from 'lucide-react';
+import { ReactNode } from 'react';
 
 interface EditorToolbarProps {
-  editor: Editor | null;
-  isEditing: boolean;
+  editor: Editor;
+  isEditing?: boolean;
   onToggleEdit?: () => void;
-  editable: boolean;
+  editable?: boolean;
+  customButtons?: ReactNode;
 }
 
-export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable }: EditorToolbarProps) => {
-  const { toast } = useToast();
-  const uploadImage = useSupabaseUpload();
-
-  if (!editor) return null;
-
-  const addLink = () => {
-    const url = window.prompt('Enter URL');
-    if (url) {
-      editor.chain().focus().setLink({ href: url }).run();
-    }
-  };
-
-  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    
-    if (!file.type.startsWith('image/')) {
-      toast({
-        title: "Invalid file type",
-        description: "Please upload an image file",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    try {
-      const { default: url } = await uploadImage(file).upload();
-      editor.chain().focus().setImage({ src: url }).run();
-    } catch (error) {
-      toast({
-        title: "Upload failed",
-        description: "Failed to upload image",
-        variant: "destructive",
-      });
-    }
-  };
+export const EditorToolbar = ({ 
+  editor, 
+  isEditing = true, 
+  onToggleEdit,
+  editable = true,
+  customButtons
+}: EditorToolbarProps) => {
+  if (!editor) {
+    return null;
+  }
 
   return (
-    <div className={`rounded-md flex gap-1 items-center p-1 flex-wrap z-50 ${isEditing ? 'sticky top-4 bg-muted/50 shadow-sm backdrop-blur-sm' : ''}`}>
-      {isEditing && (
-        <>
-          <div className="flex gap-1">
-            {[2, 3, 4, 5, 6].map((level) => (
-              <Button
-                key={level}
-                variant="ghost"
-                size="sm"
-                onClick={() => editor.chain().focus().toggleHeading({ level: level as 2 | 3 | 4 | 5 | 6 }).run()}
-                className={editor.isActive('heading', { level: level as 2 | 3 | 4 | 5 | 6 }) ? 'bg-muted' : ''}
-              >
-                h{level}
-              </Button>
-            ))}
-          </div>
-          <div className="w-px h-4 bg-border mx-1" />
+    <div className="border-b flex items-center justify-between px-4 py-2 sticky top-0 bg-background z-10">
+      {isEditing ? (
+        <div className="flex flex-wrap items-center gap-1">
           <Button
+            size="icon"
             variant="ghost"
-            size="sm"
             onClick={() => editor.chain().focus().toggleBold().run()}
-            className={editor.isActive('bold') ? 'bg-muted' : ''}
+            className={editor.isActive('bold') ? 'bg-accent' : ''}
           >
             <Bold className="h-4 w-4" />
           </Button>
           <Button
+            size="icon"
             variant="ghost"
-            size="sm"
             onClick={() => editor.chain().focus().toggleItalic().run()}
-            className={editor.isActive('italic') ? 'bg-muted' : ''}
+            className={editor.isActive('italic') ? 'bg-accent' : ''}
           >
             <Italic className="h-4 w-4" />
           </Button>
           <Button
+            size="icon"
             variant="ghost"
-            size="sm"
-            onClick={() => editor.chain().focus().toggleBlockquote().run()}
-            className={editor.isActive('blockquote') ? 'bg-muted' : ''}
-          >
-            <Quote className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => editor.chain().focus().toggleCodeBlock().run()}
-            className={editor.isActive('codeBlock') ? 'bg-muted' : ''}
-          >
-            <Code2 className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
             onClick={() => editor.chain().focus().toggleBulletList().run()}
-            className={editor.isActive('bulletList') ? 'bg-muted' : ''}
+            className={editor.isActive('bulletList') ? 'bg-accent' : ''}
           >
             <List className="h-4 w-4" />
           </Button>
           <Button
+            size="icon"
             variant="ghost"
-            size="sm"
             onClick={() => editor.chain().focus().toggleOrderedList().run()}
-            className={editor.isActive('orderedList') ? 'bg-muted' : ''}
+            className={editor.isActive('orderedList') ? 'bg-accent' : ''}
           >
             <ListOrdered className="h-4 w-4" />
           </Button>
           <Button
+            size="icon"
             variant="ghost"
-            size="sm"
-            onClick={addLink}
-            className={editor.isActive('link') ? 'bg-muted' : ''}
+            onClick={() => editor.chain().focus().toggleBlockquote().run()}
+            className={editor.isActive('blockquote') ? 'bg-accent' : ''}
           >
-            <Link2 className="h-4 w-4" />
+            <Quote className="h-4 w-4" />
           </Button>
-          <div className="relative">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="relative"
-            >
-              <input
-                type="file"
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                onChange={handleImageUpload}
-                accept="image/*"
-              />
-              <ImageIcon className="h-4 w-4" />
-            </Button>
-          </div>
-          <div className="ml-auto flex gap-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => editor.chain().focus().undo().run()}
-              disabled={!editor.can().undo()}
-            >
-              <Undo className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => editor.chain().focus().redo().run()}
-              disabled={!editor.can().redo()}
-            >
-              <Redo className="h-4 w-4" />
-            </Button>
-          </div>
-        </>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => editor.chain().focus().toggleCodeBlock().run()}
+            className={editor.isActive('codeBlock') ? 'bg-accent' : ''}
+          >
+            <Code className="h-4 w-4" />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => editor.chain().focus().setHeading({ level: 1 }).run()}
+            className={editor.isActive('heading', { level: 1 }) ? 'bg-accent' : ''}
+          >
+            <Heading1 className="h-4 w-4" />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => editor.chain().focus().setHeading({ level: 2 }).run()}
+            className={editor.isActive('heading', { level: 2 }) ? 'bg-accent' : ''}
+          >
+            <Heading2 className="h-4 w-4" />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => editor.chain().focus().setHeading({ level: 3 }).run()}
+            className={editor.isActive('heading', { level: 3 }) ? 'bg-accent' : ''}
+          >
+            <Heading3 className="h-4 w-4" />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => editor.chain().focus().undo().run()}
+            disabled={!editor.can().undo()}
+          >
+            <Undo className="h-4 w-4" />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => editor.chain().focus().redo().run()}
+            disabled={!editor.can().redo()}
+          >
+            <Redo className="h-4 w-4" />
+          </Button>
+        </div>
+      ) : (
+        <div></div>
       )}
 
-      {editable && (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onToggleEdit}
-          className="ml-auto"
-        >
-          {isEditing ? (
-            <>
-              <Eye className="mr-2 h-4 w-4" />
-              Preview
-            </>
-          ) : (
-            <>
-              <Pencil className="mr-2 h-4 w-4" />
-              Edit
-            </>
-          )}
-        </Button>
-      )}
+      <div className="flex items-center gap-2">
+        {customButtons}
+        {editable && onToggleEdit && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onToggleEdit}
+            className="gap-2"
+          >
+            {isEditing ? (
+              <>
+                <Eye className="h-4 w-4" />
+                Preview
+              </>
+            ) : (
+              <>
+                <Pencil className="h-4 w-4" />
+                Edit
+              </>
+            )}
+          </Button>
+        )}
+      </div>
     </div>
   );
 };

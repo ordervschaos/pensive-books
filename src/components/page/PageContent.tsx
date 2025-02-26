@@ -1,12 +1,14 @@
+
 import { useState, useCallback, ChangeEvent } from "react";
 import { debounce } from "lodash";
 import { SectionPageContent } from "./SectionPageContent";
 import { TextPageContent } from "./TextPageContent";
+import { supabase } from "@/integrations/supabase/client";
 
 interface PageContentProps {
   content: string;
   title: string;
-  onSave: (html: string, json: any, title?: string) => void;
+  onSave: (html: string, json?: any) => void;
   saving: boolean;
   pageType?: 'text' | 'section';
   editable?: boolean;
@@ -28,29 +30,36 @@ export const PageContent = ({
   const [currentContent, setCurrentContent] = useState(content || '');
   const [currentTitle, setCurrentTitle] = useState(title || '');
   const [editorJson, setEditorJson] = useState<any>(null);
+  const [lastSaveTime, setLastSaveTime] = useState<Date | null>(null);
+
+  const saveHistory = async (html: string) => {
+    // Only save history if more than 5 minutes have passed since last save
+    const now = new Date();
+    if (lastSaveTime && now.getTime() - lastSaveTime.getTime() < 5 * 60 * 1000) {
+      return;
+    }
+
+    try {
+      const batchId = new Date().toISOString();
+      await supabase.from('page_history').insert({
+        page_id: parseInt(pageId),
+        html_content: html,
+        batch_id: batchId,
+      });
+      setLastSaveTime(now);
+    } catch (error) {
+      console.error('Error saving history:', error);
+    }
+  };
 
   const debouncedSave = useCallback(
     debounce((html: string) => {
       if (!initialLoad) {
-        // Extract title from the first h1 in the content
-        // const firstHeading = editorJson.content?.find(
-        //   (node: any) => node.type === 'heading' && node.attrs?.level === 1
-        // );
-
-        // let extractedTitle = '';
-        // if (firstHeading?.content) {
-        //   extractedTitle = firstHeading.content
-        //     .filter((node: any) => node.type === 'text')
-        //     .map((node: any) => node.text)
-        //     .join('');
-        // }
-
-        // // Only use 'Untitled' if there's no title content
-        // const finalTitle = extractedTitle.trim() || title || 'Untitled';
         onSave(html);
+        saveHistory(html);
       }
     }, 200),
-    [onSave, initialLoad, title]
+    [onSave, initialLoad]
   );
 
   const handleContentChange = (html: string, json: any) => {
@@ -58,13 +67,12 @@ export const PageContent = ({
     setCurrentContent(html);
     setEditorJson(json);
     setInitialLoad(false);
-    debouncedSave(html, json);
+    debouncedSave(html);
   };
 
-  const handleTitleChange = (e: ChangeEvent<HTMLInputElement>) => {
-    if (!editable) return;
-    setCurrentTitle(e.target.value);
-    setInitialLoad(false);
+  const handleRevertToVersion = async (html: string) => {
+    setCurrentContent(html);
+    await onSave(html);
   };
 
   const handleEditingChange = (editing: boolean) => {
@@ -85,6 +93,7 @@ export const PageContent = ({
             onChange={handleContentChange}
             onToggleEdit={() => handleEditingChange(!isEditing)}
             canEdit={canEdit}
+            onRevert={handleRevertToVersion}
           />
         ) : (
           <TextPageContent
@@ -94,6 +103,7 @@ export const PageContent = ({
             title={currentTitle}
             onToggleEdit={() => handleEditingChange(!isEditing)}
             canEdit={canEdit}
+            onRevert={handleRevertToVersion}
           />
         )}
       </div>
