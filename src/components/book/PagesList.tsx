@@ -106,9 +106,8 @@ const SortablePageItem = ({ page, bookId, onNavigate, onDelete, isBookmarked }: 
               {page.title || `Untitled Page ${page.page_index + 1}`}
             </h3>
             {isBookmarked && (
-              <Badge variant="secondary" className="h-5">
+              <Badge variant="default" className="h-5">
                 <BookmarkCheck className="h-3 w-3 mr-1" />
-                <span className="text-xs">Current page</span>
               </Badge>
             )}
           </div>
@@ -142,9 +141,8 @@ const RegularPageItem = ({ page, bookId, onNavigate, onDelete, isBookmarked }: S
               {page.title || `Untitled Page ${page.page_index + 1}`}
             </h3>
             {isBookmarked && (
-              <Badge variant="secondary" className="h-5">
+              <Badge variant="default" color="green" className="h-5">
                 <BookmarkCheck className="h-3 w-3 mr-1" />
-                <span className="text-xs">Current page</span>
               </Badge>
             )}
           </div>
@@ -193,9 +191,8 @@ const PageCard = ({ page, bookId, onNavigate, onDelete, isBookmarked }: Sortable
                 {page.title || `Untitled Page ${page.page_index + 1}`}
               </h3>
               {isBookmarked && (
-                <Badge variant="secondary" className="h-5 shrink-0">
-                  <BookmarkCheck className="h-3 w-3 mr-1" />
-                  <span className="text-xs">Current</span>
+                <Badge variant="default" color="green" className="h-5 shrink-0">
+                  <BookmarkCheck  className="h-3 w-3 mr-1" />
                 </Badge>
               )}
             </div>
