@@ -5,30 +5,29 @@ import { useToast } from "@/hooks/use-toast";
 import { useIsMobile } from '@/hooks/use-mobile';
 import { getEditorConfig } from './config/editorConfig';
 import { EditorToolbar } from './EditorToolbar';
-import { cn } from "@/lib/utils";
 
 interface TipTapEditorProps {
   content: string;
-  onChange: (html: string, json: any) => void;
+  onChange: (html: string, json?: any) => void;
+  onTitleChange?: (title: string) => void;
   editable?: boolean;
   isEditing?: boolean;
   onToggleEdit?: () => void;
-  editorConfig?: any;
+  editorConfig?: Record<string, unknown>;
   hideToolbar?: boolean;
   className?: string;
-  customButtons?: React.ReactNode;
 }
 
 export const TipTapEditor = ({ 
-  content,
+  content, 
   onChange,
-  editable = true,
-  isEditing = true,
+  onTitleChange,
+  editable = true, 
+  isEditing = true, 
   onToggleEdit,
   editorConfig,
   hideToolbar = false,
-  className,
-  customButtons
+  className = ''
 }: TipTapEditorProps) => {
   const { toast } = useToast();
   const isMobile = useIsMobile();
@@ -68,17 +67,26 @@ export const TipTapEditor = ({
   }
 
   return (
-    <div className={cn("flex flex-col w-full", className)}>
+    <div className="h-full flex flex-col">
       {!hideToolbar && (
         <EditorToolbar 
           editor={editor} 
           isEditing={isEditing} 
           onToggleEdit={onToggleEdit}
           editable={editable}
-          customButtons={customButtons}
         />
       )}
-      <EditorContent editor={editor} className="flex-1 px-4 py-2" />
+      <div className={`prose dark:prose-invert prose-slate w-full max-w-none p-8 flex-1 [&_.ProseMirror:focus]:outline-none bg-background ${isMobile ? 'text-xl' : 'text-2xl'} ${className} [&_img]:mx-auto [&_img]:block [&_p]:text-xl [&_p]:md:text-2xl [&_p]:leading-relaxed [&_p]:mb-6`}>
+        <EditorContent editor={editor} className="
+          [&>div>h1]:text-4xl [&>div>h1]:font-bold [&>div>h1]:mb-8 [&>div>h1]:mt-0
+          [&>div>h2]:text-3xl [&>div>h2]:font-bold [&>div>h2]:mb-6 [&>div>h2]:mt-8
+          [&>div>h3]:text-2xl [&>div>h3]:font-bold [&>div>h3]:mb-4 [&>div>h3]:mt-6
+          [&>div>h4]:text-xl [&>div>h4]:font-bold [&>div>h4]:mb-4 [&>div>h4]:mt-6
+          [&>div>h5]:text-lg [&>div>h5]:font-bold [&>div>h5]:mb-4 [&>div>h5]:mt-6
+          [&>div>h6]:text-base [&>div>h6]:font-bold [&>div>h6]:mb-4 [&>div>h6]:mt-6
+          [&>div>h1,h2,h3,h4,h5,h6]:tracking-tight [&>div>h1,h2,h3,h4,h5,h6]:text-foreground
+        " />
+      </div>
     </div>
   );
 };
