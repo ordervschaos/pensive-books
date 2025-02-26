@@ -90,48 +90,31 @@ serve(async (req) => {
   try {
     const { prompt } = await req.json();
 
-    const systemPrompt = `You are an AI assistant that generates structured book outlines. Generate a detailed outline for a book with the following structure:
+    const systemPrompt = `You are an AI assistant that generates structured book content as JSON. The output must follow this JSON format:
 
     {
-      "title": "Book Title",
-      "genre": "Primary genre with optional subgenre",
-      "targetAudience": "Description of target readers",
-      "estimatedLength": "Estimated word count and pages",
-      "description": "2-3 sentence book pitch",
-      "outline": [
-        {
-          "type": "chapter",
-          "title": "Chapter Title",
-          "description": "Brief chapter summary including key plot points and character development",
-          "wordCount": estimated_word_count,
-          "children": [
-            {
-              "type": "section",
-              "title": "Section Title",
-              "description": "Detailed section description with key scenes and developments",
-              "wordCount": estimated_word_count,
-              "children": [
-                {
-                  "type": "subsection",
-                  "title": "Subsection Title",
-                  "description": "Specific scene or plot point description",
-                  "wordCount": estimated_word_count
-                }
-              ]
-            }
-          ]
-        }
+      "pages": [
+        { // example section page
+          "pageType": "section",
+          "title": "Section Title",
+          "content": "<h1>Section Title</h1>"
+        },
+        { // example text page
+          "pageType": "text",
+          "title": "Page Title",
+          "content": "<h1>Page Title</h1><p>Page content...</p>"
+        },
+        // ...any other pages you generate
       ]
     }
 
-    Rules for outline generation:
-    1. Create a well-structured outline with 8-15 chapters
-    2. Each chapter should have 2-4 main sections
-    3. Sections can optionally have subsections for important scenes
-    4. Provide realistic word count estimates based on genre standards
-    5. Ensure the outline follows a logical progression
-    6. Include character development and plot points in descriptions
-    7. Target total word count should match common lengths for the chosen genre
+    Rules for JSON output:
+    1. The JSON response MUST have a "pages" array at the root level
+    2. Each page in the array MUST have:
+       - pageType: either "section" or "text"
+       - title: string
+       - content: string (with title wrapped in <h1>)
+    3. Use proper HTML tags (<h1>, <h2>, <p>, <ul>, <ol>, <blockquote>) within content strings
     
     Return only valid JSON that matches this exact structure.`;
 
@@ -142,7 +125,7 @@ serve(async (req) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4',
+        model: 'gpt-4o-mini',
         messages: [
           { 
             role: 'system', 
@@ -152,9 +135,9 @@ serve(async (req) => {
             role: 'user', 
             content: prompt 
           }
-        ],
-        temperature: 0.7
+        ]
       }),
+      
     });
 
     const data = await response.json();
@@ -164,21 +147,25 @@ serve(async (req) => {
       throw new Error(data.error.message || 'Error from OpenAI API');
     }
 
-    const bookOutline = JSON.parse(data.choices[0].message.content) as BookOutline;
+    const generatedContent = JSON.parse(data.choices[0].message.content) as GeneratedContent;
 
     // Validate the response structure
-    if (!bookOutline.title || !bookOutline.genre || !bookOutline.outline || !Array.isArray(bookOutline.outline)) {
-      throw new Error('Invalid response format: missing required fields');
+    if (!generatedContent.pages || !Array.isArray(generatedContent.pages)) {
+      throw new Error('Invalid response format: missing pages array');
     }
 
-    // Convert the outline to the required page format
-    const generatedContent = convertOutlineToPages(bookOutline);
+    // Validate each page in the array
+    generatedContent.pages.forEach((page) => {
+      if (!page.title || !page.content || !['section', 'text'].includes(page.pageType)) {
+        throw new Error('Invalid page format in response');
+      }
+    });
 
     return new Response(JSON.stringify(generatedContent), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
-    console.error('Error in generate-book-outline function:', error);
+    console.error('Error in generate-book-content function:', error);
     return new Response(JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

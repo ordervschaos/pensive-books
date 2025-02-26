@@ -328,6 +328,7 @@ const PageView = () => {
             editable={canEdit}
             onEditingChange={setIsEditing}
             canEdit={canEdit}
+            pageId={pageId}
           />
           <PageNavigation
             bookId={bookId || ""}

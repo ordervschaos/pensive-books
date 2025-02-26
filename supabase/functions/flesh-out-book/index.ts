@@ -74,7 +74,7 @@ serve(async (req) => {
       const newContent = data.choices[0].message.content.trim();
 
       // Update the page with combined content
-      const updatedHtmlContent = `${page.html_content}<p>${newContent}</p>`;
+      const updatedHtmlContent = `${newContent}`;
       
       const { error: updateError } = await supabase
         .from('pages')

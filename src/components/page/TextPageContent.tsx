@@ -1,4 +1,3 @@
-
 import { TipTapEditor } from "@/components/editor/TipTapEditor";
 import { PageHistory } from "./PageHistory";
 
@@ -24,6 +23,7 @@ export const TextPageContent = ({
   pageId
 }: TextPageContentProps) => {
   // Create initial content with title if it's empty
+
   const initialContent = content || `<h1 class="page-title">${title}</h1><p></p>`;
 
   return (
@@ -34,7 +34,7 @@ export const TextPageContent = ({
         editable={canEdit}
         isEditing={isEditing}
         onToggleEdit={canEdit ? onToggleEdit : undefined}
-        customButtons={canEdit && pageId ? <PageHistory pageId={parseInt(pageId)} currentContent={content} onRevert={onRevert} /> : undefined}
+        customButtons={canEdit && pageId ? <PageHistory pageId={parseInt(pageId) || 0} currentContent={content} onRevert={onRevert} /> : undefined}
       />
     </div>
   );

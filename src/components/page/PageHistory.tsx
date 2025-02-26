@@ -47,7 +47,7 @@ export const PageHistory = ({ pageId, currentContent, onRevert }: PageHistoryPro
         <ScrollArea className="h-[80vh] mt-4">
           <div className="space-y-4">
             {versions.map((version) => (
-              <div key={version.id} className="border rounded-lg p-4">
+              <div key={version.id} className="border rounded-lg p-4 h-[100px] overflow-y-hidden">
                 <div className="flex justify-between items-center mb-2">
                   <div className="text-sm text-muted-foreground">
                     {format(new Date(version.created_at), 'PPpp')}
