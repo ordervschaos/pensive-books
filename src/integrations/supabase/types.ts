@@ -219,6 +219,51 @@ export type Database = {
           },
         ]
       }
+      page_history: {
+        Row: {
+          batch_id: string | null
+          created_at: string | null
+          created_at_minute: string | null
+          created_by: string | null
+          html_content: string | null
+          id: number
+          page_id: number | null
+        }
+        Insert: {
+          batch_id?: string | null
+          created_at?: string | null
+          created_at_minute?: string | null
+          created_by?: string | null
+          html_content?: string | null
+          id?: never
+          page_id?: number | null
+        }
+        Update: {
+          batch_id?: string | null
+          created_at?: string | null
+          created_at_minute?: string | null
+          created_by?: string | null
+          html_content?: string | null
+          id?: never
+          page_id?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fk_page"
+            columns: ["page_id"]
+            isOneToOne: false
+            referencedRelation: "pages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "page_history_page_id_fkey"
+            columns: ["page_id"]
+            isOneToOne: false
+            referencedRelation: "pages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       pages: {
         Row: {
           archived: boolean | null
@@ -360,6 +405,7 @@ export type Database = {
       }
       user_data: {
         Row: {
+          bookmarked_pages: Json | null
           created_at: string | null
           default_notebook: number | null
           email: string | null
@@ -374,6 +420,7 @@ export type Database = {
           username: string | null
         }
         Insert: {
+          bookmarked_pages?: Json | null
           created_at?: string | null
           default_notebook?: number | null
           email?: string | null
@@ -388,6 +435,7 @@ export type Database = {
           username?: string | null
         }
         Update: {
+          bookmarked_pages?: Json | null
           created_at?: string | null
           default_notebook?: number | null
           email?: string | null

@@ -1,15 +1,18 @@
+
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { BookInfo } from "@/components/book/BookInfo";
 import { PagesList } from "@/components/book/PagesList";
 import { useBookPermissions } from "@/hooks/use-book-permissions";
-import { BookVisibilityToggle } from "@/components/book/BookVisibilityToggle";
-import { Button } from "@/components/ui/button";
-import { Copy, Settings } from "lucide-react";
+import { BookActionsBar } from "@/components/book/BookActionsBar";
+import { ShareBookButton } from "@/components/book/ShareBookButton";
+import { ContinueReadingButton } from "@/components/book/ContinueReadingButton";
+import { FleshOutBookDialog } from "@/components/book/FleshOutBookDialog";
 import { setPageTitle } from "@/utils/pageTitle";
+
+const LOCALSTORAGE_BOOKMARKS_KEY = 'bookmarked_pages';
 
 const BookDetails = () => {
   const { id } = useParams();
@@ -21,6 +24,7 @@ const BookDetails = () => {
   const [publishing, setPublishing] = useState(false);
   const [isReorderMode, setIsReorderMode] = useState(false);
   const [isDeleteMode, setIsDeleteMode] = useState(false);
+  const [bookmarkedPageIndex, setBookmarkedPageIndex] = useState<number | null>(null);
   const { canEdit, isOwner, loading: permissionsLoading } = useBookPermissions(id);
 
   const getNumericId = (param: string | undefined) => {
@@ -29,28 +33,75 @@ const BookDetails = () => {
     return match ? parseInt(match[1]) : 0;
   };
 
-  const handleCopyLink = async () => {
-    const bookUrl = window.location.href;
+  const fetchBookmarkedPage = async (session: any) => {
     try {
-      await navigator.clipboard.writeText(bookUrl);
-      toast({
-        title: "Link copied",
-        description: "Book link has been copied to clipboard",
-      });
-    } catch (err) {
+      const numericId = getNumericId(id);
+      if (session) {
+        const { data: userData, error } = await supabase
+          .from('user_data')
+          .select('bookmarked_pages')
+          .eq('user_id', session.user.id)
+          .maybeSingle();
+
+        if (error) throw error;
+        
+        const bookmarks = userData?.bookmarked_pages || {};
+        setBookmarkedPageIndex(bookmarks[numericId] ?? null);
+      } else {
+        const storedBookmarks = localStorage.getItem(LOCALSTORAGE_BOOKMARKS_KEY);
+        const bookmarks = storedBookmarks ? JSON.parse(storedBookmarks) : {};
+        setBookmarkedPageIndex(bookmarks[numericId] ?? null);
+      }
+    } catch (error: any) {
+      console.error('Error fetching bookmarked page:', error);
+    }
+  };
+
+  const updateBookmark = async (pageIndex: number | null) => {
+    try {
+      const numericId = getNumericId(id);
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (session) {
+        const { data: userData, error: fetchError } = await supabase
+          .from('user_data')
+          .select('bookmarked_pages')
+          .eq('user_id', session.user.id)
+          .maybeSingle();
+
+        if (fetchError) throw fetchError;
+
+        const bookmarks = (userData?.bookmarked_pages as Record<string, number>) || {};
+        const updatedBookmarks = { ...bookmarks, [numericId]: pageIndex };
+
+        const { error: updateError } = await supabase
+          .from('user_data')
+          .update({ bookmarked_pages: updatedBookmarks })
+          .eq('user_id', session.user.id);
+
+        if (updateError) throw updateError;
+      } else {
+        const storedBookmarks = localStorage.getItem(LOCALSTORAGE_BOOKMARKS_KEY);
+        const bookmarks = storedBookmarks ? JSON.parse(storedBookmarks) : {};
+        const updatedBookmarks = { ...bookmarks, [numericId]: pageIndex };
+        localStorage.setItem(LOCALSTORAGE_BOOKMARKS_KEY, JSON.stringify(updatedBookmarks));
+      }
+
+      setBookmarkedPageIndex(pageIndex);
+    } catch (error: any) {
+      console.error('Error updating bookmark:', error);
       toast({
         variant: "destructive",
-        title: "Failed to copy",
-        description: "Could not copy the link to clipboard",
+        title: "Error updating bookmark",
+        description: error.message
       });
     }
   };
 
-
   useEffect(() => {
     const checkAuthAndFetch = async () => {
       const { data: { session } } = await supabase.auth.getSession();
-
+      fetchBookmarkedPage(session);
       fetchBookDetails();
     };
 
@@ -151,78 +202,23 @@ const BookDetails = () => {
     navigate(`/book/${id}/edit`);
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex flex-col">
-        <div className="container mx-auto px-4 py-6 space-y-6">
-          <Skeleton className="h-8 w-48" />
-          <Skeleton className="h-[200px] w-full" />
-          <Skeleton className="h-[400px] w-full" />
-        </div>
-      </div>
-    );
-  }
+  const handleContinueReading = () => {
+    const numericId = getNumericId(id);
+    if (!pages.length) return;
 
-  if (!book) {
-    return (
-      <div className="min-h-screen flex flex-col">
-        <div className="container mx-auto px-4 py-6 text-center">
-          <h1 className="text-2xl font-bold mb-4">Book not found</h1>
-          <p className="text-muted-foreground">The book you're looking for doesn't exist or you don't have permission to view it.</p>
-        </div>
-      </div>
-    );
-  }
+    const pageToNavigate = bookmarkedPageIndex !== null && bookmarkedPageIndex < pages.length
+      ? pages[bookmarkedPageIndex]
+      : pages[0];
 
-  const BookInfoSection = () => {
-    return <BookInfo
-      name={book.name}
-      subtitle={book.subtitle}
-      coverUrl={book.cover_url}
-      bookId={parseInt(id || "0")}
-      author={book.author}
-      showTextOnCover={book.show_text_on_cover}
-    />;
+    if (pageToNavigate) {
+      const newIndex = bookmarkedPageIndex === null ? 0 : bookmarkedPageIndex;
+      updateBookmark(newIndex);
+      navigate(`/book/${numericId}/page/${pageToNavigate.id}`);
+    }
   };
 
-  const BookActions = () => {
-    return canEdit && (
-      <div className="flex justify-center my-4 gap-2 justify-between">
-        <BookVisibilityToggle
-          isPublic={book.is_public}
-          onTogglePublish={togglePublish}
-          publishing={publishing}
-        />
-        <Button onClick={handleEditClick} variant="ghost">
-          <Settings className="h-4 w-4" />
-        </Button>
-      </div>
-    );
-  };
-
-  const ShareBookLink = () => {
-    return (
-      <>
-      {book.is_public && (
-        <div className="mt-4 space-y-2">
-          <p className="text-sm font-medium">Share this book</p>
-          <div className="flex items-center gap-2 p-2 rounded-md bg-muted text-sm">
-            <span className="truncate flex-1">
-              {window.location.href}
-            </span>
-            <Button
-              onClick={handleCopyLink}
-              variant="ghost"
-              size="sm"
-              className="shrink-0"
-            >
-              <Copy className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      )}
-      </>
-    );
+  if (loading || !book) {
+    return null;
   }
 
   return (
@@ -238,15 +234,65 @@ const BookDetails = () => {
                 {book.name}
               </h1>
               <p className="text-muted-foreground mb-4">{book.author || "Unknown author"}</p>
-              {canEdit && <BookActions />}
-              <ShareBookLink />
+              
+              <div className="flex flex-wrap gap-3">
+                <ContinueReadingButton
+                  onClick={handleContinueReading}
+                  bookmarkedPageIndex={bookmarkedPageIndex}
+                  totalPages={pages.length}
+                  className="flex-1 sm:flex-none"
+                />
+                {canEdit && <FleshOutBookDialog bookId={parseInt(id || "0")} onComplete={fetchBookDetails} />}
+              </div>
+
+              {canEdit && (
+                <BookActionsBar
+                  isPublic={book.is_public}
+                  onTogglePublish={togglePublish}
+                  publishing={publishing}
+                  onEditClick={handleEditClick}
+                />
+              )}
+              
+              <ShareBookButton
+                isPublic={book.is_public}
+                url={window.location.href}
+              />
             </div>
 
             <div className="col-span-full lg:col-span-1">
-              <BookInfoSection />
-              <div className="hidden lg:block">
-                {canEdit && <BookActions />}
-                <ShareBookLink />
+              <BookInfo
+                name={book.name}
+                subtitle={book.subtitle}
+                coverUrl={book.cover_url}
+                bookId={parseInt(id || "0")}
+                author={book.author}
+                showTextOnCover={book.show_text_on_cover}
+              />
+              
+              <div className="hidden lg:block space-y-4">
+                <ContinueReadingButton
+                  onClick={handleContinueReading}
+                  bookmarkedPageIndex={bookmarkedPageIndex}
+                  totalPages={pages.length}
+                  className="w-full"
+                />
+
+                {canEdit && <FleshOutBookDialog bookId={parseInt(id || "0")} onComplete={fetchBookDetails} />}
+
+                {canEdit && (
+                  <BookActionsBar
+                    isPublic={book.is_public}
+                    onTogglePublish={togglePublish}
+                    publishing={publishing}
+                    onEditClick={handleEditClick}
+                  />
+                )}
+                
+                <ShareBookButton
+                  isPublic={book.is_public}
+                  url={window.location.href}
+                />
               </div>
             </div>
 

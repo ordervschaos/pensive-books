@@ -5,8 +5,25 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { TopNav } from "@/components/TopNav";
 
+interface Book {
+  id: number;
+  name: string;
+  subtitle?: string | null;
+  author?: string | null;
+  cover_url?: string | null;
+  show_text_on_cover?: boolean;
+  is_public: boolean;
+  is_archived: boolean;
+  created_at: string;
+  book_id?: number;
+  bookmarked_page_index?: number;
+  digest_bookmarked_page_index?: number;
+  edit_invitation_token?: string;
+  view_invitation_token?: string;
+}
+
 export default function Library() {
-  const [books, setBooks] = useState<any[]>([]);
+  const [books, setBooks] = useState<Book[]>([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
@@ -22,7 +39,7 @@ export default function Library() {
 
         if (error) throw error;
         setBooks(data || []);
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error("Error fetching published books:", error);
       } finally {
         setLoading(false);
@@ -72,17 +89,17 @@ export default function Library() {
                         />
                         {book.show_text_on_cover && (
                           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30 p-4">
-                            <h2 className="text-base sm:text-xl font-semibold text-white text-center mb-1 sm:mb-2">
+                            <h2 className="text-base sm:text-xl font-semibold text-white text-center mb-1 sm:mb-2 line-clamp-3 break-words">
                               {book.name}
                             </h2>
 
                             {book.subtitle && (
-                              <p className="text-xs hidden sm:block sm:text-sm text-white/90 text-center mb-1 sm:mb-2">
+                              <p className="text-xs hidden sm:block sm:text-sm text-white/90 text-center mb-1 sm:mb-2 line-clamp-2 break-words">
                                 {book.subtitle}
                               </p>
                             )}
                             {book.author && (
-                              <p className="text-xs hidden sm:block sm:text-sm text-white/90 text-center">
+                              <p className="text-xs hidden sm:block sm:text-sm text-white/90 text-center line-clamp-1 break-words">
                                 by {book.author}
                               </p>
                             )}
@@ -99,18 +116,18 @@ export default function Library() {
                   </Card>
                   <div className="flex-1 sm:mt-2 space-y-1 sm:text-center text-left">
                     <h3 
-                      className="text-sm text-muted-foreground font-medium truncate cursor-pointer"
+                      className="text-sm text-muted-foreground font-medium line-clamp-2 break-words cursor-pointer"
                       onClick={() => navigate(`/book/${book.id}`)}
                     >
                       {book.name}
                     </h3>
                     {book.subtitle && (
-                      <p className="text-xs text-muted-foreground truncate sm:hidden">
+                      <p className="text-xs text-muted-foreground line-clamp-2 break-words">
                         {book.subtitle}
                       </p>
                     )}
                     {book.author && (
-                      <p className="text-xs text-muted-foreground truncate sm:hidden">
+                      <p className="text-xs text-muted-foreground line-clamp-1 break-words sm:hidden">
                         by {book.author}
                       </p>
                     )}

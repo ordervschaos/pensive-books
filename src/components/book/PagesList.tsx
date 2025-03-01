@@ -1,3 +1,4 @@
+
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,7 +11,8 @@ import {
   Type, 
   Section, 
   Plus,
-  MoreVertical
+  MoreVertical,
+  BookmarkCheck
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -37,6 +39,7 @@ import {
   useSortable,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
+import { Badge } from "@/components/ui/badge";
 
 interface Page {
   id: number;
@@ -61,9 +64,12 @@ interface SortablePageItemProps {
   bookId: number;
   onNavigate: (pageId: number) => void;
   onDelete?: (pageId: number) => void;
+  isBookmarked?: boolean;
 }
 
-const SortablePageItem = ({ page, bookId, onNavigate, onDelete }: SortablePageItemProps) => {
+const LOCALSTORAGE_BOOKMARKS_KEY = 'bookmarked_pages';
+
+const SortablePageItem = ({ page, bookId, onNavigate, onDelete, isBookmarked }: SortablePageItemProps) => {
   const {
     attributes,
     listeners,
@@ -95,9 +101,16 @@ const SortablePageItem = ({ page, bookId, onNavigate, onDelete }: SortablePageIt
         onClick={() => onNavigate(page.id)}
       >
         <div className={`flex items-center ${page.page_type === 'section' ? 'justify-center min-h-[60px]' : 'justify-between'}`}>
-          <h3 className={`text-lg ${page.page_type === 'section' ? 'font-bold text-xl text-center' : ''}`}>
-            {page.title || `Untitled Page ${page.page_index + 1}`}
-          </h3>
+          <div className="flex items-center gap-2">
+            <h3 className={`text-lg ${page.page_type === 'section' ? 'font-bold text-xl text-center' : ''}`}>
+              {page.title || `Untitled Page ${page.page_index + 1}`}
+            </h3>
+            {isBookmarked && (
+              <Badge variant="default" className="h-5">
+                <BookmarkCheck className="h-3 w-3 mr-1" />
+              </Badge>
+            )}
+          </div>
           {page.page_type === 'text' && (
             <span className="text-sm text-muted-foreground">
               {wordCount} words
@@ -109,7 +122,7 @@ const SortablePageItem = ({ page, bookId, onNavigate, onDelete }: SortablePageIt
   );
 };
 
-const RegularPageItem = ({ page, bookId, onNavigate, onDelete }: SortablePageItemProps) => {
+const RegularPageItem = ({ page, bookId, onNavigate, onDelete, isBookmarked }: SortablePageItemProps) => {
   const wordCount = page.html_content && page.page_type === 'text' ? 
     page.html_content.replace(/<[^>]*>/g, '').trim().split(/\s+/).length : 
     0;
@@ -123,9 +136,16 @@ const RegularPageItem = ({ page, bookId, onNavigate, onDelete }: SortablePageIte
         onClick={() => onNavigate(page.id)}
       >
         <div className={`flex items-center ${page.page_type === 'section' ? 'justify-center min-h-[60px]' : 'justify-between'}`}>
-          <h3 className={`text-lg ${page.page_type === 'section' ? 'font-bold text-xl text-center' : ''}`}>
-            {page.title || `Untitled Page ${page.page_index + 1}`}
-          </h3>
+          <div className="flex items-center gap-2">
+            <h3 className={`text-lg ${page.page_type === 'section' ? 'font-bold text-xl text-center' : ''}`}>
+              {page.title || `Untitled Page ${page.page_index + 1}`}
+            </h3>
+            {isBookmarked && (
+              <Badge variant="default" color="green" className="h-5">
+                <BookmarkCheck className="h-3 w-3 mr-1" />
+              </Badge>
+            )}
+          </div>
           {page.page_type === 'text' && (
             <span className="text-sm text-muted-foreground">
               {wordCount} words
@@ -150,7 +170,7 @@ const RegularPageItem = ({ page, bookId, onNavigate, onDelete }: SortablePageIte
   );
 };
 
-const PageCard = ({ page, bookId, onNavigate, onDelete }: SortablePageItemProps) => {
+const PageCard = ({ page, bookId, onNavigate, onDelete, isBookmarked }: SortablePageItemProps) => {
   const wordCount = page.html_content && page.page_type === 'text' ? 
     page.html_content.replace(/<[^>]*>/g, '').trim().split(/\s+/).length : 
     0;
@@ -166,9 +186,16 @@ const PageCard = ({ page, bookId, onNavigate, onDelete }: SortablePageItemProps)
         <CardContent className="absolute inset-0 p-4 flex flex-col overflow-hidden">
           {/* Page Header */}
           <div className={`mb-3 pb-3 border-b border-border/50 ${page.page_type === 'section' ? 'flex-1 flex items-center justify-center' : ''}`}>
-            <h3 className={`${page.page_type === 'section' ? 'text-xl font-bold text-center' : 'text-base font-medium'} line-clamp-2`}>
-              {page.title || `Untitled Page ${page.page_index + 1}`}
-            </h3>
+            <div className="flex items-center gap-2 justify-between">
+              <h3 className={`${page.page_type === 'section' ? 'text-xl font-bold text-center' : 'text-base font-medium'} line-clamp-2`}>
+                {page.title || `Untitled Page ${page.page_index + 1}`}
+              </h3>
+              {isBookmarked && (
+                <Badge variant="default" color="green" className="h-5 shrink-0">
+                  <BookmarkCheck  className="h-3 w-3 mr-1" />
+                </Badge>
+              )}
+            </div>
           </div>
           
           {/* Page Content Preview - Only show for text pages */}
@@ -224,6 +251,34 @@ export const PagesList = ({
   const [isReordering, setIsReordering] = useState(isReorderMode);
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('grid');
   const [previousViewMode, setPreviousViewMode] = useState<'list' | 'grid'>('grid');
+  const [bookmarkedPageIndex, setBookmarkedPageIndex] = useState<number | null>(null);
+
+  useEffect(() => {
+    const fetchBookmarkedPage = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (session) {
+          const { data: userData } = await supabase
+            .from('user_data')
+            .select('bookmarked_pages')
+            .eq('user_id', session.user.id)
+            .maybeSingle();
+          
+          const bookmarks = userData?.bookmarked_pages || {};
+          setBookmarkedPageIndex(bookmarks[bookId] ?? null);
+        } else {
+          const storedBookmarks = localStorage.getItem(LOCALSTORAGE_BOOKMARKS_KEY);
+          const bookmarks = storedBookmarks ? JSON.parse(storedBookmarks) : {};
+          setBookmarkedPageIndex(bookmarks[bookId] ?? null);
+        }
+      } catch (error) {
+        console.error('Error fetching bookmarked page:', error);
+      }
+    };
+
+    fetchBookmarkedPage();
+  }, [bookId]);
 
   useEffect(() => {
     setIsReordering(isReorderMode);
@@ -447,80 +502,80 @@ export const PagesList = ({
                 <div className="sm:hidden">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="icon" className="rounded-full">
-                      <MoreVertical className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="w-40">
-                    <DropdownMenuItem
-                      onClick={() => {
-                        setIsReordering(false);
-                        onDeleteModeChange?.(!isDeleteMode);
-                      }}
-                      className="flex items-center gap-2"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      <span>{isDeleteMode ? 'Exit Delete Mode' : 'Delete Pages'}</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => {
-                        onDeleteModeChange?.(false);
-                        if (!isReordering) {
-                          setPreviousViewMode(viewMode);
-                          setViewMode('list');
-                        } else {
-                          setViewMode(previousViewMode);
-                        }
-                        setIsReordering(!isReordering);
-                      }}
-                      className="flex items-center gap-2"
-                    >
-                      <Move className="h-4 w-4" />
-                      <span>{isReordering ? 'Exit Reorder Mode' : 'Reorder Pages'}</span>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
+                      <Button variant="outline" size="icon" className="rounded-full">
+                        <MoreVertical className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-40">
+                      <DropdownMenuItem
+                        onClick={() => {
+                          setIsReordering(false);
+                          onDeleteModeChange?.(!isDeleteMode);
+                        }}
+                        className="flex items-center gap-2"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        <span>{isDeleteMode ? 'Exit Delete Mode' : 'Delete Pages'}</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => {
+                          onDeleteModeChange?.(false);
+                          if (!isReordering) {
+                            setPreviousViewMode(viewMode);
+                            setViewMode('list');
+                          } else {
+                            setViewMode(previousViewMode);
+                          }
+                          setIsReordering(!isReordering);
+                        }}
+                        className="flex items-center gap-2"
+                      >
+                        <Move className="h-4 w-4" />
+                        <span>{isReordering ? 'Exit Reorder Mode' : 'Reorder Pages'}</span>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
 
-              <div className="hidden sm:flex items-center gap-2">
-                <Button
-                  variant={isDeleteMode ? "secondary" : "outline"}
-                  size="sm"
-                  className="flex items-center gap-2"
-                  onClick={() => {
-                    setIsReordering(false);
-                    onDeleteModeChange?.(!isDeleteMode);
-                  }}
-                >
-                  <Trash2 className="h-4 w-4" />
-                  <span>{isDeleteMode ? 'Exit Delete' : 'Delete'}</span>
-                </Button>
-                <Button
-                  variant={isReordering ? "secondary" : "outline"}
-                  size="sm"
-                  className="flex items-center gap-2"
-                  onClick={() => {
-                    onDeleteModeChange?.(false);
-                    if (!isReordering) {
-                      setPreviousViewMode(viewMode);
-                      setViewMode('list');
-                    } else {
-                      setViewMode(previousViewMode);
-                    }
-                    setIsReordering(!isReordering);
-                  }}
-                >
-                  <Move className="h-4 w-4" />
-                  <span>{isReordering ? 'Exit Reorder' : 'Reorder'}</span>
-                </Button>
-              </div>
+                <div className="hidden sm:flex items-center gap-2">
+                  <Button
+                    variant={isDeleteMode ? "secondary" : "outline"}
+                    size="sm"
+                    className="flex items-center gap-2"
+                    onClick={() => {
+                      setIsReordering(false);
+                      onDeleteModeChange?.(!isDeleteMode);
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    <span>{isDeleteMode ? 'Exit Delete' : 'Delete'}</span>
+                  </Button>
+                  <Button
+                    variant={isReordering ? "secondary" : "outline"}
+                    size="sm"
+                    className="flex items-center gap-2"
+                    onClick={() => {
+                      onDeleteModeChange?.(false);
+                      if (!isReordering) {
+                        setPreviousViewMode(viewMode);
+                        setViewMode('list');
+                      } else {
+                        setViewMode(previousViewMode);
+                      }
+                      setIsReordering(!isReordering);
+                    }}
+                  >
+                    <Move className="h-4 w-4" />
+                    <span>{isReordering ? 'Exit Reorder' : 'Reorder'}</span>
+                  </Button>
+                </div>
               </>
             )}
           </div>
 
           {canEdit && (
             <div className="flex flex-wrap items-center gap-4 ">
-                <Button
+              <Button
                 variant="outline"
                 onClick={() => createNewPage('section')}
                 className="flex items-center gap-2 relative flex-1 sm:flex-initial justify-center"
@@ -534,7 +589,6 @@ export const PagesList = ({
                 </div>
               </Button>
               <Button
-                // variant="outline"
                 onClick={() => createNewPage('text')}
                 className="flex items-center gap-2 relative flex-1 sm:flex-initial justify-center"
                 title="Add Text Page"
@@ -546,7 +600,6 @@ export const PagesList = ({
                   <Plus className="h-3 w-3 text-white" />
                 </div>
               </Button>
-            
             </div>
           )}
         </div>
@@ -575,6 +628,7 @@ export const PagesList = ({
                       page={page}
                       bookId={bookId}
                       onNavigate={(pageId) => navigate(`/book/${bookId}/page/${pageId}`)}
+                      isBookmarked={bookmarkedPageIndex === page.page_index}
                     />
                   ))}
                 </SortableContext>
@@ -588,6 +642,7 @@ export const PagesList = ({
                     bookId={bookId}
                     onNavigate={(pageId) => navigate(`/book/${bookId}/page/${pageId}`)}
                     onDelete={isDeleteMode && canEdit ? handleDeletePage : undefined}
+                    isBookmarked={bookmarkedPageIndex === page.page_index}
                   />
                 ) : (
                   <PageCard
@@ -596,6 +651,7 @@ export const PagesList = ({
                     bookId={bookId}
                     onNavigate={(pageId) => navigate(`/book/${bookId}/page/${pageId}`)}
                     onDelete={isDeleteMode && canEdit ? handleDeletePage : undefined}
+                    isBookmarked={bookmarkedPageIndex === page.page_index}
                   />
                 )
               ))

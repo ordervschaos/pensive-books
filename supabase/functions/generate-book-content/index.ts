@@ -1,7 +1,6 @@
+
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-
-const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -25,8 +24,12 @@ serve(async (req) => {
 
   try {
     const { prompt } = await req.json();
+    
+    // Get Deepseek API key
+    const deepseekApiKey = Deno.env.get('DEEPSEEK_API_KEY');
+    if (!deepseekApiKey) throw new Error('Deepseek API key not configured');
 
-    const systemPrompt = `You are an AI assistant that generates structured book content as JSON. The output must follow this JSON format:
+    const systemPrompt = `You are an expert book writer that generates structured book content as JSON. The output must follow this JSON format:
 
     {
       "pages": [
@@ -54,14 +57,14 @@ serve(async (req) => {
     
     Return only valid JSON that matches this exact structure.`;
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${openAIApiKey}`,
+        'Authorization': `Bearer ${deepseekApiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: 'deepseek-chat',
         messages: [
           { 
             role: 'system', 
@@ -71,18 +74,20 @@ serve(async (req) => {
             role: 'user', 
             content: prompt 
           }
-        ]
+        ],
+        temperature: 0.7,
+        max_tokens: 4000
       }),
-      
     });
 
     const data = await response.json();
-    console.log('OpenAI API response:', data);
+    console.log('Deepseek API response:', data);
 
     if (data.error) {
-      throw new Error(data.error.message || 'Error from OpenAI API');
+      throw new Error(data.error.message || 'Error from Deepseek API');
     }
 
+    // Parse the content from the Deepseek response
     const generatedContent = JSON.parse(data.choices[0].message.content) as GeneratedContent;
 
     // Validate the response structure

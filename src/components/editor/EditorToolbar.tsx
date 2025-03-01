@@ -1,3 +1,4 @@
+
 import { Editor } from '@tiptap/react';
 import { Bold, Italic, Quote, Code2, Link2, List, ListOrdered, Image as ImageIcon, Undo, Redo, Pencil, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -9,9 +10,10 @@ interface EditorToolbarProps {
   isEditing: boolean;
   onToggleEdit?: () => void;
   editable: boolean;
+  customButtons?: React.ReactNode;
 }
 
-export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable }: EditorToolbarProps) => {
+export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, customButtons }: EditorToolbarProps) => {
   const { toast } = useToast();
   const uploadImage = useSupabaseUpload();
 
@@ -138,7 +140,7 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable }: Edi
               <ImageIcon className="h-4 w-4" />
             </Button>
           </div>
-          <div className="ml-auto flex gap-1">
+          <div className="ml-auto flex gap-1 items-center">
             <Button
               variant="ghost"
               size="sm"
@@ -155,6 +157,7 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable }: Edi
             >
               <Redo className="h-4 w-4" />
             </Button>
+            {customButtons}
           </div>
         </>
       )}
