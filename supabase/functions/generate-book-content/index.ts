@@ -29,7 +29,7 @@ serve(async (req) => {
     const deepseekApiKey = Deno.env.get('DEEPSEEK_API_KEY');
     if (!deepseekApiKey) throw new Error('Deepseek API key not configured');
 
-    const systemPrompt = `You are an AI assistant that generates structured book content as JSON. The output must follow this JSON format:
+    const systemPrompt = `You are an expert book writer that generates structured book content as JSON. The output must follow this JSON format:
 
     {
       "pages": [

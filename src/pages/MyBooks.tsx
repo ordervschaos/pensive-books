@@ -7,9 +7,23 @@ import { useToast } from "@/hooks/use-toast";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
+interface Book {
+  id: number;
+  name: string;
+  subtitle?: string | null;
+  author?: string | null;
+  cover_url?: string | null;
+  show_text_on_cover?: boolean;
+  is_public: boolean;
+  is_archived: boolean;
+  created_at: string;
+  owner_id?: string;
+  access_level?: string;
+}
+
 export default function Index() {
-  const [books, setBooks] = useState<any[]>([]);
-  const [sharedBooks, setSharedBooks] = useState<any[]>([]);
+  const [books, setBooks] = useState<Book[]>([]);
+  const [sharedBooks, setSharedBooks] = useState<Book[]>([]);
   const [loading, setLoading] = useState(true);
   const [username, setUsername] = useState<string | null>(null);
   const { toast } = useToast();
@@ -80,12 +94,12 @@ export default function Index() {
 
         setBooks(ownedBooks || []);
         setSharedBooks(transformedSharedBooks);
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error("Error fetching books:", error);
         toast({
           variant: "destructive",
           title: "Error fetching books",
-          description: error.message,
+          description: error instanceof Error ? error.message : "An unknown error occurred",
         });
       } finally {
         setLoading(false);
@@ -121,7 +135,7 @@ export default function Index() {
   const publishedBooks = books.filter((book) => book.is_public);
   const unpublishedBooks = books.filter((book) => !book.is_public);
 
-  const BookGrid = ({ books, title }: { books: any[], title: string }) => (
+  const BookGrid = ({ books, title }: { books: Book[], title: string }) => (
     <div className="space-y-6">
       <div className="flex items-center gap-2">
         <h2 className="text-2xl font-semibold">{title}</h2>
@@ -157,16 +171,16 @@ export default function Index() {
                         />
                         {book.show_text_on_cover && (
                           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30 p-4">
-                            <h2 className="text-base sm:text-xl font-semibold text-slate-50 text-center mb-1 sm:mb-2">
+                            <h2 className="text-base sm:text-xl font-semibold text-slate-50 text-center mb-1 sm:mb-2 line-clamp-3 break-words">
                               {book.name}
                             </h2>
                             {book.subtitle && (
-                              <p className="text-xs hidden sm:block sm:text-sm text-slate-100 text-center mb-1 sm:mb-2">
+                              <p className="text-xs hidden sm:block sm:text-sm text-slate-100 text-center mb-1 sm:mb-2 line-clamp-2 break-words">
                                 {book.subtitle}
                               </p>
                             )}
                             {book.author && (
-                              <p className="text-xs hidden sm:block sm:text-sm text-slate-100 text-center">
+                              <p className="text-xs hidden sm:block sm:text-sm text-slate-100 text-center line-clamp-1 break-words">
                                 by {book.author}
                               </p>
                             )}
@@ -179,12 +193,12 @@ export default function Index() {
                           {book.name}
                         </h2>
                         {book.subtitle && (
-                          <p className="text-xs hidden sm:block sm:text-sm text-slate-100 text-center mb-1 sm:mb-2">
+                          <p className="text-xs hidden sm:block sm:text-sm text-slate-100 text-center mb-1 sm:mb-2 line-clamp-2 break-words">
                             {book.subtitle}
                           </p>
                         )}
                         {book.author && (
-                          <p className="text-xs hidden sm:block sm:text-sm text-slate-100 text-center">
+                          <p className="text-xs hidden sm:block sm:text-sm text-slate-100 text-center line-clamp-1 break-words">
                             by {book.author}
                           </p>
                         )}
@@ -193,16 +207,16 @@ export default function Index() {
                   </div>
                 </Card>
                 <div className="flex-1 sm:mt-2 space-y-1 sm:text-center text-left">
-                  <h3 className="text-sm text-muted-foreground font-medium truncate cursor-pointer" onClick={() => navigate(`/book/${book.id}`)}>
+                  <h3 className="text-sm text-muted-foreground font-medium line-clamp-2 break-words cursor-pointer" onClick={() => navigate(`/book/${book.id}`)}>
                     {book.name}
                   </h3>
                   {book.subtitle && (
-                    <p className="text-xs text-muted-foreground truncate sm:hidden">
+                    <p className="text-xs text-muted-foreground line-clamp-2 break-words sm:hidden">
                       {book.subtitle}
                     </p>
                   )}
                   {book.author && (
-                    <p className="text-xs text-muted-foreground truncate sm:hidden">
+                    <p className="text-xs text-muted-foreground line-clamp-1 break-words sm:hidden">
                       by {book.author}
                     </p>
                   )}

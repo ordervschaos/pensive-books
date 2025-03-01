@@ -50,17 +50,17 @@ export const BookGrid = ({ books, title, showBadges = false }: BookGridProps) =>
                         />
                         {book.show_text_on_cover && (
                           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/60 p-4">
-                            <h2 className="text-base sm:text-xl font-semibold text-slate-50 text-center mb-1 sm:mb-2">
+                            <h2 className="text-base sm:text-xl font-semibold text-slate-50 text-center mb-1 sm:mb-2 line-clamp-3 break-words">
                               {book.name}
                             </h2>
                             <div className="hidden sm:flex flex-col">
                             {book.subtitle && (
-                              <p className="text-xs sm:text-sm text-slate-100 text-center mb-1 sm:mb-2">
+                              <p className="text-xs sm:text-sm text-slate-100 text-center mb-1 sm:mb-2 line-clamp-2 break-words">
                                 {book.subtitle}
                               </p>
                             )}
                             {book.author && (
-                              <p className="text-xs sm:text-sm text-slate-100 text-center">
+                              <p className="text-xs sm:text-sm text-slate-100 text-center line-clamp-1 break-words">
                                 by {book.author}
                               </p>
                             )}
@@ -74,12 +74,12 @@ export const BookGrid = ({ books, title, showBadges = false }: BookGridProps) =>
                           {book.name}
                         </h2>
                         {book.subtitle && (
-                          <p className="hidden sm:block text-xs sm:text-sm text-slate-100 text-center mb-1 sm:mb-2">
+                          <p className="hidden sm:block text-xs sm:text-sm text-slate-100 text-center mb-1 sm:mb-2 line-clamp-2 break-words">
                             {book.subtitle}
                           </p>
                         )}
                         {book.author && (
-                          <p className="hidden sm:block text-xs sm:text-sm text-slate-100 text-center">
+                          <p className="hidden sm:block text-xs sm:text-sm text-slate-100 text-center line-clamp-1 break-words">
                             by {book.author}
                           </p>
                         )}
@@ -89,18 +89,18 @@ export const BookGrid = ({ books, title, showBadges = false }: BookGridProps) =>
                 </Card>
                 <div className="flex-1 sm:mt-2 space-y-1 sm:text-center text-left">
                   <h3 
-                    className="text-sm text-muted-foreground font-medium truncate cursor-pointer"
+                    className="text-sm text-muted-foreground font-medium line-clamp-2 break-words cursor-pointer"
                     onClick={() => navigate(`/book/${book.id}`)}
                   >
                     {book.name}
                   </h3>
                   {book.subtitle && (
-                    <p className="text-xs text-muted-foreground truncate sm:hidden">
+                    <p className="text-xs text-muted-foreground line-clamp-2 break-words sm:hidden">
                       {book.subtitle}
                     </p>
                   )}
                   {book.author && (
-                    <p className="text-xs text-muted-foreground truncate sm:hidden">
+                    <p className="text-xs text-muted-foreground line-clamp-1 break-words sm:hidden">
                       by {book.author}
                     </p>
                   )}
