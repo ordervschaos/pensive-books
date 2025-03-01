@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -83,7 +84,7 @@ export default function GenerateBook() {
 
       toast({
         title: "Book generated",
-        description: "Your book has been created successfully",
+        description: "Your book has been created successfully using Deepseek AI",
       });
 
       // Navigate to the book edit page
@@ -111,7 +112,7 @@ export default function GenerateBook() {
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <h1 className="text-2xl font-semibold">Generate Book</h1>
+          <h1 className="text-2xl font-semibold">Generate Book with Deepseek AI</h1>
         </div>
 
         <div className="max-w-2xl mx-auto space-y-8">
@@ -126,7 +127,6 @@ export default function GenerateBook() {
               />
             </div>
 
-
             <div className="space-y-2">
               <Label htmlFor="prompt">Prompt</Label>
               <Textarea
@@ -138,7 +138,7 @@ export default function GenerateBook() {
                 className="resize-none"
               />
               <p className="text-sm text-muted-foreground">
-                Describe what you want your book to be about. The AI will generate structured content based on your prompt.
+                Describe what you want your book to be about. Deepseek AI will generate structured content based on your prompt.
               </p>
             </div>
 

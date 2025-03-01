@@ -33,9 +33,9 @@ serve(async (req) => {
     if (pagesError) throw pagesError;
     if (!pages?.length) throw new Error('No pages found in this book');
 
-    // Get OpenAI API key
-    const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
-    if (!openAIApiKey) throw new Error('OpenAI API key not configured');
+    // Get Deepseek API key
+    const deepseekApiKey = Deno.env.get('DEEPSEEK_API_KEY');
+    if (!deepseekApiKey) throw new Error('Deepseek API key not configured');
 
     // Process each page
     const updatedPages = await Promise.all(pages.map(async (page) => {
@@ -43,18 +43,18 @@ serve(async (req) => {
 
       // Get current content without HTML tags
       const currentContent = page.html_content
-        .replace(/<[^>]*>/g, '')
-        .trim();
+        ? page.html_content.replace(/<[^>]*>/g, '').trim()
+        : '';
 
       // Generate new content
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${openAIApiKey}`,
+          'Authorization': `Bearer ${deepseekApiKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'gpt-4o-mini',
+          model: 'deepseek-chat',
           messages: [
             {
               role: 'system',
@@ -62,31 +62,31 @@ serve(async (req) => {
             },
             {
               role: 'user',
-              content: `Here's the current content:\n\n${currentContent}\n\nPlease expand on this content, adding more details and depth while maintaining the same style and tone. Return ONLY the new additional content, as it will be appended to the existing content.`
+              content: `Here's the current content:\n\n${currentContent}\n\nPlease expand on this content, adding more details and depth while maintaining the same style and tone. Return the expanded content in HTML format with appropriate tags (<p>, <h1>, <h2>, <ul>, <li>, etc).`
             }
           ],
           temperature: 0.7,
-          max_tokens: 1000,
+          max_tokens: 2000,
         }),
       });
 
       const data = await response.json();
+      if (data.error) throw new Error(data.error.message || 'Error from Deepseek API');
+      
       const newContent = data.choices[0].message.content.trim();
 
-      // Update the page with combined content
-      const updatedHtmlContent = `${newContent}`;
-      
+      // Update the page with expanded content
       const { error: updateError } = await supabase
         .from('pages')
         .update({ 
-          html_content: updatedHtmlContent,
+          html_content: newContent,
           updated_at: new Date().toISOString()
         })
         .eq('id', page.id);
 
       if (updateError) throw updateError;
 
-      return { ...page, html_content: updatedHtmlContent };
+      return { ...page, html_content: newContent };
     }));
 
     return new Response(JSON.stringify({ 

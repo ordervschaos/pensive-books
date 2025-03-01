@@ -223,6 +223,7 @@ export type Database = {
         Row: {
           batch_id: string | null
           created_at: string | null
+          created_at_minute: string | null
           created_by: string | null
           html_content: string | null
           id: number
@@ -231,6 +232,7 @@ export type Database = {
         Insert: {
           batch_id?: string | null
           created_at?: string | null
+          created_at_minute?: string | null
           created_by?: string | null
           html_content?: string | null
           id?: never
@@ -239,6 +241,7 @@ export type Database = {
         Update: {
           batch_id?: string | null
           created_at?: string | null
+          created_at_minute?: string | null
           created_by?: string | null
           html_content?: string | null
           id?: never

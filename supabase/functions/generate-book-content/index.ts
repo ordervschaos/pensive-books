@@ -1,7 +1,6 @@
+
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-
-const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -18,70 +17,6 @@ interface GeneratedContent {
   pages: Page[];
 }
 
-interface OutlineItem {
-  type: "chapter" | "section" | "subsection";
-  title: string;
-  description: string;
-  wordCount?: number;
-  children?: OutlineItem[];
-}
-
-interface BookOutline {
-  title: string;
-  genre: string;
-  targetAudience: string;
-  estimatedLength: string;
-  description: string;
-  outline: OutlineItem[];
-}
-
-function convertOutlineToPages(bookOutline: BookOutline): GeneratedContent {
-  const pages: Page[] = [];
-
-  // Add book overview
-  pages.push({
-    pageType: "section",
-    title: "Book Overview",
-    content: `<h1>Book Overview</h1>
-<h2>${bookOutline.title}</h2>
-<p><strong>Genre:</strong> ${bookOutline.genre}</p>
-<p><strong>Target Audience:</strong> ${bookOutline.targetAudience}</p>
-<p><strong>Estimated Length:</strong> ${bookOutline.estimatedLength}</p>
-<p><strong>Description:</strong> ${bookOutline.description}</p>`
-  });
-
-  // Process each chapter
-  bookOutline.outline.forEach((chapter, chapterIndex) => {
-    // Add chapter section
-    pages.push({
-      pageType: "section",
-      title: `Chapter ${chapterIndex + 1}: ${chapter.title}`,
-      content: `<h1>Chapter ${chapterIndex + 1}: ${chapter.title}</h1>
-<p><strong>Word Count:</strong> ${chapter.wordCount || 'TBD'}</p>
-<p>${chapter.description}</p>`
-    });
-
-    // Process sections within chapter
-    if (chapter.children) {
-      chapter.children.forEach((section, sectionIndex) => {
-        pages.push({
-          pageType: "text",
-          title: section.title,
-          content: `<h1>${section.title}</h1>
-<p><strong>Estimated Words:</strong> ${section.wordCount || 'TBD'}</p>
-<p>${section.description}</p>
-${section.children ? '<h2>Subsections:</h2><ul>' + 
-  section.children.map(subsection => 
-    `<li><strong>${subsection.title}</strong> - ${subsection.description} (${subsection.wordCount || 'TBD'} words)</li>`
-  ).join('\n') + '</ul>' : ''}`
-        });
-      });
-    }
-  });
-
-  return { pages };
-}
-
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -89,6 +24,10 @@ serve(async (req) => {
 
   try {
     const { prompt } = await req.json();
+    
+    // Get Deepseek API key
+    const deepseekApiKey = Deno.env.get('DEEPSEEK_API_KEY');
+    if (!deepseekApiKey) throw new Error('Deepseek API key not configured');
 
     const systemPrompt = `You are an AI assistant that generates structured book content as JSON. The output must follow this JSON format:
 
@@ -118,14 +57,14 @@ serve(async (req) => {
     
     Return only valid JSON that matches this exact structure.`;
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${openAIApiKey}`,
+        'Authorization': `Bearer ${deepseekApiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: 'deepseek-chat',
         messages: [
           { 
             role: 'system', 
@@ -135,18 +74,20 @@ serve(async (req) => {
             role: 'user', 
             content: prompt 
           }
-        ]
+        ],
+        temperature: 0.7,
+        max_tokens: 4000
       }),
-      
     });
 
     const data = await response.json();
-    console.log('OpenAI API response:', data);
+    console.log('Deepseek API response:', data);
 
     if (data.error) {
-      throw new Error(data.error.message || 'Error from OpenAI API');
+      throw new Error(data.error.message || 'Error from Deepseek API');
     }
 
+    // Parse the content from the Deepseek response
     const generatedContent = JSON.parse(data.choices[0].message.content) as GeneratedContent;
 
     // Validate the response structure
