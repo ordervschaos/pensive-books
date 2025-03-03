@@ -40,7 +40,7 @@ export const TipTapEditor = ({
     ...config,
     // Add keyboard shortcut for suggestion
     editorProps: {
-      ...(config.editorProps || {}),
+      ...(config.editorProps as Record<string, unknown> || {}),
       handleKeyDown: (view, event) => {
         // Ctrl+Space or Cmd+Space to trigger AI suggestion
         if (event.key === ' ' && (event.ctrlKey || event.metaKey)) {
