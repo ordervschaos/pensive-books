@@ -1,9 +1,10 @@
 
 import { Editor } from '@tiptap/react';
-import { Bold, Italic, Quote, Code2, Link2, List, ListOrdered, Image as ImageIcon, Undo, Redo, Pencil, Eye } from "lucide-react";
+import { Bold, Italic, Quote, Code2, Link2, List, ListOrdered, Image as ImageIcon, Undo, Redo, Pencil, Eye, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useSupabaseUpload } from "@/hooks/use-supabase-upload";
+import { AiSuggestionPopover } from "./AiSuggestionPopover";
 
 interface EditorToolbarProps {
   editor: Editor | null;
@@ -48,6 +49,37 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
         description: "Failed to upload image",
         variant: "destructive",
       });
+    }
+  };
+
+  const getSelectedText = () => {
+    if (!editor) return "";
+    
+    const { from, to } = editor.state.selection;
+    if (from === to) {
+      // No selection, get the current paragraph or node
+      const node = editor.state.doc.nodeAt(from);
+      const pos = editor.state.selection.$from.pos;
+      const nodeText = editor.state.doc.textBetween(
+        Math.max(0, pos - 100), // Get some context before
+        Math.min(editor.state.doc.content.size, pos + 100) // And after
+      );
+      return nodeText;
+    }
+    
+    return editor.state.doc.textBetween(from, to);
+  };
+
+  const applyAiSuggestion = (suggestion: string) => {
+    if (!editor) return;
+    
+    const { from, to } = editor.state.selection;
+    if (from === to) {
+      // If no text is selected, we'll insert at cursor
+      editor.chain().focus().insertContent(suggestion).run();
+    } else {
+      // Replace selected text with suggestion
+      editor.chain().focus().deleteSelection().insertContent(suggestion).run();
     }
   };
 
@@ -140,6 +172,10 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
               <ImageIcon className="h-4 w-4" />
             </Button>
           </div>
+          <AiSuggestionPopover 
+            selectedText={getSelectedText()} 
+            onApplySuggestion={applyAiSuggestion} 
+          />
           <div className="ml-auto flex gap-1 items-center">
             <Button
               variant="ghost"

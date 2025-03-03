@@ -1,1 +1,51 @@
+
 project_id = "qiqeyirtpstdjkkeyfss"
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "storage", "graphql_public"]
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+api_url = "http://localhost:54321"
+
+[inbucket]
+enabled = false
+port = 54324
+smtp_port = 54325
+pop3_port = 54326
+
+[auth]
+enabled = true
+site_url = "http://localhost:3000"
+
+[realtime]
+enabled = true
+
+[storage]
+enabled = true
+
+[vector]
+enabled = true
+
+[functions]
+[functions.flesh-out-book]
+verify_jwt = false
+[functions.generate-book-content]
+verify_jwt = false
+[functions.get-secret]
+verify_jwt = true
+[functions.send-book-invitation]
+verify_jwt = false
+[functions.send-kindle-verification]
+verify_jwt = false
+[functions.send-to-kindle]
+verify_jwt = false
+[functions.suggest-text-correction]
+verify_jwt = false
