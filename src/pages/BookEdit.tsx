@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Archive, ChevronDown } from "lucide-react";
@@ -6,7 +7,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { BookInfo } from "@/components/book/BookInfo";
 import { BookEditForm } from "@/components/book/BookEditForm";
-import { ManageCollaboratorsSheet } from "@/components/book/ManageCollaboratorsSheet";
 import { ShareBookSheet } from "@/components/book/ShareBookSheet";
 import { BookCoverEdit } from "@/components/book/BookCoverEdit";
 import { BookVisibilityToggle } from "@/components/book/BookVisibilityToggle";

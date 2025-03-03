@@ -1,3 +1,4 @@
+
 import { Database } from '@/integrations/supabase/types';
 import { supabase } from '@/integrations/supabase/client';
 import { generateEPUB } from './epub';
@@ -214,6 +215,7 @@ export const generatePDF = async (
     // Store actual page numbers for TOC
     const tocPageNumbers: { [key: string]: number } = {};
     let currentPdfPage = 0;
+    let sectionCount = 0;  // Declaration moved here to fix error
 
     // Add cover page if available
     if (options.coverUrl) {
@@ -240,9 +242,9 @@ export const generatePDF = async (
 
         // Add a single light overlay for better text visibility
         pdf.setFillColor(0, 0, 0);
-        pdf.setGState(new pdf.GState({ opacity: 0.4 }));
+        pdf.setGState(pdf.GState({opacity: 0.4}));
         pdf.rect(0, 0, pageWidth, pageHeight, 'F');
-        pdf.setGState(new pdf.GState({ opacity: 1 }));
+        pdf.setGState(pdf.GState({opacity: 1}));
 
         // Add title text with white color and ensure it's on top
         pdf.setTextColor(255, 255, 255);
@@ -359,7 +361,7 @@ export const generatePDF = async (
 
     // Reset text color and opacity for content pages
     pdf.setTextColor(0, 0, 0);
-    pdf.setGState(new pdf.GState({ opacity: 1 }));
+    pdf.setGState(pdf.GState({opacity: 1}));
 
     // Add TOC placeholder page - we'll come back to fill it later
     pdf.addPage();
@@ -393,6 +395,7 @@ export const generatePDF = async (
           pdf.text(line, centerX, centerY + (index * lineHeight));
         });
         
+        sectionCount++;
         continue;
       }
 
@@ -471,8 +474,8 @@ export const generatePDF = async (
     pdf.text('Table of Contents', margin, margin + 20);
 
     let tocY = margin + 60;
-    let sectionCount = 0;
     let pageCount = 0;
+    sectionCount = 0; // Reset for TOC generation
 
     // Generate TOC with accurate page numbers
     pages.forEach((page, index) => {

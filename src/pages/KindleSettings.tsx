@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -290,7 +291,7 @@ export default function KindleSettings() {
           )}
 
           {isConfigured && !showOtpInput && (
-            <Alert variant="success" className="bg-green-50 dark:bg-green-950">
+            <Alert className="bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800">
               <Info className="h-4 w-4 text-green-600 dark:text-green-400" />
               <AlertTitle className="text-green-600 dark:text-green-400">Kindle Email Verified</AlertTitle>
               <AlertDescription className="text-green-600 dark:text-green-400">

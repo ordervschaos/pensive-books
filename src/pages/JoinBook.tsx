@@ -5,14 +5,12 @@ import { Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
-
 export default function JoinBook() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const {id:bookId} = useParams();
-  console.log(bookId);
 
   useEffect(() => {
     const joinBook = async () => {
@@ -28,7 +26,7 @@ export default function JoinBook() {
           return;
         }
 
-        if (!token || !access) {
+        if (!token || !access || !bookId) {
           throw new Error("Invalid invitation link");
         }
 
@@ -36,7 +34,7 @@ export default function JoinBook() {
         const { data: existingAccess } = await supabase
           .from("book_access")
           .select("id")
-          .eq("book_id", bookId)
+          .eq("book_id", parseInt(bookId))
           .eq("invited_email", session.user.email)
           .single();
 
@@ -45,7 +43,7 @@ export default function JoinBook() {
           const { error: accessError } = await supabase
             .from("book_access")
             .insert({
-              book_id: bookId,
+              book_id: parseInt(bookId),
               invited_email: session.user.email,
               user_id: session.user.id,
               access_level: access as "view" | "edit",
@@ -79,7 +77,7 @@ export default function JoinBook() {
     };
 
     joinBook();
-  }, [navigate, searchParams, toast]);
+  }, [navigate, searchParams, toast, bookId]);
 
   if (loading) {
     return (
