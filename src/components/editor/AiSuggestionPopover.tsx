@@ -4,7 +4,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Sparkles, Check, X, Loader2 } from "lucide-react";
+import { Sparkles, Check, X, Loader2, RefreshCw } from "lucide-react";
 
 interface AiSuggestionPopoverProps {
   selectedText: string;
@@ -15,6 +15,7 @@ export const AiSuggestionPopover = ({ selectedText, onApplySuggestion }: AiSugge
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [suggestion, setSuggestion] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
 
   const getSuggestion = async () => {
@@ -30,14 +31,17 @@ export const AiSuggestionPopover = ({ selectedText, onApplySuggestion }: AiSugge
     try {
       setIsLoading(true);
       setSuggestion(null);
+      setError(null);
 
       const { data, error } = await supabase.functions.invoke('suggest-text-correction', {
         body: { text: selectedText }
       });
 
-      if (error) throw error;
+      if (error) throw new Error(error.message || "Error calling suggestion function");
 
-      if (data.suggestion) {
+      if (data?.error) throw new Error(data.error);
+
+      if (data?.suggestion) {
         // Extract the actual suggestion text from the format
         let extractedSuggestion = data.suggestion;
         const match = data.suggestion.match(/Suggested correction: (.*)/i);
@@ -51,6 +55,7 @@ export const AiSuggestionPopover = ({ selectedText, onApplySuggestion }: AiSugge
       }
     } catch (error: any) {
       console.error('Error getting suggestion:', error);
+      setError(error.message || "Something went wrong");
       toast({
         title: "Error getting suggestion",
         description: error.message || "Something went wrong",
@@ -63,7 +68,7 @@ export const AiSuggestionPopover = ({ selectedText, onApplySuggestion }: AiSugge
 
   const handleOpen = (open: boolean) => {
     setIsOpen(open);
-    if (open && !suggestion && !isLoading) {
+    if (open && !suggestion && !isLoading && !error) {
       getSuggestion();
     }
   };
@@ -79,6 +84,12 @@ export const AiSuggestionPopover = ({ selectedText, onApplySuggestion }: AiSugge
     }
   };
 
+  const retryGetSuggestion = () => {
+    setError(null);
+    getSuggestion();
+  };
+
+  // Remove any leading/trailing quotes from the suggestion
   const cleanSuggestion = suggestion?.replace(/^["']|["']$/g, '');
 
   return (
@@ -106,6 +117,20 @@ export const AiSuggestionPopover = ({ selectedText, onApplySuggestion }: AiSugge
             <div className="flex items-center justify-center py-4">
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
               <span className="ml-2 text-sm text-muted-foreground">Generating suggestion...</span>
+            </div>
+          ) : error ? (
+            <div className="space-y-3">
+              <p className="text-sm text-destructive">
+                {error}
+              </p>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={retryGetSuggestion}
+                className="w-full"
+              >
+                <RefreshCw className="h-4 w-4 mr-2" /> Try again
+              </Button>
             </div>
           ) : suggestion ? (
             <>
