@@ -36,37 +36,7 @@ export const TipTapEditor = ({
   const defaultConfig = getEditorConfig(content, onChange, editable, isEditing);
   const config = editorConfig || defaultConfig;
 
-  const editor = useEditor({
-    ...config,
-    // Add keyboard shortcut for suggestion
-    editorProps: {
-      ...(config.editorProps as Record<string, unknown> || {}),
-      handleKeyDown: (view, event) => {
-        // Ctrl+Space or Cmd+Space to trigger AI suggestion
-        if (event.key === ' ' && (event.ctrlKey || event.metaKey)) {
-          // This will be handled by the suggestion button's click handler
-          // We're just preventing default behavior here
-          event.preventDefault();
-          
-          // Find and click the suggestion button
-          const suggestButton = document.querySelector('[data-suggestion-trigger="true"]');
-          if (suggestButton instanceof HTMLElement) {
-            suggestButton.click();
-          } else {
-            toast({
-              title: "Suggestion shortcut",
-              description: "Select text and use the Suggest button in the toolbar",
-              duration: 3000,
-            });
-          }
-          return true;
-        }
-        
-        // Allow other keyboard events to be handled by the editor
-        return false;
-      },
-    },
-  });
+  const editor = useEditor(config);
 
   useEffect(() => {
     if (editor) {

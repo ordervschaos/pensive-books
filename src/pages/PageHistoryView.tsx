@@ -1,349 +1,212 @@
-import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { format } from "date-fns";
+import { ArrowLeft } from "lucide-react";
+import { useState, useEffect } from "react";
+import { TipTapEditor } from "@/components/editor/TipTapEditor";
 import { useToast } from "@/hooks/use-toast";
-import { PageNavigation } from "@/components/page/PageNavigation";
-import { PageContent } from "@/components/page/PageContent";
-import { PageLoading } from "@/components/page/PageLoading";
-import { PageNotFound } from "@/components/page/PageNotFound";
-import { useBookPermissions } from "@/hooks/use-book-permissions";
-import { setPageTitle } from "@/utils/pageTitle";
 
-const LOCALSTORAGE_BOOKMARKS_KEY = 'bookmarked_pages';
+interface PageVersion {
+  id: number;
+  page_id: number;
+  html_content: string;
+  content?: any;
+  created_at: string;
+}
 
-const PageHistoryView = () => {
-  const { bookId, pageId } = useParams();
+export default function PageHistoryView() {
+  const { pageId, bookId } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [page, setPage] = useState<any>(null);
-  const [book, setBook] = useState<any>(null);
-  const [nextPageTitle, setNextPageTitle] = useState<string>("");
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [totalPages, setTotalPages] = useState(0);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [isEditing, setIsEditing] = useState(false);
-  
-  const getNumericId = (param: string | undefined) => {
-    if (!param) return 0;
-    const match = param.match(/^(\d+)/);
-    return match ? parseInt(match[1]) : 0;
-  };
-  
-  const numericBookId = getNumericId(bookId);
-  const numericPageId = getNumericId(pageId);
-  const { canEdit, loading: loadingPermissions } = useBookPermissions(numericBookId.toString());
+  const queryClient = useQueryClient();
+  const [selectedVersion, setSelectedVersion] = useState<PageVersion | null>(null);
 
-  const updateBookmark = async (pageIndex: number) => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-
-      if (session) {
-        const { data: userData, error: fetchError } = await supabase
-          .from('user_data')
-          .select('bookmarked_pages')
-          .eq('user_id', session.user.id)
-          .maybeSingle();
-
-        if (fetchError) throw fetchError;
-
-        const bookmarks = (userData?.bookmarked_pages as Record<string, number>) || {};
-        const updatedBookmarks = { ...bookmarks, [numericBookId]: pageIndex };
-
-        const { error: updateError } = await supabase
-          .from('user_data')
-          .update({ bookmarked_pages: updatedBookmarks })
-          .eq('user_id', session.user.id);
-
-        if (updateError) throw updateError;
-      } else {
-        const storedBookmarks = localStorage.getItem(LOCALSTORAGE_BOOKMARKS_KEY);
-        const bookmarks = storedBookmarks ? JSON.parse(storedBookmarks) : {};
-        const updatedBookmarks = { ...bookmarks, [numericBookId]: pageIndex };
-        localStorage.setItem(LOCALSTORAGE_BOOKMARKS_KEY, JSON.stringify(updatedBookmarks));
-      }
-    } catch (error: any) {
-      console.error('Error updating bookmark:', error);
-      toast({
-        variant: "destructive",
-        title: "Error updating bookmark",
-        description: error.message
-      });
-    }
-  };
-
-  const fetchPageDetails = async () => {
-    try {
-      setLoading(true);
-      console.log("Fetching page details for pageId:", numericPageId);
-      
-      const { data: pageData, error: pageError } = await supabase
-        .from("pages")
-        .select("*")
-        .eq("id", numericPageId)
-        .eq("book_id", numericBookId)
-        .eq("archived", false)
+  // First fetch the current page
+  const { data: currentPage, isLoading: isLoadingPage } = useQuery({
+    queryKey: ['page', pageId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('pages')
+        .select('*, owner_id')
+        .eq('id', parseInt(pageId || '0'))
         .maybeSingle();
-
-      if (pageError) throw pageError;
-      if (!pageData) {
-        console.log("Page not found:", numericPageId);
-        return;
-      }
       
-      console.log("Page data fetched:", pageData);
+      if (error) throw error;
+      return data;
+    },
+    staleTime: 0 // Always fetch fresh data
+  });
+
+  // Then fetch versions only after we have the current page
+  const { data: versions, isLoading: isLoadingVersions } = useQuery({
+    queryKey: ['page-history', pageId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('page_history')
+        .select('*')
+        .eq('page_id', parseInt(pageId || '0'))
+        .order('created_at', { ascending: false });
       
-      if (pageData && !pageId?.includes('-') && pageData.title) {
-        const slug = `${numericPageId}-${pageData.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
-        navigate(`/book/${bookId}/page/${slug}`, { replace: true });
-      }
-      
-      setPage(pageData);
+      if (error) throw error;
+      return data as PageVersion[];
+    },
+    enabled: !!currentPage,
+    staleTime: 0 // Always fetch fresh data
+  });
 
-      const { data: bookData, error: bookError } = await supabase
-        .from("books")
-        .select("*")
-        .eq("id", numericBookId)
-        .eq("is_archived", false)
-        .maybeSingle();
+  const isLoading = isLoadingPage || isLoadingVersions;
 
-      if (bookError) throw bookError;
-      if (!bookData) {
-        console.log("Book not found:", numericBookId);
-        return;
-      }
-      
-      console.log("Book data fetched:", bookData);
-      
-      if (bookData && !bookId?.includes('-') && bookData.name) {
-        const slug = `${numericBookId}-${bookData.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
-        navigate(`/book/${slug}/page/${pageId}`, { replace: true });
-      }
-      
-      setBook(bookData);
+  // Compute the current display content based on selection
+  const displayContent = selectedVersion 
+    ? selectedVersion.html_content || ''
+    : currentPage?.html_content || '';
 
-      const { data: pagesData, error: pagesError } = await supabase
-        .from("pages")
-        .select("id, title, page_index")
-        .eq("book_id", numericBookId)
-        .eq("archived", false)
-        .order("page_index", { ascending: true });
-
-      if (pagesError) throw pagesError;
-
-      setTotalPages(pagesData.length);
-      const currentPageIndex = pagesData.findIndex(p => p.id === numericPageId);
-      setCurrentIndex(currentPageIndex);
-
-      // Update bookmark when page loads
-      if (currentPageIndex !== -1) {
-        updateBookmark(currentPageIndex);
-      }
-
-      // Get next page title if not the last page
-      if (currentPageIndex < pagesData.length - 1) {
-        const nextPage = pagesData[currentPageIndex + 1];
-        setNextPageTitle(nextPage.title || "");
-      }
-
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error fetching page details",
-        description: error.message
-      });
-    } finally {
-      setLoading(false);
-    }
+  // Handle version selection
+  const handleVersionSelect = (version: PageVersion | null) => {
+    setSelectedVersion(version);
   };
 
-  const getTitleFromHtml = (html: string) => {
-    // the first line of the html content is the title and it's an h1 tag
-    const doc = new DOMParser().parseFromString(html, 'text/html');
-    const h1 = doc.querySelector('h1');
-    const title = h1?.textContent?.trim() || 'Untitled';
-    return title;
-  }
-
-  const handleSave = async (html: string) => {
-    if (!canEdit) {
-      toast({
-        variant: "destructive",
-        title: "Permission denied",
-        description: "You don't have permission to edit this page"
-      });
-      return;
-    }
+  const handleRestore = async () => {
+    if (!selectedVersion || !pageId || !currentPage?.owner_id) return;
 
     try {
-      setSaving(true);
+      // Save current version to history before restoring
+      const { error: historyError } = await supabase
+        .from('page_history')
+        .upsert(
+          {
+            page_id: parseInt(pageId),
+            html_content: currentPage?.html_content,
+            created_by: currentPage.owner_id,
+            created_at: new Date().toISOString()
+          },
+          {
+            onConflict: 'page_id,created_at_minute'
+          }
+        );
+
+      if (historyError) throw historyError;
+
+      // Then update the current page with the selected version
       const { error } = await supabase
-        .from("pages")
+        .from('pages')
         .update({ 
-          html_content: html,
-          title: getTitleFromHtml(html),
+          html_content: selectedVersion.html_content,
           updated_at: new Date().toISOString()
         })
-        .eq("id", parseInt(pageId || "0"));
-
-      if (error) throw error;
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error saving page",
-        description: error.message
-      });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const createNewPage = async () => {
-    if (!canEdit) {
-      toast({
-        variant: "destructive",
-        title: "Permission denied",
-        description: "You don't have permission to create pages in this book"
-      });
-      return;
-    }
-
-    try {
-      const maxPageIndex = currentIndex + 1;
-      
-      const { data: newPage, error } = await supabase
-        .from('pages')
-        .insert({
-          book_id: parseInt(bookId || "0"),
-          page_index: maxPageIndex,
-          content: {},
-          html_content: '',
-          page_type: 'text'
-        })
-        .select()
-        .single();
+        .eq('id', parseInt(pageId));
 
       if (error) throw error;
 
-      navigate(`/book/${bookId}/page/${newPage.id}`);
+      // Invalidate queries to ensure fresh data
+      await Promise.all([
+        queryClient.invalidateQueries(['page', pageId]),
+        queryClient.invalidateQueries(['page-history', pageId])
+      ]);
 
       toast({
-        title: "Page created",
-        description: "Your new page has been created"
+        title: "Version restored",
+        description: "The page has been reverted to the selected version."
       });
-    } catch (error: any) {
+
+      navigate(`/book/${bookId}/page/${pageId}`);
+    } catch (error) {
+      console.error('Error restoring version:', error);
       toast({
         variant: "destructive",
-        title: "Error creating page",
-        description: error.message
+        title: "Error",
+        description: "Failed to restore the selected version."
       });
     }
   };
-
-  const navigateToPage = async (index: number) => {
-    try {
-      const { data: nextPage, error } = await supabase
-        .from("pages")
-        .select("id, title")
-        .eq("book_id", numericBookId)
-        .eq("page_index", index)
-        .eq("archived", false)
-        .single();
-
-      if (error) throw error;
-      if (nextPage) {
-        // Update bookmark when navigating to a new page
-        updateBookmark(index);
-        
-        const slug = nextPage.title ? 
-          `${nextPage.id}-${nextPage.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}` : 
-          nextPage.id.toString();
-        navigate(`/book/${bookId}/page/${slug}`);
-      }
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error navigating to page",
-        description: error.message
-      });
-    }
-  };
-
-  // Handle keyboard navigation
-  useEffect(() => {
-    const handleKeyPress = (event: KeyboardEvent) => {
-      // Only allow navigation if not editing
-      if (!isEditing && event.key === 'ArrowRight' && currentIndex < totalPages - 1) {
-        navigateToPage(currentIndex + 1);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyPress);
-    return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [currentIndex, totalPages, isEditing]);
-
-  useEffect(() => {
-    console.log("PageId changed, fetching new page details");
-    fetchPageDetails();
-  }, [bookId, pageId]);
-
-  // Add effect to update page title when page or book data changes
-  useEffect(() => {
-    if (page && book) {
-      setPageTitle(`${page.title} - ${book.name}`);
-    }
-  }, [page?.title, book?.name]);
-
-  if (loading || loadingPermissions) {
-    return (
-      <div className="min-h-screen flex flex-col bg-background">
-        <div className="flex-1 container max-w-4xl mx-auto px-4 py-4">
-          <PageLoading />
-        </div>
-      </div>
-    );
-  }
-
-  if (!page || !book) {
-    return (
-      <div className="min-h-screen flex flex-col bg-background">
-        <div className="flex-1 container max-w-4xl mx-auto px-4 py-4">
-          <PageNotFound bookId={bookId || ""} />
-        </div>
-      </div>
-    );
-  }
 
   return (
-    <div className="min-h-[calc(100vh-56px)] flex flex-col bg-background">
-      <div className="flex-1 container max-w-5xl mx-auto px-4 py-4 flex flex-col gap-4">
-        <div className="flex-1 flex flex-col">
-          <PageContent
-            content={page?.html_content || ''}
-            title={page?.title || 'Untitled'}
-            onSave={handleSave}
-            saving={saving}
-            pageType={page?.page_type}
-            editable={canEdit}
-            onEditingChange={setIsEditing}
-            canEdit={canEdit}
-            pageId={pageId}
-          />
-          <PageNavigation
-            bookId={bookId || ""}
-            currentIndex={currentIndex}
-            totalPages={totalPages}
-            onNavigate={navigateToPage}
-            nextPageTitle={nextPageTitle}
-            bookTitle={book?.name}
-            isEditing={isEditing}
-            onNewPage={createNewPage}
-            canEdit={canEdit}
-          />
+    <div className="min-h-screen flex">
+      {/* Sidebar with versions */}
+      <div className="w-80 border-r bg-muted/30">
+        <div className="p-4 border-b">
+          <Button 
+            variant="ghost" 
+            className="mb-2"
+            onClick={() => navigate(`/book/${bookId}/page/${pageId}`)}
+          >
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back to page
+          </Button>
+          <h2 className="text-lg font-semibold">Page History</h2>
+        </div>
+        <ScrollArea className="h-[calc(100vh-8rem)]">
+          <div className="p-4 space-y-4">
+            {isLoading ? (
+              <div className="p-4 text-muted-foreground">Loading...</div>
+            ) : (
+              <>
+                <div 
+                  className={`p-4 border rounded-lg cursor-pointer transition-colors hover:bg-accent ${!selectedVersion ? 'bg-accent' : ''}`}
+                  onClick={() => handleVersionSelect(null)}
+                >
+                  <div className="font-medium">Current Version</div>
+                  <div className="text-sm text-muted-foreground">
+                    {currentPage?.updated_at ? format(new Date(currentPage.updated_at), 'PPpp') : 'Unknown date'}
+                  </div>
+                </div>
+                {versions?.map((version) => (
+                  <div
+                    key={version.id}
+                    className={`p-4 border rounded-lg cursor-pointer transition-colors hover:bg-accent ${selectedVersion?.id === version.id ? 'bg-accent' : ''}`}
+                    onClick={() => handleVersionSelect(version)}
+                  >
+                    <div className="text-sm text-muted-foreground">
+                      {format(new Date(version.created_at), 'PPpp')}
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+        </ScrollArea>
+      </div>
+
+      {/* Content preview */}
+      <div className="flex-1 flex flex-col">
+        <div className="p-4 border-b flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold">
+              {selectedVersion ? 'Previewing past version' : 'Current version'}
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              {selectedVersion 
+                ? `From ${format(new Date(selectedVersion.created_at), 'PPpp')}` 
+                : `Last updated ${currentPage?.updated_at ? format(new Date(currentPage.updated_at), 'PPpp') : 'Unknown'}`
+              }
+            </p>
+          </div>
+          {selectedVersion && (
+            <Button onClick={handleRestore}>
+              Restore this version
+            </Button>
+          )}
+        </div>
+        <div className="flex-1 overflow-auto">
+          {isLoading ? (
+            <div className="p-8 text-muted-foreground">Loading...</div>
+          ) : (
+            displayContent && (
+              <TipTapEditor
+                key={`${selectedVersion?.id || 'current'}-${displayContent.length}`}
+                content={displayContent}
+                onChange={() => {}}
+                editable={false}
+                isEditing={false}
+                hideToolbar
+              />
+            )
+          )}
         </div>
       </div>
     </div>
   );
-};
-
-export default PageHistoryView;
+}

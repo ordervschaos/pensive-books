@@ -1,4 +1,3 @@
-
 import { Input } from "@/components/ui/input";
 import { ChangeEvent } from "react";
 import { TipTapEditor } from "@/components/editor/TipTapEditor";
@@ -84,11 +83,11 @@ export const SectionPageContent = ({
         <TipTapEditor 
           content={initialContent}
           onChange={onChange}
-          editable={isEditing && canEdit}
+          editable={canEdit}
           isEditing={isEditing}
           onToggleEdit={onToggleEdit}
           editorConfig={sectionEditorConfig}
-          hideToolbar={true}
+          hideToolbar
           className="min-h-[200px] flex items-center justify-center"
         />
       </div>
