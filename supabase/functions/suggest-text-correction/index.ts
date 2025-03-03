@@ -8,7 +8,10 @@ const deepseekApiKey = Deno.env.get('DEEPSEEK_API_KEY');
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+    return new Response(null, { 
+      status: 204, 
+      headers: corsHeaders 
+    });
   }
 
   try {
@@ -73,7 +76,10 @@ serve(async (req) => {
     
     return new Response(
       JSON.stringify({ suggestion }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { 
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      }
     );
   } catch (error) {
     console.error('Error in suggest-text-correction function:', error);
