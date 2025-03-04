@@ -1,52 +1,38 @@
 
-import { useState, useEffect } from 'react';
-import { supabase } from '@/integrations/supabase/client';
-import { Session, User } from '@supabase/supabase-js';
+import { useEffect, useState } from 'react';
+import { supabase } from "@/integrations/supabase/client";
+import { Session } from '@supabase/supabase-js';
 
-interface UseSessionResult {
-  session: Session | null;
-  user: User | null;
-  isLoading: boolean;
-}
-
-export const useSession = (): UseSessionResult => {
+export function useSession() {
   const [session, setSession] = useState<Session | null>(null);
-  const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const fetchSession = async () => {
+    // Initial session check
+    const getInitialSession = async () => {
       try {
-        const { data, error } = await supabase.auth.getSession();
-        
-        if (error) {
-          console.error('Error fetching session:', error);
-          throw error;
-        }
-        
-        setSession(data.session);
-        setUser(data.session?.user || null);
+        setIsLoading(true);
+        const { data: { session } } = await supabase.auth.getSession();
+        setSession(session);
       } catch (error) {
-        console.error('Session fetch error:', error);
+        console.error('Error getting session:', error);
       } finally {
         setIsLoading(false);
       }
     };
 
-    fetchSession();
+    getInitialSession();
 
-    const { data: authListener } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setSession(session);
-        setUser(session?.user || null);
-        setIsLoading(false);
-      }
-    );
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      setSession(session);
+    });
 
+    // Clean up subscription on unmount
     return () => {
-      authListener.subscription.unsubscribe();
+      subscription.unsubscribe();
     };
   }, []);
 
-  return { session, user, isLoading };
-};
+  return { session, isLoading };
+}

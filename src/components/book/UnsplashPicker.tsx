@@ -1,226 +1,103 @@
-
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { createApi } from "unsplash-js";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Loader2, Search, X } from "lucide-react";
-import { createApi } from "unsplash-js";
+import { Search } from "lucide-react";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from "@/integrations/supabase/client";
 
 interface UnsplashPickerProps {
-  onSelect: (imageUrl: string, photographer: string, photographerUsername: string) => void;
-  onClose: () => void;
+  onSelect: (imageUrl: string) => void;
 }
 
-export function UnsplashPicker({ onSelect, onClose }: UnsplashPickerProps) {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [searching, setSearching] = useState(false);
+export const UnsplashPicker = ({ onSelect }: UnsplashPickerProps) => {
+  const [query, setQuery] = useState("");
   const [images, setImages] = useState<any[]>([]);
-  const [unsplashApi, setUnsplashApi] = useState<any>(null);
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
-  const [initialLoad, setInitialLoad] = useState(true);
+  const [loading, setLoading] = useState(false);
 
-  // Initialize Unsplash API
-  useEffect(() => {
-    const initUnsplashApi = async () => {
-      // Get Unsplash API key from Supabase secrets
-      const { data, error } = await supabase.functions.invoke("get-secret", {
-        body: { key: "UNSPLASH_ACCESS_KEY" }
-      });
+  const searchImages = async () => {
+    if (!query.trim()) return;
+    
+    setLoading(true);
+    try {
+      console.log('Fetching Unsplash API keys...');
+      // Get both Unsplash API keys from Supabase secrets
+      const { data: secrets, error: secretError } = await supabase
+        .functions.invoke('get-secret', {
+          body: { 
+            secretNames: ['UNSPLASH_ACCESS_KEY', 'UNSPLASH_SECRET_KEY']
+          }
+        });
 
-      if (error) {
-        console.error("Error fetching Unsplash API key:", error);
-        return;
+      if (secretError) {
+        console.error('Error fetching secrets:', secretError);
+        throw secretError;
       }
 
-      const api = createApi({
-        accessKey: data.secret,
+      console.log('Creating Unsplash API client...');
+      const unsplash = createApi({
+        accessKey: secrets.UNSPLASH_ACCESS_KEY,
+        // The secret key is not needed for client-side operations
+        // It's only used for server-side authentication
       });
 
-      setUnsplashApi(api);
-
-      // Load popular photos on initial load
-      loadPopularPhotos(api);
-    };
-
-    initUnsplashApi();
-  }, []);
-
-  const loadPopularPhotos = async (api: any) => {
-    try {
-      setSearching(true);
-      const result = await api.photos.list({ page, perPage: 20 });
-      
-      if (result.errors) {
-        console.error("Unsplash API errors:", result.errors);
-        return;
-      }
-
-      setImages(prev => page === 1 ? result.response.results : [...prev, ...result.response.results]);
-      setHasMore(result.response.results.length === 20);
-      setInitialLoad(false);
-    } catch (error) {
-      console.error("Error loading popular photos:", error);
-    } finally {
-      setSearching(false);
-    }
-  };
-
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!searchTerm.trim() || !unsplashApi) return;
-
-    try {
-      setSearching(true);
-      setPage(1);
-
-      const result = await unsplashApi.search.getPhotos({
-        query: searchTerm,
-        page: 1,
+      console.log('Searching Unsplash images for query:', query);
+      const result = await unsplash.search.getPhotos({
+        query: query,
         perPage: 20,
-        orientation: "landscape",
       });
-
-      if (result.errors) {
-        console.error("Unsplash API errors:", result.errors);
-        return;
+      
+      if (result.response) {
+        console.log('Found', result.response.results.length, 'images');
+        setImages(result.response.results);
       }
-
-      setImages(result.response.results);
-      setHasMore(result.response.results.length === 20);
     } catch (error) {
-      console.error("Error searching photos:", error);
+      console.error("Error searching Unsplash:", error);
     } finally {
-      setSearching(false);
-    }
-  };
-
-  const loadMore = async () => {
-    if (!unsplashApi || searching || !hasMore) return;
-
-    try {
-      setSearching(true);
-      const nextPage = page + 1;
-      setPage(nextPage);
-
-      if (searchTerm.trim()) {
-        const result = await unsplashApi.search.getPhotos({
-          query: searchTerm,
-          page: nextPage,
-          perPage: 20,
-          orientation: "landscape",
-        });
-
-        if (result.errors) {
-          console.error("Unsplash API errors:", result.errors);
-          return;
-        }
-
-        setImages(prev => [...prev, ...result.response.results]);
-        setHasMore(result.response.results.length === 20);
-      } else {
-        await loadPopularPhotos(unsplashApi);
-      }
-    } catch (error) {
-      console.error("Error loading more photos:", error);
-    } finally {
-      setSearching(false);
-    }
-  };
-
-  const handleSelectImage = async (image: any) => {
-    try {
-      // Track a download with Unsplash API to comply with API requirements
-      if (unsplashApi) {
-        await unsplashApi.photos.trackDownload({
-          downloadLocation: image.links.download_location,
-        });
-      }
-
-      // Get photographer info
-      const photographer = image.user.name;
-      const photographerUsername = image.user.username;
-
-      // Pass both the URL and photographer info to the parent component
-      onSelect(image.urls.regular, photographer, photographerUsername);
-    } catch (error) {
-      console.error("Error tracking download:", error);
-      // Still provide the image even if tracking fails
-      onSelect(
-        image.urls.regular, 
-        image.user.name,
-        image.user.username
-      );
+      setLoading(false);
     }
   };
 
   return (
-    <div className="flex flex-col gap-4 h-full">
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-medium">Choose an Unsplash Image</h3>
-        <Button variant="ghost" size="sm" onClick={onClose}>
-          <X className="h-4 w-4" />
+    <div className="space-y-4">
+      <div className="flex gap-2">
+        <Input
+          placeholder="Search for images..."
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              searchImages();
+            }
+          }}
+        />
+        <Button onClick={searchImages} disabled={loading}>
+          <Search className="h-4 w-4" />
         </Button>
       </div>
       
-      <form onSubmit={handleSearch} className="flex gap-2">
-        <Input
-          placeholder="Search for images..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-        />
-        <Button type="submit" disabled={searching}>
-          {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-        </Button>
-      </form>
-      
-      {initialLoad && searching ? (
-        <div className="flex justify-center items-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin" />
-        </div>
-      ) : (
-        <>
-          <div className="grid grid-cols-2 gap-4 overflow-y-auto">
-            {images.map((image) => (
-              <div 
-                key={image.id} 
-                className="relative group cursor-pointer rounded-md overflow-hidden"
-                onClick={() => handleSelectImage(image)}
-              >
-                <img 
-                  src={image.urls.small} 
-                  alt={image.alt_description || "Unsplash image"} 
-                  className="w-full h-40 object-cover transition-transform group-hover:scale-105"
-                />
-                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-2">
-                  <p className="text-white text-xs truncate">
-                    Photo by {image.user.name}
-                  </p>
-                </div>
+      <ScrollArea className="h-[400px]">
+        <div className="grid grid-cols-2 gap-4">
+          {images.map((image) => (
+            <div
+              key={image.id}
+              className="relative group cursor-pointer"
+              onClick={() => onSelect(image.urls.regular)}
+            >
+              <img
+                src={image.urls.small}
+                alt={image.alt_description}
+                className="w-full h-40 object-cover rounded-md transition-opacity group-hover:opacity-75"
+              />
+              <div className="absolute inset-0 flex items-end p-2 opacity-0 group-hover:opacity-100 transition-opacity bg-gradient-to-t from-black/60 to-transparent">
+                <p className="text-xs text-white">
+                  Photo by {image.user.name} on Unsplash
+                </p>
               </div>
-            ))}
-          </div>
-          
-          {hasMore && (
-            <div className="flex justify-center mt-4">
-              <Button onClick={loadMore} variant="outline" disabled={searching}>
-                {searching ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    Loading...
-                  </>
-                ) : (
-                  "Load More"
-                )}
-              </Button>
             </div>
-          )}
-        </>
-      )}
-      
-      <p className="text-xs text-muted-foreground mt-auto">
-        Photos provided by <a href="https://unsplash.com/" target="_blank" rel="noopener noreferrer" className="underline">Unsplash</a>
-      </p>
+          ))}
+        </div>
+      </ScrollArea>
     </div>
   );
-}
+};

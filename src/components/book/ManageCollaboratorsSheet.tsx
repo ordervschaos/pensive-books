@@ -23,7 +23,7 @@ import {
 
 interface CollaboratorData {
   id: string;
-  invited_email?: string;
+  email?: string;
   status: string;
   invitation_sent_at: string;
   invitation_token: string;
@@ -55,7 +55,7 @@ export function ManageCollaboratorsSheet({ bookId, onCollaboratorAdded }: Manage
         .from("book_access")
         .select(`
           id,
-          invited_email,
+          email,
           status,
           invitation_sent_at,
           invitation_token,
@@ -72,7 +72,7 @@ export function ManageCollaboratorsSheet({ bookId, onCollaboratorAdded }: Manage
       if (data) {
         const formattedData = data.map(item => ({
           id: item.id,
-          invited_email: item.invited_email,
+          email: item.email,
           status: item.status,
           invitation_sent_at: item.invitation_sent_at,
           invitation_token: item.invitation_token,
@@ -112,7 +112,7 @@ export function ManageCollaboratorsSheet({ bookId, onCollaboratorAdded }: Manage
         .from("book_access")
         .select("*")
         .eq("book_id", bookId)
-        .eq("invited_email", email.toLowerCase().trim());
+        .eq("email", email.toLowerCase().trim());
         
       if (existingInvite && existingInvite.length > 0) {
         toast({
@@ -133,7 +133,7 @@ export function ManageCollaboratorsSheet({ bookId, onCollaboratorAdded }: Manage
       
       if (error) throw error;
       
-      if (data && data.error) throw new Error(data.error);
+      if (data.error) throw new Error(data.error);
       
       toast({
         title: "Invitation sent",
@@ -238,7 +238,7 @@ export function ManageCollaboratorsSheet({ bookId, onCollaboratorAdded }: Manage
                   <div key={collaborator.id} className="flex items-center justify-between p-2 border rounded-md">
                     <div>
                       <p className="text-sm font-medium">
-                        {collaborator.name || collaborator.username || collaborator.invited_email}
+                        {collaborator.name || collaborator.username || collaborator.email}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {collaborator.status === "pending" ? "Invitation pending" : "Active"}

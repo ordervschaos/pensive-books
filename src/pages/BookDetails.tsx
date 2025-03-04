@@ -1,290 +1,321 @@
-
-import { useParams, Link, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { Button } from "@/components/ui/button";
-import { BookHeader } from "@/components/book/BookHeader";
-import { PagesList } from "@/components/book/pageList";
+import { useToast } from "@/hooks/use-toast";
 import { BookInfo } from "@/components/book/BookInfo";
-import { BookActionsBar } from "@/components/book/BookActionsBar";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ContinueReadingButton } from "@/components/book/ContinueReadingButton";
-import { NavTabs } from "@/components/navigation";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Pencil, PlusCircle, Share } from "lucide-react";
-import { ShareBookSheet } from "@/components/book/ShareBookSheet";
+import { PagesList } from "@/components/book/PagesList";
 import { useBookPermissions } from "@/hooks/use-book-permissions";
-import { ManageCollaboratorsSheet } from "@/components/book/ManageCollaboratorsSheet";
+import { BookActionsBar } from "@/components/book/BookActionsBar";
+import { ShareBookButton } from "@/components/book/ShareBookButton";
+import { ContinueReadingButton } from "@/components/book/ContinueReadingButton";
+import { setPageTitle } from "@/utils/pageTitle";
 
-export default function BookDetails() {
-  const { id } = useParams<{ id: string }>();
+const LOCALSTORAGE_BOOKMARKS_KEY = 'bookmarked_pages';
+
+const BookDetails = () => {
+  const { id } = useParams();
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [book, setBook] = useState<any>(null);
   const [pages, setPages] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [notebookId, setNotebookId] = useState<number | null>(null);
-  const { canEdit, isOwner, loadingPermissions } = useBookPermissions(id ? parseInt(id) : null);
+  const [publishing, setPublishing] = useState(false);
+  const [isReorderMode, setIsReorderMode] = useState(false);
+  const [isDeleteMode, setIsDeleteMode] = useState(false);
+  const [bookmarkedPageIndex, setBookmarkedPageIndex] = useState<number | null>(null);
+  const { canEdit, isOwner, loading: permissionsLoading } = useBookPermissions(id);
+
+  const getNumericId = (param: string | undefined) => {
+    if (!param) return 0;
+    const match = param.match(/^(\d+)/);
+    return match ? parseInt(match[1]) : 0;
+  };
+
+  const fetchBookmarkedPage = async (session: any) => {
+    try {
+      const numericId = getNumericId(id);
+      if (session) {
+        const { data: userData, error } = await supabase
+          .from('user_data')
+          .select('bookmarked_pages')
+          .eq('user_id', session.user.id)
+          .maybeSingle();
+
+        if (error) throw error;
+        
+        const bookmarks = userData?.bookmarked_pages || {};
+        setBookmarkedPageIndex(bookmarks[numericId] ?? null);
+      } else {
+        const storedBookmarks = localStorage.getItem(LOCALSTORAGE_BOOKMARKS_KEY);
+        const bookmarks = storedBookmarks ? JSON.parse(storedBookmarks) : {};
+        setBookmarkedPageIndex(bookmarks[numericId] ?? null);
+      }
+    } catch (error: any) {
+      console.error('Error fetching bookmarked page:', error);
+    }
+  };
+
+  const updateBookmark = async (pageIndex: number | null) => {
+    try {
+      const numericId = getNumericId(id);
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (session) {
+        const { data: userData, error: fetchError } = await supabase
+          .from('user_data')
+          .select('bookmarked_pages')
+          .eq('user_id', session.user.id)
+          .maybeSingle();
+
+        if (fetchError) throw fetchError;
+
+        const bookmarks = (userData?.bookmarked_pages as Record<string, number>) || {};
+        const updatedBookmarks = { ...bookmarks, [numericId]: pageIndex };
+
+        const { error: updateError } = await supabase
+          .from('user_data')
+          .update({ bookmarked_pages: updatedBookmarks })
+          .eq('user_id', session.user.id);
+
+        if (updateError) throw updateError;
+      } else {
+        const storedBookmarks = localStorage.getItem(LOCALSTORAGE_BOOKMARKS_KEY);
+        const bookmarks = storedBookmarks ? JSON.parse(storedBookmarks) : {};
+        const updatedBookmarks = { ...bookmarks, [numericId]: pageIndex };
+        localStorage.setItem(LOCALSTORAGE_BOOKMARKS_KEY, JSON.stringify(updatedBookmarks));
+      }
+
+      setBookmarkedPageIndex(pageIndex);
+    } catch (error: any) {
+      console.error('Error updating bookmark:', error);
+      toast({
+        variant: "destructive",
+        title: "Error updating bookmark",
+        description: error.message
+      });
+    }
+  };
 
   useEffect(() => {
-    if (!id) return;
-    
-    const bookId = parseInt(id);
-    setNotebookId(bookId);
-    
-    const fetchBookDetails = async () => {
-      try {
-        setLoading(true);
-        
-        // Fetch book details
-        const { data: bookData, error: bookError } = await supabase
-          .from('books')
-          .select('*')
-          .eq('id', bookId)
-          .single();
-          
-        if (bookError) throw bookError;
-        setBook(bookData);
-        
-        // Fetch pages
-        const { data: pagesData, error: pagesError } = await supabase
-          .from('pages')
-          .select('*')
-          .eq('book_id', bookId)
-          .eq('archived', false)
-          .order('page_index', { ascending: true });
-          
-        if (pagesError) throw pagesError;
-        setPages(pagesData || []);
-        
-      } catch (error) {
-        console.error('Error fetching book details:', error);
-      } finally {
-        setLoading(false);
-      }
+    const checkAuthAndFetch = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      fetchBookmarkedPage(session);
+      fetchBookDetails();
     };
-    
-    fetchBookDetails();
+
+    checkAuthAndFetch();
   }, [id]);
 
-  const handleEditBook = () => {
-    if (id) {
-      navigate(`/book/${id}/edit`);
-    }
-  };
-
-  const handleCreateNewPage = async () => {
-    if (!id || !book) return;
-    
+  const fetchBookDetails = async () => {
     try {
-      // Get the next page index
-      const nextPageIndex = pages.length > 0 
-        ? Math.max(...pages.map(p => p.page_index || 0)) + 1 
-        : 0;
-      
-      // Create a new page
-      const { data, error } = await supabase
-        .from('pages')
-        .insert([{
-          book_id: parseInt(id),
-          page_index: nextPageIndex,
-          title: 'Untitled',
-          html_content: '<h1>Untitled</h1><p>Start writing here...</p>',
-          page_type: 'text'
-        }])
-        .select()
+      const numericId = getNumericId(id);
+      console.log('Fetching book details for ID:', numericId);
+
+      const { data: bookData, error: bookError } = await supabase
+        .from("books")
+        .select("*")
+        .eq("id", numericId)
+        .eq("is_archived", false)
         .single();
-        
-      if (error) throw error;
-      
-      // Navigate to the new page
-      navigate(`/book/${id}/page/${data.id}`);
-    } catch (error) {
-      console.error('Error creating new page:', error);
-    }
-  };
 
-  const refreshPages = async () => {
-    if (!id) return;
-    
-    try {
-      const { data, error } = await supabase
-        .from('pages')
-        .select('*')
-        .eq('book_id', parseInt(id))
-        .eq('archived', false)
+      if (bookError) {
+        console.error('Error fetching book:', bookError);
+        throw bookError;
+      }
+
+      if (bookData && !id?.includes('-') && bookData.name) {
+        const slug = `${numericId}-${bookData.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+        navigate(`/book/${slug}`, { replace: true });
+      }
+
+      console.log('Book data fetched:', bookData);
+      setBook(bookData);
+      setPageTitle(bookData.name);
+
+      const { data: pagesData, error: pagesError } = await supabase
+        .from("pages")
+        .select("*")
+        .eq("book_id", numericId)
+        .eq("archived", false)
         .order('page_index', { ascending: true });
-        
-      if (error) throw error;
-      setPages(data || []);
-    } catch (error) {
-      console.error('Error refreshing pages:', error);
+
+      if (pagesError) {
+        console.error('Error fetching pages:', pagesError);
+        throw pagesError;
+      }
+
+      console.log('Pages fetched:', pagesData?.length);
+      setPages(pagesData || []);
+    } catch (error: any) {
+      console.error('Error in fetchBookDetails:', error);
+      toast({
+        variant: "destructive",
+        title: "Error fetching book details",
+        description: error.message
+      });
+    } finally {
+      setLoading(false);
     }
   };
 
-  if (loading || loadingPermissions) {
-    return (
-      <div className="container max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-        <div className="animate-pulse space-y-6">
-          <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-1/4"></div>
-          <div className="h-64 bg-gray-200 dark:bg-gray-700 rounded"></div>
-          <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-1/2"></div>
-        </div>
-      </div>
-    );
-  }
+  const togglePublish = async () => {
+    try {
+      setPublishing(true);
+      const newPublishState = !book.is_public;
 
-  if (!book) {
-    return (
-      <div className="container max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-        <Card>
-          <CardHeader>
-            <CardTitle>Book Not Found</CardTitle>
-            <CardDescription>The book you're looking for doesn't exist or you don't have permission to view it.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button asChild>
-              <Link to="/my-books">Go to My Books</Link>
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
+      const { error } = await supabase
+        .from("books")
+        .update({
+          is_public: newPublishState,
+          published_at: newPublishState ? new Date().toISOString() : null
+        })
+        .eq("id", parseInt(id || "0"));
+
+      if (error) throw error;
+
+      setBook({
+        ...book,
+        is_public: newPublishState,
+        published_at: newPublishState ? new Date().toISOString() : null
+      });
+
+      toast({
+        title: newPublishState ? "Book Published" : "Book Unpublished",
+        description: newPublishState
+          ? "Your book is now available to the public"
+          : "Your book is now private"
+      });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error updating book",
+        description: error.message
+      });
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  const handleEditClick = () => {
+    navigate(`/book/${id}/edit`);
+  };
+
+  const handleContinueReading = () => {
+    const numericId = getNumericId(id);
+    if (!pages.length) return;
+
+    const pageToNavigate = bookmarkedPageIndex !== null && bookmarkedPageIndex < pages.length
+      ? pages[bookmarkedPageIndex]
+      : pages[0];
+
+    if (pageToNavigate) {
+      const newIndex = bookmarkedPageIndex === null ? 0 : bookmarkedPageIndex;
+      updateBookmark(newIndex);
+      navigate(`/book/${numericId}/page/${pageToNavigate.id}`);
+    }
+  };
+
+  if (loading || !book) {
+    return null;
   }
 
   return (
-    <div className="container max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-      <div className="mb-6">
-        <BookHeader title={book.name} subtitle={book.subtitle} />
-      </div>
+    <div className="min-h-screen flex flex-col bg-background">
+      <div className="container mx-auto px-4 py-6">
+        <div className="max-w-7xl mx-auto space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            <div className="lg:hidden col-span-full">
+              <h1
+                className={`text-2xl font-bold mb-2 ${canEdit ? 'cursor-pointer hover:text-blue-600 transition-colors' : ''}`}
+                onClick={canEdit ? handleEditClick : undefined}
+              >
+                {book.name}
+              </h1>
+              <p className="text-muted-foreground mb-4">{book.author || "Unknown author"}</p>
+              
+              <div className="flex flex-wrap gap-3">
+                <ContinueReadingButton
+                  onClick={handleContinueReading}
+                  bookmarkedPageIndex={bookmarkedPageIndex}
+                  totalPages={pages.length}
+                  className="flex-1 sm:flex-none"
+                />
+              </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-1">
-          <div className="space-y-6">
-            <BookInfo bookId={parseInt(id!)} canEdit={canEdit} />
-            
-            {/* Book Actions */}
-            <div className="space-y-3">
-              <ContinueReadingButton bookId={parseInt(id!)} pages={pages} />
-              
               {canEdit && (
-                <Button 
-                  variant="outline" 
-                  className="w-full" 
-                  onClick={handleCreateNewPage}
-                >
-                  <PlusCircle className="h-4 w-4 mr-2" />
-                  Create New Page
-                </Button>
-              )}
-              
-              {canEdit && (
-                <Button 
-                  variant="outline" 
-                  className="w-full" 
-                  onClick={handleEditBook}
-                >
-                  <Pencil className="h-4 w-4 mr-2" />
-                  Edit Book
-                </Button>
-              )}
-              
-              <ShareBookSheet bookId={parseInt(id!)} />
-              
-              {isOwner && (
-                <ManageCollaboratorsSheet 
-                  bookId={parseInt(id!)} 
-                  onCollaboratorAdded={refreshPages}
+                <BookActionsBar
+                  isPublic={book.is_public}
+                  onTogglePublish={togglePublish}
+                  publishing={publishing}
+                  onEditClick={handleEditClick}
                 />
               )}
+              
+              <ShareBookButton
+                isPublic={book.is_public}
+                url={window.location.href}
+              />
             </div>
 
-            {/* Book Information */}
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-lg">Book Information</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <dl className="space-y-2 text-sm">
-                  <div>
-                    <dt className="text-muted-foreground">Created</dt>
-                    <dd>{new Date(book.created_at).toLocaleDateString()}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-muted-foreground">Last Updated</dt>
-                    <dd>{new Date(book.updated_at).toLocaleDateString()}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-muted-foreground">Pages</dt>
-                    <dd>{pages.length}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-muted-foreground">Visibility</dt>
-                    <dd className="flex items-center">
-                      {book.is_public ? (
-                        <>
-                          <Globe className="h-3.5 w-3.5 text-green-500 mr-1" />
-                          Public
-                        </>
-                      ) : (
-                        <>
-                          <Lock className="h-3.5 w-3.5 text-gray-500 mr-1" />
-                          Private
-                        </>
-                      )}
-                    </dd>
-                  </div>
-                  {book.photographer && (
-                    <div>
-                      <dt className="text-muted-foreground">Cover Photo</dt>
-                      <dd>
-                        By{" "}
-                        <a 
-                          href={`https://unsplash.com/@${book.photographer_username}?utm_source=pensive&utm_medium=referral`} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="underline"
-                        >
-                          {book.photographer}
-                        </a>{" "}
-                        on{" "}
-                        <a 
-                          href="https://unsplash.com/?utm_source=pensive&utm_medium=referral" 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="underline"
-                        >
-                          Unsplash
-                        </a>
-                      </dd>
-                    </div>
-                  )}
-                </dl>
-              </CardContent>
-            </Card>
+            <div className="col-span-full lg:col-span-1">
+              <BookInfo
+                name={book.name}
+                subtitle={book.subtitle}
+                coverUrl={book.cover_url}
+                bookId={parseInt(id || "0")}
+                author={book.author}
+                showTextOnCover={book.show_text_on_cover}
+              />
+              
+              <div className="hidden lg:block space-y-4">
+                <ContinueReadingButton
+                  onClick={handleContinueReading}
+                  bookmarkedPageIndex={bookmarkedPageIndex}
+                  totalPages={pages.length}
+                  className="w-full"
+                />
+
+                {canEdit && (
+                  <BookActionsBar
+                    isPublic={book.is_public}
+                    onTogglePublish={togglePublish}
+                    publishing={publishing}
+                    onEditClick={handleEditClick}
+                  />
+                )}
+                
+                <ShareBookButton
+                  isPublic={book.is_public}
+                  url={window.location.href}
+                />
+              </div>
+            </div>
+
+            <div className="col-span-full lg:col-span-3">
+              <div className="hidden lg:block mb-6">
+                <h1
+                  className={`text-3xl font-bold ${canEdit ? 'cursor-pointer hover:text-blue-600 transition-colors' : ''}`}
+                  onClick={canEdit ? handleEditClick : undefined}
+                >
+                  {book.name}
+                </h1>
+                <p className="text-muted-foreground">{book.author || "Unknown author"}</p>
+              </div>
+
+              <PagesList
+                pages={pages}
+                bookId={parseInt(id || "0")}
+                isReorderMode={isReorderMode}
+                isDeleteMode={isDeleteMode}
+                canEdit={canEdit}
+                onDeleteModeChange={(isDelete) => setIsDeleteMode(isDelete)}
+              />
+            </div>
           </div>
         </div>
-
-        <div className="lg:col-span-2">
-          <Tabs defaultValue="pages">
-            <TabsList className="mb-4">
-              <TabsTrigger value="pages">Pages</TabsTrigger>
-            </TabsList>
-            <TabsContent value="pages">
-              <PagesList 
-                pages={pages} 
-                bookId={parseInt(id!)}
-                onPagesUpdated={refreshPages}
-                canEdit={canEdit}
-              />
-            </TabsContent>
-          </Tabs>
-        </div>
       </div>
-
-      <BookActionsBar bookId={parseInt(id!)} />
     </div>
   );
-}
+};
 
-// Missing imports (added here)
-import { Globe, Lock } from "lucide-react";
+export default BookDetails;

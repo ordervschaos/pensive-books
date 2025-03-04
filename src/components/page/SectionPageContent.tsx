@@ -1,4 +1,3 @@
-
 import { Input } from "@/components/ui/input";
 import { ChangeEvent } from "react";
 import { TipTapEditor } from "@/components/editor/TipTapEditor";
@@ -6,7 +5,7 @@ import { getEditorConfig } from "../editor/config/editorConfig";
 import StarterKit from '@tiptap/starter-kit';
 import { SectionDocument } from "../editor/extensions/SectionDocument";
 import { Button } from "@/components/ui/button";
-import { Pencil, Eye } from "lucide-react";
+import { Pencil, Eye, EyeOff } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 
 interface SectionPageContentProps {
@@ -84,7 +83,7 @@ export const SectionPageContent = ({
         <TipTapEditor 
           content={initialContent}
           onChange={onChange}
-          editable={isEditing && canEdit}
+          editable={canEdit}
           isEditing={isEditing}
           onToggleEdit={onToggleEdit}
           editorConfig={sectionEditorConfig}

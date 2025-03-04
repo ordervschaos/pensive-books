@@ -70,8 +70,6 @@ export type Database = {
           name: string | null
           owner_id: string | null
           page_ids: Json | null
-          photographer: string | null
-          photographer_username: string | null
           pinned: boolean | null
           published_at: string | null
           show_text_on_cover: boolean | null
@@ -96,8 +94,6 @@ export type Database = {
           name?: string | null
           owner_id?: string | null
           page_ids?: Json | null
-          photographer?: string | null
-          photographer_username?: string | null
           pinned?: boolean | null
           published_at?: string | null
           show_text_on_cover?: boolean | null
@@ -122,8 +118,6 @@ export type Database = {
           name?: string | null
           owner_id?: string | null
           page_ids?: Json | null
-          photographer?: string | null
-          photographer_username?: string | null
           pinned?: boolean | null
           published_at?: string | null
           show_text_on_cover?: boolean | null
