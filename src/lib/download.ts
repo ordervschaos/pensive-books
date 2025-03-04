@@ -1,4 +1,3 @@
-
 interface Page {
   id: number;
   book_id: number;
