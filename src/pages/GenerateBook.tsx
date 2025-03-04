@@ -1,16 +1,25 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowLeft, ArrowRight, Brain, Wand2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Brain, Trash2, Pencil, Save, Wand2, MoveUp, MoveDown } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
+import { TipTapEditor } from "@/components/editor/TipTapEditor";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 interface GeneratedPage {
   title: string;
@@ -18,7 +27,7 @@ interface GeneratedPage {
   pageType: "text" | "section";
 }
 
-type GenerationStep = 'prompt' | 'review' | 'generating' | 'complete';
+type GenerationStep = 'prompt' | 'review' | 'editing' | 'generating' | 'expanding' | 'complete';
 
 export default function GenerateBook() {
   const navigate = useNavigate();
@@ -29,6 +38,9 @@ export default function GenerateBook() {
   const [generatedContent, setGeneratedContent] = useState<{ pages: GeneratedPage[] } | null>(null);
   const [step, setStep] = useState<GenerationStep>('prompt');
   const [bookId, setBookId] = useState<number | null>(null);
+  const [editingPage, setEditingPage] = useState<GeneratedPage | null>(null);
+  const [editingPageIndex, setEditingPageIndex] = useState<number | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
 
   const handleGenerateOutline = async () => {
     if (!bookName || !prompt) {
@@ -75,11 +87,76 @@ export default function GenerateBook() {
     }
   };
 
+  const movePageUp = (index: number) => {
+    if (!generatedContent || index <= 0) return;
+    
+    const newPages = [...generatedContent.pages];
+    [newPages[index - 1], newPages[index]] = [newPages[index], newPages[index - 1]];
+    
+    setGeneratedContent({
+      pages: newPages
+    });
+  };
+
+  const movePageDown = (index: number) => {
+    if (!generatedContent || index >= generatedContent.pages.length - 1) return;
+    
+    const newPages = [...generatedContent.pages];
+    [newPages[index], newPages[index + 1]] = [newPages[index + 1], newPages[index]];
+    
+    setGeneratedContent({
+      pages: newPages
+    });
+  };
+
+  const deletePage = (index: number) => {
+    if (!generatedContent) return;
+    
+    const newPages = [...generatedContent.pages];
+    newPages.splice(index, 1);
+    
+    setGeneratedContent({
+      pages: newPages
+    });
+
+    toast({
+      title: "Page deleted",
+      description: "The page has been removed from the outline",
+    });
+  };
+
+  const openEditDialog = (page: GeneratedPage, index: number) => {
+    setEditingPage({ ...page });
+    setEditingPageIndex(index);
+    setEditDialogOpen(true);
+  };
+
+  const handleSaveEdit = () => {
+    if (!editingPage || editingPageIndex === null || !generatedContent) return;
+    
+    const newPages = [...generatedContent.pages];
+    newPages[editingPageIndex] = editingPage;
+    
+    setGeneratedContent({
+      pages: newPages
+    });
+    
+    setEditDialogOpen(false);
+    setEditingPage(null);
+    setEditingPageIndex(null);
+
+    toast({
+      title: "Changes saved",
+      description: "Your edits have been applied to the outline",
+    });
+  };
+
   const handleCreateBook = async () => {
     if (!generatedContent || !bookName) return;
 
     try {
       setGenerating(true);
+      setStep('expanding');
 
       // Create the book first
       const { data: bookData, error: bookError } = await supabase
@@ -112,9 +189,22 @@ export default function GenerateBook() {
         if (pageError) throw pageError;
       }
 
+      // Now call the flesh-out-book function to expand the content
+      const { data: expandedData, error: expandError } = await supabase.functions.invoke(
+        "flesh-out-book",
+        {
+          body: {
+            bookId: newBookId,
+            prompt: `This is a book about: ${prompt}. Expand the content to be more detailed and engaging.`
+          },
+        }
+      );
+
+      if (expandError) throw expandError;
+
       toast({
-        title: "Book created",
-        description: "Your book has been created successfully using Deepseek AI",
+        title: "Book created and expanded",
+        description: "Your book has been created and content has been expanded using AI",
       });
 
       setStep('complete');
@@ -130,10 +220,26 @@ export default function GenerateBook() {
     }
   };
 
+  const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!editingPage) return;
+    setEditingPage({
+      ...editingPage,
+      title: e.target.value
+    });
+  };
+
+  const handleContentChange = (html: string) => {
+    if (!editingPage) return;
+    setEditingPage({
+      ...editingPage,
+      content: html
+    });
+  };
+
   const renderStepIndicator = () => (
     <div className="flex items-center justify-center mb-8 w-full max-w-md mx-auto">
-      <div className={`h-2 flex-1 rounded-l-full ${step === 'prompt' || step === 'review' || step === 'generating' || step === 'complete' ? 'bg-primary' : 'bg-muted'}`} />
-      <div className={`h-2 flex-1 ${step === 'review' || step === 'generating' || step === 'complete' ? 'bg-primary' : 'bg-muted'}`} />
+      <div className={`h-2 flex-1 rounded-l-full ${step === 'prompt' || step === 'review' || step === 'editing' || step === 'generating' || step === 'expanding' || step === 'complete' ? 'bg-primary' : 'bg-muted'}`} />
+      <div className={`h-2 flex-1 ${step === 'review' || step === 'editing' || step === 'generating' || step === 'expanding' || step === 'complete' ? 'bg-primary' : 'bg-muted'}`} />
       <div className={`h-2 flex-1 rounded-r-full ${step === 'complete' ? 'bg-primary' : 'bg-muted'}`} />
     </div>
   );
@@ -191,15 +297,30 @@ export default function GenerateBook() {
     </Card>
   );
 
+  const renderExpandingStep = () => (
+    <Card className="p-6 flex flex-col items-center justify-center space-y-4">
+      <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
+        <Wand2 className="h-8 w-8 text-primary animate-pulse" />
+      </div>
+      <h3 className="text-xl font-medium">Expanding Your Book Content</h3>
+      <p className="text-center text-muted-foreground">
+        Please wait while our AI expands the content of your book. This may take several minutes.
+      </p>
+      <div className="w-full max-w-md h-2 bg-muted rounded-full overflow-hidden">
+        <div className="h-full bg-primary animate-progress" style={{ width: '60%' }} />
+      </div>
+    </Card>
+  );
+
   const renderReviewStep = () => {
     if (!generatedContent) return null;
     
     return (
       <Card className="p-6 space-y-6">
         <div className="space-y-2">
-          <h2 className="text-xl font-semibold">Book Outline Review</h2>
+          <h2 className="text-xl font-semibold">Book Outline Review & Edit</h2>
           <p className="text-muted-foreground">
-            Here's the outline generated for your book. Review it before creating the book.
+            Here's the outline generated for your book. You can review, edit, reorder, or delete pages before creating the book.
           </p>
         </div>
 
@@ -207,18 +328,54 @@ export default function GenerateBook() {
 
         <div className="max-h-[50vh] overflow-y-auto rounded-md border p-4 space-y-4">
           {generatedContent.pages.map((page, idx) => (
-            <div key={idx} className="space-y-2">
-              <h3 className={`font-medium ${page.pageType === 'section' ? 'text-primary text-lg' : 'text-foreground'}`}>
-                {page.title}
-              </h3>
+            <div key={idx} className="space-y-2 bg-card rounded-md shadow-sm p-4">
+              <div className="flex justify-between items-center">
+                <h3 className={`font-medium ${page.pageType === 'section' ? 'text-primary text-lg' : 'text-foreground'}`}>
+                  {page.title}
+                </h3>
+                <div className="flex gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => movePageUp(idx)}
+                    disabled={idx === 0}
+                    className="h-8 w-8"
+                  >
+                    <MoveUp className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => movePageDown(idx)}
+                    disabled={idx === generatedContent.pages.length - 1}
+                    className="h-8 w-8"
+                  >
+                    <MoveDown className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => openEditDialog(page, idx)}
+                    className="h-8 w-8"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => deletePage(idx)}
+                    className="h-8 w-8 text-destructive"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
               {page.pageType === 'text' && (
-                <div className="text-sm text-muted-foreground">
-                  {page.content.length > 100 
-                    ? `${page.content.replace(/<[^>]*>/g, '').substring(0, 100)}...`
-                    : page.content.replace(/<[^>]*>/g, '')}
+                <div className="text-sm text-muted-foreground line-clamp-2">
+                  {page.content.replace(/<[^>]*>/g, '').substring(0, 150)}
+                  {page.content.replace(/<[^>]*>/g, '').length > 150 ? '...' : ''}
                 </div>
               )}
-              {idx < generatedContent.pages.length - 1 && <Separator className="my-2" />}
             </div>
           ))}
         </div>
@@ -234,7 +391,7 @@ export default function GenerateBook() {
           </Button>
           <Button
             onClick={handleCreateBook}
-            disabled={generating}
+            disabled={generating || generatedContent.pages.length === 0}
             className="flex-1"
           >
             <Wand2 className="h-4 w-4 mr-2" />
@@ -252,7 +409,7 @@ export default function GenerateBook() {
       </div>
       <h3 className="text-xl font-medium">Book Created Successfully!</h3>
       <p className="text-center text-muted-foreground">
-        Your book has been created. You can now view and edit it.
+        Your book has been created with AI-generated content. You can now view and edit it.
       </p>
       <div className="flex gap-4">
         <Button
@@ -282,7 +439,7 @@ export default function GenerateBook() {
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <h1 className="text-2xl font-semibold">Generate Book with Deepseek AI</h1>
+          <h1 className="text-2xl font-semibold">Generate Book with AI</h1>
         </div>
 
         {renderStepIndicator()}
@@ -291,8 +448,52 @@ export default function GenerateBook() {
           {step === 'prompt' && renderPromptStep()}
           {step === 'generating' && renderGeneratingStep()}
           {step === 'review' && renderReviewStep()}
+          {step === 'expanding' && renderExpandingStep()}
           {step === 'complete' && renderCompleteStep()}
         </div>
+
+        <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Edit Page</DialogTitle>
+              <DialogDescription>
+                Make changes to the page title and content.
+              </DialogDescription>
+            </DialogHeader>
+            
+            {editingPage && (
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="pageTitle">Page Title</Label>
+                  <Input
+                    id="pageTitle"
+                    value={editingPage.title}
+                    onChange={handleTitleChange}
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label>Page Content</Label>
+                  <div className="min-h-[300px] border rounded-md">
+                    <TipTapEditor 
+                      content={editingPage.content}
+                      onChange={handleContentChange}
+                      editable={true}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setEditDialogOpen(false)}>Cancel</Button>
+              <Button onClick={handleSaveEdit}>
+                <Save className="h-4 w-4 mr-2" />
+                Save Changes
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

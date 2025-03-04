@@ -1,212 +1,191 @@
-import { useParams, useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { format } from "date-fns";
-import { ArrowLeft } from "lucide-react";
-import { useState, useEffect } from "react";
-import { TipTapEditor } from "@/components/editor/TipTapEditor";
 import { useToast } from "@/hooks/use-toast";
+import {
+  Table,
+  TableBody,
+  TableCaption,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import { TipTapEditor } from "@/components/editor/TipTapEditor";
 
 interface PageVersion {
-  id: number;
-  page_id: number;
-  html_content: string;
-  content?: any;
+  id: string;
   created_at: string;
+  html_content: string;
 }
 
 export default function PageHistoryView() {
-  const { pageId, bookId } = useParams();
-  const navigate = useNavigate();
+  const { pageId } = useParams<{ pageId: string }>();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [selectedVersion, setSelectedVersion] = useState<PageVersion | null>(null);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [restoringVersionId, setRestoringVersionId] = useState<string | null>(null);
 
-  // First fetch the current page
-  const { data: currentPage, isLoading: isLoadingPage } = useQuery({
-    queryKey: ['page', pageId],
+  const { data: pageVersions, isLoading, isError, error } = useQuery({
+    queryKey: ["page-history", pageId],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('pages')
-        .select('*, owner_id')
-        .eq('id', parseInt(pageId || '0'))
-        .maybeSingle();
-      
-      if (error) throw error;
-      return data;
-    },
-    staleTime: 0 // Always fetch fresh data
-  });
+      if (!pageId) throw new Error("Page ID is required");
 
-  // Then fetch versions only after we have the current page
-  const { data: versions, isLoading: isLoadingVersions } = useQuery({
-    queryKey: ['page-history', pageId],
-    queryFn: async () => {
       const { data, error } = await supabase
-        .from('page_history')
-        .select('*')
-        .eq('page_id', parseInt(pageId || '0'))
-        .order('created_at', { ascending: false });
-      
+        .from("page_history")
+        .select("*")
+        .eq("page_id", pageId)
+        .order("created_at", { ascending: false });
+
       if (error) throw error;
       return data as PageVersion[];
     },
-    enabled: !!currentPage,
-    staleTime: 0 // Always fetch fresh data
   });
 
-  const isLoading = isLoadingPage || isLoadingVersions;
+  const { data: currentPage, refetch } = useQuery({
+    queryKey: ["page", pageId],
+    queryFn: async () => {
+      if (!pageId) throw new Error("Page ID is required");
 
-  // Compute the current display content based on selection
-  const displayContent = selectedVersion 
-    ? selectedVersion.html_content || ''
-    : currentPage?.html_content || '';
+      const { data, error } = await supabase
+        .from("pages")
+        .select("*")
+        .eq("id", pageId)
+        .single();
 
-  // Handle version selection
-  const handleVersionSelect = (version: PageVersion | null) => {
-    setSelectedVersion(version);
-  };
+      if (error) throw error;
+      return data;
+    },
+  });
 
-  const handleRestore = async () => {
-    if (!selectedVersion || !pageId || !currentPage?.owner_id) return;
+  useEffect(() => {
+    refetch();
+  }, [pageId, refetch]);
+
+  const handleRestoreVersion = async (version: any) => {
+    if (!pageId) {
+      toast({
+        title: "Missing Page ID",
+        description: "The page ID is not available. Please try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsRestoring(true);
+    setRestoringVersionId(version.id);
 
     try {
-      // Save current version to history before restoring
-      const { error: historyError } = await supabase
-        .from('page_history')
-        .upsert(
-          {
-            page_id: parseInt(pageId),
-            html_content: currentPage?.html_content,
-            created_by: currentPage.owner_id,
-            created_at: new Date().toISOString()
-          },
-          {
-            onConflict: 'page_id,created_at_minute'
-          }
-        );
-
-      if (historyError) throw historyError;
-
-      // Then update the current page with the selected version
       const { error } = await supabase
-        .from('pages')
-        .update({ 
-          html_content: selectedVersion.html_content,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', parseInt(pageId));
+        .from("pages")
+        .update({ html_content: version.html_content, updated_at: new Date().toISOString() })
+        .eq("id", pageId);
 
       if (error) throw error;
 
-      // Invalidate queries to ensure fresh data
-      await Promise.all([
-        queryClient.invalidateQueries(['page', pageId]),
-        queryClient.invalidateQueries(['page-history', pageId])
-      ]);
+      // Update the invalidateQueries calls to use the correct type
+      queryClient.invalidateQueries({ queryKey: ["page", pageId] });
+      queryClient.invalidateQueries({ queryKey: ["page-history", pageId] });
 
       toast({
-        title: "Version restored",
-        description: "The page has been reverted to the selected version."
+        title: "Page version restored",
+        description: "The selected version has been successfully restored.",
       });
-
-      navigate(`/book/${bookId}/page/${pageId}`);
-    } catch (error) {
-      console.error('Error restoring version:', error);
+    } catch (error: any) {
       toast({
+        title: "Error restoring version",
+        description: error.message,
         variant: "destructive",
-        title: "Error",
-        description: "Failed to restore the selected version."
       });
+    } finally {
+      setIsRestoring(false);
+      setRestoringVersionId(null);
     }
   };
 
-  return (
-    <div className="min-h-screen flex">
-      {/* Sidebar with versions */}
-      <div className="w-80 border-r bg-muted/30">
-        <div className="p-4 border-b">
-          <Button 
-            variant="ghost" 
-            className="mb-2"
-            onClick={() => navigate(`/book/${bookId}/page/${pageId}`)}
-          >
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to page
-          </Button>
-          <h2 className="text-lg font-semibold">Page History</h2>
-        </div>
-        <ScrollArea className="h-[calc(100vh-8rem)]">
-          <div className="p-4 space-y-4">
-            {isLoading ? (
-              <div className="p-4 text-muted-foreground">Loading...</div>
-            ) : (
-              <>
-                <div 
-                  className={`p-4 border rounded-lg cursor-pointer transition-colors hover:bg-accent ${!selectedVersion ? 'bg-accent' : ''}`}
-                  onClick={() => handleVersionSelect(null)}
-                >
-                  <div className="font-medium">Current Version</div>
-                  <div className="text-sm text-muted-foreground">
-                    {currentPage?.updated_at ? format(new Date(currentPage.updated_at), 'PPpp') : 'Unknown date'}
-                  </div>
-                </div>
-                {versions?.map((version) => (
-                  <div
-                    key={version.id}
-                    className={`p-4 border rounded-lg cursor-pointer transition-colors hover:bg-accent ${selectedVersion?.id === version.id ? 'bg-accent' : ''}`}
-                    onClick={() => handleVersionSelect(version)}
-                  >
-                    <div className="text-sm text-muted-foreground">
-                      {format(new Date(version.created_at), 'PPpp')}
-                    </div>
-                  </div>
-                ))}
-              </>
-            )}
-          </div>
-        </ScrollArea>
-      </div>
+  if (isLoading) {
+    return <div>Loading...</div>;
+  }
 
-      {/* Content preview */}
-      <div className="flex-1 flex flex-col">
-        <div className="p-4 border-b flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-semibold">
-              {selectedVersion ? 'Previewing past version' : 'Current version'}
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              {selectedVersion 
-                ? `From ${format(new Date(selectedVersion.created_at), 'PPpp')}` 
-                : `Last updated ${currentPage?.updated_at ? format(new Date(currentPage.updated_at), 'PPpp') : 'Unknown'}`
-              }
-            </p>
-          </div>
-          {selectedVersion && (
-            <Button onClick={handleRestore}>
-              Restore this version
-            </Button>
-          )}
-        </div>
-        <div className="flex-1 overflow-auto">
-          {isLoading ? (
-            <div className="p-8 text-muted-foreground">Loading...</div>
+  if (isError) {
+    return <div>Error: {error.message}</div>;
+  }
+
+  return (
+    <div className="container mx-auto py-8">
+      <Card>
+        <CardHeader>
+          <CardTitle>Page History</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {pageVersions && pageVersions.length > 0 ? (
+            <Table>
+              <TableCaption>A history of all edits made to this page.</TableCaption>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[100px]">Date</TableHead>
+                  <TableHead>Preview</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {pageVersions.map((version) => (
+                  <TableRow key={version.id}>
+                    <TableCell className="font-medium">{new Date(version.created_at).toLocaleString()}</TableCell>
+                    <TableCell>
+                      <Dialog>
+                        <DialogTrigger asChild>
+                          <Button variant="link">
+                            View Content
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+                          <DialogHeader>
+                            <DialogTitle>Version Preview</DialogTitle>
+                            <DialogDescription>
+                              Preview of the page content at this version.
+                            </DialogDescription>
+                          </DialogHeader>
+                          <div className="border rounded-md">
+                            <TipTapEditor
+                              content={version.html_content}
+                              onChange={() => {}}
+                              editable={false}
+                            />
+                          </div>
+                        </DialogContent>
+                      </Dialog>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        variant="outline"
+                        onClick={() => handleRestoreVersion(version)}
+                        disabled={isRestoring && restoringVersionId === version.id}
+                      >
+                        {isRestoring && restoringVersionId === version.id ? "Restoring..." : "Restore"}
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           ) : (
-            displayContent && (
-              <TipTapEditor
-                key={`${selectedVersion?.id || 'current'}-${displayContent.length}`}
-                content={displayContent}
-                onChange={() => {}}
-                editable={false}
-                isEditing={false}
-                hideToolbar
-              />
-            )
+            <p>No history available for this page.</p>
           )}
-        </div>
-      </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
