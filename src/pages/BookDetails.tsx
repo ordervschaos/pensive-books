@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -9,7 +8,6 @@ import { useBookPermissions } from "@/hooks/use-book-permissions";
 import { BookActionsBar } from "@/components/book/BookActionsBar";
 import { ShareBookButton } from "@/components/book/ShareBookButton";
 import { ContinueReadingButton } from "@/components/book/ContinueReadingButton";
-import { FleshOutBookDialog } from "@/components/book/FleshOutBookDialog";
 import { setPageTitle } from "@/utils/pageTitle";
 
 const LOCALSTORAGE_BOOKMARKS_KEY = 'bookmarked_pages';
@@ -242,7 +240,6 @@ const BookDetails = () => {
                   totalPages={pages.length}
                   className="flex-1 sm:flex-none"
                 />
-                {canEdit && <FleshOutBookDialog bookId={parseInt(id || "0")} onComplete={fetchBookDetails} />}
               </div>
 
               {canEdit && (
@@ -277,8 +274,6 @@ const BookDetails = () => {
                   totalPages={pages.length}
                   className="w-full"
                 />
-
-                {canEdit && <FleshOutBookDialog bookId={parseInt(id || "0")} onComplete={fetchBookDetails} />}
 
                 {canEdit && (
                   <BookActionsBar
