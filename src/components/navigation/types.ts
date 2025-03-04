@@ -3,13 +3,13 @@ import { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 export interface PageChangePayload {
   new: {
     title: string | null;
-    [key: string]: any;
+    [key: string]: unknown;
   };
   old: {
     title: string | null;
-    [key: string]: any;
+    [key: string]: unknown;
   };
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface NavBreadcrumbProps {
