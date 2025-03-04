@@ -2,7 +2,6 @@
 import { Button } from "@/components/ui/button";
 import { TipTapEditor } from "@/components/editor/TipTapEditor";
 import { useState, useEffect } from "react";
-import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Save, Edit } from "lucide-react";
 import { Page } from "@/components/book/pageList/types";
@@ -61,7 +60,7 @@ export function SectionPageContent({
           <Button
             variant="outline"
             size="sm"
-            onClick={toggleEdit}
+            onClick={isEditing ? handleSave : toggleEdit}
             className="flex items-center gap-2"
           >
             {isEditing ? (
@@ -83,7 +82,7 @@ export function SectionPageContent({
         <TipTapEditor
           content={content}
           onChange={handleContentChange}
-          editable={canEdit}
+          editable={canEdit && isEditing}
           isEditing={isEditing}
           onToggleEdit={toggleEdit}
         />

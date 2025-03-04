@@ -63,7 +63,7 @@ export default function App() {
                 <Route path="/privacy" element={<PrivacyPolicy />} />
                 <Route path="/terms" element={<Terms />} />
                 <Route path="/contact" element={<Contact />} />
-                <Route path="/book/:id/join" element={<JoinBook />} />
+                <Route path="/book/:bookId/join/:token" element={<JoinBook />} />
                 <Route
                   path="/settings/kindle"
                   element={

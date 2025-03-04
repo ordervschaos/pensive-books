@@ -1,189 +1,181 @@
+
+import { useParams, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { useParams } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
-import {
-  Table,
-  TableBody,
-  TableCaption,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
-import { TipTapEditor } from "@/components/editor/TipTapEditor";
+import { Loader2 } from "lucide-react";
 
 interface PageVersion {
-  id: string;
-  created_at: string;
+  id: number;
+  page_id: number;
   html_content: string;
+  created_at: string;
+  created_by: string;
+  batch_id: string;
+  created_at_minute: string;
 }
 
 export default function PageHistoryView() {
-  const { pageId } = useParams<{ pageId: string }>();
+  const { bookId, pageId } = useParams<{ bookId: string; pageId: string }>();
+  const navigate = useNavigate();
   const { toast } = useToast();
-  const queryClient = useQueryClient();
-  const [isRestoring, setIsRestoring] = useState(false);
-  const [restoringVersionId, setRestoringVersionId] = useState<string | null>(null);
-
-  const { data: pageVersions, isLoading, isError, error } = useQuery({
-    queryKey: ["page-history", pageId],
-    queryFn: async () => {
-      if (!pageId) throw new Error("Page ID is required");
-
-      const { data, error } = await supabase
-        .from("page_history")
-        .select("*")
-        .eq("page_id", pageId)
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
-      return data as PageVersion[];
-    },
-  });
-
-  const { data: currentPage, refetch } = useQuery({
-    queryKey: ["page", pageId],
-    queryFn: async () => {
-      if (!pageId) throw new Error("Page ID is required");
-
-      const { data, error } = await supabase
-        .from("pages")
-        .select("*")
-        .eq("id", pageId)
-        .single();
-
-      if (error) throw error;
-      return data;
-    },
-  });
+  const [versions, setVersions] = useState<PageVersion[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [restoring, setRestoring] = useState(false);
+  const [currentPageContent, setCurrentPageContent] = useState("");
+  
+  const numericBookId = bookId ? parseInt(bookId, 10) : 0;
+  const numericPageId = pageId ? parseInt(pageId, 10) : 0;
 
   useEffect(() => {
-    refetch();
-  }, [pageId, refetch]);
-
-  const handleRestoreVersion = async (version: any) => {
-    if (!pageId) {
-      toast({
-        title: "Missing Page ID",
-        description: "The page ID is not available. Please try again.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsRestoring(true);
-    setRestoringVersionId(version.id);
-
+    const fetchHistory = async () => {
+      if (!numericBookId || !numericPageId) return;
+      
+      try {
+        setLoading(true);
+        
+        // Get current page content
+        const { data: pageData } = await supabase
+          .from("pages")
+          .select("html_content")
+          .eq("id", numericPageId)
+          .single();
+          
+        if (pageData) {
+          setCurrentPageContent(pageData.html_content);
+        }
+        
+        // Get page history
+        const { data, error } = await supabase
+          .from("page_versions")
+          .select("*")
+          .eq("page_id", numericPageId)
+          .order("created_at", { ascending: false });
+          
+        if (error) throw error;
+        
+        if (data) {
+          setVersions(data as PageVersion[]);
+        }
+      } catch (error) {
+        console.error("Error fetching page history:", error);
+        toast({
+          title: "Error",
+          description: "Failed to load page history.",
+          variant: "destructive",
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchHistory();
+  }, [numericBookId, numericPageId, toast]);
+  
+  const handleRestoreVersion = async (versionId: number) => {
+    if (!numericBookId || !numericPageId) return;
+    
     try {
-      const { error } = await supabase
+      setRestoring(true);
+      
+      // Get the version content
+      const { data: versionData, error: versionError } = await supabase
+        .from("page_versions")
+        .select("html_content")
+        .eq("id", versionId)
+        .single();
+        
+      if (versionError) throw versionError;
+      
+      if (!versionData) {
+        throw new Error("Version not found");
+      }
+      
+      // Update the page with the version content
+      const { error: updateError } = await supabase
         .from("pages")
-        .update({ html_content: version.html_content, updated_at: new Date().toISOString() })
-        .eq("id", pageId);
-
-      if (error) throw error;
-
-      // Update the invalidateQueries calls to use the correct type
-      queryClient.invalidateQueries({ queryKey: ["page", pageId] });
-      queryClient.invalidateQueries({ queryKey: ["page-history", pageId] });
-
+        .update({ html_content: versionData.html_content })
+        .eq("id", numericPageId);
+        
+      if (updateError) throw updateError;
+      
       toast({
-        title: "Page version restored",
-        description: "The selected version has been successfully restored.",
+        title: "Success",
+        description: "Page version restored successfully.",
       });
+      
+      // Navigate back to the page
+      navigate(`/book/${bookId}/page/${pageId}`);
     } catch (error: any) {
+      console.error("Error restoring version:", error);
       toast({
-        title: "Error restoring version",
-        description: error.message,
+        title: "Error",
+        description: error.message || "Failed to restore version.",
         variant: "destructive",
       });
     } finally {
-      setIsRestoring(false);
-      setRestoringVersionId(null);
+      setRestoring(false);
     }
   };
-
-  if (isLoading) {
-    return <div>Loading...</div>;
-  }
-
-  if (isError) {
-    return <div>Error: {error.message}</div>;
-  }
-
+  
   return (
-    <div className="container mx-auto py-8">
+    <div className="container mx-auto py-8 px-4">
       <Card>
         <CardHeader>
           <CardTitle>Page History</CardTitle>
         </CardHeader>
         <CardContent>
-          {pageVersions && pageVersions.length > 0 ? (
-            <Table>
-              <TableCaption>A history of all edits made to this page.</TableCaption>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[100px]">Date</TableHead>
-                  <TableHead>Preview</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {pageVersions.map((version) => (
-                  <TableRow key={version.id}>
-                    <TableCell className="font-medium">{new Date(version.created_at).toLocaleString()}</TableCell>
-                    <TableCell>
-                      <Dialog>
-                        <DialogTrigger asChild>
-                          <Button variant="link">
-                            View Content
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-                          <DialogHeader>
-                            <DialogTitle>Version Preview</DialogTitle>
-                            <DialogDescription>
-                              Preview of the page content at this version.
-                            </DialogDescription>
-                          </DialogHeader>
-                          <div className="border rounded-md">
-                            <TipTapEditor
-                              content={version.html_content}
-                              onChange={() => {}}
-                              editable={false}
-                            />
-                          </div>
-                        </DialogContent>
-                      </Dialog>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        variant="outline"
-                        onClick={() => handleRestoreVersion(version)}
-                        disabled={isRestoring && restoringVersionId === version.id}
-                      >
-                        {isRestoring && restoringVersionId === version.id ? "Restoring..." : "Restore"}
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          ) : (
+          {loading ? (
+            <div className="flex justify-center p-4">
+              <Loader2 className="h-6 w-6 animate-spin" />
+            </div>
+          ) : versions.length === 0 ? (
             <p>No history available for this page.</p>
+          ) : (
+            <div className="space-y-4">
+              {versions.map((version) => (
+                <Card key={version.id} className="p-4">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <p className="text-sm text-gray-500">
+                        {format(new Date(version.created_at), "PPpp")}
+                      </p>
+                    </div>
+                    <Button
+                      onClick={() => handleRestoreVersion(version.id)}
+                      disabled={restoring}
+                      variant="outline"
+                      size="sm"
+                    >
+                      {restoring ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                          Restoring...
+                        </>
+                      ) : (
+                        "Restore this version"
+                      )}
+                    </Button>
+                  </div>
+                  <div 
+                    className="mt-4 p-4 border rounded-md bg-gray-50"
+                    dangerouslySetInnerHTML={{ __html: version.html_content }}
+                  />
+                </Card>
+              ))}
+            </div>
           )}
+          <div className="mt-6">
+            <Button
+              onClick={() => navigate(`/book/${bookId}/page/${pageId}`)}
+              variant="outline"
+            >
+              Back to Page
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>
