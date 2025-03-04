@@ -1,257 +1,203 @@
 
 import { useState } from "react";
-import { Card, CardHeader } from "@/components/ui/card";
-import { Image as ImageIcon } from "lucide-react";
-import { Input } from "@/components/ui/input";
-import { supabase } from "@/integrations/supabase/client";
-import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { UnsplashPicker } from "./UnsplashPicker";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
-import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+import { Pencil, Image, Loader2, X, Upload } from "lucide-react";
+import { useSupabaseUpload } from "@/hooks/use-supabase-upload";
 
 interface BookCoverEditProps {
   bookId: number;
-  coverUrl?: string | null;
-  showTextOnCover?: boolean;
-  title?: string;
-  subtitle?: string | null;
-  author?: string;
-  photographer?: string | null;
-  onCoverChange?: (url: string, photographer?: string | null, photographerUsername?: string | null) => void;
-  onShowTextChange?: (showText: boolean) => void;
 }
 
-export const BookCoverEdit = ({ 
-  bookId, 
-  coverUrl,
-  showTextOnCover = false,
-  title = "",
-  subtitle = "",
-  author = "",
-  photographer = null,
-  onCoverChange,
-  onShowTextChange
-}: BookCoverEditProps) => {
-  const [uploading, setUploading] = useState(false);
-  const [isOpen, setIsOpen] = useState(false);
-  const [isShowingText, setIsShowingText] = useState(showTextOnCover);
+export function BookCoverEdit({ bookId }: BookCoverEditProps) {
+  const [open, setOpen] = useState(false);
+  const [showUnsplash, setShowUnsplash] = useState(false);
+  const [loading, setLoading] = useState(false);
   const { toast } = useToast();
-
-  const handleCoverUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    try {
-      setUploading(true);
-      const file = event.target.files?.[0];
-      if (!file) return;
-
-      if (!file.type.startsWith('image/')) {
-        toast({
-          variant: "destructive",
-          title: "Invalid file type",
-          description: "Please upload an image file."
-        });
-        return;
-      }
-
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${bookId || 'new'}_${Math.random().toString(36).slice(2)}.${fileExt}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('public_images')
-        .upload(fileName, file);
-
-      if (uploadError) throw uploadError;
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('public_images')
-        .getPublicUrl(fileName);
-
-      await updateBookCover(publicUrl, null, null);
-    } catch (error) {
-      toast({
-        variant: "destructive",
-        title: "Error uploading cover",
-        description: error instanceof Error ? error.message : "An error occurred"
-      });
-    } finally {
-      setUploading(false);
-      setIsOpen(false);
-    }
-  };
+  const { uploadImage } = useSupabaseUpload();
 
   const handleUnsplashSelect = async (imageUrl: string, photographer: string, photographerUsername: string) => {
     try {
-      setUploading(true);
-      await updateBookCover(imageUrl, photographer, photographerUsername);
-      setIsOpen(false);
-    } catch (error) {
-      toast({
-        variant: "destructive",
-        title: "Error setting cover",
-        description: error instanceof Error ? error.message : "An error occurred"
-      });
-    } finally {
-      setUploading(false);
-    }
-  };
+      setLoading(true);
 
-  const updateBookCover = async (url: string, photographer: string | null = null, photographerUsername: string | null = null) => {
-    try {
-      if (bookId === 0) {
-        // For new book, just update the parent state
-        onCoverChange?.(url, photographer, photographerUsername);
-      } else {
-        // For existing book, update in database
-        const { error: updateError } = await supabase
-          .from('books')
-          .update({ 
-            cover_url: url,
-            photographer: photographer,
-            photographer_username: photographerUsername
-          })
-          .eq('id', bookId);
+      // Update the book with the Unsplash image URL and photographer info
+      const { error } = await supabase
+        .from("books")
+        .update({ 
+          cover_url: imageUrl,
+          photographer: photographer,
+          photographer_username: photographerUsername 
+        })
+        .eq("id", bookId);
 
-        if (updateError) throw updateError;
-
-        // If parent provided onCoverChange, call it
-        onCoverChange?.(url, photographer, photographerUsername);
-      }
+      if (error) throw error;
 
       toast({
         title: "Cover updated",
-        description: "Your book cover has been successfully updated."
+        description: "Book cover has been updated successfully.",
       });
-    } catch (error) {
-      throw error;
+
+      setShowUnsplash(false);
+      setOpen(false);
+    } catch (error: any) {
+      console.error("Error updating cover:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update book cover.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleTextToggle = async () => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
     try {
-      const newShowTextValue = !isShowingText;
-      setIsShowingText(newShowTextValue);
-      
-      if (bookId === 0) {
-        // For new book, just update the parent state
-        onShowTextChange?.(newShowTextValue);
-      } else {
-        // For existing book, update in database
-        const { error } = await supabase
-          .from('books')
-          .update({ show_text_on_cover: newShowTextValue })
-          .eq('id', bookId);
+      setLoading(true);
 
-        if (error) throw error;
+      // Upload the image to Supabase Storage
+      const { url, error: uploadError } = await uploadImage(file, "book-covers");
 
-        // If parent provided onShowTextChange, call it
-        onShowTextChange?.(newShowTextValue);
-      }
+      if (uploadError) throw uploadError;
+
+      // Update the book with the new cover URL
+      const { error: updateError } = await supabase
+        .from("books")
+        .update({ 
+          cover_url: url,
+          // Clear photographer info since this is a custom upload
+          photographer: null,
+          photographer_username: null
+        })
+        .eq("id", bookId);
+
+      if (updateError) throw updateError;
 
       toast({
-        title: "Setting updated",
-        description: `Text overlay ${newShowTextValue ? 'enabled' : 'disabled'}`
+        title: "Cover updated",
+        description: "Book cover has been updated successfully.",
       });
-    } catch (error) {
+
+      setOpen(false);
+    } catch (error: any) {
+      console.error("Error uploading cover:", error);
       toast({
+        title: "Error",
+        description: error.message || "Failed to upload book cover.",
         variant: "destructive",
-        title: "Error updating setting",
-        description: error instanceof Error ? error.message : "An error occurred"
       });
-      setIsShowingText(!isShowingText); // Revert state on error
+    } finally {
+      setLoading(false);
+      // Reset the file input
+      e.target.value = "";
+    }
+  };
+
+  const removeCover = async () => {
+    try {
+      setLoading(true);
+
+      const { error } = await supabase
+        .from("books")
+        .update({ 
+          cover_url: null,
+          photographer: null,
+          photographer_username: null
+        })
+        .eq("id", bookId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Cover removed",
+        description: "Book cover has been removed.",
+      });
+
+      setOpen(false);
+    } catch (error: any) {
+      console.error("Error removing cover:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to remove book cover.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <Card className="border bg-card">
-      <CardHeader className="space-y-6">
-        <div className="space-y-4">
-          <div className="w-full aspect-[3/4] relative rounded-lg overflow-hidden bg-muted">
-            {coverUrl ? (
-              <div className="relative w-full h-full">
-                <img 
-                  src={coverUrl} 
-                  alt="Book cover" 
-                  className="w-full h-full object-cover"
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="absolute bottom-2 left-2 bg-black/50 hover:bg-black/70 text-white"
+        >
+          <Pencil className="h-4 w-4 mr-2" />
+          Edit Cover
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogTitle>Change Book Cover</DialogTitle>
+        
+        {showUnsplash ? (
+          <UnsplashPicker
+            onSelect={handleUnsplashSelect}
+            onClose={() => setShowUnsplash(false)}
+          />
+        ) : (
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <Button
+                variant="outline"
+                className="h-20"
+                onClick={() => setShowUnsplash(true)}
+                disabled={loading}
+              >
+                <Image className="h-5 w-5 mr-2" />
+                Choose from Unsplash
+              </Button>
+              
+              <label className="cursor-pointer">
+                <div className="flex items-center justify-center h-20 border border-dashed rounded-md">
+                  <div className="flex flex-col items-center">
+                    <Upload className="h-5 w-5 mb-1" />
+                    <span className="text-sm">Upload Image</span>
+                  </div>
+                </div>
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleFileUpload}
+                  disabled={loading}
                 />
-                {isShowingText && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/40 p-4">
-                    <h1 className="text-2xl font-bold text-white text-center mb-2">
-                      {title || "Untitled"}
-                    </h1>
-                    {subtitle && (
-                      <p className="text-lg text-white/90 text-center mb-4">
-                        {subtitle}
-                      </p>
-                    )}
-                    {author && (
-                      <p className="text-lg text-white/90 text-center">
-                        by {author}
-                      </p>
-                    )}
-                  </div>
-                )}
-                {photographer && (
-                  <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-xs text-white p-1 text-center">
-                    Photo by {photographer} on Unsplash
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="w-full h-full flex items-center justify-center">
-                <ImageIcon className="w-16 h-16 text-muted-foreground" />
-              </div>
-            )}
-            <Dialog open={isOpen} onOpenChange={setIsOpen}>
-              <DialogTrigger asChild>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  className={cn(
-                    "absolute bottom-4 right-4",
-                    "bg-background/90 backdrop-blur-sm hover:bg-background/95"
-                  )}
-                  disabled={uploading}
-                >
-                  {uploading ? "Updating..." : <ImageIcon className="h-4 w-4" />}
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Choose Cover Image</DialogTitle>
-                </DialogHeader>
-                <Tabs defaultValue="upload">
-                  <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="upload">Upload</TabsTrigger>
-                    <TabsTrigger value="unsplash">Unsplash</TabsTrigger>
-                  </TabsList>
-                  <TabsContent value="upload" className="space-y-4">
-                    <Input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleCoverUpload}
-                      disabled={uploading}
-                    />
-                  </TabsContent>
-                  <TabsContent value="unsplash">
-                    <UnsplashPicker onSelect={handleUnsplashSelect} />
-                  </TabsContent>
-                </Tabs>
-              </DialogContent>
-            </Dialog>
+              </label>
+            </div>
+            
+            <Button
+              variant="destructive"
+              className="w-full"
+              onClick={removeCover}
+              disabled={loading}
+            >
+              {loading ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <X className="h-4 w-4 mr-2" />
+              )}
+              Remove Cover
+            </Button>
           </div>
-          <div className="flex items-center space-x-2">
-            <Switch
-              id="show-text"
-              checked={isShowingText}
-              onCheckedChange={handleTextToggle}
-            />
-            <Label htmlFor="show-text">Show title and author on cover</Label>
-          </div>
-        </div>
-      </CardHeader>
-    </Card>
+        )}
+      </DialogContent>
+    </Dialog>
   );
-};
+}

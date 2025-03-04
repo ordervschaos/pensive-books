@@ -1,244 +1,120 @@
 
-import { 
-  Card,
-  CardHeader 
-} from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { ImageIcon, Download, FileText, Tablet } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
-import { generatePDF, generateAndDownloadEPUB } from "@/lib/download";
-import { useNavigate } from "react-router-dom";
-import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useEffect, useState } from "react";
+import { BookCoverEdit } from "./BookCoverEdit";
+import { AspectRatio } from "@/components/ui/aspect-ratio";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface BookInfoProps {
-  name: string;
-  coverUrl?: string | null;
   bookId: number;
-  author?: string | null;
-  subtitle?: string | null;
-  showTextOnCover?: boolean;
-  photographer?: string | null;
+  canEdit?: boolean;
+  showCover?: boolean;
+  showTitleOnCover?: boolean;
 }
 
-export const BookInfo = ({ 
-  name,
-  coverUrl,
-  bookId,
-  author,
-  subtitle,
-  showTextOnCover = false,
-  photographer = null
-}: BookInfoProps) => {
-  const { toast } = useToast();
-  const navigate = useNavigate();
-  const [sending, setSending] = useState(false);
+export function BookInfo({ bookId, canEdit = false, showCover = true, showTitleOnCover }: BookInfoProps) {
+  const [book, setBook] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
 
-  const handleDownloadPDF = async () => {
-    const result = await generatePDF({ 
-      bookId, 
-      name, 
-      author,
-      coverUrl
-    });
-    
-    if (!result.success) {
-      toast({
-        variant: "destructive",
-        title: "Error generating PDF",
-        description: result.error?.message
-      });
-    } else {
-      toast({
-        title: "PDF Generated",
-        description: "Your book has been downloaded as PDF"
-      });
-    }
-  };
-
-  const handleDownloadEPUB = async () => {
-    const result = await generateAndDownloadEPUB({ 
-      bookId, 
-      name, 
-      subtitle,
-      author,
-      coverUrl,
-      showTextOnCover
-    });
-    
-    if (result.success) {
-      toast({
-        title: "EPUB Generated",
-        description: "Your book has been downloaded as EPUB"
-      });
-    } else {
-      toast({
-        variant: "destructive",
-        title: "Error generating EPUB",
-        description: result.error?.message
-      });
-    }
-  };
-
-  const handleSendToKindle = async () => {
-    try {
-      setSending(true);
+  useEffect(() => {
+    const fetchBook = async () => {
+      if (!bookId) return;
       
-      // Check if user is logged in
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        navigate("/auth");
-        return;
+      try {
+        setLoading(true);
+        const { data, error } = await supabase
+          .from("books")
+          .select("*")
+          .eq("id", bookId)
+          .single();
+          
+        if (error) throw error;
+        setBook(data);
+      } catch (error) {
+        console.error("Error fetching book:", error);
+      } finally {
+        setLoading(false);
       }
+    };
 
-      // Check Kindle configuration
-      const { data: userData, error: userError } = await supabase
-        .from('user_data')
-        .select('kindle_email, kindle_configured')
-        .eq('user_id', session.user.id)
-        .single();
+    fetchBook();
+  }, [bookId]);
 
-      if (userError || !userData) {
-        throw new Error('Could not fetch user data');
-      }
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-[250px] w-full" />
+        <Skeleton className="h-8 w-full" />
+        <Skeleton className="h-4 w-2/3" />
+      </div>
+    );
+  }
 
-      if (!userData.kindle_configured || !userData.kindle_email) {
-        navigate('/settings/kindle');
-        return;
-      }
+  if (!book) return null;
 
-      // Generate EPUB content
-      const result = await generateAndDownloadEPUB({ 
-        bookId, 
-        name, 
-        subtitle,
-        author,
-        coverUrl,
-        showTextOnCover,
-        returnBlob: true
-      });
-
-      if (!result.success || !result.blob) {
-        throw new Error('Failed to generate EPUB');
-      }
-
-      // Convert blob to base64
-      const base64Data = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          if (typeof reader.result === 'string') {
-            // Remove the data URL prefix
-            const base64 = reader.result.split(',')[1];
-            resolve(base64);
-          } else {
-            reject(new Error('Failed to convert file to base64'));
-          }
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(result.blob);
-      });
-
-      // Send to Kindle
-      const { error: sendError } = await supabase.functions.invoke('send-to-kindle', {
-        body: { 
-          bookId,
-          title: name,
-          kindle_email: userData.kindle_email,
-          epub_data: base64Data
-        },
-        headers: {
-          Authorization: `Bearer ${session.access_token}`
-        }
-      });
-
-      if (sendError) throw sendError;
-
-      toast({
-        title: "Book Sent to Kindle",
-        description: "Your book will appear on your Kindle shortly"
-      });
-    } catch (error) {
-      console.error('Error sending to Kindle:', error);
-      toast({
-        variant: "destructive",
-        title: "Error Sending to Kindle",
-        description: error instanceof Error ? error.message : 'An unexpected error occurred'
-      });
-    } finally {
-      setSending(false);
-    }
-  };
+  const coverUrl = book.cover_url;
+  const showText = showTitleOnCover !== undefined ? showTitleOnCover : book.show_text_on_cover;
 
   return (
-    <Card className="bg-background shadow-sm w-full lg:max-w-[300px]">
-      <div className="flex flex-col gap-4">
-        <CardHeader className="space-y-6">
-          <div className="w-full aspect-[3/4] relative rounded-lg overflow-hidden bg-muted">
+    <div className="space-y-4">
+      {showCover && (
+        <div className="relative">
+          <AspectRatio ratio={3/4} className="bg-muted overflow-hidden rounded-lg">
             {coverUrl ? (
-              <div className="relative w-full h-full">
-                <img 
-                  src={coverUrl} 
-                  alt="Book cover"
-                  className="w-full h-full object-cover"
+              <div className="w-full h-full relative">
+                <img
+                  src={coverUrl}
+                  alt={book.name}
+                  className="w-full h-full object-cover rounded-lg"
                 />
-                {showTextOnCover && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30 p-4">
-                    <h1 className="text-sm sm:text-base lg:text-2xl font-bold text-white text-center mb-1 sm:mb-2">
-                      {name}
+                {showText && (
+                  <div className="absolute inset-0 flex flex-col justify-center items-center p-4 bg-black/30">
+                    <h1 className="text-white text-2xl md:text-3xl font-bold text-center">
+                      {book.name}
                     </h1>
-                    {subtitle && (
-                      <p className="text-xs sm:text-sm lg:text-lg text-white/90 text-center mb-1 sm:mb-4">
-                        {subtitle}
+                    {book.author && (
+                      <p className="text-white text-sm mt-2">
+                        {book.author}
                       </p>
                     )}
-                    {author && (
-                      <p className="text-xs sm:text-sm lg:text-lg text-white/90 text-center">
-                        by {author}
-                      </p>
-                    )}
-                  </div>
-                )}
-                {photographer && (
-                  <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-xs text-white p-1 text-center">
-                    Photo by {photographer} on Unsplash
                   </div>
                 )}
               </div>
             ) : (
-              <div className="w-full h-full flex items-center justify-center">
-                <ImageIcon className="w-16 h-16 text-muted-foreground" />
+              <div className="h-full w-full flex flex-col justify-center items-center bg-slate-200 dark:bg-slate-800 text-center p-4">
+                <span className="text-2xl font-bold">{book.name}</span>
+                {book.author && <span className="text-sm mt-2">{book.author}</span>}
               </div>
             )}
-          </div>
-          <div className="flex flex-col sm:flex-row lg:flex-col gap-2">
-            <Button
-              onClick={handleDownloadEPUB}
-              variant="outline"
-              className="w-full text-xs sm:text-sm"
-            >
-              <Download className="h-4 w-4 mr-2" />
-              Download EPUB
-            </Button>
-            <Button
-              onClick={handleDownloadPDF}
-              variant="outline"
-              className="w-full text-xs sm:text-sm"
-            >
-              <FileText className="h-4 w-4 mr-2" />
-              Download PDF
-            </Button>
-            <Button
-              onClick={handleSendToKindle}
-              variant="outline"
-              className="w-full text-xs sm:text-sm"
-              disabled={sending}
-            >
-              <Tablet className="h-4 w-4 mr-2" />
-              {sending ? "Sending..." : "Send to Kindle"}
-            </Button>
-          </div>
-        </CardHeader>
-      </div>
-    </Card>
+          </AspectRatio>
+          
+          {/* Photographer attribution */}
+          {coverUrl && book.photographer && (
+            <div className="absolute bottom-2 right-2 text-white text-xs bg-black/50 px-2 py-1 rounded">
+              Photo by{" "}
+              <a 
+                href={`https://unsplash.com/@${book.photographer_username}?utm_source=pensive&utm_medium=referral`} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="underline"
+              >
+                {book.photographer}
+              </a>{" "}
+              on{" "}
+              <a 
+                href="https://unsplash.com/?utm_source=pensive&utm_medium=referral" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="underline"
+              >
+                Unsplash
+              </a>
+            </div>
+          )}
+          
+          {canEdit && <BookCoverEdit bookId={bookId} />}
+        </div>
+      )}
+    </div>
   );
-};
+}
