@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { createApi } from "unsplash-js";
 import { Input } from "@/components/ui/input";
@@ -6,13 +7,26 @@ import { Search } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from "@/integrations/supabase/client";
 
+interface UnsplashImage {
+  id: string;
+  urls: {
+    regular: string;
+    small: string;
+  };
+  alt_description: string;
+  user: {
+    name: string;
+    username: string;
+  };
+}
+
 interface UnsplashPickerProps {
-  onSelect: (imageUrl: string) => void;
+  onSelect: (imageUrl: string, photographer: string, photographerUsername: string) => void;
 }
 
 export const UnsplashPicker = ({ onSelect }: UnsplashPickerProps) => {
   const [query, setQuery] = useState("");
-  const [images, setImages] = useState<any[]>([]);
+  const [images, setImages] = useState<UnsplashImage[]>([]);
   const [loading, setLoading] = useState(false);
 
   const searchImages = async () => {
@@ -58,6 +72,14 @@ export const UnsplashPicker = ({ onSelect }: UnsplashPickerProps) => {
     }
   };
 
+  const handleSelectImage = (image: UnsplashImage) => {
+    onSelect(
+      image.urls.regular, 
+      image.user.name, 
+      image.user.username
+    );
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex gap-2">
@@ -82,7 +104,7 @@ export const UnsplashPicker = ({ onSelect }: UnsplashPickerProps) => {
             <div
               key={image.id}
               className="relative group cursor-pointer"
-              onClick={() => onSelect(image.urls.regular)}
+              onClick={() => handleSelectImage(image)}
             >
               <img
                 src={image.urls.small}

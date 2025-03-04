@@ -29,6 +29,8 @@ interface Book {
   published_at?: string | null;
   view_invitation_token?: string;
   edit_invitation_token?: string;
+  photographer?: string | null;
+  photographer_username?: string | null;
 }
 
 export default function BookEdit() {
@@ -222,7 +224,15 @@ export default function BookEdit() {
               title={book.name}
               subtitle={book.subtitle}
               author={book.author}
-              onCoverChange={(url) => setBook({ ...book, cover_url: url })}
+              photographer={book.photographer}
+              onCoverChange={(url, photographer, photographerUsername) => 
+                setBook({ 
+                  ...book, 
+                  cover_url: url,
+                  photographer: photographer || null,
+                  photographer_username: photographerUsername || null
+                })
+              }
               onShowTextChange={(showText) => setBook({ ...book, show_text_on_cover: showText })}
             />
           </div>

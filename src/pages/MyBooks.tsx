@@ -19,6 +19,7 @@ interface Book {
   created_at: string;
   owner_id?: string;
   access_level?: string;
+  photographer?: string | null;
 }
 
 export default function Index() {
@@ -39,7 +40,6 @@ export default function Index() {
           return;
         }
 
-        // Fetch user's username
         const { data: userData } = await supabase
           .from('user_data')
           .select('username')
@@ -50,7 +50,6 @@ export default function Index() {
 
         console.log("Fetching books for user:", session.user.email);
         
-        // Fetch user's own books
         const { data: ownedBooks, error: ownedError } = await supabase
           .from("books")
           .select("*")
@@ -63,7 +62,6 @@ export default function Index() {
           throw ownedError;
         }
 
-        // Updated query to get shared books - now directly querying the books table
         const { data: sharedBooksAccess, error: sharedError } = await supabase
           .from("book_access")
           .select(`
@@ -79,7 +77,6 @@ export default function Index() {
           throw sharedError;
         }
 
-        // Transform shared books data to include access level
         const transformedSharedBooks = sharedBooksAccess
           ?.filter(item => item.books !== null)
           .map(item => ({
@@ -184,6 +181,11 @@ export default function Index() {
                                 by {book.author}
                               </p>
                             )}
+                          </div>
+                        )}
+                        {book.photographer && (
+                          <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-xs text-white p-1 text-center">
+                            Photo by {book.photographer} on Unsplash
                           </div>
                         )}
                       </div>

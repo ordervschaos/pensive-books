@@ -265,6 +265,7 @@ const BookDetails = () => {
                 bookId={parseInt(id || "0")}
                 author={book.author}
                 showTextOnCover={book.show_text_on_cover}
+                photographer={book.photographer}
               />
               
               <div className="hidden lg:block space-y-4">

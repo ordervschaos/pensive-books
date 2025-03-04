@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
@@ -18,6 +19,8 @@ interface Book {
   is_public: boolean;
   cover_url?: string | null;
   show_text_on_cover?: boolean;
+  photographer?: string | null;
+  photographer_username?: string | null;
 }
 
 const NewBook = () => {
@@ -30,7 +33,9 @@ const NewBook = () => {
     author: null,
     is_public: false,
     cover_url: null,
-    show_text_on_cover: true
+    show_text_on_cover: true,
+    photographer: null,
+    photographer_username: null
   });
 
   useEffect(() => {
@@ -50,7 +55,9 @@ const NewBook = () => {
           author: book.author,
           is_public: false,
           cover_url: book.cover_url,
-          show_text_on_cover: book.show_text_on_cover
+          show_text_on_cover: book.show_text_on_cover,
+          photographer: book.photographer,
+          photographer_username: book.photographer_username
         })
         .select()
         .single();
@@ -75,8 +82,13 @@ const NewBook = () => {
     }
   };
 
-  const handleCoverChange = (url: string) => {
-    setBook(prev => ({ ...prev, cover_url: url }));
+  const handleCoverChange = (url: string, photographer?: string | null, photographerUsername?: string | null) => {
+    setBook(prev => ({ 
+      ...prev, 
+      cover_url: url,
+      photographer: photographer || null,
+      photographer_username: photographerUsername || null 
+    }));
   };
 
   const handleShowTextChange = (showText: boolean) => {
@@ -107,6 +119,7 @@ const NewBook = () => {
               title={book.name}
               subtitle={book.subtitle}
               author={book.author}
+              photographer={book.photographer}
               onCoverChange={handleCoverChange}
               onShowTextChange={handleShowTextChange}
             />

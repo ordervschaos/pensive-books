@@ -1,3 +1,4 @@
+
 import { 
   Card,
   CardHeader 
@@ -17,6 +18,7 @@ interface BookInfoProps {
   author?: string | null;
   subtitle?: string | null;
   showTextOnCover?: boolean;
+  photographer?: string | null;
 }
 
 export const BookInfo = ({ 
@@ -25,7 +27,8 @@ export const BookInfo = ({
   bookId,
   author,
   subtitle,
-  showTextOnCover = false
+  showTextOnCover = false,
+  photographer = null
 }: BookInfoProps) => {
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -193,6 +196,11 @@ export const BookInfo = ({
                         by {author}
                       </p>
                     )}
+                  </div>
+                )}
+                {photographer && (
+                  <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-xs text-white p-1 text-center">
+                    Photo by {photographer} on Unsplash
                   </div>
                 )}
               </div>

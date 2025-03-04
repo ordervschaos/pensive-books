@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Image as ImageIcon } from "lucide-react";
@@ -19,7 +20,8 @@ interface BookCoverEditProps {
   title?: string;
   subtitle?: string | null;
   author?: string;
-  onCoverChange?: (url: string) => void;
+  photographer?: string | null;
+  onCoverChange?: (url: string, photographer?: string | null, photographerUsername?: string | null) => void;
   onShowTextChange?: (showText: boolean) => void;
 }
 
@@ -30,6 +32,7 @@ export const BookCoverEdit = ({
   title = "",
   subtitle = "",
   author = "",
+  photographer = null,
   onCoverChange,
   onShowTextChange
 }: BookCoverEditProps) => {
@@ -66,7 +69,7 @@ export const BookCoverEdit = ({
         .from('public_images')
         .getPublicUrl(fileName);
 
-      await updateBookCover(publicUrl);
+      await updateBookCover(publicUrl, null, null);
     } catch (error) {
       toast({
         variant: "destructive",
@@ -79,10 +82,10 @@ export const BookCoverEdit = ({
     }
   };
 
-  const handleUnsplashSelect = async (imageUrl: string) => {
+  const handleUnsplashSelect = async (imageUrl: string, photographer: string, photographerUsername: string) => {
     try {
       setUploading(true);
-      await updateBookCover(imageUrl);
+      await updateBookCover(imageUrl, photographer, photographerUsername);
       setIsOpen(false);
     } catch (error) {
       toast({
@@ -95,22 +98,26 @@ export const BookCoverEdit = ({
     }
   };
 
-  const updateBookCover = async (url: string) => {
+  const updateBookCover = async (url: string, photographer: string | null = null, photographerUsername: string | null = null) => {
     try {
       if (bookId === 0) {
         // For new book, just update the parent state
-        onCoverChange?.(url);
+        onCoverChange?.(url, photographer, photographerUsername);
       } else {
         // For existing book, update in database
         const { error: updateError } = await supabase
           .from('books')
-          .update({ cover_url: url })
+          .update({ 
+            cover_url: url,
+            photographer: photographer,
+            photographer_username: photographerUsername
+          })
           .eq('id', bookId);
 
         if (updateError) throw updateError;
 
         // If parent provided onCoverChange, call it
-        onCoverChange?.(url);
+        onCoverChange?.(url, photographer, photographerUsername);
       }
 
       toast({
@@ -184,6 +191,11 @@ export const BookCoverEdit = ({
                         by {author}
                       </p>
                     )}
+                  </div>
+                )}
+                {photographer && (
+                  <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-xs text-white p-1 text-center">
+                    Photo by {photographer} on Unsplash
                   </div>
                 )}
               </div>
