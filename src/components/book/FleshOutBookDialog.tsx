@@ -14,7 +14,7 @@ interface FleshOutBookDialogProps {
 
 export function FleshOutBookDialog({ bookId, onComplete }: FleshOutBookDialogProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [prompt, setPrompt] = useState("");
+  const [prompt, setPrompt] = useState("Expand on each section with more detailed content, adding depth and examples while maintaining a consistent tone and style.");
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
@@ -43,7 +43,9 @@ export function FleshOutBookDialog({ bookId, onComplete }: FleshOutBookDialogPro
       });
 
       setIsOpen(false);
-      onComplete?.();
+      if (onComplete) {
+        onComplete();
+      }
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -58,9 +60,9 @@ export function FleshOutBookDialog({ bookId, onComplete }: FleshOutBookDialogPro
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" className="gap-2">
+        <Button className="gap-2 w-full md:w-auto">
           <Wand2 className="h-4 w-4" />
-          Expand Content
+          Expand Content with AI
         </Button>
       </DialogTrigger>
       <DialogContent>
