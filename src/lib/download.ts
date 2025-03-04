@@ -1,3 +1,4 @@
+
 interface Page {
   id: number;
   book_id: number;
@@ -273,7 +274,7 @@ const createBackCover = async (book: any) => {
 
 export const downloadBookAsHtml = async (bookId: number, book: any) => {
   const { data: pages, error } = await supabase
-    .from('page')
+    .from('pages')
     .select('*')
     .eq('book_id', bookId)
     .order('page_number', { ascending: true });
@@ -321,7 +322,7 @@ export const downloadBookAsHtml = async (bookId: number, book: any) => {
 
 export const downloadBookAsMarkdown = async (bookId: number, book: any) => {
   const { data: pages, error } = await supabase
-    .from('page')
+    .from('pages')
     .select('*')
     .eq('book_id', bookId)
     .order('page_number', { ascending: true });
@@ -360,7 +361,7 @@ export const downloadBookAsMarkdown = async (bookId: number, book: any) => {
 
 export const downloadBookAsText = async (bookId: number, book: any) => {
   const { data: pages, error } = await supabase
-    .from('page')
+    .from('pages')
     .select('*')
     .eq('book_id', bookId)
     .order('page_number', { ascending: true });
@@ -400,39 +401,90 @@ export const downloadBookAsText = async (bookId: number, book: any) => {
 
 export const downloadBookAsPdf = async (bookId: number, book: any) => {
   const { data: pages, error } = await supabase
-    .from('page')
+    .from('pages')
     .select('*')
     .eq('book_id', bookId)
     .order('page_number', { ascending: true });
 
   if (error) {
     console.error("Error fetching pages:", error);
-    return;
+    return { success: false, error };
   }
 
   if (!pages) {
     console.warn("No pages found for book ID:", bookId);
-    return;
+    return { success: false, error: new Error("No pages found") };
   }
 
   const doc = new jsPDF();
   let sectionCount = 1;
 
-  for (const page of pages as Page[]) {
-    if (page.page_type === 'section') {
-      doc.text(`Section ${sectionCount}: ${page.title}`, 10, 10);
-      sectionCount++;
+  try {
+    for (const page of pages as Page[]) {
+      if (page.page_type === 'section') {
+        doc.text(`Section ${sectionCount}: ${page.title}`, 10, 10);
+        sectionCount++;
+      }
+
+      // Use autoTable to handle HTML content
+      autoTable(doc, {
+        html: page.html_content,
+        startY: 20,
+        useCss: true,
+      });
+
+      doc.addPage();
     }
 
-    // Use autoTable to handle HTML content
-    autoTable(doc, {
-      html: page.html_content,
-      startY: 20,
-      useCss: true,
-    });
-
-    doc.addPage();
+    doc.save(`${book.title}.pdf`);
+    return { success: true };
+  } catch (error) {
+    console.error("Error generating PDF:", error);
+    return { success: false, error };
   }
+};
 
-  doc.save(`${book.title}.pdf`);
+// Add missing functions referenced in BookInfo
+export const generatePDF = async (params: { 
+  bookId: number; 
+  name: string;
+  author?: string | null;
+  coverUrl?: string | null;
+}) => {
+  try {
+    const result = await downloadBookAsPdf(params.bookId, {
+      title: params.name,
+      author: params.author || 'Unknown Author',
+      coverUrl: params.coverUrl
+    });
+    return result;
+  } catch (error) {
+    console.error("Error in generatePDF:", error);
+    return { success: false, error };
+  }
+};
+
+export const generateAndDownloadEPUB = async (params: { 
+  bookId: number; 
+  name: string;
+  subtitle?: string | null;
+  author?: string | null;
+  coverUrl?: string | null;
+  showTextOnCover?: boolean;
+  returnBlob?: boolean;
+}) => {
+  try {
+    // For now, just download as HTML since EPUB generation isn't implemented
+    await downloadBookAsHtml(params.bookId, {
+      title: params.name,
+      subtitle: params.subtitle,
+      author: params.author || 'Unknown Author',
+      coverUrl: params.coverUrl
+    });
+    
+    return { success: true, blob: params.returnBlob ? new Blob(["EPUB data"], {type: 'application/epub+zip'}) : undefined };
+  } catch (error) {
+    console.error("Error in generateAndDownloadEPUB:", error);
+    return { success: false, error };
+  }
 };

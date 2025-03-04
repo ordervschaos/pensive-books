@@ -1,7 +1,7 @@
 
 import { useEffect } from "react";
 import { Route, Routes } from "react-router-dom";
-import { ThemeProvider } from "@/components/ui/theme-provider";
+import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { PrivateRoute } from "@/components/PrivateRoute";
 import Landing from "@/pages/Landing";
 import MyBooks from "@/pages/MyBooks";

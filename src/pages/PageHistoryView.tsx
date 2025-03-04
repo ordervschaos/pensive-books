@@ -103,8 +103,8 @@ export default function PageHistoryView() {
 
       // Invalidate queries to ensure fresh data
       await Promise.all([
-        queryClient.invalidateQueries(['page', pageId]),
-        queryClient.invalidateQueries(['page-history', pageId])
+        queryClient.invalidateQueries({ queryKey: ['page', pageId] }),
+        queryClient.invalidateQueries({ queryKey: ['page-history', pageId] })
       ]);
 
       toast({
