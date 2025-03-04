@@ -1,93 +1,96 @@
-
-import React, { useState, useEffect } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Bookmark } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { Input } from "@/components/ui/input";
+import { ChangeEvent } from "react";
+import { TipTapEditor } from "@/components/editor/TipTapEditor";
+import { getEditorConfig } from "../editor/config/editorConfig";
+import StarterKit from '@tiptap/starter-kit';
+import { SectionDocument } from "../editor/extensions/SectionDocument";
+import { Button } from "@/components/ui/button";
+import { Pencil, Eye, EyeOff } from "lucide-react";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 interface SectionPageContentProps {
-  bookId: number;
-  pageId: number;
+  title: string;
+  isEditing: boolean;
+  onChange: (html: string, json: any) => void;
   content: string;
-  onPageChange?: (pageId: number) => void;
+  onToggleEdit?: () => void;
+  canEdit?: boolean;
 }
 
-const SectionPageContent: React.FC<SectionPageContentProps> = ({
-  bookId,
-  pageId,
+export const SectionPageContent = ({ 
+  title, 
+  isEditing, 
+  onChange,
   content,
-  onPageChange
-}) => {
-  const [childPages, setChildPages] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const { toast } = useToast();
+  onToggleEdit,
+  canEdit = false
+}: SectionPageContentProps) => {
+  const isMobile = useIsMobile();
+  const initialContent = content || `<h1 class="page-title">${title}</h1>`;
 
-  useEffect(() => {
-    const fetchChildPages = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('pages')
-          .select('*')
-          .eq('book_id', bookId)
-          .eq('parent_id', pageId)
-          .order('page_index', { ascending: true });
-
-        if (error) throw error;
-        setChildPages(data || []);
-      } catch (error) {
-        console.error('Error fetching child pages:', error);
-        toast({
-          title: 'Error',
-          description: 'Failed to load section pages',
-          variant: 'destructive',
-        });
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchChildPages();
-  }, [bookId, pageId, toast]);
-
-  const handlePageClick = (childPageId: number) => {
-    if (onPageChange) {
-      onPageChange(childPageId);
-    }
+  const sectionEditorConfig = {
+    ...getEditorConfig(initialContent, onChange),
+    extensions: [
+      SectionDocument,
+      StarterKit.configure({
+        document: false,
+        heading: {
+          levels: [1],
+          HTMLAttributes: {
+            class: 'text-4xl font-bold text-center',
+          }
+        },
+        // Disable all other nodes/marks
+        paragraph: false,
+        text: true,
+        bold: false,
+        italic: false,
+        strike: false,
+        bulletList: false,
+        orderedList: false,
+        listItem: false,
+        code: false,
+        codeBlock: false,
+        blockquote: false,
+        horizontalRule: false,
+        hardBreak: false,
+      }),
+    ],
   };
 
   return (
-    <div className="space-y-6 mb-10">
-      <div className="prose max-w-none dark:prose-invert" dangerouslySetInnerHTML={{ __html: content }} />
-      
-      {loading ? (
-        <div className="space-y-4">
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-10 w-full" />
-        </div>
-      ) : (
-        <div className="mt-6 space-y-4">
-          <h3 className="text-lg font-medium">Pages in this section</h3>
-          <div className="grid gap-2">
-            {childPages.length > 0 ? (
-              childPages.map((page) => (
-                <button
-                  key={page.id}
-                  onClick={() => handlePageClick(page.id)}
-                  className="flex items-center gap-2 p-2 hover:bg-accent rounded-md text-left"
-                >
-                  <Bookmark className="h-4 w-4 text-muted-foreground" />
-                  <span>{page.title}</span>
-                </button>
-              ))
+    <div className="flex-1 flex items-center justify-center">
+      <div className="w-full max-w-3xl relative group">
+        {canEdit && onToggleEdit && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onToggleEdit}
+            className={`absolute right-4 top-4 ${
+              isMobile || isEditing
+                ? 'opacity-100' 
+                : 'opacity-0 group-hover:opacity-100 transition-opacity'
+            }`}
+            title={isEditing ? "Preview" : "Edit"}
+          >
+            {isEditing ? (
+              <Eye className="h-4 w-4" />
             ) : (
-              <p className="text-sm text-muted-foreground">No pages in this section yet.</p>
+              <Pencil className="h-4 w-4" />
             )}
-          </div>
-        </div>
-      )}
+          </Button>
+        )}
+        <TipTapEditor 
+          content={initialContent}
+          onChange={onChange}
+          editable={canEdit}
+          isEditing={isEditing}
+          onToggleEdit={onToggleEdit}
+          editorConfig={sectionEditorConfig}
+          hideToolbar
+          className="min-h-[200px] flex items-center justify-center"
+        />
+      </div>
     </div>
   );
 };
-
-export default SectionPageContent;
