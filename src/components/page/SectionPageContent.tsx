@@ -84,7 +84,7 @@ export const SectionPageContent = ({
         <TipTapEditor 
           content={initialContent}
           onChange={onChange}
-          editable={canEdit}
+          editable={canEdit && isEditing}
           isEditing={isEditing}
           onToggleEdit={onToggleEdit}
           editorConfig={sectionEditorConfig}

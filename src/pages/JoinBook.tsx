@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams, useParams } from "react-router-dom";
 import { Loader2 } from "lucide-react";
@@ -36,7 +35,7 @@ export default function JoinBook() {
         const { data: existingAccess } = await supabase
           .from("book_access")
           .select("id")
-          .eq("book_id", bookId)
+          .eq("book_id", parseInt(bookId, 10))
           .eq("invited_email", session.user.email)
           .single();
 
@@ -45,7 +44,7 @@ export default function JoinBook() {
           const { error: accessError } = await supabase
             .from("book_access")
             .insert({
-              book_id: bookId,
+              book_id: parseInt(bookId, 10),
               invited_email: session.user.email,
               user_id: session.user.id,
               access_level: access as "view" | "edit",

@@ -1,3 +1,4 @@
+
 import { useEffect } from "react";
 import { Route, Routes } from "react-router-dom";
 import { ThemeProvider } from "@/components/ui/theme-provider";
@@ -16,10 +17,10 @@ import KindleSettings from "@/pages/KindleSettings";
 
 function App() {
   return (
-    <ThemeProvider>
+    <ThemeProvider defaultTheme="light">
       <Routes>
         <Route path="/" element={<Landing />} />
-        <Route element={<PrivateRoute />}>
+        <Route path="/" element={<PrivateRoute />}>
           <Route path="/my-books" element={<MyBooks />} />
           <Route path="/book/:bookId" element={<BookDetails />} />
           <Route path="/book/:bookId/edit" element={<BookEdit />} />
