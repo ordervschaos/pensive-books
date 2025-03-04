@@ -39,7 +39,7 @@ export function FleshOutBookDialog({ bookId, onComplete }: FleshOutBookDialogPro
 
       toast({
         title: "Success",
-        description: "Book content has been expanded successfully with Deepseek AI."
+        description: "Book content has been expanded successfully."
       });
 
       setIsOpen(false);
@@ -65,7 +65,7 @@ export function FleshOutBookDialog({ bookId, onComplete }: FleshOutBookDialogPro
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Expand Book Content with Deepseek AI</DialogTitle>
+          <DialogTitle>Expand Book Content with AI</DialogTitle>
           <DialogDescription>
             Enter a prompt to guide the AI in expanding your book's content. The AI will analyze each page and add relevant content while maintaining the original style and tone.
           </DialogDescription>
