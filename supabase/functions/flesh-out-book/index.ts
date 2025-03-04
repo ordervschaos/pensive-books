@@ -73,7 +73,11 @@ serve(async (req) => {
       const data = await response.json();
       if (data.error) throw new Error(data.error.message || 'Error from Deepseek API');
       
-      const newContent = data.choices[0].message.content.trim();
+      // Get the raw content from the API response
+      let newContent = data.choices[0].message.content.trim();
+      
+      // Remove markdown code block delimiters if present
+      newContent = newContent.replace(/^```html\n?/, '').replace(/```$/, '');
 
       // Update the page with expanded content
       const { error: updateError } = await supabase
