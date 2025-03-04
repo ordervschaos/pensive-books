@@ -1,4 +1,3 @@
-
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.38.1';
@@ -73,7 +72,11 @@ serve(async (req) => {
       const data = await response.json();
       if (data.error) throw new Error(data.error.message || 'Error from Deepseek API');
       
-      const newContent = data.choices[0].message.content.trim();
+      // Get the raw content from the API response
+      let newContent = data.choices[0].message.content.trim();
+      
+      // Remove markdown code block delimiters if present
+      newContent = newContent.replace(/^```html\n?/, '').replace(/```$/, '');
 
       // Update the page with expanded content
       const { error: updateError } = await supabase
