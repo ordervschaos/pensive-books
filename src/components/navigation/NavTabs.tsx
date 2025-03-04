@@ -33,13 +33,6 @@ export const NavTabs = ({ isLibraryActive, isMyBooksActive }: NavTabsProps) => {
           >
             Library
           </Link>
-          <Link
-            to="/generate-book"
-            className="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
-          >
-            <Wand2 className="h-3.5 w-3.5" />
-            Generate with AI
-          </Link>
         </div>
       </div>
     </div>

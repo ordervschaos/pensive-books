@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, ExternalLink } from "lucide-react";
+import { Plus, ExternalLink, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -243,7 +243,12 @@ export default function Index() {
 
   return (
     <div className="container mx-auto p-6">
-      <div className="flex justify-end items-center mb-6">
+      <div className="flex justify-end items-center mb-6 gap-2">
+        <Button variant="outline" onClick={() => navigate("/generate-book")}>
+          <Wand2 className="h-3.5 w-3.5 mr-2" />
+          Generate a book
+          <Badge variant="secondary" className="ml-2 text-xs">BETA</Badge>
+        </Button>
         <Button onClick={() => navigate("/book/new")}>
           <Plus className="mr-2 h-4 w-4" /> New book
         </Button>
