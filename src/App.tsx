@@ -22,6 +22,7 @@ import UserProfile from "@/pages/UserProfile";
 import SetUsername from "@/pages/SetUsername";
 import JoinBook from "@/pages/JoinBook";
 import GenerateBook from "./pages/GenerateBook";
+import ImportPDF from "./pages/ImportPDF";
 import KindleSettings from "@/pages/KindleSettings";
 import { useEffect } from "react";
 import { useGoogleAnalytics } from "@/hooks/useGoogleAnalytics";
@@ -94,6 +95,14 @@ export default function App() {
                   element={
                     <PrivateRoute>
                       <NewBook />
+                    </PrivateRoute>
+                  }
+                />
+                <Route
+                  path="/book/import-pdf"
+                  element={
+                    <PrivateRoute>
+                      <ImportPDF />
                     </PrivateRoute>
                   }
                 />
