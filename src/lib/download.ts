@@ -608,7 +608,7 @@ export const generateAndDownloadEPUB = async (
       coverUrl: options.coverUrl,
       identifier: options.bookId.toString()
     };
-
+    // Generate the EPUB file
     const epubBlob = await generateEPUB(epubOptions, processedPages, images, options.showTextOnCover);
 
     if (options.returnBlob) {
