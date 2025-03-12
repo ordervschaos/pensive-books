@@ -220,11 +220,11 @@ export const generateContentXhtml = (metadata: EPUBMetadata, pages: Page[], show
   </div>
   ` : `
   <div class="cover-page">
-    <div class="title-group">
-      <h1 class="book-title">${escapeXml(metadata.title)}</h1>
-      ${metadata.subtitle ? `<h2 class="book-subtitle">${escapeXml(metadata.subtitle)}</h2>` : ''}
-    </div>
-    ${metadata.author ? `<h3 class="book-author">by ${escapeXml(metadata.author)}</h3>` : ''}
+      <div class="title-group">
+        <h1 class="book-title">${escapeXml(metadata.title)}</h1>
+        ${metadata.subtitle ? `<h2 class="book-subtitle">${escapeXml(metadata.subtitle)}</h2>` : ''}
+      </div>
+      ${metadata.author ? `<h3 class="book-author">by ${escapeXml(metadata.author)}</h3>` : ''}
   </div>
   `}
   ${pages.map((page, index) => `
@@ -397,8 +397,11 @@ th {
 }
 `;
 
-// Add a new function to generate a complete cover image
-export const generateCoverImage = async (metadata: EPUBMetadata): Promise<Blob> => {
+// Update the function signature to include the show_text_on_cover parameter
+export const generateCoverImage = async (
+  metadata: EPUBMetadata, 
+  show_text_on_cover: boolean = true
+): Promise<Blob> => {
   // Create a canvas element
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
@@ -457,9 +460,11 @@ export const generateCoverImage = async (metadata: EPUBMetadata): Promise<Blob> 
       // Draw image to cover entire canvas (may crop sides)
       ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
       
-      // Add semi-transparent overlay for better text visibility
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      // Add semi-transparent overlay for better text visibility only if showing text
+      if (show_text_on_cover) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
     } catch (error) {
       console.warn('Failed to load cover image, using gradient instead:', error);
       const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
@@ -470,52 +475,131 @@ export const generateCoverImage = async (metadata: EPUBMetadata): Promise<Blob> 
     }
   }
   
-  // Add title
-  ctx.fillStyle = '#ffffff';
-  ctx.textAlign = 'center';
-  ctx.font = 'bold 80px serif';
-  
-  // Handle multiline title
-  const wrapText = (text: string, maxWidth: number, fontSize: number): string[] => {
-    const words = text.split(' ');
-    const lines: string[] = [];
-    let currentLine = words[0];
-    
-    ctx.font = `bold ${fontSize}px serif`;
-    
-    for (let i = 1; i < words.length; i++) {
-      const word = words[i];
-      const width = ctx.measureText(currentLine + ' ' + word).width;
-      if (width < maxWidth) {
-        currentLine += ' ' + word;
-      } else {
-        lines.push(currentLine);
-        currentLine = word;
+  // Only add text if show_text_on_cover is true
+  if (show_text_on_cover) {
+    // Calculate responsive font size for title
+    const calculateFontSize = (text: string): number => {
+      // Base size and constraints
+      const maxFontSize = 200;
+      const minFontSize = 100;
+      const maxWidth = canvas.width - 160;
+      
+      // Start with max size and reduce until it fits
+      let fontSize = maxFontSize;
+      
+      // Adjust based on title length
+      if (text.length > 0) {
+        // Rough estimate: longer titles get smaller fonts
+        fontSize = Math.max(minFontSize, maxFontSize - (text.length * 2));
+        
+        // Fine-tune by measuring actual text width
+        ctx.font = `bold ${fontSize}px serif`;
+        let textWidth = ctx.measureText(text).width;
+        
+        // If single line is too wide, reduce font size
+        while (textWidth > maxWidth && fontSize > minFontSize) {
+          fontSize -= 5;
+          ctx.font = `bold ${fontSize}px serif`;
+          textWidth = ctx.measureText(text).width;
+        }
       }
+      
+      return fontSize;
+    };
+    
+    // Handle multiline text wrapping
+    const wrapText = (text: string, maxWidth: number, fontSize: number): string[] => {
+      const words = text.split(' ');
+      const lines: string[] = [];
+      let currentLine = words[0];
+      
+      ctx.font = `bold ${fontSize}px serif`;
+      
+      for (let i = 1; i < words.length; i++) {
+        const word = words[i];
+        const width = ctx.measureText(currentLine + ' ' + word).width;
+        if (width < maxWidth) {
+          currentLine += ' ' + word;
+        } else {
+          lines.push(currentLine);
+          currentLine = word;
+        }
+      }
+      lines.push(currentLine);
+      return lines;
+    };
+    
+    // Set text styles
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
+    ctx.shadowBlur = 15;
+    ctx.shadowOffsetX = 4;
+    ctx.shadowOffsetY = 4;
+    
+    // Calculate and set responsive font size for title
+    const titleFontSize = calculateFontSize(metadata.title);
+    ctx.font = `bold ${titleFontSize}px serif`;
+    
+    // Draw title with responsive font size
+    const maxTitleWidth = canvas.width - 160;
+    const titleLines = wrapText(metadata.title, maxTitleWidth, titleFontSize);
+    
+    // Calculate vertical position for title (centered, with space for subtitle and author)
+    const titleLineHeight = titleFontSize * 1.2;
+    const titleTotalHeight = titleLines.length * titleLineHeight;
+    let titleY = canvas.height / 2 - titleTotalHeight / 2;
+    
+    // If we have subtitle or author, shift title up a bit
+    if (metadata.subtitle || metadata.author) {
+      titleY -= 150;
     }
-    lines.push(currentLine);
-    return lines;
-  };
-  
-  // Draw title
-  const titleLines = wrapText(metadata.title, canvas.width - 200, 80);
-  titleLines.forEach((line, index) => {
-    ctx.fillText(line, canvas.width / 2, canvas.height / 2 - (titleLines.length - index - 1) * 100);
-  });
-  
-  // Draw subtitle if exists
-  if (metadata.subtitle) {
-    ctx.font = 'italic 50px serif';
-    const subtitleLines = wrapText(metadata.subtitle, canvas.width - 300, 50);
-    subtitleLines.forEach((line, index) => {
-      ctx.fillText(line, canvas.width / 2, canvas.height / 2 + 100 + index * 60);
+    
+    // Draw title lines
+    titleLines.forEach((line, index) => {
+      ctx.fillText(line, canvas.width / 2, titleY + index * titleLineHeight);
     });
-  }
-  
-  // Draw author if exists
-  if (metadata.author) {
-    ctx.font = '40px serif';
-    ctx.fillText(`by ${metadata.author}`, canvas.width / 2, canvas.height / 2 + 300);
+    
+    // Calculate bottom position of title text
+    const titleBottom = titleY + titleLines.length * titleLineHeight;
+    
+    // Draw subtitle if exists
+    if (metadata.subtitle) {
+      // Calculate responsive font size for subtitle (smaller than title)
+      const subtitleFontSize = Math.max(70, titleFontSize * 0.6);
+      ctx.font = `italic ${subtitleFontSize}px serif`;
+      
+      const subtitleLines = wrapText(metadata.subtitle, canvas.width - 240, subtitleFontSize);
+      const subtitleLineHeight = subtitleFontSize * 1.2;
+      
+      // Position subtitle below title with some spacing
+      const subtitleY = titleBottom + 100;
+      
+      subtitleLines.forEach((line, index) => {
+        ctx.fillText(line, canvas.width / 2, subtitleY + index * subtitleLineHeight);
+      });
+      
+      // Update bottom position for author positioning
+      const subtitleBottom = subtitleY + subtitleLines.length * subtitleLineHeight;
+      
+      // Draw author if exists
+      if (metadata.author) {
+        const authorFontSize = Math.max(60, subtitleFontSize * 0.8);
+        ctx.font = `${authorFontSize}px serif`;
+        ctx.fillText(`by ${metadata.author}`, canvas.width / 2, subtitleBottom + 100);
+      }
+    } else if (metadata.author) {
+      // If no subtitle but author exists
+      const authorFontSize = Math.max(70, titleFontSize * 0.5);
+      ctx.font = `${authorFontSize}px serif`;
+      ctx.fillText(`by ${metadata.author}`, canvas.width / 2, titleBottom + 100);
+    }
+    
+    // Reset shadow for better performance
+    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
   }
   
   // Convert canvas to blob
@@ -530,7 +614,7 @@ export const generateCoverImage = async (metadata: EPUBMetadata): Promise<Blob> 
   });
 };
 
-// Generate EPUB file
+// Update the generateEPUB function to pass the show_text_on_cover parameter
 export const generateEPUB = async (
   metadata: EPUBMetadata,
   pages: Page[],
@@ -549,8 +633,8 @@ export const generateEPUB = async (
   let coverBlob: Blob | null = null;
   if (metadata.coverUrl) {
     try {
-      // Generate a complete cover image with title, author, etc.
-      coverBlob = await generateCoverImage(metadata);
+      // Generate a complete cover image with title, author, etc. based on show_text_on_cover
+      coverBlob = await generateCoverImage(metadata, show_text_on_cover);
       zip.file('OEBPS/cover.jpg', coverBlob);
     } catch (error) {
       console.warn('Failed to add cover image:', error);
@@ -558,7 +642,7 @@ export const generateEPUB = async (
   } else {
     // If no cover URL provided, still generate a cover with title/author on gradient background
     try {
-      coverBlob = await generateCoverImage(metadata);
+      coverBlob = await generateCoverImage(metadata, show_text_on_cover);
       zip.file('OEBPS/cover.jpg', coverBlob);
       // Update metadata to include the generated cover
       metadata = { ...metadata, coverUrl: 'cover.jpg' };
