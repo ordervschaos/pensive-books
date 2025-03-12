@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -9,6 +8,7 @@ import { PageLoading } from "@/components/page/PageLoading";
 import { PageNotFound } from "@/components/page/PageNotFound";
 import { useBookPermissions } from "@/hooks/use-book-permissions";
 import { setPageTitle } from "@/utils/pageTitle";
+import { Helmet } from "react-helmet-async";
 
 const LOCALSTORAGE_BOOKMARKS_KEY = 'bookmarked_pages';
 
@@ -315,8 +315,53 @@ const PageView = () => {
     );
   }
 
+  // Extract a text preview from HTML content for meta description
+  const getTextPreview = (htmlContent: string) => {
+    // Create a temporary div to parse HTML
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = htmlContent || '';
+    
+    // Get text content and limit to 160 characters for meta description
+    const textContent = tempDiv.textContent || '';
+    return textContent.substring(0, 160) + (textContent.length > 160 ? '...' : '');
+  };
+
+  // Construct absolute URLs for Open Graph meta tags
+  const currentUrl = window.location.href;
+  const coverImageUrl = book.cover_url 
+    ? new URL(book.cover_url, window.location.origin).toString()
+    : `${window.location.origin}/default-book-cover.png`;
+  
+  const pageDescription = getTextPreview(page.html_content || '');
+  const pageTitle = `${page.title} - ${book.name}`;
+
   return (
     <div className="min-h-[calc(100vh-56px)] flex flex-col bg-background">
+      <Helmet>
+        {/* Primary Meta Tags */}
+        <title>{pageTitle}</title>
+        <meta name="title" content={pageTitle} />
+        <meta name="description" content={pageDescription} />
+        
+        {/* Open Graph / Facebook */}
+        <meta property="og:type" content="article" />
+        <meta property="og:url" content={currentUrl} />
+        <meta property="og:title" content={pageTitle} />
+        <meta property="og:description" content={pageDescription} />
+        <meta property="og:image" content={coverImageUrl} />
+        
+        {/* Twitter */}
+        <meta property="twitter:card" content="summary_large_image" />
+        <meta property="twitter:url" content={currentUrl} />
+        <meta property="twitter:title" content={pageTitle} />
+        <meta property="twitter:description" content={pageDescription} />
+        <meta property="twitter:image" content={coverImageUrl} />
+        
+        {/* Book and article specific metadata */}
+        {book.author && <meta property="article:author" content={book.author} />}
+        {book.published_at && <meta property="article:published_time" content={book.published_at} />}
+      </Helmet>
+      
       <div className="flex-1 container max-w-5xl mx-auto px-4 py-4 flex flex-col gap-4">
         <div className="flex-1 flex flex-col">
           <PageContent

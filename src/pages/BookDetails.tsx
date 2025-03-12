@@ -9,6 +9,7 @@ import { BookActionsBar } from "@/components/book/BookActionsBar";
 import { ShareBookButton } from "@/components/book/ShareBookButton";
 import { ContinueReadingButton } from "@/components/book/ContinueReadingButton";
 import { setPageTitle } from "@/utils/pageTitle";
+import { Helmet } from "react-helmet-async";
 
 const LOCALSTORAGE_BOOKMARKS_KEY = 'bookmarked_pages';
 
@@ -219,8 +220,41 @@ const BookDetails = () => {
     return null;
   }
 
+  // Construct absolute URLs for Open Graph meta tags
+  const currentUrl = window.location.href;
+  const coverImageUrl = book.cover_url 
+    ? new URL(book.cover_url, window.location.origin).toString()
+    : `${window.location.origin}/default-book-cover.png`;
+  
+  const bookDescription = book.subtitle || `A book by ${book.author || "Unknown author"}`;
+
   return (
     <div className="min-h-screen flex flex-col bg-background">
+      <Helmet>
+        {/* Primary Meta Tags */}
+        <title>{book.name} | Pensive</title>
+        <meta name="title" content={`${book.name} | Pensive`} />
+        <meta name="description" content={bookDescription} />
+        
+        {/* Open Graph / Facebook */}
+        <meta property="og:type" content="book" />
+        <meta property="og:url" content={currentUrl} />
+        <meta property="og:title" content={`${book.name} | Pensive`} />
+        <meta property="og:description" content={bookDescription} />
+        <meta property="og:image" content={coverImageUrl} />
+        
+        {/* Twitter */}
+        <meta property="twitter:card" content="summary_large_image" />
+        <meta property="twitter:url" content={currentUrl} />
+        <meta property="twitter:title" content={`${book.name} | Pensive`} />
+        <meta property="twitter:description" content={bookDescription} />
+        <meta property="twitter:image" content={coverImageUrl} />
+        
+        {/* Book-specific metadata */}
+        {book.author && <meta property="book:author" content={book.author} />}
+        {book.published_at && <meta property="book:release_date" content={book.published_at} />}
+      </Helmet>
+      
       <div className="container mx-auto px-4 py-6">
         <div className="max-w-7xl mx-auto space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
