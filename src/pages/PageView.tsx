@@ -274,8 +274,12 @@ const PageView = () => {
   useEffect(() => {
     const handleKeyPress = (event: KeyboardEvent) => {
       // Only allow navigation if not editing
-      if (!isEditing && event.key === 'ArrowRight' && currentIndex < totalPages - 1) {
-        navigateToPage(currentIndex + 1);
+      if (!isEditing) {
+        if (event.key === 'ArrowRight' && currentIndex < totalPages - 1) {
+          navigateToPage(currentIndex + 1);
+        } else if (event.key === 'ArrowLeft' && currentIndex > 0) {
+          navigateToPage(currentIndex - 1);
+        }
       }
     };
 
