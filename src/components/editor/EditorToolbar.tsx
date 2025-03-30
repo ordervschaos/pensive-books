@@ -1,9 +1,14 @@
-
 import { Editor } from '@tiptap/react';
-import { Bold, Italic, Quote, Code2, Link2, List, ListOrdered, Image as ImageIcon, Undo, Redo, Pencil, Eye } from "lucide-react";
+import { Bold, Italic, Quote, Code2, Link2, List, ListOrdered, Image as ImageIcon, Undo, Redo, Pencil, Eye, Table as TableIcon, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useSupabaseUpload } from "@/hooks/use-supabase-upload";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface EditorToolbarProps {
   editor: Editor | null;
@@ -50,6 +55,36 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
       });
     }
   };
+
+  const addTable = () => {
+    editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+  };
+
+  const addTableRow = () => {
+    editor.chain().focus().addRowAfter().run();
+  };
+
+  const addTableColumn = () => {
+    editor.chain().focus().addColumnAfter().run();
+  };
+
+  const deleteTableRow = () => {
+    editor.chain().focus().deleteRow().run();
+  };
+
+  const deleteTableColumn = () => {
+    editor.chain().focus().deleteColumn().run();
+  };
+
+  const deleteTable = () => {
+    editor.chain().focus().deleteTable().run();
+  };
+
+  const toggleTableHeader = () => {
+    editor.chain().focus().toggleHeaderRow().run();
+  };
+
+  const isTableActive = editor.isActive('table');
 
   return (
     <div className={`rounded-md flex gap-1 items-center p-1 flex-wrap z-50 ${isEditing ? 'sticky top-4 bg-muted/50 shadow-sm backdrop-blur-sm' : ''}`}>
@@ -117,6 +152,42 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
           >
             <ListOrdered className="h-4 w-4" />
           </Button>
+          
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className={isTableActive ? 'bg-muted' : ''}
+              >
+                <TableIcon className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuItem onClick={addTable} disabled={isTableActive}>
+                Insert Table
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={addTableRow} disabled={!isTableActive}>
+                Add Row
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={addTableColumn} disabled={!isTableActive}>
+                Add Column
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={deleteTableRow} disabled={!isTableActive}>
+                Delete Row
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={deleteTableColumn} disabled={!isTableActive}>
+                Delete Column
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={toggleTableHeader} disabled={!isTableActive}>
+                Toggle Header Row
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={deleteTable} disabled={!isTableActive}>
+                Delete Table
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          
           <Button
             variant="ghost"
             size="sm"
