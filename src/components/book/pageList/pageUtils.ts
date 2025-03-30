@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { Page, LOCALSTORAGE_BOOKMARKS_KEY } from "./types";
+import { toast } from "@/components/ui/use-toast";
 
 export const fetchBookmarkedPage = async (bookId: number): Promise<number | null> => {
   try {
@@ -79,6 +80,39 @@ export const handleDeletePage = async (
   }
 };
 
+const findAvailablePageIndex = async (bookId: number, startingIndex: number): Promise<number> => {
+  let index = startingIndex;
+  let maxAttempts = 10; // Limit the number of attempts to avoid infinite loops
+  let attemptCount = 0;
+  
+  while (attemptCount < maxAttempts) {
+    // Check if the current index is already taken
+    const { data, error } = await supabase
+      .from('pages')
+      .select('id')
+      .eq('book_id', bookId)
+      .eq('page_index', index)
+      .eq('archived', false);
+      
+    if (error) {
+      console.error('Error checking page index:', error);
+      throw error;
+    }
+    
+    // If no page exists with this index, we can use it
+    if (!data || data.length === 0) {
+      return index;
+    }
+    
+    // Otherwise, try the next index
+    index++;
+    attemptCount++;
+  }
+  
+  // If we've tried too many times, throw an error
+  throw new Error('Unable to find an available page index after multiple attempts');
+};
+
 export const createNewPage = async (
   bookId: number,
   pages: Page[],
@@ -87,13 +121,21 @@ export const createNewPage = async (
   onError: (error: Error) => void
 ) => {
   try {
+    // Calculate what should be the next page index
     const maxPageIndex = Math.max(...pages.map(p => p.page_index), -1);
+    const nextIndex = maxPageIndex + 1;
     
+    // Find an available page index (handles potential duplicates)
+    const availableIndex = await findAvailablePageIndex(bookId, nextIndex);
+    
+    console.log(`Creating new page with index ${availableIndex} (originally attempted ${nextIndex})`);
+    
+    // Create the page with the available index
     const { data: newPage, error } = await supabase
       .from('pages')
       .insert({
         book_id: bookId,
-        page_index: maxPageIndex + 1,
+        page_index: availableIndex,
         content: {},
         html_content: '',
         page_type: pageType
@@ -101,10 +143,14 @@ export const createNewPage = async (
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error('Error creating new page:', error);
+      throw error;
+    }
 
     onSuccess(newPage.id);
   } catch (error: any) {
+    console.error('Detailed error during page creation:', error);
     onError(error);
   }
 };
@@ -148,4 +194,4 @@ export const reorderPages = async (
     const err = error as { message: string };
     onError(err as Error);
   }
-}; 
+};
