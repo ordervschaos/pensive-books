@@ -1,8 +1,11 @@
-
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import Image from '@tiptap/extension-image';
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
+import Table from '@tiptap/extension-table';
+import TableRow from '@tiptap/extension-table-row';
+import TableCell from '@tiptap/extension-table-cell';
+import TableHeader from '@tiptap/extension-table-header';
 import { Title } from '../extensions/Title';
 import { common, createLowlight } from 'lowlight';
 import { useSupabaseUpload } from '@/hooks/use-supabase-upload';
@@ -91,6 +94,27 @@ export const getEditorConfig = (content: string, onChange: (html: string, json?:
         },
         allowBase64: true,
         inline: false,
+      }),
+      Table.configure({
+        resizable: true,
+        HTMLAttributes: {
+          class: 'border-collapse table-auto w-full my-4',
+        },
+      }),
+      TableRow.configure({
+        HTMLAttributes: {
+          class: 'border-b border-muted',
+        },
+      }),
+      TableHeader.configure({
+        HTMLAttributes: {
+          class: 'border-b-2 border-muted bg-muted/50 font-bold text-left p-2',
+        },
+      }),
+      TableCell.configure({
+        HTMLAttributes: {
+          class: 'border border-muted p-2',
+        },
       }),
     ],
     content,
