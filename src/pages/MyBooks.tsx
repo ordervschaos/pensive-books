@@ -244,13 +244,21 @@ export default function Index() {
   return (
     <div className="container mx-auto p-6">
       <div className="flex justify-end items-center mb-6 gap-2">
-        <Button variant="outline" onClick={() => navigate("/generate-book")}>
-          <Wand2 className="h-3.5 w-3.5 mr-2" />
+        <Button 
+          variant="outline" 
+          onClick={() => navigate("/generate-book")} 
+          className="text-xs sm:text-base h-8 sm:h-10 px-2 sm:px-4"
+        >
+          <Wand2 className="h-3 w-3 sm:h-3.5 sm:w-3.5 mr-1 sm:mr-2" />
           Generate a book
-          <Badge variant="secondary" className="ml-2 text-xs">BETA</Badge>
+          <Badge variant="secondary" className="ml-1 sm:ml-2 text-[10px] sm:text-xs">BETA</Badge>
         </Button>
-        <Button onClick={() => navigate("/book/new")}>
-          <Plus className="mr-2 h-4 w-4" /> New book
+        <Button 
+          onClick={() => navigate("/book/new")} 
+          className="text-xs sm:text-base h-8 sm:h-10 px-2 sm:px-4"
+        >
+          <Plus className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" /> 
+          New book
         </Button>
       </div>
 
