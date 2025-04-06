@@ -56,7 +56,7 @@ export default function Index() {
           .select("*")
           .eq('owner_id', session.user.id)
           .eq('is_archived', false)
-          .order("created_at", { ascending: false });
+          .order("updated_at", { ascending: false });
 
         if (ownedError) {
           console.error("Error fetching owned books:", ownedError);
