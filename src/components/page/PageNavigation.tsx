@@ -35,11 +35,15 @@ export const PageNavigation = ({
   const isLastPage = currentIndex >= totalPages - 1;
 
   const handleNextClick = () => {
-    if (isLastPage) {
-      navigate(`/book/${bookId}`);
-    } else {
-      onNavigate(currentIndex + 1);
-    }
+    onNavigate(currentIndex + 1);
+  };
+
+  const handleBackToTableOfContents = () => {
+    navigate(`/book/${bookId}`);
+  };
+
+  const handleBackToPreviousPage = () => {
+    onNavigate(currentIndex - 1);
   };
 
   return (
@@ -47,28 +51,38 @@ export const PageNavigation = ({
       <span className="text-sm text-muted-foreground"> Page {displayCurrentIndex}/{displayTotalPages} </span>
       
       <div className="flex flex-row items-center gap-2 justify-center w-full">
-        <Button
-          variant="ghost"
-          onClick={() => navigate(`/book/${bookId}`)}
-          className="flex items-center gap-2 px-4 py-4 rounded-full bg-background border-border max-w-[80vw]"
-        >
-          <ArrowLeft className="h-5 w-5 flex-shrink-0" />
-        </Button>
-        <Button
-          variant="outline"
-          onClick={handleNextClick}
+        {currentIndex > 0 && (
+          <Button
+            variant="ghost"
+            onClick={handleBackToPreviousPage}
+            className="flex items-center gap-2 px-4 py-4 rounded-full bg-background border-border max-w-[80vw]"
+          >
+            <ArrowLeft className="h-5 w-5 flex-shrink-0" />
+          </Button>
+        )}
+        {!isLastPage && (
+          <Button
+            variant="outline"
+            onClick={handleNextClick}
           className="flex items-center gap-2 px-4 py-4 rounded-full bg-background border-border max-w-[80vw]"
           disabled={currentIndex === -1}
         >
           <span className="text-lg truncate">
-            {isLastPage ? `Table of contents: ${bookTitle}` : `Next: ${nextPageTitle || 'Untitled'}`}
+            {`Next: ${nextPageTitle || `Page ${currentIndex + 1}`}`}
           </span>
-          {isLastPage ? (
-            <Undo2 className="h-5 w-5 flex-shrink-0" />
-          ) : (
             <ArrowRight className="h-5 w-5 flex-shrink-0" />
-          )}
-        </Button>
+          </Button>
+        )}
+        {isLastPage && (
+           <Button
+           variant="outline"
+           onClick={handleBackToTableOfContents}
+           className="px-4 py-4 rounded-full bg-background border-border"
+           title="Back to table of contents"
+         >
+           <Undo2 className="h-5 w-5 flex-shrink-0" /> {`Back to table of contents: ${bookTitle}`}
+         </Button>
+        )}
 
         {canEdit && onNewPage && (
           <Button
@@ -80,7 +94,18 @@ export const PageNavigation = ({
             <Plus className="h-5 w-5" />
           </Button>
         )}
+        
       </div>
+      {!isLastPage && (
+        <Button
+          variant="muted"
+          onClick={handleBackToTableOfContents}
+          className="px-4 py-4 rounded-full mt-12 bg-background border-border"
+          title="Back to table of contents"
+        >
+          <Undo2 className="h-5 w-5 flex-shrink-0" /> {`Back to table of contents: ${bookTitle}`}
+        </Button>
+      )}
     </div>
   );
 };
