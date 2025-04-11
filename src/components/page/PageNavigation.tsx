@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { ArrowRight, Plus, Undo2 } from "lucide-react";
+import { ArrowRight, Plus, Undo2, ArrowLeft } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 
@@ -48,9 +48,16 @@ export const PageNavigation = ({
       
       <div className="flex flex-row items-center gap-2 justify-center w-full">
         <Button
+          variant="ghost"
+          onClick={() => navigate(`/book/${bookId}`)}
+          className="flex items-center gap-2 px-4 py-4 rounded-full bg-background border-border max-w-[80vw]"
+        >
+          <ArrowLeft className="h-5 w-5 flex-shrink-0" />
+        </Button>
+        <Button
           variant="outline"
           onClick={handleNextClick}
-          className="flex items-center gap-2 px-6 py-6 rounded-full bg-background border-border max-w-[80vw]"
+          className="flex items-center gap-2 px-4 py-4 rounded-full bg-background border-border max-w-[80vw]"
           disabled={currentIndex === -1}
         >
           <span className="text-lg truncate">
@@ -65,9 +72,9 @@ export const PageNavigation = ({
 
         {canEdit && onNewPage && (
           <Button
-            variant="outline"
+            variant="ghost"
             onClick={onNewPage}
-            className="px-6 py-6 rounded-full bg-background border-border"
+            className="px-4 py-4 rounded-full bg-background border-border"
             title="Add new page"
           >
             <Plus className="h-5 w-5" />
