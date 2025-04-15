@@ -1,3 +1,4 @@
+
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Plus, Undo2, ArrowLeft, TableOfContents } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -52,7 +53,7 @@ export const PageNavigation = ({
           onClick={toggleSidebar}
           className="flex items-center gap-2"
         >
-          <TableOfContents className="h-4 w-4" />
+          <List className="h-4 w-4" />
           <span className="hidden sm:inline">Table of Contents</span>
         </Button>
         <span className="text-sm text-muted-foreground">Page {displayCurrentIndex}/{displayTotalPages}</span>

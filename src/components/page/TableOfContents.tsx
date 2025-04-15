@@ -1,6 +1,7 @@
+
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import { TableOfContents } from "lucide-react";
+import { List } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 
@@ -51,7 +52,7 @@ export function TableOfContents({
   return (
     <div className="flex flex-col h-full">
       <div className="px-4 py-3 flex items-center gap-2 font-medium">
-        <TableOfContents className="h-5 w-5" />
+        <List className="h-5 w-5" />
         <span>Table of Contents</span>
       </div>
       <Separator />
