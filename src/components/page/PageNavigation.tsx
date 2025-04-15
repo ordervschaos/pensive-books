@@ -1,8 +1,9 @@
 
 import { Button } from "@/components/ui/button";
-import { ArrowRight, Plus, Undo2, ArrowLeft, TableOfContents } from "lucide-react";
+import { ArrowRight, Plus, Undo2, ArrowLeft, TableOfContents, List } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useSidebar } from "@/components/ui/sidebar";
+
 
 interface PageNavigationProps {
   bookId: string;
