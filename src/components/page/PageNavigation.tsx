@@ -53,12 +53,11 @@ export const PageNavigation = ({
         <Button
           variant="ghost"
           onClick={toggleSidebar}
-          className="flex items-center gap-2"
+          className="flex items-center gap-2 px-4 py-4 rounded-full bg-background border-border max-w-[80vw]"
         >
-          <List className="h-4 w-4" />
-          <span className="hidden sm:inline">Table of Contents</span>
+          <span className="text-sm text-muted-foreground">Page {displayCurrentIndex}/{displayTotalPages}</span>
         </Button>
-        <span className="text-sm text-muted-foreground">Page {displayCurrentIndex}/{displayTotalPages}</span>
+        
       </div>
       
       <div className="flex flex-row items-center gap-2 justify-center w-full">

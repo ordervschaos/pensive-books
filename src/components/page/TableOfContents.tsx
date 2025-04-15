@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { List } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
@@ -25,6 +25,16 @@ export function TableOfContents({
   onPageSelect 
 }: TableOfContentsProps) {
   const navigate = useNavigate();
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (containerRef.current) {
+      const activeElement = containerRef.current.querySelector(`[data-page-id="${currentPageId}"]`);
+      if (activeElement) {
+        activeElement.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }
+  }, [currentPageId]);
 
   const handlePageClick = (pageId: number) => {
     const page = pages.find(p => p.id === pageId);
@@ -50,12 +60,12 @@ export function TableOfContents({
   }
 
   return (
-    <div className="py-2">
+    <div className="py-2 z-10 bg-background border-border">
       <div className="px-4 py-2">
         <h2 className="mb-2 text-lg font-semibold">Table of Contents</h2>
       </div>
       <Separator />
-      <nav className="grid items-start gap-2 p-2">
+      <nav ref={containerRef} className="grid items-start gap-2 p-2 scrollbar-hide">
         {pages.map((page) => {
           const isActive = page.id === currentPageId;
           const slug = page.title ? 
@@ -65,6 +75,7 @@ export function TableOfContents({
           return (
             <PreloadLink
               key={page.id}
+              data-page-id={page.id}
               to={`/book/${bookId}/page/${slug}`}
               bookId={parseInt(bookId)}
               pageId={page.id}
