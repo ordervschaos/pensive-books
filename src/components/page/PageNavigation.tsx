@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Plus, Undo2, ArrowLeft } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-
+import { useSidebar } from "@/components/ui/sidebar";
 
 interface PageNavigationProps {
   bookId: string;
@@ -27,6 +27,7 @@ export const PageNavigation = ({
   canEdit = false
 }: PageNavigationProps) => {
   const navigate = useNavigate();
+  const { toggleSidebar } = useSidebar();
 
   // Handle case where there are no pages yet
   const displayCurrentIndex = totalPages > 0 ? currentIndex + 1 : 0;
@@ -43,8 +44,19 @@ export const PageNavigation = ({
   };
 
   return (
-    <div className="flex max-w-screen-lg items-center justify-center gap-2 flex-col">
-      <span className="text-sm text-muted-foreground"> Page {displayCurrentIndex}/{displayTotalPages} </span>
+    <div className="flex max-w-screen-lg items-center justify-center gap-4 flex-col my-4">
+      <div className="flex items-center gap-2 justify-center">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={toggleSidebar}
+          className="flex items-center gap-2"
+        >
+          <TableOfContent className="h-4 w-4" />
+          <span className="hidden sm:inline">Table of Contents</span>
+        </Button>
+        <span className="text-sm text-muted-foreground">Page {displayCurrentIndex}/{displayTotalPages}</span>
+      </div>
       
       <div className="flex flex-row items-center gap-2 justify-center w-full">
         <Button

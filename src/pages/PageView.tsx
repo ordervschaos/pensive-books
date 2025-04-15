@@ -9,6 +9,15 @@ import { PageNotFound } from "@/components/page/PageNotFound";
 import { useBookPermissions } from "@/hooks/use-book-permissions";
 import { setPageTitle } from "@/utils/pageTitle";
 import { Helmet } from "react-helmet-async";
+import { TableOfContents } from "@/components/page/TableOfContents";
+import { TableOfContent } from "lucide-react";
+import { 
+  SidebarProvider, 
+  Sidebar, 
+  SidebarContent, 
+  SidebarTrigger, 
+  SidebarInset 
+} from "@/components/ui/sidebar";
 
 const LOCALSTORAGE_BOOKMARKS_KEY = 'bookmarked_pages';
 
@@ -24,6 +33,7 @@ const PageView = () => {
   const [totalPages, setTotalPages] = useState(0);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isEditing, setIsEditing] = useState(false);
+  const [allPages, setAllPages] = useState<any[]>([]);
   
   const getNumericId = (param: string | undefined) => {
     if (!param) return 0;
@@ -132,6 +142,7 @@ const PageView = () => {
 
       if (pagesError) throw pagesError;
 
+      setAllPages(pagesData || []);
       setTotalPages(pagesData.length);
       const currentPageIndex = pagesData.findIndex(p => p.id === numericPageId);
       setCurrentIndex(currentPageIndex);
@@ -159,7 +170,6 @@ const PageView = () => {
   };
 
   const getTitleFromHtml = (html: string) => {
-    // the first line of the html content is the title and it's an h1 tag
     const doc = new DOMParser().parseFromString(html, 'text/html');
     const h1 = doc.querySelector('h1');
     const title = h1?.textContent?.trim() || 'Untitled';
@@ -278,7 +288,6 @@ const PageView = () => {
 
       if (error) throw error;
       if (nextPage) {
-        // Update bookmark when navigating to a new page
         updateBookmark(index);
         
         const slug = nextPage.title ? 
@@ -295,10 +304,8 @@ const PageView = () => {
     }
   };
 
-  // Handle keyboard navigation
   useEffect(() => {
     const handleKeyPress = (event: KeyboardEvent) => {
-      // Only allow navigation if not editing
       if (!isEditing) {
         if (event.key === 'ArrowRight' && currentIndex < totalPages - 1) {
           navigateToPage(currentIndex + 1);
@@ -317,7 +324,6 @@ const PageView = () => {
     fetchPageDetails();
   }, [bookId, pageId]);
 
-  // Add effect to update page title when page or book data changes
   useEffect(() => {
     if (page && book) {
       setPageTitle(`${page.title} - ${book.name}`);
@@ -344,18 +350,14 @@ const PageView = () => {
     );
   }
 
-  // Extract a text preview from HTML content for meta description
   const getTextPreview = (htmlContent: string) => {
-    // Create a temporary div to parse HTML
     const tempDiv = document.createElement('div');
     tempDiv.innerHTML = htmlContent || '';
     
-    // Get text content and limit to 160 characters for meta description
     const textContent = tempDiv.textContent || '';
     return textContent.substring(0, 160) + (textContent.length > 160 ? '...' : '');
   };
 
-  // Construct absolute URLs for Open Graph meta tags
   const currentUrl = window.location.href;
   const coverImageUrl = book.cover_url 
     ? new URL(book.cover_url, window.location.origin).toString()
@@ -365,59 +367,84 @@ const PageView = () => {
   const pageTitle = `${page.title} - ${book.name}`;
 
   return (
-    <div className="min-h-[calc(100vh-56px)] flex flex-col bg-background">
-      <Helmet>
-        {/* Primary Meta Tags */}
-        <title>{pageTitle}</title>
-        <meta name="title" content={pageTitle} />
-        <meta name="description" content={pageDescription} />
+    <SidebarProvider defaultOpen={false}>
+      <div className="min-h-[calc(100vh-56px)] flex flex-col bg-background w-full">
+        <Helmet>
+          <title>{pageTitle}</title>
+          <meta name="title" content={pageTitle} />
+          <meta name="description" content={pageDescription} />
+          
+          <meta property="og:type" content="article" />
+          <meta property="og:url" content={currentUrl} />
+          <meta property="og:title" content={pageTitle} />
+          <meta property="og:description" content={pageDescription} />
+          <meta property="og:image" content={coverImageUrl} />
+          
+          <meta property="twitter:card" content="summary_large_image" />
+          <meta property="twitter:url" content={currentUrl} />
+          <meta property="twitter:title" content={pageTitle} />
+          <meta property="twitter:description" content={pageDescription} />
+          <meta property="twitter:image" content={coverImageUrl} />
+          
+          {book.author && <meta property="article:author" content={book.author} />}
+          {book.published_at && <meta property="article:published_time" content={book.published_at} />}
+        </Helmet>
         
-        {/* Open Graph / Facebook */}
-        <meta property="og:type" content="article" />
-        <meta property="og:url" content={currentUrl} />
-        <meta property="og:title" content={pageTitle} />
-        <meta property="og:description" content={pageDescription} />
-        <meta property="og:image" content={coverImageUrl} />
-        
-        {/* Twitter */}
-        <meta property="twitter:card" content="summary_large_image" />
-        <meta property="twitter:url" content={currentUrl} />
-        <meta property="twitter:title" content={pageTitle} />
-        <meta property="twitter:description" content={pageDescription} />
-        <meta property="twitter:image" content={coverImageUrl} />
-        
-        {/* Book and article specific metadata */}
-        {book.author && <meta property="article:author" content={book.author} />}
-        {book.published_at && <meta property="article:published_time" content={book.published_at} />}
-      </Helmet>
-      
-      <div className="flex-1 container max-w-5xl mx-auto px-4 py-4 flex flex-col gap-4">
-        <div className="flex-1 flex flex-col">
-          <PageContent
-            content={page?.html_content || ''}
-            title={page?.title || 'Untitled'}
-            onSave={handleSave}
-            saving={saving}
-            pageType={page?.page_type}
-            editable={canEdit}
-            onEditingChange={setIsEditing}
-            canEdit={canEdit}
-            pageId={pageId}
-          />
-          <PageNavigation
-            bookId={bookId || ""}
-            currentIndex={currentIndex}
-            totalPages={totalPages}
-            onNavigate={navigateToPage}
-            nextPageTitle={nextPageTitle}
-            bookTitle={book?.name}
-            isEditing={isEditing}
-            onNewPage={createNewPage}
-            canEdit={canEdit}
-          />
+        <div className="flex flex-1 h-full">
+          <Sidebar variant="floating" side="left">
+            <SidebarContent>
+              <TableOfContents 
+                pages={allPages} 
+                bookId={bookId || ""} 
+                currentPageId={numericPageId}
+              />
+            </SidebarContent>
+          </Sidebar>
+          
+          <SidebarInset className="flex-1 flex flex-col">
+            <div className="sticky top-[56px] z-10 bg-background p-2 md:p-4 border-b flex items-center">
+              <SidebarTrigger className="ml-0 mr-4">
+                <TableOfContent className="h-5 w-5" />
+              </SidebarTrigger>
+              
+              <div className="flex-1 truncate">
+                <h1 className="text-lg font-medium truncate">{book.name}</h1>
+                <p className="text-sm text-muted-foreground truncate">
+                  {page.title || "Untitled"}
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex-1 container max-w-5xl mx-auto px-4 py-4 flex flex-col gap-4">
+              <div className="flex-1 flex flex-col">
+                <PageContent
+                  content={page?.html_content || ''}
+                  title={page?.title || 'Untitled'}
+                  onSave={handleSave}
+                  saving={saving}
+                  pageType={page?.page_type}
+                  editable={canEdit}
+                  onEditingChange={setIsEditing}
+                  canEdit={canEdit}
+                  pageId={pageId}
+                />
+                <PageNavigation
+                  bookId={bookId || ""}
+                  currentIndex={currentIndex}
+                  totalPages={totalPages}
+                  onNavigate={navigateToPage}
+                  nextPageTitle={nextPageTitle}
+                  bookTitle={book?.name}
+                  isEditing={isEditing}
+                  onNewPage={createNewPage}
+                  canEdit={canEdit}
+                />
+              </div>
+            </div>
+          </SidebarInset>
         </div>
       </div>
-    </div>
+    </SidebarProvider>
   );
 };
 
