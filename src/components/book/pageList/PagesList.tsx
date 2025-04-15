@@ -18,7 +18,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   DndContext,
   closestCenter,
@@ -63,6 +63,7 @@ export const PagesList = ({
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('grid');
   const [previousViewMode, setPreviousViewMode] = useState<'list' | 'grid'>('grid');
   const [bookmarkedPageIndex, setBookmarkedPageIndex] = useState<number | null>(null);
+  const bookmarkedPageRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const loadBookmarkedPage = async () => {
@@ -72,6 +73,16 @@ export const PagesList = ({
 
     loadBookmarkedPage();
   }, [bookId]);
+
+  // Scroll to bookmarked page when it's loaded
+  useEffect(() => {
+    if (bookmarkedPageIndex !== null && bookmarkedPageRef.current) {
+      bookmarkedPageRef.current.scrollIntoView({ 
+        behavior: 'smooth',
+        block: 'center'
+      });
+    }
+  }, [bookmarkedPageIndex, items]);
 
   useEffect(() => {
     setIsReordering(isReorderMode);
@@ -355,6 +366,7 @@ export const PagesList = ({
                       bookId={bookId}
                       onNavigate={(pageId) => navigate(`/book/${bookId}/page/${pageId}`)}
                       isBookmarked={bookmarkedPageIndex === page.page_index}
+                      ref={bookmarkedPageIndex === page.page_index ? bookmarkedPageRef : undefined}
                     />
                   ))}
                 </SortableContext>
@@ -369,6 +381,7 @@ export const PagesList = ({
                     onNavigate={(pageId) => navigate(`/book/${bookId}/page/${pageId}`)}
                     onDelete={isDeleteMode && canEdit ? handleDeletePage : undefined}
                     isBookmarked={bookmarkedPageIndex === page.page_index}
+                    ref={bookmarkedPageIndex === page.page_index ? bookmarkedPageRef : undefined}
                   />
                 ) : (
                   <PageCard
@@ -378,6 +391,7 @@ export const PagesList = ({
                     onNavigate={(pageId) => navigate(`/book/${bookId}/page/${pageId}`)}
                     onDelete={isDeleteMode && canEdit ? handleDeletePage : undefined}
                     isBookmarked={bookmarkedPageIndex === page.page_index}
+                    ref={bookmarkedPageIndex === page.page_index ? bookmarkedPageRef : undefined}
                   />
                 )
               ))

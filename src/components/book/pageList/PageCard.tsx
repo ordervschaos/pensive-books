@@ -3,8 +3,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { PageItemProps } from "./types";
+import { forwardRef } from "react";
 
-export const PageCard = ({ page, onNavigate, onDelete, isBookmarked }: PageItemProps) => {
+export const PageCard = forwardRef<HTMLDivElement, PageItemProps>(({ page, onNavigate, onDelete, isBookmarked }, ref) => {
   const wordCount = page.html_content && page.page_type === 'text' ? 
     page.html_content.replace(/<[^>]*>/g, '').trim().split(/\s+/).length : 
     0;
@@ -13,6 +14,7 @@ export const PageCard = ({ page, onNavigate, onDelete, isBookmarked }: PageItemP
 
   return (
     <Card 
+      ref={ref}
       onClick={() => onNavigate(page.id)}
       className="cursor-pointer hover:bg-accent/5 transition-colors relative group overflow-hidden"
     >
@@ -67,4 +69,4 @@ export const PageCard = ({ page, onNavigate, onDelete, isBookmarked }: PageItemP
       )}
     </Card>
   );
-}; 
+}); 

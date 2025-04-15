@@ -2,14 +2,16 @@ import { Trash2, BookmarkCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageItemProps } from "./types";
+import { forwardRef } from "react";
 
-export const RegularPageItem = ({ page, onNavigate, onDelete, isBookmarked }: PageItemProps) => {
+export const RegularPageItem = forwardRef<HTMLDivElement, PageItemProps>(({ page, onNavigate, onDelete, isBookmarked }, ref) => {
   const wordCount = page.html_content && page.page_type === 'text' ? 
     page.html_content.replace(/<[^>]*>/g, '').trim().split(/\s+/).length : 
     0;
 
   return (
     <div 
+      ref={ref}
       className="flex items-center justify-between py-4 px-6 hover:bg-accent/5 transition-colors border-b border-border last:border-0"
     >
       <div 
@@ -49,4 +51,4 @@ export const RegularPageItem = ({ page, onNavigate, onDelete, isBookmarked }: Pa
       )}
     </div>
   );
-}; 
+}); 

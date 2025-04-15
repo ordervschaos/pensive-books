@@ -2,8 +2,9 @@ import { GripVertical, BookmarkCheck } from "lucide-react";
 import { useSortable } from "@dnd-kit/sortable";
 import { Badge } from "@/components/ui/badge";
 import { PageItemProps } from "./types";
+import { forwardRef } from "react";
 
-export const SortablePageItem = ({ page, onNavigate, isBookmarked }: PageItemProps) => {
+export const SortablePageItem = forwardRef<HTMLDivElement, PageItemProps>(({ page, onNavigate, isBookmarked }, ref) => {
   const {
     attributes,
     listeners,
@@ -21,9 +22,21 @@ export const SortablePageItem = ({ page, onNavigate, isBookmarked }: PageItemPro
     page.html_content.replace(/<[^>]*>/g, '').trim().split(/\s+/).length : 
     0;
 
+  // Combine the sortable ref with our custom ref
+  const combinedRef = (node: HTMLDivElement) => {
+    setNodeRef(node);
+    if (ref) {
+      if (typeof ref === 'function') {
+        ref(node);
+      } else {
+        ref.current = node;
+      }
+    }
+  };
+
   return (
     <div 
-      ref={setNodeRef}
+      ref={combinedRef}
       style={style}
       className="flex items-center gap-3 py-4 px-6 hover:bg-accent/5 transition-colors group border-b border-border last:border-0"
     >
@@ -54,4 +67,4 @@ export const SortablePageItem = ({ page, onNavigate, isBookmarked }: PageItemPro
       </div>
     </div>
   );
-}; 
+}); 
