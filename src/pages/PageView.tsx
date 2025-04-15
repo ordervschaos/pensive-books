@@ -391,7 +391,7 @@ const PageView = () => {
         </Helmet>
         
         <div className="flex flex-1 h-full">
-          <Sidebar variant="floating" side="left">
+          <Sidebar variant="sidebar" side="left">
             <SidebarContent>
               <TableOfContents 
                 pages={allPages} 
@@ -402,17 +402,11 @@ const PageView = () => {
           </Sidebar>
           
           <SidebarInset className="flex-1 flex flex-col">
-            <div className="sticky top-[56px] z-10 bg-background p-2 md:p-4 border-b flex items-center">
+            <div className="top-[56px] z-10 bg-background p-2 md:p-4 flex items-center">
               <SidebarTrigger className="ml-0 mr-4">
                 <List className="h-5 w-5" />
               </SidebarTrigger>
               
-              <div className="flex-1 truncate">
-                <h1 className="text-lg font-medium truncate">{book.name}</h1>
-                <p className="text-sm text-muted-foreground truncate">
-                  {page.title || "Untitled"}
-                </p>
-              </div>
             </div>
             
             <div className="flex-1 container max-w-5xl mx-auto px-4 py-4 flex flex-col gap-4">
