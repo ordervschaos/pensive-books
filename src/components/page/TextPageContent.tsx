@@ -1,5 +1,6 @@
 import { TipTapEditor } from "@/components/editor/TipTapEditor";
 import { PageHistory } from "./PageHistory";
+import { useEffect, useState } from "react";
 
 interface TextPageContentProps {
   content: string;
@@ -23,8 +24,13 @@ export const TextPageContent = ({
   pageId
 }: TextPageContentProps) => {
   // Create initial content with title if it's empty
+  const [initialContent, setInitialContent] = useState(content || `<h1 class="page-title">${title}</h1><p></p>`);
 
-  const initialContent = content || `<h1 class="page-title">${title}</h1><p></p>`;
+  // Update initialContent when content or title changes
+  useEffect(() => {
+    console.log("TextPageContent: Content or title changed, updating initialContent");
+    setInitialContent(content || `<h1 class="page-title">${title}</h1><p></p>`);
+  }, [content, title]);
 
   return (
     <div className={`flex-1 ${!isEditing ? '' : ''}`}>

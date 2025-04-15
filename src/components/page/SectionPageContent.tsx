@@ -1,5 +1,5 @@
 import { Input } from "@/components/ui/input";
-import { ChangeEvent } from "react";
+import { ChangeEvent, useEffect, useState } from "react";
 import { TipTapEditor } from "@/components/editor/TipTapEditor";
 import { getEditorConfig } from "../editor/config/editorConfig";
 import StarterKit from '@tiptap/starter-kit';
@@ -26,7 +26,13 @@ export const SectionPageContent = ({
   canEdit = false
 }: SectionPageContentProps) => {
   const isMobile = useIsMobile();
-  const initialContent = content || `<h1 class="page-title">${title}</h1>`;
+  const [initialContent, setInitialContent] = useState(content || `<h1 class="page-title">${title}</h1>`);
+
+  // Update initialContent when content or title changes
+  useEffect(() => {
+    console.log("SectionPageContent: Content or title changed, updating initialContent");
+    setInitialContent(content || `<h1 class="page-title">${title}</h1>`);
+  }, [content, title]);
 
   const sectionEditorConfig = {
     ...getEditorConfig(initialContent, onChange),

@@ -95,10 +95,7 @@ const PageView = () => {
 
   const fetchPageDetails = async () => {
     try {
-      setLoading(true);
-      console.log("Fetching page details for pageId:", numericPageId);
-      
-      // Check if page is in cache
+      // Check if page is in cache first
       const cachedPage = pageCache.get(numericBookId, numericPageId);
       if (cachedPage) {
         console.log("Using cached page data");
@@ -132,9 +129,12 @@ const PageView = () => {
           setNextPageId(nextPage.id);
         }
 
-        setLoading(false);
         return;
       }
+      
+      // If not in cache, set loading state and fetch from API
+      setLoading(true);
+      console.log("Fetching page details for pageId:", numericPageId);
       
       // If not in cache, fetch from API
       const { data: pageData, error: pageError } = await supabase
@@ -331,29 +331,88 @@ const PageView = () => {
 
   const navigateToPage = async (index: number) => {
     try {
-      const { data: nextPage, error } = await supabase
-        .from("pages")
-        .select("id, title")
-        .eq("book_id", numericBookId)
-        .eq("page_index", index)
-        .eq("archived", false)
-        .single();
-
-      if (error) throw error;
-      if (nextPage) {
+      // First check if we have the next page in cache
+      const nextPage = allPages.find(p => p.page_index === index);
+      if (!nextPage) {
+        console.error("Next page not found in allPages");
+        return;
+      }
+      
+      const nextPageId = nextPage.id;
+      const cachedPage = pageCache.get(numericBookId, nextPageId);
+      
+      // If we have the page in cache, use it immediately without setting loading state
+      if (cachedPage) {
+        console.log("Using cached page for navigation");
+        setPage(cachedPage.page);
+        setBook(cachedPage.book);
+        setCurrentIndex(index);
         updateBookmark(index);
         
+        // Update URL without triggering a full page reload
         const slug = nextPage.title ? 
-          `${nextPage.id}-${nextPage.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}` : 
-          nextPage.id.toString();
-        navigate(`/book/${bookId}/page/${slug}`);
+          `${nextPageId}-${nextPage.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}` : 
+          nextPageId.toString();
+        
+        navigate(`/book/${bookId}/page/${slug}`, { replace: true });
+        return;
       }
+      
+      // If not in cache, proceed with normal navigation
+      updateBookmark(index);
+      
+      const slug = nextPage.title ? 
+        `${nextPageId}-${nextPage.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}` : 
+        nextPageId.toString();
+      
+      // Use navigate with replace: false to ensure the browser history is updated correctly
+      navigate(`/book/${bookId}/page/${slug}`, { replace: false });
+      
+      // Force a fetch of the new page data
+      setLoading(true);
+      const { data: pageData, error: pageError } = await supabase
+        .from("pages")
+        .select("*")
+        .eq("id", nextPageId)
+        .eq("book_id", numericBookId)
+        .eq("archived", false)
+        .maybeSingle();
+
+      if (pageError) throw pageError;
+      if (!pageData) {
+        console.log("Page not found:", nextPageId);
+        return;
+      }
+      
+      setPage(pageData);
+      
+      // Fetch book data if needed
+      const { data: bookData, error: bookError } = await supabase
+        .from("books")
+        .select("*")
+        .eq("id", numericBookId)
+        .eq("is_archived", false)
+        .maybeSingle();
+
+      if (bookError) throw bookError;
+      if (!bookData) {
+        console.log("Book not found:", numericBookId);
+        return;
+      }
+      
+      setBook(bookData);
+      
+      // Cache the page data
+      pageCache.set(numericBookId, nextPageId, pageData, bookData);
+      
+      setLoading(false);
     } catch (error: any) {
       toast({
         variant: "destructive",
         title: "Error navigating to page",
         description: error.message
       });
+      setLoading(false);
     }
   };
 
@@ -414,6 +473,20 @@ const PageView = () => {
       preloadNextPages();
     }
   }, [loading, page, book, preloadNextPages]);
+
+  // Add a useEffect to preload the next page when the current page changes
+  useEffect(() => {
+    if (nextPageId && !loading) {
+      // Preload the next page
+      preloadPages(numericBookId, [nextPageId])
+        .then(() => {
+          console.log(`Preloaded page ${nextPageId}`);
+        })
+        .catch(error => {
+          console.error('Error preloading next page:', error);
+        });
+    }
+  }, [nextPageId, numericBookId, loading]);
 
   if (loading || loadingPermissions) {
     return (

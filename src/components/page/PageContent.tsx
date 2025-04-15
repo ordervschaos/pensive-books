@@ -1,4 +1,4 @@
-import { useState, useCallback, ChangeEvent } from "react";
+import { useState, useCallback, ChangeEvent, useEffect } from "react";
 import { debounce } from "lodash";
 import { SectionPageContent } from "./SectionPageContent";
 import { TextPageContent } from "./TextPageContent";
@@ -33,6 +33,13 @@ export const PageContent = ({
   const [currentTitle, setCurrentTitle] = useState(title || '');
   const [editorJson, setEditorJson] = useState<any>(null);
   const { toast } = useToast();
+
+  useEffect(() => {
+    console.log("PageContent: Content prop changed, updating state");
+    setCurrentContent(content || '');
+    setCurrentTitle(title || '');
+    setInitialLoad(true);
+  }, [content, title]);
 
   const debouncedSave = useCallback(
     debounce(async (html: string, json: any) => {

@@ -1,4 +1,3 @@
-
 import { useEditor, EditorContent } from '@tiptap/react';
 import { useEffect } from 'react';
 import { useToast } from "@/hooks/use-toast";
@@ -37,6 +36,14 @@ export const TipTapEditor = ({
   const config = editorConfig || defaultConfig;
 
   const editor = useEditor(config);
+
+  // Add useEffect to update editor content when content prop changes
+  useEffect(() => {
+    if (editor && content !== editor.getHTML()) {
+      console.log("TipTapEditor: Content prop changed, updating editor content");
+      editor.commands.setContent(content);
+    }
+  }, [editor, content]);
 
   useEffect(() => {
     if (editor) {

@@ -50,12 +50,20 @@ export const PageNavigation = ({
   return (
     <div className="flex max-w-screen-lg items-center justify-center gap-4 flex-col my-4">
       <div className="flex items-center gap-2 justify-center">
+        <Button
+          variant="ghost"
+          onClick={toggleSidebar}
+          className="flex items-center gap-2"
+        >
+          <List className="h-4 w-4" />
+          <span className="hidden sm:inline">Table of Contents</span>
+        </Button>
         <span className="text-sm text-muted-foreground">Page {displayCurrentIndex}/{displayTotalPages}</span>
       </div>
       
       <div className="flex flex-row items-center gap-2 justify-center w-full">
         <Button
-          variant="outline"
+          variant="ghost"
           onClick={() => navigate(`/book/${bookId}`)}
           className="flex items-center gap-2 px-4 py-4 rounded-full bg-background border-border max-w-[80vw]"
         >
@@ -77,21 +85,13 @@ export const PageNavigation = ({
         ) : nextPageId ? (
           <Button
             variant="outline"
-            onClick={() => navigate(`/book/${bookId}/page/${nextPageId}`)}
+            onClick={() => onNavigate(currentIndex + 1)}
             className="flex items-center gap-2 px-4 py-4 rounded-full bg-background border-border max-w-[80vw]"
             disabled={isEditing}
-          >
-          
-          <PreloadLink
-            to={`/book/${bookId}/page/${nextPageId}`}
-            bookId={parseInt(bookId)}
-            pageId={nextPageId}
-            onClick={() => onNavigate(currentIndex + 1)}
           >
             <span className="text-lg truncate">
               Next: {nextPageTitle || 'Untitled'}
             </span>
-          </PreloadLink>
             <ArrowRight className="h-5 w-5 flex-shrink-0" />
           </Button>
         ) : (
@@ -110,7 +110,7 @@ export const PageNavigation = ({
 
         {canEdit && onNewPage && (
           <Button
-            variant="outline"
+            variant="ghost"
             onClick={() => onNewPage()}
             className="px-4 py-4 rounded-full bg-background border-border"
             title="Add new page"
