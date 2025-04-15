@@ -73,7 +73,7 @@ export const PageNavigation = ({
         {canEdit && onNewPage && (
           <Button
             variant="ghost"
-            onClick={() => onNewPage(currentIndex)}
+            onClick={() => onNewPage()}
             className="px-4 py-4 rounded-full bg-background border-border"
             title="Add new page"
           >
