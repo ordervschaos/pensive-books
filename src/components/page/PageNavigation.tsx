@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { ArrowRight, Plus, Undo2, ArrowLeft } from "lucide-react";
+import { ArrowRight, Plus, Undo2, ArrowLeft, TableOfContents } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useSidebar } from "@/components/ui/sidebar";
 
@@ -52,7 +52,7 @@ export const PageNavigation = ({
           onClick={toggleSidebar}
           className="flex items-center gap-2"
         >
-          <TableOfContent className="h-4 w-4" />
+          <TableOfContents className="h-4 w-4" />
           <span className="hidden sm:inline">Table of Contents</span>
         </Button>
         <span className="text-sm text-muted-foreground">Page {displayCurrentIndex}/{displayTotalPages}</span>

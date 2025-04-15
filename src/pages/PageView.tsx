@@ -9,8 +9,7 @@ import { PageNotFound } from "@/components/page/PageNotFound";
 import { useBookPermissions } from "@/hooks/use-book-permissions";
 import { setPageTitle } from "@/utils/pageTitle";
 import { Helmet } from "react-helmet-async";
-import { TableOfContents } from "@/components/page/TableOfContents";
-import { TableOfContent } from "lucide-react";
+import { TableOfContents } from "lucide-react";
 import { 
   SidebarProvider, 
   Sidebar, 
@@ -404,7 +403,7 @@ const PageView = () => {
           <SidebarInset className="flex-1 flex flex-col">
             <div className="sticky top-[56px] z-10 bg-background p-2 md:p-4 border-b flex items-center">
               <SidebarTrigger className="ml-0 mr-4">
-                <TableOfContent className="h-5 w-5" />
+                <TableOfContents className="h-5 w-5" />
               </SidebarTrigger>
               
               <div className="flex-1 truncate">
