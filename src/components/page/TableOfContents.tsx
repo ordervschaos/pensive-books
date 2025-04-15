@@ -1,9 +1,9 @@
-
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import { List } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
+import { PreloadLink } from "./PreloadLink";
 
 type PageItem = {
   id: number;
@@ -50,29 +50,35 @@ export function TableOfContents({
   }
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="px-4 py-3 flex items-center gap-2 font-medium">
-        <List className="h-5 w-5" />
-        <span>Table of Contents</span>
+    <div className="py-2">
+      <div className="px-4 py-2">
+        <h2 className="mb-2 text-lg font-semibold">Table of Contents</h2>
       </div>
       <Separator />
-      <div className="flex-1 overflow-auto">
-        <div className="py-2">
-          {pages.map((page) => (
-            <button
+      <nav className="grid items-start gap-2 p-2">
+        {pages.map((page) => {
+          const isActive = page.id === currentPageId;
+          const slug = page.title ? 
+            `${page.id}-${page.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}` : 
+            page.id.toString();
+          
+          return (
+            <PreloadLink
               key={page.id}
-              onClick={() => handlePageClick(page.id)}
+              to={`/book/${bookId}/page/${slug}`}
+              bookId={parseInt(bookId)}
+              pageId={page.id}
               className={cn(
-                "w-full px-4 py-2 text-left text-sm hover:bg-sidebar-accent transition-colors flex items-center",
-                page.id === currentPageId ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : ""
+                "group flex items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground",
+                isActive && "bg-accent"
               )}
+              onClick={() => onPageSelect && onPageSelect()}
             >
-              <span className="mr-2 text-muted-foreground">{page.page_index + 1}.</span>
-              <span className="truncate">{page.title || "Untitled"}</span>
-            </button>
-          ))}
-        </div>
-      </div>
+              <span className="truncate">{page.title || `Page ${page.page_index + 1}`}</span>
+            </PreloadLink>
+          );
+        })}
+      </nav>
     </div>
   );
 }

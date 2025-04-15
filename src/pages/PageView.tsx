@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -18,6 +18,9 @@ import {
   SidebarTrigger, 
   SidebarInset 
 } from "@/components/ui/sidebar";
+import { PagePreloader } from "@/components/page/PagePreloader";
+import { pageCache } from "@/services/PageCache";
+import { preloadPages, getNextPageIds } from "@/utils/pagePreloader";
 
 const LOCALSTORAGE_BOOKMARKS_KEY = 'bookmarked_pages';
 
@@ -34,6 +37,8 @@ const PageView = () => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isEditing, setIsEditing] = useState(false);
   const [allPages, setAllPages] = useState<any[]>([]);
+  const [nextPageId, setNextPageId] = useState<number | null>(null);
+  const [preloadedPageIds, setPreloadedPageIds] = useState<number[]>([]);
   
   const getNumericId = (param: string | undefined) => {
     if (!param) return 0;
@@ -44,6 +49,11 @@ const PageView = () => {
   const numericBookId = getNumericId(bookId);
   const numericPageId = getNumericId(pageId);
   const { canEdit, loading: loadingPermissions } = useBookPermissions(numericBookId.toString());
+
+  // Handle preloaded page data
+  const handlePreloaded = useCallback((preloadedPageId: number) => {
+    console.log(`Page ${preloadedPageId} has been preloaded`);
+  }, []);
 
   const updateBookmark = async (pageIndex: number) => {
     try {
@@ -88,6 +98,45 @@ const PageView = () => {
       setLoading(true);
       console.log("Fetching page details for pageId:", numericPageId);
       
+      // Check if page is in cache
+      const cachedPage = pageCache.get(numericBookId, numericPageId);
+      if (cachedPage) {
+        console.log("Using cached page data");
+        setPage(cachedPage.page);
+        setBook(cachedPage.book);
+        
+        // Still need to fetch all pages for navigation
+        const { data: pagesData, error: pagesError } = await supabase
+          .from("pages")
+          .select("id, title, page_index")
+          .eq("book_id", numericBookId)
+          .eq("archived", false)
+          .order("page_index", { ascending: true });
+
+        if (pagesError) throw pagesError;
+
+        setAllPages(pagesData || []);
+        setTotalPages(pagesData.length);
+        const currentPageIndex = pagesData.findIndex(p => p.id === numericPageId);
+        setCurrentIndex(currentPageIndex);
+
+        // Update bookmark when page loads
+        if (currentPageIndex !== -1) {
+          updateBookmark(currentPageIndex);
+        }
+
+        // Get next page title if not the last page
+        if (currentPageIndex < pagesData.length - 1) {
+          const nextPage = pagesData[currentPageIndex + 1];
+          setNextPageTitle(nextPage.title || "");
+          setNextPageId(nextPage.id);
+        }
+
+        setLoading(false);
+        return;
+      }
+      
+      // If not in cache, fetch from API
       const { data: pageData, error: pageError } = await supabase
         .from("pages")
         .select("*")
@@ -132,6 +181,9 @@ const PageView = () => {
       }
       
       setBook(bookData);
+      
+      // Cache the page data
+      pageCache.set(numericBookId, numericPageId, pageData, bookData);
 
       const { data: pagesData, error: pagesError } = await supabase
         .from("pages")
@@ -156,6 +208,7 @@ const PageView = () => {
       if (currentPageIndex < pagesData.length - 1) {
         const nextPage = pagesData[currentPageIndex + 1];
         setNextPageTitle(nextPage.title || "");
+        setNextPageId(nextPage.id);
       }
 
     } catch (error: any) {
@@ -330,6 +383,38 @@ const PageView = () => {
     }
   }, [page?.title, book?.name]);
 
+  // Preload multiple pages
+  const preloadNextPages = useCallback(async () => {
+    if (!numericBookId || !numericPageId) return;
+    
+    try {
+      // Get the next 3 page IDs
+      const nextIds = await getNextPageIds(numericBookId, numericPageId, 3);
+      
+      if (nextIds.length > 0) {
+        // Filter out already preloaded pages
+        const newPageIds = nextIds.filter(id => !preloadedPageIds.includes(id));
+        
+        if (newPageIds.length > 0) {
+          // Preload the new pages
+          await preloadPages(numericBookId, newPageIds);
+          
+          // Update the list of preloaded page IDs
+          setPreloadedPageIds(prev => [...prev, ...newPageIds]);
+        }
+      }
+    } catch (error) {
+      console.error("Error preloading next pages:", error);
+    }
+  }, [numericBookId, numericPageId, preloadedPageIds]);
+
+  // Preload next pages when the current page changes
+  useEffect(() => {
+    if (!loading && page && book) {
+      preloadNextPages();
+    }
+  }, [loading, page, book, preloadNextPages]);
+
   if (loading || loadingPermissions) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
@@ -390,6 +475,15 @@ const PageView = () => {
           {book.published_at && <meta property="article:published_time" content={book.published_at} />}
         </Helmet>
         
+        {/* Preload the next page if available */}
+        {nextPageId && (
+          <PagePreloader 
+            bookId={numericBookId} 
+            pageId={nextPageId} 
+            onPreloaded={handlePreloaded} 
+          />
+        )}
+        
         <div className="flex flex-1 h-full">
           <Sidebar variant="sidebar" side="left">
             <SidebarContent>
@@ -432,6 +526,7 @@ const PageView = () => {
                   isEditing={isEditing}
                   onNewPage={createNewPage}
                   canEdit={canEdit}
+                  nextPageId={nextPageId}
                 />
               </div>
             </div>
