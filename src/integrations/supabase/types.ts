@@ -538,6 +538,19 @@ export type Database = {
           title: string
         }[]
       }
+      create_next_page: {
+        Args: { p_book_id: number }
+        Returns: {
+          id: number
+          book_id: number
+          page_index: number
+          content: Json
+          html_content: string
+          page_type: string
+          created_at: string
+          updated_at: string
+        }[]
+      }
       similarity_search: {
         Args: {
           query_embedding: string

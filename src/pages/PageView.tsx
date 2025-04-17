@@ -262,7 +262,7 @@ const PageView = () => {
     }
   };
 
-  const createNewPage = async (insertAfterIndex?: number) => {
+  const createNewPage = async () => {
     if (!canEdit) {
       toast({
         variant: "destructive",
@@ -273,41 +273,10 @@ const PageView = () => {
     }
 
     try {
-      // If no specific index is provided, append to the end
-      const targetIndex = insertAfterIndex !== undefined ? insertAfterIndex + 1 : currentIndex + 1;
-      
-      // First, update the page indices of all pages that come after the insertion point
-      const { data: pagesToUpdate, error: fetchError } = await supabase
-        .from('pages')
-        .select('id, page_index')
-        .eq('book_id', parseInt(bookId || "0"))
-        .gte('page_index', targetIndex)
-        .order('page_index', { ascending: false }); // Order in descending order
-      
-      if (fetchError) throw fetchError;
-      
-      // Update each page's index to make room for the new page
-      // Process in descending order to avoid conflicts with the unique constraint
-      if (pagesToUpdate && pagesToUpdate.length > 0) {
-        for (const page of pagesToUpdate) {
-          const { error: updateError } = await supabase
-            .from('pages')
-            .update({ page_index: page.page_index + 1 })
-            .eq('id', page.id);
-          
-          if (updateError) throw updateError;
-        }
-      }
-      
-      // Now insert the new page at the target index
+      // Insert a new page with page_index set to the max + 1 in a single query
       const { data: newPage, error } = await supabase
-        .from('pages')
-        .insert({
-          book_id: parseInt(bookId || "0"),
-          page_index: targetIndex,
-          content: {},
-          html_content: '',
-          page_type: 'text'
+        .rpc('create_next_page', {
+          p_book_id: parseInt(bookId || "0")
         })
         .select()
         .single();

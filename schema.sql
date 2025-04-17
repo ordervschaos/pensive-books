@@ -250,6 +250,45 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION create_next_page(p_book_id INTEGER)
+RETURNS TABLE (
+  id INTEGER,
+  book_id INTEGER,
+  page_index INTEGER,
+  content JSONB,
+  html_content TEXT,
+  page_type TEXT,
+  created_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ
+) AS $$
+DECLARE
+  next_index INTEGER;
+BEGIN
+  -- Get the maximum page_index for the book, defaulting to -1 if no pages exist
+  SELECT COALESCE(MAX(page_index), -1) INTO next_index
+  FROM pages
+  WHERE book_id = p_book_id;
+  
+  -- Insert the new page with the next index
+  RETURN QUERY
+  INSERT INTO pages (
+    book_id,
+    page_index,
+    content,
+    html_content,
+    page_type
+  )
+  VALUES (
+    p_book_id,
+    next_index + 1,
+    '{}'::JSONB,
+    '',
+    'text'
+  )
+  RETURNING *;
+END;
+$$ LANGUAGE plpgsql;
+
 ALTER FUNCTION "public"."update_habit_timestamp"() OWNER TO "postgres";
 
 CREATE OR REPLACE FUNCTION "public"."update_modified_column"() RETURNS "trigger"
