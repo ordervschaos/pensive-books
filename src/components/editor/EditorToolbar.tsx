@@ -1,5 +1,5 @@
 import { Editor } from '@tiptap/react';
-import { Bold, Italic, Quote, Code2, Link2, List, ListOrdered, Image as ImageIcon, Undo, Redo, Pencil, Eye, Table as TableIcon, MoreHorizontal } from "lucide-react";
+import { Bold, Italic, Quote, Code2, Link2, List, ListOrdered, Image as ImageIcon, Undo, Redo, Pencil, Eye, Table as TableIcon, MoreHorizontal, Heading1, Heading2, Heading3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useSupabaseUpload } from "@/hooks/use-supabase-upload";
@@ -8,7 +8,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
+import { useMediaQuery } from "@/hooks/use-media-query";
 
 interface EditorToolbarProps {
   editor: Editor | null;
@@ -21,6 +23,7 @@ interface EditorToolbarProps {
 export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, customButtons }: EditorToolbarProps) => {
   const { toast } = useToast();
   const uploadImage = useSupabaseUpload();
+  const isMobile = useMediaQuery("(max-width: 768px)");
 
   if (!editor) return null;
 
@@ -86,72 +89,156 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
 
   const isTableActive = editor.isActive('table');
 
+  const renderTextFormattingButtons = () => (
+    <>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => editor.chain().focus().toggleBold().run()}
+        className={editor.isActive('bold') ? 'bg-muted' : ''}
+      >
+        <Bold className="h-4 w-4" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => editor.chain().focus().toggleItalic().run()}
+        className={editor.isActive('italic') ? 'bg-muted' : ''}
+      >
+        <Italic className="h-4 w-4" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => editor.chain().focus().toggleBlockquote().run()}
+        className={editor.isActive('blockquote') ? 'bg-muted' : ''}
+      >
+        <Quote className="h-4 w-4" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => editor.chain().focus().toggleCodeBlock().run()}
+        className={editor.isActive('codeBlock') ? 'bg-muted' : ''}
+      >
+        <Code2 className="h-4 w-4" />
+      </Button>
+    </>
+  );
+
+  const renderListButtons = () => (
+    <>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => editor.chain().focus().toggleBulletList().run()}
+        className={editor.isActive('bulletList') ? 'bg-muted' : ''}
+      >
+        <List className="h-4 w-4" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => editor.chain().focus().toggleOrderedList().run()}
+        className={editor.isActive('orderedList') ? 'bg-muted' : ''}
+      >
+        <ListOrdered className="h-4 w-4" />
+      </Button>
+    </>
+  );
+
+  const renderHistoryButtons = () => (
+    <>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => editor.chain().focus().undo().run()}
+        disabled={!editor.can().undo()}
+      >
+        <Undo className="h-4 w-4" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => editor.chain().focus().redo().run()}
+        disabled={!editor.can().redo()}
+      >
+        <Redo className="h-4 w-4" />
+      </Button>
+    </>
+  );
+
   return (
     <div className={`rounded-md flex gap-1 items-center p-1 flex-wrap z-50 ${isEditing ? 'sticky top-4 bg-muted/50 shadow-sm backdrop-blur-sm' : ''}`}>
       {isEditing && (
         <>
-          <div className="flex gap-1">
-            {[2, 3, 4, 5, 6].map((level) => (
-              <Button
-                key={level}
-                variant="ghost"
-                size="sm"
-                onClick={() => editor.chain().focus().toggleHeading({ level: level as 2 | 3 | 4 | 5 | 6 }).run()}
-                className={editor.isActive('heading', { level: level as 2 | 3 | 4 | 5 | 6 }) ? 'bg-muted' : ''}
-              >
-                h{level}
-              </Button>
-            ))}
-          </div>
+          {!isMobile ? (
+            <>
+              <div className="flex gap-1">
+                {[2, 3, 4, 5, 6].map((level) => (
+                  <Button
+                    key={level}
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => editor.chain().focus().toggleHeading({ level: level as 2 | 3 | 4 | 5 | 6 }).run()}
+                    className={editor.isActive('heading', { level: level as 2 | 3 | 4 | 5 | 6 }) ? 'bg-muted' : ''}
+                  >
+                    h{level}
+                  </Button>
+                ))}
+              </div>
+              <div className="w-px h-4 bg-border mx-1" />
+              {renderTextFormattingButtons()}
+              {renderListButtons()}
+            </>
+          ) : (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-56">
+                <DropdownMenuItem onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}>
+                  <Heading2 className="mr-2 h-4 w-4" />
+                  Heading 2
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}>
+                  <Heading3 className="mr-2 h-4 w-4" />
+                  Heading 3
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => editor.chain().focus().toggleBold().run()}>
+                  <Bold className="mr-2 h-4 w-4" />
+                  Bold
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => editor.chain().focus().toggleItalic().run()}>
+                  <Italic className="mr-2 h-4 w-4" />
+                  Italic
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => editor.chain().focus().toggleBlockquote().run()}>
+                  <Quote className="mr-2 h-4 w-4" />
+                  Quote
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => editor.chain().focus().toggleCodeBlock().run()}>
+                  <Code2 className="mr-2 h-4 w-4" />
+                  Code
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => editor.chain().focus().toggleBulletList().run()}>
+                  <List className="mr-2 h-4 w-4" />
+                  Bullet List
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => editor.chain().focus().toggleOrderedList().run()}>
+                  <ListOrdered className="mr-2 h-4 w-4" />
+                  Numbered List
+                </DropdownMenuItem>
+                {/* history buttons */}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+
           <div className="w-px h-4 bg-border mx-1" />
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => editor.chain().focus().toggleBold().run()}
-            className={editor.isActive('bold') ? 'bg-muted' : ''}
-          >
-            <Bold className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => editor.chain().focus().toggleItalic().run()}
-            className={editor.isActive('italic') ? 'bg-muted' : ''}
-          >
-            <Italic className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => editor.chain().focus().toggleBlockquote().run()}
-            className={editor.isActive('blockquote') ? 'bg-muted' : ''}
-          >
-            <Quote className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => editor.chain().focus().toggleCodeBlock().run()}
-            className={editor.isActive('codeBlock') ? 'bg-muted' : ''}
-          >
-            <Code2 className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => editor.chain().focus().toggleBulletList().run()}
-            className={editor.isActive('bulletList') ? 'bg-muted' : ''}
-          >
-            <List className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => editor.chain().focus().toggleOrderedList().run()}
-            className={editor.isActive('orderedList') ? 'bg-muted' : ''}
-          >
-            <ListOrdered className="h-4 w-4" />
-          </Button>
           
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -185,6 +272,9 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
               <DropdownMenuItem onClick={deleteTable} disabled={!isTableActive}>
                 Delete Table
               </DropdownMenuItem>
+              <DropdownMenuItem>
+                {isMobile && customButtons}
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
           
@@ -212,23 +302,9 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
             </Button>
           </div>
           <div className="ml-auto flex gap-1 items-center">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => editor.chain().focus().undo().run()}
-              disabled={!editor.can().undo()}
-            >
-              <Undo className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => editor.chain().focus().redo().run()}
-              disabled={!editor.can().redo()}
-            >
-              <Redo className="h-4 w-4" />
-            </Button>
-            {customButtons}
+            {renderHistoryButtons()}
+            {!isMobile && customButtons}
+            
           </div>
         </>
       )}
