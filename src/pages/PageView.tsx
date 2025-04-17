@@ -282,7 +282,7 @@ const PageView = () => {
         .single();
 
       if (error) throw error;
-
+      setIsEditing(true);
       navigate(`/book/${bookId}/page/${newPage.id}`);
 
       toast({
@@ -312,7 +312,6 @@ const PageView = () => {
       
       // If we have the page in cache, use it immediately without setting loading state
       if (cachedPage) {
-        console.log("Using cached page for navigation");
         setPage(cachedPage.page);
         setBook(cachedPage.book);
         setCurrentIndex(index);
@@ -349,7 +348,6 @@ const PageView = () => {
 
       if (pageError) throw pageError;
       if (!pageData) {
-        console.log("Page not found:", nextPageId);
         return;
       }
       
@@ -365,7 +363,6 @@ const PageView = () => {
 
       if (bookError) throw bookError;
       if (!bookData) {
-        console.log("Book not found:", numericBookId);
         return;
       }
       
@@ -388,6 +385,7 @@ const PageView = () => {
   useEffect(() => {
     const handleKeyPress = (event: KeyboardEvent) => {
       if (!isEditing) {
+
         if (event.key === 'ArrowRight' && currentIndex < totalPages - 1) {
           navigateToPage(currentIndex + 1);
         } else if (event.key === 'ArrowLeft' && currentIndex > 0) {
@@ -401,7 +399,6 @@ const PageView = () => {
   }, [currentIndex, totalPages, isEditing]);
 
   useEffect(() => {
-    console.log("PageId changed, fetching new page details");
     fetchPageDetails();
   }, [bookId, pageId]);
 

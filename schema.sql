@@ -265,9 +265,9 @@ DECLARE
   next_index INTEGER;
 BEGIN
   -- Get the maximum page_index for the book, defaulting to -1 if no pages exist
-  SELECT COALESCE(MAX(page_index), -1) INTO next_index
+  SELECT COALESCE(MAX(pages.page_index), -1) INTO next_index
   FROM pages
-  WHERE book_id = p_book_id;
+  WHERE pages.book_id = p_book_id;
   
   -- Insert the new page with the next index
   RETURN QUERY
@@ -285,7 +285,15 @@ BEGIN
     '',
     'text'
   )
-  RETURNING *;
+  RETURNING 
+    pages.id,
+    pages.book_id,
+    pages.page_index,
+    pages.content,
+    pages.html_content,
+    pages.page_type,
+    pages.created_at,
+    pages.updated_at;
 END;
 $$ LANGUAGE plpgsql;
 
