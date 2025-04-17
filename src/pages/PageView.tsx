@@ -535,12 +535,6 @@ const PageView = () => {
           </Sidebar>
           
           <SidebarInset className="flex-1 flex flex-col">
-            <div className="top-[56px] z-10 bg-background p-2 md:p-4 flex items-center">
-              <SidebarTrigger className="ml-0 mr-4">
-                <List className="h-5 w-5" />
-              </SidebarTrigger>
-              
-            </div>
             
             <div className="flex-1 container max-w-5xl mx-auto px-4 py-4 flex flex-col gap-4">
               <div className="flex-1 flex flex-col">
