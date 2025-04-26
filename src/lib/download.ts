@@ -32,8 +32,23 @@ const loadImage = (url: string): Promise<HTMLImageElement> => {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
-    img.onload = () => resolve(img);
-    img.onerror = reject;
+    
+    // Set a timeout to prevent hanging
+    const timeoutId = setTimeout(() => {
+      img.src = ''; // Cancel loading
+      reject(new Error(`Image load timeout: ${url}`));
+    }, 10000); // 10 second timeout
+    
+    img.onload = () => {
+      clearTimeout(timeoutId);
+      resolve(img);
+    };
+    
+    img.onerror = (error) => {
+      clearTimeout(timeoutId);
+      reject(new Error(`Failed to load image: ${url}`));
+    };
+    
     img.src = url;
   });
 };
@@ -71,102 +86,120 @@ const processHtmlContent = (html: string): { lines: string[]; images: Array<{ ur
     br.replaceWith('\n');
   });
 
-  // Track images and their positions
-  div.querySelectorAll('img').forEach(img => {
-    const src = img.getAttribute('src');
-    if (src) {
-      // Store the image URL and the current line count
-      images.push({
-        url: src,
-        afterLine: lines.length
-      });
-      // Add extra spacing for the image
-      lines.push('\n');
-      lines.push('\n');
-    }
-  });
-
-  // Process headings with more spacing
-  div.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach(heading => {
-    lines.push('\n'); // Extra line break before heading
-    lines.push(heading.textContent?.trim() || '');
-    lines.push('\n'); // Extra line break after heading
-  });
-
-  // Process paragraphs with proper spacing
-  div.querySelectorAll('p').forEach(p => {
-    const text = p.textContent?.trim();
-    if (text) {
-      lines.push('\n'); // Line break before paragraph
-      // Split paragraph into individual lines to preserve manual line breaks
-      text.split('\n').forEach(line => {
-        if (line.trim()) {
-          lines.push(line.trim());
-        } else {
-          // Add empty line for <br> tags that resulted in empty lines
-          lines.push('');
-        }
-      });
-      lines.push('\n'); // Line break after paragraph
-    }
-  });
-
-  // Process lists with proper indentation and spacing
-  div.querySelectorAll('ul, ol').forEach(list => {
-    lines.push('\n'); // Line break before list
-    list.querySelectorAll('li').forEach(li => {
-      const text = li.textContent?.trim();
+  // Process the content in order, handling images as they appear
+  const processNode = (node: Node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = node.textContent?.trim();
       if (text) {
-        // Handle multi-line list items
-        text.split('\n').forEach((line, index) => {
-          if (line.trim()) {
-            if (index === 0) {
-              lines.push(`  • ${line.trim()}`);
+        lines.push(text);
+      }
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      const element = node as Element;
+      
+      // Handle images
+      if (element.tagName.toLowerCase() === 'img') {
+        const src = element.getAttribute('src');
+        if (src) {
+          // Store the image URL and the current line count
+          images.push({
+            url: src,
+            afterLine: lines.length
+          });
+          // Add extra spacing for the image
+          lines.push('\n');
+          lines.push('\n');
+        }
+      }
+      // Handle headings with more spacing
+      else if (element.tagName.match(/^h[1-6]$/i)) {
+        lines.push('\n'); // Extra line break before heading
+        lines.push(element.textContent?.trim() || '');
+        lines.push('\n'); // Extra line break after heading
+      }
+      // Handle paragraphs with proper spacing
+      else if (element.tagName.toLowerCase() === 'p') {
+        const text = element.textContent?.trim();
+        if (text) {
+          lines.push('\n'); // Line break before paragraph
+          // Split paragraph into individual lines to preserve manual line breaks
+          text.split('\n').forEach(line => {
+            if (line.trim()) {
+              lines.push(line.trim());
             } else {
-              lines.push(`    ${line.trim()}`); // Extra indent for wrapped lines
+              // Add empty line for <br> tags that resulted in empty lines
+              lines.push('');
             }
-          } else {
-            // Add empty line for <br> tags in list items
-            lines.push('');
+          });
+          lines.push('\n'); // Line break after paragraph
+        }
+      }
+      // Handle lists with proper indentation and spacing
+      else if (element.tagName.toLowerCase() === 'ul' || element.tagName.toLowerCase() === 'ol') {
+        lines.push('\n'); // Line break before list
+        element.querySelectorAll('li').forEach(li => {
+          const text = li.textContent?.trim();
+          if (text) {
+            // Handle multi-line list items
+            text.split('\n').forEach((line, index) => {
+              if (line.trim()) {
+                if (index === 0) {
+                  lines.push(`  • ${line.trim()}`);
+                } else {
+                  lines.push(`    ${line.trim()}`); // Extra indent for wrapped lines
+                }
+              } else {
+                // Add empty line for <br> tags in list items
+                lines.push('');
+              }
+            });
           }
         });
+        lines.push('\n'); // Line break after list
       }
-    });
-    lines.push('\n'); // Line break after list
-  });
-
-  // Process blockquotes with proper formatting
-  div.querySelectorAll('blockquote').forEach(quote => {
-    lines.push('\n'); // Line break before quote
-    const text = quote.textContent?.trim();
-    if (text) {
-      text.split('\n').forEach(line => {
-        if (line.trim()) {
-          lines.push(`  "${line.trim()}"`);
-        } else {
-          // Add empty line for <br> tags in quotes
-          lines.push('');
+      // Handle blockquotes with proper formatting
+      else if (element.tagName.toLowerCase() === 'blockquote') {
+        lines.push('\n'); // Line break before quote
+        const text = element.textContent?.trim();
+        if (text) {
+          text.split('\n').forEach(line => {
+            if (line.trim()) {
+              lines.push(`  "${line.trim()}"`);
+            } else {
+              // Add empty line for <br> tags in quotes
+              lines.push('');
+            }
+          });
         }
-      });
-    }
-    lines.push('\n'); // Line break after quote
-  });
-
-  // Process code blocks with proper formatting and spacing
-  div.querySelectorAll('pre, code').forEach(code => {
-    lines.push('\n'); // Line break before code block
-    const text = code.textContent?.trim();
-    if (text) {
-      text.split('\n').forEach(line => {
-        if (line.trim()) {
-          lines.push(`  ${line}`);
-        } else {
-          // Add empty line for <br> tags in code blocks
-          lines.push('');
+        lines.push('\n'); // Line break after quote
+      }
+      // Handle code blocks with proper formatting and spacing
+      else if (element.tagName.toLowerCase() === 'pre' || element.tagName.toLowerCase() === 'code') {
+        lines.push('\n'); // Line break before code block
+        const text = element.textContent?.trim();
+        if (text) {
+          text.split('\n').forEach(line => {
+            if (line.trim()) {
+              lines.push(`  ${line}`);
+            } else {
+              // Add empty line for <br> tags in code blocks
+              lines.push('');
+            }
+          });
         }
-      });
+        lines.push('\n'); // Line break after code block
+      }
+      // Process child nodes for other elements
+      else {
+        Array.from(element.childNodes).forEach(child => {
+          processNode(child);
+        });
+      }
     }
-    lines.push('\n'); // Line break after code block
+  };
+
+  // Process all nodes in the div
+  Array.from(div.childNodes).forEach(node => {
+    processNode(node);
   });
 
   // Filter out consecutive empty lines
@@ -194,7 +227,17 @@ export const generatePDF = async (
   options: DownloadOptions
 ): Promise<GenerateResult> => {
   try {
+    // Validate input
+    if (!options.bookId) {
+      throw new Error('Book ID is required');
+    }
+    
     const pages = await fetchBookPages(options.bookId);
+    
+    // Check if we have any pages
+    if (!pages || pages.length === 0) {
+      throw new Error('No pages found for the specified book');
+    }
     
     // Initialize PDF
     const pdf = new jsPDF({
@@ -240,9 +283,13 @@ export const generatePDF = async (
 
         // Add a single light overlay for better text visibility
         pdf.setFillColor(0, 0, 0);
-        pdf.setGState(new pdf.GState({ opacity: 0.4 }));
+        // Create a proper GState object
+        const overlayGState = new pdf.GState({ opacity: 0.4 });
+        pdf.setGState(overlayGState);
         pdf.rect(0, 0, pageWidth, pageHeight, 'F');
-        pdf.setGState(new pdf.GState({ opacity: 1 }));
+        // Reset to normal opacity
+        const coverNormalGState = new pdf.GState({ opacity: 1 });
+        pdf.setGState(coverNormalGState);
 
         // Add title text with white color and ensure it's on top
         pdf.setTextColor(255, 255, 255);
@@ -359,7 +406,9 @@ export const generatePDF = async (
 
     // Reset text color and opacity for content pages
     pdf.setTextColor(0, 0, 0);
-    pdf.setGState(new pdf.GState({ opacity: 1 }));
+    // Reset to normal opacity
+    const contentGState = new pdf.GState({ opacity: 1 });
+    pdf.setGState(contentGState);
 
     // Add TOC placeholder page - we'll come back to fill it later
     pdf.addPage();
@@ -367,6 +416,7 @@ export const generatePDF = async (
     const tocPageNumber = currentPdfPage;
 
     // First pass: Generate content and track actual page numbers
+    let sectionCount = 0;
     for (const page of pages) {
       pdf.addPage();
       currentPdfPage++;
@@ -393,6 +443,7 @@ export const generatePDF = async (
           pdf.text(line, centerX, centerY + (index * lineHeight));
         });
         
+        sectionCount++;
         continue;
       }
 
@@ -438,6 +489,12 @@ export const generatePDF = async (
           try {
             const img = await loadImage(imageToInsert.url);
             
+            // Check if image loaded successfully
+            if (!img || !img.width || !img.height) {
+              console.warn('Failed to load image properly:', imageToInsert.url);
+              continue;
+            }
+            
             let imgWidth = contentWidth;
             let imgHeight = (img.height / img.width) * imgWidth;
 
@@ -453,10 +510,20 @@ export const generatePDF = async (
             }
 
             const xPos = (pageWidth - imgWidth) / 2;
-            pdf.addImage(img, 'PNG', xPos, y, imgWidth, imgHeight);
-            y += imgHeight + paragraphSpacing;
+            
+            // Use a try-catch block for the actual image insertion
+            try {
+              pdf.addImage(img, 'PNG', xPos, y, imgWidth, imgHeight);
+              y += imgHeight + paragraphSpacing;
+            } catch (imgError) {
+              console.warn('Error adding image to PDF:', imgError);
+              // Continue without the image
+              y += paragraphSpacing;
+            }
           } catch (error) {
             console.warn('Failed to add image to PDF:', error);
+            // Continue without the image
+            y += paragraphSpacing;
           }
         }
 
@@ -471,7 +538,6 @@ export const generatePDF = async (
     pdf.text('Table of Contents', margin, margin + 20);
 
     let tocY = margin + 60;
-    let sectionCount = 0;
     let pageCount = 0;
 
     // Generate TOC with accurate page numbers
@@ -601,6 +667,12 @@ export const generateAndDownloadEPUB = async (
     const pages = await fetchBookPages(options.bookId);
     const { processedPages, images } = await prepareEPUBContent(pages);
 
+    // Ensure processedPages have the correct type for generateEPUB
+    const typedProcessedPages = processedPages.map(page => ({
+      ...page,
+      page_type: page.page_type as 'section' | 'page'
+    }));
+
     const epubOptions: EPUBOptions = {
       title: options.name,
       subtitle: options.subtitle,
@@ -609,7 +681,7 @@ export const generateAndDownloadEPUB = async (
       identifier: options.bookId.toString()
     };
     // Generate the EPUB file
-    const epubBlob = await generateEPUB(epubOptions, processedPages, images, options.showTextOnCover);
+    const epubBlob = await generateEPUB(epubOptions, typedProcessedPages, images, options.showTextOnCover);
 
     if (options.returnBlob) {
       return { success: true, blob: epubBlob };
