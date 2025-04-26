@@ -96,41 +96,41 @@ const PageView = () => {
   const fetchPageDetails = async () => {
     try {
       // Check if page is in cache first
-      const cachedPage = pageCache.get(numericBookId, numericPageId);
-      if (cachedPage) {
-        console.log("Using cached page data");
-        setPage(cachedPage.page);
-        setBook(cachedPage.book);
+      // const cachedPage = pageCache.get(numericBookId, numericPageId);
+      // if (cachedPage) {
+      //   console.log("Using cached page data");
+      //   setPage(cachedPage.page);
+      //   setBook(cachedPage.book);
         
-        // Still need to fetch all pages for navigation
-        const { data: pagesData, error: pagesError } = await supabase
-          .from("pages")
-          .select("id, title, page_index")
-          .eq("book_id", numericBookId)
-          .eq("archived", false)
-          .order("page_index", { ascending: true });
+      //   // Still need to fetch all pages for navigation
+      //   const { data: pagesData, error: pagesError } = await supabase
+      //     .from("pages")
+      //     .select("id, title, page_index")
+      //     .eq("book_id", numericBookId)
+      //     .eq("archived", false)
+      //     .order("page_index", { ascending: true });
 
-        if (pagesError) throw pagesError;
+      //   if (pagesError) throw pagesError;
 
-        setAllPages(pagesData || []);
-        setTotalPages(pagesData.length);
-        const currentPageIndex = pagesData.findIndex(p => p.id === numericPageId);
-        setCurrentIndex(currentPageIndex);
+      //   setAllPages(pagesData || []);
+      //   setTotalPages(pagesData.length);
+      //   const currentPageIndex = pagesData.findIndex(p => p.id === numericPageId);
+      //   setCurrentIndex(currentPageIndex);
 
-        // Update bookmark when page loads
-        if (currentPageIndex !== -1) {
-          updateBookmark(currentPageIndex);
-        }
+      //   // Update bookmark when page loads
+      //   if (currentPageIndex !== -1) {
+      //     updateBookmark(currentPageIndex);
+      //   }
 
-        // Get next page title if not the last page
-        if (currentPageIndex < pagesData.length - 1) {
-          const nextPage = pagesData[currentPageIndex + 1];
-          setNextPageTitle(nextPage.title || "");
-          setNextPageId(nextPage.id);
-        }
+      //   // Get next page title if not the last page
+      //   if (currentPageIndex < pagesData.length - 1) {
+      //     const nextPage = pagesData[currentPageIndex + 1];
+      //     setNextPageTitle(nextPage.title || "");
+      //     setNextPageId(nextPage.id);
+      //   }
 
-        return;
-      }
+      //   return;
+      // }
       
       // If not in cache, set loading state and fetch from API
       setLoading(true);
