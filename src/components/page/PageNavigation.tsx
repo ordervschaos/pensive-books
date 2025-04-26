@@ -63,7 +63,7 @@ export const PageNavigation = ({
       <div className="flex flex-row items-center gap-2 justify-center w-full">
         <Button
           variant="ghost"
-          onClick={() => navigate(`/book/${bookId}`)}
+          onClick={() => onNavigate(currentIndex - 1)}
           className="flex items-center gap-2 px-4 py-4 rounded-full bg-background border-border max-w-[80vw]"
         >
           <ArrowLeft className="h-5 w-5 flex-shrink-0" />
