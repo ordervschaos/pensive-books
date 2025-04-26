@@ -32,23 +32,131 @@ export const BookInfo = ({
   const [sending, setSending] = useState(false);
 
   const handleDownloadPDF = async () => {
-    const result = await generatePDF({ 
-      bookId, 
-      name, 
-      author,
-      coverUrl
-    });
-    
-    if (!result.success) {
+    try {
+      // Fetch all pages for the book
+      const { data: pages, error } = await supabase
+        .from("pages")
+        .select("*")
+        .eq("book_id", bookId)
+        .eq("archived", false)
+        .order("page_index", { ascending: true });
+
+      if (error) throw error;
+      if (!pages || pages.length === 0) {
+        throw new Error('No pages found for the book');
+      }
+
+      // Create a new window for printing
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        throw new Error('Failed to open print window');
+      }
+
+      // Create the HTML content for printing
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>${name}</title>
+            <style>
+              body {
+                font-family: Arial, sans-serif;
+                line-height: 1.6;
+                margin: 0;
+                padding: 20px;
+                max-width: 800px;
+                margin: 0 auto;
+              }
+              .cover {
+                text-align: center;
+                margin-bottom: 40px;
+                page-break-after: always;
+              }
+              .cover img {
+                max-width: 300px;
+                height: auto;
+                margin-bottom: 20px;
+              }
+              .cover h1 {
+                font-size: 2.5em;
+                margin-bottom: 10px;
+              }
+              .cover h2 {
+                font-size: 1.5em;
+                color: #666;
+                margin-bottom: 20px;
+              }
+              .cover p {
+                font-size: 1.2em;
+                color: #444;
+              }
+              .section {
+                text-align: center;
+                margin: 40px 0;
+                page-break-before: always;
+              }
+              .section h2 {
+                font-size: 2em;
+                margin-bottom: 20px;
+              }
+              .content {
+                margin: 20px 0;
+              }
+              .content img {
+                max-width: 100%;
+                height: auto;
+                margin: 20px 0;
+              }
+              @media print {
+                body {
+                  padding: 0;
+                }
+                .content {
+                  page-break-inside: avoid;
+                }
+              }
+            </style>
+          </head>
+          <body>
+            <div class="cover">
+              ${coverUrl ? `<img src="${coverUrl}" alt="Book cover">` : ''}
+              <h1>${name}</h1>
+              ${subtitle ? `<h2>${subtitle}</h2>` : ''}
+              ${author ? `<p>by ${author}</p>` : ''}
+            </div>
+            ${pages.map(page => `
+              ${page.page_type === 'section' 
+                ? `<div class="section"><h2>${page.title || 'Untitled Section'}</h2></div>`
+                : `<div class="content">${page.html_content || ''}</div>`
+              }
+            `).join('')}
+          </body>
+        </html>
+      `;
+
+      // Write the content to the new window
+      printWindow.document.write(htmlContent);
+      printWindow.document.close();
+
+      // Wait for images to load before printing
+      printWindow.onload = () => {
+        printWindow.print();
+        // Close the window after printing (or if printing is cancelled)
+        printWindow.onafterprint = () => {
+          printWindow.close();
+        };
+      };
+
+      toast({
+        title: "Print Dialog Opened",
+        description: "Please use your browser's print dialog to save as PDF"
+      });
+    } catch (error) {
+      console.error('Error preparing PDF:', error);
       toast({
         variant: "destructive",
-        title: "Error generating PDF",
-        description: result.error?.message
-      });
-    } else {
-      toast({
-        title: "PDF Generated",
-        description: "Your book has been downloaded as PDF"
+        title: "Error preparing PDF",
+        description: error instanceof Error ? error.message : 'An unexpected error occurred'
       });
     }
   };
