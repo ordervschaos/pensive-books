@@ -67,7 +67,7 @@ export function FleshOutBookDialog({ bookId, onComplete }: FleshOutBookDialogPro
         <DialogHeader>
           <DialogTitle>Expand Book Content with AI</DialogTitle>
           <DialogDescription>
-            Enter a prompt to guide the AI in expanding your book's content. The AI will analyze each page and add relevant content while maintaining the original style and tone.
+            Enter a prompt to guide the generator in expanding your book's content. The app will analyze each page and add relevant content while maintaining the original style and tone.
           </DialogDescription>
         </DialogHeader>
 

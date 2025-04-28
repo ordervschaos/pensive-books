@@ -289,7 +289,7 @@ export default function GenerateBook() {
       </div>
       <h3 className="text-xl font-medium">Generating Your Book Outline</h3>
       <p className="text-center text-muted-foreground">
-        Please wait while our AI creates an outline for your book. This may take a minute or two.
+        Please wait while we create an outline for your book. This may take a minute or two.
       </p>
       <div className="w-full max-w-md h-2 bg-muted rounded-full overflow-hidden">
         <div className="h-full bg-primary animate-progress" style={{ width: '60%' }} />
@@ -304,7 +304,7 @@ export default function GenerateBook() {
       </div>
       <h3 className="text-xl font-medium">Expanding Your Book Content</h3>
       <p className="text-center text-muted-foreground">
-        Please wait while our AI expands the content of your book. This may take several minutes.
+        Please wait while we flesh out the content of your book. This may take several minutes.
       </p>
       <div className="w-full max-w-md h-2 bg-muted rounded-full overflow-hidden">
         <div className="h-full bg-primary animate-progress" style={{ width: '60%' }} />
@@ -439,7 +439,7 @@ export default function GenerateBook() {
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <h1 className="text-2xl font-semibold">Generate Book with AI</h1>
+          <h1 className="text-2xl font-semibold">Generate BookA</h1>
         </div>
 
         {renderStepIndicator()}
