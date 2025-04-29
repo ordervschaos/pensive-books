@@ -256,12 +256,9 @@ export const BookInfo = ({
       
       const { token, mailgunEndpoint, mailgunApiKey } = data;
       
-      // Extract domain from the endpoint for the "from" email address
-      const mailgunDomain = new URL(mailgunEndpoint).pathname.split('/')[3];
-      
-      // Create form data for the email
+      // Create form data for the email with the correct from address
       const formData = new FormData();
-      formData.append('from', `Pensive <hello@${mailgunDomain}>`);
+      formData.append('from', `Pensive <hello@pensive.me>`);
       formData.append('to', userData.kindle_email);
       formData.append('subject', name);
       formData.append('text', `Your book "${name}" is attached.`);
