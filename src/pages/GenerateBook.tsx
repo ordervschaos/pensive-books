@@ -439,7 +439,7 @@ export default function GenerateBook() {
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <h1 className="text-2xl font-semibold">Generate BookA</h1>
+          <h1 className="text-2xl font-semibold">Generate Book</h1>
         </div>
 
         {renderStepIndicator()}
