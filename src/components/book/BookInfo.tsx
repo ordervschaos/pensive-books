@@ -243,20 +243,47 @@ export const BookInfo = ({
         reader.readAsDataURL(result.blob);
       });
 
-      // Send to Kindle
-      const { error: sendError } = await supabase.functions.invoke('send-to-kindle', {
+      // Use the new client-side approach to send to Kindle
+      const { data, error } = await supabase.functions.invoke('get-kindle-token', {
         body: { 
           bookId,
           title: name,
-          kindle_email: userData.kindle_email,
-          epub_data: base64Data
-        },
-        headers: {
-          Authorization: `Bearer ${session.access_token}`
+          kindle_email: userData.kindle_email
         }
       });
-
-      if (sendError) throw sendError;
+      
+      if (error) throw new Error(`Failed to get token: ${error.message}`);
+      
+      const { token, mailgunEndpoint, mailgunApiKey } = data;
+      
+      // Extract domain from the endpoint for the "from" email address
+      const mailgunDomain = new URL(mailgunEndpoint).pathname.split('/')[3];
+      
+      // Create form data for the email
+      const formData = new FormData();
+      formData.append('from', `Pensive <hello@${mailgunDomain}>`);
+      formData.append('to', userData.kindle_email);
+      formData.append('subject', name);
+      formData.append('text', `Your book "${name}" is attached.`);
+      
+      // Convert base64 to Blob for the attachment
+      const binaryData = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+      const blob = new Blob([binaryData], { type: 'application/epub+zip' });
+      formData.append('attachment', blob, `${name}.epub`);
+      
+      // Send to Mailgun directly from the client
+      const response = await fetch(mailgunEndpoint, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${btoa(`api:${mailgunApiKey}`)}`,
+        },
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to send email');
+      }
 
       toast({
         title: "Book Sent to Kindle",
