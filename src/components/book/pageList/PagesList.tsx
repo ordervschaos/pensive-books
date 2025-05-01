@@ -372,29 +372,55 @@ export const PagesList = ({
                 </SortableContext>
               </DndContext>
             ) : (
-              items.map((page) => (
-                viewMode === 'list' ? (
-                  <RegularPageItem
-                    key={page.id}
-                    page={page}
-                    bookId={bookId}
-                    onNavigate={(pageId) => navigate(`/book/${bookId}/page/${pageId}`)}
-                    onDelete={isDeleteMode && canEdit ? handleDeletePage : undefined}
-                    isBookmarked={bookmarkedPageIndex === page.page_index}
-                    ref={bookmarkedPageIndex === page.page_index ? bookmarkedPageRef : undefined}
-                  />
-                ) : (
-                  <PageCard
-                    key={page.id}
-                    page={page}
-                    bookId={bookId}
-                    onNavigate={(pageId) => navigate(`/book/${bookId}/page/${pageId}`)}
-                    onDelete={isDeleteMode && canEdit ? handleDeletePage : undefined}
-                    isBookmarked={bookmarkedPageIndex === page.page_index}
-                    ref={bookmarkedPageIndex === page.page_index ? bookmarkedPageRef : undefined}
-                  />
-                )
-              ))
+              <>
+                {items.map((page) => (
+                  viewMode === 'list' ? (
+                    <RegularPageItem
+                      key={page.id}
+                      page={page}
+                      bookId={bookId}
+                      onNavigate={(pageId) => navigate(`/book/${bookId}/page/${pageId}`)}
+                      onDelete={isDeleteMode && canEdit ? handleDeletePage : undefined}
+                      isBookmarked={bookmarkedPageIndex === page.page_index}
+                      ref={bookmarkedPageIndex === page.page_index ? bookmarkedPageRef : undefined}
+                    />
+                  ) : (
+                    <PageCard
+                      key={page.id}
+                      page={page}
+                      bookId={bookId}
+                      onNavigate={(pageId) => navigate(`/book/${bookId}/page/${pageId}`)}
+                      onDelete={isDeleteMode && canEdit ? handleDeletePage : undefined}
+                      isBookmarked={bookmarkedPageIndex === page.page_index}
+                      ref={bookmarkedPageIndex === page.page_index ? bookmarkedPageRef : undefined}
+                    />
+                  )
+                ))}
+                
+                {/* Add New Page card/list item */}
+                {canEdit && !isDeleteMode && !isReordering && (
+                  viewMode === 'list' ? (
+                    <div className="flex items-center p-3 border-b border-border group hover:bg-accent/50 transition-colors cursor-pointer" onClick={() => createNewPage('text')}>
+                      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 mr-3">
+                        <Plus className="h-4 w-4 text-primary" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-medium text-primary">Add New Page</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div 
+                      className="flex flex-col items-center justify-center border border-dashed border-primary/40 rounded-md p-6 h-full min-h-[180px] hover:bg-accent/50 transition-colors cursor-pointer"
+                      onClick={() => createNewPage('text')}
+                    >
+                      <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-3">
+                        <Plus className="h-6 w-6 text-primary" />
+                      </div>
+                      <p className="font-medium text-primary text-center">Add New Page</p>
+                    </div>
+                  )
+                )}
+              </>
             )}
           </div>
         )}
