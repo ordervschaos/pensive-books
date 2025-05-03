@@ -36,7 +36,7 @@ export const PageCard = forwardRef<HTMLDivElement, PageItemProps>(({ page, onNav
           
           {/* Page Content Preview - Only show for text pages */}
           {page.page_type === 'text' && (
-            <div className="flex-1 relative">
+            <div className="flex-1 relative overflow-hidden">
               <div className="text-xs prose text-muted-foreground space-y-2 overflow-hidden"
                 dangerouslySetInnerHTML={{ __html: excerpt }}
               >
