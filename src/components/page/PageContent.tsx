@@ -27,7 +27,7 @@ export const PageContent = ({
   canEdit = false,
   pageId
 }: PageContentProps) => {
-  const [isEditing, setIsEditing] = useState(!content && editable && canEdit);
+  const [isEditing, setIsEditing] = useState(editable && canEdit);
   const [initialLoad, setInitialLoad] = useState(true);
   const [currentContent, setCurrentContent] = useState(content || '');
   const [currentTitle, setCurrentTitle] = useState(title || '');
