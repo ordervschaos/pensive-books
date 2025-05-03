@@ -118,7 +118,7 @@ const BookDetails = () => {
         .eq("id", numericId)
         .eq("is_archived", false)
         .single();
-
+      
       if (bookError) {
         console.error('Error fetching book:', bookError);
         throw bookError;
@@ -334,6 +334,10 @@ const BookDetails = () => {
                   {book.name}
                 </h1>
                 <p className="text-muted-foreground">{book.author || "Unknown author"}</p>
+                {/* number of words */}
+                <p className="text-muted-foreground">{pages.reduce((acc, page) => acc + ( page.html_content && page.page_type === 'text' ? 
+    page.html_content.replace(/<[^>]*>/g, '').trim().split(/\s+/).length : 
+    0), 0)} words</p>
               </div>
 
               <PagesList
