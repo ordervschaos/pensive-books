@@ -82,7 +82,7 @@ export const PagesList = ({
         block: 'center'
       });
     }
-  }, [bookmarkedPageIndex, items]);
+  }, []);
 
   useEffect(() => {
     setIsReordering(isReorderMode);

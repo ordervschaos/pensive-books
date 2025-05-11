@@ -1,6 +1,4 @@
 import React, { useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
-import { List } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { PreloadLink } from "./PreloadLink";
@@ -24,7 +22,6 @@ export function TableOfContents({
   currentPageId,
   onPageSelect 
 }: TableOfContentsProps) {
-  const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -36,20 +33,6 @@ export function TableOfContents({
     }
   }, [currentPageId]);
 
-  const handlePageClick = (pageId: number) => {
-    const page = pages.find(p => p.id === pageId);
-    if (!page) return;
-    
-    const slug = page.title ? 
-      `${pageId}-${page.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}` : 
-      pageId.toString();
-      
-    navigate(`/book/${bookId}/page/${slug}`);
-    
-    if (onPageSelect) {
-      onPageSelect();
-    }
-  };
 
   if (!pages.length) {
     return (
