@@ -393,21 +393,6 @@ const PageView = () => {
     }
   };
 
-  useEffect(() => {
-    const handleKeyPress = (event: KeyboardEvent) => {
-      if (!isEditing) {
-
-        if (event.key === 'ArrowRight' && currentIndex < totalPages - 1) {
-          navigateToPage(currentIndex + 1);
-        } else if (event.key === 'ArrowLeft' && currentIndex > 0) {
-          navigateToPage(currentIndex - 1);
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyPress);
-    return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [currentIndex, totalPages, isEditing]);
 
   useEffect(() => {
     fetchPageDetails();
@@ -559,6 +544,8 @@ const PageView = () => {
                   onEditingChange={setIsEditing}
                   canEdit={canEdit}
                   pageId={pageId}
+                  isEditing={isEditing}
+                  setIsEditing={setIsEditing}
                 />
                 <PageNavigation
                   bookId={bookId || ""}

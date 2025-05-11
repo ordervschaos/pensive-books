@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { useEffect } from "react";
 import { ArrowRight, Plus, Undo2, ArrowLeft, TableOfContents, List } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useSidebar } from "@/components/ui/sidebar";
@@ -38,7 +39,7 @@ export const PageNavigation = ({
   const displayTotalPages = Math.max(totalPages, 0);
 
   const isLastPage = currentIndex >= totalPages - 1;
-
+ 
   const handleNextClick = () => {
     if (isLastPage) {
       navigate(`/book/${bookId}`);

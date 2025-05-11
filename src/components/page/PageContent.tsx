@@ -15,6 +15,8 @@ interface PageContentProps {
   onEditingChange?: (isEditing: boolean) => void;
   canEdit?: boolean;
   pageId?: string;
+  isEditing?: boolean;
+  setIsEditing?: (isEditing: boolean) => void;
 }
 
 export const PageContent = ({ 
@@ -25,9 +27,10 @@ export const PageContent = ({
   editable = false,
   onEditingChange,
   canEdit = false,
-  pageId
+  pageId,
+  isEditing = false,
+  setIsEditing,
 }: PageContentProps) => {
-  const [isEditing, setIsEditing] = useState(editable && canEdit);
   const [initialLoad, setInitialLoad] = useState(true);
   const [currentContent, setCurrentContent] = useState(content || '');
   const [currentTitle, setCurrentTitle] = useState(title || '');
