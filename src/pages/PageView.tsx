@@ -310,7 +310,7 @@ const PageView = () => {
     }
   };
 
-  const navigateToPage = async (index: number) => {
+  const navigateToPage = useCallback(async (index: number) => {
     try {
       // First check if we have the next page in cache
       const nextPage = allPages.find(p => p.page_index === index);
@@ -392,7 +392,22 @@ const PageView = () => {
       });
       setLoading(false);
     }
-  };
+  }, [allPages, numericBookId, numericPageId, pageCache]);
+
+  // event listenet to navigate to next and previous pages
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'ArrowRight' && !isEditing) {
+        navigateToPage(currentIndex + 1);
+      }
+      if (event.key === 'ArrowLeft' && !isEditing) {
+        navigateToPage(currentIndex - 1);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [currentIndex, navigateToPage, isEditing]);
+  
 
 
   useEffect(() => {
