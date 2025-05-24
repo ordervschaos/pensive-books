@@ -17,6 +17,7 @@ interface PageNavigationProps {
   onNewPage?: (insertAfterIndex?: number) => void;
   canEdit?: boolean;
   nextPageId?: number;
+  setIsEditing?: (isEditing: boolean) => void;
 }
 
 export const PageNavigation = ({ 
@@ -26,7 +27,6 @@ export const PageNavigation = ({
   onNavigate,
   nextPageTitle,
   bookTitle = 'Untitled',
-  isEditing = false,
   onNewPage,
   canEdit = false,
   nextPageId
@@ -75,7 +75,6 @@ export const PageNavigation = ({
             variant="outline"
             onClick={() => navigate(`/book/${bookId}`)}
             className="flex items-center gap-2 px-4 py-4 rounded-full bg-background border-border max-w-[80vw]"
-            disabled={isEditing}
           >
             <span className="text-lg truncate">
               Table of contents: {bookTitle}
@@ -87,7 +86,6 @@ export const PageNavigation = ({
             variant="outline"
             onClick={() => onNavigate(currentIndex + 1)}
             className="flex items-center gap-2 px-4 py-4 rounded-full bg-background border-border max-w-[80vw]"
-            disabled={isEditing}
           >
             <span className="text-lg truncate">
               Next: {nextPageTitle || 'Untitled'}
@@ -99,7 +97,6 @@ export const PageNavigation = ({
             variant="outline"
             onClick={handleNextClick}
             className="flex items-center gap-2 px-4 py-4 rounded-full bg-background border-border max-w-[80vw]"
-            disabled={isEditing}
           >
             <span className="text-lg truncate">
               Next: {nextPageTitle || 'Untitled'}
