@@ -156,7 +156,7 @@ export const PagesList = ({
       items,
       pageType,
       (newPageId) => {
-        navigate(`/book/${bookId}/page/${newPageId}`);
+        navigate(`/book/${bookId}/page/${newPageId}?edit=true`);
         toast({
           title: `${pageType.charAt(0).toUpperCase() + pageType.slice(1)} page created`,
           description: "Your new page has been created"

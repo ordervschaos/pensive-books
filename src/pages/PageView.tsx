@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { PageNavigation } from "@/components/page/PageNavigation";
@@ -28,6 +28,7 @@ const PageView = () => {
   const { bookId, pageId } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const [searchParams] = useSearchParams();
   const [page, setPage] = useState<any>(null);
   const [book, setBook] = useState<any>(null);
   const [nextPageTitle, setNextPageTitle] = useState<string>("");
@@ -403,6 +404,13 @@ const PageView = () => {
       setPageTitle(`${page.title} - ${book.name}`);
     }
   }, [page?.title, book?.name]);
+
+  // Check for edit mode from URL params
+  useEffect(() => {
+    if (searchParams.get("edit") === "true" && canEdit) {
+      setIsEditing(true);
+    }
+  }, [searchParams, canEdit]);
 
   // Preload multiple pages
   const preloadNextPages = useCallback(async () => {
