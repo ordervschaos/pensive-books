@@ -1,4 +1,9 @@
 {
+  "functions": {
+    "app/api/**/*.ts": {
+      "runtime": "nodejs22.x"
+    }
+  },
   "rewrites": [
     {
       "source": "/(.*)",
