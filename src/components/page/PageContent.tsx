@@ -17,6 +17,8 @@ interface PageContentProps {
   pageId?: string;
   isEditing?: boolean;
   setIsEditing?: (isEditing: boolean) => void;
+  onToggleChat?: () => void;
+  hasActiveChat?: boolean;
 }
 
 export const PageContent = ({ 
@@ -30,6 +32,8 @@ export const PageContent = ({
   pageId,
   isEditing = false,
   setIsEditing,
+  onToggleChat,
+  hasActiveChat,
 }: PageContentProps) => {
   const [initialLoad, setInitialLoad] = useState(true);
   const [currentContent, setCurrentContent] = useState(content || '');
@@ -134,6 +138,8 @@ export const PageContent = ({
             canEdit={canEdit}
             onRevert={handleRevertToVersion}
             pageId={pageId}
+            onToggleChat={onToggleChat}
+            hasActiveChat={hasActiveChat}
           />
         )}
       </div>

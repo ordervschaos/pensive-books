@@ -1,5 +1,5 @@
 import { Editor } from '@tiptap/react';
-import { Bold, Italic, Quote, Code2, Link2, List, ListOrdered, Image as ImageIcon, Undo, Redo, Pencil, Eye, Table as TableIcon, MoreHorizontal, Heading1, Heading2, Heading3 } from "lucide-react";
+import { Bold, Italic, Quote, Code2, Link2, List, ListOrdered, Image as ImageIcon, Undo, Redo, Pencil, Eye, Table as TableIcon, MoreHorizontal, Heading1, Heading2, Heading3, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useSupabaseUpload } from "@/hooks/use-supabase-upload";
@@ -18,9 +18,11 @@ interface EditorToolbarProps {
   onToggleEdit?: () => void;
   editable: boolean;
   customButtons?: React.ReactNode;
+  onToggleChat?: () => void;
+  hasActiveChat?: boolean;
 }
 
-export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, customButtons }: EditorToolbarProps) => {
+export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, customButtons, onToggleChat, hasActiveChat }: EditorToolbarProps) => {
   const { toast } = useToast();
   const uploadImage = useSupabaseUpload();
   const isMobile = useMediaQuery("(max-width: 768px)");
@@ -286,6 +288,17 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
           >
             <Link2 className="h-4 w-4" />
           </Button>
+          
+          {onToggleChat && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onToggleChat}
+              className={hasActiveChat ? 'bg-muted' : ''}
+            >
+              <MessageSquare className="h-4 w-4" />
+            </Button>
+          )}
           <div className="relative">
             <Button
               variant="ghost"

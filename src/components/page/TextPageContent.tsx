@@ -11,6 +11,8 @@ interface TextPageContentProps {
   canEdit?: boolean;
   onRevert: (content: string) => Promise<void>;
   pageId?: string;
+  onToggleChat?: () => void;
+  hasActiveChat?: boolean;
 }
 
 export const TextPageContent = ({ 
@@ -21,7 +23,9 @@ export const TextPageContent = ({
   onToggleEdit,
   canEdit = false,
   onRevert,
-  pageId
+  pageId,
+  onToggleChat,
+  hasActiveChat
 }: TextPageContentProps) => {
   // Create initial content with title if it's empty
   const [initialContent, setInitialContent] = useState(content || `<h1 class="page-title">${title}</h1><p></p>`);
@@ -40,6 +44,8 @@ export const TextPageContent = ({
         editable={canEdit}
         isEditing={isEditing}
         onToggleEdit={canEdit ? onToggleEdit : undefined}
+        onToggleChat={onToggleChat}
+        hasActiveChat={hasActiveChat}
         // customButtons={canEdit && pageId ? <PageHistory pageId={parseInt(pageId) || 0} currentContent={content} onRevert={onRevert} /> : undefined}
       />
     </div>

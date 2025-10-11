@@ -21,6 +21,7 @@ import {
 import { PagePreloader } from "@/components/page/PagePreloader";
 import { pageCache } from "@/services/PageCache";
 import { preloadPages, getNextPageIds } from "@/utils/pagePreloader";
+import { PageChatPanel } from "@/components/page/PageChatPanel";
 
 const LOCALSTORAGE_BOOKMARKS_KEY = 'bookmarked_pages';
 
@@ -29,17 +30,19 @@ const PageView = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [searchParams] = useSearchParams();
-  const [page, setPage] = useState<any>(null);
-  const [book, setBook] = useState<any>(null);
+  const [page, setPage] = useState<{id: number; title: string; html_content: string; page_type: string; updated_at: string} | null>(null);
+  const [book, setBook] = useState<{id: number; name: string; cover_url?: string; author?: string; published_at?: string} | null>(null);
   const [nextPageTitle, setNextPageTitle] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [totalPages, setTotalPages] = useState(0);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isEditing, setIsEditing] = useState(false);
-  const [allPages, setAllPages] = useState<any[]>([]);
+  const [allPages, setAllPages] = useState<{id: number; title: string; page_index: number}[]>([]);
   const [nextPageId, setNextPageId] = useState<number | null>(null);
   const [preloadedPageIds, setPreloadedPageIds] = useState<number[]>([]);
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  
   
   const getNumericId = (param: string | undefined) => {
     if (!param) return 0;
@@ -84,17 +87,17 @@ const PageView = () => {
         const updatedBookmarks = { ...bookmarks, [numericBookId]: pageIndex };
         localStorage.setItem(LOCALSTORAGE_BOOKMARKS_KEY, JSON.stringify(updatedBookmarks));
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error updating bookmark:', error);
       toast({
         variant: "destructive",
         title: "Error updating bookmark",
-        description: error.message
+        description: error instanceof Error ? error.message : 'Unknown error'
       });
     }
   };
 
-  const fetchPageDetails = async () => {
+  const fetchPageDetails = useCallback(async () => {
     try {
       // Check if page is in cache first
       const cachedPage = pageCache.get(numericBookId, numericPageId);
@@ -212,16 +215,16 @@ const PageView = () => {
         setNextPageId(nextPage.id);
       }
 
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast({
         variant: "destructive",
         title: "Error fetching page details",
-        description: error.message
+        description: error instanceof Error ? error.message : 'Unknown error'
       });
     } finally {
       setLoading(false);
     }
-  };
+  }, [numericBookId, numericPageId, pageCache, bookId, pageId, navigate, updateBookmark]);
 
   const getTitleFromHtml = (html: string) => {
     const doc = new DOMParser().parseFromString(html, 'text/html');
@@ -262,16 +265,24 @@ const PageView = () => {
           updated_at: new Date().toISOString()
         };
         pageCache.set(numericBookId, numericPageId, updatedPage, book);
+        setPage(updatedPage);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast({
         variant: "destructive",
         title: "Error saving page",
-        description: error.message
+        description: error instanceof Error ? error.message : 'Unknown error'
       });
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleApplyEdit = (oldText: string, newText: string) => {
+    if (!page?.html_content) return;
+    
+    const updatedContent = page.html_content.replace(oldText, newText);
+    handleSave(updatedContent);
   };
 
   const createNewPage = async () => {
@@ -301,11 +312,11 @@ const PageView = () => {
         title: "Page created",
         description: "Your new page has been created"
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast({
         variant: "destructive",
         title: "Error creating page",
-        description: error.message
+        description: error instanceof Error ? error.message : 'Unknown error'
       });
     }
   };
@@ -384,15 +395,15 @@ const PageView = () => {
       pageCache.set(numericBookId, nextPageId, pageData, bookData);
       
       setLoading(false);
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast({
         variant: "destructive",
         title: "Error navigating to page",
-        description: error.message
+        description: error instanceof Error ? error.message : 'Unknown error'
       });
       setLoading(false);
     }
-  }, [allPages, numericBookId, numericPageId, pageCache]);
+  }, [allPages, numericBookId, numericPageId, pageCache, bookId, navigate, toast, updateBookmark]);
 
   // event listenet to navigate to next and previous pages
   useEffect(() => {
@@ -412,13 +423,13 @@ const PageView = () => {
 
   useEffect(() => {
     fetchPageDetails();
-  }, [bookId, pageId]);
+  }, [bookId, pageId, fetchPageDetails]);
 
   useEffect(() => {
     if (page && book) {
       setPageTitle(`${page.title} - ${book.name}`);
     }
-  }, [page?.title, book?.name]);
+  }, [page, book]);
 
   // Check for edit mode from URL params
   useEffect(() => {
@@ -554,35 +565,55 @@ const PageView = () => {
           </Sidebar>
           
           <SidebarInset className="flex-1 flex flex-col">
-            
-            <div className="flex-1 container max-w-5xl mx-auto px-4 py-4 flex flex-col gap-4">
-              <div className="flex-1 flex flex-col">
-                <PageContent
-                  content={page?.html_content || ''}
-                  title={page?.title || 'Untitled'}
-                  onSave={handleSave}
-                  saving={saving}
-                  pageType={page?.page_type}
-                  editable={canEdit}
-                  onEditingChange={setIsEditing}
-                  canEdit={canEdit}
-                  pageId={pageId}
-                  isEditing={isEditing}
-                  setIsEditing={setIsEditing}
-                />
-                <PageNavigation
-                  bookId={bookId || ""}
-                  currentIndex={currentIndex}
-                  totalPages={totalPages}
-                  onNavigate={navigateToPage}
-                  nextPageTitle={nextPageTitle}
-                  bookTitle={book?.name}
-                  isEditing={isEditing}
-                  onNewPage={createNewPage}
-                  canEdit={canEdit}
-                  nextPageId={nextPageId}
-                />
+            <div className="flex flex-1 flex-col">
+              {/* Main content area - with bottom padding when chat is open */}
+              <div className={`flex flex-col w-full ${isChatOpen ? 'pb-[50vh]' : ''}`}>
+                <div className="flex-1 container max-w-5xl mx-auto px-4 py-4 flex flex-col gap-4">
+                  <div className="flex-1 flex flex-col">
+                    <PageContent
+                      content={page?.html_content || ''}
+                      title={page?.title || 'Untitled'}
+                      onSave={handleSave}
+                      saving={saving}
+                      pageType={page?.page_type}
+                      editable={canEdit}
+                      onEditingChange={setIsEditing}
+                      canEdit={canEdit}
+                      pageId={pageId}
+                      isEditing={isEditing}
+                      setIsEditing={setIsEditing}
+                      onToggleChat={() => setIsChatOpen(!isChatOpen)}
+                      hasActiveChat={isChatOpen}
+                    />
+                    <PageNavigation
+                      bookId={bookId || ""}
+                      currentIndex={currentIndex}
+                      totalPages={totalPages}
+                      onNavigate={navigateToPage}
+                      nextPageTitle={nextPageTitle}
+                      bookTitle={book?.name}
+                      isEditing={isEditing}
+                      onNewPage={createNewPage}
+                      canEdit={canEdit}
+                      nextPageId={nextPageId}
+                    />
+                  </div>
+                </div>
               </div>
+
+              {/* Chat panel - Bottom drawer */}
+              {isChatOpen && (
+                <div className="fixed bottom-0 left-0 right-0 h-[50vh] border-t bg-background shadow-lg z-50">
+                  <PageChatPanel
+                    pageId={pageId || ""}
+                    pageContent={page?.html_content || ''}
+                    canEdit={canEdit}
+                    isOpen={isChatOpen}
+                    onClose={() => setIsChatOpen(false)}
+                    onApplyEdit={handleApplyEdit}
+                  />
+                </div>
+              )}
             </div>
           </SidebarInset>
         </div>
