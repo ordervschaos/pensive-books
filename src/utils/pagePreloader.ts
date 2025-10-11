@@ -1,4 +1,3 @@
-import { pageCache } from '@/services/PageCache';
 import { supabase } from '@/integrations/supabase/client';
 
 /**
@@ -36,11 +35,6 @@ export const preloadPages = async (bookId: number, pageIds: number[]): Promise<v
       console.error("Error fetching pages for preloading:", pagesError);
       return;
     }
-    
-    // Cache each page
-    pagesData.forEach(page => {
-      pageCache.set(bookId, page.id, page, bookData);
-    });
     
     console.log(`Preloaded ${pagesData.length} pages for book ${bookId}`);
   } catch (error) {

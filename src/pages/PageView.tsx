@@ -19,7 +19,6 @@ import {
   SidebarInset 
 } from "@/components/ui/sidebar";
 import { PagePreloader } from "@/components/page/PagePreloader";
-import { pageCache } from "@/services/PageCache";
 import { preloadPages, getNextPageIds } from "@/utils/pagePreloader";
 import { PageChatPanel } from "@/components/page/PageChatPanel";
 
@@ -99,44 +98,6 @@ const PageView = () => {
 
   const fetchPageDetails = useCallback(async () => {
     try {
-      // Check if page is in cache first
-      const cachedPage = pageCache.get(numericBookId, numericPageId);
-      if (cachedPage) {
-        console.log("Using cached page data");
-        setPage(cachedPage.page);
-        setBook(cachedPage.book);
-        
-        // Still need to fetch all pages for navigation
-        const { data: pagesData, error: pagesError } = await supabase
-          .from("pages")
-          .select("id, title, page_index")
-          .eq("book_id", numericBookId)
-          .eq("archived", false)
-          .order("page_index", { ascending: true });
-
-        if (pagesError) throw pagesError;
-
-        setAllPages(pagesData || []);
-        setTotalPages(pagesData.length);
-        const currentPageIndex = pagesData.findIndex(p => p.id === numericPageId);
-        setCurrentIndex(currentPageIndex);
-
-        // Update bookmark when page loads
-        if (currentPageIndex !== -1) {
-          updateBookmark(currentPageIndex);
-        }
-
-        // Get next page title if not the last page
-        if (currentPageIndex < pagesData.length - 1) {
-          const nextPage = pagesData[currentPageIndex + 1];
-          setNextPageTitle(nextPage.title || "");
-          setNextPageId(nextPage.id);
-        }
-
-        return;
-      }
-      
-      // If not in cache, set loading state and fetch from API
       setLoading(true);
       console.log("Fetching page details for pageId:", numericPageId);
       
@@ -185,9 +146,6 @@ const PageView = () => {
       }
       
       setBook(bookData);
-      
-      // Cache the page data
-      pageCache.set(numericBookId, numericPageId, pageData, bookData);
 
       const { data: pagesData, error: pagesError } = await supabase
         .from("pages")
@@ -224,7 +182,7 @@ const PageView = () => {
     } finally {
       setLoading(false);
     }
-  }, [numericBookId, numericPageId, pageCache, bookId, pageId, navigate, updateBookmark]);
+  }, [numericBookId, numericPageId, bookId, pageId, navigate, updateBookmark]);
 
   const getTitleFromHtml = (html: string) => {
     const doc = new DOMParser().parseFromString(html, 'text/html');
@@ -256,15 +214,14 @@ const PageView = () => {
 
       if (error) throw error;
 
-      // Update the cache with the new content
-      if (page && book) {
+      // Update the page state with the new content
+      if (page) {
         const updatedPage = {
           ...page,
           html_content: html,
           title: getTitleFromHtml(html),
           updated_at: new Date().toISOString()
         };
-        pageCache.set(numericBookId, numericPageId, updatedPage, book);
         setPage(updatedPage);
       }
     } catch (error: unknown) {
@@ -323,7 +280,6 @@ const PageView = () => {
 
   const navigateToPage = useCallback(async (index: number) => {
     try {
-      // First check if we have the next page in cache
       const nextPage = allPages.find(p => p.page_index === index);
       if (!nextPage) {
         console.error("Next page not found in allPages");
@@ -331,25 +287,6 @@ const PageView = () => {
       }
       
       const nextPageId = nextPage.id;
-      const cachedPage = pageCache.get(numericBookId, nextPageId);
-      
-      // If we have the page in cache, use it immediately without setting loading state
-      if (cachedPage) {
-        setPage(cachedPage.page);
-        setBook(cachedPage.book);
-        setCurrentIndex(index);
-        updateBookmark(index);
-        
-        // Update URL without triggering a full page reload
-        const slug = nextPage.title ? 
-          `${nextPageId}-${nextPage.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}` : 
-          nextPageId.toString();
-        
-        navigate(`/book/${bookId}/page/${slug}`, { replace: true });
-        return;
-      }
-      
-      // If not in cache, proceed with normal navigation
       updateBookmark(index);
       
       const slug = nextPage.title ? 
@@ -390,10 +327,6 @@ const PageView = () => {
       }
       
       setBook(bookData);
-      
-      // Cache the page data
-      pageCache.set(numericBookId, nextPageId, pageData, bookData);
-      
       setLoading(false);
     } catch (error: unknown) {
       toast({
@@ -403,7 +336,7 @@ const PageView = () => {
       });
       setLoading(false);
     }
-  }, [allPages, numericBookId, numericPageId, pageCache, bookId, navigate, toast, updateBookmark]);
+  }, [allPages, numericBookId, numericPageId, bookId, navigate, toast, updateBookmark]);
 
   // event listenet to navigate to next and previous pages
   useEffect(() => {
@@ -573,7 +506,7 @@ const PageView = () => {
                     title={page?.title || 'Untitled'}
                     onSave={handleSave}
                     saving={saving}
-                    pageType={page?.page_type}
+                    pageType={page?.page_type as 'text' | 'section'}
                     editable={canEdit}
                     onEditingChange={setIsEditing}
                     canEdit={canEdit}
