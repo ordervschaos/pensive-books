@@ -28,6 +28,7 @@ interface PageListItem {
 
 interface UsePageViewDataReturn {
   page: Page | null;
+  setPage: React.Dispatch<React.SetStateAction<Page | null>>;
   book: Book | null;
   allPages: PageListItem[];
   currentIndex: number;
@@ -153,6 +154,7 @@ export const usePageViewData = (
 
   return {
     page,
+    setPage,
     book,
     allPages,
     currentIndex,

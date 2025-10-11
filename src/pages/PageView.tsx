@@ -1,13 +1,10 @@
-import { useState, useEffect, useCallback } from "react";
-import { useParams, useNavigate, useSearchParams } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
-import { useToast } from "@/hooks/use-toast";
+import { useState } from "react";
+import { useParams } from "react-router-dom";
 import { PageNavigation } from "@/components/page/PageNavigation";
 import { PageContent } from "@/components/page/PageContent";
 import { PageLoading } from "@/components/page/PageLoading";
 import { PageNotFound } from "@/components/page/PageNotFound";
 import { useBookPermissions } from "@/hooks/use-book-permissions";
-import { setPageTitle } from "@/utils/pageTitle";
 import { TableOfContents } from "@/components/page/TableOfContents";
 import {
   SidebarProvider,
@@ -16,7 +13,6 @@ import {
   SidebarInset
 } from "@/components/ui/sidebar";
 import { PagePreloader } from "@/components/page/PagePreloader";
-import { preloadPages } from "@/utils/pagePreloader";
 import { PageChatPanel } from "@/components/page/PageChatPanel";
 import { PageMeta } from "@/components/page/PageMeta";
 import { SlugService } from "@/utils/slugService";
@@ -27,17 +23,18 @@ import { useBookmarkTracking } from "@/hooks/use-bookmark-tracking";
 import { usePageNavigation } from "@/hooks/use-page-navigation";
 import { useKeyboardNavigation } from "@/hooks/use-keyboard-navigation";
 import { usePageSave } from "@/hooks/use-page-save";
+import { useEditMode } from "@/hooks/use-edit-mode";
+import { usePageTitle } from "@/hooks/use-page-title";
+import { usePagePreloaderEffect } from "@/hooks/use-page-preloader-effect";
+import { usePageCreation } from "@/hooks/use-page-creation";
 
 /**
- * Refactored PageView component - Now much cleaner!
- * Delegates logic to custom hooks and child components
+ * Fully refactored PageView component
+ * Pure orchestration - delegates ALL logic to custom hooks and child components
  */
-const PageViewRefactored = () => {
+const PageView = () => {
   // 1. URL parameters
   const { bookId, pageId } = useParams();
-  const navigate = useNavigate();
-  const { toast } = useToast();
-  const [searchParams] = useSearchParams();
 
   // 2. Extract numeric IDs from slugs
   const numericBookId = SlugService.extractId(bookId);
@@ -46,6 +43,7 @@ const PageViewRefactored = () => {
   // 3. Fetch all data using custom hook
   const {
     page,
+    setPage,
     book,
     allPages,
     currentIndex,
@@ -59,103 +57,39 @@ const PageViewRefactored = () => {
   const { canEdit, loading: permissionsLoading } = useBookPermissions(numericBookId.toString());
 
   // 5. Local UI state
-  const [isEditing, setIsEditing] = useState(false);
+  const [isEditing, setIsEditing] = useEditMode(canEdit);
   const [isChatOpen, setIsChatOpen] = useState(false);
 
-  // 6. Page save logic
+  // 6. Page save logic with proper state update
   const { handleSave, handleApplyEdit, saving } = usePageSave(
     pageId,
     canEdit,
     (updatedHtml, updatedTitle) => {
-      // Update local page state after successful save
-      if (page) {
-        page.html_content = updatedHtml;
-        page.title = updatedTitle;
-      }
+      // Properly update state without mutation
+      setPage(prevPage =>
+        prevPage ? { ...prevPage, html_content: updatedHtml, title: updatedTitle } : null
+      );
     }
   );
 
   // 7. Navigation logic
-  const { navigateNext, navigatePrev } = usePageNavigation(
+  const { navigateToPage, navigateNext, navigatePrev } = usePageNavigation(
     bookId,
     numericBookId,
     allPages,
     currentIndex
   );
 
-  // 8. Bookmark tracking (auto-runs on page change)
+  // 8. Page creation logic
+  const { createNewPage } = usePageCreation(bookId, numericBookId, canEdit);
+
+  // 9. Side effects (auto-tracking)
   useBookmarkTracking(numericBookId, currentIndex);
+  useKeyboardNavigation({ onNext: navigateNext, onPrev: navigatePrev }, isEditing);
+  usePagePreloaderEffect(numericBookId, nextPageId, dataLoading);
+  usePageTitle(page?.title, book?.name);
 
-  // 9. Keyboard shortcuts
-  useKeyboardNavigation(
-    {
-      onNext: navigateNext,
-      onPrev: navigatePrev,
-    },
-    isEditing
-  );
-
-  // 10. Set page title in browser
-  useEffect(() => {
-    if (page && book) {
-      setPageTitle(`${page.title} - ${book.name}`);
-    }
-  }, [page, book]);
-
-  // 11. Auto-enter edit mode if URL has ?edit=true
-  useEffect(() => {
-    if (searchParams.get("edit") === "true" && canEdit) {
-      setIsEditing(true);
-    }
-  }, [searchParams, canEdit]);
-
-  // 12. Preload next pages for performance
-  useEffect(() => {
-    if (!dataLoading && nextPageId) {
-      preloadPages(numericBookId, [nextPageId]).catch(error => {
-        console.error('Error preloading next page:', error);
-      });
-    }
-  }, [nextPageId, numericBookId, dataLoading]);
-
-  // 13. Create new page handler
-  const createNewPage = useCallback(async () => {
-    if (!canEdit) {
-      toast({
-        variant: "destructive",
-        title: "Permission denied",
-        description: "You don't have permission to create pages in this book"
-      });
-      return;
-    }
-
-    try {
-      const { data: newPage, error } = await supabase
-        .rpc('create_next_page', {
-          p_book_id: numericBookId
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      setIsEditing(true);
-      navigate(`/book/${bookId}/page/${newPage.id}`);
-
-      toast({
-        title: "Page created",
-        description: "Your new page has been created"
-      });
-    } catch (error: unknown) {
-      toast({
-        variant: "destructive",
-        title: "Error creating page",
-        description: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  }, [canEdit, numericBookId, bookId, navigate, toast]);
-
-  // 14. Loading state
+  // 10. Loading state
   if (dataLoading || permissionsLoading) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
@@ -166,7 +100,7 @@ const PageViewRefactored = () => {
     );
   }
 
-  // 15. Not found state
+  // 11. Not found state
   if (!page || !book) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
@@ -177,7 +111,7 @@ const PageViewRefactored = () => {
     );
   }
 
-  // 16. Main render
+  // 12. Main render - Pure composition
   return (
     <SidebarProvider defaultOpen={false}>
       <div className="min-h-[calc(100vh-56px)] flex flex-col bg-background w-full">
@@ -235,13 +169,7 @@ const PageViewRefactored = () => {
                     bookId={bookId || ""}
                     currentIndex={currentIndex}
                     totalPages={totalPages}
-                    onNavigate={(index) => {
-                      const targetPage = allPages[index];
-                      if (targetPage) {
-                        const slug = SlugService.generateSlug(targetPage.id, targetPage.title);
-                        navigate(`/book/${bookId}/page/${slug}`);
-                      }
-                    }}
+                    onNavigate={navigateToPage}
                     nextPageTitle={nextPageTitle}
                     bookTitle={book.name}
                     isEditing={isEditing}
@@ -273,4 +201,4 @@ const PageViewRefactored = () => {
   );
 };
 
-export default PageViewRefactored;
+export default PageView;
