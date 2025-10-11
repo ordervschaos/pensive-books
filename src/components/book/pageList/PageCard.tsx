@@ -2,6 +2,7 @@ import { Trash2, BookmarkCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { AudioPlayer } from "@/components/page/AudioPlayer";
 import { PageItemProps } from "./types";
 import { forwardRef } from "react";
 
@@ -48,7 +49,16 @@ export const PageCard = forwardRef<HTMLDivElement, PageItemProps>(({ page, onNav
 
           {/* Footer */}
           <div className="mt-auto pt-2 flex items-center justify-between text-xs text-muted-foreground">
-            {page.page_type === 'text' && <span>{wordCount} words</span>}
+            <div className="flex items-center gap-2">
+              {page.page_type === 'text' && <span>{wordCount} words</span>}
+              {page.page_type === 'text' && (
+                <AudioPlayer 
+                  pageId={page.id} 
+                  content={page.html_content}
+                  compact={true}
+                />
+              )}
+            </div>
             <span className={`${page.page_type === 'section' ? 'mx-auto' : 'ml-auto'}`}>Page {page.page_index + 1}</span>
           </div>
         </CardContent>

@@ -566,55 +566,48 @@ const PageView = () => {
           
           <SidebarInset className="flex-1 flex flex-col">
             <div className="flex flex-1 flex-col">
-              {/* Main content area - with bottom padding when chat is open */}
-              <div className={`flex flex-col w-full ${isChatOpen ? 'pb-[50vh]' : ''}`}>
-                <div className="flex-1 container max-w-5xl mx-auto px-4 py-4 flex flex-col gap-4">
-                  <div className="flex-1 flex flex-col">
-                    <PageContent
-                      content={page?.html_content || ''}
-                      title={page?.title || 'Untitled'}
-                      onSave={handleSave}
-                      saving={saving}
-                      pageType={page?.page_type}
-                      editable={canEdit}
-                      onEditingChange={setIsEditing}
-                      canEdit={canEdit}
-                      pageId={pageId}
-                      isEditing={isEditing}
-                      setIsEditing={setIsEditing}
-                      onToggleChat={() => setIsChatOpen(!isChatOpen)}
-                      hasActiveChat={isChatOpen}
-                    />
-                    <PageNavigation
-                      bookId={bookId || ""}
-                      currentIndex={currentIndex}
-                      totalPages={totalPages}
-                      onNavigate={navigateToPage}
-                      nextPageTitle={nextPageTitle}
-                      bookTitle={book?.name}
-                      isEditing={isEditing}
-                      onNewPage={createNewPage}
-                      canEdit={canEdit}
-                      nextPageId={nextPageId}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Chat panel - Bottom drawer */}
-              {isChatOpen && (
-                <div className="fixed bottom-0 left-0 right-0 h-[50vh] border-t bg-background shadow-lg z-50">
-                  <PageChatPanel
-                    pageId={pageId || ""}
-                    pageContent={page?.html_content || ''}
+              <div className="flex-1 container max-w-5xl mx-auto px-4 py-4 flex flex-col gap-4">
+                <div className="flex-1 flex flex-col">
+                  <PageContent
+                    content={page?.html_content || ''}
+                    title={page?.title || 'Untitled'}
+                    onSave={handleSave}
+                    saving={saving}
+                    pageType={page?.page_type}
+                    editable={canEdit}
+                    onEditingChange={setIsEditing}
                     canEdit={canEdit}
-                    isOpen={isChatOpen}
-                    onClose={() => setIsChatOpen(false)}
-                    onApplyEdit={handleApplyEdit}
+                    pageId={pageId}
+                    isEditing={isEditing}
+                    setIsEditing={setIsEditing}
+                    onToggleChat={() => setIsChatOpen(!isChatOpen)}
+                    hasActiveChat={isChatOpen}
+                  />
+                  <PageNavigation
+                    bookId={bookId || ""}
+                    currentIndex={currentIndex}
+                    totalPages={totalPages}
+                    onNavigate={navigateToPage}
+                    nextPageTitle={nextPageTitle}
+                    bookTitle={book?.name}
+                    isEditing={isEditing}
+                    onNewPage={createNewPage}
+                    canEdit={canEdit}
+                    nextPageId={nextPageId}
                   />
                 </div>
-              )}
+              </div>
             </div>
+
+            {/* Chat Sidebar - Rendered as a portal */}
+            <PageChatPanel
+              pageId={pageId || ""}
+              pageContent={page?.html_content || ''}
+              canEdit={canEdit}
+              isOpen={isChatOpen}
+              onClose={() => setIsChatOpen(false)}
+              onApplyEdit={handleApplyEdit}
+            />
           </SidebarInset>
         </div>
       </div>

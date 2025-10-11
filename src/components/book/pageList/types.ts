@@ -14,6 +14,8 @@ export interface PagesListProps {
   isDeleteMode?: boolean;
   canEdit?: boolean;
   onDeleteModeChange?: (isDelete: boolean) => void;
+  onChatToggle?: () => void;
+  hasActiveChat?: boolean;
 }
 
 export interface PageItemProps {

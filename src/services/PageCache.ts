@@ -13,14 +13,26 @@ interface Book {
   is_archived: boolean;
 }
 
+interface PageSummary {
+  id: number;
+  title: string;
+  page_index: number;
+}
+
 interface CachedPage {
   page: Page;
   book: Book;
   timestamp: number;
 }
 
+interface CachedBookPages {
+  pages: PageSummary[];
+  timestamp: number;
+}
+
 class PageCache {
   private cache: Map<string, CachedPage> = new Map();
+  private bookPagesCache: Map<number, CachedBookPages> = new Map();
   private maxSize: number = 10; // Maximum number of pages to cache
   private maxAge: number = 5 * 60 * 1000; // 5 minutes in milliseconds
 
@@ -86,6 +98,35 @@ class PageCache {
   // Clear the entire cache
   clear(): void {
     this.cache.clear();
+    this.bookPagesCache.clear();
+  }
+
+  // Set allPages for a book
+  setBookPages(bookId: number, pages: PageSummary[]): void {
+    this.bookPagesCache.set(bookId, {
+      pages,
+      timestamp: Date.now()
+    });
+  }
+
+  // Get allPages for a book
+  getBookPages(bookId: number): PageSummary[] | null {
+    const cached = this.bookPagesCache.get(bookId);
+
+    if (!cached) return null;
+
+    // Check if cache entry is too old
+    if (Date.now() - cached.timestamp > this.maxAge) {
+      this.bookPagesCache.delete(bookId);
+      return null;
+    }
+
+    return cached.pages;
+  }
+
+  // Clear book pages cache for a specific book (useful when pages are added/removed)
+  clearBookPages(bookId: number): void {
+    this.bookPagesCache.delete(bookId);
   }
 }
 

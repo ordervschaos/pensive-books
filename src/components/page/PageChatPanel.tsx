@@ -2,10 +2,10 @@ import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { ChatMessage } from './ChatMessage';
 import { usePageChat, SuggestedEdit } from '@/hooks/use-page-chat';
-import { Send, X, Trash2, Loader2 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { Send, Trash2, Loader2 } from 'lucide-react';
 
 interface PageChatPanelProps {
   pageId: string;
@@ -65,41 +65,33 @@ export const PageChatPanel = ({
     }
   };
 
-  if (!isOpen) return null;
-
   return (
-    <div className="flex flex-col h-full bg-background">
-      {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b flex-shrink-0">
-        <div>
-          <h3 className="font-semibold">Chat with Page</h3>
-          <p className="text-sm text-muted-foreground">
-            {canEdit ? 'Full assistant' : 'Read-only mode'}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {hasMessages && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleClearChat}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              <Trash2 className="w-4 h-4" />
-            </Button>
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onClose}
-          >
-            <X className="w-4 h-4" />
-          </Button>
-        </div>
-      </div>
+    <Sheet open={isOpen} onOpenChange={onClose}>
+      <SheetContent side="right" className="w-full sm:max-w-xl p-0 flex flex-col">
+        {/* Header */}
+        <SheetHeader className="p-6 pb-4 border-b flex-shrink-0">
+          <div className="flex items-center justify-between">
+            <div className="flex-1">
+              <SheetTitle>Chat with Page</SheetTitle>
+              <SheetDescription>
+                {canEdit ? 'Ask questions or request edits' : 'Ask questions about the page'}
+              </SheetDescription>
+            </div>
+            {hasMessages && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleClearChat}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            )}
+          </div>
+        </SheetHeader>
 
-      {/* Messages - with bottom padding to account for fixed input */}
-      <ScrollArea className="flex-1 p-4 min-h-0 pb-20">
+        {/* Messages */}
+        <ScrollArea className="flex-1 p-6 min-h-0">
         {loading ? (
           <div className="flex items-center justify-center h-32">
             <Loader2 className="w-6 h-6 animate-spin" />
@@ -137,34 +129,35 @@ export const PageChatPanel = ({
         )}
       </ScrollArea>
 
-      {/* Input - Fixed at bottom of drawer */}
-      <div className="absolute bottom-0 left-0 right-0 p-4 border-t bg-background">
-        <div className="flex gap-2">
-          <Input
-            value={inputMessage}
-            onChange={(e) => setInputMessage(e.target.value)}
-            onKeyPress={handleKeyPress}
-            placeholder={
-              canEdit 
-                ? "Ask a question or request an edit..." 
-                : "Ask a question about the content..."
-            }
-            disabled={sending}
-            className="flex-1"
-          />
-          <Button
-            onClick={handleSendMessage}
-            disabled={!inputMessage.trim() || sending}
-            size="sm"
-          >
-            {sending ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Send className="w-4 h-4" />
-            )}
-          </Button>
+        {/* Input */}
+        <div className="p-6 pt-4 border-t bg-background flex-shrink-0">
+          <div className="flex gap-2">
+            <Input
+              value={inputMessage}
+              onChange={(e) => setInputMessage(e.target.value)}
+              onKeyPress={handleKeyPress}
+              placeholder={
+                canEdit
+                  ? "Ask a question or request an edit..."
+                  : "Ask a question about the content..."
+              }
+              disabled={sending}
+              className="flex-1"
+            />
+            <Button
+              onClick={handleSendMessage}
+              disabled={!inputMessage.trim() || sending}
+              size="sm"
+            >
+              {sending ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Send className="w-4 h-4" />
+              )}
+            </Button>
+          </div>
         </div>
-      </div>
-    </div>
+      </SheetContent>
+    </Sheet>
   );
 };

@@ -1,15 +1,16 @@
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { 
-  Move, 
-  LayoutList, 
-  LayoutGrid, 
-  Trash2, 
-  Type, 
-  Section, 
+import {
+  Move,
+  LayoutList,
+  LayoutGrid,
+  Trash2,
+  Type,
+  Section,
   Plus,
-  MoreVertical
+  MoreVertical,
+  MessageSquare
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -46,13 +47,15 @@ import {
   reorderPages
 } from "./pageUtils";
 
-export const PagesList = ({ 
-  pages, 
-  bookId, 
-  isReorderMode = false, 
-  isDeleteMode = false, 
+export const PagesList = ({
+  pages,
+  bookId,
+  isReorderMode = false,
+  isDeleteMode = false,
   canEdit = false,
-  onDeleteModeChange 
+  onDeleteModeChange,
+  onChatToggle,
+  hasActiveChat
 }: PagesListProps) => {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -233,7 +236,21 @@ export const PagesList = ({
                 <LayoutList className="h-4 w-4" />
               )}
             </Button>
-            
+
+            {/* Chat button - available for everyone */}
+            {onChatToggle && (
+              <>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className={`rounded-full hidden sm:flex ${hasActiveChat ? 'bg-muted' : ''}`}
+                  onClick={onChatToggle}
+                >
+                  <MessageSquare className="h-4 w-4" />
+                </Button>
+              </>
+            )}
+
             {canEdit && (
               <>
                 <div className="sm:hidden">
@@ -244,6 +261,15 @@ export const PagesList = ({
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="start" className="w-40">
+                      {onChatToggle && (
+                        <DropdownMenuItem
+                          onClick={onChatToggle}
+                          className="flex items-center gap-2"
+                        >
+                          <MessageSquare className="h-4 w-4" />
+                          <span>Chat</span>
+                        </DropdownMenuItem>
+                      )}
                       <DropdownMenuItem
                         onClick={() => {
                           setIsReordering(false);

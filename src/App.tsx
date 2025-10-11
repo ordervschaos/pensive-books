@@ -23,6 +23,7 @@ import SetUsername from "@/pages/SetUsername";
 import JoinBook from "@/pages/JoinBook";
 import GenerateBook from "./pages/GenerateBook";
 import KindleSettings from "@/pages/KindleSettings";
+import BookFlashcards from "@/pages/BookFlashcards";
 import { useEffect } from "react";
 import { useGoogleAnalytics } from "@/hooks/useGoogleAnalytics";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -110,6 +111,14 @@ export default function App() {
                   element={
                     <PrivateRoute>
                       <BookEdit />
+                    </PrivateRoute>
+                  }
+                />
+                <Route
+                  path="/book/:id/flashcards"
+                  element={
+                    <PrivateRoute>
+                      <BookFlashcards />
                     </PrivateRoute>
                   }
                 />

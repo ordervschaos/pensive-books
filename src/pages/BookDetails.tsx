@@ -1,21 +1,34 @@
-import { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useEffect, useState, useCallback } from "react";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { BookInfo } from "@/components/book/BookInfo";
 import { PagesList } from "@/components/book/PagesList";
 import { useBookPermissions } from "@/hooks/use-book-permissions";
+import { useUserBookPreferences } from "@/hooks/use-user-book-preferences";
 import { BookActionsBar } from "@/components/book/BookActionsBar";
 import { ShareBookButton } from "@/components/book/ShareBookButton";
 import { ContinueReadingButton } from "@/components/book/ContinueReadingButton";
+import { BookChatPanel } from "@/components/book/BookChatPanel";
+import { IntegratedFlashcardSection } from "@/components/flashcard/IntegratedFlashcardSection";
+import { FlashcardEditor } from "@/components/flashcard/FlashcardEditor";
+import { GenerateFlashcardsDialog } from "@/components/flashcard/GenerateFlashcardsDialog";
+import { FlashcardModal } from "@/components/flashcard/FlashcardModal";
+import { useFlashcards } from "@/hooks/use-flashcards";
 import { setPageTitle } from "@/utils/pageTitle";
 import { Helmet } from "react-helmet-async";
+import { executeBookOperation } from "@/lib/book-operations";
+import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 
 const LOCALSTORAGE_BOOKMARKS_KEY = 'bookmarked_pages';
 
 const BookDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
   const [book, setBook] = useState<any>(null);
   const [pages, setPages] = useState<any[]>([]);
@@ -24,15 +37,47 @@ const BookDetails = () => {
   const [isReorderMode, setIsReorderMode] = useState(false);
   const [isDeleteMode, setIsDeleteMode] = useState(false);
   const [bookmarkedPageIndex, setBookmarkedPageIndex] = useState<number | null>(null);
+  const [isChatOpen, setIsChatOpen] = useState(false);
   const { canEdit, isOwner, loading: permissionsLoading } = useBookPermissions(id);
-
+  
+  // Get user session for preferences
+  const [session, setSession] = useState<any>(null);
+  
   const getNumericId = (param: string | undefined) => {
     if (!param) return 0;
     const match = param.match(/^(\d+)/);
     return match ? parseInt(match[1]) : 0;
   };
+  
+  // User book preferences
+  const { 
+    preferences, 
+    loading: preferencesLoading, 
+    toggleFlashcards 
+  } = useUserBookPreferences({ 
+    bookId: getNumericId(id), 
+    userId: session?.user?.id || '' 
+  });
 
-  const fetchBookmarkedPage = async (session: any) => {
+  // Flashcard management
+  const {
+    flashcards,
+    loading: flashcardsLoading,
+    createFlashcard,
+    updateFlashcard,
+    deleteFlashcard,
+    generateFlashcards
+  } = useFlashcards(getNumericId(id), session?.user?.id || '');
+
+  // Flashcard UI state
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [isGenerateDialogOpen, setIsGenerateDialogOpen] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [viewingFlashcard, setViewingFlashcard] = useState<any>(null);
+  const [currentFlashcardIndex, setCurrentFlashcardIndex] = useState(0);
+  const [editingFlashcard, setEditingFlashcard] = useState<any>(null);
+
+  const fetchBookmarkedPage = useCallback(async (session: any) => {
     try {
       const numericId = getNumericId(id);
       if (session) {
@@ -54,7 +99,7 @@ const BookDetails = () => {
     } catch (error: any) {
       console.error('Error fetching bookmarked page:', error);
     }
-  };
+  }, [id]);
 
   const updateBookmark = async (pageIndex: number | null) => {
     try {
@@ -97,17 +142,7 @@ const BookDetails = () => {
     }
   };
 
-  useEffect(() => {
-    const checkAuthAndFetch = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      fetchBookmarkedPage(session);
-      fetchBookDetails();
-    };
-
-    checkAuthAndFetch();
-  }, [id]);
-
-  const fetchBookDetails = async () => {
+  const fetchBookDetails = useCallback(async () => {
     try {
       const numericId = getNumericId(id);
       console.log('Fetching book details for ID:', numericId);
@@ -157,7 +192,18 @@ const BookDetails = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, navigate, toast]);
+
+  useEffect(() => {
+    const checkAuthAndFetch = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      setSession(session);
+      fetchBookmarkedPage(session);
+      fetchBookDetails();
+    };
+
+    checkAuthAndFetch();
+  }, [id, fetchBookmarkedPage, fetchBookDetails]);
 
   const togglePublish = async () => {
     try {
@@ -216,6 +262,171 @@ const BookDetails = () => {
     }
   };
 
+  // Prepare book metadata for chat
+  const getBookMetadata = () => {
+    if (!book || !pages) return null;
+
+    const metadata = {
+      name: book.name,
+      author: book.author || 'Unknown',
+      subtitle: book.subtitle || '',
+      pageCount: pages.length,
+      pages: pages.map(page => ({
+        id: page.id,
+        title: page.title || 'Untitled',
+        pageIndex: page.page_index,
+        summary: page.html_content 
+          ? page.html_content.replace(/<[^>]*>/g, '').trim().substring(0, 200) + '...'
+          : 'No content'
+      }))
+    };
+    
+    console.log('Book metadata being sent to AI:', JSON.stringify(metadata, null, 2));
+    return metadata;
+  };
+
+  // Handle book operations from chat
+  const handleApplyOperation = async (operation: {
+    type: 'add' | 'archive' | 'move' | 'edit';
+    pageId?: number;
+    newIndex?: number;
+    title?: string;
+    content?: string;
+    oldContent?: string;
+    newContent?: string;
+  }) => {
+    if (!canEdit) {
+      toast({
+        variant: "destructive",
+        title: "Permission denied",
+        description: "You don't have permission to edit this book"
+      });
+      return;
+    }
+
+    const numericId = getNumericId(id);
+    if (!numericId) return;
+
+    try {
+      const result = await executeBookOperation(operation, numericId, pages);
+      
+      if (result.success) {
+        toast({
+          title: "Operation completed",
+          description: `Successfully ${operation.type}ed page`
+        });
+        
+        // Refresh book data to reflect changes
+        await fetchBookDetails();
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Operation failed",
+          description: result.error || "Failed to complete operation"
+        });
+      }
+    } catch (error) {
+      console.error('Error applying operation:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to apply operation"
+      });
+    }
+  };
+
+  // Flashcard handlers
+  const handleCreateFlashcard = async (front: string, back: string) => {
+    try {
+      await createFlashcard(front, back);
+      setIsEditorOpen(false);
+      toast({
+        title: "Flashcard created",
+        description: "Your flashcard has been added successfully"
+      });
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to create flashcard"
+      });
+    }
+  };
+
+  const handleUpdateFlashcard = async (id: number, front: string, back: string) => {
+    try {
+      await updateFlashcard(id, front, back);
+      setIsEditorOpen(false);
+      setEditingFlashcard(null);
+      toast({
+        title: "Flashcard updated",
+        description: "Your flashcard has been updated successfully"
+      });
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to update flashcard"
+      });
+    }
+  };
+
+  const handleDeleteFlashcard = async (flashcard: any) => {
+    try {
+      await deleteFlashcard(flashcard.id);
+      toast({
+        title: "Flashcard deleted",
+        description: "Your flashcard has been removed"
+      });
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to delete flashcard"
+      });
+    }
+  };
+
+  const handleGenerateFlashcards = async () => {
+    try {
+      await generateFlashcards();
+      setIsGenerateDialogOpen(false);
+      toast({
+        title: "Flashcards generated",
+        description: "New flashcards have been created from your book content"
+      });
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to generate flashcards"
+      });
+    }
+  };
+
+  const handleViewFlashcard = (flashcard: any) => {
+    const index = flashcards.findIndex(f => f.id === flashcard.id);
+    setCurrentFlashcardIndex(index);
+    setViewingFlashcard(flashcard);
+    setIsModalOpen(true);
+  };
+
+  const handleEditFlashcard = (flashcard: any) => {
+    setEditingFlashcard(flashcard);
+    setIsEditorOpen(true);
+  };
+
+  const handleStudyFlashcard = (flashcard: any) => {
+    handleViewFlashcard(flashcard);
+  };
+
+  const handleNavigateFlashcard = (index: number) => {
+    if (index >= 0 && index < flashcards.length) {
+      setCurrentFlashcardIndex(index);
+      setViewingFlashcard(flashcards[index]);
+    }
+  };
+
   if (loading || !book) {
     return null;
   }
@@ -257,7 +468,7 @@ const BookDetails = () => {
       
       <div className="container mx-auto px-4 py-6">
         <div className="max-w-7xl mx-auto space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-4">
             <div className="lg:hidden col-span-full">
               <h1
                 className={`text-2xl font-bold mb-2 ${canEdit ? 'cursor-pointer hover:text-blue-600 transition-colors' : ''}`}
@@ -340,6 +551,7 @@ const BookDetails = () => {
     0), 0)} words</p>
               </div>
 
+
               <PagesList
                 pages={pages}
                 bookId={parseInt(id || "0")}
@@ -347,9 +559,71 @@ const BookDetails = () => {
                 isDeleteMode={isDeleteMode}
                 canEdit={canEdit}
                 onDeleteModeChange={(isDelete) => setIsDeleteMode(isDelete)}
+                onChatToggle={() => setIsChatOpen(!isChatOpen)}
+                hasActiveChat={isChatOpen}
+              />
+
+              {/* Integrated Flashcard Section */}
+              <IntegratedFlashcardSection
+                flashcards={flashcards}
+                loading={flashcardsLoading}
+                onGenerate={() => setIsGenerateDialogOpen(true)}
+                onEdit={handleEditFlashcard}
+                onDelete={handleDeleteFlashcard}
+                onStudy={handleStudyFlashcard}
+                onView={handleViewFlashcard}
+                isEnabled={preferences?.flashcards_enabled ?? true}
+                onToggleEnabled={toggleFlashcards}
+                preferencesLoading={preferencesLoading}
               />
             </div>
+
           </div>
+
+          {/* Chat Sidebar - Rendered as a portal */}
+          <BookChatPanel
+            bookId={id || ""}
+            bookMetadata={getBookMetadata()!}
+            canEdit={canEdit}
+            isOpen={isChatOpen}
+            onClose={() => setIsChatOpen(false)}
+            onApplyOperation={handleApplyOperation}
+          />
+
+          {/* Flashcard Dialogs */}
+          <FlashcardEditor
+            isOpen={isEditorOpen}
+            onClose={() => {
+              setIsEditorOpen(false);
+              setEditingFlashcard(null);
+            }}
+            onSubmit={editingFlashcard ? 
+              (front, back) => handleUpdateFlashcard(editingFlashcard.id, front, back) :
+              handleCreateFlashcard
+            }
+            initialFront={editingFlashcard?.front || ''}
+            initialBack={editingFlashcard?.back || ''}
+            title={editingFlashcard ? 'Edit Flashcard' : 'Create Flashcard'}
+          />
+
+          <GenerateFlashcardsDialog
+            isOpen={isGenerateDialogOpen}
+            onClose={() => setIsGenerateDialogOpen(false)}
+            onGenerate={handleGenerateFlashcards}
+            loading={flashcardsLoading}
+          />
+
+          <FlashcardModal
+            flashcard={viewingFlashcard}
+            flashcards={flashcards}
+            currentIndex={currentFlashcardIndex}
+            isOpen={isModalOpen}
+            onClose={() => {
+              setIsModalOpen(false);
+              setViewingFlashcard(null);
+            }}
+            onNavigate={handleNavigateFlashcard}
+          />
         </div>
       </div>
     </div>

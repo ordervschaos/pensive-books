@@ -2,6 +2,7 @@ import { Message, SuggestedEdit } from '@/hooks/use-page-chat';
 import { Button } from '@/components/ui/button';
 import { Check, X, User, Bot } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import ReactMarkdown from 'react-markdown';
 
 interface ChatMessageProps {
   message: Message;
@@ -39,11 +40,17 @@ export const ChatMessage = ({ message, onApplyEdit, onRejectEdit }: ChatMessageP
         {/* Message bubble */}
         <div className={cn(
           "rounded-lg px-4 py-2 text-sm",
-          isUser 
-            ? "bg-primary text-primary-foreground" 
+          isUser
+            ? "bg-primary text-primary-foreground"
             : "bg-muted text-foreground"
         )}>
-          <div className="whitespace-pre-wrap">{message.content}</div>
+          {isUser ? (
+            <div className="whitespace-pre-wrap">{message.content}</div>
+          ) : (
+            <div className="prose prose-sm max-w-none dark:prose-invert prose-p:my-2 prose-ul:my-2 prose-ol:my-2 prose-li:my-0">
+              <ReactMarkdown>{message.content}</ReactMarkdown>
+            </div>
+          )}
         </div>
 
         {/* Timestamp */}

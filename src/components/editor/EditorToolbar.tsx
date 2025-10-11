@@ -312,38 +312,39 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
         </>
       )}
 
-      {/* Chat button - available in both edit and preview modes */}
-      {onToggleChat && (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onToggleChat}
-          className={hasActiveChat ? 'bg-muted' : ''}
-        >
-          <MessageSquare className="h-4 w-4" />
-        </Button>
-      )}
+      {/* Edit and Chat buttons - grouped together on the right */}
+      <div className={`flex gap-1 items-center ${!isEditing ? 'ml-auto' : ''}`}>
+        {onToggleChat && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onToggleChat}
+            className={hasActiveChat ? 'bg-muted' : ''}
+          >
+            <MessageSquare className="h-4 w-4" />
+          </Button>
+        )}
 
-      {editable && (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onToggleEdit}
-          className="ml-auto"
-        >
-          {isEditing ? (
-            <>
-              <Eye className="mr-2 h-4 w-4" />
-              Preview
-            </>
-          ) : (
-            <>
-              <Pencil className="mr-2 h-4 w-4" />
-              Edit
-            </>
-          )}
-        </Button>
-      )}
+        {editable && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onToggleEdit}
+          >
+            {isEditing ? (
+              <>
+                <Eye className="mr-2 h-4 w-4" />
+                Preview
+              </>
+            ) : (
+              <>
+                <Pencil className="mr-2 h-4 w-4" />
+                Edit
+              </>
+            )}
+          </Button>
+        )}
+      </div>
     </div>
   );
 };

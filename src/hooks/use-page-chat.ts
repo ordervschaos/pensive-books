@@ -36,45 +36,45 @@ export const usePageChat = (pageId: string | undefined) => {
   const { toast } = useToast();
 
   // Fetch chat history when pageId changes
-  useEffect(() => {
-    if (!pageId) return;
+  // useEffect(() => {
+  //   if (!pageId) return;
 
-    const fetchChatHistory = async () => {
-      try {
-        setLoading(true);
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
+  //   const fetchChatHistory = async () => {
+  //     try {
+  //       setLoading(true);
+  //       const { data: { user } } = await supabase.auth.getUser();
+  //       if (!user) return;
 
-        const { data, error } = await supabase
-          .from('page_chats')
-          .select('*')
-          .eq('page_id', parseInt(pageId))
-          .eq('user_id', user.id)
-          .maybeSingle();
+  //       const { data, error } = await supabase
+  //         .from('page_chats')
+  //         .select('*')
+  //         .eq('page_id', parseInt(pageId))
+  //         .eq('user_id', user.id)
+  //         .maybeSingle();
 
-        if (error) throw error;
+  //       if (error) throw error;
 
-        if (data) {
-          setChatHistory(data);
-          setMessages(data.messages || []);
-        } else {
-          setChatHistory(null);
-          setMessages([]);
-        }
-      } catch (error) {
-        console.error('Error fetching chat history:', error);
-        toast({
-          variant: "destructive",
-          title: "Error loading chat",
-          description: "Failed to load chat history"
-        });
-      } finally {
-        setLoading(false);
-      }
-    };
+  //       if (data) {
+  //         setChatHistory(data);
+  //         setMessages(data.messages || []);
+  //       } else {
+  //         setChatHistory(null);
+  //         setMessages([]);
+  //       }
+  //     } catch (error) {
+  //       console.error('Error fetching chat history:', error);
+  //       toast({
+  //         variant: "destructive",
+  //         title: "Error loading chat",
+  //         description: "Failed to load chat history"
+  //       });
+  //     } finally {
+  //       setLoading(false);
+  //     }
+  //   };
 
-    fetchChatHistory();
-  }, [pageId, toast]);
+  //   fetchChatHistory();
+  // }, [pageId, toast]);
 
   // Save chat history to database
   const saveChatHistory = useCallback(async (newMessages: Message[]) => {

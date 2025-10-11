@@ -1,5 +1,6 @@
 import { TipTapEditor } from "@/components/editor/TipTapEditor";
 import { PageHistory } from "./PageHistory";
+import { AudioPlayer } from "./AudioPlayer";
 import { useEffect, useState } from "react";
 
 interface TextPageContentProps {
@@ -38,6 +39,17 @@ export const TextPageContent = ({
 
   return (
     <div className={`flex-1 ${!isEditing ? '' : ''}`}>
+      {/* Audio Player - Always visible */}
+      {pageId && (
+        <div className="mb-4 flex justify-end">
+          <AudioPlayer 
+            pageId={parseInt(pageId)} 
+            content={content}
+            compact={false}
+          />
+        </div>
+      )}
+      
       <TipTapEditor 
         content={initialContent}
         onChange={onChange}
@@ -46,7 +58,15 @@ export const TextPageContent = ({
         onToggleEdit={canEdit ? onToggleEdit : undefined}
         onToggleChat={onToggleChat}
         hasActiveChat={hasActiveChat}
-        customButtons={canEdit && pageId ? <PageHistory pageId={parseInt(pageId) || 0} currentContent={content} onRevert={onRevert} /> : undefined}
+        customButtons={
+          canEdit && pageId ? (
+            <PageHistory 
+              pageId={parseInt(pageId) || 0} 
+              currentContent={content} 
+              onRevert={onRevert} 
+            />
+          ) : undefined
+        }
       />
     </div>
   );

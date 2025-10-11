@@ -465,6 +465,137 @@ export type Database = {
           },
         ]
       }
+      flashcards: {
+        Row: {
+          id: number
+          book_id: number
+          user_id: string
+          front: string
+          back: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: number
+          book_id: number
+          user_id: string
+          front: string
+          back: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: number
+          book_id?: number
+          user_id?: string
+          front?: string
+          back?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "flashcards_book_id_fkey"
+            columns: ["book_id"]
+            isOneToOne: false
+            referencedRelation: "books"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "flashcards_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_book_preferences: {
+        Row: {
+          id: string
+          user_id: string
+          book_id: number
+          flashcards_enabled: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          book_id: number
+          flashcards_enabled?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          book_id?: number
+          flashcards_enabled?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_book_preferences_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_book_preferences_book_id_fkey"
+            columns: ["book_id"]
+            isOneToOne: false
+            referencedRelation: "books"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      page_audio: {
+        Row: {
+          id: string
+          page_id: number
+          audio_url: string
+          audio_duration: number | null
+          character_count: number
+          voice_id: string
+          content_hash: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          page_id: number
+          audio_url: string
+          audio_duration?: number | null
+          character_count: number
+          voice_id?: string
+          content_hash: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          page_id?: number
+          audio_url?: string
+          audio_duration?: number | null
+          character_count?: number
+          voice_id?: string
+          content_hash?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "page_audio_page_id_fkey"
+            columns: ["page_id"]
+            isOneToOne: false
+            referencedRelation: "pages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       public_user_profiles: {
