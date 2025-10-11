@@ -12,7 +12,6 @@ import {
   SidebarContent,
   SidebarInset
 } from "@/components/ui/sidebar";
-import { PagePreloader } from "@/components/page/PagePreloader";
 import { PageChatPanel } from "@/components/page/PageChatPanel";
 import { PageMeta } from "@/components/page/PageMeta";
 import { SlugService } from "@/utils/slugService";
@@ -25,7 +24,6 @@ import { useKeyboardNavigation } from "@/hooks/use-keyboard-navigation";
 import { usePageSave } from "@/hooks/use-page-save";
 import { useEditMode } from "@/hooks/use-edit-mode";
 import { usePageTitle } from "@/hooks/use-page-title";
-import { usePagePreloaderEffect } from "@/hooks/use-page-preloader-effect";
 import { usePageCreation } from "@/hooks/use-page-creation";
 
 /**
@@ -86,7 +84,6 @@ const PageView = () => {
   // 9. Side effects (auto-tracking)
   useBookmarkTracking(numericBookId, currentIndex);
   useKeyboardNavigation({ onNext: navigateNext, onPrev: navigatePrev }, isEditing);
-  usePagePreloaderEffect(numericBookId, nextPageId, dataLoading);
   usePageTitle(page?.title, book?.name);
 
   // 10. Loading state
@@ -118,15 +115,6 @@ const PageView = () => {
 
         {/* SEO Meta Tags */}
         <PageMeta page={page} book={book} />
-
-        {/* Hidden preloader for next page */}
-        {nextPageId && (
-          <PagePreloader
-            bookId={numericBookId}
-            pageId={nextPageId}
-            onPreloaded={(id) => console.log(`Preloaded page ${id}`)}
-          />
-        )}
 
         <div className="flex flex-1 h-full">
 
