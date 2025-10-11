@@ -42,11 +42,14 @@ export const PageContent = ({
   const { toast } = useToast();
 
   useEffect(() => {
-    console.log("PageContent: Content prop changed, updating state");
-    setCurrentContent(content || '');
-    setCurrentTitle(title || '');
-    setInitialLoad(true);
-  }, [content, title]);
+    // Only update content if not currently editing to prevent overwriting user input
+    if (!isEditing) {
+      console.log("PageContent: Content prop changed, updating state");
+      setCurrentContent(content || '');
+      setCurrentTitle(title || '');
+      setInitialLoad(true);
+    }
+  }, [content, title, isEditing]);
 
   const debouncedSave = useCallback(
     debounce(async (html: string, json: any) => {

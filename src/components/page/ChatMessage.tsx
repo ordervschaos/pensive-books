@@ -90,7 +90,10 @@ const EditSuggestion = ({ edit, onApply, onReject }: EditSuggestionProps) => {
         <div>
           <div className="text-xs font-medium text-destructive mb-1">Remove:</div>
           <div className="text-sm bg-destructive/10 p-2 rounded border-l-2 border-destructive">
-            {edit.old}
+            <div 
+              className="prose prose-sm max-w-none"
+              dangerouslySetInnerHTML={{ __html: edit.old }}
+            />
           </div>
         </div>
 
@@ -98,7 +101,10 @@ const EditSuggestion = ({ edit, onApply, onReject }: EditSuggestionProps) => {
         <div>
           <div className="text-xs font-medium text-green-600 mb-1">Add:</div>
           <div className="text-sm bg-green-50 p-2 rounded border-l-2 border-green-600">
-            {edit.new}
+            <div 
+              className="prose prose-sm max-w-none"
+              dangerouslySetInnerHTML={{ __html: edit.new }}
+            />
           </div>
         </div>
       </div>

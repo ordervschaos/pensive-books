@@ -59,7 +59,7 @@ const PageView = () => {
     console.log(`Page ${preloadedPageId} has been preloaded`);
   }, []);
 
-  const updateBookmark = async (pageIndex: number) => {
+  const updateBookmark = useCallback(async (pageIndex: number) => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
 
@@ -95,7 +95,7 @@ const PageView = () => {
         description: error instanceof Error ? error.message : 'Unknown error'
       });
     }
-  };
+  }, [numericBookId, toast]);
 
   const fetchPageDetails = useCallback(async () => {
     try {

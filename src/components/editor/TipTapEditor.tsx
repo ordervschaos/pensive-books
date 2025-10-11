@@ -42,12 +42,13 @@ export const TipTapEditor = ({
   const editor = useEditor(config);
 
   // Add useEffect to update editor content when content prop changes
+  // BUT only if the editor is not currently being edited (to avoid overwriting user input)
   useEffect(() => {
-    if (editor && content !== editor.getHTML()) {
+    if (editor && content !== editor.getHTML() && !isEditing) {
       console.log("TipTapEditor: Content prop changed, updating editor content");
       editor.commands.setContent(content);
     }
-  }, [editor, content]);
+  }, [editor, content, isEditing]);
 
   useEffect(() => {
     if (editor) {
