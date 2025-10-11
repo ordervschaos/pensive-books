@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -8,241 +8,118 @@ import { PageLoading } from "@/components/page/PageLoading";
 import { PageNotFound } from "@/components/page/PageNotFound";
 import { useBookPermissions } from "@/hooks/use-book-permissions";
 import { setPageTitle } from "@/utils/pageTitle";
-import { Helmet } from "react-helmet-async";
-import { List } from "lucide-react";
 import { TableOfContents } from "@/components/page/TableOfContents";
-import { 
-  SidebarProvider, 
-  Sidebar, 
-  SidebarContent, 
-  SidebarTrigger, 
-  SidebarInset 
+import {
+  SidebarProvider,
+  Sidebar,
+  SidebarContent,
+  SidebarInset
 } from "@/components/ui/sidebar";
 import { PagePreloader } from "@/components/page/PagePreloader";
-import { preloadPages, getNextPageIds } from "@/utils/pagePreloader";
+import { preloadPages } from "@/utils/pagePreloader";
 import { PageChatPanel } from "@/components/page/PageChatPanel";
+import { PageMeta } from "@/components/page/PageMeta";
+import { SlugService } from "@/utils/slugService";
 
-const LOCALSTORAGE_BOOKMARKS_KEY = 'bookmarked_pages';
+// Custom hooks
+import { usePageViewData } from "@/hooks/use-page-view-data";
+import { useBookmarkTracking } from "@/hooks/use-bookmark-tracking";
+import { usePageNavigation } from "@/hooks/use-page-navigation";
+import { useKeyboardNavigation } from "@/hooks/use-keyboard-navigation";
+import { usePageSave } from "@/hooks/use-page-save";
 
-const PageView = () => {
+/**
+ * Refactored PageView component - Now much cleaner!
+ * Delegates logic to custom hooks and child components
+ */
+const PageViewRefactored = () => {
+  // 1. URL parameters
   const { bookId, pageId } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [searchParams] = useSearchParams();
-  const [page, setPage] = useState<{id: number; title: string; html_content: string; page_type: string; updated_at: string} | null>(null);
-  const [book, setBook] = useState<{id: number; name: string; cover_url?: string; author?: string; published_at?: string} | null>(null);
-  const [nextPageTitle, setNextPageTitle] = useState<string>("");
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [totalPages, setTotalPages] = useState(0);
-  const [currentIndex, setCurrentIndex] = useState(0);
+
+  // 2. Extract numeric IDs from slugs
+  const numericBookId = SlugService.extractId(bookId);
+  const numericPageId = SlugService.extractId(pageId);
+
+  // 3. Fetch all data using custom hook
+  const {
+    page,
+    book,
+    allPages,
+    currentIndex,
+    totalPages,
+    nextPageId,
+    nextPageTitle,
+    loading: dataLoading,
+  } = usePageViewData(bookId, pageId);
+
+  // 4. Check permissions
+  const { canEdit, loading: permissionsLoading } = useBookPermissions(numericBookId.toString());
+
+  // 5. Local UI state
   const [isEditing, setIsEditing] = useState(false);
-  const [allPages, setAllPages] = useState<{id: number; title: string; page_index: number}[]>([]);
-  const [nextPageId, setNextPageId] = useState<number | null>(null);
-  const [preloadedPageIds, setPreloadedPageIds] = useState<number[]>([]);
   const [isChatOpen, setIsChatOpen] = useState(false);
-  
-  
-  const getNumericId = (param: string | undefined) => {
-    if (!param) return 0;
-    const match = param.match(/^(\d+)/);
-    return match ? parseInt(match[1]) : 0;
-  };
-  
-  const numericBookId = getNumericId(bookId);
-  const numericPageId = getNumericId(pageId);
-  const { canEdit, loading: loadingPermissions } = useBookPermissions(numericBookId.toString());
 
-  // Handle preloaded page data
-  const handlePreloaded = useCallback((preloadedPageId: number) => {
-    console.log(`Page ${preloadedPageId} has been preloaded`);
-  }, []);
-
-  const updateBookmark = useCallback(async (pageIndex: number) => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-
-      if (session) {
-        const { data: userData, error: fetchError } = await supabase
-          .from('user_data')
-          .select('bookmarked_pages')
-          .eq('user_id', session.user.id)
-          .maybeSingle();
-
-        if (fetchError) throw fetchError;
-
-        const bookmarks = (userData?.bookmarked_pages as Record<string, number>) || {};
-        const updatedBookmarks = { ...bookmarks, [numericBookId]: pageIndex };
-
-        const { error: updateError } = await supabase
-          .from('user_data')
-          .update({ bookmarked_pages: updatedBookmarks })
-          .eq('user_id', session.user.id);
-
-        if (updateError) throw updateError;
-      } else {
-        const storedBookmarks = localStorage.getItem(LOCALSTORAGE_BOOKMARKS_KEY);
-        const bookmarks = storedBookmarks ? JSON.parse(storedBookmarks) : {};
-        const updatedBookmarks = { ...bookmarks, [numericBookId]: pageIndex };
-        localStorage.setItem(LOCALSTORAGE_BOOKMARKS_KEY, JSON.stringify(updatedBookmarks));
-      }
-    } catch (error: unknown) {
-      console.error('Error updating bookmark:', error);
-      toast({
-        variant: "destructive",
-        title: "Error updating bookmark",
-        description: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  }, [numericBookId, toast]);
-
-  const fetchPageDetails = useCallback(async () => {
-    try {
-      setLoading(true);
-      console.log("Fetching page details for pageId:", numericPageId);
-      
-      // If not in cache, fetch from API
-      const { data: pageData, error: pageError } = await supabase
-        .from("pages")
-        .select("*")
-        .eq("id", numericPageId)
-        .eq("book_id", numericBookId)
-        .eq("archived", false)
-        .maybeSingle();
-
-      if (pageError) throw pageError;
-      if (!pageData) {
-        console.log("Page not found:", numericPageId);
-        return;
-      }
-      
-      console.log("Page data fetched:", pageData);
-      
-      if (pageData && !pageId?.includes('-') && pageData.title) {
-        const slug = `${numericPageId}-${pageData.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
-        navigate(`/book/${bookId}/page/${slug}`, { replace: true });
-      }
-      
-      setPage(pageData);
-
-      const { data: bookData, error: bookError } = await supabase
-        .from("books")
-        .select("*")
-        .eq("id", numericBookId)
-        .eq("is_archived", false)
-        .maybeSingle();
-
-      if (bookError) throw bookError;
-      if (!bookData) {
-        console.log("Book not found:", numericBookId);
-        return;
-      }
-      
-      console.log("Book data fetched:", bookData);
-      
-      if (bookData && !bookId?.includes('-') && bookData.name) {
-        const slug = `${numericBookId}-${bookData.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
-        navigate(`/book/${slug}/page/${pageId}`, { replace: true });
-      }
-      
-      setBook(bookData);
-
-      const { data: pagesData, error: pagesError } = await supabase
-        .from("pages")
-        .select("id, title, page_index")
-        .eq("book_id", numericBookId)
-        .eq("archived", false)
-        .order("page_index", { ascending: true });
-
-      if (pagesError) throw pagesError;
-
-      setAllPages(pagesData || []);
-      setTotalPages(pagesData.length);
-      const currentPageIndex = pagesData.findIndex(p => p.id === numericPageId);
-      setCurrentIndex(currentPageIndex);
-
-      // Update bookmark when page loads
-      if (currentPageIndex !== -1) {
-        updateBookmark(currentPageIndex);
-      }
-
-      // Get next page title if not the last page
-      if (currentPageIndex < pagesData.length - 1) {
-        const nextPage = pagesData[currentPageIndex + 1];
-        setNextPageTitle(nextPage.title || "");
-        setNextPageId(nextPage.id);
-      }
-
-    } catch (error: unknown) {
-      toast({
-        variant: "destructive",
-        title: "Error fetching page details",
-        description: error instanceof Error ? error.message : 'Unknown error'
-      });
-    } finally {
-      setLoading(false);
-    }
-  }, [numericBookId, numericPageId, bookId, pageId, navigate, updateBookmark]);
-
-  const getTitleFromHtml = (html: string) => {
-    const doc = new DOMParser().parseFromString(html, 'text/html');
-    const h1 = doc.querySelector('h1');
-    const title = h1?.textContent?.trim() || 'Untitled';
-    return title;
-  }
-
-  const handleSave = async (html: string) => {
-    if (!canEdit) {
-      toast({
-        variant: "destructive",
-        title: "Permission denied",
-        description: "You don't have permission to edit this page"
-      });
-      return;
-    }
-
-    try {
-      setSaving(true);
-      const { error } = await supabase
-        .from("pages")
-        .update({ 
-          html_content: html,
-          title: getTitleFromHtml(html),
-          updated_at: new Date().toISOString()
-        })
-        .eq("id", parseInt(pageId || "0"));
-
-      if (error) throw error;
-
-      // Update the page state with the new content
+  // 6. Page save logic
+  const { handleSave, handleApplyEdit, saving } = usePageSave(
+    pageId,
+    canEdit,
+    (updatedHtml, updatedTitle) => {
+      // Update local page state after successful save
       if (page) {
-        const updatedPage = {
-          ...page,
-          html_content: html,
-          title: getTitleFromHtml(html),
-          updated_at: new Date().toISOString()
-        };
-        setPage(updatedPage);
+        page.html_content = updatedHtml;
+        page.title = updatedTitle;
       }
-    } catch (error: unknown) {
-      toast({
-        variant: "destructive",
-        title: "Error saving page",
-        description: error instanceof Error ? error.message : 'Unknown error'
-      });
-    } finally {
-      setSaving(false);
     }
-  };
+  );
 
-  const handleApplyEdit = (oldText: string, newText: string) => {
-    if (!page?.html_content) return;
-    
-    const updatedContent = page.html_content.replace(oldText, newText);
-    handleSave(updatedContent);
-  };
+  // 7. Navigation logic
+  const { navigateNext, navigatePrev } = usePageNavigation(
+    bookId,
+    numericBookId,
+    allPages,
+    currentIndex
+  );
 
-  const createNewPage = async () => {
+  // 8. Bookmark tracking (auto-runs on page change)
+  useBookmarkTracking(numericBookId, currentIndex);
+
+  // 9. Keyboard shortcuts
+  useKeyboardNavigation(
+    {
+      onNext: navigateNext,
+      onPrev: navigatePrev,
+    },
+    isEditing
+  );
+
+  // 10. Set page title in browser
+  useEffect(() => {
+    if (page && book) {
+      setPageTitle(`${page.title} - ${book.name}`);
+    }
+  }, [page, book]);
+
+  // 11. Auto-enter edit mode if URL has ?edit=true
+  useEffect(() => {
+    if (searchParams.get("edit") === "true" && canEdit) {
+      setIsEditing(true);
+    }
+  }, [searchParams, canEdit]);
+
+  // 12. Preload next pages for performance
+  useEffect(() => {
+    if (!dataLoading && nextPageId) {
+      preloadPages(numericBookId, [nextPageId]).catch(error => {
+        console.error('Error preloading next page:', error);
+      });
+    }
+  }, [nextPageId, numericBookId, dataLoading]);
+
+  // 13. Create new page handler
+  const createNewPage = useCallback(async () => {
     if (!canEdit) {
       toast({
         variant: "destructive",
@@ -253,15 +130,15 @@ const PageView = () => {
     }
 
     try {
-      // Insert a new page with page_index set to the max + 1 in a single query
       const { data: newPage, error } = await supabase
         .rpc('create_next_page', {
-          p_book_id: parseInt(bookId || "0")
+          p_book_id: numericBookId
         })
         .select()
         .single();
 
       if (error) throw error;
+
       setIsEditing(true);
       navigate(`/book/${bookId}/page/${newPage.id}`);
 
@@ -276,148 +153,10 @@ const PageView = () => {
         description: error instanceof Error ? error.message : 'Unknown error'
       });
     }
-  };
+  }, [canEdit, numericBookId, bookId, navigate, toast]);
 
-  const navigateToPage = useCallback(async (index: number) => {
-    try {
-      const nextPage = allPages.find(p => p.page_index === index);
-      if (!nextPage) {
-        console.error("Next page not found in allPages");
-        return;
-      }
-      
-      const nextPageId = nextPage.id;
-      updateBookmark(index);
-      
-      const slug = nextPage.title ? 
-        `${nextPageId}-${nextPage.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}` : 
-        nextPageId.toString();
-      
-      // Use navigate with replace: false to ensure the browser history is updated correctly
-      navigate(`/book/${bookId}/page/${slug}`, { replace: false });
-      
-      // Force a fetch of the new page data
-      setLoading(true);
-      const { data: pageData, error: pageError } = await supabase
-        .from("pages")
-        .select("*")
-        .eq("id", nextPageId)
-        .eq("book_id", numericBookId)
-        .eq("archived", false)
-        .maybeSingle();
-
-      if (pageError) throw pageError;
-      if (!pageData) {
-        return;
-      }
-      
-      setPage(pageData);
-      
-      // Fetch book data if needed
-      const { data: bookData, error: bookError } = await supabase
-        .from("books")
-        .select("*")
-        .eq("id", numericBookId)
-        .eq("is_archived", false)
-        .maybeSingle();
-
-      if (bookError) throw bookError;
-      if (!bookData) {
-        return;
-      }
-      
-      setBook(bookData);
-      setLoading(false);
-    } catch (error: unknown) {
-      toast({
-        variant: "destructive",
-        title: "Error navigating to page",
-        description: error instanceof Error ? error.message : 'Unknown error'
-      });
-      setLoading(false);
-    }
-  }, [allPages, numericBookId, numericPageId, bookId, navigate, toast, updateBookmark]);
-
-  // event listenet to navigate to next and previous pages
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'ArrowRight' && !isEditing) {
-        navigateToPage(currentIndex + 1);
-      }
-      if (event.key === 'ArrowLeft' && !isEditing) {
-        navigateToPage(currentIndex - 1);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentIndex, navigateToPage, isEditing]);
-  
-
-
-  useEffect(() => {
-    fetchPageDetails();
-  }, [bookId, pageId, fetchPageDetails]);
-
-  useEffect(() => {
-    if (page && book) {
-      setPageTitle(`${page.title} - ${book.name}`);
-    }
-  }, [page, book]);
-
-  // Check for edit mode from URL params
-  useEffect(() => {
-    if (searchParams.get("edit") === "true" && canEdit) {
-      setIsEditing(true);
-    }
-  }, [searchParams, canEdit]);
-
-  // Preload multiple pages
-  const preloadNextPages = useCallback(async () => {
-    if (!numericBookId || !numericPageId) return;
-    
-    try {
-      // Get the next 3 page IDs
-      const nextIds = await getNextPageIds(numericBookId, numericPageId, 3);
-      
-      if (nextIds.length > 0) {
-        // Filter out already preloaded pages
-        const newPageIds = nextIds.filter(id => !preloadedPageIds.includes(id));
-        
-        if (newPageIds.length > 0) {
-          // Preload the new pages
-          await preloadPages(numericBookId, newPageIds);
-          
-          // Update the list of preloaded page IDs
-          setPreloadedPageIds(prev => [...prev, ...newPageIds]);
-        }
-      }
-    } catch (error) {
-      console.error("Error preloading next pages:", error);
-    }
-  }, [numericBookId, numericPageId, preloadedPageIds]);
-
-  // Preload next pages when the current page changes
-  useEffect(() => {
-    if (!loading && page && book) {
-      preloadNextPages();
-    }
-  }, [loading, page, book, preloadNextPages]);
-
-  // Add a useEffect to preload the next page when the current page changes
-  useEffect(() => {
-    if (nextPageId && !loading) {
-      // Preload the next page
-      preloadPages(numericBookId, [nextPageId])
-        .then(() => {
-          console.log(`Preloaded page ${nextPageId}`);
-        })
-        .catch(error => {
-          console.error('Error preloading next page:', error);
-        });
-    }
-  }, [nextPageId, numericBookId, loading]);
-
-  if (loading || loadingPermissions) {
+  // 14. Loading state
+  if (dataLoading || permissionsLoading) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
         <div className="flex-1 container max-w-4xl mx-auto px-4 py-4">
@@ -427,6 +166,7 @@ const PageView = () => {
     );
   }
 
+  // 15. Not found state
   if (!page || !book) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
@@ -437,76 +177,49 @@ const PageView = () => {
     );
   }
 
-  const getTextPreview = (htmlContent: string) => {
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = htmlContent || '';
-    
-    const textContent = tempDiv.textContent || '';
-    return textContent.substring(0, 160) + (textContent.length > 160 ? '...' : '');
-  };
-
-  const currentUrl = window.location.href;
-  const coverImageUrl = book.cover_url 
-    ? new URL(book.cover_url, window.location.origin).toString()
-    : `${window.location.origin}/default-book-cover.png`;
-  
-  const pageDescription = getTextPreview(page.html_content || '');
-  const pageTitle = `${page.title} - ${book.name}`;
-
+  // 16. Main render
   return (
     <SidebarProvider defaultOpen={false}>
       <div className="min-h-[calc(100vh-56px)] flex flex-col bg-background w-full">
-        <Helmet>
-          <title>{pageTitle}</title>
-          <meta name="title" content={pageTitle} />
-          <meta name="description" content={pageDescription} />
-          
-          <meta property="og:type" content="article" />
-          <meta property="og:url" content={currentUrl} />
-          <meta property="og:title" content={pageTitle} />
-          <meta property="og:description" content={pageDescription} />
-          <meta property="og:image" content={coverImageUrl} />
-          
-          <meta property="twitter:card" content="summary_large_image" />
-          <meta property="twitter:url" content={currentUrl} />
-          <meta property="twitter:title" content={pageTitle} />
-          <meta property="twitter:description" content={pageDescription} />
-          <meta property="twitter:image" content={coverImageUrl} />
-          
-          {book.author && <meta property="article:author" content={book.author} />}
-          {book.published_at && <meta property="article:published_time" content={book.published_at} />}
-        </Helmet>
-        
-        {/* Preload the next page if available */}
+
+        {/* SEO Meta Tags */}
+        <PageMeta page={page} book={book} />
+
+        {/* Hidden preloader for next page */}
         {nextPageId && (
-          <PagePreloader 
-            bookId={numericBookId} 
-            pageId={nextPageId} 
-            onPreloaded={handlePreloaded} 
+          <PagePreloader
+            bookId={numericBookId}
+            pageId={nextPageId}
+            onPreloaded={(id) => console.log(`Preloaded page ${id}`)}
           />
         )}
-        
+
         <div className="flex flex-1 h-full">
+
+          {/* Left Sidebar: Table of Contents */}
           <Sidebar variant="sidebar" side="left">
             <SidebarContent>
-              <TableOfContents 
-                pages={allPages} 
-                bookId={bookId || ""} 
+              <TableOfContents
+                pages={allPages}
+                bookId={bookId || ""}
                 currentPageId={numericPageId}
               />
             </SidebarContent>
           </Sidebar>
-          
+
+          {/* Main Content Area */}
           <SidebarInset className="flex-1 flex flex-col">
             <div className="flex flex-1 flex-col">
               <div className="flex-1 container max-w-5xl mx-auto px-4 py-4 flex flex-col gap-4">
                 <div className="flex-1 flex flex-col">
+
+                  {/* Page Editor/Viewer */}
                   <PageContent
-                    content={page?.html_content || ''}
-                    title={page?.title || 'Untitled'}
+                    content={page.html_content || ''}
+                    title={page.title || 'Untitled'}
                     onSave={handleSave}
                     saving={saving}
-                    pageType={page?.page_type as 'text' | 'section'}
+                    pageType={page.page_type as 'text' | 'section'}
                     editable={canEdit}
                     onEditingChange={setIsEditing}
                     canEdit={canEdit}
@@ -516,31 +229,43 @@ const PageView = () => {
                     onToggleChat={() => setIsChatOpen(!isChatOpen)}
                     hasActiveChat={isChatOpen}
                   />
+
+                  {/* Navigation Controls */}
                   <PageNavigation
                     bookId={bookId || ""}
                     currentIndex={currentIndex}
                     totalPages={totalPages}
-                    onNavigate={navigateToPage}
+                    onNavigate={(index) => {
+                      const targetPage = allPages[index];
+                      if (targetPage) {
+                        const slug = SlugService.generateSlug(targetPage.id, targetPage.title);
+                        navigate(`/book/${bookId}/page/${slug}`);
+                      }
+                    }}
                     nextPageTitle={nextPageTitle}
-                    bookTitle={book?.name}
+                    bookTitle={book.name}
                     isEditing={isEditing}
                     onNewPage={createNewPage}
                     canEdit={canEdit}
                     nextPageId={nextPageId}
                   />
+
                 </div>
               </div>
             </div>
 
-            {/* Chat Sidebar - Rendered as a portal */}
+            {/* Right Sidebar: AI Chat Panel */}
             <PageChatPanel
               pageId={pageId || ""}
-              pageContent={page?.html_content || ''}
+              pageContent={page.html_content || ''}
               canEdit={canEdit}
               isOpen={isChatOpen}
               onClose={() => setIsChatOpen(false)}
-              onApplyEdit={handleApplyEdit}
+              onApplyEdit={(oldText, newText) =>
+                handleApplyEdit(oldText, newText, page.html_content)
+              }
             />
+
           </SidebarInset>
         </div>
       </div>
@@ -548,4 +273,4 @@ const PageView = () => {
   );
 };
 
-export default PageView;
+export default PageViewRefactored;
