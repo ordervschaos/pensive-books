@@ -50,7 +50,7 @@ export default function PageHistoryView() {
         
         // Get page history
         const { data, error } = await supabase
-          .from("page_versions")
+          .from("page_history")
           .select("*")
           .eq("page_id", numericPageId)
           .order("created_at", { ascending: false });
@@ -83,7 +83,7 @@ export default function PageHistoryView() {
       
       // Get the version content
       const { data: versionData, error: versionError } = await supabase
-        .from("page_versions")
+        .from("page_history")
         .select("html_content")
         .eq("id", versionId)
         .single();
@@ -161,7 +161,7 @@ export default function PageHistoryView() {
                     </Button>
                   </div>
                   <div 
-                    className="mt-4 p-4 border rounded-md bg-gray-50"
+                    className="mt-4 p-4 border rounded-md bg-muted/50"
                     dangerouslySetInnerHTML={{ __html: version.html_content }}
                   />
                 </Card>

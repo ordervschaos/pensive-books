@@ -1,14 +1,15 @@
-import { useState, useCallback, ChangeEvent, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { debounce } from "lodash";
 import { SectionPageContent } from "./SectionPageContent";
 import { TextPageContent } from "./TextPageContent";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { EditorJSON, PageSaveHandler } from "@/types/editor";
 
 interface PageContentProps {
   content: string;
   title: string;
-  onSave: (html: string, json: any) => void;
+  onSave: PageSaveHandler;
   saving: boolean;
   pageType?: 'text' | 'section';
   editable?: boolean;
@@ -21,11 +22,11 @@ interface PageContentProps {
   hasActiveChat?: boolean;
 }
 
-export const PageContent = ({ 
-  content, 
-  title, 
-  onSave, 
-  pageType = 'text', 
+export const PageContent = ({
+  content,
+  title,
+  onSave,
+  pageType = 'text',
   editable = false,
   onEditingChange,
   canEdit = false,
@@ -38,8 +39,8 @@ export const PageContent = ({
   const [initialLoad, setInitialLoad] = useState(true);
   const [currentContent, setCurrentContent] = useState(content || '');
   const [currentTitle, setCurrentTitle] = useState(title || '');
-  const [editorJson, setEditorJson] = useState<any>(null);
   const { toast } = useToast();
+  const debouncedSaveRef = useRef<ReturnType<typeof debounce>>();
 
   useEffect(() => {
     // Only update content if not currently editing to prevent overwriting user input
@@ -51,8 +52,9 @@ export const PageContent = ({
     }
   }, [content, title, isEditing]);
 
-  const debouncedSave = useCallback(
-    debounce(async (html: string, json: any) => {
+  // Create debounced save function
+  useEffect(() => {
+    debouncedSaveRef.current = debounce(async (html: string, json: EditorJSON | null) => {
       if (!initialLoad && pageId) {
         try {
           // Get the current user's ID
@@ -65,7 +67,7 @@ export const PageContent = ({
             .upsert(
               {
                 page_id: parseInt(pageId),
-                html_content: content,
+                html_content: html,
                 created_by: user.id,
                 created_at: new Date().toISOString()
               },
@@ -73,7 +75,7 @@ export const PageContent = ({
                 onConflict: 'page_id,created_at_minute'
               }
             );
-          
+
           // Then save the new content
           onSave(html, json);
         } catch (error) {
@@ -82,19 +84,22 @@ export const PageContent = ({
       } else {
         onSave(html, json);
       }
-    }, 200),
-    [onSave, initialLoad, content, pageId]
-  );
+    }, 200);
 
-  const handleContentChange = (html: string, json: any) => {
+    // Cleanup: cancel any pending debounced calls
+    return () => {
+      debouncedSaveRef.current?.cancel();
+    };
+  }, [onSave, initialLoad, pageId]);
+
+  const handleContentChange = useCallback((html: string, json: EditorJSON | null) => {
     if (!editable) return;
     setCurrentContent(html);
-    setEditorJson(json);
     setInitialLoad(false);
-    debouncedSave(html, json);
-  };
+    debouncedSaveRef.current?.(html, json);
+  }, [editable]);
 
-  const handleRevertToVersion = async (versionContent: string) => {
+  const handleRevertToVersion = useCallback(async (versionContent: string) => {
     try {
       setCurrentContent(versionContent);
       await onSave(versionContent, null);
@@ -110,14 +115,12 @@ export const PageContent = ({
         description: "Failed to restore the selected version."
       });
     }
-  };
+  }, [onSave, toast]);
 
-  const handleEditingChange = (editing: boolean) => {
-    setIsEditing(editing);
-    if (onEditingChange) {
-      onEditingChange(editing);
-    }
-  };
+  const handleEditingChange = useCallback((editing: boolean) => {
+    setIsEditing?.(editing);
+    onEditingChange?.(editing);
+  }, [setIsEditing, onEditingChange]);
 
   return (
     <div className="flex-1 flex flex-col bg-background">
@@ -130,6 +133,8 @@ export const PageContent = ({
             onChange={handleContentChange}
             onToggleEdit={() => handleEditingChange(!isEditing)}
             canEdit={canEdit}
+            onToggleChat={onToggleChat}
+            hasActiveChat={hasActiveChat}
           />
         ) : (
           <TextPageContent

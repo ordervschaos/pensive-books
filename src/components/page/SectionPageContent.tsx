@@ -15,6 +15,8 @@ interface SectionPageContentProps {
   content: string;
   onToggleEdit?: () => void;
   canEdit?: boolean;
+  onToggleChat?: () => void;
+  hasActiveChat?: boolean;
 }
 
 export const SectionPageContent = ({ 
@@ -23,7 +25,9 @@ export const SectionPageContent = ({
   onChange,
   content,
   onToggleEdit,
-  canEdit = false
+  canEdit = false,
+  onToggleChat,
+  hasActiveChat
 }: SectionPageContentProps) => {
   const isMobile = useIsMobile();
   const [initialContent, setInitialContent] = useState(content || `<h1 class="page-title">${title}</h1>`);
@@ -48,7 +52,7 @@ export const SectionPageContent = ({
         },
         // Disable all other nodes/marks
         paragraph: false,
-        text: true,
+        text: {},
         bold: false,
         italic: false,
         strike: false,
@@ -92,6 +96,8 @@ export const SectionPageContent = ({
           editable={canEdit}
           isEditing={isEditing}
           onToggleEdit={onToggleEdit}
+          onToggleChat={onToggleChat}
+          hasActiveChat={hasActiveChat}
           editorConfig={sectionEditorConfig}
           hideToolbar
           className="min-h-[200px] flex items-center justify-center"

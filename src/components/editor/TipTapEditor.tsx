@@ -1,14 +1,16 @@
 import { useEditor, EditorContent } from '@tiptap/react';
-import { useEffect } from 'react';
+import { useEffect, useCallback } from 'react';
 import { useToast } from "@/hooks/use-toast";
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useSupabaseUpload } from '@/hooks/use-supabase-upload';
 import { getEditorConfig } from './config/editorConfig';
 import { EditorToolbar } from './EditorToolbar';
 import { cn } from "@/lib/utils";
+import { EditorChangeHandler } from '@/types/editor';
 
 interface TipTapEditorProps {
   content: string;
-  onChange: (html: string, json: any) => void;
+  onChange: EditorChangeHandler;
   editable?: boolean;
   isEditing?: boolean;
   onToggleEdit?: () => void;
@@ -20,11 +22,11 @@ interface TipTapEditorProps {
   hasActiveChat?: boolean;
 }
 
-export const TipTapEditor = ({ 
-  content, 
+export const TipTapEditor = ({
+  content,
   onChange,
-  editable = true, 
-  isEditing = true, 
+  editable = true,
+  isEditing = true,
   onToggleEdit,
   editorConfig,
   hideToolbar = false,
@@ -35,8 +37,9 @@ export const TipTapEditor = ({
 }: TipTapEditorProps) => {
   const { toast } = useToast();
   const isMobile = useIsMobile();
+  const uploadImage = useSupabaseUpload();
 
-  const defaultConfig = getEditorConfig(content, onChange, editable, isEditing);
+  const defaultConfig = getEditorConfig(content, onChange, editable, isEditing, uploadImage);
   const config = editorConfig || defaultConfig;
 
   const editor = useEditor(config);
@@ -50,6 +53,19 @@ export const TipTapEditor = ({
     }
   }, [editor, content, isEditing]);
 
+  // Memoize the copy button click handler
+  const handleCopyClick = useCallback((e: Event) => {
+    e.preventDefault();
+    const code = (e.currentTarget as HTMLElement).getAttribute('data-code');
+    if (code) {
+      navigator.clipboard.writeText(code);
+      toast({
+        title: "Copied to clipboard",
+        duration: 1000,
+      });
+    }
+  }, [toast]);
+
   useEffect(() => {
     if (editor) {
       editor.setEditable(editable && isEditing);
@@ -60,27 +76,24 @@ export const TipTapEditor = ({
       // Add click handlers for copy buttons
       const copyButtons = document.querySelectorAll('.copy-button');
       copyButtons.forEach(button => {
-        button.addEventListener('click', (e) => {
-          e.preventDefault();
-          const code = (e.currentTarget as HTMLElement).getAttribute('data-code');
-          if (code) {
-            navigator.clipboard.writeText(code);
-            toast({
-              title: "Copied to clipboard",
-              duration: 1000,
-            });
-          }
-        });
+        button.addEventListener('click', handleCopyClick);
       });
+
+      // Cleanup: remove event listeners
+      return () => {
+        copyButtons.forEach(button => {
+          button.removeEventListener('click', handleCopyClick);
+        });
+      };
     }
-  }, [editor, editable, isEditing]);
+  }, [editor, editable, isEditing, handleCopyClick]);
 
   if (!editor) {
     return null;
   }
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col min-h-[600px]">
       {!hideToolbar && (
         <EditorToolbar 
           editor={editor} 

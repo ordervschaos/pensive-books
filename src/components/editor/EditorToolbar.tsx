@@ -289,16 +289,6 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
             <Link2 className="h-4 w-4" />
           </Button>
           
-          {onToggleChat && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onToggleChat}
-              className={hasActiveChat ? 'bg-muted' : ''}
-            >
-              <MessageSquare className="h-4 w-4" />
-            </Button>
-          )}
           <div className="relative">
             <Button
               variant="ghost"
@@ -320,6 +310,18 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
             
           </div>
         </>
+      )}
+
+      {/* Chat button - available in both edit and preview modes */}
+      {onToggleChat && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onToggleChat}
+          className={hasActiveChat ? 'bg-muted' : ''}
+        >
+          <MessageSquare className="h-4 w-4" />
+        </Button>
       )}
 
       {editable && (

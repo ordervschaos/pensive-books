@@ -46,7 +46,7 @@ export const TextPageContent = ({
         onToggleEdit={canEdit ? onToggleEdit : undefined}
         onToggleChat={onToggleChat}
         hasActiveChat={hasActiveChat}
-        // customButtons={canEdit && pageId ? <PageHistory pageId={parseInt(pageId) || 0} currentContent={content} onRevert={onRevert} /> : undefined}
+        customButtons={canEdit && pageId ? <PageHistory pageId={parseInt(pageId) || 0} currentContent={content} onRevert={onRevert} /> : undefined}
       />
     </div>
   );

@@ -9,12 +9,24 @@ import TableHeader from '@tiptap/extension-table-header';
 import { Title } from '../extensions/Title';
 import { SmartTypography } from '../extensions/SmartTypography';
 import { common, createLowlight } from 'lowlight';
-import { useSupabaseUpload } from '@/hooks/use-supabase-upload';
+import { EditorChangeHandler } from '@/types/editor';
+import type { EditorView } from '@tiptap/pm/view';
+import type { Slice } from '@tiptap/pm/model';
 
 export const lowlight = createLowlight(common);
 
-export const getEditorConfig = (content: string, onChange: (html: string, json?: any) => void, editable = true, isEditing = true) => {
-  const uploadImage = useSupabaseUpload();
+// Type for the image upload function
+type ImageUploadFn = (file: File) => {
+  upload: (options?: { preserveAnimation?: boolean }) => Promise<{ default: string }>;
+};
+
+export const getEditorConfig = (
+  content: string,
+  onChange: EditorChangeHandler,
+  editable = true,
+  isEditing = true,
+  uploadImage: ImageUploadFn
+) => {
 
   return {
     extensions: [
@@ -125,26 +137,28 @@ export const getEditorConfig = (content: string, onChange: (html: string, json?:
       onChange(editor.getHTML(), editor.getJSON());
     },
     editorProps: {
-      handleDrop: (view: any, event: any, slice: any, moved: boolean) => {
+      handleDrop: (view: EditorView, event: DragEvent, _slice: Slice, moved: boolean) => {
         if (!moved && event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0]) {
           const file = event.dataTransfer.files[0];
           if (file.type.startsWith('image/')) {
             event.preventDefault();
-            
+
             const isGif = file.type === 'image/gif';
             uploadImage(file).upload({ preserveAnimation: isGif }).then(({ default: url }) => {
               const { schema } = view.state;
               const node = schema.nodes.image.create({ src: url });
               const transaction = view.state.tr.replaceSelectionWith(node);
               view.dispatch(transaction);
+            }).catch(error => {
+              console.error('Error uploading image:', error);
             });
-            
+
             return true;
           }
         }
         return false;
       },
-      handlePaste: (view: any, event: any, slice: any) => {
+      handlePaste: (view: EditorView, event: ClipboardEvent, _slice: Slice) => {
         const items = event.clipboardData?.items;
         if (!items) return false;
 
@@ -152,19 +166,22 @@ export const getEditorConfig = (content: string, onChange: (html: string, json?:
           if (item.type.startsWith('image/')) {
             event.preventDefault();
             const file = item.getAsFile();
-            
+            if (!file) continue;
+
             const isGif = item.type === 'image/gif';
             uploadImage(file).upload({ preserveAnimation: isGif }).then(({ default: url }) => {
               const { schema } = view.state;
               const node = schema.nodes.image.create({ src: url });
               const transaction = view.state.tr.replaceSelectionWith(node);
               view.dispatch(transaction);
+            }).catch(error => {
+              console.error('Error uploading image:', error);
             });
-            
+
             return true;
           }
         }
-        
+
         return false;
       },
     },
