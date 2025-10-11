@@ -67,6 +67,7 @@ export const PagesList = ({
   const [previousViewMode, setPreviousViewMode] = useState<'list' | 'grid'>('grid');
   const [bookmarkedPageIndex, setBookmarkedPageIndex] = useState<number | null>(null);
   const bookmarkedPageRef = useRef<HTMLDivElement>(null);
+  const isBetaEnabled = localStorage.getItem('is_beta') === 'true';
 
   useEffect(() => {
     const loadBookmarkedPage = async () => {
@@ -237,8 +238,8 @@ export const PagesList = ({
               )}
             </Button>
 
-            {/* Chat button - available for everyone */}
-            {onChatToggle && (
+            {/* Chat button - available for everyone in beta */}
+            {onChatToggle && isBetaEnabled && (
               <>
                 <Button
                   variant="outline"
@@ -261,7 +262,7 @@ export const PagesList = ({
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="start" className="w-40">
-                      {onChatToggle && (
+                      {onChatToggle && isBetaEnabled && (
                         <DropdownMenuItem
                           onClick={onChatToggle}
                           className="flex items-center gap-2"

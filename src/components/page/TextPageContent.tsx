@@ -16,11 +16,11 @@ interface TextPageContentProps {
   hasActiveChat?: boolean;
 }
 
-export const TextPageContent = ({ 
-  content, 
-  isEditing, 
-  onChange, 
-  title, 
+export const TextPageContent = ({
+  content,
+  isEditing,
+  onChange,
+  title,
   onToggleEdit,
   canEdit = false,
   onRevert,
@@ -31,6 +31,9 @@ export const TextPageContent = ({
   // Create initial content with title if it's empty
   const [initialContent, setInitialContent] = useState(content || `<h1 class="page-title">${title}</h1><p></p>`);
 
+  // Check beta flag
+  const isBetaEnabled = localStorage.getItem('is_beta') === 'true';
+
   // Update initialContent when content or title changes
   useEffect(() => {
     console.log("TextPageContent: Content or title changed, updating initialContent");
@@ -39,11 +42,11 @@ export const TextPageContent = ({
 
   return (
     <div className={`flex-1 ${!isEditing ? '' : ''}`}>
-      {/* Audio Player - Always visible */}
-      {pageId && (
+      {/* Audio Player - Only visible in beta */}
+      {pageId && isBetaEnabled && (
         <div className="mb-4 flex justify-end">
-          <AudioPlayer 
-            pageId={parseInt(pageId)} 
+          <AudioPlayer
+            pageId={parseInt(pageId)}
             content={content}
             compact={false}
           />

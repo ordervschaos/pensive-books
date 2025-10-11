@@ -26,6 +26,7 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
   const { toast } = useToast();
   const uploadImage = useSupabaseUpload();
   const isMobile = useMediaQuery("(max-width: 768px)");
+  const isBetaEnabled = localStorage.getItem('is_beta') === 'true';
 
   if (!editor) return null;
 
@@ -314,7 +315,7 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
 
       {/* Edit and Chat buttons - grouped together on the right */}
       <div className={`flex gap-1 items-center ${!isEditing ? 'ml-auto' : ''}`}>
-        {onToggleChat && (
+        {onToggleChat && isBetaEnabled && (
           <Button
             variant="ghost"
             size="sm"

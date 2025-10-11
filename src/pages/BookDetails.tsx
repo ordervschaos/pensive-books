@@ -42,7 +42,10 @@ const BookDetails = () => {
   
   // Get user session for preferences
   const [session, setSession] = useState<any>(null);
-  
+
+  // Check beta flag
+  const isBetaEnabled = localStorage.getItem('is_beta') === 'true';
+
   const getNumericId = (param: string | undefined) => {
     if (!param) return 0;
     const match = param.match(/^(\d+)/);
@@ -563,19 +566,21 @@ const BookDetails = () => {
                 hasActiveChat={isChatOpen}
               />
 
-              {/* Integrated Flashcard Section */}
-              <IntegratedFlashcardSection
-                flashcards={flashcards}
-                loading={flashcardsLoading}
-                onGenerate={() => setIsGenerateDialogOpen(true)}
-                onEdit={handleEditFlashcard}
-                onDelete={handleDeleteFlashcard}
-                onStudy={handleStudyFlashcard}
-                onView={handleViewFlashcard}
-                isEnabled={preferences?.flashcards_enabled ?? true}
-                onToggleEnabled={toggleFlashcards}
-                preferencesLoading={preferencesLoading}
-              />
+              {/* Integrated Flashcard Section - Only visible in beta */}
+              {isBetaEnabled && (
+                <IntegratedFlashcardSection
+                  flashcards={flashcards}
+                  loading={flashcardsLoading}
+                  onGenerate={() => setIsGenerateDialogOpen(true)}
+                  onEdit={handleEditFlashcard}
+                  onDelete={handleDeleteFlashcard}
+                  onStudy={handleStudyFlashcard}
+                  onView={handleViewFlashcard}
+                  isEnabled={preferences?.flashcards_enabled ?? true}
+                  onToggleEnabled={toggleFlashcards}
+                  preferencesLoading={preferencesLoading}
+                />
+              )}
             </div>
 
           </div>
