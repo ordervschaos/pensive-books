@@ -7,6 +7,7 @@ import TableRow from '@tiptap/extension-table-row';
 import TableCell from '@tiptap/extension-table-cell';
 import TableHeader from '@tiptap/extension-table-header';
 import { Title } from '../extensions/Title';
+import { SmartTypography } from '../extensions/SmartTypography';
 import { common, createLowlight } from 'lowlight';
 import { useSupabaseUpload } from '@/hooks/use-supabase-upload';
 
@@ -18,6 +19,7 @@ export const getEditorConfig = (content: string, onChange: (html: string, json?:
   return {
     extensions: [
       Title,
+      SmartTypography,
       StarterKit.configure({
         document: false,
         blockquote: {
