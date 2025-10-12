@@ -80,12 +80,6 @@ export const usePageViewData = (
         return;
       }
 
-      // Auto-redirect to slug URL if needed
-      if (pageData && !SlugService.hasSlug(pageId) && pageData.title) {
-        const slug = SlugService.generateSlug(numericPageId, pageData.title);
-        navigate(`/book/${bookId}/page/${slug}`, { replace: true });
-      }
-
       setPage(pageData);
 
       // 2. Fetch parent book data
@@ -102,13 +96,27 @@ export const usePageViewData = (
         return;
       }
 
-      // Auto-redirect book to slug URL if needed
-      if (bookData && !SlugService.hasSlug(bookId) && bookData.name) {
-        const slug = SlugService.generateSlug(numericBookId, bookData.name);
-        navigate(`/book/${slug}/page/${pageId}`, { replace: true });
-      }
-
       setBook(bookData);
+
+      // Auto-redirect to slug URL if needed (do it once with both slugs)
+      const needsPageSlug = !SlugService.hasSlug(pageId) && pageData.title;
+      const needsBookSlug = !SlugService.hasSlug(bookId) && bookData.name;
+
+      if (needsPageSlug || needsBookSlug) {
+        const bookSlug = needsBookSlug
+          ? SlugService.generateSlug(numericBookId, bookData.name)
+          : bookId;
+        const pageSlug = needsPageSlug
+          ? SlugService.generateSlug(numericPageId, pageData.title)
+          : pageId;
+
+        // Preserve query params (like ?edit=true)
+        const searchParams = new URLSearchParams(window.location.search);
+        const queryString = searchParams.toString();
+        const fullPath = `/book/${bookSlug}/page/${pageSlug}${queryString ? `?${queryString}` : ''}`;
+
+        navigate(fullPath, { replace: true });
+      }
 
       // 3. Fetch all pages for navigation
       const { data: pagesData, error: pagesError } = await supabase
