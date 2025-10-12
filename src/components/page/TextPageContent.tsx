@@ -42,7 +42,7 @@ export const TextPageContent = ({
         onToggleEdit={undefined} // Edit button now handled by FloatingActions
         onToggleChat={undefined} // Chat button now handled by FloatingActions
         hasActiveChat={hasActiveChat}
-        className={centerContent ? "text-center" : undefined}
+        centerContent={centerContent}
         customButtons={canEdit && pageId && <PageHistory pageId={parseInt(pageId)} />}
       />
       
