@@ -9,10 +9,12 @@ export interface AudioBlock {
   textContent: string;
   level?: number; // for headings
   children?: AudioBlock[]; // for nested structures like lists
+  marks?: any[]; // inline formatting marks (bold, italic, etc.)
+  rawNode?: any; // original TipTap node for advanced processing
 }
 
 /**
- * Extract text content from TipTap node
+ * Extract text content from TipTap node with proper spacing
  */
 function extractTextFromNode(node: any): string {
   if (node.type === 'text') {
@@ -20,6 +22,12 @@ function extractTextFromNode(node: any): string {
   }
 
   if (node.content && Array.isArray(node.content)) {
+    // Add spacing between block-level elements (paragraphs, etc.)
+    if (node.type === 'listItem' || node.type === 'blockquote') {
+      // For list items and blockquotes, join nested content with spaces
+      return node.content.map((child: any) => extractTextFromNode(child)).join(' ').trim();
+    }
+    // For other nodes, join without separators
     return node.content.map((child: any) => extractTextFromNode(child)).join('');
   }
 

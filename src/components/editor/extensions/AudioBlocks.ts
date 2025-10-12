@@ -1,12 +1,12 @@
 /**
  * Audio Blocks Extension for TipTap
  * Adds data-audio-block attributes to rendered elements for audio highlighting
+ * Uses same extraction logic as the edge function for consistency
  */
 
 import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
-
-let globalBlockIndex = 0;
+import { extractAudioBlocks } from '@/utils/audioBlockExtractor';
 
 export const AudioBlocks = Extension.create({
   name: 'audioBlocks',
@@ -48,9 +48,6 @@ export const AudioBlocks = Extension.create({
       new Plugin({
         key: new PluginKey('audioBlocks'),
         appendTransaction: (transactions, oldState, newState) => {
-          // Reset block counter
-          globalBlockIndex = 0;
-
           const tr = newState.tr;
           let modified = false;
 
@@ -60,7 +57,17 @@ export const AudioBlocks = Extension.create({
             return null;
           }
 
-          // Traverse the document and assign block indices
+          // Extract blocks using the same logic as the edge function
+          const tiptapJSON = newState.doc.toJSON();
+          const audioBlocks = extractAudioBlocks(tiptapJSON);
+          
+          // Create a map of text content to block index for matching
+          const blockIndexMap = new Map<string, number>();
+          audioBlocks.forEach(block => {
+            blockIndexMap.set(block.textContent.trim(), block.index);
+          });
+
+          // Traverse the document and assign matching block indices
           newState.doc.descendants((node, pos) => {
             if (
               node.isBlock &&
@@ -74,15 +81,16 @@ export const AudioBlocks = Extension.create({
               const hasContent = node.textContent.trim().length > 0;
               
               if (hasContent) {
-                const currentIndex = node.attrs.audioBlock;
-                if (currentIndex !== globalBlockIndex) {
+                const nodeText = node.textContent.trim();
+                const blockIndex = blockIndexMap.get(nodeText);
+                
+                if (blockIndex !== undefined && node.attrs.audioBlock !== blockIndex) {
                   tr.setNodeMarkup(pos, undefined, {
                     ...node.attrs,
-                    audioBlock: globalBlockIndex,
+                    audioBlock: blockIndex,
                   });
                   modified = true;
                 }
-                globalBlockIndex++;
               }
             }
             return true;

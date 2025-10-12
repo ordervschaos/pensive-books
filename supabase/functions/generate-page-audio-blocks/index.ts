@@ -14,7 +14,7 @@ interface AudioBlock {
 }
 
 /**
- * Extract text content from TipTap node
+ * Extract text content from TipTap node with proper spacing
  */
 function extractTextFromNode(node: any): string {
   if (node.type === 'text') {
@@ -22,6 +22,12 @@ function extractTextFromNode(node: any): string {
   }
 
   if (node.content && Array.isArray(node.content)) {
+    // Add spacing between block-level elements (paragraphs, etc.)
+    if (node.type === 'listItem' || node.type === 'blockquote') {
+      // For list items and blockquotes, join nested content with spaces
+      return node.content.map((child: any) => extractTextFromNode(child)).join(' ').trim();
+    }
+    // For other nodes, join without separators
     return node.content.map((child: any) => extractTextFromNode(child)).join('');
   }
 
@@ -197,12 +203,103 @@ function generateContentHash(text: string): string {
 }
 
 /**
- * Generate audio for a single block using ElevenLabs
+ * Add intelligent sentence breaks to text for natural pacing
+ */
+function addSentenceBreaks(text: string): string {
+  return text
+    // Sentence endings: period, exclamation, question mark
+    .replace(/([.!?])\s+/g, '$1<break time="0.3s"/> ')
+    // Commas, semicolons, colons
+    .replace(/([,;:])\s+/g, '$1<break time="0.15s"/> ')
+    // Em dashes (often used for emphasis or asides)
+    .replace(/\s*—\s*/g, ' <break time="0.2s"/> ')
+    // Handle ellipsis
+    .replace(/\.\.\.\s*/g, '...<break time="0.4s"/> ');
+}
+
+/**
+ * Check if text contains nested list indicators (for proper pause handling)
+ */
+function hasNestedContent(text: string): boolean {
+  // Check if text has multiple line breaks or nested structure indicators
+  return text.includes('\n') || text.split('•').length > 2;
+}
+
+/**
+ * Convert audio block to SSML markup for expressive narration
+ */
+function blockToSsml(block: AudioBlock): string {
+  let ssml = '';
+  
+  switch (block.type) {
+    case 'heading':
+      // Headings get strong emphasis and longer pauses
+      const emphasisLevel = (block.level === 1) ? 'strong' : 'moderate';
+      const pauseTime = (block.level === 1) ? '0.8s' : 
+                       (block.level === 2) ? '0.6s' : '0.5s';
+      ssml = `<emphasis level="${emphasisLevel}">${block.textContent}</emphasis><break time="${pauseTime}"/>`;
+      break;
+    
+    case 'blockquote':
+      // Quotes get slight pitch change and surrounding pauses for distinction
+      ssml = `<break time="0.4s"/><prosody pitch="-5%">${block.textContent}</prosody><break time="0.4s"/>`;
+      break;
+    
+    case 'listItem':
+      // List items get intro pause and moderate end pause
+      // If list item has nested content, add longer pause after for separation
+      const hasNested = hasNestedContent(block.textContent);
+      const endPause = hasNested ? '0.5s' : '0.3s';
+      
+      // Process text: add sentence breaks and handle nested structure
+      let processedText = block.textContent;
+      
+      // If text looks like multiple concatenated statements without punctuation,
+      // treat capital letters as new sentence starts
+      if (processedText.match(/[a-z][A-Z]/) && !processedText.includes('. ')) {
+        // Add periods before capital letters that follow lowercase (missing sentence boundaries)
+        processedText = processedText.replace(/([a-z])([A-Z])/g, '$1. $2');
+      }
+      
+      // Add sentence breaks and handle nested bullets
+      processedText = addSentenceBreaks(processedText)
+        .replace(/\s*•\s*/g, '<break time="0.25s"/> ');
+      
+      ssml = `<break time="0.15s"/>${processedText}<break time="${endPause}"/>`;
+      break;
+    
+    case 'paragraph':
+      // Paragraphs get natural sentence breaks plus paragraph pause
+      ssml = addSentenceBreaks(block.textContent) + '<break time="0.5s"/>';
+      break;
+    
+    case 'codeBlock':
+      // Code blocks announced simply with pauses
+      ssml = `<break time="0.3s"/>Code block<break time="0.3s"/>`;
+      break;
+    
+    default:
+      // Default: add sentence breaks if text is long enough
+      if (block.textContent.length > 50) {
+        ssml = addSentenceBreaks(block.textContent) + '<break time="0.4s"/>';
+      } else {
+        ssml = block.textContent + '<break time="0.3s"/>';
+      }
+  }
+  
+  return ssml;
+}
+
+/**
+ * Generate audio for a single block using ElevenLabs with SSML markup
  */
 async function generateBlockAudio(
-  text: string,
+  block: AudioBlock,
   elevenLabsApiKey: string
 ): Promise<ArrayBuffer> {
+  // Convert block to SSML for expressive narration
+  const ssmlText = blockToSsml(block);
+  
   const response = await fetch(
     `https://api.elevenlabs.io/v1/text-to-speech/JBFqnCBsd6RMkjVDRZzb`,
     {
@@ -213,12 +310,12 @@ async function generateBlockAudio(
         'xi-api-key': elevenLabsApiKey,
       },
       body: JSON.stringify({
-        text: `<speak>${text}</speak>`,
+        text: `<speak>${ssmlText}</speak>`,
         model_id: 'eleven_multilingual_v2',
         voice_settings: {
-          stability: 0.5,
-          similarity_boost: 0.5,
-          style: 0.0,
+          stability: 0.5,        // Balanced for accuracy and expression (was 0.4)
+          similarity_boost: 0.8, // Higher to prevent word hallucinations (was 0.75)
+          style: 0.3,            // Moderate style - prevents adding random words (was 0.6)
           use_speaker_boost: true
         }
       }),
@@ -342,7 +439,7 @@ serve(async (req) => {
         // Generate new audio
         console.log(`Generating audio for block ${block.index}: ${block.textContent.substring(0, 50)}...`);
         
-        const audioBlob = await generateBlockAudio(block.textContent, elevenLabsApiKey);
+        const audioBlob = await generateBlockAudio(block, elevenLabsApiKey);
         const duration = estimateDuration(block.textContent);
         
         // Upload to Supabase Storage
