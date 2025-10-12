@@ -16,12 +16,14 @@ interface UseTextToSpeechReturn {
   error: string | null;
   duration: number;
   currentTime: number;
+  playbackRate: number;
   generateAudio: () => Promise<void>;
   regenerateAudio: () => Promise<void>;
   play: () => void;
   pause: () => void;
   stop: () => void;
   seek: (time: number) => void;
+  setPlaybackRate: (rate: number) => void;
 }
 
 interface GenerateAudioResponse {
@@ -88,6 +90,7 @@ export const useTextToSpeech = ({
   const [error, setError] = useState<string | null>(null);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
+  const [playbackRate, setPlaybackRateState] = useState(1);
   const [audioData, setAudioData] = useState<PageAudio | null>(null);
 
   // Use custom hook for audio element management
@@ -221,6 +224,14 @@ export const useTextToSpeech = ({
     }
   }, []);
 
+  // Set playback rate
+  const setPlaybackRate = useCallback((rate: number) => {
+    if (audioRef.current) {
+      audioRef.current.playbackRate = rate;
+      setPlaybackRateState(rate);
+    }
+  }, []);
+
   // Load audio data on mount
   // useEffect(() => {
   //   fetchAudioData();
@@ -233,11 +244,13 @@ export const useTextToSpeech = ({
     error,
     duration,
     currentTime,
+    playbackRate,
     generateAudio,
     regenerateAudio,
     play,
     pause,
     stop,
     seek,
+    setPlaybackRate,
   };
 };
