@@ -126,8 +126,8 @@ export const PageNavigation = ({
       {
         isEditing && (
           <div className="flex items-center gap-2 justify-center">
-            <Button variant="outline" className="rounded-full" onClick={() => setIsEditing(false)}>
-              <Check className="h-5 w-5 flex-shrink-0" />
+            <Button variant="default" className="rounded-full" onClick={() => setIsEditing(false)}>
+              <Check className="h-5 w-5 flex-shrink-0" /> I'm done editing
             </Button>
           </div>
         )
