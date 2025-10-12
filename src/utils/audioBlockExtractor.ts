@@ -14,7 +14,7 @@ export interface AudioBlock {
 }
 
 /**
- * Extract text content from TipTap node with proper spacing
+ * Extract text content from TipTap node
  */
 function extractTextFromNode(node: any): string {
   if (node.type === 'text') {
@@ -22,12 +22,7 @@ function extractTextFromNode(node: any): string {
   }
 
   if (node.content && Array.isArray(node.content)) {
-    // Add spacing between block-level elements (paragraphs, etc.)
-    if (node.type === 'listItem' || node.type === 'blockquote') {
-      // For list items and blockquotes, join nested content with spaces
-      return node.content.map((child: any) => extractTextFromNode(child)).join(' ').trim();
-    }
-    // For other nodes, join without separators
+    // Join child content
     return node.content.map((child: any) => extractTextFromNode(child)).join('');
   }
 
@@ -43,7 +38,30 @@ function hasTextContent(node: any): boolean {
 }
 
 /**
- * Process list items into individual audio blocks
+ * Extract text from a list item, excluding nested lists
+ */
+function extractListItemText(item: any): string {
+  if (!item.content || !Array.isArray(item.content)) {
+    return '';
+  }
+  
+  // Only extract text from direct paragraphs/text, skip nested lists
+  const textParts: string[] = [];
+  for (const child of item.content) {
+    if (child.type === 'paragraph') {
+      const text = extractTextFromNode(child).trim();
+      if (text) {
+        textParts.push(text);
+      }
+    }
+    // Skip bulletList and orderedList - they'll be processed recursively
+  }
+  
+  return textParts.join(' ');
+}
+
+/**
+ * Process list items into individual audio blocks (handles nested lists recursively)
  */
 function processListItems(
   listNode: any,
@@ -55,14 +73,24 @@ function processListItems(
   }
 
   for (const item of listNode.content) {
-    if (item.type === 'listItem' && hasTextContent(item)) {
-      const text = extractTextFromNode(item).trim();
+    if (item.type === 'listItem') {
+      // Extract text from this list item (excluding nested lists)
+      const text = extractListItemText(item).trim();
       if (text) {
         blocks.push({
           index: blockIndex++,
           type: 'listItem',
           textContent: text,
         });
+      }
+      
+      // Now process any nested lists within this item
+      if (item.content && Array.isArray(item.content)) {
+        for (const child of item.content) {
+          if (child.type === 'bulletList' || child.type === 'orderedList') {
+            blockIndex = processListItems(child, blockIndex, blocks);
+          }
+        }
       }
     }
   }
