@@ -1,6 +1,8 @@
 import { TipTapEditor } from "@/components/editor/TipTapEditor";
 import { PageHistory } from "./PageHistory";
 import { FloatingActions } from "./FloatingActions";
+import { useAudioHighlighting } from "@/hooks/use-audio-highlighting";
+import { useAdaptiveTextToSpeech } from "@/hooks/use-adaptive-text-to-speech";
 
 interface TextPageContentProps {
   content: string;
@@ -13,6 +15,7 @@ interface TextPageContentProps {
   onToggleChat?: () => void;
   hasActiveChat?: boolean;
   centerContent?: boolean;
+  jsonContent?: any;
 }
 
 export const TextPageContent = ({
@@ -25,11 +28,26 @@ export const TextPageContent = ({
   pageId,
   onToggleChat,
   hasActiveChat,
-  centerContent = false
+  centerContent = false,
+  jsonContent
 }: TextPageContentProps) => {
   // Always use the prop content directly - don't maintain separate state
   // This ensures content updates immediately when navigating between pages
   const displayContent = content || `<h1 class="page-title">${title}</h1><p></p>`;
+
+  // Audio state management
+  const audioState = useAdaptiveTextToSpeech({
+    pageId: pageId ? parseInt(pageId) : undefined,
+    content,
+    jsonContent,
+  });
+
+  // Apply audio highlighting
+  useAudioHighlighting({
+    currentBlockIndex: audioState.currentBlockIndex,
+    isPlaying: audioState.isPlaying,
+    autoScroll: true,
+  });
 
   return (
     <div className={`flex-1 ${!isEditing ? '' : ''}`}>
@@ -55,6 +73,7 @@ export const TextPageContent = ({
         hasActiveChat={hasActiveChat}
         pageId={pageId}
         content={content}
+        audioState={audioState}
       />
     </div>
   );

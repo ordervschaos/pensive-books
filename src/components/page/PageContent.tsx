@@ -19,6 +19,7 @@ interface PageContentProps {
   setIsEditing?: (isEditing: boolean) => void;
   onToggleChat?: () => void;
   hasActiveChat?: boolean;
+  jsonContent?: any;
 }
 
 export const PageContent = ({
@@ -34,6 +35,7 @@ export const PageContent = ({
   setIsEditing,
   onToggleChat,
   hasActiveChat,
+  jsonContent,
 }: PageContentProps) => {
   const [initialLoad, setInitialLoad] = useState(true);
   const [currentContent, setCurrentContent] = useState(content || '');
@@ -120,6 +122,7 @@ export const PageContent = ({
                 onToggleChat={onToggleChat}
                 hasActiveChat={hasActiveChat}
                 centerContent={pageType === 'section'}
+                jsonContent={jsonContent}
               />
             </div>
           </div>

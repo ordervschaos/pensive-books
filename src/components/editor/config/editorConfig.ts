@@ -8,6 +8,7 @@ import TableCell from '@tiptap/extension-table-cell';
 import TableHeader from '@tiptap/extension-table-header';
 import { Title } from '../extensions/Title';
 import { SmartTypography } from '../extensions/SmartTypography';
+import { AudioBlocks } from '../extensions/AudioBlocks';
 import { common, createLowlight } from 'lowlight';
 import { EditorChangeHandler } from '@/types/editor';
 import type { EditorView } from '@tiptap/pm/view';
@@ -32,6 +33,7 @@ export const getEditorConfig = (
     extensions: [
       Title,
       SmartTypography,
+      AudioBlocks,
       StarterKit.configure({
         document: false,
         blockquote: {

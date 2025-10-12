@@ -12,7 +12,7 @@ const getTitleFromHtml = (html: string): string => {
 };
 
 interface UsePageSaveReturn {
-  handleSave: (html: string) => Promise<void>;
+  handleSave: (html: string, json?: any) => Promise<void>;
   handleApplyEdit: (oldText: string, newText: string, currentHtml: string) => Promise<void>;
   saving: boolean;
 }
@@ -29,7 +29,7 @@ export const usePageSave = (
   const { toast } = useToast();
   const [saving, setSaving] = useState(false);
 
-  const handleSave = useCallback(async (html: string) => {
+  const handleSave = useCallback(async (html: string, json?: any) => {
     if (!canEdit) {
       toast({
         variant: 'destructive',
@@ -53,13 +53,20 @@ export const usePageSave = (
 
       const title = getTitleFromHtml(html);
 
+      const updateData: any = {
+        html_content: html,
+        title: title,
+        updated_at: new Date().toISOString(),
+      };
+
+      // Save JSON content if provided
+      if (json) {
+        updateData.content = json;
+      }
+
       const { error } = await supabase
         .from('pages')
-        .update({
-          html_content: html,
-          title: title,
-          updated_at: new Date().toISOString(),
-        })
+        .update(updateData)
         .eq('id', parseInt(pageId, 10));
 
       if (error) throw error;

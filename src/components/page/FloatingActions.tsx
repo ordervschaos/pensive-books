@@ -1,6 +1,5 @@
 import { Button } from "@/components/ui/button";
 import { Pencil, Check, MessageSquare, Volume2, VolumeX, Loader2 } from "lucide-react";
-import { useTextToSpeech } from "@/hooks/use-text-to-speech";
 import { FloatingAudioPlayer } from "./FloatingAudioPlayer";
 
 interface FloatingActionsProps {
@@ -16,6 +15,7 @@ interface FloatingActionsProps {
   // Audio props
   pageId?: string;
   content: string;
+  audioState?: any; // Audio state from parent
 }
 
 export const FloatingActions = ({
@@ -25,10 +25,12 @@ export const FloatingActions = ({
   onToggleChat,
   hasActiveChat,
   pageId,
-  content
+  content,
+  audioState
 }: FloatingActionsProps) => {
   const isBetaEnabled = localStorage.getItem('is_beta') === 'true';
   
+  // Use provided audio state if available
   const {
     audioUrl,
     isGenerating,
@@ -40,12 +42,11 @@ export const FloatingActions = ({
     pause,
     seek,
     setPlaybackRate,
-  } = useTextToSpeech({ 
-    pageId: pageId ? parseInt(pageId) : undefined, 
-    content 
-  });
+  } = audioState || {};
 
   const handleAudioToggle = async () => {
+    if (!play || !pause) return;
+    
     if (isPlaying) {
       pause();
     } else {

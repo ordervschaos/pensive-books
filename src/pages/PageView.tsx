@@ -155,6 +155,7 @@ const PageView = () => {
                     setIsEditing={setIsEditing}
                     onToggleChat={() => setIsChatOpen(!isChatOpen)}
                     hasActiveChat={isChatOpen}
+                    jsonContent={page.content}
                   />
 
                   {/* Navigation Controls */}

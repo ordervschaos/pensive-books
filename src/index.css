@@ -97,3 +97,15 @@
 .animate-progress {
   animation: progress 2s ease-in-out infinite;
 }
+
+/* Audio Block Highlighting */
+.audio-highlighted {
+  background-color: rgba(255, 255, 0, 0.2);
+  transition: background-color 0.3s ease;
+  border-radius: 4px;
+  padding: 2px 0;
+}
+
+.dark .audio-highlighted {
+  background-color: rgba(255, 255, 0, 0.15);
+}
