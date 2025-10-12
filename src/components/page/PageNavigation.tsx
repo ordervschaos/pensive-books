@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { useEffect } from "react";
-import { ArrowRight, Plus, Undo2, ArrowLeft, TableOfContents, List } from "lucide-react";
+import { ArrowRight, Plus, Undo2, ArrowLeft, TableOfContents, List, Check } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useSidebar } from "@/components/ui/sidebar";
 import { PreloadLink } from "./PreloadLink";
@@ -29,7 +29,9 @@ export const PageNavigation = ({
   bookTitle = 'Untitled',
   onNewPage,
   canEdit = false,
-  nextPageId
+  nextPageId,
+  isEditing = false,
+  setIsEditing
 }: PageNavigationProps) => {
   const navigate = useNavigate();
   const { toggleSidebar } = useSidebar();
@@ -48,6 +50,8 @@ export const PageNavigation = ({
     }
   };
 
+ 
+
   return (
     <div className="flex max-w-screen-lg items-center justify-center gap-4 flex-col my-4">
       <div className="flex items-center gap-2 justify-center">
@@ -60,8 +64,9 @@ export const PageNavigation = ({
         </Button>
         
       </div>
-      
-      <div className="flex flex-row items-center gap-2 justify-center w-full">
+
+      {!isEditing && (
+        <div className="flex flex-row items-center gap-2 justify-center w-full">
         <Button
           variant="ghost"
           onClick={() => onNavigate(currentIndex - 1)}
@@ -116,6 +121,18 @@ export const PageNavigation = ({
           </Button>
         )}
       </div>
+      )}
+
+      {
+        isEditing && (
+          <div className="flex items-center gap-2 justify-center">
+            <Button variant="outline" className="rounded-full" onClick={() => setIsEditing(false)}>
+              <Check className="h-5 w-5 flex-shrink-0" />
+            </Button>
+          </div>
+        )
+      }
+     
     </div>
   );
 };

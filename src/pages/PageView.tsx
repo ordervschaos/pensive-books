@@ -169,6 +169,7 @@ const PageView = () => {
                     onNewPage={createNewPage}
                     canEdit={canEdit}
                     nextPageId={nextPageId}
+                    setIsEditing={setIsEditing}
                   />
 
                 </div>
