@@ -1,6 +1,6 @@
 import { TipTapEditor } from "@/components/editor/TipTapEditor";
 import { PageHistory } from "./PageHistory";
-import { AudioPlayer } from "./AudioPlayer";
+import { FloatingActions } from "./FloatingActions";
 
 interface TextPageContentProps {
   content: string;
@@ -27,37 +27,34 @@ export const TextPageContent = ({
   hasActiveChat,
   centerContent = false
 }: TextPageContentProps) => {
-  // Check beta flag
-  const isBetaEnabled = localStorage.getItem('is_beta') === 'true';
-
   // Always use the prop content directly - don't maintain separate state
   // This ensures content updates immediately when navigating between pages
   const displayContent = content || `<h1 class="page-title">${title}</h1><p></p>`;
 
   return (
     <div className={`flex-1 ${!isEditing ? '' : ''}`}>
-      {/* Audio Player - Only visible in beta */}
-      {pageId && isBetaEnabled && (
-        <div className="mb-4 flex justify-end">
-          <AudioPlayer
-            pageId={parseInt(pageId)}
-            content={content}
-            compact={false}
-          />
-        </div>
-      )}
-
       <TipTapEditor
         key={pageId} // Force remount on page change to ensure fresh content
         content={displayContent}
         onChange={onChange}
         editable={canEdit}
         isEditing={isEditing}
-        onToggleEdit={canEdit ? onToggleEdit : undefined}
-        onToggleChat={onToggleChat}
+        onToggleEdit={undefined} // Edit button now handled by FloatingActions
+        onToggleChat={undefined} // Chat button now handled by FloatingActions
         hasActiveChat={hasActiveChat}
         className={centerContent ? "text-center" : undefined}
         customButtons={canEdit && pageId && <PageHistory pageId={parseInt(pageId)} />}
+      />
+      
+      {/* Floating action buttons */}
+      <FloatingActions
+        isEditing={isEditing}
+        onToggleEdit={onToggleEdit}
+        canEdit={canEdit}
+        onToggleChat={onToggleChat}
+        hasActiveChat={hasActiveChat}
+        pageId={pageId}
+        content={content}
       />
     </div>
   );
