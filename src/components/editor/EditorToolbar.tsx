@@ -1,5 +1,5 @@
 import { Editor } from '@tiptap/react';
-import { Bold, Italic, Quote, Code2, Link2, List, ListOrdered, Image as ImageIcon, Undo, Redo, Pencil, Eye, Table as TableIcon, MoreHorizontal, Heading1, Heading2, Heading3, MessageSquare } from "lucide-react";
+import { Bold, Italic, Quote, Code2, Link2, List, ListOrdered, Image as ImageIcon, Undo, Redo, Pencil, Check, Table as TableIcon, MoreHorizontal, Heading1, Heading2, Heading3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useSupabaseUpload } from "@/hooks/use-supabase-upload";
@@ -172,180 +172,163 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
   );
 
   return (
-    <div className={`rounded-md flex gap-1 items-center p-1 flex-wrap z-50 ${isEditing ? 'sticky top-4 bg-muted/50 shadow-sm backdrop-blur-sm' : ''}`}>
+    <>
+      {/* Formatting toolbar - only visible when editing */}
       {isEditing && (
-        <>
-          {!isMobile ? (
-            <>
-              <div className="flex gap-1">
-                {[2, 3, 4, 5, 6].map((level) => (
-                  <Button
-                    key={level}
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => editor.chain().focus().toggleHeading({ level: level as 2 | 3 | 4 | 5 | 6 }).run()}
-                    className={editor.isActive('heading', { level: level as 2 | 3 | 4 | 5 | 6 }) ? 'bg-muted' : ''}
-                  >
-                    h{level}
+        <div className="rounded-md flex gap-1 items-center p-1 flex-wrap z-50 sticky top-4 bg-muted/50 shadow-sm backdrop-blur-sm mb-2">
+          <div className="flex gap-1 items-center flex-1 flex-wrap">
+            {!isMobile ? (
+              <>
+                <div className="flex gap-1">
+                  {[2, 3, 4, 5, 6].map((level) => (
+                    <Button
+                      key={level}
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => editor.chain().focus().toggleHeading({ level: level as 2 | 3 | 4 | 5 | 6 }).run()}
+                      className={editor.isActive('heading', { level: level as 2 | 3 | 4 | 5 | 6 }) ? 'bg-muted' : ''}
+                    >
+                      h{level}
+                    </Button>
+                  ))}
+                </div>
+                <div className="w-px h-4 bg-border mx-1" />
+                {renderTextFormattingButtons()}
+                {renderListButtons()}
+              </>
+            ) : (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm">
+                    <MoreHorizontal className="h-4 w-4" />
                   </Button>
-                ))}
-              </div>
-              <div className="w-px h-4 bg-border mx-1" />
-              {renderTextFormattingButtons()}
-              {renderListButtons()}
-            </>
-          ) : (
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-56">
+                  <DropdownMenuItem onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}>
+                    <Heading2 className="mr-2 h-4 w-4" />
+                    Heading 2
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}>
+                    <Heading3 className="mr-2 h-4 w-4" />
+                    Heading 3
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => editor.chain().focus().toggleBold().run()}>
+                    <Bold className="mr-2 h-4 w-4" />
+                    Bold
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => editor.chain().focus().toggleItalic().run()}>
+                    <Italic className="mr-2 h-4 w-4" />
+                    Italic
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => editor.chain().focus().toggleBlockquote().run()}>
+                    <Quote className="mr-2 h-4 w-4" />
+                    Quote
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => editor.chain().focus().toggleCodeBlock().run()}>
+                    <Code2 className="mr-2 h-4 w-4" />
+                    Code
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => editor.chain().focus().toggleBulletList().run()}>
+                    <List className="mr-2 h-4 w-4" />
+                    Bullet List
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => editor.chain().focus().toggleOrderedList().run()}>
+                    <ListOrdered className="mr-2 h-4 w-4" />
+                    Numbered List
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+
+            <div className="w-px h-4 bg-border mx-1" />
+            
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm">
-                  <MoreHorizontal className="h-4 w-4" />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={isTableActive ? 'bg-muted' : ''}
+                >
+                  <TableIcon className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-56">
-                <DropdownMenuItem onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}>
-                  <Heading2 className="mr-2 h-4 w-4" />
-                  Heading 2
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem onClick={addTable} disabled={isTableActive}>
+                  Insert Table
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}>
-                  <Heading3 className="mr-2 h-4 w-4" />
-                  Heading 3
+                <DropdownMenuItem onClick={addTableRow} disabled={!isTableActive}>
+                  Add Row
                 </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => editor.chain().focus().toggleBold().run()}>
-                  <Bold className="mr-2 h-4 w-4" />
-                  Bold
+                <DropdownMenuItem onClick={addTableColumn} disabled={!isTableActive}>
+                  Add Column
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => editor.chain().focus().toggleItalic().run()}>
-                  <Italic className="mr-2 h-4 w-4" />
-                  Italic
+                <DropdownMenuItem onClick={deleteTableRow} disabled={!isTableActive}>
+                  Delete Row
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => editor.chain().focus().toggleBlockquote().run()}>
-                  <Quote className="mr-2 h-4 w-4" />
-                  Quote
+                <DropdownMenuItem onClick={deleteTableColumn} disabled={!isTableActive}>
+                  Delete Column
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => editor.chain().focus().toggleCodeBlock().run()}>
-                  <Code2 className="mr-2 h-4 w-4" />
-                  Code
+                <DropdownMenuItem onClick={toggleTableHeader} disabled={!isTableActive}>
+                  Toggle Header Row
                 </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => editor.chain().focus().toggleBulletList().run()}>
-                  <List className="mr-2 h-4 w-4" />
-                  Bullet List
+                <DropdownMenuItem onClick={deleteTable} disabled={!isTableActive}>
+                  Delete Table
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => editor.chain().focus().toggleOrderedList().run()}>
-                  <ListOrdered className="mr-2 h-4 w-4" />
-                  Numbered List
+                <DropdownMenuItem>
+                  {isMobile && customButtons}
                 </DropdownMenuItem>
-                {/* history buttons */}
               </DropdownMenuContent>
             </DropdownMenu>
-          )}
-
-          <div className="w-px h-4 bg-border mx-1" />
-          
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className={isTableActive ? 'bg-muted' : ''}
-              >
-                <TableIcon className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              <DropdownMenuItem onClick={addTable} disabled={isTableActive}>
-                Insert Table
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={addTableRow} disabled={!isTableActive}>
-                Add Row
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={addTableColumn} disabled={!isTableActive}>
-                Add Column
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={deleteTableRow} disabled={!isTableActive}>
-                Delete Row
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={deleteTableColumn} disabled={!isTableActive}>
-                Delete Column
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={toggleTableHeader} disabled={!isTableActive}>
-                Toggle Header Row
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={deleteTable} disabled={!isTableActive}>
-                Delete Table
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                {isMobile && customButtons}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={addLink}
-            className={editor.isActive('link') ? 'bg-muted' : ''}
-          >
-            <Link2 className="h-4 w-4" />
-          </Button>
-          
-          <div className="relative">
+            
             <Button
               variant="ghost"
               size="sm"
-              className="relative"
+              onClick={addLink}
+              className={editor.isActive('link') ? 'bg-muted' : ''}
             >
-              <input
-                type="file"
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                onChange={handleImageUpload}
-                accept="image/*"
-              />
-              <ImageIcon className="h-4 w-4" />
+              <Link2 className="h-4 w-4" />
             </Button>
-          </div>
-          <div className="ml-auto flex gap-1 items-center">
+            
+            <div className="relative">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="relative"
+              >
+                <input
+                  type="file"
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  onChange={handleImageUpload}
+                  accept="image/*"
+                />
+                <ImageIcon className="h-4 w-4" />
+              </Button>
+            </div>
+            
+            <div className="w-px h-4 bg-border mx-1" />
             {renderHistoryButtons()}
             {!isMobile && customButtons}
-            
           </div>
-        </>
+        </div>
       )}
 
-      {/* Edit and Chat buttons - grouped together on the right */}
-      <div className={`flex gap-1 items-center ${!isEditing ? 'ml-auto' : ''}`}>
-        {onToggleChat && isBetaEnabled && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onToggleChat}
-            className={hasActiveChat ? 'bg-muted' : ''}
-          >
-            <MessageSquare className="h-4 w-4" />
-          </Button>
-        )}
-
-        {editable && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onToggleEdit}
-          >
-            {isEditing ? (
-              <>
-                <Eye className="mr-2 h-4 w-4" />
-                Preview
-              </>
-            ) : (
-              <>
-                <Pencil className="mr-2 h-4 w-4" />
-                Edit
-              </>
-            )}
-          </Button>
-        )}
-      </div>
-    </div>
+      {/* Circular toggle button - Edit/Preview - Outside toolbar */}
+      {editable && (
+        <Button
+          variant="default"
+          size="lg"
+          onClick={onToggleEdit}
+          className="rounded-full h-14 w-14 p-0 fixed bottom-6 right-6 z-50 shadow-2xl border-2 border-primary/20 hover:scale-110 transition-transform duration-200"
+        >
+          {isEditing ? (
+            <Check className="h-5 w-5" />
+          ) : (
+            <Pencil className="h-5 w-5" />
+          )}
+        </Button>
+      )}
+    </>
   );
 };
