@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { SlugService } from '@/utils/slugService';
@@ -61,12 +62,17 @@ export const usePageViewData = (
   const numericBookId = SlugService.extractId(bookId);
   const numericPageId = SlugService.extractId(pageId);
 
-  const fetchPageDetails = useCallback(async () => {
-    try {
-      setLoading(true);
-
-      // 1. Fetch current page data
-      const { data: pageData, error: pageError } = await supabase
+  // Use React Query to fetch page data (will use preloaded cache if available)
+  const {
+    data: pageData,
+    isLoading: pageLoading,
+    dataUpdatedAt,
+    isFetching
+  } = useQuery({
+    queryKey: ['page', numericPageId, numericBookId],
+    queryFn: async () => {
+      console.log(`[PageViewData] 🌐 NETWORK REQUEST - Fetching page ${numericPageId} from Supabase`);
+      const { data, error } = await supabase
         .from('pages')
         .select('*')
         .eq('id', numericPageId)
@@ -74,10 +80,38 @@ export const usePageViewData = (
         .eq('archived', false)
         .maybeSingle();
 
-      if (pageError) throw pageError;
-      if (!pageData) {
+      if (error) throw error;
+      if (!data) {
         console.log('Page not found:', numericPageId);
-        return;
+        return null;
+      }
+
+      console.log(`[PageViewData] ✓ Page ${numericPageId} fetched from network`);
+      return data;
+    },
+    enabled: !!numericPageId && !!numericBookId,
+    staleTime: 5 * 60 * 1000, // Match preloader cache time
+    refetchOnMount: false, // Don't refetch if data is in cache
+    refetchOnWindowFocus: false, // Don't refetch when window regains focus
+    refetchOnReconnect: false, // Don't refetch on reconnect
+  });
+
+  // Log cache hit/miss and set page immediately if cached
+  useEffect(() => {
+    if (pageData && !isFetching) {
+      console.log(`[PageViewData] ⚡ CACHE HIT - Page ${numericPageId} loaded instantly from cache!`);
+      setPage(pageData);
+      setLoading(false); // Clear loading state immediately for cached page
+    }
+  }, [numericPageId, pageData, isFetching]);
+
+  const fetchPageDetails = useCallback(async () => {
+    if (!pageData || pageLoading) return;
+
+    try {
+      // Only show loading if we're actually fetching
+      if (isFetching) {
+        setLoading(true);
       }
 
       setPage(pageData);
@@ -153,12 +187,19 @@ export const usePageViewData = (
     } finally {
       setLoading(false);
     }
-  }, [numericBookId, numericPageId, bookId, pageId, navigate, toast]);
+  }, [numericBookId, numericPageId, bookId, pageId, navigate, toast, pageData, pageLoading]);
 
-  // Fetch data when book/page IDs change
+  // Fetch data when book/page IDs change OR when pageData becomes available
   useEffect(() => {
     fetchPageDetails();
   }, [fetchPageDetails]);
+
+  // Update loading state based on query loading
+  useEffect(() => {
+    if (pageLoading) {
+      setLoading(true);
+    }
+  }, [pageLoading]);
 
   return {
     page,

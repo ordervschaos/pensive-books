@@ -1,6 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { debounce } from "lodash";
-import { SectionPageContent } from "./SectionPageContent";
 import { TextPageContent } from "./TextPageContent";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -125,31 +124,24 @@ export const PageContent = ({
   return (
     <div className="flex-1 flex flex-col bg-background">
       <div className="p-0 flex-1 flex flex-col">
-        {pageType === 'section' ? (
-          <SectionPageContent
-            content={currentContent}
-            title={currentTitle}
-            isEditing={isEditing && editable}
-            onChange={handleContentChange}
-            onToggleEdit={() => handleEditingChange(!isEditing)}
-            canEdit={canEdit}
-            onToggleChat={onToggleChat}
-            hasActiveChat={hasActiveChat}
-          />
-        ) : (
-          <TextPageContent
-            content={currentContent}
-            isEditing={isEditing && editable}
-            onChange={handleContentChange}
-            title={currentTitle}
-            onToggleEdit={() => handleEditingChange(!isEditing)}
-            canEdit={canEdit}
-            onRevert={handleRevertToVersion}
-            pageId={pageId}
-            onToggleChat={onToggleChat}
-            hasActiveChat={hasActiveChat}
-          />
-        )}
+        
+          <div className="flex-1 flex items-center justify-center">
+            <div className="w-full max-w-3xl">
+              <TextPageContent
+                content={currentContent}
+                isEditing={isEditing && editable}
+                onChange={handleContentChange}
+                title={currentTitle}
+                onToggleEdit={() => handleEditingChange(!isEditing)}
+                canEdit={canEdit}
+                onRevert={handleRevertToVersion}
+                pageId={pageId}
+                onToggleChat={onToggleChat}
+                hasActiveChat={hasActiveChat}
+                centerContent={pageType === 'section'}
+              />
+            </div>
+          </div>
       </div>
     </div>
   );

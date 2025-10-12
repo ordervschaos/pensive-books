@@ -1,7 +1,6 @@
 import { TipTapEditor } from "@/components/editor/TipTapEditor";
 import { PageHistory } from "./PageHistory";
 import { AudioPlayer } from "./AudioPlayer";
-import { useEffect, useState } from "react";
 
 interface TextPageContentProps {
   content: string;
@@ -14,6 +13,7 @@ interface TextPageContentProps {
   pageId?: string;
   onToggleChat?: () => void;
   hasActiveChat?: boolean;
+  centerContent?: boolean;
 }
 
 export const TextPageContent = ({
@@ -26,19 +26,15 @@ export const TextPageContent = ({
   onRevert,
   pageId,
   onToggleChat,
-  hasActiveChat
+  hasActiveChat,
+  centerContent = false
 }: TextPageContentProps) => {
-  // Create initial content with title if it's empty
-  const [initialContent, setInitialContent] = useState(content || `<h1 class="page-title">${title}</h1><p></p>`);
-
   // Check beta flag
   const isBetaEnabled = localStorage.getItem('is_beta') === 'true';
 
-  // Update initialContent when content or title changes
-  useEffect(() => {
-    console.log("TextPageContent: Content or title changed, updating initialContent");
-    setInitialContent(content || `<h1 class="page-title">${title}</h1><p></p>`);
-  }, [content, title]);
+  // Always use the prop content directly - don't maintain separate state
+  // This ensures content updates immediately when navigating between pages
+  const displayContent = content || `<h1 class="page-title">${title}</h1><p></p>`;
 
   return (
     <div className={`flex-1 ${!isEditing ? '' : ''}`}>
@@ -52,21 +48,23 @@ export const TextPageContent = ({
           />
         </div>
       )}
-      
-      <TipTapEditor 
-        content={initialContent}
+
+      <TipTapEditor
+        key={pageId} // Force remount on page change to ensure fresh content
+        content={displayContent}
         onChange={onChange}
         editable={canEdit}
         isEditing={isEditing}
         onToggleEdit={canEdit ? onToggleEdit : undefined}
         onToggleChat={onToggleChat}
         hasActiveChat={hasActiveChat}
+        className={centerContent ? "text-center" : undefined}
         customButtons={
           canEdit && pageId ? (
-            <PageHistory 
-              pageId={parseInt(pageId) || 0} 
-              currentContent={content} 
-              onRevert={onRevert} 
+            <PageHistory
+              pageId={parseInt(pageId) || 0}
+              currentContent={content}
+              onRevert={onRevert}
             />
           ) : undefined
         }

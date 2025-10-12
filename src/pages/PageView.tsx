@@ -25,6 +25,7 @@ import { usePageSave } from "@/hooks/use-page-save";
 import { useEditMode } from "@/hooks/use-edit-mode";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { usePageCreation } from "@/hooks/use-page-creation";
+import { useNextPagePreloader } from "@/hooks/use-next-page-preloader";
 
 /**
  * Fully refactored PageView component
@@ -86,7 +87,10 @@ const PageView = () => {
   useKeyboardNavigation({ onNext: navigateNext, onPrev: navigatePrev }, isEditing);
   usePageTitle(page?.title, book?.name);
 
-  // 10. Loading state
+  // 10. Preload next page for faster navigation
+  useNextPagePreloader(numericBookId, nextPageId);
+
+  // 11. Loading state
   if (dataLoading || permissionsLoading) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
@@ -97,7 +101,7 @@ const PageView = () => {
     );
   }
 
-  // 11. Not found state
+  // 12. Not found state
   if (!page || !book) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
@@ -108,7 +112,7 @@ const PageView = () => {
     );
   }
 
-  // 12. Main render - Pure composition
+  // 13. Main render - Pure composition
   return (
     <SidebarProvider defaultOpen={false}>
       <div className="min-h-[calc(100vh-56px)] flex flex-col bg-background w-full">
@@ -137,6 +141,7 @@ const PageView = () => {
 
                   {/* Page Editor/Viewer */}
                   <PageContent
+                    key={pageId} // Force remount when page changes to prevent stale content
                     content={page.html_content || ''}
                     title={page.title || 'Untitled'}
                     onSave={handleSave}
