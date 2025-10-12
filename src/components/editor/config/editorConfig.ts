@@ -185,6 +185,7 @@ export const getEditorConfig = (
         return false;
       },
     },
-    autofocus: 'start' as const,
+    // Only autofocus when editing to prevent scroll issues on page navigation
+    autofocus: editable && isEditing ? ('start' as const) : false,
   };
 };
