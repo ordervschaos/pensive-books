@@ -98,24 +98,6 @@ export const PageContent = ({
     debouncedSaveRef.current?.(html, json);
   }, [editable]);
 
-  const handleRevertToVersion = useCallback(async (versionContent: string) => {
-    try {
-      setCurrentContent(versionContent);
-      await onSave(versionContent, null);
-      toast({
-        title: "Version restored",
-        description: "The page has been reverted to the selected version."
-      });
-    } catch (error) {
-      console.error('Error reverting version:', error);
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to restore the selected version."
-      });
-    }
-  }, [onSave, toast]);
-
   const handleEditingChange = useCallback((editing: boolean) => {
     setIsEditing?.(editing);
     onEditingChange?.(editing);
@@ -134,7 +116,6 @@ export const PageContent = ({
                 title={currentTitle}
                 onToggleEdit={() => handleEditingChange(!isEditing)}
                 canEdit={canEdit}
-                onRevert={handleRevertToVersion}
                 pageId={pageId}
                 onToggleChat={onToggleChat}
                 hasActiveChat={hasActiveChat}

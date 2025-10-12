@@ -9,7 +9,6 @@ interface TextPageContentProps {
   title: string;
   onToggleEdit?: () => void;
   canEdit?: boolean;
-  onRevert: (content: string) => Promise<void>;
   pageId?: string;
   onToggleChat?: () => void;
   hasActiveChat?: boolean;
@@ -23,7 +22,6 @@ export const TextPageContent = ({
   title,
   onToggleEdit,
   canEdit = false,
-  onRevert,
   pageId,
   onToggleChat,
   hasActiveChat,
@@ -59,15 +57,7 @@ export const TextPageContent = ({
         onToggleChat={onToggleChat}
         hasActiveChat={hasActiveChat}
         className={centerContent ? "text-center" : undefined}
-        customButtons={
-          canEdit && pageId ? (
-            <PageHistory
-              pageId={parseInt(pageId) || 0}
-              currentContent={content}
-              onRevert={onRevert}
-            />
-          ) : undefined
-        }
+        customButtons={canEdit && pageId && <PageHistory pageId={parseInt(pageId)} />}
       />
     </div>
   );
