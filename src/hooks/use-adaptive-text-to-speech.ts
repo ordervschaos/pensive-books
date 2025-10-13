@@ -39,6 +39,7 @@ export const useAdaptiveTextToSpeech = ({
       ...blockBasedAudio,
       audioUrl: blockBasedAudio.blocks.length > 0 ? blockBasedAudio.blocks[0].audioUrl : null,
       mode: 'blocks' as const,
+      playBlockByIndex: blockBasedAudio.playBlockByIndex,
     };
   }
 
@@ -47,6 +48,7 @@ export const useAdaptiveTextToSpeech = ({
     currentBlockIndex: null,
     blocks: [],
     mode: 'legacy' as const,
+    playBlockByIndex: async () => {}, // No-op for legacy mode
   };
 };
 

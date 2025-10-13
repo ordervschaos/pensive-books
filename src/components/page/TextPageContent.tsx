@@ -42,11 +42,12 @@ export const TextPageContent = ({
     jsonContent,
   });
 
-  // Apply audio highlighting
+  // Apply audio highlighting with click-to-play
   useAudioHighlighting({
     currentBlockIndex: audioState.currentBlockIndex,
     isPlaying: audioState.isPlaying,
     autoScroll: true,
+    onBlockClick: audioState.playBlockByIndex,
   });
 
   return (

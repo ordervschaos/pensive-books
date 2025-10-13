@@ -111,3 +111,33 @@
   background-color: rgba(255, 255, 0, 0.15);
   box-shadow: 0 0 0 2px rgba(255, 255, 0, 0.08);
 }
+
+/* Audio Block Clickable - makes blocks interactive */
+[data-audio-block] {
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.1s ease, box-shadow 0.2s ease;
+  border-radius: 4px;
+  position: relative;
+}
+
+[data-audio-block]:hover {
+  background-color: rgba(59, 130, 246, 0.05);
+  transform: translateX(2px);
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.1);
+}
+
+.dark [data-audio-block]:hover {
+  background-color: rgba(59, 130, 246, 0.08);
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.15);
+}
+
+/* When highlighted, show it's still clickable with enhanced hover */
+[data-audio-block].audio-highlighted:hover {
+  background-color: rgba(255, 255, 0, 0.3);
+  box-shadow: 0 0 0 2px rgba(255, 255, 0, 0.2);
+}
+
+.dark [data-audio-block].audio-highlighted:hover {
+  background-color: rgba(255, 255, 0, 0.25);
+  box-shadow: 0 0 0 2px rgba(255, 255, 0, 0.15);
+}

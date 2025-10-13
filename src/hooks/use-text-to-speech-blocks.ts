@@ -31,6 +31,7 @@ interface UseTextToSpeechBlocksReturn {
   stop: () => void;
   seek: (time: number) => void;
   setPlaybackRate: (rate: number) => void;
+  playBlockByIndex: (blockIndex: number) => Promise<void>;
 }
 
 export const useTextToSpeechBlocks = ({
@@ -302,6 +303,31 @@ export const useTextToSpeechBlocks = ({
     }
   }, []);
 
+  // Play specific block by index (for click-to-play feature)
+  const playBlockByIndex = useCallback(async (blockIndex: number) => {
+    if (!audioRef.current || blocks.length === 0) {
+      // If no blocks loaded yet, try to generate first
+      if (blocks.length === 0) {
+        await generateAudio();
+      }
+      return;
+    }
+
+    // Find the block with matching index
+    const targetBlock = blocks.find(b => b.blockIndex === blockIndex);
+    if (!targetBlock) {
+      console.warn(`Block with index ${blockIndex} not found`);
+      return;
+    }
+
+    // Find the position in the blocks array
+    const arrayIndex = blocks.indexOf(targetBlock);
+    if (arrayIndex === -1) return;
+
+    // Start playing from this block
+    await playBlockAtIndex(arrayIndex);
+  }, [blocks, generateAudio, playBlockAtIndex]);
+
   return {
     isGenerating,
     isPlaying,
@@ -317,6 +343,7 @@ export const useTextToSpeechBlocks = ({
     stop,
     seek,
     setPlaybackRate,
+    playBlockByIndex,
   };
 };
 
