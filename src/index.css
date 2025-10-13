@@ -101,11 +101,13 @@
 /* Audio Block Highlighting */
 .audio-highlighted {
   background-color: rgba(255, 255, 0, 0.2);
-  transition: background-color 0.3s ease;
+  transition: background-color 0.3s ease, box-shadow 0.3s ease;
   border-radius: 4px;
-  padding: 2px 0;
+  /* Use box-shadow instead of padding to avoid layout shift */
+  box-shadow: 0 0 0 2px rgba(255, 255, 0, 0.1);
 }
 
 .dark .audio-highlighted {
   background-color: rgba(255, 255, 0, 0.15);
+  box-shadow: 0 0 0 2px rgba(255, 255, 0, 0.08);
 }
