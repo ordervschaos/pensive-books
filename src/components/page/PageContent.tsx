@@ -109,7 +109,7 @@ export const PageContent = ({
     <div className="flex-1 flex flex-col bg-background">
       <div className="p-0 flex-1 flex flex-col">
         
-          <div className="flex-1 flex items-center justify-center">
+          <div className="flex-1 flex justify-center">
             <div className="w-full max-w-3xl">
               <TextPageContent
                 content={currentContent}
