@@ -1,5 +1,5 @@
 import { Editor } from '@tiptap/react';
-import { Bold, Italic, Quote, Code2, Link2, List, ListOrdered, Image as ImageIcon, Undo, Redo, Table as TableIcon, MoreHorizontal, Heading1, Heading2, Heading3 } from "lucide-react";
+import { Bold, Italic, Quote, Code2, Link2, List, ListOrdered, Image as ImageIcon, Undo, Redo, Table as TableIcon, MoreHorizontal, Heading1, Heading2, Heading3, Heading } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useSupabaseUpload } from "@/hooks/use-supabase-upload";
@@ -182,13 +182,13 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
             {!isMobile ? (
               <>
                 <div className="flex gap-1">
-                  {[2, 3, 4, 5, 6].map((level) => (
+                  {[1,2, 3, 4, 5, 6].map((level) => (
                     <Button
                       key={level}
                       variant="ghost"
                       size="sm"
-                      onClick={() => editor.chain().focus().toggleHeading({ level: level as 2 | 3 | 4 | 5 | 6 }).run()}
-                      className={`h-8 w-8 p-0 text-xs ${editor.isActive('heading', { level: level as 2 | 3 | 4 | 5 | 6 }) ? 'bg-muted' : ''}`}
+                      onClick={() => editor.chain().focus().toggleHeading({ level: level as 1 | 2 | 3 | 4 | 5 | 6 }).run()}
+                      className={`h-8 w-8 p-0 text-xs ${editor.isActive('heading', { level: level as 1 | 2 | 3 | 4 | 5 | 6 }) ? 'bg-muted' : ''}`}
                     >
                       h{level}
                     </Button>
@@ -206,8 +206,12 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-56">
+                  <DropdownMenuItem onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}>
+                    <Heading className="mr-2 h-4 w-4" />
+                    Heading 1
+                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}>
-                    <Heading2 className="mr-2 h-4 w-4" />
+                    <Heading className="mr-2 h-4 w-4" />
                     Heading 2
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}>
