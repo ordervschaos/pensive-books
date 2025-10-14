@@ -1,5 +1,5 @@
 import { Editor } from '@tiptap/react';
-import { Bold, Italic, Quote, Code2, Link2, List, ListOrdered, Image as ImageIcon, Undo, Redo, Table as TableIcon, MoreHorizontal, Heading1, Heading2, Heading3, Heading } from "lucide-react";
+import { Bold, Italic, Quote, Code2, Link2, List, ListOrdered, Image as ImageIcon, Undo, Redo, Table as TableIcon, MoreHorizontal, Heading1, Heading2, Heading3, Heading, Pencil, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useSupabaseUpload } from "@/hooks/use-supabase-upload";
@@ -15,7 +15,7 @@ import { useMediaQuery } from "@/hooks/use-media-query";
 interface EditorToolbarProps {
   editor: Editor | null;
   isEditing: boolean;
-  onToggleEdit?: () => void;
+  onToggleEdit: () => void;
   editable: boolean;
   customButtons?: React.ReactNode;
   onToggleChat?: () => void;
@@ -174,12 +174,12 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
   );
 
   return (
-    <>
-      {/* Formatting toolbar - only visible when editing */}
-      {isEditing && (
-        <div className="rounded-md flex gap-1 items-center p-1 z-50 sticky top-4 bg-muted/50 shadow-sm backdrop-blur-sm mb-2">
-          <div className="flex gap-1 items-center flex-1">
-            {!isMobile ? (
+    <div className="flex gap-2 items-center justify-end min-h-[44px]">
+      <div className="flex-1 flex justify-start">
+        {isEditing && (
+          <div className="rounded-md flex gap-1 grow items-center p-1 z-50 sticky top-4 bg-muted/50 shadow-sm backdrop-blur-sm">
+            <div className="flex gap-1 items-center flex-1">
+              {!isMobile ? (
               <>
                 <div className="flex gap-1">
                   {[1,2, 3, 4, 5, 6].map((level) => (
@@ -318,7 +318,23 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
             {!isMobile && customButtons}
           </div>
         </div>
+        )}
+      </div>
+      {onToggleEdit && editable && (
+        <Button 
+          size="sm" 
+          className="rounded-full"
+          variant={isEditing ? "default" : "outline"}
+          onClick={onToggleEdit}
+          title={isEditing ? "Exit Edit Mode" : "Enter Edit Mode"}
+        >
+          {isEditing ? (
+            <Check className="h-4 w-4" />
+          ) : (
+            <Pencil className="h-4 w-4" />
+          )}
+        </Button>
       )}
-    </>
+    </div>
   );
 };

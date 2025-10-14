@@ -90,22 +90,6 @@ export const FloatingActions = ({
           </Button>
         )}
 
-        {/* Edit/Preview button - always visible when editable */}
-        {canEdit && (
-          <Button
-            variant="default"
-            size="sm"
-            onClick={onToggleEdit}
-            className="rounded-full h-10 w-10 p-0 shadow-lg hover:bg-primary/90 transition-all duration-200"
-            title={isEditing ? "Preview" : "Edit"}
-          >
-            {isEditing ? (
-              <Check className="h-4 w-4" />
-            ) : (
-              <Pencil className="h-4 w-4" />
-            )}
-          </Button>
-        )}
       </div>
 
       {/* Floating Audio Player - only in beta */}

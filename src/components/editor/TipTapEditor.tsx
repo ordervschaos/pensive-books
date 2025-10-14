@@ -15,7 +15,6 @@ interface TipTapEditorProps {
   isEditing?: boolean;
   onToggleEdit?: () => void;
   editorConfig?: Record<string, unknown>;
-  hideToolbar?: boolean;
   className?: string;
   customButtons?: React.ReactNode;
   onToggleChat?: () => void;
@@ -30,7 +29,6 @@ export const TipTapEditor = ({
   isEditing = true,
   onToggleEdit,
   editorConfig,
-  hideToolbar = false,
   className = '',
   customButtons,
   onToggleChat,
@@ -96,7 +94,6 @@ export const TipTapEditor = ({
 
   return (
     <div className="h-full flex flex-col min-h-[600px]">
-      {!hideToolbar && (
         <EditorToolbar 
           editor={editor} 
           isEditing={isEditing} 
@@ -106,7 +103,6 @@ export const TipTapEditor = ({
           onToggleChat={onToggleChat}
           hasActiveChat={hasActiveChat}
         />
-      )}
       <div className={cn(`${centerContent ? 'flex items-center justify-center text-center' : ''} prose dark:prose-invert prose-slate w-full max-w-none p-8 flex-1 [&_.ProseMirror:focus]:outline-none bg-background ${isMobile ? 'text-xl' : 'text-2xl'} ${className} [&_img]:mx-auto [&_img]:block [&_p]:text-xl [&_p]:md:text-2xl [&_p]:leading-relaxed [&_p]:mb-6 [&_table]:border-collapse [&_table]:w-full [&_th]:border [&_th]:border-muted [&_th]:p-2 [&_td]:border [&_td]:border-muted [&_td]:p-2 [&_.selectedCell]:bg-muted/30 [&_pre]:text-lg [&_pre]:md:text-xl [&_code]:text-lg [&_code]:md:text-xl`)}>
         <EditorContent editor={editor} className="
           [&>div>h1]:text-4xl [&>div>h1]:font-bold [&>div>h1]:mb-8 [&>div>h1]:mt-0
