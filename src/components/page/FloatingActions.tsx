@@ -56,7 +56,7 @@ export const FloatingActions = ({
 
   return (
     <>
-      <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3 items-center">
+      <div className="fixed bottom-12 z-50 flex flex-col gap-3 items-center" style={{ left: 'calc(50% + min(48rem, 100vw) / 2 - 1rem)' }}>
         {/* Audio button - only in beta */}
         {isBetaEnabled && pageId && (
           <Button
@@ -94,15 +94,15 @@ export const FloatingActions = ({
         {canEdit && (
           <Button
             variant="default"
-            size="lg"
+            size="sm"
             onClick={onToggleEdit}
-            className="rounded-full h-14 w-14 p-0 shadow-2xl border-2 border-primary/20 hover:scale-110 transition-transform duration-200"
+            className="rounded-full h-10 w-10 p-0 shadow-lg hover:bg-primary/90 transition-all duration-200"
             title={isEditing ? "Preview" : "Edit"}
           >
             {isEditing ? (
-              <Check className="h-5 w-5" />
+              <Check className="h-4 w-4" />
             ) : (
-              <Pencil className="h-5 w-5" />
+              <Pencil className="h-4 w-4" />
             )}
           </Button>
         )}

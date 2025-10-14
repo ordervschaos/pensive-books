@@ -3,7 +3,6 @@ import { BrowserRouter as Router, Routes, Route, useLocation } from "react-route
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { Toaster } from "@/components/ui/toaster";
 import { TopNav } from "@/components/TopNav";
-import { Footer } from "@/components/Footer";
 import { PrivateRoute } from "@/components/PrivateRoute";
 import Landing from "@/pages/Landing";
 import Auth from "@/pages/Auth";
@@ -148,7 +147,6 @@ export default function App() {
                 />
               </Routes>
             </main>
-            <Footer />
           </div>
           <Toaster />
         </Router>

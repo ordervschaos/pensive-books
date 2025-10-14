@@ -51,7 +51,7 @@ export const TextPageContent = ({
   });
 
   return (
-    <div className={`flex-1 ${!isEditing ? '' : ''}`}>
+    <div className={`flex-1 ${!isEditing ? '' : ''} relative`}>
       <TipTapEditor
         key={pageId} // Force remount on page change to ensure fresh content
         content={displayContent}
