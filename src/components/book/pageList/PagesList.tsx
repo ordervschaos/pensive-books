@@ -10,7 +10,8 @@ import {
   Section,
   Plus,
   MoreVertical,
-  MessageSquare
+  MessageSquare,
+  X
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -452,6 +453,23 @@ export const PagesList = ({
           </div>
         )}
       </CardContent>
+
+      {/* Floating Exit Reorder Button */}
+      {isReordering && (
+        <div className="fixed bottom-6 right-6 z-50">
+          <Button
+            size="lg"
+            onClick={() => {
+              setViewMode(previousViewMode);
+              setIsReordering(false);
+            }}
+            className="rounded-full shadow-lg hover:shadow-xl transition-all flex items-center gap-2 px-6 py-6 text-base font-semibold"
+          >
+            <X className="h-5 w-5" />
+            <span>Exit Reorder</span>
+          </Button>
+        </div>
+      )}
     </Card>
   );
 }; 
