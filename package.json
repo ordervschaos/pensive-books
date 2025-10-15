@@ -15,7 +15,12 @@
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest --coverage",
-    "test:run": "vitest run"
+    "test:run": "vitest run",
+    "functions:start": "supabase start",
+    "functions:stop": "supabase stop",
+    "functions:serve": "supabase functions serve",
+    "functions:logs": "supabase functions logs",
+    "functions:list": "supabase functions list"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
