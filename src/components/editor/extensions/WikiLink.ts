@@ -104,7 +104,17 @@ export const WikiLink = Mark.create<WikiLinkOptions>({
 
           // Handle clicks on wiki-links
           handleClick(view, pos, event) {
-            const { doc, schema } = view.state;
+            // First check: did we actually click on a wiki link DOM element?
+            const target = event.target as HTMLElement;
+            const wikiLinkElement = target.closest('[data-wiki-link]');
+
+            if (!wikiLinkElement) {
+              // Not clicking on a wiki link element, don't handle
+              return false;
+            }
+
+            // Second check: is there a wiki link mark at this position in the document?
+            const { doc } = view.state;
             const $pos = doc.resolve(pos);
             const marks = $pos.marks();
             const wikiLinkMark = marks.find(mark => mark.type.name === 'wikiLink');

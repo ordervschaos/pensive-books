@@ -51,18 +51,26 @@ export const useAudioHighlighting = ({
     if (!onBlockClick) return;
 
     const handleBlockClick = (event: Event) => {
-      event.stopPropagation(); // Prevent bubbling to parent audio blocks
-      
       // Use event.target to get the actual clicked element
       const clickedElement = event.target as HTMLElement;
-      
+
+      // Check if we clicked directly on a wiki link element
+      // Wiki links have the data-wiki-link attribute
+      const wikiLink = clickedElement.closest('[data-wiki-link]');
+      if (wikiLink) {
+        // Don't play audio if clicking on a wiki link
+        return;
+      }
+
       // Find the closest element with data-audio-block attribute
       // This handles nested structures by finding the innermost block
       const targetBlock = clickedElement.closest('[data-audio-block]') as HTMLElement;
-      
+
       if (targetBlock) {
+        event.stopPropagation(); // Prevent bubbling to parent audio blocks
+
         const blockIndex = targetBlock.getAttribute('data-audio-block');
-        
+
         if (blockIndex !== null) {
           const index = parseInt(blockIndex, 10);
           if (!isNaN(index)) {
@@ -72,17 +80,12 @@ export const useAudioHighlighting = ({
       }
     };
 
-    // Find all audio blocks and add click handlers
-    const audioBlocks = document.querySelectorAll('[data-audio-block]');
-    audioBlocks.forEach(block => {
-      block.addEventListener('click', handleBlockClick);
-    });
+    // Add a single click handler to the document
+    document.addEventListener('click', handleBlockClick);
 
     // Cleanup
     return () => {
-      audioBlocks.forEach(block => {
-        block.removeEventListener('click', handleBlockClick);
-      });
+      document.removeEventListener('click', handleBlockClick);
     };
   }, [onBlockClick]);
 };

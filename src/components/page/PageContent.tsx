@@ -123,11 +123,12 @@ export const PageContent = ({
   });
 
   // Apply audio highlighting with click-to-play
+  // Only enable click-to-play when NOT editing
   useAudioHighlighting({
     currentBlockIndex: audioState.currentBlockIndex,
     isPlaying: audioState.isPlaying,
     autoScroll: true,
-    onBlockClick: audioState.playBlockByIndex,
+    onBlockClick: isEditing ? undefined : audioState.playBlockByIndex,
   });
 
   // Prepare wiki-link options if we have the necessary data
