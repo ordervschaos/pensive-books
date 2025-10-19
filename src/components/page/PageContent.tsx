@@ -1,7 +1,11 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { debounce } from "lodash";
-import { TextPageContent } from "./TextPageContent";
-import { useToast } from "@/hooks/use-toast";
+import { TipTapEditor } from "@/components/editor/TipTapEditor";
+import { PageHistory } from "./PageHistory";
+import { FloatingActions } from "./FloatingActions";
+import { useAudioHighlighting } from "@/hooks/use-audio-highlighting";
+import { useAdaptiveTextToSpeech } from "@/hooks/use-adaptive-text-to-speech";
+import { SlugService } from "@/utils/slugService";
 import { supabase } from "@/integrations/supabase/client";
 import { EditorJSON, PageSaveHandler } from "@/types/editor";
 
@@ -20,6 +24,8 @@ interface PageContentProps {
   onToggleChat?: () => void;
   hasActiveChat?: boolean;
   jsonContent?: any;
+  bookId?: string;
+  onWikiLinkNavigate?: (pageTitle: string, bookId: number) => void;
 }
 
 export const PageContent = ({
@@ -36,11 +42,12 @@ export const PageContent = ({
   onToggleChat,
   hasActiveChat,
   jsonContent,
+  bookId,
+  onWikiLinkNavigate,
 }: PageContentProps) => {
   const [initialLoad, setInitialLoad] = useState(true);
   const [currentContent, setCurrentContent] = useState(content || '');
   const [currentTitle, setCurrentTitle] = useState(title || '');
-  const { toast } = useToast();
   const debouncedSaveRef = useRef<ReturnType<typeof debounce>>();
 
   useEffect(() => {
@@ -105,27 +112,65 @@ export const PageContent = ({
     onEditingChange?.(editing);
   }, [setIsEditing, onEditingChange]);
 
+  // Always use the current content - don't maintain separate state for display
+  const displayContent = currentContent || `<h1 class="page-title">${currentTitle}</h1><p></p>`;
+
+  // Audio state management
+  const audioState = useAdaptiveTextToSpeech({
+    pageId: pageId ? parseInt(pageId) : undefined,
+    content: currentContent,
+    jsonContent,
+  });
+
+  // Apply audio highlighting with click-to-play
+  useAudioHighlighting({
+    currentBlockIndex: audioState.currentBlockIndex,
+    isPlaying: audioState.isPlaying,
+    autoScroll: true,
+    onBlockClick: audioState.playBlockByIndex,
+  });
+
+  // Prepare wiki-link options if we have the necessary data
+  const numericBookId = bookId ? SlugService.extractId(bookId) : undefined;
+  const wikiLinkOptions = numericBookId && onWikiLinkNavigate ? {
+    onNavigate: onWikiLinkNavigate,
+    bookId: numericBookId,
+  } : undefined;
+
   return (
     <div className="flex-1 flex flex-col bg-background">
       <div className="p-0 flex-1 flex flex-col">
-        
-          <div className="flex-1 flex justify-center">
-            <div className="w-full max-w-3xl">
-              <TextPageContent
-                content={currentContent}
-                isEditing={isEditing && editable}
+        <div className="flex-1 flex justify-center">
+          <div className="w-full max-w-3xl">
+            <div className={`flex-1 ${!isEditing ? '' : ''} relative`}>
+              <TipTapEditor
+                key={pageId} // Force remount on page change to ensure fresh content
+                content={displayContent}
                 onChange={handleContentChange}
-                title={currentTitle}
-                onToggleEdit={() => handleEditingChange(!isEditing)}
-                canEdit={canEdit}
-                pageId={pageId}
-                onToggleChat={onToggleChat}
+                editable={canEdit}
+                isEditing={isEditing && editable}
+                onToggleEdit={() => handleEditingChange(!isEditing)} // Edit button in toolbar and FloatingActions
+                onToggleChat={undefined} // Chat button now handled by FloatingActions
                 hasActiveChat={hasActiveChat}
                 centerContent={pageType === 'section'}
-                jsonContent={jsonContent}
+                customButtons={canEdit && pageId && <PageHistory pageId={parseInt(pageId)} />}
+                wikiLinkOptions={wikiLinkOptions}
+              />
+
+              {/* Floating action buttons */}
+              <FloatingActions
+                isEditing={isEditing && editable}
+                onToggleEdit={() => handleEditingChange(!isEditing)}
+                canEdit={canEdit}
+                onToggleChat={onToggleChat}
+                hasActiveChat={hasActiveChat}
+                pageId={pageId}
+                content={currentContent}
+                audioState={audioState}
               />
             </div>
           </div>
+        </div>
       </div>
     </div>
   );

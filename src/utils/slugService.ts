@@ -37,4 +37,14 @@ export const SlugService = {
   hasSlug: (param: string | undefined): boolean => {
     return param?.includes('-') ?? false;
   },
+
+  /**
+   * Create a slug-based ID for URLs (alias for generateSlug)
+   * @param id - Numeric ID
+   * @param slug - Page or book slug/title
+   * @returns Slug in format "123-my-page-title"
+   */
+  createSlugId: (id: number, slug: string): string => {
+    return SlugService.generateSlug(id, slug);
+  },
 };

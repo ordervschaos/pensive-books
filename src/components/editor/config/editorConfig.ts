@@ -9,6 +9,7 @@ import TableHeader from '@tiptap/extension-table-header';
 import { Title } from '../extensions/Title';
 import { SmartTypography } from '../extensions/SmartTypography';
 import { AudioBlocks } from '../extensions/AudioBlocks';
+import { WikiLink } from '../extensions/WikiLink';
 import { common, createLowlight } from 'lowlight';
 import { EditorChangeHandler } from '@/types/editor';
 import type { EditorView } from '@tiptap/pm/view';
@@ -21,12 +22,19 @@ type ImageUploadFn = (file: File) => {
   upload: (options?: { preserveAnimation?: boolean }) => Promise<{ default: string }>;
 };
 
+// Type for wiki-link navigation handler
+type WikiLinkNavigationHandler = (pageTitle: string, bookId: number) => void;
+
 export const getEditorConfig = (
   content: string,
   onChange: EditorChangeHandler,
   editable = true,
   isEditing = true,
-  uploadImage: ImageUploadFn
+  uploadImage: ImageUploadFn,
+  wikiLinkOptions?: {
+    onNavigate: WikiLinkNavigationHandler;
+    bookId: number;
+  }
 ) => {
 
   return {
@@ -34,6 +42,10 @@ export const getEditorConfig = (
       Title,
       SmartTypography,
       AudioBlocks,
+      ...(wikiLinkOptions ? [WikiLink.configure({
+        onNavigate: wikiLinkOptions.onNavigate,
+        bookId: wikiLinkOptions.bookId,
+      })] : []),
       StarterKit.configure({
         document: false,
         blockquote: {

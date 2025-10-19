@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useParams } from "react-router-dom";
+import { useState, useCallback } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import { PageNavigation } from "@/components/page/PageNavigation";
 import { PageContent } from "@/components/page/PageContent";
 import { PageLoading } from "@/components/page/PageLoading";
@@ -15,6 +15,8 @@ import {
 import { PageChatPanel } from "@/components/page/PageChatPanel";
 import { PageMeta } from "@/components/page/PageMeta";
 import { SlugService } from "@/utils/slugService";
+import { createWikiLinkNavigationHandler } from "@/utils/wikiLinkNavigation";
+import { useToast } from "@/hooks/use-toast";
 
 // Custom hooks
 import { usePageViewData } from "@/hooks/use-page-view-data";
@@ -90,7 +92,25 @@ const PageView = () => {
   // 10. Preload next page for faster navigation
   useNextPagePreloader(numericBookId, nextPageId);
 
-  // 11. Loading state
+  // 11. Wiki-link navigation handler
+  const navigate = useNavigate();
+  const { toast } = useToast();
+
+  const handleWikiLinkNavigate = useCallback((pageTitle: string, bookIdParam: number) => {
+    const wikiNavigate = (slugBasedPageId: string) => {
+      navigate(`/book/${bookId}/page/${slugBasedPageId}`);
+    };
+
+    const handler = createWikiLinkNavigationHandler(
+      bookIdParam,
+      wikiNavigate,
+      toast
+    );
+
+    handler(pageTitle, bookIdParam);
+  }, [bookId, navigate, toast]);
+
+  // 12. Loading state
   if (dataLoading || permissionsLoading) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
@@ -156,6 +176,8 @@ const PageView = () => {
                     onToggleChat={() => setIsChatOpen(!isChatOpen)}
                     hasActiveChat={isChatOpen}
                     jsonContent={page.content}
+                    bookId={bookId}
+                    onWikiLinkNavigate={handleWikiLinkNavigate}
                   />
 
                   {/* Navigation Controls */}

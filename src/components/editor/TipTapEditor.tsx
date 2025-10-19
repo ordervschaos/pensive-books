@@ -20,6 +20,10 @@ interface TipTapEditorProps {
   onToggleChat?: () => void;
   hasActiveChat?: boolean;
   centerContent?: boolean;
+  wikiLinkOptions?: {
+    onNavigate: (pageTitle: string, bookId: number) => void;
+    bookId: number;
+  };
 }
 
 export const TipTapEditor = ({
@@ -33,13 +37,14 @@ export const TipTapEditor = ({
   customButtons,
   onToggleChat,
   hasActiveChat,
-  centerContent
+  centerContent,
+  wikiLinkOptions
 }: TipTapEditorProps) => {
   const { toast } = useToast();
   const isMobile = useIsMobile();
   const uploadImage = useSupabaseUpload();
 
-  const defaultConfig = getEditorConfig(content, onChange, editable, isEditing, uploadImage);
+  const defaultConfig = getEditorConfig(content, onChange, editable, isEditing, uploadImage, wikiLinkOptions);
   const config = editorConfig || defaultConfig;
 
   const editor = useEditor(config);
