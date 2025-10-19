@@ -70,7 +70,7 @@ export const PageNavigation = ({
         {canEdit && (
           isEditing ? (
             <div className="flex items-center gap-2 justify-center">
-              <Button variant="default" size="sm" className="rounded-full" onClick={() => setIsEditing(false)}>
+              <Button variant="ghost" size="sm" className="rounded-full" onClick={() => setIsEditing(false)}>
                 <Check className="h-4 w-4 flex-shrink-0" /> Done
               </Button>
             </div>
@@ -84,7 +84,6 @@ export const PageNavigation = ({
         )}
       </div>
 
-      {!isEditing && (
         <div className="flex flex-row items-center gap-2 justify-center w-full">
         <Button
           variant="ghost"
@@ -140,7 +139,7 @@ export const PageNavigation = ({
           </Button>
         )}
       </div>
-      )}
+
 
   
      

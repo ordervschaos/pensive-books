@@ -161,7 +161,7 @@ const PageView = () => {
 
                   {/* Page Editor/Viewer */}
                   <PageContent
-                    key={pageId} // Force remount when page changes to prevent stale content
+                    key={`current-page-${page.id.toString()}-cache-${pageId}`} // Force remount when page changes to prevent stale content
                     content={page.html_content || ''}
                     title={page.title || 'Untitled'}
                     onSave={handleSave}
