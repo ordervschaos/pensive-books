@@ -103,7 +103,7 @@ Deno.serve(async (req: Request) => {
     // Fetch all pages for the book
     const { data: pages, error: pagesError } = await supabaseClient
       .from('pages')
-      .select('id, title, html_content, page_index')
+      .select('id, title, content, page_index')
       .eq('book_id', bookId)
       .eq('archived', false)
       .order('page_index', { ascending: true });
@@ -121,12 +121,12 @@ Deno.serve(async (req: Request) => {
     // Prepare book content for AI
     const bookContent = pages
       .map(page => {
-        const cleanContent = page.html_content
-          ? page.html_content.replace(/<[^>]*>/g, '').trim()
+        const cleanContent = page.content
+          ? JSON.stringify(page.content)
           : '';
         return `Page ${page.page_index + 1}: ${page.title}\n${cleanContent}`;
       })
-      .join('\n\n');
+      .join('\n\n'); 
 
     // Call OpenAI API to generate flashcards
     const openaiApiKey = Deno.env.get('OPENAI_API_KEY');

@@ -393,7 +393,7 @@ serve(async (req) => {
     // Fetch page content including JSON
     const { data: page, error: pageError } = await supabase
       .from('pages')
-      .select('id, title, html_content, content')
+      .select('id, title, content')
       .eq('id', pageId)
       .single();
 
@@ -404,15 +404,8 @@ serve(async (req) => {
     // Use JSON content if available, otherwise fall back to HTML
     let blocks: AudioBlock[] = [];
     
-    if (page.content && typeof page.content === 'object') {
+    if (page.content) {
       blocks = extractAudioBlocks(page.content);
-    } else {
-      // Fallback: treat entire HTML content as a single block
-      blocks = [{
-        index: 0,
-        type: 'paragraph',
-        textContent: page.html_content || 'No content available'
-      }];
     }
 
     if (blocks.length === 0) {
