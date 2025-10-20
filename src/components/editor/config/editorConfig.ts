@@ -10,7 +10,7 @@ import { Title } from '../extensions/Title';
 import { SmartTypography } from '../extensions/SmartTypography';
 import { AudioBlocks } from '../extensions/AudioBlocks';
 import { common, createLowlight } from 'lowlight';
-import { EditorChangeHandler } from '@/types/editor';
+import { EditorChangeHandler, EditorJSON } from '@/types/editor';
 import type { EditorView } from '@tiptap/pm/view';
 import type { Slice } from '@tiptap/pm/model';
 
@@ -22,7 +22,7 @@ type ImageUploadFn = (file: File) => {
 };
 
 export const getEditorConfig = (
-  content: string,
+  content: string | EditorJSON | null,
   onChange: EditorChangeHandler,
   editable = true,
   isEditing = true,
@@ -136,7 +136,7 @@ export const getEditorConfig = (
     content,
     editable: editable && isEditing,
     onUpdate: ({ editor }) => {
-      onChange(editor.getHTML(), editor.getJSON());
+      onChange(editor.getJSON());
     },
     editorProps: {
       handleDrop: (view: EditorView, event: DragEvent, _slice: Slice, moved: boolean) => {

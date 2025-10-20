@@ -6,10 +6,10 @@ import { useSupabaseUpload } from '@/hooks/use-supabase-upload';
 import { getEditorConfig } from './config/editorConfig';
 import { EditorToolbar } from './EditorToolbar';
 import { cn } from "@/lib/utils";
-import { EditorChangeHandler } from '@/types/editor';
+import { EditorChangeHandler, EditorJSON } from '@/types/editor';
 
 interface TipTapEditorProps {
-  content: string;
+  content: string | EditorJSON | null;
   onChange: EditorChangeHandler;
   editable?: boolean;
   isEditing?: boolean;
@@ -47,9 +47,15 @@ export const TipTapEditor = ({
   // Add useEffect to update editor content when content prop changes
   // BUT only if the editor is not currently being edited (to avoid overwriting user input)
   useEffect(() => {
-    if (editor && content !== editor.getHTML() && !isEditing) {
-      console.log("TipTapEditor: Content prop changed, updating editor content");
-      editor.commands.setContent(content);
+    if (editor && !isEditing) {
+      // Handle both JSON and HTML content
+      const currentContent = editor.getJSON();
+      const contentChanged = JSON.stringify(content) !== JSON.stringify(currentContent);
+      
+      if (contentChanged) {
+        console.log("TipTapEditor: Content prop changed, updating editor content");
+        editor.commands.setContent(content);
+      }
     }
   }, [editor, content, isEditing]);
 

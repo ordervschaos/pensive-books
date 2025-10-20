@@ -7,7 +7,6 @@ import { useAudioHighlighting } from "@/hooks/use-audio-highlighting";
 import { useAdaptiveTextToSpeech } from "@/hooks/use-adaptive-text-to-speech";
 import { supabase } from "@/integrations/supabase/client";
 import { EditorJSON, PageSaveHandler } from "@/types/editor";
-import { convertJSONToHTML } from "@/utils/tiptapHelpers";
 
 interface PageContentProps {
   jsonContent: EditorJSON | null;  // Primary content source
@@ -24,8 +23,6 @@ interface PageContentProps {
   onToggleChat?: () => void;
   hasActiveChat?: boolean;
   bookId?: string;
-  // Deprecated - kept for backward compatibility
-  content?: string;
 }
 
 export const PageContent = ({
@@ -42,28 +39,29 @@ export const PageContent = ({
   onToggleChat,
   hasActiveChat,
   bookId,
-  content, // Deprecated - for backward compatibility
 }: PageContentProps) => {
   const [initialLoad, setInitialLoad] = useState(true);
-  const [currentContent, setCurrentContent] = useState('');
+  const [currentContent, setCurrentContent] = useState<EditorJSON | null>(null);
   const [currentTitle, setCurrentTitle] = useState(title || '');
   const debouncedSaveRef = useRef<ReturnType<typeof debounce>>();
+  const currentPageIdRef = useRef<string | undefined>(pageId);
 
   useEffect(() => {
-    // Only update content if not currently editing to prevent overwriting user input
-    if (!isEditing) {
+    // Update content when pageId changes (even in edit mode) or when not editing
+    // This ensures content loads properly when navigating between pages
+    if (!isEditing || pageId !== currentPageIdRef.current) {
       console.log("PageContent: Content prop changed, updating state");
-      // Convert JSON content to HTML
-      const htmlContent = jsonContent ? convertJSONToHTML(jsonContent) : '';
-      setCurrentContent(htmlContent);
+      // Use JSON content directly
+      setCurrentContent(jsonContent);
       setCurrentTitle(title || '');
       setInitialLoad(true);
+      currentPageIdRef.current = pageId;
     }
-  }, [title, isEditing, jsonContent]);
+  }, [title, isEditing, jsonContent, pageId]);
 
   // Create debounced save function
   useEffect(() => {
-    debouncedSaveRef.current = debounce(async (html: string, json: EditorJSON | null) => {
+    debouncedSaveRef.current = debounce(async (json: EditorJSON | null) => {
       if (!initialLoad && pageId) {
         try {
           // Get the current user's ID
@@ -101,11 +99,11 @@ export const PageContent = ({
     };
   }, [onSave, initialLoad, pageId]);
 
-  const handleContentChange = useCallback((html: string, json: EditorJSON | null) => {
+  const handleContentChange = useCallback((json: EditorJSON | null) => {
     if (!editable) return;
-    setCurrentContent(html);
+    setCurrentContent(json);
     setInitialLoad(false);
-    debouncedSaveRef.current?.(html, json);
+    debouncedSaveRef.current?.(json);
   }, [editable]);
 
   const handleEditingChange = useCallback((editing: boolean) => {
@@ -114,13 +112,25 @@ export const PageContent = ({
   }, [setIsEditing, onEditingChange]);
 
   // Always use the current content - don't maintain separate state for display
-  const displayContent = currentContent || `<h1 class="page-title">${currentTitle}</h1><p></p>`;
+  const displayContent = currentContent || {
+    type: 'doc',
+    content: [
+      {
+        type: 'heading',
+        attrs: { level: 1 },
+        content: [{ type: 'text', text: currentTitle }]
+      },
+      {
+        type: 'paragraph',
+        content: []
+      }
+    ]
+  };
 
   // Audio state management
   const audioState = useAdaptiveTextToSpeech({
     pageId: pageId ? parseInt(pageId) : undefined,
     content: currentContent,
-    jsonContent,
   });
 
   // Apply audio highlighting with click-to-play
@@ -159,7 +169,6 @@ export const PageContent = ({
                 onToggleChat={onToggleChat}
                 hasActiveChat={hasActiveChat}
                 pageId={pageId}
-                content={currentContent}
                 audioState={audioState}
               />
             </div>

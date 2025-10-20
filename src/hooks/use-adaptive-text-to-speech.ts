@@ -8,20 +8,18 @@ import { useTextToSpeechBlocks } from './use-text-to-speech-blocks';
 
 interface UseAdaptiveTextToSpeechProps {
   pageId: number | undefined;
-  content: string;
-  jsonContent?: any;
+  content: EditorJSON | null;
 }
 
 export const useAdaptiveTextToSpeech = ({
   pageId,
   content,
-  jsonContent
 }: UseAdaptiveTextToSpeechProps) => {
   // Check for block-based audio feature flag
   const useBlockBasedAudio = localStorage.getItem('audio_blocks_enabled') === 'true';
 
   // Use block-based audio if enabled and JSON content is available
-  const shouldUseBlocks = useBlockBasedAudio && jsonContent && pageId;
+  const shouldUseBlocks = useBlockBasedAudio && content && pageId;
 
   const legacyAudio = useTextToSpeech({
     pageId: pageId || 0,
@@ -30,7 +28,7 @@ export const useAdaptiveTextToSpeech = ({
 
   const blockBasedAudio = useTextToSpeechBlocks({
     pageId: pageId || 0,
-    content: jsonContent,
+    content: content,
   });
 
   // Return the appropriate implementation

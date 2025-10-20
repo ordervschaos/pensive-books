@@ -9,9 +9,21 @@ import { PageContent } from './PageContent';
 
 // Mock dependencies
 vi.mock('@/components/editor/TipTapEditor', () => ({
-  TipTapEditor: ({ content }: { content: string }) => (
-    <div data-testid="tiptap-editor">{content}</div>
-  ),
+  TipTapEditor: ({ content }: { content: string | any }) => {
+    // Handle JSON content by extracting text from it
+    if (typeof content === 'object' && content !== null) {
+      const extractText = (node: any): string => {
+        if (node.text) return node.text;
+        if (node.content && Array.isArray(node.content)) {
+          return node.content.map(extractText).join('');
+        }
+        return '';
+      };
+      const text = extractText(content);
+      return <div data-testid="tiptap-editor">{text || 'JSON content'}</div>;
+    }
+    return <div data-testid="tiptap-editor">{content}</div>;
+  },
 }));
 
 vi.mock('./PageHistory', () => ({
@@ -45,19 +57,22 @@ vi.mock('@/integrations/supabase/client', () => ({
   },
 }));
 
-vi.mock('@/utils/tiptapHelpers', () => ({
-  convertJSONToHTML: vi.fn((jsonContent) => {
-    // Mock implementation for JSON content
-    if (jsonContent && jsonContent.content) {
-      return '<h1>JSON Title</h1><p>JSON content</p>';
-    }
-    return '';
-  }),
-}));
-
 describe('PageContent', () => {
   const defaultProps = {
-    content: '<h1>Test Title</h1><p>Test content</p>',
+    jsonContent: {
+      type: 'doc',
+      content: [
+        {
+          type: 'heading',
+          attrs: { level: 1 },
+          content: [{ type: 'text', text: 'Test Title' }],
+        },
+        {
+          type: 'paragraph',
+          content: [{ type: 'text', text: 'Test content' }],
+        },
+      ],
+    },
     title: 'Test Page',
     onSave: vi.fn(),
     saving: false,
@@ -80,7 +95,7 @@ describe('PageContent', () => {
     expect(editor).toBeTruthy();
   });
 
-  it('should prefer JSON content over HTML content', async () => {
+  it('should render with JSON content', async () => {
     const jsonContent = {
       type: 'doc',
       content: [
@@ -95,7 +110,6 @@ describe('PageContent', () => {
     render(
       <PageContent
         {...defaultProps}
-        content="<h1>HTML Title</h1>"
         jsonContent={jsonContent}
       />
     );
@@ -109,7 +123,7 @@ describe('PageContent', () => {
 
   it('should handle null JSON content', () => {
     render(
-      <PageContent {...defaultProps} content="" jsonContent={null} />
+      <PageContent {...defaultProps} jsonContent={null} />
     );
 
     const editor = screen.getByTestId('tiptap-editor');
@@ -145,35 +159,33 @@ describe('PageContent', () => {
 
   it('should update content when props change and not editing', async () => {
     const { rerender } = render(
-      <PageContent {...defaultProps} content="Initial content" jsonContent={{ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Initial' }] }] }} isEditing={false} />
+      <PageContent {...defaultProps} jsonContent={{ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Initial' }] }] }} isEditing={false} />
     );
 
     rerender(
       <PageContent
         {...defaultProps}
-        content="Updated content"
         jsonContent={{ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Updated' }] }] }}
         isEditing={false}
       />
     );
 
-    await waitFor(() => {
-      const editor = screen.getByTestId('tiptap-editor');
-      // Mock returns "JSON content" for any doc with content
-      expect(editor.textContent).toContain('JSON content');
-    });
+      await waitFor(() => {
+        const editor = screen.getByTestId('tiptap-editor');
+        // Should show the actual text content from JSON
+        expect(editor.textContent).toContain('Updated');
+      });
   });
 
   it('should not update content when props change while editing', async () => {
     const initialJson = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Initial' }] }] };
     const { rerender } = render(
-      <PageContent {...defaultProps} content="Initial content" jsonContent={initialJson} isEditing={true} />
+      <PageContent {...defaultProps} jsonContent={initialJson} isEditing={true} />
     );
 
     rerender(
       <PageContent
         {...defaultProps}
-        content="Updated content"
         jsonContent={{ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Updated' }] }] }}
         isEditing={true}
       />
@@ -186,7 +198,7 @@ describe('PageContent', () => {
   });
 
   it('should handle empty content gracefully', () => {
-    render(<PageContent {...defaultProps} content="" />);
+    render(<PageContent {...defaultProps} jsonContent={null} />);
 
     const editor = screen.getByTestId('tiptap-editor');
     expect(editor).toBeTruthy();
@@ -249,11 +261,10 @@ describe('PageContent', () => {
       });
     });
 
-    it('should handle switch from HTML to JSON content', async () => {
+    it('should handle switch from null to JSON content', async () => {
       const { rerender } = render(
         <PageContent
           {...defaultProps}
-          content="<p>HTML content</p>"
           jsonContent={null}
           isEditing={false}
         />
@@ -272,7 +283,6 @@ describe('PageContent', () => {
       rerender(
         <PageContent
           {...defaultProps}
-          content="<p>HTML content</p>"
           jsonContent={newJson}
           isEditing={false}
         />
@@ -285,11 +295,10 @@ describe('PageContent', () => {
     });
   });
 
-  describe('Backward compatibility', () => {
+  describe('JSON content handling', () => {
     it('should work with pages without JSON content', () => {
       const legacyProps = {
         ...defaultProps,
-        content: '',
         jsonContent: undefined,
       };
 
@@ -303,7 +312,6 @@ describe('PageContent', () => {
     it('should work with new pages (JSON content)', () => {
       const newProps = {
         ...defaultProps,
-        content: '',
         jsonContent: {
           type: 'doc',
           content: [
@@ -321,10 +329,9 @@ describe('PageContent', () => {
       expect(screen.getByTestId('tiptap-editor')).toBeTruthy();
     });
 
-    it('should work with mixed content (both JSON and HTML)', () => {
-      const mixedProps = {
+    it('should work with valid JSON content', () => {
+      const jsonProps = {
         ...defaultProps,
-        content: '<h1>HTML Fallback</h1>',
         jsonContent: {
           type: 'doc',
           content: [
@@ -337,17 +344,25 @@ describe('PageContent', () => {
         },
       };
 
-      render(<PageContent {...mixedProps} />);
+      render(<PageContent {...jsonProps} />);
 
       const editor = screen.getByTestId('tiptap-editor');
-      // Should prefer JSON
+      // Should use JSON content
       expect(editor.textContent).toContain('JSON');
     });
   });
 
   describe('Edge cases', () => {
     it('should handle very long content', () => {
-      const longContent = '<p>' + 'A'.repeat(10000) + '</p>';
+      const longContent = {
+        type: 'doc',
+        content: [
+          {
+            type: 'paragraph',
+            content: [{ type: 'text', text: 'A'.repeat(10000) }],
+          },
+        ],
+      };
 
       render(<PageContent {...defaultProps} jsonContent={longContent} />);
 
@@ -355,17 +370,38 @@ describe('PageContent', () => {
     });
 
     it('should handle special characters in content', () => {
-      const specialContent = '<p>&lt;&gt;&amp;&quot;</p>';
+      const specialContent = {
+        type: 'doc',
+        content: [
+          {
+            type: 'paragraph',
+            content: [{ type: 'text', text: '<>&"' }],
+          },
+        ],
+      };
 
       render(<PageContent {...defaultProps} jsonContent={specialContent} />);
 
       expect(screen.getByTestId('tiptap-editor')).toBeTruthy();
     });
 
-    it('should handle malformed HTML gracefully', () => {
-      const malformedContent = '<p>Unclosed paragraph<div>Mixed tags</p></div>';
+    it('should handle complex nested content', () => {
+      const complexContent = {
+        type: 'doc',
+        content: [
+          {
+            type: 'heading',
+            attrs: { level: 1 },
+            content: [{ type: 'text', text: 'Title' }],
+          },
+          {
+            type: 'paragraph',
+            content: [{ type: 'text', text: 'Paragraph' }],
+          },
+        ],
+      };
 
-      render(<PageContent {...defaultProps} jsonContent={malformedContent} />);
+      render(<PageContent {...defaultProps} jsonContent={complexContent} />);
 
       expect(screen.getByTestId('tiptap-editor')).toBeTruthy();
     });
@@ -398,7 +434,6 @@ describe('PageContent', () => {
         <PageContent
           {...defaultProps}
           pageId="123"
-          content="<h1>Title</h1><p>Content</p>"
           jsonContent={{ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Content' }] }] }}
         />
       );
@@ -407,15 +442,41 @@ describe('PageContent', () => {
         <PageContent
           {...defaultProps}
           pageId="456"
-          content="<h1>New Title</h1><p>New Content</p>"
           jsonContent={{ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'New Content' }] }] }}
         />
       );
 
       await waitFor(() => {
         const editor = screen.getByTestId('tiptap-editor');
-        // Mock returns "JSON content" for any doc with content
-        expect(editor.textContent).toContain('JSON content');
+        // Should show the actual text content from JSON
+        expect(editor.textContent).toContain('New Content');
+      });
+    });
+
+    it('should update content when pageId changes in edit mode', async () => {
+      const { rerender } = render(
+        <PageContent
+          {...defaultProps}
+          isEditing={true}
+          pageId="123"
+          jsonContent={{ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Original Content' }] }] }}
+        />
+      );
+
+      // Navigate to a different page while in edit mode
+      rerender(
+        <PageContent
+          {...defaultProps}
+          isEditing={true}
+          pageId="456"
+          jsonContent={{ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'New Page Content' }] }] }}
+        />
+      );
+
+      await waitFor(() => {
+        const editor = screen.getByTestId('tiptap-editor');
+        // Should show new content even though we're in edit mode
+        expect(editor.textContent).toContain('New Page Content');
       });
     });
   });

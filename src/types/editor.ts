@@ -20,10 +20,9 @@ export interface EditorJSON {
 
 /**
  * Callback function for editor content changes
- * @param html - HTML string representation of the content
  * @param json - Structured JSON representation of the content (null when reverting to a version)
  */
-export type EditorChangeHandler = (html: string, json: EditorJSON | null) => void;
+export type EditorChangeHandler = (json: EditorJSON | null) => void;
 
 /**
  * Callback for saving page content

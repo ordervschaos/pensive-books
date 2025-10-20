@@ -14,7 +14,6 @@ interface FloatingActionsProps {
   
   // Audio props
   pageId?: string;
-  content: string;
   audioState?: any; // Audio state from parent
 }
 
@@ -25,7 +24,6 @@ export const FloatingActions = ({
   onToggleChat,
   hasActiveChat,
   pageId,
-  content,
   audioState
 }: FloatingActionsProps) => {
   const isBetaEnabled = localStorage.getItem('is_beta') === 'true';
