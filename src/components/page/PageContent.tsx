@@ -8,6 +8,7 @@ import { useAdaptiveTextToSpeech } from "@/hooks/use-adaptive-text-to-speech";
 import { supabase } from "@/integrations/supabase/client";
 import { EditorJSON, PageSaveHandler } from "@/types/editor";
 
+
 interface PageContentProps {
   jsonContent: EditorJSON | null;  // Primary content source
   title: string;
@@ -41,8 +42,7 @@ export const PageContent = ({
   bookId,
 }: PageContentProps) => {
   const [initialLoad, setInitialLoad] = useState(true);
-  const [currentContent, setCurrentContent] = useState<EditorJSON | null>(null);
-  const [currentTitle, setCurrentTitle] = useState(title || '');
+  const [currentContent, setCurrentContent] = useState<EditorJSON | null>(jsonContent);
   const debouncedSaveRef = useRef<ReturnType<typeof debounce>>();
   const currentPageIdRef = useRef<string | undefined>(pageId);
 
@@ -53,7 +53,6 @@ export const PageContent = ({
       console.log("PageContent: Content prop changed, updating state");
       // Use JSON content directly
       setCurrentContent(jsonContent);
-      setCurrentTitle(title || '');
       setInitialLoad(true);
       currentPageIdRef.current = pageId;
     }
@@ -112,20 +111,7 @@ export const PageContent = ({
   }, [setIsEditing, onEditingChange]);
 
   // Always use the current content - don't maintain separate state for display
-  const displayContent = currentContent || {
-    type: 'doc',
-    content: [
-      {
-        type: 'heading',
-        attrs: { level: 1 },
-        content: [{ type: 'text', text: currentTitle }]
-      },
-      {
-        type: 'paragraph',
-        content: []
-      }
-    ]
-  };
+  
 
   // Audio state management
   const audioState = useAdaptiveTextToSpeech({
@@ -150,7 +136,7 @@ export const PageContent = ({
             <div className={`flex-1 ${!isEditing ? '' : ''} relative`}>
               <TipTapEditor
                 key={pageId} // Force remount on page change to ensure fresh content
-                content={displayContent}
+                content={currentContent}
                 onChange={handleContentChange}
                 editable={canEdit}
                 isEditing={isEditing && editable}
