@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { generateEPUB } from './epub';
 import { prepareEPUBContent, EPUBOptions } from './epub-generator';
 import jsPDF from 'jspdf';
-import { getHtmlFromContent } from '@/utils/tiptapHelpers';
+import { convertJSONToHTML } from '@/utils/tiptapHelpers';
 
 type Page = Database['public']['Tables']['pages']['Row'] & {
   page_type: 'section' | 'page';
@@ -479,7 +479,7 @@ const renderContentPage = async (
   let contentData = { elements: [], images: [] };
   // Convert JSON content to HTML
   if (page.content) {
-    const htmlContent = getHtmlFromContent(page.content);
+    const htmlContent = convertJSONToHTML(page.content);
     if (htmlContent) {
       contentData = processHtmlContent(htmlContent);
     }

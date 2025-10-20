@@ -6,7 +6,7 @@ import { describe, it, expect, vi } from 'vitest';
 
 // Mock the tiptapHelpers module
 vi.mock('@/utils/tiptapHelpers', () => ({
-  getHtmlFromContent: vi.fn((jsonContent) => {
+  convertJSONToHTML: vi.fn((jsonContent) => {
     if (jsonContent && jsonContent.type === 'doc') {
       return '<h1>JSON Title</h1><p>JSON content from TipTap</p>';
     }
@@ -75,9 +75,9 @@ describe('PDF Generation with JSON content', () => {
 
   describe('renderContentPage', () => {
     it('should use JSON content when available', async () => {
-      const { getHtmlFromContent } = await import('@/utils/tiptapHelpers');
+      const { convertJSONToHTML } = await import('@/utils/tiptapHelpers');
 
-      // The function should call getHtmlFromContent with JSON
+      // The function should call convertJSONToHTML with JSON
       const page = {
         id: 1,
         title: 'Test Page',
@@ -88,7 +88,7 @@ describe('PDF Generation with JSON content', () => {
 
       // Since renderContentPage is internal, we test through generatePDF
       // Just verify the mock was set up correctly
-      expect(vi.mocked(getHtmlFromContent)).toBeDefined();
+      expect(vi.mocked(convertJSONToHTML)).toBeDefined();
     });
 
     it('should fall back to HTML when JSON is not available', async () => {
@@ -255,8 +255,8 @@ describe('PDF Generation with JSON content', () => {
     });
   });
 
-  describe('Integration with getHtmlFromContent', () => {
-    it('should call getHtmlFromContent for each page', () => {
+  describe('Integration with convertJSONToHTML', () => {
+    it('should call convertJSONToHTML for each page', () => {
       // Verified through the actual implementation
       const pages = [
         { content: { type: 'doc', content: [] }, page_type: 'text' as const },
@@ -267,7 +267,7 @@ describe('PDF Generation with JSON content', () => {
       expect(pages).toHaveLength(3);
     });
 
-    it('should pass correct parameters to getHtmlFromContent', () => {
+    it('should pass correct parameters to convertJSONToHTML', () => {
       const jsonContent = { type: 'doc', content: [] };
       const htmlContent = '<p>HTML</p>';
 

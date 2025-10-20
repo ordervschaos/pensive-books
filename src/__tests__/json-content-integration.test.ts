@@ -76,10 +76,10 @@ describe('JSON Content Integration', () => {
       };
 
       // Import utilities
-      const { getHtmlFromContent, getTextFromContent } = await import('@/utils/tiptapHelpers');
+      const { convertJSONToHTML, getTextFromContent } = await import('@/utils/tiptapHelpers');
 
       // Get HTML for display
-      const displayHtml = getHtmlFromContent(page.content);
+      const displayHtml = convertJSONToHTML(page.content);
       expect(displayHtml).toContain('Test content');
 
       // Get text for meta tags
@@ -111,9 +111,9 @@ describe('JSON Content Integration', () => {
         },
       };
 
-      const { getHtmlFromContent, getTextFromContent } = await import('@/utils/tiptapHelpers');
+      const { convertJSONToHTML, getTextFromContent } = await import('@/utils/tiptapHelpers');
 
-      const displayHtml = getHtmlFromContent(page.content);
+      const displayHtml = convertJSONToHTML(page.content);
       expect(displayHtml).toContain('Main Title');
       expect(displayHtml).toContain('bold');
 
@@ -129,9 +129,9 @@ describe('JSON Content Integration', () => {
         content: null,
       };
 
-      const { getHtmlFromContent, getTextFromContent } = await import('@/utils/tiptapHelpers');
+      const { convertJSONToHTML, getTextFromContent } = await import('@/utils/tiptapHelpers');
 
-      const displayHtml = getHtmlFromContent(page.content);
+      const displayHtml = convertJSONToHTML(page.content);
       expect(displayHtml).toBe('');
 
       const textContent = getTextFromContent(page.content);
@@ -145,9 +145,9 @@ describe('JSON Content Integration', () => {
         content: { invalid: 'structure' },
       };
 
-      const { getHtmlFromContent } = await import('@/utils/tiptapHelpers');
+      const { convertJSONToHTML } = await import('@/utils/tiptapHelpers');
 
-      const displayHtml = getHtmlFromContent(page.content);
+      const displayHtml = convertJSONToHTML(page.content);
       // Should not throw error, returns empty or minimal HTML
       expect(displayHtml).toBeDefined();
     });
@@ -169,10 +169,10 @@ describe('JSON Content Integration', () => {
         },
       };
 
-      const { getHtmlFromContent } = await import('@/utils/tiptapHelpers');
+      const { convertJSONToHTML } = await import('@/utils/tiptapHelpers');
 
-      const result1 = getHtmlFromContent(page.content);
-      const result2 = getHtmlFromContent(page.content);
+      const result1 = convertJSONToHTML(page.content);
+      const result2 = convertJSONToHTML(page.content);
       expect(result1).toBe(result2);
     });
   });
@@ -193,11 +193,11 @@ describe('JSON Content Integration', () => {
         },
       };
 
-      const { getHtmlFromContent } = await import('@/utils/tiptapHelpers');
+      const { convertJSONToHTML } = await import('@/utils/tiptapHelpers');
 
-      const epubContent = getHtmlFromContent(page.content);
-      const pdfContent = getHtmlFromContent(page.content);
-      const printContent = getHtmlFromContent(page.content);
+      const epubContent = convertJSONToHTML(page.content);
+      const pdfContent = convertJSONToHTML(page.content);
+      const printContent = convertJSONToHTML(page.content);
 
       expect(epubContent).toContain('Export content');
       expect(pdfContent).toContain('Export content');
@@ -222,10 +222,10 @@ describe('JSON Content Integration', () => {
         },
       };
 
-      const { getHtmlFromContent } = await import('@/utils/tiptapHelpers');
+      const { convertJSONToHTML } = await import('@/utils/tiptapHelpers');
 
       const start = performance.now();
-      const content = getHtmlFromContent(page.content);
+      const content = convertJSONToHTML(page.content);
       const end = performance.now();
 
       expect(content).toContain(largeContent);

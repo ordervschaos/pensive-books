@@ -9,7 +9,7 @@ import { generatePDF, generateAndDownloadEPUB } from "@/lib/download";
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { getHtmlFromContent } from "@/utils/tiptapHelpers";
+import { convertJSONToHTML } from "@/utils/tiptapHelpers";
 
 interface BookInfoProps {
   name: string;
@@ -126,7 +126,7 @@ export const BookInfo = ({
               ${author ? `<p>by ${author}</p>` : ''}
             </div>
             ${pages.map(page => {
-              const pageHtml = page.content ? getHtmlFromContent(page.content) : '';
+              const pageHtml = page.content ? convertJSONToHTML(page.content) : '';
 
               return `
               ${page.page_type === 'section'

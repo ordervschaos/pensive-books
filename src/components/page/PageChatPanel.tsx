@@ -5,11 +5,12 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { ChatMessage } from './ChatMessage';
 import { usePageChat, SuggestedEdit } from '@/hooks/use-page-chat';
+import { convertJSONToHTML } from '@/utils/tiptapHelpers';
 import { Send, Trash2, Loader2 } from 'lucide-react';
 
 interface PageChatPanelProps {
   pageId: string;
-  pageContent: string;
+  pageContent: Record<string, unknown> | null; // JSON content from TipTap editor
   canEdit: boolean;
   isOpen: boolean;
   onClose: () => void;
@@ -40,7 +41,9 @@ export const PageChatPanel = ({
     const message = inputMessage.trim();
     setInputMessage('');
 
-    await sendMessage(message, pageContent, canEdit);
+    // Convert JSON content to HTML for the chat API
+    const htmlContent = pageContent ? convertJSONToHTML(pageContent) : '';
+    await sendMessage(message, htmlContent, canEdit);
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {

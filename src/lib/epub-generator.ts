@@ -1,5 +1,5 @@
 import { Database } from '@/integrations/supabase/types';
-import { getHtmlFromContent } from '@/utils/tiptapHelpers';
+import { convertJSONToHTML } from '@/utils/tiptapHelpers';
 
 type Page = Database['public']['Tables']['pages']['Row'];
 
@@ -98,7 +98,7 @@ export const prepareEPUBContent = async (
   // Process and download images
   const imagePromises = pages.flatMap((page, index) => {
     // Convert JSON content to HTML for image extraction
-    const htmlContent = page.content ? getHtmlFromContent(page.content) : '';
+    const htmlContent = page.content ? convertJSONToHTML(page.content) : '';
     console.log(`EPUB: Page ${index} (${page.title || 'Untitled'}) - has JSON: ${!!page.content}, HTML length: ${htmlContent.length}`);
 
     const urls = extractImageUrls(htmlContent);

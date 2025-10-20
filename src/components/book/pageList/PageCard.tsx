@@ -5,14 +5,14 @@ import { Badge } from "@/components/ui/badge";
 import { AudioPlayer } from "@/components/page/AudioPlayer";
 import { PageItemProps } from "./types";
 import { forwardRef } from "react";
-import { getWordCountFromContent, getHtmlFromContent } from "@/utils/tiptapHelpers";
+import { getWordCountFromContent, convertJSONToHTML } from "@/utils/tiptapHelpers";
 
 export const PageCard = forwardRef<HTMLDivElement, PageItemProps>(({ page, onNavigate, onDelete, isBookmarked }, ref) => {
   const wordCount = page.page_type === 'text' && page.content
     ? getWordCountFromContent(page.content)
     : 0;
 
-  const htmlContent = page.content ? getHtmlFromContent(page.content) : '';
+  const htmlContent = page.content ? convertJSONToHTML(page.content) : '';
   const excerpt = htmlContent ? htmlContent.replace(/<h1[^>]*>.*?<\/h1>/g, '') : '';
 
   return (

@@ -1,5 +1,5 @@
 import JSZip from 'jszip';
-import { getHtmlFromContent } from '@/utils/tiptapHelpers';
+import { convertJSONToHTML } from '@/utils/tiptapHelpers';
 
 interface Page {
   title: string | null;
@@ -232,7 +232,7 @@ export const generateContentXhtml = (metadata: EPUBMetadata, pages: Page[], show
   `}
   ${pages.map((page, index) => {
     // Generate HTML from JSON content
-    const htmlContent = page.content ? getHtmlFromContent(page.content) : '';
+    const htmlContent = page.content ? convertJSONToHTML(page.content) : '';
 
     return `
     <section id="page${index}" epub:type="chapter" class="${page.page_type === 'section' ? 'section-page' : 'content-page'}">

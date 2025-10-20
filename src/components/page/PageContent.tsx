@@ -7,10 +7,10 @@ import { useAudioHighlighting } from "@/hooks/use-audio-highlighting";
 import { useAdaptiveTextToSpeech } from "@/hooks/use-adaptive-text-to-speech";
 import { supabase } from "@/integrations/supabase/client";
 import { EditorJSON, PageSaveHandler } from "@/types/editor";
-import { getHtmlFromContent } from "@/utils/tiptapHelpers";
+import { convertJSONToHTML } from "@/utils/tiptapHelpers";
 
 interface PageContentProps {
-  jsonContent: any;  // Primary content source
+  jsonContent: EditorJSON | null;  // Primary content source
   title: string;
   onSave: PageSaveHandler;
   saving: boolean;
@@ -54,7 +54,7 @@ export const PageContent = ({
     if (!isEditing) {
       console.log("PageContent: Content prop changed, updating state");
       // Convert JSON content to HTML
-      const htmlContent = jsonContent ? getHtmlFromContent(jsonContent) : '';
+      const htmlContent = jsonContent ? convertJSONToHTML(jsonContent) : '';
       setCurrentContent(htmlContent);
       setCurrentTitle(title || '');
       setInitialLoad(true);
@@ -85,13 +85,13 @@ export const PageContent = ({
               }
             );
 
-          // Then save the new content
-          onSave(html, json);
+          // Then save the new content (only pass JSON)
+          onSave(json);
         } catch (error) {
           console.error('Error saving history:', error);
         }
       } else {
-        onSave(html, json);
+        onSave(json);
       }
     }, 200);
 

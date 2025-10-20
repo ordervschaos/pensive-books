@@ -1,19 +1,34 @@
 import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { EditorJSON } from '@/types/editor';
 
 /**
- * Extract title from HTML content (first <h1> tag)
+ * Extract title from JSON content (first heading node)
  */
-const getTitleFromHtml = (html: string): string => {
-  const doc = new DOMParser().parseFromString(html, 'text/html');
-  const h1 = doc.querySelector('h1');
-  return h1?.textContent?.trim() || 'Untitled';
+const getTitleFromJson = (json: EditorJSON | null): string => {
+  if (!json || !json.content) return 'Untitled';
+  
+  // Find the first heading node
+  const findFirstHeading = (nodes: EditorJSON[]): string | null => {
+    for (const node of nodes) {
+      if (node.type === 'heading' && node.content && node.content[0] && node.content[0].text) {
+        return node.content[0].text.trim();
+      }
+      if (node.content && Array.isArray(node.content)) {
+        const heading = findFirstHeading(node.content);
+        if (heading) return heading;
+      }
+    }
+    return null;
+  };
+  
+  return findFirstHeading(json.content) || 'Untitled';
 };
 
 interface UsePageSaveReturn {
-  handleSave: (html: string, json?: any) => Promise<void>;
-  handleApplyEdit: (oldText: string, newText: string, currentHtml: string) => Promise<void>;
+  handleSave: (json: EditorJSON | null) => Promise<void>;
+  handleApplyEdit: (oldText: string, newText: string, currentJson: EditorJSON | null) => Promise<void>;
   saving: boolean;
 }
 
@@ -24,12 +39,12 @@ interface UsePageSaveReturn {
 export const usePageSave = (
   pageId: string | undefined,
   canEdit: boolean,
-  onSaveSuccess?: (updatedHtml: string, updatedTitle: string) => void
+  onSaveSuccess?: (updatedJson: EditorJSON | null, updatedTitle: string) => void
 ): UsePageSaveReturn => {
   const { toast } = useToast();
   const [saving, setSaving] = useState(false);
 
-  const handleSave = useCallback(async (html: string, json?: any) => {
+  const handleSave = useCallback(async (json: EditorJSON | null) => {
     if (!canEdit) {
       toast({
         variant: 'destructive',
@@ -51,17 +66,17 @@ export const usePageSave = (
     try {
       setSaving(true);
 
-      const title = getTitleFromHtml(html);
+      const title = getTitleFromJson(json);
 
-      const updateData: any = {
+      const updateData: {
+        title: string;
+        content: EditorJSON | null;
+        updated_at: string;
+      } = {
         title: title,
+        content: json,
         updated_at: new Date().toISOString(),
       };
-
-      // Save JSON content (required)
-      if (json) {
-        updateData.content = json;
-      }
 
       const { error } = await supabase
         .from('pages')
@@ -72,7 +87,7 @@ export const usePageSave = (
 
       // Notify parent component of successful save
       if (onSaveSuccess) {
-        onSaveSuccess(html, title);
+        onSaveSuccess(json, title);
       }
 
     } catch (error: unknown) {
@@ -87,17 +102,21 @@ export const usePageSave = (
   }, [pageId, canEdit, toast, onSaveSuccess]);
 
   /**
-   * Apply AI-suggested edit by replacing old text with new text
+   * Apply AI-suggested edit by replacing old text with new text in JSON content
    */
   const handleApplyEdit = useCallback(async (
     oldText: string,
     newText: string,
-    currentHtml: string
+    currentJson: EditorJSON | null
   ) => {
-    if (!currentHtml) return;
+    if (!currentJson) return;
 
-    const updatedContent = currentHtml.replace(oldText, newText);
-    await handleSave(updatedContent);
+    // Convert JSON to string, replace text, then convert back
+    const jsonString = JSON.stringify(currentJson);
+    const updatedJsonString = jsonString.replace(oldText, newText);
+    const updatedJson = JSON.parse(updatedJsonString);
+    
+    await handleSave(updatedJson);
   }, [handleSave]);
 
   return {

@@ -29,4 +29,4 @@ export type EditorChangeHandler = (html: string, json: EditorJSON | null) => voi
  * Callback for saving page content
  * Used in PageContent component
  */
-export type PageSaveHandler = (html: string, json: EditorJSON | null) => void | Promise<void>;
+export type PageSaveHandler = (json: EditorJSON | null) => void | Promise<void>;

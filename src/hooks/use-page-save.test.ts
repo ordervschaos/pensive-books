@@ -31,11 +31,24 @@ describe('usePageSave', () => {
   it('should save page content successfully', async () => {
     const { result } = renderHook(() => usePageSave('123', true));
 
-    const testHtml = '<h1>Test Title</h1><p>Content</p>';
+    const testJson = {
+      type: 'doc',
+      content: [
+        {
+          type: 'heading',
+          attrs: { level: 1 },
+          content: [{ type: 'text', text: 'Test Title' }]
+        },
+        {
+          type: 'paragraph',
+          content: [{ type: 'text', text: 'Content' }]
+        }
+      ]
+    };
     const { supabase } = await import('@/integrations/supabase/client');
 
     await act(async () => {
-      await result.current.handleSave(testHtml);
+      await result.current.handleSave(testJson);
     });
 
     await waitFor(() => {
@@ -43,19 +56,32 @@ describe('usePageSave', () => {
       expect(mockUpdate).toHaveBeenCalledWith(
         expect.objectContaining({
           title: 'Test Title',
-          // content field would be JSON, but we're only checking title extraction
+          content: testJson,
         })
       );
     });
   });
 
-  it('should extract title from HTML h1 tag', async () => {
+  it('should extract title from JSON heading', async () => {
     const { result } = renderHook(() => usePageSave('123', true));
 
-    const testHtml = '<h1>My Page Title</h1><p>Content</p>';
+    const testJson = {
+      type: 'doc',
+      content: [
+        {
+          type: 'heading',
+          attrs: { level: 1 },
+          content: [{ type: 'text', text: 'My Page Title' }]
+        },
+        {
+          type: 'paragraph',
+          content: [{ type: 'text', text: 'Content' }]
+        }
+      ]
+    };
 
     await act(async () => {
-      await result.current.handleSave(testHtml);
+      await result.current.handleSave(testJson);
     });
 
     await waitFor(() => {
@@ -67,13 +93,21 @@ describe('usePageSave', () => {
     });
   });
 
-  it('should use "Untitled" when no h1 tag exists', async () => {
+  it('should use "Untitled" when no heading exists', async () => {
     const { result } = renderHook(() => usePageSave('123', true));
 
-    const testHtml = '<p>Content without title</p>';
+    const testJson = {
+      type: 'doc',
+      content: [
+        {
+          type: 'paragraph',
+          content: [{ type: 'text', text: 'Content without title' }]
+        }
+      ]
+    };
 
     await act(async () => {
-      await result.current.handleSave(testHtml);
+      await result.current.handleSave(testJson);
     });
 
     await waitFor(() => {
@@ -88,8 +122,19 @@ describe('usePageSave', () => {
   it('should show error when user lacks edit permission', async () => {
     const { result } = renderHook(() => usePageSave('123', false));
 
+    const testJson = {
+      type: 'doc',
+      content: [
+        {
+          type: 'heading',
+          attrs: { level: 1 },
+          content: [{ type: 'text', text: 'Test' }]
+        }
+      ]
+    };
+
     await act(async () => {
-      await result.current.handleSave('<h1>Test</h1>');
+      await result.current.handleSave(testJson);
     });
 
     expect(mockToast).toHaveBeenCalledWith(
@@ -103,8 +148,19 @@ describe('usePageSave', () => {
   it('should show error when pageId is missing', async () => {
     const { result } = renderHook(() => usePageSave(undefined, true));
 
+    const testJson = {
+      type: 'doc',
+      content: [
+        {
+          type: 'heading',
+          attrs: { level: 1 },
+          content: [{ type: 'text', text: 'Test' }]
+        }
+      ]
+    };
+
     await act(async () => {
-      await result.current.handleSave('<h1>Test</h1>');
+      await result.current.handleSave(testJson);
     });
 
     expect(mockToast).toHaveBeenCalledWith(
@@ -121,8 +177,19 @@ describe('usePageSave', () => {
 
     expect(result.current.saving).toBe(false);
 
+    const testJson = {
+      type: 'doc',
+      content: [
+        {
+          type: 'heading',
+          attrs: { level: 1 },
+          content: [{ type: 'text', text: 'Test' }]
+        }
+      ]
+    };
+
     const savePromise = act(async () => {
-      await result.current.handleSave('<h1>Test</h1>');
+      await result.current.handleSave(testJson);
     });
 
     // Note: Due to async nature, saving state may have already changed
@@ -138,8 +205,19 @@ describe('usePageSave', () => {
 
     const { result } = renderHook(() => usePageSave('123', true));
 
+    const testJson = {
+      type: 'doc',
+      content: [
+        {
+          type: 'heading',
+          attrs: { level: 1 },
+          content: [{ type: 'text', text: 'Test' }]
+        }
+      ]
+    };
+
     await act(async () => {
-      await result.current.handleSave('<h1>Test</h1>');
+      await result.current.handleSave(testJson);
     });
 
     expect(mockToast).toHaveBeenCalledWith(
@@ -155,43 +233,69 @@ describe('usePageSave', () => {
     const mockCallback = vi.fn();
     const { result } = renderHook(() => usePageSave('123', true, mockCallback));
 
-    const testHtml = '<h1>Test Title</h1><p>Content</p>';
+    const testJson = {
+      type: 'doc',
+      content: [
+        {
+          type: 'heading',
+          attrs: { level: 1 },
+          content: [{ type: 'text', text: 'Test Title' }]
+        },
+        {
+          type: 'paragraph',
+          content: [{ type: 'text', text: 'Content' }]
+        }
+      ]
+    };
 
     await act(async () => {
-      await result.current.handleSave(testHtml);
+      await result.current.handleSave(testJson);
     });
 
     await waitFor(() => {
-      expect(mockCallback).toHaveBeenCalledWith(testHtml, 'Test Title');
+      expect(mockCallback).toHaveBeenCalledWith(testJson, 'Test Title');
     });
   });
 
   it('should handle AI edit application', async () => {
     const { result } = renderHook(() => usePageSave('123', true));
 
-    const currentHtml = '<h1>Title</h1><p>Old text here</p>';
+    const currentJson = {
+      type: 'doc',
+      content: [
+        {
+          type: 'heading',
+          attrs: { level: 1 },
+          content: [{ type: 'text', text: 'Title' }]
+        },
+        {
+          type: 'paragraph',
+          content: [{ type: 'text', text: 'Old text here' }]
+        }
+      ]
+    };
     const oldText = 'Old text';
     const newText = 'New text';
 
     await act(async () => {
-      await result.current.handleApplyEdit(oldText, newText, currentHtml);
+      await result.current.handleApplyEdit(oldText, newText, currentJson);
     });
 
     await waitFor(() => {
       expect(mockUpdate).toHaveBeenCalledWith(
         expect.objectContaining({
           title: 'Title',
-          // Edited HTML is converted to JSON before saving
+          // Edited JSON content is saved
         })
       );
     });
   });
 
-  it('should not apply edit when currentHtml is empty', async () => {
+  it('should not apply edit when currentJson is empty', async () => {
     const { result } = renderHook(() => usePageSave('123', true));
 
     await act(async () => {
-      await result.current.handleApplyEdit('old', 'new', '');
+      await result.current.handleApplyEdit('old', 'new', null);
     });
 
     expect(mockUpdate).not.toHaveBeenCalled();
@@ -200,10 +304,23 @@ describe('usePageSave', () => {
   it('should trim whitespace from extracted title', async () => {
     const { result } = renderHook(() => usePageSave('123', true));
 
-    const testHtml = '<h1>  Spaced Title  </h1><p>Content</p>';
+    const testJson = {
+      type: 'doc',
+      content: [
+        {
+          type: 'heading',
+          attrs: { level: 1 },
+          content: [{ type: 'text', text: '  Spaced Title  ' }]
+        },
+        {
+          type: 'paragraph',
+          content: [{ type: 'text', text: 'Content' }]
+        }
+      ]
+    };
 
     await act(async () => {
-      await result.current.handleSave(testHtml);
+      await result.current.handleSave(testJson);
     });
 
     await waitFor(() => {
@@ -218,8 +335,19 @@ describe('usePageSave', () => {
   it('should update timestamp on save', async () => {
     const { result } = renderHook(() => usePageSave('123', true));
 
+    const testJson = {
+      type: 'doc',
+      content: [
+        {
+          type: 'heading',
+          attrs: { level: 1 },
+          content: [{ type: 'text', text: 'Test' }]
+        }
+      ]
+    };
+
     await act(async () => {
-      await result.current.handleSave('<h1>Test</h1>');
+      await result.current.handleSave(testJson);
     });
 
     await waitFor(() => {

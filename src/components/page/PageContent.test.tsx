@@ -46,7 +46,7 @@ vi.mock('@/integrations/supabase/client', () => ({
 }));
 
 vi.mock('@/utils/tiptapHelpers', () => ({
-  getHtmlFromContent: vi.fn((jsonContent) => {
+  convertJSONToHTML: vi.fn((jsonContent) => {
     // Mock implementation for JSON content
     if (jsonContent && jsonContent.content) {
       return '<h1>JSON Title</h1><p>JSON content</p>';

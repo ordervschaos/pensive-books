@@ -8,7 +8,7 @@ import {
   htmlToJson,
   jsonToText,
   getTextFromContent,
-  getHtmlFromContent,
+  convertJSONToHTML,
   getWordCountFromContent,
 } from './tiptapHelpers';
 
@@ -245,7 +245,7 @@ describe('tiptapHelpers', () => {
     });
   });
 
-  describe('getHtmlFromContent', () => {
+  describe('convertJSONToHTML', () => {
     const sampleJson = {
       type: 'doc',
       content: [
@@ -258,23 +258,23 @@ describe('tiptapHelpers', () => {
     };
 
     it('should convert JSON content to HTML', () => {
-      const html = getHtmlFromContent(sampleJson);
+      const html = convertJSONToHTML(sampleJson);
       expect(html).toContain('JSON Title');
     });
 
     it('should return empty string for null input', () => {
-      const html = getHtmlFromContent(null);
+      const html = convertJSONToHTML(null);
       expect(html).toBe('');
     });
 
     it('should return empty string for undefined input', () => {
-      const html = getHtmlFromContent(undefined);
+      const html = convertJSONToHTML(undefined);
       expect(html).toBe('');
     });
 
     it('should handle JSON that produces empty HTML', () => {
       const emptyJson = { type: 'doc', content: [] };
-      const html = getHtmlFromContent(emptyJson);
+      const html = convertJSONToHTML(emptyJson);
       expect(html).toBe('');
     });
 
@@ -289,7 +289,7 @@ describe('tiptapHelpers', () => {
         ],
       };
 
-      const html = getHtmlFromContent(json);
+      const html = convertJSONToHTML(json);
       expect(html).toContain('<p>');
       expect(html).toContain('Test paragraph');
       expect(html).toContain('</p>');
@@ -466,6 +466,31 @@ describe('tiptapHelpers', () => {
 
       const count = getWordCountFromContent(jsonContent);
       expect(count).toBe(5);
+    });
+  });
+
+  describe('audioBlock handling', () => {
+    it('should handle audioBlock attributes correctly', () => {
+      const jsonWithAudioBlock = {
+        type: 'doc',
+        content: [
+          {
+            type: 'heading',
+            attrs: { level: 1, audioBlock: 0 },
+            content: [{ type: 'text', text: 'Untitled' }]
+          },
+          {
+            type: 'paragraph',
+            attrs: { audioBlock: 1 },
+            content: [{ type: 'text', text: 'asd' }]
+          }
+        ]
+      };
+
+      const html = convertJSONToHTML(jsonWithAudioBlock);
+      expect(html).toContain('<h1>Untitled</h1>');
+      expect(html).toContain('<p>asd</p>');
+      expect(html).not.toContain('audioBlock');
     });
   });
 });

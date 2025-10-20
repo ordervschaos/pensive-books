@@ -140,7 +140,7 @@ export const getTextFromContent = (jsonContent: any): string => {
 };
 
 /**
- * Remove unsupported marks from JSON content
+ * Remove unsupported marks and attributes from JSON content
  * This is needed when converting content for export formats
  */
 const stripUnsupportedMarks = (json: any): any => {
@@ -149,21 +149,41 @@ const stripUnsupportedMarks = (json: any): any => {
   const processNode = (node: any): any => {
     if (!node) return node;
 
-    // If this is a text node with marks, filter out unsupported marks
-    if (node.type === 'text' && node.marks) {
-      // Currently no unsupported marks to filter out
-      return node;
+    // Create a clean copy of the node without unsupported attributes
+    const cleanNode: any = {
+      type: node.type,
+    };
+
+    // Copy supported attributes, excluding custom ones like audioBlock
+    if (node.attrs) {
+      const cleanAttrs: any = {};
+      for (const [key, value] of Object.entries(node.attrs)) {
+        // Only keep standard TipTap attributes, exclude custom ones
+        if (!['audioBlock'].includes(key)) {
+          cleanAttrs[key] = value;
+        }
+      }
+      if (Object.keys(cleanAttrs).length > 0) {
+        cleanNode.attrs = cleanAttrs;
+      }
+    }
+
+    // Copy text content
+    if (node.text) {
+      cleanNode.text = node.text;
+    }
+
+    // Copy marks (formatting)
+    if (node.marks) {
+      cleanNode.marks = node.marks;
     }
 
     // Recursively process content arrays
     if (node.content && Array.isArray(node.content)) {
-      return {
-        ...node,
-        content: node.content.map(processNode)
-      };
+      cleanNode.content = node.content.map(processNode);
     }
 
-    return node;
+    return cleanNode;
   };
 
   return processNode(json);
@@ -173,7 +193,7 @@ const stripUnsupportedMarks = (json: any): any => {
 /**
  * Get HTML from JSON content (simplified API)
  */
-export const getHtmlFromContent = (jsonContent: any): string => {
+export const convertJSONToHTML = (jsonContent: any): string => {
   if (!jsonContent) return '';
   const cleanedJson = stripUnsupportedMarks(jsonContent);
   return jsonToHtml(cleanedJson);

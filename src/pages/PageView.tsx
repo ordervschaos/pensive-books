@@ -15,7 +15,6 @@ import {
 import { PageChatPanel } from "@/components/page/PageChatPanel";
 import { PageMeta } from "@/components/page/PageMeta";
 import { SlugService } from "@/utils/slugService";
-import { getHtmlFromContent } from "@/utils/tiptapHelpers";
 
 // Custom hooks
 import { usePageViewData } from "@/hooks/use-page-view-data";
@@ -64,10 +63,10 @@ const PageView = () => {
   const { handleSave, handleApplyEdit, saving } = usePageSave(
     pageId,
     canEdit,
-    (updatedHtml, updatedTitle) => {
-      // Update page title in local state
+    (updatedJson, updatedTitle) => {
+      // Update page title and content in local state
       setPage(prevPage =>
-        prevPage ? { ...prevPage, title: updatedTitle } : null
+        prevPage ? { ...prevPage, title: updatedTitle, content: updatedJson } : null
       );
     }
   );
@@ -181,13 +180,12 @@ const PageView = () => {
             {/* Right Sidebar: AI Chat Panel */}
             <PageChatPanel
               pageId={pageId || ""}
-              pageContent={page.content ? getHtmlFromContent(page.content) : ''}
+              pageContent={page.content}
               canEdit={canEdit}
               isOpen={isChatOpen}
               onClose={() => setIsChatOpen(false)}
               onApplyEdit={(oldText, newText) => {
-                const currentHtml = page.content ? getHtmlFromContent(page.content) : '';
-                handleApplyEdit(oldText, newText, currentHtml);
+                handleApplyEdit(oldText, newText, page.content);
               }}
             />
 

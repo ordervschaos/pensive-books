@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2 } from "lucide-react";
-import { getHtmlFromContent } from "@/utils/tiptapHelpers";
+import { convertJSONToHTML } from "@/utils/tiptapHelpers";
 
 interface PageVersion {
   id: number;
@@ -46,7 +46,7 @@ export default function PageHistoryView() {
           .single();
 
         if (pageData && pageData.content) {
-          const html = getHtmlFromContent(pageData.content);
+          const html = convertJSONToHTML(pageData.content);
           setCurrentPageContent(html);
         }
         
@@ -166,7 +166,7 @@ export default function PageHistoryView() {
                   </div>
                   <div
                     className="mt-4 p-4 border rounded-md bg-muted/50"
-                    dangerouslySetInnerHTML={{ __html: version.content ? getHtmlFromContent(version.content) : '' }}
+                    dangerouslySetInnerHTML={{ __html: version.content ? convertJSONToHTML(version.content) : '' }}
                   />
                 </Card>
               ))}

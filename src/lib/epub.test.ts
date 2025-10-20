@@ -11,7 +11,7 @@ import {
 
 // Mock the tiptapHelpers module
 vi.mock('@/utils/tiptapHelpers', () => ({
-  getHtmlFromContent: vi.fn().mockImplementation((jsonContent) => {
+  convertJSONToHTML: vi.fn().mockImplementation((jsonContent) => {
     if (jsonContent && jsonContent.type === 'doc') {
       return '<h1>JSON Title</h1><p>JSON content from TipTap</p>';
     }
@@ -22,8 +22,8 @@ vi.mock('@/utils/tiptapHelpers', () => ({
 describe('EPUB Generation', () => {
   beforeEach(async () => {
     // Restore default mock implementation before each test
-    const { getHtmlFromContent } = await import('@/utils/tiptapHelpers');
-    vi.mocked(getHtmlFromContent).mockImplementation((jsonContent) => {
+    const { convertJSONToHTML } = await import('@/utils/tiptapHelpers');
+    vi.mocked(convertJSONToHTML).mockImplementation((jsonContent) => {
       if (jsonContent && jsonContent.type === 'doc') {
         return '<h1>JSON Title</h1><p>JSON content from TipTap</p>';
       }
@@ -138,15 +138,15 @@ describe('EPUB Generation', () => {
 
       const xhtml = generateContentXhtml(metadata, pages, true);
 
-      // Should use content from getHtmlFromContent (mocked to return JSON version)
+      // Should use content from convertJSONToHTML (mocked to return JSON version)
       expect(xhtml).toContain('JSON content from TipTap');
     });
 
     it('should handle pages with null content', async () => {
-      const { getHtmlFromContent } = await import('@/utils/tiptapHelpers');
+      const { convertJSONToHTML } = await import('@/utils/tiptapHelpers');
 
       // Mock returns empty string for null content
-      vi.mocked(getHtmlFromContent).mockReturnValueOnce('');
+      vi.mocked(convertJSONToHTML).mockReturnValueOnce('');
 
       const pages = [
         {
@@ -242,10 +242,10 @@ describe('EPUB Generation', () => {
     });
 
     it('should sanitize content in pages', async () => {
-      const { getHtmlFromContent } = await import('@/utils/tiptapHelpers');
+      const { convertJSONToHTML } = await import('@/utils/tiptapHelpers');
 
       // Mock to return content with script tag
-      vi.mocked(getHtmlFromContent).mockReturnValueOnce(
+      vi.mocked(convertJSONToHTML).mockReturnValueOnce(
         '<p>Content</p><script>alert("test")</script>'
       );
 
@@ -297,9 +297,9 @@ describe('EPUB Generation', () => {
     };
 
     it('should work with pages without content field', async () => {
-      const { getHtmlFromContent } = await import('@/utils/tiptapHelpers');
+      const { convertJSONToHTML } = await import('@/utils/tiptapHelpers');
 
-      vi.mocked(getHtmlFromContent).mockReturnValueOnce('');
+      vi.mocked(convertJSONToHTML).mockReturnValueOnce('');
 
       const legacyPages = [
         {
@@ -335,12 +335,12 @@ describe('EPUB Generation', () => {
     });
 
     it('should work with mixed content types', async () => {
-      const { getHtmlFromContent } = await import('@/utils/tiptapHelpers');
+      const { convertJSONToHTML } = await import('@/utils/tiptapHelpers');
 
       // First page: JSON
-      vi.mocked(getHtmlFromContent).mockReturnValueOnce('<p>JSON content</p>');
+      vi.mocked(convertJSONToHTML).mockReturnValueOnce('<p>JSON content</p>');
       // Second page: HTML fallback
-      vi.mocked(getHtmlFromContent).mockReturnValueOnce('<p>HTML content</p>');
+      vi.mocked(convertJSONToHTML).mockReturnValueOnce('<p>HTML content</p>');
 
       const mixedPages = [
         {
@@ -369,10 +369,10 @@ describe('EPUB Generation', () => {
     };
 
     it('should handle very long content', async () => {
-      const { getHtmlFromContent } = await import('@/utils/tiptapHelpers');
+      const { convertJSONToHTML } = await import('@/utils/tiptapHelpers');
 
       const longContent = '<p>' + 'A'.repeat(10000) + '</p>';
-      vi.mocked(getHtmlFromContent).mockReturnValueOnce(longContent);
+      vi.mocked(convertJSONToHTML).mockReturnValueOnce(longContent);
 
       const pages = [
         {
@@ -391,9 +391,9 @@ describe('EPUB Generation', () => {
     });
 
     it('should handle unicode characters', async () => {
-      const { getHtmlFromContent } = await import('@/utils/tiptapHelpers');
+      const { convertJSONToHTML } = await import('@/utils/tiptapHelpers');
 
-      vi.mocked(getHtmlFromContent).mockReturnValueOnce('<p>Hello 世界 🌍</p>');
+      vi.mocked(convertJSONToHTML).mockReturnValueOnce('<p>Hello 世界 🌍</p>');
 
       const pages = [
         {
@@ -412,9 +412,9 @@ describe('EPUB Generation', () => {
     });
 
     it('should handle null or undefined content gracefully', async () => {
-      const { getHtmlFromContent } = await import('@/utils/tiptapHelpers');
+      const { convertJSONToHTML } = await import('@/utils/tiptapHelpers');
 
-      vi.mocked(getHtmlFromContent).mockReturnValueOnce('');
+      vi.mocked(convertJSONToHTML).mockReturnValueOnce('');
 
       const pages = [
         {
@@ -432,9 +432,9 @@ describe('EPUB Generation', () => {
     });
 
     it('should handle malformed HTML', async () => {
-      const { getHtmlFromContent } = await import('@/utils/tiptapHelpers');
+      const { convertJSONToHTML } = await import('@/utils/tiptapHelpers');
 
-      vi.mocked(getHtmlFromContent).mockReturnValueOnce('<p>Unclosed<div>Mixed</p></div>');
+      vi.mocked(convertJSONToHTML).mockReturnValueOnce('<p>Unclosed<div>Mixed</p></div>');
 
       const pages = [
         {
