@@ -54,14 +54,6 @@ export const useAudioHighlighting = ({
       // Use event.target to get the actual clicked element
       const clickedElement = event.target as HTMLElement;
 
-      // Check if we clicked directly on a wiki link element
-      // Wiki links have the data-wiki-link attribute
-      const wikiLink = clickedElement.closest('[data-wiki-link]');
-      if (wikiLink) {
-        // Don't play audio if clicking on a wiki link
-        return;
-      }
-
       // Find the closest element with data-audio-block attribute
       // This handles nested structures by finding the innermost block
       const targetBlock = clickedElement.closest('[data-audio-block]') as HTMLElement;

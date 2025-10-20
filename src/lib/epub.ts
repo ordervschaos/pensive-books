@@ -1,8 +1,10 @@
 import JSZip from 'jszip';
+import { getHtmlContent } from '@/utils/tiptapHelpers';
 
 interface Page {
   title: string | null;
   html_content: string | null;
+  content?: any; // TipTap JSON content
   page_type: 'section' | 'page';
   page_index: number;
 }
@@ -45,6 +47,8 @@ export const sanitizeContent = (html: string): string => {
     .replace(/<br>/g, '<br/>')
     .replace(/<hr>/g, '<hr/>')
     .replace(/<img ([^>]*)>/g, '<img $1/>')
+    .replace(/<col>/g, '<col/>')
+    .replace(/<col ([^>]*)>/g, '<col $1/>')
     // Remove any script tags and their content
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
     // Remove any style tags and their content
@@ -227,17 +231,25 @@ export const generateContentXhtml = (metadata: EPUBMetadata, pages: Page[], show
       ${metadata.author ? `<h3 class="book-author">by ${escapeXml(metadata.author)}</h3>` : ''}
   </div>
   `}
-  ${pages.map((page, index) => `
+  ${pages.map((page, index) => {
+    // Use the processed html_content if available (already has image URLs replaced)
+    // Otherwise generate from JSON
+    const htmlContent = page.html_content
+      ? page.html_content
+      : getHtmlContent(page.content, page.html_content || '');
+
+    return `
     <section id="page${index}" epub:type="chapter" class="${page.page_type === 'section' ? 'section-page' : 'content-page'}">
-      ${page.page_type === 'section' 
+      ${page.page_type === 'section'
         ? `<h2 class="section-title">${escapeXml(page.title || 'Untitled Section')}</h2>`
         : `
           <article>
-            <div class="page-content">${page.html_content ? sanitizeContent(page.html_content) : ''}</div>
+            <div class="page-content">${htmlContent ? sanitizeContent(htmlContent) : ''}</div>
           </article>
         `}
     </section>
-  `).join('\n')}
+  `;
+  }).join('\n')}
 </body>
 </html>`;
 

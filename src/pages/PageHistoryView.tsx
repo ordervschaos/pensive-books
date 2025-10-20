@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2 } from "lucide-react";
+import { htmlToJson } from "@/utils/tiptapHelpers";
 
 interface PageVersion {
   id: number;
@@ -94,10 +95,16 @@ export default function PageHistoryView() {
         throw new Error("Version not found");
       }
       
-      // Update the page with the version content
+      // Convert HTML to JSON for the content field
+      const jsonContent = htmlToJson(versionData.html_content);
+
+      // Update the page with the version content (both HTML and JSON)
       const { error: updateError } = await supabase
         .from("pages")
-        .update({ html_content: versionData.html_content })
+        .update({
+          html_content: versionData.html_content,
+          content: jsonContent
+        })
         .eq("id", numericPageId);
         
       if (updateError) throw updateError;

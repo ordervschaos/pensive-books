@@ -1,9 +1,11 @@
 import { Helmet } from 'react-helmet-async';
+import { getTextContent } from '@/utils/tiptapHelpers';
 
 interface PageMetaProps {
   page: {
     title: string;
     html_content: string;
+    content?: any; // TipTap JSON content
   };
   book: {
     name: string;
@@ -14,13 +16,11 @@ interface PageMetaProps {
 }
 
 /**
- * Extract first 160 characters of text from HTML for meta description
+ * Extract first 160 characters of text from page content for meta description
+ * Prefers JSON content, falls back to HTML
  */
-const getTextPreview = (htmlContent: string): string => {
-  const tempDiv = document.createElement('div');
-  tempDiv.innerHTML = htmlContent || '';
-
-  const textContent = tempDiv.textContent || '';
+const getTextPreview = (jsonContent: any, htmlContent: string): string => {
+  const textContent = getTextContent(jsonContent, htmlContent);
   return textContent.substring(0, 160) + (textContent.length > 160 ? '...' : '');
 };
 
@@ -34,7 +34,7 @@ export const PageMeta = ({ page, book }: PageMetaProps) => {
     ? new URL(book.cover_url, window.location.origin).toString()
     : `${window.location.origin}/default-book-cover.png`;
 
-  const pageDescription = getTextPreview(page.html_content || '');
+  const pageDescription = getTextPreview(page.content, page.html_content || '');
   const pageTitle = `${page.title} - ${book.name}`;
 
   return (

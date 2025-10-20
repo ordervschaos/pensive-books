@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { generateEPUB } from './epub';
 import { prepareEPUBContent, EPUBOptions } from './epub-generator';
 import jsPDF from 'jspdf';
+import { getHtmlContent } from '@/utils/tiptapHelpers';
 
 type Page = Database['public']['Tables']['pages']['Row'] & {
   page_type: 'section' | 'page';
@@ -476,8 +477,10 @@ const renderContentPage = async (
   pdf.setFontSize(14);
 
   let contentData = { elements: [], images: [] };
-  if (page.html_content) {
-    contentData = processHtmlContent(page.html_content);
+  // Prefer JSON content over HTML content
+  const htmlContent = getHtmlContent(page.content, page.html_content || '');
+  if (htmlContent) {
+    contentData = processHtmlContent(htmlContent);
   }
 
   // Add content with proper formatting and images

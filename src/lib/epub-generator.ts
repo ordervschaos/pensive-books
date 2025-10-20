@@ -1,4 +1,5 @@
 import { Database } from '@/integrations/supabase/types';
+import { getHtmlContent } from '@/utils/tiptapHelpers';
 
 type Page = Database['public']['Tables']['pages']['Row'];
 
@@ -40,11 +41,16 @@ const processContent = (html: string): string => {
 // Download and process images for EPUB
 const downloadImage = async (url: string): Promise<Blob | null> => {
   try {
+    console.log(`EPUB: Downloading image from ${url}`);
     const response = await fetch(url);
-    if (!response.ok) throw new Error(`Failed to fetch image: ${response.statusText}`);
-    return await response.blob();
+    if (!response.ok) {
+      throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+    }
+    const blob = await response.blob();
+    console.log(`EPUB: Successfully downloaded image (${blob.size} bytes, type: ${blob.type})`);
+    return blob;
   } catch (error) {
-    console.warn(`Failed to download image: ${url}`, error);
+    console.error(`EPUB: Failed to download image from ${url}:`, error);
     return null;
   }
 };
@@ -55,9 +61,32 @@ const extractImageUrls = (html: string): string[] => {
   const div = document.createElement('div');
   div.innerHTML = html;
   const images = div.querySelectorAll('img');
-  return Array.from(images)
-    .map(img => img.getAttribute('src'))
-    .filter((src): src is string => src !== null && src.startsWith('http'));
+  const urls = Array.from(images)
+    .map(img => {
+      const src = img.getAttribute('src');
+      if (!src) return null;
+
+      // Convert relative URLs to absolute URLs
+      if (src.startsWith('/')) {
+        const absoluteUrl = `${window.location.origin}${src}`;
+        console.log(`EPUB: Converting relative URL ${src} to ${absoluteUrl}`);
+        return absoluteUrl;
+      }
+
+      // Keep http/https URLs as-is
+      if (src.startsWith('http://') || src.startsWith('https://')) {
+        console.log(`EPUB: Found absolute URL ${src}`);
+        return src;
+      }
+
+      // Skip data URLs and other non-fetchable URLs
+      console.log(`EPUB: Skipping non-fetchable URL ${src}`);
+      return null;
+    })
+    .filter((src): src is string => src !== null);
+
+  console.log(`EPUB: Extracted ${urls.length} image URLs from HTML`);
+  return urls;
 };
 
 export const prepareEPUBContent = async (
@@ -67,12 +96,19 @@ export const prepareEPUBContent = async (
   images: EPUBImage[];
 }> => {
   // Process and download images
-  const imagePromises = pages.flatMap(page => 
-    extractImageUrls(page.html_content || '').map(async url => ({
+  const imagePromises = pages.flatMap((page, index) => {
+    // Prefer JSON content over HTML content for image extraction
+    const htmlContent = getHtmlContent(page.content, page.html_content || '');
+    console.log(`EPUB: Page ${index} (${page.title || 'Untitled'}) - has JSON: ${!!page.content}, HTML length: ${htmlContent.length}`);
+
+    const urls = extractImageUrls(htmlContent);
+    console.log(`EPUB: Page ${index} - found ${urls.length} images`);
+
+    return urls.map(async url => ({
       url,
       blob: await downloadImage(url)
-    }))
-  );
+    }));
+  });
 
   const images = (await Promise.all(imagePromises))
     .filter(img => img.blob !== null)
@@ -82,25 +118,32 @@ export const prepareEPUBContent = async (
       blob: img.blob as Blob
     }));
 
+  console.log(`EPUB: Processed ${images.length} images for inclusion`);
+
   // Create image map for replacement
   const imageMap = new Map(images.map(img => [img.url, img.id]));
 
   // Process pages and replace image URLs with IDs
-  const processedPages = pages.map(page => ({
-    ...page,
-    html_content: page.html_content 
-      ? processContent(page.html_content).replace(
-          /<img[^>]+src="([^"]+)"[^>]*>/g,
-          (match, url) => {
-            const imgId = imageMap.get(url);
-            return imgId 
-              ? match.replace(url, `images/${imgId}`) 
-              : match;
-          }
-        )
-      : null,
-    page_type: page.page_type as 'section' | 'page'
-  }));
+  const processedPages = pages.map(page => {
+    // Prefer JSON content over HTML content
+    const htmlContent = getHtmlContent(page.content, page.html_content || '');
+
+    return {
+      ...page,
+      html_content: htmlContent
+        ? processContent(htmlContent).replace(
+            /<img[^>]+src="([^"]+)"[^>]*>/g,
+            (match, url) => {
+              const imgId = imageMap.get(url);
+              return imgId
+                ? match.replace(url, `images/${imgId}`)
+                : match;
+            }
+          )
+        : null,
+      page_type: page.page_type as 'section' | 'page'
+    };
+  });
 
   return { processedPages, images };
 };

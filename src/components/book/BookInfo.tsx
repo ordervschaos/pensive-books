@@ -1,6 +1,6 @@
-import { 
+import {
   Card,
-  CardHeader 
+  CardHeader
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ImageIcon, Download, FileText, Tablet } from "lucide-react";
@@ -9,6 +9,7 @@ import { generatePDF, generateAndDownloadEPUB } from "@/lib/download";
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { getHtmlContent } from "@/utils/tiptapHelpers";
 
 interface BookInfoProps {
   name: string;
@@ -124,12 +125,17 @@ export const BookInfo = ({
               ${subtitle ? `<h2>${subtitle}</h2>` : ''}
               ${author ? `<p>by ${author}</p>` : ''}
             </div>
-            ${pages.map(page => `
-              ${page.page_type === 'section' 
+            ${pages.map(page => {
+              // Prefer JSON content over HTML content
+              const htmlContent = getHtmlContent(page.content, page.html_content || '');
+
+              return `
+              ${page.page_type === 'section'
                 ? `<div class="section"><h2>${page.title || 'Untitled Section'}</h2></div>`
-                : `<div class="content">${page.html_content || ''}</div>`
+                : `<div class="content">${htmlContent}</div>`
               }
-            `).join('')}
+            `;
+            }).join('')}
           </body>
         </html>
       `;

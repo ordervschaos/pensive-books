@@ -5,9 +5,9 @@ import { PageHistory } from "./PageHistory";
 import { FloatingActions } from "./FloatingActions";
 import { useAudioHighlighting } from "@/hooks/use-audio-highlighting";
 import { useAdaptiveTextToSpeech } from "@/hooks/use-adaptive-text-to-speech";
-import { SlugService } from "@/utils/slugService";
 import { supabase } from "@/integrations/supabase/client";
 import { EditorJSON, PageSaveHandler } from "@/types/editor";
+import { getHtmlContent } from "@/utils/tiptapHelpers";
 
 interface PageContentProps {
   content: string;
@@ -25,7 +25,6 @@ interface PageContentProps {
   hasActiveChat?: boolean;
   jsonContent?: any;
   bookId?: string;
-  onWikiLinkNavigate?: (pageTitle: string, bookId: number) => void;
 }
 
 export const PageContent = ({
@@ -43,7 +42,6 @@ export const PageContent = ({
   hasActiveChat,
   jsonContent,
   bookId,
-  onWikiLinkNavigate,
 }: PageContentProps) => {
   const [initialLoad, setInitialLoad] = useState(true);
   const [currentContent, setCurrentContent] = useState(content || '');
@@ -54,11 +52,13 @@ export const PageContent = ({
     // Only update content if not currently editing to prevent overwriting user input
     if (!isEditing) {
       console.log("PageContent: Content prop changed, updating state");
-      setCurrentContent(content || '');
+      // Prefer JSON content over HTML content
+      const htmlContent = getHtmlContent(jsonContent, content || '');
+      setCurrentContent(htmlContent);
       setCurrentTitle(title || '');
       setInitialLoad(true);
     }
-  }, [content, title, isEditing]);
+  }, [content, title, isEditing, jsonContent]);
 
   // Create debounced save function
   useEffect(() => {
@@ -131,13 +131,6 @@ export const PageContent = ({
     onBlockClick: isEditing ? undefined : audioState.playBlockByIndex,
   });
 
-  // Prepare wiki-link options if we have the necessary data
-  const numericBookId = bookId ? SlugService.extractId(bookId) : undefined;
-  const wikiLinkOptions = numericBookId && onWikiLinkNavigate ? {
-    onNavigate: onWikiLinkNavigate,
-    bookId: numericBookId,
-  } : undefined;
-
   return (
     <div className="flex-1 flex flex-col bg-background">
       <div className="p-0 flex-1 flex flex-col">
@@ -155,7 +148,6 @@ export const PageContent = ({
                 hasActiveChat={hasActiveChat}
                 centerContent={pageType === 'section'}
                 customButtons={canEdit && pageId && <PageHistory pageId={parseInt(pageId)} />}
-                wikiLinkOptions={wikiLinkOptions}
               />
 
               {/* Floating action buttons */}
