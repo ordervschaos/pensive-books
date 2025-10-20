@@ -2,6 +2,7 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.38.1';
+import { markdownToJson } from '../_shared/markdownToJson.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -41,12 +42,22 @@ serve(async (req) => {
     const updatedPages = await Promise.all(pages.map(async (page) => {
       if (page.page_type !== 'text') return page; // Skip section pages
 
-      // Get current content without HTML tags
-      const currentContent = page.html_content
-        ? page.html_content.replace(/<[^>]*>/g, '').trim()
+      // Extract text from current JSON content
+      const extractText = (content: any): string => {
+        if (!content) return '';
+        if (typeof content === 'string') return content;
+        if (content.type === 'text') return content.text || '';
+        if (content.content && Array.isArray(content.content)) {
+          return content.content.map(extractText).join(' ');
+        }
+        return '';
+      };
+
+      const currentContent = page.content
+        ? extractText(page.content)
         : '';
 
-      // Generate new content
+      // Generate new content in markdown format
       const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -62,7 +73,7 @@ serve(async (req) => {
             },
             {
               role: 'user',
-              content: `Here's the current content:\n\n${currentContent}\n\nPlease expand on this content, adding more details and depth while maintaining the same style and tone. Return the expanded content in HTML format with appropriate tags (<p>, <h1>, <h2>, <ul>, <li>, etc).`
+              content: `Here's the current content:\n\n${currentContent}\n\nPlease expand on this content, adding more details and depth while maintaining the same style and tone. Return the expanded content in MARKDOWN format with appropriate formatting (headings, paragraphs, lists, bold, italic, etc). Use proper markdown syntax.`
             }
           ],
           temperature: 0.7,
@@ -72,25 +83,28 @@ serve(async (req) => {
 
       const data = await response.json();
       if (data.error) throw new Error(data.error.message || 'Error from Deepseek API');
-      
-      // Get the raw content from the API response
-      let newContent = data.choices[0].message.content.trim();
-      
-      // Remove markdown code block delimiters if present
-      newContent = newContent.replace(/^```html\n?/, '').replace(/```$/, '');
 
-      // Update the page with expanded content
+      // Get the markdown content from the API response
+      let markdownContent = data.choices[0].message.content.trim();
+
+      // Remove markdown code block delimiters if present
+      markdownContent = markdownContent.replace(/^```markdown\n?/, '').replace(/^```\n?/, '').replace(/```$/, '');
+
+      // Convert markdown to TipTap JSON
+      const jsonContent = markdownToJson(markdownContent);
+
+      // Update the page with expanded content in JSON format
       const { error: updateError } = await supabase
         .from('pages')
-        .update({ 
-          html_content: newContent,
+        .update({
+          content: jsonContent,
           updated_at: new Date().toISOString()
         })
         .eq('id', page.id);
 
       if (updateError) throw updateError;
 
-      return { ...page, html_content: newContent };
+      return { ...page, content: jsonContent };
     }));
 
     return new Response(JSON.stringify({ 
