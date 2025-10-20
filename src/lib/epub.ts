@@ -215,7 +215,12 @@ export const generateTocNcx = (metadata: EPUBMetadata, pages: Page[]): string =>
 </ncx>`;
 
 // Generate content.xhtml content
-export const generateContentXhtml = (metadata: EPUBMetadata, pages: Page[], show_text_on_cover: boolean = true): string => `<?xml version="1.0" encoding="UTF-8"?>
+export const generateContentXhtml = (
+  metadata: EPUBMetadata,
+  pages: Page[],
+  show_text_on_cover: boolean = true,
+  imageMap?: Map<string, string>
+): string => `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
 <head>
@@ -239,7 +244,17 @@ export const generateContentXhtml = (metadata: EPUBMetadata, pages: Page[], show
   `}
   ${pages.map((page, index) => {
     // Generate HTML from JSON content
-    const htmlContent = page.content ? convertJSONToHTML(page.content) : '';
+    let htmlContent = page.content ? convertJSONToHTML(page.content) : '';
+
+    // Replace image URLs with local EPUB paths
+    if (htmlContent && imageMap && imageMap.size > 0) {
+      imageMap.forEach((imageId, originalUrl) => {
+        // Replace all occurrences of the original URL with the local path
+        const escapedUrl = originalUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(escapedUrl, 'g');
+        htmlContent = htmlContent.replace(regex, `images/${imageId}`);
+      });
+    }
 
     return `
     <section id="page${index}" epub:type="chapter" class="${page.page_type === 'section' ? 'section-page' : 'content-page'}">
@@ -666,11 +681,14 @@ export const generateEPUB = async (
     }
   }
 
+  // Create image map for URL replacement
+  const imageMap = new Map(images.map(img => [img.url, img.id]));
+
   // Add OEBPS directory
   zip.file('OEBPS/content.opf', generateContentOpf(metadata, images));
   zip.file('OEBPS/nav.xhtml', generateNavXhtml(pages));
   zip.file('OEBPS/toc.ncx', generateTocNcx(metadata, pages));
-  zip.file('OEBPS/content.xhtml', generateContentXhtml(metadata, pages, show_text_on_cover));
+  zip.file('OEBPS/content.xhtml', generateContentXhtml(metadata, pages, show_text_on_cover, imageMap));
   zip.file('OEBPS/styles.css', generateStyles());
 
   // Add content images
