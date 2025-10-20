@@ -59,18 +59,6 @@ export const jsonToHtml = (json: any): string => {
   }
 };
 
-/**
- * Convert HTML string to TipTap JSON content
- */
-export const htmlToJson = (html: string): any => {
-  if (!html) return null;
-  try {
-    return generateJSON(html, extensions);
-  } catch (error) {
-    console.error('Error converting HTML to JSON:', error);
-    return null;
-  }
-};
 
 /**
  * Extract plain text from TipTap JSON content

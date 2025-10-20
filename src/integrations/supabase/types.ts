@@ -231,7 +231,6 @@ export type Database = {
           created_at: string | null
           created_at_minute: string | null
           created_by: string | null
-          html_content: string | null
           id: number
           page_id: number | null
         }
@@ -240,7 +239,6 @@ export type Database = {
           created_at?: string | null
           created_at_minute?: string | null
           created_by?: string | null
-          html_content?: string | null
           id?: never
           page_id?: number | null
         }
@@ -249,7 +247,6 @@ export type Database = {
           created_at?: string | null
           created_at_minute?: string | null
           created_by?: string | null
-          html_content?: string | null
           id?: never
           page_id?: number | null
         }
@@ -277,7 +274,6 @@ export type Database = {
           content: Json | null
           created_at: string | null
           embedding: string | null
-          html_content: string | null
           id: number
           last_published_at: string | null
           old_content: string | null
@@ -294,7 +290,6 @@ export type Database = {
           content?: Json | null
           created_at?: string | null
           embedding?: string | null
-          html_content?: string | null
           id?: number
           last_published_at?: string | null
           old_content?: string | null
@@ -311,7 +306,6 @@ export type Database = {
           content?: Json | null
           created_at?: string | null
           embedding?: string | null
-          html_content?: string | null
           id?: number
           last_published_at?: string | null
           old_content?: string | null
@@ -648,7 +642,6 @@ export type Database = {
           content: Json | null
           created_at: string | null
           embedding: string | null
-          html_content: string | null
           id: number
           last_published_at: string | null
           old_content: string | null
@@ -676,7 +669,6 @@ export type Database = {
           book_id: number
           page_index: number
           content: Json
-          html_content: string
           page_type: string
           created_at: string
           updated_at: string
@@ -692,7 +684,6 @@ export type Database = {
         Returns: {
           id: number
           content: Json
-          html_content: string
           embedding: string
           distance: number
         }[]

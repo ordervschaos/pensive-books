@@ -67,15 +67,6 @@ vi.mock('@/hooks/use-toast', () => ({
   }),
 }));
 
-vi.mock('@/utils/tiptapHelpers', () => ({
-  htmlToJson: vi.fn((html) => {
-    // Mock conversion
-    if (html.includes('Version 1')) {
-      return { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Version 1 JSON' }] }] };
-    }
-    return { type: 'doc', content: [] };
-  }),
-}));
 
 describe('PageHistoryView', () => {
   beforeEach(() => {
@@ -91,49 +82,9 @@ describe('PageHistoryView', () => {
     expect(container).toBeTruthy();
   });
 
-  it('should have htmlToJson function available for conversion', async () => {
-    const { htmlToJson } = await import('@/utils/tiptapHelpers');
 
-    // Verify the mock works as expected
-    const result = htmlToJson('<p>Version 1</p>');
-    expect(result).toBeTruthy();
-    expect(result.type).toBe('doc');
-  });
-
-  describe('Backward compatibility', () => {
-    it('should support HTML to JSON conversion for legacy content', async () => {
-      const { htmlToJson } = await import('@/utils/tiptapHelpers');
-
-      // When restoring a legacy HTML version, it should be converted to JSON
-      const htmlContent = '<p>Legacy HTML content</p>';
-      const jsonContent = htmlToJson(htmlContent);
-
-      // Should return valid JSON structure
-      expect(jsonContent).toBeTruthy();
-      expect(jsonContent.type).toBe('doc');
-    });
-
-    it('should handle malformed HTML gracefully', async () => {
-      const { htmlToJson } = await import('@/utils/tiptapHelpers');
-
-      // Even malformed HTML should not crash the conversion
-      const malformedHtml = '<p>Malformed<div>Mixed</p></div>';
-
-      // Should not throw
-      expect(() => htmlToJson(malformedHtml)).not.toThrow();
-    });
-  });
 
   describe('Edge cases', () => {
-    it('should handle empty version content', async () => {
-      const { htmlToJson } = await import('@/utils/tiptapHelpers');
-
-      // Empty content should return empty document
-      const result = htmlToJson('');
-      expect(result).toBeTruthy();
-      expect(result.type).toBe('doc');
-    });
-
     it('should handle null or undefined gracefully', () => {
       // Component should render even with edge cases
       const { container } = renderWithRouter(<PageHistoryView />);

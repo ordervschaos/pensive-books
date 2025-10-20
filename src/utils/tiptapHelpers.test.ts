@@ -5,7 +5,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   jsonToHtml,
-  htmlToJson,
   jsonToText,
   getTextFromContent,
   convertJSONToHTML,
@@ -85,60 +84,6 @@ describe('tiptapHelpers', () => {
     });
   });
 
-  describe('htmlToJson', () => {
-    it('should convert valid HTML to JSON', () => {
-      const html = '<h1>Hello World</h1><p>This is a paragraph.</p>';
-      const json = htmlToJson(html);
-
-      expect(json).toBeDefined();
-      expect(json.type).toBe('doc');
-      expect(json.content).toBeDefined();
-      expect(Array.isArray(json.content)).toBe(true);
-    });
-
-    it('should return null for empty string', () => {
-      const json = htmlToJson('');
-      expect(json).toBeNull();
-    });
-
-    it('should return null for null input', () => {
-      const json = htmlToJson(null as unknown as string);
-      expect(json).toBeNull();
-    });
-
-    it('should handle complex HTML with formatting', () => {
-      const html = '<p>This is <strong>bold</strong> and <em>italic</em> text.</p>';
-      const json = htmlToJson(html);
-
-      expect(json).toBeDefined();
-      expect(json.type).toBe('doc');
-      expect(json.content).toBeDefined();
-    });
-
-    it('should handle lists', () => {
-      const html = '<ul><li>Item 1</li><li>Item 2</li></ul>';
-      const json = htmlToJson(html);
-
-      expect(json).toBeDefined();
-      expect(json.type).toBe('doc');
-    });
-
-    it('should handle code blocks', () => {
-      const html = '<pre><code>console.log("hello");</code></pre>';
-      const json = htmlToJson(html);
-
-      expect(json).toBeDefined();
-      expect(json.type).toBe('doc');
-    });
-
-    it('should handle tables', () => {
-      const html = '<table><tr><td>Cell 1</td><td>Cell 2</td></tr></table>';
-      const json = htmlToJson(html);
-
-      expect(json).toBeDefined();
-      expect(json.type).toBe('doc');
-    });
-  });
 
   describe('jsonToText', () => {
     it('should extract plain text from JSON', () => {
@@ -296,32 +241,6 @@ describe('tiptapHelpers', () => {
     });
   });
 
-  describe('Round-trip conversion', () => {
-    it('should maintain content through HTML -> JSON -> HTML', () => {
-      const originalHtml = '<h1>Title</h1><p>Content with <strong>bold</strong> text.</p>';
-
-      // HTML -> JSON
-      const json = htmlToJson(originalHtml);
-      expect(json).toBeDefined();
-
-      // JSON -> HTML
-      const convertedHtml = jsonToHtml(json);
-      expect(convertedHtml).toContain('Title');
-      expect(convertedHtml).toContain('Content with');
-      expect(convertedHtml).toContain('bold');
-      expect(convertedHtml).toContain('text.');
-    });
-
-    it('should preserve text content through conversions', () => {
-      const originalText = 'This is test content.';
-      const html = `<p>${originalText}</p>`;
-
-      const json = htmlToJson(html);
-      const text = jsonToText(json);
-
-      expect(text).toContain(originalText);
-    });
-  });
 
   describe('Edge cases', () => {
     it('should handle very long content', () => {

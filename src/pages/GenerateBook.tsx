@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -9,10 +9,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { ArrowLeft, ArrowRight, Brain, Trash2, Pencil, Save, Wand2, MoveUp, MoveDown } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { TipTapEditor } from "@/components/editor/TipTapEditor";
-import { htmlToJson } from "@/utils/tiptapHelpers";
 import {
   Dialog,
   DialogContent,
@@ -178,7 +176,7 @@ export default function GenerateBook() {
       for (let i = 0; i < generatedContent.pages.length; i++) {
         const page = generatedContent.pages[i];
         // AI generates HTML, convert to JSON for storage
-        const jsonContent = htmlToJson(page.content);
+        const jsonContent = page.content;
 
         const { error: pageError } = await supabase
           .from("pages")

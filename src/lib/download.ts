@@ -870,3 +870,133 @@ export const generateAndDownloadEPUB = async (
     };
   }
 };
+
+// Generate PDF using browser print dialog
+export const generatePDFWithPrintDialog = async (
+  options: DownloadOptions
+): Promise<GenerateResult> => {
+  try {
+    // Fetch all pages for the book
+    const pages = await fetchBookPages(options.bookId);
+    
+    if (!pages || pages.length === 0) {
+      throw new Error('No pages found for the book');
+    }
+
+    // Create a new window for printing
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      throw new Error('Failed to open print window');
+    }
+
+    // Create the HTML content for printing
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>${options.name}</title>
+          <style>
+            body {
+              font-family: Arial, sans-serif;
+              line-height: 1.6;
+              margin: 0;
+              padding: 20px;
+              max-width: 800px;
+              margin: 0 auto;
+            }
+            .cover {
+              text-align: center;
+              margin-bottom: 40px;
+              page-break-after: always;
+            }
+            .cover img {
+              max-width: 300px;
+              height: auto;
+              margin-bottom: 20px;
+            }
+            .cover h1 {
+              font-size: 2.5em;
+              margin-bottom: 10px;
+            }
+            .cover h2 {
+              font-size: 1.5em;
+              color: #666;
+              margin-bottom: 20px;
+            }
+            .cover p {
+              font-size: 1.2em;
+              color: #444;
+            }
+            .section {
+              text-align: center;
+              margin: 40px 0;
+              page-break-before: always;
+            }
+            .section h2 {
+              font-size: 2em;
+              margin-bottom: 20px;
+            }
+            .content {
+              margin: 20px 0;
+            }
+            .content img {
+              max-width: 100%;
+              height: auto;
+              margin: 20px 0;
+            }
+            @media print {
+              body {
+                padding: 0;
+              }
+              .content {
+                page-break-inside: avoid;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="cover">
+            ${options.coverUrl ? `<img src="${options.coverUrl}" alt="Book cover">` : ''}
+            <h1>${options.name}</h1>
+            ${options.subtitle ? `<h2>${options.subtitle}</h2>` : ''}
+            ${options.author ? `<p>by ${options.author}</p>` : ''}
+          </div>
+          ${pages.map(page => {
+            const pageHtml = page.content ? convertJSONToHTML(page.content) : '';
+
+            return `
+            ${page.page_type === 'section'
+              ? `<div class="section"><h2>${page.title || 'Untitled Section'}</h2></div>`
+              : `<div class="content">${pageHtml}</div>`
+            }
+          `;
+          }).join('')}
+        </body>
+      </html>
+    `;
+
+    // Write the content to the new window
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+
+    // Wait for images to load before printing
+    printWindow.onload = () => {
+      printWindow.print();
+      // Close the window after printing (or if printing is cancelled)
+      printWindow.onafterprint = () => {
+        printWindow.close();
+      };
+    };
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error preparing PDF:', error);
+    return {
+      success: false,
+      error: {
+        message: "Failed to generate PDF",
+        details: error instanceof Error ? error.message : error
+      }
+    };
+  }
+};
