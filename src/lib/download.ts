@@ -1,7 +1,6 @@
 import { Database } from '@/integrations/supabase/types';
 import { supabase } from '@/integrations/supabase/client';
-import { generateEPUB } from './epub';
-import { prepareEPUBContent, EPUBOptions } from './epub-generator';
+import { generateEPUB, prepareEPUBContent, EPUBOptions } from './epub';
 import jsPDF from 'jspdf';
 import { convertJSONToHTML } from '@/utils/tiptapHelpers';
 
