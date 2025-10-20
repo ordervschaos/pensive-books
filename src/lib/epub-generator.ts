@@ -1,5 +1,5 @@
 import { Database } from '@/integrations/supabase/types';
-import { getHtmlContent } from '@/utils/tiptapHelpers';
+import { getHtmlFromContent } from '@/utils/tiptapHelpers';
 
 type Page = Database['public']['Tables']['pages']['Row'];
 
@@ -97,8 +97,8 @@ export const prepareEPUBContent = async (
 }> => {
   // Process and download images
   const imagePromises = pages.flatMap((page, index) => {
-    // Prefer JSON content over HTML content for image extraction
-    const htmlContent = getHtmlContent(page.content, page.html_content || '');
+    // Convert JSON content to HTML for image extraction
+    const htmlContent = page.content ? getHtmlFromContent(page.content) : '';
     console.log(`EPUB: Page ${index} (${page.title || 'Untitled'}) - has JSON: ${!!page.content}, HTML length: ${htmlContent.length}`);
 
     const urls = extractImageUrls(htmlContent);
@@ -125,22 +125,26 @@ export const prepareEPUBContent = async (
 
   // Process pages and replace image URLs with IDs
   const processedPages = pages.map(page => {
-    // Prefer JSON content over HTML content
-    const htmlContent = getHtmlContent(page.content, page.html_content || '');
+    // Convert JSON content to HTML
+    const htmlContent = page.content ? getHtmlFromContent(page.content) : '';
+
+    // Process and replace image URLs in HTML
+    const processedHtml = htmlContent
+      ? processContent(htmlContent).replace(
+          /<img[^>]+src="([^"]+)"[^>]*>/g,
+          (match, url) => {
+            const imgId = imageMap.get(url);
+            return imgId
+              ? match.replace(url, `images/${imgId}`)
+              : match;
+          }
+        )
+      : '';
 
     return {
       ...page,
-      html_content: htmlContent
-        ? processContent(htmlContent).replace(
-            /<img[^>]+src="([^"]+)"[^>]*>/g,
-            (match, url) => {
-              const imgId = imageMap.get(url);
-              return imgId
-                ? match.replace(url, `images/${imgId}`)
-                : match;
-            }
-          )
-        : null,
+      content: page.content,  // Keep original JSON
+      html_content: processedHtml || null,  // Store processed HTML temporarily for epub generation
       page_type: page.page_type as 'section' | 'page'
     };
   });

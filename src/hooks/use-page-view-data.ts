@@ -8,8 +8,7 @@ import { SlugService } from '@/utils/slugService';
 interface Page {
   id: number;
   title: string;
-  html_content: string;
-  content?: any; // TipTap JSON content
+  content: any; // TipTap JSON content
   page_type: string;
   updated_at: string;
 }

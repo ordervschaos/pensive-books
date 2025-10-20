@@ -46,7 +46,7 @@ vi.mock('@/integrations/supabase/client', () => ({
 }));
 
 vi.mock('@/utils/tiptapHelpers', () => ({
-  getHtmlContent: vi.fn((jsonContent, htmlContent) => {
+  getHtmlFromContent: vi.fn((jsonContent, htmlContent) => {
     // Mock implementation that prefers JSON
     if (jsonContent && jsonContent.content) {
       return '<h1>JSON Title</h1><p>JSON content</p>';
@@ -343,7 +343,7 @@ describe('PageContent', () => {
     it('should handle very long content', () => {
       const longContent = '<p>' + 'A'.repeat(10000) + '</p>';
 
-      render(<PageContent {...defaultProps} content={longContent} />);
+      render(<PageContent {...defaultProps} jsonContent={longContent} />);
 
       expect(screen.getByTestId('tiptap-editor')).toBeTruthy();
     });
@@ -351,7 +351,7 @@ describe('PageContent', () => {
     it('should handle special characters in content', () => {
       const specialContent = '<p>&lt;&gt;&amp;&quot;</p>';
 
-      render(<PageContent {...defaultProps} content={specialContent} />);
+      render(<PageContent {...defaultProps} jsonContent={specialContent} />);
 
       expect(screen.getByTestId('tiptap-editor')).toBeTruthy();
     });
@@ -359,7 +359,7 @@ describe('PageContent', () => {
     it('should handle malformed HTML gracefully', () => {
       const malformedContent = '<p>Unclosed paragraph<div>Mixed tags</p></div>';
 
-      render(<PageContent {...defaultProps} content={malformedContent} />);
+      render(<PageContent {...defaultProps} jsonContent={malformedContent} />);
 
       expect(screen.getByTestId('tiptap-editor')).toBeTruthy();
     });

@@ -11,7 +11,7 @@ import {
 
 // Mock the tiptapHelpers module
 vi.mock('@/utils/tiptapHelpers', () => ({
-  getHtmlContent: vi.fn((jsonContent, htmlContent) => {
+  getHtmlFromContent: vi.fn((jsonContent, htmlContent) => {
     if (jsonContent && jsonContent.type === 'doc') {
       return '<h1>JSON Title</h1><p>JSON content from TipTap</p>';
     }

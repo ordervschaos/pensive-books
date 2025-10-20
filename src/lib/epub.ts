@@ -1,10 +1,10 @@
 import JSZip from 'jszip';
-import { getHtmlContent } from '@/utils/tiptapHelpers';
+import { getHtmlFromContent } from '@/utils/tiptapHelpers';
 
 interface Page {
   title: string | null;
-  html_content: string | null;
-  content?: any; // TipTap JSON content
+  content: any; // TipTap JSON content
+  html_content?: string | null; // Processed HTML from epub-generator (temporary)
   page_type: 'section' | 'page';
   page_index: number;
 }
@@ -232,11 +232,9 @@ export const generateContentXhtml = (metadata: EPUBMetadata, pages: Page[], show
   </div>
   `}
   ${pages.map((page, index) => {
-    // Use the processed html_content if available (already has image URLs replaced)
-    // Otherwise generate from JSON
-    const htmlContent = page.html_content
-      ? page.html_content
-      : getHtmlContent(page.content, page.html_content || '');
+    // Use processed HTML if available (from epub-generator with image replacements)
+    // Otherwise generate from JSON content
+    const htmlContent = page.html_content || (page.content ? getHtmlFromContent(page.content) : '');
 
     return `
     <section id="page${index}" epub:type="chapter" class="${page.page_type === 'section' ? 'section-page' : 'content-page'}">

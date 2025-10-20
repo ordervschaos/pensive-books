@@ -7,10 +7,10 @@ import { useAudioHighlighting } from "@/hooks/use-audio-highlighting";
 import { useAdaptiveTextToSpeech } from "@/hooks/use-adaptive-text-to-speech";
 import { supabase } from "@/integrations/supabase/client";
 import { EditorJSON, PageSaveHandler } from "@/types/editor";
-import { getHtmlContent } from "@/utils/tiptapHelpers";
+import { getHtmlFromContent } from "@/utils/tiptapHelpers";
 
 interface PageContentProps {
-  content: string;
+  jsonContent: any;  // Primary content source
   title: string;
   onSave: PageSaveHandler;
   saving: boolean;
@@ -23,12 +23,13 @@ interface PageContentProps {
   setIsEditing?: (isEditing: boolean) => void;
   onToggleChat?: () => void;
   hasActiveChat?: boolean;
-  jsonContent?: any;
   bookId?: string;
+  // Deprecated - kept for backward compatibility
+  content?: string;
 }
 
 export const PageContent = ({
-  content,
+  jsonContent,
   title,
   onSave,
   pageType = 'text',
@@ -40,11 +41,11 @@ export const PageContent = ({
   setIsEditing,
   onToggleChat,
   hasActiveChat,
-  jsonContent,
   bookId,
+  content, // Deprecated - for backward compatibility
 }: PageContentProps) => {
   const [initialLoad, setInitialLoad] = useState(true);
-  const [currentContent, setCurrentContent] = useState(content || '');
+  const [currentContent, setCurrentContent] = useState('');
   const [currentTitle, setCurrentTitle] = useState(title || '');
   const debouncedSaveRef = useRef<ReturnType<typeof debounce>>();
 
@@ -52,13 +53,13 @@ export const PageContent = ({
     // Only update content if not currently editing to prevent overwriting user input
     if (!isEditing) {
       console.log("PageContent: Content prop changed, updating state");
-      // Prefer JSON content over HTML content
-      const htmlContent = getHtmlContent(jsonContent, content || '');
+      // Convert JSON content to HTML
+      const htmlContent = jsonContent ? getHtmlFromContent(jsonContent) : '';
       setCurrentContent(htmlContent);
       setCurrentTitle(title || '');
       setInitialLoad(true);
     }
-  }, [content, title, isEditing, jsonContent]);
+  }, [title, isEditing, jsonContent]);
 
   // Create debounced save function
   useEffect(() => {
