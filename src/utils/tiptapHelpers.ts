@@ -115,16 +115,28 @@ export const htmlToText = (html: string): string => {
 };
 
 /**
- * Get text content with preference for JSON content
- * Falls back to HTML if JSON is not available
+ * Get text content from JSON content
+ * @deprecated Use jsonToText directly
  */
-export const getTextContent = (jsonContent: any, htmlContent: string): string => {
+export const getTextContent = (jsonContent: any, htmlContent?: string): string => {
   if (jsonContent) {
     const text = jsonToText(jsonContent);
     if (text) return text;
   }
 
-  return htmlToText(htmlContent);
+  // Fallback for legacy code
+  if (htmlContent) {
+    return htmlToText(htmlContent);
+  }
+
+  return '';
+};
+
+/**
+ * Get text content from JSON content (simplified API)
+ */
+export const getTextFromContent = (jsonContent: any): string => {
+  return jsonToText(jsonContent);
 };
 
 /**
@@ -164,10 +176,10 @@ const stripUnsupportedMarks = (json: any): any => {
 };
 
 /**
- * Get HTML content with preference for JSON content
- * Falls back to HTML string if JSON is not available
+ * Get HTML content from JSON content
+ * @deprecated Use jsonToHtml directly or getHtmlFromContent
  */
-export const getHtmlContent = (jsonContent: any, htmlContent: string): string => {
+export const getHtmlContent = (jsonContent: any, htmlContent?: string): string => {
   if (jsonContent) {
     // Strip unsupported marks before conversion
     const cleanedJson = stripUnsupportedMarks(jsonContent);
@@ -175,5 +187,34 @@ export const getHtmlContent = (jsonContent: any, htmlContent: string): string =>
     if (html) return html;
   }
 
+  // Fallback for legacy code
   return htmlContent || '';
+};
+
+/**
+ * Get HTML from JSON content (simplified API)
+ */
+export const getHtmlFromContent = (jsonContent: any): string => {
+  if (!jsonContent) return '';
+  const cleanedJson = stripUnsupportedMarks(jsonContent);
+  return jsonToHtml(cleanedJson);
+};
+
+/**
+ * Get word count from content
+ * @deprecated Use getWordCountFromContent
+ */
+export const getWordCount = (jsonContent: any, htmlContent?: string): number => {
+  const text = getTextContent(jsonContent, htmlContent);
+  if (!text.trim()) return 0;
+  return text.trim().split(/\s+/).length;
+};
+
+/**
+ * Get word count from JSON content (simplified API)
+ */
+export const getWordCountFromContent = (jsonContent: any): number => {
+  const text = jsonToText(jsonContent);
+  if (!text.trim()) return 0;
+  return text.trim().split(/\s+/).length;
 };

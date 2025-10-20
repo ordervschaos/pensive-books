@@ -3,11 +3,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageItemProps } from "./types";
 import { forwardRef } from "react";
+import { getWordCountFromContent } from "@/utils/tiptapHelpers";
 
 export const RegularPageItem = forwardRef<HTMLDivElement, PageItemProps>(({ page, onNavigate, onDelete, isBookmarked }, ref) => {
-  const wordCount = page.html_content && page.page_type === 'text' ? 
-    page.html_content.replace(/<[^>]*>/g, '').trim().split(/\s+/).length : 
-    0;
+  const wordCount = page.page_type === 'text' && page.content
+    ? getWordCountFromContent(page.content)
+    : 0;
 
   return (
     <div 

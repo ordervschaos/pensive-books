@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import { jsonToText, getWordCountFromContent } from "@/utils/tiptapHelpers";
 
 const LOCALSTORAGE_BOOKMARKS_KEY = 'bookmarked_pages';
 
@@ -278,9 +279,11 @@ const BookDetails = () => {
         id: page.id,
         title: page.title || 'Untitled',
         pageIndex: page.page_index,
-        summary: page.html_content 
-          ? page.html_content.replace(/<[^>]*>/g, '').trim().substring(0, 200) + '...'
-          : 'No content'
+        summary: (() => {
+          if (!page.content) return 'No content';
+          const text = jsonToText(page.content);
+          return text ? text.substring(0, 200) + (text.length > 200 ? '...' : '') : 'No content';
+        })()
       }))
     };
     
@@ -549,9 +552,8 @@ const BookDetails = () => {
                 </h1>
                 <p className="text-muted-foreground">{book.author || "Unknown author"}</p>
                 {/* number of words */}
-                <p className="text-muted-foreground">{pages.reduce((acc, page) => acc + ( page.html_content && page.page_type === 'text' ? 
-    page.html_content.replace(/<[^>]*>/g, '').trim().split(/\s+/).length : 
-    0), 0)} words</p>
+                <p className="text-muted-foreground">{pages.reduce((acc, page) =>
+                  acc + (page.page_type === 'text' && page.content ? getWordCountFromContent(page.content) : 0), 0)} words</p>
               </div>
 
 

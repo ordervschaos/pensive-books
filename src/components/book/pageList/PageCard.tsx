@@ -5,13 +5,15 @@ import { Badge } from "@/components/ui/badge";
 import { AudioPlayer } from "@/components/page/AudioPlayer";
 import { PageItemProps } from "./types";
 import { forwardRef } from "react";
+import { getWordCountFromContent, getHtmlFromContent } from "@/utils/tiptapHelpers";
 
 export const PageCard = forwardRef<HTMLDivElement, PageItemProps>(({ page, onNavigate, onDelete, isBookmarked }, ref) => {
-  const wordCount = page.html_content && page.page_type === 'text' ? 
-    page.html_content.replace(/<[^>]*>/g, '').trim().split(/\s+/).length : 
-    0;
+  const wordCount = page.page_type === 'text' && page.content
+    ? getWordCountFromContent(page.content)
+    : 0;
 
-  const excerpt = page.html_content ? page.html_content.replace(/<h1[^>]*>.*?<\/h1>/g, '') : '';
+  const htmlContent = page.content ? getHtmlFromContent(page.content) : '';
+  const excerpt = htmlContent ? htmlContent.replace(/<h1[^>]*>.*?<\/h1>/g, '') : '';
 
   return (
     <Card 
@@ -52,9 +54,9 @@ export const PageCard = forwardRef<HTMLDivElement, PageItemProps>(({ page, onNav
             <div className="flex items-center gap-2">
               {page.page_type === 'text' && <span>{wordCount} words</span>}
               {page.page_type === 'text' && (
-                <AudioPlayer 
-                  pageId={page.id} 
-                  content={page.html_content}
+                <AudioPlayer
+                  pageId={page.id}
+                  content={htmlContent}
                   compact={true}
                 />
               )}

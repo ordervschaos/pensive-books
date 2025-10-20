@@ -3,6 +3,7 @@ import { useSortable } from "@dnd-kit/sortable";
 import { Badge } from "@/components/ui/badge";
 import { PageItemProps } from "./types";
 import { forwardRef } from "react";
+import { getWordCountFromContent } from "@/utils/tiptapHelpers";
 
 export const SortablePageItem = forwardRef<HTMLDivElement, PageItemProps>(({ page, onNavigate, isBookmarked }, ref) => {
   const {
@@ -18,9 +19,9 @@ export const SortablePageItem = forwardRef<HTMLDivElement, PageItemProps>(({ pag
     transition,
   } : undefined;
 
-  const wordCount = page.html_content && page.page_type === 'text' ? 
-    page.html_content.replace(/<[^>]*>/g, '').trim().split(/\s+/).length : 
-    0;
+  const wordCount = page.page_type === 'text' && page.content
+    ? getWordCountFromContent(page.content)
+    : 0;
 
   // Combine the sortable ref with our custom ref
   const combinedRef = (node: HTMLDivElement) => {

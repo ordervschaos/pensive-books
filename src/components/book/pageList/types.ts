@@ -3,7 +3,7 @@ export interface Page {
   page_index: number;
   updated_at: string;
   title: string;
-  html_content?: string;
+  content?: any; // TipTap JSON content
   page_type: 'text' | 'section';
 }
 

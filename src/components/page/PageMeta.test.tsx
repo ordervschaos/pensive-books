@@ -10,8 +10,15 @@ import { PageMeta } from './PageMeta';
 
 // Mock the tiptapHelpers module
 vi.mock('@/utils/tiptapHelpers', () => ({
+  jsonToText: vi.fn((jsonContent) => {
+    // Mock implementation for JSON to text
+    if (jsonContent && jsonContent.content) {
+      return 'Text from JSON content';
+    }
+    return '';
+  }),
   getTextContent: vi.fn((jsonContent, htmlContent) => {
-    // Mock implementation that prefers JSON
+    // Mock implementation that prefers JSON (deprecated, for backward compatibility)
     if (jsonContent && jsonContent.content) {
       return 'Text from JSON content';
     }
@@ -34,7 +41,7 @@ describe('PageMeta', () => {
   it('should render meta tags with page title and book name', () => {
     const page = {
       title: 'Test Page',
-      html_content: '<p>Test content</p>',
+      content: '<p>Test content</p>',
     };
 
     const { container } = renderWithHelmet(<PageMeta page={page} book={mockBook} />);
@@ -47,7 +54,7 @@ describe('PageMeta', () => {
   it('should use JSON content for description when available', () => {
     const page = {
       title: 'Test Page',
-      html_content: '<p>HTML content</p>',
+      content: '<p>HTML content</p>',
       content: {
         type: 'doc',
         content: [
@@ -69,7 +76,7 @@ describe('PageMeta', () => {
   it('should fall back to HTML content when JSON is not available', () => {
     const page = {
       title: 'Test Page',
-      html_content: '<p>HTML content</p>',
+      content: '<p>HTML content</p>',
     };
 
     const { container } = renderWithHelmet(<PageMeta page={page} book={mockBook} />);
@@ -82,7 +89,7 @@ describe('PageMeta', () => {
   it('should include book author in meta tags', () => {
     const page = {
       title: 'Test Page',
-      html_content: '<p>Test content</p>',
+      content: '<p>Test content</p>',
     };
 
     const { container } = renderWithHelmet(<PageMeta page={page} book={mockBook} />);
@@ -94,7 +101,7 @@ describe('PageMeta', () => {
   it('should include published date in meta tags', () => {
     const page = {
       title: 'Test Page',
-      html_content: '<p>Test content</p>',
+      content: '<p>Test content</p>',
     };
 
     const { container } = renderWithHelmet(<PageMeta page={page} book={mockBook} />);
@@ -106,7 +113,7 @@ describe('PageMeta', () => {
   it('should include cover image URL in meta tags', () => {
     const page = {
       title: 'Test Page',
-      html_content: '<p>Test content</p>',
+      content: '<p>Test content</p>',
     };
 
     const { container } = renderWithHelmet(<PageMeta page={page} book={mockBook} />);
@@ -123,7 +130,7 @@ describe('PageMeta', () => {
 
     const page = {
       title: 'Test Page',
-      html_content: '<p>Test content</p>',
+      content: '<p>Test content</p>',
     };
 
     const { container } = renderWithHelmet(<PageMeta page={page} book={bookWithoutAuthor} />);
@@ -141,7 +148,7 @@ describe('PageMeta', () => {
 
     const page = {
       title: 'Test Page',
-      html_content: '<p>Test content</p>',
+      content: '<p>Test content</p>',
     };
 
     const { container } = renderWithHelmet(<PageMeta page={page} book={bookWithoutDate} />);
@@ -158,7 +165,7 @@ describe('PageMeta', () => {
 
     const page = {
       title: 'Test Page',
-      html_content: '<p>Test content</p>',
+      content: '<p>Test content</p>',
     };
 
     const { container } = renderWithHelmet(<PageMeta page={page} book={bookWithoutCover} />);
@@ -171,7 +178,7 @@ describe('PageMeta', () => {
     const longContent = 'A'.repeat(200);
     const page = {
       title: 'Test Page',
-      html_content: `<p>${longContent}</p>`,
+      content: `<p>${longContent}</p>`,
     };
 
     // Mock getTextContent to return long content
@@ -188,7 +195,7 @@ describe('PageMeta', () => {
   it('should set Open Graph type to article', () => {
     const page = {
       title: 'Test Page',
-      html_content: '<p>Test content</p>',
+      content: '<p>Test content</p>',
     };
 
     const { container } = renderWithHelmet(<PageMeta page={page} book={mockBook} />);
@@ -200,7 +207,7 @@ describe('PageMeta', () => {
   it('should include current URL in meta tags', () => {
     const page = {
       title: 'Test Page',
-      html_content: '<p>Test content</p>',
+      content: '<p>Test content</p>',
     };
 
     const { container } = renderWithHelmet(<PageMeta page={page} book={mockBook} />);
@@ -212,7 +219,7 @@ describe('PageMeta', () => {
   it('should set Twitter card type to summary_large_image', () => {
     const page = {
       title: 'Test Page',
-      html_content: '<p>Test content</p>',
+      content: '<p>Test content</p>',
     };
 
     const { container } = renderWithHelmet(<PageMeta page={page} book={mockBook} />);
@@ -224,7 +231,7 @@ describe('PageMeta', () => {
   it('should handle empty content gracefully', () => {
     const page = {
       title: 'Test Page',
-      html_content: '',
+      content: '',
     };
 
     const { container } = renderWithHelmet(<PageMeta page={page} book={mockBook} />);
@@ -236,7 +243,7 @@ describe('PageMeta', () => {
   it('should handle page with only whitespace content', () => {
     const page = {
       title: 'Test Page',
-      html_content: '<p>   </p>',
+      content: '<p>   </p>',
     };
 
     const { container } = renderWithHelmet(<PageMeta page={page} book={mockBook} />);
@@ -249,7 +256,7 @@ describe('PageMeta', () => {
     it('should work with legacy pages (HTML only)', () => {
       const legacyPage = {
         title: 'Legacy Page',
-        html_content: '<p>Legacy HTML content</p>',
+        content: '<p>Legacy HTML content</p>',
       };
 
       const { container } = renderWithHelmet(<PageMeta page={legacyPage} book={mockBook} />);
@@ -261,7 +268,7 @@ describe('PageMeta', () => {
     it('should work with new pages (JSON content)', () => {
       const newPage = {
         title: 'New Page',
-        html_content: '',
+        content: '',
         content: {
           type: 'doc',
           content: [
