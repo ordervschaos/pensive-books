@@ -13,9 +13,9 @@ This feature enables synchronized text highlighting during audio narration by sp
 ## How It Works
 
 ### 1. Content Storage
-- Pages now store both HTML (`html_content`) and structured JSON (`content`)
+- Pages store structured JSON content in the `content` field
 - TipTap JSON format provides clean structure for block extraction
-- Backward compatible with existing HTML-only pages
+- Content is the primary source for all rendering and processing
 
 ### 2. Block Extraction
 - Content is parsed into blocks: paragraphs, headings, list items, blockquotes
@@ -138,8 +138,7 @@ Wrapper that switches between block-based and legacy audio based on feature flag
 ```typescript
 const audioState = useAdaptiveTextToSpeech({
   pageId,
-  content, // HTML content
-  jsonContent, // TipTap JSON (for block-based)
+  jsonContent, // TipTap JSON content
 });
 ```
 
@@ -215,8 +214,7 @@ useAudioHighlighting({
 
 ## Migration Notes
 
-- Existing pages with old audio system continue to work
-- Block-based audio requires JSON content in `pages.content`
+- Block-based audio uses JSON content from `pages.content` field
 - Feature is opt-in via `audio_blocks_enabled` flag
-- Can coexist with legacy audio system
+- All pages now use the JSON content format as the primary source
 

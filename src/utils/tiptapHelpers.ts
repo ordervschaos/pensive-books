@@ -169,21 +169,6 @@ const stripUnsupportedMarks = (json: any): any => {
   return processNode(json);
 };
 
-/**
- * Get HTML content from JSON content
- * @deprecated Use jsonToHtml directly or getHtmlFromContent
- */
-export const getHtmlContent = (jsonContent: any, htmlContent?: string): string => {
-  if (jsonContent) {
-    // Strip unsupported marks before conversion
-    const cleanedJson = stripUnsupportedMarks(jsonContent);
-    const html = jsonToHtml(cleanedJson);
-    if (html) return html;
-  }
-
-  // Fallback for legacy code
-  return htmlContent || '';
-};
 
 /**
  * Get HTML from JSON content (simplified API)

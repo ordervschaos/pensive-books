@@ -191,67 +191,6 @@ function decodeHtmlEntities(text: string): string {
  * 4. Decodes HTML entities
  * 5. Normalizes whitespace
  */
-function processHtmlForTTS(html: string): string {
-  if (!html) return '';
-  
-  // Remove script and style tags with their content
-  let processed = html
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
-  
-  // Remove all HTML attributes (class, id, style, etc.) from opening tags
-  // This cleans up tags like <h1 class="text-4xl"> to just <h1>
-  processed = processed.replace(/<([a-z][a-z0-9]*)\s+[^>]*>/gi, '<$1>');
-  
-  // Use placeholders to prevent SSML tags from being stripped
-  const EMPHASIS_START_STRONG = '___EMPHASIS_STRONG___';
-  const EMPHASIS_END = '___EMPHASIS_END___';
-  const EMPHASIS_START_MODERATE = '___EMPHASIS_MODERATE___';
-  const BREAK_05 = '___BREAK_05___';
-  const BREAK_04 = '___BREAK_04___';
-  const BREAK_03 = '___BREAK_03___';
-  
-  // Add SSML emphasis for headings (h1-h6)
-  // h1 and h2 get strong emphasis, h3-h6 get moderate emphasis
-  processed = processed.replace(/<h1[^>]*>(.*?)<\/h1>/gi, `${EMPHASIS_START_STRONG}$1${EMPHASIS_END}${BREAK_05}`);
-  processed = processed.replace(/<h2[^>]*>(.*?)<\/h2>/gi, `${EMPHASIS_START_STRONG}$1${EMPHASIS_END}${BREAK_05}`);
-  processed = processed.replace(/<h3[^>]*>(.*?)<\/h3>/gi, `${EMPHASIS_START_MODERATE}$1${EMPHASIS_END}${BREAK_04}`);
-  processed = processed.replace(/<h4[^>]*>(.*?)<\/h4>/gi, `${EMPHASIS_START_MODERATE}$1${EMPHASIS_END}${BREAK_04}`);
-  processed = processed.replace(/<h5[^>]*>(.*?)<\/h5>/gi, `${EMPHASIS_START_MODERATE}$1${EMPHASIS_END}${BREAK_03}`);
-  processed = processed.replace(/<h6[^>]*>(.*?)<\/h6>/gi, `${EMPHASIS_START_MODERATE}$1${EMPHASIS_END}${BREAK_03}`);
-  
-  // Add pauses for paragraphs
-  processed = processed.replace(/<\/p>/gi, BREAK_03);
-  
-  // Add pauses for line breaks
-  processed = processed.replace(/<br\s*\/?>/gi, BREAK_03);
-  
-  // Add pauses for list items
-  processed = processed.replace(/<\/li>/gi, BREAK_03);
-  
-  // Add pauses after blockquotes
-  processed = processed.replace(/<\/blockquote>/gi, BREAK_03);
-  
-  // Remove all remaining HTML tags
-  processed = processed.replace(/<[^>]*>/g, ' ');
-  
-  // Decode common HTML entities BEFORE converting to SSML
-  processed = decodeHtmlEntities(processed);
-  
-  // Convert placeholders to SSML tags
-  processed = processed.replace(new RegExp(EMPHASIS_START_STRONG, 'g'), '<emphasis level="strong">');
-  processed = processed.replace(new RegExp(EMPHASIS_START_MODERATE, 'g'), '<emphasis level="moderate">');
-  processed = processed.replace(new RegExp(EMPHASIS_END, 'g'), '</emphasis>');
-  processed = processed.replace(new RegExp(BREAK_05, 'g'), '<break time="0.5s"/>');
-  processed = processed.replace(new RegExp(BREAK_04, 'g'), '<break time="0.4s"/>');
-  processed = processed.replace(new RegExp(BREAK_03, 'g'), '<break time="0.3s"/>');
-  
-  // Normalize whitespace: replace multiple spaces/newlines with single space
-  // Do this AFTER SSML conversion to preserve the SSML tags
-  processed = processed.replace(/\s+/g, ' ').trim();
-  
-  return processed;
-}
 
 // Helper function to generate a simple hash
 function generateContentHash(text: string): string {

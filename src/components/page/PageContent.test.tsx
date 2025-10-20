@@ -245,7 +245,6 @@ describe('PageContent', () => {
 
       await waitFor(() => {
         const editor = screen.getByTestId('tiptap-editor');
-        // getHtmlContent should be called with updated JSON
         expect(editor).toBeTruthy();
       });
     });

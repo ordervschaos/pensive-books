@@ -6,26 +6,6 @@ The audio generation system converts HTML content from pages into clean text sui
 
 ## Implementation
 
-### Main Function: `processHtmlForTTS()`
-
-Location: `supabase/functions/generate-page-audio/index.ts` and `src/utils/htmlToTtsText.ts`
-
-The function performs the following operations:
-
-1. **Remove Script & Style Tags**: Strips `<script>` and `<style>` tags and their contents
-2. **Remove HTML Attributes**: Strips all attributes (class, id, style, etc.) from HTML tags to clean up formatting
-3. **Add SSML Emphasis for Headings**: Converts heading tags to SSML emphasis tags
-   - `<h1>` and `<h2>` → `<emphasis level="strong">` with 0.5s pause
-   - `<h3>` and `<h4>` → `<emphasis level="moderate">` with 0.4s pause
-   - `<h5>` and `<h6>` → `<emphasis level="moderate">` with 0.3s pause
-4. **Add SSML Pauses**: Inserts `<break time="0.3s"/>` after:
-   - Paragraphs (`</p>`)
-   - Line breaks (`<br>`)
-   - List items (`</li>`)
-   - Blockquotes (`</blockquote>`)
-5. **Strip Remaining HTML Tags**: Removes all HTML tags (but preserves their text content)
-6. **Decode HTML Entities**: Converts HTML entities to their character equivalents
-7. **Normalize Whitespace**: Reduces multiple spaces/newlines to single spaces and trims
 
 ### Supported HTML Entities
 
@@ -75,17 +55,15 @@ npm test -- src/utils/htmlToTtsText.test.ts
 - Tests French text with special characters
 - Validates various HTML structures from the editor
 
-## Migration from `page.content`
+## Content Processing
 
-**Previous Implementation**: The system previously used the deprecated `page.content` (TipTap JSON structure) with fallback to `html_content`.
+**Current Implementation**: The system processes page content from the TipTap JSON structure stored in the `content` field.
 
-**Current Implementation**: Now exclusively uses `html_content` for audio generation.
-
-### Changes Made
-1. Removed `content` field from database queries
-2. Updated content hash generation to use only HTML
-3. Simplified TTS text processing to use only HTML processing
-4. Marked `processTipTapContentForTTS()` as deprecated
+### Implementation Details
+1. Content is retrieved from the `content` JSON field
+2. TipTap JSON is converted to HTML for processing
+3. HTML is then converted to clean text for TTS
+4. Content hash is generated for change detection
 
 ## Utility Function
 

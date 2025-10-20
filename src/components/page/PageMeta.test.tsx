@@ -17,12 +17,12 @@ vi.mock('@/utils/tiptapHelpers', () => ({
     }
     return '';
   }),
-  getTextContent: vi.fn((jsonContent, htmlContent) => {
-    // Mock implementation that prefers JSON (deprecated, for backward compatibility)
+  getTextFromContent: vi.fn((jsonContent) => {
+    // Mock implementation for JSON content
     if (jsonContent && jsonContent.content) {
       return 'Text from JSON content';
     }
-    return htmlContent ? 'Text from HTML content' : '';
+    return '';
   }),
 }));
 
@@ -69,7 +69,7 @@ describe('PageMeta', () => {
     const { container } = renderWithHelmet(<PageMeta page={page} book={mockBook} />);
 
     // Component should render without errors
-    // getTextContent should be called with JSON content
+    // getTextFromContent should be called with JSON content
     expect(container).toBeTruthy();
   });
 
@@ -82,7 +82,7 @@ describe('PageMeta', () => {
     const { container } = renderWithHelmet(<PageMeta page={page} book={mockBook} />);
 
     // Component should render without errors
-    // getTextContent should be called with HTML fallback
+    // getTextFromContent should be called with JSON content
     expect(container).toBeTruthy();
   });
 
@@ -181,9 +181,9 @@ describe('PageMeta', () => {
       content: `<p>${longContent}</p>`,
     };
 
-    // Mock getTextContent to return long content
-    const { getTextContent } = await import('@/utils/tiptapHelpers');
-    vi.mocked(getTextContent).mockReturnValueOnce(longContent);
+    // Mock getTextFromContent to return long content
+    const { getTextFromContent } = await import('@/utils/tiptapHelpers');
+    vi.mocked(getTextFromContent).mockReturnValueOnce(longContent);
 
     const { container } = renderWithHelmet(<PageMeta page={page} book={mockBook} />);
 

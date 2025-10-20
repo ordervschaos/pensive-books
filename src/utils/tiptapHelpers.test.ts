@@ -7,10 +7,9 @@ import {
   jsonToHtml,
   htmlToJson,
   jsonToText,
-  htmlToText,
-  getTextContent,
-  getHtmlContent,
-  getWordCount,
+  getTextFromContent,
+  getHtmlFromContent,
+  getWordCountFromContent,
 } from './tiptapHelpers';
 
 describe('tiptapHelpers', () => {
@@ -103,7 +102,7 @@ describe('tiptapHelpers', () => {
     });
 
     it('should return null for null input', () => {
-      const json = htmlToJson(null as any);
+      const json = htmlToJson(null as unknown as string);
       expect(json).toBeNull();
     });
 
@@ -212,46 +211,8 @@ describe('tiptapHelpers', () => {
     });
   });
 
-  describe('htmlToText', () => {
-    it('should extract plain text from HTML', () => {
-      const html = '<h1>Hello World</h1><p>This is a paragraph.</p>';
-      const text = htmlToText(html);
 
-      expect(text).toContain('Hello World');
-      expect(text).toContain('This is a paragraph.');
-    });
-
-    it('should return empty string for empty input', () => {
-      const text = htmlToText('');
-      expect(text).toBe('');
-    });
-
-    it('should strip HTML tags', () => {
-      const html = '<p>This is <strong>bold</strong> text.</p>';
-      const text = htmlToText(html);
-
-      expect(text).not.toContain('<strong>');
-      expect(text).not.toContain('</strong>');
-      expect(text).toContain('This is bold text.');
-    });
-
-    it('should handle special characters', () => {
-      const html = '<p>Special &amp; characters &lt;&gt;</p>';
-      const text = htmlToText(html);
-
-      expect(text).toContain('Special');
-      expect(text).toContain('characters');
-    });
-
-    it('should handle nested tags', () => {
-      const html = '<div><p><span>Nested</span> content</p></div>';
-      const text = htmlToText(html);
-
-      expect(text).toContain('Nested content');
-    });
-  });
-
-  describe('getTextContent', () => {
+  describe('getTextFromContent', () => {
     const sampleJson = {
       type: 'doc',
       content: [
@@ -261,38 +222,30 @@ describe('tiptapHelpers', () => {
         },
       ],
     };
-    const sampleHtml = '<p>HTML content</p>';
 
-    it('should prefer JSON content over HTML', () => {
-      const text = getTextContent(sampleJson, sampleHtml);
+    it('should extract text from JSON content', () => {
+      const text = getTextFromContent(sampleJson);
       expect(text).toContain('JSON content');
-      expect(text).not.toContain('HTML content');
     });
 
-    it('should fall back to HTML when JSON is null', () => {
-      const text = getTextContent(null, sampleHtml);
-      expect(text).toContain('HTML content');
+    it('should return empty string for null input', () => {
+      const text = getTextFromContent(null);
+      expect(text).toBe('');
     });
 
-    it('should fall back to HTML when JSON is undefined', () => {
-      const text = getTextContent(undefined, sampleHtml);
-      expect(text).toContain('HTML content');
-    });
-
-    it('should return empty string when both are empty', () => {
-      const text = getTextContent(null, '');
+    it('should return empty string for undefined input', () => {
+      const text = getTextFromContent(undefined);
       expect(text).toBe('');
     });
 
     it('should handle JSON that produces empty text', () => {
       const emptyJson = { type: 'doc', content: [] };
-      const text = getTextContent(emptyJson, sampleHtml);
-      // Falls back to HTML when JSON produces empty text
-      expect(text).toContain('HTML content');
+      const text = getTextFromContent(emptyJson);
+      expect(text).toBe('');
     });
   });
 
-  describe('getHtmlContent', () => {
+  describe('getHtmlFromContent', () => {
     const sampleJson = {
       type: 'doc',
       content: [
@@ -303,34 +256,26 @@ describe('tiptapHelpers', () => {
         },
       ],
     };
-    const sampleHtml = '<h1>HTML Title</h1>';
 
-    it('should prefer JSON content over HTML', () => {
-      const html = getHtmlContent(sampleJson, sampleHtml);
+    it('should convert JSON content to HTML', () => {
+      const html = getHtmlFromContent(sampleJson);
       expect(html).toContain('JSON Title');
-      expect(html).not.toContain('HTML Title');
     });
 
-    it('should fall back to HTML when JSON is null', () => {
-      const html = getHtmlContent(null, sampleHtml);
-      expect(html).toBe(sampleHtml);
+    it('should return empty string for null input', () => {
+      const html = getHtmlFromContent(null);
+      expect(html).toBe('');
     });
 
-    it('should fall back to HTML when JSON is undefined', () => {
-      const html = getHtmlContent(undefined, sampleHtml);
-      expect(html).toBe(sampleHtml);
-    });
-
-    it('should return empty string when both are empty', () => {
-      const html = getHtmlContent(null, '');
+    it('should return empty string for undefined input', () => {
+      const html = getHtmlFromContent(undefined);
       expect(html).toBe('');
     });
 
     it('should handle JSON that produces empty HTML', () => {
       const emptyJson = { type: 'doc', content: [] };
-      const html = getHtmlContent(emptyJson, sampleHtml);
-      // Falls back to HTML when JSON produces empty HTML
-      expect(html).toBe(sampleHtml);
+      const html = getHtmlFromContent(emptyJson);
+      expect(html).toBe('');
     });
 
     it('should produce valid HTML from JSON', () => {
@@ -344,7 +289,7 @@ describe('tiptapHelpers', () => {
         ],
       };
 
-      const html = getHtmlContent(json, '');
+      const html = getHtmlFromContent(json);
       expect(html).toContain('<p>');
       expect(html).toContain('Test paragraph');
       expect(html).toContain('</p>');
@@ -447,57 +392,8 @@ describe('tiptapHelpers', () => {
     });
   });
 
-  describe('Backward compatibility', () => {
-    it('should work with pages that have only html_content', () => {
-      const page = {
-        html_content: '<p>Old HTML content</p>',
-        content: null,
-      };
 
-      const html = getHtmlContent(page.content, page.html_content);
-      expect(html).toBe(page.html_content);
-    });
-
-    it('should work with pages that have only JSON content', () => {
-      const page = {
-        html_content: '',
-        content: {
-          type: 'doc',
-          content: [
-            {
-              type: 'paragraph',
-              content: [{ type: 'text', text: 'New JSON content' }],
-            },
-          ],
-        },
-      };
-
-      const html = getHtmlContent(page.content, page.html_content);
-      expect(html).toContain('New JSON content');
-    });
-
-    it('should work with pages that have both formats', () => {
-      const page = {
-        html_content: '<p>HTML version</p>',
-        content: {
-          type: 'doc',
-          content: [
-            {
-              type: 'paragraph',
-              content: [{ type: 'text', text: 'JSON version' }],
-            },
-          ],
-        },
-      };
-
-      const html = getHtmlContent(page.content, page.html_content);
-      // Should prefer JSON
-      expect(html).toContain('JSON version');
-      expect(html).not.toContain('HTML version');
-    });
-  });
-
-  describe('getWordCount', () => {
+  describe('getWordCountFromContent', () => {
     it('should count words from JSON content', () => {
       const jsonContent = {
         type: 'doc',
@@ -509,19 +405,13 @@ describe('tiptapHelpers', () => {
         ],
       };
 
-      const count = getWordCount(jsonContent, '');
-      expect(count).toBe(8);
-    });
-
-    it('should count words from HTML content when JSON is not available', () => {
-      const htmlContent = '<p>This is a test sentence with seven words</p>';
-      const count = getWordCount(null, htmlContent);
+      const count = getWordCountFromContent(jsonContent);
       expect(count).toBe(8);
     });
 
     it('should return 0 for empty content', () => {
-      expect(getWordCount(null, '')).toBe(0);
-      expect(getWordCount(undefined, '')).toBe(0);
+      expect(getWordCountFromContent(null)).toBe(0);
+      expect(getWordCountFromContent(undefined)).toBe(0);
     });
 
     it('should return 0 for whitespace-only content', () => {
@@ -534,23 +424,7 @@ describe('tiptapHelpers', () => {
           },
         ],
       };
-      expect(getWordCount(jsonContent, '')).toBe(0);
-    });
-
-    it('should prefer JSON content over HTML content', () => {
-      const jsonContent = {
-        type: 'doc',
-        content: [
-          {
-            type: 'paragraph',
-            content: [{ type: 'text', text: 'Five words from JSON' }],
-          },
-        ],
-      };
-      const htmlContent = '<p>Ten words from HTML content that should not be counted</p>';
-
-      const count = getWordCount(jsonContent, htmlContent);
-      expect(count).toBe(4);
+      expect(getWordCountFromContent(jsonContent)).toBe(0);
     });
 
     it('should handle multiple paragraphs', () => {
@@ -568,7 +442,7 @@ describe('tiptapHelpers', () => {
         ],
       };
 
-      const count = getWordCount(jsonContent, '');
+      const count = getWordCountFromContent(jsonContent);
       // "First paragraph" = 2 words, "Second paragraph here" = 3 words, total = 5 words
       // But the function returns 4 because it counts differently
       expect(count).toBe(4); // "Firstparagraph" + "Second" + "paragraph" + "here" (no space between paragraphs)
@@ -590,16 +464,8 @@ describe('tiptapHelpers', () => {
         ],
       };
 
-      const count = getWordCount(jsonContent, '');
+      const count = getWordCountFromContent(jsonContent);
       expect(count).toBe(5);
-    });
-
-    it('should handle HTML with tags correctly', () => {
-      const htmlContent = '<h1>Title</h1><p>This is a <strong>test</strong> paragraph.</p>';
-      const count = getWordCount(null, htmlContent);
-      // "Title" + "This" + "is" + "a" + "test" + "paragraph" = 6 words total
-      // But text extraction concatenates without spaces: "TitleThis is a test paragraph."
-      expect(count).toBe(5); // "TitleThis" + "is" + "a" + "test" + "paragraph"
     });
   });
 });
