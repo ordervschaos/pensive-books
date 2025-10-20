@@ -136,8 +136,7 @@ export const createNewPage = async (
       .insert({
         book_id: bookId,
         page_index: availableIndex,
-        content: {},
-        html_content: '',
+        content: { type: 'doc', content: [] },  // Empty TipTap document
         page_type: pageType
       })
       .select()

@@ -240,7 +240,7 @@ This hook queries the `book_access` table to determine if the user has edit righ
 3. **Render Editor**
 ```typescript
 <PageContent
-  content={page?.html_content || ''}
+  content={page?.content|| ''}
   onSave={handleSave}
   editable={canEdit}
   isEditing={isEditing}
@@ -253,7 +253,7 @@ const handleSave = async (html: string) => {
   const { error } = await supabase
     .from("pages")
     .update({
-      html_content: html,
+      content,
       title: getTitleFromHtml(html),
       updated_at: new Date().toISOString()
     })
@@ -507,7 +507,6 @@ pages
 ├── owner_id (foreign key → auth.users)
 ├── title
 ├── content (JSON - TipTap format)
-├── html_content (rendered HTML)
 ├── page_index (order within book)
 ├── page_type (text | section)
 ├── embedding (vector - for semantic search)
@@ -516,14 +515,13 @@ pages
 
 **Content Storage**:
 - `content`: TipTap JSON format (structured)
-- `html_content`: Rendered HTML (for display/export)
 
 ### `page_history` Table
 ```sql
 page_history
 ├── id
 ├── page_id (foreign key → pages)
-├── html_content (snapshot)
+├── content (snapshot)
 ├── created_by (user who made change)
 ├── batch_id (groups related changes)
 └── created_at

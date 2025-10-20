@@ -6,11 +6,11 @@ import { describe, it, expect, vi } from 'vitest';
 
 // Mock the tiptapHelpers module
 vi.mock('@/utils/tiptapHelpers', () => ({
-  getHtmlFromContent: vi.fn((jsonContent, htmlContent) => {
+  getHtmlFromContent: vi.fn((jsonContent) => {
     if (jsonContent && jsonContent.type === 'doc') {
       return '<h1>JSON Title</h1><p>JSON content from TipTap</p>';
     }
-    return htmlContent || '';
+    return '';
   }),
 }));
 
@@ -53,7 +53,6 @@ vi.mock('@/integrations/supabase/client', () => ({
                 {
                   id: 1,
                   title: 'Page 1',
-                  html_content: '<p>HTML content</p>',
                   content: null,
                   page_type: 'page',
                   page_index: 0,
@@ -76,13 +75,12 @@ describe('PDF Generation with JSON content', () => {
 
   describe('renderContentPage', () => {
     it('should use JSON content when available', async () => {
-      const { getHtmlContent } = await import('@/utils/tiptapHelpers');
+      const { getHtmlFromContent } = await import('@/utils/tiptapHelpers');
 
-      // The function should call getHtmlContent with JSON
+      // The function should call getHtmlFromContent with JSON
       const page = {
         id: 1,
         title: 'Test Page',
-        html_content: '<p>Old HTML</p>',
         content: { type: 'doc', content: [] },
         page_type: 'page' as const,
         page_index: 0,
@@ -90,7 +88,7 @@ describe('PDF Generation with JSON content', () => {
 
       // Since renderContentPage is internal, we test through generatePDF
       // Just verify the mock was set up correctly
-      expect(vi.mocked(getHtmlContent)).toBeDefined();
+      expect(vi.mocked(getHtmlFromContent)).toBeDefined();
     });
 
     it('should fall back to HTML when JSON is not available', async () => {
@@ -157,10 +155,14 @@ describe('PDF Generation with JSON content', () => {
 
     it('should handle pages with images', () => {
       const pageWithImage = {
-        html_content: '<p>Text</p><img src="https://example.com/img.jpg" />',
+        title: 'Page with image',
+        content: { type: 'doc', content: [] },
+        page_type: 'text' as const,
       };
 
-      expect(pageWithImage.html_content).toContain('img');
+      // Verify page structure can hold content
+      expect(pageWithImage.content).toBeDefined();
+      expect(pageWithImage.page_type).toBe('text');
     });
   });
 
@@ -189,11 +191,10 @@ describe('PDF Generation with JSON content', () => {
 
     it('should handle null pages', () => {
       const nullPage = {
-        html_content: null,
         content: null,
       };
 
-      expect(nullPage.html_content).toBeNull();
+      // Verify null content is handled gracefully
       expect(nullPage.content).toBeNull();
     });
 
@@ -254,19 +255,19 @@ describe('PDF Generation with JSON content', () => {
     });
   });
 
-  describe('Integration with getHtmlContent', () => {
-    it('should call getHtmlContent for each page', () => {
+  describe('Integration with getHtmlFromContent', () => {
+    it('should call getHtmlFromContent for each page', () => {
       // Verified through the actual implementation
       const pages = [
-        { content: { type: 'doc' }, html_content: '<p>1</p>' },
-        { content: null, html_content: '<p>2</p>' },
-        { content: { type: 'doc' }, html_content: '<p>3</p>' },
+        { content: { type: 'doc', content: [] }, page_type: 'text' as const },
+        { content: { type: 'doc', content: [] }, page_type: 'text' as const },
+        { content: { type: 'doc', content: [] }, page_type: 'text' as const },
       ];
 
       expect(pages).toHaveLength(3);
     });
 
-    it('should pass correct parameters to getHtmlContent', () => {
+    it('should pass correct parameters to getHtmlFromContent', () => {
       const jsonContent = { type: 'doc', content: [] };
       const htmlContent = '<p>HTML</p>';
 

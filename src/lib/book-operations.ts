@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { htmlToJson } from '@/utils/tiptapHelpers';
 import { Database } from '@/integrations/supabase/types';
 
 type Page = Database['public']['Tables']['pages']['Row'];
@@ -67,15 +68,16 @@ export async function addPage(
       }
     }
 
-    // Create the new page
+    // Create the new page with JSON content
+    const jsonContent = content ? htmlToJson(content) : { type: 'doc', content: [] };
+
     const { data: newPage, error: insertError } = await supabase
       .from('pages')
       .insert({
         book_id: bookId,
         page_index: newPageIndex,
         title: title,
-        html_content: content,
-        content: {},
+        content: jsonContent,
         page_type: 'text'
       })
       .select('id')
@@ -203,10 +205,13 @@ export async function editPageContent(
   newContent: string
 ): Promise<OperationResult> {
   try {
+    // Convert HTML content to JSON
+    const jsonContent = htmlToJson(newContent);
+
     const { error } = await supabase
       .from('pages')
       .update({
-        html_content: newContent,
+        content: jsonContent,
         updated_at: new Date().toISOString()
       })
       .eq('id', pageId);

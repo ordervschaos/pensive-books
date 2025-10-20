@@ -42,8 +42,8 @@ describe('usePageSave', () => {
       expect(supabase.from).toHaveBeenCalledWith('pages');
       expect(mockUpdate).toHaveBeenCalledWith(
         expect.objectContaining({
-          html_content: testHtml,
           title: 'Test Title',
+          // content field would be JSON, but we're only checking title extraction
         })
       );
     });
@@ -180,7 +180,8 @@ describe('usePageSave', () => {
     await waitFor(() => {
       expect(mockUpdate).toHaveBeenCalledWith(
         expect.objectContaining({
-          html_content: '<h1>Title</h1><p>New text here</p>',
+          title: 'Title',
+          // Edited HTML is converted to JSON before saving
         })
       );
     });

@@ -1,5 +1,5 @@
 -- Add unique constraint for page titles within a book
--- This ensures [[page title]] links can uniquely identify pages within a book's context
+-- This ensures page titles are unique within a book's context
 
 -- Step 1: Handle duplicate pages by adding a numeric suffix
 -- This ensures all pages have unique titles before we add the constraint
@@ -66,4 +66,4 @@ USING "btree" ("book_id", "title")
 WHERE ("archived" = false AND "title" IS NOT NULL AND "title" != '');
 
 -- Add a comment explaining the constraint
-COMMENT ON INDEX "public"."unique_book_page_title" IS 'Ensures page titles are unique within a book context for wiki-link functionality [[page title]]';
+COMMENT ON INDEX "public"."unique_book_page_title" IS 'Ensures page titles are unique within a book context';

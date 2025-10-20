@@ -65,9 +65,9 @@ const PageView = () => {
     pageId,
     canEdit,
     (updatedHtml, updatedTitle) => {
-      // Properly update state without mutation
+      // Update page title in local state
       setPage(prevPage =>
-        prevPage ? { ...prevPage, html_content: updatedHtml, title: updatedTitle } : null
+        prevPage ? { ...prevPage, title: updatedTitle } : null
       );
     }
   );

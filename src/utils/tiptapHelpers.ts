@@ -140,7 +140,7 @@ export const getTextFromContent = (jsonContent: any): string => {
 };
 
 /**
- * Remove unsupported marks from JSON content (like wikiLink)
+ * Remove unsupported marks from JSON content
  * This is needed when converting content for export formats
  */
 const stripUnsupportedMarks = (json: any): any => {
@@ -151,14 +151,8 @@ const stripUnsupportedMarks = (json: any): any => {
 
     // If this is a text node with marks, filter out unsupported marks
     if (node.type === 'text' && node.marks) {
-      const supportedMarks = node.marks.filter((mark: any) => {
-        // Remove wikiLink marks as they're not in the standard schema
-        return mark.type !== 'wikiLink';
-      });
-      return {
-        ...node,
-        marks: supportedMarks.length > 0 ? supportedMarks : undefined
-      };
+      // Currently no unsupported marks to filter out
+      return node;
     }
 
     // Recursively process content arrays

@@ -54,12 +54,11 @@ export const usePageSave = (
       const title = getTitleFromHtml(html);
 
       const updateData: any = {
-        html_content: html,
         title: title,
         updated_at: new Date().toISOString(),
       };
 
-      // Save JSON content if provided
+      // Save JSON content (required)
       if (json) {
         updateData.content = json;
       }

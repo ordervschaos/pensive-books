@@ -204,7 +204,6 @@ it('should save page content successfully', async () => {
 
   expect(mockUpdate).toHaveBeenCalledWith(
     expect.objectContaining({
-      html_content: '<h1>Test Title</h1><p>Content</p>',
       title: 'Test Title',
     })
   );

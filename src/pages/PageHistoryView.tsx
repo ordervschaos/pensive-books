@@ -7,12 +7,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2 } from "lucide-react";
-import { htmlToJson } from "@/utils/tiptapHelpers";
+import { getHtmlFromContent } from "@/utils/tiptapHelpers";
 
 interface PageVersion {
   id: number;
   page_id: number;
-  html_content: string;
+  content: any;  // JSON content
   created_at: string;
   created_by: string;
   batch_id: string;
@@ -38,15 +38,16 @@ export default function PageHistoryView() {
       try {
         setLoading(true);
         
-        // Get current page content
+        // Get current page content (JSON)
         const { data: pageData } = await supabase
           .from("pages")
-          .select("html_content")
+          .select("content")
           .eq("id", numericPageId)
           .single();
-          
-        if (pageData) {
-          setCurrentPageContent(pageData.html_content);
+
+        if (pageData && pageData.content) {
+          const html = getHtmlFromContent(pageData.content);
+          setCurrentPageContent(html);
         }
         
         // Get page history
@@ -82,31 +83,27 @@ export default function PageHistoryView() {
     try {
       setRestoring(true);
       
-      // Get the version content
+      // Get the version content (JSON)
       const { data: versionData, error: versionError } = await supabase
         .from("page_history")
-        .select("html_content")
+        .select("content")
         .eq("id", versionId)
         .single();
-        
+
       if (versionError) throw versionError;
-      
+
       if (!versionData) {
         throw new Error("Version not found");
       }
-      
-      // Convert HTML to JSON for the content field
-      const jsonContent = htmlToJson(versionData.html_content);
 
-      // Update the page with the version content (both HTML and JSON)
+      // Update the page with the version JSON content
       const { error: updateError } = await supabase
         .from("pages")
         .update({
-          html_content: versionData.html_content,
-          content: jsonContent
+          content: versionData.content
         })
         .eq("id", numericPageId);
-        
+
       if (updateError) throw updateError;
       
       toast({
@@ -167,9 +164,9 @@ export default function PageHistoryView() {
                       )}
                     </Button>
                   </div>
-                  <div 
+                  <div
                     className="mt-4 p-4 border rounded-md bg-muted/50"
-                    dangerouslySetInnerHTML={{ __html: version.html_content }}
+                    dangerouslySetInnerHTML={{ __html: version.content ? getHtmlFromContent(version.content) : '' }}
                   />
                 </Card>
               ))}

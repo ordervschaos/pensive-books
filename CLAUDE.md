@@ -161,7 +161,6 @@ Individual pages/sections within books
 - `owner_id`: UUID reference to user
 - `title`: Page title
 - `content`: JSON content (TipTap format)
-- `html_content`: HTML representation
 - `old_content`: Legacy content format
 - `page_index`: Order within book
 - `page_type`: Type (e.g., "text", "section")
@@ -174,7 +173,6 @@ Individual pages/sections within books
 Version history for pages
 - `id`: Primary key
 - `page_id`: Foreign key to pages
-- `html_content`: Historical HTML content
 - `created_by`: User who created this version
 - `batch_id`: Groups related changes
 - `created_at`: Timestamp

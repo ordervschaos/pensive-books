@@ -12,6 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { TipTapEditor } from "@/components/editor/TipTapEditor";
+import { htmlToJson } from "@/utils/tiptapHelpers";
 import {
   Dialog,
   DialogContent,
@@ -176,16 +177,19 @@ export default function GenerateBook() {
       // Create pages in sequence
       for (let i = 0; i < generatedContent.pages.length; i++) {
         const page = generatedContent.pages[i];
+        // AI generates HTML, convert to JSON for storage
+        const jsonContent = htmlToJson(page.content);
+
         const { error: pageError } = await supabase
           .from("pages")
           .insert({
             book_id: newBookId,
             title: page.title,
-            html_content: page.content,
+            content: jsonContent,  // Store as JSON
             page_type: page.pageType,
             page_index: i,
           });
-          
+
         if (pageError) throw pageError;
       }
 

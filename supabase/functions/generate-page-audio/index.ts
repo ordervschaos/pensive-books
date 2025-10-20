@@ -6,22 +6,21 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-// DEPRECATED: Helper function to convert TipTap structured content to SSML
-// This function is kept for reference but is no longer used since page.content is deprecated
-function processTipTapContentForTTS(content: any): string {
+// Helper function to convert TipTap structured content to SSML
+function processTipTapContentForTTS(content: Record<string, unknown>): string {
   if (!content || !content.content) return '';
   
-  const processNode = (node: any): string => {
+  const processNode = (node: Record<string, unknown>): string => {
     if (!node) return '';
     
-    switch (node.type) {
-      case 'text':
-        let text = node.text || '';
+    switch (node.type as string) {
+      case 'text': {
+        let text = (node.text as string) || '';
         
         // Apply text marks (formatting)
-        if (node.marks) {
-          for (const mark of node.marks) {
-            switch (mark.type) {
+        if (node.marks && Array.isArray(node.marks)) {
+          for (const mark of node.marks as Record<string, unknown>[]) {
+            switch (mark.type as string) {
               case 'bold':
                 text = `<emphasis level="moderate">${text}</emphasis>`;
                 break;
@@ -39,82 +38,97 @@ function processTipTapContentForTTS(content: any): string {
         }
         
         return text;
+      }
         
       case 'hardBreak':
         return '<break time="0.2s"/>';
         
-      case 'paragraph':
-        if (!node.content || node.content.length === 0) return '';
-        const paragraphText = node.content.map(processNode).join('').trim();
+      case 'paragraph': {
+        if (!node.content || !Array.isArray(node.content) || node.content.length === 0) return '';
+        const paragraphText = (node.content as Record<string, unknown>[]).map(processNode).join('').trim();
         return paragraphText ? `${paragraphText}<break time="0.5s"/>` : '';
+      }
         
-      case 'heading':
-        if (!node.content || node.content.length === 0) return '';
-        const headingText = node.content.map(processNode).join('').trim();
+      case 'heading': {
+        if (!node.content || !Array.isArray(node.content) || node.content.length === 0) return '';
+        const headingText = (node.content as Record<string, unknown>[]).map(processNode).join('').trim();
         if (!headingText) return '';
         
-        const level = node.attrs?.level || 1;
+        const attrs = node.attrs as Record<string, unknown> || {};
+        const level = (attrs.level as number) || 1;
         const emphasisLevel = level <= 2 ? 'strong' : 'moderate';
         const pauseTime = level === 1 ? '0.8s' : level === 2 ? '0.6s' : level === 3 ? '0.5s' : '0.4s';
         
         return `<emphasis level="${emphasisLevel}">${headingText}</emphasis><break time="${pauseTime}"/>`;
+      }
         
-      case 'bulletList':
-        if (!node.content || node.content.length === 0) return '';
-        const listText = node.content.map(processNode).join('').trim();
+      case 'bulletList': {
+        if (!node.content || !Array.isArray(node.content) || node.content.length === 0) return '';
+        const listText = (node.content as Record<string, unknown>[]).map(processNode).join('').trim();
         return listText ? `<break time="0.3s"/>${listText}` : '';
+      }
         
-      case 'orderedList':
-        if (!node.content || node.content.length === 0) return '';
-        const orderedListText = node.content.map(processNode).join('').trim();
+      case 'orderedList': {
+        if (!node.content || !Array.isArray(node.content) || node.content.length === 0) return '';
+        const orderedListText = (node.content as Record<string, unknown>[]).map(processNode).join('').trim();
         return orderedListText ? `<break time="0.3s"/>${orderedListText}` : '';
+      }
         
-      case 'listItem':
-        if (!node.content || node.content.length === 0) return '';
-        const itemText = node.content.map(processNode).join('').trim();
+      case 'listItem': {
+        if (!node.content || !Array.isArray(node.content) || node.content.length === 0) return '';
+        const itemText = (node.content as Record<string, unknown>[]).map(processNode).join('').trim();
         return itemText ? `• ${itemText}<break time="0.2s"/>` : '';
+      }
         
-      case 'blockquote':
-        if (!node.content || node.content.length === 0) return '';
-        const quoteText = node.content.map(processNode).join('').trim();
+      case 'blockquote': {
+        if (!node.content || !Array.isArray(node.content) || node.content.length === 0) return '';
+        const quoteText = (node.content as Record<string, unknown>[]).map(processNode).join('').trim();
         return quoteText ? `<break time="0.3s"/>${quoteText}<break time="0.3s"/>` : '';
+      }
         
-      case 'codeBlock':
-        if (!node.content || node.content.length === 0) return '';
-        const codeText = node.content.map(processNode).join('').trim();
+      case 'codeBlock': {
+        if (!node.content || !Array.isArray(node.content) || node.content.length === 0) return '';
+        const codeText = (node.content as Record<string, unknown>[]).map(processNode).join('').trim();
         return codeText ? `<break time="0.3s"/>${codeText}<break time="0.3s"/>` : '';
+      }
         
-      case 'table':
-        if (!node.content || node.content.length === 0) return '';
-        const tableText = node.content.map(processNode).join('').trim();
+      case 'table': {
+        if (!node.content || !Array.isArray(node.content) || node.content.length === 0) return '';
+        const tableText = (node.content as Record<string, unknown>[]).map(processNode).join('').trim();
         return tableText ? `<break time="0.3s"/>${tableText}` : '';
+      }
         
-      case 'tableRow':
-        if (!node.content || node.content.length === 0) return '';
-        const rowText = node.content.map(processNode).join('').trim();
+      case 'tableRow': {
+        if (!node.content || !Array.isArray(node.content) || node.content.length === 0) return '';
+        const rowText = (node.content as Record<string, unknown>[]).map(processNode).join('').trim();
         return rowText ? `<break time="0.2s"/>${rowText}` : '';
+      }
         
       case 'tableCell':
-      case 'tableHeader':
-        if (!node.content || node.content.length === 0) return '';
-        const cellText = node.content.map(processNode).join('').trim();
+      case 'tableHeader': {
+        if (!node.content || !Array.isArray(node.content) || node.content.length === 0) return '';
+        const cellText = (node.content as Record<string, unknown>[]).map(processNode).join('').trim();
         return cellText ? `${cellText} ` : '';
+      }
         
-      case 'image':
+      case 'image': {
         // Use alt text if available
-        return node.attrs?.alt || '';
+        const attrs = node.attrs as Record<string, unknown> || {};
+        return (attrs.alt as string) || '';
+      }
+        
         
       default:
         // For unknown node types, try to process their content
         if (node.content && Array.isArray(node.content)) {
-          return node.content.map(processNode).join('').trim();
+          return (node.content as Record<string, unknown>[]).map(processNode).join('').trim();
         }
         return '';
     }
   };
   
   // Process the root document
-  const result = content.content.map(processNode).join('').trim();
+  const result = (content.content as Record<string, unknown>[]).map(processNode).join('').trim();
   
   // Clean up multiple spaces and ensure proper spacing
   return result.replace(/\s+/g, ' ').trim();
@@ -279,7 +293,7 @@ serve(async (req) => {
     // Fetch page content
     const { data: page, error: pageError } = await supabase
       .from('pages')
-      .select('id, title, html_content')
+      .select('id, title, content')
       .eq('id', pageId)
       .single()
 
@@ -287,8 +301,8 @@ serve(async (req) => {
       throw new Error('Page not found')
     }
 
-    // Generate content hash from HTML content
-    const contentForHash = page.html_content || ''
+    // Generate content hash from TipTap JSON content
+    const contentForHash = JSON.stringify(page.content || {})
     const contentHash = generateContentHash(contentForHash)
     
     // Check if audio already exists for this content (skip if forceRegenerate is true)
@@ -317,8 +331,8 @@ serve(async (req) => {
       }
     }
 
-    // Process HTML content for TTS
-    const ttsText = processHtmlForTTS(page.html_content || '');
+    // Process TipTap content for TTS
+    const ttsText = processTipTapContentForTTS(page.content);
     
     if (!ttsText || ttsText.length < 10) {
       throw new Error('Page content is too short for text-to-speech')

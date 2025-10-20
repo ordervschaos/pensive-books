@@ -4,7 +4,6 @@ import { getHtmlFromContent } from '@/utils/tiptapHelpers';
 interface Page {
   title: string | null;
   content: any; // TipTap JSON content
-  html_content?: string | null; // Processed HTML from epub-generator (temporary)
   page_type: 'section' | 'page';
   page_index: number;
 }
@@ -232,9 +231,8 @@ export const generateContentXhtml = (metadata: EPUBMetadata, pages: Page[], show
   </div>
   `}
   ${pages.map((page, index) => {
-    // Use processed HTML if available (from epub-generator with image replacements)
-    // Otherwise generate from JSON content
-    const htmlContent = page.html_content || (page.content ? getHtmlFromContent(page.content) : '');
+    // Generate HTML from JSON content
+    const htmlContent = page.content ? getHtmlFromContent(page.content) : '';
 
     return `
     <section id="page${index}" epub:type="chapter" class="${page.page_type === 'section' ? 'section-page' : 'content-page'}">

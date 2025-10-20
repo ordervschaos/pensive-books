@@ -123,31 +123,12 @@ export const prepareEPUBContent = async (
   // Create image map for replacement
   const imageMap = new Map(images.map(img => [img.url, img.id]));
 
-  // Process pages and replace image URLs with IDs
-  const processedPages = pages.map(page => {
-    // Convert JSON content to HTML
-    const htmlContent = page.content ? getHtmlFromContent(page.content) : '';
-
-    // Process and replace image URLs in HTML
-    const processedHtml = htmlContent
-      ? processContent(htmlContent).replace(
-          /<img[^>]+src="([^"]+)"[^>]*>/g,
-          (match, url) => {
-            const imgId = imageMap.get(url);
-            return imgId
-              ? match.replace(url, `images/${imgId}`)
-              : match;
-          }
-        )
-      : '';
-
-    return {
-      ...page,
-      content: page.content,  // Keep original JSON
-      html_content: processedHtml || null,  // Store processed HTML temporarily for epub generation
-      page_type: page.page_type as 'section' | 'page'
-    };
-  });
+  // Process pages - no need to process HTML separately
+  // The epub.ts will generate HTML from JSON directly
+  const processedPages = pages.map(page => ({
+    ...page,
+    page_type: page.page_type as 'section' | 'page'
+  }));
 
   return { processedPages, images };
 };

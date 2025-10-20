@@ -76,7 +76,7 @@ export const PageContent = ({
             .upsert(
               {
                 page_id: parseInt(pageId),
-                html_content: html,
+                content: json,  // Store JSON content for history
                 created_by: user.id,
                 created_at: new Date().toISOString()
               },
