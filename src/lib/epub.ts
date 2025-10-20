@@ -30,37 +30,54 @@ export interface EPUBOptions {
   identifier?: string;
 }
 
-// Sanitize HTML content for XHTML compatibility
+/**
+ * Sanitize HTML content for XHTML compatibility in EPUB files
+ * 
+ * WHY HTML IS USED HERE:
+ * - EPUB files require XHTML (XML-compliant HTML) for content
+ * - TipTap editor stores content as JSON, but EPUB readers expect HTML
+ * - The JSON content is converted to HTML via convertJSONToHTML() before this function
+ * - This function ensures the HTML meets XHTML standards required by EPUB spec
+ * 
+ * DATA FLOW:
+ * 1. Page content stored as JSON in database (TipTap format)
+ * 2. convertJSONToHTML() converts JSON → HTML string
+ * 3. This function sanitizes HTML → XHTML-compliant string
+ * 4. XHTML is embedded in EPUB content.xhtml file
+ * 
+ */
 export const sanitizeContent = (html: string): string => {
   if (!html) return '';
   
   return html
     // Replace HTML entities with their XML equivalents
-    .replace(/&nbsp;/g, '&#160;')
-    .replace(/&ldquo;/g, '&#8220;')
-    .replace(/&rdquo;/g, '&#8221;')
-    .replace(/&lsquo;/g, '&#8216;')
-    .replace(/&rsquo;/g, '&#8217;')
-    .replace(/&mdash;/g, '&#8212;')
-    .replace(/&ndash;/g, '&#8211;')
-    .replace(/&hellip;/g, '&#8230;')
-    .replace(/&amp;/g, '&#38;')
-    .replace(/&lt;/g, '&#60;')
-    .replace(/&gt;/g, '&#62;')
-    .replace(/&quot;/g, '&#34;')
-    .replace(/&apos;/g, '&#39;')
-    // Ensure all tags are properly closed
-    .replace(/<br>/g, '<br/>')
-    .replace(/<hr>/g, '<hr/>')
-    .replace(/<img ([^>]*)>/g, '<img $1/>')
-    .replace(/<col>/g, '<col/>')
-    .replace(/<col ([^>]*)>/g, '<col $1/>')
-    // Remove any script tags and their content
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-    // Remove any style tags and their content
-    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
-    // Remove any comments
-    .replace(/<!--[\s\S]*?-->/g, '');
+    // HTML entities like &nbsp; are not valid in XML/XHTML
+    .replace(/&nbsp;/g, '&#160;')        // Non-breaking space: &nbsp; → &#160;
+    .replace(/&ldquo;/g, '&#8220;')      // Left double quotation mark: " → "
+    .replace(/&rdquo;/g, '&#8221;')      // Right double quotation mark: " → "
+    .replace(/&lsquo;/g, '&#8216;')      // Left single quotation mark: ' → '
+    .replace(/&rsquo;/g, '&#8217;')      // Right single quotation mark: ' → '
+    .replace(/&mdash;/g, '&#8212;')      // Em dash: — → —
+    .replace(/&ndash;/g, '&#8211;')      // En dash: – → –
+    .replace(/&hellip;/g, '&#8230;')     // Horizontal ellipsis: … → …
+    .replace(/&amp;/g, '&#38;')          // Ampersand: & → &
+    .replace(/&lt;/g, '&#60;')           // Less than: < → <
+    .replace(/&gt;/g, '&#62;')           // Greater than: > → >
+    .replace(/&quot;/g, '&#34;')         // Quotation mark: " → "
+    .replace(/&apos;/g, '&#39;')         // Apostrophe: ' → '
+    
+    // Ensure all tags are properly closed (XHTML requirement)
+    // HTML allows self-closing tags like <br>, but XHTML requires <br/>
+    .replace(/<br>/g, '<br/>')           // Line break: <br> → <br/>
+    .replace(/<hr>/g, '<hr/>')           // Horizontal rule: <hr> → <hr/>
+    .replace(/<img ([^>]*)>/g, '<img $1/>')  // Images: <img src="..."> → <img src="..."/>
+    .replace(/<col>/g, '<col/>')         // Table column: <col> → <col/>
+    .replace(/<col ([^>]*)>/g, '<col $1/>') // Table column with attributes: <col span="2"> → <col span="2"/>
+    
+    // Remove security-sensitive content that shouldn't be in EPUB
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')  // Remove all <script> tags and content
+    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')     // Remove all <style> tags and content
+    .replace(/<!--[\s\S]*?-->/g, '');    // Remove HTML comments
 };
 
 // Escape text for XML
@@ -243,10 +260,12 @@ export const generateContentXhtml = (
   </div>
   `}
   ${pages.map((page, index) => {
-    // Generate HTML from JSON content
+    // STEP 1: Convert TipTap JSON content to HTML string
+    // This is where the JSON → HTML conversion happens
     let htmlContent = page.content ? convertJSONToHTML(page.content) : '';
 
-    // Replace image URLs with local EPUB paths
+    // STEP 2: Replace image URLs with local EPUB paths
+    // Convert external URLs to local image references within the EPUB
     if (htmlContent && imageMap && imageMap.size > 0) {
       imageMap.forEach((imageId, originalUrl) => {
         // Replace all occurrences of the original URL with the local path
@@ -262,6 +281,7 @@ export const generateContentXhtml = (
         ? `<h2 class="section-title">${escapeXml(page.title || 'Untitled Section')}</h2>`
         : `
           <article>
+            <!-- STEP 3: Sanitize HTML to make it XHTML-compliant for EPUB -->
             <div class="page-content">${htmlContent ? sanitizeContent(htmlContent) : ''}</div>
           </article>
         `}
