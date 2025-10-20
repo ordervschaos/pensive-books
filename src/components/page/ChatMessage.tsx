@@ -2,6 +2,7 @@ import { Message, SuggestedEdit } from '@/hooks/use-page-chat';
 import { Button } from '@/components/ui/button';
 import { Check, X, User, Bot } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { convertJSONToHTML } from '@/utils/tiptapHelpers';
 import ReactMarkdown from 'react-markdown';
 
 interface ChatMessageProps {
@@ -86,31 +87,43 @@ interface EditSuggestionProps {
 }
 
 const EditSuggestion = ({ edit, onApply, onReject }: EditSuggestionProps) => {
+  // Convert JSON content to HTML for display, or use existing HTML strings
+  const oldHtml = edit.oldJson ? convertJSONToHTML(edit.oldJson) : edit.old;
+  const newHtml = edit.newJson ? convertJSONToHTML(edit.newJson) : edit.new;
+  
+  // Check if this is a replacement edit (has old content) or an alternative edit (no old content)
+  const isReplacement = oldHtml && oldHtml.trim() !== '';
+  const isAlternative = !isReplacement;
+
   return (
     <div className="border rounded-lg p-3 bg-background">
       <div className="text-xs font-medium text-muted-foreground mb-2">
-        Suggested Edit:
+        {isAlternative ? 'Alternative Version:' : 'Suggested Edit:'}
       </div>
       
       <div className="space-y-2">
-        {/* Old text */}
-        <div>
-          <div className="text-xs font-medium text-destructive mb-1">Remove:</div>
-          <div className="text-sm bg-destructive/10 p-2 rounded border-l-2 border-destructive">
-            <div 
-              className="prose prose-sm max-w-none"
-              dangerouslySetInnerHTML={{ __html: edit.old }}
-            />
+        {/* Old text - only show if this is a replacement edit */}
+        {isReplacement && (
+          <div>
+            <div className="text-xs font-medium text-destructive mb-1">Current Content:</div>
+            <div className="text-sm bg-destructive/10 p-2 rounded border-l-2 border-destructive">
+              <div 
+                className="prose prose-sm max-w-none"
+                dangerouslySetInnerHTML={{ __html: oldHtml }}
+              />
+            </div>
           </div>
-        </div>
+        )}
 
         {/* New text */}
         <div>
-          <div className="text-xs font-medium text-green-600 mb-1">Add:</div>
+          <div className="text-xs font-medium text-green-600 mb-1">
+            {isAlternative ? 'Alternative Content:' : 'New Content:'}
+          </div>
           <div className="text-sm bg-green-50 p-2 rounded border-l-2 border-green-600">
             <div 
               className="prose prose-sm max-w-none"
-              dangerouslySetInnerHTML={{ __html: edit.new }}
+              dangerouslySetInnerHTML={{ __html: newHtml }}
             />
           </div>
         </div>

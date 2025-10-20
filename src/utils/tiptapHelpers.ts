@@ -2,7 +2,7 @@
  * Utility functions for working with TipTap JSON content
  */
 
-import { generateHTML, generateJSON } from '@tiptap/html';
+import { generateHTML } from '@tiptap/html';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import Image from '@tiptap/extension-image';

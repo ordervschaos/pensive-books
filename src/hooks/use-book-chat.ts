@@ -11,9 +11,12 @@ export interface Message {
     pageId?: number;
     newIndex?: number;
     title?: string;
-    content?: string;
-    oldContent?: string;
-    newContent?: string;
+    content?: string; // HTML string for display
+    oldContent?: string; // HTML string for display
+    newContent?: string; // HTML string for display
+    contentJson?: Record<string, unknown>; // JSON content for editing
+    oldContentJson?: Record<string, unknown>; // JSON content for editing
+    newContentJson?: Record<string, unknown>; // JSON content for editing
   }>;
 }
 
@@ -48,9 +51,12 @@ export interface ChatResponse {
     pageId?: number;
     newIndex?: number;
     title?: string;
-    content?: string;
-    oldContent?: string;
-    newContent?: string;
+    content?: string; // HTML string for display
+    oldContent?: string; // HTML string for display
+    newContent?: string; // HTML string for display
+    contentJson?: Record<string, unknown>; // JSON content for editing
+    oldContentJson?: Record<string, unknown>; // JSON content for editing
+    newContentJson?: Record<string, unknown>; // JSON content for editing
   }>;
 }
 
@@ -65,85 +71,93 @@ export const useBookChat = (bookId: string | undefined) => {
   useEffect(() => {
     if (!bookId) return;
 
-    const fetchChatHistory = async () => {
-      try {
-        setLoading(true);
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
+    // TODO: Implement chat history fetching when book_chats table is created
+    console.log('Chat history would be fetched for book:', bookId);
+    setLoading(false);
+    
+    // const fetchChatHistory = async () => {
+    //   try {
+    //     setLoading(true);
+    //     const { data: { user } } = await supabase.auth.getUser();
+    //     if (!user) return;
 
-        const { data, error } = await supabase
-          .from('book_chats')
-          .select('*')
-          .eq('book_id', parseInt(bookId))
-          .eq('user_id', user.id)
-          .maybeSingle();
+    //     const { data, error } = await supabase
+    //       .from('book_chats')
+    //       .select('*')
+    //       .eq('book_id', parseInt(bookId))
+    //       .eq('user_id', user.id)
+    //       .maybeSingle();
 
-        if (error) throw error;
+    //     if (error) throw error;
 
-        if (data) {
-          setChatHistory(data);
-          setMessages(data.messages || []);
-        } else {
-          setChatHistory(null);
-          setMessages([]);
-        }
-      } catch (error) {
-        console.error('Error fetching chat history:', error);
-        toast({
-          variant: "destructive",
-          title: "Error loading chat",
-          description: "Failed to load chat history"
-        });
-      } finally {
-        setLoading(false);
-      }
-    };
+    //     if (data) {
+    //       setChatHistory(data);
+    //       setMessages(data.messages || []);
+    //     } else {
+    //       setChatHistory(null);
+    //       setMessages([]);
+    //     }
+    //   } catch (error) {
+    //     console.error('Error fetching chat history:', error);
+    //     toast({
+    //       variant: "destructive",
+    //       title: "Error loading chat",
+    //       description: "Failed to load chat history"
+    //     });
+    //   } finally {
+    //     setLoading(false);
+    //   }
+    // };
 
-    fetchChatHistory();
+    // fetchChatHistory();
   }, [bookId, toast]);
 
   // Save chat history to database
   const saveChatHistory = useCallback(async (newMessages: Message[]) => {
     if (!bookId) return;
 
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+    // TODO: Implement chat history persistence when book_chats table is created
+    console.log('Chat history would be saved:', { bookId, messages: newMessages });
+    
+    // For now, just store in local state
+    // try {
+    //   const { data: { user } } = await supabase.auth.getUser();
+    //   if (!user) return;
 
-      const chatData = {
-        book_id: parseInt(bookId),
-        user_id: user.id,
-        messages: newMessages,
-        updated_at: new Date().toISOString()
-      };
+    //   const chatData = {
+    //     book_id: parseInt(bookId),
+    //     user_id: user.id,
+    //     messages: newMessages,
+    //     updated_at: new Date().toISOString()
+    //   };
 
-      if (chatHistory) {
-        // Update existing chat
-        const { error } = await supabase
-          .from('book_chats')
-          .update(chatData)
-          .eq('id', chatHistory.id);
+    //   if (chatHistory) {
+    //     // Update existing chat
+    //     const { error } = await supabase
+    //       .from('book_chats')
+    //       .update(chatData)
+    //       .eq('id', chatHistory.id);
 
-        if (error) throw error;
-      } else {
-        // Create new chat
-        const { data, error } = await supabase
-          .from('book_chats')
-          .insert(chatData)
-          .select()
-          .single();
+    //     if (error) throw error;
+    //   } else {
+    //     // Create new chat
+    //     const { data, error } = await supabase
+    //       .from('book_chats')
+    //       .insert(chatData)
+    //       .select()
+    //       .single();
 
-        if (error) throw error;
-        setChatHistory(data);
-      }
-    } catch (error) {
-      console.error('Error saving chat history:', error);
-      toast({
-        variant: "destructive",
-        title: "Error saving chat",
-        description: "Failed to save chat history"
-      });
-    }
+    //     if (error) throw error;
+    //     setChatHistory(data);
+    //   }
+    // } catch (error) {
+    //   console.error('Error saving chat history:', error);
+    //   toast({
+    //     variant: "destructive",
+    //     title: "Error saving chat",
+    //     description: "Failed to save chat history"
+    //   });
+    // }
   }, [bookId, chatHistory, toast]);
 
   // Send message to chat API
@@ -213,26 +227,33 @@ export const useBookChat = (bookId: string | undefined) => {
 
   // Clear chat history
   const clearChat = useCallback(async () => {
-    if (!bookId || !chatHistory) return;
+    if (!bookId) return;
 
-    try {
-      const { error } = await supabase
-        .from('book_chats')
-        .delete()
-        .eq('id', chatHistory.id);
+    // TODO: Implement chat history clearing when book_chats table is created
+    console.log('Chat history would be cleared for book:', bookId);
+    
+    // For now, just clear local state
+    setMessages([]);
+    setChatHistory(null);
+    
+    // try {
+    //   const { error } = await supabase
+    //     .from('book_chats')
+    //     .delete()
+    //     .eq('id', chatHistory.id);
 
-      if (error) throw error;
+    //   if (error) throw error;
 
-      setMessages([]);
-      setChatHistory(null);
-    } catch (error) {
-      console.error('Error clearing chat:', error);
-      toast({
-        variant: "destructive",
-        title: "Error clearing chat",
-        description: "Failed to clear chat history"
-      });
-    }
+    //   setMessages([]);
+    //   setChatHistory(null);
+    // } catch (error) {
+    //   console.error('Error clearing chat:', error);
+    //   toast({
+    //     variant: "destructive",
+    //     title: "Error clearing chat",
+    //     description: "Failed to clear chat history"
+    //   });
+    // }
   }, [bookId, chatHistory, toast]);
 
   return {

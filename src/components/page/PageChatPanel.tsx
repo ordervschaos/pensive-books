@@ -41,9 +41,9 @@ export const PageChatPanel = ({
     const message = inputMessage.trim();
     setInputMessage('');
 
-    // Convert JSON content to HTML for the chat API
-    const htmlContent = pageContent ? convertJSONToHTML(pageContent) : '';
-    await sendMessage(message, htmlContent, canEdit);
+    // Send JSON content directly to the chat API instead of converting to HTML
+    // The API can work with JSON content and convert it as needed
+    await sendMessage(message, pageContent, canEdit);
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -54,7 +54,10 @@ export const PageChatPanel = ({
   };
 
   const handleApplyEdit = (edit: SuggestedEdit) => {
-    onApplyEdit(edit.old, edit.new);
+    // Use JSON content if available, otherwise fall back to HTML strings
+    const oldText = edit.oldJson ? JSON.stringify(edit.oldJson) : edit.old;
+    const newText = edit.newJson ? JSON.stringify(edit.newJson) : edit.new;
+    onApplyEdit(oldText, newText);
   };
 
   const handleRejectEdit = (edit: SuggestedEdit) => {

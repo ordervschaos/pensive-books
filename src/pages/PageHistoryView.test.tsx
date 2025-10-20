@@ -2,8 +2,7 @@
  * Tests for PageHistoryView component
  * Verifies history restoration with JSON content conversion
  *
- * NOTE: html_content references in this file are for backward compatibility testing only.
- * The html_content field is deprecated. All new pages use the 'content' JSON field.
+
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -28,7 +27,6 @@ vi.mock('@/integrations/supabase/client', () => ({
         eq: vi.fn(() => ({
           single: vi.fn(() =>
             Promise.resolve({
-              data: { html_content: '<p>Current content</p>' },
               error: null,
             })
           ),

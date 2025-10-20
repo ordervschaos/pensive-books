@@ -19,8 +19,10 @@ export interface ChatHistory {
 }
 
 export interface SuggestedEdit {
-  old: string;
-  new: string;
+  old: string; // HTML string for display
+  new: string; // HTML string for display
+  oldJson?: Record<string, unknown>; // JSON content for editing
+  newJson?: Record<string, unknown>; // JSON content for editing
 }
 
 export interface ChatResponse {
@@ -80,50 +82,54 @@ export const usePageChat = (pageId: string | undefined) => {
   const saveChatHistory = useCallback(async (newMessages: Message[]) => {
     if (!pageId) return;
 
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+    // TODO: Implement chat history persistence when page_chats table is created
+    console.log('Chat history would be saved:', { pageId, messages: newMessages });
+    
+    // For now, just store in local state
+    // try {
+    //   const { data: { user } } = await supabase.auth.getUser();
+    //   if (!user) return;
 
-      const chatData = {
-        page_id: parseInt(pageId),
-        user_id: user.id,
-        messages: newMessages,
-        updated_at: new Date().toISOString()
-      };
+    //   const chatData = {
+    //     page_id: parseInt(pageId),
+    //     user_id: user.id,
+    //     messages: newMessages,
+    //     updated_at: new Date().toISOString()
+    //   };
 
-      if (chatHistory) {
-        // Update existing chat
-        const { error } = await supabase
-          .from('page_chats')
-          .update(chatData)
-          .eq('id', chatHistory.id);
+    //   if (chatHistory) {
+    //     // Update existing chat
+    //     const { error } = await supabase
+    //       .from('page_chats')
+    //       .update(chatData)
+    //       .eq('id', chatHistory.id);
 
-        if (error) throw error;
-      } else {
-        // Create new chat
-        const { data, error } = await supabase
-          .from('page_chats')
-          .insert(chatData)
-          .select()
-          .single();
+    //     if (error) throw error;
+    //   } else {
+    //     // Create new chat
+    //     const { data, error } = await supabase
+    //       .from('page_chats')
+    //       .insert(chatData)
+    //       .select()
+    //       .single();
 
-        if (error) throw error;
-        setChatHistory(data);
-      }
-    } catch (error) {
-      console.error('Error saving chat history:', error);
-      toast({
-        variant: "destructive",
-        title: "Error saving chat",
-        description: "Failed to save chat history"
-      });
-    }
-  }, [pageId, chatHistory, toast]);
+    //     if (error) throw error;
+    //     setChatHistory(data);
+    //   }
+    // } catch (error) {
+    //   console.error('Error saving chat history:', error);
+    //   toast({
+    //     variant: "destructive",
+    //     title: "Error saving chat",
+    //     description: "Failed to save chat history"
+    //   });
+    // }
+  }, [pageId]);
 
   // Send message to chat API
   const sendMessage = useCallback(async (
     message: string,
-    pageContent: string,
+    pageContent: Record<string, unknown> | null,
     canEdit: boolean
   ): Promise<ChatResponse | null> => {
     if (!pageId) return null;
@@ -187,27 +193,34 @@ export const usePageChat = (pageId: string | undefined) => {
 
   // Clear chat history
   const clearChat = useCallback(async () => {
-    if (!pageId || !chatHistory) return;
+    if (!pageId) return;
 
-    try {
-      const { error } = await supabase
-        .from('page_chats')
-        .delete()
-        .eq('id', chatHistory.id);
+    // TODO: Implement chat history clearing when page_chats table is created
+    console.log('Chat history would be cleared for page:', pageId);
+    
+    // For now, just clear local state
+    setMessages([]);
+    setChatHistory(null);
+    
+    // try {
+    //   const { error } = await supabase
+    //     .from('page_chats')
+    //     .delete()
+    //     .eq('id', chatHistory.id);
 
-      if (error) throw error;
+    //   if (error) throw error;
 
-      setMessages([]);
-      setChatHistory(null);
-    } catch (error) {
-      console.error('Error clearing chat:', error);
-      toast({
-        variant: "destructive",
-        title: "Error clearing chat",
-        description: "Failed to clear chat history"
-      });
-    }
-  }, [pageId, chatHistory, toast]);
+    //   setMessages([]);
+    //   setChatHistory(null);
+    // } catch (error) {
+    //   console.error('Error clearing chat:', error);
+    //   toast({
+    //     variant: "destructive",
+    //     title: "Error clearing chat",
+    //     description: "Failed to clear chat history"
+    //   });
+    // }
+  }, [pageId]);
 
   return {
     messages,

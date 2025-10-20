@@ -2,6 +2,7 @@ import { Message } from '@/hooks/use-book-chat';
 import { Button } from '@/components/ui/button';
 import { Check, X, User, Bot, Plus, Trash2, Move, Edit3 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { convertJSONToHTML } from '@/utils/tiptapHelpers';
 import ReactMarkdown from 'react-markdown';
 
 interface BookChatMessageProps {
@@ -147,27 +148,35 @@ const OperationSuggestion = ({ operation, onApply, onReject }: OperationSuggesti
       </div>
 
       {/* Show content preview for add/edit operations */}
-      {(operation.type === 'add' || operation.type === 'edit') && operation.content && (
+      {(operation.type === 'add' || operation.type === 'edit') && (operation.content || operation.contentJson) && (
         <div className="mb-3">
           <div className="text-xs font-medium text-muted-foreground mb-1">Content Preview:</div>
           <div className="text-sm bg-muted/50 p-2 rounded border-l-2 border-blue-500 max-h-32 overflow-y-auto">
             <div 
               className="prose prose-sm max-w-none"
-              dangerouslySetInnerHTML={{ __html: operation.content }}
+              dangerouslySetInnerHTML={{ 
+                __html: operation.contentJson 
+                  ? convertJSONToHTML(operation.contentJson) 
+                  : operation.content || '' 
+              }}
             />
           </div>
         </div>
       )}
 
       {/* Show old vs new content for edit operations */}
-      {operation.type === 'edit' && operation.oldContent && operation.newContent && (
+      {operation.type === 'edit' && (operation.oldContent || operation.oldContentJson) && (operation.newContent || operation.newContentJson) && (
         <div className="mb-3 space-y-2">
           <div>
             <div className="text-xs font-medium text-destructive mb-1">Current:</div>
             <div className="text-sm bg-destructive/10 p-2 rounded border-l-2 border-destructive max-h-24 overflow-y-auto">
               <div 
                 className="prose prose-sm max-w-none"
-                dangerouslySetInnerHTML={{ __html: operation.oldContent }}
+                dangerouslySetInnerHTML={{ 
+                  __html: operation.oldContentJson 
+                    ? convertJSONToHTML(operation.oldContentJson) 
+                    : operation.oldContent || '' 
+                }}
               />
             </div>
           </div>
@@ -176,7 +185,11 @@ const OperationSuggestion = ({ operation, onApply, onReject }: OperationSuggesti
             <div className="text-sm bg-green-50 p-2 rounded border-l-2 border-green-600 max-h-24 overflow-y-auto">
               <div 
                 className="prose prose-sm max-w-none"
-                dangerouslySetInnerHTML={{ __html: operation.newContent }}
+                dangerouslySetInnerHTML={{ 
+                  __html: operation.newContentJson 
+                    ? convertJSONToHTML(operation.newContentJson) 
+                    : operation.newContent || '' 
+                }}
               />
             </div>
           </div>

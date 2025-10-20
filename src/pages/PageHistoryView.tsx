@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2 } from "lucide-react";
+import { convertJSONToHTML } from "@/utils/tiptapHelpers";
 
 interface PageVersion {
   id: number;

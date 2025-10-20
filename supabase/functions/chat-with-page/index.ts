@@ -50,7 +50,9 @@ serve(async (req) => {
     const systemPrompt = canEdit 
       ? `You are a conversational assistant for book editing. You can answer questions about the page content, suggest improvements, and provide HTML edits. 
 
-When suggesting edits, wrap them in this special format: [EDIT]old_text|new_text[/EDIT]
+When suggesting edits, use this special format: [EDIT]new_html_content[/EDIT]
+
+For multiple edits, you can provide multiple [EDIT] blocks. Each block should contain the complete new content for that specific edit.
 
 The page content is:
 ${pageContent}
@@ -99,14 +101,29 @@ Answer questions about this content only. Do not suggest edits or changes.`;
 
     // Extract edit suggestions if in edit mode
     if (canEdit) {
-      const editRegex = /\[EDIT\](.*?)\|(.*?)\[\/EDIT\]/gs;
+      const editRegex = /\[EDIT\](.*?)\[\/EDIT\]/gs;
       let match;
+      let editIndex = 0;
       
       while ((match = editRegex.exec(assistantMessage)) !== null) {
-        suggestedEdits.push({
-          old: match[1].trim(),
-          new: match[2].trim()
-        });
+        const newContent = match[1].trim();
+        
+        if (editIndex === 0) {
+          // First edit: replace the entire page content
+          suggestedEdits.push({
+            old: pageContent,
+            new: newContent
+          });
+        } else {
+          // Subsequent edits: these are alternative versions or additional options
+          // We'll treat them as separate edit suggestions
+          suggestedEdits.push({
+            old: '', // Empty old content indicates this is an alternative edit
+            new: newContent
+          });
+        }
+        
+        editIndex++;
       }
       
       // Remove edit markers from the message
