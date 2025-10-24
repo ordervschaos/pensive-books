@@ -21,8 +21,8 @@ export default function UserProfile() {
   const navigate = useNavigate();
 
   // Remove @ prefix if present and decode the username
-  const username = paramUsername ? 
-    decodeURIComponent(paramUsername.startsWith('@') ? paramUsername.slice(1) : paramUsername) 
+  const username = paramUsername ?
+    decodeURIComponent(paramUsername.startsWith('@') ? paramUsername.slice(1) : paramUsername)
     : null;
 
   useEffect(() => {
@@ -110,7 +110,7 @@ export default function UserProfile() {
             </Avatar>
             <div className="flex-1">
               <div className="flex items-center gap-4 mb-2">
-                <div>
+                <div className="flex flex-col items-start">
                   <h1 className="text-4xl font-bold">
                     {userData?.name || `@${username}`}
                   </h1>
@@ -119,17 +119,22 @@ export default function UserProfile() {
                       @{username}
                     </p>
                   )}
+                  {isOwnProfile && (
+                    <div className="flex items-center gap-2 mt-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => navigate("/profile/edit")}
+                        className="flex items-center gap-2"
+                      >
+                        <Edit className="h-3 w-3" />
+                        <span className="text-muted-foreground text-sm">Edit Profile</span>
+                      </Button>
+                    </div>
+                  )}
                 </div>
-                {isOwnProfile && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => navigate("/profile/edit")}
-                  >
-                    <Edit className="h-4 w-4" />
-                  </Button>
-                )}
               </div>
+
               {userData?.intro && (
                 <p className="text-muted-foreground whitespace-pre-wrap mb-4 mt-3">
                   {userData.intro}
@@ -201,8 +206,8 @@ export default function UserProfile() {
                     )}
                   </Card>
                   <div className="flex-1 sm:mt-2 space-y-1 sm:text-center text-left">
-                    <h3 
-                      className="text-sm text-muted-foreground font-medium truncate cursor-pointer" 
+                    <h3
+                      className="text-sm text-muted-foreground font-medium truncate cursor-pointer"
                       onClick={() => navigate(`/book/${book.id}`)}
                     >
                       {book.name}
