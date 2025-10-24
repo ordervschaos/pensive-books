@@ -23,6 +23,11 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { jsonToText, getWordCountFromContent } from "@/utils/tiptapHelpers";
+import { UncommittedChangesBadge } from "@/components/book/UncommittedChangesBadge";
+import { CommitDialog } from "@/components/book/CommitDialog";
+import { VersionHistory } from "@/components/book/VersionHistory";
+import { GitCommit, History, FileText } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const LOCALSTORAGE_BOOKMARKS_KEY = 'bookmarked_pages';
 
@@ -80,6 +85,10 @@ const BookDetails = () => {
   const [viewingFlashcard, setViewingFlashcard] = useState<any>(null);
   const [currentFlashcardIndex, setCurrentFlashcardIndex] = useState(0);
   const [editingFlashcard, setEditingFlashcard] = useState<any>(null);
+
+  // Version control state
+  const [isCommitDialogOpen, setIsCommitDialogOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState("pages");
 
   const fetchBookmarkedPage = useCallback(async (session: any) => {
     try {
@@ -544,29 +553,78 @@ const BookDetails = () => {
 
             <div className="col-span-full lg:col-span-3">
               <div className="hidden lg:block mb-6">
-                <h1
-                  className={`text-3xl font-bold ${canEdit ? 'cursor-pointer hover:text-blue-600 transition-colors' : ''}`}
-                  onClick={canEdit ? handleEditClick : undefined}
-                >
-                  {book.name}
-                </h1>
-                <p className="text-muted-foreground">{book.author || "Unknown author"}</p>
-                {/* number of words */}
-                <p className="text-muted-foreground">{pages.reduce((acc, page) =>
-                  acc + (page.page_type === 'text' && page.content ? getWordCountFromContent(page.content) : 0), 0)} words</p>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1">
+                    <h1
+                      className={`text-3xl font-bold ${canEdit ? 'cursor-pointer hover:text-blue-600 transition-colors' : ''}`}
+                      onClick={canEdit ? handleEditClick : undefined}
+                    >
+                      {book.name}
+                    </h1>
+                    <p className="text-muted-foreground">{book.author || "Unknown author"}</p>
+                    {/* number of words */}
+                    <p className="text-muted-foreground">{pages.reduce((acc, page) =>
+                      acc + (page.page_type === 'text' && page.content ? getWordCountFromContent(page.content) : 0), 0)} words</p>
+                  </div>
+
+                  {canEdit && (
+                    <div className="flex flex-col gap-2">
+                      <UncommittedChangesBadge bookId={parseInt(id || "0")} showCount />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setIsCommitDialogOpen(true)}
+                        className="gap-2"
+                      >
+                        <GitCommit className="h-4 w-4" />
+                        Commit Changes
+                      </Button>
+                    </div>
+                  )}
+                </div>
               </div>
 
 
-              <PagesList
-                pages={pages}
-                bookId={parseInt(id || "0")}
-                isReorderMode={isReorderMode}
-                isDeleteMode={isDeleteMode}
-                canEdit={canEdit}
-                onDeleteModeChange={(isDelete) => setIsDeleteMode(isDelete)}
-                onChatToggle={() => setIsChatOpen(!isChatOpen)}
-                hasActiveChat={isChatOpen}
-              />
+              <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                <TabsList>
+                  <TabsTrigger value="pages" className="gap-2">
+                    <FileText className="h-4 w-4" />
+                    Pages
+                  </TabsTrigger>
+                  {canEdit && (
+                    <TabsTrigger value="versions" className="gap-2">
+                      <History className="h-4 w-4" />
+                      Version History
+                    </TabsTrigger>
+                  )}
+                </TabsList>
+
+                <TabsContent value="pages" className="mt-6">
+                  <PagesList
+                    pages={pages}
+                    bookId={parseInt(id || "0")}
+                    isReorderMode={isReorderMode}
+                    isDeleteMode={isDeleteMode}
+                    canEdit={canEdit}
+                    onDeleteModeChange={(isDelete) => setIsDeleteMode(isDelete)}
+                    onChatToggle={() => setIsChatOpen(!isChatOpen)}
+                    hasActiveChat={isChatOpen}
+                  />
+                </TabsContent>
+
+                {canEdit && (
+                  <TabsContent value="versions" className="mt-6">
+                    <VersionHistory
+                      bookId={parseInt(id || "0")}
+                      bookName={book.name}
+                      allowRollback={isOwner}
+                      onPreview={(versionId) => {
+                        navigate(`/book/${id}/version/${versionId}`);
+                      }}
+                    />
+                  </TabsContent>
+                )}
+              </Tabs>
 
               {/* Integrated Flashcard Section - Only visible in beta */}
               {isBetaEnabled && (
@@ -630,6 +688,18 @@ const BookDetails = () => {
               setViewingFlashcard(null);
             }}
             onNavigate={handleNavigateFlashcard}
+          />
+
+          {/* Version Control Dialog */}
+          <CommitDialog
+            bookId={parseInt(id || "0")}
+            bookName={book.name}
+            open={isCommitDialogOpen}
+            onOpenChange={setIsCommitDialogOpen}
+            onSuccess={() => {
+              // Optionally switch to version history tab after successful commit
+              setActiveTab("versions");
+            }}
           />
         </div>
       </div>

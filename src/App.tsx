@@ -23,6 +23,8 @@ import JoinBook from "@/pages/JoinBook";
 import GenerateBook from "./pages/GenerateBook";
 import KindleSettings from "@/pages/KindleSettings";
 import BookFlashcards from "@/pages/BookFlashcards";
+import VersionPreview from "@/pages/VersionPreview";
+import VersionPageView from "@/pages/VersionPageView";
 import { useEffect } from "react";
 import { useGoogleAnalytics } from "@/hooks/useGoogleAnalytics";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -102,6 +104,22 @@ export default function App() {
                   element={
                     <PrivateRoute>
                       <NewBook />
+                    </PrivateRoute>
+                  }
+                />
+                <Route
+                  path="/book/:bookId/version/:versionId/page/:pageId"
+                  element={
+                    <PrivateRoute>
+                      <VersionPageView />
+                    </PrivateRoute>
+                  }
+                />
+                <Route
+                  path="/book/:bookId/version/:versionId"
+                  element={
+                    <PrivateRoute>
+                      <VersionPreview />
                     </PrivateRoute>
                   }
                 />

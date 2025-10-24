@@ -60,11 +60,13 @@ export type Database = {
           bookmarked_page_index: number | null
           cover_url: string | null
           created_at: string | null
+          current_draft_status: string | null
           digest_bookmarked_page_index: number | null
           edit_invitation_token: string | null
           id: number
           is_archived: boolean | null
           is_public: boolean | null
+          last_commit_version_id: number | null
           last_published_at: string | null
           last_read: string | null
           name: string | null
@@ -74,6 +76,7 @@ export type Database = {
           photographer_username: string | null
           pinned: boolean | null
           published_at: string | null
+          published_version_id: number | null
           show_text_on_cover: boolean | null
           slug: string | null
           subtitle: string | null
@@ -86,11 +89,13 @@ export type Database = {
           bookmarked_page_index?: number | null
           cover_url?: string | null
           created_at?: string | null
+          current_draft_status?: string | null
           digest_bookmarked_page_index?: number | null
           edit_invitation_token?: string | null
           id?: number
           is_archived?: boolean | null
           is_public?: boolean | null
+          last_commit_version_id?: number | null
           last_published_at?: string | null
           last_read?: string | null
           name?: string | null
@@ -100,6 +105,7 @@ export type Database = {
           photographer_username?: string | null
           pinned?: boolean | null
           published_at?: string | null
+          published_version_id?: number | null
           show_text_on_cover?: boolean | null
           slug?: string | null
           subtitle?: string | null
@@ -112,11 +118,13 @@ export type Database = {
           bookmarked_page_index?: number | null
           cover_url?: string | null
           created_at?: string | null
+          current_draft_status?: string | null
           digest_bookmarked_page_index?: number | null
           edit_invitation_token?: string | null
           id?: number
           is_archived?: boolean | null
           is_public?: boolean | null
+          last_commit_version_id?: number | null
           last_published_at?: string | null
           last_read?: string | null
           name?: string | null
@@ -126,13 +134,94 @@ export type Database = {
           photographer_username?: string | null
           pinned?: boolean | null
           published_at?: string | null
+          published_version_id?: number | null
           show_text_on_cover?: boolean | null
           slug?: string | null
           subtitle?: string | null
           updated_at?: string | null
           view_invitation_token?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "books_last_commit_version_id_fkey"
+            columns: ["last_commit_version_id"]
+            isOneToOne: false
+            referencedRelation: "book_versions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "books_published_version_id_fkey"
+            columns: ["published_version_id"]
+            isOneToOne: false
+            referencedRelation: "book_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      book_versions: {
+        Row: {
+          author: string | null
+          book_id: number
+          commit_message: string | null
+          committed_at: string
+          committed_by: string | null
+          cover_url: string | null
+          id: number
+          is_published: boolean | null
+          metadata: Json | null
+          name: string
+          photographer: string | null
+          photographer_username: string | null
+          published_at: string | null
+          show_text_on_cover: boolean | null
+          subtitle: string | null
+          version_number: number
+        }
+        Insert: {
+          author?: string | null
+          book_id: number
+          commit_message?: string | null
+          committed_at?: string
+          committed_by?: string | null
+          cover_url?: string | null
+          id?: number
+          is_published?: boolean | null
+          metadata?: Json | null
+          name: string
+          photographer?: string | null
+          photographer_username?: string | null
+          published_at?: string | null
+          show_text_on_cover?: boolean | null
+          subtitle?: string | null
+          version_number: number
+        }
+        Update: {
+          author?: string | null
+          book_id?: number
+          commit_message?: string | null
+          committed_at?: string
+          committed_by?: string | null
+          cover_url?: string | null
+          id?: number
+          is_published?: boolean | null
+          metadata?: Json | null
+          name?: string
+          photographer?: string | null
+          photographer_username?: string | null
+          published_at?: string | null
+          show_text_on_cover?: boolean | null
+          subtitle?: string | null
+          version_number?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "book_versions_book_id_fkey"
+            columns: ["book_id"]
+            isOneToOne: false
+            referencedRelation: "books"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       leads: {
         Row: {
@@ -275,6 +364,7 @@ export type Database = {
           created_at: string | null
           embedding: string | null
           id: number
+          is_draft: boolean
           last_published_at: string | null
           old_content: string | null
           owner_id: string | null
@@ -291,6 +381,7 @@ export type Database = {
           created_at?: string | null
           embedding?: string | null
           id?: number
+          is_draft?: boolean
           last_published_at?: string | null
           old_content?: string | null
           owner_id?: string | null
@@ -307,6 +398,7 @@ export type Database = {
           created_at?: string | null
           embedding?: string | null
           id?: number
+          is_draft?: boolean
           last_published_at?: string | null
           old_content?: string | null
           owner_id?: string | null
@@ -322,6 +414,54 @@ export type Database = {
             columns: ["book_id"]
             isOneToOne: false
             referencedRelation: "books"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      page_versions: {
+        Row: {
+          book_version_id: number
+          content: Json
+          id: number
+          metadata: Json | null
+          page_id: number | null
+          page_index: number
+          page_type: string | null
+          title: string
+        }
+        Insert: {
+          book_version_id: number
+          content: Json
+          id?: number
+          metadata?: Json | null
+          page_id?: number | null
+          page_index: number
+          page_type?: string | null
+          title: string
+        }
+        Update: {
+          book_version_id?: number
+          content?: Json
+          id?: number
+          metadata?: Json | null
+          page_id?: number | null
+          page_index?: number
+          page_type?: string | null
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "page_versions_book_version_id_fkey"
+            columns: ["book_version_id"]
+            isOneToOne: false
+            referencedRelation: "book_versions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "page_versions_page_id_fkey"
+            columns: ["page_id"]
+            isOneToOne: false
+            referencedRelation: "pages"
             referencedColumns: ["id"]
           },
         ]
