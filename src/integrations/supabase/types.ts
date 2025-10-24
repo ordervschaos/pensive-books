@@ -414,6 +414,7 @@ export type Database = {
           kindle_email: string | null
           kindle_verification_expires: string | null
           kindle_verification_otp: string | null
+          name: string | null
           one_time_events: Json | null
           profile_pic: string | null
           timezone: string | null
@@ -431,6 +432,7 @@ export type Database = {
           kindle_email?: string | null
           kindle_verification_expires?: string | null
           kindle_verification_otp?: string | null
+          name?: string | null
           one_time_events?: Json | null
           profile_pic?: string | null
           timezone?: string | null
@@ -448,6 +450,7 @@ export type Database = {
           kindle_email?: string | null
           kindle_verification_expires?: string | null
           kindle_verification_otp?: string | null
+          name?: string | null
           one_time_events?: Json | null
           profile_pic?: string | null
           timezone?: string | null

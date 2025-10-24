@@ -15,6 +15,7 @@ export default function ProfileEdit() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [userData, setUserData] = useState<any>(null);
+  const [name, setName] = useState("");
   const [intro, setIntro] = useState("");
   const [profilePic, setProfilePic] = useState("");
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -39,6 +40,7 @@ export default function ProfileEdit() {
         if (error) throw error;
 
         setUserData(userDataResult);
+        setName(userDataResult.name || "");
         setIntro(userDataResult.intro || "");
         setProfilePic(userDataResult.profile_pic || "");
       } catch (error: any) {
@@ -170,11 +172,12 @@ export default function ProfileEdit() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      console.log('Saving profile with:', { intro, profile_pic: profilePic });
+      console.log('Saving profile with:', { name, intro, profile_pic: profilePic });
 
       const { error } = await supabase
         .from("user_data")
         .update({
+          name,
           intro,
           profile_pic: profilePic,
           updated_at: new Date().toISOString(),
@@ -283,12 +286,27 @@ export default function ProfileEdit() {
               </div>
             </div>
 
+            {/* Name */}
+            <div className="space-y-2">
+              <Label htmlFor="name">Name</Label>
+              <Input
+                id="name"
+                placeholder="Your full name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                maxLength={100}
+              />
+              <p className="text-sm text-muted-foreground">
+                Your display name (e.g., "John Smith")
+              </p>
+            </div>
+
             {/* Username (read-only) */}
             <div className="space-y-2">
               <Label>Username</Label>
               <Input value={userData?.username || ""} disabled />
               <p className="text-sm text-muted-foreground">
-                Your username cannot be changed here. Your profile is at: /{userData?.username}
+                Your username handle. Your profile is at: /{userData?.username}
               </p>
             </div>
 

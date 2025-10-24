@@ -110,9 +110,16 @@ export default function UserProfile() {
             </Avatar>
             <div className="flex-1">
               <div className="flex items-center gap-4 mb-2">
-                <h1 className="text-4xl font-bold">
-                  @{username}
-                </h1>
+                <div>
+                  <h1 className="text-4xl font-bold">
+                    {userData?.name || `@${username}`}
+                  </h1>
+                  {userData?.name && (
+                    <p className="text-lg text-muted-foreground mt-1">
+                      @{username}
+                    </p>
+                  )}
+                </div>
                 {isOwnProfile && (
                   <Button
                     variant="ghost"
@@ -124,7 +131,7 @@ export default function UserProfile() {
                 )}
               </div>
               {userData?.intro && (
-                <p className="text-muted-foreground whitespace-pre-wrap mb-4">
+                <p className="text-muted-foreground whitespace-pre-wrap mb-4 mt-3">
                   {userData.intro}
                 </p>
               )}
