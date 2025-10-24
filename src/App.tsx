@@ -12,7 +12,6 @@ import NewBook from "@/pages/NewBook";
 import BookDetails from "@/pages/BookDetails";
 import BookEdit from "@/pages/BookEdit";
 import PageView from "@/pages/PageView";
-import PageHistoryView from "@/pages/PageHistoryView";
 import AcceptInvitation from "@/pages/AcceptInvitation";
 import PrivacyPolicy from "@/pages/PrivacyPolicy";
 import Terms from "@/pages/Terms";
@@ -135,14 +134,6 @@ export default function App() {
                   element={
                     <PrivateRoute>
                       <PageView />
-                    </PrivateRoute>
-                  }
-                />
-                <Route
-                  path="/book/:bookId/page/:pageId/history"
-                  element={
-                    <PrivateRoute>
-                      <PageHistoryView />
                     </PrivateRoute>
                   }
                 />

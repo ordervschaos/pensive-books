@@ -26,10 +26,6 @@ vi.mock('@/components/editor/TipTapEditor', () => ({
   },
 }));
 
-vi.mock('./PageHistory', () => ({
-  PageHistory: () => <div data-testid="page-history">History</div>,
-}));
-
 vi.mock('./FloatingActions', () => ({
   FloatingActions: () => <div data-testid="floating-actions">Actions</div>,
 }));
@@ -131,18 +127,6 @@ describe('PageContent', () => {
     expect(editor).toBeTruthy();
   });
 
-  it('should render page history component when canEdit is true', () => {
-    render(<PageContent {...defaultProps} canEdit={true} pageId="123" />);
-
-    // PageHistory is rendered but mocked, so we just verify no errors
-    expect(screen.queryByTestId('page-history')).toBeDefined();
-  });
-
-  it('should not render page history when canEdit is false', () => {
-    render(<PageContent {...defaultProps} canEdit={false} />);
-
-    expect(screen.queryByTestId('page-history')).toBeFalsy();
-  });
 
   it('should render floating actions', () => {
     render(<PageContent {...defaultProps} />);

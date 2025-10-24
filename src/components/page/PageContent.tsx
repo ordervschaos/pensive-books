@@ -1,11 +1,9 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { debounce } from "lodash";
 import { TipTapEditor } from "@/components/editor/TipTapEditor";
-import { PageHistory } from "./PageHistory";
 import { FloatingActions } from "./FloatingActions";
 import { useAudioHighlighting } from "@/hooks/use-audio-highlighting";
 import { useAdaptiveTextToSpeech } from "@/hooks/use-adaptive-text-to-speech";
-import { supabase } from "@/integrations/supabase/client";
 import { EditorJSON, PageSaveHandler } from "@/types/editor";
 
 
@@ -61,42 +59,14 @@ export const PageContent = ({
   // Create debounced save function
   useEffect(() => {
     debouncedSaveRef.current = debounce(async (json: EditorJSON | null) => {
-      if (!initialLoad && pageId) {
-        try {
-          // Get the current user's ID
-          const { data: { user } } = await supabase.auth.getUser();
-          if (!user?.id) throw new Error('User not authenticated');
-
-          // Upsert the history - will update if entry exists within last minute
-          await supabase
-            .from('page_history')
-            .upsert(
-              {
-                page_id: parseInt(pageId),
-                content: json,  // Store JSON content for history
-                created_by: user.id,
-                created_at: new Date().toISOString()
-              },
-              {
-                onConflict: 'page_id,created_at_minute'
-              }
-            );
-
-          // Then save the new content (only pass JSON)
-          onSave(json);
-        } catch (error) {
-          console.error('Error saving history:', error);
-        }
-      } else {
-        onSave(json);
-      }
+      onSave(json);
     }, 200);
 
     // Cleanup: cancel any pending debounced calls
     return () => {
       debouncedSaveRef.current?.cancel();
     };
-  }, [onSave, initialLoad, pageId]);
+  }, [onSave]);
 
   const handleContentChange = useCallback((json: EditorJSON | null) => {
     if (!editable) return;
@@ -144,7 +114,6 @@ export const PageContent = ({
                 onToggleChat={undefined} // Chat button now handled by FloatingActions
                 hasActiveChat={hasActiveChat}
                 centerContent={pageType === 'section'}
-                customButtons={canEdit && pageId && <PageHistory pageId={parseInt(pageId)} />}
               />
 
               {/* Floating action buttons */}
