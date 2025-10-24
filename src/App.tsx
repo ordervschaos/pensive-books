@@ -19,6 +19,7 @@ import Terms from "@/pages/Terms";
 import Contact from "@/pages/Contact";
 import UserProfile from "@/pages/UserProfile";
 import SetUsername from "@/pages/SetUsername";
+import ProfileEdit from "@/pages/ProfileEdit";
 import JoinBook from "@/pages/JoinBook";
 import GenerateBook from "./pages/GenerateBook";
 import KindleSettings from "@/pages/KindleSettings";
@@ -77,6 +78,14 @@ export default function App() {
                   element={
                     <PrivateRoute>
                       <SetUsername />
+                    </PrivateRoute>
+                  }
+                />
+                <Route
+                  path="/profile/edit"
+                  element={
+                    <PrivateRoute>
+                      <ProfileEdit />
                     </PrivateRoute>
                   }
                 />

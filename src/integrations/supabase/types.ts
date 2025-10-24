@@ -409,11 +409,13 @@ export type Database = {
           created_at: string | null
           default_notebook: number | null
           email: string | null
+          intro: string | null
           kindle_configured: boolean | null
           kindle_email: string | null
           kindle_verification_expires: string | null
           kindle_verification_otp: string | null
           one_time_events: Json | null
+          profile_pic: string | null
           timezone: string | null
           updated_at: string | null
           user_id: string
@@ -424,11 +426,13 @@ export type Database = {
           created_at?: string | null
           default_notebook?: number | null
           email?: string | null
+          intro?: string | null
           kindle_configured?: boolean | null
           kindle_email?: string | null
           kindle_verification_expires?: string | null
           kindle_verification_otp?: string | null
           one_time_events?: Json | null
+          profile_pic?: string | null
           timezone?: string | null
           updated_at?: string | null
           user_id?: string
@@ -439,11 +443,13 @@ export type Database = {
           created_at?: string | null
           default_notebook?: number | null
           email?: string | null
+          intro?: string | null
           kindle_configured?: boolean | null
           kindle_email?: string | null
           kindle_verification_expires?: string | null
           kindle_verification_otp?: string | null
           one_time_events?: Json | null
+          profile_pic?: string | null
           timezone?: string | null
           updated_at?: string | null
           user_id?: string

@@ -4,14 +4,18 @@ import { useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useNavigate } from "react-router-dom";
 import { PageLoading } from "@/components/page/PageLoading";
 import { useToast } from "@/hooks/use-toast";
+import { Edit } from "lucide-react";
 
 export default function UserProfile() {
   const [books, setBooks] = useState<any[]>([]);
   const [userData, setUserData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [isOwnProfile, setIsOwnProfile] = useState(false);
   const { username: paramUsername } = useParams();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -36,6 +40,9 @@ export default function UserProfile() {
 
         console.log("Fetching user data for:", username);
 
+        // Check if this is the current user's profile
+        const { data: { user } } = await supabase.auth.getUser();
+
         // First fetch user data based on username from the public view
         const { data: userDataResult, error: userError } = await supabase
           .from("public_user_profiles")
@@ -55,6 +62,7 @@ export default function UserProfile() {
         }
 
         setUserData(userDataResult);
+        setIsOwnProfile(user?.id === userDataResult.user_id);
 
         // Then fetch their published books
         const { data: booksData, error: booksError } = await supabase
@@ -86,15 +94,46 @@ export default function UserProfile() {
     return <PageLoading />;
   }
 
+  const userInitials = username
+    ? username.substring(0, 2).toUpperCase()
+    : "?";
+
   return (
     <div className="container mx-auto p-6">
       <div className="max-w-5xl mx-auto">
+        {/* Profile Header */}
         <header className="mb-12">
-          <h1 className="text-4xl font-bold mb-2">
-            @{username}'s Books
-          </h1>
+          <div className="flex items-start gap-6 mb-6">
+            <Avatar className="h-24 w-24">
+              <AvatarImage src={userData?.profile_pic || ""} alt={username || "User"} />
+              <AvatarFallback className="text-2xl">{userInitials}</AvatarFallback>
+            </Avatar>
+            <div className="flex-1">
+              <div className="flex items-center gap-4 mb-2">
+                <h1 className="text-4xl font-bold">
+                  @{username}
+                </h1>
+                {isOwnProfile && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => navigate("/profile/edit")}
+                  >
+                    <Edit className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+              {userData?.intro && (
+                <p className="text-muted-foreground whitespace-pre-wrap mb-4">
+                  {userData.intro}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <h2 className="text-2xl font-semibold mb-2">Published Books</h2>
           <p className="text-muted-foreground">
-            Published books by @{username}
+            {books.length} {books.length === 1 ? 'book' : 'books'} published
           </p>
         </header>
 
