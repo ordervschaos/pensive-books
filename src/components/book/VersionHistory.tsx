@@ -21,6 +21,7 @@ import {
   RotateCcw,
   CheckCircle2,
   AlertCircle,
+  Globe,
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import {
@@ -61,6 +62,7 @@ export function VersionHistory({
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [versionToRollback, setVersionToRollback] = useState<number | null>(null);
+  const [versionToPublish, setVersionToPublish] = useState<number | null>(null);
 
   // Fetch version history
   const {
@@ -102,6 +104,34 @@ export function VersionHistory({
     },
   });
 
+  // Publish version mutation
+  const publishMutation = useMutation({
+    mutationFn: async (versionId: number) => {
+      return await VersionService.publishVersion(bookId, versionId);
+    },
+    onSuccess: () => {
+      toast({
+        title: "Version published",
+        description: "This version is now the published version visible to the public.",
+      });
+
+      // Invalidate queries to refresh UI
+      queryClient.invalidateQueries({ queryKey: ["version-history", bookId] });
+      queryClient.invalidateQueries({ queryKey: ["books", bookId] });
+      queryClient.invalidateQueries({ queryKey: ["books"] });
+
+      setVersionToPublish(null);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Publish failed",
+        description: error.message || "Failed to publish version. Please try again.",
+        variant: "destructive",
+      });
+      setVersionToPublish(null);
+    },
+  });
+
   const handleRollbackClick = (versionId: number) => {
     setVersionToRollback(versionId);
   };
@@ -109,6 +139,16 @@ export function VersionHistory({
   const handleRollbackConfirm = () => {
     if (versionToRollback) {
       rollbackMutation.mutate(versionToRollback);
+    }
+  };
+
+  const handlePublishClick = (versionId: number) => {
+    setVersionToPublish(versionId);
+  };
+
+  const handlePublishConfirm = () => {
+    if (versionToPublish) {
+      publishMutation.mutate(versionToPublish);
     }
   };
 
@@ -165,9 +205,14 @@ export function VersionHistory({
                   allowRollback={allowRollback && index !== 0}
                   onPreview={() => onPreview?.(version.versionId)}
                   onRollback={() => handleRollbackClick(version.versionId)}
+                  onPublish={() => handlePublishClick(version.versionId)}
                   isRollingBack={
                     rollbackMutation.isPending &&
                     versionToRollback === version.versionId
+                  }
+                  isPublishing={
+                    publishMutation.isPending &&
+                    versionToPublish === version.versionId
                   }
                 />
               ))}
@@ -214,6 +259,45 @@ export function VersionHistory({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Publish Confirmation Dialog */}
+      <AlertDialog
+        open={versionToPublish !== null}
+        onOpenChange={(open) => !open && setVersionToPublish(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Publish this version?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will make version{" "}
+              {versions?.find((v) => v.versionId === versionToPublish)?.versionNumber} the
+              published version visible to the public (if the book is set to public).
+              <br />
+              <br />
+              Any previously published version will be unpublished.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={publishMutation.isPending}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handlePublishConfirm}
+              disabled={publishMutation.isPending}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              {publishMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Publishing...
+                </>
+              ) : (
+                "Publish"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }
@@ -224,7 +308,9 @@ interface VersionItemProps {
   allowRollback: boolean;
   onPreview: () => void;
   onRollback: () => void;
+  onPublish: () => void;
   isRollingBack: boolean;
+  isPublishing: boolean;
 }
 
 function VersionItem({
@@ -233,7 +319,9 @@ function VersionItem({
   allowRollback,
   onPreview,
   onRollback,
+  onPublish,
   isRollingBack,
+  isPublishing,
 }: VersionItemProps) {
   return (
     <div className="relative">
@@ -265,6 +353,12 @@ function VersionItem({
                   Current
                 </Badge>
               )}
+              {version.isPublished && (
+                <Badge variant="secondary" className="text-xs bg-green-100 text-green-800">
+                  <Globe className="mr-1 h-3 w-3" />
+                  Published
+                </Badge>
+              )}
             </div>
 
             <div className="flex gap-2">
@@ -276,6 +370,28 @@ function VersionItem({
                 <Eye className="mr-2 h-3 w-3" />
                 Preview
               </Button>
+
+              {!version.isPublished && (
+                <Button
+                  size="sm"
+                  variant="default"
+                  onClick={onPublish}
+                  disabled={isPublishing}
+                  className="bg-green-600 hover:bg-green-700"
+                >
+                  {isPublishing ? (
+                    <>
+                      <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                      Publishing...
+                    </>
+                  ) : (
+                    <>
+                      <Globe className="mr-2 h-3 w-3" />
+                      Publish
+                    </>
+                  )}
+                </Button>
+              )}
 
               {allowRollback && (
                 <Button

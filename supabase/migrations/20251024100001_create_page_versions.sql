@@ -20,9 +20,9 @@ CREATE TABLE IF NOT EXISTS page_versions (
 );
 
 -- Create indexes for performance
-CREATE INDEX idx_page_versions_book_version ON page_versions(book_version_id);
-CREATE INDEX idx_page_versions_page_id ON page_versions(page_id);
-CREATE INDEX idx_page_versions_book_version_index ON page_versions(book_version_id, page_index);
+CREATE INDEX IF NOT EXISTS idx_page_versions_book_version ON page_versions(book_version_id);
+CREATE INDEX IF NOT EXISTS idx_page_versions_page_id ON page_versions(page_id);
+CREATE INDEX IF NOT EXISTS idx_page_versions_book_version_index ON page_versions(book_version_id, page_index);
 
 -- Add comments for documentation
 COMMENT ON TABLE page_versions IS 'Stores immutable snapshots of page content linked to book versions';
@@ -33,6 +33,14 @@ COMMENT ON COLUMN page_versions.metadata IS 'Flexible JSONB field for stats, wor
 
 -- Enable Row Level Security
 ALTER TABLE page_versions ENABLE ROW LEVEL SECURITY;
+
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS page_versions_public_select ON page_versions;
+DROP POLICY IF EXISTS page_versions_owner_select ON page_versions;
+DROP POLICY IF EXISTS page_versions_editor_select ON page_versions;
+DROP POLICY IF EXISTS page_versions_owner_insert ON page_versions;
+DROP POLICY IF EXISTS page_versions_owner_update ON page_versions;
+DROP POLICY IF EXISTS page_versions_owner_delete ON page_versions;
 
 -- Policy: Public can view page versions that belong to published book versions
 CREATE POLICY page_versions_public_select ON page_versions

@@ -1,5 +1,11 @@
 -- Storage policies for profile-pictures bucket
 
+-- Drop existing policies if they exist (for idempotency)
+DROP POLICY IF EXISTS "Users can upload their own profile pictures" ON storage.objects;
+DROP POLICY IF EXISTS "Anyone can view profile pictures" ON storage.objects;
+DROP POLICY IF EXISTS "Users can update their own profile pictures" ON storage.objects;
+DROP POLICY IF EXISTS "Users can delete their own profile pictures" ON storage.objects;
+
 -- Allow authenticated users to upload their own profile pictures
 CREATE POLICY "Users can upload their own profile pictures"
 ON storage.objects

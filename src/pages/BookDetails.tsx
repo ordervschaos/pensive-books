@@ -223,6 +223,18 @@ const BookDetails = () => {
       setPublishing(true);
       const newPublishState = !book.is_public;
 
+      // If turning public, check if there's a published version
+      if (newPublishState && !book.published_version_id) {
+        toast({
+          variant: "destructive",
+          title: "No published version",
+          description: "Please publish a version from the Version History tab before making the book public."
+        });
+        setPublishing(false);
+        setActiveTab("history");
+        return;
+      }
+
       const { error } = await supabase
         .from("books")
         .update({
@@ -240,9 +252,9 @@ const BookDetails = () => {
       });
 
       toast({
-        title: newPublishState ? "Book Published" : "Book Unpublished",
+        title: newPublishState ? "Book Made Public" : "Book Made Private",
         description: newPublishState
-          ? "Your book is now available to the public"
+          ? "Your book is now visible to the public"
           : "Your book is now private"
       });
     } catch (error: any) {

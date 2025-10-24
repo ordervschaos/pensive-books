@@ -35,9 +35,9 @@ CREATE TABLE IF NOT EXISTS book_versions (
 );
 
 -- Create indexes for performance
-CREATE INDEX idx_book_versions_book_id ON book_versions(book_id);
-CREATE INDEX idx_book_versions_published ON book_versions(book_id, is_published) WHERE is_published = true;
-CREATE INDEX idx_book_versions_committed_at ON book_versions(book_id, committed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_book_versions_book_id ON book_versions(book_id);
+CREATE INDEX IF NOT EXISTS idx_book_versions_published ON book_versions(book_id, is_published) WHERE is_published = true;
+CREATE INDEX IF NOT EXISTS idx_book_versions_committed_at ON book_versions(book_id, committed_at DESC);
 
 -- Add comments for documentation
 COMMENT ON TABLE book_versions IS 'Stores immutable snapshots of books at commit time for version control';
@@ -48,6 +48,14 @@ COMMENT ON COLUMN book_versions.metadata IS 'Flexible JSONB field for future ext
 
 -- Enable Row Level Security
 ALTER TABLE book_versions ENABLE ROW LEVEL SECURITY;
+
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS book_versions_public_select ON book_versions;
+DROP POLICY IF EXISTS book_versions_owner_select ON book_versions;
+DROP POLICY IF EXISTS book_versions_editor_select ON book_versions;
+DROP POLICY IF EXISTS book_versions_owner_insert ON book_versions;
+DROP POLICY IF EXISTS book_versions_owner_update ON book_versions;
+DROP POLICY IF EXISTS book_versions_owner_delete ON book_versions;
 
 -- Policy: Public can view published versions of public books
 CREATE POLICY book_versions_public_select ON book_versions

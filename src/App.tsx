@@ -25,6 +25,8 @@ import KindleSettings from "@/pages/KindleSettings";
 import BookFlashcards from "@/pages/BookFlashcards";
 import VersionPreview from "@/pages/VersionPreview";
 import VersionPageView from "@/pages/VersionPageView";
+import PublishedBookDetails from "@/pages/PublishedBookDetails";
+import PublishedPageView from "@/pages/PublishedPageView";
 import { useEffect } from "react";
 import { useGoogleAnalytics } from "@/hooks/useGoogleAnalytics";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -66,6 +68,10 @@ export default function App() {
                 <Route path="/terms" element={<Terms />} />
                 <Route path="/contact" element={<Contact />} />
                 <Route path="/book/:bookId/join/:token" element={<JoinBook />} />
+
+                {/* Public published content routes */}
+                <Route path="/published/book/:id" element={<PublishedBookDetails />} />
+                <Route path="/published/book/:bookId/page/:pageId" element={<PublishedPageView />} />
                 <Route
                   path="/settings/kindle"
                   element={

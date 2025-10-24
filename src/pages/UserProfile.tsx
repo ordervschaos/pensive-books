@@ -160,7 +160,7 @@ export default function UserProfile() {
                 <div className="flex sm:block items-start gap-4 sm:gap-0">
                   <Card
                     className="relative cursor-pointer group overflow-hidden w-24 sm:w-full aspect-[3/4]"
-                    onClick={() => navigate(`/book/${book.id}`)}
+                    onClick={() => navigate(`/published/book/${book.id}`)}
                   >
                     {book.cover_url ? (
                       <div className="relative w-full h-full">
@@ -208,7 +208,7 @@ export default function UserProfile() {
                   <div className="flex-1 sm:mt-2 space-y-1 sm:text-center text-left">
                     <h3
                       className="text-sm text-muted-foreground font-medium truncate cursor-pointer"
-                      onClick={() => navigate(`/book/${book.id}`)}
+                      onClick={() => navigate(`/published/book/${book.id}`)}
                     >
                       {book.name}
                     </h3>
