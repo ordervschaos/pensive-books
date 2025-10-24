@@ -11,11 +11,8 @@ interface PrivateRouteProps {
 
 export const PrivateRoute = ({ children }: PrivateRouteProps) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
-  const [isPublicBook, setIsPublicBook] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
   const [termsAccepted, setTermsAccepted] = useState<boolean>(false);
-  const params = useParams();
-  const bookId = params.id || params.bookId;
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -31,24 +28,6 @@ export const PrivateRoute = ({ children }: PrivateRouteProps) => {
           setTermsAccepted(!!user_metadata?.terms_accepted);
         }
 
-        // If we're on a book route, check if it's public
-        if (bookId) {
-          console.log("Checking if book is public:", bookId);
-          const { data: book, error } = await supabase
-            .from("books")
-            .select("is_public")
-            .eq("id", parseInt(bookId))
-            .single();
-
-          if (error) {
-            console.error("Error checking book visibility:", error);
-            setIsPublicBook(false);
-          } else {
-            console.log("Book public status:", book?.is_public);
-            setIsPublicBook(book?.is_public || false);
-          }
-        }
-
         setLoading(false);
       } catch (error) {
         console.error("Error in auth check:", error);
@@ -62,7 +41,7 @@ export const PrivateRoute = ({ children }: PrivateRouteProps) => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log("Auth state change:", event, !!session);
       setIsAuthenticated(!!session);
-      
+
       // Update terms acceptance state when auth changes
       if (session?.user) {
         const { user_metadata } = session.user;
@@ -73,7 +52,7 @@ export const PrivateRoute = ({ children }: PrivateRouteProps) => {
     });
 
     return () => subscription.unsubscribe();
-  }, [bookId]);
+  }, []);
 
   const handleAcceptTerms = async () => {
     try {
@@ -82,7 +61,7 @@ export const PrivateRoute = ({ children }: PrivateRouteProps) => {
       });
 
       if (error) throw error;
-      
+
       if (user) {
         setTermsAccepted(true);
       }
@@ -100,20 +79,8 @@ export const PrivateRoute = ({ children }: PrivateRouteProps) => {
     return null;
   }
 
-  // If it's a book route and the book is public, allow access
-  if (bookId && isPublicBook) {
-    console.log("Allowing access to public book");
-    return <>{children}</>;
-  }
-
-  // If not authenticated and not a public book, redirect to login
+  // If not authenticated, redirect to login
   if (!isAuthenticated) {
-    if (bookId) {
-      // If it's a book route but not public, redirect to auth
-      console.log("Redirecting to auth for private book");
-      return <Navigate to="/auth" replace state={{ returnTo: window.location.pathname }} />;
-    }
-    // For non-book routes, redirect to auth
     console.log("Redirecting to auth for protected route");
     return <Navigate to="/auth" replace state={{ returnTo: window.location.pathname }} />;
   }
