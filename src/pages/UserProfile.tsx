@@ -200,11 +200,6 @@ export default function UserProfile() {
                     >
                       {book.name}
                     </h3>
-                    <div className="flex gap-2 sm:justify-center justify-start">
-                      <Badge variant="secondary" className="text-xs">
-                        Public
-                      </Badge>
-                    </div>
                   </div>
                 </div>
               </div>
