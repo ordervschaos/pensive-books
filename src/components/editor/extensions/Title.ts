@@ -1,4 +1,4 @@
-import Document from "@tiptap/extension-document";
+import { Document } from "@tiptap/extension-document";
 import { Plugin, PluginKey } from 'prosemirror-state';
 
 export const Title = Document.extend({

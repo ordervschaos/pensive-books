@@ -36,14 +36,11 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { EditorContent, useEditor } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
-import TiptapLink from "@tiptap/extension-link";
-import Image from "@tiptap/extension-image";
-import Table from "@tiptap/extension-table";
-import TableRow from "@tiptap/extension-table-row";
-import TableCell from "@tiptap/extension-table-cell";
-import TableHeader from "@tiptap/extension-table-header";
-import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
+import { StarterKit } from "@tiptap/starter-kit";
+import { Link as TiptapLink } from "@tiptap/extension-link";
+import { Image } from "@tiptap/extension-image";
+import { Table, TableRow, TableCell, TableHeader } from "@tiptap/extension-table";
+import { CodeBlockLowlight } from "@tiptap/extension-code-block-lowlight";
 import { common, createLowlight } from "lowlight";
 
 const lowlight = createLowlight(common);

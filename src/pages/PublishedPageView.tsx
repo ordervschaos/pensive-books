@@ -5,7 +5,7 @@ import { ChevronLeft, ChevronRight, BookOpen, Lock } from "lucide-react";
 import { usePublishedPageData } from "@/hooks/use-published-page-data";
 import { PageLoading } from "@/components/page/PageLoading";
 import { SlugService } from "@/utils/slugService";
-import { TipTapEditor } from "@/components/editor/TipTapEditor";
+import { StaticPageRenderer } from "@/components/page/StaticPageRenderer";
 import {
   SidebarProvider,
   Sidebar,
@@ -145,18 +145,10 @@ export default function PublishedPageView() {
                 </span>
               </div>
 
-              {/* Page Title */}
-              <div className="mb-4">
-                <h1 className="text-4xl font-bold">{page.title || "Untitled"}</h1>
-              </div>
 
-              {/* Read-only Editor */}
+              {/* Static Rendered Content */}
               <div className="flex-1">
-                <TipTapEditor
-                  content={page.content}
-                  onChange={() => {}} // No-op for read-only
-                  editable={false}
-                />
+                <StaticPageRenderer content={page.content} />
               </div>
 
               {/* Navigation Footer */}

@@ -1,11 +1,8 @@
-import StarterKit from '@tiptap/starter-kit';
-import Link from '@tiptap/extension-link';
-import Image from '@tiptap/extension-image';
-import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
-import Table from '@tiptap/extension-table';
-import TableRow from '@tiptap/extension-table-row';
-import TableCell from '@tiptap/extension-table-cell';
-import TableHeader from '@tiptap/extension-table-header';
+import { StarterKit } from '@tiptap/starter-kit';
+import { Link } from '@tiptap/extension-link';
+import { Image } from '@tiptap/extension-image';
+import { CodeBlockLowlight } from '@tiptap/extension-code-block-lowlight';
+import { Table, TableRow, TableCell, TableHeader } from '@tiptap/extension-table';
 import { Title } from '../extensions/Title';
 import { SmartTypography } from '../extensions/SmartTypography';
 import { AudioBlocks } from '../extensions/AudioBlocks';
