@@ -9,11 +9,15 @@ import { Image } from '@tiptap/extension-image';
 import { CodeBlockLowlight } from '@tiptap/extension-code-block-lowlight';
 import { Table, TableRow, TableCell, TableHeader } from '@tiptap/extension-table';
 import { Title } from '@/components/editor/extensions/Title';
-import { lowlight } from '@/components/editor/config/editorConfig';
+import { SmartTypography } from '@/components/editor/extensions/SmartTypography';
+import { common, createLowlight } from 'lowlight';
+
+const lowlight = createLowlight(common);
 
 // Extensions matching the editor config
 const extensions = [
   Title,
+  SmartTypography,
   StarterKit.configure({
     document: false,
     codeBlock: false,
