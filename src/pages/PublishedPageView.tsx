@@ -78,7 +78,7 @@ export default function PublishedPageView() {
 
   const handleNavigateToPage = (targetPageId: number, targetTitle: string) => {
     const pageSlug = SlugService.generateSlug(targetPageId, targetTitle);
-    navigate(`/published/book/${bookId}/page/${pageSlug}`);
+    navigate(`/library/book/${bookId}/page/${pageSlug}`);
   };
 
   const handlePrevious = () => {
@@ -96,7 +96,7 @@ export default function PublishedPageView() {
   };
 
   const handleBackToBook = () => {
-    navigate(`/published/book/${bookId}`);
+    navigate(`/library/book/${bookId}`);
   };
 
   return (

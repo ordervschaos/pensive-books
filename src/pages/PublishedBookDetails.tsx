@@ -102,7 +102,7 @@ export default function PublishedBookDetails() {
               className="p-4 hover:bg-accent cursor-pointer transition-colors"
               onClick={() => {
                 const pageSlug = SlugService.generateSlug(page.id, page.title);
-                navigate(`/published/book/${id}/page/${pageSlug}`);
+                navigate(`/library/book/${id}/page/${pageSlug}`);
               }}
             >
               <div className="flex items-center gap-3">
@@ -125,7 +125,7 @@ export default function PublishedBookDetails() {
             onClick={() => {
               const firstPage = allPages[0];
               const pageSlug = SlugService.generateSlug(firstPage.id, firstPage.title);
-              navigate(`/published/book/${id}/page/${pageSlug}`);
+              navigate(`/library/book/${id}/page/${pageSlug}`);
             }}
           >
             <BookOpen className="h-5 w-5 mr-2" />

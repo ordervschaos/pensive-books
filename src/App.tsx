@@ -70,8 +70,8 @@ export default function App() {
                 <Route path="/book/:bookId/join/:token" element={<JoinBook />} />
 
                 {/* Public published content routes */}
-                <Route path="/published/book/:id" element={<PublishedBookDetails />} />
-                <Route path="/published/book/:bookId/page/:pageId" element={<PublishedPageView />} />
+                <Route path="/library/book/:id" element={<PublishedBookDetails />} />
+                <Route path="/library/book/:bookId/page/:pageId" element={<PublishedPageView />} />
                 <Route
                   path="/settings/kindle"
                   element={
