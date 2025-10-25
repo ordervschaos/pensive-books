@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, useLocation } from "react-route
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { Toaster } from "@/components/ui/toaster";
 import { TopNav } from "@/components/TopNav";
+import { LibraryNav } from "@/components/navigation/LibraryNav";
 import { PrivateRoute } from "@/components/PrivateRoute";
 import Landing from "@/pages/Landing";
 import Auth from "@/pages/Auth";
@@ -44,6 +45,17 @@ function ScrollToTop() {
   return null;
 }
 
+function ConditionalNav() {
+  const location = useLocation();
+  const isLibraryRoute = location.pathname.startsWith('/library');
+
+  if (isLibraryRoute) {
+    return <LibraryNav />;
+  }
+
+  return <TopNav />;
+}
+
 export default function App() {
   const isProd = window.location.hostname === "www.pensive.me";
   const basename = isProd ? "" : "/";
@@ -54,7 +66,7 @@ export default function App() {
         <Router basename={basename}>
           <div className="min-h-screen flex flex-col">
             <ScrollToTop />
-            <TopNav />
+            <ConditionalNav />
             <main className="flex-1">
               <Routes>
                 <Route path="/:username" element={<UserProfile />} />
