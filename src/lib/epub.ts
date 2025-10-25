@@ -48,36 +48,46 @@ export interface EPUBOptions {
  */
 export const sanitizeContent = (html: string): string => {
   if (!html) return '';
-  
-  return html
-    // Replace HTML entities with their XML equivalents
-    // HTML entities like &nbsp; are not valid in XML/XHTML
-    .replace(/&nbsp;/g, '&#160;')        // Non-breaking space: &nbsp; → &#160;
-    .replace(/&ldquo;/g, '&#8220;')      // Left double quotation mark: " → "
-    .replace(/&rdquo;/g, '&#8221;')      // Right double quotation mark: " → "
-    .replace(/&lsquo;/g, '&#8216;')      // Left single quotation mark: ' → '
-    .replace(/&rsquo;/g, '&#8217;')      // Right single quotation mark: ' → '
-    .replace(/&mdash;/g, '&#8212;')      // Em dash: — → —
-    .replace(/&ndash;/g, '&#8211;')      // En dash: – → –
-    .replace(/&hellip;/g, '&#8230;')     // Horizontal ellipsis: … → …
-    .replace(/&amp;/g, '&#38;')          // Ampersand: & → &
-    .replace(/&lt;/g, '&#60;')           // Less than: < → <
-    .replace(/&gt;/g, '&#62;')           // Greater than: > → >
-    .replace(/&quot;/g, '&#34;')         // Quotation mark: " → "
-    .replace(/&apos;/g, '&#39;')         // Apostrophe: ' → '
-    
-    // Ensure all tags are properly closed (XHTML requirement)
-    // HTML allows self-closing tags like <br>, but XHTML requires <br/>
-    .replace(/<br>/g, '<br/>')           // Line break: <br> → <br/>
-    .replace(/<hr>/g, '<hr/>')           // Horizontal rule: <hr> → <hr/>
-    .replace(/<img ([^>]*)>/g, '<img $1/>')  // Images: <img src="..."> → <img src="..."/>
-    .replace(/<col>/g, '<col/>')         // Table column: <col> → <col/>
-    .replace(/<col ([^>]*)>/g, '<col $1/>') // Table column with attributes: <col span="2"> → <col span="2"/>
-    
-    // Remove security-sensitive content that shouldn't be in EPUB
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')  // Remove all <script> tags and content
-    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')     // Remove all <style> tags and content
-    .replace(/<!--[\s\S]*?-->/g, '');    // Remove HTML comments
+
+  let sanitized = html;
+
+  // Remove security-sensitive content that shouldn't be in EPUB
+  sanitized = sanitized.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+  sanitized = sanitized.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
+  sanitized = sanitized.replace(/<!--[\s\S]*?-->/g, '');
+
+  // Remove any xmlns attributes that might have been added by TipTap
+  sanitized = sanitized.replace(/ xmlns="[^"]*"/g, '');
+
+  // Remove any data-* attributes (not needed for EPUB and can cause issues)
+  sanitized = sanitized.replace(/ data-[a-zA-Z0-9-_]*="[^"]*"/g, '');
+
+  // Remove any empty attributes (like class="" or style="")
+  sanitized = sanitized.replace(/ [a-zA-Z-]+=""/g, '');
+
+  // Ensure all self-closing tags are properly formatted (XHTML requirement)
+  sanitized = sanitized.replace(/<br>/gi, '<br/>');
+  sanitized = sanitized.replace(/<hr>/gi, '<hr/>');
+  sanitized = sanitized.replace(/<img ([^>/]*)>/gi, '<img $1/>');
+  sanitized = sanitized.replace(/<col>/gi, '<col/>');
+  sanitized = sanitized.replace(/<col ([^>/]*)>/gi, '<col $1/>');
+  sanitized = sanitized.replace(/<input ([^>/]*)>/gi, '<input $1/>');
+  sanitized = sanitized.replace(/<meta ([^>/]*)>/gi, '<meta $1/>');
+  sanitized = sanitized.replace(/<link ([^>/]*)>/gi, '<link $1/>');
+
+  // Replace HTML entities with their XML numeric equivalents
+  // This must be done AFTER all other replacements to avoid double-escaping
+  sanitized = sanitized
+    .replace(/&nbsp;/g, '&#160;')        // Non-breaking space
+    .replace(/&ldquo;/g, '&#8220;')      // Left double quotation mark
+    .replace(/&rdquo;/g, '&#8221;')      // Right double quotation mark
+    .replace(/&lsquo;/g, '&#8216;')      // Left single quotation mark
+    .replace(/&rsquo;/g, '&#8217;')      // Right single quotation mark
+    .replace(/&mdash;/g, '&#8212;')      // Em dash
+    .replace(/&ndash;/g, '&#8211;')      // En dash
+    .replace(/&hellip;/g, '&#8230;');    // Horizontal ellipsis
+
+  return sanitized;
 };
 
 // Escape text for XML
