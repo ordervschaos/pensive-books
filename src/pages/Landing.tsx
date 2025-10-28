@@ -321,7 +321,7 @@ export default function Landing() {
             <Button 
               size="lg" 
               variant="outline" 
-              onClick={() => window.open("https://github.com/ordervschaos/pensive-books", "_blank")}
+              onClick={() => window.open("https://github.com/ordervschaos/pensive-books-v2", "_blank")}
               className="text-lg px-8 py-6"
             >
               View on GitHub

@@ -5,25 +5,33 @@ import { Settings } from "lucide-react";
 
 interface BookActionsBarProps {
   isPublic: boolean;
-  onTogglePublish: () => void;
+  onPublish: () => void;
+  onUnpublish: () => void;
   publishing: boolean;
   onEditClick: () => void;
 }
 
 export const BookActionsBar = ({
   isPublic,
-  onTogglePublish,
+  onPublish,
+  onUnpublish,
   publishing,
   onEditClick
 }: BookActionsBarProps) => {
   return (
-    <div className="flex justify-center my-4 gap-2 justify-between">
+    <div className="flex items-center gap-1">
       <BookVisibilityToggle
         isPublic={isPublic}
-        onTogglePublish={onTogglePublish}
+        onPublish={onPublish}
+        onUnpublish={onUnpublish}
         publishing={publishing}
       />
-      <Button onClick={onEditClick} variant="ghost">
+      <Button
+        onClick={onEditClick}
+        variant="ghost"
+        size="sm"
+        className="h-8 w-8 p-0"
+      >
         <Settings className="h-4 w-4" />
       </Button>
     </div>

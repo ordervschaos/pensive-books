@@ -1,14 +1,11 @@
-import {
-  Card,
-  CardHeader
-} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ImageIcon, Download, FileText, Tablet } from "lucide-react";
+import { ImageIcon, Play } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {  generateAndDownloadEPUB, generatePDFWithPrintDialog } from "@/lib/download";
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { formatDistanceToNow } from "date-fns";
 
 interface BookInfoProps {
   name: string;
@@ -17,15 +14,23 @@ interface BookInfoProps {
   author?: string | null;
   subtitle?: string | null;
   showTextOnCover?: boolean;
+  currentPage?: number;
+  totalPages?: number;
+  onContinueReading?: () => void;
+  lastUpdated?: string | null;
 }
 
-export const BookInfo = ({ 
+export const BookInfo = ({
   name,
   coverUrl,
   bookId,
   author,
   subtitle,
-  showTextOnCover = false
+  showTextOnCover = false,
+  currentPage = 0,
+  totalPages = 0,
+  onContinueReading,
+  lastUpdated
 }: BookInfoProps) => {
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -192,71 +197,122 @@ export const BookInfo = ({
     }
   };
 
+  const progressPercentage = totalPages > 0 ? ((currentPage + 1) / totalPages) * 100 : 0;
+  const lastUpdatedLabel = lastUpdated ? formatDistanceToNow(new Date(lastUpdated), { addSuffix: true }) : null;
+
   return (
-    <Card className="bg-background shadow-sm w-full lg:max-w-[300px]">
-      <div className="flex flex-col gap-4">
-        <CardHeader className="space-y-6">
-          <div className="w-full aspect-[3/4] relative rounded-lg overflow-hidden bg-muted">
+    <div className="grid grid-cols-1 gap-6 p-5 sm:grid-cols-[160px,1fr] sm:p-6 md:grid-cols-[200px,1fr] md:gap-8 md:p-8">
+          {/* Book Cover */}
+          <div className="relative overflow-hidden rounded-xl ring-1 ring-border/50">
             {coverUrl ? (
-              <div className="relative w-full h-full">
-                <img 
-                  src={coverUrl} 
-                  alt="Book cover"
-                  className="w-full h-full object-cover"
-                />
-                {showTextOnCover && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30 p-4">
-                    <h1 className="text-sm sm:text-base lg:text-2xl font-bold text-white text-center mb-1 sm:mb-2">
-                      {name}
-                    </h1>
-                    {subtitle && (
-                      <p className="text-xs sm:text-sm lg:text-lg text-white/90 text-center mb-1 sm:mb-4">
-                        {subtitle}
-                      </p>
-                    )}
-                    {author && (
-                      <p className="text-xs sm:text-sm lg:text-lg text-white/90 text-center">
-                        by {author}
-                      </p>
-                    )}
-                  </div>
-                )}
-              </div>
+              <img
+                src={coverUrl}
+                alt={`${name} cover`}
+                className="h-full w-full object-cover"
+                loading="lazy"
+              />
             ) : (
-              <div className="w-full h-full flex items-center justify-center">
-                <ImageIcon className="w-16 h-16 text-muted-foreground" />
+              <div className="flex h-full min-h-[220px] w-full items-center justify-center bg-gradient-to-br from-muted/80 to-muted/40">
+                <ImageIcon className="h-14 w-14 text-muted-foreground" />
               </div>
             )}
           </div>
-          <div className="flex flex-col sm:flex-row lg:flex-col gap-2">
-            <Button
-              onClick={handleDownloadEPUB}
-              variant="outline"
-              className="w-full text-xs sm:text-sm"
-            >
-              <Download className="h-4 w-4 mr-2" />
-              Download EPUB
-            </Button>
-            <Button
-              onClick={handleDownloadPDF}
-              variant="outline"
-              className="w-full text-xs sm:text-sm"
-            >
-              <FileText className="h-4 w-4 mr-2" />
-              Download PDF
-            </Button>
-            <Button
-              onClick={handleSendToKindle}
-              variant="outline"
-              className="w-full text-xs sm:text-sm"
-              disabled={sending}
-            >
-              <Tablet className="h-4 w-4 mr-2" />
-              {sending ? "Sending..." : "Send to Kindle"}
-            </Button>
+
+          {/* Content Column */}
+          <div className="flex flex-col">
+            {/* Header */}
+            <header className="mb-3">
+              <h1 className="text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
+                {name}
+              </h1>
+              <div className="mt-1 flex flex-wrap items-center gap-x-3 text-sm text-muted-foreground">
+                <span>
+                  {currentPage + 1} / {totalPages} chapters
+                </span>
+                {lastUpdatedLabel && (
+                  <>
+                    <span className="hidden h-1 w-1 rounded-full bg-muted-foreground/50 sm:inline-block" />
+                    <span>Updated {lastUpdatedLabel}</span>
+                  </>
+                )}
+              </div>
+            </header>
+
+            {/* Progress Bar */}
+            {totalPages > 0 && (
+              <div className="mb-4">
+                <div className="mb-1 flex items-center justify-between text-xs tabular-nums text-muted-foreground">
+                  <span className="sr-only sm:not-sr-only">Progress</span>
+                  <span className="ml-auto">{Math.round(progressPercentage)}%</span>
+                </div>
+                <div
+                  className="relative h-2.5 overflow-hidden rounded-full bg-secondary ring-1 ring-inset ring-border/30"
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={Math.round(progressPercentage)}
+                  aria-label="Reading progress"
+                >
+                  <div
+                    className="h-full w-0 rounded-full bg-gradient-to-r from-primary/80 to-primary transition-[width] duration-500 ease-out"
+                    style={{ width: `${progressPercentage}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Continue Reading Button */}
+            {onContinueReading && (
+              <div className="mb-5">
+                <Button
+                  type="button"
+                  onClick={onContinueReading}
+                  className="group inline-flex w-full items-center justify-center gap-2 md:w-max"
+                  size="default"
+                >
+                  <Play className="h-4 w-4 fill-current transition group-hover:translate-x-0.5" />
+                  <span className="font-medium">Continue Reading</span>
+                </Button>
+              </div>
+            )}
+
+            {/* Downloads Section */}
+            <div className="mt-auto">
+              <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                Downloads
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  onClick={handleDownloadEPUB}
+                  variant="outline"
+                  size="sm"
+                  className="text-sm"
+                >
+                  EPUB
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleDownloadPDF}
+                  variant="outline"
+                  size="sm"
+                  className="text-sm"
+                >
+                  PDF
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleSendToKindle}
+                  variant="outline"
+                  size="sm"
+                  className="text-sm"
+                  disabled={sending}
+                >
+                  {sending ? "Sending..." : "Kindle"}
+                </Button>
+              </div>
+            </div>
           </div>
-        </CardHeader>
-      </div>
-    </Card>
+    </div>
   );
 };

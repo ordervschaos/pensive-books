@@ -2,18 +2,24 @@
  * Utility functions for working with TipTap JSON content
  */
 
-import { generateHTML } from '@tiptap/html';
+// Conditional import based on environment
+// In browser, use @tiptap/html; in Node/test, use @tiptap/html (default export works in both)
+import { generateHTML as generateHTMLBrowser } from '@tiptap/html';
 import { StarterKit } from '@tiptap/starter-kit';
 import { Link } from '@tiptap/extension-link';
 import { Image } from '@tiptap/extension-image';
 import { CodeBlockLowlight } from '@tiptap/extension-code-block-lowlight';
 import { Table, TableRow, TableCell, TableHeader } from '@tiptap/extension-table';
 import { Title } from '@/components/editor/extensions/Title';
-import { lowlight } from '@/components/editor/config/editorConfig';
+import { SmartTypography } from '@/components/editor/extensions/SmartTypography';
+import { common, createLowlight } from 'lowlight';
+
+const lowlight = createLowlight(common);
 
 // Extensions matching the editor config
 const extensions = [
   Title,
+  SmartTypography,
   StarterKit.configure({
     document: false,
     codeBlock: false,
@@ -29,13 +35,20 @@ const extensions = [
   TableHeader,
 ];
 
+// Use the browser version - it works in both environments when window is defined
+const generateHTML = generateHTMLBrowser;
+
 /**
  * Convert TipTap JSON content to HTML string
  */
 export const jsonToHtml = (json: any): string => {
   if (!json) return '';
   try {
-    const html = generateHTML(json, extensions);
+    let html = generateHTML(json, extensions);
+
+    // Remove xmlns attributes that are added in Node environment
+    html = html.replace(/ xmlns="http:\/\/www\.w3\.org\/1999\/xhtml"/g, '');
+
     // Check if HTML contains images
     if (html.includes('<img')) {
       const imgMatches = html.match(/<img[^>]*src="([^"]+)"[^>]*>/g);

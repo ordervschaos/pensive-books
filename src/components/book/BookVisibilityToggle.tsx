@@ -1,26 +1,38 @@
 import { Lock, Globe } from "lucide-react";
-import { Switch } from "@/components/ui/switch";
+import { Button } from "@/components/ui/button";
 
 interface BookVisibilityToggleProps {
   isPublic: boolean;
-  onTogglePublish: () => void;
+  onPublish: () => void;
+  onUnpublish: () => void;
   publishing: boolean;
 }
 
 export const BookVisibilityToggle = ({
   isPublic,
-  onTogglePublish,
+  onPublish,
+  onUnpublish,
   publishing
 }: BookVisibilityToggleProps) => {
   return (
-    <div className="flex items-center gap-2">
-      <Lock className="h-4 w-4 text-muted-foreground" />
-      <Switch
-        checked={isPublic}
-        onCheckedChange={onTogglePublish}
-        disabled={publishing}
-      />
-      <Globe className="h-4 w-4 text-muted-foreground" />
-    </div>
+    <Button
+      onClick={isPublic ? onUnpublish : onPublish}
+      disabled={publishing}
+      variant="ghost"
+      size="sm"
+      className="h-8 gap-1.5 text-xs"
+    >
+      {isPublic ? (
+        <>
+          <Lock className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">Unpublish</span>
+        </>
+      ) : (
+        <>
+          <Globe className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">Publish</span>
+        </>
+      )}
+    </Button>
   );
 }; 

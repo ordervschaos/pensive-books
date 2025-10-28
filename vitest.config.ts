@@ -24,6 +24,9 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      // Force browser version of @tiptap/html in tests
+      '@tiptap/html$': path.resolve(__dirname, './node_modules/@tiptap/html/dist/index.js'),
     },
+    conditions: ['browser'],
   },
 });

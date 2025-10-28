@@ -8,7 +8,6 @@ import { useBookPermissions } from "@/hooks/use-book-permissions";
 import { useUserBookPreferences } from "@/hooks/use-user-book-preferences";
 import { BookActionsBar } from "@/components/book/BookActionsBar";
 import { ShareBookButton } from "@/components/book/ShareBookButton";
-import { ContinueReadingButton } from "@/components/book/ContinueReadingButton";
 import { BookChatPanel } from "@/components/book/BookChatPanel";
 import { IntegratedFlashcardSection } from "@/components/flashcard/IntegratedFlashcardSection";
 import { FlashcardEditor } from "@/components/flashcard/FlashcardEditor";
@@ -26,6 +25,7 @@ import { jsonToText, getWordCountFromContent } from "@/utils/tiptapHelpers";
 import { UncommittedChangesBadge } from "@/components/book/UncommittedChangesBadge";
 import { CommitDialog } from "@/components/book/CommitDialog";
 import { VersionHistory } from "@/components/book/VersionHistory";
+import { PublishingDialog } from "@/components/book/PublishingDialog";
 import { GitCommit, History, FileText } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -88,6 +88,7 @@ const BookDetails = () => {
 
   // Version control state
   const [isCommitDialogOpen, setIsCommitDialogOpen] = useState(false);
+  const [isPublishingDialogOpen, setIsPublishingDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("pages");
 
   const fetchBookmarkedPage = useCallback(async (session: any) => {
@@ -218,54 +219,18 @@ const BookDetails = () => {
     checkAuthAndFetch();
   }, [id, fetchBookmarkedPage, fetchBookDetails]);
 
-  const togglePublish = async () => {
-    try {
-      setPublishing(true);
-      const newPublishState = !book.is_public;
+  const handlePublish = () => {
+    setIsPublishingDialogOpen(true);
+  };
 
-      // If turning public, check if there's a published version
-      if (newPublishState && !book.published_version_id) {
-        toast({
-          variant: "destructive",
-          title: "No published version",
-          description: "Please publish a version from the Version History tab before making the book public."
-        });
-        setPublishing(false);
-        setActiveTab("history");
-        return;
-      }
+  const handleUnpublish = () => {
+    setIsPublishingDialogOpen(true);
+  };
 
-      const { error } = await supabase
-        .from("books")
-        .update({
-          is_public: newPublishState,
-          published_at: newPublishState ? new Date().toISOString() : null
-        })
-        .eq("id", parseInt(id || "0"));
-
-      if (error) throw error;
-
-      setBook({
-        ...book,
-        is_public: newPublishState,
-        published_at: newPublishState ? new Date().toISOString() : null
-      });
-
-      toast({
-        title: newPublishState ? "Book Made Public" : "Book Made Private",
-        description: newPublishState
-          ? "Your book is now visible to the public"
-          : "Your book is now private"
-      });
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error updating book",
-        description: error.message
-      });
-    } finally {
-      setPublishing(false);
-    }
+  const handlePublishingSuccess = async () => {
+    // Refresh book details after publishing/unpublishing
+    await fetchBookDetails();
+    setPublishing(false);
   };
 
   const handleEditClick = () => {
@@ -494,42 +459,29 @@ const BookDetails = () => {
       </Helmet>
       
       <div className="container mx-auto px-4 py-6">
-        <div className="max-w-7xl mx-auto space-y-6">
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-4">
-            <div className="lg:hidden col-span-full">
-              <h1
-                className={`text-2xl font-bold mb-2 ${canEdit ? 'cursor-pointer hover:text-blue-600 transition-colors' : ''}`}
-                onClick={canEdit ? handleEditClick : undefined}
-              >
-                {book.name}
-              </h1>
-              <p className="text-muted-foreground mb-4">{book.author || "Unknown author"}</p>
-              
-              <div className="flex flex-wrap gap-3">
-                <ContinueReadingButton
-                  onClick={handleContinueReading}
-                  bookmarkedPageIndex={bookmarkedPageIndex}
-                  totalPages={pages.length}
-                  className="flex-1 sm:flex-none"
-                />
-              </div>
-
+        <div className="max-w-5xl mx-auto space-y-6">
+          {/* Single Column Layout */}
+          <div className="space-y-6">
+            {/* Book Header with Cover and Info */}
+            <div className="rounded-2xl border border-border/50 bg-gradient-to-b from-card/60 to-card/30 shadow-xl backdrop-blur overflow-hidden relative">
+              {/* Header Actions - Top Right */}
               {canEdit && (
-                <BookActionsBar
-                  isPublic={book.is_public}
-                  onTogglePublish={togglePublish}
-                  publishing={publishing}
-                  onEditClick={handleEditClick}
-                />
-              )}
-              
-              <ShareBookButton
-                isPublic={book.is_public}
-                url={window.location.href}
-              />
-            </div>
+                <div className="absolute top-4 right-4 sm:top-5 sm:right-5 md:top-6 md:right-6 z-10 flex items-center gap-2">
+                  <ShareBookButton
+                    isPublic={book.is_public}
+                    url={window.location.href}
+                  />
 
-            <div className="col-span-full lg:col-span-1">
+                  <BookActionsBar
+                    isPublic={book.is_public}
+                    onPublish={handlePublish}
+                    onUnpublish={handleUnpublish}
+                    publishing={publishing}
+                    onEditClick={handleEditClick}
+                  />
+                </div>
+              )}
+
               <BookInfo
                 name={book.name}
                 subtitle={book.subtitle}
@@ -537,67 +489,38 @@ const BookDetails = () => {
                 bookId={parseInt(id || "0")}
                 author={book.author}
                 showTextOnCover={book.show_text_on_cover}
+                currentPage={bookmarkedPageIndex ?? 0}
+                totalPages={pages.length}
+                onContinueReading={handleContinueReading}
+                lastUpdated={book.updated_at}
               />
-              
-              <div className="hidden lg:block space-y-4">
-                <ContinueReadingButton
-                  onClick={handleContinueReading}
-                  bookmarkedPageIndex={bookmarkedPageIndex}
-                  totalPages={pages.length}
-                  className="w-full"
-                />
-
-                {canEdit && (
-                  <BookActionsBar
-                    isPublic={book.is_public}
-                    onTogglePublish={togglePublish}
-                    publishing={publishing}
-                    onEditClick={handleEditClick}
-                  />
-                )}
-                
-                <ShareBookButton
-                  isPublic={book.is_public}
-                  url={window.location.href}
-                />
-              </div>
             </div>
 
-            <div className="col-span-full lg:col-span-3">
-              <div className="hidden lg:block mb-6">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1">
-                    <h1
-                      className={`text-3xl font-bold ${canEdit ? 'cursor-pointer hover:text-blue-600 transition-colors' : ''}`}
-                      onClick={canEdit ? handleEditClick : undefined}
-                    >
-                      {book.name}
-                    </h1>
-                    <p className="text-muted-foreground">{book.author || "Unknown author"}</p>
-                    {/* number of words */}
-                    <p className="text-muted-foreground">{pages.reduce((acc, page) =>
-                      acc + (page.page_type === 'text' && page.content ? getWordCountFromContent(page.content) : 0), 0)} words</p>
-                  </div>
+            {/* Word Count & Version Control */}
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">
+                {pages.reduce((acc, page) =>
+                  acc + (page.page_type === 'text' && page.content ? getWordCountFromContent(page.content) : 0), 0)} words
+              </p>
 
-                  {canEdit && (
-                    <div className="flex flex-col gap-2">
-                      <UncommittedChangesBadge bookId={parseInt(id || "0")} showCount />
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setIsCommitDialogOpen(true)}
-                        className="gap-2"
-                      >
-                        <GitCommit className="h-4 w-4" />
-                        Commit Changes
-                      </Button>
-                    </div>
-                  )}
+              {canEdit && (
+                <div className="flex items-center gap-2">
+                  <UncommittedChangesBadge bookId={parseInt(id || "0")} showCount />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setIsCommitDialogOpen(true)}
+                    className="gap-2"
+                  >
+                    <GitCommit className="h-4 w-4" />
+                    Commit Changes
+                  </Button>
                 </div>
-              </div>
+              )}
+            </div>
 
-
-              <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            {/* Tabs for Pages and Version History */}
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
                 <TabsList>
                   <TabsTrigger value="pages" className="gap-2">
                     <FileText className="h-4 w-4" />
@@ -638,23 +561,21 @@ const BookDetails = () => {
                 )}
               </Tabs>
 
-              {/* Integrated Flashcard Section - Only visible in beta */}
-              {isBetaEnabled && (
-                <IntegratedFlashcardSection
-                  flashcards={flashcards}
-                  loading={flashcardsLoading}
-                  onGenerate={() => setIsGenerateDialogOpen(true)}
-                  onEdit={handleEditFlashcard}
-                  onDelete={handleDeleteFlashcard}
-                  onStudy={handleStudyFlashcard}
-                  onView={handleViewFlashcard}
-                  isEnabled={preferences?.flashcards_enabled ?? true}
-                  onToggleEnabled={toggleFlashcards}
-                  preferencesLoading={preferencesLoading}
-                />
-              )}
-            </div>
-
+            {/* Integrated Flashcard Section - Only visible in beta */}
+            {isBetaEnabled && (
+              <IntegratedFlashcardSection
+                flashcards={flashcards}
+                loading={flashcardsLoading}
+                onGenerate={() => setIsGenerateDialogOpen(true)}
+                onEdit={handleEditFlashcard}
+                onDelete={handleDeleteFlashcard}
+                onStudy={handleStudyFlashcard}
+                onView={handleViewFlashcard}
+                isEnabled={preferences?.flashcards_enabled ?? true}
+                onToggleEnabled={toggleFlashcards}
+                preferencesLoading={preferencesLoading}
+              />
+            )}
           </div>
 
           {/* Chat Sidebar - Rendered as a portal */}
@@ -712,6 +633,16 @@ const BookDetails = () => {
               // Optionally switch to version history tab after successful commit
               setActiveTab("versions");
             }}
+          />
+
+          {/* Publishing Dialog */}
+          <PublishingDialog
+            bookId={parseInt(id || "0")}
+            bookName={book.name}
+            isPublic={book.is_public}
+            open={isPublishingDialogOpen}
+            onOpenChange={setIsPublishingDialogOpen}
+            onSuccess={handlePublishingSuccess}
           />
         </div>
       </div>
