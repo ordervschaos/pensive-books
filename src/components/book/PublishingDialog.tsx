@@ -25,6 +25,8 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, CheckCircle2, Globe, Lock, AlertTriangle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Badge } from "@/components/ui/badge";
 
 interface PublishingDialogProps {
   bookId: number;
@@ -59,30 +61,37 @@ export function PublishingDialog({
   const [commitMessage, setCommitMessage] = useState("");
   const [uncommittedChangesCount, setUncommittedChangesCount] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [initialPublicState, setInitialPublicState] = useState<boolean>(false);
+  const [selectedOption, setSelectedOption] = useState<"last-commit" | "commit-and-publish">("commit-and-publish");
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Reset state when dialog opens
+  // Combined effect: Reset state and trigger publish/unpublish flow when dialog opens
+  // Only depends on `open` to prevent re-triggering when isPublic changes during the operation
   useEffect(() => {
-    if (open) {
-      setStep(PublishingStep.CHECKING);
-      setCommitMessage("");
-      setVersionId(null);
-      setUncommittedChangesCount(0);
-      setErrorMessage(null);
-    }
-  }, [open]);
+    if (!open) return;
 
-  // Check if versions exist when dialog opens
-  useEffect(() => {
-    if (open && !isPublic) {
+    // Reset state
+    setStep(PublishingStep.CHECKING);
+    setCommitMessage("");
+    setVersionId(null);
+    setUncommittedChangesCount(0);
+    setErrorMessage(null);
+
+    // Capture the initial public state for this dialog session
+    setInitialPublicState(isPublic);
+
+    // Determine flow based on current isPublic value (before parent refetches)
+    if (!isPublic) {
+      // Publishing flow - check version status
       checkPublishingStatus();
-    } else if (open && isPublic) {
-      // Unpublishing - just do it directly
+    } else {
+      // Unpublishing flow - do it directly
       setStep(PublishingStep.PUBLISHING);
       unpublishBook();
     }
-  }, [open, isPublic]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]); // CRITICAL: Only depend on `open`, not `isPublic`
 
   const checkPublishingStatus = async () => {
     try {
@@ -154,6 +163,9 @@ export function PublishingDialog({
       const newVersionId = await VersionService.createCommit(bookId, message);
       setVersionId(newVersionId);
 
+      // Invalidate uncommitted changes cache after creating commit
+      queryClient.invalidateQueries({ queryKey: ["uncommitted-changes", bookId] });
+
       setStep(PublishingStep.VERSION_CREATED);
 
       // Wait a moment to show the version created message
@@ -194,6 +206,9 @@ export function PublishingDialog({
       const newVersionId = await VersionService.createCommit(bookId, message);
       setVersionId(newVersionId);
 
+      // Invalidate uncommitted changes cache after creating commit
+      queryClient.invalidateQueries({ queryKey: ["uncommitted-changes", bookId] });
+
       setStep(PublishingStep.VERSION_CREATED);
 
       // Wait a moment to show the version created message
@@ -220,6 +235,7 @@ export function PublishingDialog({
     }
   };
 
+  
   const makeBookPublic = async () => {
     try {
       const { error } = await supabase
@@ -285,7 +301,7 @@ export function PublishingDialog({
   };
 
   const getDialogContent = () => {
-    if (isPublic) {
+    if (initialPublicState) {
       // Unpublishing flow
       if (step === PublishingStep.COMPLETED) {
         return {
@@ -319,8 +335,8 @@ export function PublishingDialog({
 
       case PublishingStep.AWAITING_CHOICE:
         return {
-          title: "Uncommitted Changes",
-          description: `You have ${uncommittedChangesCount} page${uncommittedChangesCount === 1 ? '' : 's'} with uncommitted changes.`,
+          title: "Uncommitted changes",
+          description: "", // Description is now in the body
           icon: <AlertTriangle className="h-6 w-6 text-amber-500" />,
         };
 
@@ -372,9 +388,29 @@ export function PublishingDialog({
 
   const content = getDialogContent();
 
+  // Handle keyboard shortcuts
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (step === PublishingStep.AWAITING_CHOICE) {
+      if (e.key === 'Escape') {
+        onOpenChange(false);
+      } else if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        if (selectedOption === "last-commit") {
+          handlePublishLastCommitted();
+        } else {
+          handleCommitAndPublish();
+        }
+      }
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]" onPointerDownOutside={(e) => e.preventDefault()}>
+      <DialogContent
+        className="sm:max-w-[500px]"
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onKeyDown={handleKeyDown}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {content.icon}
@@ -416,41 +452,65 @@ export function PublishingDialog({
           {/* Awaiting Choice - User has uncommitted changes */}
           {step === PublishingStep.AWAITING_CHOICE && (
             <>
-              <Alert variant="default">
-                <AlertDescription>
-                  Choose whether to publish the last committed version or commit your current changes first.
-                </AlertDescription>
-              </Alert>
-              <div className="space-y-3">
-                <div className="p-3 border rounded-lg space-y-2">
-                  <h4 className="font-medium text-sm">Option 1: Publish Last Committed Version</h4>
-                  <p className="text-xs text-muted-foreground">
-                    Publish the book as it was in the last commit. Your current changes won't be included.
-                  </p>
-                </div>
-                <div className="p-3 border rounded-lg space-y-2">
-                  <h4 className="font-medium text-sm">Option 2: Commit Changes & Publish</h4>
-                  <p className="text-xs text-muted-foreground">
-                    Create a new commit with your current changes and then publish that version.
-                  </p>
-                  <div className="space-y-2 pt-2">
-                    <Label htmlFor="commit-message-choice">Commit Message (optional)</Label>
-                    <Input
-                      id="commit-message-choice"
-                      placeholder="Describe your changes..."
-                      value={commitMessage}
-                      onChange={(e) => setCommitMessage(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          handleCommitAndPublish();
-                        }
-                      }}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Default: "Update with {uncommittedChangesCount} page{uncommittedChangesCount === 1 ? '' : 's'}"
-                    </p>
+              <div className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  {uncommittedChangesCount} page{uncommittedChangesCount === 1 ? ' has' : 's have'} uncommitted edits. Choose what to publish.
+                </p>
+
+                <RadioGroup value={selectedOption} onValueChange={(value) => setSelectedOption(value as typeof selectedOption)}>
+                  {/* Option 1: Publish Last Commit */}
+                  <div className="flex items-start space-x-3 p-4 border rounded-lg hover:bg-accent/50 cursor-pointer">
+                    <RadioGroupItem value="last-commit" id="last-commit" className="mt-0.5" />
+                    <div className="flex-1 space-y-1">
+                      <Label htmlFor="last-commit" className="font-medium cursor-pointer">
+                        Publish last commit
+                      </Label>
+                      <p className="text-xs text-muted-foreground">
+                        Publish exactly what's in the last commit.
+                      </p>
+                      <Badge variant="destructive" className="text-xs">
+                        Your latest edits won't be included
+                      </Badge>
+                    </div>
                   </div>
-                </div>
+
+                  {/* Option 2: Commit & Publish */}
+                  <div className="flex items-start space-x-3 p-4 border rounded-lg hover:bg-accent/50 cursor-pointer">
+                    <RadioGroupItem value="commit-and-publish" id="commit-and-publish" className="mt-0.5" />
+                    <div className="flex-1 space-y-2">
+                      <Label htmlFor="commit-and-publish" className="font-medium cursor-pointer">
+                        Commit & publish
+                      </Label>
+                      <p className="text-xs text-muted-foreground">
+                        Create a new commit with your current edits, then publish.
+                      </p>
+
+                      {/* Commit message field - only enabled when this option is selected */}
+                      {selectedOption === "commit-and-publish" && (
+                        <div className="space-y-2 pt-2">
+                          <Label htmlFor="commit-message-choice" className="text-xs">
+                            Commit message (optional)
+                          </Label>
+                          <Input
+                            id="commit-message-choice"
+                            placeholder="Describe your changes..."
+                            value={commitMessage}
+                            onChange={(e) => setCommitMessage(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                handleCommitAndPublish();
+                              }
+                            }}
+                            className="text-sm"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Default: "Update ({uncommittedChangesCount} page{uncommittedChangesCount === 1 ? '' : 's'})"
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </RadioGroup>
               </div>
             </>
           )}
@@ -466,7 +526,7 @@ export function PublishingDialog({
           )}
 
           {/* Completed */}
-          {step === PublishingStep.COMPLETED && !isPublic && (
+          {step === PublishingStep.COMPLETED && !initialPublicState && (
             <Alert>
               <Globe className="h-4 w-4" />
               <AlertDescription>
@@ -475,7 +535,7 @@ export function PublishingDialog({
             </Alert>
           )}
 
-          {step === PublishingStep.COMPLETED && isPublic && (
+          {step === PublishingStep.COMPLETED && initialPublicState && (
             <Alert>
               <Lock className="h-4 w-4" />
               <AlertDescription>
@@ -513,11 +573,10 @@ export function PublishingDialog({
               <Button variant="outline" onClick={() => onOpenChange(false)}>
                 Cancel
               </Button>
-              <Button variant="secondary" onClick={handlePublishLastCommitted}>
-                Publish Last Committed
-              </Button>
-              <Button onClick={handleCommitAndPublish}>
-                Commit & Publish
+              <Button
+                onClick={selectedOption === "last-commit" ? handlePublishLastCommitted : handleCommitAndPublish}
+              >
+                {selectedOption === "last-commit" ? "Publish Last Commit" : "Commit & Publish"}
               </Button>
             </>
           )}
