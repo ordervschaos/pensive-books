@@ -25,7 +25,7 @@ export const BookVisibilityToggle = ({
       {isPublic ? (
         <>
           <Lock className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">Private</span>
+          <span className="hidden sm:inline">Unpublish</span>
         </>
       ) : (
         <>
