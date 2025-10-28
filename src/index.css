@@ -10,60 +10,103 @@
 
     --card: 0 0% 100%;
     --card-foreground: 0 0% 3.9%;
- 
+
     --popover: 0 0% 100%;
     --popover-foreground: 0 0% 3.9%;
- 
+
     --primary: 0 0% 9%;
     --primary-foreground: 0 0% 98%;
- 
+
     --secondary: 0 0% 96.1%;
     --secondary-foreground: 0 0% 9%;
- 
+
     --muted: 0 0% 96.1%;
     --muted-foreground: 0 0% 45.1%;
- 
+
     --accent: 0 0% 96.1%;
     --accent-foreground: 0 0% 9%;
- 
+
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
 
     --border: 0 0% 89.8%;
     --input: 0 0% 89.8%;
     --ring: 0 0% 3.9%;
- 
+
     --radius: 0.5rem;
+
+    /* Audio highlight colors */
+    --audio-highlight-bg: 255 255 0;
+    --audio-highlight-bg-opacity: 0.2;
+    --audio-highlight-shadow-opacity: 0.1;
+    --audio-highlight-hover-bg-opacity: 0.3;
+    --audio-highlight-hover-shadow-opacity: 0.2;
+
+    /* Audio block hover colors */
+    --audio-block-hover-bg: 59 130 246;
+    --audio-block-hover-bg-opacity: 0.05;
+    --audio-block-hover-shadow-opacity: 0.1;
+
+    /* EPUB/Book cover colors */
+    --epub-cover-overlay: 0 0 0;
+    --epub-cover-overlay-opacity: 0.5;
+    --epub-cover-gradient-start: #1a3c5a;
+    --epub-cover-gradient-end: #0f2439;
+    --epub-cover-text: #ffffff;
+    --epub-cover-text-shadow: 0 0 0;
+    --epub-cover-text-shadow-opacity: 0.7;
+    --epub-canvas-bg: #000000;
+
+    /* EPUB content colors */
+    --epub-body-text: #333;
+    --epub-meta-text: #555;
+    --epub-heading-text: #444;
+    --epub-link-text: #0066cc;
+    --epub-blockquote-border: #ccc;
+    --epub-blockquote-text: #666;
+    --epub-code-bg: #f5f5f5;
+    --epub-table-border: #ddd;
+    --epub-table-header-bg: #f5f5f5;
   }
  
   .dark {
     --background: 0 0% 3.9%;
     --foreground: 0 0% 75%;
- 
+
     --card: 0 0% 3.9%;
     --card-foreground: 0 0% 98%;
- 
+
     --popover: 0 0% 3.9%;
     --popover-foreground: 0 0% 98%;
- 
+
     --primary: 0 0% 90%;
     --primary-foreground: 0 0% 9%;
- 
+
     --secondary: 0 0% 14.9%;
     --secondary-foreground: 0 0% 98%;
- 
+
     --muted: 0 0% 14.9%;
     --muted-foreground: 0 0% 63.9%;
- 
+
     --accent: 0 0% 14.9%;
     --accent-foreground: 0 0% 98%;
- 
+
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 98%;
- 
+
     --border: 0 0% 14.9%;
     --input: 0 0% 14.9%;
     --ring: 0 0% 83.1%;
+
+    /* Audio highlight colors - dark mode */
+    --audio-highlight-bg-opacity: 0.15;
+    --audio-highlight-shadow-opacity: 0.08;
+    --audio-highlight-hover-bg-opacity: 0.25;
+    --audio-highlight-hover-shadow-opacity: 0.15;
+
+    /* Audio block hover colors - dark mode */
+    --audio-block-hover-bg-opacity: 0.08;
+    --audio-block-hover-shadow-opacity: 0.15;
   }
 }
  
@@ -100,16 +143,11 @@
 
 /* Audio Block Highlighting */
 .audio-highlighted {
-  background-color: rgba(255, 255, 0, 0.2);
+  background-color: rgba(var(--audio-highlight-bg), var(--audio-highlight-bg-opacity));
   transition: background-color 0.3s ease, box-shadow 0.3s ease;
   border-radius: 4px;
   /* Use box-shadow instead of padding to avoid layout shift */
-  box-shadow: 0 0 0 2px rgba(255, 255, 0, 0.1);
-}
-
-.dark .audio-highlighted {
-  background-color: rgba(255, 255, 0, 0.15);
-  box-shadow: 0 0 0 2px rgba(255, 255, 0, 0.08);
+  box-shadow: 0 0 0 2px rgba(var(--audio-highlight-bg), var(--audio-highlight-shadow-opacity));
 }
 
 /* Audio Block Clickable - makes blocks interactive */
@@ -121,23 +159,13 @@
 }
 
 [data-audio-block]:hover {
-  background-color: rgba(59, 130, 246, 0.05);
+  background-color: rgba(var(--audio-block-hover-bg), var(--audio-block-hover-bg-opacity));
   transform: translateX(2px);
-  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.1);
-}
-
-.dark [data-audio-block]:hover {
-  background-color: rgba(59, 130, 246, 0.08);
-  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.15);
+  box-shadow: 0 0 0 1px rgba(var(--audio-block-hover-bg), var(--audio-block-hover-shadow-opacity));
 }
 
 /* When highlighted, show it's still clickable with enhanced hover */
 [data-audio-block].audio-highlighted:hover {
-  background-color: rgba(255, 255, 0, 0.3);
-  box-shadow: 0 0 0 2px rgba(255, 255, 0, 0.2);
-}
-
-.dark [data-audio-block].audio-highlighted:hover {
-  background-color: rgba(255, 255, 0, 0.25);
-  box-shadow: 0 0 0 2px rgba(255, 255, 0, 0.15);
+  background-color: rgba(var(--audio-highlight-bg), var(--audio-highlight-hover-bg-opacity));
+  box-shadow: 0 0 0 2px rgba(var(--audio-highlight-bg), var(--audio-highlight-hover-shadow-opacity));
 }
