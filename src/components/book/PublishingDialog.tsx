@@ -92,15 +92,24 @@ export function PublishingDialog({
       const versions = await VersionService.getVersionHistory(bookId);
       const uncommittedChanges = await VersionService.getUncommittedChanges(bookId);
 
+      console.log('Publishing status check:', {
+        versionsCount: versions.length,
+        hasUncommittedChanges: uncommittedChanges.hasChanges,
+        uncommittedPagesCount: uncommittedChanges.changedPages,
+        versions: versions.map(v => ({ id: v.versionId, number: v.versionNumber, isPublished: v.isPublished }))
+      });
+
       setUncommittedChangesCount(uncommittedChanges.changedPages);
 
       if (versions.length === 0) {
         // No commits exist - ask user to create first commit
+        console.log('No versions found - showing first commit screen');
         setStep(PublishingStep.AWAITING_FIRST_COMMIT);
       } else {
         // Commits exist - check if there are uncommitted changes
         if (uncommittedChanges.hasChanges) {
           // Has uncommitted changes - let user choose
+          console.log('Has uncommitted changes - showing choice screen');
           setStep(PublishingStep.AWAITING_CHOICE);
           setVersionId(versions[0].versionId); // Latest version
         } else {
@@ -109,10 +118,12 @@ export function PublishingDialog({
 
           if (publishedVersion) {
             // Already has a published version - just toggle is_public
+            console.log('Already has published version - making book public');
             setStep(PublishingStep.PUBLISHING);
             await makeBookPublic();
           } else {
             // Has versions but none published - publish the latest
+            console.log('Has versions but none published - publishing latest');
             setVersionId(versions[0].versionId);
             setStep(PublishingStep.CREATING_VERSION);
             await publishVersion(versions[0].versionId);
