@@ -88,6 +88,14 @@ export function PublishingDialog({
     try {
       setStep(PublishingStep.CHECKING);
 
+      // Small delay to ensure any recent commits have been fully processed
+      // This prevents race conditions when publishing immediately after committing
+      await new Promise(resolve => setTimeout(resolve, 300));
+
+      // Invalidate and refetch to ensure we have the latest data
+      await queryClient.invalidateQueries({ queryKey: ["uncommitted-changes", bookId] });
+      await queryClient.invalidateQueries({ queryKey: ["version-history", bookId] });
+
       // Check if any versions exist
       const versions = await VersionService.getVersionHistory(bookId);
       const uncommittedChanges = await VersionService.getUncommittedChanges(bookId);
