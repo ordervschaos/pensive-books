@@ -26,6 +26,7 @@ import { jsonToText, getWordCountFromContent } from "@/utils/tiptapHelpers";
 import { UncommittedChangesBadge } from "@/components/book/UncommittedChangesBadge";
 import { CommitDialog } from "@/components/book/CommitDialog";
 import { VersionHistory } from "@/components/book/VersionHistory";
+import { PublishingDialog } from "@/components/book/PublishingDialog";
 import { GitCommit, History, FileText } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -88,6 +89,7 @@ const BookDetails = () => {
 
   // Version control state
   const [isCommitDialogOpen, setIsCommitDialogOpen] = useState(false);
+  const [isPublishingDialogOpen, setIsPublishingDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("pages");
 
   const fetchBookmarkedPage = useCallback(async (session: any) => {
@@ -218,54 +220,18 @@ const BookDetails = () => {
     checkAuthAndFetch();
   }, [id, fetchBookmarkedPage, fetchBookDetails]);
 
-  const togglePublish = async () => {
-    try {
-      setPublishing(true);
-      const newPublishState = !book.is_public;
+  const handlePublish = () => {
+    setIsPublishingDialogOpen(true);
+  };
 
-      // If turning public, check if there's a published version
-      if (newPublishState && !book.published_version_id) {
-        toast({
-          variant: "destructive",
-          title: "No published version",
-          description: "Please publish a version from the Version History tab before making the book public."
-        });
-        setPublishing(false);
-        setActiveTab("history");
-        return;
-      }
+  const handleUnpublish = () => {
+    setIsPublishingDialogOpen(true);
+  };
 
-      const { error } = await supabase
-        .from("books")
-        .update({
-          is_public: newPublishState,
-          published_at: newPublishState ? new Date().toISOString() : null
-        })
-        .eq("id", parseInt(id || "0"));
-
-      if (error) throw error;
-
-      setBook({
-        ...book,
-        is_public: newPublishState,
-        published_at: newPublishState ? new Date().toISOString() : null
-      });
-
-      toast({
-        title: newPublishState ? "Book Made Public" : "Book Made Private",
-        description: newPublishState
-          ? "Your book is now visible to the public"
-          : "Your book is now private"
-      });
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error updating book",
-        description: error.message
-      });
-    } finally {
-      setPublishing(false);
-    }
+  const handlePublishingSuccess = async () => {
+    // Refresh book details after publishing/unpublishing
+    await fetchBookDetails();
+    setPublishing(false);
   };
 
   const handleEditClick = () => {
@@ -517,7 +483,8 @@ const BookDetails = () => {
               {canEdit && (
                 <BookActionsBar
                   isPublic={book.is_public}
-                  onTogglePublish={togglePublish}
+                  onPublish={handlePublish}
+                  onUnpublish={handleUnpublish}
                   publishing={publishing}
                   onEditClick={handleEditClick}
                 />
@@ -550,7 +517,8 @@ const BookDetails = () => {
                 {canEdit && (
                   <BookActionsBar
                     isPublic={book.is_public}
-                    onTogglePublish={togglePublish}
+                    onPublish={handlePublish}
+                    onUnpublish={handleUnpublish}
                     publishing={publishing}
                     onEditClick={handleEditClick}
                   />
@@ -712,6 +680,16 @@ const BookDetails = () => {
               // Optionally switch to version history tab after successful commit
               setActiveTab("versions");
             }}
+          />
+
+          {/* Publishing Dialog */}
+          <PublishingDialog
+            bookId={parseInt(id || "0")}
+            bookName={book.name}
+            isPublic={book.is_public}
+            open={isPublishingDialogOpen}
+            onOpenChange={setIsPublishingDialogOpen}
+            onSuccess={handlePublishingSuccess}
           />
         </div>
       </div>

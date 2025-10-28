@@ -10,6 +10,7 @@ import { ManageCollaboratorsSheet } from "@/components/book/ManageCollaboratorsS
 import { ShareBookSheet } from "@/components/book/ShareBookSheet";
 import { BookCoverEdit } from "@/components/book/BookCoverEdit";
 import { BookVisibilityToggle } from "@/components/book/BookVisibilityToggle";
+import { PublishingDialog } from "@/components/book/PublishingDialog";
 import { useBookPermissions } from "@/hooks/use-book-permissions";
 import { setPageTitle } from "@/utils/pageTitle";
 import { Card } from "@/components/ui/card";
@@ -48,6 +49,7 @@ export default function BookEdit() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [isPublishingDialogOpen, setIsPublishingDialogOpen] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -113,42 +115,18 @@ export default function BookEdit() {
     }
   };
 
-  const togglePublish = async () => {
-    try {
-      setPublishing(true);
-      const newPublishState = !book.is_public;
-      
-      const { error } = await supabase
-        .from("books")
-        .update({ 
-          is_public: newPublishState,
-          published_at: newPublishState ? new Date().toISOString() : null
-        })
-        .eq("id", parseInt(id || "0"));
+  const handlePublish = () => {
+    setIsPublishingDialogOpen(true);
+  };
 
-      if (error) throw error;
+  const handleUnpublish = () => {
+    setIsPublishingDialogOpen(true);
+  };
 
-      setBook({
-        ...book,
-        is_public: newPublishState,
-        published_at: newPublishState ? new Date().toISOString() : null
-      });
-
-      toast({
-        title: newPublishState ? "Book Published" : "Book Unpublished",
-        description: newPublishState 
-          ? "Your book is now available to the public"
-          : "Your book is now private"
-      });
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error updating book",
-        description: error.message
-      });
-    } finally {
-      setPublishing(false);
-    }
+  const handlePublishingSuccess = async () => {
+    // Refresh book details after publishing/unpublishing
+    await fetchBook();
+    setPublishing(false);
   };
 
   const handleArchiveBook = async () => {
@@ -200,7 +178,8 @@ export default function BookEdit() {
           <div className="flex items-center gap-4">
             <BookVisibilityToggle
               isPublic={book.is_public}
-              onTogglePublish={togglePublish}
+              onPublish={handlePublish}
+              onUnpublish={handleUnpublish}
               publishing={publishing}
             />
             {isOwner && id && book.view_invitation_token && book.edit_invitation_token && (
@@ -270,6 +249,16 @@ export default function BookEdit() {
             )}
           </div>
         </div>
+
+        {/* Publishing Dialog */}
+        <PublishingDialog
+          bookId={parseInt(id || "0")}
+          bookName={book.name}
+          isPublic={book.is_public}
+          open={isPublishingDialogOpen}
+          onOpenChange={setIsPublishingDialogOpen}
+          onSuccess={handlePublishingSuccess}
+        />
       </div>
     </div>
   );
