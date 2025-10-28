@@ -19,14 +19,19 @@ export const BookActionsBar = ({
   onEditClick
 }: BookActionsBarProps) => {
   return (
-    <div className="flex justify-center my-4 gap-2 justify-between">
+    <div className="flex items-center gap-1">
       <BookVisibilityToggle
         isPublic={isPublic}
         onPublish={onPublish}
         onUnpublish={onUnpublish}
         publishing={publishing}
       />
-      <Button onClick={onEditClick} variant="ghost">
+      <Button
+        onClick={onEditClick}
+        variant="ghost"
+        size="sm"
+        className="h-8 w-8 p-0"
+      >
         <Settings className="h-4 w-4" />
       </Button>
     </div>

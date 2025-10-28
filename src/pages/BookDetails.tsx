@@ -8,7 +8,6 @@ import { useBookPermissions } from "@/hooks/use-book-permissions";
 import { useUserBookPreferences } from "@/hooks/use-user-book-preferences";
 import { BookActionsBar } from "@/components/book/BookActionsBar";
 import { ShareBookButton } from "@/components/book/ShareBookButton";
-import { ContinueReadingButton } from "@/components/book/ContinueReadingButton";
 import { BookChatPanel } from "@/components/book/BookChatPanel";
 import { IntegratedFlashcardSection } from "@/components/flashcard/IntegratedFlashcardSection";
 import { FlashcardEditor } from "@/components/flashcard/FlashcardEditor";
@@ -460,61 +459,19 @@ const BookDetails = () => {
       </Helmet>
       
       <div className="container mx-auto px-4 py-6">
-        <div className="max-w-7xl mx-auto space-y-6">
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-4">
-            <div className="lg:hidden col-span-full">
-              <h1
-                className={`text-2xl font-bold mb-2 ${canEdit ? 'cursor-pointer hover:text-blue-600 transition-colors' : ''}`}
-                onClick={canEdit ? handleEditClick : undefined}
-              >
-                {book.name}
-              </h1>
-              <p className="text-muted-foreground mb-4">{book.author || "Unknown author"}</p>
-              
-              <div className="flex flex-wrap gap-3">
-                <ContinueReadingButton
-                  onClick={handleContinueReading}
-                  bookmarkedPageIndex={bookmarkedPageIndex}
-                  totalPages={pages.length}
-                  className="flex-1 sm:flex-none"
-                />
-              </div>
-
+        <div className="max-w-5xl mx-auto space-y-6">
+          {/* Single Column Layout */}
+          <div className="space-y-6">
+            {/* Book Header with Cover and Info */}
+            <div className="rounded-2xl border border-border/50 bg-gradient-to-b from-card/60 to-card/30 shadow-xl backdrop-blur overflow-hidden relative">
+              {/* Header Actions - Top Right */}
               {canEdit && (
-                <BookActionsBar
-                  isPublic={book.is_public}
-                  onPublish={handlePublish}
-                  onUnpublish={handleUnpublish}
-                  publishing={publishing}
-                  onEditClick={handleEditClick}
-                />
-              )}
-              
-              <ShareBookButton
-                isPublic={book.is_public}
-                url={window.location.href}
-              />
-            </div>
+                <div className="absolute top-4 right-4 sm:top-5 sm:right-5 md:top-6 md:right-6 z-10 flex items-center gap-2">
+                  <ShareBookButton
+                    isPublic={book.is_public}
+                    url={window.location.href}
+                  />
 
-            <div className="col-span-full lg:col-span-1">
-              <BookInfo
-                name={book.name}
-                subtitle={book.subtitle}
-                coverUrl={book.cover_url}
-                bookId={parseInt(id || "0")}
-                author={book.author}
-                showTextOnCover={book.show_text_on_cover}
-              />
-              
-              <div className="hidden lg:block space-y-4">
-                <ContinueReadingButton
-                  onClick={handleContinueReading}
-                  bookmarkedPageIndex={bookmarkedPageIndex}
-                  totalPages={pages.length}
-                  className="w-full"
-                />
-
-                {canEdit && (
                   <BookActionsBar
                     isPublic={book.is_public}
                     onPublish={handlePublish}
@@ -522,50 +479,48 @@ const BookDetails = () => {
                     publishing={publishing}
                     onEditClick={handleEditClick}
                   />
-                )}
-                
-                <ShareBookButton
-                  isPublic={book.is_public}
-                  url={window.location.href}
-                />
-              </div>
+                </div>
+              )}
+
+              <BookInfo
+                name={book.name}
+                subtitle={book.subtitle}
+                coverUrl={book.cover_url}
+                bookId={parseInt(id || "0")}
+                author={book.author}
+                showTextOnCover={book.show_text_on_cover}
+                currentPage={bookmarkedPageIndex ?? 0}
+                totalPages={pages.length}
+                onContinueReading={handleContinueReading}
+                lastUpdated={book.updated_at}
+              />
             </div>
 
-            <div className="col-span-full lg:col-span-3">
-              <div className="hidden lg:block mb-6">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1">
-                    <h1
-                      className={`text-3xl font-bold ${canEdit ? 'cursor-pointer hover:text-blue-600 transition-colors' : ''}`}
-                      onClick={canEdit ? handleEditClick : undefined}
-                    >
-                      {book.name}
-                    </h1>
-                    <p className="text-muted-foreground">{book.author || "Unknown author"}</p>
-                    {/* number of words */}
-                    <p className="text-muted-foreground">{pages.reduce((acc, page) =>
-                      acc + (page.page_type === 'text' && page.content ? getWordCountFromContent(page.content) : 0), 0)} words</p>
-                  </div>
+            {/* Word Count & Version Control */}
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">
+                {pages.reduce((acc, page) =>
+                  acc + (page.page_type === 'text' && page.content ? getWordCountFromContent(page.content) : 0), 0)} words
+              </p>
 
-                  {canEdit && (
-                    <div className="flex flex-col gap-2">
-                      <UncommittedChangesBadge bookId={parseInt(id || "0")} showCount />
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setIsCommitDialogOpen(true)}
-                        className="gap-2"
-                      >
-                        <GitCommit className="h-4 w-4" />
-                        Commit Changes
-                      </Button>
-                    </div>
-                  )}
+              {canEdit && (
+                <div className="flex items-center gap-2">
+                  <UncommittedChangesBadge bookId={parseInt(id || "0")} showCount />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setIsCommitDialogOpen(true)}
+                    className="gap-2"
+                  >
+                    <GitCommit className="h-4 w-4" />
+                    Commit Changes
+                  </Button>
                 </div>
-              </div>
+              )}
+            </div>
 
-
-              <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            {/* Tabs for Pages and Version History */}
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
                 <TabsList>
                   <TabsTrigger value="pages" className="gap-2">
                     <FileText className="h-4 w-4" />
@@ -606,23 +561,21 @@ const BookDetails = () => {
                 )}
               </Tabs>
 
-              {/* Integrated Flashcard Section - Only visible in beta */}
-              {isBetaEnabled && (
-                <IntegratedFlashcardSection
-                  flashcards={flashcards}
-                  loading={flashcardsLoading}
-                  onGenerate={() => setIsGenerateDialogOpen(true)}
-                  onEdit={handleEditFlashcard}
-                  onDelete={handleDeleteFlashcard}
-                  onStudy={handleStudyFlashcard}
-                  onView={handleViewFlashcard}
-                  isEnabled={preferences?.flashcards_enabled ?? true}
-                  onToggleEnabled={toggleFlashcards}
-                  preferencesLoading={preferencesLoading}
-                />
-              )}
-            </div>
-
+            {/* Integrated Flashcard Section - Only visible in beta */}
+            {isBetaEnabled && (
+              <IntegratedFlashcardSection
+                flashcards={flashcards}
+                loading={flashcardsLoading}
+                onGenerate={() => setIsGenerateDialogOpen(true)}
+                onEdit={handleEditFlashcard}
+                onDelete={handleDeleteFlashcard}
+                onStudy={handleStudyFlashcard}
+                onView={handleViewFlashcard}
+                isEnabled={preferences?.flashcards_enabled ?? true}
+                onToggleEnabled={toggleFlashcards}
+                preferencesLoading={preferencesLoading}
+              />
+            )}
           </div>
 
           {/* Chat Sidebar - Rendered as a portal */}

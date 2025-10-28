@@ -15,30 +15,24 @@ export const BookVisibilityToggle = ({
   publishing
 }: BookVisibilityToggleProps) => {
   return (
-    <div className="flex items-center gap-2">
+    <Button
+      onClick={isPublic ? onUnpublish : onPublish}
+      disabled={publishing}
+      variant="ghost"
+      size="sm"
+      className="h-8 gap-1.5 text-xs"
+    >
       {isPublic ? (
-        <Button
-          onClick={onUnpublish}
-          disabled={publishing}
-          variant="outline"
-          size="sm"
-          className="gap-2"
-        >
-          <Lock className="h-4 w-4" />
-          Unpublish
-        </Button>
+        <>
+          <Lock className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">Private</span>
+        </>
       ) : (
-        <Button
-          onClick={onPublish}
-          disabled={publishing}
-          variant="default"
-          size="sm"
-          className="gap-2"
-        >
-          <Globe className="h-4 w-4" />
-          Publish
-        </Button>
+        <>
+          <Globe className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">Publish</span>
+        </>
       )}
-    </div>
+    </Button>
   );
 }; 

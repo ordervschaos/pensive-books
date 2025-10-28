@@ -120,7 +120,7 @@ export default function Landing() {
                     <CarouselItem key={book.id} className="pl-2 md:pl-4 basis-full sm:basis-1/2 md:basis-1/3 lg:basis-1/4">
                       <Card
                         className="relative cursor-pointer group overflow-hidden aspect-[3/4]"
-                        onClick={() => navigate(`/book/${book.id}`)}
+                        onClick={() => navigate(`/library/book/${book.id}`)}
                       >
                         {book.cover_url ? (
                           <div className="relative w-full h-full">
