@@ -25,8 +25,6 @@ export interface NavBreadcrumbProps {
 export interface NavActionsProps {
   isAuthenticated: boolean;
   isBookRoute: boolean;
-  theme: string;
-  toggleTheme: () => void;
   handleLogout: () => void;
   handleLogin: () => void;
   setSearchOpen: (open: boolean) => void;

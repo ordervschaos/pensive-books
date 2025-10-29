@@ -61,7 +61,12 @@ export default {
 					'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
 					border: 'hsl(var(--sidebar-border))',
 					ring: 'hsl(var(--sidebar-ring))'
-				}
+				},
+				'image-overlay': {
+					DEFAULT: 'rgb(var(--image-overlay-text))',
+					muted: 'rgb(var(--image-overlay-text-muted) / var(--image-overlay-text-muted-opacity))'
+				},
+				link: 'rgb(var(--color-link))'
 			},
 			borderRadius: {
 				lg: 'var(--radius)',

@@ -35,8 +35,8 @@ export const NavBreadcrumb = ({ bookName, pageName, location, navigate }: NavBre
             </BreadcrumbItem>
           )}
           <BreadcrumbItem className="flex items-center min-w-0">
-            <Link 
-              className="text-blue-500 hover:text-blue-600 transition-colors font-medium shrink-0" 
+            <Link
+              className="text-link hover:opacity-80 transition-opacity font-medium shrink-0"
               to={`/my-books`}
             >
               <Library className="h-5 w-5" />
@@ -44,8 +44,8 @@ export const NavBreadcrumb = ({ bookName, pageName, location, navigate }: NavBre
             <span className="mx-2 text-muted-foreground shrink-0">›</span>
             {isPageRoute ? (
               <>
-                <Link 
-                  className="text-blue-500 hover:text-blue-600 transition-colors font-medium truncate max-w-[120px] md:max-w-[200px]"
+                <Link
+                  className="text-link hover:opacity-80 transition-opacity font-medium truncate max-w-[120px] md:max-w-[200px]"
                   to={`/book/${location.pathname.split('/')[2]}`}
                 >
                   {bookName}
@@ -59,8 +59,8 @@ export const NavBreadcrumb = ({ bookName, pageName, location, navigate }: NavBre
               <>
                 {isBookEditRoute ? (
                   <>
-                    <Link 
-                      className="text-blue-500 hover:text-blue-600 transition-colors font-medium truncate max-w-[300px]"
+                    <Link
+                      className="text-link hover:opacity-80 transition-opacity font-medium truncate max-w-[300px]"
                       to={`/book/${location.pathname.split('/')[2]}`}
                     >
                       {bookName}

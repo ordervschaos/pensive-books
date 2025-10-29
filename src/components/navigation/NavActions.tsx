@@ -1,22 +1,26 @@
-import { LogOut, LogIn, Moon, Sun, Search, MoreVertical } from "lucide-react";
+import { LogOut, LogIn, Search, MoreVertical, Moon, Sun, Coffee, Palette, Package } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { ThemeSwitcher } from "@/components/theme/ThemeSwitcher";
+import { useTheme } from "@/components/theme/ThemeProvider";
 import { NavActionsProps } from "./types";
 
-export const NavActions = ({ 
-  isAuthenticated, 
-  isBookRoute, 
-  theme, 
-  toggleTheme, 
-  handleLogout, 
-  handleLogin, 
-  setSearchOpen 
+export const NavActions = ({
+  isAuthenticated,
+  isBookRoute,
+  handleLogout,
+  handleLogin,
+  setSearchOpen
 }: NavActionsProps) => {
+  const { themeName, themeMode, setThemeName, setThemeMode } = useTheme();
+
   return (
     <div className="w-[120px] flex items-center gap-2 justify-end shrink-0">
       {/* Desktop buttons */}
@@ -26,13 +30,7 @@ export const NavActions = ({
             <Search className="h-4 w-4" />
           </Button>
         )}
-        <Button variant="ghost" size="icon" onClick={toggleTheme}>
-          {theme === "light" ? (
-            <Moon className="h-4 w-4" />
-          ) : (
-            <Sun className="h-4 w-4" />
-          )}
-        </Button> 
+        <ThemeSwitcher />
         {isAuthenticated ? (
           <Button variant="ghost" size="icon" onClick={handleLogout}>
             <LogOut className="h-4 w-4" />
@@ -59,19 +57,49 @@ export const NavActions = ({
                 <span>Search</span>
               </DropdownMenuItem>
             )}
-            <DropdownMenuItem onClick={toggleTheme}>
-              {theme === "light" ? (
-                <>
-                  <Moon className="h-4 w-4 mr-2" />
-                  <span>Dark mode</span>
-                </>
-              ) : (
-                <>
-                  <Sun className="h-4 w-4 mr-2" />
-                  <span>Light mode</span>
-                </>
-              )}
+
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel>Theme</DropdownMenuLabel>
+            <DropdownMenuItem
+              onClick={() => setThemeName("default")}
+              className={themeName === "default" ? "bg-accent" : ""}
+            >
+              <Palette className="h-4 w-4 mr-2" />
+              <span>Default</span>
             </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => setThemeName("coffee")}
+              className={themeName === "coffee" ? "bg-accent" : ""}
+            >
+              <Coffee className="h-4 w-4 mr-2" />
+              <span>Coffee</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => setThemeName("mujiyish")}
+              className={themeName === "mujiyish" ? "bg-accent" : ""}
+            >
+              <Package className="h-4 w-4 mr-2" />
+              <span>Mujiyish</span>
+            </DropdownMenuItem>
+
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel>Mode</DropdownMenuLabel>
+            <DropdownMenuItem
+              onClick={() => setThemeMode("light")}
+              className={themeMode === "light" ? "bg-accent" : ""}
+            >
+              <Sun className="h-4 w-4 mr-2" />
+              <span>Light</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => setThemeMode("dark")}
+              className={themeMode === "dark" ? "bg-accent" : ""}
+            >
+              <Moon className="h-4 w-4 mr-2" />
+              <span>Dark</span>
+            </DropdownMenuItem>
+
+            <DropdownMenuSeparator />
             {isAuthenticated ? (
               <DropdownMenuItem onClick={handleLogout}>
                 <LogOut className="h-4 w-4 mr-2" />

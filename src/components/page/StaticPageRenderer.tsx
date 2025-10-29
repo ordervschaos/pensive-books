@@ -195,7 +195,7 @@ export const StaticPageRenderer = ({
     Link.configure({
       openOnClick: true,
       HTMLAttributes: {
-        class: 'text-blue-500 dark:text-blue-400 underline',
+        class: 'text-link underline',
       },
     }),
     Image.configure({

@@ -13,7 +13,6 @@ export function TopNav() {
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
-  const { theme, toggleTheme } = useTheme();
   const [bookName, setBookName] = useState<string>("");
   const [pageName, setPageName] = useState<string>("");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -214,11 +213,9 @@ export function TopNav() {
             </div>
 
             {/* Right actions */}
-            <NavActions 
+            <NavActions
               isAuthenticated={isAuthenticated}
               isBookRoute={isBookRoute}
-              theme={theme}
-              toggleTheme={toggleTheme}
               handleLogout={handleLogout}
               handleLogin={handleLogin}
               setSearchOpen={setSearchOpen}
