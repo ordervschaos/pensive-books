@@ -54,7 +54,7 @@ export const FloatingActions = ({
 
   return (
     <>
-      <div className="fixed bottom-12 z-50 flex flex-col gap-3 items-center" style={{ left: 'calc(50% + min(48rem, 100vw) / 2 - 1rem)' }}>
+      <div className="fixed bottom-12 z-50 flex flex-col gap-3 items-center" style={{ left: '2rem)' }}>
         {/* Audio button - only in beta */}
         {isBetaEnabled && pageId && (
           <Button
