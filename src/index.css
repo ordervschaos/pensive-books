@@ -336,8 +336,8 @@
     --popover-foreground: 48 60% 94%;
   
     /* Brand / interactive (lifted for legibility on dark) */
-    --primary: 348 60% 35%;     /* muted MUJI maroon */
-    --primary-foreground: 48 60% 95%;
+    --primary: 348 70% 55%;     /* brighter MUJI maroon for better contrast */
+    --primary-foreground: 30 20% 14%;  /* dark text on bright primary */
   
     --secondary: 20 18% 24%;    /* warm charcoal panel */
     --secondary-foreground: 48 60% 92%;
@@ -367,7 +367,7 @@
     /* Brand variants & links */
     --color-brand-primary-dark: #8b1538;  /* muted maroon for dark */
     --color-brand-primary-darker: #6b1029;
-    --color-link: 139 21 56;      /* muted maroon - rgb(139, 21, 56) = #8b1538 */
+    --color-link: 219 112 147;    /* brighter pink-maroon - rgb(219, 112, 147) = #db7093 for better contrast */
     
     /* Optional audio feature opacities */
     --audio-highlight-bg-opacity: 0.16;
