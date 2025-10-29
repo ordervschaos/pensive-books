@@ -12,7 +12,9 @@ import {
   SidebarContent,
   SidebarInset
 } from "@/components/ui/sidebar";
-import { useEffect } from "react";
+import { useEffect, useCallback } from "react";
+import { useKeyboardNavigation } from "@/hooks/use-keyboard-navigation";
+import { useBookmarkTracking } from "@/hooks/use-bookmark-tracking";
 
 /**
  * PublishedPageView - Public read-only view of a published page
@@ -35,12 +37,51 @@ export default function PublishedPageView() {
     notFound,
   } = usePublishedPageData(bookId, pageId);
 
+  // Navigation handlers - defined early for keyboard navigation hook
+  const numericBookId = SlugService.extractId(bookId);
+  const numericPageId = SlugService.extractId(pageId);
+
+  const handleNavigateToPage = useCallback((targetPageId: number, targetTitle: string) => {
+    const pageSlug = SlugService.generateSlug(targetPageId, targetTitle);
+    navigate(`/library/book/${bookId}/page/${pageSlug}`);
+  }, [bookId, navigate]);
+
+  const handlePrevious = useCallback(() => {
+    if (currentIndex > 0 && allPages.length > 0) {
+      const prevPage = allPages[currentIndex - 1];
+      handleNavigateToPage(prevPage.id, prevPage.title);
+    }
+  }, [currentIndex, allPages, handleNavigateToPage]);
+
+  const handleNext = useCallback(() => {
+    if (currentIndex < totalPages - 1 && allPages.length > 0) {
+      const nextPage = allPages[currentIndex + 1];
+      handleNavigateToPage(nextPage.id, nextPage.title);
+    }
+  }, [currentIndex, totalPages, allPages, handleNavigateToPage]);
+
+  const handleBackToBook = useCallback(() => {
+    navigate(`/library/book/${bookId}`);
+  }, [bookId, navigate]);
+
   // Set page title
   useEffect(() => {
     if (page?.title && book?.name) {
       document.title = `${page.title} - ${book.name}`;
     }
   }, [page?.title, book?.name]);
+
+  // Automatically track reading position (updates bookmark when currentIndex changes)
+  useBookmarkTracking(numericBookId, currentIndex);
+
+  // Enable arrow key navigation (Left/Right arrows)
+  useKeyboardNavigation(
+    {
+      onNext: handleNext,
+      onPrev: handlePrevious
+    },
+    false // Not in editing mode (read-only view)
+  );
 
   if (loading) {
     return (
@@ -72,32 +113,6 @@ export default function PublishedPageView() {
       </div>
     );
   }
-
-  const numericBookId = SlugService.extractId(bookId);
-  const numericPageId = SlugService.extractId(pageId);
-
-  const handleNavigateToPage = (targetPageId: number, targetTitle: string) => {
-    const pageSlug = SlugService.generateSlug(targetPageId, targetTitle);
-    navigate(`/library/book/${bookId}/page/${pageSlug}`);
-  };
-
-  const handlePrevious = () => {
-    if (currentIndex > 0) {
-      const prevPage = allPages[currentIndex - 1];
-      handleNavigateToPage(prevPage.id, prevPage.title);
-    }
-  };
-
-  const handleNext = () => {
-    if (currentIndex < totalPages - 1) {
-      const nextPage = allPages[currentIndex + 1];
-      handleNavigateToPage(nextPage.id, nextPage.title);
-    }
-  };
-
-  const handleBackToBook = () => {
-    navigate(`/library/book/${bookId}`);
-  };
 
   return (
     <SidebarProvider defaultOpen={false}>
