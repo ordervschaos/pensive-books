@@ -5,68 +5,381 @@
  
 @layer base {
   :root {
+    /* ============================================
+       THEME SYSTEM
+       ============================================
+       Structure: :root = default theme (light)
+                  .dark = default theme (dark)
+                  .theme-* = custom theme (light)
+                  .theme-*.dark = custom theme (dark)
+       ============================================ */
+
+    /* Radius - constant across all themes */
+    --radius: 0.5rem;
+
+    /* ============================================
+       DEFAULT THEME (Light Mode)
+       ============================================ */
+
+    /* shadcn/ui color tokens */
     --background: 0 0% 100%;
     --foreground: 0 0% 25%;
 
     --card: 0 0% 100%;
     --card-foreground: 0 0% 3.9%;
- 
+
     --popover: 0 0% 100%;
     --popover-foreground: 0 0% 3.9%;
- 
+
     --primary: 0 0% 9%;
     --primary-foreground: 0 0% 98%;
- 
+
     --secondary: 0 0% 96.1%;
     --secondary-foreground: 0 0% 9%;
- 
+
     --muted: 0 0% 96.1%;
     --muted-foreground: 0 0% 45.1%;
- 
+
     --accent: 0 0% 96.1%;
     --accent-foreground: 0 0% 9%;
- 
+
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
 
     --border: 0 0% 89.8%;
     --input: 0 0% 89.8%;
     --ring: 0 0% 3.9%;
- 
-    --radius: 0.5rem;
+
+    /* ============================================
+       Semantic Color Palette (Default Theme)
+       ============================================ */
+
+    /* Base colors - used across different contexts */
+    --color-black: 0 0 0;
+    --color-white: 255 255 255;
+    --color-yellow: 255 255 0;
+    --color-blue: 59 130 246;
+
+    /* Neutral grays - from darkest to lightest */
+    --color-gray-900: #333;  /* Dark gray for body text */
+    --color-gray-700: #444;  /* Medium-dark gray for headings */
+    --color-gray-600: #555;  /* Medium gray for meta text */
+    --color-gray-500: #666;  /* Medium-light gray for muted text */
+    --color-gray-300: #ccc;  /* Light gray for borders */
+    --color-gray-200: #ddd;  /* Very light gray for subtle borders */
+    --color-gray-100: #f5f5f5;  /* Almost white for backgrounds */
+
+    /* Brand/accent colors */
+    --color-brand-primary-dark: #1a3c5a;  /* Deep brand color for gradients */
+    --color-brand-primary-darker: #0f2439;  /* Darker brand color for gradients */
+    --color-link: 0 102 204;  /* Link color - rgb(0, 102, 204) = #0066cc */
+
+    /* ============================================
+       Audio Feature Colors
+       ============================================ */
+
+    /* Audio highlighting - uses yellow */
+    --audio-highlight-bg: var(--color-yellow);
+    --audio-highlight-bg-opacity: 0.2;
+    --audio-highlight-shadow-opacity: 0.1;
+    --audio-highlight-hover-bg-opacity: 0.3;
+    --audio-highlight-hover-shadow-opacity: 0.2;
+
+    /* Audio block hover - uses blue */
+    --audio-block-hover-bg: var(--color-blue);
+    --audio-block-hover-bg-opacity: 0.05;
+    --audio-block-hover-shadow-opacity: 0.1;
+
+    /* ============================================
+       EPUB/Book Generation Colors
+       ============================================ */
+
+    /* Cover design */
+    --epub-cover-overlay: var(--color-black);
+    --epub-cover-overlay-opacity: 0.5;
+    --epub-cover-gradient-start: var(--color-brand-primary-dark);
+    --epub-cover-gradient-end: var(--color-brand-primary-darker);
+    --epub-cover-text: #ffffff;  /* Pure white, not RGB format */
+    --epub-cover-text-shadow: var(--color-black);
+    --epub-cover-text-shadow-opacity: 0.7;
+    --epub-cover-bg: #000000;  /* Pure black, not RGB format */
+
+    /* Content styling */
+    --epub-text-body: var(--color-gray-900);
+    --epub-text-meta: var(--color-gray-600);
+    --epub-text-heading: var(--color-gray-700);
+    --epub-text-muted: var(--color-gray-500);
+    --epub-link: var(--color-link);
+
+    /* Borders and backgrounds */
+    --epub-border-medium: var(--color-gray-300);
+    --epub-border-light: var(--color-gray-200);
+    --epub-bg-subtle: var(--color-gray-100);
+
+    /* ============================================
+       Image Overlay Text Colors
+       ============================================ */
+
+    /* Text that appears over images with dark overlays */
+    --image-overlay-text: 255 255 255;  /* Pure white for maximum contrast */
+    --image-overlay-text-muted: 255 255 255;  /* Same base, opacity applied in Tailwind */
+    --image-overlay-text-muted-opacity: 0.9;  /* 90% opacity for subtle variation */
   }
- 
+
+  /* ============================================
+     DEFAULT THEME (Dark Mode)
+     ============================================ */
   .dark {
+    /* shadcn/ui color tokens - dark mode */
     --background: 0 0% 3.9%;
     --foreground: 0 0% 75%;
- 
+
     --card: 0 0% 3.9%;
     --card-foreground: 0 0% 98%;
- 
+
     --popover: 0 0% 3.9%;
     --popover-foreground: 0 0% 98%;
- 
+
     --primary: 0 0% 90%;
     --primary-foreground: 0 0% 9%;
- 
+
     --secondary: 0 0% 14.9%;
     --secondary-foreground: 0 0% 98%;
- 
+
     --muted: 0 0% 14.9%;
     --muted-foreground: 0 0% 63.9%;
- 
+
     --accent: 0 0% 14.9%;
     --accent-foreground: 0 0% 98%;
- 
+
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 98%;
- 
+
     --border: 0 0% 14.9%;
     --input: 0 0% 14.9%;
     --ring: 0 0% 83.1%;
+
+    /* Audio feature opacity adjustments for dark mode */
+    --audio-highlight-bg-opacity: 0.15;
+    --audio-highlight-shadow-opacity: 0.08;
+    --audio-highlight-hover-bg-opacity: 0.25;
+    --audio-highlight-hover-shadow-opacity: 0.15;
+
+    --audio-block-hover-bg-opacity: 0.08;
+    --audio-block-hover-shadow-opacity: 0.15;
+  }
+
+  /* ============================================
+     COFFEE THEME (Light Mode)
+     ============================================ */
+  .theme-coffee {
+    /* shadcn/ui color tokens - coffee light */
+    --background: 35 30% 98%;  /* Cream/off-white */
+    --foreground: 25 40% 20%;  /* Dark coffee brown */
+
+    --card: 35 25% 96%;  /* Light cream */
+    --card-foreground: 25 40% 20%;
+
+    --popover: 35 25% 96%;
+    --popover-foreground: 25 40% 20%;
+
+    --primary: 25 45% 35%;  /* Rich coffee brown */
+    --primary-foreground: 35 30% 98%;
+
+    --secondary: 30 35% 85%;  /* Latte beige */
+    --secondary-foreground: 25 40% 20%;
+
+    --muted: 30 25% 88%;  /* Light beige */
+    --muted-foreground: 25 25% 40%;  /* Medium brown */
+
+    --accent: 30 50% 75%;  /* Warm tan */
+    --accent-foreground: 25 40% 20%;
+
+    --destructive: 0 70% 50%;  /* Keep red for errors */
+    --destructive-foreground: 35 30% 98%;
+
+    --border: 30 20% 80%;  /* Soft brown border */
+    --input: 30 20% 80%;
+    --ring: 25 45% 35%;
+
+    /* Semantic colors - coffee palette */
+    --color-gray-900: #3d2817;  /* Dark coffee */
+    --color-gray-700: #5c3d2e;  /* Medium-dark coffee */
+    --color-gray-600: #7a5548;  /* Medium coffee */
+    --color-gray-500: #8b6f5f;  /* Light coffee */
+    --color-gray-300: #c4a68a;  /* Tan */
+    --color-gray-200: #d9c4b0;  /* Light tan */
+    --color-gray-100: #f0e6db;  /* Cream */
+
+    --color-brand-primary-dark: #6b4423;  /* Coffee bean */
+    --color-brand-primary-darker: #4a2f19;  /* Espresso */
+    --color-link: 139 90 60;  /* Caramel link - rgb(139, 90, 60) = #8b5a3c */
+  }
+
+  /* ============================================
+     COFFEE THEME (Dark Mode)
+     ============================================ */
+  .theme-coffee.dark {
+    /* shadcn/ui color tokens - coffee dark */
+    --background: 25 30% 12%;  /* Dark roast */
+    --foreground: 30 20% 85%;  /* Light cream text */
+
+    --card: 25 25% 15%;  /* Slightly lighter dark */
+    --card-foreground: 30 20% 90%;
+
+    --popover: 25 25% 15%;
+    --popover-foreground: 30 20% 90%;
+
+    --primary: 30 40% 70%;  /* Light caramel */
+    --primary-foreground: 25 30% 12%;
+
+    --secondary: 25 20% 22%;  /* Dark chocolate */
+    --secondary-foreground: 30 20% 90%;
+
+    --muted: 25 15% 20%;  /* Muted dark brown */
+    --muted-foreground: 30 15% 65%;  /* Muted tan */
+
+    --accent: 30 30% 30%;  /* Deep tan */
+    --accent-foreground: 30 20% 90%;
+
+    --destructive: 0 55% 45%;  /* Darker red for dark mode */
+    --destructive-foreground: 30 20% 90%;
+
+    --border: 25 20% 25%;  /* Dark border */
+    --input: 25 20% 25%;
+    --ring: 30 40% 70%;
+
+    /* Semantic colors - coffee dark palette */
+    --color-gray-900: #e5d4c1;  /* Light for dark bg */
+    --color-gray-700: #c4a68a;  /* Lighter tan */
+    --color-gray-600: #a68a72;  /* Medium tan */
+    --color-gray-500: #8b7461;  /* Darker tan */
+    --color-gray-300: #5c4a3a;  /* Dark brown border */
+    --color-gray-200: #453529;  /* Darker brown border */
+    --color-gray-100: #2e2419;  /* Very dark background */
+
+    --color-brand-primary-dark: #b8956a;  /* Golden coffee */
+    --color-brand-primary-darker: #8b6f47;  /* Darker golden */
+    --color-link: 212 165 116;  /* Bright caramel link - rgb(212, 165, 116) = #d4a574 */
+
+    /* Audio feature opacity adjustments for coffee dark mode */
+    --audio-highlight-bg-opacity: 0.18;
+    --audio-highlight-shadow-opacity: 0.1;
+    --audio-highlight-hover-bg-opacity: 0.28;
+    --audio-highlight-hover-shadow-opacity: 0.18;
+
+    --audio-block-hover-bg-opacity: 0.1;
+    --audio-block-hover-shadow-opacity: 0.18;
+  }
+/* ============================================
+   MUJI THEME (Light)
+   ============================================ */
+   .theme-mujiyish {
+    /* Core surfaces & text (warm, paper-like) */
+    --background: 48 60% 95%;   /* #faf7eb */
+    --foreground: 30 22% 16%;   /* deep warm brown (~#31241b) for better contrast */
+  
+    --card: 48 45% 96%;         /* slightly lighter than bg for subtle elevation */
+    --card-foreground: 30 22% 16%;
+  
+    --popover: 48 45% 96%;
+    --popover-foreground: 30 22% 16%;
+  
+    /* Brand / interactive */
+    --primary: 348 100% 25%;    /* MUJI maroon #7f0019 */
+    --primary-foreground: 48 60% 95%; /* cream on maroon */
+  
+    --secondary: 29 28% 63%;    /* kraft beige #bb9f85 */
+    --secondary-foreground: 30 22% 16%;
+  
+    --muted: 0 0% 80%;          /* #cccccc */
+    --muted-foreground: 0 0% 40%;/* #666666 */
+  
+    --accent: 73 17% 56%;       /* olive/khaki #9aa27c (gentle accent) */
+    --accent-foreground: 30 22% 16%;
+  
+    --destructive: 0 65% 46%;   /* tuned red for errors (accessible on cream) */
+    --destructive-foreground: 48 60% 95%;
+  
+    /* Inputs, borders, focus */
+    --border: 20 27% 82%;       /* warm paper edge */
+    --input: 20 27% 82%;
+    --ring: 348 90% 32%;        /* brighter MUJI maroon for focus */
+  
+    /* Semantic neutrals drawn from your references */
+    --color-gray-900: #3a2a1a;  /* deep natural brown (text) */
+    --color-gray-700: #666666;  /* from palette 70883 */
+    --color-gray-600: #999999;  /* from palette 70883 */
+    --color-gray-500: #bb9f85;  /* kraft beige midtone */
+    --color-gray-300: #d9d0bf;  /* light warm beige */
+    --color-gray-200: #f5f5f5;  /* from palette 95591 */
+    --color-gray-100: #faf7eb;  /* paper cream */
+  
+    /* Brand variants & links */
+    --color-brand-primary-dark: #7f0019;
+    --color-brand-primary-darker: #5a0012;
+    --color-link: 127 0 25;      /* MUJI maroon as link - rgb(127, 0, 25) = #7f0019 */
+  }
+  
+  /* ============================================
+     MUJI THEME (Dark)
+     ============================================ */
+  .theme-mujiyish.dark {
+    /* Core surfaces & text (warm dark, not gray) */
+    --background: 30 20% 14%;   /* ~#2a2218 */
+    --foreground: 48 60% 94%;   /* cream text #faf7eb */
+  
+    --card: 30 20% 17%;
+    --card-foreground: 48 60% 94%;
+  
+    --popover: 30 20% 17%;
+    --popover-foreground: 48 60% 94%;
+  
+    /* Brand / interactive (lifted for legibility on dark) */
+    --primary: 348 60% 35%;     /* muted MUJI maroon */
+    --primary-foreground: 48 60% 95%;
+  
+    --secondary: 20 18% 24%;    /* warm charcoal panel */
+    --secondary-foreground: 48 60% 92%;
+  
+    --muted: 30 12% 28%;
+    --muted-foreground: 29 20% 70%;
+  
+    --accent: 73 17% 52%;       /* olive accent slightly dimmed for dark */
+    --accent-foreground: 30 22% 14%;
+  
+    --destructive: 0 70% 48%;
+    --destructive-foreground: 48 60% 95%;
+  
+    --border: 30 12% 30%;
+    --input: 30 12% 30%;
+    --ring: 348 60% 45%;
+  
+    /* Semantic neutrals (reversed) */
+    --color-gray-900: #f0e8da;  /* warm cream for high-contrast text */
+    --color-gray-700: #d4c8b0;
+    --color-gray-600: #b8a890;
+    --color-gray-500: #9d8a70;
+    --color-gray-300: #5a4d3f;
+    --color-gray-200: #4a3f33;
+    --color-gray-100: #3d342a;
+  
+    /* Brand variants & links */
+    --color-brand-primary-dark: #8b1538;  /* muted maroon for dark */
+    --color-brand-primary-darker: #6b1029;
+    --color-link: 139 21 56;      /* muted maroon - rgb(139, 21, 56) = #8b1538 */
+    
+    /* Optional audio feature opacities */
+    --audio-highlight-bg-opacity: 0.16;
+    --audio-highlight-shadow-opacity: 0.10;
+    --audio-highlight-hover-bg-opacity: 0.26;
+    --audio-highlight-hover-shadow-opacity: 0.16;
+  
+    --audio-block-hover-bg-opacity: 0.09;
+    --audio-block-hover-shadow-opacity: 0.16;
   }
 }
- 
+
 @layer base {
   * {
     @apply border-border;
@@ -100,16 +413,11 @@
 
 /* Audio Block Highlighting */
 .audio-highlighted {
-  background-color: rgba(255, 255, 0, 0.2);
+  background-color: rgba(var(--audio-highlight-bg), var(--audio-highlight-bg-opacity));
   transition: background-color 0.3s ease, box-shadow 0.3s ease;
   border-radius: 4px;
   /* Use box-shadow instead of padding to avoid layout shift */
-  box-shadow: 0 0 0 2px rgba(255, 255, 0, 0.1);
-}
-
-.dark .audio-highlighted {
-  background-color: rgba(255, 255, 0, 0.15);
-  box-shadow: 0 0 0 2px rgba(255, 255, 0, 0.08);
+  box-shadow: 0 0 0 2px rgba(var(--audio-highlight-bg), var(--audio-highlight-shadow-opacity));
 }
 
 /* Audio Block Clickable - makes blocks interactive */
@@ -121,23 +429,13 @@
 }
 
 [data-audio-block]:hover {
-  background-color: rgba(59, 130, 246, 0.05);
+  background-color: rgba(var(--audio-block-hover-bg), var(--audio-block-hover-bg-opacity));
   transform: translateX(2px);
-  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.1);
-}
-
-.dark [data-audio-block]:hover {
-  background-color: rgba(59, 130, 246, 0.08);
-  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.15);
+  box-shadow: 0 0 0 1px rgba(var(--audio-block-hover-bg), var(--audio-block-hover-shadow-opacity));
 }
 
 /* When highlighted, show it's still clickable with enhanced hover */
 [data-audio-block].audio-highlighted:hover {
-  background-color: rgba(255, 255, 0, 0.3);
-  box-shadow: 0 0 0 2px rgba(255, 255, 0, 0.2);
-}
-
-.dark [data-audio-block].audio-highlighted:hover {
-  background-color: rgba(255, 255, 0, 0.25);
-  box-shadow: 0 0 0 2px rgba(255, 255, 0, 0.15);
+  background-color: rgba(var(--audio-highlight-bg), var(--audio-highlight-hover-bg-opacity));
+  box-shadow: 0 0 0 2px rgba(var(--audio-highlight-bg), var(--audio-highlight-hover-shadow-opacity));
 }

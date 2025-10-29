@@ -171,16 +171,16 @@ export default function Index() {
                         />
                         {book.show_text_on_cover && (
                           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30 p-4">
-                            <h2 className="text-base sm:text-xl font-semibold text-slate-50 text-center mb-1 sm:mb-2 line-clamp-3 break-words">
+                            <h2 className="text-base sm:text-xl font-semibold text-image-overlay text-center mb-1 sm:mb-2 line-clamp-3 break-words">
                               {book.name}
                             </h2>
                             {book.subtitle && (
-                              <p className="text-xs hidden sm:block sm:text-sm text-slate-100 text-center mb-1 sm:mb-2 line-clamp-2 break-words">
+                              <p className="text-xs hidden sm:block sm:text-sm text-image-overlay-muted text-center mb-1 sm:mb-2 line-clamp-2 break-words">
                                 {book.subtitle}
                               </p>
                             )}
                             {book.author && (
-                              <p className="text-xs hidden sm:block sm:text-sm text-slate-100 text-center line-clamp-1 break-words">
+                              <p className="text-xs hidden sm:block sm:text-sm text-image-overlay-muted text-center line-clamp-1 break-words">
                                 by {book.author}
                               </p>
                             )}
@@ -188,17 +188,17 @@ export default function Index() {
                         )}
                       </div>
                     ) : (
-                      <div className="absolute inset-0 flex flex-col items-center md:justify-center bg-slate-800 p-4">
-                        <h2 className="text-xs md:text-2xl font-semibold text-center text-slate-50 break-words line-clamp-3">
+                      <div className="absolute inset-0 flex flex-col items-center md:justify-center bg-secondary p-4">
+                        <h2 className="text-xs md:text-2xl font-semibold text-center text-secondary-foreground break-words line-clamp-3">
                           {book.name}
                         </h2>
                         {book.subtitle && (
-                          <p className="text-xs hidden sm:block sm:text-sm text-slate-100 text-center mb-1 sm:mb-2 line-clamp-2 break-words">
+                          <p className="text-xs hidden sm:block sm:text-sm text-muted-foreground text-center mb-1 sm:mb-2 line-clamp-2 break-words">
                             {book.subtitle}
                           </p>
                         )}
                         {book.author && (
-                          <p className="text-xs hidden sm:block sm:text-sm text-slate-100 text-center line-clamp-1 break-words">
+                          <p className="text-xs hidden sm:block sm:text-sm text-muted-foreground text-center line-clamp-1 break-words">
                             by {book.author}
                           </p>
                         )}

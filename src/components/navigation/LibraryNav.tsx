@@ -125,7 +125,7 @@ export function LibraryNav() {
             {/* Library Link */}
             <Link
               to="/library"
-              className="flex items-center gap-1.5 hover:text-blue-500 transition-colors flex-shrink-0"
+              className="flex items-center gap-1.5 hover:text-link transition-colors flex-shrink-0"
             >
               <Library className="h-4 w-4" />
               <span className="text-sm font-medium hidden sm:inline">
@@ -140,7 +140,7 @@ export function LibraryNav() {
                 {isPageView ? (
                   <Link
                     to={`/library/book/${bookIdSlug}`}
-                    className="text-sm font-medium text-blue-500 hover:text-blue-600 transition-colors truncate max-w-[150px] md:max-w-[250px] hidden sm:inline"
+                    className="text-sm font-medium text-link hover:opacity-80 transition-opacity truncate max-w-[150px] md:max-w-[250px] hidden sm:inline"
                     title={bookName}
                   >
                     {bookName}
