@@ -174,7 +174,7 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
   );
 
   return (
-    <div className="flex gap-2 items-center justify-end min-h-[44px]">
+    <div className={`flex gap-2 items-center justify-end min-h-[44px] sticky top-0 ${isEditing ? 'bg-background' : ''} z-50`}>
       <div className="flex-1 flex justify-start">
         {isEditing && (
           <div className="rounded-md flex gap-1 grow items-center p-1 z-50 sticky top-4 bg-muted/50 shadow-sm backdrop-blur-sm">
