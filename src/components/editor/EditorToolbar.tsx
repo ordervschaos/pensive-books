@@ -1,5 +1,5 @@
 import { Editor } from '@tiptap/react';
-import { Bold, Italic, Quote, Code2, Link2, List, ListOrdered, Image as ImageIcon, Undo, Redo, Table as TableIcon, MoreHorizontal, Heading1, Heading2, Heading3, Heading, Pencil, Check } from "lucide-react";
+import { Bold, Italic, Quote, Code2, Link2, List, ListOrdered, Image as ImageIcon, Undo, Redo, Table as TableIcon, MoreHorizontal, Heading1, Heading2, Heading3, Heading, Pencil, Check, Type, Section } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useSupabaseUpload } from "@/hooks/use-supabase-upload";
@@ -20,9 +20,11 @@ interface EditorToolbarProps {
   customButtons?: React.ReactNode;
   onToggleChat?: () => void;
   hasActiveChat?: boolean;
+  pageType?: 'text' | 'section';
+  onPageTypeChange?: (newPageType: 'text' | 'section') => void;
 }
 
-export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, customButtons, onToggleChat, hasActiveChat }: EditorToolbarProps) => {
+export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, customButtons, onToggleChat, hasActiveChat, pageType, onPageTypeChange }: EditorToolbarProps) => {
   const { toast } = useToast();
   const uploadImage = useSupabaseUpload();
   const isMobile = useMediaQuery("(max-width: 768px)");
@@ -179,6 +181,50 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
         {isEditing && (
           <div className="rounded-md flex gap-1 grow items-center p-1 z-50 sticky top-4 bg-muted/50 shadow-sm backdrop-blur-sm">
             <div className="flex gap-1 items-center flex-1">
+              {/* Page Type Selector */}
+              {onPageTypeChange && (
+                <>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 px-2 text-xs"
+                        title="Page Type"
+                      >
+                        {pageType === 'section' ? (
+                          <>
+                            <Section className="h-4 w-4 mr-1" />
+                            <span className="hidden sm:inline">Section</span>
+                          </>
+                        ) : (
+                          <>
+                            <Type className="h-4 w-4 mr-1" />
+                            <span className="hidden sm:inline">Text</span>
+                          </>
+                        )}
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start">
+                      <DropdownMenuItem 
+                        onClick={() => onPageTypeChange('text')}
+                        className={pageType === 'text' ? 'bg-muted' : ''}
+                      >
+                        <Type className="mr-2 h-4 w-4" />
+                        Text Page
+                      </DropdownMenuItem>
+                      <DropdownMenuItem 
+                        onClick={() => onPageTypeChange('section')}
+                        className={pageType === 'section' ? 'bg-muted' : ''}
+                      >
+                        <Section className="mr-2 h-4 w-4" />
+                        Section (Centered)
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <div className="w-px h-4 bg-border mx-0.5" />
+                </>
+              )}
               {!isMobile ? (
               <>
                 <div className="flex gap-1">

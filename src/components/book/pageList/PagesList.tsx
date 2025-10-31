@@ -7,7 +7,6 @@ import {
   LayoutGrid,
   Trash2,
   Type,
-  Section,
   Plus,
   MoreVertical,
   MessageSquare,
@@ -339,33 +338,18 @@ export const PagesList = ({
           </div>
 
           {canEdit && (
-            <div className="flex flex-wrap items-center gap-4 ">
-              <Button
-                variant="outline"
-                onClick={() => createNewPage('section')}
-                className="flex items-center gap-2 relative flex-1 sm:flex-initial justify-center"
-                title="Add Section Header"
-                aria-label="Add Section Header"
-              >
-                <Section className="h-4 w-4" />
-                <span className="hidden md:block">Add Section</span>
-                <div className="absolute -top-2 -right-2 bg-green-500 rounded-full p-0.5 shadow-sm">
-                  <Plus className="h-3 w-3 text-white" />
-                </div>
-              </Button>
-              <Button
-                onClick={() => createNewPage('text')}
-                className="flex items-center gap-2 relative flex-1 sm:flex-initial justify-center"
-                title="Add Text Page"
-                aria-label="Add Text Page"
-              >
-                <Type className="h-4 w-4" />
-                <span>Add Page</span>
-                <div className="absolute -top-2 -right-2 bg-green-500 rounded-full p-0.5 shadow-sm">
-                  <Plus className="h-3 w-3 text-white" />
-                </div>
-              </Button>
-            </div>
+            <Button
+              onClick={() => createNewPage('text')}
+              className="flex items-center gap-2 relative"
+              title="Add Page"
+              aria-label="Add Page"
+            >
+              <Type className="h-4 w-4" />
+              <span>Add Page</span>
+              <div className="absolute -top-2 -right-2 bg-green-500 rounded-full p-0.5 shadow-sm">
+                <Plus className="h-3 w-3 text-white" />
+              </div>
+            </Button>
           )}
         </div>
 

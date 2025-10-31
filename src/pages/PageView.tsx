@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { PageNavigation } from "@/components/page/PageNavigation";
 import { PageContent } from "@/components/page/PageContent";
@@ -15,6 +15,8 @@ import {
 import { PageChatPanel } from "@/components/page/PageChatPanel";
 import { PageMeta } from "@/components/page/PageMeta";
 import { SlugService } from "@/utils/slugService";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 // Custom hooks
 import { usePageViewData } from "@/hooks/use-page-view-data";
@@ -58,8 +60,52 @@ const PageView = () => {
   // 5. Local UI state
   const [isEditing, setIsEditing] = useEditMode(canEdit);
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const { toast } = useToast();
+  
+  // Use ref to track page type independently to avoid triggering content updates
+  const pageTypeRef = useRef<'text' | 'section'>(page?.page_type as 'text' | 'section' || 'text');
 
-  // 6. Page save logic with proper state update
+  // 6. Page type update function
+  const handlePageTypeChange = async (newPageType: 'text' | 'section') => {
+    if (!canEdit || !page) return;
+    
+    try {
+      const { error } = await supabase
+        .from('pages')
+        .update({ page_type: newPageType })
+        .eq('id', numericPageId);
+
+      if (error) throw error;
+
+      // Update ref immediately to avoid re-renders
+      pageTypeRef.current = newPageType;
+      
+      // Update local state for persistence
+      setPage(prevPage =>
+        prevPage ? { ...prevPage, page_type: newPageType } : null
+      );
+
+      // Manually trigger editor refocus after state update
+      // Use a slight delay to ensure DOM has updated
+      setTimeout(() => {
+        const editorElement = document.querySelector('.ProseMirror') as HTMLElement;
+        if (editorElement) {
+          editorElement.focus();
+        }
+      }, 100);
+
+      // Toast removed to prevent cursor loss
+    } catch (error) {
+      console.error('Error updating page type:', error);
+      toast({
+        variant: "destructive",
+        title: "Failed to update page type",
+        description: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  };
+
+  // 7. Page save logic with proper state update
   const { handleSave, handleApplyEdit, saving } = usePageSave(
     pageId,
     canEdit,
@@ -71,7 +117,7 @@ const PageView = () => {
     }
   );
 
-  // 7. Navigation logic
+  // 8. Navigation logic
   const { navigateToPage, navigateNext, navigatePrev } = usePageNavigation(
     bookId,
     numericBookId,
@@ -79,18 +125,18 @@ const PageView = () => {
     currentIndex
   );
 
-  // 8. Page creation logic
+  // 9. Page creation logic
   const { createNewPage } = usePageCreation(bookId, numericBookId, canEdit);
 
-  // 9. Side effects (auto-tracking)
+  // 10. Side effects (auto-tracking)
   useBookmarkTracking(numericBookId, currentIndex);
   useKeyboardNavigation({ onNext: navigateNext, onPrev: navigatePrev }, isEditing);
   usePageTitle(page?.title, book?.name);
 
-  // 10. Preload next page for faster navigation
+  // 11. Preload next page for faster navigation
   useNextPagePreloader(numericBookId, nextPageId);
 
-  // 11. Loading state
+  // 12. Loading state
   if (dataLoading || permissionsLoading) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
@@ -101,7 +147,7 @@ const PageView = () => {
     );
   }
 
-  // 12. Not found state
+  // 13. Not found state
   if (!page || !book) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
@@ -112,7 +158,7 @@ const PageView = () => {
     );
   }
 
-  // 13. Main render - Pure composition
+  // 14. Main render - Pure composition
   return (
     <SidebarProvider defaultOpen={false}>
       <div className="min-h-[calc(100vh-56px)] flex flex-col bg-background w-full">
@@ -146,7 +192,8 @@ const PageView = () => {
                     title={page.title || 'Untitled'}
                     onSave={handleSave}
                     saving={saving}
-                    pageType={page.page_type as 'text' | 'section'}
+                    pageType={pageTypeRef.current}
+                    onPageTypeChange={handlePageTypeChange}
                     editable={canEdit}
                     onEditingChange={setIsEditing}
                     canEdit={canEdit}

@@ -13,6 +13,7 @@ interface PageContentProps {
   onSave: PageSaveHandler;
   saving: boolean;
   pageType?: 'text' | 'section';
+  onPageTypeChange?: (newPageType: 'text' | 'section') => void;
   editable?: boolean;
   onEditingChange?: (isEditing: boolean) => void;
   canEdit?: boolean;
@@ -29,6 +30,7 @@ export const PageContent = ({
   title,
   onSave,
   pageType = 'text',
+  onPageTypeChange,
   editable = false,
   onEditingChange,
   canEdit = false,
@@ -114,6 +116,8 @@ export const PageContent = ({
                 onToggleChat={undefined} // Chat button now handled by FloatingActions
                 hasActiveChat={hasActiveChat}
                 centerContent={pageType === 'section'}
+                pageType={pageType}
+                onPageTypeChange={onPageTypeChange}
               />
 
               {/* Floating action buttons */}
