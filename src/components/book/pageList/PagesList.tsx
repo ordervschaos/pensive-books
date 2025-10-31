@@ -336,21 +336,6 @@ export const PagesList = ({
               </>
             )}
           </div>
-
-          {canEdit && (
-            <Button
-              onClick={() => createNewPage('text')}
-              className="flex items-center gap-2 relative"
-              title="Add Page"
-              aria-label="Add Page"
-            >
-              <Type className="h-4 w-4" />
-              <span>Add Page</span>
-              <div className="absolute -top-2 -right-2 bg-green-500 rounded-full p-0.5 shadow-sm">
-                <Plus className="h-3 w-3 text-white" />
-              </div>
-            </Button>
-          )}
         </div>
 
         {items.length === 0 ? (
@@ -385,6 +370,30 @@ export const PagesList = ({
               </DndContext>
             ) : (
               <>
+                {/* Add New Page card/list item at the beginning (only if >3 pages) */}
+                {canEdit && !isDeleteMode && !isReordering && items.length > 3 && (
+                  viewMode === 'list' ? (
+                    <div className="flex items-center p-3 border-b border-border group hover:bg-accent/50 transition-colors cursor-pointer" onClick={() => createNewPage('text')}>
+                      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 mr-3">
+                        <Plus className="h-4 w-4 text-primary" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-medium text-primary">Add New Page</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div 
+                      className="flex flex-col items-center justify-center border border-dashed border-primary/40 rounded-md p-6 h-full min-h-[180px] hover:bg-accent/50 transition-colors cursor-pointer"
+                      onClick={() => createNewPage('text')}
+                    >
+                      <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-3">
+                        <Plus className="h-6 w-6 text-primary" />
+                      </div>
+                      <p className="font-medium text-primary text-center">Add New Page</p>
+                    </div>
+                  )
+                )}
+
                 {items.map((page) => (
                   viewMode === 'list' ? (
                     <RegularPageItem
@@ -409,7 +418,7 @@ export const PagesList = ({
                   )
                 ))}
                 
-                {/* Add New Page card/list item */}
+                {/* Add New Page card/list item at the end (always shown) */}
                 {canEdit && !isDeleteMode && !isReordering && (
                   viewMode === 'list' ? (
                     <div className="flex items-center p-3 border-b border-border group hover:bg-accent/50 transition-colors cursor-pointer" onClick={() => createNewPage('text')}>

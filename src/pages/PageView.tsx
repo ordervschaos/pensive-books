@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { PageNavigation } from "@/components/page/PageNavigation";
 import { PageContent } from "@/components/page/PageContent";
