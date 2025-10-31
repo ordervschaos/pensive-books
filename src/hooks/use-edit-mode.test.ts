@@ -158,6 +158,8 @@ describe('useEditMode', () => {
     ];
 
     testCases.forEach(({ param, canEdit, expected }) => {
+      // Clear localStorage before each test case to avoid interference
+      localStorageMock.clear();
       mockSearchParams = new URLSearchParams();
       if (param) mockSearchParams.set('edit', param);
       (ReactRouter.useSearchParams as any).mockReturnValue([mockSearchParams]);
