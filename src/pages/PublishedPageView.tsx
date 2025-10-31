@@ -160,67 +160,57 @@ export default function PublishedPageView() {
               </div>
 
               {/* Navigation Footer */}
-              <div className="mt-8">
-                <div className="bg-muted/30 border border-border rounded-lg p-4 md:p-6">
-                  {/* Top row: Back to book button */}
-                  <div className="flex items-center justify-end mb-4 pb-3 border-b border-border">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={handleBackToBook}
-                      className="text-sm text-muted-foreground hover:text-foreground"
-                    >
-                      <ChevronLeft className="h-4 w-4 mr-1" />
-                      Back to Book
-                    </Button>
+              <div className="mt-12 pt-8 border-t border-border/50">
+                {/* Navigation row: Previous | Page counter | Next */}
+                <div className="flex items-center justify-between mb-6">
+                  {/* Previous Button */}
+                  <Button
+                    variant="ghost"
+                    onClick={handlePrevious}
+                    disabled={currentIndex === 0}
+                    className="flex items-center gap-2"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    <span className="hidden sm:inline">Previous</span>
+                  </Button>
+
+                  {/* Center: Page counter */}
+                  <span className="text-sm text-muted-foreground font-medium">
+                    {currentIndex + 1} / {totalPages}
+                  </span>
+
+                  {/* Next Button */}
+                  <Button
+                    variant="ghost"
+                    onClick={handleNext}
+                    disabled={currentIndex >= totalPages - 1}
+                    className="flex items-center gap-2"
+                  >
+                    <span className="hidden sm:inline">Next</span>
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+
+                {/* Next Page Preview */}
+                {nextPageTitle && currentIndex < totalPages - 1 && (
+                  <div className="text-center mb-4">
+                    <p className="text-sm text-muted-foreground">
+                      Next: <span className="font-medium text-foreground">{nextPageTitle}</span>
+                    </p>
                   </div>
+                )}
 
-                  {/* Navigation row: Previous | Page counter | Next */}
-                  <div className="flex items-center justify-between mb-4">
-                    {/* Previous Button */}
-                    <Button
-                      variant="outline"
-                      onClick={handlePrevious}
-                      disabled={currentIndex === 0}
-                      className="flex items-center gap-2 px-4 md:px-6 py-2"
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                      <span className="hidden sm:inline">Previous</span>
-                    </Button>
-
-                    {/* Center: Page counter */}
-                    <span className="text-sm text-muted-foreground">
-                      Page {currentIndex + 1} / {totalPages}
-                    </span>
-
-                    {/* Next Button or Back to Contents */}
-                    {currentIndex < totalPages - 1 ? (
-                      <Button
-                        onClick={handleNext}
-                        className="flex items-center gap-2 px-4 md:px-6 py-2"
-                      >
-                        <span className="hidden sm:inline">Next</span>
-                        <ChevronRight className="h-4 w-4" />
-                      </Button>
-                    ) : (
-                      <Button
-                        onClick={handleBackToBook}
-                        className="flex items-center gap-2 px-4 md:px-6 py-2"
-                      >
-                        <BookOpen className="h-4 w-4" />
-                        <span className="hidden sm:inline">Back to Contents</span>
-                      </Button>
-                    )}
-                  </div>
-
-                  {/* Next Page Preview */}
-                  {nextPageTitle && currentIndex < totalPages - 1 && (
-                    <div className="text-center pt-2 border-t border-border">
-                      <p className="text-sm text-muted-foreground">
-                        Next: <span className="font-medium text-foreground">{nextPageTitle}</span>
-                      </p>
-                    </div>
-                  )}
+                {/* Back to Book button */}
+                <div className="flex items-center justify-center">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleBackToBook}
+                    className="text-sm text-muted-foreground hover:text-foreground"
+                  >
+                    <ChevronLeft className="h-4 w-4 mr-1" />
+                    Back to Book
+                  </Button>
                 </div>
               </div>
             </div>
