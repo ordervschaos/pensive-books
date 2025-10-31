@@ -148,10 +148,15 @@ export default function PublishedPageView() {
 
           {/* Main Content Area */}
           <SidebarInset className="flex-1 flex flex-col">
-            <div className="flex-1 container max-w-5xl mx-auto px-4 py-4 flex flex-col gap-4">
+            <div className={`flex-1 container max-w-5xl mx-auto px-4 py-4 flex flex-col gap-4 ${
+              page.page_type === 'section' ? 'justify-center' : ''
+            }`}>
               {/* Static Rendered Content */}
-              <div className="flex-1">
-                <StaticPageRenderer content={page.content} />
+              <div className={page.page_type === 'section' ? 'flex-1 flex items-center justify-center' : 'flex-1'}>
+                <StaticPageRenderer 
+                  content={page.content} 
+                  centerContent={page.page_type === 'section'}
+                />
               </div>
 
               {/* Navigation Footer */}
