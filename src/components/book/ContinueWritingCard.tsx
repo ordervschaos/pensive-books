@@ -192,7 +192,7 @@ export function ContinueWritingCard() {
 
   const handleContinueWriting = () => {
     if (!lastPage) return;
-    navigate(`/book/${lastPage.book_id}/page/${lastPage.id}`);
+    navigate(`/book/${lastPage.book_id}/page/${lastPage.id}?edit=true`);
   };
 
   const handleContinueReading = () => {
