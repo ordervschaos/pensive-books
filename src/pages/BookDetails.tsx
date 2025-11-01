@@ -43,6 +43,7 @@ const BookDetails = () => {
   const [isReorderMode, setIsReorderMode] = useState(false);
   const [isDeleteMode, setIsDeleteMode] = useState(false);
   const [bookmarkedPageIndex, setBookmarkedPageIndex] = useState<number | null>(null);
+  const [bookmarkTimestamp, setBookmarkTimestamp] = useState<string | null>(null);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const { canEdit, isOwner, loading: permissionsLoading } = useBookPermissions(id);
   
@@ -104,11 +105,35 @@ const BookDetails = () => {
         if (error) throw error;
         
         const bookmarks = userData?.bookmarked_pages || {};
-        setBookmarkedPageIndex(bookmarks[numericId] ?? null);
+        const bookmarkData = bookmarks[numericId];
+        
+        // Handle both old format (just number) and new format ({ pageIndex, timestamp })
+        if (typeof bookmarkData === 'number') {
+          setBookmarkedPageIndex(bookmarkData);
+          setBookmarkTimestamp(null);
+        } else if (bookmarkData && typeof bookmarkData === 'object') {
+          setBookmarkedPageIndex(bookmarkData.pageIndex ?? null);
+          setBookmarkTimestamp(bookmarkData.timestamp ?? null);
+        } else {
+          setBookmarkedPageIndex(null);
+          setBookmarkTimestamp(null);
+        }
       } else {
         const storedBookmarks = localStorage.getItem(LOCALSTORAGE_BOOKMARKS_KEY);
         const bookmarks = storedBookmarks ? JSON.parse(storedBookmarks) : {};
-        setBookmarkedPageIndex(bookmarks[numericId] ?? null);
+        const bookmarkData = bookmarks[numericId];
+        
+        // Handle both old format (just number) and new format ({ pageIndex, timestamp })
+        if (typeof bookmarkData === 'number') {
+          setBookmarkedPageIndex(bookmarkData);
+          setBookmarkTimestamp(null);
+        } else if (bookmarkData && typeof bookmarkData === 'object') {
+          setBookmarkedPageIndex(bookmarkData.pageIndex ?? null);
+          setBookmarkTimestamp(bookmarkData.timestamp ?? null);
+        } else {
+          setBookmarkedPageIndex(null);
+          setBookmarkTimestamp(null);
+        }
       }
     } catch (error: any) {
       console.error('Error fetching bookmarked page:', error);
@@ -119,6 +144,7 @@ const BookDetails = () => {
     try {
       const numericId = getNumericId(id);
       const { data: { session } } = await supabase.auth.getSession();
+      const timestamp = new Date().toISOString();
 
       if (session) {
         const { data: userData, error: fetchError } = await supabase
@@ -129,8 +155,14 @@ const BookDetails = () => {
 
         if (fetchError) throw fetchError;
 
-        const bookmarks = (userData?.bookmarked_pages as Record<string, number>) || {};
-        const updatedBookmarks = { ...bookmarks, [numericId]: pageIndex };
+        const bookmarks = (userData?.bookmarked_pages as Record<string, any>) || {};
+        const updatedBookmarks = { 
+          ...bookmarks, 
+          [numericId]: {
+            pageIndex: pageIndex,
+            timestamp: timestamp
+          }
+        };
 
         const { error: updateError } = await supabase
           .from('user_data')
@@ -141,11 +173,18 @@ const BookDetails = () => {
       } else {
         const storedBookmarks = localStorage.getItem(LOCALSTORAGE_BOOKMARKS_KEY);
         const bookmarks = storedBookmarks ? JSON.parse(storedBookmarks) : {};
-        const updatedBookmarks = { ...bookmarks, [numericId]: pageIndex };
+        const updatedBookmarks = { 
+          ...bookmarks, 
+          [numericId]: {
+            pageIndex: pageIndex,
+            timestamp: timestamp
+          }
+        };
         localStorage.setItem(LOCALSTORAGE_BOOKMARKS_KEY, JSON.stringify(updatedBookmarks));
       }
 
       setBookmarkedPageIndex(pageIndex);
+      setBookmarkTimestamp(timestamp);
     } catch (error: any) {
       console.error('Error updating bookmark:', error);
       toast({
@@ -237,7 +276,7 @@ const BookDetails = () => {
     navigate(`/book/${id}/edit`);
   };
 
-  const handleContinueReading = () => {
+  const handleContinueReading = async () => {
     const numericId = getNumericId(id);
     if (!pages.length) return;
 
@@ -247,9 +286,55 @@ const BookDetails = () => {
 
     if (pageToNavigate) {
       const newIndex = bookmarkedPageIndex === null ? 0 : bookmarkedPageIndex;
+      // updateBookmark now includes timestamp, which serves as last_read
       updateBookmark(newIndex);
       navigate(`/book/${numericId}/page/${pageToNavigate.id}`);
     }
+  };
+
+  const handleContinueWriting = () => {
+    const numericId = getNumericId(id);
+    if (!pages.length) return;
+
+    // Find the most recently updated page
+    const lastUpdatedPage = [...pages].sort((a, b) => {
+      const dateA = new Date(a.updated_at || 0).getTime();
+      const dateB = new Date(b.updated_at || 0).getTime();
+      return dateB - dateA;
+    })[0];
+
+    if (lastUpdatedPage) {
+      navigate(`/book/${numericId}/page/${lastUpdatedPage.id}?edit=true`);
+    }
+  };
+
+  // Get the index of the last updated page
+  const getLastUpdatedPageIndex = () => {
+    if (!pages.length) return undefined;
+    
+    const lastUpdatedPage = [...pages].sort((a, b) => {
+      const dateA = new Date(a.updated_at || 0).getTime();
+      const dateB = new Date(b.updated_at || 0).getTime();
+      return dateB - dateA;
+    })[0];
+
+    return lastUpdatedPage?.page_index;
+  };
+
+  // Determine whether to show writing or reading button
+  const shouldShowWritingButton = () => {
+    if (!canEdit || !pages.length) return false;
+
+    // Find the most recent page update time
+    const mostRecentPageUpdate = Math.max(
+      ...pages.map(page => new Date(page.updated_at || 0).getTime())
+    );
+
+    // Get last read time from bookmarked_pages timestamp
+    const lastReadTime = bookmarkTimestamp ? new Date(bookmarkTimestamp).getTime() : 0;
+
+    // If there's no last read time, or if a page was updated more recently than the last read, show writing
+    return !lastReadTime || mostRecentPageUpdate > lastReadTime;
   };
 
   // Prepare book metadata for chat
@@ -492,7 +577,11 @@ const BookDetails = () => {
                 currentPage={bookmarkedPageIndex ?? 0}
                 totalPages={pages.length}
                 onContinueReading={handleContinueReading}
+                onContinueWriting={handleContinueWriting}
                 lastUpdated={book.updated_at}
+                canEdit={canEdit}
+                lastUpdatedPageIndex={getLastUpdatedPageIndex()}
+                showWritingButton={shouldShowWritingButton()}
               />
             </div>
 

@@ -82,11 +82,29 @@ export default function PublishedBookDetails() {
         if (error) throw error;
 
         const bookmarks = userData?.bookmarked_pages || {};
-        setBookmarkedPageIndex(bookmarks[bookId] ?? null);
+        const bookmarkData = bookmarks[bookId];
+        
+        // Handle both old format (just number) and new format ({ pageIndex, timestamp })
+        if (typeof bookmarkData === 'number') {
+          setBookmarkedPageIndex(bookmarkData);
+        } else if (bookmarkData && typeof bookmarkData === 'object') {
+          setBookmarkedPageIndex(bookmarkData.pageIndex ?? null);
+        } else {
+          setBookmarkedPageIndex(null);
+        }
       } else {
         const storedBookmarks = localStorage.getItem(LOCALSTORAGE_BOOKMARKS_KEY);
         const bookmarks = storedBookmarks ? JSON.parse(storedBookmarks) : {};
-        setBookmarkedPageIndex(bookmarks[bookId] ?? null);
+        const bookmarkData = bookmarks[bookId];
+        
+        // Handle both old format (just number) and new format ({ pageIndex, timestamp })
+        if (typeof bookmarkData === 'number') {
+          setBookmarkedPageIndex(bookmarkData);
+        } else if (bookmarkData && typeof bookmarkData === 'object') {
+          setBookmarkedPageIndex(bookmarkData.pageIndex ?? null);
+        } else {
+          setBookmarkedPageIndex(null);
+        }
       }
     } catch (error: any) {
       console.error('Error fetching bookmarked page:', error);
@@ -96,6 +114,7 @@ export default function PublishedBookDetails() {
   const updateBookmark = async (pageIndex: number | null) => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
+      const timestamp = new Date().toISOString();
 
       if (session) {
         const { data: userData, error: fetchError } = await supabase
@@ -106,8 +125,14 @@ export default function PublishedBookDetails() {
 
         if (fetchError) throw fetchError;
 
-        const bookmarks = (userData?.bookmarked_pages as Record<string, number>) || {};
-        const updatedBookmarks = { ...bookmarks, [bookId]: pageIndex };
+        const bookmarks = (userData?.bookmarked_pages as Record<string, any>) || {};
+        const updatedBookmarks = { 
+          ...bookmarks, 
+          [bookId]: {
+            pageIndex: pageIndex,
+            timestamp: timestamp
+          }
+        };
 
         const { error: updateError } = await supabase
           .from('user_data')
@@ -118,7 +143,13 @@ export default function PublishedBookDetails() {
       } else {
         const storedBookmarks = localStorage.getItem(LOCALSTORAGE_BOOKMARKS_KEY);
         const bookmarks = storedBookmarks ? JSON.parse(storedBookmarks) : {};
-        const updatedBookmarks = { ...bookmarks, [bookId]: pageIndex };
+        const updatedBookmarks = { 
+          ...bookmarks, 
+          [bookId]: {
+            pageIndex: pageIndex,
+            timestamp: timestamp
+          }
+        };
         localStorage.setItem(LOCALSTORAGE_BOOKMARKS_KEY, JSON.stringify(updatedBookmarks));
       }
 

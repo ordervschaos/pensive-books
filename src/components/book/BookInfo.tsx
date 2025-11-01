@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { ImageIcon, Play } from "lucide-react";
+import { ImageIcon, Play, Pencil } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {  generateAndDownloadEPUB, generatePDFWithPrintDialog } from "@/lib/download";
 import { useNavigate } from "react-router-dom";
@@ -17,7 +17,11 @@ interface BookInfoProps {
   currentPage?: number;
   totalPages?: number;
   onContinueReading?: () => void;
+  onContinueWriting?: () => void;
   lastUpdated?: string | null;
+  canEdit?: boolean;
+  lastUpdatedPageIndex?: number;
+  showWritingButton?: boolean;
 }
 
 export const BookInfo = ({
@@ -30,7 +34,11 @@ export const BookInfo = ({
   currentPage = 0,
   totalPages = 0,
   onContinueReading,
-  lastUpdated
+  onContinueWriting,
+  lastUpdated,
+  canEdit = false,
+  lastUpdatedPageIndex,
+  showWritingButton = false
 }: BookInfoProps) => {
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -197,7 +205,6 @@ export const BookInfo = ({
     }
   };
 
-  const progressPercentage = totalPages > 0 ? ((currentPage + 1) / totalPages) * 100 : 0;
   const lastUpdatedLabel = lastUpdated ? formatDistanceToNow(new Date(lastUpdated), { addSuffix: true }) : null;
 
   return (
@@ -238,43 +245,34 @@ export const BookInfo = ({
               </div>
             </header>
 
-            {/* Progress Bar */}
-            {totalPages > 0 && (
-              <div className="mb-4">
-                <div className="mb-1 flex items-center justify-between text-xs tabular-nums text-muted-foreground">
-                  <span className="sr-only sm:not-sr-only">Progress</span>
-                  <span className="ml-auto">{Math.round(progressPercentage)}%</span>
-                </div>
-                <div
-                  className="relative h-2.5 overflow-hidden rounded-full bg-secondary ring-1 ring-inset ring-border/30"
-                  role="progressbar"
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={Math.round(progressPercentage)}
-                  aria-label="Reading progress"
+            {/* Action Buttons */}
+            <div className="mb-5">
+              {showWritingButton && canEdit && onContinueWriting && lastUpdatedPageIndex !== undefined ? (
+                <Button
+                  type="button"
+                  onClick={onContinueWriting}
+                  className="group inline-flex items-center justify-center gap-2"
+                  size="default"
+                  variant="default"
                 >
-                  <div
-                    className="h-full w-0 rounded-full bg-gradient-to-r from-primary/80 to-primary transition-[width] duration-500 ease-out"
-                    style={{ width: `${progressPercentage}%` }}
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* Continue Reading Button */}
-            {onContinueReading && (
-              <div className="mb-5">
+                  <Pencil className="h-4 w-4 transition group-hover:translate-x-0.5" />
+                  <span className="font-medium">Continue Writing</span>
+                  <span className="text-xs opacity-70">(Page {lastUpdatedPageIndex + 1})</span>
+                </Button>
+              ) : onContinueReading ? (
                 <Button
                   type="button"
                   onClick={onContinueReading}
-                  className="group inline-flex w-full items-center justify-center gap-2 md:w-max"
+                  className="group inline-flex items-center justify-center gap-2"
                   size="default"
+                  variant="default"
                 >
                   <Play className="h-4 w-4 fill-current transition group-hover:translate-x-0.5" />
                   <span className="font-medium">Continue Reading</span>
+                  <span className="text-xs opacity-70">(Page {currentPage + 1})</span>
                 </Button>
-              </div>
-            )}
+              ) : null}
+            </div>
 
             {/* Downloads Section */}
             <div className="mt-auto">

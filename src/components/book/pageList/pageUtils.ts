@@ -14,11 +14,27 @@ export const fetchBookmarkedPage = async (bookId: number): Promise<number | null
         .maybeSingle();
       
       const bookmarks = userData?.bookmarked_pages || {};
-      return bookmarks[bookId] ?? null;
+      const bookmarkData = bookmarks[bookId];
+      
+      // Handle both old format (just number) and new format ({ pageIndex, timestamp })
+      if (typeof bookmarkData === 'number') {
+        return bookmarkData;
+      } else if (bookmarkData && typeof bookmarkData === 'object') {
+        return bookmarkData.pageIndex ?? null;
+      }
+      return null;
     } else {
       const storedBookmarks = localStorage.getItem(LOCALSTORAGE_BOOKMARKS_KEY);
       const bookmarks = storedBookmarks ? JSON.parse(storedBookmarks) : {};
-      return bookmarks[bookId] ?? null;
+      const bookmarkData = bookmarks[bookId];
+      
+      // Handle both old format (just number) and new format ({ pageIndex, timestamp })
+      if (typeof bookmarkData === 'number') {
+        return bookmarkData;
+      } else if (bookmarkData && typeof bookmarkData === 'object') {
+        return bookmarkData.pageIndex ?? null;
+      }
+      return null;
     }
   } catch (error) {
     console.error('Error fetching bookmarked page:', error);

@@ -7,6 +7,9 @@ const LOCALSTORAGE_BOOKMARKS_KEY = 'bookmarked_pages';
 /**
  * Custom hook to automatically track and save reading position
  * Works for both authenticated and anonymous users
+ * 
+ * Bookmark structure: { pageIndex: number, timestamp: ISO string }
+ * The timestamp represents when the bookmark was last updated (i.e., when the user last read this page)
  */
 export const useBookmarkTracking = (
   bookId: number,
@@ -17,6 +20,7 @@ export const useBookmarkTracking = (
   const updateBookmark = useCallback(async (index: number) => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
+      const timestamp = new Date().toISOString();
 
       if (session) {
         // Authenticated user - save to database
@@ -28,8 +32,14 @@ export const useBookmarkTracking = (
 
         if (fetchError) throw fetchError;
 
-        const bookmarks = (userData?.bookmarked_pages as Record<string, number>) || {};
-        const updatedBookmarks = { ...bookmarks, [bookId]: index };
+        const bookmarks = (userData?.bookmarked_pages as Record<string, any>) || {};
+        const updatedBookmarks = { 
+          ...bookmarks, 
+          [bookId]: {
+            pageIndex: index,
+            timestamp: timestamp
+          }
+        };
 
         const { error: updateError } = await supabase
           .from('user_data')
@@ -41,7 +51,13 @@ export const useBookmarkTracking = (
         // Anonymous user - save to localStorage
         const storedBookmarks = localStorage.getItem(LOCALSTORAGE_BOOKMARKS_KEY);
         const bookmarks = storedBookmarks ? JSON.parse(storedBookmarks) : {};
-        const updatedBookmarks = { ...bookmarks, [bookId]: index };
+        const updatedBookmarks = { 
+          ...bookmarks, 
+          [bookId]: {
+            pageIndex: index,
+            timestamp: timestamp
+          }
+        };
         localStorage.setItem(LOCALSTORAGE_BOOKMARKS_KEY, JSON.stringify(updatedBookmarks));
       }
     } catch (error: unknown) {
