@@ -3,9 +3,13 @@ import { ImageIcon, Play, Pencil } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {  generateAndDownloadEPUB, generatePDFWithPrintDialog } from "@/lib/download";
 import { useNavigate } from "react-router-dom";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { formatDistanceToNow } from "date-fns";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { UnsplashPicker } from "./UnsplashPicker";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface BookInfoProps {
   name: string;
@@ -43,6 +47,14 @@ export const BookInfo = ({
   const { toast } = useToast();
   const navigate = useNavigate();
   const [sending, setSending] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [isEditCoverOpen, setIsEditCoverOpen] = useState(false);
+  const [currentCoverUrl, setCurrentCoverUrl] = useState(coverUrl);
+
+  // Sync coverUrl prop changes with local state
+  useEffect(() => {
+    setCurrentCoverUrl(coverUrl);
+  }, [coverUrl]);
 
   const handleDownloadPDF = async () => {
     const result = await generatePDFWithPrintDialog({ 
@@ -205,15 +217,88 @@ export const BookInfo = ({
     }
   };
 
+  const handleCoverUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      setUploading(true);
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      if (!file.type.startsWith('image/')) {
+        toast({
+          variant: "destructive",
+          title: "Invalid file type",
+          description: "Please upload an image file."
+        });
+        return;
+      }
+
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${bookId}_${Math.random().toString(36).slice(2)}.${fileExt}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('public_images')
+        .upload(fileName, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('public_images')
+        .getPublicUrl(fileName);
+
+      await updateBookCover(publicUrl);
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Error uploading cover",
+        description: error instanceof Error ? error.message : "An error occurred"
+      });
+    } finally {
+      setUploading(false);
+      setIsEditCoverOpen(false);
+    }
+  };
+
+  const handleUnsplashSelect = async (imageUrl: string) => {
+    try {
+      setUploading(true);
+      await updateBookCover(imageUrl);
+      setIsEditCoverOpen(false);
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Error setting cover",
+        description: error instanceof Error ? error.message : "An error occurred"
+      });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const updateBookCover = async (url: string) => {
+    const { error: updateError } = await supabase
+      .from('books')
+      .update({ cover_url: url })
+      .eq('id', bookId);
+
+    if (updateError) throw updateError;
+
+    setCurrentCoverUrl(url);
+
+    toast({
+      title: "Cover updated",
+      description: "Your book cover has been successfully updated."
+    });
+  };
+
   const lastUpdatedLabel = lastUpdated ? formatDistanceToNow(new Date(lastUpdated), { addSuffix: true }) : null;
 
   return (
     <div className="grid grid-cols-1 gap-6 p-5 sm:grid-cols-[160px,1fr] sm:p-6 md:grid-cols-[200px,1fr] md:gap-8 md:p-8">
           {/* Book Cover */}
-          <div className="relative overflow-hidden rounded-xl ring-1 ring-border/50">
-            {coverUrl ? (
+          <div className="relative overflow-hidden rounded-xl ring-1 ring-border/50 group">
+            {currentCoverUrl ? (
               <img
-                src={coverUrl}
+                src={currentCoverUrl}
                 alt={`${name} cover`}
                 className="h-full w-full object-cover"
                 loading="lazy"
@@ -222,6 +307,44 @@ export const BookInfo = ({
               <div className="flex h-full min-h-[220px] w-full items-center justify-center bg-gradient-to-br from-muted/80 to-muted/40">
                 <ImageIcon className="h-14 w-14 text-muted-foreground" />
               </div>
+            )}
+            
+            {/* Edit Cover Button - Only shows when user can edit */}
+            {canEdit && (
+              <Dialog open={isEditCoverOpen} onOpenChange={setIsEditCoverOpen}>
+                <DialogTrigger asChild>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity bg-background/90 backdrop-blur-sm hover:bg-background/95"
+                    disabled={uploading}
+                  >
+                    {uploading ? "Updating..." : <><ImageIcon className="h-4 w-4 mr-1" /> Edit Cover</>}
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Choose Cover Image</DialogTitle>
+                  </DialogHeader>
+                  <Tabs defaultValue="upload">
+                    <TabsList className="grid w-full grid-cols-2">
+                      <TabsTrigger value="upload">Upload</TabsTrigger>
+                      <TabsTrigger value="unsplash">Unsplash</TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="upload" className="space-y-4">
+                      <Input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleCoverUpload}
+                        disabled={uploading}
+                      />
+                    </TabsContent>
+                    <TabsContent value="unsplash">
+                      <UnsplashPicker onSelect={handleUnsplashSelect} />
+                    </TabsContent>
+                  </Tabs>
+                </DialogContent>
+              </Dialog>
             )}
           </div>
 
