@@ -50,8 +50,8 @@ export const PageNavigation = ({
     <div className="mt-8">
       {/* Navigation Footer */}
       <div className=" rounded-lg p-4 md:p-6">
-        {/* Navigation row: Previous | Page counter + Add | Next */}
-        <div className="flex items-center justify-between mb-4">
+        {/* Navigation buttons row: Previous | Add | Next */}
+        <div className="flex items-center justify-between gap-2 mb-4">
           {/* Previous Button */}
           <Button
             variant="outline"
@@ -63,29 +63,18 @@ export const PageNavigation = ({
             <span className="hidden sm:inline">Previous</span>
           </Button>
 
-          {/* Center: Page counter with add button */}
-          <div className="flex items-center gap-2">
+          {/* Add button (center) */}
+          {canEdit && onNewPage && (
             <Button
-              variant="ghost"
+              variant="outline"
               size="sm"
-              onClick={toggleSidebar}
-              className="text-sm text-muted-foreground hover:text-foreground"
+              onClick={() => onNewPage()}
+              className="h-8 w-8 p-0 rounded-full"
+              title="Add new page after current"
             >
-              Page {displayCurrentIndex} / {displayTotalPages}
+              <Plus className="h-4 w-4" />
             </Button>
-
-            {canEdit && onNewPage && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => onNewPage()}
-                className="h-8 w-8 p-0 rounded-full"
-                title="Add new page after current"
-              >
-                <Plus className="h-4 w-4" />
-              </Button>
-            )}
-          </div>
+          )}
 
           {/* Next Button or Back to Contents */}
           {isLastPage ? (
@@ -107,14 +96,25 @@ export const PageNavigation = ({
           )}
         </div>
 
-        {/* Next page preview */}
-        {!isLastPage && nextPageTitle && (
-          <div className="text-center pt-2 border-t border-border">
-            <p className="text-sm text-muted-foreground">
+        {/* Page counter and Next page preview row */}
+        <div className="flex items-center justify-between gap-2">
+          {/* Page counter */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={toggleSidebar}
+            className="text-sm text-muted-foreground hover:text-foreground"
+          >
+            Page {displayCurrentIndex} / {displayTotalPages}
+          </Button>
+
+          {/* Next page preview */}
+          {!isLastPage && nextPageTitle && (
+            <div className="text-sm text-muted-foreground">
               Next: <span className="font-medium text-foreground">{nextPageTitle}</span>
-            </p>
-          </div>
-        )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
