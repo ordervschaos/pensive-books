@@ -17,6 +17,7 @@ interface TipTapEditorProps {
   editorConfig?: Record<string, unknown>;
   className?: string;
   fontSizeClassName?: string;
+  fontFamilyStyle?: React.CSSProperties;
   customButtons?: React.ReactNode;
   onToggleChat?: () => void;
   hasActiveChat?: boolean;
@@ -35,6 +36,7 @@ export const TipTapEditor = ({
   editorConfig,
   className = '',
   fontSizeClassName = '',
+  fontFamilyStyle = {},
   customButtons,
   onToggleChat,
   hasActiveChat,
@@ -79,6 +81,28 @@ export const TipTapEditor = ({
       });
     }
   }, [toast]);
+
+  // Apply font-family directly to ProseMirror element
+  useEffect(() => {
+    if (editor && fontFamilyStyle?.fontFamily) {
+      // Wait a bit for font to load, then apply
+      const timeoutId = setTimeout(() => {
+        const editorElement = editor.view.dom;
+        if (editorElement) {
+          const element = editorElement as HTMLElement;
+          element.style.fontFamily = fontFamilyStyle.fontFamily;
+          
+          // Also apply to all child elements to ensure it cascades
+          const allElements = element.querySelectorAll('*');
+          allElements.forEach((el) => {
+            (el as HTMLElement).style.fontFamily = fontFamilyStyle.fontFamily;
+          });
+        }
+      }, 100);
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [editor, fontFamilyStyle]);
 
   useEffect(() => {
     if (editor) {
@@ -127,6 +151,7 @@ export const TipTapEditor = ({
           `[&_img]:mx-auto [&_img]:block [&_p]:leading-relaxed [&_p]:mb-6 [&_table]:border-collapse [&_table]:w-full [&_th]:border [&_th]:border-muted [&_th]:p-2 [&_td]:border [&_td]:border-muted [&_td]:p-2 [&_.selectedCell]:bg-muted/30`,
           fontSizeClassName // Apply font size classes last to override prose defaults
         )}
+        style={fontFamilyStyle && Object.keys(fontFamilyStyle).length > 0 ? fontFamilyStyle : undefined}
         onClick={() => {
           // When clicking anywhere in the editor container, focus the editor
           if (editable && isEditing && editor) {

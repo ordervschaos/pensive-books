@@ -5,7 +5,7 @@ import { FloatingActions } from "./FloatingActions";
 import { useAudioHighlighting } from "@/hooks/use-audio-highlighting";
 import { useAdaptiveTextToSpeech } from "@/hooks/use-adaptive-text-to-speech";
 import { EditorJSON, PageSaveHandler } from "@/types/editor";
-import { usePageDisplaySettings } from "@/contexts/PageDisplaySettingsContext";
+import { usePageDisplaySettings, FontFamily } from "@/contexts/PageDisplaySettingsContext";
 import { cn } from "@/lib/utils";
 
 
@@ -114,6 +114,39 @@ export const PageContent = ({
     }
   };
 
+  const getFontFamilyStyle = () => {
+    const fontMap: Record<FontFamily, string> = {
+      default: '',
+      // Serif fonts
+      merriweather: 'Merriweather, serif',
+      lora: 'Lora, serif',
+      crimson: '"Crimson Pro", serif',
+      'libre-baskerville': '"Libre Baskerville", serif',
+      'eb-garamond': '"EB Garamond", serif',
+      literata: 'Literata, serif',
+      'source-serif': '"Source Serif Pro", serif',
+      georgia: 'Georgia, serif',
+      // Sans-serif fonts
+      inter: 'Inter, sans-serif',
+      'open-sans': '"Open Sans", sans-serif',
+      'source-sans': '"Source Sans Pro", sans-serif',
+      roboto: 'Roboto, sans-serif',
+      lato: 'Lato, sans-serif',
+      // Slab serif
+      'roboto-slab': '"Roboto Slab", serif',
+    };
+    return fontMap[settings.fontFamily] ? { fontFamily: fontMap[settings.fontFamily] } : {};
+  };
+
+  // Removed getFontFamilyClass - using inline styles instead for better compatibility
+
+  const getFontStyleClass = () => {
+    if (settings.fontStyle === 'italic') {
+      return '[&_.ProseMirror_p]:italic [&_.ProseMirror_h1]:italic [&_.ProseMirror_h2]:italic [&_.ProseMirror_h3]:italic [&_.ProseMirror_h4]:italic [&_.ProseMirror_h5]:italic [&_.ProseMirror_h6]:italic [&_.ProseMirror_li]:italic';
+    }
+    return '[&_.ProseMirror_p]:not-italic [&_.ProseMirror_h1]:not-italic [&_.ProseMirror_h2]:not-italic [&_.ProseMirror_h3]:not-italic [&_.ProseMirror_h4]:not-italic [&_.ProseMirror_h5]:not-italic [&_.ProseMirror_h6]:not-italic [&_.ProseMirror_li]:not-italic';
+  };
+
   const getMarginClass = () => {
     switch (settings.marginSize) {
       case 'narrow':
@@ -155,7 +188,8 @@ export const PageContent = ({
                 pageType={pageType}
                 onPageTypeChange={onPageTypeChange}
                 onDeletePage={onDeletePage}
-                fontSizeClassName={getFontSizeClass()}
+                fontSizeClassName={cn(getFontSizeClass(), getFontStyleClass())}
+                fontFamilyStyle={getFontFamilyStyle()}
               />
 
               {/* Floating action buttons */}
