@@ -54,7 +54,7 @@ export const FloatingActions = ({
 
   return (
     <>
-      <div className="fixed bottom-12 z-50 flex flex-col gap-3 items-center" style={{ left: '2rem)' }}>
+      <div className="fixed bottom-12 z-50 flex flex-col gap-3 items-center right-8">
         {/* Audio button - only in beta */}
         {isBetaEnabled && pageId && (
           <Button
