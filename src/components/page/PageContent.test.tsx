@@ -4,8 +4,10 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import { PageContent } from './PageContent';
+import { PageDisplaySettingsProvider } from '@/contexts/PageDisplaySettingsContext';
 
 // Mock dependencies
 vi.mock('@/components/editor/TipTapEditor', () => ({
@@ -80,12 +82,20 @@ describe('PageContent', () => {
     setIsEditing: vi.fn(),
   };
 
+  const renderWithProvider = (component: React.ReactElement) => {
+    return render(
+      <PageDisplaySettingsProvider>
+        {component}
+      </PageDisplaySettingsProvider>
+    );
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   it('should render TipTapEditor with content', () => {
-    render(<PageContent {...defaultProps} />);
+    renderWithProvider(<PageContent {...defaultProps} />);
 
     const editor = screen.getByTestId('tiptap-editor');
     expect(editor).toBeTruthy();
@@ -103,7 +113,7 @@ describe('PageContent', () => {
       ],
     };
 
-    render(
+    renderWithProvider(
       <PageContent
         {...defaultProps}
         jsonContent={jsonContent}
@@ -118,7 +128,7 @@ describe('PageContent', () => {
   });
 
   it('should handle null JSON content', () => {
-    render(
+    renderWithProvider(
       <PageContent {...defaultProps} jsonContent={null} />
     );
 
@@ -129,29 +139,31 @@ describe('PageContent', () => {
 
 
   it('should render floating actions', () => {
-    render(<PageContent {...defaultProps} />);
+    renderWithProvider(<PageContent {...defaultProps} />);
 
     expect(screen.getByTestId('floating-actions')).toBeTruthy();
   });
 
   it('should handle section page type with centered content', () => {
-    render(<PageContent {...defaultProps} pageType="section" />);
+    renderWithProvider(<PageContent {...defaultProps} pageType="section" />);
 
     // Component should render without errors
     expect(screen.getByTestId('tiptap-editor')).toBeTruthy();
   });
 
   it('should update content when props change and not editing', async () => {
-    const { rerender } = render(
+    const { rerender } = renderWithProvider(
       <PageContent {...defaultProps} jsonContent={{ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Initial' }] }] }} isEditing={false} />
     );
 
     rerender(
-      <PageContent
-        {...defaultProps}
-        jsonContent={{ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Updated' }] }] }}
-        isEditing={false}
-      />
+      <PageDisplaySettingsProvider>
+        <PageContent
+          {...defaultProps}
+          jsonContent={{ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Updated' }] }] }}
+          isEditing={false}
+        />
+      </PageDisplaySettingsProvider>
     );
 
       await waitFor(() => {
@@ -163,16 +175,18 @@ describe('PageContent', () => {
 
   it('should not update content when props change while editing', async () => {
     const initialJson = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Initial' }] }] };
-    const { rerender } = render(
+    const { rerender } = renderWithProvider(
       <PageContent {...defaultProps} jsonContent={initialJson} isEditing={true} />
     );
 
     rerender(
-      <PageContent
-        {...defaultProps}
-        jsonContent={{ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Updated' }] }] }}
-        isEditing={true}
-      />
+      <PageDisplaySettingsProvider>
+        <PageContent
+          {...defaultProps}
+          jsonContent={{ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Updated' }] }] }}
+          isEditing={true}
+        />
+      </PageDisplaySettingsProvider>
     );
 
     // Content should not change while editing
@@ -182,20 +196,20 @@ describe('PageContent', () => {
   });
 
   it('should handle empty content gracefully', () => {
-    render(<PageContent {...defaultProps} jsonContent={null} />);
+    renderWithProvider(<PageContent {...defaultProps} jsonContent={null} />);
 
     const editor = screen.getByTestId('tiptap-editor');
     expect(editor).toBeTruthy();
   });
 
   it('should handle null title', () => {
-    render(<PageContent {...defaultProps} title="" />);
+    renderWithProvider(<PageContent {...defaultProps} title="" />);
 
     expect(screen.getByTestId('tiptap-editor')).toBeTruthy();
   });
 
   it('should pass saving state to children', () => {
-    render(<PageContent {...defaultProps} saving={true} />);
+    renderWithProvider(<PageContent {...defaultProps} saving={true} />);
 
     // Component should render without errors even when saving
     expect(screen.getByTestId('tiptap-editor')).toBeTruthy();
@@ -223,7 +237,7 @@ describe('PageContent', () => {
         ],
       };
 
-      const { rerender } = render(
+      const { rerender } = renderWithProvider(
         <PageContent
           {...defaultProps}
           jsonContent={initialJson}
@@ -232,11 +246,13 @@ describe('PageContent', () => {
       );
 
       rerender(
-        <PageContent
-          {...defaultProps}
-          jsonContent={updatedJson}
-          isEditing={false}
-        />
+        <PageDisplaySettingsProvider>
+          <PageContent
+            {...defaultProps}
+            jsonContent={updatedJson}
+            isEditing={false}
+          />
+        </PageDisplaySettingsProvider>
       );
 
       await waitFor(() => {
@@ -246,7 +262,7 @@ describe('PageContent', () => {
     });
 
     it('should handle switch from null to JSON content', async () => {
-      const { rerender } = render(
+      const { rerender } = renderWithProvider(
         <PageContent
           {...defaultProps}
           jsonContent={null}
@@ -265,11 +281,13 @@ describe('PageContent', () => {
       };
 
       rerender(
-        <PageContent
-          {...defaultProps}
-          jsonContent={newJson}
-          isEditing={false}
-        />
+        <PageDisplaySettingsProvider>
+          <PageContent
+            {...defaultProps}
+            jsonContent={newJson}
+            isEditing={false}
+          />
+        </PageDisplaySettingsProvider>
       );
 
       await waitFor(() => {
@@ -286,7 +304,7 @@ describe('PageContent', () => {
         jsonContent: undefined,
       };
 
-      render(<PageContent {...legacyProps} />);
+      renderWithProvider(<PageContent {...legacyProps} />);
 
       const editor = screen.getByTestId('tiptap-editor');
       // Without JSON content, editor should render (empty content is expected)
@@ -308,7 +326,7 @@ describe('PageContent', () => {
         },
       };
 
-      render(<PageContent {...newProps} />);
+      renderWithProvider(<PageContent {...newProps} />);
 
       expect(screen.getByTestId('tiptap-editor')).toBeTruthy();
     });
@@ -328,7 +346,7 @@ describe('PageContent', () => {
         },
       };
 
-      render(<PageContent {...jsonProps} />);
+      renderWithProvider(<PageContent {...jsonProps} />);
 
       const editor = screen.getByTestId('tiptap-editor');
       // Should use JSON content
@@ -348,7 +366,7 @@ describe('PageContent', () => {
         ],
       };
 
-      render(<PageContent {...defaultProps} jsonContent={longContent} />);
+      renderWithProvider(<PageContent {...defaultProps} jsonContent={longContent} />);
 
       expect(screen.getByTestId('tiptap-editor')).toBeTruthy();
     });
@@ -364,7 +382,7 @@ describe('PageContent', () => {
         ],
       };
 
-      render(<PageContent {...defaultProps} jsonContent={specialContent} />);
+      renderWithProvider(<PageContent {...defaultProps} jsonContent={specialContent} />);
 
       expect(screen.getByTestId('tiptap-editor')).toBeTruthy();
     });
@@ -385,19 +403,19 @@ describe('PageContent', () => {
         ],
       };
 
-      render(<PageContent {...defaultProps} jsonContent={complexContent} />);
+      renderWithProvider(<PageContent {...defaultProps} jsonContent={complexContent} />);
 
       expect(screen.getByTestId('tiptap-editor')).toBeTruthy();
     });
 
     it('should handle undefined pageId', () => {
-      render(<PageContent {...defaultProps} pageId={undefined} />);
+      renderWithProvider(<PageContent {...defaultProps} pageId={undefined} />);
 
       expect(screen.getByTestId('tiptap-editor')).toBeTruthy();
     });
 
     it('should handle null editable prop', () => {
-      render(<PageContent {...defaultProps} editable={false} canEdit={false} />);
+      renderWithProvider(<PageContent {...defaultProps} editable={false} canEdit={false} />);
 
       expect(screen.getByTestId('tiptap-editor')).toBeTruthy();
     });
@@ -405,16 +423,20 @@ describe('PageContent', () => {
 
   describe('Content remounting', () => {
     it('should remount editor when pageId changes', () => {
-      const { rerender } = render(<PageContent {...defaultProps} pageId="123" />);
+      const { rerender } = renderWithProvider(<PageContent {...defaultProps} pageId="123" />);
 
       // Change pageId - should force remount
-      rerender(<PageContent {...defaultProps} pageId="456" />);
+      rerender(
+        <PageDisplaySettingsProvider>
+          <PageContent {...defaultProps} pageId="456" />
+        </PageDisplaySettingsProvider>
+      );
 
       expect(screen.getByTestId('tiptap-editor')).toBeTruthy();
     });
 
     it('should preserve content structure after remount', async () => {
-      const { rerender } = render(
+      const { rerender } = renderWithProvider(
         <PageContent
           {...defaultProps}
           pageId="123"
@@ -423,11 +445,13 @@ describe('PageContent', () => {
       );
 
       rerender(
-        <PageContent
-          {...defaultProps}
-          pageId="456"
-          jsonContent={{ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'New Content' }] }] }}
-        />
+        <PageDisplaySettingsProvider>
+          <PageContent
+            {...defaultProps}
+            pageId="456"
+            jsonContent={{ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'New Content' }] }] }}
+          />
+        </PageDisplaySettingsProvider>
       );
 
       await waitFor(() => {
@@ -438,7 +462,7 @@ describe('PageContent', () => {
     });
 
     it('should update content when pageId changes in edit mode', async () => {
-      const { rerender } = render(
+      const { rerender } = renderWithProvider(
         <PageContent
           {...defaultProps}
           isEditing={true}
@@ -449,12 +473,14 @@ describe('PageContent', () => {
 
       // Navigate to a different page while in edit mode
       rerender(
-        <PageContent
-          {...defaultProps}
-          isEditing={true}
-          pageId="456"
-          jsonContent={{ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'New Page Content' }] }] }}
-        />
+        <PageDisplaySettingsProvider>
+          <PageContent
+            {...defaultProps}
+            isEditing={true}
+            pageId="456"
+            jsonContent={{ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'New Page Content' }] }] }}
+          />
+        </PageDisplaySettingsProvider>
       );
 
       await waitFor(() => {
