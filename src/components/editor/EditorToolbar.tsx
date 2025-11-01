@@ -1,5 +1,5 @@
 import { Editor } from '@tiptap/react';
-import { Bold, Italic, Quote, Code2, Link2, List, ListOrdered, Image as ImageIcon, Undo, Redo, Table as TableIcon, MoreHorizontal, Heading1, Heading2, Heading3, Heading, Pencil, Check, Type, Section } from "lucide-react";
+import { Bold, Italic, Quote, Code2, Link2, List, ListOrdered, Image as ImageIcon, Undo, Redo, Table as TableIcon, MoreHorizontal, Heading1, Heading2, Heading3, Heading, Pencil, Check, Type, Section, MoreVertical, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useSupabaseUpload } from "@/hooks/use-supabase-upload";
@@ -22,9 +22,10 @@ interface EditorToolbarProps {
   hasActiveChat?: boolean;
   pageType?: 'text' | 'section';
   onPageTypeChange?: (newPageType: 'text' | 'section') => void;
+  onDeletePage?: () => void;
 }
 
-export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, customButtons, onToggleChat, hasActiveChat, pageType, onPageTypeChange }: EditorToolbarProps) => {
+export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, customButtons, onToggleChat, hasActiveChat, pageType, onPageTypeChange, onDeletePage }: EditorToolbarProps) => {
   const { toast } = useToast();
   const uploadImage = useSupabaseUpload();
   const isMobile = useMediaQuery("(max-width: 768px)");
@@ -367,19 +368,46 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
         )}
       </div>
       {onToggleEdit && editable && (
-        <Button 
-          size="sm" 
-          className="rounded-full"
-          variant={isEditing ? "default" : "outline"}
-          onClick={onToggleEdit}
-          title={isEditing ? "Exit Edit Mode" : "Enter Edit Mode"}
-        >
-          {isEditing ? (
-            <Check className="h-4 w-4" />
-          ) : (
-            <Pencil className="h-4 w-4" />
+        <>
+          <Button 
+            size="sm" 
+            className="rounded-full"
+            variant={isEditing ? "default" : "outline"}
+            onClick={onToggleEdit}
+            title={isEditing ? "Exit Edit Mode" : "Enter Edit Mode"}
+          >
+            {isEditing ? (
+              <Check className="h-4 w-4" />
+            ) : (
+              <Pencil className="h-4 w-4" />
+            )}
+          </Button>
+          
+          {/* Kebab menu for page actions */}
+          {onDeletePage && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button 
+                  size="sm" 
+                  variant="outline"
+                  className="rounded-full h-9 w-9 p-0"
+                  title="More options"
+                >
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onClick={onDeletePage}
+                  className="text-destructive focus:text-destructive flex items-center gap-2"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  <span>Delete Page</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
-        </Button>
+        </>
       )}
     </div>
   );

@@ -23,6 +23,7 @@ interface PageContentProps {
   onToggleChat?: () => void;
   hasActiveChat?: boolean;
   bookId?: string;
+  onDeletePage?: () => void;
 }
 
 export const PageContent = ({
@@ -40,6 +41,7 @@ export const PageContent = ({
   onToggleChat,
   hasActiveChat,
   bookId,
+  onDeletePage,
 }: PageContentProps) => {
   const [initialLoad, setInitialLoad] = useState(true);
   const [currentContent, setCurrentContent] = useState<EditorJSON | null>(jsonContent);
@@ -118,6 +120,7 @@ export const PageContent = ({
                 centerContent={pageType === 'section'}
                 pageType={pageType}
                 onPageTypeChange={onPageTypeChange}
+                onDeletePage={onDeletePage}
               />
 
               {/* Floating action buttons */}
@@ -129,6 +132,8 @@ export const PageContent = ({
                 hasActiveChat={hasActiveChat}
                 pageId={pageId}
                 audioState={audioState}
+                bookId={bookId}
+                onDeletePage={onDeletePage}
               />
             </div>
           </div>

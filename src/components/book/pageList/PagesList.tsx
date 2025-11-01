@@ -338,13 +338,7 @@ export const PagesList = ({
           </div>
         </div>
 
-        {items.length === 0 ? (
-          <div className="text-center py-12">
-            <Type className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-            <p className="text-muted-foreground">No pages yet</p>
-            {canEdit && <p className="text-muted-foreground text-sm">Click the buttons above to add a new page</p>}
-          </div>
-        ) : (
+
           <div className={`${viewMode === 'grid' ? 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 p-4' : ''}`}>
             {isReordering ? (
               <DndContext
@@ -401,7 +395,7 @@ export const PagesList = ({
                       page={page}
                       bookId={bookId}
                       onNavigate={(pageId) => navigate(`/book/${bookId}/page/${pageId}`)}
-                      onDelete={isDeleteMode && canEdit ? handleDeletePage : undefined}
+                      onDelete={canEdit ? handleDeletePage : undefined}
                       isBookmarked={bookmarkedPageIndex === page.page_index}
                       ref={bookmarkedPageIndex === page.page_index ? bookmarkedPageRef : undefined}
                     />
@@ -411,7 +405,7 @@ export const PagesList = ({
                       page={page}
                       bookId={bookId}
                       onNavigate={(pageId) => navigate(`/book/${bookId}/page/${pageId}`)}
-                      onDelete={isDeleteMode && canEdit ? handleDeletePage : undefined}
+                      onDelete={canEdit ? handleDeletePage : undefined}
                       isBookmarked={bookmarkedPageIndex === page.page_index}
                       ref={bookmarkedPageIndex === page.page_index ? bookmarkedPageRef : undefined}
                     />
@@ -444,7 +438,7 @@ export const PagesList = ({
               </>
             )}
           </div>
-        )}
+
       </CardContent>
 
       {/* Floating Exit Reorder Button */}

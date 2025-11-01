@@ -22,6 +22,7 @@ interface TipTapEditorProps {
   centerContent?: boolean;
   pageType?: 'text' | 'section';
   onPageTypeChange?: (newPageType: 'text' | 'section') => void;
+  onDeletePage?: () => void;
 }
 
 export const TipTapEditor = ({
@@ -37,7 +38,8 @@ export const TipTapEditor = ({
   hasActiveChat,
   centerContent,
   pageType,
-  onPageTypeChange
+  onPageTypeChange,
+  onDeletePage
 }: TipTapEditorProps) => {
   const { toast } = useToast();
   const isMobile = useIsMobile();
@@ -114,6 +116,7 @@ export const TipTapEditor = ({
           hasActiveChat={hasActiveChat}
           pageType={pageType}
           onPageTypeChange={onPageTypeChange}
+          onDeletePage={onDeletePage}
         />
       <div 
         className={cn(`${centerContent ? 'flex items-center justify-center text-center' : ''} prose dark:prose-invert prose-slate w-full max-w-none p-8 flex-1 [&_.ProseMirror:focus]:outline-none bg-background ${isMobile ? 'text-xl' : 'text-2xl'} ${className} [&_img]:mx-auto [&_img]:block [&_p]:text-xl [&_p]:md:text-2xl [&_p]:leading-relaxed [&_p]:mb-6 [&_table]:border-collapse [&_table]:w-full [&_th]:border [&_th]:border-muted [&_th]:p-2 [&_td]:border [&_td]:border-muted [&_td]:p-2 [&_.selectedCell]:bg-muted/30 [&_pre]:text-lg [&_pre]:md:text-xl [&_code]:text-lg [&_code]:md:text-xl`)}

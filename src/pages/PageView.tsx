@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { PageNavigation } from "@/components/page/PageNavigation";
 import { PageContent } from "@/components/page/PageContent";
 import { PageLoading } from "@/components/page/PageLoading";
@@ -15,8 +15,6 @@ import {
 import { PageChatPanel } from "@/components/page/PageChatPanel";
 import { PageMeta } from "@/components/page/PageMeta";
 import { SlugService } from "@/utils/slugService";
-import { supabase } from "@/integrations/supabase/client";
-import { useToast } from "@/hooks/use-toast";
 
 // Custom hooks
 import { usePageViewData } from "@/hooks/use-page-view-data";
@@ -28,6 +26,8 @@ import { useEditMode } from "@/hooks/use-edit-mode";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { usePageCreation } from "@/hooks/use-page-creation";
 import { useNextPagePreloader } from "@/hooks/use-next-page-preloader";
+import { usePageDeletion } from "@/hooks/use-page-deletion";
+import { usePageTypeChange } from "@/hooks/use-page-type-change";
 
 /**
  * Fully refactored PageView component
@@ -36,6 +36,7 @@ import { useNextPagePreloader } from "@/hooks/use-next-page-preloader";
 const PageView = () => {
   // 1. URL parameters
   const { bookId, pageId } = useParams();
+  const navigate = useNavigate();
 
   // 2. Extract numeric IDs from slugs
   const numericBookId = SlugService.extractId(bookId);
@@ -60,50 +61,18 @@ const PageView = () => {
   // 5. Local UI state
   const [isEditing, setIsEditing] = useEditMode(canEdit);
   const [isChatOpen, setIsChatOpen] = useState(false);
-  const { toast } = useToast();
   
   // Use ref to track page type independently to avoid triggering content updates
   const pageTypeRef = useRef<'text' | 'section'>(page?.page_type as 'text' | 'section' || 'text');
 
   // 6. Page type update function
-  const handlePageTypeChange = async (newPageType: 'text' | 'section') => {
-    if (!canEdit || !page) return;
-    
-    try {
-      const { error } = await supabase
-        .from('pages')
-        .update({ page_type: newPageType })
-        .eq('id', numericPageId);
-
-      if (error) throw error;
-
-      // Update ref immediately to avoid re-renders
-      pageTypeRef.current = newPageType;
-      
-      // Update local state for persistence
-      setPage(prevPage =>
-        prevPage ? { ...prevPage, page_type: newPageType } : null
-      );
-
-      // Manually trigger editor refocus after state update
-      // Use a slight delay to ensure DOM has updated
-      setTimeout(() => {
-        const editorElement = document.querySelector('.ProseMirror') as HTMLElement;
-        if (editorElement) {
-          editorElement.focus();
-        }
-      }, 100);
-
-      // Toast removed to prevent cursor loss
-    } catch (error) {
-      console.error('Error updating page type:', error);
-      toast({
-        variant: "destructive",
-        title: "Failed to update page type",
-        description: error instanceof Error ? error.message : "Unknown error",
-      });
-    }
-  };
+  const { handlePageTypeChange } = usePageTypeChange({
+    canEdit,
+    page,
+    numericPageId,
+    setPage,
+    pageTypeRef
+  });
 
   // 7. Page save logic with proper state update
   const { handleSave, handleApplyEdit, saving } = usePageSave(
@@ -128,15 +97,25 @@ const PageView = () => {
   // 9. Page creation logic
   const { createNewPage } = usePageCreation(bookId, numericBookId, canEdit);
 
-  // 10. Side effects (auto-tracking)
+  // 10. Page deletion logic
+  const { handleDeletePage } = usePageDeletion({
+    bookId: bookId || "",
+    numericBookId,
+    numericPageId,
+    allPages,
+    currentIndex,
+    canEdit
+  });
+
+  // 11. Side effects (auto-tracking)
   useBookmarkTracking(numericBookId, currentIndex);
   useKeyboardNavigation({ onNext: navigateNext, onPrev: navigatePrev }, isEditing);
   usePageTitle(page?.title, book?.name);
 
-  // 11. Preload next page for faster navigation
+  // 12. Preload next page for faster navigation
   useNextPagePreloader(numericBookId, nextPageId);
 
-  // 12. Loading state
+  // 13. Loading state
   if (dataLoading || permissionsLoading) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
@@ -147,7 +126,7 @@ const PageView = () => {
     );
   }
 
-  // 13. Not found state
+  // 14. Not found state
   if (!page || !book) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
@@ -158,7 +137,7 @@ const PageView = () => {
     );
   }
 
-  // 14. Main render - Pure composition
+  // 15. Main render - Pure composition
   return (
     <SidebarProvider defaultOpen={false}>
       <div className="min-h-[calc(100vh-56px)] flex flex-col bg-background w-full">
@@ -203,6 +182,7 @@ const PageView = () => {
                     onToggleChat={() => setIsChatOpen(!isChatOpen)}
                     hasActiveChat={isChatOpen}
                     bookId={bookId}
+                    onDeletePage={handleDeletePage}
                   />
 
                   {/* Navigation Controls */}
