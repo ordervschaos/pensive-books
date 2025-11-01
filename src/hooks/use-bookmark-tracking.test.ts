@@ -86,7 +86,12 @@ describe('useBookmarkTracking', () => {
         expect(supabase.from).toHaveBeenCalledWith('user_data');
         expect(mockUpdate).toHaveBeenCalledWith(
           expect.objectContaining({
-            bookmarked_pages: { '123': 5 },
+            bookmarked_pages: {
+              '123': {
+                pageIndex: 5,
+                timestamp: expect.any(String),
+              },
+            },
           })
         );
       });
@@ -109,7 +114,14 @@ describe('useBookmarkTracking', () => {
       await waitFor(() => {
         expect(mockUpdate).toHaveBeenCalledWith(
           expect.objectContaining({
-            bookmarked_pages: { '100': 2, '200': 3, '123': 5 },
+            bookmarked_pages: {
+              '100': 2,
+              '200': 3,
+              '123': {
+                pageIndex: 5,
+                timestamp: expect.any(String),
+              },
+            },
           })
         );
       });
@@ -132,7 +144,12 @@ describe('useBookmarkTracking', () => {
       await waitFor(() => {
         expect(mockUpdate).toHaveBeenCalledWith(
           expect.objectContaining({
-            bookmarked_pages: { '123': 5 },
+            bookmarked_pages: {
+              '123': {
+                pageIndex: 5,
+                timestamp: expect.any(String),
+              },
+            },
           })
         );
       });
@@ -170,7 +187,12 @@ describe('useBookmarkTracking', () => {
       await waitFor(() => {
         expect(mockUpdate).toHaveBeenCalledWith(
           expect.objectContaining({
-            bookmarked_pages: { '123': 0 },
+            bookmarked_pages: {
+              '123': {
+                pageIndex: 0,
+                timestamp: expect.any(String),
+              },
+            },
           })
         );
       });
@@ -182,7 +204,12 @@ describe('useBookmarkTracking', () => {
       await waitFor(() => {
         expect(mockUpdate).toHaveBeenCalledWith(
           expect.objectContaining({
-            bookmarked_pages: { '123': 5 },
+            bookmarked_pages: {
+              '123': {
+                pageIndex: 5,
+                timestamp: expect.any(String),
+              },
+            },
           })
         );
       });
@@ -203,7 +230,12 @@ describe('useBookmarkTracking', () => {
         const stored = localStorage.getItem('bookmarked_pages');
         expect(stored).toBeTruthy();
         const bookmarks = JSON.parse(stored!);
-        expect(bookmarks).toEqual({ '123': 5 });
+        expect(bookmarks).toEqual({
+          '123': {
+            pageIndex: 5,
+            timestamp: expect.any(String),
+          },
+        });
       });
     });
 
@@ -215,7 +247,13 @@ describe('useBookmarkTracking', () => {
       await waitFor(() => {
         const stored = localStorage.getItem('bookmarked_pages');
         const bookmarks = JSON.parse(stored!);
-        expect(bookmarks).toEqual({ '100': 2, '123': 5 });
+        expect(bookmarks).toEqual({
+          '100': 2,
+          '123': {
+            pageIndex: 5,
+            timestamp: expect.any(String),
+          },
+        });
       });
     });
 
@@ -262,7 +300,12 @@ describe('useBookmarkTracking', () => {
       await waitFor(() => {
         const stored = localStorage.getItem('bookmarked_pages');
         const bookmarks = JSON.parse(stored!);
-        expect(bookmarks).toEqual({ '123': 0 });
+        expect(bookmarks).toEqual({
+          '123': {
+            pageIndex: 0,
+            timestamp: expect.any(String),
+          },
+        });
       });
     });
 

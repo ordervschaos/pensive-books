@@ -3,6 +3,8 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { ContinueWritingCard } from '@/components/book/ContinueWritingCard';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ReactNode } from 'react';
 
 vi.mock('react-router-dom', () => ({
   useNavigate: vi.fn(),
@@ -19,10 +21,23 @@ vi.mock('@/integrations/supabase/client', () => ({
 }));
 
 vi.mock('@/hooks/use-toast', () => ({
-  useToast: () => ({
+  useToast: vi.fn(() => ({
     toast: vi.fn(),
-  }),
+  })),
 }));
+
+// Create a wrapper with QueryClient
+const createWrapper = () => {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+  return ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  );
+};
 
 const mockNavigate = vi.fn();
 
@@ -51,7 +66,7 @@ describe('ContinueWritingCard', () => {
             eq: vi.fn().mockReturnValue({
               order: vi.fn().mockReturnValue({
                 limit: vi.fn().mockReturnValue({
-                  single: vi.fn().mockImplementation(() => 
+                  maybeSingle: vi.fn().mockImplementation(() =>
                     new Promise(() => {}) // Never resolves to keep loading state
                   ),
                 }),
@@ -62,8 +77,8 @@ describe('ContinueWritingCard', () => {
       }),
     });
 
-    const { container } = render(<ContinueWritingCard />);
-    
+    const { container } = render(<ContinueWritingCard />, { wrapper: createWrapper() });
+
     // Should show loading skeleton
     expect(container.querySelector('[class*="animate-pulse"]')).toBeInTheDocument();
   });
@@ -83,37 +98,27 @@ describe('ContinueWritingCard', () => {
       },
     };
 
-    // Create proper chainable mock
-    const mockOrder = {
-      limit: vi.fn().mockReturnValue({
-        single: vi.fn().mockResolvedValue({
-          data: mockPage,
-          error: null,
+    // Create proper chainable mock for pages query
+    (supabase.from as any).mockReturnValue({
+      select: vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              order: vi.fn().mockReturnValue({
+                limit: vi.fn().mockReturnValue({
+                  maybeSingle: vi.fn().mockResolvedValue({
+                    data: mockPage,
+                    error: null,
+                  }),
+                }),
+              }),
+            }),
+          }),
         }),
       }),
-    };
-
-    const mockEq3 = {
-      order: vi.fn().mockReturnValue(mockOrder),
-    };
-
-    const mockEq2 = {
-      eq: vi.fn().mockReturnValue(mockEq3),
-    };
-
-    const mockEq1 = {
-      eq: vi.fn().mockReturnValue(mockEq2),
-    };
-
-    const mockSelect = {
-      eq: vi.fn().mockReturnValue(mockEq1),
-    };
-
-    (supabase.from as any).mockReturnValue({
-      select: vi.fn().mockReturnValue(mockSelect),
     });
 
-    render(<ContinueWritingCard />);
+    render(<ContinueWritingCard />, { wrapper: createWrapper() });
 
     await waitFor(() => {
       expect(screen.getByText('My Book')).toBeInTheDocument();
@@ -129,7 +134,7 @@ describe('ContinueWritingCard', () => {
             eq: vi.fn().mockReturnValue({
               order: vi.fn().mockReturnValue({
                 limit: vi.fn().mockReturnValue({
-                  single: vi.fn().mockResolvedValue({
+                  maybeSingle: vi.fn().mockResolvedValue({
                     data: null,
                     error: { code: 'PGRST116' }, // Not found error
                   }),
@@ -141,7 +146,7 @@ describe('ContinueWritingCard', () => {
       }),
     });
 
-    const { container } = render(<ContinueWritingCard />);
+    const { container } = render(<ContinueWritingCard />, { wrapper: createWrapper() });
 
     await waitFor(() => {
       // Component should return null when no pages exist
@@ -171,7 +176,7 @@ describe('ContinueWritingCard', () => {
             eq: vi.fn().mockReturnValue({
               order: vi.fn().mockReturnValue({
                 limit: vi.fn().mockReturnValue({
-                  single: vi.fn().mockResolvedValue({
+                  maybeSingle: vi.fn().mockResolvedValue({
                     data: mockPage,
                     error: null,
                   }),
@@ -183,7 +188,7 @@ describe('ContinueWritingCard', () => {
       }),
     });
 
-    render(<ContinueWritingCard />);
+    render(<ContinueWritingCard />, { wrapper: createWrapper() });
 
     await waitFor(() => {
       expect(screen.getByText('Continue writing')).toBeInTheDocument();
@@ -193,7 +198,7 @@ describe('ContinueWritingCard', () => {
     continueButton?.click();
 
     await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith('/book/456/page/123');
+      expect(mockNavigate).toHaveBeenCalledWith('/book/456/page/123?edit=true');
     });
   });
 
@@ -223,7 +228,7 @@ describe('ContinueWritingCard', () => {
             eq: vi.fn().mockReturnValue({
               order: vi.fn().mockReturnValue({
                 limit: vi.fn().mockReturnValue({
-                  single: vi.fn().mockResolvedValue({
+                  maybeSingle: vi.fn().mockResolvedValue({
                     data: mockPage,
                     error: null,
                   }),
@@ -245,7 +250,7 @@ describe('ContinueWritingCard', () => {
       }),
     });
 
-    render(<ContinueWritingCard />);
+    render(<ContinueWritingCard />, { wrapper: createWrapper() });
 
     await waitFor(() => {
       expect(screen.getByText('New page')).toBeInTheDocument();
@@ -288,7 +293,7 @@ describe('ContinueWritingCard', () => {
             eq: vi.fn().mockReturnValue({
               order: vi.fn().mockReturnValue({
                 limit: vi.fn().mockReturnValue({
-                  single: vi.fn().mockResolvedValue({
+                  maybeSingle: vi.fn().mockResolvedValue({
                     data: mockPage,
                     error: null,
                   }),
@@ -300,7 +305,7 @@ describe('ContinueWritingCard', () => {
       }),
     });
 
-    render(<ContinueWritingCard />);
+    render(<ContinueWritingCard />, { wrapper: createWrapper() });
 
     await waitFor(() => {
       const img = screen.getByAltText('My Book');
@@ -331,7 +336,7 @@ describe('ContinueWritingCard', () => {
             eq: vi.fn().mockReturnValue({
               order: vi.fn().mockReturnValue({
                 limit: vi.fn().mockReturnValue({
-                  single: vi.fn().mockResolvedValue({
+                  maybeSingle: vi.fn().mockResolvedValue({
                     data: mockPage,
                     error: null,
                   }),
@@ -343,7 +348,7 @@ describe('ContinueWritingCard', () => {
       }),
     });
 
-    render(<ContinueWritingCard />);
+    render(<ContinueWritingCard />, { wrapper: createWrapper() });
 
     await waitFor(() => {
       expect(screen.getByText('Book Subtitle')).toBeInTheDocument();

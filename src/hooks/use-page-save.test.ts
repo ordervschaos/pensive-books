@@ -5,12 +5,13 @@ import { usePageSave } from './use-page-save';
 // Mock dependencies
 const mockToast = vi.fn();
 vi.mock('@/hooks/use-toast', () => ({
-  useToast: () => ({
+  useToast: vi.fn(() => ({
     toast: mockToast,
-  }),
+  })),
 }));
 
 const mockUpdate = vi.fn();
+const mockInvalidateQueries = vi.fn();
 
 vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
@@ -18,6 +19,12 @@ vi.mock('@/integrations/supabase/client', () => ({
       update: mockUpdate,
     })),
   },
+}));
+
+vi.mock('@tanstack/react-query', () => ({
+  useQueryClient: vi.fn(() => ({
+    invalidateQueries: mockInvalidateQueries,
+  })),
 }));
 
 describe('usePageSave', () => {
