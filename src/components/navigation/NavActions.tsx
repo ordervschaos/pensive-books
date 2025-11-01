@@ -11,6 +11,8 @@ import {
 import { ThemeSwitcher } from "@/components/theme/ThemeSwitcher";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { NavActionsProps } from "./types";
+import { PageDisplayControls } from "./PageDisplayControls";
+import { useLocation } from "react-router-dom";
 
 export const NavActions = ({
   isAuthenticated,
@@ -20,6 +22,8 @@ export const NavActions = ({
   setSearchOpen
 }: NavActionsProps) => {
   const { themeName, themeMode, setThemeName, setThemeMode } = useTheme();
+  const location = useLocation();
+  const isPageRoute = location.pathname.includes('/page/');
 
   return (
     <div className="w-[120px] flex items-center gap-2 justify-end shrink-0">
@@ -30,6 +34,7 @@ export const NavActions = ({
             <Search className="h-4 w-4" />
           </Button>
         )}
+        {isPageRoute && <PageDisplayControls isPageRoute={isPageRoute} />}
         <ThemeSwitcher />
         {isAuthenticated ? (
           <Button variant="ghost" size="icon" onClick={handleLogout}>
@@ -56,6 +61,14 @@ export const NavActions = ({
                 <Search className="h-4 w-4 mr-2" />
                 <span>Search</span>
               </DropdownMenuItem>
+            )}
+
+            {isPageRoute && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>Display Settings</DropdownMenuLabel>
+                <PageDisplayControls isPageRoute={isPageRoute} mobile />
+              </>
             )}
 
             <DropdownMenuSeparator />

@@ -1,6 +1,7 @@
 
 import { BrowserRouter as Router, Routes, Route, useLocation } from "react-router-dom";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
+import { PageDisplaySettingsProvider } from "@/contexts/PageDisplaySettingsContext";
 import { Toaster } from "@/components/ui/toaster";
 import { TopNav } from "@/components/TopNav";
 import { LibraryNav } from "@/components/navigation/LibraryNav";
@@ -63,7 +64,8 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider defaultTheme="light">
-        <Router basename={basename}>
+        <PageDisplaySettingsProvider>
+          <Router basename={basename}>
           <div className="min-h-screen flex flex-col">
             <ScrollToTop />
             <ConditionalNav />
@@ -186,6 +188,7 @@ export default function App() {
           </div>
           <Toaster />
         </Router>
+        </PageDisplaySettingsProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );
