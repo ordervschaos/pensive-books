@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { EditorJSON } from '@/types/editor';
+import { useQueryClient } from '@tanstack/react-query';
 
 /**
  * Extract title from JSON content (first heading node)
@@ -42,6 +43,7 @@ export const usePageSave = (
   onSaveSuccess?: (updatedJson: EditorJSON | null, updatedTitle: string) => void
 ): UsePageSaveReturn => {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [saving, setSaving] = useState(false);
 
   const handleSave = useCallback(async (json: EditorJSON | null) => {
@@ -85,6 +87,10 @@ export const usePageSave = (
 
       if (error) throw error;
 
+      // Invalidate the React Query cache for this page
+      const numericPageId = parseInt(pageId, 10);
+      queryClient.invalidateQueries({ queryKey: ['page', numericPageId] });
+
       // Notify parent component of successful save
       if (onSaveSuccess) {
         onSaveSuccess(json, title);
@@ -99,7 +105,7 @@ export const usePageSave = (
     } finally {
       setSaving(false);
     }
-  }, [pageId, canEdit, toast, onSaveSuccess]);
+  }, [pageId, canEdit, toast, onSaveSuccess, queryClient]);
 
   /**
    * Apply AI-suggested edit by replacing old text with new text in JSON content
