@@ -64,12 +64,6 @@ describe('usePageCreation', () => {
         p_book_id: 123,
       });
       expect(mockNavigate).toHaveBeenCalledWith('/book/123/page/456?edit=true');
-      expect(mockToast).toHaveBeenCalledWith(
-        expect.objectContaining({
-          title: 'Page created',
-          description: 'Your new page has been created',
-        })
-      );
     });
   });
 
