@@ -264,11 +264,13 @@ RETURNS TABLE (
 DECLARE
   next_index INTEGER;
 BEGIN
-  -- Get the maximum page_index for the book, defaulting to -1 if no pages exist
+  -- Get the maximum page_index for non-archived pages only
+  -- This prevents gaps when archived pages have higher indices
   SELECT COALESCE(MAX(pages.page_index), -1) INTO next_index
   FROM pages
-  WHERE pages.book_id = p_book_id;
-  
+  WHERE pages.book_id = p_book_id
+    AND (pages.archived = false OR pages.archived IS NULL);
+
   -- Insert the new page with the next index
   RETURN QUERY
   INSERT INTO pages (
@@ -276,16 +278,18 @@ BEGIN
     page_index,
     content,
     html_content,
-    page_type
+    page_type,
+    archived
   )
   VALUES (
     p_book_id,
     next_index + 1,
     '{}'::JSONB,
     '',
-    'text'
+    'text',
+    false
   )
-  RETURNING 
+  RETURNING
     pages.id,
     pages.book_id,
     pages.page_index,
