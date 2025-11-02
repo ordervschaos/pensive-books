@@ -15,6 +15,8 @@ import {
 import { PageChatPanel } from "@/components/page/PageChatPanel";
 import { PageMeta } from "@/components/page/PageMeta";
 import { SlugService } from "@/utils/slugService";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 // Custom hooks
 import { usePageViewData } from "@/hooks/use-page-view-data";
@@ -26,8 +28,6 @@ import { useEditMode } from "@/hooks/use-edit-mode";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { usePageCreation } from "@/hooks/use-page-creation";
 import { useNextPagePreloader } from "@/hooks/use-next-page-preloader";
-import { usePageDeletion } from "@/hooks/use-page-deletion";
-import { usePageTypeChange } from "@/hooks/use-page-type-change";
 
 /**
  * Fully refactored PageView component
@@ -61,18 +61,50 @@ const PageView = () => {
   // 5. Local UI state
   const [isEditing, setIsEditing] = useEditMode(canEdit);
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const { toast } = useToast();
   
   // Use ref to track page type independently to avoid triggering content updates
   const pageTypeRef = useRef<'text' | 'section'>(page?.page_type as 'text' | 'section' || 'text');
 
   // 6. Page type update function
-  const { handlePageTypeChange } = usePageTypeChange({
-    canEdit,
-    page,
-    numericPageId,
-    setPage,
-    pageTypeRef
-  });
+  const handlePageTypeChange = async (newPageType: 'text' | 'section') => {
+    if (!canEdit || !page) return;
+    
+    try {
+      const { error } = await supabase
+        .from('pages')
+        .update({ page_type: newPageType })
+        .eq('id', numericPageId);
+
+      if (error) throw error;
+
+      // Update ref immediately to avoid re-renders
+      pageTypeRef.current = newPageType;
+      
+      // Update local state for persistence
+      setPage(prevPage =>
+        prevPage ? { ...prevPage, page_type: newPageType } : null
+      );
+
+      // Manually trigger editor refocus after state update
+      // Use a slight delay to ensure DOM has updated
+      setTimeout(() => {
+        const editorElement = document.querySelector('.ProseMirror') as HTMLElement;
+        if (editorElement) {
+          editorElement.focus();
+        }
+      }, 100);
+
+      // Toast removed to prevent cursor loss
+    } catch (error) {
+      console.error('Error updating page type:', error);
+      toast({
+        variant: "destructive",
+        title: "Failed to update page type",
+        description: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  };
 
   // 7. Page save logic with proper state update
   const { handleSave, handleApplyEdit, saving } = usePageSave(
@@ -98,14 +130,70 @@ const PageView = () => {
   const { createNewPage } = usePageCreation(bookId, numericBookId, canEdit);
 
   // 10. Page deletion logic
-  const { handleDeletePage } = usePageDeletion({
-    bookId: bookId || "",
-    numericBookId,
-    numericPageId,
-    allPages,
-    currentIndex,
-    canEdit
-  });
+  const handleDeletePage = async () => {
+    if (!canEdit) {
+      toast({
+        variant: "destructive",
+        title: "Permission denied",
+        description: "You don't have permission to delete this page"
+      });
+      return;
+    }
+
+    try {
+      // Archive the page
+      const { error: archiveError } = await supabase
+        .from('pages')
+        .update({ 
+          archived: true,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', numericPageId);
+
+      if (archiveError) throw archiveError;
+
+      // Get remaining pages and update their indices
+      const remainingPages = allPages.filter(p => p.id !== numericPageId);
+      const updatedPages = remainingPages.map((page, index) => ({
+        id: page.id,
+        page_index: index,
+        book_id: numericBookId
+      }));
+
+      // Update the indices of remaining pages
+      const { error: updateError } = await supabase
+        .from('pages')
+        .upsert(updatedPages);
+
+      if (updateError) throw updateError;
+
+      toast({
+        title: "Page deleted",
+        description: "The page has been archived successfully"
+      });
+
+      // Smart navigation after deletion
+      if (remainingPages.length === 0) {
+        // No pages left, go to book details (table of contents)
+        navigate(`/book/${bookId}`);
+      } else if (currentIndex < remainingPages.length) {
+        // Not the last page, go to the next page (which now has the same index)
+        const nextPage = remainingPages[currentIndex];
+        navigate(`/book/${bookId}/page/${nextPage.id}`);
+      } else {
+        // Was the last page, go to the previous page (now the new last page)
+        const prevPage = remainingPages[remainingPages.length - 1];
+        navigate(`/book/${bookId}/page/${prevPage.id}`);
+      }
+    } catch (error) {
+      console.error('Error deleting page:', error);
+      toast({
+        variant: "destructive",
+        title: "Error deleting page",
+        description: error instanceof Error ? error.message : "Failed to delete page"
+      });
+    }
+  };
 
   // 11. Side effects (auto-tracking)
   useBookmarkTracking(numericBookId, currentIndex);
