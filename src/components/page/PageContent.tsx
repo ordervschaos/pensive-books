@@ -68,9 +68,10 @@ export const PageContent = ({
       onSave(json);
     }, 200);
 
-    // Cleanup: cancel any pending debounced calls
+    // Cleanup: flush any pending saves immediately before unmounting
+    // This ensures content is saved even when navigating away quickly
     return () => {
-      debouncedSaveRef.current?.cancel();
+      debouncedSaveRef.current?.flush();
     };
   }, [onSave]);
 
@@ -80,6 +81,20 @@ export const PageContent = ({
     setInitialLoad(false);
     debouncedSaveRef.current?.(json);
   }, [editable]);
+
+  // Add beforeunload handler to flush pending saves when closing/refreshing browser
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      // Flush any pending saves immediately
+      debouncedSaveRef.current?.flush();
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, []);
 
   const handleEditingChange = useCallback((editing: boolean) => {
     setIsEditing?.(editing);
