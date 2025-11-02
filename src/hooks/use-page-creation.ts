@@ -43,10 +43,6 @@ export const usePageCreation = (
       // Navigate to the new page with edit mode enabled
       navigate(`/book/${bookId}/page/${newPage.id}?edit=true`);
 
-      toast({
-        title: 'Page created',
-        description: 'Your new page has been created',
-      });
     } catch (error: unknown) {
       toast({
         variant: 'destructive',

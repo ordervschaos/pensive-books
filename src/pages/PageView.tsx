@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { PageNavigation } from "@/components/page/PageNavigation";
 import { PageContent } from "@/components/page/PageContent";
@@ -65,6 +65,13 @@ const PageView = () => {
   
   // Use ref to track page type independently to avoid triggering content updates
   const pageTypeRef = useRef<'text' | 'section'>(page?.page_type as 'text' | 'section' || 'text');
+  
+  // Update pageTypeRef whenever page changes to prevent persistence between pages
+  useEffect(() => {
+    if (page?.page_type) {
+      pageTypeRef.current = page.page_type as 'text' | 'section';
+    }
+  }, [page?.id, page?.page_type]); // Re-run when page ID or page_type changes
 
   // 6. Page type update function
   const handlePageTypeChange = async (newPageType: 'text' | 'section') => {
@@ -254,7 +261,7 @@ const PageView = () => {
 
                   {/* Page Editor/Viewer */}
                   <PageContent
-                    key={`current-page-${page.id.toString()}-cache-${pageId}`} // Force remount when page changes to prevent stale content
+                    key={`current-page-${page.id.toString()}`} // Force remount when page changes to prevent stale content
                     jsonContent={page.content}
                     title={page.title || 'Untitled'}
                     onSave={handleSave}

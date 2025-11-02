@@ -176,7 +176,7 @@ export const PageContent = ({
           <div className="w-full max-w-3xl">
             <div className={cn("flex-1 relative", getMarginClass())}>
               <TipTapEditor
-                key={pageId} // Force remount on page change to ensure fresh content
+                // key={pageId} // Force remount on page change to ensure fresh content
                 content={currentContent}
                 onChange={handleContentChange}
                 editable={canEdit}
