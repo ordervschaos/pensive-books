@@ -420,25 +420,26 @@
   box-shadow: 0 0 0 2px rgba(var(--audio-highlight-bg), var(--audio-highlight-shadow-opacity));
 }
 
-/* Audio Block Clickable - makes blocks interactive */
+/* Audio Block Clickable - hover effect disabled */
 [data-audio-block] {
-  cursor: pointer;
-  transition: background-color 0.2s ease, transform 0.1s ease, box-shadow 0.2s ease;
+  /* cursor: pointer; */
+  /* transition: background-color 0.2s ease, transform 0.1s ease, box-shadow 0.2s ease; */
   border-radius: 4px;
   position: relative;
 }
 
-[data-audio-block]:hover {
+/* Hover effect disabled - will use different mechanism for audio playback */
+/* [data-audio-block]:hover {
   background-color: rgba(var(--audio-block-hover-bg), var(--audio-block-hover-bg-opacity));
   transform: translateX(2px);
   box-shadow: 0 0 0 1px rgba(var(--audio-block-hover-bg), var(--audio-block-hover-shadow-opacity));
-}
+} */
 
-/* When highlighted, show it's still clickable with enhanced hover */
-[data-audio-block].audio-highlighted:hover {
+/* Enhanced hover disabled - will use different mechanism */
+/* [data-audio-block].audio-highlighted:hover {
   background-color: rgba(var(--audio-highlight-bg), var(--audio-highlight-hover-bg-opacity));
   box-shadow: 0 0 0 2px rgba(var(--audio-highlight-bg), var(--audio-highlight-hover-shadow-opacity));
-}
+} */
 
 /* Remove default Tippy padding for page link suggestions */
 .tippy-box[data-theme~='none'] {
