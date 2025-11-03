@@ -5,6 +5,8 @@ import tippy, { Instance as TippyInstance } from 'tippy.js';
 import { forwardRef, useEffect, useImperativeHandle, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { SlugService } from '@/utils/slugService';
+import type { Editor } from '@tiptap/core';
+import type { Range } from '@tiptap/core';
 
 interface Page {
   id: string;
@@ -307,7 +309,7 @@ export const PageLinkSuggestion = Extension.create<PageLinkSuggestionOptions>({
           let popup: TippyInstance[];
 
           // Function to create a new page
-          const createNewPage = async (title: string, editor: any, range: any) => {
+          const createNewPage = async (title: string, editor: Editor, range: Range) => {
             if (!bookId) return;
 
             try {
@@ -327,10 +329,33 @@ export const PageLinkSuggestion = Extension.create<PageLinkSuggestionOptions>({
               // The function returns an array with one row
               const newPage = newPageData[0];
 
-              // Update the page title
+              // Create initial content with H1 heading matching the title
+              const initialContent = {
+                type: 'doc',
+                content: [
+                  {
+                    type: 'heading',
+                    attrs: { level: 1 },
+                    content: [
+                      {
+                        type: 'text',
+                        text: title,
+                      },
+                    ],
+                  },
+                  {
+                    type: 'paragraph',
+                  },
+                ],
+              };
+
+              // Update the page title and content
               const { data: updatedPage, error: updateError } = await supabase
                 .from('pages')
-                .update({ title })
+                .update({
+                  title,
+                  content: initialContent,
+                })
                 .eq('id', newPage.id)
                 .select('id, title, page_index, book_id')
                 .single();
@@ -434,7 +459,7 @@ export const PageLinkSuggestion = Extension.create<PageLinkSuggestionOptions>({
             },
           };
         },
-      } as Partial<SuggestionOptions<PageSuggestion>>),
+      } as SuggestionOptions<PageSuggestion>),
     ];
   },
 });
