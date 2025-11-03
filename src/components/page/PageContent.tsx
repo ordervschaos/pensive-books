@@ -203,6 +203,7 @@ export const PageContent = ({
                 pageType={pageType}
                 onPageTypeChange={onPageTypeChange}
                 onDeletePage={onDeletePage}
+                bookId={bookId}
                 fontSizeClassName={cn(getFontSizeClass(), getFontStyleClass())}
                 fontFamilyStyle={getFontFamilyStyle()}
               />

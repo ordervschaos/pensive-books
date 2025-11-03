@@ -6,6 +6,8 @@ import { Table, TableRow, TableCell, TableHeader } from '@tiptap/extension-table
 import { Title } from '../extensions/Title';
 import { SmartTypography } from '../extensions/SmartTypography';
 import { AudioBlocks } from '../extensions/AudioBlocks';
+import { PageLink } from '../extensions/PageLink';
+import { PageLinkSuggestion } from '../extensions/PageLinkSuggestion';
 import { common, createLowlight } from 'lowlight';
 import { EditorChangeHandler, EditorJSON } from '@/types/editor';
 import type { EditorView } from '@tiptap/pm/view';
@@ -23,7 +25,9 @@ export const getEditorConfig = (
   onChange: EditorChangeHandler,
   editable = true,
   isEditing = true,
-  uploadImage: ImageUploadFn
+  uploadImage: ImageUploadFn,
+  bookId?: string | null,
+  onPageLinkClick?: (pageId: string, bookId: string) => void
 ) => {
 
   return {
@@ -31,6 +35,13 @@ export const getEditorConfig = (
       Title,
       SmartTypography,
       AudioBlocks,
+      PageLink.configure({
+        onPageLinkClick,
+      }),
+      PageLinkSuggestion.configure({
+        bookId: bookId || null,
+        onNavigateToPage: onPageLinkClick, // Reuse the same navigation handler
+      }),
       StarterKit.configure({
         document: false,
         blockquote: {

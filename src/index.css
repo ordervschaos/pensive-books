@@ -439,3 +439,13 @@
   background-color: rgba(var(--audio-highlight-bg), var(--audio-highlight-hover-bg-opacity));
   box-shadow: 0 0 0 2px rgba(var(--audio-highlight-bg), var(--audio-highlight-hover-shadow-opacity));
 }
+
+/* Remove default Tippy padding for page link suggestions */
+.tippy-box[data-theme~='none'] {
+  background-color: transparent;
+  box-shadow: none;
+}
+
+.tippy-box[data-theme~='none'] .tippy-content {
+  padding: 0;
+}

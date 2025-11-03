@@ -1,12 +1,13 @@
 import { useEditor, EditorContent } from '@tiptap/react';
 import { useEffect, useCallback } from 'react';
 import { useToast } from "@/hooks/use-toast";
-import { useIsMobile } from '@/hooks/use-mobile';
 import { useSupabaseUpload } from '@/hooks/use-supabase-upload';
 import { getEditorConfig } from './config/editorConfig';
 import { EditorToolbar } from './EditorToolbar';
 import { cn } from "@/lib/utils";
 import { EditorChangeHandler, EditorJSON } from '@/types/editor';
+import { useNavigate } from 'react-router-dom';
+import 'tippy.js/dist/tippy.css';
 
 interface TipTapEditorProps {
   content: string | EditorJSON | null;
@@ -25,6 +26,7 @@ interface TipTapEditorProps {
   pageType?: 'text' | 'section';
   onPageTypeChange?: (newPageType: 'text' | 'section') => void;
   onDeletePage?: () => void;
+  bookId?: string | null;
 }
 
 export const TipTapEditor = ({
@@ -43,13 +45,27 @@ export const TipTapEditor = ({
   centerContent,
   pageType,
   onPageTypeChange,
-  onDeletePage
+  onDeletePage,
+  bookId
 }: TipTapEditorProps) => {
   const { toast } = useToast();
-  const isMobile = useIsMobile();
   const uploadImage = useSupabaseUpload();
+  const navigate = useNavigate();
 
-  const defaultConfig = getEditorConfig(content, onChange, editable, isEditing, uploadImage);
+  // Handle page link clicks
+  const handlePageLinkClick = useCallback((pageId: string, linkBookId: string) => {
+    navigate(`/book/${linkBookId}/page/${pageId}`);
+  }, [navigate]);
+
+  const defaultConfig = getEditorConfig(
+    content,
+    onChange,
+    editable,
+    isEditing,
+    uploadImage,
+    bookId,
+    handlePageLinkClick
+  );
   const config = editorConfig || defaultConfig;
 
   const editor = useEditor(config);
