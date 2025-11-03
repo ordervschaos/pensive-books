@@ -1,5 +1,5 @@
 import { useEditor, EditorContent } from '@tiptap/react';
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useMemo } from 'react';
 import { useToast } from "@/hooks/use-toast";
 import { useSupabaseUpload } from '@/hooks/use-supabase-upload';
 import { getEditorConfig } from './config/editorConfig';
@@ -57,15 +57,20 @@ export const TipTapEditor = ({
     navigate(`/book/${linkBookId}/page/${pageId}`);
   }, [navigate]);
 
-  const defaultConfig = getEditorConfig(
-    content,
-    onChange,
-    editable,
-    isEditing,
-    uploadImage,
-    bookId,
-    handlePageLinkClick
-  );
+  // Memoize the editor config to prevent unnecessary recreations
+  // Only recreate when dependencies actually change
+  const defaultConfig = useMemo(() => {
+    return getEditorConfig(
+      content,
+      onChange,
+      editable,
+      isEditing,
+      uploadImage,
+      bookId,
+      handlePageLinkClick
+    );
+  }, [content, onChange, editable, isEditing, uploadImage, bookId, handlePageLinkClick]);
+
   const config = editorConfig || defaultConfig;
 
   const editor = useEditor(config);

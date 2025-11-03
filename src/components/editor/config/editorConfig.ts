@@ -40,8 +40,10 @@ export const getEditorConfig = (
       }),
       // StarterKit MUST come before PageLinkSuggestion
       // This ensures the suggestion plugin has higher priority for keyboard handling
+      // IMPORTANT: Disable Link extension in StarterKit to avoid duplication
       StarterKit.configure({
         document: false,
+        link: false, // Disable built-in Link to avoid duplication with our custom Link below
         blockquote: {
           HTMLAttributes: {
             class: 'border-l-4 border-primary pl-4 my-4 italic',

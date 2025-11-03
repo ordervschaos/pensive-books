@@ -94,6 +94,7 @@ export const usePageViewData = (
     refetchOnMount: false, // Don't refetch if data is in cache
     refetchOnWindowFocus: false, // Don't refetch when window regains focus
     refetchOnReconnect: false, // Don't refetch on reconnect
+    refetchInterval: false, // CRITICAL: Disable automatic background refetching to prevent editor remounts
   });
 
   // Log cache hit/miss and set page immediately if cached
