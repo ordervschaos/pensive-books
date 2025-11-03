@@ -38,10 +38,8 @@ export const getEditorConfig = (
       PageLink.configure({
         onPageLinkClick,
       }),
-      PageLinkSuggestion.configure({
-        bookId: bookId || null,
-        onNavigateToPage: onPageLinkClick, // Reuse the same navigation handler
-      }),
+      // StarterKit MUST come before PageLinkSuggestion
+      // This ensures the suggestion plugin has higher priority for keyboard handling
       StarterKit.configure({
         document: false,
         blockquote: {
@@ -105,6 +103,13 @@ export const getEditorConfig = (
             ]
           ];
         }
+      }),
+      // PageLinkSuggestion MUST come after StarterKit
+      // Extensions loaded later have higher priority for keyboard shortcuts
+      // This ensures suggestion popup handles Enter before list item splitting
+      PageLinkSuggestion.configure({
+        bookId: bookId || null,
+        onNavigateToPage: onPageLinkClick,
       }),
       Link.configure({
         openOnClick: false,
