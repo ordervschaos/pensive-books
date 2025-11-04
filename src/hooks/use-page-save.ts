@@ -40,7 +40,8 @@ interface UsePageSaveReturn {
 export const usePageSave = (
   pageId: string | undefined,
   canEdit: boolean,
-  onSaveSuccess?: (updatedJson: EditorJSON | null, updatedTitle: string) => void
+  onSaveSuccess?: (updatedJson: EditorJSON | null, updatedTitle: string) => void,
+  bookId?: number
 ): UsePageSaveReturn => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -87,9 +88,22 @@ export const usePageSave = (
 
       if (error) throw error;
 
-      // Invalidate the React Query cache for this page
+      // CRITICAL FIX: Update cache directly instead of invalidating
+      // invalidateQueries triggers a network refetch, which causes editor to remount
+      // setQueryData updates the cache without refetching
       const numericPageId = parseInt(pageId, 10);
-      queryClient.invalidateQueries({ queryKey: ['page', numericPageId] });
+
+      if (bookId) {
+        queryClient.setQueryData(['page', numericPageId, bookId], (oldData: any) => {
+          if (!oldData) return oldData;
+          return {
+            ...oldData,
+            title: title,
+            content: json,
+            updated_at: updateData.updated_at,
+          };
+        });
+      }
 
       // Notify parent component of successful save
       if (onSaveSuccess) {
@@ -105,7 +119,7 @@ export const usePageSave = (
     } finally {
       setSaving(false);
     }
-  }, [pageId, canEdit, toast, onSaveSuccess, queryClient]);
+  }, [pageId, canEdit, toast, onSaveSuccess, queryClient, bookId]);
 
   /**
    * Apply AI-suggested edit by replacing old text with new text in JSON content

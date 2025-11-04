@@ -122,7 +122,8 @@ const PageView = () => {
       setPage(prevPage =>
         prevPage ? { ...prevPage, title: updatedTitle, content: updatedJson } : null
       );
-    }
+    },
+    numericBookId // Pass bookId for proper cache updates
   );
 
   // 8. Navigation logic

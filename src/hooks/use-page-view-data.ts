@@ -71,7 +71,6 @@ export const usePageViewData = (
   } = useQuery({
     queryKey: ['page', numericPageId, numericBookId],
     queryFn: async () => {
-      console.log(`[PageViewData] 🌐 NETWORK REQUEST - Fetching page ${numericPageId} from Supabase`);
       const { data, error } = await supabase
         .from('pages')
         .select('*')
@@ -81,12 +80,8 @@ export const usePageViewData = (
         .maybeSingle();
 
       if (error) throw error;
-      if (!data) {
-        console.log('Page not found:', numericPageId);
-        return null;
-      }
+      if (!data) return null;
 
-      console.log(`[PageViewData] ✓ Page ${numericPageId} fetched from network`);
       return data;
     },
     enabled: !!numericPageId && !!numericBookId,
@@ -97,27 +92,23 @@ export const usePageViewData = (
     refetchInterval: false, // CRITICAL: Disable automatic background refetching to prevent editor remounts
   });
 
-  // Log cache hit/miss and set page immediately if cached
+  // Set page data as soon as it's available
   useEffect(() => {
-    if (pageData && !isFetching) {
-      console.log(`[PageViewData] ⚡ CACHE HIT - Page ${numericPageId} loaded instantly from cache!`);
+    if (pageData) {
       setPage(pageData);
-      setLoading(false); // Clear loading state immediately for cached page
+      setLoading(false); // Clear loading state as soon as we have data
     }
-  }, [numericPageId, pageData, isFetching]);
+  }, [numericPageId, pageData, isFetching, dataUpdatedAt, pageLoading]);
 
   const fetchPageDetails = useCallback(async () => {
-    if (!pageData || pageLoading) return;
+    // CRITICAL: Don't check pageData here!
+    // The useEffect that calls this function already has pageData in its dependencies,
+    // so this function will only be called when pageData is available.
+    // But because pageData is NOT in this callback's dependencies, we'd be checking
+    // a stale closure value. Solution: trust that the useEffect handles the dependency.
 
     try {
-      // Only show loading if we're actually fetching
-      if (isFetching) {
-        setLoading(true);
-      }
-
-      setPage(pageData);
-
-      // 2. Fetch parent book data
+      // Fetch parent book data
       const { data: bookData, error: bookError } = await supabase
         .from('books')
         .select('*')
@@ -126,10 +117,7 @@ export const usePageViewData = (
         .maybeSingle();
 
       if (bookError) throw bookError;
-      if (!bookData) {
-        console.log('Book not found:', numericBookId);
-        return;
-      }
+      if (!bookData) return;
 
       setBook(bookData);
 
@@ -153,7 +141,7 @@ export const usePageViewData = (
         navigate(fullPath, { replace: true });
       }
 
-      // 3. Fetch all pages for navigation
+      // Fetch all pages for navigation
       const { data: pagesData, error: pagesError } = await supabase
         .from('pages')
         .select('id, title, page_index')
@@ -188,12 +176,20 @@ export const usePageViewData = (
     } finally {
       setLoading(false);
     }
-  }, [numericBookId, numericPageId, bookId, pageId, navigate, toast, pageData, pageLoading]);
+    // CRITICAL FIX: Remove pageData and pageLoading from dependencies
+    // They are checked inside the function, but including them as dependencies
+    // causes infinite loop: pageData changes -> callback recreates -> useEffect triggers -> loop
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [numericBookId, numericPageId, bookId, pageId, navigate, toast]);
 
   // Fetch data when book/page IDs change OR when pageData becomes available
+  // Include pageData here (not in fetchPageDetails dependencies) to trigger when data arrives
+  // but prevent infinite loop by keeping it out of the callback dependencies
   useEffect(() => {
+    if (!pageData) return;
     fetchPageDetails();
-  }, [fetchPageDetails]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [numericBookId, numericPageId, pageData]);
 
   // Update loading state based on query loading
   useEffect(() => {

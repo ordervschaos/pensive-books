@@ -52,7 +52,6 @@ export const PageContent = ({
     // Update content when pageId changes (even in edit mode) or when not editing
     // This ensures content loads properly when navigating between pages
     if (!isEditing || pageId !== currentPageIdRef.current) {
-      console.log("PageContent: Content prop changed, updating state");
       // Use JSON content directly
       setCurrentContent(jsonContent);
       setInitialLoad(true);

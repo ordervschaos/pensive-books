@@ -58,7 +58,10 @@ export const TipTapEditor = ({
   }, [navigate]);
 
   // Memoize the editor config to prevent unnecessary recreations
-  // Only recreate when dependencies actually change
+  // CRITICAL FIX: Only depend on bookId and editable
+  // - content: Updated via editor.commands.setContent() in useEffect
+  // - onChange/uploadImage/handlePageLinkClick: Callbacks don't need to trigger recreation
+  // - isEditing: Updated via editor.setEditable() in useEffect
   const defaultConfig = useMemo(() => {
     return getEditorConfig(
       content,
@@ -69,7 +72,8 @@ export const TipTapEditor = ({
       bookId,
       handlePageLinkClick
     );
-  }, [content, onChange, editable, isEditing, uploadImage, bookId, handlePageLinkClick]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookId, editable]);
 
   const config = editorConfig || defaultConfig;
 
@@ -82,9 +86,8 @@ export const TipTapEditor = ({
       // Handle both JSON and HTML content
       const currentContent = editor.getJSON();
       const contentChanged = JSON.stringify(content) !== JSON.stringify(currentContent);
-      
+
       if (contentChanged) {
-        console.log("TipTapEditor: Content prop changed, updating editor content");
         editor.commands.setContent(content);
       }
     }
