@@ -10,6 +10,7 @@
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { VersionService } from "@/services/VersionService";
+import { SlugService } from "@/utils/slugService";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -46,11 +47,14 @@ import { common, createLowlight } from "lowlight";
 const lowlight = createLowlight(common);
 
 const VersionPageView = () => {
-  const { bookId, versionId, pageId } = useParams();
+  const { bookSlug, versionId, pageSlug } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [showRollbackDialog, setShowRollbackDialog] = useState(false);
+  
+  // Extract numeric ID from slug
+  const numericBookId = SlugService.extractId(bookSlug);
 
   // Fetch version details
   const {
@@ -74,8 +78,8 @@ const VersionPageView = () => {
   });
 
   // Find current page and navigation using page_index
-  const currentPage = pageVersions?.find((p) => p.page_index?.toString() === pageId);
-  const currentIndex = pageVersions?.findIndex((p) => p.page_index?.toString() === pageId) ?? -1;
+  const currentPage = pageVersions?.find((p) => p.page_index?.toString() === pageSlug);
+  const currentIndex = pageVersions?.findIndex((p) => p.page_index?.toString() === pageSlug) ?? -1;
   const prevPage = currentIndex > 0 ? pageVersions?.[currentIndex - 1] : null;
   const nextPage = currentIndex < (pageVersions?.length ?? 0) - 1 ? pageVersions?.[currentIndex + 1] : null;
 
@@ -83,7 +87,7 @@ const VersionPageView = () => {
   const rollbackMutation = useMutation({
     mutationFn: async () => {
       return await VersionService.rollbackToVersion(
-        parseInt(bookId || "0"),
+        numericBookId,
         parseInt(versionId || "0")
       );
     },
@@ -100,7 +104,7 @@ const VersionPageView = () => {
       queryClient.invalidateQueries({ queryKey: ["pages"] });
 
       // Navigate back to book details
-      navigate(`/book/${bookId}`);
+      navigate(`/book/${bookSlug}`);
     },
     onError: (error: Error) => {
       toast({
@@ -193,7 +197,7 @@ const VersionPageView = () => {
     if (editor && currentPage?.content) {
       editor.commands.setContent(currentPage.content);
     }
-  }, [editor, currentPage?.content, pageId]);
+  }, [editor, currentPage?.content, pageSlug]);
 
   const isLoading = versionLoading || pagesLoading;
 
@@ -239,7 +243,7 @@ const VersionPageView = () => {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => navigate(`/book/${bookId}/version/${versionId}`)}
+                onClick={() => navigate(`/book/${bookSlug}/version/${versionId}`)}
               >
                 <ArrowLeft className="mr-2 h-4 w-4" />
                 Back to Version
@@ -264,7 +268,7 @@ const VersionPageView = () => {
         <div className="mb-6">
           <div className="flex items-center gap-2 mb-2">
             <Link
-              to={`/book/${bookId}/version/${versionId}`}
+              to={`/book/${bookSlug}/version/${versionId}`}
               className="text-sm text-muted-foreground hover:text-foreground"
             >
               {version.bookName}
@@ -297,7 +301,7 @@ const VersionPageView = () => {
             <Button
               variant="outline"
               onClick={() =>
-                navigate(`/book/${bookId}/version/${versionId}/page/${prevPage.page_index}`)
+                navigate(`/book/${bookSlug}/version/${versionId}/page/${prevPage.page_index}`)
               }
             >
               <ChevronLeft className="mr-2 h-4 w-4" />
@@ -311,7 +315,7 @@ const VersionPageView = () => {
             <Button
               variant="outline"
               onClick={() =>
-                navigate(`/book/${bookId}/version/${versionId}/page/${nextPage.page_index}`)
+                navigate(`/book/${bookSlug}/version/${versionId}/page/${nextPage.page_index}`)
               }
             >
               {nextPage.title}

@@ -12,7 +12,7 @@ import { useSession } from "@/hooks/use-session";
 import { Loader2 } from "lucide-react";
 
 export default function JoinBook() {
-  const { bookId, token } = useParams<{ bookId: string; token: string }>();
+  const { bookSlug, token } = useParams<{ bookSlug: string; token: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
   const { session, isLoading: isSessionLoading } = useSession();
@@ -30,7 +30,7 @@ export default function JoinBook() {
   }
 
   const handleAcceptInvitation = async () => {
-    if (!bookId || !token) {
+    if (!bookSlug || !token) {
       toast({
         title: "Missing information",
         description: "Book ID or invitation token is missing.",
@@ -41,7 +41,7 @@ export default function JoinBook() {
 
     try {
       setProcessing(true);
-      const bookIdNumber = parseInt(bookId, 10); // Convert string to number
+      const bookIdNumber = SlugService.extractId(bookSlug);
     
       if (isNaN(bookIdNumber)) {
         throw new Error("Invalid book ID");
@@ -81,7 +81,7 @@ export default function JoinBook() {
         title: "Invitation accepted",
         description: `You have successfully joined the book: ${bookData.name}`,
       });
-      navigate(`/book/${bookId}`);
+      navigate(`/book/${bookSlug}`);
     } catch (error: any) {
       toast({
         title: "Error accepting invitation",
@@ -101,8 +101,8 @@ export default function JoinBook() {
         </CardHeader>
         <CardContent className="grid gap-4">
           <div className="space-y-2">
-            <Label htmlFor="bookId">Book ID</Label>
-            <Input id="bookId" value={bookId} readOnly />
+            <Label htmlFor="bookSlug">Book</Label>
+            <Input id="bookSlug" value={bookSlug} readOnly />
           </div>
           <div className="space-y-2">
             <Label htmlFor="token">Invitation Token</Label>

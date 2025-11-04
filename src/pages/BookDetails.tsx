@@ -32,7 +32,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 const LOCALSTORAGE_BOOKMARKS_KEY = 'bookmarked_pages';
 
 const BookDetails = () => {
-  const { id } = useParams();
+  const { bookSlug } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
@@ -45,7 +45,7 @@ const BookDetails = () => {
   const [bookmarkedPageIndex, setBookmarkedPageIndex] = useState<number | null>(null);
   const [bookmarkTimestamp, setBookmarkTimestamp] = useState<string | null>(null);
   const [isChatOpen, setIsChatOpen] = useState(false);
-  const { canEdit, isOwner, loading: permissionsLoading } = useBookPermissions(id);
+  const { canEdit, isOwner, loading: permissionsLoading } = useBookPermissions(bookSlug);
   
   // Get user session for preferences
   const [session, setSession] = useState<any>(null);
@@ -59,13 +59,16 @@ const BookDetails = () => {
     return match ? parseInt(match[1]) : 0;
   };
   
+  // Extract numeric ID from slug
+  const numericBookId = getNumericId(bookSlug);
+  
   // User book preferences
   const { 
     preferences, 
     loading: preferencesLoading, 
     toggleFlashcards 
   } = useUserBookPreferences({ 
-    bookId: getNumericId(id), 
+    bookId: getNumericId(bookSlug), 
     userId: session?.user?.id || '' 
   });
 
@@ -77,7 +80,7 @@ const BookDetails = () => {
     updateFlashcard,
     deleteFlashcard,
     generateFlashcards
-  } = useFlashcards(getNumericId(id), session?.user?.id || '');
+  } = useFlashcards(getNumericId(bookSlug), session?.user?.id || '');
 
   // Flashcard UI state
   const [isEditorOpen, setIsEditorOpen] = useState(false);
@@ -94,7 +97,7 @@ const BookDetails = () => {
 
   const fetchBookmarkedPage = useCallback(async (session: any) => {
     try {
-      const numericId = getNumericId(id);
+      const numericId = getNumericId(bookSlug);
       if (session) {
         const { data: userData, error } = await supabase
           .from('user_data')
@@ -138,11 +141,11 @@ const BookDetails = () => {
     } catch (error: any) {
       console.error('Error fetching bookmarked page:', error);
     }
-  }, [id]);
+  }, [numericBookId]);
 
   const updateBookmark = async (pageIndex: number | null) => {
     try {
-      const numericId = getNumericId(id);
+      const numericId = getNumericId(bookSlug);
       const { data: { session } } = await supabase.auth.getSession();
       const timestamp = new Date().toISOString();
 
@@ -197,7 +200,7 @@ const BookDetails = () => {
 
   const fetchBookDetails = useCallback(async () => {
     try {
-      const numericId = getNumericId(id);
+      const numericId = getNumericId(bookSlug);
       console.log('Fetching book details for ID:', numericId);
 
       const { data: bookData, error: bookError } = await supabase
@@ -212,7 +215,7 @@ const BookDetails = () => {
         throw bookError;
       }
 
-      if (bookData && !id?.includes('-') && bookData.name) {
+      if (bookData && !bookSlug?.includes('-') && bookData.name) {
         const slug = `${numericId}-${bookData.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
         navigate(`/book/${slug}`, { replace: true });
       }
@@ -245,7 +248,7 @@ const BookDetails = () => {
     } finally {
       setLoading(false);
     }
-  }, [id, navigate, toast]);
+  }, [bookSlug, navigate, toast]);
 
   useEffect(() => {
     const checkAuthAndFetch = async () => {
@@ -256,7 +259,7 @@ const BookDetails = () => {
     };
 
     checkAuthAndFetch();
-  }, [id, fetchBookmarkedPage, fetchBookDetails]);
+  }, [numericBookId, fetchBookmarkedPage, fetchBookDetails]);
 
   const handlePublish = () => {
     setIsPublishingDialogOpen(true);
@@ -273,11 +276,11 @@ const BookDetails = () => {
   };
 
   const handleEditClick = () => {
-    navigate(`/book/${id}/edit`);
+    navigate(`/book/${bookSlug}/edit`);
   };
 
   const handleContinueReading = async () => {
-    const numericId = getNumericId(id);
+    const numericId = getNumericId(bookSlug);
     if (!pages.length) return;
 
     const pageToNavigate = bookmarkedPageIndex !== null && bookmarkedPageIndex < pages.length
@@ -293,7 +296,7 @@ const BookDetails = () => {
   };
 
   const handleContinueWriting = () => {
-    const numericId = getNumericId(id);
+    const numericId = getNumericId(bookSlug);
     if (!pages.length) return;
 
     // Find the most recently updated page
@@ -381,7 +384,7 @@ const BookDetails = () => {
       return;
     }
 
-    const numericId = getNumericId(id);
+    const numericId = getNumericId(bookSlug);
     if (!numericId) return;
 
     try {
@@ -571,7 +574,7 @@ const BookDetails = () => {
                 name={book.name}
                 subtitle={book.subtitle}
                 coverUrl={book.cover_url}
-                bookId={parseInt(id || "0")}
+                bookId={getNumericId(bookSlug)}
                 author={book.author}
                 showTextOnCover={book.show_text_on_cover}
                 currentPage={bookmarkedPageIndex ?? 0}
@@ -594,7 +597,7 @@ const BookDetails = () => {
 
               {canEdit && (
                 <div className="flex items-center gap-2">
-                  <UncommittedChangesBadge bookId={parseInt(id || "0")} showCount />
+                  <UncommittedChangesBadge bookId={getNumericId(bookSlug)} showCount />
                   <Button
                     size="sm"
                     variant="outline"
@@ -626,7 +629,7 @@ const BookDetails = () => {
                 <TabsContent value="pages" className="mt-6">
                   <PagesList
                     pages={pages}
-                    bookId={parseInt(id || "0")}
+                    bookId={getNumericId(bookSlug)}
                     isReorderMode={isReorderMode}
                     isDeleteMode={isDeleteMode}
                     canEdit={canEdit}
@@ -639,11 +642,11 @@ const BookDetails = () => {
                 {canEdit && (
                   <TabsContent value="versions" className="mt-6">
                     <VersionHistory
-                      bookId={parseInt(id || "0")}
+                      bookId={getNumericId(bookSlug)}
                       bookName={book.name}
                       allowRollback={isOwner}
                       onPreview={(versionId) => {
-                        navigate(`/book/${id}/version/${versionId}`);
+                        navigate(`/book/${bookSlug}/version/${versionId}`);
                       }}
                     />
                   </TabsContent>
@@ -669,7 +672,7 @@ const BookDetails = () => {
 
           {/* Chat Sidebar - Rendered as a portal */}
           <BookChatPanel
-            bookId={id || ""}
+            bookId={bookSlug || ""}
             bookMetadata={getBookMetadata()!}
             canEdit={canEdit}
             isOpen={isChatOpen}
@@ -714,7 +717,7 @@ const BookDetails = () => {
 
           {/* Version Control Dialog */}
           <CommitDialog
-            bookId={parseInt(id || "0")}
+            bookId={getNumericId(bookSlug)}
             bookName={book.name}
             open={isCommitDialogOpen}
             onOpenChange={setIsCommitDialogOpen}
@@ -726,7 +729,7 @@ const BookDetails = () => {
 
           {/* Publishing Dialog */}
           <PublishingDialog
-            bookId={parseInt(id || "0")}
+            bookId={getNumericId(bookSlug)}
             bookName={book.name}
             isPublic={book.is_public}
             open={isPublishingDialogOpen}

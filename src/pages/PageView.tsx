@@ -34,13 +34,13 @@ import { useNextPagePreloader } from "@/hooks/use-next-page-preloader";
  * Pure orchestration - delegates ALL logic to custom hooks and child components
  */
 const PageView = () => {
-  // 1. URL parameters
-  const { bookId, pageId } = useParams();
+  // 1. URL parameters (slugs, not IDs)
+  const { bookSlug, pageSlug } = useParams();
   const navigate = useNavigate();
 
   // 2. Extract numeric IDs from slugs
-  const numericBookId = SlugService.extractId(bookId);
-  const numericPageId = SlugService.extractId(pageId);
+  const numericBookId = SlugService.extractId(bookSlug);
+  const numericPageId = SlugService.extractId(pageSlug);
 
   // 3. Fetch all data using custom hook
   const {
@@ -53,7 +53,7 @@ const PageView = () => {
     nextPageId,
     nextPageTitle,
     loading: dataLoading,
-  } = usePageViewData(bookId, pageId);
+  } = usePageViewData(bookSlug, pageSlug);
 
   // 4. Check permissions
   const { canEdit, loading: permissionsLoading } = useBookPermissions(numericBookId.toString());
@@ -115,7 +115,7 @@ const PageView = () => {
 
   // 7. Page save logic with proper state update
   const { handleSave, handleApplyEdit, saving } = usePageSave(
-    pageId,
+    numericPageId.toString(),
     canEdit,
     (updatedJson, updatedTitle) => {
       // Update page title and content in local state
@@ -127,14 +127,14 @@ const PageView = () => {
 
   // 8. Navigation logic
   const { navigateToPage, navigateNext, navigatePrev } = usePageNavigation(
-    bookId,
+    bookSlug, // Used for URL generation only
     numericBookId,
     allPages,
     currentIndex
   );
 
   // 9. Page creation logic
-  const { createNewPage } = usePageCreation(bookId, numericBookId, canEdit);
+  const { createNewPage } = usePageCreation(bookSlug, numericBookId, canEdit); // bookSlug used for URL generation
 
   // 10. Page deletion logic
   const handleDeletePage = async () => {
@@ -182,15 +182,15 @@ const PageView = () => {
       // Smart navigation after deletion
       if (remainingPages.length === 0) {
         // No pages left, go to book details (table of contents)
-        navigate(`/book/${bookId}`);
+        navigate(`/book/${bookSlug}`);
       } else if (currentIndex < remainingPages.length) {
         // Not the last page, go to the next page (which now has the same index)
         const nextPage = remainingPages[currentIndex];
-        navigate(`/book/${bookId}/page/${nextPage.id}`);
+        navigate(`/book/${bookSlug}/page/${nextPage.id}`);
       } else {
         // Was the last page, go to the previous page (now the new last page)
         const prevPage = remainingPages[remainingPages.length - 1];
-        navigate(`/book/${bookId}/page/${prevPage.id}`);
+        navigate(`/book/${bookSlug}/page/${prevPage.id}`);
       }
     } catch (error) {
       console.error('Error deleting page:', error);
@@ -226,7 +226,7 @@ const PageView = () => {
     return (
       <div className="min-h-screen flex flex-col bg-background">
         <div className="flex-1 container max-w-4xl mx-auto px-4 py-4">
-          <PageNotFound bookId={bookId || ""} />
+          <PageNotFound bookId={numericBookId.toString()} />
         </div>
       </div>
     );
@@ -247,7 +247,7 @@ const PageView = () => {
             <SidebarContent>
               <TableOfContents
                 pages={allPages}
-                bookId={bookId || ""}
+                bookId={numericBookId.toString()}
                 currentPageId={numericPageId}
               />
             </SidebarContent>
@@ -271,18 +271,18 @@ const PageView = () => {
                     editable={canEdit}
                     onEditingChange={setIsEditing}
                     canEdit={canEdit}
-                    pageId={pageId}
+                    pageId={numericPageId.toString()}
                     isEditing={isEditing}
                     setIsEditing={setIsEditing}
                     onToggleChat={() => setIsChatOpen(!isChatOpen)}
                     hasActiveChat={isChatOpen}
-                    bookId={bookId}
+                    bookId={numericBookId.toString()}
                     onDeletePage={handleDeletePage}
                   />
 
                   {/* Navigation Controls */}
                   <PageNavigation
-                    bookId={bookId || ""}
+                    bookId={numericBookId.toString()}
                     currentIndex={currentIndex}
                     totalPages={totalPages}
                     onNavigate={navigateToPage}
@@ -301,7 +301,7 @@ const PageView = () => {
 
             {/* Right Sidebar: AI Chat Panel */}
             <PageChatPanel
-              pageId={pageId || ""}
+              pageId={numericPageId.toString()}
               pageContent={page.content}
               canEdit={canEdit}
               isOpen={isChatOpen}

@@ -79,6 +79,7 @@ export function TopNav() {
     let isSubscribed = true;
 
     const fetchBookDetails = async () => {
+      // Extract numeric ID from slug (e.g., "884-digest-nov" -> "884")
       const match = location.pathname.match(/\/book\/(\d+)/);
       const isNewBook = location.pathname.endsWith('/book/new');
 
@@ -128,6 +129,14 @@ export function TopNav() {
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
     const fetchPageDetails = async () => {
+      // Skip fetching page details for version pages (they use page_index, not page ID)
+      const isVersionPage = location.pathname.includes('/version/');
+      if (isVersionPage) {
+        setPageName(""); // Clear page name for version pages
+        return;
+      }
+
+      // Extract numeric page ID from slug (e.g., "123-page-title" -> "123")
       const match = location.pathname.match(/\/page\/(\d+)/);
       
       if (!match) {

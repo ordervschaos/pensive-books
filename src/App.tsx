@@ -81,11 +81,11 @@ export default function App() {
                 <Route path="/privacy" element={<PrivacyPolicy />} />
                 <Route path="/terms" element={<Terms />} />
                 <Route path="/contact" element={<Contact />} />
-                <Route path="/book/:bookId/join/:token" element={<JoinBook />} />
+                <Route path="/book/:bookSlug/join/:token" element={<JoinBook />} />
 
                 {/* Public published content routes */}
-                <Route path="/library/book/:id" element={<PublishedBookDetails />} />
-                <Route path="/library/book/:bookId/page/:pageId" element={<PublishedPageView />} />
+                <Route path="/library/book/:bookSlug" element={<PublishedBookDetails />} />
+                <Route path="/library/book/:bookSlug/page/:pageSlug" element={<PublishedPageView />} />
                 <Route
                   path="/settings/kindle"
                   element={
@@ -128,7 +128,7 @@ export default function App() {
                   }
                 />
                 <Route
-                  path="/book/:bookId/version/:versionId/page/:pageId"
+                  path="/book/:bookSlug/version/:versionId/page/:pageSlug"
                   element={
                     <PrivateRoute>
                       <VersionPageView />
@@ -136,7 +136,7 @@ export default function App() {
                   }
                 />
                 <Route
-                  path="/book/:bookId/version/:versionId"
+                  path="/book/:bookSlug/version/:versionId"
                   element={
                     <PrivateRoute>
                       <VersionPreview />
@@ -144,7 +144,7 @@ export default function App() {
                   }
                 />
                 <Route
-                  path="/book/:id"
+                  path="/book/:bookSlug"
                   element={
                     <PrivateRoute>
                       <BookDetails />
@@ -152,7 +152,7 @@ export default function App() {
                   }
                 />
                 <Route
-                  path="/book/:id/edit"
+                  path="/book/:bookSlug/edit"
                   element={
                     <PrivateRoute>
                       <BookEdit />
@@ -160,7 +160,7 @@ export default function App() {
                   }
                 />
                 <Route
-                  path="/book/:id/flashcards"
+                  path="/book/:bookSlug/flashcards"
                   element={
                     <PrivateRoute>
                       <BookFlashcards />
@@ -168,7 +168,7 @@ export default function App() {
                   }
                 />
                 <Route
-                  path="/book/:bookId/page/:pageId"
+                  path="/book/:bookSlug/page/:pageSlug"
                   element={
                     <PrivateRoute>
                       <PageView />

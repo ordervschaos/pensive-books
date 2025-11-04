@@ -11,6 +11,7 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { VersionService } from "@/services/VersionService";
+import { SlugService } from "@/utils/slugService";
 import { BookInfo } from "@/components/book/BookInfo";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -42,11 +43,19 @@ import {
 } from "@/components/ui/alert-dialog";
 
 const VersionPreview = () => {
-  const { bookId, versionId } = useParams();
+  const { bookSlug, versionId } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [showRollbackDialog, setShowRollbackDialog] = useState(false);
+  
+  // Extract numeric ID from slug
+  const numericBookId = SlugService.extractId(bookSlug);
+  
+  // Validate that we have valid IDs
+  if (!numericBookId || !versionId) {
+    console.warn('Invalid bookSlug or versionId:', { bookSlug, versionId, numericBookId });
+  }
 
   // Fetch version details
   const {
@@ -83,7 +92,7 @@ const VersionPreview = () => {
   const rollbackMutation = useMutation({
     mutationFn: async () => {
       return await VersionService.rollbackToVersion(
-        parseInt(bookId || "0"),
+        numericBookId,
         parseInt(versionId || "0")
       );
     },
@@ -100,7 +109,7 @@ const VersionPreview = () => {
       queryClient.invalidateQueries({ queryKey: ["pages"] });
 
       // Navigate back to book details
-      navigate(`/book/${bookId}`);
+      navigate(`/book/${bookSlug}`);
     },
     onError: (error: Error) => {
       toast({
@@ -155,7 +164,7 @@ const VersionPreview = () => {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => navigate(`/book/${bookId}`)}
+                onClick={() => navigate(`/book/${bookSlug}`)}
               >
                 <ArrowLeft className="mr-2 h-4 w-4" />
                 Back to Book
@@ -184,7 +193,7 @@ const VersionPreview = () => {
                 name={bookVersion.name}
                 subtitle={bookVersion.subtitle || undefined}
                 coverUrl={bookVersion.cover_url || undefined}
-                bookId={parseInt(bookId || "0")}
+                bookId={numericBookId}
                 author={bookVersion.author || undefined}
                 showTextOnCover={bookVersion.show_text_on_cover ?? true}
               />
@@ -269,7 +278,7 @@ const VersionPreview = () => {
                         {pageVersions.map((page, index) => (
                           <Link
                             key={page.id}
-                            to={`/book/${bookId}/version/${versionId}/page/${page.page_index}`}
+                            to={`/book/${bookSlug}/version/${versionId}/page/${page.page_index}`}
                             className="block"
                           >
                             <div className="flex items-center gap-3 p-3 rounded-lg border hover:bg-accent transition-colors">

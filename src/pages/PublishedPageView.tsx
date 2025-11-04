@@ -21,7 +21,7 @@ import { useBookmarkTracking } from "@/hooks/use-bookmark-tracking";
  * Shows content from page_versions (immutable published snapshot)
  */
 export default function PublishedPageView() {
-  const { bookId, pageId } = useParams();
+  const { bookSlug, pageSlug } = useParams();
   const navigate = useNavigate();
 
   // Fetch published page data
@@ -35,16 +35,16 @@ export default function PublishedPageView() {
     nextPageTitle,
     loading,
     notFound,
-  } = usePublishedPageData(bookId, pageId);
+  } = usePublishedPageData(bookSlug, pageSlug);
 
   // Navigation handlers - defined early for keyboard navigation hook
-  const numericBookId = SlugService.extractId(bookId);
-  const numericPageId = SlugService.extractId(pageId);
+  const numericBookId = SlugService.extractId(bookSlug);
+  const numericPageId = SlugService.extractId(pageSlug);
 
   const handleNavigateToPage = useCallback((targetPageId: number, targetTitle: string) => {
-    const pageSlug = SlugService.generateSlug(targetPageId, targetTitle);
-    navigate(`/library/book/${bookId}/page/${pageSlug}`);
-  }, [bookId, navigate]);
+    const targetPageSlug = SlugService.generateSlug(targetPageId, targetTitle);
+    navigate(`/library/book/${bookSlug}/page/${targetPageSlug}`);
+  }, [bookSlug, navigate]);
 
   const handlePrevious = useCallback(() => {
     if (currentIndex > 0 && allPages.length > 0) {
@@ -61,8 +61,8 @@ export default function PublishedPageView() {
   }, [currentIndex, totalPages, allPages, handleNavigateToPage]);
 
   const handleBackToBook = useCallback(() => {
-    navigate(`/library/book/${bookId}`);
-  }, [bookId, navigate]);
+    navigate(`/library/book/${bookSlug}`);
+  }, [bookSlug, navigate]);
 
   // Set page title
   useEffect(() => {

@@ -15,9 +15,13 @@ import { setPageTitle } from "@/utils/pageTitle";
 import { Helmet } from "react-helmet-async";
 
 const BookFlashcards = () => {
-  const { id } = useParams();
+  const { bookSlug } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
+  
+  // Extract numeric ID from slug
+  const numericBookId = SlugService.extractId(bookSlug);
+  
   const [book, setBook] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
@@ -37,7 +41,7 @@ const BookFlashcards = () => {
     updateFlashcard, 
     deleteFlashcard, 
     generateFlashcards 
-  } = useFlashcards(id);
+  } = useFlashcards(numericBookId);
 
   const getNumericId = (param: string | undefined) => {
     if (!param) return 0;
@@ -47,13 +51,12 @@ const BookFlashcards = () => {
 
   const fetchBookDetails = useCallback(async () => {
     try {
-      const numericId = getNumericId(id);
-      console.log('Fetching book details for ID:', numericId);
+      console.log('Fetching book details for ID:', numericBookId);
 
       const { data: bookData, error: bookError } = await supabase
         .from("books")
         .select("*")
-        .eq("id", numericId)
+        .eq("id", numericBookId)
         .eq("is_archived", false)
         .single();
       
@@ -75,7 +78,7 @@ const BookFlashcards = () => {
     } finally {
       setLoading(false);
     }
-  }, [id, toast]);
+  }, [numericBookId, toast]);
 
   // Load book details on mount
   useEffect(() => {
@@ -170,7 +173,7 @@ const BookFlashcards = () => {
                 name={book.name}
                 subtitle={book.subtitle}
                 coverUrl={book.cover_url}
-                bookId={parseInt(id || "0")}
+                bookId={numericBookId}
                 author={book.author}
                 showTextOnCover={book.show_text_on_cover}
               />

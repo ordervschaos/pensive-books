@@ -25,13 +25,13 @@ const LOCALSTORAGE_BOOKMARKS_KEY = 'bookmarked_pages';
  * Shows table of contents from published version only (immutable)
  */
 export default function PublishedBookDetails() {
-  const { id } = useParams();
+  const { bookSlug } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [bookmarkedPageIndex, setBookmarkedPageIndex] = useState<number | null>(null);
 
   // Fetch published book data
-  const { book, allPages, loading, notFound } = usePublishedPageData(id, undefined);
+  const { book, allPages, loading, notFound } = usePublishedPageData(bookSlug, undefined);
 
   // Get user session for preferences
   const [session, setSession] = useState<any>(null);
@@ -39,7 +39,7 @@ export default function PublishedBookDetails() {
   // Check beta flag
   const isBetaEnabled = localStorage.getItem('is_beta') === 'true';
 
-  const bookId = SlugService.extractId(id);
+  const bookId = SlugService.extractId(bookSlug);
 
   // User book preferences
   const {
@@ -191,7 +191,7 @@ export default function PublishedBookDetails() {
       const newIndex = bookmarkedPageIndex === null ? 0 : bookmarkedPageIndex;
       updateBookmark(newIndex);
       const pageSlug = SlugService.generateSlug(pageToNavigate.id, pageToNavigate.title);
-      navigate(`/library/book/${id}/page/${pageSlug}`);
+      navigate(`/library/book/${bookSlug}/page/${pageSlug}`);
     }
   };
 
@@ -356,7 +356,7 @@ export default function PublishedBookDetails() {
                       onClick={() => {
                         const pageSlug = SlugService.generateSlug(page.id, page.title);
                         updateBookmark(index);
-                        navigate(`/library/book/${id}/page/${pageSlug}`);
+                        navigate(`/library/book/${bookSlug}/page/${pageSlug}`);
                       }}
                     >
                       <div className="flex items-center gap-3">

@@ -33,10 +33,14 @@ interface Book {
 }
 
 export default function BookEdit() {
-  const { id } = useParams();
+  const { bookSlug } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { isOwner, loading: permissionsLoading } = useBookPermissions(id);
+  const { isOwner, loading: permissionsLoading } = useBookPermissions(bookSlug);
+  
+  // Extract numeric ID from slug
+  const numericBookId = SlugService.extractId(bookSlug);
+  
   const [book, setBook] = useState<Book>({
     name: "",
     subtitle: "",
@@ -68,7 +72,7 @@ export default function BookEdit() {
       const { data, error } = await supabase
         .from("books")
         .select("*")
-        .eq("id", parseInt(id || "0"))
+        .eq("id", numericBookId)
         .single();
 
       if (error) throw error;
@@ -95,7 +99,7 @@ export default function BookEdit() {
       const { error } = await supabase
         .from("books")
         .update(book)
-        .eq("id", parseInt(id || "0"));
+        .eq("id", numericBookId);
 
       if (error) throw error;
 
@@ -147,7 +151,7 @@ export default function BookEdit() {
       const { error } = await supabase
         .from("books")
         .update({ is_archived: true })
-        .eq("id", parseInt(id || "0"));
+        .eq("id", numericBookId);
 
       if (error) throw error;
 
@@ -184,7 +188,7 @@ export default function BookEdit() {
             />
             {isOwner && id && book.view_invitation_token && book.edit_invitation_token && (
               <ShareBookSheet
-                bookId={parseInt(id)}
+                bookId={numericBookId}
                 viewToken={book.view_invitation_token}
                 editToken={book.edit_invitation_token}
               />
@@ -252,7 +256,7 @@ export default function BookEdit() {
 
         {/* Publishing Dialog */}
         <PublishingDialog
-          bookId={parseInt(id || "0")}
+          bookId={numericBookId}
           bookName={book.name}
           isPublic={book.is_public}
           open={isPublishingDialogOpen}
