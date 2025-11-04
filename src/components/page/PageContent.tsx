@@ -11,7 +11,6 @@ import { cn } from "@/lib/utils";
 
 interface PageContentProps {
   jsonContent: EditorJSON | null;  // Primary content source
-  title: string;
   onSave: PageSaveHandler;
   saving: boolean;
   pageType?: 'text' | 'section';
@@ -30,7 +29,6 @@ interface PageContentProps {
 
 export const PageContent = ({
   jsonContent,
-  title,
   onSave,
   pageType = 'text',
   onPageTypeChange,

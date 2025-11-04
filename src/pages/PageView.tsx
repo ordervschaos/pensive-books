@@ -263,7 +263,6 @@ const PageView = () => {
                   <PageContent
                     key={`current-page-${page.id.toString()}`} // Force remount when page changes to prevent stale content
                     jsonContent={page.content}
-                    title={page.title || 'Untitled'}
                     onSave={handleSave}
                     saving={saving}
                     pageType={pageTypeRef.current}
