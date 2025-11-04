@@ -60,7 +60,7 @@ export const PageContent = ({
       setInitialLoad(true);
       currentPageIdRef.current = pageId;
     }
-  }, [title, isEditing, jsonContent, pageId]);
+  }, [isEditing, jsonContent, pageId]);
 
   // Create debounced save function
   useEffect(() => {
