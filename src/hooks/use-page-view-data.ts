@@ -101,11 +101,10 @@ export const usePageViewData = (
   }, [numericPageId, pageData, isFetching, dataUpdatedAt, pageLoading]);
 
   const fetchPageDetails = useCallback(async () => {
-    // CRITICAL: Don't check pageData here!
-    // The useEffect that calls this function already has pageData in its dependencies,
-    // so this function will only be called when pageData is available.
-    // But because pageData is NOT in this callback's dependencies, we'd be checking
-    // a stale closure value. Solution: trust that the useEffect handles the dependency.
+    // CRITICAL: pageData is from closure and might be stale, so we need to check it
+    // The useEffect checks pageData before calling this, but the closure value might differ
+    // We use optional chaining when accessing pageData properties to be safe
+
 
     try {
       // Fetch parent book data
@@ -122,14 +121,15 @@ export const usePageViewData = (
       setBook(bookData);
 
       // Auto-redirect to slug URL if needed (do it once with both slugs)
-      const needsPageSlug = !SlugService.hasSlug(pageId) && pageData.title;
+      // Note: pageData is from closure, so we need to check if it exists
+      const needsPageSlug = !SlugService.hasSlug(pageId) && pageData?.title;
       const needsBookSlug = !SlugService.hasSlug(bookId) && bookData.name;
 
       if (needsPageSlug || needsBookSlug) {
         const bookSlug = needsBookSlug
           ? SlugService.generateSlug(numericBookId, bookData.name)
           : bookId;
-        const pageSlug = needsPageSlug
+        const pageSlug = needsPageSlug && pageData?.title
           ? SlugService.generateSlug(numericPageId, pageData.title)
           : pageId;
 
