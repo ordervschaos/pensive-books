@@ -28,7 +28,7 @@ import BookDetails from "@/pages/books/show/BookDetails";
 import BookEdit from "@/pages/books/edit/BookEdit";
 import BookFlashcards from "@/pages/books/flashcards/BookFlashcards";
 import GenerateBook from "@/pages/books/generate/GenerateBook";
-import PublishedBookDetails from "@/pages/books/show/PublishedBookDetails";
+import PublishedBookDetails from "@/pages/public/library/PublishedBookDetails";
 
 // Nested resources under books
 import PageView from "@/pages/books/pages/view/PageView";
