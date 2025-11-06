@@ -17,12 +17,12 @@ import Contact from "@/pages/public/legal/Contact";
 import Auth from "@/pages/auth/Auth";
 
 // User pages
-import MyBooks from "@/pages/user/library/MyBooks";
 import UserProfile from "@/pages/user/profile/UserProfile";
 import SetUsername from "@/pages/user/profile/SetUsername";
 import ProfileEdit from "@/pages/user/profile/ProfileEdit";
 
 // Book pages
+import MyBooks from "@/pages/book/list/MyBooks";
 import NewBook from "@/pages/book/new/NewBook";
 import BookDetails from "@/pages/book/view/BookDetails";
 import BookEdit from "@/pages/book/edit/BookEdit";
@@ -84,7 +84,7 @@ export default function App() {
             <ConditionalNav />
             <main className="flex-1">
               <Routes>
-                <Route path="/:username" element={<UserProfile />} />
+                <Route path="/u/:username" element={<UserProfile />} />
                 
                 <Route path="/" element={<Landing />} />
                 <Route path="/auth" element={<Auth />} />
