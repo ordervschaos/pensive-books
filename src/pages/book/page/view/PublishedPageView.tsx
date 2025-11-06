@@ -5,7 +5,7 @@ import { ChevronLeft, ChevronRight, BookOpen, Lock } from "lucide-react";
 import { usePublishedPageData } from "@/hooks/use-published-page-data";
 import { PageLoading } from "@/components/page/PageLoading";
 import { SlugService } from "@/utils/slugService";
-import { StaticPageRenderer } from "@/components/page/StaticPageRenderer";
+import { StaticPageRenderer } from "./components/StaticPageRenderer";
 import {
   SidebarProvider,
   Sidebar,

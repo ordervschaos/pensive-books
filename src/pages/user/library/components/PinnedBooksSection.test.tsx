@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { PinnedBooksSection } from '@/components/book/PinnedBooksSection';
+import { PinnedBooksSection } from './PinnedBooksSection';
 import { useNavigate } from 'react-router-dom';
 
 vi.mock('react-router-dom', () => ({

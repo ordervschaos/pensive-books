@@ -8,7 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ContinueWritingCard } from "@/components/book/ContinueWritingCard";
+import { ContinueWritingCard } from "./components/ContinueWritingCard";
 import { useBookFilters, FilterType, SortType } from "@/hooks/use-book-filters";
 import { formatDistanceToNow } from "date-fns";
 

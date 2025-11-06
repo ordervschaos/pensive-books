@@ -6,15 +6,16 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { BookInfo } from "@/components/book/BookInfo";
 import { BookEditForm } from "@/components/book/BookEditForm";
-import { ManageCollaboratorsSheet } from "@/components/book/ManageCollaboratorsSheet";
-import { ShareBookSheet } from "@/components/book/ShareBookSheet";
+import { ManageCollaboratorsSheet } from "./components/ManageCollaboratorsSheet";
+import { ShareBookSheet } from "./components/ShareBookSheet";
 import { BookCoverEdit } from "@/components/book/BookCoverEdit";
-import { BookVisibilityToggle } from "@/components/book/BookVisibilityToggle";
+import { BookVisibilityToggle } from "./components/BookVisibilityToggle";
 import { PublishingDialog } from "@/components/book/PublishingDialog";
 import { useBookPermissions } from "@/hooks/use-book-permissions";
 import { setPageTitle } from "@/utils/pageTitle";
 import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { SlugService } from "@/utils/slugService";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
 interface Book {
@@ -39,7 +40,7 @@ export default function BookEdit() {
   const { isOwner, loading: permissionsLoading } = useBookPermissions(bookSlug);
   
   // Extract numeric ID from slug
-  const numericBookId = SlugService.extractId(bookSlug);
+  const id = SlugService.extractId(bookSlug);
   
   const [book, setBook] = useState<Book>({
     name: "",
@@ -72,7 +73,7 @@ export default function BookEdit() {
       const { data, error } = await supabase
         .from("books")
         .select("*")
-        .eq("id", numericBookId)
+        .eq("id", id)
         .single();
 
       if (error) throw error;
@@ -99,7 +100,7 @@ export default function BookEdit() {
       const { error } = await supabase
         .from("books")
         .update(book)
-        .eq("id", numericBookId);
+        .eq("id", id);
 
       if (error) throw error;
 
@@ -151,7 +152,7 @@ export default function BookEdit() {
       const { error } = await supabase
         .from("books")
         .update({ is_archived: true })
-        .eq("id", numericBookId);
+        .eq("id", id);
 
       if (error) throw error;
 
@@ -188,7 +189,7 @@ export default function BookEdit() {
             />
             {isOwner && id && book.view_invitation_token && book.edit_invitation_token && (
               <ShareBookSheet
-                bookId={numericBookId}
+                bookId={id}
                 viewToken={book.view_invitation_token}
                 editToken={book.edit_invitation_token}
               />
@@ -256,7 +257,7 @@ export default function BookEdit() {
 
         {/* Publishing Dialog */}
         <PublishingDialog
-          bookId={numericBookId}
+          bookId={id}
           bookName={book.name}
           isPublic={book.is_public}
           open={isPublishingDialogOpen}

@@ -1,19 +1,19 @@
 import { useState, useRef, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { PageNavigation } from "@/components/page/PageNavigation";
-import { PageContent } from "@/components/page/PageContent";
+import { PageNavigation } from "./components/PageNavigation";
+import { PageContent } from "./components/PageContent";
 import { PageLoading } from "@/components/page/PageLoading";
-import { PageNotFound } from "@/components/page/PageNotFound";
+import { PageNotFound } from "./components/PageNotFound";
 import { useBookPermissions } from "@/hooks/use-book-permissions";
-import { TableOfContents } from "@/components/page/TableOfContents";
+import { TableOfContents } from "./components/TableOfContents";
 import {
   SidebarProvider,
   Sidebar,
   SidebarContent,
   SidebarInset
 } from "@/components/ui/sidebar";
-import { PageChatPanel } from "@/components/page/PageChatPanel";
-import { PageMeta } from "@/components/page/PageMeta";
+import { PageChatPanel } from "./components/PageChatPanel";
+import { PageMeta } from "./components/PageMeta";
 import { SlugService } from "@/utils/slugService";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";

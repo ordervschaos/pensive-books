@@ -30,11 +30,11 @@ import BookFlashcards from "@/pages/book/flashcards/BookFlashcards";
 import GenerateBook from "@/pages/book/generate/GenerateBook";
 import PublishedBookDetails from "@/pages/book/view/PublishedBookDetails";
 
-// Page pages
-import PageView from "@/pages/page/view/PageView";
-import VersionPreview from "@/pages/page/version/VersionPreview";
-import VersionPageView from "@/pages/page/version/VersionPageView";
-import PublishedPageView from "@/pages/page/view/PublishedPageView";
+// Page pages (under book/)
+import PageView from "@/pages/book/page/view/PageView";
+import VersionPreview from "@/pages/book/version/VersionPreview";
+import VersionPageView from "@/pages/book/version/VersionPageView";
+import PublishedPageView from "@/pages/book/page/view/PublishedPageView";
 
 // Invitation pages
 import AcceptInvitation from "@/pages/invitation/AcceptInvitation";
