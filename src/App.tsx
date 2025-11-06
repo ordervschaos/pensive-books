@@ -17,7 +17,7 @@ import Contact from "@/pages/public/legal/Contact";
 import Auth from "@/pages/auth/Auth";
 
 // User pages
-import UserProfile from "@/pages/user/profile/UserProfile";
+import PublicProfile from "@/pages/user/profile/PublicProfile";
 import SetUsername from "@/pages/user/profile/SetUsername";
 import ProfileEdit from "@/pages/user/profile/ProfileEdit";
 
@@ -84,7 +84,7 @@ export default function App() {
             <ConditionalNav />
             <main className="flex-1">
               <Routes>
-                <Route path="/u/:username" element={<UserProfile />} />
+                <Route path="/u/:username" element={<PublicProfile />} />
                 
                 <Route path="/" element={<Landing />} />
                 <Route path="/auth" element={<Auth />} />

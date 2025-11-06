@@ -11,7 +11,7 @@ import { PageLoading } from "@/components/page/PageLoading";
 import { useToast } from "@/hooks/use-toast";
 import { Edit } from "lucide-react";
 
-export default function UserProfile() {
+export default function PublicProfile() {
   const [books, setBooks] = useState<any[]>([]);
   const [userData, setUserData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
