@@ -285,8 +285,8 @@ export default function Index() {
               Generate
               <Badge variant="secondary" className="ml-1.5 text-[10px] px-1 py-0">BETA</Badge>
             </Button>
-            <Button 
-              onClick={() => navigate("/book/new")} 
+            <Button
+              onClick={() => navigate("/books/new")}
               size="sm"
               className="h-9 px-3 text-sm"
             >
@@ -344,7 +344,7 @@ export default function Index() {
                   <div className="flex sm:block items-start gap-4 sm:gap-0">
                     <Card
                       className="relative cursor-pointer overflow-hidden w-24 sm:w-full aspect-[3/4]"
-                      onClick={() => navigate(`/book/${book.id}`)}
+                      onClick={() => navigate(`/books/${book.id}`)}
                     >
                       {/* Published Badge */}
                       {book.is_public && (
@@ -420,7 +420,7 @@ export default function Index() {
                     <div className="flex-1 sm:mt-2 space-y-1 sm:text-center text-left">
                       <h3 
                         className="text-sm text-muted-foreground font-medium line-clamp-2 break-words cursor-pointer" 
-                        onClick={() => navigate(`/book/${book.id}`)}
+                        onClick={() => navigate(`/books/${book.id}`)}
                       >
                         {book.name}
                       </h3>

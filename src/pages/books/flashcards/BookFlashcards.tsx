@@ -129,7 +129,7 @@ const BookFlashcards = () => {
   };
 
   const handleBackToBook = () => {
-    navigate(`/book/${id}`);
+    navigate(`/books/${id}`);
   };
 
   if (loading || !book) {

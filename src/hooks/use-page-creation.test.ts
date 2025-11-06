@@ -63,7 +63,7 @@ describe('usePageCreation', () => {
       expect(supabase.rpc).toHaveBeenCalledWith('create_next_page', {
         p_book_id: 123,
       });
-      expect(mockNavigate).toHaveBeenCalledWith('/book/123/page/456?edit=true');
+      expect(mockNavigate).toHaveBeenCalledWith('/books/123/pages/456?edit=true');
     });
   });
 
@@ -171,7 +171,7 @@ describe('usePageCreation', () => {
 
     await waitFor(() => {
       expect(mockNavigate).toHaveBeenCalledWith(
-        '/book/123-my-awesome-book/page/456?edit=true'
+        '/books/123-my-awesome-book/pages/456?edit=true'
       );
     });
   });

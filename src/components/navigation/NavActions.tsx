@@ -23,7 +23,7 @@ export const NavActions = ({
 }: NavActionsProps) => {
   const { themeName, themeMode, setThemeName, setThemeMode } = useTheme();
   const location = useLocation();
-  const isPageRoute = location.pathname.includes('/page/');
+  const isPageRoute = location.pathname.includes('/pages/');
 
   return (
     <div className="w-[120px] flex items-center gap-2 justify-end shrink-0">

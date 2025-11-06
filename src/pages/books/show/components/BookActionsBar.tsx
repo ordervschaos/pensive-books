@@ -1,5 +1,5 @@
 
-import { BookVisibilityToggle } from "@/pages/book/edit/components/BookVisibilityToggle";
+import { BookVisibilityToggle } from "@/pages/books/edit/components/BookVisibilityToggle";
 import { Button } from "@/components/ui/button";
 import { Settings } from "lucide-react";
 

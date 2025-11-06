@@ -51,7 +51,7 @@ export default function AcceptInvitation() {
             title: "Already have access",
             description: "You already have access to this book"
           });
-          navigate(`/book/${bookId}`);
+          navigate(`/books/${bookId}`);
           return;
         }
 
@@ -98,7 +98,7 @@ export default function AcceptInvitation() {
         });
 
         // Redirect to the book
-        navigate(`/book/${bookId}`);
+        navigate(`/books/${bookId}`);
       } catch (error: any) {
         console.error("Error accepting invitation:", error);
         toast({

@@ -9,10 +9,10 @@ import {
 import { NavBreadcrumbProps } from "./types";
 
 export const NavBreadcrumb = ({ bookName, pageName, location, navigate }: NavBreadcrumbProps) => {
-  const isBookRoute = location.pathname.includes('/book/');
-  const isPageRoute = location.pathname.includes('/page/');
+  const isBookRoute = location.pathname.includes('/books/');
+  const isPageRoute = location.pathname.includes('/pages/');
   const isBookEditRoute = location.pathname.endsWith('/edit');
-  const isNewBookRoute = location.pathname.endsWith('/book/new');
+  const isNewBookRoute = location.pathname.endsWith('/books/new');
   const showBackButton = location.pathname !== '/';
 
   if (!isBookRoute) {
@@ -37,7 +37,7 @@ export const NavBreadcrumb = ({ bookName, pageName, location, navigate }: NavBre
           <BreadcrumbItem className="flex items-center min-w-0">
             <Link
               className="text-link hover:opacity-80 transition-opacity font-medium shrink-0"
-              to={`/my-books`}
+              to={`/books`}
             >
               <Library className="h-5 w-5" />
             </Link>
@@ -46,7 +46,7 @@ export const NavBreadcrumb = ({ bookName, pageName, location, navigate }: NavBre
               <>
                 <Link
                   className="text-link hover:opacity-80 transition-opacity font-medium truncate max-w-[120px] md:max-w-[200px]"
-                  to={`/book/${location.pathname.split('/')[2]}`}
+                  to={`/books/${location.pathname.split('/')[2]}`}
                 >
                   {bookName}
                 </Link>
@@ -61,7 +61,7 @@ export const NavBreadcrumb = ({ bookName, pageName, location, navigate }: NavBre
                   <>
                     <Link
                       className="text-link hover:opacity-80 transition-opacity font-medium truncate max-w-[300px]"
-                      to={`/book/${location.pathname.split('/')[2]}`}
+                      to={`/books/${location.pathname.split('/')[2]}`}
                     >
                       {bookName}
                     </Link>

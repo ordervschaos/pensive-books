@@ -421,7 +421,7 @@ export default function GenerateBook() {
           Go to My Books
         </Button>
         <Button
-          onClick={() => navigate(`/book/${bookId}`)}
+          onClick={() => navigate(`/books/${bookId}`)}
         >
           <ArrowRight className="h-4 w-4 mr-2" />
           View Book

@@ -136,7 +136,7 @@ export const usePageViewData = (
         // Preserve query params (like ?edit=true)
         const searchParams = new URLSearchParams(window.location.search);
         const queryString = searchParams.toString();
-        const fullPath = `/book/${bookSlug}/page/${pageSlug}${queryString ? `?${queryString}` : ''}`;
+        const fullPath = `/books/${bookSlug}/pages/${pageSlug}${queryString ? `?${queryString}` : ''}`;
 
         navigate(fullPath, { replace: true });
       }

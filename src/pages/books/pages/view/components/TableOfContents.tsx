@@ -59,7 +59,7 @@ export function TableOfContents({
             <PreloadLink
               key={page.id}
               data-page-id={page.id}
-              to={`/book/${bookId}/page/${slug}`}
+              to={`/books/${bookId}/pages/${slug}`}
               bookId={parseInt(bookId)}
               pageId={page.id}
               className={cn(

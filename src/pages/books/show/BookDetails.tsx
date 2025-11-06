@@ -217,7 +217,7 @@ const BookDetails = () => {
 
       if (bookData && !bookSlug?.includes('-') && bookData.name) {
         const slug = `${numericId}-${bookData.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
-        navigate(`/book/${slug}`, { replace: true });
+        navigate(`/books/${slug}`, { replace: true });
       }
 
       console.log('Book data fetched:', bookData);
@@ -276,7 +276,7 @@ const BookDetails = () => {
   };
 
   const handleEditClick = () => {
-    navigate(`/book/${bookSlug}/edit`);
+    navigate(`/books/${bookSlug}/edit`);
   };
 
   const handleContinueReading = async () => {
@@ -291,7 +291,7 @@ const BookDetails = () => {
       const newIndex = bookmarkedPageIndex === null ? 0 : bookmarkedPageIndex;
       // updateBookmark now includes timestamp, which serves as last_read
       updateBookmark(newIndex);
-      navigate(`/book/${numericId}/page/${pageToNavigate.id}`);
+      navigate(`/books/${numericId}/pages/${pageToNavigate.id}`);
     }
   };
 
@@ -307,7 +307,7 @@ const BookDetails = () => {
     })[0];
 
     if (lastUpdatedPage) {
-      navigate(`/book/${numericId}/page/${lastUpdatedPage.id}?edit=true`);
+      navigate(`/books/${numericId}/pages/${lastUpdatedPage.id}?edit=true`);
     }
   };
 
@@ -646,7 +646,7 @@ const BookDetails = () => {
                       bookName={book.name}
                       allowRollback={isOwner}
                       onPreview={(versionId) => {
-                        navigate(`/book/${bookSlug}/version/${versionId}`);
+                        navigate(`/books/${bookSlug}/version/${versionId}`);
                       }}
                     />
                   </TabsContent>

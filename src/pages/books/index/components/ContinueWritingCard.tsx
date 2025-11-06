@@ -192,12 +192,12 @@ export function ContinueWritingCard() {
 
   const handleContinueWriting = () => {
     if (!lastPage) return;
-    navigate(`/book/${lastPage.book_id}/page/${lastPage.id}?edit=true`);
+    navigate(`/books/${lastPage.book_id}/pages/${lastPage.id}?edit=true`);
   };
 
   const handleContinueReading = () => {
     if (!lastReadBook) return;
-    navigate(`/book/${lastReadBook.book_id}/page/${lastReadBook.page_id}`);
+    navigate(`/books/${lastReadBook.book_id}/pages/${lastReadBook.page_id}`);
   };
 
   const handleAddNewPage = async () => {
@@ -217,7 +217,7 @@ export function ContinueWritingCard() {
       if (error) throw error;
 
       // Navigate to the new page with edit mode enabled
-      navigate(`/book/${lastPage.book_id}/page/${newPage.id}?edit=true`);
+      navigate(`/books/${lastPage.book_id}/pages/${newPage.id}?edit=true`);
 
       toast({
         title: 'Page created',

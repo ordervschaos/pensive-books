@@ -43,7 +43,7 @@ export default function PublishedPageView() {
 
   const handleNavigateToPage = useCallback((targetPageId: number, targetTitle: string) => {
     const targetPageSlug = SlugService.generateSlug(targetPageId, targetTitle);
-    navigate(`/library/book/${bookSlug}/page/${targetPageSlug}`);
+    navigate(`/library/books/${bookSlug}/pages/${targetPageSlug}`);
   }, [bookSlug, navigate]);
 
   const handlePrevious = useCallback(() => {
@@ -61,7 +61,7 @@ export default function PublishedPageView() {
   }, [currentIndex, totalPages, allPages, handleNavigateToPage]);
 
   const handleBackToBook = useCallback(() => {
-    navigate(`/library/book/${bookSlug}`);
+    navigate(`/library/books/${bookSlug}`);
   }, [bookSlug, navigate]);
 
   // Set page title

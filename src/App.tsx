@@ -21,20 +21,20 @@ import PublicProfile from "@/pages/user/profile/PublicProfile";
 import SetUsername from "@/pages/user/profile/SetUsername";
 import ProfileEdit from "@/pages/user/profile/ProfileEdit";
 
-// Book pages
-import MyBooks from "@/pages/book/list/MyBooks";
-import NewBook from "@/pages/book/new/NewBook";
-import BookDetails from "@/pages/book/view/BookDetails";
-import BookEdit from "@/pages/book/edit/BookEdit";
-import BookFlashcards from "@/pages/book/flashcards/BookFlashcards";
-import GenerateBook from "@/pages/book/generate/GenerateBook";
-import PublishedBookDetails from "@/pages/book/view/PublishedBookDetails";
+// Books resource (CRUD-compliant)
+import MyBooks from "@/pages/books/index/MyBooks";
+import NewBook from "@/pages/books/new/NewBook";
+import BookDetails from "@/pages/books/show/BookDetails";
+import BookEdit from "@/pages/books/edit/BookEdit";
+import BookFlashcards from "@/pages/books/flashcards/BookFlashcards";
+import GenerateBook from "@/pages/books/generate/GenerateBook";
+import PublishedBookDetails from "@/pages/books/show/PublishedBookDetails";
 
-// Page pages (under book/)
-import PageView from "@/pages/book/page/view/PageView";
-import VersionPreview from "@/pages/book/version/VersionPreview";
-import VersionPageView from "@/pages/book/version/VersionPageView";
-import PublishedPageView from "@/pages/book/page/view/PublishedPageView";
+// Nested resources under books
+import PageView from "@/pages/books/pages/view/PageView";
+import VersionPreview from "@/pages/books/versions/VersionPreview";
+import VersionPageView from "@/pages/books/versions/VersionPageView";
+import PublishedPageView from "@/pages/books/pages/view/PublishedPageView";
 
 // Invitation pages
 import AcceptInvitation from "@/pages/invitation/AcceptInvitation";
@@ -45,6 +45,7 @@ import KindleSettings from "@/pages/settings/KindleSettings";
 import { useEffect } from "react";
 import { useGoogleAnalytics } from "@/hooks/useGoogleAnalytics";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { LegacyRedirects } from "@/components/LegacyRedirects";
 
 const queryClient = new QueryClient();
 
@@ -81,6 +82,7 @@ export default function App() {
           <Router basename={basename}>
           <div className="min-h-screen flex flex-col">
             <ScrollToTop />
+            <LegacyRedirects />
             <ConditionalNav />
             <main className="flex-1">
               <Routes>
@@ -94,11 +96,11 @@ export default function App() {
                 <Route path="/privacy" element={<PrivacyPolicy />} />
                 <Route path="/terms" element={<Terms />} />
                 <Route path="/contact" element={<Contact />} />
-                <Route path="/book/:bookSlug/join/:token" element={<JoinBook />} />
+                <Route path="/books/:bookSlug/join/:token" element={<JoinBook />} />
 
                 {/* Public published content routes */}
-                <Route path="/library/book/:bookSlug" element={<PublishedBookDetails />} />
-                <Route path="/library/book/:bookSlug/page/:pageSlug" element={<PublishedPageView />} />
+                <Route path="/library/books/:bookSlug" element={<PublishedBookDetails />} />
+                <Route path="/library/books/:bookSlug/pages/:pageSlug" element={<PublishedPageView />} />
                 <Route
                   path="/settings/kindle"
                   element={
@@ -108,7 +110,7 @@ export default function App() {
                   }
                 />
                 <Route
-                  path="/profile/set-username"
+                  path="/user/profile/set-username"
                   element={
                     <PrivateRoute>
                       <SetUsername />
@@ -116,7 +118,7 @@ export default function App() {
                   }
                 />
                 <Route
-                  path="/profile/edit"
+                  path="/user/profile/edit"
                   element={
                     <PrivateRoute>
                       <ProfileEdit />
@@ -125,7 +127,7 @@ export default function App() {
                 />
                 
                 <Route
-                  path="/my-books"
+                  path="/books"
                   element={
                     <PrivateRoute>
                       <MyBooks />
@@ -133,7 +135,7 @@ export default function App() {
                   }
                 />
                 <Route
-                  path="/book/new"
+                  path="/books/new"
                   element={
                     <PrivateRoute>
                       <NewBook />
@@ -141,7 +143,7 @@ export default function App() {
                   }
                 />
                 <Route
-                  path="/book/:bookSlug/version/:versionId/page/:pageSlug"
+                  path="/books/:bookSlug/versions/:versionId/pages/:pageSlug"
                   element={
                     <PrivateRoute>
                       <VersionPageView />
@@ -149,7 +151,7 @@ export default function App() {
                   }
                 />
                 <Route
-                  path="/book/:bookSlug/version/:versionId"
+                  path="/books/:bookSlug/versions/:versionId"
                   element={
                     <PrivateRoute>
                       <VersionPreview />
@@ -157,7 +159,7 @@ export default function App() {
                   }
                 />
                 <Route
-                  path="/book/:bookSlug"
+                  path="/books/:bookSlug"
                   element={
                     <PrivateRoute>
                       <BookDetails />
@@ -165,7 +167,7 @@ export default function App() {
                   }
                 />
                 <Route
-                  path="/book/:bookSlug/edit"
+                  path="/books/:bookSlug/edit"
                   element={
                     <PrivateRoute>
                       <BookEdit />
@@ -173,7 +175,7 @@ export default function App() {
                   }
                 />
                 <Route
-                  path="/book/:bookSlug/flashcards"
+                  path="/books/:bookSlug/flashcards"
                   element={
                     <PrivateRoute>
                       <BookFlashcards />
@@ -181,7 +183,7 @@ export default function App() {
                   }
                 />
                 <Route
-                  path="/book/:bookSlug/page/:pageSlug"
+                  path="/books/:bookSlug/pages/:pageSlug"
                   element={
                     <PrivateRoute>
                       <PageView />
@@ -189,7 +191,7 @@ export default function App() {
                   }
                 />
                 <Route
-                  path="/book/generate"
+                  path="/books/generate"
                   element={
                     <PrivateRoute>
                       <GenerateBook />

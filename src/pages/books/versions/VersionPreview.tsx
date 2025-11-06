@@ -4,7 +4,7 @@
  * Read-only view of a historical book version.
  * Shows book metadata and pages as they were at that specific commit.
  *
- * URL: /book/:bookId/version/:versionId
+ * URL: /books/:bookId/versions/:versionId
  */
 
 import { useEffect, useState } from "react";
@@ -109,7 +109,7 @@ const VersionPreview = () => {
       queryClient.invalidateQueries({ queryKey: ["pages"] });
 
       // Navigate back to book details
-      navigate(`/book/${bookSlug}`);
+      navigate(`/books/${bookSlug}`);
     },
     onError: (error: Error) => {
       toast({
@@ -164,7 +164,7 @@ const VersionPreview = () => {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => navigate(`/book/${bookSlug}`)}
+                onClick={() => navigate(`/books/${bookSlug}`)}
               >
                 <ArrowLeft className="mr-2 h-4 w-4" />
                 Back to Book
@@ -278,7 +278,7 @@ const VersionPreview = () => {
                         {pageVersions.map((page, index) => (
                           <Link
                             key={page.id}
-                            to={`/book/${bookSlug}/version/${versionId}/page/${page.page_index}`}
+                            to={`/books/${bookSlug}/versions/${versionId}/pages/${page.page_index}`}
                             className="block"
                           >
                             <div className="flex items-center gap-3 p-3 rounded-lg border hover:bg-accent transition-colors">

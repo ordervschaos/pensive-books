@@ -183,15 +183,15 @@ const PageView = () => {
       // Smart navigation after deletion
       if (remainingPages.length === 0) {
         // No pages left, go to book details (table of contents)
-        navigate(`/book/${bookSlug}`);
+        navigate(`/books/${bookSlug}`);
       } else if (currentIndex < remainingPages.length) {
         // Not the last page, go to the next page (which now has the same index)
         const nextPage = remainingPages[currentIndex];
-        navigate(`/book/${bookSlug}/page/${nextPage.id}`);
+        navigate(`/books/${bookSlug}/pages/${nextPage.id}`);
       } else {
         // Was the last page, go to the previous page (now the new last page)
         const prevPage = remainingPages[remainingPages.length - 1];
-        navigate(`/book/${bookSlug}/page/${prevPage.id}`);
+        navigate(`/books/${bookSlug}/pages/${prevPage.id}`);
       }
     } catch (error) {
       console.error('Error deleting page:', error);

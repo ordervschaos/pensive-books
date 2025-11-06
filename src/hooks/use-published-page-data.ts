@@ -229,7 +229,7 @@ export const usePublishedPageData = (
           ? SlugService.generateSlug(numericPageId, pageData.title)
           : pageId;
 
-        navigate(`/library/book/${bookSlug}/page/${pageSlug}`, { replace: true });
+        navigate(`/library/books/${bookSlug}/pages/${pageSlug}`, { replace: true });
       }
 
       // Calculate current position (only when viewing a specific page)

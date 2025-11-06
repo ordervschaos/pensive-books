@@ -41,7 +41,7 @@ export const usePageCreation = (
       if (error) throw error;
 
       // Navigate to the new page with edit mode enabled
-      navigate(`/book/${bookId}/page/${newPage.id}?edit=true`);
+      navigate(`/books/${bookId}/pages/${newPage.id}?edit=true`);
 
     } catch (error: unknown) {
       toast({

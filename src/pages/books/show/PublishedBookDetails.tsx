@@ -191,7 +191,7 @@ export default function PublishedBookDetails() {
       const newIndex = bookmarkedPageIndex === null ? 0 : bookmarkedPageIndex;
       updateBookmark(newIndex);
       const pageSlug = SlugService.generateSlug(pageToNavigate.id, pageToNavigate.title);
-      navigate(`/library/book/${bookSlug}/page/${pageSlug}`);
+      navigate(`/library/books/${bookSlug}/pages/${pageSlug}`);
     }
   };
 
@@ -356,7 +356,7 @@ export default function PublishedBookDetails() {
                       onClick={() => {
                         const pageSlug = SlugService.generateSlug(page.id, page.title);
                         updateBookmark(index);
-                        navigate(`/library/book/${bookSlug}/page/${pageSlug}`);
+                        navigate(`/library/books/${bookSlug}/pages/${pageSlug}`);
                       }}
                     >
                       <div className="flex items-center gap-3">

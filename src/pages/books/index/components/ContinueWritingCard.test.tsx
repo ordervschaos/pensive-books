@@ -198,7 +198,7 @@ describe('ContinueWritingCard', () => {
     continueButton?.click();
 
     await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith('/book/456/page/123?edit=true');
+      expect(mockNavigate).toHaveBeenCalledWith('/books/456/pages/123?edit=true');
     });
   });
 

@@ -139,7 +139,7 @@ export function LibraryNav() {
                 <span className="text-muted-foreground hidden sm:inline">›</span>
                 {isPageView ? (
                   <Link
-                    to={`/library/book/${bookIdSlug}`}
+                    to={`/library/books/${bookIdSlug}`}
                     className="text-sm font-medium text-link hover:opacity-80 transition-opacity truncate max-w-[150px] md:max-w-[250px] hidden sm:inline"
                     title={bookName}
                   >
@@ -196,7 +196,7 @@ export function LibraryNav() {
                     {userEmail}
                   </div>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => navigate("/my-books")}>
+                  <DropdownMenuItem onClick={() => navigate("/books")}>
                     <BookOpen className="h-4 w-4 mr-2" />
                     My Books
                   </DropdownMenuItem>

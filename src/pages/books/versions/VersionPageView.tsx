@@ -4,7 +4,7 @@
  * Read-only view of a single page within a historical version.
  * Similar to PageView but for version snapshots.
  *
- * URL: /book/:bookId/version/:versionId/page/:pageId
+ * URL: /books/:bookId/versions/:versionId/pages/:pageId
  */
 
 import { useParams, useNavigate, Link } from "react-router-dom";
@@ -104,7 +104,7 @@ const VersionPageView = () => {
       queryClient.invalidateQueries({ queryKey: ["pages"] });
 
       // Navigate back to book details
-      navigate(`/book/${bookSlug}`);
+      navigate(`/books/${bookSlug}`);
     },
     onError: (error: Error) => {
       toast({
@@ -243,7 +243,7 @@ const VersionPageView = () => {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => navigate(`/book/${bookSlug}/version/${versionId}`)}
+                onClick={() => navigate(`/books/${bookSlug}/version/${versionId}`)}
               >
                 <ArrowLeft className="mr-2 h-4 w-4" />
                 Back to Version
@@ -301,7 +301,7 @@ const VersionPageView = () => {
             <Button
               variant="outline"
               onClick={() =>
-                navigate(`/book/${bookSlug}/version/${versionId}/page/${prevPage.page_index}`)
+                navigate(`/books/${bookSlug}/versions/${versionId}/pages/${prevPage.page_index}`)
               }
             >
               <ChevronLeft className="mr-2 h-4 w-4" />
@@ -315,7 +315,7 @@ const VersionPageView = () => {
             <Button
               variant="outline"
               onClick={() =>
-                navigate(`/book/${bookSlug}/version/${versionId}/page/${nextPage.page_index}`)
+                navigate(`/books/${bookSlug}/versions/${versionId}/pages/${nextPage.page_index}`)
               }
             >
               {nextPage.title}

@@ -2,7 +2,7 @@ import { Trash2, BookmarkCheck, MoreVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { AudioPlayer } from "@/pages/book/page/view/components/AudioPlayer";
+import { AudioPlayer } from "@/pages/books/pages/view/components/AudioPlayer";
 import { PageItemProps } from "./types";
 import { forwardRef } from "react";
 import { getWordCountFromContent, convertJSONToHTML } from "@/utils/tiptapHelpers";

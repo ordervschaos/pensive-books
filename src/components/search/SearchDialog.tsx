@@ -22,8 +22,8 @@ interface SearchDialogProps {
 
 export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
   const location = useLocation();
-  const bookId = location.pathname.split('/').find((segment, index, arr) => 
-    arr[index - 1] === 'book' && /^\d+/.test(segment)
+  const bookId = location.pathname.split('/').find((segment, index, arr) =>
+    arr[index - 1] === 'books' && /^\d+/.test(segment)
   )?.match(/^\d+/)?.[0];
 
   const { toast } = useToast();
@@ -65,7 +65,7 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
   };
 
   const navigateToPage = (pageId: number) => {
-    window.location.href = `/book/${bookId}/page/${pageId}`;
+    window.location.href = `/books/${bookId}/pages/${pageId}`;
     onOpenChange(false);
   };
 

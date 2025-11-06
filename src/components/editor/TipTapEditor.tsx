@@ -54,7 +54,7 @@ export const TipTapEditor = ({
 
   // Handle page link clicks
   const handlePageLinkClick = useCallback((pageId: string, linkBookId: string) => {
-    navigate(`/book/${linkBookId}/page/${pageId}`);
+    navigate(`/books/${linkBookId}/pages/${pageId}`);
   }, [navigate]);
 
   // Memoize the editor config to prevent unnecessary recreations

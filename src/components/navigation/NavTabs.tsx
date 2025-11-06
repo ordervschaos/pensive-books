@@ -14,7 +14,7 @@ export const NavTabs = ({ isLibraryActive, isMyBooksActive }: NavTabsProps) => {
       <div className="container max-w-7xl mx-auto">
         <div className="flex space-x-4">
           <Link
-            to="/my-books"
+            to="/books"
             className={cn(
               "px-4 py-2 text-sm font-medium transition-colors relative",
               isMyBooksActive ? "text-foreground" : "text-muted-foreground hover:text-foreground",

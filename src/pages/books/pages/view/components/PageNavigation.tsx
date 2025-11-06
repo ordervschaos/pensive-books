@@ -38,7 +38,7 @@ export const PageNavigation = ({
  
   const handleNextClick = () => {
     if (isLastPage) {
-      navigate(`/book/${bookId}`);
+      navigate(`/books/${bookId}`);
     } else {
       onNavigate(currentIndex + 1);
     }
@@ -79,7 +79,7 @@ export const PageNavigation = ({
           {/* Next Button or Back to Contents */}
           {isLastPage ? (
             <Button
-              onClick={() => navigate(`/book/${bookId}`)}
+              onClick={() => navigate(`/books/${bookId}`)}
               className="flex items-center gap-2 px-4 md:px-6 py-2"
             >
               <TableOfContents className="h-4 w-4" />

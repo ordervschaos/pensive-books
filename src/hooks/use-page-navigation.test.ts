@@ -57,7 +57,7 @@ describe('usePageNavigation', () => {
     });
 
     await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith('/book/123/page/2-chapter-2', { replace: false });
+      expect(mockNavigate).toHaveBeenCalledWith('/books/123/pages/2-chapter-2', { replace: false });
     });
   });
 
@@ -71,7 +71,7 @@ describe('usePageNavigation', () => {
     });
 
     await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith('/book/123/page/2-chapter-2', { replace: false });
+      expect(mockNavigate).toHaveBeenCalledWith('/books/123/pages/2-chapter-2', { replace: false });
     });
   });
 
@@ -85,7 +85,7 @@ describe('usePageNavigation', () => {
     });
 
     await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith('/book/123/page/1-chapter-1', { replace: false });
+      expect(mockNavigate).toHaveBeenCalledWith('/books/123/pages/1-chapter-1', { replace: false });
     });
   });
 
@@ -127,7 +127,7 @@ describe('usePageNavigation', () => {
     });
 
     await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith('/book/123/page/1', { replace: false });
+      expect(mockNavigate).toHaveBeenCalledWith('/books/123/pages/1', { replace: false });
     });
   });
 
@@ -197,7 +197,7 @@ describe('usePageNavigation', () => {
     });
 
     await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith('/book/123/page/2-hello-world', { replace: false });
+      expect(mockNavigate).toHaveBeenCalledWith('/books/123/pages/2-hello-world', { replace: false });
     });
   });
 });

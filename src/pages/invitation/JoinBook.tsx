@@ -81,7 +81,7 @@ export default function JoinBook() {
         title: "Invitation accepted",
         description: `You have successfully joined the book: ${bookData.name}`,
       });
-      navigate(`/book/${bookSlug}`);
+      navigate(`/books/${bookSlug}`);
     } catch (error: any) {
       toast({
         title: "Error accepting invitation",

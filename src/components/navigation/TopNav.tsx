@@ -80,8 +80,8 @@ export function TopNav() {
 
     const fetchBookDetails = async () => {
       // Extract numeric ID from slug (e.g., "884-digest-nov" -> "884")
-      const match = location.pathname.match(/\/book\/(\d+)/);
-      const isNewBook = location.pathname.endsWith('/book/new');
+      const match = location.pathname.match(/\/books\/(\d+)/);
+      const isNewBook = location.pathname.endsWith('/books/new');
 
       if (isNewBook) {
         setBookName("New Book");
@@ -137,7 +137,7 @@ export function TopNav() {
       }
 
       // Extract numeric page ID from slug (e.g., "123-page-title" -> "123")
-      const match = location.pathname.match(/\/page\/(\d+)/);
+      const match = location.pathname.match(/\/pages\/(\d+)/);
       
       if (!match) {
         setPageName(""); // Only reset if not on a page route
@@ -202,9 +202,9 @@ export function TopNav() {
     };
   }, [location.pathname, toast]);
 
-  const isBookRoute = location.pathname.includes('/book/');
+  const isBookRoute = location.pathname.includes('/books/');
   const isLibraryActive = location.pathname === '/library';
-  const isMyBooksActive = location.pathname === '/my-books';
+  const isMyBooksActive = location.pathname === '/books';
 
   return (
     <>

@@ -52,7 +52,7 @@ export const usePageNavigation = (
         : nextPageId.toString();
 
       // Update URL (triggers PageView to re-render with new params)
-      navigate(`/book/${bookId}/page/${slug}`, { replace: false });
+      navigate(`/books/${bookId}/pages/${slug}`, { replace: false });
 
       // Optionally notify parent of navigation completion
       if (onNavigationComplete) {

@@ -160,7 +160,7 @@ export const PagesList = ({
       items,
       pageType,
       (newPageId) => {
-        navigate(`/book/${bookId}/page/${newPageId}?edit=true`);
+        navigate(`/books/${bookId}/pages/${newPageId}?edit=true`);
       },
       (error) => {
         toast({
@@ -351,7 +351,7 @@ export const PagesList = ({
                       key={page.id}
                       page={page}
                       bookId={bookId}
-                      onNavigate={(pageId) => navigate(`/book/${bookId}/page/${pageId}`)}
+                      onNavigate={(pageId) => navigate(`/books/${bookId}/pages/${pageId}`)}
                       isBookmarked={bookmarkedPageIndex === page.page_index}
                       ref={bookmarkedPageIndex === page.page_index ? bookmarkedPageRef : undefined}
                     />
@@ -390,7 +390,7 @@ export const PagesList = ({
                       key={page.id}
                       page={page}
                       bookId={bookId}
-                      onNavigate={(pageId) => navigate(`/book/${bookId}/page/${pageId}`)}
+                      onNavigate={(pageId) => navigate(`/books/${bookId}/pages/${pageId}`)}
                       onDelete={canEdit ? handleDeletePage : undefined}
                       isBookmarked={bookmarkedPageIndex === page.page_index}
                       ref={bookmarkedPageIndex === page.page_index ? bookmarkedPageRef : undefined}
@@ -400,7 +400,7 @@ export const PagesList = ({
                       key={page.id}
                       page={page}
                       bookId={bookId}
-                      onNavigate={(pageId) => navigate(`/book/${bookId}/page/${pageId}`)}
+                      onNavigate={(pageId) => navigate(`/books/${bookId}/pages/${pageId}`)}
                       onDelete={canEdit ? handleDeletePage : undefined}
                       isBookmarked={bookmarkedPageIndex === page.page_index}
                       ref={bookmarkedPageIndex === page.page_index ? bookmarkedPageRef : undefined}
