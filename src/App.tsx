@@ -6,29 +6,42 @@ import { Toaster } from "@/components/ui/toaster";
 import { TopNav } from "@/components/TopNav";
 import { LibraryNav } from "@/components/navigation/LibraryNav";
 import { PrivateRoute } from "@/components/PrivateRoute";
-import Landing from "@/pages/Landing";
-import Auth from "@/pages/Auth";
-import Library from "@/pages/Library";
-import MyBooks from "@/pages/MyBooks";
-import NewBook from "@/pages/NewBook";
-import BookDetails from "@/pages/BookDetails";
-import BookEdit from "@/pages/BookEdit";
-import PageView from "@/pages/PageView";
-import AcceptInvitation from "@/pages/AcceptInvitation";
-import PrivacyPolicy from "@/pages/PrivacyPolicy";
-import Terms from "@/pages/Terms";
-import Contact from "@/pages/Contact";
-import UserProfile from "@/pages/UserProfile";
-import SetUsername from "@/pages/SetUsername";
-import ProfileEdit from "@/pages/ProfileEdit";
-import JoinBook from "@/pages/JoinBook";
-import GenerateBook from "./pages/GenerateBook";
-import KindleSettings from "@/pages/KindleSettings";
-import BookFlashcards from "@/pages/BookFlashcards";
-import VersionPreview from "@/pages/VersionPreview";
-import VersionPageView from "@/pages/VersionPageView";
-import PublishedBookDetails from "@/pages/PublishedBookDetails";
-import PublishedPageView from "@/pages/PublishedPageView";
+// Public pages
+import Landing from "@/pages/public/landing/Landing";
+import Library from "@/pages/public/library/Library";
+import PrivacyPolicy from "@/pages/public/legal/PrivacyPolicy";
+import Terms from "@/pages/public/legal/Terms";
+import Contact from "@/pages/public/legal/Contact";
+
+// Auth pages
+import Auth from "@/pages/auth/Auth";
+
+// User pages
+import MyBooks from "@/pages/user/library/MyBooks";
+import UserProfile from "@/pages/user/profile/UserProfile";
+import SetUsername from "@/pages/user/profile/SetUsername";
+import ProfileEdit from "@/pages/user/profile/ProfileEdit";
+
+// Book pages
+import NewBook from "@/pages/book/new/NewBook";
+import BookDetails from "@/pages/book/view/BookDetails";
+import BookEdit from "@/pages/book/edit/BookEdit";
+import BookFlashcards from "@/pages/book/flashcards/BookFlashcards";
+import GenerateBook from "@/pages/book/generate/GenerateBook";
+import PublishedBookDetails from "@/pages/book/view/PublishedBookDetails";
+
+// Page pages
+import PageView from "@/pages/page/view/PageView";
+import VersionPreview from "@/pages/page/version/VersionPreview";
+import VersionPageView from "@/pages/page/version/VersionPageView";
+import PublishedPageView from "@/pages/page/view/PublishedPageView";
+
+// Invitation pages
+import AcceptInvitation from "@/pages/invitation/AcceptInvitation";
+import JoinBook from "@/pages/invitation/JoinBook";
+
+// Settings pages
+import KindleSettings from "@/pages/settings/KindleSettings";
 import { useEffect } from "react";
 import { useGoogleAnalytics } from "@/hooks/useGoogleAnalytics";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
