@@ -111,7 +111,7 @@ Routes are divided into **public** and **private**:
 - `/book/:id` - Book details & table of contents
 - `/book/:id/edit` - Edit book metadata
 - `/book/:bookId/page/:pageId` - View/edit individual page
-- `/generate-book` - AI-powered book generation
+- `/book/generate` - AI-powered book generation
 - `/settings/kindle` - Kindle integration settings
 
 **How Private Routes Work**:

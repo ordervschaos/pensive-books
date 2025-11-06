@@ -108,7 +108,7 @@ export default function App() {
                   }
                 />
                 <Route
-                  path="/set-username"
+                  path="/profile/set-username"
                   element={
                     <PrivateRoute>
                       <SetUsername />
@@ -189,7 +189,7 @@ export default function App() {
                   }
                 />
                 <Route
-                  path="/generate-book"
+                  path="/book/generate"
                   element={
                     <PrivateRoute>
                       <GenerateBook />

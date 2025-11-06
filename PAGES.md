@@ -204,7 +204,7 @@ These pages require user authentication. They are wrapped with the `PrivateRoute
   - See who made changes
 
 ### 17. Generate Book
-- **Route:** `/generate-book`
+- **Route:** `/book/generate`
 - **Component:** `GenerateBook.tsx`
 - **Description:** AI-powered book generation
 - **Features:**
@@ -226,7 +226,7 @@ These pages require user authentication. They are wrapped with the `PrivateRoute
   - Manage Kindle preferences
 
 ### 19. Set Username
-- **Route:** `/set-username`
+- **Route:** `/profile/set-username`
 - **Component:** `SetUsername.tsx`
 - **Description:** Set or update user's username
 - **Features:**
@@ -300,9 +300,9 @@ Inherits permissions from parent book:
 
 ### First-Time User
 1. `/` (Landing) → `/auth` (Signup)
-2. `/set-username` (Set username)
+2. `/profile/set-username` (Set username)
 3. `/my-books` (Dashboard)
-4. `/book/new` or `/generate-book` (Create first book)
+4. `/book/new` or `/book/generate` (Create first book)
 
 ### Returning User
 1. `/` (Landing) or `/auth` (Login)
