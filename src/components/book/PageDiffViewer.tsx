@@ -1,0 +1,266 @@
+/**
+ * PageDiffViewer Component
+ *
+ * Displays a side-by-side diff view comparing the committed version
+ * and current workspace version of a page
+ */
+
+import { useState, useEffect } from "react";
+import ReactDiffViewer, { DiffMethod } from "react-diff-viewer-continued";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Loader2, FileEdit, FilePlus, FileX, X } from "lucide-react";
+import { DiffService, type PageDiff } from "@/services/DiffService";
+import { useQuery } from "@tanstack/react-query";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { BlockDiffViewer } from "./BlockDiffViewer";
+
+interface PageDiffViewerProps {
+  pageId: number;
+  bookId: number;
+  onClose?: () => void;
+  compact?: boolean; // For inline display
+}
+
+const getStatusIcon = (status: PageDiff["status"]) => {
+  switch (status) {
+    case "added":
+      return <FilePlus className="h-4 w-4 text-green-600" />;
+    case "deleted":
+      return <FileX className="h-4 w-4 text-red-600" />;
+    case "modified":
+      return <FileEdit className="h-4 w-4 text-orange-600" />;
+  }
+};
+
+const getStatusBadge = (status: PageDiff["status"]) => {
+  switch (status) {
+    case "added":
+      return (
+        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+          Added
+        </Badge>
+      );
+    case "deleted":
+      return (
+        <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
+          Deleted
+        </Badge>
+      );
+    case "modified":
+      return (
+        <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
+          Modified
+        </Badge>
+      );
+  }
+};
+
+export function PageDiffViewer({ pageId, bookId, onClose, compact = false }: PageDiffViewerProps) {
+  const [viewMode, setViewMode] = useState<"split" | "unified">("split");
+  const [diffMode, setDiffMode] = useState<"blocks" | "text">("blocks"); // New: block vs text diff
+
+  const { data: diff, isLoading, error } = useQuery({
+    queryKey: ["page-diff", pageId, bookId],
+    queryFn: () => DiffService.getPageDiff(pageId, bookId),
+  });
+
+  if (isLoading) {
+    return (
+      <div className={compact ? "py-8" : ""}>
+        <Card className={compact ? "border-0 shadow-none" : ""}>
+          <CardContent className="py-12">
+            <div className="flex items-center justify-center">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (error || !diff) {
+    return (
+      <div className={compact ? "py-4" : ""}>
+        <Card className={compact ? "border-0 shadow-none" : ""}>
+          <CardContent className="py-12">
+            <div className="text-center text-muted-foreground">
+              Failed to load diff. Please try again.
+              {error && <div className="text-xs mt-2 text-red-600">{String(error)}</div>}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  const diffStyles = {
+    variables: {
+      light: {
+        diffViewerBackground: "#fff",
+        diffViewerColor: "#212529",
+        addedBackground: "#e6ffed",
+        addedColor: "#24292e",
+        removedBackground: "#ffeef0",
+        removedColor: "#24292e",
+        wordAddedBackground: "#acf2bd",
+        wordRemovedBackground: "#fdb8c0",
+        addedGutterBackground: "#cdffd8",
+        removedGutterBackground: "#ffdce0",
+        gutterBackground: "#f7f7f7",
+        gutterBackgroundDark: "#f3f1f1",
+        highlightBackground: "#fffbdd",
+        highlightGutterBackground: "#fff5b1",
+      },
+    },
+  };
+
+  // Compact mode for inline display
+  if (compact) {
+    return (
+      <div className="space-y-3 mt-3">
+        {/* View Mode Tabs */}
+        <div className="flex items-center justify-between gap-2">
+          <Tabs value={diffMode} onValueChange={(v) => setDiffMode(v as "blocks" | "text")}>
+            <TabsList className="h-8">
+              <TabsTrigger value="blocks" className="text-xs h-7">
+                Blocks
+              </TabsTrigger>
+              <TabsTrigger value="text" className="text-xs h-7">
+                Text
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+
+          {diffMode === "text" && (
+            <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as "split" | "unified")}>
+              <TabsList className="h-8">
+                <TabsTrigger value="split" className="text-xs h-7">
+                  Split
+                </TabsTrigger>
+                <TabsTrigger value="unified" className="text-xs h-7">
+                  Unified
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+          )}
+        </div>
+
+        {/* Block Diff Viewer or Text Diff Viewer */}
+        {diffMode === "blocks" && diff.blockDiffs ? (
+          <BlockDiffViewer blockDiffs={diff.blockDiffs} compact={true} />
+        ) : (
+          <>
+            {/* Text Diff Viewer */}
+            <div className="border rounded-lg overflow-x-auto">
+              <ReactDiffViewer
+                oldValue={diff.oldContent}
+                newValue={diff.newContent}
+                splitView={viewMode === "split"}
+                compareMethod={DiffMethod.WORDS}
+                useDarkTheme={false}
+                styles={diffStyles}
+                leftTitle="Committed"
+                rightTitle="Current"
+                showDiffOnly={true}
+                extraLinesSurroundingDiff={3}
+              />
+            </div>
+
+            {/* Stats */}
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              <div>
+                <span className="font-medium">{diff.oldContent.split("\n").length}</span> → <span className="font-medium">{diff.newContent.split("\n").length}</span> lines
+              </div>
+              <div>
+                {diff.newContent.split("\n").length - diff.oldContent.split("\n").length > 0
+                  ? <span className="text-green-600">+{diff.newContent.split("\n").length - diff.oldContent.split("\n").length}</span>
+                  : <span className="text-red-600">{diff.newContent.split("\n").length - diff.oldContent.split("\n").length}</span>}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  // Full mode for standalone display
+  return (
+    <Card className="border-2">
+      <CardHeader>
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+          <div className="space-y-2 flex-1 min-w-0">
+            <div className="flex items-start gap-2 flex-wrap">
+              {getStatusIcon(diff.status)}
+              <CardTitle className="text-lg break-words">{diff.title}</CardTitle>
+              {getStatusBadge(diff.status)}
+            </div>
+            <CardDescription className="text-xs sm:text-sm">
+              Comparing committed version with current workspace
+            </CardDescription>
+          </div>
+          {onClose && (
+            <Button variant="ghost" size="icon" onClick={onClose} className="flex-shrink-0 self-start">
+              <X className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* View Mode Tabs */}
+        <div className="flex items-center justify-start">
+          <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as "split" | "unified")}>
+            <TabsList className="w-full sm:w-auto">
+              <TabsTrigger value="split" className="flex-1 sm:flex-initial text-xs sm:text-sm">
+                <span className="hidden sm:inline">Split View</span>
+                <span className="sm:hidden">Split</span>
+              </TabsTrigger>
+              <TabsTrigger value="unified" className="flex-1 sm:flex-initial text-xs sm:text-sm">
+                <span className="hidden sm:inline">Unified View</span>
+                <span className="sm:hidden">Unified</span>
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
+
+        {/* Diff Viewer */}
+        <div className="border rounded-lg overflow-x-auto">
+          <ReactDiffViewer
+            oldValue={diff.oldContent}
+            newValue={diff.newContent}
+            splitView={viewMode === "split"}
+            compareMethod={DiffMethod.WORDS}
+            useDarkTheme={false}
+            styles={diffStyles}
+            leftTitle="Committed"
+            rightTitle="Current"
+            showDiffOnly={true}
+            extraLinesSurroundingDiff={3}
+          />
+        </div>
+
+        {/* Stats */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-xs sm:text-sm text-muted-foreground pt-2 border-t">
+          <div>
+            <span className="font-medium">Status:</span> {diff.status}
+          </div>
+          <div>
+            <span className="font-medium">Before:</span>{" "}
+            {diff.oldContent.split("\n").length} lines
+          </div>
+          <div>
+            <span className="font-medium">After:</span>{" "}
+            {diff.newContent.split("\n").length} lines
+          </div>
+          <div>
+            <span className="font-medium">Diff:</span>{" "}
+            {diff.newContent.split("\n").length - diff.oldContent.split("\n").length > 0
+              ? `+${diff.newContent.split("\n").length - diff.oldContent.split("\n").length}`
+              : diff.newContent.split("\n").length - diff.oldContent.split("\n").length}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}

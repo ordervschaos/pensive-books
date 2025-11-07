@@ -26,6 +26,8 @@ import { UncommittedChangesBadge } from "./components/UncommittedChangesBadge";
 import { CommitDialog } from "./components/CommitDialog";
 import { VersionHistory } from "./components/VersionHistory";
 import { PublishingDialog } from "@/components/book/PublishingDialog";
+import { BookSidebar } from "./components/BookSidebar";
+import { VSCodeLayout } from "./components/VSCodeLayout";
 import { GitCommit, History, FileText } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -611,47 +613,20 @@ const BookDetails = () => {
               )}
             </div>
 
-            {/* Tabs for Pages and Version History */}
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                <TabsList>
-                  <TabsTrigger value="pages" className="gap-2">
-                    <FileText className="h-4 w-4" />
-                    Pages
-                  </TabsTrigger>
-                  {canEdit && (
-                    <TabsTrigger value="versions" className="gap-2">
-                      <History className="h-4 w-4" />
-                      Version History
-                    </TabsTrigger>
-                  )}
-                </TabsList>
-
-                <TabsContent value="pages" className="mt-6">
-                  <PagesList
-                    pages={pages}
-                    bookId={getNumericId(bookSlug)}
-                    isReorderMode={isReorderMode}
-                    isDeleteMode={isDeleteMode}
-                    canEdit={canEdit}
-                    onDeleteModeChange={(isDelete) => setIsDeleteMode(isDelete)}
-                    onChatToggle={() => setIsChatOpen(!isChatOpen)}
-                    hasActiveChat={isChatOpen}
-                  />
-                </TabsContent>
-
-                {canEdit && (
-                  <TabsContent value="versions" className="mt-6">
-                    <VersionHistory
-                      bookId={getNumericId(bookSlug)}
-                      bookName={book.name}
-                      allowRollback={isOwner}
-                      onPreview={(versionId) => {
-                        navigate(`/books/${bookSlug}/version/${versionId}`);
-                      }}
-                    />
-                  </TabsContent>
-                )}
-              </Tabs>
+            {/* VSCode-style Layout */}
+            <VSCodeLayout
+              bookId={getNumericId(bookSlug)}
+              bookSlug={bookSlug || ""}
+              bookName={book.name}
+              pages={pages}
+              canEdit={canEdit}
+              isOwner={isOwner}
+              isReorderMode={isReorderMode}
+              isDeleteMode={isDeleteMode}
+              onDeleteModeChange={setIsDeleteMode}
+              onChatToggle={() => setIsChatOpen(!isChatOpen)}
+              hasActiveChat={isChatOpen}
+            />
 
             {/* Integrated Flashcard Section - Only visible in beta */}
             {isBetaEnabled && (
@@ -736,6 +711,8 @@ const BookDetails = () => {
             onOpenChange={setIsPublishingDialogOpen}
             onSuccess={handlePublishingSuccess}
           />
+
+          {/* BookSidebar replaced by VSCodeLayout above */}
         </div>
       </div>
     </div>
