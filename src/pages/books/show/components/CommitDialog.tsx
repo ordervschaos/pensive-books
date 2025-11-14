@@ -64,6 +64,9 @@ export function CommitDialog({
       queryClient.invalidateQueries({ queryKey: ["uncommitted-changes", bookId] });
       queryClient.invalidateQueries({ queryKey: ["version-history", bookId] });
       queryClient.invalidateQueries({ queryKey: ["books"] });
+      
+      // Immediately refetch latest version to update the badge
+      queryClient.refetchQueries({ queryKey: ["latest-version", bookId] });
 
       // Reset form and close dialog
       setCommitMessage("");

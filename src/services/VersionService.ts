@@ -159,23 +159,25 @@ export class VersionService {
 
   /**
    * Gets count of pages modified since last commit
+   * Only counts pages with actual content changes (not just timestamp changes)
    */
   static async getUncommittedChanges(
     bookId: number
   ): Promise<UncommittedChanges> {
-    const { data, error } = await supabase.rpc(
+    // Get last commit info
+    const { data: commitInfo, error: commitError } = await supabase.rpc(
       "get_uncommitted_changes_count",
       {
         p_book_id: bookId,
       }
     );
 
-    if (error) {
-      console.error("Error fetching uncommitted changes:", error);
-      throw new Error(`Failed to get uncommitted changes: ${error.message}`);
+    if (commitError) {
+      console.error("Error fetching uncommitted changes:", commitError);
+      throw new Error(`Failed to get uncommitted changes: ${commitError.message}`);
     }
 
-    if (!data || data.length === 0) {
+    if (!commitInfo || commitInfo.length === 0) {
       return {
         changedPages: 0,
         lastCommitAt: null,
@@ -183,11 +185,41 @@ export class VersionService {
       };
     }
 
-    const result = data[0];
+    const lastCommitAt = commitInfo[0].last_commit_at;
+
+    // Get modified page IDs (by timestamp)
+    const modifiedPageIds = await this.getModifiedPageIds(bookId);
+
+    if (modifiedPageIds.length === 0) {
+      return {
+        changedPages: 0,
+        lastCommitAt,
+        hasChanges: false,
+      };
+    }
+
+    // Get latest version for content comparison
+    const latestVersion = await this.getLatestVersion(bookId);
+
+    // Import DiffService dynamically to avoid circular dependencies
+    const { DiffService } = await import("./DiffService");
+
+    // Get statuses for all modified pages (filters out unchanged content)
+    const pageStatuses = await DiffService.getPageStatusesBatch(
+      modifiedPageIds,
+      bookId,
+      latestVersion
+    );
+
+    // Count only pages with actual changes (status is not null)
+    const actualChangedPages = pageStatuses.filter(
+      (s) => s.status !== null
+    ).length;
+
     return {
-      changedPages: result.changed_pages || 0,
-      lastCommitAt: result.last_commit_at,
-      hasChanges: (result.changed_pages || 0) > 0,
+      changedPages: actualChangedPages,
+      lastCommitAt,
+      hasChanges: actualChangedPages > 0,
     };
   }
 

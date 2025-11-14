@@ -5,21 +5,20 @@
  * and current workspace version of a page
  */
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import ReactDiffViewer, { DiffMethod } from "react-diff-viewer-continued";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Loader2, FileEdit, FilePlus, FileX, X } from "lucide-react";
+import { Loader2, FileEdit, FilePlus, FileX } from "lucide-react";
 import { DiffService, type PageDiff } from "@/services/DiffService";
 import { useQuery } from "@tanstack/react-query";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BlockDiffViewer } from "./BlockDiffViewer";
+import { FormattedDiffViewer } from "./FormattedDiffViewer";
 
 interface PageDiffViewerProps {
   pageId: number;
   bookId: number;
-  onClose?: () => void;
   compact?: boolean; // For inline display
 }
 
@@ -185,82 +184,7 @@ export function PageDiffViewer({ pageId, bookId, onClose, compact = false }: Pag
     );
   }
 
-  // Full mode for standalone display
-  return (
-    <Card className="border-2">
-      <CardHeader>
-        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-          <div className="space-y-2 flex-1 min-w-0">
-            <div className="flex items-start gap-2 flex-wrap">
-              {getStatusIcon(diff.status)}
-              <CardTitle className="text-lg break-words">{diff.title}</CardTitle>
-              {getStatusBadge(diff.status)}
-            </div>
-            <CardDescription className="text-xs sm:text-sm">
-              Comparing committed version with current workspace
-            </CardDescription>
-          </div>
-          {onClose && (
-            <Button variant="ghost" size="icon" onClick={onClose} className="flex-shrink-0 self-start">
-              <X className="h-4 w-4" />
-            </Button>
-          )}
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {/* View Mode Tabs */}
-        <div className="flex items-center justify-start">
-          <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as "split" | "unified")}>
-            <TabsList className="w-full sm:w-auto">
-              <TabsTrigger value="split" className="flex-1 sm:flex-initial text-xs sm:text-sm">
-                <span className="hidden sm:inline">Split View</span>
-                <span className="sm:hidden">Split</span>
-              </TabsTrigger>
-              <TabsTrigger value="unified" className="flex-1 sm:flex-initial text-xs sm:text-sm">
-                <span className="hidden sm:inline">Unified View</span>
-                <span className="sm:hidden">Unified</span>
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-        </div>
-
-        {/* Diff Viewer */}
-        <div className="border rounded-lg overflow-x-auto">
-          <ReactDiffViewer
-            oldValue={diff.oldContent}
-            newValue={diff.newContent}
-            splitView={viewMode === "split"}
-            compareMethod={DiffMethod.WORDS}
-            useDarkTheme={false}
-            styles={diffStyles}
-            leftTitle="Committed"
-            rightTitle="Current"
-            showDiffOnly={true}
-            extraLinesSurroundingDiff={3}
-          />
-        </div>
-
-        {/* Stats */}
-        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-xs sm:text-sm text-muted-foreground pt-2 border-t">
-          <div>
-            <span className="font-medium">Status:</span> {diff.status}
-          </div>
-          <div>
-            <span className="font-medium">Before:</span>{" "}
-            {diff.oldContent.split("\n").length} lines
-          </div>
-          <div>
-            <span className="font-medium">After:</span>{" "}
-            {diff.newContent.split("\n").length} lines
-          </div>
-          <div>
-            <span className="font-medium">Diff:</span>{" "}
-            {diff.newContent.split("\n").length - diff.oldContent.split("\n").length > 0
-              ? `+${diff.newContent.split("\n").length - diff.oldContent.split("\n").length}`
-              : diff.newContent.split("\n").length - diff.oldContent.split("\n").length}
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
+  // Full mode for standalone display - use side-by-side diff viewer
+  // Hide header since parent component (DraftChanges) already shows one
+  return <FormattedDiffViewer diff={diff} compact={true} />;
 }

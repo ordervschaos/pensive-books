@@ -45,6 +45,7 @@ import {
 import { formatDistanceToNow } from "date-fns";
 import { Checkbox } from "@/components/ui/checkbox";
 import { PageDiffViewer } from "@/components/book/PageDiffViewer";
+import { cn } from "@/lib/utils";
 
 interface PageChange {
   id: number;
@@ -231,7 +232,7 @@ export function UncommittedChangesPanel({
     queryKey: ["page-statuses", bookId, modifiedPageIds],
     queryFn: async () => {
       if (!modifiedPageIds || modifiedPageIds.length === 0) return {};
-      const statuses: Record<number, FileStatus> = {};
+      const statuses: Record<number, FileStatus | null> = {};
       for (const pageId of modifiedPageIds) {
         const status = await DiffService.getPageStatus(pageId, bookId);
         statuses[pageId] = status;
@@ -241,18 +242,23 @@ export function UncommittedChangesPanel({
     enabled: !!modifiedPageIds && modifiedPageIds.length > 0,
   });
 
-  // Build list of changed pages with details
+  // Build list of changed pages with details, filtering out unchanged pages
   const changedPages: PageChange[] = (modifiedPageIds || [])
     .map((pageId) => {
       const page = pages.find((p) => p.id === pageId);
       if (!page) return null;
+      const status = pageStatuses?.[pageId];
+      // Filter out pages with null status (unchanged content)
+      if (status === null || status === undefined) {
+        return null;
+      }
       return {
         id: page.id,
         title: page.title || "Untitled",
         pageIndex: page.page_index,
         lastModified: page.updated_at,
         slug: page.slug || page.id.toString(),
-        status: pageStatuses?.[pageId] || "modified",
+        status: status,
       };
     })
     .filter(Boolean) as PageChange[];

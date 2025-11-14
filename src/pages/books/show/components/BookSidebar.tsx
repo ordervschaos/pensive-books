@@ -11,10 +11,9 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { FileEdit, FileText, History, ChevronRight } from "lucide-react";
+import { FileEdit, FileText, ChevronRight } from "lucide-react";
 import { UncommittedChangesPanel } from "./UncommittedChangesPanel";
 import { PagesList } from "./PagesList";
-import { VersionHistory } from "./VersionHistory";
 import { cn } from "@/lib/utils";
 
 interface BookSidebarProps {
@@ -68,7 +67,7 @@ export function BookSidebar({
           </SheetHeader>
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
-            <TabsList className="mx-6 mt-4 grid w-auto grid-cols-3">
+            <TabsList className="mx-6 mt-4 grid w-auto grid-cols-2">
               <TabsTrigger value="changes" className="gap-2">
                 <FileEdit className="h-4 w-4" />
                 <span className="hidden sm:inline">Changes</span>
@@ -77,12 +76,6 @@ export function BookSidebar({
                 <FileText className="h-4 w-4" />
                 <span className="hidden sm:inline">Pages</span>
               </TabsTrigger>
-              {canEdit && (
-                <TabsTrigger value="versions" className="gap-2">
-                  <History className="h-4 w-4" />
-                  <span className="hidden sm:inline">Versions</span>
-                </TabsTrigger>
-              )}
             </TabsList>
 
             <div className="flex-1 overflow-hidden">
@@ -110,18 +103,6 @@ export function BookSidebar({
                 </div>
               </TabsContent>
 
-              {canEdit && (
-                <TabsContent value="versions" className="h-full mt-4 mx-6 overflow-y-auto">
-                  <VersionHistory
-                    bookId={bookId}
-                    bookName={bookName}
-                    allowRollback={isOwner}
-                    onPreview={(versionId) => {
-                      window.location.href = `/books/${bookSlug}/version/${versionId}`;
-                    }}
-                  />
-                </TabsContent>
-              )}
             </div>
           </Tabs>
         </SheetContent>

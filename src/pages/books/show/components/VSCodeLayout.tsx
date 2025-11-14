@@ -12,16 +12,11 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   FileEdit,
-  FileText,
-  History,
-  ChevronLeft,
-  ChevronRight,
   PanelLeftClose,
   PanelLeft
 } from "lucide-react";
 import { UncommittedChangesPanel } from "./UncommittedChangesPanel";
-import { PagesList } from "./PagesList";
-import { VersionHistory } from "./VersionHistory";
+import { PageDiffViewer } from "@/components/book/PageDiffViewer";
 import { cn } from "@/lib/utils";
 
 interface VSCodeLayoutProps {
@@ -91,139 +86,114 @@ export function VSCodeLayout({
   };
 
   return (
-    <div className="flex h-screen w-full bg-background">
-      {/* Left Sidebar */}
-      <div
-        className={cn(
-          "flex flex-col border-r border-border bg-background transition-all duration-200",
-          sidebarCollapsed ? "w-0" : ""
-        )}
-        style={{ width: sidebarCollapsed ? 0 : sidebarWidth }}
-      >
-        {!sidebarCollapsed && (
-          <>
-            {/* Sidebar Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-              <h3 className="font-semibold text-sm truncate">{bookName}</h3>
+    <>
+      {/* Full-Screen Diff Viewer */}
+      {selectedFile && (
+        <div className="fixed inset-0 bg-background z-50 flex flex-col">
+          {/* Diff Header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-background">
+            <div className="flex items-center gap-3">
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-6 w-6 flex-shrink-0"
-                onClick={toggleSidebar}
+                onClick={() => setSelectedFile(null)}
               >
                 <PanelLeftClose className="h-4 w-4" />
               </Button>
+              <h3 className="font-semibold text-sm">
+                {pages.find(p => p.id === selectedFile)?.title || "Page Diff"}
+              </h3>
             </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSelectedFile(null)}
+            >
+              Close
+            </Button>
+          </div>
 
-            {/* Tabs */}
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
-              <TabsList className="m-2 grid w-auto grid-cols-3 rounded-md">
-                <TabsTrigger value="changes" className="gap-1.5 text-xs">
-                  <FileEdit className="h-3.5 w-3.5" />
-                  <span>Changes</span>
-                </TabsTrigger>
-                <TabsTrigger value="pages" className="gap-1.5 text-xs">
-                  <FileText className="h-3.5 w-3.5" />
-                  <span>Pages</span>
-                </TabsTrigger>
-                {canEdit && (
-                  <TabsTrigger value="versions" className="gap-1.5 text-xs">
-                    <History className="h-3.5 w-3.5" />
-                    <span>Versions</span>
-                  </TabsTrigger>
-                )}
-              </TabsList>
+          {/* Full-Screen Diff Content */}
+          <div className="flex-1 overflow-auto p-6">
+            <div className="max-w-7xl mx-auto">
+              <PageDiffViewer
+                pageId={selectedFile}
+                bookId={bookId}
+                compact={false}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
-              {/* Tab Content */}
-              <div className="flex-1 overflow-hidden">
-                <TabsContent value="changes" className="h-full m-0 p-2 overflow-y-auto">
-                  <UncommittedChangesPanel
-                    bookId={bookId}
-                    bookSlug={bookSlug}
-                    pages={pages}
-                    canEdit={canEdit}
-                    onFileSelect={setSelectedFile}
-                    selectedFile={selectedFile}
-                    vsCodeMode={true}
-                  />
-                </TabsContent>
+      {/* Sidebar Toggle Button (when collapsed and no diff open) */}
+      {sidebarCollapsed && !selectedFile && (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="fixed bottom-4 right-4 z-50 h-12 w-12 rounded-full shadow-lg"
+          onClick={toggleSidebar}
+        >
+          <PanelLeft className="h-6 w-6" />
+        </Button>
+      )}
 
-                <TabsContent value="pages" className="h-full m-0 p-2 overflow-y-auto">
-                  <PagesList
-                    pages={pages}
-                    bookId={bookId}
-                    isReorderMode={isReorderMode}
-                    isDeleteMode={isDeleteMode}
-                    canEdit={canEdit}
-                    onDeleteModeChange={onDeleteModeChange}
-                    onChatToggle={onChatToggle}
-                    hasActiveChat={hasActiveChat}
-                  />
-                </TabsContent>
+      {/* Sidebar Overlay (only show when sidebar open and no diff) */}
+      {!sidebarCollapsed && !selectedFile && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 transition-opacity"
+          onClick={toggleSidebar}
+        />
+      )}
 
-                {canEdit && (
-                  <TabsContent value="versions" className="h-full m-0 p-2 overflow-y-auto">
-                    <VersionHistory
-                      bookId={bookId}
-                      bookName={bookName}
-                      allowRollback={isOwner}
-                      onPreview={(versionId) => {
-                        window.location.href = `/books/${bookSlug}/version/${versionId}`;
-                      }}
-                    />
-                  </TabsContent>
-                )}
-              </div>
-            </Tabs>
-          </>
-        )}
-      </div>
-
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Top Bar */}
-        <div className="flex items-center gap-2 px-4 py-2 border-b border-border bg-background">
-          {sidebarCollapsed && (
+      {/* Sidebar Panel (hide when showing full-screen diff) */}
+      {!selectedFile && (
+        <div
+          className={cn(
+            "fixed top-0 right-0 h-full bg-background border-l border-border shadow-2xl z-50 transition-transform duration-300 ease-in-out flex flex-col",
+            sidebarCollapsed ? "translate-x-full" : "translate-x-0"
+          )}
+          style={{ width: sidebarWidth }}
+        >
+          {/* Sidebar Header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+            <h3 className="font-semibold text-sm truncate">{bookName}</h3>
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8"
+              className="h-6 w-6 flex-shrink-0"
               onClick={toggleSidebar}
             >
-              <PanelLeft className="h-4 w-4" />
+              <PanelLeftClose className="h-4 w-4" />
             </Button>
-          )}
-          <div className="flex-1">
-            {selectedFile ? (
-              <div className="text-sm font-medium">
-                Viewing diff for page {pages.find(p => p.id === selectedFile)?.title || selectedFile}
-              </div>
-            ) : (
-              <div className="text-sm text-muted-foreground">
-                Select a file from the sidebar to view changes
-              </div>
-            )}
           </div>
-        </div>
 
-        {/* Diff Viewer or Empty State */}
-        <div className="flex-1 overflow-auto p-4">
-          {selectedFile ? (
-            <div className="max-w-7xl mx-auto">
-              {/* This will be rendered by UncommittedChangesPanel in VSCode mode */}
-              <div id="vscode-diff-viewer" />
+          {/* Tabs - Only Changes */}
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
+            <TabsList className="m-2 grid w-auto grid-cols-1 rounded-md">
+              <TabsTrigger value="changes" className="gap-1.5 text-xs">
+                <FileEdit className="h-3.5 w-3.5" />
+                <span>Changes</span>
+              </TabsTrigger>
+            </TabsList>
+
+            {/* Tab Content */}
+            <div className="flex-1 overflow-hidden">
+              <TabsContent value="changes" className="h-full m-0 p-2 overflow-y-auto">
+                <UncommittedChangesPanel
+                  bookId={bookId}
+                  bookSlug={bookSlug}
+                  pages={pages}
+                  canEdit={canEdit}
+                  onFileSelect={setSelectedFile}
+                  selectedFile={selectedFile}
+                  vsCodeMode={false}
+                />
+              </TabsContent>
             </div>
-          ) : (
-            <div className="h-full flex items-center justify-center text-muted-foreground">
-              <div className="text-center">
-                <FileEdit className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p className="text-lg font-medium">No file selected</p>
-                <p className="text-sm mt-2">Select a file from the Changes tab to view the diff</p>
-              </div>
-            </div>
-          )}
+          </Tabs>
         </div>
-      </div>
-    </div>
+      )}
+    </>
   );
 }

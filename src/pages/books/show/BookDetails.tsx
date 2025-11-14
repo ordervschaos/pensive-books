@@ -18,17 +18,19 @@ import { setPageTitle } from "@/utils/pageTitle";
 import { Helmet } from "react-helmet-async";
 import { executeBookOperation } from "@/lib/book-operations";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { jsonToText, getWordCountFromContent } from "@/utils/tiptapHelpers";
 import { UncommittedChangesBadge } from "./components/UncommittedChangesBadge";
 import { CommitDialog } from "./components/CommitDialog";
-import { VersionHistory } from "./components/VersionHistory";
 import { PublishingDialog } from "@/components/book/PublishingDialog";
 import { BookSidebar } from "./components/BookSidebar";
 import { VSCodeLayout } from "./components/VSCodeLayout";
+import { VersionService } from "@/services/VersionService";
 import { GitCommit, History, FileText } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const LOCALSTORAGE_BOOKMARKS_KEY = 'bookmarked_pages';
@@ -96,6 +98,13 @@ const BookDetails = () => {
   const [isCommitDialogOpen, setIsCommitDialogOpen] = useState(false);
   const [isPublishingDialogOpen, setIsPublishingDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("pages");
+
+  // Fetch latest version for version badge
+  const { data: latestVersion } = useQuery({
+    queryKey: ["latest-version", numericBookId],
+    queryFn: () => VersionService.getLatestVersion(numericBookId),
+    enabled: numericBookId > 0,
+  });
 
   const fetchBookmarkedPage = useCallback(async (session: any) => {
     try {
@@ -599,31 +608,56 @@ const BookDetails = () => {
 
               {canEdit && (
                 <div className="flex items-center gap-2">
-                  <UncommittedChangesBadge bookId={getNumericId(bookSlug)} showCount />
+                  {/* Draft Badge */}
+                  <UncommittedChangesBadge
+                    bookId={getNumericId(bookSlug)}
+                    bookSlug={bookSlug}
+                    showCount
+                  />
+                  
+                  {/* Version Badge */}
+                  {latestVersion ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => navigate(`/books/${bookSlug}/versions`)}
+                      className="gap-1.5 h-7 px-2.5 text-xs font-mono"
+                    >
+                      <History className="h-3.5 w-3.5" />
+                      v{latestVersion.version_number}
+                    </Button>
+                  ) : (
+                    <Badge
+                      variant="outline"
+                      className="gap-1.5 h-7 px-2.5 text-xs bg-muted/50 text-muted-foreground border-muted-foreground/20"
+                    >
+                      <History className="h-3.5 w-3.5" />
+                      No version
+                    </Badge>
+                  )}
+                  
+                  {/* Save Button */}
                   <Button
                     size="sm"
-                    variant="outline"
+                    variant="default"
                     onClick={() => setIsCommitDialogOpen(true)}
-                    className="gap-2"
+                    className="gap-1.5 h-7 px-3 text-xs bg-primary hover:bg-primary/90"
                   >
-                    <GitCommit className="h-4 w-4" />
-                    Commit Changes
+                    <GitCommit className="h-3.5 w-3.5" />
+                    Save this version
                   </Button>
                 </div>
               )}
             </div>
 
-            {/* VSCode-style Layout */}
-            <VSCodeLayout
-              bookId={getNumericId(bookSlug)}
-              bookSlug={bookSlug || ""}
-              bookName={book.name}
+            {/* Pages List - Center Stage */}
+            <PagesList
               pages={pages}
-              canEdit={canEdit}
-              isOwner={isOwner}
+              bookId={getNumericId(bookSlug)}
               isReorderMode={isReorderMode}
               isDeleteMode={isDeleteMode}
-              onDeleteModeChange={setIsDeleteMode}
+              canEdit={canEdit}
+              onDeleteModeChange={(isDelete) => setIsDeleteMode(isDelete)}
               onChatToggle={() => setIsChatOpen(!isChatOpen)}
               hasActiveChat={isChatOpen}
             />
@@ -712,7 +746,20 @@ const BookDetails = () => {
             onSuccess={handlePublishingSuccess}
           />
 
-          {/* BookSidebar replaced by VSCodeLayout above */}
+          {/* VSCode-style Sidebar for Changes and Versions */}
+          <VSCodeLayout
+            bookId={getNumericId(bookSlug)}
+            bookSlug={bookSlug || ""}
+            bookName={book.name}
+            pages={pages}
+            canEdit={canEdit}
+            isOwner={isOwner}
+            isReorderMode={isReorderMode}
+            isDeleteMode={isDeleteMode}
+            onDeleteModeChange={setIsDeleteMode}
+            onChatToggle={() => setIsChatOpen(!isChatOpen)}
+            hasActiveChat={isChatOpen}
+          />
         </div>
       </div>
     </div>

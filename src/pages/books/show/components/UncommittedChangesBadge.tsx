@@ -15,9 +15,12 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { formatDistanceToNow } from "date-fns";
+import { useNavigate } from "react-router-dom";
 
 interface UncommittedChangesBadgeProps {
   bookId: number;
+  /** Book slug for navigation */
+  bookSlug?: string;
   /** Whether to show count of changed pages */
   showCount?: boolean;
   /** Size variant */
@@ -26,11 +29,19 @@ interface UncommittedChangesBadgeProps {
 
 export function UncommittedChangesBadge({
   bookId,
+  bookSlug,
   showCount = false,
   variant = "default",
 }: UncommittedChangesBadgeProps) {
+  const navigate = useNavigate();
   const { hasChanges, changedPages, lastCommitAt, isLoading } =
     useUncommittedChanges(bookId);
+
+  const handleClick = () => {
+    if (hasChanges && bookSlug) {
+      navigate(`/books/${bookSlug}/draft`);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -59,11 +70,10 @@ export function UncommittedChangesBadge({
           <TooltipTrigger asChild>
             <Badge
               variant="secondary"
-              className="gap-1 bg-amber-100 text-amber-900 hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-200"
+              className="gap-1.5 h-7 px-2.5 text-xs bg-amber-100 text-amber-900 hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-200 cursor-pointer transition-all border border-amber-200 dark:border-amber-800"
+              onClick={handleClick}
             >
-              <FileEdit
-                className={variant === "sm" ? "h-2.5 w-2.5" : "h-3 w-3"}
-              />
+              <FileEdit className="h-3.5 w-3.5" />
               Draft
               {showCount && changedPages > 0 && (
                 <span className="ml-0.5">({changedPages})</span>
@@ -72,6 +82,7 @@ export function UncommittedChangesBadge({
           </TooltipTrigger>
           <TooltipContent>
             <p>{tooltipText}</p>
+            {bookSlug && <p className="text-xs mt-1 text-muted-foreground">Click to view changes</p>}
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
@@ -92,11 +103,9 @@ export function UncommittedChangesBadge({
         <TooltipTrigger asChild>
           <Badge
             variant="outline"
-            className="gap-1 bg-green-50 text-green-700 border-green-200 hover:bg-green-100 dark:bg-green-900/20 dark:text-green-300 dark:border-green-800"
+            className="gap-1.5 h-7 px-2.5 text-xs bg-green-50 text-green-700 border-green-200 hover:bg-green-100 dark:bg-green-900/20 dark:text-green-300 dark:border-green-800"
           >
-            <CheckCircle2
-              className={variant === "sm" ? "h-2.5 w-2.5" : "h-3 w-3"}
-            />
+            <CheckCircle2 className="h-3.5 w-3.5" />
             Up to date
           </Badge>
         </TooltipTrigger>

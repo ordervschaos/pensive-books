@@ -28,6 +28,8 @@ export interface PageDiff {
   status: FileStatus;
   oldContent: string;
   newContent: string;
+  oldContentJson?: any;  // TipTap JSON for old version
+  newContentJson?: any;  // TipTap JSON for new version
   lastModified: string;
   slug: string;
   blockDiffs?: BlockDiff[];
@@ -35,14 +37,106 @@ export interface PageDiff {
 
 export class DiffService {
   /**
+   * Gets the status of multiple pages in batch (much more efficient)
+   * @param pageIds - Array of page IDs to check
+   * @param bookId - The book ID
+   * @param lastVersion - Optional: The last committed version (to avoid repeated queries)
+   */
+  static async getPageStatusesBatch(
+    pageIds: number[],
+    bookId: number,
+    lastVersion?: any
+  ): Promise<Array<{ pageId: number; status: FileStatus | null }>> {
+    if (pageIds.length === 0) {
+      return [];
+    }
+
+    // Get the last committed version if not provided
+    if (!lastVersion) {
+      lastVersion = await VersionService.getLatestVersion(bookId);
+    }
+
+    if (!lastVersion) {
+      // No commits yet, so all pages are "added"
+      return pageIds.map(pageId => ({ pageId, status: "added" as FileStatus }));
+    }
+
+    // Batch fetch all page versions at once
+    const { data: pageVersions = [] } = await supabase
+      .from("page_versions")
+      .select("*")
+      .eq("book_version_id", lastVersion.id)
+      .in("page_id", pageIds);
+
+    // Batch fetch all current pages at once
+    const { data: currentPages = [] } = await supabase
+      .from("pages")
+      .select("*")
+      .in("id", pageIds)
+      .eq("archived", false);
+
+    // Create maps for quick lookup
+    const pageVersionMap = new Map(
+      pageVersions.map(pv => [pv.page_id, pv])
+    );
+    const currentPageMap = new Map(
+      currentPages.map(p => [p.id, p])
+    );
+
+    // Process each page
+    return pageIds.map(pageId => {
+      const pageVersion = pageVersionMap.get(pageId);
+      const currentPage = currentPageMap.get(pageId);
+
+      if (!pageVersion && currentPage) {
+        return { pageId, status: "added" as FileStatus };
+      }
+
+      if (pageVersion && !currentPage) {
+        return { pageId, status: "deleted" as FileStatus };
+      }
+
+      // Both exist - check if content actually changed
+      if (pageVersion && currentPage) {
+        // Compare content by converting both to text
+        const oldContent = pageVersion.content
+          ? jsonToText(pageVersion.content)
+          : "";
+        const newContent = currentPage.content
+          ? jsonToText(currentPage.content)
+          : "";
+
+        // Also compare titles
+        const oldTitle = (pageVersion.title || "").trim();
+        const newTitle = (currentPage.title || "").trim();
+
+        // If content and title are identical, return null (unchanged)
+        if (oldContent === newContent && oldTitle === newTitle) {
+          return { pageId, status: null }; // Content unchanged
+        }
+
+        return { pageId, status: "modified" as FileStatus };
+      }
+
+      return { pageId, status: "modified" as FileStatus };
+    });
+  }
+
+  /**
    * Gets the status of a page (modified, added, or deleted)
+   * @param pageId - The page ID to check
+   * @param bookId - The book ID
+   * @param lastVersion - Optional: The last committed version (to avoid repeated queries)
    */
   static async getPageStatus(
     pageId: number,
-    bookId: number
-  ): Promise<FileStatus> {
-    // Get the last committed version
-    const lastVersion = await VersionService.getLatestVersion(bookId);
+    bookId: number,
+    lastVersion?: any
+  ): Promise<FileStatus | null> {
+    // Get the last committed version if not provided
+    if (!lastVersion) {
+      lastVersion = await VersionService.getLatestVersion(bookId);
+    }
 
     if (!lastVersion) {
       // No commits yet, so all pages are "added"
@@ -73,15 +167,41 @@ export class DiffService {
       return "deleted";
     }
 
+    // Both exist - check if content actually changed
+    if (pageVersion && currentPage) {
+      // Compare content by converting both to text
+      const oldContent = pageVersion.content
+        ? jsonToText(pageVersion.content)
+        : "";
+      const newContent = currentPage.content
+        ? jsonToText(currentPage.content)
+        : "";
+
+      // Also compare titles
+      const oldTitle = (pageVersion.title || "").trim();
+      const newTitle = (currentPage.title || "").trim();
+
+      // If content and title are identical, return null (unchanged)
+      if (oldContent === newContent && oldTitle === newTitle) {
+        return null; // Content unchanged
+      }
+
+      return "modified";
+    }
+
     return "modified";
   }
 
   /**
    * Gets the diff for a specific page
+   * @param pageId - The page ID to diff
+   * @param bookId - The book ID
+   * @param lastVersion - Optional: The last committed version (to avoid repeated queries)
    */
   static async getPageDiff(
     pageId: number,
-    bookId: number
+    bookId: number,
+    lastVersion?: any
   ): Promise<PageDiff | null> {
     // Get current page
     const { data: currentPage, error: currentError } = await supabase
@@ -95,8 +215,10 @@ export class DiffService {
       throw new Error(`Failed to fetch current page: ${currentError.message}`);
     }
 
-    // Get the last committed version
-    const lastVersion = await VersionService.getLatestVersion(bookId);
+    // Get the last committed version if not provided
+    if (!lastVersion) {
+      lastVersion = await VersionService.getLatestVersion(bookId);
+    }
 
     let oldContent = "";
     let oldTitle = "";
@@ -142,6 +264,8 @@ export class DiffService {
       status,
       oldContent,
       newContent,
+      oldContentJson,
+      newContentJson,
       lastModified: currentPage?.updated_at || new Date().toISOString(),
       slug: currentPage?.slug || pageId.toString(),
       blockDiffs,

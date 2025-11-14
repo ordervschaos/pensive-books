@@ -25,6 +25,8 @@ import ProfileEdit from "@/pages/user/profile/ProfileEdit";
 import MyBooks from "@/pages/books/index/MyBooks";
 import NewBook from "@/pages/books/new/NewBook";
 import BookDetails from "@/pages/books/show/BookDetails";
+import DraftChanges from "@/pages/books/show/DraftChanges";
+import VersionHistoryPage from "@/pages/books/show/VersionHistoryPage";
 import BookEdit from "@/pages/books/edit/BookEdit";
 import BookFlashcards from "@/pages/books/flashcards/BookFlashcards";
 import GenerateBook from "@/pages/books/generate/GenerateBook";
@@ -155,6 +157,22 @@ export default function App() {
                   element={
                     <PrivateRoute>
                       <VersionPreview />
+                    </PrivateRoute>
+                  }
+                />
+                <Route
+                  path="/books/:bookSlug/versions"
+                  element={
+                    <PrivateRoute>
+                      <VersionHistoryPage />
+                    </PrivateRoute>
+                  }
+                />
+                <Route
+                  path="/books/:bookSlug/draft"
+                  element={
+                    <PrivateRoute>
+                      <DraftChanges />
                     </PrivateRoute>
                   }
                 />
