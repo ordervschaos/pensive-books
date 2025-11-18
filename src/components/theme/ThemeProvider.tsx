@@ -60,9 +60,9 @@ export function ThemeProvider({
       if (savedMode) {
         return savedMode
       }
-      return getSystemMode()
     }
-    return defaultMode || 'light'
+    // Use defaultMode if provided, otherwise use system preference, otherwise use 'light'
+    return defaultMode || getSystemMode()
   }
 
   const [themeName, setThemeNameState] = useState<ThemeName>(getInitialTheme)

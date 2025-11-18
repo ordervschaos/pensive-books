@@ -79,7 +79,7 @@ export default function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider defaultTheme="light">
+      <ThemeProvider defaultTheme="coffee" defaultMode="dark">
         <PageDisplaySettingsProvider>
           <Router basename={basename}>
           <div className="min-h-screen flex flex-col">
