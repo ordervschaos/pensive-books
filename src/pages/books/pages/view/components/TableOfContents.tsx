@@ -1,5 +1,4 @@
 import React, { useEffect, useRef } from "react";
-import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { PreloadLink } from "./PreloadLink";
 
@@ -43,18 +42,17 @@ export function TableOfContents({
   }
 
   return (
-    <div className="py-2 z-10 bg-background border-border">
-      <div className="px-4 py-2">
-        <h2 className="mb-2 text-lg font-semibold">Table of Contents</h2>
+    <div className="h-full flex flex-col py-6 px-4">
+      <div className="mb-4">
+        <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide px-2">Pages</h2>
       </div>
-      <Separator />
-      <nav ref={containerRef} className="grid items-start gap-2 p-2 scrollbar-hide">
+      <nav ref={containerRef} className="flex-1 flex flex-col gap-0.5 overflow-y-auto scrollbar-hide">
         {pages.map((page) => {
           const isActive = page.id === currentPageId;
-          const slug = page.title ? 
-            `${page.id}-${page.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}` : 
+          const slug = page.title ?
+            `${page.id}-${page.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}` :
             page.id.toString();
-          
+
           return (
             <PreloadLink
               key={page.id}
@@ -63,8 +61,9 @@ export function TableOfContents({
               bookId={parseInt(bookId)}
               pageId={page.id}
               className={cn(
-                "group flex items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground",
-                isActive && "bg-accent"
+                "flex items-center rounded-md px-2 py-1.5 text-sm transition-colors",
+                "hover:bg-accent/50 hover:text-foreground",
+                isActive ? "text-foreground font-medium bg-accent/30" : "text-muted-foreground"
               )}
               onClick={() => onPageSelect && onPageSelect()}
             >

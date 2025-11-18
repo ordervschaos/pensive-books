@@ -6,12 +6,6 @@ import { PageLoading } from "@/components/page/PageLoading";
 import { PageNotFound } from "./components/PageNotFound";
 import { useBookPermissions } from "@/hooks/use-book-permissions";
 import { TableOfContents } from "./components/TableOfContents";
-import {
-  SidebarProvider,
-  Sidebar,
-  SidebarContent,
-  SidebarInset
-} from "@/components/ui/sidebar";
 import { PageChatPanel } from "./components/PageChatPanel";
 import { PageMeta } from "./components/PageMeta";
 import { SlugService } from "@/utils/slugService";
@@ -235,86 +229,75 @@ const PageView = () => {
 
   // 15. Main render - Pure composition
   return (
-    <SidebarProvider defaultOpen={false}>
-      <div className="min-h-[calc(100vh-56px)] flex flex-col bg-background w-full">
+    <div className="min-h-[calc(100vh-56px)] flex bg-background w-full">
+      {/* SEO Meta Tags */}
+      <PageMeta page={page} book={book} />
 
-        {/* SEO Meta Tags */}
-        <PageMeta page={page} book={book} />
+      {/* Left Sidebar: Pages List - Always visible, minimal design */}
+      <aside className="hidden lg:flex w-64 flex-col border-r border-border/40 bg-background/50">
+        <TableOfContents
+          pages={allPages}
+          bookId={numericBookId.toString()}
+          currentPageId={numericPageId}
+        />
+      </aside>
 
-        <div className="flex flex-1 h-full">
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col">
+        <div className="flex-1 container max-w-5xl mx-auto px-4 py-4 flex flex-col gap-4">
+          <div className="flex-1 flex flex-col">
 
-          {/* Left Sidebar: Table of Contents */}
-          <Sidebar variant="sidebar" side="left">
-            <SidebarContent>
-              <TableOfContents
-                pages={allPages}
-                bookId={numericBookId.toString()}
-                currentPageId={numericPageId}
-              />
-            </SidebarContent>
-          </Sidebar>
-
-          {/* Main Content Area */}
-          <SidebarInset className="flex-1 flex flex-col">
-            <div className="flex flex-1 flex-col">
-              <div className="flex-1 container max-w-5xl mx-auto px-4 py-4 flex flex-col gap-4">
-                <div className="flex-1 flex flex-col">
-
-                  {/* Page Editor/Viewer */}
-                  <PageContent
-                    key={`current-page-${page.id.toString()}`} // Force remount when page changes to prevent stale content
-                    jsonContent={page.content}
-                    onSave={handleSave}
-                    saving={saving}
-                    pageType={pageTypeRef.current}
-                    onPageTypeChange={handlePageTypeChange}
-                    editable={canEdit}
-                    onEditingChange={setIsEditing}
-                    canEdit={canEdit}
-                    pageId={numericPageId.toString()}
-                    isEditing={isEditing}
-                    setIsEditing={setIsEditing}
-                    onToggleChat={() => setIsChatOpen(!isChatOpen)}
-                    hasActiveChat={isChatOpen}
-                    bookId={numericBookId.toString()}
-                    onDeletePage={handleDeletePage}
-                  />
-
-                  {/* Navigation Controls */}
-                  <PageNavigation
-                    bookId={numericBookId.toString()}
-                    currentIndex={currentIndex}
-                    totalPages={totalPages}
-                    onNavigate={navigateToPage}
-                    nextPageTitle={nextPageTitle}
-                    bookTitle={book.name}
-                    isEditing={isEditing}
-                    onNewPage={createNewPage}
-                    canEdit={canEdit}
-                    nextPageId={nextPageId}
-                    setIsEditing={setIsEditing}
-                  />
-
-                </div>
-              </div>
-            </div>
-
-            {/* Right Sidebar: AI Chat Panel */}
-            <PageChatPanel
-              pageId={numericPageId.toString()}
-              pageContent={page.content}
+            {/* Page Editor/Viewer */}
+            <PageContent
+              key={`current-page-${page.id.toString()}`} // Force remount when page changes to prevent stale content
+              jsonContent={page.content}
+              onSave={handleSave}
+              saving={saving}
+              pageType={pageTypeRef.current}
+              onPageTypeChange={handlePageTypeChange}
+              editable={canEdit}
+              onEditingChange={setIsEditing}
               canEdit={canEdit}
-              isOpen={isChatOpen}
-              onClose={() => setIsChatOpen(false)}
-              onApplyEdit={(oldText, newText) => {
-                handleApplyEdit(oldText, newText, page.content);
-              }}
+              pageId={numericPageId.toString()}
+              isEditing={isEditing}
+              setIsEditing={setIsEditing}
+              onToggleChat={() => setIsChatOpen(!isChatOpen)}
+              hasActiveChat={isChatOpen}
+              bookId={numericBookId.toString()}
+              onDeletePage={handleDeletePage}
             />
 
-          </SidebarInset>
+            {/* Navigation Controls */}
+            <PageNavigation
+              bookId={numericBookId.toString()}
+              currentIndex={currentIndex}
+              totalPages={totalPages}
+              onNavigate={navigateToPage}
+              nextPageTitle={nextPageTitle}
+              bookTitle={book.name}
+              isEditing={isEditing}
+              onNewPage={createNewPage}
+              canEdit={canEdit}
+              nextPageId={nextPageId}
+              setIsEditing={setIsEditing}
+            />
+
+          </div>
         </div>
       </div>
-    </SidebarProvider>
+
+      {/* Right Sidebar: AI Chat Panel */}
+      <PageChatPanel
+        pageId={numericPageId.toString()}
+        pageContent={page.content}
+        canEdit={canEdit}
+        isOpen={isChatOpen}
+        onClose={() => setIsChatOpen(false)}
+        onApplyEdit={(oldText, newText) => {
+          handleApplyEdit(oldText, newText, page.content);
+        }}
+      />
+    </div>
   );
 };
 
