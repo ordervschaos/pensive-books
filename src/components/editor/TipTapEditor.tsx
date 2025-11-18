@@ -14,7 +14,6 @@ interface TipTapEditorProps {
   onChange: EditorChangeHandler;
   editable?: boolean;
   isEditing?: boolean;
-  onToggleEdit?: () => void;
   editorConfig?: Record<string, unknown>;
   className?: string;
   fontSizeClassName?: string;
@@ -34,7 +33,6 @@ export const TipTapEditor = ({
   onChange,
   editable = true,
   isEditing = true,
-  onToggleEdit,
   editorConfig,
   className = '',
   fontSizeClassName = '',
@@ -156,10 +154,9 @@ export const TipTapEditor = ({
 
   return (
     <div className="h-full flex flex-col min-h-[600px]">
-        <EditorToolbar 
-          editor={editor} 
-          isEditing={isEditing} 
-          onToggleEdit={onToggleEdit}
+        <EditorToolbar
+          editor={editor}
+          isEditing={isEditing}
           editable={editable}
           customButtons={customButtons}
           onToggleChat={onToggleChat}

@@ -209,7 +209,6 @@ export const PageContent = ({
                 onChange={handleContentChange}
                 editable={canEdit}
                 isEditing={isEditing && editable}
-                onToggleEdit={() => handleEditingChange(!isEditing)} // Edit button in toolbar and FloatingActions
                 onToggleChat={undefined} // Chat button now handled by FloatingActions
                 hasActiveChat={hasActiveChat}
                 centerContent={pageType === 'section'}
@@ -224,7 +223,6 @@ export const PageContent = ({
               {/* Floating action buttons */}
               <FloatingActions
                 isEditing={isEditing && editable}
-                onToggleEdit={() => handleEditingChange(!isEditing)}
                 canEdit={canEdit}
                 onToggleChat={onToggleChat}
                 hasActiveChat={hasActiveChat}

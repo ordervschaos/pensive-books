@@ -5,13 +5,12 @@ import { FloatingAudioPlayer } from "./FloatingAudioPlayer";
 interface FloatingActionsProps {
   // Edit/Preview props
   isEditing: boolean;
-  onToggleEdit?: () => void;
   canEdit: boolean;
-  
+
   // Chat props
   onToggleChat?: () => void;
   hasActiveChat?: boolean;
-  
+
   // Audio props
   pageId?: string;
   audioState?: any; // Audio state from parent
@@ -19,7 +18,6 @@ interface FloatingActionsProps {
 
 export const FloatingActions = ({
   isEditing,
-  onToggleEdit,
   canEdit,
   onToggleChat,
   hasActiveChat,
