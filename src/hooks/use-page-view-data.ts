@@ -25,6 +25,7 @@ interface PageListItem {
   id: number;
   title: string;
   page_index: number;
+  page_type?: 'text' | 'section';
 }
 
 interface UsePageViewDataReturn {
@@ -144,7 +145,7 @@ export const usePageViewData = (
       // Fetch all pages for navigation
       const { data: pagesData, error: pagesError } = await supabase
         .from('pages')
-        .select('id, title, page_index')
+        .select('id, title, page_index, page_type')
         .eq('book_id', numericBookId)
         .eq('archived', false)
         .order('page_index', { ascending: true });

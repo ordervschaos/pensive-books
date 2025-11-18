@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { PreloadLink } from "./PreloadLink";
 
@@ -6,6 +6,7 @@ type PageItem = {
   id: number;
   title: string;
   page_index: number;
+  page_type?: 'text' | 'section';
 };
 
 interface TableOfContentsProps {
@@ -49,6 +50,7 @@ export function TableOfContents({
       <nav ref={containerRef} className="flex-1 flex flex-col gap-0.5 overflow-y-auto scrollbar-hide">
         {pages.map((page) => {
           const isActive = page.id === currentPageId;
+          const isSection = page.page_type === 'section';
           const slug = page.title ?
             `${page.id}-${page.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}` :
             page.id.toString();
@@ -61,13 +63,20 @@ export function TableOfContents({
               bookId={parseInt(bookId)}
               pageId={page.id}
               className={cn(
-                "flex items-center rounded-md px-2 py-1.5 text-sm transition-colors",
+                "flex items-center rounded-md px-2 transition-colors",
+                isSection ? "py-2 mt-2" : "py-1.5",
                 "hover:bg-accent/50 hover:text-foreground",
-                isActive ? "text-foreground font-medium bg-accent/30" : "text-muted-foreground"
+                isActive
+                  ? "text-foreground font-medium bg-accent/30"
+                  : isSection
+                  ? "text-foreground font-semibold"
+                  : "text-muted-foreground"
               )}
               onClick={() => onPageSelect && onPageSelect()}
             >
-              <span className="truncate">{page.title || `Page ${page.page_index + 1}`}</span>
+              <span className={cn("truncate", isSection && "text-base")}>
+                {page.title || `Page ${page.page_index + 1}`}
+              </span>
             </PreloadLink>
           );
         })}
