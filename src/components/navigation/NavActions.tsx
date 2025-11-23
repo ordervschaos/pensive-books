@@ -1,4 +1,4 @@
-import { LogOut, LogIn, Search, MoreVertical, Moon, Sun, Coffee, Palette, Package, Pencil, Eye } from "lucide-react";
+import { LogOut, LogIn, Search, MoreVertical, Moon, Sun, Coffee, Palette, Package } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -13,7 +13,6 @@ import { useTheme } from "@/components/theme/ThemeProvider";
 import { NavActionsProps } from "./types";
 import { PageDisplayControls } from "./PageDisplayControls";
 import { useLocation } from "react-router-dom";
-import { useGlobalEditMode } from "@/contexts/EditModeContext";
 
 export const NavActions = ({
   isAuthenticated,
@@ -25,35 +24,11 @@ export const NavActions = ({
   const { themeName, themeMode, setThemeName, setThemeMode } = useTheme();
   const location = useLocation();
   const isPageRoute = location.pathname.includes('/pages/');
-  const { isEditing, setIsEditing, canEdit } = useGlobalEditMode();
 
   return (
     <div className="w-[120px] flex items-center gap-2 justify-end shrink-0">
       {/* Desktop buttons */}
       <div className="hidden sm:flex items-center gap-2">
-        {/* Edit/Preview Switch - First in the list */}
-        {isPageRoute && canEdit && (
-          <div className="flex items-center gap-1 p-1 rounded-md border border-border bg-muted/50">
-            <Button
-              variant={isEditing ? "default" : "ghost"}
-              size="sm"
-              onClick={() => setIsEditing(true)}
-              className={`h-7 px-2 text-xs ${!isEditing ? "hover:bg-transparent" : ""}`}
-            >
-              <Pencil className="h-3 w-3 mr-1" />
-              Edit
-            </Button>
-            <Button
-              variant={!isEditing ? "default" : "ghost"}
-              size="sm"
-              onClick={() => setIsEditing(false)}
-              className={`h-7 px-2 text-xs ${isEditing ? "hover:bg-transparent" : ""}`}
-            >
-              <Eye className="h-3 w-3 mr-1" />
-              Preview
-            </Button>
-          </div>
-        )}
         {isBookRoute && (
           <Button variant="ghost" size="icon" onClick={() => setSearchOpen(true)}>
             <Search className="h-4 w-4" />
@@ -81,34 +56,6 @@ export const NavActions = ({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            {/* Edit/Preview Switch - First in mobile menu */}
-            {isPageRoute && canEdit && (
-              <>
-                <DropdownMenuLabel>Mode</DropdownMenuLabel>
-                <div className="flex gap-1 p-2">
-                  <Button
-                    variant={isEditing ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setIsEditing(true)}
-                    className="flex-1 h-8 text-xs"
-                  >
-                    <Pencil className="h-3 w-3 mr-1" />
-                    Edit
-                  </Button>
-                  <Button
-                    variant={!isEditing ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setIsEditing(false)}
-                    className="flex-1 h-8 text-xs"
-                  >
-                    <Eye className="h-3 w-3 mr-1" />
-                    Preview
-                  </Button>
-                </div>
-                <DropdownMenuSeparator />
-              </>
-            )}
-
             {isBookRoute && (
               <DropdownMenuItem onClick={() => setSearchOpen(true)}>
                 <Search className="h-4 w-4 mr-2" />

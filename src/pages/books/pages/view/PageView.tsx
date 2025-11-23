@@ -18,10 +18,10 @@ import { useBookmarkTracking } from "@/hooks/use-bookmark-tracking";
 import { usePageNavigation } from "@/hooks/use-page-navigation";
 import { useKeyboardNavigation } from "@/hooks/use-keyboard-navigation";
 import { usePageSave } from "@/hooks/use-page-save";
+import { useEditMode } from "@/hooks/use-edit-mode";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { usePageCreation } from "@/hooks/use-page-creation";
 import { useNextPagePreloader } from "@/hooks/use-next-page-preloader";
-import { useGlobalEditMode } from "@/contexts/EditModeContext";
 
 /**
  * Fully refactored PageView component
@@ -52,19 +52,14 @@ const PageView = () => {
   // 4. Check permissions
   const { canEdit, loading: permissionsLoading } = useBookPermissions(numericBookId.toString());
 
-  // 5. Global edit mode state
-  const { isEditing, setIsEditing, setCanEdit: setGlobalCanEdit } = useGlobalEditMode();
+  // 5. Local UI state
+  const [isEditing, setIsEditing] = useEditMode(canEdit);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const { toast } = useToast();
-
-  // 6. Update global canEdit when permissions change
-  useEffect(() => {
-    setGlobalCanEdit(canEdit);
-  }, [canEdit, setGlobalCanEdit]);
   
   // Use ref to track page type independently to avoid triggering content updates
   const pageTypeRef = useRef<'text' | 'section'>(page?.page_type as 'text' | 'section' || 'text');
-
+  
   // Update pageTypeRef whenever page changes to prevent persistence between pages
   useEffect(() => {
     if (page?.page_type) {
@@ -72,7 +67,7 @@ const PageView = () => {
     }
   }, [page?.id, page?.page_type]); // Re-run when page ID or page_type changes
 
-  // 7. Page type update function
+  // 6. Page type update function
   const handlePageTypeChange = async (newPageType: 'text' | 'section') => {
     if (!canEdit || !page) return;
     
@@ -112,7 +107,7 @@ const PageView = () => {
     }
   };
 
-  // 8. Page save logic with proper state update
+  // 7. Page save logic with proper state update
   const { handleSave, handleApplyEdit, saving } = usePageSave(
     numericPageId.toString(),
     canEdit,
@@ -125,7 +120,7 @@ const PageView = () => {
     numericBookId // Pass bookId for proper cache updates
   );
 
-  // 9. Navigation logic
+  // 8. Navigation logic
   const { navigateToPage, navigateNext, navigatePrev } = usePageNavigation(
     bookSlug, // Used for URL generation only
     numericBookId,
@@ -133,10 +128,10 @@ const PageView = () => {
     currentIndex
   );
 
-  // 10. Page creation logic
+  // 9. Page creation logic
   const { createNewPage } = usePageCreation(bookSlug, numericBookId, canEdit); // bookSlug used for URL generation
 
-  // 11. Page deletion logic
+  // 10. Page deletion logic
   const handleDeletePage = async () => {
     if (!canEdit) {
       toast({
@@ -202,15 +197,15 @@ const PageView = () => {
     }
   };
 
-  // 12. Side effects (auto-tracking)
+  // 11. Side effects (auto-tracking)
   useBookmarkTracking(numericBookId, currentIndex);
   useKeyboardNavigation({ onNext: navigateNext, onPrev: navigatePrev }, isEditing);
   usePageTitle(page?.title, book?.name);
 
-  // 13. Preload next page for faster navigation
+  // 12. Preload next page for faster navigation
   useNextPagePreloader(numericBookId, nextPageId);
 
-  // 14. Loading state
+  // 13. Loading state
   if (dataLoading || permissionsLoading) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
@@ -221,7 +216,7 @@ const PageView = () => {
     );
   }
 
-  // 15. Not found state
+  // 14. Not found state
   if (!page || !book) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
@@ -232,7 +227,7 @@ const PageView = () => {
     );
   }
 
-  // 16. Main render - Pure composition
+  // 15. Main render - Pure composition
   return (
     <div className="min-h-[calc(100vh-56px)] flex bg-background w-full">
       {/* SEO Meta Tags */}

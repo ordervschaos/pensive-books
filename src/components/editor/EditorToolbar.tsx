@@ -15,6 +15,7 @@ import { useMediaQuery } from "@/hooks/use-media-query";
 interface EditorToolbarProps {
   editor: Editor | null;
   isEditing: boolean;
+  onToggleEdit: () => void;
   editable: boolean;
   customButtons?: React.ReactNode;
   onToggleChat?: () => void;
@@ -24,7 +25,7 @@ interface EditorToolbarProps {
   onDeletePage?: () => void;
 }
 
-export const EditorToolbar = ({ editor, isEditing, editable, customButtons, onToggleChat, hasActiveChat, pageType, onPageTypeChange, onDeletePage }: EditorToolbarProps) => {
+export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, customButtons, onToggleChat, hasActiveChat, pageType, onPageTypeChange, onDeletePage }: EditorToolbarProps) => {
   const { toast } = useToast();
   const uploadImage = useSupabaseUpload();
   const isMobile = useMediaQuery("(max-width: 768px)");
@@ -366,29 +367,47 @@ export const EditorToolbar = ({ editor, isEditing, editable, customButtons, onTo
         </div>
         )}
       </div>
-      {/* Kebab menu for page actions */}
-      {onDeletePage && editable && (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              size="sm"
-              variant="outline"
-              className="rounded-full h-9 w-9 p-0"
-              title="More options"
-            >
-              <MoreVertical className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem
-              onClick={onDeletePage}
-              className="text-destructive focus:text-destructive flex items-center gap-2"
-            >
-              <Trash2 className="h-4 w-4" />
-              <span>Delete Page</span>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+      {onToggleEdit && editable && (
+        <>
+          <Button 
+            size="sm" 
+            className="rounded-full"
+            variant={isEditing ? "default" : "outline"}
+            onClick={onToggleEdit}
+            title={isEditing ? "Exit Edit Mode" : "Enter Edit Mode"}
+          >
+            {isEditing ? (
+              <Check className="h-4 w-4" />
+            ) : (
+              <Pencil className="h-4 w-4" />
+            )}
+          </Button>
+          
+          {/* Kebab menu for page actions */}
+          {onDeletePage && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button 
+                  size="sm" 
+                  variant="outline"
+                  className="rounded-full h-9 w-9 p-0"
+                  title="More options"
+                >
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onClick={onDeletePage}
+                  className="text-destructive focus:text-destructive flex items-center gap-2"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  <span>Delete Page</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </>
       )}
     </div>
   );

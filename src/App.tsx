@@ -2,7 +2,6 @@
 import { BrowserRouter as Router, Routes, Route, useLocation } from "react-router-dom";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { PageDisplaySettingsProvider } from "@/contexts/PageDisplaySettingsContext";
-import { EditModeProvider } from "@/contexts/EditModeContext";
 import { Toaster } from "@/components/ui/toaster";
 import { TopNav } from "@/components/TopNav";
 import { LibraryNav } from "@/components/navigation/LibraryNav";
@@ -83,12 +82,11 @@ export default function App() {
       <ThemeProvider defaultTheme="coffee" defaultMode="dark">
         <PageDisplaySettingsProvider>
           <Router basename={basename}>
-            <EditModeProvider>
-              <div className="min-h-screen flex flex-col">
-                <ScrollToTop />
-                <LegacyRedirects />
-                <ConditionalNav />
-                <main className="flex-1">
+          <div className="min-h-screen flex flex-col">
+            <ScrollToTop />
+            <LegacyRedirects />
+            <ConditionalNav />
+            <main className="flex-1">
               <Routes>
                 <Route path="/u/:username" element={<PublicProfile />} />
                 
@@ -222,7 +220,6 @@ export default function App() {
             </main>
           </div>
           <Toaster />
-            </EditModeProvider>
         </Router>
         </PageDisplaySettingsProvider>
       </ThemeProvider>
