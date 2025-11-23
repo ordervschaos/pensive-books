@@ -43,11 +43,11 @@ export function TableOfContents({
   }
 
   return (
-    <div className="h-full flex flex-col py-6 px-4">
-      <div className="mb-4">
+    <div className="h-full flex flex-col py-6 pl-4 pr-0">
+      <div className="mb-4 pr-4">
         <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide px-2">Pages</h2>
       </div>
-      <nav ref={containerRef} className="flex-1 flex flex-col gap-0.5 overflow-y-auto scrollbar-hide">
+      <nav ref={containerRef} className="flex-1 flex flex-col gap-0.5 overflow-y-auto sidebar-scroll pr-2">
         {pages.map((page) => {
           const isActive = page.id === currentPageId;
           const isSection = page.page_type === 'section';

@@ -233,8 +233,8 @@ const PageView = () => {
       {/* SEO Meta Tags */}
       <PageMeta page={page} book={book} />
 
-      {/* Left Sidebar: Pages List - Always visible, minimal design */}
-      <aside className="hidden lg:flex w-64 flex-col border-r border-border/40 bg-background/50">
+      {/* Left Sidebar: Pages List - Fixed height, independently scrollable */}
+      <aside className="hidden lg:flex w-64 flex-col border-r border-border/40 bg-background/50 h-[calc(100vh-56px)] sticky top-0 overflow-hidden">
         <TableOfContents
           pages={allPages}
           bookId={numericBookId.toString()}
