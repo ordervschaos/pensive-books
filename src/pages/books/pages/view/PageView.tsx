@@ -239,6 +239,8 @@ const PageView = () => {
           pages={allPages}
           bookId={numericBookId.toString()}
           currentPageId={numericPageId}
+          onNewPage={createNewPage}
+          canEdit={canEdit}
         />
       </aside>
 
