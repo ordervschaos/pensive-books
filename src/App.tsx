@@ -65,9 +65,15 @@ function ScrollToTop() {
 function ConditionalNav() {
   const location = useLocation();
   const isLibraryRoute = location.pathname.startsWith('/library');
+  const isPageViewRoute = location.pathname.includes('/pages/');
 
   if (isLibraryRoute) {
     return <LibraryNav />;
+  }
+
+  // Hide nav for page view routes (they have their own fixed settings menu)
+  if (isPageViewRoute) {
+    return null;
   }
 
   return <TopNav />;

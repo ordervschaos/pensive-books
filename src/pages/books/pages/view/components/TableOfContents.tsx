@@ -2,7 +2,8 @@ import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { PreloadLink } from "./PreloadLink";
 import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
+import { Plus, ArrowLeft } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 type PageItem = {
   id: number;
@@ -18,6 +19,7 @@ interface TableOfContentsProps {
   onPageSelect?: () => void;
   onNewPage?: () => void;
   canEdit?: boolean;
+  bookName?: string;
 }
 
 export function TableOfContents({
@@ -26,9 +28,11 @@ export function TableOfContents({
   currentPageId,
   onPageSelect,
   onNewPage,
-  canEdit = false
+  canEdit = false,
+  bookName
 }: TableOfContentsProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (containerRef.current) {
@@ -49,7 +53,21 @@ export function TableOfContents({
   }
 
   return (
-    <div className="h-full flex flex-col py-6 pl-4 pr-0">
+    <div className="h-full flex flex-col py-4 pl-4 pr-0">
+      {/* Back to Book Navigation */}
+      <div className="mb-4 pr-4">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => navigate(`/books/${bookId}`)}
+          className="w-full justify-start px-2 h-auto py-2"
+        >
+          <ArrowLeft className="h-4 w-4 mr-2 flex-shrink-0" />
+          <span className="truncate text-sm">{bookName || "Back to Book"}</span>
+        </Button>
+      </div>
+
+      {/* Pages Header */}
       <div className="mb-4 pr-4 flex items-center justify-between">
         <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide px-2">Pages</h2>
         {canEdit && onNewPage && (

@@ -8,9 +8,11 @@ import { useBookPermissions } from "@/hooks/use-book-permissions";
 import { TableOfContents } from "./components/TableOfContents";
 import { PageChatPanel } from "./components/PageChatPanel";
 import { PageMeta } from "./components/PageMeta";
+import { PageViewSettings } from "./components/PageViewSettings";
 import { SlugService } from "@/utils/slugService";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { SearchDialog } from "@/components/search/SearchDialog";
 
 // Custom hooks
 import { usePageViewData } from "@/hooks/use-page-view-data";
@@ -55,6 +57,7 @@ const PageView = () => {
   // 5. Local UI state
   const [isEditing, setIsEditing] = useEditMode(canEdit);
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const { toast } = useToast();
   
   // Use ref to track page type independently to avoid triggering content updates
@@ -209,6 +212,7 @@ const PageView = () => {
   if (dataLoading || permissionsLoading) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
+        <PageViewSettings onSearchOpen={() => setSearchOpen(true)} />
         <div className="flex-1 container max-w-4xl mx-auto px-4 py-4">
           <PageLoading />
         </div>
@@ -220,6 +224,7 @@ const PageView = () => {
   if (!page || !book) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
+        <PageViewSettings onSearchOpen={() => setSearchOpen(true)} />
         <div className="flex-1 container max-w-4xl mx-auto px-4 py-4">
           <PageNotFound bookId={numericBookId.toString()} />
         </div>
@@ -229,18 +234,28 @@ const PageView = () => {
 
   // 15. Main render - Pure composition
   return (
-    <div className="min-h-[calc(100vh-56px)] flex bg-background w-full">
+    <div className="min-h-screen flex bg-background w-full">
       {/* SEO Meta Tags */}
       <PageMeta page={page} book={book} />
 
+      {/* Fixed Settings Menu */}
+      <PageViewSettings onSearchOpen={() => setSearchOpen(true)} />
+
+      {/* Search Dialog */}
+      <SearchDialog
+        open={searchOpen}
+        onOpenChange={setSearchOpen}
+      />
+
       {/* Left Sidebar: Pages List - Fixed height, independently scrollable */}
-      <aside className="hidden lg:flex w-64 flex-col border-r border-border/40 bg-background/50 h-[calc(100vh-56px)] sticky top-0 overflow-hidden">
+      <aside className="hidden lg:flex w-64 flex-col border-r border-border/40 bg-background/50 h-screen sticky top-0 overflow-hidden">
         <TableOfContents
           pages={allPages}
           bookId={numericBookId.toString()}
           currentPageId={numericPageId}
           onNewPage={createNewPage}
           canEdit={canEdit}
+          bookName={book.name}
         />
       </aside>
 
