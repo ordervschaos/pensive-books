@@ -32,13 +32,11 @@ import {
   FileEdit,
   RotateCcw,
   CheckCircle2,
-  AlertCircle,
   Loader2,
   ExternalLink,
   Trash2,
   FilePlus,
   FileX,
-  Eye,
   ChevronDown,
   ChevronRight,
 } from "lucide-react";
@@ -47,24 +45,73 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { PageDiffViewer } from "@/components/book/PageDiffViewer";
 import { cn } from "@/lib/utils";
 
+// Types
 interface PageChange {
   id: number;
   title: string;
   pageIndex: number;
   lastModified: string;
   slug: string;
-  status?: FileStatus;
+  status: FileStatus;
+}
+
+interface Page {
+  id: number;
+  page_index: number;
+  updated_at: string;
+  title: string | null;
+  slug: string | null;
 }
 
 interface UncommittedChangesPanelProps {
   bookId: number;
   bookSlug: string;
-  pages: any[];
+  pages: Page[];
   canEdit: boolean;
-  vsCodeMode?: boolean; // New: for VSCode-style layout
-  onFileSelect?: (pageId: number | null) => void; // New: callback when file is selected
-  selectedFile?: number | null; // New: currently selected file
+  vsCodeMode?: boolean;
+  onFileSelect?: (pageId: number | null) => void;
+  selectedFile?: number | null;
 }
+
+type RevertTarget = "single" | "selected" | "all" | null;
+
+// Constants
+const STATUS_CONFIG = {
+  added: {
+    icon: FilePlus,
+    badgeColor: "bg-green-50 text-green-700 border-green-200",
+    iconColor: "text-green-600",
+    label: "A",
+  },
+  deleted: {
+    icon: FileX,
+    badgeColor: "bg-red-50 text-red-700 border-red-200",
+    iconColor: "text-red-600",
+    label: "D",
+  },
+  modified: {
+    icon: FileEdit,
+    badgeColor: "bg-orange-50 text-orange-700 border-orange-200",
+    iconColor: "text-orange-600",
+    label: "M",
+  },
+} as const;
+
+// Helper Functions
+const getStatusIcon = (status: FileStatus) => {
+  const config = STATUS_CONFIG[status];
+  const Icon = config.icon;
+  return <Icon className={cn("h-4 w-4", config.iconColor)} />;
+};
+
+const getStatusBadge = (status: FileStatus) => {
+  const config = STATUS_CONFIG[status];
+  return (
+    <Badge variant="outline" className={cn("text-xs", config.badgeColor)}>
+      {config.label}
+    </Badge>
+  );
+};
 
 export function UncommittedChangesPanel({
   bookId,
@@ -77,12 +124,14 @@ export function UncommittedChangesPanel({
 }: UncommittedChangesPanelProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // State Management
   const [selectedPages, setSelectedPages] = useState<Set<number>>(new Set());
-  const [revertTarget, setRevertTarget] = useState<"single" | "selected" | "all" | null>(null);
+  const [revertTarget, setRevertTarget] = useState<RevertTarget>(null);
   const [singlePageId, setSinglePageId] = useState<number | null>(null);
   const [expandedDiffs, setExpandedDiffs] = useState<Set<number>>(new Set());
 
-  // Fetch modified page IDs
+  // Data Fetching
   const {
     data: modifiedPageIds,
     isLoading: loadingIds,
@@ -91,7 +140,6 @@ export function UncommittedChangesPanel({
     queryFn: () => VersionService.getModifiedPageIds(bookId),
   });
 
-  // Get uncommitted changes summary
   const {
     data: changesSummary,
     isLoading: loadingSummary,
@@ -100,53 +148,47 @@ export function UncommittedChangesPanel({
     queryFn: () => VersionService.getUncommittedChanges(bookId),
   });
 
-  // Revert mutation
+  // Revert Logic
+  const revertPages = async (pageIds: number[]) => {
+    const latestVersion = await VersionService.getLatestVersion(bookId);
+    if (!latestVersion) {
+      throw new Error("No previous version found. Cannot revert changes.");
+    }
+
+    const pageVersions = await VersionService.getPageVersions(latestVersion.id);
+
+    for (const pageId of pageIds) {
+      const pageVersion = pageVersions.find((pv) => pv.page_id === pageId);
+      if (!pageVersion) continue;
+
+      const { error } = await supabase
+        .from("pages")
+        .update({
+          title: pageVersion.title,
+          content: pageVersion.content,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", pageId);
+
+      if (error) throw error;
+    }
+  };
+
   const revertMutation = useMutation({
-    mutationFn: async (pageIds: number[]) => {
-      // Get the last version to revert to
-      const latestVersion = await VersionService.getLatestVersion(bookId);
-
-      if (!latestVersion) {
-        throw new Error("No previous version found. Cannot revert changes.");
-      }
-
-      // Get page versions from the last commit
-      const pageVersions = await VersionService.getPageVersions(latestVersion.id);
-
-      // Revert each page
-      for (const pageId of pageIds) {
-        const pageVersion = pageVersions.find((pv) => pv.page_id === pageId);
-
-        if (pageVersion) {
-          // Restore page content from version
-          const { error } = await supabase
-            .from("pages")
-            .update({
-              title: pageVersion.title,
-              content: pageVersion.content,
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", pageId);
-
-          if (error) {
-            throw error;
-          }
-        }
-      }
-    },
+    mutationFn: revertPages,
     onSuccess: () => {
       toast({
         title: "Changes reverted",
         description: "Selected pages have been restored to the last commit.",
       });
 
-      // Invalidate queries to refresh UI
+      // Refresh data
       queryClient.invalidateQueries({ queryKey: ["modified-pages", bookId] });
       queryClient.invalidateQueries({ queryKey: ["uncommitted-changes", bookId] });
       queryClient.invalidateQueries({ queryKey: ["pages"] });
       queryClient.invalidateQueries({ queryKey: ["books", bookId] });
 
-      // Clear selection and close dialog
+      // Reset state
       setSelectedPages(new Set());
       setRevertTarget(null);
       setSinglePageId(null);
@@ -162,6 +204,7 @@ export function UncommittedChangesPanel({
     },
   });
 
+  // Event Handlers - Revert Actions
   const handleRevertSingle = (pageId: number) => {
     setSinglePageId(pageId);
     setRevertTarget("single");
@@ -184,15 +227,24 @@ export function UncommittedChangesPanel({
   };
 
   const handleRevertConfirm = () => {
+    if (!revertTarget) return;
+
+    let pageIdsToRevert: number[] = [];
+
     if (revertTarget === "single" && singlePageId) {
-      revertMutation.mutate([singlePageId]);
+      pageIdsToRevert = [singlePageId];
     } else if (revertTarget === "selected") {
-      revertMutation.mutate(Array.from(selectedPages));
+      pageIdsToRevert = Array.from(selectedPages);
     } else if (revertTarget === "all" && modifiedPageIds) {
-      revertMutation.mutate(modifiedPageIds);
+      pageIdsToRevert = modifiedPageIds;
+    }
+
+    if (pageIdsToRevert.length > 0) {
+      revertMutation.mutate(pageIdsToRevert);
     }
   };
 
+  // Event Handlers - Selection
   const togglePageSelection = (pageId: number) => {
     const newSelection = new Set(selectedPages);
     if (newSelection.has(pageId)) {
@@ -204,16 +256,16 @@ export function UncommittedChangesPanel({
   };
 
   const toggleSelectAll = () => {
-    if (modifiedPageIds && selectedPages.size === modifiedPageIds.length) {
-      setSelectedPages(new Set());
-    } else if (modifiedPageIds) {
-      setSelectedPages(new Set(modifiedPageIds));
-    }
+    if (!modifiedPageIds) return;
+
+    const allSelected = selectedPages.size === modifiedPageIds.length;
+    setSelectedPages(allSelected ? new Set() : new Set(modifiedPageIds));
   };
 
+  // Event Handlers - Diff View
   const toggleDiff = (pageId: number) => {
     if (vsCodeMode && onFileSelect) {
-      // VSCode mode: select file for full-width diff
+      // VSCode mode: toggle file selection for full-width diff
       onFileSelect(selectedFile === pageId ? null : pageId);
     } else {
       // Inline mode: expand/collapse diff
@@ -227,11 +279,12 @@ export function UncommittedChangesPanel({
     }
   };
 
-  // Fetch page statuses
+  // Fetch page statuses for all modified pages
   const { data: pageStatuses } = useQuery({
     queryKey: ["page-statuses", bookId, modifiedPageIds],
     queryFn: async () => {
       if (!modifiedPageIds || modifiedPageIds.length === 0) return {};
+
       const statuses: Record<number, FileStatus | null> = {};
       for (const pageId of modifiedPageIds) {
         const status = await DiffService.getPageStatus(pageId, bookId);
@@ -242,63 +295,32 @@ export function UncommittedChangesPanel({
     enabled: !!modifiedPageIds && modifiedPageIds.length > 0,
   });
 
-  // Build list of changed pages with details, filtering out unchanged pages
+  // Process changed pages with status information
   const changedPages: PageChange[] = (modifiedPageIds || [])
     .map((pageId) => {
       const page = pages.find((p) => p.id === pageId);
       if (!page) return null;
+
       const status = pageStatuses?.[pageId];
-      // Filter out pages with null status (unchanged content)
-      if (status === null || status === undefined) {
-        return null;
-      }
+      // Only include pages with actual changes (non-null status)
+      if (status === null || status === undefined) return null;
+
       return {
         id: page.id,
         title: page.title || "Untitled",
         pageIndex: page.page_index,
         lastModified: page.updated_at,
         slug: page.slug || page.id.toString(),
-        status: status,
+        status: status as FileStatus,
       };
     })
-    .filter(Boolean) as PageChange[];
+    .filter((page): page is PageChange => page !== null && page.status !== undefined);
 
-  const getStatusIcon = (status: FileStatus) => {
-    switch (status) {
-      case "added":
-        return <FilePlus className="h-4 w-4 text-green-600" />;
-      case "deleted":
-        return <FileX className="h-4 w-4 text-red-600" />;
-      case "modified":
-        return <FileEdit className="h-4 w-4 text-orange-600" />;
-    }
-  };
-
-  const getStatusBadge = (status: FileStatus) => {
-    switch (status) {
-      case "added":
-        return (
-          <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 text-xs">
-            A
-          </Badge>
-        );
-      case "deleted":
-        return (
-          <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200 text-xs">
-            D
-          </Badge>
-        );
-      case "modified":
-        return (
-          <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200 text-xs">
-            M
-          </Badge>
-        );
-    }
-  };
-
+  // Computed Values
   const isLoading = loadingIds || loadingSummary;
+  const hasChanges = changesSummary?.hasChanges && changedPages.length > 0;
 
+  // Loading State
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -307,7 +329,8 @@ export function UncommittedChangesPanel({
     );
   }
 
-  if (!changesSummary?.hasChanges || changedPages.length === 0) {
+  // No Changes State
+  if (!hasChanges) {
     return (
       <Alert>
         <CheckCircle2 className="h-4 w-4" />
@@ -318,23 +341,19 @@ export function UncommittedChangesPanel({
     );
   }
 
-  // VSCode mode: Render selected file's full diff in main content area
+  // VSCode Mode - Full Diff View
   if (vsCodeMode && selectedFile) {
-    const selectedPage = changedPages.find(p => p.id === selectedFile);
+    const selectedPage = changedPages.find((p) => p.id === selectedFile);
     if (selectedPage) {
       return (
         <div className="w-full">
-          <PageDiffViewer
-            pageId={selectedFile}
-            bookId={bookId}
-            compact={false}
-          />
+          <PageDiffViewer pageId={selectedFile} bookId={bookId} compact={false} />
         </div>
       );
     }
   }
 
-  // VSCode mode: File list for sidebar
+  // VSCode Mode - File List Sidebar
   if (vsCodeMode) {
     return (
       <div className="space-y-1">
@@ -347,22 +366,148 @@ export function UncommittedChangesPanel({
             )}
             onClick={() => toggleDiff(page.id)}
           >
-            {/* Status Badge */}
-            <div className="flex-shrink-0">
-              {page.status && getStatusBadge(page.status)}
-            </div>
-
-            {/* Title */}
-            <div className="flex-1 min-w-0 truncate font-medium">
-              {page.title}
-            </div>
+            {page.status && (
+              <div className="flex-shrink-0">{getStatusBadge(page.status)}</div>
+            )}
+            <div className="flex-1 min-w-0 truncate font-medium">{page.title}</div>
           </div>
         ))}
       </div>
     );
   }
 
-  // Original inline mode
+  // Inline Mode - Full Card View
+  const renderPageItem = (page: PageChange) => {
+    const isExpanded = expandedDiffs.has(page.id);
+    const isSelected = selectedPages.has(page.id);
+    const showCheckbox = canEdit && changedPages.length > 1;
+
+    return (
+      <div key={page.id} className="rounded-lg border border-border transition-colors">
+        {/* Header: Expand/Collapse, Checkbox, Status, Title */}
+        <div
+          className="flex items-start gap-2 p-3 pb-2 cursor-pointer hover:bg-accent/50"
+          onClick={() => toggleDiff(page.id)}
+        >
+          <div className="flex-shrink-0 mt-0.5">
+            {isExpanded ? (
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            )}
+          </div>
+
+          {showCheckbox && (
+            <div onClick={(e) => e.stopPropagation()}>
+              <Checkbox
+                checked={isSelected}
+                onCheckedChange={() => {
+                  togglePageSelection(page.id);
+                }}
+                className="mt-0.5 flex-shrink-0"
+              />
+            </div>
+          )}
+
+          {page.status && (
+            <div className="flex-shrink-0 mt-0.5">{getStatusBadge(page.status)}</div>
+          )}
+
+          <div className="flex-1 min-w-0">
+            <div className="flex items-start gap-2 flex-wrap">
+              <span className="font-medium text-sm break-words">{page.title}</span>
+              <Badge variant="secondary" className="text-xs flex-shrink-0">
+                Page {page.pageIndex + 1}
+              </Badge>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer: Timestamp and Actions */}
+        <div className="flex items-center justify-between px-3 pb-3 pt-0 gap-2 pl-9">
+          <p className="text-xs text-muted-foreground flex-1 min-w-0 truncate">
+            {formatDistanceToNow(new Date(page.lastModified), { addSuffix: true })}
+          </p>
+
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={(e) => {
+                e.stopPropagation();
+                window.open(`/books/${bookId}/pages/${page.id}`, "_blank");
+              }}
+              className="h-7 w-7 p-0"
+              title="Open page"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+            </Button>
+            {canEdit && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleRevertSingle(page.id);
+                }}
+                className="h-7 w-7 p-0 text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+                title="Revert changes"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {/* Expanded Diff Viewer */}
+        {isExpanded && (
+          <div className="border-t border-border px-3 pb-3">
+            <PageDiffViewer pageId={page.id} bookId={bookId} compact={true} />
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderRevertDialogMessage = () => {
+    if (revertTarget === "single") {
+      return (
+        <>
+          This will restore the selected page to its state at the last commit.
+          <br />
+          <br />
+          <strong>Your current unsaved changes to this page will be lost.</strong>
+        </>
+      );
+    }
+
+    if (revertTarget === "selected") {
+      return (
+        <>
+          This will restore {selectedPages.size} selected page
+          {selectedPages.size !== 1 ? "s" : ""} to their state at the last commit.
+          <br />
+          <br />
+          <strong>Your current unsaved changes to these pages will be lost.</strong>
+        </>
+      );
+    }
+
+    if (revertTarget === "all") {
+      return (
+        <>
+          This will restore all {changedPages.length} modified page
+          {changedPages.length !== 1 ? "s" : ""} to their state at the last commit.
+          <br />
+          <br />
+          <strong>All your current unsaved changes will be lost.</strong>
+        </>
+      );
+    }
+
+    return null;
+  };
+
   return (
     <>
       <Card>
@@ -382,110 +527,16 @@ export function UncommittedChangesPanel({
               </CardDescription>
             </div>
             {canEdit && changedPages.length > 1 && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={toggleSelectAll}
-                className="text-xs"
-              >
+              <Button size="sm" variant="outline" onClick={toggleSelectAll} className="text-xs">
                 {selectedPages.size === changedPages.length ? "Deselect All" : "Select All"}
               </Button>
             )}
           </div>
         </CardHeader>
+
         <CardContent>
           <ScrollArea className="h-[400px] pr-4">
-            <div className="space-y-2">
-              {changedPages.map((page) => (
-                <div
-                  key={page.id}
-                  className="rounded-lg border border-border transition-colors"
-                >
-                  {/* Top row: Checkbox, Status, Title - Clickable to expand/collapse */}
-                  <div
-                    className="flex items-start gap-2 p-3 pb-2 cursor-pointer hover:bg-accent/50"
-                    onClick={() => toggleDiff(page.id)}
-                  >
-                    {/* Expand/Collapse Icon */}
-                    <div className="flex-shrink-0 mt-0.5">
-                      {expandedDiffs.has(page.id) ? (
-                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                      ) : (
-                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                      )}
-                    </div>
-
-                    {canEdit && changedPages.length > 1 && (
-                      <Checkbox
-                        checked={selectedPages.has(page.id)}
-                        onCheckedChange={(e) => {
-                          e.stopPropagation();
-                          togglePageSelection(page.id);
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                        className="mt-0.5 flex-shrink-0"
-                      />
-                    )}
-
-                    {/* Status Badge */}
-                    <div className="flex-shrink-0 mt-0.5">
-                      {page.status && getStatusBadge(page.status)}
-                    </div>
-
-                    {/* Title and Page Number - takes up remaining space */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start gap-2 flex-wrap">
-                        <span className="font-medium text-sm break-words">{page.title}</span>
-                        <Badge variant="secondary" className="text-xs flex-shrink-0">
-                          Page {page.pageIndex + 1}
-                        </Badge>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Bottom row: Timestamp and Actions */}
-                  <div className="flex items-center justify-between px-3 pb-3 pt-0 gap-2 pl-9">
-                    <p className="text-xs text-muted-foreground flex-1 min-w-0 truncate">
-                      {formatDistanceToNow(new Date(page.lastModified), { addSuffix: true })}
-                    </p>
-
-                    <div className="flex items-center gap-1 flex-shrink-0">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => window.open(`/books/${bookId}/pages/${page.id}`, "_blank")}
-                        className="h-7 w-7 p-0"
-                        title="Open page"
-                      >
-                        <ExternalLink className="h-3.5 w-3.5" />
-                      </Button>
-                      {canEdit && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleRevertSingle(page.id)}
-                          className="h-7 w-7 p-0 text-orange-600 hover:text-orange-700 hover:bg-orange-50"
-                          title="Revert changes"
-                        >
-                          <RotateCcw className="h-3.5 w-3.5" />
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Inline Diff Viewer - Expanded */}
-                  {expandedDiffs.has(page.id) && (
-                    <div className="border-t border-border px-3 pb-3">
-                      <PageDiffViewer
-                        pageId={page.id}
-                        bookId={bookId}
-                        compact={true}
-                      />
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
+            <div className="space-y-2">{changedPages.map(renderPageItem)}</div>
           </ScrollArea>
 
           {canEdit && (
@@ -498,7 +549,9 @@ export function UncommittedChangesPanel({
                   disabled={revertMutation.isPending}
                 >
                   <RotateCcw className="h-4 w-4" />
-                  <span className="hidden sm:inline">Revert Selected ({selectedPages.size})</span>
+                  <span className="hidden sm:inline">
+                    Revert Selected ({selectedPages.size})
+                  </span>
                   <span className="sm:hidden">Selected ({selectedPages.size})</span>
                 </Button>
               )}
@@ -525,39 +578,10 @@ export function UncommittedChangesPanel({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Revert changes?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {revertTarget === "single" && (
-                <>
-                  This will restore the selected page to its state at the last commit.
-                  <br />
-                  <br />
-                  <strong>Your current unsaved changes to this page will be lost.</strong>
-                </>
-              )}
-              {revertTarget === "selected" && (
-                <>
-                  This will restore {selectedPages.size} selected page
-                  {selectedPages.size !== 1 ? "s" : ""} to their state at the last commit.
-                  <br />
-                  <br />
-                  <strong>Your current unsaved changes to these pages will be lost.</strong>
-                </>
-              )}
-              {revertTarget === "all" && (
-                <>
-                  This will restore all {changedPages.length} modified page
-                  {changedPages.length !== 1 ? "s" : ""} to their state at the last commit.
-                  <br />
-                  <br />
-                  <strong>All your current unsaved changes will be lost.</strong>
-                </>
-              )}
-            </AlertDialogDescription>
+            <AlertDialogDescription>{renderRevertDialogMessage()}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={revertMutation.isPending}>
-              Cancel
-            </AlertDialogCancel>
+            <AlertDialogCancel disabled={revertMutation.isPending}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleRevertConfirm}
               disabled={revertMutation.isPending}

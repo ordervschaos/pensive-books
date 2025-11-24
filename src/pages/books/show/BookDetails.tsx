@@ -26,8 +26,6 @@ import { jsonToText, getWordCountFromContent } from "@/utils/tiptapHelpers";
 import { UncommittedChangesBadge } from "./components/UncommittedChangesBadge";
 import { CommitDialog } from "./components/CommitDialog";
 import { PublishingDialog } from "@/components/book/PublishingDialog";
-import { BookSidebar } from "./components/BookSidebar";
-import { VSCodeLayout } from "./components/VSCodeLayout";
 import { VersionService } from "@/services/VersionService";
 import { GitCommit, History, FileText } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
@@ -746,20 +744,6 @@ const BookDetails = () => {
             onSuccess={handlePublishingSuccess}
           />
 
-          {/* VSCode-style Sidebar for Changes and Versions */}
-          <VSCodeLayout
-            bookId={getNumericId(bookSlug)}
-            bookSlug={bookSlug || ""}
-            bookName={book.name}
-            pages={pages}
-            canEdit={canEdit}
-            isOwner={isOwner}
-            isReorderMode={isReorderMode}
-            isDeleteMode={isDeleteMode}
-            onDeleteModeChange={setIsDeleteMode}
-            onChatToggle={() => setIsChatOpen(!isChatOpen)}
-            hasActiveChat={isChatOpen}
-          />
         </div>
       </div>
     </div>
