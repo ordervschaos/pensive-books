@@ -276,6 +276,7 @@ export default function DraftChanges() {
                   pageId={selectedFile}
                   bookId={bookId}
                   compact={false}
+                  bookSlug={bookSlug}
                 />
               </div>
             ) : (

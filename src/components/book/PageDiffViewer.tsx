@@ -20,6 +20,7 @@ interface PageDiffViewerProps {
   pageId: number;
   bookId: number;
   compact?: boolean; // For inline display
+  bookSlug?: string; // Book slug for generating version links
 }
 
 const getStatusIcon = (status: PageDiff["status"]) => {
@@ -56,7 +57,7 @@ const getStatusBadge = (status: PageDiff["status"]) => {
   }
 };
 
-export function PageDiffViewer({ pageId, bookId, onClose, compact = false }: PageDiffViewerProps) {
+export function PageDiffViewer({ pageId, bookId, onClose, compact = false, bookSlug }: PageDiffViewerProps) {
   const [viewMode, setViewMode] = useState<"split" | "unified">("split");
   const [diffMode, setDiffMode] = useState<"blocks" | "text">("blocks"); // New: block vs text diff
 
@@ -195,5 +196,5 @@ export function PageDiffViewer({ pageId, bookId, onClose, compact = false }: Pag
 
   // Full mode for standalone display - use side-by-side diff viewer
   // Hide header since parent component (DraftChanges) already shows one
-  return <FormattedDiffViewer diff={diff} compact={true} />;
+  return <FormattedDiffViewer diff={diff} compact={true} bookSlug={bookSlug} />;
 }

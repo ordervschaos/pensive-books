@@ -19,6 +19,8 @@ export interface BlockDiff {
   newContent?: string;
   oldBlock?: any;
   newBlock?: any;
+  contextBefore?: number; // Number of unchanged blocks before this change
+  contextAfter?: number; // Number of unchanged blocks after this change
 }
 
 export interface PageDiff {
@@ -33,6 +35,8 @@ export interface PageDiff {
   lastModified: string;
   slug: string;
   blockDiffs?: BlockDiff[];
+  versionId?: number;  // ID of the committed version
+  versionPageIndex?: number;  // Page index in the committed version
 }
 
 export class DiffService {
@@ -225,7 +229,12 @@ export class DiffService {
     let oldContentJson: any = null;
     let status: FileStatus = "added";
 
+    let versionId: number | undefined;
+    let versionPageIndex: number | undefined;
+
     if (lastVersion) {
+      versionId = lastVersion.id;
+      
       // Get page from last version
       const { data: pageVersion } = await supabase
         .from("page_versions")
@@ -240,6 +249,7 @@ export class DiffService {
           ? jsonToText(pageVersion.content)
           : "";
         oldContentJson = pageVersion.content;
+        versionPageIndex = pageVersion.page_index;
         status = currentPage ? "modified" : "deleted";
       }
     }
@@ -253,9 +263,9 @@ export class DiffService {
       ? jsonToText(currentPage.content)
       : "";
 
-    // Generate block-level diffs
+    // Generate block-level diffs (already includes context blocks)
     const newContentJson = currentPage?.content || null;
-    const blockDiffs = this.compareBlocks(oldContentJson, newContentJson);
+    const blockDiffs = this.compareBlocks(oldContentJson, newContentJson, 2);
 
     return {
       pageId,
@@ -269,6 +279,8 @@ export class DiffService {
       lastModified: currentPage?.updated_at || new Date().toISOString(),
       slug: currentPage?.slug || pageId.toString(),
       blockDiffs,
+      versionId,
+      versionPageIndex,
     };
   }
 
@@ -383,8 +395,9 @@ export class DiffService {
   /**
    * Compares blocks between two versions and generates block-level diffs
    * Uses a smart matching algorithm that handles reordering and modifications
+   * Includes context blocks (unchanged blocks) around changes for better understanding
    */
-  static compareBlocks(oldContent: any, newContent: any): BlockDiff[] {
+  static compareBlocks(oldContent: any, newContent: any, contextLines: number = 2): BlockDiff[] {
     const oldBlocks = this.extractBlocks(oldContent);
     const newBlocks = this.extractBlocks(newContent);
     const diffs: BlockDiff[] = [];
@@ -392,65 +405,96 @@ export class DiffService {
     // Track which blocks we've processed
     const processedOld = new Set<number>();
     const processedNew = new Set<number>();
+    const changeIndices: number[] = []; // Track indices where changes occur
 
-    // First pass: Look for exact matches by position and content
-    const minLength = Math.min(oldBlocks.length, newBlocks.length);
-    for (let i = 0; i < minLength; i++) {
+    // First pass: Identify all changes and unchanged blocks
+    const allBlocks: Array<{
+      oldIndex?: number;
+      newIndex?: number;
+      type: BlockChangeType;
+      oldBlock?: any;
+      newBlock?: any;
+    }> = [];
+
+    // Build a mapping of all blocks with their change status
+    const maxLength = Math.max(oldBlocks.length, newBlocks.length);
+    for (let i = 0; i < maxLength; i++) {
       const oldBlock = oldBlocks[i];
       const newBlock = newBlocks[i];
 
-      // Check if blocks at same position are equal
-      if (this.areBlocksEqual(oldBlock, newBlock)) {
-        // Unchanged block at same position - skip it
-        processedOld.add(i);
-        processedNew.add(i);
-      } else if (oldBlock.type === newBlock.type) {
-        // Same type, different content - this is a modification
-        processedOld.add(i);
-        processedNew.add(i);
-        diffs.push({
-          type: "modified",
-          blockType: newBlock.type || "unknown",
-          oldContent: this.blockToText(oldBlock),
-          newContent: this.blockToText(newBlock),
+      if (oldBlock && newBlock) {
+        if (this.areBlocksEqual(oldBlock, newBlock)) {
+          // Unchanged block
+          allBlocks.push({
+            oldIndex: i,
+            newIndex: i,
+            type: "unchanged",
+            oldBlock: oldBlock,
+            newBlock: newBlock,
+          });
+          processedOld.add(i);
+          processedNew.add(i);
+        } else if (oldBlock.type === newBlock.type) {
+          // Modified block
+          allBlocks.push({
+            oldIndex: i,
+            newIndex: i,
+            type: "modified",
+            oldBlock: oldBlock,
+            newBlock: newBlock,
+          });
+          changeIndices.push(allBlocks.length - 1);
+          processedOld.add(i);
+          processedNew.add(i);
+        }
+      } else if (oldBlock && !newBlock) {
+        // Removed block
+        allBlocks.push({
+          oldIndex: i,
+          type: "removed",
           oldBlock: oldBlock,
+        });
+        changeIndices.push(allBlocks.length - 1);
+        processedOld.add(i);
+      } else if (!oldBlock && newBlock) {
+        // Added block
+        allBlocks.push({
+          newIndex: i,
+          type: "added",
           newBlock: newBlock,
         });
+        changeIndices.push(allBlocks.length - 1);
+        processedNew.add(i);
       }
     }
 
-    // Second pass: Find added blocks (in new but not in old)
+    // Second pass: Find added blocks that weren't matched by position
     newBlocks.forEach((newBlock, newIndex) => {
       if (!processedNew.has(newIndex)) {
-        // Try to find a similar block in old that hasn't been processed
         let foundMatch = false;
 
         for (let oldIndex = 0; oldIndex < oldBlocks.length; oldIndex++) {
           if (processedOld.has(oldIndex)) continue;
 
           const oldBlock = oldBlocks[oldIndex];
-
-          // Check if this is the same block (by audioBlock or similar content)
           const sameAudioBlock =
             oldBlock.attrs?.audioBlock !== undefined &&
             oldBlock.attrs?.audioBlock === newBlock.attrs?.audioBlock;
-
           const similarContent =
             oldBlock.type === newBlock.type &&
             this.blockToText(oldBlock).length > 0 &&
             this.blockToText(oldBlock) === this.blockToText(newBlock);
 
           if (sameAudioBlock || similarContent) {
-            // This is a match - check if modified
             if (!this.areBlocksEqual(oldBlock, newBlock)) {
-              diffs.push({
+              allBlocks.push({
+                oldIndex,
+                newIndex,
                 type: "modified",
-                blockType: newBlock.type || "unknown",
-                oldContent: this.blockToText(oldBlock),
-                newContent: this.blockToText(newBlock),
                 oldBlock: oldBlock,
                 newBlock: newBlock,
               });
+              changeIndices.push(allBlocks.length - 1);
             }
             processedOld.add(oldIndex);
             processedNew.add(newIndex);
@@ -459,31 +503,203 @@ export class DiffService {
           }
         }
 
-        // If no match found, this is a new block
         if (!foundMatch) {
-          processedNew.add(newIndex);
-          diffs.push({
+          allBlocks.push({
+            newIndex,
             type: "added",
-            blockType: newBlock.type || "unknown",
-            newContent: this.blockToText(newBlock),
             newBlock: newBlock,
           });
+          changeIndices.push(allBlocks.length - 1);
+          processedNew.add(newIndex);
         }
       }
     });
 
-    // Third pass: Find removed blocks (in old but not in new)
+    // Third pass: Find removed blocks
     oldBlocks.forEach((oldBlock, oldIndex) => {
       if (!processedOld.has(oldIndex)) {
-        diffs.push({
+        allBlocks.push({
+          oldIndex,
           type: "removed",
-          blockType: oldBlock.type || "unknown",
-          oldContent: this.blockToText(oldBlock),
           oldBlock: oldBlock,
         });
+        changeIndices.push(allBlocks.length - 1);
       }
     });
 
-    return diffs;
+    // Sort all blocks by their position (oldIndex or newIndex)
+    allBlocks.sort((a, b) => {
+      const aIndex = a.oldIndex ?? a.newIndex ?? -1;
+      const bIndex = b.oldIndex ?? b.newIndex ?? -1;
+      return aIndex - bIndex;
+    });
+
+    // Build final diff array with context
+    const finalDiffs: BlockDiff[] = [];
+    const includedIndices = new Set<number>();
+
+    // Include all changed blocks and context around them
+    changeIndices.forEach((changeIdx) => {
+      const startIdx = Math.max(0, changeIdx - contextLines);
+      const endIdx = Math.min(allBlocks.length - 1, changeIdx + contextLines);
+
+      for (let i = startIdx; i <= endIdx; i++) {
+        if (!includedIndices.has(i)) {
+          const block = allBlocks[i];
+          const blockDiff: BlockDiff = {
+            type: block.type,
+            blockType: (block.oldBlock || block.newBlock)?.type || "unknown",
+            oldContent: block.oldBlock ? this.blockToText(block.oldBlock) : undefined,
+            newContent: block.newBlock ? this.blockToText(block.newBlock) : undefined,
+            oldBlock: block.oldBlock,
+            newBlock: block.newBlock,
+          };
+          finalDiffs.push(blockDiff);
+          includedIndices.add(i);
+        }
+      }
+    });
+
+    // If no changes, return empty array (or all blocks if needed)
+    if (finalDiffs.length === 0 && allBlocks.length > 0) {
+      // No changes detected, return empty
+      return [];
+    }
+
+    return finalDiffs;
+  }
+
+  /**
+   * Adds context blocks (unchanged blocks) around changes for better understanding
+   * Similar to Git's diff context lines
+   */
+  static addContextBlocks(
+    blockDiffs: BlockDiff[],
+    oldContent: any,
+    newContent: any,
+    contextLines: number = 2
+  ): BlockDiff[] {
+    if (blockDiffs.length === 0) return [];
+
+    const oldBlocks = this.extractBlocks(oldContent);
+    const newBlocks = this.extractBlocks(newContent);
+    const result: BlockDiff[] = [];
+    const includedOldIndices = new Set<number>();
+    const includedNewIndices = new Set<number>();
+
+    // First, mark which blocks are already included
+    blockDiffs.forEach((diff) => {
+      // Find the indices of changed blocks
+      if (diff.oldBlock) {
+        const idx = oldBlocks.findIndex((b) => this.areBlocksEqual(b, diff.oldBlock));
+        if (idx >= 0) includedOldIndices.add(idx);
+      }
+      if (diff.newBlock) {
+        const idx = newBlocks.findIndex((b) => this.areBlocksEqual(b, diff.newBlock));
+        if (idx >= 0) includedNewIndices.add(idx);
+      }
+    });
+
+    // Build a map of all blocks with their positions
+    const blockMap = new Map<string, { oldIdx?: number; newIdx?: number; block: any }>();
+    
+    oldBlocks.forEach((block, idx) => {
+      const key = this.getBlockId(block, idx);
+      if (!blockMap.has(key)) {
+        blockMap.set(key, { oldIdx: idx, block });
+      } else {
+        blockMap.get(key)!.oldIdx = idx;
+      }
+    });
+
+    newBlocks.forEach((block, idx) => {
+      const key = this.getBlockId(block, idx);
+      if (!blockMap.has(key)) {
+        blockMap.set(key, { newIdx: idx, block });
+      } else {
+        blockMap.get(key)!.newIdx = idx;
+      }
+    });
+
+    // For each change, add context blocks before and after
+    blockDiffs.forEach((diff, diffIdx) => {
+      // Find the position of this change
+      let oldIdx = -1;
+      let newIdx = -1;
+
+      if (diff.oldBlock) {
+        oldIdx = oldBlocks.findIndex((b) => this.areBlocksEqual(b, diff.oldBlock));
+      }
+      if (diff.newBlock) {
+        newIdx = newBlocks.findIndex((b) => this.areBlocksEqual(b, diff.newBlock));
+      }
+
+      // Add context before
+      if (diffIdx === 0 || result.length === 0 || result[result.length - 1].type !== "unchanged") {
+        const contextStart = Math.max(0, Math.min(oldIdx >= 0 ? oldIdx : newIdx, newIdx >= 0 ? newIdx : oldIdx) - contextLines);
+        const contextEnd = Math.min(oldIdx >= 0 ? oldIdx : newIdx, newIdx >= 0 ? newIdx : oldIdx);
+        
+        for (let i = contextStart; i < contextEnd; i++) {
+          if (oldIdx >= 0 && i < oldBlocks.length && !includedOldIndices.has(i)) {
+            const block = oldBlocks[i];
+            const matchingNewIdx = newBlocks.findIndex((b) => this.areBlocksEqual(b, block));
+            if (matchingNewIdx >= 0 && !includedNewIndices.has(matchingNewIdx)) {
+              result.push({
+                type: "unchanged",
+                blockType: block.type || "unknown",
+                oldContent: this.blockToText(block),
+                newContent: this.blockToText(newBlocks[matchingNewIdx]),
+                oldBlock: block,
+                newBlock: newBlocks[matchingNewIdx],
+              });
+              includedOldIndices.add(i);
+              includedNewIndices.add(matchingNewIdx);
+            }
+          }
+        }
+      }
+
+      // Add the change itself
+      result.push(diff);
+      if (oldIdx >= 0) includedOldIndices.add(oldIdx);
+      if (newIdx >= 0) includedNewIndices.add(newIdx);
+
+      // Add context after
+      const nextChangeIdx = diffIdx < blockDiffs.length - 1 ? 
+        (() => {
+          const next = blockDiffs[diffIdx + 1];
+          if (next.oldBlock) {
+            const idx = oldBlocks.findIndex((b) => this.areBlocksEqual(b, next.oldBlock));
+            return idx >= 0 ? idx : (next.newBlock ? newBlocks.findIndex((b) => this.areBlocksEqual(b, next.newBlock)) : -1);
+          }
+          return next.newBlock ? newBlocks.findIndex((b) => this.areBlocksEqual(b, next.newBlock)) : -1;
+        })() : -1;
+
+      const contextStart = Math.max(0, Math.min(oldIdx >= 0 ? oldIdx : newIdx, newIdx >= 0 ? newIdx : oldIdx) + 1);
+      const contextEnd = nextChangeIdx >= 0 
+        ? Math.min(contextStart + contextLines, nextChangeIdx)
+        : Math.min(contextStart + contextLines, Math.max(oldBlocks.length, newBlocks.length));
+
+      for (let i = contextStart; i < contextEnd; i++) {
+        if (oldIdx >= 0 && i < oldBlocks.length && !includedOldIndices.has(i)) {
+          const block = oldBlocks[i];
+          const matchingNewIdx = newBlocks.findIndex((b) => this.areBlocksEqual(b, block));
+          if (matchingNewIdx >= 0 && !includedNewIndices.has(matchingNewIdx)) {
+            result.push({
+              type: "unchanged",
+              blockType: block.type || "unknown",
+              oldContent: this.blockToText(block),
+              newContent: this.blockToText(newBlocks[matchingNewIdx]),
+              oldBlock: block,
+              newBlock: newBlocks[matchingNewIdx],
+            });
+            includedOldIndices.add(i);
+            includedNewIndices.add(matchingNewIdx);
+          }
+        }
+      }
+    });
+
+    return result.length > 0 ? result : blockDiffs;
   }
 }
