@@ -79,20 +79,20 @@ type RevertTarget = "single" | "selected" | "all" | null;
 const STATUS_CONFIG = {
   added: {
     icon: FilePlus,
-    badgeColor: "bg-green-50 text-green-700 border-green-200",
-    iconColor: "text-green-600",
+    badgeColor: "bg-green-100 text-green-900 border-green-400 dark:bg-green-900 dark:text-green-100 dark:border-green-600",
+    iconColor: "text-green-700 dark:text-green-400",
     label: "A",
   },
   deleted: {
     icon: FileX,
-    badgeColor: "bg-red-50 text-red-700 border-red-200",
-    iconColor: "text-red-600",
+    badgeColor: "bg-red-100 text-red-900 border-red-400 dark:bg-red-900 dark:text-red-100 dark:border-red-600",
+    iconColor: "text-red-700 dark:text-red-400",
     label: "D",
   },
   modified: {
     icon: FileEdit,
-    badgeColor: "bg-orange-50 text-orange-700 border-orange-200",
-    iconColor: "text-orange-600",
+    badgeColor: "bg-orange-100 text-orange-900 border-orange-400 dark:bg-orange-900 dark:text-orange-100 dark:border-orange-600",
+    iconColor: "text-orange-700 dark:text-orange-400",
     label: "M",
   },
 } as const;
@@ -324,7 +324,7 @@ export function UncommittedChangesPanel({
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        <Loader2 className="h-6 w-6 animate-spin text-foreground/70" />
       </div>
     );
   }
@@ -334,7 +334,7 @@ export function UncommittedChangesPanel({
     return (
       <Alert>
         <CheckCircle2 className="h-4 w-4" />
-        <AlertDescription>
+        <AlertDescription className="text-foreground">
           No uncommitted changes. Your workspace is up to date with the last commit.
         </AlertDescription>
       </Alert>
@@ -369,7 +369,7 @@ export function UncommittedChangesPanel({
             {page.status && (
               <div className="flex-shrink-0">{getStatusBadge(page.status)}</div>
             )}
-            <div className="flex-1 min-w-0 truncate font-medium">{page.title}</div>
+            <div className="flex-1 min-w-0 truncate font-medium text-foreground">{page.title}</div>
           </div>
         ))}
       </div>
@@ -391,9 +391,9 @@ export function UncommittedChangesPanel({
         >
           <div className="flex-shrink-0 mt-0.5">
             {isExpanded ? (
-              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              <ChevronDown className="h-4 w-4 text-foreground/70" />
             ) : (
-              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              <ChevronRight className="h-4 w-4 text-foreground/70" />
             )}
           </div>
 
@@ -415,8 +415,8 @@ export function UncommittedChangesPanel({
 
           <div className="flex-1 min-w-0">
             <div className="flex items-start gap-2 flex-wrap">
-              <span className="font-medium text-sm break-words">{page.title}</span>
-              <Badge variant="secondary" className="text-xs flex-shrink-0">
+              <span className="font-medium text-sm break-words text-foreground">{page.title}</span>
+              <Badge variant="secondary" className="text-xs flex-shrink-0 text-foreground/80 bg-muted">
                 Page {page.pageIndex + 1}
               </Badge>
             </div>
@@ -425,7 +425,7 @@ export function UncommittedChangesPanel({
 
         {/* Footer: Timestamp and Actions */}
         <div className="flex items-center justify-between px-3 pb-3 pt-0 gap-2 pl-9">
-          <p className="text-xs text-muted-foreground flex-1 min-w-0 truncate">
+          <p className="text-xs text-foreground/70 flex-1 min-w-0 truncate">
             {formatDistanceToNow(new Date(page.lastModified), { addSuffix: true })}
           </p>
 
@@ -514,11 +514,11 @@ export function UncommittedChangesPanel({
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle className="flex items-center gap-2">
+              <CardTitle className="flex items-center gap-2 text-foreground">
                 <FileEdit className="h-5 w-5" />
                 Uncommitted Changes
               </CardTitle>
-              <CardDescription>
+              <CardDescription className="text-foreground/80">
                 {changedPages.length} page{changedPages.length !== 1 ? "s" : ""} modified
                 {changesSummary?.lastCommitAt &&
                   ` since ${formatDistanceToNow(new Date(changesSummary.lastCommitAt), {

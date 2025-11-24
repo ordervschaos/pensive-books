@@ -98,19 +98,19 @@ export function PageDiffViewer({ pageId, bookId, onClose, compact = false }: Pag
     variables: {
       light: {
         diffViewerBackground: "#fff",
-        diffViewerColor: "#212529",
-        addedBackground: "#e6ffed",
-        addedColor: "#24292e",
-        removedBackground: "#ffeef0",
-        removedColor: "#24292e",
-        wordAddedBackground: "#acf2bd",
-        wordRemovedBackground: "#fdb8c0",
-        addedGutterBackground: "#cdffd8",
-        removedGutterBackground: "#ffdce0",
-        gutterBackground: "#f7f7f7",
-        gutterBackgroundDark: "#f3f1f1",
-        highlightBackground: "#fffbdd",
-        highlightGutterBackground: "#fff5b1",
+        diffViewerColor: "#1f2937", // Darker for better contrast
+        addedBackground: "#d1fae5", // Lighter green for better contrast
+        addedColor: "#065f46", // Dark green text
+        removedBackground: "#fee2e2", // Lighter red for better contrast
+        removedColor: "#991b1b", // Dark red text
+        wordAddedBackground: "#86efac", // Brighter green highlight
+        wordRemovedBackground: "#fca5a5", // Brighter red highlight
+        addedGutterBackground: "#a7f3d0",
+        removedGutterBackground: "#fecaca",
+        gutterBackground: "#f9fafb",
+        gutterBackgroundDark: "#f3f4f6",
+        highlightBackground: "#fef3c7",
+        highlightGutterBackground: "#fde68a",
       },
     },
   };
@@ -168,14 +168,14 @@ export function PageDiffViewer({ pageId, bookId, onClose, compact = false }: Pag
             </div>
 
             {/* Stats */}
-            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            <div className="flex items-center gap-3 text-xs text-foreground/80">
               <div>
-                <span className="font-medium">{diff.oldContent.split("\n").length}</span> → <span className="font-medium">{diff.newContent.split("\n").length}</span> lines
+                <span className="font-medium text-foreground">{diff.oldContent.split("\n").length}</span> → <span className="font-medium text-foreground">{diff.newContent.split("\n").length}</span> lines
               </div>
               <div>
                 {diff.newContent.split("\n").length - diff.oldContent.split("\n").length > 0
-                  ? <span className="text-green-600">+{diff.newContent.split("\n").length - diff.oldContent.split("\n").length}</span>
-                  : <span className="text-red-600">{diff.newContent.split("\n").length - diff.oldContent.split("\n").length}</span>}
+                  ? <span className="text-green-700 dark:text-green-400 font-medium">+{diff.newContent.split("\n").length - diff.oldContent.split("\n").length}</span>
+                  : <span className="text-red-700 dark:text-red-400 font-medium">{diff.newContent.split("\n").length - diff.oldContent.split("\n").length}</span>}
               </div>
             </div>
           </>

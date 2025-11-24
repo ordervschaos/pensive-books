@@ -59,7 +59,7 @@ function ReadOnlyTipTapViewer({ content }: { content: any }) {
     editable: false,
     editorProps: {
       attributes: {
-        class: "prose prose-sm max-w-none focus:outline-none",
+        class: "prose prose-sm max-w-none focus:outline-none prose-foreground text-foreground",
       },
     },
   });
@@ -74,7 +74,7 @@ function DiffBlockViewer({ block, type }: { block: any; type: "old" | "new" | "u
     editable: false,
     editorProps: {
       attributes: {
-        class: "prose prose-sm max-w-none focus:outline-none",
+        class: "prose prose-sm max-w-none focus:outline-none prose-foreground text-foreground",
       },
     },
   });
@@ -101,7 +101,7 @@ export function FormattedDiffViewer({ diff, compact = false }: FormattedDiffView
       {!compact && (
         <div className="flex items-center gap-3 pb-3 border-b">
           {getStatusIcon(diff.status)}
-          <h2 className="text-xl font-semibold">{diff.title}</h2>
+          <h2 className="text-xl font-semibold text-foreground">{diff.title}</h2>
           {getStatusBadge(diff.status)}
         </div>
       )}
@@ -111,34 +111,38 @@ export function FormattedDiffViewer({ diff, compact = false }: FormattedDiffView
         {/* Left: Committed version */}
         <div className="space-y-2">
           <div className="flex items-center justify-between px-3 py-2 bg-muted/50 rounded-t-lg border border-b-0">
-            <span className="text-sm font-medium">Committed</span>
+            <span className="text-sm font-medium text-foreground">Committed</span>
             {diff.status === "modified" && (
-              <Badge variant="outline" className="text-xs">Before</Badge>
+              <Badge variant="outline" className="text-xs text-foreground/80">Before</Badge>
             )}
           </div>
-          <Card className="rounded-t-none">
+          <Card className="rounded-t-none bg-card">
             <ScrollArea className="h-[600px]">
-              <div className="p-4 space-y-2">
+              <div className="p-4 space-y-2 text-foreground">
                 {hasBlockDiffs ? (
                   blockDiffs.map((blockDiff, idx) => {
                     if (!blockDiff.oldBlock) return null;
 
                     const bgColor =
-                      blockDiff.type === "removed" ? "bg-red-100 border-l-4 border-red-500" :
-                      blockDiff.type === "modified" ? "bg-red-100 border-l-4 border-red-500" :
+                      blockDiff.type === "removed" ? "bg-red-100 dark:bg-red-900/30 border-l-4 border-red-500" :
+                      blockDiff.type === "modified" ? "bg-red-100 dark:bg-red-900/30 border-l-4 border-red-500" :
                       "";
 
                     return (
-                      <div key={idx} className={`p-2 rounded ${bgColor}`}>
-                        <DiffBlockViewer block={blockDiff.oldBlock} type="old" />
+                      <div key={idx} className={`p-2 rounded ${bgColor} text-foreground`}>
+                        <div className="prose prose-sm max-w-none prose-foreground dark:prose-invert">
+                          <DiffBlockViewer block={blockDiff.oldBlock} type="old" />
+                        </div>
                       </div>
                     );
                   })
                 ) : diff.oldContentJson ? (
                   // Fallback to full content if no block diffs
-                  <ReadOnlyTipTapViewer content={diff.oldContentJson} />
+                  <div className="text-foreground">
+                    <ReadOnlyTipTapViewer content={diff.oldContentJson} />
+                  </div>
                 ) : (
-                  <div className="text-muted-foreground italic text-sm">
+                  <div className="text-foreground/70 italic text-sm">
                     (No previous version)
                   </div>
                 )}
@@ -150,34 +154,38 @@ export function FormattedDiffViewer({ diff, compact = false }: FormattedDiffView
         {/* Right: Current version */}
         <div className="space-y-2">
           <div className="flex items-center justify-between px-3 py-2 bg-muted/50 rounded-t-lg border border-b-0">
-            <span className="text-sm font-medium">Current</span>
+            <span className="text-sm font-medium text-foreground">Current</span>
             {diff.status === "modified" && (
-              <Badge variant="outline" className="text-xs">After</Badge>
+              <Badge variant="outline" className="text-xs text-foreground/80">After</Badge>
             )}
           </div>
-          <Card className="rounded-t-none">
+          <Card className="rounded-t-none bg-card">
             <ScrollArea className="h-[600px]">
-              <div className="p-4 space-y-2">
+              <div className="p-4 space-y-2 text-foreground">
                 {hasBlockDiffs ? (
                   blockDiffs.map((blockDiff, idx) => {
                     if (!blockDiff.newBlock) return null;
 
                     const bgColor =
-                      blockDiff.type === "added" ? "bg-green-100 border-l-4 border-green-500" :
-                      blockDiff.type === "modified" ? "bg-green-100 border-l-4 border-green-500" :
+                      blockDiff.type === "added" ? "bg-green-100 dark:bg-green-900/30 border-l-4 border-green-500" :
+                      blockDiff.type === "modified" ? "bg-green-100 dark:bg-green-900/30 border-l-4 border-green-500" :
                       "";
 
                     return (
-                      <div key={idx} className={`p-2 rounded ${bgColor}`}>
-                        <DiffBlockViewer block={blockDiff.newBlock} type="new" />
+                      <div key={idx} className={`p-2 rounded ${bgColor} text-foreground`}>
+                        <div className="prose prose-sm max-w-none prose-foreground dark:prose-invert">
+                          <DiffBlockViewer block={blockDiff.newBlock} type="new" />
+                        </div>
                       </div>
                     );
                   })
                 ) : diff.newContentJson ? (
                   // Fallback to full content if no block diffs
-                  <ReadOnlyTipTapViewer content={diff.newContentJson} />
+                  <div className="text-foreground">
+                    <ReadOnlyTipTapViewer content={diff.newContentJson} />
+                  </div>
                 ) : (
-                  <div className="text-muted-foreground italic text-sm">
+                  <div className="text-foreground/70 italic text-sm">
                     (No current version)
                   </div>
                 )}
@@ -188,19 +196,19 @@ export function FormattedDiffViewer({ diff, compact = false }: FormattedDiffView
       </div>
 
       {/* Stats */}
-      <div className="flex items-center gap-4 text-sm text-muted-foreground pt-2 border-t">
+      <div className="flex items-center gap-4 text-sm text-foreground/80 pt-2 border-t">
         <div>
-          <span className="font-medium">Status:</span> {diff.status}
+          <span className="font-medium text-foreground">Status:</span> {diff.status}
         </div>
         {diff.blockDiffs && (
           <>
-            <div className="text-green-600">
+            <div className="text-green-700 dark:text-green-400">
               <span className="font-medium">+{diff.blockDiffs.filter(d => d.type === "added").length}</span> added
             </div>
-            <div className="text-red-600">
+            <div className="text-red-700 dark:text-red-400">
               <span className="font-medium">-{diff.blockDiffs.filter(d => d.type === "removed").length}</span> removed
             </div>
-            <div className="text-orange-600">
+            <div className="text-orange-700 dark:text-orange-400">
               <span className="font-medium">~{diff.blockDiffs.filter(d => d.type === "modified").length}</span> modified
             </div>
           </>

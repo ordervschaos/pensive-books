@@ -75,7 +75,7 @@ const getChangeBadge = (type: BlockDiff["type"]) => {
 export function BlockDiffViewer({ blockDiffs, compact = false }: BlockDiffViewerProps) {
   if (!blockDiffs || blockDiffs.length === 0) {
     return (
-      <div className="text-sm text-muted-foreground text-center py-4">
+      <div className="text-sm text-foreground/70 text-center py-4">
         No changes detected in this page
       </div>
     );
@@ -97,7 +97,7 @@ export function BlockDiffViewer({ blockDiffs, compact = false }: BlockDiffViewer
           {/* Header */}
           <div className="flex items-center gap-2 mb-2">
             {getChangeIcon(diff.type)}
-            <span className="text-xs font-medium text-muted-foreground">
+            <span className="text-xs font-medium text-foreground/80">
               {getBlockTypeLabel(diff.blockType)}
             </span>
             {getChangeBadge(diff.type)}
@@ -107,24 +107,24 @@ export function BlockDiffViewer({ blockDiffs, compact = false }: BlockDiffViewer
           <div className="space-y-2">
             {/* Removed/Old Content */}
             {(diff.type === "removed" || diff.type === "modified") && (
-              <div className="bg-red-100/50 border border-red-200 rounded px-3 py-2">
+              <div className="bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded px-3 py-2">
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-xs font-medium text-red-700">Before</span>
+                  <span className="text-xs font-medium text-red-900 dark:text-red-100">Before</span>
                 </div>
-                <div className="text-sm text-red-900 whitespace-pre-wrap break-words">
-                  {diff.oldContent || <span className="italic text-red-600/60">(empty)</span>}
+                <div className="text-sm text-red-950 dark:text-red-50 whitespace-pre-wrap break-words font-medium">
+                  {diff.oldContent || <span className="italic text-red-700 dark:text-red-300">(empty)</span>}
                 </div>
               </div>
             )}
 
             {/* Added/New Content */}
             {(diff.type === "added" || diff.type === "modified") && (
-              <div className="bg-green-100/50 border border-green-200 rounded px-3 py-2">
+              <div className="bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700 rounded px-3 py-2">
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-xs font-medium text-green-700">After</span>
+                  <span className="text-xs font-medium text-green-900 dark:text-green-100">After</span>
                 </div>
-                <div className="text-sm text-green-900 whitespace-pre-wrap break-words">
-                  {diff.newContent || <span className="italic text-green-600/60">(empty)</span>}
+                <div className="text-sm text-green-950 dark:text-green-50 whitespace-pre-wrap break-words font-medium">
+                  {diff.newContent || <span className="italic text-green-700 dark:text-green-300">(empty)</span>}
                 </div>
               </div>
             )}
@@ -133,17 +133,17 @@ export function BlockDiffViewer({ blockDiffs, compact = false }: BlockDiffViewer
       ))}
 
       {/* Summary */}
-      <div className="flex items-center gap-4 text-xs text-muted-foreground pt-2 border-t">
+      <div className="flex items-center gap-4 text-xs text-foreground/80 pt-2 border-t">
         <div>
-          <span className="font-medium">Total changes:</span> {blockDiffs.length}
+          <span className="font-medium text-foreground">Total changes:</span> {blockDiffs.length}
         </div>
-        <div className="text-green-600">
+        <div className="text-green-700 dark:text-green-400">
           <span className="font-medium">+{blockDiffs.filter((d) => d.type === "added").length}</span> added
         </div>
-        <div className="text-red-600">
+        <div className="text-red-700 dark:text-red-400">
           <span className="font-medium">-{blockDiffs.filter((d) => d.type === "removed").length}</span> removed
         </div>
-        <div className="text-orange-600">
+        <div className="text-orange-700 dark:text-orange-400">
           <span className="font-medium">~{blockDiffs.filter((d) => d.type === "modified").length}</span> modified
         </div>
       </div>
