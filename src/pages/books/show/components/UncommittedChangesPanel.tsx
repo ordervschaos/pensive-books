@@ -346,7 +346,7 @@ export function UncommittedChangesPanel({
     const selectedPage = changedPages.find((p) => p.id === selectedFile);
     if (selectedPage) {
       return (
-        <div className="w-full">
+        <div className="w-full" key={`diff-${selectedFile}`}>
           <PageDiffViewer pageId={selectedFile} bookId={bookId} compact={false} />
         </div>
       );
@@ -461,7 +461,7 @@ export function UncommittedChangesPanel({
 
         {/* Expanded Diff Viewer */}
         {isExpanded && (
-          <div className="border-t border-border px-3 pb-3">
+          <div className="border-t border-border px-3 pb-3" key={`diff-inline-${page.id}`}>
             <PageDiffViewer pageId={page.id} bookId={bookId} compact={true} />
           </div>
         )}

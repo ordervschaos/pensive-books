@@ -5,7 +5,7 @@
  * and current workspace version of a page
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import ReactDiffViewer, { DiffMethod } from "react-diff-viewer-continued";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -60,9 +60,18 @@ export function PageDiffViewer({ pageId, bookId, onClose, compact = false }: Pag
   const [viewMode, setViewMode] = useState<"split" | "unified">("split");
   const [diffMode, setDiffMode] = useState<"blocks" | "text">("blocks"); // New: block vs text diff
 
+  // Reset state when pageId changes
+  useEffect(() => {
+    setViewMode("split");
+    setDiffMode("blocks");
+  }, [pageId]);
+
   const { data: diff, isLoading, error } = useQuery({
     queryKey: ["page-diff", pageId, bookId],
     queryFn: () => DiffService.getPageDiff(pageId, bookId),
+    staleTime: 0, // Always consider data stale to ensure fresh fetches
+    refetchOnMount: true, // Always refetch when component mounts
+    refetchOnWindowFocus: false, // Don't refetch on window focus
   });
 
   if (isLoading) {

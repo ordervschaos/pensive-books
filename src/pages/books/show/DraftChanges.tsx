@@ -272,6 +272,7 @@ export default function DraftChanges() {
 
                 {/* Diff Viewer */}
                 <PageDiffViewer
+                  key={`diff-${selectedFile}`}
                   pageId={selectedFile}
                   bookId={bookId}
                   compact={false}
