@@ -8,6 +8,7 @@ import { SmartTypography } from '../extensions/SmartTypography';
 import { AudioBlocks } from '../extensions/AudioBlocks';
 import { PageLink } from '../extensions/PageLink';
 import { PageLinkSuggestion } from '../extensions/PageLinkSuggestion';
+import { HeadingWithId } from '../extensions/HeadingWithId';
 import { common, createLowlight } from 'lowlight';
 import { EditorChangeHandler, EditorJSON } from '@/types/editor';
 import type { EditorView } from '@tiptap/pm/view';
@@ -44,13 +45,11 @@ export const getEditorConfig = (
       StarterKit.configure({
         document: false,
         link: false, // Disable built-in Link to avoid duplication with our custom Link below
+        heading: false, // Disable built-in Heading to use our custom HeadingWithId below
         blockquote: {
           HTMLAttributes: {
             class: 'border-l-4 border-primary pl-4 my-4 italic',
           },
-        },
-        heading: {
-          levels: [1, 2, 3, 4, 5, 6]
         },
         bulletList: {
           HTMLAttributes: {
@@ -73,6 +72,9 @@ export const getEditorConfig = (
           },
         },
         codeBlock: false,
+      }),
+      HeadingWithId.configure({
+        levels: [1, 2, 3, 4, 5, 6],
       }),
       CodeBlockLowlight.configure({
         lowlight,

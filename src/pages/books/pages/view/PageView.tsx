@@ -9,6 +9,7 @@ import { TableOfContents } from "./components/TableOfContents";
 import { PageChatPanel } from "./components/PageChatPanel";
 import { PageMeta } from "./components/PageMeta";
 import { PageViewSettings } from "./components/PageViewSettings";
+import { PageTableOfContents } from "./components/PageTableOfContents";
 import { SlugService } from "@/utils/slugService";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -302,6 +303,9 @@ const PageView = () => {
           </div>
         </div>
       </div>
+
+      {/* Right Sidebar: Page TOC (hidden when chat is open) */}
+      {!isChatOpen && <PageTableOfContents />}
 
       {/* Right Sidebar: AI Chat Panel */}
       <PageChatPanel
