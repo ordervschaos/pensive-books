@@ -10,6 +10,7 @@ import { PageChatPanel } from "./components/PageChatPanel";
 import { PageMeta } from "./components/PageMeta";
 import { PageViewSettings } from "./components/PageViewSettings";
 import { PageTableOfContents } from "./components/PageTableOfContents";
+import { PageSettingsDrawer } from "./components/PageSettingsDrawer";
 import { SlugService } from "@/utils/slugService";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -239,7 +240,10 @@ const PageView = () => {
       {/* SEO Meta Tags */}
       <PageMeta page={page} book={book} />
 
-      {/* Fixed Settings Menu */}
+      {/* Settings Drawer */}
+      <PageSettingsDrawer onSearchOpen={() => setSearchOpen(true)} />
+
+      {/* Login/Logout Button */}
       <PageViewSettings onSearchOpen={() => setSearchOpen(true)} />
 
       {/* Search Dialog */}

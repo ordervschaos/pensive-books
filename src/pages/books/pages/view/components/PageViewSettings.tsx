@@ -1,16 +1,6 @@
 import { useState, useEffect } from "react";
-import { Settings, LogOut, LogIn, Search } from "lucide-react";
+import { LogOut, LogIn } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { ThemeSwitcher } from "@/components/theme/ThemeSwitcher";
-import { PageDisplayControls } from "@/components/navigation/PageDisplayControls";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 
@@ -79,21 +69,14 @@ export function PageViewSettings({ onSearchOpen }: PageViewSettingsProps) {
   };
 
   return (
-    <div className="fixed top-2 right-2 z-50 flex items-center gap-1">
-      {onSearchOpen && (
-        <Button variant="ghost" size="icon" onClick={onSearchOpen} className="h-7 w-7 hover:bg-accent/50">
-          <Search className="h-3.5 w-3.5 opacity-40 hover:opacity-100 transition-opacity" />
-        </Button>
-      )}
-      <PageDisplayControls isPageRoute={true} />
-      <ThemeSwitcher />
+    <div className="fixed top-2 right-12 z-50 flex items-center gap-1">
       {isAuthenticated ? (
-        <Button variant="ghost" size="icon" onClick={handleLogout} className="h-7 w-7 hover:bg-accent/50">
-          <LogOut className="h-3.5 w-3.5 opacity-40 hover:opacity-100 transition-opacity" />
+        <Button variant="ghost" size="icon" onClick={handleLogout} className="h-8 w-8 hover:bg-accent/50">
+          <LogOut className="h-4 w-4 opacity-60 hover:opacity-100 transition-opacity" />
         </Button>
       ) : (
-        <Button variant="ghost" size="icon" onClick={handleLogin} className="h-7 w-7 hover:bg-accent/50">
-          <LogIn className="h-3.5 w-3.5 opacity-40 hover:opacity-100 transition-opacity" />
+        <Button variant="ghost" size="icon" onClick={handleLogin} className="h-8 w-8 hover:bg-accent/50">
+          <LogIn className="h-4 w-4 opacity-60 hover:opacity-100 transition-opacity" />
         </Button>
       )}
     </div>

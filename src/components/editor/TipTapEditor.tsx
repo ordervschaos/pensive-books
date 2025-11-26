@@ -20,8 +20,6 @@ interface TipTapEditorProps {
   fontSizeClassName?: string;
   fontFamilyStyle?: React.CSSProperties;
   customButtons?: React.ReactNode;
-  onToggleChat?: () => void;
-  hasActiveChat?: boolean;
   centerContent?: boolean;
   pageType?: 'text' | 'section';
   onPageTypeChange?: (newPageType: 'text' | 'section') => void;
@@ -40,8 +38,6 @@ export const TipTapEditor = ({
   fontSizeClassName = '',
   fontFamilyStyle = {},
   customButtons,
-  onToggleChat,
-  hasActiveChat,
   centerContent,
   pageType,
   onPageTypeChange,
@@ -156,14 +152,12 @@ export const TipTapEditor = ({
 
   return (
     <div className="h-full flex flex-col min-h-[600px]">
-        <EditorToolbar 
-          editor={editor} 
-          isEditing={isEditing} 
+        <EditorToolbar
+          editor={editor}
+          isEditing={isEditing}
           onToggleEdit={onToggleEdit}
           editable={editable}
           customButtons={customButtons}
-          onToggleChat={onToggleChat}
-          hasActiveChat={hasActiveChat}
           pageType={pageType}
           onPageTypeChange={onPageTypeChange}
           onDeletePage={onDeletePage}
