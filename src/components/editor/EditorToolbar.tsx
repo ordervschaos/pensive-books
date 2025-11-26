@@ -1,4 +1,5 @@
 import { Editor } from '@tiptap/react';
+import { useEffect, useState } from 'react';
 import { Bold, Italic, Quote, Code2, Link2, List, ListOrdered, Image as ImageIcon, Undo, Redo, Table as TableIcon, Heading1, Heading2, Heading3, Heading, Pencil, Check, Type, Section, MoreVertical, Trash2, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -27,6 +28,26 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
   const { toast } = useToast();
   const uploadImage = useSupabaseUpload();
   const isMobile = useMediaQuery("(max-width: 768px)");
+
+  // Track editor selection to force re-renders when heading changes
+  const [, setSelectionUpdate] = useState(0);
+
+  // Update toolbar when editor selection changes
+  useEffect(() => {
+    if (!editor) return;
+
+    const updateHandler = () => {
+      setSelectionUpdate(prev => prev + 1);
+    };
+
+    editor.on('selectionUpdate', updateHandler);
+    editor.on('update', updateHandler);
+
+    return () => {
+      editor.off('selectionUpdate', updateHandler);
+      editor.off('update', updateHandler);
+    };
+  }, [editor]);
 
   if (!editor) return null;
 
