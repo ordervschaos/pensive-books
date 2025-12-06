@@ -34,6 +34,7 @@ import PublishedBookDetails from "@/pages/public/library/PublishedBookDetails";
 
 // Nested resources under books
 import PageView from "@/pages/books/pages/view/PageView";
+import BookChatPage from "@/pages/books/chat/BookChatPage";
 import VersionPreview from "@/pages/books/versions/VersionPreview";
 import VersionPageView from "@/pages/books/versions/VersionPageView";
 import PublishedPageView from "@/pages/books/pages/view/PublishedPageView";
@@ -179,6 +180,14 @@ export default function App() {
                   element={
                     <PrivateRoute>
                       <DraftChanges />
+                    </PrivateRoute>
+                  }
+                />
+                <Route
+                  path="/books/:bookSlug/chat"
+                  element={
+                    <PrivateRoute>
+                      <BookChatPage />
                     </PrivateRoute>
                   }
                 />

@@ -65,6 +65,7 @@ export const useBookChat = (bookId: string | undefined) => {
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [chatHistory, setChatHistory] = useState<ChatHistory | null>(null);
+  const [selectedPageIds, setSelectedPageIds] = useState<number[]>([]);
   const { toast } = useToast();
 
   // Fetch chat history when bookId changes
@@ -181,18 +182,33 @@ export const useBookChat = (bookId: string | undefined) => {
       const updatedMessages = [...messages, userMessage];
       setMessages(updatedMessages);
 
-      // Call the edge function
+      // Mock API response for now (API call stopped as per user request)
+      // TODO: Uncomment when ready to enable API
+      /*
       const { data, error } = await supabase.functions.invoke('chat-with-book', {
         body: {
           bookId: parseInt(bookId),
           message,
           bookMetadata,
           canEdit,
+          pageIds: selectedPageIds,
           conversationHistory: messages
         }
       });
 
       if (error) throw error;
+      */
+
+      // Mock response
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      const contextInfo = selectedPageIds.length > 0
+        ? `${selectedPageIds.length} selected page(s)`
+        : 'all pages in the book';
+
+      const data = {
+        message: `This is a mock response for: "${message}"\n\nI would analyze ${contextInfo} to provide a detailed answer.\n\n**Context:** ${bookMetadata.name} by ${bookMetadata.author}\n**Pages in context:** ${contextInfo}`,
+        suggestedOperations: []
+      };
 
       // Add assistant response to local state
       const assistantMessage: Message = {
@@ -223,7 +239,7 @@ export const useBookChat = (bookId: string | undefined) => {
     } finally {
       setSending(false);
     }
-  }, [bookId, messages, saveChatHistory, toast]);
+  }, [bookId, messages, selectedPageIds, saveChatHistory, toast]);
 
   // Clear chat history
   const clearChat = useCallback(async () => {
@@ -256,12 +272,19 @@ export const useBookChat = (bookId: string | undefined) => {
     // }
   }, [bookId, chatHistory, toast]);
 
+  // Update selected pages for context
+  const updateSelectedPages = useCallback((pageIds: number[]) => {
+    setSelectedPageIds(pageIds);
+  }, []);
+
   return {
     messages,
     loading,
     sending,
     sendMessage,
     clearChat,
-    hasMessages: messages.length > 0
+    hasMessages: messages.length > 0,
+    selectedPageIds,
+    updateSelectedPages
   };
 };

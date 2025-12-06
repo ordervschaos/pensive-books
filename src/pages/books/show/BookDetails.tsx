@@ -27,7 +27,7 @@ import { UncommittedChangesBadge } from "./components/UncommittedChangesBadge";
 import { CommitDialog } from "./components/CommitDialog";
 import { PublishingDialog } from "@/components/book/PublishingDialog";
 import { VersionService } from "@/services/VersionService";
-import { GitCommit, History, FileText } from "lucide-react";
+import { GitCommit, History, FileText, MessageSquare } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -564,6 +564,18 @@ const BookDetails = () => {
               {/* Header Actions - Top Right */}
               {canEdit && (
                 <div className="absolute top-4 right-4 sm:top-5 sm:right-5 md:top-6 md:right-6 z-10 flex items-center gap-2">
+                  {isBetaEnabled && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => navigate(`/books/${bookSlug}/chat`)}
+                    className="gap-2"
+                  >
+                    <MessageSquare className="h-4 w-4" />
+                    Chat with Book
+                  </Button>
+                  )}
+
                   <ShareBookButton
                     isPublic={book.is_public}
                     url={window.location.href}
