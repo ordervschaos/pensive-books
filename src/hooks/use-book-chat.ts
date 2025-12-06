@@ -201,9 +201,9 @@ export const useBookChat = (bookId: string | undefined) => {
 
       // Mock response
       await new Promise(resolve => setTimeout(resolve, 1000));
-      const contextInfo = selectedPageIds.length > 0
-        ? `${selectedPageIds.length} selected page(s)`
-        : 'all pages in the book';
+      const contextInfo = selectedPageIds.length === bookMetadata.pageCount
+        ? 'all pages in the book'
+        : `${selectedPageIds.length} selected page(s)`;
 
       const data = {
         message: `This is a mock response for: "${message}"\n\nI would analyze ${contextInfo} to provide a detailed answer.\n\n**Context:** ${bookMetadata.name} by ${bookMetadata.author}\n**Pages in context:** ${contextInfo}`,

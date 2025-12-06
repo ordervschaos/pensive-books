@@ -9,6 +9,7 @@ import { Send, Trash2, Loader2, Settings2, FileText, ChevronLeft } from 'lucide-
 import { supabase } from '@/integrations/supabase/client';
 import { useBookPermissions } from '@/hooks/use-book-permissions';
 import { useToast } from '@/hooks/use-toast';
+import { useSession } from '@/hooks/use-session';
 import {
   Sheet,
   SheetContent,
@@ -38,11 +39,13 @@ export default function BookChatPage() {
   const { bookSlug } = useParams<{ bookSlug: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { session } = useSession();
   const [inputMessage, setInputMessage] = useState('');
   const [book, setBook] = useState<Book | null>(null);
   const [pages, setPages] = useState<Page[]>([]);
   const [loading, setLoading] = useState(true);
   const [isContextSheetOpen, setIsContextSheetOpen] = useState(false);
+  const [userName, setUserName] = useState<string>('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Extract numeric ID from slug (e.g., "860-book-name" -> 860)
@@ -69,6 +72,42 @@ export default function BookChatPage() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Fetch user name
+  useEffect(() => {
+    const fetchUserName = async () => {
+      if (!session?.user?.id) return;
+
+      try {
+        const { data, error } = await supabase
+          .from('user_data')
+          .select('username, email')
+          .eq('user_id', session.user.id)
+          .maybeSingle();
+
+        if (error) throw error;
+
+        // Use username if available, otherwise use first part of email
+        if (data?.username) {
+          setUserName(data.username);
+        } else if (session.user.email) {
+          const emailName = session.user.email.split('@')[0];
+          const formatted = emailName.charAt(0).toUpperCase() + emailName.slice(1);
+          setUserName(formatted);
+        }
+      } catch (error) {
+        console.error('Error fetching user name:', error);
+        // Fallback to email if available
+        if (session.user.email) {
+          const emailName = session.user.email.split('@')[0];
+          const formatted = emailName.charAt(0).toUpperCase() + emailName.slice(1);
+          setUserName(formatted);
+        }
+      }
+    };
+
+    fetchUserName();
+  }, [session]);
 
   // Fetch book and pages
   useEffect(() => {
@@ -269,8 +308,8 @@ export default function BookChatPage() {
 
   return (
     <div className="flex flex-col h-screen">
-      {/* Header */}
-      <div className="border-b bg-background">
+      {/* Header - Simplified when no messages */}
+      <div className={messages.length === 0 ? 'bg-background py-2' : 'border-b bg-background'}>
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
@@ -282,22 +321,26 @@ export default function BookChatPage() {
                 <ChevronLeft className="w-4 h-4 mr-1" />
                 Back to Book
               </Button>
-              <div>
-                <h1 className="text-xl font-semibold">{book.name}</h1>
-                <p className="text-sm text-muted-foreground">
-                  Chat with {selectedPageIds.length === pages.length ? 'all pages' : `${selectedPageIds.length} selected page(s)`}
-                </p>
-              </div>
+              {messages.length > 0 && (
+                <div>
+                  <h1 className="text-xl font-semibold">{book.name}</h1>
+                  <p className="text-sm text-muted-foreground">
+                    Chat with {selectedPageIds.length === pages.length ? 'all pages' : `${selectedPageIds.length} selected page(s)`}
+                  </p>
+                </div>
+              )}
             </div>
             <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setIsContextSheetOpen(true)}
-              >
-                <Settings2 className="w-4 h-4 mr-2" />
-                Context ({selectedPageIds.length}/{pages.length})
-              </Button>
+              {messages.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsContextSheetOpen(true)}
+                >
+                  <Settings2 className="w-4 h-4 mr-2" />
+                  Context ({selectedPageIds.length}/{pages.length})
+                </Button>
+              )}
               {hasMessages && (
                 <Button
                   variant="ghost"
@@ -313,93 +356,138 @@ export default function BookChatPage() {
         </div>
       </div>
 
-      {/* Messages Area */}
-      <ScrollArea className="flex-1 container mx-auto px-4 py-6">
-        {messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-center max-w-md mx-auto">
-            <FileText className="w-12 h-12 text-muted-foreground mb-4" />
-            <h2 className="text-lg font-semibold mb-2">Start a conversation</h2>
-            <p className="text-sm text-muted-foreground mb-4">
-              Ask questions about {book.name}. I'll use the{' '}
-              {selectedPageIds.length === pages.length
-                ? 'entire book'
-                : `${selectedPageIds.length} selected page(s)`}{' '}
-              as context.
-            </p>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setIsContextSheetOpen(true)}
-            >
-              <Settings2 className="w-4 h-4 mr-2" />
-              Select Pages
-            </Button>
-          </div>
-        ) : (
-          <div className="max-w-4xl mx-auto space-y-4">
-            {messages.map((message, index) => (
-              <div key={index}>
-                <ChatMessage message={message} />
-                {message.role === 'assistant' && (
-                  <div className="flex justify-end mt-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleConvertToPage(message.content)}
-                    >
-                      <FileText className="w-3 h-3 mr-2" />
-                      Convert to Page
-                    </Button>
-                  </div>
-                )}
-              </div>
-            ))}
-            {sending && (
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                </div>
-                <div className="text-sm text-muted-foreground">Thinking...</div>
-              </div>
-            )}
-            <div ref={messagesEndRef} />
-          </div>
-        )}
-      </ScrollArea>
+      {/* Messages Area - Centered when empty, scrollable when has messages */}
+      {messages.length === 0 ? (
+        <div className="flex-1 flex flex-col items-center justify-center container mx-auto px-4">
+          <div className="w-full max-w-3xl">
+            <div className="flex flex-col items-center text-center mb-8">
+              <h1 className="text-3xl font-semibold mb-2">
+                {userName ? `Hi ${userName}` : 'Hi'}
+              </h1>
+              <p className="text-muted-foreground">
+                Ask questions about {book.name}
+              </p>
+            </div>
 
-      {/* Input Area */}
-      <div className="border-t bg-background">
-        <div className="container mx-auto px-4 py-4">
-          <div className="max-w-4xl mx-auto">
-            <div className="flex gap-2">
-              <Input
-                value={inputMessage}
-                onChange={(e) => setInputMessage(e.target.value)}
-                onKeyPress={handleKeyPress}
-                placeholder={`Ask a question about ${book.name}...`}
-                disabled={sending || selectedPageIds.length === 0}
-                className="flex-1"
-              />
+            {/* Centered Input */}
+            <div className="w-full">
+              <div className="flex gap-2 mb-4">
+                <Input
+                  value={inputMessage}
+                  onChange={(e) => setInputMessage(e.target.value)}
+                  onKeyPress={handleKeyPress}
+                  placeholder={`Ask a question about ${book.name}...`}
+                  disabled={sending || selectedPageIds.length === 0}
+                  className="flex-1 h-12 text-base"
+                  autoFocus
+                />
+                <Button
+                  onClick={handleSendMessage}
+                  disabled={!inputMessage.trim() || sending || selectedPageIds.length === 0}
+                  className="h-12 px-4"
+                >
+                  {sending ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <Send className="w-5 h-5" />
+                  )}
+                </Button>
+              </div>
+
+              {selectedPageIds.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center">
+                  Please select at least one page to start chatting
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground text-center">
+                  Using {selectedPageIds.length === pages.length ? 'all pages' : `${selectedPageIds.length} page(s)`} as context
+                </p>
+              )}
+            </div>
+
+            {/* Suggested Actions */}
+            <div className="flex flex-wrap gap-2 justify-center mt-6">
               <Button
-                onClick={handleSendMessage}
-                disabled={!inputMessage.trim() || sending || selectedPageIds.length === 0}
+                variant="outline"
                 size="sm"
+                onClick={() => setIsContextSheetOpen(true)}
+                className="rounded-full"
               >
-                {sending ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Send className="w-4 h-4" />
-                )}
+                <Settings2 className="w-4 h-4 mr-2" />
+                Select Pages
               </Button>
             </div>
-            {selectedPageIds.length === 0 && (
-              <p className="text-xs text-muted-foreground mt-2">
-                Please select at least one page to start chatting
-              </p>
-            )}
           </div>
         </div>
-      </div>
+      ) : (
+        <>
+          {/* Messages Area */}
+          <ScrollArea className="flex-1 container mx-auto px-4 py-6">
+            <div className="max-w-4xl mx-auto space-y-4">
+              {messages.map((message, index) => (
+                <div key={index}>
+                  <ChatMessage message={message} />
+                  {message.role === 'assistant' && (
+                    <div className="flex justify-end mt-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleConvertToPage(message.content)}
+                      >
+                        <FileText className="w-3 h-3 mr-2" />
+                        Convert to Page
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              ))}
+              {sending && (
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  </div>
+                  <div className="text-sm text-muted-foreground">Thinking...</div>
+                </div>
+              )}
+              <div ref={messagesEndRef} />
+            </div>
+          </ScrollArea>
+
+          {/* Input Area - Bottom when has messages */}
+          <div className="border-t bg-background">
+            <div className="container mx-auto px-4 py-4">
+              <div className="max-w-4xl mx-auto">
+                <div className="flex gap-2">
+                  <Input
+                    value={inputMessage}
+                    onChange={(e) => setInputMessage(e.target.value)}
+                    onKeyPress={handleKeyPress}
+                    placeholder={`Ask a question about ${book.name}...`}
+                    disabled={sending || selectedPageIds.length === 0}
+                    className="flex-1"
+                  />
+                  <Button
+                    onClick={handleSendMessage}
+                    disabled={!inputMessage.trim() || sending || selectedPageIds.length === 0}
+                    size="sm"
+                  >
+                    {sending ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Send className="w-4 h-4" />
+                    )}
+                  </Button>
+                </div>
+                {selectedPageIds.length === 0 && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Please select at least one page to start chatting
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Context Selection Sheet */}
       <Sheet open={isContextSheetOpen} onOpenChange={setIsContextSheetOpen}>

@@ -21,6 +21,9 @@ Implemented a full-blown chat page for books that allows users to chat with thei
 
 ### 3. **Chat Interface**
 - Clean, modern chat UI with message history
+- **Centered layout when empty** - Input starts in the center of the screen (like Gemini)
+- **Dynamic layout** - Input moves to bottom when messages appear
+- **Personalized greeting** - Fetches username from database for welcoming message
 - User messages displayed on the right with primary color
 - AI responses displayed on the left with markdown support
 - Auto-scrolling to latest message
@@ -120,18 +123,34 @@ const { data, error } = await supabase.functions.invoke('chat-with-book', {
 ## UI/UX Features
 
 ### Header
-- Book title and subtitle
-- Selected page count display
-- Context button with count badge
-- Clear chat button
-- Back to book navigation
+- Back to book button (always visible)
+- Book title and subtitle (hidden when no messages for cleaner UI)
+- Context button with count badge (visible when messages exist)
+- Clear chat button (visible when messages exist)
+- Simplified header when chat is empty
+
+### Layout Behavior
+- **Empty State (No Messages)**:
+  - Input box centered vertically on screen (like Gemini/ChatGPT)
+  - Personalized greeting using username from database
+  - Large, welcoming title
+  - Helpful subtitle about the book
+  - Context info below input
+  - Suggested action buttons
+  - Minimal header
+- **Active State (With Messages)**:
+  - Input box moves to bottom of screen
+  - Full header with book info and controls
+  - Scrollable message history
+  - Standard chat interface
 
 ### Messages Area
 - Scrollable message history
-- Empty state with helpful instructions
+- Empty state with centered, welcoming UI
 - Avatar indicators (User vs Bot)
 - Markdown rendering for AI responses
 - Convert to Page button per response
+- Auto-scroll to latest message
 
 ### Input Area
 - Full-width input field
