@@ -378,6 +378,109 @@
     --audio-block-hover-bg-opacity: 0.09;
     --audio-block-hover-shadow-opacity: 0.16;
   }
+
+  /* ============================================
+     PUMPKIN THEME (Light Mode)
+     ============================================ */
+  .theme-pumpkin {
+    /* shadcn/ui color tokens - pumpkin light */
+    --background: 48 100% 98%;  /* Warm cream/off-white */
+    --foreground: 202 38% 22%;  /* Charcoal for text */
+
+    --card: 48 80% 96%;  /* Light cream */
+    --card-foreground: 202 38% 22%;
+
+    --popover: 48 80% 96%;
+    --popover-foreground: 202 38% 22%;
+
+    --primary: 20 99% 59%;  /* Pumpkin orange #fe7f2d */
+    --primary-foreground: 48 100% 98%;
+
+    --secondary: 30 60% 90%;  /* Light pumpkin tint */
+    --secondary-foreground: 202 38% 22%;
+
+    --muted: 35 40% 88%;  /* Warm beige */
+    --muted-foreground: 202 30% 40%;  /* Medium charcoal */
+
+    --accent: 20 95% 70%;  /* Bright pumpkin */
+    --accent-foreground: 202 38% 22%;
+
+    --destructive: 0 70% 50%;  /* Keep red for errors */
+    --destructive-foreground: 48 100% 98%;
+
+    --border: 30 30% 80%;  /* Warm border */
+    --input: 30 30% 80%;
+    --ring: 20 99% 59%;
+
+    /* Semantic colors - pumpkin palette */
+    --color-gray-900: #233d4d;  /* Charcoal */
+    --color-gray-700: #2d4a5c;  /* Medium charcoal */
+    --color-gray-600: #3d5a6d;  /* Lighter charcoal */
+    --color-gray-500: #5a7a8a;  /* Light charcoal */
+    --color-gray-300: #c4a68a;  /* Warm tan */
+    --color-gray-200: #e0d4c0;  /* Light cream */
+    --color-gray-100: #f5efe5;  /* Very light cream */
+
+    --color-brand-primary-dark: #d46a1f;  /* Darker pumpkin */
+    --color-brand-primary-darker: #b8550f;  /* Deep pumpkin */
+    --color-link: 254 127 45;  /* Pumpkin link - rgb(254, 127, 45) = #fe7f2d */
+  }
+
+  /* ============================================
+     PUMPKIN THEME (Dark Mode)
+     ============================================ */
+  .theme-pumpkin.dark {
+    /* shadcn/ui color tokens - pumpkin dark */
+    --background: 202 38% 12%;  /* Dark charcoal */
+    --foreground: 48 40% 90%;  /* Light cream text */
+
+    --card: 202 35% 15%;  /* Slightly lighter charcoal */
+    --card-foreground: 48 40% 92%;
+
+    --popover: 202 35% 15%;
+    --popover-foreground: 48 40% 92%;
+
+    --primary: 20 99% 65%;  /* Bright pumpkin */
+    --primary-foreground: 202 38% 12%;
+
+    --secondary: 202 30% 20%;  /* Dark charcoal panel */
+    --secondary-foreground: 48 40% 90%;
+
+    --muted: 202 25% 18%;  /* Muted dark charcoal */
+    --muted-foreground: 48 25% 70%;  /* Muted cream */
+
+    --accent: 20 90% 55%;  /* Pumpkin accent */
+    --accent-foreground: 48 40% 90%;
+
+    --destructive: 0 55% 45%;  /* Darker red for dark mode */
+    --destructive-foreground: 48 40% 90%;
+
+    --border: 202 25% 22%;  /* Dark border */
+    --input: 202 25% 22%;
+    --ring: 20 99% 65%;
+
+    /* Semantic colors - pumpkin dark palette */
+    --color-gray-900: #f5efe5;  /* Light cream for text */
+    --color-gray-700: #e0d4c0;  /* Lighter cream */
+    --color-gray-600: #c4a68a;  /* Tan */
+    --color-gray-500: #8b7461;  /* Darker tan */
+    --color-gray-300: #4a5a6a;  /* Medium charcoal border */
+    --color-gray-200: #3d4a5c;  /* Darker charcoal border */
+    --color-gray-100: #2d3a4a;  /* Very dark charcoal background */
+
+    --color-brand-primary-dark: #fe7f2d;  /* Pumpkin */
+    --color-brand-primary-darker: #d46a1f;  /* Darker pumpkin */
+    --color-link: 254 127 45;  /* Pumpkin link - rgb(254, 127, 45) = #fe7f2d */
+
+    /* Audio feature opacity adjustments for pumpkin dark mode */
+    --audio-highlight-bg-opacity: 0.18;
+    --audio-highlight-shadow-opacity: 0.10;
+    --audio-highlight-hover-bg-opacity: 0.28;
+    --audio-highlight-hover-shadow-opacity: 0.18;
+
+    --audio-block-hover-bg-opacity: 0.1;
+    --audio-block-hover-shadow-opacity: 0.18;
+  }
 }
 
 @layer base {
