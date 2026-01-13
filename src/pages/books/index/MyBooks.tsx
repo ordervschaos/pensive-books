@@ -8,7 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ContinueWritingCard } from "./components/ContinueWritingCard";
+import { RecentBooksCard } from "./components/RecentBooksCard";
 import { useBookFilters, FilterType, SortType } from "@/hooks/use-book-filters";
 import { formatDistanceToNow } from "date-fns";
 
@@ -232,8 +232,8 @@ export default function Index() {
 
   return (
     <div className="container mx-auto p-6 space-y-6">
-      {/* Continue Writing Card - Top Priority */}
-      <ContinueWritingCard />
+      {/* Recent Books - Top Priority */}
+      <RecentBooksCard />
 
       {/* Header with Search, Filters, Sort */}
       <div className="space-y-3">
