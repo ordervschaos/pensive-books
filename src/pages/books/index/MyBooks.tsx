@@ -33,6 +33,7 @@ export default function Index() {
   const [books, setBooks] = useState<Book[]>([]);
   const [sharedBooks, setSharedBooks] = useState<Book[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingDetails, setLoadingDetails] = useState(true);
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -52,106 +53,93 @@ export default function Index() {
     const checkAuthAndFetchBooks = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        
+
         if (!session) {
           navigate("/auth");
           return;
         }
 
         console.log("Fetching books for user:", session.user.email);
-        
-        // Fetch user's own books (including pinned field)
-        const { data: ownedBooks, error: ownedError } = await supabase
-          .from("books")
-          .select("*")
-          .eq('owner_id', session.user.id)
-          .eq('is_archived', false)
-          .order("updated_at", { ascending: false });
 
-        if (ownedError) {
-          console.error("Error fetching owned books:", ownedError);
-          throw ownedError;
+        // STAGE 1: Fetch basic book info FAST (without page counts)
+        const [ownedBooksResult, sharedBooksResult] = await Promise.all([
+          supabase
+            .from("books")
+            .select("*")
+            .eq('owner_id', session.user.id)
+            .eq('is_archived', false)
+            .order("updated_at", { ascending: false }),
+
+          supabase
+            .from("book_access")
+            .select(`
+              access_level,
+              books!inner (*)
+            `)
+            .eq('invited_email', session.user.email)
+            .eq('status', 'accepted')
+            .eq('books.is_archived', false)
+        ]);
+
+        if (ownedBooksResult.error) {
+          console.error("Error fetching owned books:", ownedBooksResult.error);
+          throw ownedBooksResult.error;
         }
 
-        // Fetch page counts for each book
-        const bookIds = (ownedBooks || []).map(book => book.id);
-        const pageCountsMap = new Map<number, number>();
-        
-        if (bookIds.length > 0) {
-          // Fetch page counts using a single query with grouping
-          const { data: pageCounts, error: pageCountError } = await supabase
-            .from('pages')
-            .select('book_id')
-            .in('book_id', bookIds)
-            .eq('archived', false);
-
-          if (!pageCountError && pageCounts) {
-            // Count pages per book
-            pageCounts.forEach(page => {
-              const count = pageCountsMap.get(page.book_id) || 0;
-              pageCountsMap.set(page.book_id, count + 1);
-            });
-          }
-
-          // Add page_count to each book
-          ownedBooks?.forEach(book => {
-            (book as any).page_count = pageCountsMap.get(book.id) || 0;
-          });
+        if (sharedBooksResult.error) {
+          console.error("Error fetching shared books:", sharedBooksResult.error);
+          throw sharedBooksResult.error;
         }
 
-        // Fetch shared books
-        const { data: sharedBooksAccess, error: sharedError } = await supabase
-          .from("book_access")
-          .select(`
-            access_level,
-            books!inner (*)
-          `)
-          .eq('invited_email', session.user.email)
-          .eq('status', 'accepted')
-          .eq('books.is_archived', false);
-
-        if (sharedError) {
-          console.error("Error fetching shared books:", sharedError);
-          throw sharedError;
-        }
-
-        // Transform shared books data to include access level and page count
-        const transformedSharedBooks = sharedBooksAccess
+        const ownedBooks = ownedBooksResult.data || [];
+        const transformedSharedBooks = sharedBooksResult.data
           ?.filter(item => item.books !== null)
           .map(item => ({
             ...item.books,
             access_level: item.access_level
           })) as Book[] || [];
 
-        // Fetch page counts for shared books
-        const sharedBookIds = transformedSharedBooks.map(book => book.id);
-        if (sharedBookIds.length > 0) {
-          const { data: sharedPageCounts, error: sharedPageCountError } = await supabase
+        console.log("Basic books fetched successfully:", {
+          owned: ownedBooks.length,
+          shared: transformedSharedBooks.length
+        });
+
+        // Show books immediately with page_count = 0
+        setBooks(ownedBooks.map(book => ({ ...book, page_count: 0 })) as Book[]);
+        setSharedBooks(transformedSharedBooks.map(book => ({ ...book, page_count: 0 })));
+        setLoading(false);
+
+        // STAGE 2: Fetch page counts in background
+        const allBookIds = [...ownedBooks.map(b => b.id), ...transformedSharedBooks.map(b => b.id)];
+
+        if (allBookIds.length > 0) {
+          const { data: pageCounts, error: pageCountError } = await supabase
             .from('pages')
             .select('book_id')
-            .in('book_id', sharedBookIds)
+            .in('book_id', allBookIds)
             .eq('archived', false);
 
-          if (!sharedPageCountError && sharedPageCounts) {
-            const sharedPageCountsMap = new Map<number, number>();
-            sharedPageCounts.forEach(page => {
-              const count = sharedPageCountsMap.get(page.book_id) || 0;
-              sharedPageCountsMap.set(page.book_id, count + 1);
+          if (!pageCountError && pageCounts) {
+            const pageCountsMap = new Map<number, number>();
+            pageCounts.forEach(page => {
+              const count = pageCountsMap.get(page.book_id) || 0;
+              pageCountsMap.set(page.book_id, count + 1);
             });
 
-            transformedSharedBooks.forEach(book => {
-              book.page_count = sharedPageCountsMap.get(book.id) || 0;
-            });
+            // Update books with page counts
+            setBooks(prev => prev.map(book => ({
+              ...book,
+              page_count: pageCountsMap.get(book.id) || 0
+            })));
+
+            setSharedBooks(prev => prev.map(book => ({
+              ...book,
+              page_count: pageCountsMap.get(book.id) || 0
+            })));
           }
         }
 
-        console.log("Books fetched successfully:", {
-          owned: ownedBooks?.length || 0,
-          shared: transformedSharedBooks?.length || 0
-        });
-
-        setBooks((ownedBooks || []) as Book[]);
-        setSharedBooks(transformedSharedBooks);
+        setLoadingDetails(false);
       } catch (error: unknown) {
         console.error("Error fetching books:", error);
         toast({
@@ -159,8 +147,8 @@ export default function Index() {
           title: "Error fetching books",
           description: error instanceof Error ? error.message : "An unknown error occurred",
         });
-      } finally {
         setLoading(false);
+        setLoadingDetails(false);
       }
     };
 
@@ -189,12 +177,12 @@ export default function Index() {
           ? 'Book removed from pinned section'
           : 'Book added to pinned section',
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error toggling pin:', error);
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: error.message || 'Unknown error occurred',
+        description: error instanceof Error ? error.message : 'Unknown error occurred',
       });
     }
   };
@@ -202,13 +190,19 @@ export default function Index() {
   if (loading) {
     return (
       <div className="container mx-auto p-6">
-        <div className="animate-pulse space-y-6">
-          <div className="h-24 bg-muted rounded"></div>
-          <div className="h-12 bg-muted rounded"></div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="aspect-[3/4] bg-muted rounded"></div>
-            ))}
+        <div className="fixed top-0 left-0 right-0 z-50">
+          <div className="h-1 bg-primary/20">
+            <div className="h-full bg-primary animate-pulse" style={{ width: '80%' }}></div>
+          </div>
+        </div>
+        <div className="opacity-60">
+          <div className="space-y-3">
+            <div className="h-6 w-32 bg-muted rounded animate-pulse"></div>
+            <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className={`h-24 bg-muted rounded animate-pulse ${i > 2 ? 'hidden lg:block' : ''}`}></div>
+              ))}
+            </div>
           </div>
         </div>
       </div>

@@ -31,7 +31,7 @@ export default function Landing() {
     const checkAuth = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
-        navigate('/my-books', { replace: true });
+        navigate('/books', { replace: true });
       }
     };
     checkAuth();

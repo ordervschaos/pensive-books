@@ -74,9 +74,15 @@ export const PrivateRoute = ({ children }: PrivateRouteProps) => {
     await supabase.auth.signOut();
   };
 
-  // Show nothing while checking auth status
+  // Show minimal loading indicator while checking auth status
   if (loading) {
-    return null;
+    return (
+      <div className="fixed top-0 left-0 right-0 z-50">
+        <div className="h-1 bg-primary/20">
+          <div className="h-full bg-primary animate-pulse" style={{ width: '60%' }}></div>
+        </div>
+      </div>
+    );
   }
 
   // If not authenticated, redirect to login

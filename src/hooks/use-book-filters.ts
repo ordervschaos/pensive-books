@@ -9,6 +9,7 @@ interface Book {
   subtitle?: string | null;
   author?: string | null;
   cover_url?: string | null;
+  show_text_on_cover?: boolean;
   is_public: boolean;
   is_archived: boolean;
   pinned?: boolean | null;
