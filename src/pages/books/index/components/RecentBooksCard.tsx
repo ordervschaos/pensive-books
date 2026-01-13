@@ -14,7 +14,38 @@ interface RecentBook {
   showTextOnCover: boolean;
   pageTitle: string | null;
   timestamp: string;
-  wasEditing: boolean; // Track if user was editing vs just reading
+  wasEditing: boolean;
+}
+
+interface PageData {
+  id: number;
+  title: string | null;
+  updated_at: string;
+  book_id: number;
+  page_index: number;
+  books: {
+    id: number;
+    name: string;
+    subtitle: string | null;
+    cover_url: string | null;
+    show_text_on_cover: boolean;
+    is_archived: boolean;
+  };
+}
+
+interface BookData {
+  id: number;
+  name: string;
+  subtitle: string | null;
+  cover_url: string | null;
+  show_text_on_cover: boolean;
+}
+
+interface PageLookup {
+  id: number;
+  title: string | null;
+  book_id: number;
+  page_index: number;
 }
 
 export function RecentBooksCard() {
@@ -30,33 +61,42 @@ export function RecentBooksCard() {
 
         const recentItems: RecentBook[] = [];
 
-        // 1. Fetch recently edited pages (from pages table)
-        const { data: editedPages, error: editError } = await supabase
-          .from('pages')
-          .select(`
-            id,
-            title,
-            updated_at,
-            book_id,
-            books!inner (
+        // Run both queries in parallel
+        const [editedPagesResult, userDataResult] = await Promise.all([
+          // 1. Fetch recently edited pages
+          supabase
+            .from('pages')
+            .select(`
               id,
-              name,
-              subtitle,
-              cover_url,
-              show_text_on_cover,
-              is_archived
-            )
-          `)
-          .eq('owner_id', session.user.id)
-          .eq('archived', false)
-          .eq('books.is_archived', false)
-          .order('updated_at', { ascending: false })
-          .limit(5); // Get top 5 edited pages
+              title,
+              updated_at,
+              book_id,
+              books!inner (
+                id,
+                name,
+                subtitle,
+                cover_url,
+                show_text_on_cover,
+                is_archived
+              )
+            `)
+            .eq('owner_id', session.user.id)
+            .eq('archived', false)
+            .eq('books.is_archived', false)
+            .order('updated_at', { ascending: false })
+            .limit(5),
 
-        if (editError) {
-          console.error('Error fetching edited pages:', editError);
-        } else if (editedPages) {
-          editedPages.forEach((page: any) => {
+          // 2. Fetch user bookmarks
+          supabase
+            .from('user_data')
+            .select('bookmarked_pages')
+            .eq('user_id', session.user.id)
+            .maybeSingle()
+        ]);
+
+        // Process edited pages
+        if (!editedPagesResult.error && editedPagesResult.data) {
+          editedPagesResult.data.forEach((page: PageData) => {
             recentItems.push({
               bookId: page.books.id,
               pageId: page.id,
@@ -71,24 +111,17 @@ export function RecentBooksCard() {
           });
         }
 
-        // 2. Fetch recently read books (from user_data.bookmarked_pages)
-        const { data: userData, error: userError } = await supabase
-          .from('user_data')
-          .select('bookmarked_pages')
-          .eq('user_id', session.user.id)
-          .maybeSingle();
+        // Process bookmarked pages - OPTIMIZED
+        if (!userDataResult.error && userDataResult.data?.bookmarked_pages) {
+          const bookmarks = userDataResult.data.bookmarked_pages as Record<string, number | { pageIndex: number; timestamp: string }>;
 
-        if (userError) {
-          console.error('Error fetching user data:', userError);
-        } else if (userData?.bookmarked_pages) {
-          const bookmarks = userData.bookmarked_pages as Record<string, any>;
+          // Collect all book IDs and page indices
+          const bookmarkEntries: Array<{ bookId: string; pageIndex: number; timestamp: string }> = [];
 
-          // Process each bookmark
           for (const [bookId, bookmark] of Object.entries(bookmarks)) {
             let pageIndex: number;
             let timestamp: string;
 
-            // Handle both old and new bookmark formats
             if (typeof bookmark === 'number') {
               pageIndex = bookmark;
               timestamp = new Date(0).toISOString();
@@ -99,44 +132,70 @@ export function RecentBooksCard() {
               continue;
             }
 
-            // Fetch book details
-            const { data: bookData, error: bookError } = await supabase
+            bookmarkEntries.push({ bookId, pageIndex, timestamp });
+          }
+
+          if (bookmarkEntries.length > 0) {
+            const bookIds = bookmarkEntries.map(entry => parseInt(entry.bookId));
+
+            // Batch query: Get all books at once
+            const { data: booksData, error: booksError } = await supabase
               .from('books')
               .select('id, name, subtitle, cover_url, show_text_on_cover')
-              .eq('id', bookId)
-              .eq('is_archived', false)
-              .maybeSingle();
+              .in('id', bookIds)
+              .eq('is_archived', false);
 
-            if (bookError || !bookData) continue;
+            if (!booksError && booksData) {
+              // Batch query: Get all pages for these books at once
+              const { data: pagesData, error: pagesError } = await supabase
+                .from('pages')
+                .select('id, title, book_id, page_index')
+                .in('book_id', bookIds)
+                .eq('archived', false)
+                .order('page_index', { ascending: true });
 
-            // Fetch the specific page
-            const { data: pagesData, error: pagesError } = await supabase
-              .from('pages')
-              .select('id, title')
-              .eq('book_id', bookId)
-              .eq('archived', false)
-              .order('page_index', { ascending: true });
+              if (!pagesError && pagesData) {
+                // Create lookup maps for O(1) access
+                const bookMap = new Map(booksData.map(book => [book.id, book]));
 
-            if (pagesError || !pagesData) continue;
+                // Group pages by book_id for faster lookup
+                const pagesByBook = new Map<number, PageLookup[]>();
+                pagesData.forEach(page => {
+                  if (!pagesByBook.has(page.book_id)) {
+                    pagesByBook.set(page.book_id, []);
+                  }
+                  pagesByBook.get(page.book_id)!.push(page);
+                });
 
-            const targetPage = pagesData[pageIndex];
-            if (targetPage) {
-              recentItems.push({
-                bookId: parseInt(bookId),
-                pageId: targetPage.id,
-                bookName: bookData.name,
-                bookSubtitle: bookData.subtitle,
-                coverUrl: bookData.cover_url,
-                showTextOnCover: bookData.show_text_on_cover,
-                pageTitle: targetPage.title,
-                timestamp: timestamp,
-                wasEditing: false,
-              });
+                // Process each bookmark using the lookup maps
+                bookmarkEntries.forEach(({ bookId, pageIndex, timestamp }) => {
+                  const bookIdNum = parseInt(bookId);
+                  const book = bookMap.get(bookIdNum);
+                  const pages = pagesByBook.get(bookIdNum);
+
+                  if (book && pages) {
+                    const targetPage = pages[pageIndex];
+                    if (targetPage) {
+                      recentItems.push({
+                        bookId: bookIdNum,
+                        pageId: targetPage.id,
+                        bookName: book.name,
+                        bookSubtitle: book.subtitle,
+                        coverUrl: book.cover_url,
+                        showTextOnCover: book.show_text_on_cover,
+                        pageTitle: targetPage.title,
+                        timestamp: timestamp,
+                        wasEditing: false,
+                      });
+                    }
+                  }
+                });
+              }
             }
           }
         }
 
-        // 3. Deduplicate by bookId (keep most recent), sort by timestamp, and take top 4
+        // Deduplicate by bookId (keep most recent), sort by timestamp, and take top 4
         const bookMap = new Map<number, RecentBook>();
 
         recentItems.forEach(item => {
@@ -148,7 +207,7 @@ export function RecentBooksCard() {
 
         const sortedRecent = Array.from(bookMap.values())
           .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-          .slice(0, 4); // Show top 4 most recent books
+          .slice(0, 4);
 
         setRecentBooks(sortedRecent);
       } catch (error) {
@@ -190,7 +249,7 @@ export function RecentBooksCard() {
   }
 
   if (recentBooks.length === 0) {
-    return null; // Don't show anything if no recent activity
+    return null;
   }
 
   return (
@@ -208,7 +267,6 @@ export function RecentBooksCard() {
             onClick={() => handleContinue(book)}
           >
             <div className="flex gap-3 items-start">
-              {/* Book Cover */}
               <div className="w-12 h-16 flex-shrink-0">
                 {book.coverUrl ? (
                   <img
@@ -225,7 +283,6 @@ export function RecentBooksCard() {
                 )}
               </div>
 
-              {/* Content */}
               <div className="flex-1 min-w-0">
                 <h3 className="text-sm font-semibold mb-1 line-clamp-1">
                   {book.bookName || 'Untitled Book'}
