@@ -10,7 +10,8 @@ import {
   Plus,
   MoreVertical,
   MessageSquare,
-  X
+  X,
+  List
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -39,10 +40,11 @@ import {
 import { SortablePageItem } from "./SortablePageItem";
 import { RegularPageItem } from "./RegularPageItem";
 import { PageCard } from "./PageCard";
+import { BookOutlineView } from "./BookOutlineView";
 import { PagesListProps, Page } from "./types";
-import { 
-  fetchBookmarkedPage, 
-  handleDeletePage as deletePageUtil, 
+import {
+  fetchBookmarkedPage,
+  handleDeletePage as deletePageUtil,
   createNewPage as createPageUtil,
   reorderPages
 } from "./pageUtils";
@@ -63,8 +65,8 @@ export const PagesList = ({
     [...pages].sort((a, b) => a.page_index - b.page_index)
   );
   const [isReordering, setIsReordering] = useState(isReorderMode);
-  const [viewMode, setViewMode] = useState<'list' | 'grid'>('grid');
-  const [previousViewMode, setPreviousViewMode] = useState<'list' | 'grid'>('grid');
+  const [viewMode, setViewMode] = useState<'list' | 'grid' | 'outline'>('grid');
+  const [previousViewMode, setPreviousViewMode] = useState<'list' | 'grid' | 'outline'>('grid');
   const [bookmarkedPageIndex, setBookmarkedPageIndex] = useState<number | null>(null);
   const bookmarkedPageRef = useRef<HTMLDivElement>(null);
   const isBetaEnabled = localStorage.getItem('is_beta') === 'true';
@@ -220,19 +222,39 @@ export const PagesList = ({
       <CardContent className="p-0">
         <div className="flex flex-row sm:flex-row items-start sm:items-center justify-between p-4 border-b border-border gap-4">
           <div className="flex items-center gap-2">
-            <Button
-              variant={viewMode === 'list' ? "default" : "outline"}
-              size="icon"
-              onClick={() => setViewMode(viewMode === 'list' ? 'grid' : 'list')}
-              className="rounded-full"
-              disabled={isReordering}
-            >
-              {viewMode === 'list' ? (
+            {/* View Mode Buttons */}
+            <div className="flex items-center gap-1 border border-border rounded-full p-1">
+              <Button
+                variant={viewMode === 'grid' ? 'default' : 'ghost'}
+                size="icon"
+                onClick={() => setViewMode('grid')}
+                className="rounded-full h-8 w-8"
+                disabled={isReordering}
+                title="Grid View"
+              >
                 <LayoutGrid className="h-4 w-4" />
-              ) : (
+              </Button>
+              <Button
+                variant={viewMode === 'list' ? 'default' : 'ghost'}
+                size="icon"
+                onClick={() => setViewMode('list')}
+                className="rounded-full h-8 w-8"
+                disabled={isReordering}
+                title="List View"
+              >
                 <LayoutList className="h-4 w-4" />
-              )}
-            </Button>
+              </Button>
+              <Button
+                variant={viewMode === 'outline' ? 'default' : 'ghost'}
+                size="icon"
+                onClick={() => setViewMode('outline')}
+                className="rounded-full h-8 w-8"
+                disabled={isReordering}
+                title="Outline View"
+              >
+                <List className="h-4 w-4" />
+              </Button>
+            </div>
 
             {/* Chat button - available for everyone in beta */}
             {onChatToggle && isBetaEnabled && (
@@ -335,105 +357,113 @@ export const PagesList = ({
         </div>
 
 
-          <div className={`${viewMode === 'grid' ? 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 p-4' : ''}`}>
-            {isReordering ? (
-              <DndContext
-                sensors={sensors}
-                collisionDetection={closestCenter}
-                onDragEnd={handleDragEnd}
-              >
-                <SortableContext
-                  items={items}
-                  strategy={verticalListSortingStrategy}
+          {viewMode === 'outline' ? (
+            <BookOutlineView
+              pages={items}
+              bookId={bookId}
+              onNavigate={(pageId) => navigate(`/books/${bookId}/pages/${pageId}`)}
+            />
+          ) : (
+            <div className={`${viewMode === 'grid' ? 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 p-4' : ''}`}>
+              {isReordering ? (
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleDragEnd}
                 >
-                  {items.map((page) => (
-                    <SortablePageItem
-                      key={page.id}
-                      page={page}
-                      bookId={bookId}
-                      onNavigate={(pageId) => navigate(`/books/${bookId}/pages/${pageId}`)}
-                      isBookmarked={bookmarkedPageIndex === page.page_index}
-                      ref={bookmarkedPageIndex === page.page_index ? bookmarkedPageRef : undefined}
-                    />
-                  ))}
-                </SortableContext>
-              </DndContext>
-            ) : (
-              <>
-                {/* Add New Page card/list item at the beginning (only if >3 pages) */}
-                {canEdit && !isDeleteMode && !isReordering && items.length > 3 && (
-                  viewMode === 'list' ? (
-                    <div className="flex items-center p-3 border-b border-border group hover:bg-accent/50 transition-colors cursor-pointer" onClick={() => createNewPage('text')}>
-                      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 mr-3">
-                        <Plus className="h-4 w-4 text-primary" />
+                  <SortableContext
+                    items={items}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    {items.map((page) => (
+                      <SortablePageItem
+                        key={page.id}
+                        page={page}
+                        bookId={bookId}
+                        onNavigate={(pageId) => navigate(`/books/${bookId}/pages/${pageId}`)}
+                        isBookmarked={bookmarkedPageIndex === page.page_index}
+                        ref={bookmarkedPageIndex === page.page_index ? bookmarkedPageRef : undefined}
+                      />
+                    ))}
+                  </SortableContext>
+                </DndContext>
+              ) : (
+                <>
+                  {/* Add New Page card/list item at the beginning (only if >3 pages) */}
+                  {canEdit && !isDeleteMode && !isReordering && items.length > 3 && (
+                    viewMode === 'list' ? (
+                      <div className="flex items-center p-3 border-b border-border group hover:bg-accent/50 transition-colors cursor-pointer" onClick={() => createNewPage('text')}>
+                        <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 mr-3">
+                          <Plus className="h-4 w-4 text-primary" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-medium text-primary">Add New Page</p>
+                        </div>
                       </div>
-                      <div className="flex-1">
-                        <p className="font-medium text-primary">Add New Page</p>
+                    ) : (
+                      <div
+                        className="flex flex-col items-center justify-center border border-dashed border-primary/40 rounded-md p-6 h-full min-h-[180px] hover:bg-accent/50 transition-colors cursor-pointer"
+                        onClick={() => createNewPage('text')}
+                      >
+                        <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-3">
+                          <Plus className="h-6 w-6 text-primary" />
+                        </div>
+                        <p className="font-medium text-primary text-center">Add New Page</p>
                       </div>
-                    </div>
-                  ) : (
-                    <div 
-                      className="flex flex-col items-center justify-center border border-dashed border-primary/40 rounded-md p-6 h-full min-h-[180px] hover:bg-accent/50 transition-colors cursor-pointer"
-                      onClick={() => createNewPage('text')}
-                    >
-                      <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-3">
-                        <Plus className="h-6 w-6 text-primary" />
-                      </div>
-                      <p className="font-medium text-primary text-center">Add New Page</p>
-                    </div>
-                  )
-                )}
+                    )
+                  )}
 
-                {items.map((page) => (
-                  viewMode === 'list' ? (
-                    <RegularPageItem
-                      key={page.id}
-                      page={page}
-                      bookId={bookId}
-                      onNavigate={(pageId) => navigate(`/books/${bookId}/pages/${pageId}`)}
-                      onDelete={canEdit ? handleDeletePage : undefined}
-                      isBookmarked={bookmarkedPageIndex === page.page_index}
-                      ref={bookmarkedPageIndex === page.page_index ? bookmarkedPageRef : undefined}
-                    />
-                  ) : (
-                    <PageCard
-                      key={page.id}
-                      page={page}
-                      bookId={bookId}
-                      onNavigate={(pageId) => navigate(`/books/${bookId}/pages/${pageId}`)}
-                      onDelete={canEdit ? handleDeletePage : undefined}
-                      isBookmarked={bookmarkedPageIndex === page.page_index}
-                      ref={bookmarkedPageIndex === page.page_index ? bookmarkedPageRef : undefined}
-                    />
-                  )
-                ))}
-                
-                {/* Add New Page card/list item at the end (always shown) */}
-                {canEdit && !isDeleteMode && !isReordering && (
-                  viewMode === 'list' ? (
-                    <div className="flex items-center p-3 border-b border-border group hover:bg-accent/50 transition-colors cursor-pointer" onClick={() => createNewPage('text')}>
-                      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 mr-3">
-                        <Plus className="h-4 w-4 text-primary" />
+                  {items.map((page) => (
+                    viewMode === 'list' ? (
+                      <RegularPageItem
+                        key={page.id}
+                        page={page}
+                        bookId={bookId}
+                        onNavigate={(pageId) => navigate(`/books/${bookId}/pages/${pageId}`)}
+                        onDelete={canEdit ? handleDeletePage : undefined}
+                        isBookmarked={bookmarkedPageIndex === page.page_index}
+                        ref={bookmarkedPageIndex === page.page_index ? bookmarkedPageRef : undefined}
+                      />
+                    ) : (
+                      <PageCard
+                        key={page.id}
+                        page={page}
+                        bookId={bookId}
+                        onNavigate={(pageId) => navigate(`/books/${bookId}/pages/${pageId}`)}
+                        onDelete={canEdit ? handleDeletePage : undefined}
+                        isBookmarked={bookmarkedPageIndex === page.page_index}
+                        ref={bookmarkedPageIndex === page.page_index ? bookmarkedPageRef : undefined}
+                      />
+                    )
+                  ))}
+
+                  {/* Add New Page card/list item at the end (always shown) */}
+                  {canEdit && !isDeleteMode && !isReordering && (
+                    viewMode === 'list' ? (
+                      <div className="flex items-center p-3 border-b border-border group hover:bg-accent/50 transition-colors cursor-pointer" onClick={() => createNewPage('text')}>
+                        <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 mr-3">
+                          <Plus className="h-4 w-4 text-primary" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-medium text-primary">Add New Page</p>
+                        </div>
                       </div>
-                      <div className="flex-1">
-                        <p className="font-medium text-primary">Add New Page</p>
+                    ) : (
+                      <div
+                        className="flex flex-col items-center justify-center border border-dashed border-primary/40 rounded-md p-6 h-full min-h-[180px] hover:bg-accent/50 transition-colors cursor-pointer"
+                        onClick={() => createNewPage('text')}
+                      >
+                        <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-3">
+                          <Plus className="h-6 w-6 text-primary" />
+                        </div>
+                        <p className="font-medium text-primary text-center">Add New Page</p>
                       </div>
-                    </div>
-                  ) : (
-                    <div 
-                      className="flex flex-col items-center justify-center border border-dashed border-primary/40 rounded-md p-6 h-full min-h-[180px] hover:bg-accent/50 transition-colors cursor-pointer"
-                      onClick={() => createNewPage('text')}
-                    >
-                      <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-3">
-                        <Plus className="h-6 w-6 text-primary" />
-                      </div>
-                      <p className="font-medium text-primary text-center">Add New Page</p>
-                    </div>
-                  )
-                )}
-              </>
-            )}
-          </div>
+                    )
+                  )}
+                </>
+              )}
+            </div>
+          )}
 
       </CardContent>
 
