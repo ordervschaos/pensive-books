@@ -67,7 +67,8 @@ export const BookOutlineView = ({ pages, bookId, onNavigate }: BookOutlineViewPr
     heading: HeadingNode,
     pageId: number,
     path: string,
-    level: number = 0
+    level: number = 0,
+    isParentSection: boolean = false
   ) => {
     const key = `${pageId}-${path}-${heading.text}`;
     const isExpanded = expandedHeadings[key];
@@ -81,7 +82,9 @@ export const BookOutlineView = ({ pages, bookId, onNavigate }: BookOutlineViewPr
     const hasAnyChildren = hasHeadingChildren || hasContentChildren;
 
     // Calculate consistent indentation (32px per level)
-    const paddingLeft = level === 0 ? 48 : 48 + (level * 32);
+    // Section pages start at 8px (pl-2), regular pages at 24px (pl-6)
+    const basePadding = isParentSection ? 40 : 56; // 8 + 32 for sections, 24 + 32 for regular
+    const paddingLeft = level === 0 ? basePadding : basePadding + (level * 32);
 
     return (
       <div key={key}>
@@ -125,14 +128,15 @@ export const BookOutlineView = ({ pages, bookId, onNavigate }: BookOutlineViewPr
                 child,
                 pageId,
                 `${path}-${idx}`,
-                level + 1
+                level + 1,
+                isParentSection
               )
             )}
 
             {/* Then, render content only if there are no heading children */}
             {!hasHeadingChildren && hasContentChildren && contentChildren.map((child, idx) => {
               const contentHtml = child.content ? jsonToHtml(child.content) : child.text;
-              const contentPaddingLeft = 48 + ((level + 1) * 32);
+              const contentPaddingLeft = basePadding + ((level + 1) * 32);
               return (
                 <div
                   key={`${key}-content-${idx}`}
@@ -156,6 +160,7 @@ export const BookOutlineView = ({ pages, bookId, onNavigate }: BookOutlineViewPr
   const renderPageSection = (pageOutline: any) => {
     const isExpanded = expandedPages[pageOutline.pageId];
     const hasHeadings = pageOutline.topLevelHeadings.length > 0;
+    const isSection = pageOutline.pageType === 'section';
 
     // Check if first heading matches page title (case-insensitive)
     const firstHeading = hasHeadings ? pageOutline.topLevelHeadings[0] : null;
@@ -168,18 +173,27 @@ export const BookOutlineView = ({ pages, bookId, onNavigate }: BookOutlineViewPr
 
     const titleExpanded = expandedTitles[pageOutline.pageId];
 
+    // Section pages are not collapsible
+    const isCollapsible = !isSection && hasHeadings;
+
     return (
       <div key={pageOutline.pageId} className="border-b border-border/50 last:border-b-0">
         {/* Page Title - always shown */}
         <div
           className={cn(
-            "flex items-center gap-3 py-3 px-4 hover:bg-accent/50 cursor-pointer transition-colors group",
-            pageOutline.pageType === 'section' && "bg-muted/30"
+            "flex items-center gap-3 py-3 hover:bg-accent/50 cursor-pointer transition-colors group",
+            isSection ? "bg-muted/30 pl-2 pr-4" : "pl-6 pr-4"
           )}
           onClick={() => {
+            // Section pages always navigate directly
+            if (isSection) {
+              onNavigate(pageOutline.pageId);
+              return;
+            }
+
             if (titleIsExpandable) {
               toggleTitle(pageOutline.pageId);
-            } else if (hasHeadings) {
+            } else if (isCollapsible) {
               // Auto-expand title if first heading matches and has heading children
               const shouldAutoExpandTitle = !isExpanded && firstHeadingMatchesTitle && firstH1HasHeadingChildren;
               togglePage(pageOutline.pageId, shouldAutoExpandTitle);
@@ -190,19 +204,21 @@ export const BookOutlineView = ({ pages, bookId, onNavigate }: BookOutlineViewPr
         >
           {/* Fixed width chevron container */}
           <div className="w-5 h-5 flex items-center justify-center flex-shrink-0">
-            {titleIsExpandable ? (
-              titleExpanded ? (
-                <ChevronDown className="h-5 w-5 text-muted-foreground" />
-              ) : (
-                <ChevronRight className="h-5 w-5 text-muted-foreground" />
-              )
-            ) : hasHeadings ? (
-              isExpanded ? (
-                <ChevronDown className="h-5 w-5 text-muted-foreground" />
-              ) : (
-                <ChevronRight className="h-5 w-5 text-muted-foreground" />
-              )
-            ) : null}
+            {!isSection && (
+              titleIsExpandable ? (
+                titleExpanded ? (
+                  <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                )
+              ) : isCollapsible ? (
+                isExpanded ? (
+                  <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                )
+              ) : null
+            )}
           </div>
 
           {/* Page icon */}
@@ -243,7 +259,8 @@ export const BookOutlineView = ({ pages, bookId, onNavigate }: BookOutlineViewPr
                   child,
                   pageOutline.pageId,
                   `title-h1-${idx}`,
-                  0
+                  0,
+                  isSection
                 )
               )}
           </div>
@@ -260,7 +277,8 @@ export const BookOutlineView = ({ pages, bookId, onNavigate }: BookOutlineViewPr
                   heading,
                   pageOutline.pageId,
                   `h${actualIdx}`,
-                  0
+                  0,
+                  isSection
                 );
               })}
           </div>

@@ -65,11 +65,24 @@ export const PagesList = ({
     [...pages].sort((a, b) => a.page_index - b.page_index)
   );
   const [isReordering, setIsReordering] = useState(isReorderMode);
-  const [viewMode, setViewMode] = useState<'list' | 'grid' | 'outline'>('grid');
-  const [previousViewMode, setPreviousViewMode] = useState<'list' | 'grid' | 'outline'>('grid');
+  const [viewMode, setViewMode] = useState<'list' | 'grid' | 'outline'>(() => {
+    const savedViewMode = localStorage.getItem('book-view-mode') as 'list' | 'grid' | 'outline' | null;
+    return savedViewMode || 'grid';
+  });
+  const [previousViewMode, setPreviousViewMode] = useState<'list' | 'grid' | 'outline'>(() => {
+    const savedViewMode = localStorage.getItem('book-view-mode') as 'list' | 'grid' | 'outline' | null;
+    return savedViewMode || 'grid';
+  });
   const [bookmarkedPageIndex, setBookmarkedPageIndex] = useState<number | null>(null);
   const bookmarkedPageRef = useRef<HTMLDivElement>(null);
   const isBetaEnabled = localStorage.getItem('is_beta') === 'true';
+
+  // Save view mode to localStorage
+  useEffect(() => {
+    if (!isDeleteMode && !isReorderMode) {
+      localStorage.setItem('book-view-mode', viewMode);
+    }
+  }, [viewMode, isDeleteMode, isReorderMode]);
 
   useEffect(() => {
     const loadBookmarkedPage = async () => {
