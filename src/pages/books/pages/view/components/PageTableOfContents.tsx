@@ -103,9 +103,7 @@ export const PageTableOfContents = ({ className, pageId }: PageTableOfContentsPr
     }
   };
 
-  if (headings.length === 0) {
-    return null;
-  }
+  
 
   return (
     <aside className={cn('w-64 flex-shrink-0 h-screen sticky top-0 overflow-hidden border-l border-border/40 bg-background/50', className)}>
