@@ -309,7 +309,7 @@ const PageView = () => {
       </div>
 
       {/* Right Sidebar: Page TOC (hidden when chat is open) */}
-      {!isChatOpen && <PageTableOfContents />}
+      {!isChatOpen && <PageTableOfContents pageId={numericPageId} />}
 
       {/* Right Sidebar: AI Chat Panel */}
       <PageChatPanel

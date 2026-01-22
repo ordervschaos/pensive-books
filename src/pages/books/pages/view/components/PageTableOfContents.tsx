@@ -9,13 +9,18 @@ interface Heading {
 
 interface PageTableOfContentsProps {
   className?: string;
+  pageId?: number | null;
 }
 
-export const PageTableOfContents = ({ className }: PageTableOfContentsProps) => {
+export const PageTableOfContents = ({ className, pageId }: PageTableOfContentsProps) => {
   const [headings, setHeadings] = useState<Heading[]>([]);
   const [activeId, setActiveId] = useState<string>('');
 
   useEffect(() => {
+    // Reset headings when page changes
+    setHeadings([]);
+    setActiveId('');
+
     // Extract headings from the page
     const extractHeadings = () => {
       const headingElements = document.querySelectorAll('.ProseMirror h1, .ProseMirror h2, .ProseMirror h3, .ProseMirror h4, .ProseMirror h5, .ProseMirror h6');
@@ -37,8 +42,8 @@ export const PageTableOfContents = ({ className }: PageTableOfContentsProps) => 
       setHeadings(headingData);
     };
 
-    // Initial extraction
-    extractHeadings();
+    // Delay initial extraction to ensure content is rendered
+    const timeoutId = setTimeout(extractHeadings, 100);
 
     // Set up a MutationObserver to watch for changes in the editor
     const observer = new MutationObserver(() => {
@@ -54,8 +59,11 @@ export const PageTableOfContents = ({ className }: PageTableOfContentsProps) => 
       });
     }
 
-    return () => observer.disconnect();
-  }, []);
+    return () => {
+      clearTimeout(timeoutId);
+      observer.disconnect();
+    };
+  }, [pageId]);
 
   useEffect(() => {
     // Set up Intersection Observer to highlight active section
