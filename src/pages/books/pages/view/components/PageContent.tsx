@@ -204,14 +204,11 @@ export const PageContent = ({
           <div className="w-full max-w-3xl">
             <div className={cn("flex-1 relative", marginClass)}>
               <TipTapEditor
-                // key={pageId} // Force remount on page change to ensure fresh content
                 content={currentContent}
                 onChange={handleContentChange}
                 editable={canEdit}
                 isEditing={isEditing && editable}
-                onToggleEdit={() => handleEditingChange(!isEditing)} // Edit button in toolbar and FloatingActions
-                onToggleChat={undefined} // Chat button now handled by FloatingActions
-                hasActiveChat={hasActiveChat}
+                onToggleEdit={() => handleEditingChange(!isEditing)}
                 centerContent={pageType === 'section'}
                 pageType={pageType}
                 onPageTypeChange={onPageTypeChange}

@@ -275,7 +275,7 @@ const PageView = () => {
               jsonContent={page.content}
               onSave={handleSave}
               saving={saving}
-              pageType={pageTypeRef.current}
+              pageType={(page.page_type as 'text' | 'section') || 'text'}
               onPageTypeChange={handlePageTypeChange}
               editable={canEdit}
               onEditingChange={setIsEditing}
