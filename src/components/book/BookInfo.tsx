@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { ImageIcon, Play, Pencil } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import {  generateAndDownloadEPUB, generatePDFWithPrintDialog } from "@/lib/download";
+import { generateAndDownloadEPUB, generatePDFWithPrintDialog, generateAndDownloadMarkdown } from "@/lib/download";
 import { useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -81,15 +81,15 @@ export const BookInfo = ({
   };
 
   const handleDownloadEPUB = async () => {
-    const result = await generateAndDownloadEPUB({ 
-      bookId, 
-      name, 
+    const result = await generateAndDownloadEPUB({
+      bookId,
+      name,
       subtitle,
       author,
       coverUrl,
       showTextOnCover
     });
-    
+
     if (result.success) {
       toast({
         title: "EPUB Generated",
@@ -99,6 +99,30 @@ export const BookInfo = ({
       toast({
         variant: "destructive",
         title: "Error generating EPUB",
+        description: result.error?.message
+      });
+    }
+  };
+
+  const handleDownloadMarkdown = async () => {
+    const result = await generateAndDownloadMarkdown({
+      bookId,
+      name,
+      subtitle,
+      author,
+      coverUrl,
+      showTextOnCover
+    });
+
+    if (result.success) {
+      toast({
+        title: "Markdown Generated",
+        description: "Your book has been downloaded as Markdown files"
+      });
+    } else {
+      toast({
+        variant: "destructive",
+        title: "Error generating Markdown",
         description: result.error?.message
       });
     }
@@ -420,6 +444,15 @@ export const BookInfo = ({
                   className="text-sm"
                 >
                   PDF
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleDownloadMarkdown}
+                  variant="outline"
+                  size="sm"
+                  className="text-sm"
+                >
+                  Markdown
                 </Button>
                 <Button
                   type="button"

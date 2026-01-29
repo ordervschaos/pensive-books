@@ -215,3 +215,140 @@ export const getWordCountFromContent = (jsonContent: any): number => {
   if (!text.trim()) return 0;
   return text.trim().split(/\s+/).length;
 };
+
+/**
+ * Convert TipTap JSON content to Markdown string
+ */
+export const jsonToMarkdown = (json: any): string => {
+  if (!json || !json.content) return '';
+
+  const processMarks = (text: string, marks?: any[]): string => {
+    if (!marks || marks.length === 0) return text;
+
+    let result = text;
+    for (const mark of marks) {
+      switch (mark.type) {
+        case 'bold':
+          result = `**${result}**`;
+          break;
+        case 'italic':
+          result = `*${result}*`;
+          break;
+        case 'strike':
+          result = `~~${result}~~`;
+          break;
+        case 'code':
+          result = `\`${result}\``;
+          break;
+        case 'link':
+          result = `[${result}](${mark.attrs?.href || ''})`;
+          break;
+      }
+    }
+    return result;
+  };
+
+  const processNode = (node: any, listType?: 'bullet' | 'ordered', listIndex?: number): string => {
+    if (!node) return '';
+
+    switch (node.type) {
+      case 'doc':
+        return node.content?.map((child: any) => processNode(child)).join('\n\n') || '';
+
+      case 'title':
+      case 'heading': {
+        const level = node.attrs?.level || 1;
+        const prefix = '#'.repeat(level);
+        const text = node.content?.map((child: any) => processNode(child)).join('') || '';
+        return `${prefix} ${text}`;
+      }
+
+      case 'paragraph': {
+        const text = node.content?.map((child: any) => processNode(child)).join('') || '';
+        return text;
+      }
+
+      case 'text':
+        return processMarks(node.text || '', node.marks);
+
+      case 'hardBreak':
+        return '  \n';
+
+      case 'horizontalRule':
+        return '---';
+
+      case 'codeBlock': {
+        const language = node.attrs?.language || '';
+        const code = node.content?.map((child: any) => child.text || '').join('') || '';
+        return `\`\`\`${language}\n${code}\n\`\`\``;
+      }
+
+      case 'blockquote': {
+        const content = node.content?.map((child: any) => processNode(child)).join('\n') || '';
+        return content.split('\n').map((line: string) => `> ${line}`).join('\n');
+      }
+
+      case 'bulletList': {
+        return node.content?.map((child: any) => processNode(child, 'bullet')).join('\n') || '';
+      }
+
+      case 'orderedList': {
+        return node.content?.map((child: any, index: number) => processNode(child, 'ordered', index + 1)).join('\n') || '';
+      }
+
+      case 'listItem': {
+        const prefix = listType === 'ordered' ? `${listIndex}. ` : '- ';
+        const content = node.content?.map((child: any) => processNode(child)).join('\n') || '';
+        // Handle nested content with proper indentation
+        const lines = content.split('\n');
+        return lines.map((line: string, i: number) => i === 0 ? `${prefix}${line}` : `  ${line}`).join('\n');
+      }
+
+      case 'image': {
+        const src = node.attrs?.src || '';
+        const alt = node.attrs?.alt || '';
+        const title = node.attrs?.title || '';
+        return title ? `![${alt}](${src} "${title}")` : `![${alt}](${src})`;
+      }
+
+      case 'table': {
+        const rows = node.content || [];
+        if (rows.length === 0) return '';
+
+        const processCell = (cell: any): string => {
+          return cell.content?.map((child: any) => processNode(child)).join(' ') || '';
+        };
+
+        const tableRows: string[] = [];
+        rows.forEach((row: any, rowIndex: number) => {
+          const cells = row.content || [];
+          const rowContent = cells.map((cell: any) => processCell(cell)).join(' | ');
+          tableRows.push(`| ${rowContent} |`);
+
+          // Add separator after header row
+          if (rowIndex === 0) {
+            const separator = cells.map(() => '---').join(' | ');
+            tableRows.push(`| ${separator} |`);
+          }
+        });
+
+        return tableRows.join('\n');
+      }
+
+      default:
+        // For unknown nodes, try to extract text content
+        if (node.content) {
+          return node.content.map((child: any) => processNode(child)).join('');
+        }
+        return node.text || '';
+    }
+  };
+
+  try {
+    const cleanedJson = stripUnsupportedMarks(json);
+    return processNode(cleanedJson);
+  } catch (error) {
+    console.error('Error converting JSON to Markdown:', error);
+    return '';
+  }
+};

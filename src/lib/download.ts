@@ -2,7 +2,8 @@ import { Database } from '@/integrations/supabase/types';
 import { supabase } from '@/integrations/supabase/client';
 import { generateEPUB, prepareEPUBContent, EPUBOptions } from './epub';
 import jsPDF from 'jspdf';
-import { convertJSONToHTML } from '@/utils/tiptapHelpers';
+import JSZip from 'jszip';
+import { convertJSONToHTML, jsonToMarkdown } from '@/utils/tiptapHelpers';
 
 type Page = Database['public']['Tables']['pages']['Row'] & {
   page_type: 'section' | 'page';
@@ -994,6 +995,96 @@ export const generatePDFWithPrintDialog = async (
       success: false,
       error: {
         message: "Failed to generate PDF",
+        details: error instanceof Error ? error.message : error
+      }
+    };
+  }
+};
+
+// Sanitize filename by removing/replacing invalid characters
+const sanitizeFilename = (name: string): string => {
+  return name
+    .replace(/[<>:"/\\|?*]/g, '') // Remove invalid characters
+    .replace(/\s+/g, '-') // Replace spaces with hyphens
+    .replace(/-+/g, '-') // Collapse multiple hyphens
+    .replace(/^-|-$/g, '') // Remove leading/trailing hyphens
+    .slice(0, 100); // Limit length
+};
+
+export const generateAndDownloadMarkdown = async (
+  options: DownloadOptions
+): Promise<GenerateResult> => {
+  try {
+    const pages = await fetchBookPages(options.bookId);
+
+    if (!pages || pages.length === 0) {
+      throw new Error('No pages found for the book');
+    }
+
+    const zip = new JSZip();
+
+    // Add a README with book metadata
+    let readme = `# ${options.name}\n\n`;
+    if (options.subtitle) {
+      readme += `*${options.subtitle}*\n\n`;
+    }
+    if (options.author) {
+      readme += `By ${options.author}\n\n`;
+    }
+    readme += `---\n\n## Table of Contents\n\n`;
+
+    // Process each page and add to ZIP
+    pages.forEach((page, index) => {
+      const pageNumber = String(index + 1).padStart(2, '0');
+      const pageTitle = page.title || `Page ${index + 1}`;
+      const sanitizedTitle = sanitizeFilename(pageTitle);
+      const filename = `${pageNumber}-${sanitizedTitle}.md`;
+
+      // Add to TOC
+      readme += `${index + 1}. [${pageTitle}](${filename})\n`;
+
+      // Convert content to Markdown
+      let markdown = '';
+
+      if (page.page_type === 'section') {
+        // Section pages are just titles
+        markdown = `# ${pageTitle}\n`;
+      } else if (page.content) {
+        const contentMarkdown = jsonToMarkdown(page.content);
+        if (contentMarkdown) {
+          markdown += contentMarkdown;
+        }
+      }
+
+      zip.file(filename, markdown);
+    });
+
+    // Add TOC 
+    zip.file('00-TOC.md', readme);
+
+    // Generate and download ZIP
+    const zipBlob = await zip.generateAsync({ type: 'blob' });
+
+    if (options.returnBlob) {
+      return { success: true, blob: zipBlob };
+    }
+
+    const url = window.URL.createObjectURL(zipBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${sanitizeFilename(options.name)}-markdown.zip`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error generating Markdown:', error);
+    return {
+      success: false,
+      error: {
+        message: "Failed to generate Markdown files",
         details: error instanceof Error ? error.message : error
       }
     };
