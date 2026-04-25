@@ -210,9 +210,14 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
   const divider = <div className="w-px h-4 bg-border/60 mx-1" />;
 
   return (
-    <div className="flex gap-2 items-center justify-between min-h-[44px] sticky top-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 z-40 py-1.5 border-b border-border/40">
-      {/* Left side: formatting tools — only visible in edit mode */}
-      <div className="flex-1 flex items-center gap-1 min-w-0 overflow-x-auto">
+    <>
+      {/* Spacer reserves vertical space so editor content doesn't slide under the fixed bar */}
+      <div className="h-14 flex-shrink-0" aria-hidden />
+      <div className="fixed top-0 left-0 right-0 lg:left-64 lg:right-64 z-40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 border-b border-border/40">
+        <div className="max-w-3xl mx-auto px-4">
+          <div className="flex gap-2 items-center justify-between min-h-[44px] py-1.5">
+            {/* Left side: formatting tools — only visible in edit mode */}
+            <div className="flex-1 flex items-center gap-1 min-w-0 overflow-x-auto">
         {isEditing && (
           <div className="flex items-center gap-0.5">
             {/* Headings Dropdown */}
@@ -433,7 +438,10 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
             </DropdownMenuContent>
           </DropdownMenu>
         )}
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
+    </>
   );
 };
