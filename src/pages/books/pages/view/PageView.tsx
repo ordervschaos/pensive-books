@@ -298,7 +298,7 @@ const PageView = () => {
               nextPageTitle={nextPageTitle}
               bookTitle={book.name}
               isEditing={isEditing}
-              onNewPage={createNewPage}
+              onNewPage={() => createNewPage()}
               canEdit={canEdit}
               nextPageId={nextPageId}
               setIsEditing={setIsEditing}

@@ -210,50 +210,11 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
   const divider = <div className="w-px h-4 bg-border/60 mx-1" />;
 
   return (
-    <div className="flex gap-2 items-center justify-between min-h-[40px] sticky top-0 bg-background z-50">
+    <div className="flex gap-2 items-center justify-between min-h-[44px] sticky top-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 z-40 py-1.5 border-b border-border/40">
       {/* Left side: formatting tools — only visible in edit mode */}
       <div className="flex-1 flex items-center gap-1 min-w-0 overflow-x-auto">
         {isEditing && (
           <div className="flex items-center gap-0.5">
-            {/* Page Type Selector */}
-            {onPageTypeChange && (
-              <>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className={cn(iconBtn, "opacity-60 hover:opacity-100")}
-                      title="Change Page Type"
-                    >
-                      {pageType === 'section' ? (
-                        <Section className="h-3.5 w-3.5" />
-                      ) : (
-                        <Type className="h-3.5 w-3.5" />
-                      )}
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start">
-                    <DropdownMenuItem
-                      onClick={() => onPageTypeChange('text')}
-                      className={pageType === 'text' ? 'bg-muted' : ''}
-                    >
-                      <Type className="mr-2 h-4 w-4" />
-                      Text Page
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => onPageTypeChange('section')}
-                      className={pageType === 'section' ? 'bg-muted' : ''}
-                    >
-                      <Section className="mr-2 h-4 w-4" />
-                      Section (Centered)
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                {divider}
-              </>
-            )}
-
             {/* Headings Dropdown */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -428,7 +389,7 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
           </div>
         )}
 
-        {onDeletePage && editable && (
+        {editable && (onDeletePage || onPageTypeChange) && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -441,13 +402,34 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem
-                onClick={onDeletePage}
-                className="text-destructive focus:text-destructive flex items-center gap-2"
-              >
-                <Trash2 className="h-4 w-4" />
-                <span>Delete Page</span>
-              </DropdownMenuItem>
+              {onPageTypeChange && (
+                <>
+                  <DropdownMenuItem
+                    onClick={() => onPageTypeChange('text')}
+                    className={cn("flex items-center gap-2", pageType !== 'section' && "bg-muted")}
+                  >
+                    <Type className="h-4 w-4" />
+                    <span>Text page</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => onPageTypeChange('section')}
+                    className={cn("flex items-center gap-2", pageType === 'section' && "bg-muted")}
+                  >
+                    <Section className="h-4 w-4" />
+                    <span>Section (centered)</span>
+                  </DropdownMenuItem>
+                  {onDeletePage && <DropdownMenuSeparator />}
+                </>
+              )}
+              {onDeletePage && (
+                <DropdownMenuItem
+                  onClick={onDeletePage}
+                  className="text-destructive focus:text-destructive flex items-center gap-2"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  <span>Delete page</span>
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         )}

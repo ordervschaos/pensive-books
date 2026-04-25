@@ -4,7 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
 interface UsePageCreationReturn {
-  createNewPage: () => Promise<void>;
+  createNewPage: (pageType?: 'text' | 'section') => Promise<void>;
   creating: boolean;
 }
 
@@ -20,7 +20,7 @@ export const usePageCreation = (
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  const createNewPage = useCallback(async () => {
+  const createNewPage = useCallback(async (pageType: 'text' | 'section' = 'text') => {
     if (!canEdit) {
       toast({
         variant: 'destructive',
@@ -39,6 +39,15 @@ export const usePageCreation = (
         .single();
 
       if (error) throw error;
+
+      // The RPC always creates page_type='text'; promote to 'section' if requested.
+      if (pageType === 'section') {
+        const { error: updateError } = await supabase
+          .from('pages')
+          .update({ page_type: 'section' })
+          .eq('id', newPage.id);
+        if (updateError) throw updateError;
+      }
 
       // Navigate to the new page with edit mode enabled
       navigate(`/books/${bookId}/pages/${newPage.id}?edit=true`);

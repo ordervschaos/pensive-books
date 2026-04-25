@@ -2,8 +2,14 @@ import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { PreloadLink } from "./PreloadLink";
 import { Button } from "@/components/ui/button";
-import { Plus, ArrowLeft } from "lucide-react";
+import { Plus, ArrowLeft, Type, Section, ChevronDown } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 type PageItem = {
   id: number;
@@ -17,7 +23,7 @@ interface TableOfContentsProps {
   bookId: string;
   currentPageId: number;
   onPageSelect?: () => void;
-  onNewPage?: () => void;
+  onNewPage?: (pageType?: 'text' | 'section') => void;
   canEdit?: boolean;
   bookName?: string;
 }
@@ -52,6 +58,22 @@ export function TableOfContents({
     );
   }
 
+  const renderAddMenu = (trigger: React.ReactNode) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={() => onNewPage?.('text')} className="flex items-center gap-2">
+          <Type className="h-4 w-4" />
+          <span>New page</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onNewPage?.('section')} className="flex items-center gap-2">
+          <Section className="h-4 w-4" />
+          <span>New section</span>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
   return (
     <div className="h-full flex flex-col py-4 pl-4 pr-0">
       {/* Back to Book Navigation */}
@@ -70,13 +92,12 @@ export function TableOfContents({
       {/* Pages Header */}
       <div className="mb-4 pr-4 flex items-center justify-between">
         <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide px-2">Pages</h2>
-        {canEdit && onNewPage && (
+        {canEdit && onNewPage && renderAddMenu(
           <Button
             variant="ghost"
             size="sm"
-            onClick={onNewPage}
             className="h-7 w-7 p-0"
-            title="Add new page"
+            title="Add new"
           >
             <Plus className="h-4 w-4" />
           </Button>
@@ -117,16 +138,26 @@ export function TableOfContents({
         })}
       </nav>
       {canEdit && onNewPage && (
-        <div className="pt-4 pr-4">
+        <div className="pt-4 pr-4 flex items-center gap-1">
           <Button
             variant="outline"
             size="sm"
-            onClick={onNewPage}
-            className="w-full"
+            onClick={() => onNewPage('text')}
+            className="flex-1"
           >
             <Plus className="h-4 w-4 mr-2" />
-            Add Page
+            Add page
           </Button>
+          {renderAddMenu(
+            <Button
+              variant="outline"
+              size="sm"
+              className="px-2"
+              title="More options"
+            >
+              <ChevronDown className="h-4 w-4" />
+            </Button>
+          )}
         </div>
       )}
     </div>
