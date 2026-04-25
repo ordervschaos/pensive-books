@@ -1,6 +1,6 @@
 import { Editor } from '@tiptap/react';
 import { useEffect, useState } from 'react';
-import { Bold, Italic, Quote, Code2, Link2, List, ListOrdered, Image as ImageIcon, Undo, Redo, Table as TableIcon, Heading1, Heading2, Heading3, Heading, Pencil, Check, Type, Section, MoreVertical, Trash2, ChevronDown } from "lucide-react";
+import { Bold, Italic, Quote, Code2, Link2, List, ListOrdered, Image as ImageIcon, Undo, Redo, Table as TableIcon, Heading1, Heading2, Heading3, Heading, Type, Section, MoreHorizontal, Trash2, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useSupabaseUpload } from "@/hooks/use-supabase-upload";
@@ -12,6 +12,7 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { useMediaQuery } from "@/hooks/use-media-query";
+import { cn } from "@/lib/utils";
 
 interface EditorToolbarProps {
   editor: Editor | null;
@@ -61,7 +62,7 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
   const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    
+
     if (!file.type.startsWith('image/')) {
       toast({
         title: "Invalid file type",
@@ -113,39 +114,42 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
 
   const isTableActive = editor.isActive('table');
 
+  const iconBtn = "h-7 w-7 p-0 text-muted-foreground hover:text-foreground";
+  const iconBtnActive = "bg-muted text-foreground";
+
   const renderTextFormattingButtons = () => (
     <>
       <Button
         variant="ghost"
         size="sm"
         onClick={() => editor.chain().focus().toggleBold().run()}
-        className={`h-8 w-8 p-0 ${editor.isActive('bold') ? 'bg-muted' : ''}`}
+        className={cn(iconBtn, editor.isActive('bold') && iconBtnActive)}
       >
-        <Bold className="h-4 w-4" />
+        <Bold className="h-3.5 w-3.5" />
       </Button>
       <Button
         variant="ghost"
         size="sm"
         onClick={() => editor.chain().focus().toggleItalic().run()}
-        className={`h-8 w-8 p-0 ${editor.isActive('italic') ? 'bg-muted' : ''}`}
+        className={cn(iconBtn, editor.isActive('italic') && iconBtnActive)}
       >
-        <Italic className="h-4 w-4" />
+        <Italic className="h-3.5 w-3.5" />
       </Button>
       <Button
         variant="ghost"
         size="sm"
         onClick={() => editor.chain().focus().toggleBlockquote().run()}
-        className={`h-8 w-8 p-0 ${editor.isActive('blockquote') ? 'bg-muted' : ''}`}
+        className={cn(iconBtn, editor.isActive('blockquote') && iconBtnActive)}
       >
-        <Quote className="h-4 w-4" />
+        <Quote className="h-3.5 w-3.5" />
       </Button>
       <Button
         variant="ghost"
         size="sm"
         onClick={() => editor.chain().focus().toggleCodeBlock().run()}
-        className={`h-8 w-8 p-0 ${editor.isActive('codeBlock') ? 'bg-muted' : ''}`}
+        className={cn(iconBtn, editor.isActive('codeBlock') && iconBtnActive)}
       >
-        <Code2 className="h-4 w-4" />
+        <Code2 className="h-3.5 w-3.5" />
       </Button>
     </>
   );
@@ -156,17 +160,17 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
         variant="ghost"
         size="sm"
         onClick={() => editor.chain().focus().toggleBulletList().run()}
-        className={`h-8 w-8 p-0 ${editor.isActive('bulletList') ? 'bg-muted' : ''}`}
+        className={cn(iconBtn, editor.isActive('bulletList') && iconBtnActive)}
       >
-        <List className="h-4 w-4" />
+        <List className="h-3.5 w-3.5" />
       </Button>
       <Button
         variant="ghost"
         size="sm"
         onClick={() => editor.chain().focus().toggleOrderedList().run()}
-        className={`h-8 w-8 p-0 ${editor.isActive('orderedList') ? 'bg-muted' : ''}`}
+        className={cn(iconBtn, editor.isActive('orderedList') && iconBtnActive)}
       >
-        <ListOrdered className="h-4 w-4" />
+        <ListOrdered className="h-3.5 w-3.5" />
       </Button>
     </>
   );
@@ -178,7 +182,7 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
         size="sm"
         onClick={() => editor.chain().focus().undo().run()}
         disabled={!editor.can().undo()}
-        className="opacity-60 hover:opacity-100 h-7 w-7 p-0"
+        className={cn(iconBtn, "opacity-60 hover:opacity-100")}
       >
         <Undo className="h-3.5 w-3.5" />
       </Button>
@@ -187,7 +191,7 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
         size="sm"
         onClick={() => editor.chain().focus().redo().run()}
         disabled={!editor.can().redo()}
-        className="opacity-60 hover:opacity-100 h-7 w-7 p-0"
+        className={cn(iconBtn, "opacity-60 hover:opacity-100")}
       >
         <Redo className="h-3.5 w-3.5" />
       </Button>
@@ -200,29 +204,32 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
         return `H${level}`;
       }
     }
-    return 'Text';
+    return 'T';
   };
 
+  const divider = <div className="w-px h-4 bg-border/60 mx-1" />;
+
   return (
-    <div className={`flex gap-2 items-center justify-end min-h-[44px] sticky top-0 ${isEditing ? 'bg-background' : ''} z-50`}>
-      <div className="flex-1 flex justify-start gap-2">
+    <div className="flex gap-2 items-center justify-between min-h-[40px] sticky top-0 bg-background z-50">
+      {/* Left side: formatting tools — only visible in edit mode */}
+      <div className="flex-1 flex items-center gap-1 min-w-0 overflow-x-auto">
         {isEditing && (
-          <>
-            {/* Page Type Selector - Separate Island */}
+          <div className="flex items-center gap-0.5">
+            {/* Page Type Selector */}
             {onPageTypeChange && (
-              <div className="rounded-md flex items-center p-1 z-50 sticky top-4 bg-muted/50 shadow-sm backdrop-blur-sm">
+              <>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-8 px-2 text-xs opacity-50 hover:opacity-100"
+                      className={cn(iconBtn, "opacity-60 hover:opacity-100")}
                       title="Change Page Type"
                     >
                       {pageType === 'section' ? (
-                        <Section className="h-4 w-4" />
+                        <Section className="h-3.5 w-3.5" />
                       ) : (
-                        <Type className="h-4 w-4" />
+                        <Type className="h-3.5 w-3.5" />
                       )}
                     </Button>
                   </DropdownMenuTrigger>
@@ -243,198 +250,208 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
-              </div>
+                {divider}
+              </>
             )}
 
-            {/* Content Formatting Toolbar - Separate Island */}
-            <div className="rounded-md flex gap-1 grow items-center p-1 z-50 sticky top-4 bg-muted/50 shadow-sm backdrop-blur-sm">
-              <div className="flex gap-1 items-center flex-1">
-                {/* Headings Dropdown - No icon */}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 px-2 text-xs font-medium"
-                      title="Text Style"
-                    >
-                      <span className="hidden sm:inline">{getActiveHeadingLabel()}</span>
-                      <ChevronDown className="h-3 w-3 ml-1 opacity-50" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="w-48">
-                    <DropdownMenuItem
-                      onClick={() => editor.chain().focus().setParagraph().run()}
-                      className={!editor.isActive('heading') ? 'bg-muted' : ''}
-                    >
-                      <Type className="mr-2 h-4 w-4" />
-                      Normal Text
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
-                      className={editor.isActive('heading', { level: 1 }) ? 'bg-muted' : ''}
-                    >
-                      <Heading1 className="mr-2 h-4 w-4" />
-                      Heading 1
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-                      className={editor.isActive('heading', { level: 2 }) ? 'bg-muted' : ''}
-                    >
-                      <Heading2 className="mr-2 h-4 w-4" />
-                      Heading 2
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
-                      className={editor.isActive('heading', { level: 3 }) ? 'bg-muted' : ''}
-                    >
-                      <Heading3 className="mr-2 h-4 w-4" />
-                      Heading 3
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => editor.chain().focus().toggleHeading({ level: 4 }).run()}
-                      className={editor.isActive('heading', { level: 4 }) ? 'bg-muted' : ''}
-                    >
-                      <Heading className="mr-2 h-4 w-4" />
-                      Heading 4
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => editor.chain().focus().toggleHeading({ level: 5 }).run()}
-                      className={editor.isActive('heading', { level: 5 }) ? 'bg-muted' : ''}
-                    >
-                      <Heading className="mr-2 h-4 w-4" />
-                      Heading 5
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => editor.chain().focus().toggleHeading({ level: 6 }).run()}
-                      className={editor.isActive('heading', { level: 6 }) ? 'bg-muted' : ''}
-                    >
-                      <Heading className="mr-2 h-4 w-4" />
-                      Heading 6
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-
-                <div className="w-px h-4 bg-border mx-0.5" />
-                {renderTextFormattingButtons()}
-                {renderListButtons()}
-
-              <div className="w-px h-4 bg-border mx-0.5" />
-
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className={`h-8 w-8 p-0 ${isTableActive ? 'bg-muted' : ''}`}
-                  >
-                    <TableIcon className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start">
-                  <DropdownMenuItem onClick={addTable} disabled={isTableActive}>
-                    Insert Table
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={addTableRow} disabled={!isTableActive}>
-                    Add Row
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={addTableColumn} disabled={!isTableActive}>
-                    Add Column
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={deleteTableRow} disabled={!isTableActive}>
-                    Delete Row
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={deleteTableColumn} disabled={!isTableActive}>
-                    Delete Column
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={toggleTableHeader} disabled={!isTableActive}>
-                    Toggle Header Row
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={deleteTable} disabled={!isTableActive}>
-                    Delete Table
-                  </DropdownMenuItem>
-                  <DropdownMenuItem>
-                    {isMobile && customButtons}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={addLink}
-                className={`h-8 w-8 p-0 ${editor.isActive('link') ? 'bg-muted' : ''}`}
-              >
-                <Link2 className="h-4 w-4" />
-              </Button>
-
-              <div className="relative">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="relative h-8 w-8 p-0"
-                >
-                  <input
-                    type="file"
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                    onChange={handleImageUpload}
-                    accept="image/*"
-                  />
-                  <ImageIcon className="h-4 w-4" />
-                </Button>
-              </div>
-
-                <div className="w-px h-4 bg-border mx-0.5" />
-                {renderHistoryButtons()}
-                {!isMobile && customButtons}
-              </div>
-            </div>
-          </>
-        )}
-      </div>
-      {onToggleEdit && editable && (
-        <>
-          <Button
-            size="sm"
-            className="rounded-full"
-            variant={isEditing ? "default" : "outline"}
-            onClick={onToggleEdit}
-            title={isEditing ? "Exit Edit Mode" : "Enter Edit Mode"}
-          >
-            {isEditing ? (
-              <Check className="h-4 w-4" />
-            ) : (
-              <Pencil className="h-4 w-4" />
-            )}
-          </Button>
-
-          {/* Kebab menu for page actions */}
-          {onDeletePage && (
+            {/* Headings Dropdown */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
+                  variant="ghost"
                   size="sm"
-                  variant="outline"
-                  className="rounded-full h-9 w-9 p-0"
-                  title="More options"
+                  className="h-7 px-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
+                  title="Text Style"
                 >
-                  <MoreVertical className="h-4 w-4" />
+                  <span>{getActiveHeadingLabel()}</span>
+                  <ChevronDown className="h-3 w-3 ml-0.5 opacity-50" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+              <DropdownMenuContent align="start" className="w-48">
                 <DropdownMenuItem
-                  onClick={onDeletePage}
-                  className="text-destructive focus:text-destructive flex items-center gap-2"
+                  onClick={() => editor.chain().focus().setParagraph().run()}
+                  className={!editor.isActive('heading') ? 'bg-muted' : ''}
                 >
-                  <Trash2 className="h-4 w-4" />
-                  <span>Delete Page</span>
+                  <Type className="mr-2 h-4 w-4" />
+                  Normal Text
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
+                  className={editor.isActive('heading', { level: 1 }) ? 'bg-muted' : ''}
+                >
+                  <Heading1 className="mr-2 h-4 w-4" />
+                  Heading 1
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
+                  className={editor.isActive('heading', { level: 2 }) ? 'bg-muted' : ''}
+                >
+                  <Heading2 className="mr-2 h-4 w-4" />
+                  Heading 2
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
+                  className={editor.isActive('heading', { level: 3 }) ? 'bg-muted' : ''}
+                >
+                  <Heading3 className="mr-2 h-4 w-4" />
+                  Heading 3
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => editor.chain().focus().toggleHeading({ level: 4 }).run()}
+                  className={editor.isActive('heading', { level: 4 }) ? 'bg-muted' : ''}
+                >
+                  <Heading className="mr-2 h-4 w-4" />
+                  Heading 4
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => editor.chain().focus().toggleHeading({ level: 5 }).run()}
+                  className={editor.isActive('heading', { level: 5 }) ? 'bg-muted' : ''}
+                >
+                  <Heading className="mr-2 h-4 w-4" />
+                  Heading 5
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => editor.chain().focus().toggleHeading({ level: 6 }).run()}
+                  className={editor.isActive('heading', { level: 6 }) ? 'bg-muted' : ''}
+                >
+                  <Heading className="mr-2 h-4 w-4" />
+                  Heading 6
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-          )}
-        </>
-      )}
+
+            {divider}
+            {renderTextFormattingButtons()}
+            {divider}
+            {renderListButtons()}
+            {divider}
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={cn(iconBtn, isTableActive && iconBtnActive)}
+                >
+                  <TableIcon className="h-3.5 w-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem onClick={addTable} disabled={isTableActive}>
+                  Insert Table
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={addTableRow} disabled={!isTableActive}>
+                  Add Row
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={addTableColumn} disabled={!isTableActive}>
+                  Add Column
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={deleteTableRow} disabled={!isTableActive}>
+                  Delete Row
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={deleteTableColumn} disabled={!isTableActive}>
+                  Delete Column
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={toggleTableHeader} disabled={!isTableActive}>
+                  Toggle Header Row
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={deleteTable} disabled={!isTableActive}>
+                  Delete Table
+                </DropdownMenuItem>
+                {isMobile && customButtons && (
+                  <DropdownMenuItem>{customButtons}</DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={addLink}
+              className={cn(iconBtn, editor.isActive('link') && iconBtnActive)}
+            >
+              <Link2 className="h-3.5 w-3.5" />
+            </Button>
+
+            <div className="relative">
+              <Button
+                variant="ghost"
+                size="sm"
+                className={cn(iconBtn, "relative")}
+              >
+                <input
+                  type="file"
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  onChange={handleImageUpload}
+                  accept="image/*"
+                />
+                <ImageIcon className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+
+            {divider}
+            {renderHistoryButtons()}
+            {!isMobile && customButtons}
+          </div>
+        )}
+      </div>
+
+      {/* Right side: Read/Edit segmented toggle + meatballs */}
+      <div className="flex items-center gap-1 shrink-0">
+        {onToggleEdit && editable && (
+          <div className="inline-flex items-center rounded-full bg-muted/60 p-0.5 text-xs">
+            <button
+              type="button"
+              onClick={() => { if (isEditing) onToggleEdit(); }}
+              className={cn(
+                "px-3 h-7 rounded-full font-medium transition-colors",
+                !isEditing
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              Read
+            </button>
+            <button
+              type="button"
+              onClick={() => { if (!isEditing) onToggleEdit(); }}
+              className={cn(
+                "px-3 h-7 rounded-full font-medium transition-colors",
+                isEditing
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              Edit
+            </button>
+          </div>
+        )}
+
+        {onDeletePage && editable && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                title="More options"
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={onDeletePage}
+                className="text-destructive focus:text-destructive flex items-center gap-2"
+              >
+                <Trash2 className="h-4 w-4" />
+                <span>Delete Page</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+      </div>
     </div>
   );
 };
