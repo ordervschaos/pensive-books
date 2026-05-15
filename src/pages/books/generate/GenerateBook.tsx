@@ -416,7 +416,7 @@ export default function GenerateBook() {
       <div className="flex gap-4">
         <Button
           variant="outline"
-          onClick={() => navigate("/my-books")}
+          onClick={() => navigate("/books")}
         >
           Go to My Books
         </Button>
@@ -437,7 +437,7 @@ export default function GenerateBook() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => navigate("/my-books")}
+            onClick={() => navigate("/books")}
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>

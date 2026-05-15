@@ -42,7 +42,7 @@ export default function SetUsername() {
 
       // Redirect to their public profile
       window.open(`/@${username}`, '_blank');
-      navigate("/my-books");
+      navigate("/books");
     } catch (error: any) {
       toast({
         variant: "destructive",

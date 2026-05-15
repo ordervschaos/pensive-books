@@ -35,35 +35,10 @@ export function TopNav() {
   const handleLogout = async () => {
     try {
       setIsAuthenticated(false);
-
-      // Try local signout
-      try {
-        await supabase.auth.signOut();
-      } catch (e) {
-        console.warn("Signout failed:", e);
-      }
-
-      // Clear any remaining auth state immediately
-      const key = Object.keys(localStorage).find(key => key.startsWith('sb-') && key.endsWith('-auth-token'));
-      if (key) {
-        localStorage.removeItem(key);
-      }
-      
-      // Use the correct URL based on environment
-      const isProd = window.location.hostname === "pensive.me";
-      const baseUrl = isProd ? "https://pensive.me" : "";
-      window.location.href = `${baseUrl}/auth`;
-
+      await supabase.auth.signOut();
     } catch (error) {
       console.error("Logout error:", error);
-      
-      // Force clear local storage and reload on error
-      const key = Object.keys(localStorage).find(key => key.startsWith('sb-') && key.endsWith('-auth-token'));
-      if (key) {
-        localStorage.removeItem(key);
-      }
-      
-      // Use the correct URL based on environment
+    } finally {
       const isProd = window.location.hostname === "pensive.me";
       const baseUrl = isProd ? "https://pensive.me" : "";
       window.location.href = `${baseUrl}/auth`;

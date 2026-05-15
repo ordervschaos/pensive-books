@@ -161,7 +161,7 @@ export default function BookEdit() {
         description: "The book has been moved to archive"
       });
 
-      navigate("/my-books");
+      navigate("/books");
     } catch (error: any) {
       console.error("Error archiving book:", error);
       toast({

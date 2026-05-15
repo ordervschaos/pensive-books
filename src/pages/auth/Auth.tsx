@@ -13,7 +13,7 @@ export default function Auth() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
-  const returnTo = location.state?.returnTo || searchParams.get("returnTo") || "/my-books";
+  const returnTo = location.state?.returnTo || searchParams.get("returnTo") || "/books";
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
   const [showOtpInput, setShowOtpInput] = useState(false);

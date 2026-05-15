@@ -225,7 +225,7 @@ export default function ProfileEdit() {
       <div className="max-w-3xl mx-auto">
         <Button
           variant="ghost"
-          onClick={() => navigate(userData?.username ? `/${userData.username}` : "/my-books")}
+          onClick={() => navigate(userData?.username ? `/${userData.username}` : "/books")}
           className="mb-4"
         >
           <ArrowLeft className="mr-2 h-4 w-4" />
@@ -330,7 +330,7 @@ export default function ProfileEdit() {
             <div className="flex justify-end gap-2">
               <Button
                 variant="outline"
-                onClick={() => navigate(userData?.username ? `/${userData.username}` : "/my-books")}
+                onClick={() => navigate(userData?.username ? `/${userData.username}` : "/books")}
               >
                 Cancel
               </Button>

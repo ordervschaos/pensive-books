@@ -86,10 +86,6 @@ export function LibraryNav() {
   const handleLogout = async () => {
     try {
       await supabase.auth.signOut();
-      const key = Object.keys(localStorage).find(key => key.startsWith('sb-') && key.endsWith('-auth-token'));
-      if (key) {
-        localStorage.removeItem(key);
-      }
       navigate("/auth");
     } catch (error) {
       console.error("Logout error:", error);
