@@ -4,6 +4,23 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Pensive</title>
+    <script>
+      (function () {
+        function getCookie(name) {
+          var m = document.cookie.match(new RegExp("(?:^|; )" + name + "=([^;]*)"));
+          return m ? decodeURIComponent(m[1]) : null;
+        }
+        function readTheme(key) {
+          return getCookie(key) || localStorage.getItem(key);
+        }
+        var themeName = readTheme("themeName") || "default";
+        var themeMode = readTheme("themeMode") ||
+          (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+        var root = document.documentElement;
+        if (themeName !== "default") root.classList.add("theme-" + themeName);
+        root.classList.add(themeMode);
+      })();
+    </script>
     <meta name="description" content="Write, read, and share your thoughts with Pensive." />
     <meta name="author" content="Pensive" />
     <meta property="og:image" content="/og-image.png" />
