@@ -15,6 +15,7 @@
     "lint": "corepack pnpm -r --if-present lint",
     "typecheck": "corepack pnpm -r --if-present typecheck",
     "test": "corepack pnpm --filter @pensive/web test:run",
+    "setup:hooks": "bash scripts/setup-hooks.sh",
     "functions:start": "supabase start",
     "functions:stop": "supabase stop",
     "functions:serve": "supabase functions serve",
