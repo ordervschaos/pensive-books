@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Check, X, User, Bot } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { convertJSONToHTML } from '@/utils/tiptapHelpers';
+import { sanitizeHtml } from '@/lib/sanitize';
 import ReactMarkdown from 'react-markdown';
 
 interface ChatMessageProps {
@@ -109,7 +110,7 @@ const EditSuggestion = ({ edit, onApply, onReject }: EditSuggestionProps) => {
             <div className="text-sm bg-destructive/10 p-2 rounded border-l-2 border-destructive">
               <div 
                 className="prose prose-sm max-w-none"
-                dangerouslySetInnerHTML={{ __html: oldHtml }}
+                dangerouslySetInnerHTML={{ __html: sanitizeHtml(oldHtml) }}
               />
             </div>
           </div>
@@ -123,7 +124,7 @@ const EditSuggestion = ({ edit, onApply, onReject }: EditSuggestionProps) => {
           <div className="text-sm bg-green-50 p-2 rounded border-l-2 border-green-600">
             <div 
               className="prose prose-sm max-w-none"
-              dangerouslySetInnerHTML={{ __html: newHtml }}
+              dangerouslySetInnerHTML={{ __html: sanitizeHtml(newHtml) }}
             />
           </div>
         </div>

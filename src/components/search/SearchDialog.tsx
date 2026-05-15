@@ -7,6 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Loader2, Search } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { sanitizeHtml } from "@/lib/sanitize";
 
 interface SearchResult {
   page_id: number;
@@ -108,9 +109,9 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
                   </h3>
                   <div 
                     className="prose prose-sm dark:prose-invert"
-                    dangerouslySetInnerHTML={{ 
-                      __html: result.highlighted_content 
-                    }} 
+                    dangerouslySetInnerHTML={{
+                      __html: sanitizeHtml(result.highlighted_content)
+                    }}
                   />
                 </div>
               ))}

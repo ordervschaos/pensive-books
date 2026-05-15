@@ -6,6 +6,7 @@ import { AudioPlayer } from "@/pages/books/pages/view/components/AudioPlayer";
 import { PageItemProps } from "./types";
 import { forwardRef } from "react";
 import { getWordCountFromContent, convertJSONToHTML } from "@/utils/tiptapHelpers";
+import { sanitizeHtml } from "@/lib/sanitize";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -107,7 +108,7 @@ export const PageCard = forwardRef<HTMLDivElement, PageItemProps>(({ page, onNav
           <div className="relative flex-1 overflow-hidden">
             <div
               className="prose space-y-2 overflow-hidden text-xs text-muted-foreground"
-              dangerouslySetInnerHTML={{ __html: excerpt }}
+              dangerouslySetInnerHTML={{ __html: sanitizeHtml(excerpt) }}
             />
             <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-card to-transparent" />
           </div>

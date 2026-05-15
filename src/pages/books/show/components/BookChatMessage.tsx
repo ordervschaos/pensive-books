@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Check, X, User, Bot, Plus, Trash2, Move, Edit3 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { convertJSONToHTML } from '@/utils/tiptapHelpers';
+import { sanitizeHtml } from '@/lib/sanitize';
 import ReactMarkdown from 'react-markdown';
 
 interface BookChatMessageProps {
@@ -154,10 +155,10 @@ const OperationSuggestion = ({ operation, onApply, onReject }: OperationSuggesti
           <div className="text-sm bg-muted/50 p-2 rounded border-l-2 border-blue-500 max-h-32 overflow-y-auto">
             <div 
               className="prose prose-sm max-w-none"
-              dangerouslySetInnerHTML={{ 
-                __html: operation.contentJson 
-                  ? convertJSONToHTML(operation.contentJson) 
-                  : operation.content || '' 
+              dangerouslySetInnerHTML={{
+                __html: sanitizeHtml(operation.contentJson
+                  ? convertJSONToHTML(operation.contentJson)
+                  : operation.content || '')
               }}
             />
           </div>
@@ -172,10 +173,10 @@ const OperationSuggestion = ({ operation, onApply, onReject }: OperationSuggesti
             <div className="text-sm bg-destructive/10 p-2 rounded border-l-2 border-destructive max-h-24 overflow-y-auto">
               <div 
                 className="prose prose-sm max-w-none"
-                dangerouslySetInnerHTML={{ 
-                  __html: operation.oldContentJson 
-                    ? convertJSONToHTML(operation.oldContentJson) 
-                    : operation.oldContent || '' 
+                dangerouslySetInnerHTML={{
+                  __html: sanitizeHtml(operation.oldContentJson
+                    ? convertJSONToHTML(operation.oldContentJson)
+                    : operation.oldContent || '')
                 }}
               />
             </div>
@@ -185,10 +186,10 @@ const OperationSuggestion = ({ operation, onApply, onReject }: OperationSuggesti
             <div className="text-sm bg-green-50 p-2 rounded border-l-2 border-green-600 max-h-24 overflow-y-auto">
               <div 
                 className="prose prose-sm max-w-none"
-                dangerouslySetInnerHTML={{ 
-                  __html: operation.newContentJson 
-                    ? convertJSONToHTML(operation.newContentJson) 
-                    : operation.newContent || '' 
+                dangerouslySetInnerHTML={{
+                  __html: sanitizeHtml(operation.newContentJson
+                    ? convertJSONToHTML(operation.newContentJson)
+                    : operation.newContent || '')
                 }}
               />
             </div>

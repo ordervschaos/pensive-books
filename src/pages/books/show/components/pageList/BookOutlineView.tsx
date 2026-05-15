@@ -3,6 +3,7 @@ import { ChevronRight, ChevronDown, FileText, BookOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { parsePagesIntoOutline, HeadingNode, ContentNode } from '@/utils/contentParser';
 import { jsonToHtml } from '@/utils/tiptapHelpers';
+import { sanitizeHtml } from '@/lib/sanitize';
 import { Page } from './types';
 
 interface BookOutlineViewProps {
@@ -146,7 +147,7 @@ export const BookOutlineView = ({ pages, bookId, onNavigate }: BookOutlineViewPr
                 >
                   <div
                     className="text-xs text-muted-foreground line-clamp-3 leading-relaxed pr-4"
-                    dangerouslySetInnerHTML={{ __html: contentHtml }}
+                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(contentHtml) }}
                   />
                 </div>
               );
