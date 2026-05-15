@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { PublishedPageTracker } from "@/components/PublishedPageTracker";
 import { RichTextRenderer } from "@/components/RichTextRenderer";
+import { KeyboardPageNav } from "@/components/KeyboardPageNav";
 import { getPublishedPage } from "@/lib/public-books";
 import { slugifyIdTitle } from "@/lib/pensive";
 
@@ -55,12 +56,20 @@ export default async function PublishedPageRoute({ params }: Props) {
     );
   }
 
+  const prevHref = detail.previousPage
+    ? `/library/books/${canonicalBookSlug}/pages/${slugifyIdTitle(detail.previousPage.id, detail.previousPage.title)}`
+    : null;
+  const nextHref = detail.nextPage
+    ? `/library/books/${canonicalBookSlug}/pages/${slugifyIdTitle(detail.nextPage.id, detail.nextPage.title)}`
+    : null;
+
   return (
     <main className="min-h-[calc(100vh-56px)] bg-background">
       <PublishedPageTracker
         bookId={detail.book.id}
         pageIndex={detail.currentIndex}
       />
+      <KeyboardPageNav prevHref={prevHref} nextHref={nextHref} />
 
       <div className="container mx-auto max-w-5xl px-4 py-6">
         <section className="rounded-3xl border bg-card px-5 py-8 shadow-sm md:px-8 md:py-10">

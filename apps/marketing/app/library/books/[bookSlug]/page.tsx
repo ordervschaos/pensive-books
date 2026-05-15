@@ -135,6 +135,28 @@ export default async function PublishedBookPage({ params }: Props) {
           </div>
         </div>
       </section>
+
+      {book.pages.length > 0 && (
+        <section className="mt-8 rounded-3xl border bg-card shadow-sm">
+          <div className="border-b px-6 py-4 md:px-8">
+            <h2 className="text-lg font-semibold">Table of Contents</h2>
+          </div>
+          <div className="divide-y">
+            {book.pages.map((page, index) => (
+              <Link
+                key={page.id}
+                href={`/library/books/${canonicalBookSlug}/pages/${slugifyIdTitle(page.id, page.title)}`}
+                className="flex items-center gap-4 px-6 py-3 transition-colors hover:bg-accent md:px-8"
+              >
+                <span className="w-8 shrink-0 text-sm text-muted-foreground">
+                  {index + 1}.
+                </span>
+                <span className="text-sm font-medium">{page.title || "Untitled"}</span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
     </main>
   );
 }
