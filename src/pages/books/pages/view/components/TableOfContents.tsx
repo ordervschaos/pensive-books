@@ -75,14 +75,14 @@ export function TableOfContents({
   );
 
   return (
-    <div className="h-full flex flex-col py-4 pl-4 pr-0">
+    <div className="h-full flex flex-col bg-background/50 py-4 pl-4 pr-0">
       {/* Back to Book Navigation */}
       <div className="mb-4 pr-4">
         <Button
           variant="ghost"
           size="sm"
           onClick={() => navigate(`/books/${bookId}`)}
-          className="w-full justify-start px-2 h-auto py-2"
+          className="h-auto w-full justify-start rounded-md px-3 py-2"
         >
           <ArrowLeft className="h-4 w-4 mr-2 flex-shrink-0" />
           <span className="truncate text-sm">{bookName || "Back to Book"}</span>
@@ -91,7 +91,7 @@ export function TableOfContents({
 
       {/* Pages Header */}
       <div className="mb-4 pr-4 flex items-center justify-between">
-        <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide px-2">Pages</h2>
+        <h2 className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Pages</h2>
         {canEdit && onNewPage && renderAddMenu(
           <Button
             variant="ghost"
@@ -119,18 +119,17 @@ export function TableOfContents({
               bookId={parseInt(bookId)}
               pageId={page.id}
               className={cn(
-                "flex items-center rounded-md px-2 transition-colors",
-                isSection ? "py-2 mt-2" : "py-1.5",
-                "hover:bg-accent/50 hover:text-foreground",
+                "block rounded-md transition-colors",
+                isSection
+                  ? "px-3 py-2 text-xs font-semibold uppercase tracking-wide"
+                  : "px-3 py-1.5 text-sm",
                 isActive
-                  ? "text-foreground font-medium bg-accent/30"
-                  : isSection
-                  ? "text-foreground font-bold border-l-2 border-primary/50 pl-2"
-                  : "text-muted-foreground"
+                  ? "border-l-2 border-primary bg-accent pl-[10px] text-accent-foreground"
+                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
               )}
               onClick={() => onPageSelect && onPageSelect()}
             >
-              <span className={cn("truncate", isSection && "text-base uppercase tracking-wide")}>
+              <span className={cn("block leading-5", isActive ? "whitespace-normal break-words" : "truncate")}>
                 {page.title || `Page ${page.page_index + 1}`}
               </span>
             </PreloadLink>
@@ -143,7 +142,7 @@ export function TableOfContents({
             variant="outline"
             size="sm"
             onClick={() => onNewPage('text')}
-            className="flex-1"
+            className="h-9 flex-1"
           >
             <Plus className="h-4 w-4 mr-2" />
             Add page
@@ -152,7 +151,7 @@ export function TableOfContents({
             <Button
               variant="outline"
               size="sm"
-              className="px-2"
+              className="h-9 px-2"
               title="More options"
             >
               <ChevronDown className="h-4 w-4" />

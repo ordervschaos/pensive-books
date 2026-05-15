@@ -1,9 +1,11 @@
+import type { EditorJSON } from "@/types/editor";
+
 export interface Page {
   id: number;
   page_index: number;
   updated_at: string;
   title: string;
-  content?: any; // TipTap JSON content
+  content?: EditorJSON | null;
   page_type: 'text' | 'section';
 }
 
@@ -24,6 +26,7 @@ export interface PageItemProps {
   onNavigate: (pageId: number) => void;
   onDelete?: (pageId: number) => void;
   isBookmarked?: boolean;
+  sectionNumber?: number;
 }
 
 export const LOCALSTORAGE_BOOKMARKS_KEY = 'bookmarked_pages'; 

@@ -106,10 +106,10 @@ export const PageTableOfContents = ({ className, pageId }: PageTableOfContentsPr
   
 
   return (
-    <aside className={cn('w-64 flex-shrink-0 h-screen sticky top-0 overflow-hidden border-l border-border/40 bg-background/50', className)}>
-      <div className="p-4 h-full flex flex-col">
-        <h3 className="font-semibold text-sm text-foreground/70 mb-4 px-2">This Page</h3>
-        <nav className="flex-1 overflow-y-auto">
+    <aside className={cn('sticky top-0 h-screen w-56 flex-shrink-0 overflow-hidden border-l border-border/40 bg-background/50', className)}>
+      <div className="flex h-full flex-col p-4">
+        <h3 className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">This Page</h3>
+        <nav className="sidebar-scroll flex-1 overflow-y-auto pr-2">
           <ul className="space-y-1">
             {headings.map((heading) => (
               <li
@@ -119,13 +119,15 @@ export const PageTableOfContents = ({ className, pageId }: PageTableOfContentsPr
                 <button
                   onClick={() => scrollToHeading(heading.id)}
                   className={cn(
-                    'text-left w-full text-sm py-1.5 px-2 rounded-md transition-colors hover:bg-accent hover:text-accent-foreground',
+                    'w-full rounded-md px-3 py-1.5 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground',
                     activeId === heading.id
-                      ? 'bg-accent text-accent-foreground font-medium'
+                      ? 'border-l-2 border-primary bg-accent pl-[10px] text-accent-foreground'
                       : 'text-muted-foreground'
                   )}
                 >
-                  {heading.text}
+                  <span className={cn('block leading-5', activeId === heading.id ? 'whitespace-normal break-words' : 'truncate')}>
+                    {heading.text}
+                  </span>
                 </button>
               </li>
             ))}

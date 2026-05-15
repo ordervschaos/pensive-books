@@ -1,12 +1,12 @@
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   Move,
   LayoutList,
   LayoutGrid,
   Trash2,
-  Type,
   Plus,
   MoreVertical,
   MessageSquare,
@@ -76,13 +76,14 @@ export const PagesList = ({
   const [bookmarkedPageIndex, setBookmarkedPageIndex] = useState<number | null>(null);
   const bookmarkedPageRef = useRef<HTMLDivElement>(null);
   const isBetaEnabled = localStorage.getItem('is_beta') === 'true';
+  const activeModeLabel = isReordering ? "Reorder" : isDeleteMode ? "Delete" : null;
 
   // Save view mode to localStorage
   useEffect(() => {
-    if (!isDeleteMode && !isReorderMode) {
+    if (!isDeleteMode && !isReordering) {
       localStorage.setItem('book-view-mode', viewMode);
     }
-  }, [viewMode, isDeleteMode, isReorderMode]);
+  }, [viewMode, isDeleteMode, isReordering]);
 
   useEffect(() => {
     const loadBookmarkedPage = async () => {
@@ -101,26 +102,66 @@ export const PagesList = ({
         block: 'center'
       });
     }
-  }, []);
+  }, [bookmarkedPageIndex]);
 
   useEffect(() => {
     setIsReordering(isReorderMode);
   }, [isReorderMode]);
 
-  // Force list view when in delete mode or reorder mode
+  const previousDeleteModeRef = useRef(isDeleteMode);
+
+  // Force list view for delete mode. Reorder mode manages its own view changes.
   useEffect(() => {
-    if (isDeleteMode || isReorderMode) {
+    if (!previousDeleteModeRef.current && isDeleteMode) {
       setPreviousViewMode(viewMode);
       setViewMode('list');
-    } else {
+    } else if (previousDeleteModeRef.current && !isDeleteMode) {
       setViewMode(previousViewMode);
     }
-  }, [isDeleteMode, isReorderMode]);
+    previousDeleteModeRef.current = isDeleteMode;
+  }, [isDeleteMode, previousViewMode, viewMode]);
 
   useEffect(() => {
     const sortedPages = [...pages].sort((a, b) => a.page_index - b.page_index);
     setItems(sortedPages);
   }, [pages]);
+
+  const sectionNumbers = new Map<number, number>();
+  let sectionCount = 0;
+  items.forEach((item) => {
+    if (item.page_type === "section") {
+      sectionCount += 1;
+      sectionNumbers.set(item.id, sectionCount);
+    }
+  });
+
+  const toggleDeleteMode = () => {
+    setIsReordering(false);
+    onDeleteModeChange?.(!isDeleteMode);
+  };
+
+  const toggleReorderMode = () => {
+    onDeleteModeChange?.(false);
+    if (!isReordering) {
+      setPreviousViewMode(viewMode);
+      setViewMode('list');
+    } else {
+      setViewMode(previousViewMode);
+    }
+    setIsReordering(!isReordering);
+  };
+
+  const exitActiveMode = () => {
+    if (isReordering) {
+      setViewMode(previousViewMode);
+      setIsReordering(false);
+      return;
+    }
+
+    if (isDeleteMode) {
+      onDeleteModeChange?.(false);
+    }
+  };
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -231,65 +272,59 @@ export const PagesList = ({
   };
 
   return (
-    <Card className="mt-6">
+    <Card className="mt-6 overflow-hidden">
       <CardContent className="p-0">
-        <div className="flex flex-row sm:flex-row items-start sm:items-center justify-between p-4 border-b border-border gap-4">
-          <div className="flex items-center gap-2">
-            {/* View Mode Buttons */}
-            <div className="flex items-center gap-1 border border-border rounded-full p-1">
-              <Button
-                variant={viewMode === 'grid' ? 'default' : 'ghost'}
-                size="icon"
-                onClick={() => setViewMode('grid')}
-                className="rounded-full h-8 w-8"
-                disabled={isReordering}
-                title="Grid View"
+        <div className="border-b border-border p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
+              <ToggleGroup
+                type="single"
+                value={viewMode}
+                onValueChange={(value) => {
+                  if (value) {
+                    setViewMode(value as 'list' | 'grid' | 'outline');
+                  }
+                }}
+                variant="outline"
+                size="sm"
+                className="rounded-md border border-border p-1"
               >
-                <LayoutGrid className="h-4 w-4" />
-              </Button>
-              <Button
-                variant={viewMode === 'list' ? 'default' : 'ghost'}
-                size="icon"
-                onClick={() => setViewMode('list')}
-                className="rounded-full h-8 w-8"
-                disabled={isReordering}
-                title="List View"
-              >
-                <LayoutList className="h-4 w-4" />
-              </Button>
-              <Button
-                variant={viewMode === 'outline' ? 'default' : 'ghost'}
-                size="icon"
-                onClick={() => setViewMode('outline')}
-                className="rounded-full h-8 w-8"
-                disabled={isReordering}
-                title="Outline View"
-              >
-                <List className="h-4 w-4" />
-              </Button>
-            </div>
+                <ToggleGroupItem value="grid" disabled={isReordering} className="gap-1.5 rounded-md px-3" aria-label="Grid view">
+                  <LayoutGrid className="h-4 w-4" />
+                  <span className="hidden sm:inline">Grid</span>
+                </ToggleGroupItem>
+                <ToggleGroupItem value="list" disabled={isReordering} className="gap-1.5 rounded-md px-3" aria-label="List view">
+                  <LayoutList className="h-4 w-4" />
+                  <span className="hidden sm:inline">List</span>
+                </ToggleGroupItem>
+                <ToggleGroupItem value="outline" disabled={isReordering} className="gap-1.5 rounded-md px-3" aria-label="Outline view">
+                  <List className="h-4 w-4" />
+                  <span className="hidden sm:inline">Outline</span>
+                </ToggleGroupItem>
+              </ToggleGroup>
 
-            {/* Chat button - available for everyone in beta */}
-            {onChatToggle && isBetaEnabled && (
-              <>
+              {/* Chat button - available for everyone in beta */}
+              {onChatToggle && isBetaEnabled && (
                 <Button
-                  variant="outline"
-                  size="icon"
-                  className={`rounded-full hidden sm:flex ${hasActiveChat ? 'bg-muted' : ''}`}
+                  variant={hasActiveChat ? "secondary" : "outline"}
+                  size="sm"
+                  className="hidden h-9 gap-2 sm:inline-flex"
                   onClick={onChatToggle}
                 >
                   <MessageSquare className="h-4 w-4" />
+                  <span>Chat</span>
                 </Button>
-              </>
-            )}
+              )}
+            </div>
 
             {canEdit && (
               <>
                 <div className="sm:hidden">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="icon" className="rounded-full">
+                      <Button variant="outline" size="sm" className="h-9 gap-2 px-3">
                         <MoreVertical className="h-4 w-4" />
+                        <span>Manage</span>
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="start" className="w-40">
@@ -303,26 +338,14 @@ export const PagesList = ({
                         </DropdownMenuItem>
                       )}
                       <DropdownMenuItem
-                        onClick={() => {
-                          setIsReordering(false);
-                          onDeleteModeChange?.(!isDeleteMode);
-                        }}
+                        onClick={toggleDeleteMode}
                         className="flex items-center gap-2"
                       >
                         <Trash2 className="h-4 w-4" />
                         <span>{isDeleteMode ? 'Exit Delete Mode' : 'Delete Pages'}</span>
                       </DropdownMenuItem>
                       <DropdownMenuItem
-                        onClick={() => {
-                          onDeleteModeChange?.(false);
-                          if (!isReordering) {
-                            setPreviousViewMode(viewMode);
-                            setViewMode('list');
-                          } else {
-                            setViewMode(previousViewMode);
-                          }
-                          setIsReordering(!isReordering);
-                        }}
+                        onClick={toggleReorderMode}
                         className="flex items-center gap-2"
                       >
                         <Move className="h-4 w-4" />
@@ -336,11 +359,8 @@ export const PagesList = ({
                   <Button
                     variant={isDeleteMode ? "secondary" : "outline"}
                     size="sm"
-                    className="flex items-center gap-2"
-                    onClick={() => {
-                      setIsReordering(false);
-                      onDeleteModeChange?.(!isDeleteMode);
-                    }}
+                    className="h-9 gap-2"
+                    onClick={toggleDeleteMode}
                   >
                     <Trash2 className="h-4 w-4" />
                     <span>{isDeleteMode ? 'Exit Delete' : 'Delete'}</span>
@@ -348,17 +368,8 @@ export const PagesList = ({
                   <Button
                     variant={isReordering ? "secondary" : "outline"}
                     size="sm"
-                    className="flex items-center gap-2"
-                    onClick={() => {
-                      onDeleteModeChange?.(false);
-                      if (!isReordering) {
-                        setPreviousViewMode(viewMode);
-                        setViewMode('list');
-                      } else {
-                        setViewMode(previousViewMode);
-                      }
-                      setIsReordering(!isReordering);
-                    }}
+                    className="h-9 gap-2"
+                    onClick={toggleReorderMode}
                   >
                     <Move className="h-4 w-4" />
                     <span>{isReordering ? 'Exit Reorder' : 'Reorder'}</span>
@@ -369,6 +380,15 @@ export const PagesList = ({
           </div>
         </div>
 
+        {activeModeLabel && (
+          <div className="flex items-center justify-between border-b border-border/60 bg-accent/40 px-4 py-2 text-sm">
+            <span className="font-medium text-accent-foreground">{activeModeLabel} mode is active</span>
+            <Button variant="ghost" size="sm" className="h-8 gap-1.5 px-2" onClick={exitActiveMode}>
+              <X className="h-4 w-4" />
+              Exit
+            </Button>
+          </div>
+        )}
 
           {viewMode === 'outline' ? (
             <BookOutlineView
@@ -395,6 +415,7 @@ export const PagesList = ({
                         bookId={bookId}
                         onNavigate={(pageId) => navigate(`/books/${bookId}/pages/${pageId}`)}
                         isBookmarked={bookmarkedPageIndex === page.page_index}
+                        sectionNumber={sectionNumbers.get(page.id)}
                         ref={bookmarkedPageIndex === page.page_index ? bookmarkedPageRef : undefined}
                       />
                     ))}
@@ -435,6 +456,7 @@ export const PagesList = ({
                         onNavigate={(pageId) => navigate(`/books/${bookId}/pages/${pageId}`)}
                         onDelete={canEdit ? handleDeletePage : undefined}
                         isBookmarked={bookmarkedPageIndex === page.page_index}
+                        sectionNumber={sectionNumbers.get(page.id)}
                         ref={bookmarkedPageIndex === page.page_index ? bookmarkedPageRef : undefined}
                       />
                     ) : (
@@ -445,6 +467,7 @@ export const PagesList = ({
                         onNavigate={(pageId) => navigate(`/books/${bookId}/pages/${pageId}`)}
                         onDelete={canEdit ? handleDeletePage : undefined}
                         isBookmarked={bookmarkedPageIndex === page.page_index}
+                        sectionNumber={sectionNumbers.get(page.id)}
                         ref={bookmarkedPageIndex === page.page_index ? bookmarkedPageRef : undefined}
                       />
                     )
@@ -480,19 +503,17 @@ export const PagesList = ({
 
       </CardContent>
 
-      {/* Floating Exit Reorder Button */}
-      {isReordering && (
+      {/* Floating Exit Mode Button */}
+      {activeModeLabel && (
         <div className="fixed bottom-6 right-6 z-50">
           <Button
             size="lg"
-            onClick={() => {
-              setViewMode(previousViewMode);
-              setIsReordering(false);
-            }}
-            className="rounded-full shadow-lg hover:shadow-xl transition-all flex items-center gap-2 px-6 py-6 text-base font-semibold"
+            variant="secondary"
+            onClick={exitActiveMode}
+            className="flex items-center gap-2 rounded-full px-6 py-6 text-base font-semibold shadow-lg transition-all hover:shadow-xl"
           >
             <X className="h-5 w-5" />
-            <span>Exit Reorder</span>
+            <span>Exit {activeModeLabel}</span>
           </Button>
         </div>
       )}

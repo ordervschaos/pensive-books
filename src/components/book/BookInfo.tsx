@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { ImageIcon, Play, Pencil } from "lucide-react";
+import { ImageIcon, Play, Pencil, Download, ChevronDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { generateAndDownloadEPUB, generatePDFWithPrintDialog, generateAndDownloadMarkdown } from "@/lib/download";
 import { useNavigate } from "react-router-dom";
@@ -10,6 +10,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from "@/components/ui/input";
 import { UnsplashPicker } from "./UnsplashPicker";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { BookCoverFallback } from "./BookCoverFallback";
 
 interface BookInfoProps {
   name: string;
@@ -62,7 +70,7 @@ export const BookInfo = ({
       name, 
       subtitle,
       author,
-      coverUrl,
+      coverUrl: currentCoverUrl,
       showTextOnCover
     });
     
@@ -86,7 +94,7 @@ export const BookInfo = ({
       name,
       subtitle,
       author,
-      coverUrl,
+      coverUrl: currentCoverUrl,
       showTextOnCover
     });
 
@@ -110,7 +118,7 @@ export const BookInfo = ({
       name,
       subtitle,
       author,
-      coverUrl,
+      coverUrl: currentCoverUrl,
       showTextOnCover
     });
 
@@ -161,7 +169,7 @@ export const BookInfo = ({
         name, 
         subtitle,
         author,
-        coverUrl,
+        coverUrl: currentCoverUrl,
         showTextOnCover,
         returnBlob: true
       });
@@ -319,7 +327,7 @@ export const BookInfo = ({
   return (
     <div className="grid grid-cols-1 gap-6 p-5 sm:grid-cols-[160px,1fr] sm:p-6 md:grid-cols-[200px,1fr] md:gap-8 md:p-8">
           {/* Book Cover */}
-          <div className="relative overflow-hidden rounded-xl ring-1 ring-border/50 group">
+        <div className="relative overflow-hidden rounded-xl ring-1 ring-border/50 group">
             {currentCoverUrl ? (
               <img
                 src={currentCoverUrl}
@@ -328,9 +336,12 @@ export const BookInfo = ({
                 loading="lazy"
               />
             ) : (
-              <div className="flex h-full min-h-[220px] w-full items-center justify-center bg-gradient-to-br from-muted/80 to-muted/40">
-                <ImageIcon className="h-14 w-14 text-muted-foreground" />
-              </div>
+              <BookCoverFallback
+                bookId={bookId}
+                title={name}
+                variant="hero"
+                className="min-h-[220px]"
+              />
             )}
             
             {/* Edit Cover Button - Only shows when user can edit */}
@@ -426,45 +437,35 @@ export const BookInfo = ({
               <div className="text-xs uppercase tracking-wide text-muted-foreground">
                 Downloads
               </div>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <Button
-                  type="button"
-                  onClick={handleDownloadEPUB}
-                  variant="outline"
-                  size="sm"
-                  className="text-sm"
-                >
-                  EPUB
-                </Button>
-                <Button
-                  type="button"
-                  onClick={handleDownloadPDF}
-                  variant="outline"
-                  size="sm"
-                  className="text-sm"
-                >
-                  PDF
-                </Button>
-                <Button
-                  type="button"
-                  onClick={handleDownloadMarkdown}
-                  variant="outline"
-                  size="sm"
-                  className="text-sm"
-                >
-                  Markdown
-                </Button>
-                <Button
-                  type="button"
-                  onClick={handleSendToKindle}
-                  variant="outline"
-                  size="sm"
-                  className="text-sm"
-                  disabled={sending}
-                >
-                  {sending ? "Sending..." : "Kindle"}
-                </Button>
-              </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="mt-2 h-9 gap-2 text-sm"
+                  >
+                    <Download className="h-4 w-4" />
+                    Export
+                    <ChevronDown className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-56">
+                  <DropdownMenuItem onClick={handleDownloadEPUB}>
+                    Download EPUB
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleDownloadPDF}>
+                    Download PDF
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleDownloadMarkdown}>
+                    Download Markdown
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleSendToKindle} disabled={sending}>
+                    {sending ? "Sending to Kindle..." : "Send to Kindle"}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
     </div>

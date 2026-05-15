@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { useParams, useNavigate, useLocation } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { BookInfo } from "@/components/book/BookInfo";
@@ -7,7 +7,6 @@ import { PagesList } from "./components/PagesList";
 import { useBookPermissions } from "@/hooks/use-book-permissions";
 import { useUserBookPreferences } from "@/hooks/use-user-book-preferences";
 import { BookActionsBar } from "./components/BookActionsBar";
-import { ShareBookButton } from "./components/ShareBookButton";
 import { BookChatPanel } from "./components/BookChatPanel";
 import { IntegratedFlashcardSection } from "@/components/flashcard/IntegratedFlashcardSection";
 import { FlashcardEditor } from "@/components/flashcard/FlashcardEditor";
@@ -19,38 +18,65 @@ import { Helmet } from "react-helmet-async";
 import { executeBookOperation } from "@/lib/book-operations";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
-import { cn } from "@/lib/utils";
 import { jsonToText, getWordCountFromContent } from "@/utils/tiptapHelpers";
 import { UncommittedChangesBadge } from "./components/UncommittedChangesBadge";
 import { CommitDialog } from "./components/CommitDialog";
 import { PublishingDialog } from "@/components/book/PublishingDialog";
 import { VersionService } from "@/services/VersionService";
-import { GitCommit, History, FileText, MessageSquare } from "lucide-react";
+import { GitCommit, History, MessageSquare } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import type { Session } from "@supabase/supabase-js";
+import type { EditorJSON } from "@/types/editor";
 
 const LOCALSTORAGE_BOOKMARKS_KEY = 'bookmarked_pages';
+
+interface BookmarkEntry {
+  pageIndex?: number | null;
+  timestamp?: string | null;
+}
+
+interface BookPage {
+  id: number;
+  title?: string | null;
+  page_index: number;
+  updated_at?: string | null;
+  content?: EditorJSON | null;
+  page_type?: 'text' | 'section';
+}
+
+interface BookRecord {
+  name: string;
+  subtitle?: string | null;
+  author?: string | null;
+  cover_url?: string | null;
+  show_text_on_cover?: boolean;
+  is_public: boolean;
+  updated_at?: string | null;
+  published_at?: string | null;
+}
+
+interface FlashcardRecord {
+  id: number;
+  front?: string;
+  back?: string;
+}
 
 const BookDetails = () => {
   const { bookSlug } = useParams();
   const navigate = useNavigate();
-  const location = useLocation();
   const { toast } = useToast();
-  const [book, setBook] = useState<any>(null);
-  const [pages, setPages] = useState<any[]>([]);
+  const [book, setBook] = useState<BookRecord | null>(null);
+  const [pages, setPages] = useState<BookPage[]>([]);
   const [loading, setLoading] = useState(true);
   const [publishing, setPublishing] = useState(false);
-  const [isReorderMode, setIsReorderMode] = useState(false);
   const [isDeleteMode, setIsDeleteMode] = useState(false);
   const [bookmarkedPageIndex, setBookmarkedPageIndex] = useState<number | null>(null);
   const [bookmarkTimestamp, setBookmarkTimestamp] = useState<string | null>(null);
   const [isChatOpen, setIsChatOpen] = useState(false);
-  const { canEdit, isOwner, loading: permissionsLoading } = useBookPermissions(bookSlug);
+  const { canEdit, loading: permissionsLoading } = useBookPermissions(bookSlug);
   
   // Get user session for preferences
-  const [session, setSession] = useState<any>(null);
+  const [session, setSession] = useState<Session | null>(null);
 
   // Check beta flag
   const isBetaEnabled = localStorage.getItem('is_beta') === 'true';
@@ -88,14 +114,13 @@ const BookDetails = () => {
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [isGenerateDialogOpen, setIsGenerateDialogOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [viewingFlashcard, setViewingFlashcard] = useState<any>(null);
+  const [viewingFlashcard, setViewingFlashcard] = useState<FlashcardRecord | null>(null);
   const [currentFlashcardIndex, setCurrentFlashcardIndex] = useState(0);
-  const [editingFlashcard, setEditingFlashcard] = useState<any>(null);
+  const [editingFlashcard, setEditingFlashcard] = useState<FlashcardRecord | null>(null);
 
   // Version control state
   const [isCommitDialogOpen, setIsCommitDialogOpen] = useState(false);
   const [isPublishingDialogOpen, setIsPublishingDialogOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState("pages");
 
   // Fetch latest version for version badge
   const { data: latestVersion } = useQuery({
@@ -104,7 +129,7 @@ const BookDetails = () => {
     enabled: numericBookId > 0,
   });
 
-  const fetchBookmarkedPage = useCallback(async (session: any) => {
+  const fetchBookmarkedPage = useCallback(async (session: Session | null) => {
     try {
       const numericId = getNumericId(bookSlug);
       if (session) {
@@ -116,7 +141,7 @@ const BookDetails = () => {
 
         if (error) throw error;
         
-        const bookmarks = userData?.bookmarked_pages || {};
+        const bookmarks = (userData?.bookmarked_pages as Record<string, number | BookmarkEntry>) || {};
         const bookmarkData = bookmarks[numericId];
         
         // Handle both old format (just number) and new format ({ pageIndex, timestamp })
@@ -132,7 +157,9 @@ const BookDetails = () => {
         }
       } else {
         const storedBookmarks = localStorage.getItem(LOCALSTORAGE_BOOKMARKS_KEY);
-        const bookmarks = storedBookmarks ? JSON.parse(storedBookmarks) : {};
+        const bookmarks = storedBookmarks
+          ? (JSON.parse(storedBookmarks) as Record<string, number | BookmarkEntry>)
+          : {};
         const bookmarkData = bookmarks[numericId];
         
         // Handle both old format (just number) and new format ({ pageIndex, timestamp })
@@ -147,10 +174,10 @@ const BookDetails = () => {
           setBookmarkTimestamp(null);
         }
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error fetching bookmarked page:', error);
     }
-  }, [numericBookId]);
+  }, [bookSlug]);
 
   const updateBookmark = async (pageIndex: number | null) => {
     try {
@@ -167,7 +194,7 @@ const BookDetails = () => {
 
         if (fetchError) throw fetchError;
 
-        const bookmarks = (userData?.bookmarked_pages as Record<string, any>) || {};
+        const bookmarks = (userData?.bookmarked_pages as Record<string, number | BookmarkEntry>) || {};
         const updatedBookmarks = { 
           ...bookmarks, 
           [numericId]: {
@@ -184,7 +211,9 @@ const BookDetails = () => {
         if (updateError) throw updateError;
       } else {
         const storedBookmarks = localStorage.getItem(LOCALSTORAGE_BOOKMARKS_KEY);
-        const bookmarks = storedBookmarks ? JSON.parse(storedBookmarks) : {};
+        const bookmarks = storedBookmarks
+          ? (JSON.parse(storedBookmarks) as Record<string, number | BookmarkEntry>)
+          : {};
         const updatedBookmarks = { 
           ...bookmarks, 
           [numericId]: {
@@ -197,12 +226,12 @@ const BookDetails = () => {
 
       setBookmarkedPageIndex(pageIndex);
       setBookmarkTimestamp(timestamp);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error updating bookmark:', error);
       toast({
         variant: "destructive",
         title: "Error updating bookmark",
-        description: error.message
+        description: error instanceof Error ? error.message : "Failed to update bookmark",
       });
     }
   };
@@ -230,7 +259,7 @@ const BookDetails = () => {
       }
 
       console.log('Book data fetched:', bookData);
-      setBook(bookData);
+      setBook(bookData as BookRecord);
       setPageTitle(bookData.name);
 
       const { data: pagesData, error: pagesError } = await supabase
@@ -246,13 +275,13 @@ const BookDetails = () => {
       }
 
       console.log('Pages fetched:', pagesData?.length);
-      setPages(pagesData || []);
-    } catch (error: any) {
+      setPages((pagesData || []) as BookPage[]);
+    } catch (error: unknown) {
       console.error('Error in fetchBookDetails:', error);
       toast({
         variant: "destructive",
         title: "Error fetching book details",
-        description: error.message
+        description: error instanceof Error ? error.message : "Failed to fetch book details",
       });
     } finally {
       setLoading(false);
@@ -460,7 +489,7 @@ const BookDetails = () => {
     }
   };
 
-  const handleDeleteFlashcard = async (flashcard: any) => {
+  const handleDeleteFlashcard = async (flashcard: FlashcardRecord) => {
     try {
       await deleteFlashcard(flashcard.id);
       toast({
@@ -493,19 +522,19 @@ const BookDetails = () => {
     }
   };
 
-  const handleViewFlashcard = (flashcard: any) => {
+  const handleViewFlashcard = (flashcard: FlashcardRecord) => {
     const index = flashcards.findIndex(f => f.id === flashcard.id);
     setCurrentFlashcardIndex(index);
     setViewingFlashcard(flashcard);
     setIsModalOpen(true);
   };
 
-  const handleEditFlashcard = (flashcard: any) => {
+  const handleEditFlashcard = (flashcard: FlashcardRecord) => {
     setEditingFlashcard(flashcard);
     setIsEditorOpen(true);
   };
 
-  const handleStudyFlashcard = (flashcard: any) => {
+  const handleStudyFlashcard = (flashcard: FlashcardRecord) => {
     handleViewFlashcard(flashcard);
   };
 
@@ -569,17 +598,12 @@ const BookDetails = () => {
                     size="sm"
                     variant="outline"
                     onClick={() => navigate(`/books/${bookSlug}/chat`)}
-                    className="gap-2"
+                    className="h-9 gap-2"
                   >
                     <MessageSquare className="h-4 w-4" />
                     Chat with Book
                   </Button>
                   )}
-
-                  <ShareBookButton
-                    isPublic={book.is_public}
-                    url={window.location.href}
-                  />
 
                   <BookActionsBar
                     isPublic={book.is_public}
@@ -587,6 +611,7 @@ const BookDetails = () => {
                     onUnpublish={handleUnpublish}
                     publishing={publishing}
                     onEditClick={handleEditClick}
+                    url={window.location.href}
                   />
                 </div>
               )}
@@ -610,7 +635,7 @@ const BookDetails = () => {
             </div>
 
             {/* Word Count & Version Control */}
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm text-muted-foreground">
                 {pages.reduce((acc, page) =>
                   acc + (page.page_type === 'text' && page.content ? getWordCountFromContent(page.content) : 0), 0)} words
@@ -631,7 +656,7 @@ const BookDetails = () => {
                       size="sm"
                       variant="outline"
                       onClick={() => navigate(`/books/${bookSlug}/versions`)}
-                      className="gap-1.5 h-7 px-2.5 text-xs font-mono"
+                      className="h-9 gap-1.5 px-3 text-xs font-mono"
                     >
                       <History className="h-3.5 w-3.5" />
                       v{latestVersion.version_number}
@@ -639,7 +664,7 @@ const BookDetails = () => {
                   ) : (
                     <Badge
                       variant="outline"
-                      className="gap-1.5 h-7 px-2.5 text-xs bg-muted/50 text-muted-foreground border-muted-foreground/20"
+                      className="h-9 gap-1.5 border-muted-foreground/20 bg-muted/50 px-3 text-xs text-muted-foreground"
                     >
                       <History className="h-3.5 w-3.5" />
                       No version
@@ -649,9 +674,9 @@ const BookDetails = () => {
                   {/* Save Button */}
                   <Button
                     size="sm"
-                    variant="default"
+                    variant="outline"
                     onClick={() => setIsCommitDialogOpen(true)}
-                    className="gap-1.5 h-7 px-3 text-xs bg-primary hover:bg-primary/90"
+                    className="h-9 gap-1.5 px-3 text-xs"
                   >
                     <GitCommit className="h-3.5 w-3.5" />
                     Save this version
@@ -664,7 +689,6 @@ const BookDetails = () => {
             <PagesList
               pages={pages}
               bookId={getNumericId(bookSlug)}
-              isReorderMode={isReorderMode}
               isDeleteMode={isDeleteMode}
               canEdit={canEdit}
               onDeleteModeChange={(isDelete) => setIsDeleteMode(isDelete)}
@@ -740,10 +764,7 @@ const BookDetails = () => {
             bookName={book.name}
             open={isCommitDialogOpen}
             onOpenChange={setIsCommitDialogOpen}
-            onSuccess={() => {
-              // Optionally switch to version history tab after successful commit
-              setActiveTab("versions");
-            }}
+            onSuccess={() => undefined}
           />
 
           {/* Publishing Dialog */}

@@ -4,6 +4,7 @@ import { Card } from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
 import { Clock } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
+import { BookCoverFallback } from '@/components/book/BookCoverFallback';
 
 interface RecentBook {
   bookId: number;
@@ -233,7 +234,7 @@ export function RecentBooksCard() {
         {[1, 2, 3, 4].map((i) => (
           <Card
             key={i}
-            className={`p-4 animate-pulse border-2 ${i > 2 ? 'hidden lg:block' : ''}`}
+            className={`border border-border/60 bg-card/60 p-4 animate-pulse ${i > 2 ? 'hidden lg:block' : ''}`}
           >
             <div className="flex gap-3">
               <div className="w-12 h-16 bg-muted rounded-md"></div>
@@ -261,7 +262,7 @@ export function RecentBooksCard() {
         {recentBooks.map((book, index) => (
           <Card
             key={`${book.bookId}-${book.pageId}`}
-            className={`p-4 hover:shadow-lg hover:border-primary/50 transition-all border-2 cursor-pointer group ${
+            className={`cursor-pointer border border-border/60 bg-card/60 p-4 shadow-sm transition-colors hover:bg-accent/20 ${
               index >= 2 ? 'hidden lg:block' : ''
             }`}
             onClick={() => handleContinue(book)}
@@ -275,11 +276,12 @@ export function RecentBooksCard() {
                     className="w-full h-full object-cover rounded-md shadow-sm"
                   />
                 ) : (
-                  <div className="w-full h-full bg-gradient-to-br from-muted to-muted/50 rounded-md flex items-center justify-center border">
-                    <span className="text-[9px] text-muted-foreground text-center px-1 line-clamp-2 font-medium">
-                      {book.bookName || 'Book'}
-                    </span>
-                  </div>
+                  <BookCoverFallback
+                    bookId={book.bookId}
+                    title={book.bookName}
+                    variant="mini"
+                    className="rounded-md"
+                  />
                 )}
               </div>
 
