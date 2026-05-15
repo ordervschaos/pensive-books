@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TopNav } from "@/components/TopNav";
 import { LibraryNav } from "@/components/navigation/LibraryNav";
 import { PrivateRoute } from "@/components/PrivateRoute";
+import { IndexRoute } from "@/components/IndexRoute";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Suspense, lazy, useEffect } from "react";
 import { useGoogleAnalytics } from "@/hooks/useGoogleAnalytics";
@@ -13,7 +14,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { LegacyRedirects } from "@/components/LegacyRedirects";
 
 // Public pages
-const Landing = lazy(() => import("@/pages/public/landing/Landing"));
 const Library = lazy(() => import("@/pages/public/library/Library"));
 const PrivacyPolicy = lazy(() => import("@/pages/public/legal/PrivacyPolicy"));
 const Terms = lazy(() => import("@/pages/public/legal/Terms"));
@@ -114,7 +114,7 @@ export default function App() {
                     <Routes>
                       {/* Public routes */}
                       <Route path="/u/:username" element={<PublicProfile />} />
-                      <Route path="/" element={<Landing />} />
+                      <Route path="/" element={<IndexRoute />} />
                       <Route path="/auth" element={<Auth />} />
                       <Route path="/auth/callback" element={<Auth />} />
                       <Route path="/library" element={<Library />} />

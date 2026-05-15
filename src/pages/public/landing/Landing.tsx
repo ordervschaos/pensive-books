@@ -28,16 +28,6 @@ export default function Landing() {
   const [publicBooks, setPublicBooks] = useState<PublicBook[]>([]);
 
   useEffect(() => {
-    const checkAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        navigate('/books', { replace: true });
-      }
-    };
-    checkAuth();
-  }, [navigate]);
-
-  useEffect(() => {
     const fetchPublicBooks = async () => {
       const { data, error } = await supabase
         .from("books")
