@@ -1,13 +1,14 @@
-
 import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { NavTabsProps } from "./types";
-import { Wand2 } from "lucide-react";
+import { buildPublicUrl } from "@/utils/publicOrigin";
 
 export const NavTabs = ({ isLibraryActive, isMyBooksActive }: NavTabsProps) => {
   if (!isLibraryActive && !isMyBooksActive) {
     return null;
   }
+
+  const libraryHref = buildPublicUrl("/library");
   
   return (
     <div className="bg-background border-b">
@@ -23,8 +24,8 @@ export const NavTabs = ({ isLibraryActive, isMyBooksActive }: NavTabsProps) => {
           >
             My Books
           </Link>
-          <Link
-            to="/library"
+          <a
+            href={libraryHref}
             className={cn(
               "px-4 py-2 text-sm font-medium transition-colors relative",
               isLibraryActive ? "text-foreground" : "text-muted-foreground hover:text-foreground",
@@ -32,7 +33,7 @@ export const NavTabs = ({ isLibraryActive, isMyBooksActive }: NavTabsProps) => {
             )}
           >
             Library
-          </Link>
+          </a>
         </div>
       </div>
     </div>

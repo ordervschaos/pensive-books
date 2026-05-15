@@ -61,7 +61,7 @@ export default async function HomePage() {
             <a href={`${appOrigin}/auth`} className={primaryButtonClass}>
               Start writing
             </a>
-            <a href={`${appOrigin}/library`} className={outlineButtonClass}>
+            <a href="/library" className={outlineButtonClass}>
               Browse library
             </a>
           </div>
@@ -72,7 +72,7 @@ export default async function HomePage() {
             <h2 className="text-center font-serif text-4xl font-bold text-primary">
               Featured Books
             </h2>
-            <FeaturedBooksCarousel books={featuredBooks} appOrigin={appOrigin} />
+            <FeaturedBooksCarousel books={featuredBooks} />
           </section>
         )}
 
@@ -180,7 +180,7 @@ export default async function HomePage() {
         <div className="space-y-6 rounded-lg border p-12 text-center">
           <h3 className="text-3xl font-medium text-primary">Want to learn more?</h3>
           <a
-            href={`${appOrigin}/library/books/658-the-pensive-manual`}
+            href="/library/books/658-the-pensive-manual"
             className="inline-flex items-center gap-3 text-xl font-medium text-primary hover:text-primary/90"
           >
             <span>📖</span>

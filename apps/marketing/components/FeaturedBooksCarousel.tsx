@@ -7,7 +7,6 @@ import type { PublicBook } from "@/lib/public-books";
 
 type Props = {
   books: PublicBook[];
-  appOrigin: string;
 };
 
 function scrollByAmount(container: HTMLDivElement | null, direction: 1 | -1) {
@@ -20,7 +19,7 @@ function scrollByAmount(container: HTMLDivElement | null, direction: 1 | -1) {
   });
 }
 
-export function FeaturedBooksCarousel({ books, appOrigin }: Props) {
+export function FeaturedBooksCarousel({ books }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   return (
@@ -32,7 +31,7 @@ export function FeaturedBooksCarousel({ books, appOrigin }: Props) {
         {books.map((book) => (
           <a
             key={book.id}
-            href={`${appOrigin}/library/books/${slugifyIdTitle(book.id, book.name)}`}
+            href={`/library/books/${slugifyIdTitle(book.id, book.name)}`}
             className="block min-w-[min(100%,280px)] flex-1 sm:min-w-[calc(50%-8px)] md:min-w-[calc(33.333%-11px)] lg:min-w-[calc(25%-12px)]"
           >
             <div className="relative aspect-[3/4] cursor-pointer overflow-hidden rounded-lg border bg-card text-card-foreground shadow-sm group">

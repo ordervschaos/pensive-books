@@ -8,9 +8,17 @@ export function PublicTopNav() {
   return (
     <nav className="sticky top-0 z-50 border-b bg-background">
       <div className="container mx-auto flex h-14 max-w-7xl items-center justify-between px-4">
-        <a href="/" className="text-lg font-semibold text-foreground">
-          Pensive
-        </a>
+        <div className="flex items-center gap-6">
+          <a href="/" className="text-lg font-semibold text-foreground">
+            Pensive
+          </a>
+          <a
+            href="/library"
+            className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+          >
+            Library
+          </a>
+        </div>
 
         <div className="flex items-center gap-3">
           <PublicThemeMenu />

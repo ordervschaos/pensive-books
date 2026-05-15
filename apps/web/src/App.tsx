@@ -4,7 +4,6 @@ import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { PageDisplaySettingsProvider } from "@/contexts/PageDisplaySettingsContext";
 import { Toaster } from "@/components/ui/toaster";
 import { TopNav } from "@/components/TopNav";
-import { LibraryNav } from "@/components/navigation/LibraryNav";
 import { PrivateRoute } from "@/components/PrivateRoute";
 import { IndexRoute } from "@/components/IndexRoute";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -12,9 +11,8 @@ import { Suspense, lazy, useEffect } from "react";
 import { useGoogleAnalytics } from "@/hooks/useGoogleAnalytics";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { LegacyRedirects } from "@/components/LegacyRedirects";
+import { PublicSiteRedirect } from "@/components/PublicSiteRedirect";
 
-// Public pages
-const Library = lazy(() => import("@/pages/public/library/Library"));
 const PrivacyPolicy = lazy(() => import("@/pages/public/legal/PrivacyPolicy"));
 const Terms = lazy(() => import("@/pages/public/legal/Terms"));
 const Contact = lazy(() => import("@/pages/public/legal/Contact"));
@@ -23,7 +21,6 @@ const Contact = lazy(() => import("@/pages/public/legal/Contact"));
 const Auth = lazy(() => import("@/pages/auth/Auth"));
 
 // User pages
-const PublicProfile = lazy(() => import("@/pages/user/profile/PublicProfile"));
 const SetUsername = lazy(() => import("@/pages/user/profile/SetUsername"));
 const ProfileEdit = lazy(() => import("@/pages/user/profile/ProfileEdit"));
 
@@ -36,14 +33,12 @@ const VersionHistoryPage = lazy(() => import("@/pages/books/show/VersionHistoryP
 const BookEdit = lazy(() => import("@/pages/books/edit/BookEdit"));
 const BookFlashcards = lazy(() => import("@/pages/books/flashcards/BookFlashcards"));
 const GenerateBook = lazy(() => import("@/pages/books/generate/GenerateBook"));
-const PublishedBookDetails = lazy(() => import("@/pages/public/library/PublishedBookDetails"));
 
 // Nested resources under books
 const PageView = lazy(() => import("@/pages/books/pages/view/PageView"));
 const BookChatPage = lazy(() => import("@/pages/books/chat/BookChatPage"));
 const VersionPreview = lazy(() => import("@/pages/books/versions/VersionPreview"));
 const VersionPageView = lazy(() => import("@/pages/books/versions/VersionPageView"));
-const PublishedPageView = lazy(() => import("@/pages/books/pages/view/PublishedPageView"));
 
 // Invitation pages
 const AcceptInvitation = lazy(() => import("@/pages/invitation/AcceptInvitation"));
@@ -67,12 +62,7 @@ function ScrollToTop() {
 
 function ConditionalNav() {
   const location = useLocation();
-  const isLibraryRoute = location.pathname.startsWith('/library');
   const isPageViewRoute = location.pathname.includes('/pages/');
-
-  if (isLibraryRoute) {
-    return <LibraryNav />;
-  }
 
   // Hide nav for page view routes (they have their own fixed settings menu)
   if (isPageViewRoute) {
@@ -113,11 +103,11 @@ export default function App() {
                   <Suspense fallback={<RouteFallback />}>
                     <Routes>
                       {/* Public routes */}
-                      <Route path="/u/:username" element={<PublicProfile />} />
+                      <Route path="/u/:username" element={<PublicSiteRedirect />} />
                       <Route path="/" element={<IndexRoute />} />
                       <Route path="/auth" element={<Auth />} />
                       <Route path="/auth/callback" element={<Auth />} />
-                      <Route path="/library" element={<Library />} />
+                      <Route path="/library" element={<PublicSiteRedirect />} />
                       <Route path="/accept-invitation" element={<AcceptInvitation />} />
                       <Route path="/privacy" element={<PrivacyPolicy />} />
                       <Route path="/terms" element={<Terms />} />
@@ -125,8 +115,8 @@ export default function App() {
                       <Route path="/books/:bookSlug/join/:token" element={<JoinBook />} />
 
                       {/* Public published content routes */}
-                      <Route path="/library/books/:bookSlug" element={<PublishedBookDetails />} />
-                      <Route path="/library/books/:bookSlug/pages/:pageSlug" element={<PublishedPageView />} />
+                      <Route path="/library/books/:bookSlug" element={<PublicSiteRedirect />} />
+                      <Route path="/library/books/:bookSlug/pages/:pageSlug" element={<PublicSiteRedirect />} />
 
                       {/* Protected routes */}
                       <Route element={<ProtectedLayout />}>

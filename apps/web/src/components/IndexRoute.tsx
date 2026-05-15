@@ -1,8 +1,6 @@
-import { lazy } from "react";
 import { Navigate } from "react-router-dom";
 import { SESSION_COOKIE_KEY } from "@/integrations/supabase/client";
-
-const Landing = lazy(() => import("@/pages/public/landing/Landing"));
+import { PublicSiteRedirect } from "@/components/PublicSiteRedirect";
 
 // @supabase/ssr stores the session as cookies (default storage). The base
 // cookie key is sb-<projectRef>-auth-token; large sessions get chunked into
@@ -22,5 +20,5 @@ export function IndexRoute() {
   if (hasSessionCookie()) {
     return <Navigate to="/books" replace />;
   }
-  return <Landing />;
+  return <PublicSiteRedirect path="/" />;
 }
