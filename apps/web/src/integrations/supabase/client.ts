@@ -11,6 +11,20 @@ const SUPABASE_URL = `https://${SUPABASE_PROJECT_ID}.supabase.co`;
 // duplicating the project ref.
 export const SESSION_COOKIE_KEY = `sb-${SUPABASE_PROJECT_ID}-auth-token`;
 
+function getCookieOptions() {
+  const hostname = typeof window !== "undefined" ? window.location.hostname : "";
+  const isSharedProductionDomain =
+    hostname === "pensive.me" || hostname.endsWith(".pensive.me");
+
+  return {
+    name: SESSION_COOKIE_KEY,
+    path: "/",
+    sameSite: "lax" as const,
+    secure: isSharedProductionDomain,
+    ...(isSharedProductionDomain ? { domain: ".pensive.me" } : {}),
+  };
+}
+
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 //
@@ -19,5 +33,11 @@ export const SESSION_COOKIE_KEY = `sb-${SUPABASE_PROJECT_ID}-auth-token`;
 // domain can read the same session server-side.
 export const supabase = createBrowserClient<Database>(
   SUPABASE_URL,
-  SUPABASE_ANON_KEY
+  SUPABASE_ANON_KEY,
+  {
+    // Once marketing and app live on sibling subdomains, auth cookies must be
+    // readable from both. On localhost we keep host-only cookies so dev on
+    // ports 3000/8080 still works without a custom domain.
+    cookieOptions: getCookieOptions(),
+  }
 );

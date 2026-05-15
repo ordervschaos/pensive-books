@@ -1,5 +1,9 @@
 # Welcome to Pensive
 
+## Architecture Decisions
+
+- [ADR 0001: Public Next.js App, Private Vite SPA](docs/adr/0001-public-nextjs-private-spa.md)
+
 
 ## What technologies are used for this project?
 
@@ -204,4 +208,3 @@ For the complete set of security policies and their SQL implementations, refer t
 
 ## How can I deploy this project?
 Easiest way is to deploy to Netlify or Vercel.
-
