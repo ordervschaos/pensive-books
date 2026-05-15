@@ -229,7 +229,7 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
                   className="h-7 px-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
                   title="Text Style"
                 >
-                  <span>{getActiveHeadingLabel()}</span>
+                  <span className="inline-block w-5 text-center">{getActiveHeadingLabel()}</span>
                   <ChevronDown className="h-3 w-3 ml-0.5 opacity-50" />
                 </Button>
               </DropdownMenuTrigger>
