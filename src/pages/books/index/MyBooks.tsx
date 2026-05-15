@@ -186,33 +186,11 @@ export default function Index() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="container mx-auto px-6 py-6">
-        <div className="fixed top-0 left-0 right-0 z-50">
-          <div className="h-1 bg-primary/20">
-            <div className="h-full bg-primary animate-pulse" style={{ width: '80%' }}></div>
-          </div>
-        </div>
-        <div className="opacity-60">
-          <div className="space-y-3">
-            <div className="h-6 w-32 bg-muted rounded animate-pulse"></div>
-            <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {[1, 2, 3, 4].map((i) => (
-                <div key={i} className={`h-24 bg-muted rounded animate-pulse ${i > 2 ? 'hidden lg:block' : ''}`}></div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   const filterOptions: { value: FilterType; label: string; count?: number }[] = [
-    { value: 'all', label: 'All', count: filterCounts.all },
-    { value: 'published', label: 'Published', count: filterCounts.published },
-    { value: 'private', label: 'Private', count: filterCounts.private },
-    { value: 'pinned', label: 'Pinned', count: filterCounts.pinned },
+    { value: 'all', label: 'All', count: loading ? undefined : filterCounts.all },
+    { value: 'published', label: 'Published', count: loading ? undefined : filterCounts.published },
+    { value: 'private', label: 'Private', count: loading ? undefined : filterCounts.private },
+    { value: 'pinned', label: 'Pinned', count: loading ? undefined : filterCounts.pinned },
   ];
 
   const sortOptions: { value: SortType; label: string }[] = [
@@ -225,6 +203,13 @@ export default function Index() {
 
   return (
     <div className="relative">
+      {loading && (
+        <div className="fixed top-0 left-0 right-0 z-50">
+          <div className="h-1 bg-primary/20">
+            <div className="h-full bg-primary animate-pulse" style={{ width: '80%' }}></div>
+          </div>
+        </div>
+      )}
       <div className="container relative mx-auto px-6 py-8 space-y-10">
         {/* Recent Books — top priority */}
         <RecentBooksCard />
@@ -320,16 +305,15 @@ export default function Index() {
                   )}
                 >
                   <span>{filter.label}</span>
-                  {filter.count !== undefined && (
-                    <span
-                      className={cn(
-                        "text-[11px] tabular-nums",
-                        isActive ? "text-primary-foreground/70" : "text-muted-foreground/70"
-                      )}
-                    >
-                      {filter.count}
-                    </span>
-                  )}
+                  <span
+                    className={cn(
+                      "min-w-[1ch] text-[11px] tabular-nums",
+                      filter.count === undefined && "opacity-0",
+                      isActive ? "text-primary-foreground/70" : "text-muted-foreground/70"
+                    )}
+                  >
+                    {filter.count ?? 0}
+                  </span>
                 </button>
               );
             })}
@@ -338,7 +322,19 @@ export default function Index() {
 
         {/* Unified Book Grid */}
         <div className="space-y-6">
-          {filteredAndSortedBooks.length === 0 ? (
+          {loading ? (
+            <div className="grid grid-cols-2 gap-x-5 gap-y-8 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+              {Array.from({ length: 12 }).map((_, i) => (
+                <div key={i} className="flex flex-col">
+                  <div className="aspect-[3/4] w-full animate-pulse rounded-xl border border-border/50 bg-muted/50" />
+                  <div className="mt-3 space-y-1.5 px-0.5">
+                    <div className="h-4 w-3/4 animate-pulse rounded bg-muted/60" />
+                    <div className="h-3 w-1/2 animate-pulse rounded bg-muted/40" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : filteredAndSortedBooks.length === 0 ? (
             <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border/60 bg-card/30 py-16 text-center">
               <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted/50">
                 <BookOpen className="h-5 w-5 text-muted-foreground" />

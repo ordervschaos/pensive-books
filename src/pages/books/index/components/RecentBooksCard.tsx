@@ -239,11 +239,12 @@ export function RecentBooksCard() {
               key={i}
               className={`animate-pulse border border-border/40 bg-card/40 p-3 ${i > 2 ? 'hidden lg:block' : ''}`}
             >
-              <div className="flex gap-3">
-                <div className="h-14 w-10 rounded-md bg-muted" />
-                <div className="flex-1 space-y-2">
-                  <div className="h-3.5 w-32 rounded bg-muted" />
-                  <div className="h-3 w-24 rounded bg-muted" />
+              <div className="flex items-start gap-3">
+                <div className="h-14 w-10 flex-shrink-0 rounded-[3px] bg-muted" />
+                <div className="min-w-0 flex-1">
+                  <div className="h-5 w-32 rounded bg-muted" />
+                  <div className="mt-1 h-4 w-28 rounded bg-muted" />
+                  <div className="mt-1 h-4 w-20 rounded bg-muted/70" />
                 </div>
               </div>
             </Card>
