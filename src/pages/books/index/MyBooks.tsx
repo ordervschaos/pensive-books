@@ -1,13 +1,12 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Wand2, Search, X, Pin, PinOff, MoreHorizontal } from "lucide-react";
+import { Plus, Wand2, Search, X, Pin, MoreHorizontal, BookOpen, Globe2, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { RecentBooksCard } from "./components/RecentBooksCard";
 import { useBookFilters, FilterType, SortType } from "@/hooks/use-book-filters";
 import { formatDistanceToNow } from "date-fns";
@@ -34,7 +33,7 @@ interface Book {
   updated_at: string;
   owner_id?: string;
   access_level?: string;
-  page_count?: number; // Added for sorting by most pages
+  page_count?: number;
 }
 
 export default function Index() {
@@ -111,12 +110,10 @@ export default function Index() {
           shared: transformedSharedBooks.length
         });
 
-        // Show books immediately with page_count = 0
         setBooks(ownedBooks.map(book => ({ ...book, page_count: 0 })) as Book[]);
         setSharedBooks(transformedSharedBooks.map(book => ({ ...book, page_count: 0 })));
         setLoading(false);
 
-        // STAGE 2: Fetch page counts in background
         const allBookIds = [...ownedBooks.map(b => b.id), ...transformedSharedBooks.map(b => b.id)];
 
         if (allBookIds.length > 0) {
@@ -133,7 +130,6 @@ export default function Index() {
               pageCountsMap.set(page.book_id, count + 1);
             });
 
-            // Update books with page counts
             setBooks(prev => prev.map(book => ({
               ...book,
               page_count: pageCountsMap.get(book.id) || 0
@@ -161,7 +157,7 @@ export default function Index() {
 
   const handlePinToggle = async (bookId: number, currentlyPinned: boolean, e: React.MouseEvent) => {
     e.stopPropagation();
-    
+
     try {
       const { error } = await supabase
         .from('books')
@@ -170,14 +166,13 @@ export default function Index() {
 
       if (error) throw error;
 
-      // Optimistic update
-      setBooks(prev => prev.map(book => 
+      setBooks(prev => prev.map(book =>
         book.id === bookId ? { ...book, pinned: !currentlyPinned } : book
       ));
 
       toast({
         title: currentlyPinned ? 'Book unpinned' : 'Book pinned',
-        description: currentlyPinned 
+        description: currentlyPinned
           ? 'Book removed from pinned section'
           : 'Book added to pinned section',
       });
@@ -229,225 +224,245 @@ export default function Index() {
   ];
 
   return (
-    <div className="container mx-auto px-6 py-6 space-y-6">
-      {/* Recent Books - Top Priority */}
-      <RecentBooksCard />
+    <div className="relative">
+      <div className="container relative mx-auto px-6 py-8 space-y-10">
+        {/* Recent Books — top priority */}
+        <RecentBooksCard />
 
-      {/* Header with Search, Filters, Sort */}
-      <div className="space-y-4">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-          <div className="flex flex-1 flex-col gap-3 lg:flex-row lg:items-center">
-          {/* Search Bar */}
-          <div className="relative min-w-0 flex-1">
-            <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              placeholder="Search books..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-8 pr-8 h-9 text-sm"
-            />
-            {searchQuery && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="absolute right-0.5 top-1/2 transform -translate-y-1/2 h-7 w-7"
-                onClick={clearSearch}
-              >
-                <X className="h-3.5 w-3.5" />
-              </Button>
-            )}
-          </div>
-
-          {/* Sort Dropdown */}
-          <Select value={sortType} onValueChange={(value) => setSortType(value as SortType)}>
-            <SelectTrigger className="h-9 w-full text-sm sm:w-[200px]">
-              <SelectValue placeholder="Sort by" />
-            </SelectTrigger>
-            <SelectContent>
-              {sortOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex flex-shrink-0 items-center justify-end gap-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="h-9 gap-2 px-3 text-sm">
-                  <MoreHorizontal className="h-3.5 w-3.5" />
-                  <span>More</span>
+        {/* Toolbar */}
+        <div className="space-y-5">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            {/* Search */}
+            <div className="relative min-w-0 flex-1 lg:max-w-md">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search books..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="h-10 rounded-md border-border/70 bg-transparent pl-10 pr-10 text-sm transition-colors focus-visible:border-border focus-visible:ring-1 focus-visible:ring-ring/40"
+              />
+              {searchQuery && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2 rounded-full"
+                  onClick={clearSearch}
+                >
+                  <X className="h-3.5 w-3.5" />
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuItem
-                  onClick={() => navigate("/generate-book")}
-                  className="flex items-center gap-2"
-                >
-                  <Wand2 className="h-4 w-4" />
-                  <span>Generate book</span>
-                  <Badge variant="secondary" className="ml-auto text-[10px] px-1.5 py-0">
-                    BETA
-                  </Badge>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <Button
-              onClick={() => navigate("/books/new")}
-              size="sm"
-              className="h-9 px-4 text-sm"
-            >
-              <Plus className="h-3.5 w-3.5 mr-1.5" /> 
-              New book
-            </Button>
-          </div>
-        </div>
-
-        {/* Filter Chips */}
-        <div className="flex flex-wrap gap-1.5">
-          {filterOptions.map((filter) => (
-            <Button
-              key={filter.value}
-              variant={activeFilter === filter.value ? "secondary" : "outline"}
-              size="sm"
-              onClick={() => setActiveFilter(filter.value)}
-              className="h-8 px-3 text-xs font-medium"
-            >
-              {filter.label}
-              {filter.count !== undefined && filter.count > 0 && (
-                <Badge 
-                  variant="outline"
-                  className="ml-1.5 h-4 min-w-[18px] bg-background/70 px-1.5 py-0 text-[10px]"
-                >
-                  {filter.count}
-                </Badge>
               )}
-            </Button>
-          ))}
-        </div>
-      </div>
+            </div>
 
-      {/* Unified Book Grid */}
-      <div className="space-y-6">
-        {filteredAndSortedBooks.length === 0 ? (
-          <div className="text-center py-12">
-            <p className="text-muted-foreground">
-              {searchQuery ? `No books match "${searchQuery}"` : "No books found"}
-            </p>
-            {searchQuery && (
-              <Button variant="link" onClick={clearSearch} className="mt-2">
-                Clear search
+            {/* Sort + Actions */}
+            <div className="flex flex-shrink-0 items-center gap-2">
+              <Select value={sortType} onValueChange={(value) => setSortType(value as SortType)}>
+                <SelectTrigger className="h-10 w-full rounded-md border-border/70 bg-transparent px-3 text-sm sm:w-[200px]">
+                  <SelectValue placeholder="Sort by" />
+                </SelectTrigger>
+                <SelectContent>
+                  {sortOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-10 w-10 rounded-md border-border/70 bg-transparent"
+                    aria-label="More options"
+                  >
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuItem
+                    onClick={() => navigate("/generate-book")}
+                    className="flex items-center gap-2"
+                  >
+                    <Wand2 className="h-4 w-4" />
+                    <span>Generate book</span>
+                    <span className="ml-auto rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+                      Beta
+                    </span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <Button
+                onClick={() => navigate("/books/new")}
+                size="sm"
+                className="h-10 rounded-md px-4 text-sm font-medium shadow-sm"
+              >
+                <Plus className="mr-1.5 h-4 w-4" />
+                New book
               </Button>
-            )}
+            </div>
           </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            {filteredAndSortedBooks.map((book) => {
-              const isPinned = book.pinned === true;
-              const timeAgo = formatDistanceToNow(new Date(book.updated_at || book.created_at || Date.now()), { addSuffix: true });
-              const showsTitleOnCover = Boolean(book.cover_url && book.show_text_on_cover);
 
+          {/* Filter pills */}
+          <div className="flex flex-wrap gap-2">
+            {filterOptions.map((filter) => {
+              const isActive = activeFilter === filter.value;
               return (
-                <div key={book.id} className="flex flex-col sm:block group">
-                  <div className="flex sm:block items-start gap-4 sm:gap-0">
+                <button
+                  key={filter.value}
+                  onClick={() => setActiveFilter(filter.value)}
+                  className={cn(
+                    "group inline-flex h-8 items-center gap-2 rounded-full border px-3.5 text-xs font-medium transition-all",
+                    isActive
+                      ? "border-foreground/80 bg-foreground text-background shadow-sm"
+                      : "border-border/60 bg-transparent text-muted-foreground hover:border-border hover:text-foreground"
+                  )}
+                >
+                  <span>{filter.label}</span>
+                  {filter.count !== undefined && (
+                    <span
+                      className={cn(
+                        "text-[11px] tabular-nums",
+                        isActive ? "text-primary-foreground/70" : "text-muted-foreground/70"
+                      )}
+                    >
+                      {filter.count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Unified Book Grid */}
+        <div className="space-y-6">
+          {filteredAndSortedBooks.length === 0 ? (
+            <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border/60 bg-card/30 py-16 text-center">
+              <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted/50">
+                <BookOpen className="h-5 w-5 text-muted-foreground" />
+              </div>
+              <p className="text-sm text-muted-foreground">
+                {searchQuery ? `No books match "${searchQuery}"` : "No books here yet"}
+              </p>
+              {searchQuery && (
+                <Button variant="link" onClick={clearSearch} className="mt-1 h-auto p-0 text-sm">
+                  Clear search
+                </Button>
+              )}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-x-5 gap-y-8 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+              {filteredAndSortedBooks.map((book) => {
+                const isPinned = book.pinned === true;
+                const timeAgo = formatDistanceToNow(new Date(book.updated_at || book.created_at || Date.now()), { addSuffix: true });
+                const showsTitleOnCover = Boolean(book.cover_url && book.show_text_on_cover);
+                // Fallback covers always show the title; image covers only when configured.
+                const coverShowsTitle = book.cover_url ? showsTitleOnCover : true;
+
+                return (
+                  <div key={book.id} className="group flex flex-col">
                     <Card
-                      className="relative aspect-[3/4] w-24 shrink-0 cursor-pointer overflow-hidden rounded-lg border border-border/60 bg-card shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md sm:w-full"
+                      className="relative aspect-[3/4] w-full cursor-pointer overflow-hidden rounded-xl border border-border/50 bg-card shadow-[0_1px_2px_rgba(0,0,0,0.06)] transition-all duration-300 hover:-translate-y-1 hover:border-border hover:shadow-[0_18px_40px_-12px_rgba(0,0,0,0.4)]"
                       onClick={() => navigate(`/books/${book.id}`)}
                     >
-                      {/* Pin Button */}
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className={`absolute top-1.5 left-1.5 z-10 h-7 w-7 bg-card/90 opacity-0 transition-opacity hover:bg-card sm:h-8 sm:w-8 sm:group-hover:opacity-100 ${
-                          isPinned ? 'opacity-100' : ''
-                        }`}
+                      {/* Pin indicator / button */}
+                      <button
                         onClick={(e) => handlePinToggle(book.id, isPinned, e)}
-                      >
-                        {isPinned ? (
-                          <Pin className="h-3 w-3 sm:h-4 sm:w-4 fill-current" />
-                        ) : (
-                          <PinOff className="h-3 w-3 sm:h-4 sm:w-4" />
+                        aria-label={isPinned ? 'Unpin book' : 'Pin book'}
+                        className={cn(
+                          "absolute right-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-full transition-all",
+                          isPinned
+                            ? "bg-white text-black shadow-md opacity-100"
+                            : "bg-black/50 text-white opacity-0 hover:bg-black/70 group-hover:opacity-100"
                         )}
-                      </Button>
+                      >
+                        <Pin
+                          className={cn("h-3.5 w-3.5", isPinned && "fill-current")}
+                        />
+                      </button>
 
-                      <div className="w-full h-full">
+                      {/* Status badges */}
+                      <div className="absolute left-2 top-2 z-10 flex flex-col gap-1">
+                        {book.is_public && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-black/55 px-2 py-0.5 text-[10px] font-medium text-white shadow-sm">
+                            <Globe2 className="h-2.5 w-2.5" />
+                            Published
+                          </span>
+                        )}
+                        {book.access_level && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-black/55 px-2 py-0.5 text-[10px] font-medium text-white shadow-sm">
+                            <Users className="h-2.5 w-2.5" />
+                            {book.access_level}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Cover */}
+                      <div className="h-full w-full">
                         {book.cover_url ? (
-                          <div className="relative w-full h-full">
+                          <div className="relative h-full w-full">
                             <img
                               src={book.cover_url}
                               alt={book.name || 'Book cover'}
-                              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                              className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]"
                             />
                             {showsTitleOnCover && (
-                              <div className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-foreground/60 via-foreground/10 to-transparent p-4">
-                                <h2 className="mb-1 line-clamp-3 break-words text-base font-semibold text-image-overlay sm:text-xl">
+                              <div className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/85 via-black/40 to-transparent p-3.5">
+                                <h2 className="break-words font-serif text-sm font-semibold leading-tight tracking-tight text-white line-clamp-4 sm:text-base">
                                   {book.name}
                                 </h2>
-                                {book.subtitle && (
-                                  <p className="mb-1 hidden line-clamp-2 break-words text-sm text-image-overlay-muted sm:block">
-                                    {book.subtitle}
-                                  </p>
-                                )}
                                 {book.author && (
-                                  <p className="hidden line-clamp-1 break-words text-sm text-image-overlay-muted sm:block">
-                                    by {book.author}
+                                  <p className="mt-1.5 hidden line-clamp-1 break-words text-[9px] font-medium uppercase tracking-[0.18em] text-white/75 sm:block sm:text-[10px]">
+                                    {book.author}
                                   </p>
                                 )}
                               </div>
                             )}
                           </div>
                         ) : (
-                          <BookCoverFallback bookId={book.id} title={book.name} variant="tile" />
+                          <BookCoverFallback
+                            bookId={book.id}
+                            title={book.name}
+                            author={book.author}
+                            variant="tile"
+                          />
                         )}
+
+                        {/* Subtle bottom sheen on hover */}
+                        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-foreground/0 via-foreground/0 to-foreground/0 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
                       </div>
                     </Card>
-                    <div className="flex-1 space-y-1.5 text-left sm:mt-3 sm:text-center">
-                      <h3 
-                        className={cn(
-                          "cursor-pointer line-clamp-2 break-words text-sm font-medium text-foreground",
-                          showsTitleOnCover && "sm:hidden"
-                        )}
-                        onClick={() => navigate(`/books/${book.id}`)}
-                      >
-                        {book.name}
-                      </h3>
-                      {book.subtitle && (
-                        <p className="text-xs text-muted-foreground line-clamp-2 break-words sm:hidden">
-                          {book.subtitle}
+
+                    {/* Metadata strip */}
+                    <div className="mt-3 px-0.5">
+                      {!coverShowsTitle && (
+                        <h3
+                          className="cursor-pointer line-clamp-2 break-words font-serif text-[15px] font-semibold leading-snug tracking-tight text-foreground"
+                          onClick={() => navigate(`/books/${book.id}`)}
+                        >
+                          {book.name}
+                        </h3>
+                      )}
+                      {!coverShowsTitle && book.author && (
+                        <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                          {book.author}
                         </p>
                       )}
-                      {book.author && (
-                        <p className="text-xs text-muted-foreground line-clamp-1 break-words sm:hidden">
-                          by {book.author}
-                        </p>
-                      )}
-                      <div className="flex flex-col gap-1.5 sm:items-center">
-                        <div className="flex flex-wrap justify-start gap-2 sm:justify-center">
-                          {book.is_public && (
-                            <Badge variant="secondary" className="text-xs">
-                              Published
-                            </Badge>
-                          )}
-                          {book.access_level && (
-                            <Badge variant="outline" className="text-xs">
-                              {book.access_level} access
-                            </Badge>
-                          )}
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          Updated {timeAgo}
-                        </p>
-                      </div>
+                      <p className={cn(
+                        "truncate text-[11px] text-muted-foreground/70",
+                        coverShowsTitle ? "mt-0" : "mt-1.5"
+                      )}>
+                        Updated {timeAgo}
+                      </p>
                     </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

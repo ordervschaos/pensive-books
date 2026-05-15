@@ -5,6 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Clock } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { BookCoverFallback } from '@/components/book/BookCoverFallback';
+import { cn } from '@/lib/utils';
 
 interface RecentBook {
   bookId: number;
@@ -230,21 +231,24 @@ export function RecentBooksCard() {
 
   if (loading) {
     return (
-      <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {[1, 2, 3, 4].map((i) => (
-          <Card
-            key={i}
-            className={`border border-border/60 bg-card/60 p-4 animate-pulse ${i > 2 ? 'hidden lg:block' : ''}`}
-          >
-            <div className="flex gap-3">
-              <div className="w-12 h-16 bg-muted rounded-md"></div>
-              <div className="flex-1 space-y-2">
-                <div className="h-4 w-32 bg-muted rounded"></div>
-                <div className="h-3 w-24 bg-muted rounded"></div>
+      <div className="space-y-3">
+        <div className="h-3 w-16 animate-pulse rounded bg-muted/60" />
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-2 lg:grid-cols-4">
+          {[1, 2, 3, 4].map((i) => (
+            <Card
+              key={i}
+              className={`animate-pulse border border-border/40 bg-card/40 p-3 ${i > 2 ? 'hidden lg:block' : ''}`}
+            >
+              <div className="flex gap-3">
+                <div className="h-14 w-10 rounded-md bg-muted" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-3.5 w-32 rounded bg-muted" />
+                  <div className="h-3 w-24 rounded bg-muted" />
+                </div>
               </div>
-            </div>
-          </Card>
-        ))}
+            </Card>
+          ))}
+        </div>
       </div>
     );
   }
@@ -255,45 +259,45 @@ export function RecentBooksCard() {
 
   return (
     <div className="space-y-3">
-      <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-        Recent
+      <h2 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+        Pick up where you left off
       </h2>
-      <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-2 lg:grid-cols-4">
         {recentBooks.map((book, index) => (
           <Card
             key={`${book.bookId}-${book.pageId}`}
-            className={`cursor-pointer border border-border/60 bg-card/60 p-4 shadow-sm transition-colors hover:bg-accent/20 ${
-              index >= 2 ? 'hidden lg:block' : ''
-            }`}
+            className={cn(
+              "group cursor-pointer border border-border/60 bg-transparent p-3 transition-colors hover:border-border hover:bg-card",
+              index >= 2 && "hidden lg:block"
+            )}
             onClick={() => handleContinue(book)}
           >
-            <div className="flex gap-3 items-start">
-              <div className="w-12 h-16 flex-shrink-0">
+            <div className="flex items-start gap-3">
+              <div className="h-14 w-10 flex-shrink-0 overflow-hidden rounded-[3px] shadow-sm">
                 {book.coverUrl ? (
                   <img
                     src={book.coverUrl}
                     alt={book.bookName || 'Book cover'}
-                    className="w-full h-full object-cover rounded-md shadow-sm"
+                    className="h-full w-full object-cover"
                   />
                 ) : (
                   <BookCoverFallback
                     bookId={book.bookId}
                     title={book.bookName}
                     variant="mini"
-                    className="rounded-md"
                   />
                 )}
               </div>
 
-              <div className="flex-1 min-w-0">
-                <h3 className="text-sm font-semibold mb-1 line-clamp-1">
+              <div className="min-w-0 flex-1">
+                <h3 className="line-clamp-1 font-serif text-sm font-semibold tracking-tight text-foreground">
                   {book.bookName || 'Untitled Book'}
                 </h3>
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2">
+                <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
                   <Clock className="h-3 w-3 flex-shrink-0" />
-                  <span className="truncate font-medium">{book.pageTitle || 'Untitled Page'}</span>
+                  <span className="truncate">{book.pageTitle || 'Untitled Page'}</span>
                 </div>
-                <p className="text-xs text-muted-foreground">
+                <p className="mt-1 text-[11px] text-muted-foreground/70">
                   {formatDistanceToNow(new Date(book.timestamp), { addSuffix: true })}
                 </p>
               </div>

@@ -339,6 +339,7 @@ export const BookInfo = ({
               <BookCoverFallback
                 bookId={bookId}
                 title={name}
+                author={author}
                 variant="hero"
                 className="min-h-[220px]"
               />
