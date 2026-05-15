@@ -11,6 +11,20 @@ const SUPABASE_URL = `https://${SUPABASE_PROJECT_ID}.supabase.co`;
 // duplicating the project ref.
 export const SESSION_COOKIE_KEY = `sb-${SUPABASE_PROJECT_ID}-auth-token`;
 
+// Synchronous best-effort check for an existing session. Large sessions get
+// chunked into .0/.1/... suffixed cookies, so we match any cookie that
+// starts with the base name. The token is not validated — a stale cookie
+// can produce a false positive that gets corrected once getSession() runs.
+export function hasSessionCookie(): boolean {
+  if (typeof document === "undefined") return false;
+  const cookies = document.cookie.split(";");
+  return cookies.some((c) => {
+    const trimmed = c.trim();
+    return trimmed.startsWith(`${SESSION_COOKIE_KEY}=`)
+      || trimmed.startsWith(`${SESSION_COOKIE_KEY}.`);
+  });
+}
+
 function getCookieOptions() {
   const hostname = typeof window !== "undefined" ? window.location.hostname : "";
   const isSharedProductionDomain =

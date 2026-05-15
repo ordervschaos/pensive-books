@@ -1,5 +1,5 @@
 import { useNavigate, useLocation } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase, hasSessionCookie } from "@/integrations/supabase/client";
 import { useToast } from "@/components/ui/use-toast";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { useState, useEffect } from "react";
@@ -16,7 +16,7 @@ export function TopNav() {
   const [bookName, setBookName] = useState<string>("");
   const [pageName, setPageName] = useState<string>("");
   const [searchOpen, setSearchOpen] = useState(false);
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => hasSessionCookie());
 
   useEffect(() => {
     // Check current auth status
