@@ -30,9 +30,13 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{
             __html: `
               (function () {
+                function getCookie(n) {
+                  var m = document.cookie.match(new RegExp("(?:^|; )" + n + "=([^;]*)"));
+                  return m ? decodeURIComponent(m[1]) : null;
+                }
                 var root = document.documentElement;
-                var themeName = localStorage.getItem("themeName") || "coffee";
-                var storedMode = localStorage.getItem("themeMode");
+                var themeName = getCookie("themeName") || localStorage.getItem("themeName") || "coffee";
+                var storedMode = getCookie("themeMode") || localStorage.getItem("themeMode");
                 var themeMode = storedMode || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
 
                 root.classList.remove("light", "dark", "theme-default", "theme-coffee", "theme-mujiyish", "theme-pumpkin");

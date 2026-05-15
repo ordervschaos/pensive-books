@@ -5,7 +5,7 @@ import { LogIn, LogOut } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 const iconButtonClass =
-  "inline-flex h-11 w-11 items-center justify-center rounded-md border border-input bg-background text-foreground transition-colors hover:bg-accent hover:text-accent-foreground";
+  "inline-flex h-9 w-9 items-center justify-center rounded-md border border-input bg-background text-foreground transition-colors hover:bg-accent hover:text-accent-foreground";
 
 type Props = {
   appOrigin: string;
@@ -35,7 +35,7 @@ export function AuthButton({ appOrigin }: Props) {
   }
 
   if (authenticated === null) {
-    return <div className="h-11 w-11 rounded-md border border-input bg-background" />;
+    return <div className="h-9 w-9 rounded-md border border-input bg-background" />;
   }
 
   if (authenticated) {
@@ -46,14 +46,14 @@ export function AuthButton({ appOrigin }: Props) {
         onClick={handleSignOut}
         className={iconButtonClass}
       >
-        <LogOut className="h-5 w-5" />
+        <LogOut className="h-4 w-4" />
       </button>
     );
   }
 
   return (
     <a href={`${appOrigin}/auth`} aria-label="Sign in" className={iconButtonClass}>
-      <LogIn className="h-5 w-5" />
+      <LogIn className="h-4 w-4" />
     </a>
   );
 }

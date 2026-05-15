@@ -2,12 +2,10 @@
 
 import { Coffee, Flame, Moon, Package, Palette, Sun } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { THEME_NAME_KEY, THEME_MODE_KEY, readThemeValue, writeThemeValue } from "@/lib/theme";
 
 type ThemeName = "default" | "coffee" | "mujiyish" | "pumpkin";
 type ThemeMode = "light" | "dark";
-
-const THEME_KEY = "themeName";
-const MODE_KEY = "themeMode";
 
 const themes = [
   { name: "default" as const, label: "Default", Icon: Palette },
@@ -43,10 +41,8 @@ export function PublicThemeMenu() {
 
   useEffect(() => {
     const root = document.documentElement;
-    const storedTheme = (window.localStorage.getItem(THEME_KEY) as ThemeName | null) ?? "coffee";
-    const storedMode =
-      (window.localStorage.getItem(MODE_KEY) as ThemeMode | null) ??
-      (root.classList.contains("dark") ? "dark" : "light");
+    const storedTheme = readThemeValue(THEME_NAME_KEY, "coffee") as ThemeName;
+    const storedMode = (readThemeValue(THEME_MODE_KEY, "") || (root.classList.contains("dark") ? "dark" : "light")) as ThemeMode;
 
     setThemeName(storedTheme);
     setThemeMode(storedMode);
@@ -76,8 +72,8 @@ export function PublicThemeMenu() {
 
   function updateTheme(nextThemeName: ThemeName, nextThemeMode: ThemeMode) {
     applyTheme(nextThemeName, nextThemeMode);
-    window.localStorage.setItem(THEME_KEY, nextThemeName);
-    window.localStorage.setItem(MODE_KEY, nextThemeMode);
+    writeThemeValue(THEME_NAME_KEY, nextThemeName);
+    writeThemeValue(THEME_MODE_KEY, nextThemeMode);
     setThemeName(nextThemeName);
     setThemeMode(nextThemeMode);
   }
@@ -91,9 +87,9 @@ export function PublicThemeMenu() {
         aria-label="Toggle theme"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
-        className="inline-flex h-11 w-11 items-center justify-center rounded-md border border-input bg-background text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+        className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-input bg-background text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
       >
-        <TriggerIcon className="h-5 w-5" />
+        <TriggerIcon className="h-4 w-4" />
       </button>
 
       {open && (

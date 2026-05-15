@@ -6,6 +6,34 @@ import { createContext, useContext, useEffect, useState } from "react"
 type ThemeName = "default" | "coffee" | "mujiyish" | "pumpkin"
 type ThemeMode = "light" | "dark"
 
+function isSharedProductionDomain(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    (window.location.hostname === "pensive.me" ||
+      window.location.hostname.endsWith(".pensive.me"))
+  )
+}
+
+function getCookie(name: string): string | null {
+  if (typeof document === "undefined") return null
+  const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`))
+  return match ? decodeURIComponent(match[1]) : null
+}
+
+function setCookie(name: string, value: string) {
+  const domain = isSharedProductionDomain() ? "; domain=.pensive.me" : ""
+  document.cookie = `${name}=${encodeURIComponent(value)}; path=/; SameSite=Lax; max-age=31536000${domain}`
+}
+
+function readTheme(key: string): string | null {
+  return getCookie(key) ?? localStorage.getItem(key)
+}
+
+function writeTheme(key: string, value: string) {
+  setCookie(key, value)
+  localStorage.setItem(key, value)
+}
+
 type ThemeProviderProps = {
   children: React.ReactNode
   defaultTheme?: ThemeName
@@ -43,25 +71,20 @@ export function ThemeProvider({
     return 'light'
   }
 
-  // Get initial theme and mode from localStorage or defaults
+  // Get initial theme and mode from cookie/localStorage or defaults
   const getInitialTheme = (): ThemeName => {
     if (typeof window !== 'undefined') {
-      const savedTheme = localStorage.getItem('themeName') as ThemeName
-      if (savedTheme) {
-        return savedTheme
-      }
+      const savedTheme = readTheme('themeName') as ThemeName
+      if (savedTheme) return savedTheme
     }
     return defaultTheme
   }
 
   const getInitialMode = (): ThemeMode => {
     if (typeof window !== 'undefined') {
-      const savedMode = localStorage.getItem('themeMode') as ThemeMode
-      if (savedMode) {
-        return savedMode
-      }
+      const savedMode = readTheme('themeMode') as ThemeMode
+      if (savedMode) return savedMode
     }
-    // Use defaultMode if provided, otherwise use system preference, otherwise use 'light'
     return defaultMode || getSystemMode()
   }
 
@@ -72,8 +95,7 @@ export function ThemeProvider({
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
     const handleChange = () => {
-      // Only update if there's no saved preference
-      if (!localStorage.getItem('themeMode')) {
+      if (!readTheme('themeMode')) {
         setThemeModeState(getSystemMode())
       }
     }
@@ -97,9 +119,9 @@ export function ThemeProvider({
     // Add theme mode class
     root.classList.add(themeMode)
 
-    // Save preferences to localStorage
-    localStorage.setItem('themeName', themeName)
-    localStorage.setItem('themeMode', themeMode)
+    // Save preferences to cookie (shared across subdomains) and localStorage
+    writeTheme('themeName', themeName)
+    writeTheme('themeMode', themeMode)
   }, [themeName, themeMode])
 
   const setThemeName = (name: ThemeName) => {
