@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { PublicTopNav } from "@/components/PublicTopNav";
+import { LibraryNavTabs } from "@/components/LibraryNavTabs";
+import { getConfiguredAppOrigin } from "@/lib/pensive";
 
 const publicOrigin =
   process.env.PENSIVE_PUBLIC_ORIGIN ??
@@ -19,6 +21,8 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const appOrigin = getConfiguredAppOrigin();
+
   return (
     <html lang="en" className="theme-coffee dark" suppressHydrationWarning>
       <body>
@@ -39,6 +43,7 @@ export default function RootLayout({
           }}
         />
         <PublicTopNav />
+        <LibraryNavTabs appOrigin={appOrigin} />
         {children}
       </body>
     </html>

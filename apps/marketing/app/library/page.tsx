@@ -15,9 +15,9 @@ export default async function LibraryPage() {
   return (
     <main className="container mx-auto max-w-7xl px-4 py-8">
       <header className="mb-10 space-y-3">
-        <h1 className="font-serif text-4xl font-bold text-primary">Library</h1>
+        <h1 className="font-serif text-4xl font-bold text-primary">The Library</h1>
         <p className="max-w-2xl text-muted-foreground">
-          Public books published on Pensive.
+        Books published and shared on Pensive
         </p>
         <p className="text-sm text-muted-foreground">
           {books.length} {books.length === 1 ? "book" : "books"}
@@ -29,7 +29,7 @@ export default async function LibraryPage() {
           No published books found.
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+        <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-4">
           {books.map((book) => (
             <PublicBookCard key={book.id} book={book} />
           ))}

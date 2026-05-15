@@ -54,7 +54,7 @@ export function PublicBookCard({ book }: Props) {
           </p>
         )}
         {book.author && (
-          <p className="text-sm text-muted-foreground">by {book.author}</p>
+          <p className="text-sm text-muted-foreground sm:hidden">by {book.author}</p>
         )}
       </div>
     </Link>

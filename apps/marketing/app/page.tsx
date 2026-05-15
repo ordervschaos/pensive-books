@@ -42,7 +42,7 @@ export default async function HomePage() {
           </div>
 
           <p className="text-lg text-muted-foreground">
-            Publish your own books on the web - free, open, and simple.
+            Publish your own books on the web—free, open, and simple.
           </p>
 
           <img

@@ -81,37 +81,37 @@ export default async function PublishedPageRoute({ params }: Props) {
           />
 
           <div className="mt-12 border-t pt-6">
-            <div className="mb-4 flex items-center justify-between gap-3">
+            <div className="mb-6 flex items-center justify-between">
               {detail.previousPage ? (
                 <Link
                   href={`/library/books/${canonicalBookSlug}/pages/${slugifyIdTitle(detail.previousPage.id, detail.previousPage.title)}`}
-                  className="inline-flex items-center gap-2 rounded-md border border-input px-3 py-2 text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+                  className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
                 >
                   <ChevronLeft className="h-4 w-4" />
-                  Previous
+                  <span className="hidden sm:inline">Previous</span>
                 </Link>
               ) : (
-                <span className="inline-flex items-center gap-2 rounded-md border border-input px-3 py-2 text-sm text-muted-foreground">
+                <span className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground">
                   <ChevronLeft className="h-4 w-4" />
-                  Previous
+                  <span className="hidden sm:inline">Previous</span>
                 </span>
               )}
 
-              <span className="text-sm text-muted-foreground">
+              <span className="text-sm font-medium text-muted-foreground">
                 {detail.currentIndex + 1} / {detail.book.pages.length}
               </span>
 
               {detail.nextPage ? (
                 <Link
                   href={`/library/books/${canonicalBookSlug}/pages/${slugifyIdTitle(detail.nextPage.id, detail.nextPage.title)}`}
-                  className="inline-flex items-center gap-2 rounded-md border border-input px-3 py-2 text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+                  className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
                 >
-                  Next
+                  <span className="hidden sm:inline">Next</span>
                   <ChevronRight className="h-4 w-4" />
                 </Link>
               ) : (
-                <span className="inline-flex items-center gap-2 rounded-md border border-input px-3 py-2 text-sm text-muted-foreground">
-                  Next
+                <span className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground">
+                  <span className="hidden sm:inline">Next</span>
                   <ChevronRight className="h-4 w-4" />
                 </span>
               )}
@@ -129,9 +129,10 @@ export default async function PublishedPageRoute({ params }: Props) {
             <div className="flex justify-center">
               <Link
                 href={`/library/books/${canonicalBookSlug}`}
-                className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+                className="inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
               >
-                Back to book
+                <ChevronLeft className="h-4 w-4" />
+                Back to Book
               </Link>
             </div>
           </div>

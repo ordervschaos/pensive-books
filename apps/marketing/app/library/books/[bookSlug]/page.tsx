@@ -72,7 +72,7 @@ export default async function PublishedBookPage({ params }: Props) {
         </Link>
       </div>
 
-      <section className="grid gap-8 rounded-3xl border bg-card p-6 shadow-sm md:grid-cols-[280px_minmax(0,1fr)] md:p-8">
+      <section className="grid gap-8 overflow-hidden rounded-3xl border bg-gradient-to-b from-card/60 to-card/30 p-6 shadow-xl backdrop-blur md:grid-cols-[280px_minmax(0,1fr)] md:p-8">
         <div className="overflow-hidden rounded-2xl border bg-muted">
           {book.cover_url ? (
             <img
