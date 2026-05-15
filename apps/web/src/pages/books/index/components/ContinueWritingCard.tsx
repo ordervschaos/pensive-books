@@ -77,7 +77,7 @@ export function ContinueWritingCard() {
         }
 
         if (lastWrittenData) {
-          setLastPage(lastWrittenData as LastWrittenPage);
+          setLastPage(lastWrittenData as unknown as LastWrittenPage);
         }
 
         // Fetch last read book from user_data.bookmarked_pages
@@ -212,7 +212,7 @@ export function ContinueWritingCard() {
           p_book_id: lastPage.book_id,
         })
         .select()
-        .single();
+        .single() as any;
 
       if (error) throw error;
 

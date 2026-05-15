@@ -77,8 +77,8 @@ export function ManageCollaboratorsSheet({ bookId, onCollaboratorAdded }: Manage
           invitation_sent_at: item.invitation_sent_at,
           invitation_token: item.invitation_token,
           user_id: item.user_id,
-          name: item.profiles?.name,
-          username: item.profiles?.username,
+          name: (item.profiles as any)?.name,
+          username: (item.profiles as any)?.username,
         }));
         
         setCollaborators(formattedData);

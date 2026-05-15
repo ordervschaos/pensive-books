@@ -57,6 +57,8 @@
     "@tanstack/react-query": "^5.66.9",
     "@tiptap/core": "^3.8.0",
     "@tiptap/extension-code-block-lowlight": "^3.8.0",
+    "@tiptap/extension-document": "3.23.4",
+    "@tiptap/extension-heading": "3.23.4",
     "@tiptap/extension-image": "^3.8.0",
     "@tiptap/extension-link": "^3.8.0",
     "@tiptap/extension-table": "^3.8.0",

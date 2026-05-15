@@ -136,13 +136,13 @@ export const PageLink = Mark.create<PageLinkOptions>({
 
   addCommands() {
     return {
-      setPageLink: (attributes: { pageId: string; title: string; bookId: string }) => ({ commands }) => {
+      setPageLink: (attributes: { pageId: string; title: string; bookId: string }) => ({ commands }: { commands: any }) => {
         return commands.setMark(this.name, attributes);
       },
-      unsetPageLink: () => ({ commands }) => {
+      unsetPageLink: () => ({ commands }: { commands: any }) => {
         return commands.unsetMark(this.name);
       },
-    };
+    } as any;
   },
 
   addKeyboardShortcuts() {

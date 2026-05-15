@@ -21,7 +21,7 @@ import { SlugService } from "@/utils/slugService";
 export function LibraryNav() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { theme, toggleTheme } = useTheme();
+  const { themeMode, toggleMode } = useTheme();
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [userEmail, setUserEmail] = useState<string>("");
   const [bookName, setBookName] = useState<string>("");
@@ -166,9 +166,9 @@ export function LibraryNav() {
             <Button
               variant="ghost"
               size="icon"
-              onClick={toggleTheme}
+              onClick={toggleMode}
             >
-              {theme === "dark" ? (
+              {themeMode === "dark" ? (
                 <Sun className="h-4 w-4" />
               ) : (
                 <Moon className="h-4 w-4" />

@@ -228,7 +228,7 @@ export default function BookChatPage() {
           p_book_id: numericBookId,
         })
         .select()
-        .single();
+        .single() as any;
 
       if (createError) throw createError;
 

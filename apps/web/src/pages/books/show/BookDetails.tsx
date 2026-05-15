@@ -104,11 +104,12 @@ const BookDetails = () => {
   const {
     flashcards,
     loading: flashcardsLoading,
+    generating: flashcardsGenerating,
     createFlashcard,
     updateFlashcard,
     deleteFlashcard,
     generateFlashcards
-  } = useFlashcards(getNumericId(bookSlug), session?.user?.id || '');
+  } = useFlashcards(bookSlug);
 
   // Flashcard UI state
   const [isEditorOpen, setIsEditorOpen] = useState(false);
@@ -426,7 +427,7 @@ const BookDetails = () => {
     if (!numericId) return;
 
     try {
-      const result = await executeBookOperation(operation, numericId, pages);
+      const result = await executeBookOperation(operation, numericId, pages as any);
       
       if (result.success) {
         toast({
@@ -456,7 +457,7 @@ const BookDetails = () => {
   // Flashcard handlers
   const handleCreateFlashcard = async (front: string, back: string) => {
     try {
-      await createFlashcard(front, back);
+      await createFlashcard({ front, back });
       setIsEditorOpen(false);
       toast({
         title: "Flashcard created",
@@ -473,7 +474,7 @@ const BookDetails = () => {
 
   const handleUpdateFlashcard = async (id: number, front: string, back: string) => {
     try {
-      await updateFlashcard(id, front, back);
+      await updateFlashcard(id, { front, back });
       setIsEditorOpen(false);
       setEditingFlashcard(null);
       toast({
@@ -687,7 +688,7 @@ const BookDetails = () => {
 
             {/* Pages List - Center Stage */}
             <PagesList
-              pages={pages}
+              pages={pages as any}
               bookId={getNumericId(bookSlug)}
               isDeleteMode={isDeleteMode}
               canEdit={canEdit}
@@ -725,29 +726,27 @@ const BookDetails = () => {
 
           {/* Flashcard Dialogs */}
           <FlashcardEditor
+            flashcard={editingFlashcard as any}
             isOpen={isEditorOpen}
             onClose={() => {
               setIsEditorOpen(false);
               setEditingFlashcard(null);
             }}
-            onSubmit={editingFlashcard ? 
-              (front, back) => handleUpdateFlashcard(editingFlashcard.id, front, back) :
-              handleCreateFlashcard
+            onSave={(data) => editingFlashcard
+              ? handleUpdateFlashcard(editingFlashcard.id, data.front, data.back)
+              : handleCreateFlashcard(data.front, data.back)
             }
-            initialFront={editingFlashcard?.front || ''}
-            initialBack={editingFlashcard?.back || ''}
-            title={editingFlashcard ? 'Edit Flashcard' : 'Create Flashcard'}
           />
 
           <GenerateFlashcardsDialog
             isOpen={isGenerateDialogOpen}
             onClose={() => setIsGenerateDialogOpen(false)}
             onGenerate={handleGenerateFlashcards}
-            loading={flashcardsLoading}
+            generating={flashcardsGenerating}
           />
 
           <FlashcardModal
-            flashcard={viewingFlashcard}
+            flashcard={viewingFlashcard as any}
             flashcards={flashcards}
             currentIndex={currentFlashcardIndex}
             isOpen={isModalOpen}

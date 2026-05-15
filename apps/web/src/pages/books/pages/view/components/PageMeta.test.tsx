@@ -54,7 +54,6 @@ describe('PageMeta', () => {
   it('should use JSON content for description when available', () => {
     const page = {
       title: 'Test Page',
-      content: '<p>HTML content</p>',
       content: {
         type: 'doc',
         content: [
@@ -268,7 +267,6 @@ describe('PageMeta', () => {
     it('should work with new pages (JSON content)', () => {
       const newPage = {
         title: 'New Page',
-        content: '',
         content: {
           type: 'doc',
           content: [

@@ -103,7 +103,7 @@ export default function Index() {
           .map(item => ({
             ...item.books,
             access_level: item.access_level
-          })) as Book[] || [];
+          })) as unknown as Book[] || [];
 
         console.log("Basic books fetched successfully:", {
           owned: ownedBooks.length,

@@ -98,7 +98,7 @@ export function RecentBooksCard() {
 
         // Process edited pages
         if (!editedPagesResult.error && editedPagesResult.data) {
-          editedPagesResult.data.forEach((page: PageData) => {
+          (editedPagesResult.data as unknown as PageData[]).forEach((page: PageData) => {
             recentItems.push({
               bookId: page.books.id,
               pageId: page.id,

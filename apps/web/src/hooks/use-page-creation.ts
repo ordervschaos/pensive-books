@@ -36,7 +36,7 @@ export const usePageCreation = (
           p_book_id: numericBookId,
         })
         .select()
-        .single();
+        .single() as any;
 
       if (error) throw error;
 

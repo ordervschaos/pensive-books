@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useFlashcards, Flashcard, CreateFlashcardData } from "@/hooks/use-flashcards";
 import { useBookPermissions } from "@/hooks/use-book-permissions";
+import { SlugService } from "@/utils/slugService";
 import { BookInfo } from "@/components/book/BookInfo";
 import { Button } from "@/components/ui/button";
 import { Plus, Sparkles, ArrowLeft } from "lucide-react";
@@ -32,16 +33,16 @@ const BookFlashcards = () => {
   const [currentFlashcardIndex, setCurrentFlashcardIndex] = useState(0);
   const [saving, setSaving] = useState(false);
   
-  const { canEdit, isOwner, loading: permissionsLoading } = useBookPermissions(id);
-  const { 
-    flashcards, 
-    loading: flashcardsLoading, 
-    generating, 
-    createFlashcard, 
-    updateFlashcard, 
-    deleteFlashcard, 
-    generateFlashcards 
-  } = useFlashcards(numericBookId);
+  const { canEdit, isOwner, loading: permissionsLoading } = useBookPermissions(bookSlug);
+  const {
+    flashcards,
+    loading: flashcardsLoading,
+    generating,
+    createFlashcard,
+    updateFlashcard,
+    deleteFlashcard,
+    generateFlashcards
+  } = useFlashcards(bookSlug);
 
   const getNumericId = (param: string | undefined) => {
     if (!param) return 0;
@@ -129,7 +130,7 @@ const BookFlashcards = () => {
   };
 
   const handleBackToBook = () => {
-    navigate(`/books/${id}`);
+    navigate(`/books/${bookSlug}`);
   };
 
   if (loading || !book) {

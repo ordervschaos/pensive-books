@@ -71,7 +71,6 @@ describe('PageContent', () => {
         },
       ],
     },
-    title: 'Test Page',
     onSave: vi.fn(),
     saving: false,
     pageType: 'text' as const,
@@ -203,7 +202,7 @@ describe('PageContent', () => {
   });
 
   it('should handle null title', () => {
-    renderWithProvider(<PageContent {...defaultProps} title="" />);
+    renderWithProvider(<PageContent {...defaultProps} />);
 
     expect(screen.getByTestId('tiptap-editor')).toBeTruthy();
   });

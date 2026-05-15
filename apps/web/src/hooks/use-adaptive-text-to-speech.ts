@@ -5,6 +5,7 @@
 
 import { useTextToSpeech } from './use-text-to-speech';
 import { useTextToSpeechBlocks } from './use-text-to-speech-blocks';
+import type { EditorJSON } from '@/types/editor';
 
 interface UseAdaptiveTextToSpeechProps {
   pageId: number | undefined;
@@ -23,7 +24,7 @@ export const useAdaptiveTextToSpeech = ({
 
   const legacyAudio = useTextToSpeech({
     pageId: pageId || 0,
-    content,
+    content: content as any,
   });
 
   const blockBasedAudio = useTextToSpeechBlocks({

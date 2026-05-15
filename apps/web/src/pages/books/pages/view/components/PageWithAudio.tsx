@@ -22,8 +22,7 @@ export const PageWithAudio = ({
 }: PageWithAudioProps) => {
   const audioState = useAdaptiveTextToSpeech({
     pageId: pageId ? parseInt(pageId) : undefined,
-    content,
-    jsonContent,
+    content: jsonContent ?? null,
   });
 
   // Apply audio highlighting with click-to-play

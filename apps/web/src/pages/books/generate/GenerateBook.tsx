@@ -230,11 +230,11 @@ export default function GenerateBook() {
     });
   };
 
-  const handleContentChange = (html: string) => {
+  const handleContentChange = (json: import('@/types/editor').EditorJSON | null) => {
     if (!editingPage) return;
     setEditingPage({
       ...editingPage,
-      content: html
+      content: json as any
     });
   };
 

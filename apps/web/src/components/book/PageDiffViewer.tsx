@@ -19,8 +19,9 @@ import { FormattedDiffViewer } from "./FormattedDiffViewer";
 interface PageDiffViewerProps {
   pageId: number;
   bookId: number;
-  compact?: boolean; // For inline display
-  bookSlug?: string; // Book slug for generating version links
+  onClose?: () => void;
+  compact?: boolean;
+  bookSlug?: string;
 }
 
 const getStatusIcon = (status: PageDiff["status"]) => {

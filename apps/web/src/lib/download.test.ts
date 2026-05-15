@@ -2,7 +2,7 @@
  * Tests for PDF generation with JSON content support
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock the tiptapHelpers module
 vi.mock('@/utils/tiptapHelpers', () => ({
