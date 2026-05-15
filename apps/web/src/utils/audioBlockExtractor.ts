@@ -171,8 +171,7 @@ export function extractAudioBlocks(tiptapJSON: any): AudioBlock[] {
         });
         break;
 
-      case 'paragraph':
-        // Split large paragraphs
+      case 'paragraph': {
         const wordCount = text.split(/\s+/).length;
         if (wordCount > 150) {
           const subBlocks = splitLargeParagraph(text, blockIndex);
@@ -186,6 +185,7 @@ export function extractAudioBlocks(tiptapJSON: any): AudioBlock[] {
           });
         }
         break;
+      }
 
       case 'blockquote':
         blocks.push({

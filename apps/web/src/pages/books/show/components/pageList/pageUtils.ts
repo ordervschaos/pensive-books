@@ -98,7 +98,7 @@ export const handleDeletePage = async (
 
 const findAvailablePageIndex = async (bookId: number, startingIndex: number): Promise<number> => {
   let index = startingIndex;
-  let maxAttempts = 10; // Limit the number of attempts to avoid infinite loops
+  const maxAttempts = 10;
   let attemptCount = 0;
   
   while (attemptCount < maxAttempts) {
@@ -185,7 +185,7 @@ export const reorderPages = async (
       book_id: bookId
     }));
 
-    let { error: tempError } = await supabase
+    const { error: tempError } = await supabase
       .from('pages')
       .upsert(tempUpdates);
 

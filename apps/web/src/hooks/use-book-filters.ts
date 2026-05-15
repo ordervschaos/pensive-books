@@ -86,33 +86,36 @@ export function useBookFilters(books: Book[], sharedBooks: Book[] = []) {
       // Sort each group separately
       const sortFn = (a: Book, b: Book) => {
         switch (sortType) {
-          case 'recently-updated':
+          case 'recently-updated': {
             const dateA = new Date(a.updated_at || a.created_at || 0).getTime();
             const dateB = new Date(b.updated_at || b.created_at || 0).getTime();
             return dateB - dateA;
-          case 'recently-created':
+          }
+          case 'recently-created': {
             const createdA = new Date(a.created_at || 0).getTime();
             const createdB = new Date(b.created_at || 0).getTime();
             return createdB - createdA;
-          case 'alphabetical-az':
+          }
+          case 'alphabetical-az': {
             const nameA = (a.name || '').toLowerCase();
             const nameB = (b.name || '').toLowerCase();
             return nameA.localeCompare(nameB);
-          case 'alphabetical-za':
+          }
+          case 'alphabetical-za': {
             const nameZA = (a.name || '').toLowerCase();
             const nameZB = (b.name || '').toLowerCase();
             return nameZB.localeCompare(nameZA);
-          case 'most-pages':
-            // Sort by page count (descending), fallback to recently updated if page_count not available
+          }
+          case 'most-pages': {
             const countA = (a.page_count ?? 0);
             const countB = (b.page_count ?? 0);
             if (countA !== countB) {
-              return countB - countA; // Descending order
+              return countB - countA;
             }
-            // If page counts are equal, sort by recently updated
             const datePA = new Date(a.updated_at || a.created_at || 0).getTime();
             const datePB = new Date(b.updated_at || b.created_at || 0).getTime();
             return datePB - datePA;
+          }
           default:
             return 0;
         }

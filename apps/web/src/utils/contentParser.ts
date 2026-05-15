@@ -234,7 +234,7 @@ export const extractContentUnderHeading = (content: any, headingText: string): s
   if (!content || !content.content) return '';
 
   let foundHeading = false;
-  let contentParts: string[] = [];
+  const contentParts: string[] = [];
 
   const processNode = (node: any, isAfterHeading: boolean): boolean => {
     if (node.type === 'heading') {

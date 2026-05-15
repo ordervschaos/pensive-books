@@ -38,13 +38,13 @@ export function textToSsml(block: AudioBlock): string {
   let ssml = '';
   
   switch (block.type) {
-    case 'heading':
-      // Headings get strong emphasis and longer pauses
+    case 'heading': {
       const emphasisLevel = (block.level === 1) ? 'strong' : 'moderate';
-      const pauseTime = (block.level === 1) ? '0.8s' : 
+      const pauseTime = (block.level === 1) ? '0.8s' :
                        (block.level === 2) ? '0.6s' : '0.5s';
       ssml = `<emphasis level="${emphasisLevel}">${block.textContent}</emphasis><break time="${pauseTime}"/>`;
       break;
+    }
     
     case 'blockquote':
       // Quotes get slight pitch change and surrounding pauses for distinction

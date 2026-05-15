@@ -96,30 +96,23 @@ export const BookCoverEdit = ({
   };
 
   const updateBookCover = async (url: string) => {
-    try {
-      if (bookId === 0) {
-        // For new book, just update the parent state
-        onCoverChange?.(url);
-      } else {
-        // For existing book, update in database
-        const { error: updateError } = await supabase
-          .from('books')
-          .update({ cover_url: url })
-          .eq('id', bookId);
+    if (bookId === 0) {
+      onCoverChange?.(url);
+    } else {
+      const { error: updateError } = await supabase
+        .from('books')
+        .update({ cover_url: url })
+        .eq('id', bookId);
 
-        if (updateError) throw updateError;
+      if (updateError) throw updateError;
 
-        // If parent provided onCoverChange, call it
-        onCoverChange?.(url);
-      }
-
-      toast({
-        title: "Cover updated",
-        description: "Your book cover has been successfully updated."
-      });
-    } catch (error) {
-      throw error;
+      onCoverChange?.(url);
     }
+
+    toast({
+      title: "Cover updated",
+      description: "Your book cover has been successfully updated."
+    });
   };
 
   const handleTextToggle = async () => {
