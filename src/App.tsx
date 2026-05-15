@@ -6,49 +6,50 @@ import { Toaster } from "@/components/ui/toaster";
 import { TopNav } from "@/components/TopNav";
 import { LibraryNav } from "@/components/navigation/LibraryNav";
 import { PrivateRoute } from "@/components/PrivateRoute";
-// Public pages
-import Landing from "@/pages/public/landing/Landing";
-import Library from "@/pages/public/library/Library";
-import PrivacyPolicy from "@/pages/public/legal/PrivacyPolicy";
-import Terms from "@/pages/public/legal/Terms";
-import Contact from "@/pages/public/legal/Contact";
-
-// Auth pages
-import Auth from "@/pages/auth/Auth";
-
-// User pages
-import PublicProfile from "@/pages/user/profile/PublicProfile";
-import SetUsername from "@/pages/user/profile/SetUsername";
-import ProfileEdit from "@/pages/user/profile/ProfileEdit";
-
-// Books resource (CRUD-compliant)
-import MyBooks from "@/pages/books/index/MyBooks";
-import NewBook from "@/pages/books/new/NewBook";
-import BookDetails from "@/pages/books/show/BookDetails";
-import DraftChanges from "@/pages/books/show/DraftChanges";
-import VersionHistoryPage from "@/pages/books/show/VersionHistoryPage";
-import BookEdit from "@/pages/books/edit/BookEdit";
-import BookFlashcards from "@/pages/books/flashcards/BookFlashcards";
-import GenerateBook from "@/pages/books/generate/GenerateBook";
-import PublishedBookDetails from "@/pages/public/library/PublishedBookDetails";
-
-// Nested resources under books
-import PageView from "@/pages/books/pages/view/PageView";
-import BookChatPage from "@/pages/books/chat/BookChatPage";
-import VersionPreview from "@/pages/books/versions/VersionPreview";
-import VersionPageView from "@/pages/books/versions/VersionPageView";
-import PublishedPageView from "@/pages/books/pages/view/PublishedPageView";
-
-// Invitation pages
-import AcceptInvitation from "@/pages/invitation/AcceptInvitation";
-import JoinBook from "@/pages/invitation/JoinBook";
-
-// Settings pages
-import KindleSettings from "@/pages/settings/KindleSettings";
-import { useEffect } from "react";
+import { Suspense, lazy, useEffect } from "react";
 import { useGoogleAnalytics } from "@/hooks/useGoogleAnalytics";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { LegacyRedirects } from "@/components/LegacyRedirects";
+
+// Public pages
+const Landing = lazy(() => import("@/pages/public/landing/Landing"));
+const Library = lazy(() => import("@/pages/public/library/Library"));
+const PrivacyPolicy = lazy(() => import("@/pages/public/legal/PrivacyPolicy"));
+const Terms = lazy(() => import("@/pages/public/legal/Terms"));
+const Contact = lazy(() => import("@/pages/public/legal/Contact"));
+
+// Auth pages
+const Auth = lazy(() => import("@/pages/auth/Auth"));
+
+// User pages
+const PublicProfile = lazy(() => import("@/pages/user/profile/PublicProfile"));
+const SetUsername = lazy(() => import("@/pages/user/profile/SetUsername"));
+const ProfileEdit = lazy(() => import("@/pages/user/profile/ProfileEdit"));
+
+// Books resource (CRUD-compliant)
+const MyBooks = lazy(() => import("@/pages/books/index/MyBooks"));
+const NewBook = lazy(() => import("@/pages/books/new/NewBook"));
+const BookDetails = lazy(() => import("@/pages/books/show/BookDetails"));
+const DraftChanges = lazy(() => import("@/pages/books/show/DraftChanges"));
+const VersionHistoryPage = lazy(() => import("@/pages/books/show/VersionHistoryPage"));
+const BookEdit = lazy(() => import("@/pages/books/edit/BookEdit"));
+const BookFlashcards = lazy(() => import("@/pages/books/flashcards/BookFlashcards"));
+const GenerateBook = lazy(() => import("@/pages/books/generate/GenerateBook"));
+const PublishedBookDetails = lazy(() => import("@/pages/public/library/PublishedBookDetails"));
+
+// Nested resources under books
+const PageView = lazy(() => import("@/pages/books/pages/view/PageView"));
+const BookChatPage = lazy(() => import("@/pages/books/chat/BookChatPage"));
+const VersionPreview = lazy(() => import("@/pages/books/versions/VersionPreview"));
+const VersionPageView = lazy(() => import("@/pages/books/versions/VersionPageView"));
+const PublishedPageView = lazy(() => import("@/pages/books/pages/view/PublishedPageView"));
+
+// Invitation pages
+const AcceptInvitation = lazy(() => import("@/pages/invitation/AcceptInvitation"));
+const JoinBook = lazy(() => import("@/pages/invitation/JoinBook"));
+
+// Settings pages
+const KindleSettings = lazy(() => import("@/pages/settings/KindleSettings"));
 
 const queryClient = new QueryClient();
 
@@ -80,6 +81,14 @@ function ConditionalNav() {
   return <TopNav />;
 }
 
+function RouteFallback() {
+  return (
+    <div className="flex items-center justify-center min-h-[50vh] text-muted-foreground">
+      Loading…
+    </div>
+  );
+}
+
 export default function App() {
   const isProd = window.location.hostname === "www.pensive.me";
   const basename = isProd ? "" : "/";
@@ -94,9 +103,10 @@ export default function App() {
             <LegacyRedirects />
             <ConditionalNav />
             <main className="flex-1">
-              <Routes>
+              <Suspense fallback={<RouteFallback />}>
+                <Routes>
                 <Route path="/u/:username" element={<PublicProfile />} />
-                
+
                 <Route path="/" element={<Landing />} />
                 <Route path="/auth" element={<Auth />} />
                 <Route path="/auth/callback" element={<Auth />} />
@@ -134,7 +144,7 @@ export default function App() {
                     </PrivateRoute>
                   }
                 />
-                
+
                 <Route
                   path="/books"
                   element={
@@ -232,6 +242,7 @@ export default function App() {
                   }
                 />
               </Routes>
+              </Suspense>
             </main>
           </div>
           <Toaster />
