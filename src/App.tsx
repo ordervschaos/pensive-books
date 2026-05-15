@@ -1,11 +1,12 @@
 
-import { BrowserRouter as Router, Routes, Route, useLocation } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, useLocation, Outlet } from "react-router-dom";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { PageDisplaySettingsProvider } from "@/contexts/PageDisplaySettingsContext";
 import { Toaster } from "@/components/ui/toaster";
 import { TopNav } from "@/components/TopNav";
 import { LibraryNav } from "@/components/navigation/LibraryNav";
 import { PrivateRoute } from "@/components/PrivateRoute";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Suspense, lazy, useEffect } from "react";
 import { useGoogleAnalytics } from "@/hooks/useGoogleAnalytics";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -89,164 +90,69 @@ function RouteFallback() {
   );
 }
 
-export default function App() {
-  const isProd = window.location.hostname === "www.pensive.me";
-  const basename = isProd ? "" : "/";
+function ProtectedLayout() {
+  return (
+    <PrivateRoute>
+      <Outlet />
+    </PrivateRoute>
+  );
+}
 
+export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider defaultTheme="coffee" defaultMode="dark">
         <PageDisplaySettingsProvider>
-          <Router basename={basename}>
-          <div className="min-h-screen flex flex-col">
-            <ScrollToTop />
-            <LegacyRedirects />
-            <ConditionalNav />
-            <main className="flex-1">
-              <Suspense fallback={<RouteFallback />}>
-                <Routes>
-                <Route path="/u/:username" element={<PublicProfile />} />
+          <Router>
+            <div className="min-h-screen flex flex-col">
+              <ScrollToTop />
+              <LegacyRedirects />
+              <ConditionalNav />
+              <main className="flex-1">
+                <ErrorBoundary>
+                  <Suspense fallback={<RouteFallback />}>
+                    <Routes>
+                      {/* Public routes */}
+                      <Route path="/u/:username" element={<PublicProfile />} />
+                      <Route path="/" element={<Landing />} />
+                      <Route path="/auth" element={<Auth />} />
+                      <Route path="/auth/callback" element={<Auth />} />
+                      <Route path="/library" element={<Library />} />
+                      <Route path="/accept-invitation" element={<AcceptInvitation />} />
+                      <Route path="/privacy" element={<PrivacyPolicy />} />
+                      <Route path="/terms" element={<Terms />} />
+                      <Route path="/contact" element={<Contact />} />
+                      <Route path="/books/:bookSlug/join/:token" element={<JoinBook />} />
 
-                <Route path="/" element={<Landing />} />
-                <Route path="/auth" element={<Auth />} />
-                <Route path="/auth/callback" element={<Auth />} />
-                <Route path="/library" element={<Library />} />
-                <Route path="/accept-invitation" element={<AcceptInvitation />} />
-                <Route path="/privacy" element={<PrivacyPolicy />} />
-                <Route path="/terms" element={<Terms />} />
-                <Route path="/contact" element={<Contact />} />
-                <Route path="/books/:bookSlug/join/:token" element={<JoinBook />} />
+                      {/* Public published content routes */}
+                      <Route path="/library/books/:bookSlug" element={<PublishedBookDetails />} />
+                      <Route path="/library/books/:bookSlug/pages/:pageSlug" element={<PublishedPageView />} />
 
-                {/* Public published content routes */}
-                <Route path="/library/books/:bookSlug" element={<PublishedBookDetails />} />
-                <Route path="/library/books/:bookSlug/pages/:pageSlug" element={<PublishedPageView />} />
-                <Route
-                  path="/settings/kindle"
-                  element={
-                    <PrivateRoute>
-                      <KindleSettings />
-                    </PrivateRoute>
-                  }
-                />
-                <Route
-                  path="/user/profile/set-username"
-                  element={
-                    <PrivateRoute>
-                      <SetUsername />
-                    </PrivateRoute>
-                  }
-                />
-                <Route
-                  path="/user/profile/edit"
-                  element={
-                    <PrivateRoute>
-                      <ProfileEdit />
-                    </PrivateRoute>
-                  }
-                />
-
-                <Route
-                  path="/books"
-                  element={
-                    <PrivateRoute>
-                      <MyBooks />
-                    </PrivateRoute>
-                  }
-                />
-                <Route
-                  path="/books/new"
-                  element={
-                    <PrivateRoute>
-                      <NewBook />
-                    </PrivateRoute>
-                  }
-                />
-                <Route
-                  path="/books/:bookSlug/versions/:versionId/pages/:pageSlug"
-                  element={
-                    <PrivateRoute>
-                      <VersionPageView />
-                    </PrivateRoute>
-                  }
-                />
-                <Route
-                  path="/books/:bookSlug/versions/:versionId"
-                  element={
-                    <PrivateRoute>
-                      <VersionPreview />
-                    </PrivateRoute>
-                  }
-                />
-                <Route
-                  path="/books/:bookSlug/versions"
-                  element={
-                    <PrivateRoute>
-                      <VersionHistoryPage />
-                    </PrivateRoute>
-                  }
-                />
-                <Route
-                  path="/books/:bookSlug/draft"
-                  element={
-                    <PrivateRoute>
-                      <DraftChanges />
-                    </PrivateRoute>
-                  }
-                />
-                <Route
-                  path="/books/:bookSlug/chat"
-                  element={
-                    <PrivateRoute>
-                      <BookChatPage />
-                    </PrivateRoute>
-                  }
-                />
-                <Route
-                  path="/books/:bookSlug"
-                  element={
-                    <PrivateRoute>
-                      <BookDetails />
-                    </PrivateRoute>
-                  }
-                />
-                <Route
-                  path="/books/:bookSlug/edit"
-                  element={
-                    <PrivateRoute>
-                      <BookEdit />
-                    </PrivateRoute>
-                  }
-                />
-                <Route
-                  path="/books/:bookSlug/flashcards"
-                  element={
-                    <PrivateRoute>
-                      <BookFlashcards />
-                    </PrivateRoute>
-                  }
-                />
-                <Route
-                  path="/books/:bookSlug/pages/:pageSlug"
-                  element={
-                    <PrivateRoute>
-                      <PageView />
-                    </PrivateRoute>
-                  }
-                />
-                <Route
-                  path="/books/generate"
-                  element={
-                    <PrivateRoute>
-                      <GenerateBook />
-                    </PrivateRoute>
-                  }
-                />
-              </Routes>
-              </Suspense>
-            </main>
-          </div>
-          <Toaster />
-        </Router>
+                      {/* Protected routes */}
+                      <Route element={<ProtectedLayout />}>
+                        <Route path="/settings/kindle" element={<KindleSettings />} />
+                        <Route path="/user/profile/set-username" element={<SetUsername />} />
+                        <Route path="/user/profile/edit" element={<ProfileEdit />} />
+                        <Route path="/books" element={<MyBooks />} />
+                        <Route path="/books/new" element={<NewBook />} />
+                        <Route path="/books/:bookSlug/versions/:versionId/pages/:pageSlug" element={<VersionPageView />} />
+                        <Route path="/books/:bookSlug/versions/:versionId" element={<VersionPreview />} />
+                        <Route path="/books/:bookSlug/versions" element={<VersionHistoryPage />} />
+                        <Route path="/books/:bookSlug/draft" element={<DraftChanges />} />
+                        <Route path="/books/:bookSlug/chat" element={<BookChatPage />} />
+                        <Route path="/books/:bookSlug" element={<BookDetails />} />
+                        <Route path="/books/:bookSlug/edit" element={<BookEdit />} />
+                        <Route path="/books/:bookSlug/flashcards" element={<BookFlashcards />} />
+                        <Route path="/books/:bookSlug/pages/:pageSlug" element={<PageView />} />
+                        <Route path="/books/generate" element={<GenerateBook />} />
+                      </Route>
+                    </Routes>
+                  </Suspense>
+                </ErrorBoundary>
+              </main>
+            </div>
+            <Toaster />
+          </Router>
         </PageDisplaySettingsProvider>
       </ThemeProvider>
     </QueryClientProvider>
