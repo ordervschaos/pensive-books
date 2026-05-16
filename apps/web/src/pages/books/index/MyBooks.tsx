@@ -307,7 +307,7 @@ export default function Index() {
                   <span>{filter.label}</span>
                   <span
                     className={cn(
-                      "min-w-[1ch] text-[11px] tabular-nums",
+                      "inline-block min-w-[2.5ch] text-right text-[11px] tabular-nums",
                       filter.count === undefined && "opacity-0",
                       isActive ? "text-primary-foreground/70" : "text-muted-foreground/70"
                     )}

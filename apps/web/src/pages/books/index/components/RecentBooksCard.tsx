@@ -229,82 +229,83 @@ export function RecentBooksCard() {
     navigate(url);
   };
 
-  if (loading) {
-    return (
-      <div className="space-y-3">
-        <div className="h-3 w-16 animate-pulse rounded bg-muted/60" />
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-2 lg:grid-cols-4">
-          {[1, 2, 3, 4].map((i) => (
-            <Card
-              key={i}
-              className={`animate-pulse border border-border/40 bg-card/40 p-3 ${i > 2 ? 'hidden lg:block' : ''}`}
-            >
-              <div className="flex items-start gap-3">
-                <div className="h-14 w-10 flex-shrink-0 rounded-[3px] bg-muted" />
-                <div className="min-w-0 flex-1">
-                  <div className="h-5 w-32 rounded bg-muted" />
-                  <div className="mt-1 h-4 w-28 rounded bg-muted" />
-                  <div className="mt-1 h-4 w-20 rounded bg-muted/70" />
-                </div>
-              </div>
-            </Card>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  if (recentBooks.length === 0) {
+  if (!loading && recentBooks.length === 0) {
     return null;
   }
 
   return (
     <div className="space-y-3">
-      <h2 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+      <h2
+        className={cn(
+          "w-fit text-[11px] font-semibold uppercase tracking-[0.14em]",
+          loading
+            ? "animate-pulse rounded bg-muted/60 text-transparent"
+            : "text-muted-foreground"
+        )}
+      >
         Pick up where you left off
       </h2>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-2 lg:grid-cols-4">
-        {recentBooks.map((book, index) => (
-          <Card
-            key={`${book.bookId}-${book.pageId}`}
-            className={cn(
-              "group cursor-pointer border border-border/60 bg-transparent p-3 transition-colors hover:border-border hover:bg-card",
-              index >= 2 && "hidden lg:block"
-            )}
-            onClick={() => handleContinue(book)}
-          >
-            <div className="flex items-start gap-3">
-              <div className="h-14 w-10 flex-shrink-0 overflow-hidden rounded-[3px] shadow-sm">
-                {book.coverUrl ? (
-                  <img
-                    src={book.coverUrl}
-                    alt={book.bookName || 'Book cover'}
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <BookCoverFallback
-                    bookId={book.bookId}
-                    title={book.bookName}
-                    variant="mini"
-                  />
+        {loading
+          ? [1, 2, 3, 4].map((i) => (
+              <Card
+                key={i}
+                className={cn(
+                  "h-[88px] animate-pulse border border-border/40 bg-card/40 p-3",
+                  i > 2 && "hidden lg:block"
                 )}
-              </div>
-
-              <div className="min-w-0 flex-1">
-                <h3 className="line-clamp-1 font-serif text-sm font-semibold tracking-tight text-foreground">
-                  {book.bookName || 'Untitled Book'}
-                </h3>
-                <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Clock className="h-3 w-3 flex-shrink-0" />
-                  <span className="truncate">{book.pageTitle || 'Untitled Page'}</span>
+              >
+                <div className="flex items-start gap-3">
+                  <div className="h-14 w-10 flex-shrink-0 rounded-[3px] bg-muted" />
+                  <div className="min-w-0 flex-1">
+                    <div className="h-5 w-3/4 rounded bg-muted" />
+                    <div className="mt-1 h-4 w-full rounded bg-muted" />
+                    <div className="mt-1 h-4 w-2/3 rounded bg-muted/70" />
+                  </div>
                 </div>
-                <p className="mt-1 text-[11px] text-muted-foreground/70">
-                  {formatDistanceToNow(new Date(book.timestamp), { addSuffix: true })}
-                </p>
-              </div>
-            </div>
-          </Card>
-        ))}
+              </Card>
+            ))
+          : recentBooks.map((book, index) => (
+              <Card
+                key={`${book.bookId}-${book.pageId}`}
+                className={cn(
+                  "group h-[88px] cursor-pointer border border-border/60 bg-transparent p-3 transition-colors hover:border-border hover:bg-card",
+                  index >= 2 && "hidden lg:block"
+                )}
+                onClick={() => handleContinue(book)}
+              >
+                <div className="flex items-start gap-3">
+                  <div className="h-14 w-10 flex-shrink-0 overflow-hidden rounded-[3px] shadow-sm">
+                    {book.coverUrl ? (
+                      <img
+                        src={book.coverUrl}
+                        alt={book.bookName || 'Book cover'}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <BookCoverFallback
+                        bookId={book.bookId}
+                        title={book.bookName}
+                        variant="mini"
+                      />
+                    )}
+                  </div>
+
+                  <div className="min-w-0 flex-1">
+                    <h3 className="line-clamp-1 font-serif text-sm font-semibold tracking-tight text-foreground">
+                      {book.bookName || 'Untitled Book'}
+                    </h3>
+                    <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <Clock className="h-3 w-3 flex-shrink-0" />
+                      <span className="truncate">{book.pageTitle || 'Untitled Page'}</span>
+                    </div>
+                    <p className="mt-1 text-[11px] text-muted-foreground/70">
+                      {formatDistanceToNow(new Date(book.timestamp), { addSuffix: true })}
+                    </p>
+                  </div>
+                </div>
+              </Card>
+            ))}
       </div>
     </div>
   );
