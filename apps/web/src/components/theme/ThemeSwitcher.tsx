@@ -23,11 +23,11 @@ export function ThemeSwitcher() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="icon">
+        <Button variant="outline" size="icon" className="h-9 w-9">
           {themeMode === "light" ? (
-            <Sun className="h-[1.2rem] w-[1.2rem]" />
+            <Sun className="h-4 w-4" />
           ) : (
-            <Moon className="h-[1.2rem] w-[1.2rem]" />
+            <Moon className="h-4 w-4" />
           )}
           <span className="sr-only">Toggle theme</span>
         </Button>
@@ -75,11 +75,11 @@ export function ThemeModeToggle() {
   const { themeMode, toggleMode } = useTheme()
 
   return (
-    <Button variant="outline" size="icon" onClick={toggleMode}>
+    <Button variant="outline" size="icon" className="h-9 w-9" onClick={toggleMode}>
       {themeMode === "light" ? (
-        <Sun className="h-[1.2rem] w-[1.2rem]" />
+        <Sun className="h-4 w-4" />
       ) : (
-        <Moon className="h-[1.2rem] w-[1.2rem]" />
+        <Moon className="h-4 w-4" />
       )}
       <span className="sr-only">Toggle theme mode</span>
     </Button>

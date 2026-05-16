@@ -327,7 +327,7 @@ export default function Index() {
               {Array.from({ length: 12 }).map((_, i) => (
                 <div key={i} className="flex flex-col">
                   <div className="aspect-[3/4] w-full animate-pulse rounded-xl border border-border/50 bg-muted/50" />
-                  <div className="mt-3 space-y-1.5 px-0.5">
+                  <div className="mt-3 min-h-[64px] space-y-1.5 px-0.5">
                     <div className="h-4 w-3/4 animate-pulse rounded bg-muted/60" />
                     <div className="h-3 w-1/2 animate-pulse rounded bg-muted/40" />
                   </div>
@@ -432,7 +432,7 @@ export default function Index() {
                     </Card>
 
                     {/* Metadata strip */}
-                    <div className="mt-3 px-0.5">
+                    <div className="mt-3 min-h-[64px] px-0.5">
                       {!coverShowsTitle && (
                         <h3
                           className="cursor-pointer line-clamp-2 break-words font-serif text-[15px] font-semibold leading-snug tracking-tight text-foreground"

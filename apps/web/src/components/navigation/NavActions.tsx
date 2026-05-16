@@ -26,22 +26,22 @@ export const NavActions = ({
   const isPageRoute = location.pathname.includes('/pages/');
 
   return (
-    <div className="w-[120px] flex items-center gap-2 justify-end shrink-0">
+    <div className="w-[120px] flex items-center gap-3 justify-end shrink-0">
       {/* Desktop buttons */}
-      <div className="hidden sm:flex items-center gap-2">
+      <div className="hidden sm:flex items-center gap-3">
         {isBookRoute && (
-          <Button variant="ghost" size="icon" onClick={() => setSearchOpen(true)}>
+          <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => setSearchOpen(true)}>
             <Search className="h-4 w-4" />
           </Button>
         )}
         {isPageRoute && <PageDisplayControls isPageRoute={isPageRoute} />}
         <ThemeSwitcher />
         {isAuthenticated ? (
-          <Button variant="ghost" size="icon" onClick={handleLogout}>
+          <Button variant="outline" size="icon" className="h-9 w-9" onClick={handleLogout}>
             <LogOut className="h-4 w-4" />
           </Button>
         ) : (
-          <Button variant="ghost" size="icon" onClick={handleLogin}>
+          <Button variant="outline" size="icon" className="h-9 w-9" onClick={handleLogin}>
             <LogIn className="h-4 w-4" />
           </Button>
         )}
