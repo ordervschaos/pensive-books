@@ -206,5 +206,11 @@ The database implements Row Level Security to ensure data privacy and access con
 
 For the complete set of security policies and their SQL implementations, refer to the `schema.sql` file.
 
-## How can I deploy this project?
-Easiest way is to deploy to Netlify or Vercel.
+## Deployment
+
+This repo deploys to **two Vercel projects**, one per app — both connected to `main` of this repo, both auto-deploying on push:
+
+- `pensive` (Vite SPA) → `app.pensive.me`
+- `pensive-marketing` (Next.js) → `pensive.me` / `www.pensive.me`
+
+Push to `main` and an `Ignored Build Step` ensures only the affected project rebuilds. See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** for the full workflow, project settings, DNS, rollback procedure, and gotchas.
