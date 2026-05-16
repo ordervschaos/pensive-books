@@ -4,7 +4,10 @@
   "version": "0.1.0",
   "type": "module",
   "exports": {
-    "./ui/icon-button": "./src/ui/icon-button.tsx"
+    "./lib/cn": "./src/lib/cn.ts",
+    "./ui/icon-button": "./src/ui/icon-button.tsx",
+    "./ui/book-card": "./src/ui/book-card.tsx",
+    "./ui/book-cover-fallback": "./src/ui/book-cover-fallback.tsx"
   },
   "peerDependencies": {
     "react": "^18.3.1"

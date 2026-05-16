@@ -5,6 +5,7 @@ import {
   getPublicBooksByOwner,
   getPublicProfile,
 } from "@/lib/public-books";
+import { BOOK_GRID_CLASS } from "@pensive/shared/ui/book-card";
 import { ProfileEditLink } from "@/components/ProfileEditLink";
 import { PublicBookCard } from "@/components/PublicBookCard";
 
@@ -106,7 +107,7 @@ export default async function PublicProfilePage({ params }: Props) {
           No published books yet.
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-4">
+        <div className={BOOK_GRID_CLASS}>
           {books.map((book) => (
             <PublicBookCard key={book.id} book={book} />
           ))}

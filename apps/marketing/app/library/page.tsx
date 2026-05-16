@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { BOOK_GRID_CLASS } from "@pensive/shared/ui/book-card";
 import { getLibraryBooks } from "@/lib/public-books";
 import { PublicBookCard } from "@/components/PublicBookCard";
 
@@ -29,7 +30,7 @@ export default async function LibraryPage() {
           No published books found.
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-4">
+        <div className={BOOK_GRID_CLASS}>
           {books.map((book) => (
             <PublicBookCard key={book.id} book={book} />
           ))}

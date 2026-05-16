@@ -6,7 +6,6 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { Card } from "@/components/ui/card";
 import { RecentBooksCard } from "./components/RecentBooksCard";
 import { useBookFilters, FilterType, SortType } from "@/hooks/use-book-filters";
 import { formatDistanceToNow } from "date-fns";
@@ -17,7 +16,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { BookCoverFallback } from "@/components/book/BookCoverFallback";
+import { BookCard, BOOK_GRID_CLASS } from "@pensive/shared/ui/book-card";
 
 interface Book {
   id: number;
@@ -323,7 +322,7 @@ export default function Index() {
         {/* Unified Book Grid */}
         <div className="space-y-6">
           {loading ? (
-            <div className="grid grid-cols-2 gap-x-5 gap-y-8 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+            <div className={BOOK_GRID_CLASS}>
               {Array.from({ length: 12 }).map((_, i) => (
                 <div key={i} className="flex flex-col">
                   <div className="aspect-[3/4] w-full animate-pulse rounded-xl border border-border/50 bg-muted/50" />
@@ -349,110 +348,63 @@ export default function Index() {
               )}
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-x-5 gap-y-8 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+            <div className={BOOK_GRID_CLASS}>
               {filteredAndSortedBooks.map((book) => {
                 const isPinned = book.pinned === true;
                 const timeAgo = formatDistanceToNow(new Date(book.updated_at || book.created_at || Date.now()), { addSuffix: true });
-                const showsTitleOnCover = Boolean(book.cover_url && book.show_text_on_cover);
-                // Fallback covers always show the title; image covers only when configured.
-                const coverShowsTitle = book.cover_url ? showsTitleOnCover : true;
+                const coverShowsTitle = book.cover_url ? Boolean(book.show_text_on_cover) : true;
 
                 return (
-                  <div key={book.id} className="group flex flex-col">
-                    <Card
-                      className="relative aspect-[3/4] w-full cursor-pointer overflow-hidden rounded-xl border border-border/50 bg-card shadow-[0_1px_2px_rgba(0,0,0,0.06)] transition-all duration-300 hover:-translate-y-1 hover:border-border hover:shadow-[0_18px_40px_-12px_rgba(0,0,0,0.4)]"
-                      onClick={() => navigate(`/books/${book.id}`)}
-                    >
-                      {/* Pin indicator / button */}
-                      <button
-                        onClick={(e) => handlePinToggle(book.id, isPinned, e)}
-                        aria-label={isPinned ? 'Unpin book' : 'Pin book'}
-                        className={cn(
-                          "absolute right-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-full transition-all",
-                          isPinned
-                            ? "bg-white text-black shadow-md opacity-100"
-                            : "bg-black/50 text-white opacity-0 hover:bg-black/70 group-hover:opacity-100"
-                        )}
-                      >
-                        <Pin
-                          className={cn("h-3.5 w-3.5", isPinned && "fill-current")}
-                        />
-                      </button>
-
-                      {/* Status badges */}
-                      <div className="absolute left-2 top-2 z-10 flex flex-col gap-1">
-                        {book.is_public && (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-black/55 px-2 py-0.5 text-[10px] font-medium text-white shadow-sm">
-                            <Globe2 className="h-2.5 w-2.5" />
-                            Published
-                          </span>
-                        )}
-                        {book.access_level && (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-black/55 px-2 py-0.5 text-[10px] font-medium text-white shadow-sm">
-                            <Users className="h-2.5 w-2.5" />
-                            {book.access_level}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Cover */}
-                      <div className="h-full w-full">
-                        {book.cover_url ? (
-                          <div className="relative h-full w-full">
-                            <img
-                              src={book.cover_url}
-                              alt={book.name || 'Book cover'}
-                              className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]"
-                            />
-                            {showsTitleOnCover && (
-                              <div className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/85 via-black/40 to-transparent p-3.5">
-                                <h2 className="break-words font-serif text-sm font-semibold leading-tight tracking-tight text-white line-clamp-4 sm:text-base">
-                                  {book.name}
-                                </h2>
-                                {book.author && (
-                                  <p className="mt-1.5 hidden line-clamp-1 break-words text-[9px] font-medium uppercase tracking-[0.18em] text-white/75 sm:block sm:text-[10px]">
-                                    {book.author}
-                                  </p>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <BookCoverFallback
-                            bookId={book.id}
-                            title={book.name}
-                            author={book.author}
-                            variant="tile"
-                          />
-                        )}
-
-                        {/* Subtle bottom sheen on hover */}
-                        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-foreground/0 via-foreground/0 to-foreground/0 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
-                      </div>
-                    </Card>
-
-                    {/* Metadata strip */}
-                    <div className="mt-3 min-h-[64px] px-0.5">
-                      {!coverShowsTitle && (
-                        <h3
-                          className="cursor-pointer line-clamp-2 break-words font-serif text-[15px] font-semibold leading-snug tracking-tight text-foreground"
-                          onClick={() => navigate(`/books/${book.id}`)}
+                  <div
+                    key={book.id}
+                    className="group flex cursor-pointer flex-col"
+                    onClick={() => navigate(`/books/${book.id}`)}
+                  >
+                    <BookCard
+                      book={book}
+                      topRightOverlay={
+                        <button
+                          onClick={(e) => handlePinToggle(book.id, isPinned, e)}
+                          aria-label={isPinned ? 'Unpin book' : 'Pin book'}
+                          className={cn(
+                            "flex h-7 w-7 items-center justify-center rounded-full transition-all",
+                            isPinned
+                              ? "bg-white text-black shadow-md opacity-100"
+                              : "bg-black/50 text-white opacity-0 hover:bg-black/70 group-hover:opacity-100"
+                          )}
                         >
-                          {book.name}
-                        </h3>
-                      )}
-                      {!coverShowsTitle && book.author && (
-                        <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                          {book.author}
+                          <Pin className={cn("h-3.5 w-3.5", isPinned && "fill-current")} />
+                        </button>
+                      }
+                      topLeftOverlay={
+                        (book.is_public || book.access_level) ? (
+                          <>
+                            {book.is_public && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-black/55 px-2 py-0.5 text-[10px] font-medium text-white shadow-sm">
+                                <Globe2 className="h-2.5 w-2.5" />
+                                Published
+                              </span>
+                            )}
+                            {book.access_level && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-black/55 px-2 py-0.5 text-[10px] font-medium text-white shadow-sm">
+                                <Users className="h-2.5 w-2.5" />
+                                {book.access_level}
+                              </span>
+                            )}
+                          </>
+                        ) : null
+                      }
+                      metadata={
+                        <p
+                          className={cn(
+                            "truncate text-[11px] text-muted-foreground/70",
+                            coverShowsTitle ? "mt-0" : "mt-1.5"
+                          )}
+                        >
+                          Updated {timeAgo}
                         </p>
-                      )}
-                      <p className={cn(
-                        "truncate text-[11px] text-muted-foreground/70",
-                        coverShowsTitle ? "mt-0" : "mt-1.5"
-                      )}>
-                        Updated {timeAgo}
-                      </p>
-                    </div>
+                      }
+                    />
                   </div>
                 );
               })}
