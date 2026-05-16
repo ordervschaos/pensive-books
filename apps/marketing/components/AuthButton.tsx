@@ -2,10 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { LogIn, LogOut } from "lucide-react";
+import { IconButton, IconLink, iconButtonClass } from "@pensive/shared/ui/icon-button";
 import { createClient } from "@/lib/supabase/client";
-
-const iconButtonClass =
-  "inline-flex h-9 w-9 items-center justify-center rounded-md border border-input bg-background text-foreground transition-colors hover:bg-accent hover:text-accent-foreground";
 
 type Props = {
   appOrigin: string;
@@ -35,25 +33,20 @@ export function AuthButton({ appOrigin }: Props) {
   }
 
   if (authenticated === null) {
-    return <div className="h-9 w-9 rounded-md border border-input bg-background" />;
+    return <div className={iconButtonClass} aria-hidden />;
   }
 
   if (authenticated) {
     return (
-      <button
-        type="button"
-        aria-label="Sign out"
-        onClick={handleSignOut}
-        className={iconButtonClass}
-      >
+      <IconButton aria-label="Sign out" onClick={handleSignOut}>
         <LogOut className="h-4 w-4" />
-      </button>
+      </IconButton>
     );
   }
 
   return (
-    <a href={`${appOrigin}/auth`} aria-label="Sign in" className={iconButtonClass}>
+    <IconLink href={`${appOrigin}/auth`} aria-label="Sign in">
       <LogIn className="h-4 w-4" />
-    </a>
+    </IconLink>
   );
 }

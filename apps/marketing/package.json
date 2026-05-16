@@ -9,6 +9,7 @@
     "typecheck": "next build"
   },
   "dependencies": {
+    "@pensive/shared": "workspace:*",
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.47.16",
     "lucide-react": "^0.462.0",

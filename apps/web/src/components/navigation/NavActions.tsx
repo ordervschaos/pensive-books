@@ -1,5 +1,6 @@
 import { LogOut, LogIn, Search, MoreVertical, Moon, Sun, Coffee, Palette, Package } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@pensive/shared/ui/icon-button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -30,20 +31,20 @@ export const NavActions = ({
       {/* Desktop buttons */}
       <div className="hidden sm:flex items-center gap-3">
         {isBookRoute && (
-          <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => setSearchOpen(true)}>
+          <IconButton aria-label="Search" onClick={() => setSearchOpen(true)}>
             <Search className="h-4 w-4" />
-          </Button>
+          </IconButton>
         )}
         {isPageRoute && <PageDisplayControls isPageRoute={isPageRoute} />}
         <ThemeSwitcher />
         {isAuthenticated ? (
-          <Button variant="outline" size="icon" className="h-9 w-9" onClick={handleLogout}>
+          <IconButton aria-label="Sign out" onClick={handleLogout}>
             <LogOut className="h-4 w-4" />
-          </Button>
+          </IconButton>
         ) : (
-          <Button variant="outline" size="icon" className="h-9 w-9" onClick={handleLogin}>
+          <IconButton aria-label="Sign in" onClick={handleLogin}>
             <LogIn className="h-4 w-4" />
-          </Button>
+          </IconButton>
         )}
       </div>
 

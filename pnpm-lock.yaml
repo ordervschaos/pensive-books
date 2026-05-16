@@ -14,6 +14,9 @@ importers:
 
   apps/marketing:
     dependencies:
+      '@pensive/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@supabase/ssr':
         specifier: ^0.10.3
         version: 0.10.3(@supabase/supabase-js@2.105.4)
@@ -69,6 +72,9 @@ importers:
       '@ordervschaos/babel-plugin-react-component-tagger':
         specifier: ^1.2.0
         version: 1.2.0(@babel/core@7.29.0)
+      '@pensive/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@radix-ui/react-accordion':
         specifier: ^1.2.0
         version: 1.2.12(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -410,7 +416,15 @@ importers:
         specifier: ^3.2.4
         version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.19)(@vitest/ui@3.2.4)(happy-dom@20.9.0)(jiti@1.21.7)(jsdom@26.1.0)(tsx@4.22.0)
 
-  packages/shared: {}
+  packages/shared:
+    dependencies:
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+    devDependencies:
+      '@types/react':
+        specifier: ^18.3.3
+        version: 18.3.28
 
 packages:
 

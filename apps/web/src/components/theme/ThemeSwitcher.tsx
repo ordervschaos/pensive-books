@@ -1,5 +1,5 @@
 import { useTheme } from "./ThemeProvider"
-import { Button } from "@/components/ui/button"
+import { IconButton } from "@pensive/shared/ui/icon-button"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,14 +23,13 @@ export function ThemeSwitcher() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="icon" className="h-9 w-9">
+        <IconButton aria-label="Toggle theme">
           {themeMode === "light" ? (
             <Sun className="h-4 w-4" />
           ) : (
             <Moon className="h-4 w-4" />
           )}
-          <span className="sr-only">Toggle theme</span>
-        </Button>
+        </IconButton>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <DropdownMenuLabel>Theme</DropdownMenuLabel>
@@ -75,13 +74,12 @@ export function ThemeModeToggle() {
   const { themeMode, toggleMode } = useTheme()
 
   return (
-    <Button variant="outline" size="icon" className="h-9 w-9" onClick={toggleMode}>
+    <IconButton aria-label="Toggle theme mode" onClick={toggleMode}>
       {themeMode === "light" ? (
         <Sun className="h-4 w-4" />
       ) : (
         <Moon className="h-4 w-4" />
       )}
-      <span className="sr-only">Toggle theme mode</span>
-    </Button>
+    </IconButton>
   )
 }

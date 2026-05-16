@@ -2,6 +2,7 @@
 
 import { Coffee, Flame, Moon, Package, Palette, Sun } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { IconButton } from "@pensive/shared/ui/icon-button";
 import { THEME_NAME_KEY, THEME_MODE_KEY, readThemeValue, writeThemeValue } from "@/lib/theme";
 
 type ThemeName = "default" | "coffee" | "mujiyish" | "pumpkin";
@@ -82,15 +83,13 @@ export function PublicThemeMenu() {
 
   return (
     <div ref={ref} className="relative">
-      <button
-        type="button"
+      <IconButton
         aria-label="Toggle theme"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
-        className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-input bg-background text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
       >
         <TriggerIcon className="h-4 w-4" />
-      </button>
+      </IconButton>
 
       {open && (
         <div className="absolute right-0 z-50 mt-2 w-48 rounded-md border bg-popover p-1 text-popover-foreground shadow-md">

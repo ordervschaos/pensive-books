@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  transpilePackages: ["@pensive/shared"],
   async redirects() {
     return [
       // /library/book/:slug → /library/books/:slug

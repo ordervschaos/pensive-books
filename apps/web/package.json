@@ -19,6 +19,7 @@
     "typecheck": "tsc --build --pretty false"
   },
   "dependencies": {
+    "@pensive/shared": "workspace:*",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@hookform/resolvers": "^3.9.0",
