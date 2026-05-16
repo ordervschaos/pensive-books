@@ -178,17 +178,14 @@ export function TopNav() {
   }, [location.pathname, toast]);
 
   const isBookRoute = location.pathname.includes('/books/');
-  const isLibraryActive = location.pathname === '/library';
-  const isMyBooksActive = location.pathname === '/books';
 
   return (
     <>
       <nav className="bg-background border-b h-14">
         <div className="container max-w-7xl mx-auto px-4 h-full">
           <div className="flex flex-row items-center h-full justify-between">
-            {/* Center content */}
             <div className="flex-1 flex min-w-0">
-              <NavBreadcrumb 
+              <NavBreadcrumb
                 bookName={bookName}
                 pageName={pageName}
                 location={location}
@@ -196,7 +193,6 @@ export function TopNav() {
               />
             </div>
 
-            {/* Right actions */}
             <NavActions
               isAuthenticated={isAuthenticated}
               isBookRoute={isBookRoute}
@@ -207,17 +203,12 @@ export function TopNav() {
           </div>
         </div>
 
-        <SearchDialog 
-          open={searchOpen} 
+        <SearchDialog
+          open={searchOpen}
           onOpenChange={setSearchOpen}
         />
       </nav>
-
-      {/* Tabs below top nav */}
-      <NavTabs 
-        isLibraryActive={isLibraryActive}
-        isMyBooksActive={isMyBooksActive}
-      />
+      <NavTabs />
     </>
   );
-} 
+}

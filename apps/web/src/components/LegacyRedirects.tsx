@@ -28,18 +28,6 @@ export function LegacyRedirects() {
     return <Navigate to={`${newPath}${search}${hash}`} replace />;
   }
 
-  // Redirect /library/book/ to /library/books/
-  if (pathname.startsWith('/library/book/')) {
-    const newPath = pathname.replace('/library/book/', '/library/books/');
-    return <Navigate to={`${newPath}${search}${hash}`} replace />;
-  }
-
-  // Redirect /library/books/../page/ to /library/books/../pages/
-  if (pathname.startsWith('/library/books/') && pathname.includes('/page/')) {
-    const newPath = pathname.replace('/page/', '/pages/');
-    return <Navigate to={`${newPath}${search}${hash}`} replace />;
-  }
-
   // Redirect /my-books to /books
   if (pathname === '/my-books') {
     return <Navigate to={`/books${search}${hash}`} replace />;

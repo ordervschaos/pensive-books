@@ -107,7 +107,7 @@ export default function App() {
                       <Route path="/" element={<IndexRoute />} />
                       <Route path="/auth" element={<Auth />} />
                       <Route path="/auth/callback" element={<Auth />} />
-                      <Route path="/library" element={<PublicSiteRedirect />} />
+                      <Route path="/library/*" element={<PublicSiteRedirect />} />
                       <Route path="/accept-invitation" element={<AcceptInvitation />} />
                       <Route path="/privacy" element={<PrivacyPolicy />} />
                       <Route path="/terms" element={<Terms />} />

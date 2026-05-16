@@ -1,41 +1,31 @@
+import { useLocation } from "react-router-dom";
 import { Link } from "react-router-dom";
-import { cn } from "@/lib/utils";
-import { NavTabsProps } from "./types";
 import { buildPublicUrl } from "@/utils/publicOrigin";
 
-export const NavTabs = ({ isLibraryActive, isMyBooksActive }: NavTabsProps) => {
-  if (!isLibraryActive && !isMyBooksActive) {
+export function NavTabs() {
+  const { pathname } = useLocation();
+
+  if (pathname !== "/books") {
     return null;
   }
 
-  const libraryHref = buildPublicUrl("/library");
-  
+  const tabClass = "relative px-4 py-2 text-sm font-medium transition-colors";
+  const activeClass =
+    "text-foreground after:absolute after:bottom-0 after:left-0 after:h-0.5 after:w-full after:bg-foreground";
+  const inactiveClass = "text-muted-foreground hover:text-foreground";
+
   return (
-    <div className="bg-background border-b">
-      <div className="container max-w-7xl mx-auto">
+    <div className="border-b bg-background">
+      <div className="container mx-auto max-w-7xl">
         <div className="flex space-x-4">
-          <Link
-            to="/books"
-            className={cn(
-              "px-4 py-2 text-sm font-medium transition-colors relative",
-              isMyBooksActive ? "text-foreground" : "text-muted-foreground hover:text-foreground",
-              isMyBooksActive && "after:absolute after:bottom-0 after:left-0 after:w-full after:h-0.5 after:bg-foreground"
-            )}
-          >
+          <Link to="/books" className={`${tabClass} ${activeClass}`}>
             My Books
           </Link>
-          <a
-            href={libraryHref}
-            className={cn(
-              "px-4 py-2 text-sm font-medium transition-colors relative",
-              isLibraryActive ? "text-foreground" : "text-muted-foreground hover:text-foreground",
-              isLibraryActive && "after:absolute after:bottom-0 after:left-0 after:w-full after:h-0.5 after:bg-foreground"
-            )}
-          >
+          <a href={buildPublicUrl("/library")} className={`${tabClass} ${inactiveClass}`}>
             Library
           </a>
         </div>
       </div>
     </div>
   );
-}; 
+}

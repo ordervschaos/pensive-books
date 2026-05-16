@@ -29,8 +29,3 @@ export interface NavActionsProps {
   handleLogin: () => void;
   setSearchOpen: (open: boolean) => void;
 }
-
-export interface NavTabsProps {
-  isLibraryActive: boolean;
-  isMyBooksActive: boolean;
-} 
