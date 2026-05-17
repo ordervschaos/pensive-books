@@ -34,27 +34,47 @@ export default function Auth() {
       }
     };
 
-    // Handle the OAuth callback
+    // Handle the OAuth callback. PKCE requires exchanging the `code` URL
+    // param for a session. `@supabase/ssr`'s auto-detect is unreliable when
+    // the code_verifier cookie chunking/domain combo gets out of sync, so we
+    // call exchangeCodeForSession explicitly and treat "already exchanged"
+    // (code reused, session already present) as success.
     const handleCallback = async () => {
-      if (location.pathname === "/auth/callback") {
-        try {
-          const { error } = await supabase.auth.getSession();
-          if (error) throw error;
-          
-          // Get the return URL from localStorage if it exists
-          const storedReturnTo = localStorage.getItem("returnTo");
-          const redirectTo = storedReturnTo || returnTo;
-          localStorage.removeItem("returnTo"); // Clean up
-          
-          navigate(redirectTo, { replace: true });
-        } catch (error) {
-          console.error("Error handling callback:", error);
-          toast({
-            variant: "destructive",
-            title: "Authentication Error",
-            description: "There was a problem signing you in. Please try again.",
-          });
+      if (location.pathname !== "/auth/callback") return;
+
+      const code = searchParams.get("code");
+      const errorParam = searchParams.get("error_description") || searchParams.get("error");
+
+      if (errorParam) {
+        toast({
+          variant: "destructive",
+          title: "Authentication Error",
+          description: errorParam,
+        });
+        return;
+      }
+
+      try {
+        if (code) {
+          const { error } = await supabase.auth.exchangeCodeForSession(code);
+          if (error) {
+            const { data: { session: existing } } = await supabase.auth.getSession();
+            if (!existing) throw error;
+          }
         }
+
+        const storedReturnTo = localStorage.getItem("returnTo");
+        const redirectTo = storedReturnTo || returnTo;
+        localStorage.removeItem("returnTo");
+
+        navigate(redirectTo, { replace: true });
+      } catch (error) {
+        console.error("Error handling callback:", error);
+        toast({
+          variant: "destructive",
+          title: "Authentication Error",
+          description: "There was a problem signing you in. Please try again.",
+        });
       }
     };
 
@@ -74,7 +94,7 @@ export default function Auth() {
     return () => {
       subscription.unsubscribe();
     };
-  }, [navigate, returnTo, location.pathname, toast]);
+  }, [navigate, returnTo, location.pathname, searchParams, toast]);
 
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
