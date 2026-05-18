@@ -1,13 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import {
-  ArrowLeft,
-  Bookmark,
-  ListTree,
-  Type,
-  X,
-} from "lucide-react";
+import { ArrowLeft} from "lucide-react";
 import { PublishedPageTracker } from "@/components/PublishedPageTracker";
 import { RichTextRenderer } from "@/components/RichTextRenderer";
 import { KeyboardPageNav } from "@/components/KeyboardPageNav";
@@ -103,18 +97,7 @@ export default async function PublishedPageRoute({ params }: Props) {
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-0.5">
-          <ToolButton ariaLabel="Table of contents" href={bookHref}>
-            <ListTree className="h-4 w-4" />
-          </ToolButton>
-          <ToolButton ariaLabel="Reading settings">
-            <Type className="h-4 w-4" />
-          </ToolButton>
-          <ToolButton ariaLabel="Bookmark">
-            <Bookmark className="h-4 w-4" />
-          </ToolButton>
-          <ToolButton ariaLabel="Close reader" href={bookHref}>
-            <X className="h-4 w-4" />
-          </ToolButton>
+          {/* placeholder for action buttons */}
         </div>
       </header>
 
@@ -190,21 +173,16 @@ function ToolButton({
 }: {
   children: React.ReactNode;
   ariaLabel: string;
-  href?: string;
+  href: string;
 }) {
-  const className =
-    "inline-flex h-8 w-8 items-center justify-center rounded-md text-[hsl(var(--pv-text-muted))] transition-colors hover:bg-[hsl(var(--pv-surface-2))] hover:text-foreground";
-  if (href) {
-    return (
-      <Link href={href} aria-label={ariaLabel} className={className}>
-        {children}
-      </Link>
-    );
-  }
   return (
-    <button type="button" aria-label={ariaLabel} className={className}>
+    <Link
+      href={href}
+      aria-label={ariaLabel}
+      className="inline-flex h-8 w-8 items-center justify-center rounded-md text-[hsl(var(--pv-text-muted))] transition-colors hover:bg-[hsl(var(--pv-surface-2))] hover:text-foreground"
+    >
       {children}
-    </button>
+    </Link>
   );
 }
 

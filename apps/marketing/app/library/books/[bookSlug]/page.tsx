@@ -101,8 +101,7 @@ export default async function PublishedBookPage({ params }: Props) {
 
       {/* Title block */}
       <div className="mt-10 text-center">
-        <div className="pv-eyebrow">a book on pensive</div>
-        <h1 className="pv-display mt-4 text-[52px] font-normal leading-none tracking-tight text-foreground md:text-[64px]">
+        <h1 className="pv-display text-[52px] font-normal leading-none tracking-tight text-foreground md:text-[64px]">
           {book.name}
         </h1>
         {book.subtitle && (

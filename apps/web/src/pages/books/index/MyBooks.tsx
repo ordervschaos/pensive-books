@@ -1,13 +1,40 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Wand2, Search, X, Pin, MoreHorizontal, BookOpen, Globe2, Users } from "lucide-react";
+import {
+  Plus,
+  Wand2,
+  Search,
+  X,
+  Pin,
+  MoreHorizontal,
+  BookOpen,
+  Globe2,
+  Users,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { RecentBooksCard } from "./components/RecentBooksCard";
-import { useBookFilters, FilterType, SortType } from "@/hooks/use-book-filters";
+import {
+  useMyBooksPage,
+  useMyBooksCounts,
+  useSharedBooks,
+  type FilterType,
+  type SortType,
+  type OwnedBook,
+  type SharedBook,
+} from "@/hooks/use-my-books-query";
 import { formatDistanceToNow } from "date-fns";
 import {
   DropdownMenu,
@@ -18,191 +45,147 @@ import {
 import { cn } from "@/lib/utils";
 import { BookCard, BOOK_GRID_CLASS } from "@pensive/shared/ui/book-card";
 
-interface Book {
-  id: number;
-  name: string;
-  subtitle?: string | null;
-  author?: string | null;
-  cover_url?: string | null;
-  show_text_on_cover?: boolean;
-  is_public: boolean;
-  is_archived: boolean;
-  pinned?: boolean | null;
-  created_at: string;
-  updated_at: string;
-  owner_id?: string;
-  access_level?: string;
-  page_count?: number;
-}
+const PAGE_SIZE = 24;
+const SEARCH_DEBOUNCE_MS = 300;
+
+type BookForCard = OwnedBook | SharedBook;
 
 export default function Index() {
-  const [books, setBooks] = useState<Book[]>([]);
-  const [sharedBooks, setSharedBooks] = useState<Book[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [session, setSession] = useState<{
+    userId: string;
+    email: string | null;
+  } | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [activeFilter, setActiveFilter] = useState<FilterType>("all");
+  const [sortType, setSortType] = useState<SortType>("recently-updated");
+  const [page, setPage] = useState(1);
+
   const { toast } = useToast();
   const navigate = useNavigate();
-
-  const {
-    searchQuery,
-    setSearchQuery,
-    activeFilter,
-    setActiveFilter,
-    sortType,
-    setSortType,
-    filteredAndSortedBooks,
-    filterCounts,
-    clearSearch,
-  } = useBookFilters(books, sharedBooks);
+  const queryClient = useQueryClient();
 
   useEffect(() => {
-    const checkAuthAndFetchBooks = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-
-        if (!session) {
-          navigate("/auth");
-          return;
-        }
-
-        console.log("Fetching books for user:", session.user.email);
-
-        // STAGE 1: Fetch basic book info FAST (without page counts)
-        const [ownedBooksResult, sharedBooksResult] = await Promise.all([
-          supabase
-            .from("books")
-            .select("*")
-            .eq('owner_id', session.user.id)
-            .eq('is_archived', false)
-            .order("updated_at", { ascending: false }),
-
-          supabase
-            .from("book_access")
-            .select(`
-              access_level,
-              books!inner (*)
-            `)
-            .eq('invited_email', session.user.email)
-            .eq('status', 'accepted')
-            .eq('books.is_archived', false)
-        ]);
-
-        if (ownedBooksResult.error) {
-          console.error("Error fetching owned books:", ownedBooksResult.error);
-          throw ownedBooksResult.error;
-        }
-
-        if (sharedBooksResult.error) {
-          console.error("Error fetching shared books:", sharedBooksResult.error);
-          throw sharedBooksResult.error;
-        }
-
-        const ownedBooks = ownedBooksResult.data || [];
-        const transformedSharedBooks = sharedBooksResult.data
-          ?.filter(item => item.books !== null)
-          .map(item => ({
-            ...item.books,
-            access_level: item.access_level
-          })) as unknown as Book[] || [];
-
-        console.log("Basic books fetched successfully:", {
-          owned: ownedBooks.length,
-          shared: transformedSharedBooks.length
-        });
-
-        setBooks(ownedBooks.map(book => ({ ...book, page_count: 0 })) as Book[]);
-        setSharedBooks(transformedSharedBooks.map(book => ({ ...book, page_count: 0 })));
-        setLoading(false);
-
-        const allBookIds = [...ownedBooks.map(b => b.id), ...transformedSharedBooks.map(b => b.id)];
-
-        if (allBookIds.length > 0) {
-          const { data: pageCounts, error: pageCountError } = await supabase
-            .from('pages')
-            .select('book_id')
-            .in('book_id', allBookIds)
-            .eq('archived', false);
-
-          if (!pageCountError && pageCounts) {
-            const pageCountsMap = new Map<number, number>();
-            pageCounts.forEach(page => {
-              const count = pageCountsMap.get(page.book_id) || 0;
-              pageCountsMap.set(page.book_id, count + 1);
-            });
-
-            setBooks(prev => prev.map(book => ({
-              ...book,
-              page_count: pageCountsMap.get(book.id) || 0
-            })));
-
-            setSharedBooks(prev => prev.map(book => ({
-              ...book,
-              page_count: pageCountsMap.get(book.id) || 0
-            })));
-          }
-        }
-      } catch (error: unknown) {
-        console.error("Error fetching books:", error);
-        toast({
-          variant: "destructive",
-          title: "Error fetching books",
-          description: error instanceof Error ? error.message : "An unknown error occurred",
-        });
-        setLoading(false);
+    let isMounted = true;
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!isMounted) return;
+      if (!session) {
+        navigate("/auth");
+        return;
       }
+      setSession({ userId: session.user.id, email: session.user.email ?? null });
+      setAuthChecked(true);
+    });
+    return () => {
+      isMounted = false;
     };
+  }, [navigate]);
 
-    checkAuthAndFetchBooks();
-  }, [navigate, toast]);
+  useEffect(() => {
+    const timer = setTimeout(
+      () => setDebouncedSearch(searchQuery),
+      SEARCH_DEBOUNCE_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
-  const handlePinToggle = async (bookId: number, currentlyPinned: boolean, e: React.MouseEvent) => {
+  // Any change to filter/search/sort resets us to page 1.
+  useEffect(() => {
+    setPage(1);
+  }, [activeFilter, debouncedSearch, sortType]);
+
+  const userId = session?.userId ?? null;
+
+  const {
+    data: pageData,
+    isLoading: pageLoading,
+    isFetching: pageFetching,
+    error: pageError,
+  } = useMyBooksPage({
+    userId,
+    filter: activeFilter,
+    search: debouncedSearch,
+    sort: sortType,
+    page,
+    pageSize: PAGE_SIZE,
+  });
+
+  const { data: counts } = useMyBooksCounts(userId);
+  const { data: sharedBooks } = useSharedBooks(session?.email ?? null);
+
+  useEffect(() => {
+    if (pageError) {
+      console.error("Error fetching books:", pageError);
+      toast({
+        variant: "destructive",
+        title: "Error fetching books",
+        description:
+          pageError instanceof Error ? pageError.message : "Unknown error",
+      });
+    }
+  }, [pageError, toast]);
+
+  const handlePinToggle = async (
+    bookId: number,
+    currentlyPinned: boolean,
+    e: React.MouseEvent,
+  ) => {
     e.stopPropagation();
 
     try {
       const { error } = await supabase
-        .from('books')
+        .from("books")
         .update({ pinned: !currentlyPinned })
-        .eq('id', bookId);
+        .eq("id", bookId);
 
       if (error) throw error;
 
-      setBooks(prev => prev.map(book =>
-        book.id === bookId ? { ...book, pinned: !currentlyPinned } : book
-      ));
+      // Invalidate book queries so counts + grid refresh.
+      queryClient.invalidateQueries({ queryKey: ["my-books-page"] });
+      queryClient.invalidateQueries({ queryKey: ["my-books-counts"] });
 
       toast({
-        title: currentlyPinned ? 'Book unpinned' : 'Book pinned',
+        title: currentlyPinned ? "Book unpinned" : "Book pinned",
         description: currentlyPinned
-          ? 'Book removed from pinned section'
-          : 'Book added to pinned section',
+          ? "Book removed from pinned section"
+          : "Book added to pinned section",
       });
     } catch (error: unknown) {
-      console.error('Error toggling pin:', error);
+      console.error("Error toggling pin:", error);
       toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Unknown error occurred',
+        variant: "destructive",
+        title: "Error",
+        description:
+          error instanceof Error ? error.message : "Unknown error occurred",
       });
     }
   };
 
   const filterOptions: { value: FilterType; label: string; count?: number }[] = [
-    { value: 'all', label: 'All', count: loading ? undefined : filterCounts.all },
-    { value: 'published', label: 'Published', count: loading ? undefined : filterCounts.published },
-    { value: 'private', label: 'Private', count: loading ? undefined : filterCounts.private },
-    { value: 'pinned', label: 'Pinned', count: loading ? undefined : filterCounts.pinned },
+    { value: "all", label: "All", count: counts?.all },
+    { value: "published", label: "Published", count: counts?.published },
+    { value: "private", label: "Private", count: counts?.private },
+    { value: "pinned", label: "Pinned", count: counts?.pinned },
   ];
 
   const sortOptions: { value: SortType; label: string }[] = [
-    { value: 'recently-updated', label: 'Recently updated' },
-    { value: 'recently-created', label: 'Recently created' },
-    { value: 'alphabetical-az', label: 'Alphabetical (A-Z)' },
-    { value: 'alphabetical-za', label: 'Alphabetical (Z-A)' },
-    { value: 'most-pages', label: 'Most pages' },
+    { value: "recently-updated", label: "Recently updated" },
+    { value: "recently-created", label: "Recently created" },
+    { value: "alphabetical-az", label: "Alphabetical (A-Z)" },
+    { value: "alphabetical-za", label: "Alphabetical (Z-A)" },
   ];
 
-  const totalBooks = filterCounts.all;
-  const publishedCount = filterCounts.published;
-  const privateCount = filterCounts.private;
+  const totalBooks = counts?.all ?? 0;
+  const publishedCount = counts?.published ?? 0;
+  const privateCount = counts?.private ?? 0;
+  const total = pageData?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const books = pageData?.books ?? [];
+  const isFirstLoad = pageLoading && !pageData;
+  const initializing = !authChecked || isFirstLoad;
+
+  const clearSearch = () => setSearchQuery("");
 
   const todayLabel = new Intl.DateTimeFormat("en", {
     weekday: "long",
@@ -210,17 +193,25 @@ export default function Index() {
     day: "numeric",
   }).format(new Date());
 
+  const displayedSharedBooks = useMemo<SharedBook[]>(
+    () => sharedBooks ?? [],
+    [sharedBooks],
+  );
+
   return (
     <div className="relative">
-      {loading && (
+      {(initializing || pageFetching) && (
         <div className="fixed top-0 left-0 right-0 z-50">
           <div className="h-1 bg-primary/20">
-            <div className="h-full bg-primary animate-pulse" style={{ width: '80%' }}></div>
+            <div
+              className="h-full bg-primary animate-pulse"
+              style={{ width: "80%" }}
+            ></div>
           </div>
         </div>
       )}
       <div className="container relative mx-auto max-w-7xl px-6 py-14 space-y-14 md:px-12">
-        {/* Masthead — "your desk" */}
+        {/* Masthead */}
         <header className="flex flex-col items-start justify-between gap-8 md:flex-row md:items-end">
           <div>
             <div className="pv-eyebrow">
@@ -244,7 +235,7 @@ export default function Index() {
                   className="pv-display text-[28px] leading-none text-foreground"
                   style={{ fontVariantNumeric: "oldstyle-nums" }}
                 >
-                  {loading ? "—" : s.n}
+                  {counts ? s.n : "—"}
                 </div>
                 <div className="pv-mono mt-1.5 text-[10.5px] uppercase tracking-[0.15em] text-[hsl(var(--pv-text-faint))]">
                   {s.l}
@@ -254,8 +245,32 @@ export default function Index() {
           </div>
         </header>
 
-        {/* Recent Books — top priority */}
         <RecentBooksCard />
+
+        {/* Shared with you — small section, no pagination */}
+        {displayedSharedBooks.length > 0 && (
+          <div className="space-y-5">
+            <div className="flex items-baseline justify-between gap-4">
+              <div className="pv-display text-[26px] italic tracking-tight text-foreground md:text-[30px]">
+                Shared with you
+              </div>
+              <span className="pv-mono text-[11px] uppercase tracking-[0.15em] text-[hsl(var(--pv-text-faint))]">
+                {displayedSharedBooks.length}{" "}
+                {displayedSharedBooks.length === 1 ? "book" : "books"}
+              </span>
+            </div>
+            <div className={BOOK_GRID_CLASS}>
+              {displayedSharedBooks.map((book) => (
+                <BookGridCard
+                  key={book.id}
+                  book={book}
+                  onPinToggle={handlePinToggle}
+                  onClick={() => navigate(`/books/${book.id}`)}
+                />
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Toolbar */}
         <div className="space-y-5">
@@ -264,25 +279,26 @@ export default function Index() {
               Your manuscripts
             </div>
             <span className="pv-mono text-[11px] uppercase tracking-[0.15em] text-[hsl(var(--pv-text-faint))]">
-              {loading ? "" : `${totalBooks} ${totalBooks === 1 ? "book" : "books"}`}
+              {counts ? `${totalBooks} ${totalBooks === 1 ? "book" : "books"}` : ""}
             </span>
           </div>
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             {/* Search */}
             <div className="relative min-w-0 flex-1 lg:max-w-md">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-[hsl(var(--pv-text-faint))]" />
               <Input
-                placeholder="Search books..."
+                placeholder="Search books…"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="h-10 rounded-md border-border/70 bg-transparent pl-10 pr-10 text-sm transition-colors focus-visible:border-border focus-visible:ring-1 focus-visible:ring-ring/40"
+                className="pv-serif h-10 rounded-full border-border bg-transparent pl-10 pr-10 text-[14px] italic placeholder:text-[hsl(var(--pv-text-faint))] placeholder:italic transition-colors focus-visible:border-foreground/60 focus-visible:ring-0"
               />
               {searchQuery && (
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2 rounded-full"
+                  className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2 rounded-full text-[hsl(var(--pv-text-muted))]"
                   onClick={clearSearch}
+                  aria-label="Clear search"
                 >
                   <X className="h-3.5 w-3.5" />
                 </Button>
@@ -292,7 +308,9 @@ export default function Index() {
             {/* Sort + Actions */}
             <div className="flex flex-shrink-0 items-center gap-2">
               <Select value={sortType} onValueChange={(value) => setSortType(value as SortType)}>
-                <SelectTrigger className="h-10 w-full rounded-md border-border/70 bg-transparent px-3 text-sm sm:w-[200px]">
+                <SelectTrigger
+                  className="pv-serif h-10 w-full rounded-full border-border bg-transparent px-4 text-[14px] italic text-foreground focus:ring-0 focus:ring-offset-0 data-[placeholder]:text-[hsl(var(--pv-text-faint))] sm:w-[200px]"
+                >
                   <SelectValue placeholder="Sort by" />
                 </SelectTrigger>
                 <SelectContent>
@@ -309,7 +327,7 @@ export default function Index() {
                   <Button
                     variant="outline"
                     size="icon"
-                    className="h-10 w-10 rounded-md border-border/70 bg-transparent"
+                    className="h-10 w-10 rounded-full border-border bg-transparent text-[hsl(var(--pv-text-muted))] hover:text-foreground"
                     aria-label="More options"
                   >
                     <MoreHorizontal className="h-4 w-4" />
@@ -322,7 +340,7 @@ export default function Index() {
                   >
                     <Wand2 className="h-4 w-4" />
                     <span>Generate book</span>
-                    <span className="ml-auto rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+                    <span className="pv-mono ml-auto rounded-full bg-foreground/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-foreground">
                       Beta
                     </span>
                   </DropdownMenuItem>
@@ -352,7 +370,7 @@ export default function Index() {
                     "pv-serif inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-[14px] transition-colors",
                     isActive
                       ? "border-foreground bg-foreground text-background"
-                      : "border-border bg-transparent text-[hsl(var(--pv-text-muted))] hover:border-foreground/40 hover:text-foreground"
+                      : "border-border bg-transparent text-[hsl(var(--pv-text-muted))] hover:border-foreground/40 hover:text-foreground",
                   )}
                 >
                   <span>{filter.label}</span>
@@ -371,9 +389,9 @@ export default function Index() {
           </nav>
         </div>
 
-        {/* Unified Book Grid */}
+        {/* Owned books grid */}
         <div className="space-y-6">
-          {loading ? (
+          {initializing ? (
             <div className={BOOK_GRID_CLASS}>
               {Array.from({ length: 12 }).map((_, i) => (
                 <div key={i} className="flex flex-col">
@@ -385,85 +403,176 @@ export default function Index() {
                 </div>
               ))}
             </div>
-          ) : filteredAndSortedBooks.length === 0 ? (
+          ) : books.length === 0 ? (
             <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-[hsl(var(--pv-surface-2))] py-20 text-center">
               <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full border border-border">
                 <BookOpen className="h-5 w-5 text-[hsl(var(--pv-text-muted))]" />
               </div>
               <p className="pv-serif text-[15px] italic text-[hsl(var(--pv-text-muted))]">
-                {searchQuery ? `No books match "${searchQuery}"` : "No books here yet"}
+                {debouncedSearch
+                  ? `No books match "${debouncedSearch}"`
+                  : "No books here yet"}
               </p>
-              {searchQuery && (
-                <Button variant="link" onClick={clearSearch} className="mt-1 h-auto p-0 text-sm">
+              {debouncedSearch && (
+                <Button
+                  variant="link"
+                  onClick={clearSearch}
+                  className="mt-1 h-auto p-0 text-sm"
+                >
                   Clear search
                 </Button>
               )}
             </div>
           ) : (
-            <div className={BOOK_GRID_CLASS}>
-              {filteredAndSortedBooks.map((book) => {
-                const isPinned = book.pinned === true;
-                const timeAgo = formatDistanceToNow(new Date(book.updated_at || book.created_at || Date.now()), { addSuffix: true });
-                const coverShowsTitle = book.cover_url ? Boolean(book.show_text_on_cover) : true;
-
-                return (
-                  <div
+            <>
+              <div className={BOOK_GRID_CLASS}>
+                {books.map((book) => (
+                  <BookGridCard
                     key={book.id}
-                    className="group flex cursor-pointer flex-col"
+                    book={book}
+                    onPinToggle={handlePinToggle}
                     onClick={() => navigate(`/books/${book.id}`)}
-                  >
-                    <BookCard
-                      book={book}
-                      topRightOverlay={
-                        <button
-                          onClick={(e) => handlePinToggle(book.id, isPinned, e)}
-                          aria-label={isPinned ? 'Unpin book' : 'Pin book'}
-                          className={cn(
-                            "flex h-7 w-7 items-center justify-center rounded-full transition-all",
-                            isPinned
-                              ? "bg-white text-black shadow-md opacity-100"
-                              : "bg-black/50 text-white opacity-0 hover:bg-black/70 group-hover:opacity-100"
-                          )}
-                        >
-                          <Pin className={cn("h-3.5 w-3.5", isPinned && "fill-current")} />
-                        </button>
-                      }
-                      topLeftOverlay={
-                        (book.is_public || book.access_level) ? (
-                          <>
-                            {book.is_public && (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-black/55 px-2 py-0.5 text-[10px] font-medium text-white shadow-sm">
-                                <Globe2 className="h-2.5 w-2.5" />
-                                Published
-                              </span>
-                            )}
-                            {book.access_level && (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-black/55 px-2 py-0.5 text-[10px] font-medium text-white shadow-sm">
-                                <Users className="h-2.5 w-2.5" />
-                                {book.access_level}
-                              </span>
-                            )}
-                          </>
-                        ) : null
-                      }
-                      metadata={
-                        <p
-                          className={cn(
-                            "truncate text-[11px] text-muted-foreground/70",
-                            coverShowsTitle ? "mt-0" : "mt-1.5"
-                          )}
-                        >
-                          Updated {timeAgo}
-                        </p>
-                      }
-                    />
-                  </div>
-                );
-              })}
-            </div>
+                  />
+                ))}
+              </div>
+
+              {totalPages > 1 && (
+                <PaginationBar
+                  page={page}
+                  totalPages={totalPages}
+                  total={total}
+                  onPageChange={setPage}
+                />
+              )}
+            </>
           )}
         </div>
       </div>
     </div>
+  );
+}
+
+function BookGridCard({
+  book,
+  onPinToggle,
+  onClick,
+}: {
+  book: BookForCard;
+  onPinToggle: (
+    bookId: number,
+    currentlyPinned: boolean,
+    e: React.MouseEvent,
+  ) => void;
+  onClick: () => void;
+}) {
+  const isPinned = book.pinned === true;
+  const timeAgo = formatDistanceToNow(
+    new Date(book.updated_at || book.created_at || Date.now()),
+    { addSuffix: true },
+  );
+  const coverShowsTitle = book.cover_url
+    ? Boolean(book.show_text_on_cover)
+    : true;
+  const accessLevel = "access_level" in book ? book.access_level : undefined;
+
+  return (
+    <div
+      className="group flex cursor-pointer flex-col"
+      onClick={onClick}
+    >
+      <BookCard
+        book={book}
+        topRightOverlay={
+          <button
+            onClick={(e) => onPinToggle(book.id, isPinned, e)}
+            aria-label={isPinned ? "Unpin book" : "Pin book"}
+            className={cn(
+              "flex h-7 w-7 items-center justify-center rounded-full transition-all",
+              isPinned
+                ? "bg-white text-black shadow-md opacity-100"
+                : "bg-black/50 text-white opacity-0 hover:bg-black/70 group-hover:opacity-100",
+            )}
+          >
+            <Pin className={cn("h-3.5 w-3.5", isPinned && "fill-current")} />
+          </button>
+        }
+        topLeftOverlay={
+          book.is_public || accessLevel ? (
+            <>
+              {book.is_public && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-black/55 px-2 py-0.5 text-[10px] font-medium text-white shadow-sm">
+                  <Globe2 className="h-2.5 w-2.5" />
+                  Published
+                </span>
+              )}
+              {accessLevel && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-black/55 px-2 py-0.5 text-[10px] font-medium text-white shadow-sm">
+                  <Users className="h-2.5 w-2.5" />
+                  {accessLevel}
+                </span>
+              )}
+            </>
+          ) : null
+        }
+        metadata={
+          <p
+            className={cn(
+              "truncate text-[11px] text-muted-foreground/70",
+              coverShowsTitle ? "mt-0" : "mt-1.5",
+            )}
+          >
+            Updated {timeAgo}
+          </p>
+        }
+      />
+    </div>
+  );
+}
+
+function PaginationBar({
+  page,
+  totalPages,
+  total,
+  onPageChange,
+}: {
+  page: number;
+  totalPages: number;
+  total: number;
+  onPageChange: (page: number) => void;
+}) {
+  const hasPrev = page > 1;
+  const hasNext = page < totalPages;
+
+  return (
+    <nav
+      aria-label="My books pagination"
+      className="flex items-center justify-between border-t border-border pt-6"
+    >
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        onClick={() => onPageChange(Math.max(1, page - 1))}
+        disabled={!hasPrev}
+        className="pv-serif h-9 gap-1.5 rounded-full px-3 text-[14px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground disabled:opacity-30"
+      >
+        <ChevronLeft className="h-4 w-4" />
+        previous
+      </Button>
+      <span className="pv-mono text-[11px] uppercase tracking-[0.18em] text-[hsl(var(--pv-text-faint))]">
+        page {page} of {totalPages} · {total} {total === 1 ? "book" : "books"}
+      </span>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        onClick={() => onPageChange(Math.min(totalPages, page + 1))}
+        disabled={!hasNext}
+        className="pv-serif h-9 gap-1.5 rounded-full px-3 text-[14px] text-foreground hover:text-foreground disabled:opacity-30"
+      >
+        next
+        <ChevronRight className="h-4 w-4" />
+      </Button>
+    </nav>
   );
 }

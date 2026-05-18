@@ -1,8 +1,6 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { Search } from "lucide-react";
-import { IconButton } from "@pensive/shared/ui/icon-button";
 import { TopNavShell, type TopNavTab } from "@pensive/shared/ui/top-nav";
 import { getConfiguredAppOrigin } from "@/lib/pensive";
 import { PublicThemeMenu } from "@/components/PublicThemeMenu";
@@ -55,14 +53,7 @@ export function PublicTopNav() {
         mode="compact"
         logoHref="/"
         crumb={buildCrumb(pathname)}
-        actions={
-          <>
-            <IconButton aria-label="Search">
-              <Search className="h-4 w-4" />
-            </IconButton>
-            {themeAndAuth}
-          </>
-        }
+        actions={themeAndAuth}
       />
     );
   }
@@ -81,15 +72,6 @@ export function PublicTopNav() {
   ];
 
   return (
-    <TopNavShell
-      mode="full"
-      logoHref="/"
-      tabs={tabs}
-      search={{
-        placeholder: "Search books, chapters, authors…",
-        shortcut: "⌘K",
-      }}
-      actions={themeAndAuth}
-    />
+    <TopNavShell mode="full" logoHref="/" tabs={tabs} actions={themeAndAuth} />
   );
 }

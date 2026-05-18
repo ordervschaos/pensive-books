@@ -74,23 +74,34 @@ function toPageSummary(row: {
   };
 }
 
-const getLibraryBooksCached = unstable_cache(
-  async (): Promise<PublicBook[]> => {
-    const { data, error } = await supabase
+export interface LibraryBooksPage {
+  books: PublicBook[];
+  total: number;
+}
+
+const getLibraryBooksPageCached = unstable_cache(
+  async (
+    offset: number,
+    limit: number,
+  ): Promise<LibraryBooksPage> => {
+    const { data, error, count } = await supabase
       .from("books")
-      .select("id, name, author, subtitle, cover_url, show_text_on_cover")
+      .select("id, name, author, subtitle, cover_url, show_text_on_cover", {
+        count: "exact",
+      })
       .eq("is_public", true)
       .eq("is_archived", false)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .range(offset, offset + limit - 1);
 
     if (error) {
       console.error("Failed to fetch public library books:", error);
-      return [];
+      return { books: [], total: 0 };
     }
 
-    return data ?? [];
+    return { books: data ?? [], total: count ?? 0 };
   },
-  ["public-library-books"],
+  ["public-library-books-page"],
   { revalidate: REVALIDATE_SECONDS },
 );
 
@@ -302,8 +313,16 @@ export function decodeUsernameParam(value: string): string {
   return decoded.startsWith("@") ? decoded.slice(1) : decoded;
 }
 
-export async function getLibraryBooks(): Promise<PublicBook[]> {
-  return getLibraryBooksCached();
+export async function getLibraryBooksPage(
+  page: number,
+  pageSize: number,
+): Promise<LibraryBooksPage> {
+  const safePage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+  const safePageSize = Number.isFinite(pageSize) && pageSize > 0
+    ? Math.floor(pageSize)
+    : 24;
+  const offset = (safePage - 1) * safePageSize;
+  return getLibraryBooksPageCached(offset, safePageSize);
 }
 
 export async function getFeaturedBooks(): Promise<PublicBook[]> {

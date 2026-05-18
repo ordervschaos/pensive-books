@@ -321,8 +321,7 @@ export function RecentBooksCard() {
                 </div>
                 <div className="flex items-baseline justify-between border-t border-dashed border-border pt-3">
                   <span className="pv-mono text-[10.5px] uppercase tracking-[0.15em] text-[hsl(var(--pv-text-muted))]">
-                    {book.isOwned && book.wasEditing ? 'last edited' : 'last read'}{' '}
-                    {formatDistanceToNow(new Date(book.timestamp), { addSuffix: true })}
+                    last opened {formatDistanceToNow(new Date(book.timestamp), { addSuffix: true })}
                   </span>
                   <span className="pv-serif text-[13px] italic text-foreground">
                     continue ›

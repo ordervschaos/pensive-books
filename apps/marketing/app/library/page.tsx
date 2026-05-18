@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { getLibraryBooks, type PublicBook } from "@/lib/public-books";
+import { getLibraryBooksPage, type PublicBook } from "@/lib/public-books";
 import { slugifyIdTitle } from "@/lib/pensive";
 
 export const dynamic = "force-dynamic";
@@ -9,6 +9,8 @@ export const metadata: Metadata = {
   title: "Library | Pensive",
   description: "Browse books published on Pensive.",
 };
+
+const LIBRARY_PAGE_SIZE = 24;
 
 function formatToday() {
   return new Intl.DateTimeFormat("en", {
@@ -22,10 +24,28 @@ function bookHref(book: PublicBook) {
   return `/library/books/${slugifyIdTitle(book.id, book.name)}`;
 }
 
-export default async function LibraryPage() {
-  const books = await getLibraryBooks();
-  const featured = books.slice(0, 3);
-  const rest = books.slice(3);
+function parsePage(value: string | string[] | undefined): number {
+  const raw = Array.isArray(value) ? value[0] : value;
+  const parsed = Number.parseInt(raw ?? "1", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+}
+
+type LibrarySearchParams = {
+  page?: string | string[];
+};
+
+export default async function LibraryPage({
+  searchParams,
+}: {
+  searchParams?: LibrarySearchParams;
+}) {
+  const page = parsePage(searchParams?.page);
+  const { books, total } = await getLibraryBooksPage(page, LIBRARY_PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(total / LIBRARY_PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const isFirstPage = currentPage === 1;
+  const featured = isFirstPage ? books.slice(0, 3) : [];
+  const rest = isFirstPage ? books.slice(3) : books;
 
   return (
     <main className="mx-auto max-w-[1240px] px-6 pb-24 pt-14 md:px-12">
@@ -42,8 +62,8 @@ export default async function LibraryPage() {
         </div>
         <div className="flex flex-col items-start gap-4 md:items-end">
           <p className="pv-serif max-w-[320px] text-[14px] italic text-[hsl(var(--pv-text-muted))] md:text-right">
-            {books.length}{" "}
-            {books.length === 1 ? "book" : "books"} ·{" "}
+            {total}{" "}
+            {total === 1 ? "book" : "books"} ·{" "}
             <span className="text-foreground">all written on Pensive</span>
           </p>
           <a
@@ -57,7 +77,7 @@ export default async function LibraryPage() {
 
       <hr className="mt-11 border-t border-border" />
 
-      {books.length === 0 ? (
+      {total === 0 ? (
         <div className="mt-12 rounded-2xl border border-border bg-[hsl(var(--pv-surface-2))] p-10 text-center text-[hsl(var(--pv-text-muted))]">
           No published books found.
         </div>
@@ -76,9 +96,12 @@ export default async function LibraryPage() {
 
           {rest.length > 0 && (
             <>
-              <hr className="mt-14 border-t border-border" />
-              <section className="mt-9">
-                <SectionHead title="The catalog" more={`${books.length} books`} />
+              {isFirstPage && <hr className="mt-14 border-t border-border" />}
+              <section className={isFirstPage ? "mt-9" : "mt-9"}>
+                <SectionHead
+                  title={isFirstPage ? "The catalog" : `The catalog · page ${currentPage}`}
+                  more={`${total} books`}
+                />
                 <div className="grid grid-cols-2 gap-x-9 gap-y-12 sm:grid-cols-3 md:grid-cols-4">
                   {rest.map((book) => (
                     <CatalogCard key={book.id} book={book} />
@@ -87,9 +110,60 @@ export default async function LibraryPage() {
               </section>
             </>
           )}
+
+          {totalPages > 1 && (
+            <Pagination currentPage={currentPage} totalPages={totalPages} />
+          )}
         </>
       )}
     </main>
+  );
+}
+
+function Pagination({
+  currentPage,
+  totalPages,
+}: {
+  currentPage: number;
+  totalPages: number;
+}) {
+  const prevHref = currentPage > 1
+    ? currentPage - 1 === 1
+      ? "/library"
+      : `/library?page=${currentPage - 1}`
+    : null;
+  const nextHref =
+    currentPage < totalPages ? `/library?page=${currentPage + 1}` : null;
+
+  return (
+    <nav
+      aria-label="Library pagination"
+      className="mt-14 flex items-center justify-between border-t border-border pt-7"
+    >
+      {prevHref ? (
+        <Link
+          href={prevHref}
+          className="pv-serif text-[15px] italic text-[hsl(var(--pv-text-muted))] transition-colors hover:text-foreground"
+        >
+          ← previous page
+        </Link>
+      ) : (
+        <span />
+      )}
+      <span className="pv-mono text-[11px] uppercase tracking-[0.18em] text-[hsl(var(--pv-text-faint))]">
+        page {currentPage} of {totalPages}
+      </span>
+      {nextHref ? (
+        <Link
+          href={nextHref}
+          className="pv-serif border-b border-foreground pb-px text-[15px] text-foreground"
+        >
+          next page →
+        </Link>
+      ) : (
+        <span />
+      )}
+    </nav>
   );
 }
 
@@ -108,8 +182,7 @@ function FeaturedCard({ book }: { book: PublicBook }) {
   return (
     <Link href={bookHref(book)} className="group block">
       <Cover book={book} />
-      <p className="pv-eyebrow mt-[18px]">A book on Pensive</p>
-      <h3 className="pv-display mt-2 text-[26px] font-normal leading-[1.1] tracking-tight text-foreground md:text-[28px]">
+      <h3 className="pv-display mt-[18px] text-[26px] font-normal leading-[1.1] tracking-tight text-foreground md:text-[28px]">
         {book.name}
       </h3>
       {book.subtitle && (
@@ -130,8 +203,7 @@ function CatalogCard({ book }: { book: PublicBook }) {
   return (
     <Link href={bookHref(book)} className="group block">
       <Cover book={book} compact />
-      <p className="pv-eyebrow mt-3.5">A book on Pensive</p>
-      <h4 className="pv-serif mt-2 text-[17px] font-medium leading-snug text-foreground">
+      <h4 className="pv-serif mt-3.5 text-[17px] font-medium leading-snug text-foreground">
         {book.name}
       </h4>
       {book.author && (
