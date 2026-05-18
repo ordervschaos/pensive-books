@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Bookmark, Share2, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { getWordCountFromContent } from '@/utils/tiptapHelpers';
@@ -160,8 +160,8 @@ export const PageTableOfContents = ({
         className,
       )}
     >
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-[hsl(var(--pv-border-soft))] px-6 py-5">
+      {/* Header — top padding clears the fixed Settings/Logout buttons in the top-right corner */}
+      <div className="flex items-center justify-between border-b border-[hsl(var(--pv-border-soft))] px-6 pb-5 pt-14">
         <span className="pv-eyebrow">On this page</span>
         <button
           type="button"
@@ -237,23 +237,6 @@ export const PageTableOfContents = ({
         </dl>
       </div>
 
-      {/* Bottom actions */}
-      <div className="flex flex-col gap-2.5 border-t border-[hsl(var(--pv-border-soft))] px-6 py-5">
-        <button
-          type="button"
-          className="pv-serif inline-flex items-center gap-2.5 text-[13px] text-[hsl(var(--pv-text-muted))] transition-colors hover:text-foreground"
-        >
-          <Bookmark className="h-3.5 w-3.5" />
-          <span>Set as bookmark</span>
-        </button>
-        <button
-          type="button"
-          className="pv-serif inline-flex items-center gap-2.5 text-[13px] text-[hsl(var(--pv-text-muted))] transition-colors hover:text-foreground"
-        >
-          <Share2 className="h-3.5 w-3.5" />
-          <span>Share preview link</span>
-        </button>
-      </div>
     </aside>
   );
 };

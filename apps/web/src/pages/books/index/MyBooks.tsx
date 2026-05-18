@@ -340,8 +340,8 @@ export default function Index() {
             </div>
           </div>
 
-          {/* Filter pills — paper minimal: italic + 1px underline on active */}
-          <nav className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
+          {/* Filter pills — filled pill on active, constant width across states */}
+          <nav className="flex flex-wrap items-center gap-2">
             {filterOptions.map((filter) => {
               const isActive = activeFilter === filter.value;
               return (
@@ -349,19 +349,17 @@ export default function Index() {
                   key={filter.value}
                   onClick={() => setActiveFilter(filter.value)}
                   className={cn(
-                    "pv-serif group inline-flex items-baseline gap-1.5 pb-0.5 text-[15px] transition-colors",
+                    "pv-serif inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-[14px] transition-colors",
                     isActive
-                      ? "italic text-foreground"
-                      : "text-[hsl(var(--pv-text-muted))] hover:text-foreground"
+                      ? "border-foreground bg-foreground text-background"
+                      : "border-border bg-transparent text-[hsl(var(--pv-text-muted))] hover:border-foreground/40 hover:text-foreground"
                   )}
-                  style={{
-                    borderBottom: isActive ? "1px solid hsl(var(--pv-text))" : "1px solid transparent",
-                  }}
                 >
                   <span>{filter.label}</span>
                   <span
                     className={cn(
-                      "pv-mono text-[11px] not-italic tabular-nums text-[hsl(var(--pv-text-faint))]",
+                      "pv-mono text-[11px] tabular-nums",
+                      isActive ? "text-background/70" : "text-[hsl(var(--pv-text-faint))]",
                       filter.count === undefined && "opacity-0",
                     )}
                   >

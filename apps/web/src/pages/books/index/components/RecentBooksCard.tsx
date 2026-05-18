@@ -6,6 +6,8 @@ import { Clock } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { BookCoverFallback } from '@/components/book/BookCoverFallback';
 import { cn } from '@/lib/utils';
+import { SlugService } from '@/utils/slugService';
+import { buildPublicUrl } from '@/utils/publicOrigin';
 
 interface RecentBook {
   bookId: number;
@@ -17,6 +19,7 @@ interface RecentBook {
   pageTitle: string | null;
   timestamp: string;
   wasEditing: boolean;
+  isOwned: boolean;
 }
 
 interface PageData {
@@ -41,6 +44,7 @@ interface BookData {
   subtitle: string | null;
   cover_url: string | null;
   show_text_on_cover: boolean;
+  owner_id: string | null;
 }
 
 interface PageLookup {
@@ -109,6 +113,7 @@ export function RecentBooksCard() {
               pageTitle: page.title,
               timestamp: page.updated_at,
               wasEditing: true,
+              isOwned: true,
             });
           });
         }
@@ -143,7 +148,7 @@ export function RecentBooksCard() {
             // Batch query: Get all books at once
             const { data: booksData, error: booksError } = await supabase
               .from('books')
-              .select('id, name, subtitle, cover_url, show_text_on_cover')
+              .select('id, name, subtitle, cover_url, show_text_on_cover, owner_id')
               .in('id', bookIds)
               .eq('is_archived', false);
 
@@ -188,6 +193,7 @@ export function RecentBooksCard() {
                         pageTitle: targetPage.title,
                         timestamp: timestamp,
                         wasEditing: false,
+                        isOwned: book.owner_id === session.user.id,
                       });
                     }
                   }
@@ -223,6 +229,13 @@ export function RecentBooksCard() {
   }, []);
 
   const handleContinue = (book: RecentBook) => {
+    if (!book.isOwned) {
+      const bookSlug = SlugService.generateSlug(book.bookId, book.bookName);
+      const pageSlug = SlugService.generateSlug(book.pageId, book.pageTitle || '');
+      window.location.href = buildPublicUrl(`/library/books/${bookSlug}/pages/${pageSlug}`);
+      return;
+    }
+
     const url = book.wasEditing
       ? `/books/${book.bookId}/pages/${book.pageId}?edit=true`
       : `/books/${book.bookId}/pages/${book.pageId}`;
@@ -308,7 +321,8 @@ export function RecentBooksCard() {
                 </div>
                 <div className="flex items-baseline justify-between border-t border-dashed border-border pt-3">
                   <span className="pv-mono text-[10.5px] uppercase tracking-[0.15em] text-[hsl(var(--pv-text-muted))]">
-                    last edited {formatDistanceToNow(new Date(book.timestamp), { addSuffix: true })}
+                    {book.isOwned && book.wasEditing ? 'last edited' : 'last read'}{' '}
+                    {formatDistanceToNow(new Date(book.timestamp), { addSuffix: true })}
                   </span>
                   <span className="pv-serif text-[13px] italic text-foreground">
                     continue ›

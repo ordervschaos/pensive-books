@@ -226,11 +226,6 @@ export function TopNav() {
               active: false,
             } satisfies TopNavTab,
           ]}
-          search={{
-            placeholder: "Search your books, pages, drafts…",
-            shortcut: "⌘K",
-            onClick: () => setSearchOpen(true),
-          }}
           actions={actions}
         />
       ) : (
