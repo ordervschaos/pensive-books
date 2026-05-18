@@ -5,7 +5,6 @@
  * Shows "Draft" if changes exist, "Up to date" if workspace matches last commit.
  */
 
-import { Badge } from "@/components/ui/badge";
 import { useUncommittedChanges } from "@/hooks/use-uncommitted-changes";
 import { Loader2, FileEdit, CheckCircle2 } from "lucide-react";
 import {
@@ -45,10 +44,10 @@ export function UncommittedChangesBadge({
 
   if (isLoading) {
     return (
-      <Badge variant="outline" className="gap-1">
-        <Loader2 className="h-3 w-3 animate-spin" />
-        Checking...
-      </Badge>
+      <span className="pv-serif inline-flex h-9 items-center gap-1.5 rounded-full border border-border bg-transparent px-3.5 text-[13px] italic text-[hsl(var(--pv-text-muted))]">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        Checking…
+      </span>
     );
   }
 
@@ -68,17 +67,19 @@ export function UncommittedChangesBadge({
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger asChild>
-            <Badge
-              variant="secondary"
-              className="gap-1.5 h-7 px-2.5 text-xs bg-amber-100 text-amber-900 hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-200 cursor-pointer transition-all border border-amber-200 dark:border-amber-800"
+            <button
+              type="button"
               onClick={handleClick}
+              className="pv-serif inline-flex h-9 items-center gap-1.5 rounded-full border border-foreground/30 bg-foreground/5 px-3.5 text-[13px] italic text-foreground transition-colors hover:border-foreground/50 hover:bg-foreground/10"
             >
               <FileEdit className="h-3.5 w-3.5" />
-              Draft
+              <span>Draft</span>
               {showCount && changedPages > 0 && (
-                <span className="ml-0.5">({changedPages})</span>
+                <span className="pv-mono text-[11px] not-italic tabular-nums text-[hsl(var(--pv-text-muted))]">
+                  {changedPages}
+                </span>
               )}
-            </Badge>
+            </button>
           </TooltipTrigger>
           <TooltipContent>
             <p>{tooltipText}</p>
@@ -101,13 +102,10 @@ export function UncommittedChangesBadge({
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <Badge
-            variant="outline"
-            className="gap-1.5 h-7 px-2.5 text-xs bg-green-50 text-green-700 border-green-200 hover:bg-green-100 dark:bg-green-900/20 dark:text-green-300 dark:border-green-800"
-          >
+          <span className="pv-serif inline-flex h-9 items-center gap-1.5 rounded-full border border-border bg-transparent px-3.5 text-[13px] italic text-[hsl(var(--pv-text-muted))]">
             <CheckCircle2 className="h-3.5 w-3.5" />
             Up to date
-          </Badge>
+          </span>
         </TooltipTrigger>
         <TooltipContent>
           <p>{tooltipText}</p>

@@ -91,8 +91,8 @@ export const BookOutlineView = ({ pages, bookId, onNavigate }: BookOutlineViewPr
       <div key={key}>
         <div
           className={cn(
-            "flex items-center gap-2 py-2.5 hover:bg-accent/50 cursor-pointer transition-colors group",
-            "border-l border-transparent hover:border-primary/20"
+            "group flex cursor-pointer items-center gap-2 py-2 transition-colors",
+            "hover:bg-[hsl(var(--pv-surface-2))]/60",
           )}
           style={{ paddingLeft: `${paddingLeft}px` }}
           onClick={() => hasAnyChildren ? toggleHeading(key) : onNavigate(pageId)}
@@ -101,19 +101,19 @@ export const BookOutlineView = ({ pages, bookId, onNavigate }: BookOutlineViewPr
           <div className="w-4 h-4 flex items-center justify-center flex-shrink-0">
             {hasAnyChildren && (
               isExpanded ? (
-                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                <ChevronDown className="h-3.5 w-3.5 text-[hsl(var(--pv-text-faint))]" />
               ) : (
-                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                <ChevronRight className="h-3.5 w-3.5 text-[hsl(var(--pv-text-faint))]" />
               )
             )}
           </div>
 
           <span
             className={cn(
-              "text-sm leading-relaxed flex-1 min-w-0",
-              heading.level === 1 && "font-semibold text-foreground",
-              heading.level === 2 && "font-medium text-foreground/90",
-              heading.level >= 3 && "font-normal text-muted-foreground"
+              "pv-serif min-w-0 flex-1 leading-relaxed",
+              heading.level === 1 && "text-[15px] text-foreground",
+              heading.level === 2 && "text-[14px] italic text-foreground/90",
+              heading.level >= 3 && "text-[13px] italic text-[hsl(var(--pv-text-muted))]",
             )}
           >
             {heading.text}
@@ -178,15 +178,19 @@ export const BookOutlineView = ({ pages, bookId, onNavigate }: BookOutlineViewPr
     const isCollapsible = !isSection && hasHeadings;
 
     return (
-      <div key={pageOutline.pageId} className="border-b border-border/50 last:border-b-0">
+      <div
+        key={pageOutline.pageId}
+        className="border-b border-dashed border-[hsl(var(--pv-border-soft))] last:border-b-0"
+      >
         {/* Page Title - always shown */}
         <div
           className={cn(
-            "flex items-center gap-3 py-3 hover:bg-accent/50 cursor-pointer transition-colors group",
-            isSection ? "bg-muted/30 pl-2 pr-4" : "pl-6 pr-4"
+            "group flex cursor-pointer items-center gap-3 py-3 transition-colors hover:bg-[hsl(var(--pv-surface-2))]/60",
+            isSection
+              ? "bg-[hsl(var(--pv-surface-2))]/40 pl-3 pr-5"
+              : "pl-6 pr-5",
           )}
           onClick={() => {
-            // Section pages always navigate directly
             if (isSection) {
               onNavigate(pageOutline.pageId);
               return;
@@ -195,8 +199,8 @@ export const BookOutlineView = ({ pages, bookId, onNavigate }: BookOutlineViewPr
             if (titleIsExpandable) {
               toggleTitle(pageOutline.pageId);
             } else if (isCollapsible) {
-              // Auto-expand title if first heading matches and has heading children
-              const shouldAutoExpandTitle = !isExpanded && firstHeadingMatchesTitle && firstH1HasHeadingChildren;
+              const shouldAutoExpandTitle =
+                !isExpanded && firstHeadingMatchesTitle && firstH1HasHeadingChildren;
               togglePage(pageOutline.pageId, shouldAutoExpandTitle);
             } else {
               onNavigate(pageOutline.pageId);
@@ -204,74 +208,82 @@ export const BookOutlineView = ({ pages, bookId, onNavigate }: BookOutlineViewPr
           }}
         >
           {/* Fixed width chevron container */}
-          <div className="w-5 h-5 flex items-center justify-center flex-shrink-0">
-            {!isSection && (
-              titleIsExpandable ? (
+          <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center">
+            {!isSection &&
+              (titleIsExpandable ? (
                 titleExpanded ? (
-                  <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                  <ChevronDown className="h-4 w-4 text-[hsl(var(--pv-text-faint))]" />
                 ) : (
-                  <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                  <ChevronRight className="h-4 w-4 text-[hsl(var(--pv-text-faint))]" />
                 )
               ) : isCollapsible ? (
                 isExpanded ? (
-                  <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                  <ChevronDown className="h-4 w-4 text-[hsl(var(--pv-text-faint))]" />
                 ) : (
-                  <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                  <ChevronRight className="h-4 w-4 text-[hsl(var(--pv-text-faint))]" />
                 )
-              ) : null
-            )}
+              ) : null)}
           </div>
 
           {/* Page icon */}
-          <div className="w-5 h-5 flex items-center justify-center flex-shrink-0">
-            {pageOutline.pageType === 'section' ? (
-              <BookOpen className="h-5 w-5 text-primary" />
+          <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center">
+            {pageOutline.pageType === "section" ? (
+              <BookOpen className="h-4 w-4 text-[hsl(var(--pv-text-muted))]" />
             ) : (
-              <FileText className="h-5 w-5 text-muted-foreground" />
+              <FileText className="h-4 w-4 text-[hsl(var(--pv-text-faint))]" />
             )}
           </div>
 
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <span className={cn(
-                "font-semibold truncate leading-relaxed",
-                pageOutline.pageType === 'section' ? "text-base" : "text-sm"
-              )}>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-baseline gap-2">
+              <span
+                className={cn(
+                  "pv-serif truncate leading-snug",
+                  pageOutline.pageType === "section"
+                    ? "pv-display text-[18px] italic text-foreground"
+                    : "text-[15px] text-foreground",
+                )}
+              >
                 {pageOutline.pageTitle}
               </span>
               {!pageOutline.hasContent && (
-                <span className="text-xs text-muted-foreground/70">(empty)</span>
+                <span className="pv-serif text-[12px] italic text-[hsl(var(--pv-text-faint))]">
+                  (empty)
+                </span>
               )}
             </div>
           </div>
 
-          <span className="text-xs text-muted-foreground flex-shrink-0 font-mono tabular-nums">
+          <span
+            className="pv-mono flex-shrink-0 text-[11px] tabular-nums text-[hsl(var(--pv-text-faint))]"
+            style={{ fontVariantNumeric: "oldstyle-nums" }}
+          >
             {pageOutline.pageIndex + 1}
           </span>
         </div>
 
         {/* Show first H1's heading children (H2s) when title is expanded */}
         {titleIsExpandable && titleExpanded && firstHeading.children && (
-          <div className="bg-muted/10">
+          <div>
             {firstHeading.children
-              .filter((child): child is HeadingNode => child.type === 'heading')
+              .filter((child): child is HeadingNode => child.type === "heading")
               .map((child, idx: number) =>
                 renderHeading(
                   child,
                   pageOutline.pageId,
                   `title-h1-${idx}`,
                   0,
-                  isSection
-                )
+                  isSection,
+                ),
               )}
           </div>
         )}
 
         {/* Expanded Headings - skip first if it matches title */}
         {isExpanded && hasHeadings && (
-          <div className="bg-muted/10">
+          <div>
             {pageOutline.topLevelHeadings
-              .slice(firstHeadingMatchesTitle ? 1 : 0) // Skip first heading if it matches title
+              .slice(firstHeadingMatchesTitle ? 1 : 0)
               .map((heading: HeadingNode, idx: number) => {
                 const actualIdx = firstHeadingMatchesTitle ? idx + 1 : idx;
                 return renderHeading(
@@ -279,7 +291,7 @@ export const BookOutlineView = ({ pages, bookId, onNavigate }: BookOutlineViewPr
                   pageOutline.pageId,
                   `h${actualIdx}`,
                   0,
-                  isSection
+                  isSection,
                 );
               })}
           </div>
@@ -290,16 +302,14 @@ export const BookOutlineView = ({ pages, bookId, onNavigate }: BookOutlineViewPr
 
   if (outline.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-center">
-        <FileText className="h-12 w-12 text-muted-foreground mb-4" />
-        <p className="text-muted-foreground">No pages in this book</p>
+      <div className="flex flex-col items-center justify-center py-16 text-center">
+        <FileText className="mb-4 h-10 w-10 text-[hsl(var(--pv-text-faint))]" />
+        <p className="pv-serif text-[14px] italic text-[hsl(var(--pv-text-muted))]">
+          No pages in this book
+        </p>
       </div>
     );
   }
 
-  return (
-    <div className="divide-y divide-border/30">
-      {outline.map(renderPageSection)}
-    </div>
-  );
+  return <div>{outline.map(renderPageSection)}</div>;
 };

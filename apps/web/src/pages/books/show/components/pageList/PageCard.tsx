@@ -1,7 +1,5 @@
 import { Trash2, BookmarkCheck, MoreVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { AudioPlayer } from "@/pages/books/pages/view/components/AudioPlayer";
 import { PageItemProps } from "./types";
 import { forwardRef } from "react";
@@ -25,28 +23,24 @@ export const PageCard = forwardRef<HTMLDivElement, PageItemProps>(({ page, onNav
   if (page.page_type === "section") {
     return (
       <div ref={ref} className="col-span-full">
-        <div className="relative flex items-start gap-2 rounded-md border border-border/60 bg-muted/30 p-2 transition-colors hover:bg-accent/20">
+        <div className="relative flex items-baseline gap-2 rounded-xl border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/60 p-2 transition-colors hover:bg-[hsl(var(--pv-surface-2))]">
           <button
             type="button"
             onClick={() => onNavigate(page.id)}
-            className="flex flex-1 items-center justify-between gap-4 rounded-md px-3 py-3 text-left"
+            className="flex flex-1 items-baseline justify-between gap-4 rounded-xl px-3 py-3 text-left"
           >
             <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Section</p>
-              <h3 className="mt-1 line-clamp-2 break-words text-sm font-semibold uppercase tracking-wide text-foreground">
+              <p className="pv-eyebrow">Section {sectionNumber ?? 1}</p>
+              <h3 className="pv-display mt-1 line-clamp-2 break-words text-[20px] italic text-foreground">
                 {page.title || `Untitled Section ${sectionNumber ?? 1}`}
               </h3>
             </div>
-            <div className="flex shrink-0 items-center gap-2">
-              {isBookmarked && (
-                <Badge variant="secondary" className="h-5 gap-1 px-2">
-                  <BookmarkCheck className="h-3 w-3" />
-                </Badge>
-              )}
-              <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
-                Section {sectionNumber ?? 1}
-              </Badge>
-            </div>
+            {isBookmarked && (
+              <span className="pv-mono inline-flex shrink-0 items-center gap-1 rounded-full border border-border bg-background px-2 py-0.5 text-[10px] uppercase tracking-[0.15em] text-[hsl(var(--pv-text-muted))]">
+                <BookmarkCheck className="h-3 w-3" />
+                bookmark
+              </span>
+            )}
           </button>
 
           {onDelete && (
@@ -58,7 +52,7 @@ export const PageCard = forwardRef<HTMLDivElement, PageItemProps>(({ page, onNav
                   onClick={(e) => {
                     e.stopPropagation();
                   }}
-                  className="h-8 w-8 hover:bg-accent"
+                  className="h-8 w-8 rounded-full text-[hsl(var(--pv-text-muted))] hover:bg-background hover:text-foreground"
                 >
                   <MoreVertical className="h-4 w-4" />
                 </Button>
@@ -83,38 +77,38 @@ export const PageCard = forwardRef<HTMLDivElement, PageItemProps>(({ page, onNav
   }
 
   return (
-    <Card 
+    <div
       ref={ref}
       onClick={() => onNavigate(page.id)}
-      className="group relative cursor-pointer overflow-hidden border border-border/60 bg-card/80 transition-all hover:shadow-md"
+      className="group relative cursor-pointer overflow-hidden rounded-xl border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/40 transition-all hover:border-border hover:bg-[hsl(var(--pv-surface-2))]"
     >
-      <div className="aspect-[3/4] relative">
-        <CardContent className="absolute inset-0 p-4 flex flex-col overflow-hidden">
+      <div className="relative aspect-[3/4]">
+        <div className="absolute inset-0 flex flex-col overflow-hidden p-4">
           {/* Page Header */}
-          <div className="mb-3 border-b border-border/50 pb-3">
-            <div className="flex items-start justify-between gap-2">
-              <h3 className="line-clamp-2 text-base font-medium text-foreground">
+          <div className="mb-3 border-b border-dashed border-[hsl(var(--pv-border-soft))] pb-3">
+            <div className="flex items-baseline justify-between gap-2">
+              <h3 className="pv-serif line-clamp-2 text-[15px] text-foreground">
                 {page.title || `Untitled Page ${page.page_index + 1}`}
               </h3>
               {isBookmarked && (
-                <Badge variant="secondary" className="h-5 shrink-0 gap-1 px-2">
+                <span className="pv-mono inline-flex shrink-0 items-center gap-1 rounded-full border border-border bg-background px-2 py-0.5 text-[10px] uppercase tracking-[0.15em] text-[hsl(var(--pv-text-muted))]">
                   <BookmarkCheck className="h-3 w-3" />
-                </Badge>
+                </span>
               )}
             </div>
           </div>
-          
-          {/* Page Content Preview - Only show for text pages */}
+
+          {/* Page Content Preview */}
           <div className="relative flex-1 overflow-hidden">
             <div
-              className="prose space-y-2 overflow-hidden text-xs text-muted-foreground"
+              className="prose pv-serif space-y-2 overflow-hidden text-[12px] italic text-[hsl(var(--pv-text-muted))]"
               dangerouslySetInnerHTML={{ __html: sanitizeHtml(excerpt) }}
             />
-            <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-card to-transparent" />
+            <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-[hsl(var(--pv-surface-2))] to-transparent" />
           </div>
 
           {/* Footer */}
-          <div className="mt-auto pt-2 flex items-center justify-between text-xs text-muted-foreground">
+          <div className="pv-mono mt-auto flex items-center justify-between pt-2 text-[10.5px] uppercase tracking-[0.15em] text-[hsl(var(--pv-text-faint))]">
             <div className="flex items-center gap-2">
               <span>{wordCount} words</span>
               <AudioPlayer
@@ -123,9 +117,14 @@ export const PageCard = forwardRef<HTMLDivElement, PageItemProps>(({ page, onNav
                 compact={true}
               />
             </div>
-            <span className="ml-auto">Page {page.page_index + 1}</span>
+            <span
+              className="ml-auto"
+              style={{ fontVariantNumeric: "oldstyle-nums" }}
+            >
+              page {page.page_index + 1}
+            </span>
           </div>
-        </CardContent>
+        </div>
       </div>
 
       {onDelete && (
@@ -137,7 +136,7 @@ export const PageCard = forwardRef<HTMLDivElement, PageItemProps>(({ page, onNav
               onClick={(e) => {
                 e.stopPropagation();
               }}
-              className="absolute top-2 right-2 h-8 w-8 opacity-0 transition-opacity hover:bg-accent group-hover:opacity-100"
+              className="absolute right-2 top-2 h-8 w-8 rounded-full text-[hsl(var(--pv-text-muted))] opacity-0 transition-opacity hover:bg-background hover:text-foreground group-hover:opacity-100"
             >
               <MoreVertical className="h-4 w-4" />
             </Button>
@@ -156,6 +155,6 @@ export const PageCard = forwardRef<HTMLDivElement, PageItemProps>(({ page, onNav
           </DropdownMenuContent>
         </DropdownMenu>
       )}
-    </Card>
+    </div>
   );
-}); 
+});

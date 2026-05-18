@@ -17,7 +17,6 @@ import { setPageTitle } from "@/utils/pageTitle";
 import { Helmet } from "react-helmet-async";
 import { executeBookOperation } from "@/lib/book-operations";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { jsonToText, getWordCountFromContent } from "@/utils/tiptapHelpers";
 import { UncommittedChangesBadge } from "./components/UncommittedChangesBadge";
 import { CommitDialog } from "./components/CommitDialog";
@@ -595,15 +594,15 @@ const BookDetails = () => {
               {canEdit && (
                 <div className="absolute top-2 right-2 sm:top-3 sm:right-3 z-10 flex items-center gap-2">
                   {isBetaEnabled && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => navigate(`/books/${bookSlug}/chat`)}
-                    className="h-9 gap-2"
-                  >
-                    <MessageSquare className="h-4 w-4" />
-                    Chat with Book
-                  </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => navigate(`/books/${bookSlug}/chat`)}
+                      className="pv-serif h-9 gap-1.5 rounded-full border-border bg-transparent px-3.5 text-[13px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground"
+                    >
+                      <MessageSquare className="h-3.5 w-3.5" />
+                      Chat with Book
+                    </Button>
                   )}
 
                   <BookActionsBar
@@ -653,34 +652,30 @@ const BookDetails = () => {
                     bookSlug={bookSlug}
                     showCount
                   />
-                  
+
                   {/* Version Badge */}
                   {latestVersion ? (
                     <Button
                       size="sm"
                       variant="outline"
                       onClick={() => navigate(`/books/${bookSlug}/versions`)}
-                      className="h-9 gap-1.5 px-3 text-xs font-mono"
+                      className="pv-mono h-9 gap-1.5 rounded-full border-border bg-transparent px-3.5 text-[12px] tabular-nums text-[hsl(var(--pv-text-muted))] hover:text-foreground"
                     >
                       <History className="h-3.5 w-3.5" />
                       v{latestVersion.version_number}
                     </Button>
                   ) : (
-                    <Badge
-                      variant="outline"
-                      className="h-9 gap-1.5 border-muted-foreground/20 bg-muted/50 px-3 text-xs text-muted-foreground"
-                    >
+                    <span className="pv-serif inline-flex h-9 items-center gap-1.5 rounded-full border border-border bg-transparent px-3.5 text-[13px] italic text-[hsl(var(--pv-text-faint))]">
                       <History className="h-3.5 w-3.5" />
                       No version
-                    </Badge>
+                    </span>
                   )}
-                  
+
                   {/* Save Button */}
                   <Button
                     size="sm"
-                    variant="outline"
                     onClick={() => setIsCommitDialogOpen(true)}
-                    className="h-9 gap-1.5 px-3 text-xs"
+                    className="pv-serif h-9 gap-1.5 rounded-full bg-foreground px-4 text-[13px] font-normal text-background hover:opacity-90"
                   >
                     <GitCommit className="h-3.5 w-3.5" />
                     Save this version

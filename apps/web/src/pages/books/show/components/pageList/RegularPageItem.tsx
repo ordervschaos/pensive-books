@@ -1,6 +1,5 @@
 import { Trash2, BookmarkCheck, MoreVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { PageItemProps } from "./types";
 import { forwardRef } from "react";
 import { getWordCountFromContent } from "@/utils/tiptapHelpers";
@@ -18,28 +17,27 @@ export const RegularPageItem = forwardRef<HTMLDivElement, PageItemProps>(({ page
 
   if (page.page_type === "section") {
     return (
-      <div ref={ref} className="flex items-center gap-2 border-b border-border px-4 py-3 last:border-0">
+      <div
+        ref={ref}
+        className="flex items-center gap-2 border-b border-dashed border-[hsl(var(--pv-border-soft))] px-3 py-3 last:border-0"
+      >
         <button
           type="button"
-          className="flex flex-1 items-center justify-between gap-4 rounded-md bg-muted/40 px-4 py-3 text-left transition-colors hover:bg-accent/40"
+          className="flex flex-1 items-baseline justify-between gap-4 rounded-xl bg-[hsl(var(--pv-surface-2))]/60 px-4 py-3 text-left transition-colors hover:bg-[hsl(var(--pv-surface-2))]"
           onClick={() => onNavigate(page.id)}
         >
           <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Section</p>
-            <h3 className="mt-1 line-clamp-2 break-words text-sm font-semibold uppercase tracking-wide text-foreground">
+            <p className="pv-eyebrow">Section {sectionNumber ?? 1}</p>
+            <h3 className="pv-display mt-1 line-clamp-2 break-words text-[20px] italic text-foreground">
               {page.title || `Untitled Section ${sectionNumber ?? 1}`}
             </h3>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            {isBookmarked && (
-              <Badge variant="secondary" className="h-5 gap-1 px-2">
-                <BookmarkCheck className="h-3 w-3" />
-              </Badge>
-            )}
-            <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
-              Section {sectionNumber ?? 1}
-            </Badge>
-          </div>
+          {isBookmarked && (
+            <span className="pv-mono inline-flex shrink-0 items-center gap-1 rounded-full border border-border bg-background px-2 py-0.5 text-[10px] uppercase tracking-[0.15em] text-[hsl(var(--pv-text-muted))]">
+              <BookmarkCheck className="h-3 w-3" />
+              bookmark
+            </span>
+          )}
         </button>
         {onDelete && (
           <DropdownMenu>
@@ -50,7 +48,7 @@ export const RegularPageItem = forwardRef<HTMLDivElement, PageItemProps>(({ page
                 onClick={(e) => {
                   e.stopPropagation();
                 }}
-                className="h-8 w-8 hover:bg-accent"
+                className="h-8 w-8 rounded-full text-[hsl(var(--pv-text-muted))] hover:bg-[hsl(var(--pv-surface-2))] hover:text-foreground"
               >
                 <MoreVertical className="h-4 w-4" />
               </Button>
@@ -74,26 +72,33 @@ export const RegularPageItem = forwardRef<HTMLDivElement, PageItemProps>(({ page
   }
 
   return (
-    <div 
+    <div
       ref={ref}
-      className="flex items-center justify-between gap-4 border-b border-border px-6 py-4 transition-colors hover:bg-accent/30 last:border-0"
+      className="flex items-center justify-between gap-4 border-b border-dashed border-[hsl(var(--pv-border-soft))] px-6 py-3.5 transition-colors hover:bg-[hsl(var(--pv-surface-2))]/50 last:border-0"
     >
-      <div 
+      <div
         className="flex-1 cursor-pointer"
         onClick={() => onNavigate(page.id)}
       >
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex min-w-0 items-center gap-2">
-            <h3 className="line-clamp-2 break-words text-base font-medium text-foreground">
+        <div className="flex items-baseline justify-between gap-4">
+          <div className="flex min-w-0 items-baseline gap-2.5">
+            <span
+              className="pv-mono shrink-0 text-[11px] tabular-nums text-[hsl(var(--pv-text-faint))]"
+              style={{ fontVariantNumeric: "oldstyle-nums" }}
+            >
+              {page.page_index + 1}.
+            </span>
+            <h3 className="pv-serif line-clamp-2 break-words text-[15px] text-foreground">
               {page.title || `Untitled Page ${page.page_index + 1}`}
             </h3>
             {isBookmarked && (
-              <Badge variant="secondary" className="h-5 gap-1 px-2">
+              <span className="pv-mono inline-flex shrink-0 items-center gap-1 rounded-full border border-border bg-background px-2 py-0.5 text-[10px] uppercase tracking-[0.15em] text-[hsl(var(--pv-text-muted))]">
                 <BookmarkCheck className="h-3 w-3" />
-              </Badge>
+                bookmark
+              </span>
             )}
           </div>
-          <span className="shrink-0 text-sm text-muted-foreground">
+          <span className="pv-mono shrink-0 text-[11px] uppercase tracking-[0.15em] text-[hsl(var(--pv-text-faint))]">
             {wordCount} words
           </span>
         </div>
@@ -107,7 +112,7 @@ export const RegularPageItem = forwardRef<HTMLDivElement, PageItemProps>(({ page
               onClick={(e) => {
                 e.stopPropagation();
               }}
-              className="h-8 w-8 hover:bg-accent"
+              className="h-8 w-8 rounded-full text-[hsl(var(--pv-text-muted))] hover:bg-[hsl(var(--pv-surface-2))] hover:text-foreground"
             >
               <MoreVertical className="h-4 w-4" />
             </Button>
@@ -128,4 +133,4 @@ export const RegularPageItem = forwardRef<HTMLDivElement, PageItemProps>(({ page
       )}
     </div>
   );
-}); 
+});

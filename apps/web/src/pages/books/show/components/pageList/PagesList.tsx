@@ -1,7 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   Move,
   LayoutList,
@@ -11,7 +9,7 @@ import {
   MoreVertical,
   MessageSquare,
   X,
-  List
+  List,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -21,6 +19,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect, useRef } from "react";
+import { cn } from "@/lib/utils";
 import {
   DndContext,
   closestCenter,
@@ -271,49 +270,57 @@ export const PagesList = ({
     }
   };
 
+  const viewOptions: { value: 'grid' | 'list' | 'outline'; label: string; Icon: typeof LayoutGrid }[] = [
+    { value: 'grid', label: 'Grid', Icon: LayoutGrid },
+    { value: 'list', label: 'List', Icon: LayoutList },
+    { value: 'outline', label: 'Outline', Icon: List },
+  ];
+
   return (
-    <Card className="mt-6 overflow-hidden">
-      <CardContent className="p-0">
-        <div className="border-b border-border p-4">
+    <div className="mt-6 overflow-hidden rounded-2xl border border-border bg-[hsl(var(--pv-surface-2))]/40">
+        <div className="border-b border-[hsl(var(--pv-border-soft))] px-5 py-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-wrap items-center gap-2">
-              <ToggleGroup
-                type="single"
-                value={viewMode}
-                onValueChange={(value) => {
-                  if (value) {
-                    setViewMode(value as 'list' | 'grid' | 'outline');
-                  }
-                }}
-                variant="outline"
-                size="sm"
-                className="rounded-md border border-border p-1"
-              >
-                <ToggleGroupItem value="grid" disabled={isReordering} className="gap-1.5 rounded-md px-3" aria-label="Grid view">
-                  <LayoutGrid className="h-4 w-4" />
-                  <span className="hidden sm:inline">Grid</span>
-                </ToggleGroupItem>
-                <ToggleGroupItem value="list" disabled={isReordering} className="gap-1.5 rounded-md px-3" aria-label="List view">
-                  <LayoutList className="h-4 w-4" />
-                  <span className="hidden sm:inline">List</span>
-                </ToggleGroupItem>
-                <ToggleGroupItem value="outline" disabled={isReordering} className="gap-1.5 rounded-md px-3" aria-label="Outline view">
-                  <List className="h-4 w-4" />
-                  <span className="hidden sm:inline">Outline</span>
-                </ToggleGroupItem>
-              </ToggleGroup>
+              <nav className="flex flex-wrap items-center gap-1.5" aria-label="View mode">
+                {viewOptions.map(({ value, label, Icon }) => {
+                  const isActive = viewMode === value;
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setViewMode(value)}
+                      disabled={isReordering}
+                      aria-pressed={isActive}
+                      aria-label={`${label} view`}
+                      className={cn(
+                        "pv-serif inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-[13px] transition-colors disabled:cursor-not-allowed disabled:opacity-40",
+                        isActive
+                          ? "border-foreground bg-foreground text-background"
+                          : "border-border bg-transparent text-[hsl(var(--pv-text-muted))] hover:border-foreground/40 hover:text-foreground"
+                      )}
+                    >
+                      <Icon className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">{label}</span>
+                    </button>
+                  );
+                })}
+              </nav>
 
               {/* Chat button - available for everyone in beta */}
               {onChatToggle && isBetaEnabled && (
-                <Button
-                  variant={hasActiveChat ? "secondary" : "outline"}
-                  size="sm"
-                  className="hidden h-9 gap-2 sm:inline-flex"
+                <button
+                  type="button"
                   onClick={onChatToggle}
+                  className={cn(
+                    "pv-serif hidden h-9 items-center gap-1.5 rounded-full border px-3.5 text-[13px] transition-colors sm:inline-flex",
+                    hasActiveChat
+                      ? "border-foreground bg-foreground text-background"
+                      : "border-border bg-transparent text-[hsl(var(--pv-text-muted))] hover:border-foreground/40 hover:text-foreground"
+                  )}
                 >
-                  <MessageSquare className="h-4 w-4" />
+                  <MessageSquare className="h-3.5 w-3.5" />
                   <span>Chat</span>
-                </Button>
+                </button>
               )}
             </div>
 
@@ -322,8 +329,12 @@ export const PagesList = ({
                 <div className="sm:hidden">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="sm" className="h-9 gap-2 px-3">
-                        <MoreVertical className="h-4 w-4" />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="pv-serif h-9 gap-1.5 rounded-full border-border bg-transparent px-3.5 text-[13px] text-[hsl(var(--pv-text-muted))] hover:text-foreground"
+                      >
+                        <MoreVertical className="h-3.5 w-3.5" />
                         <span>Manage</span>
                       </Button>
                     </DropdownMenuTrigger>
@@ -356,24 +367,32 @@ export const PagesList = ({
                 </div>
 
                 <div className="hidden sm:flex items-center gap-2">
-                  <Button
-                    variant={isDeleteMode ? "secondary" : "outline"}
-                    size="sm"
-                    className="h-9 gap-2"
+                  <button
+                    type="button"
                     onClick={toggleDeleteMode}
+                    className={cn(
+                      "pv-serif inline-flex h-9 items-center gap-1.5 rounded-full border px-3.5 text-[13px] transition-colors",
+                      isDeleteMode
+                        ? "border-foreground bg-foreground text-background"
+                        : "border-border bg-transparent text-[hsl(var(--pv-text-muted))] hover:border-foreground/40 hover:text-foreground"
+                    )}
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <Trash2 className="h-3.5 w-3.5" />
                     <span>{isDeleteMode ? 'Exit Delete' : 'Delete'}</span>
-                  </Button>
-                  <Button
-                    variant={isReordering ? "secondary" : "outline"}
-                    size="sm"
-                    className="h-9 gap-2"
+                  </button>
+                  <button
+                    type="button"
                     onClick={toggleReorderMode}
+                    className={cn(
+                      "pv-serif inline-flex h-9 items-center gap-1.5 rounded-full border px-3.5 text-[13px] transition-colors",
+                      isReordering
+                        ? "border-foreground bg-foreground text-background"
+                        : "border-border bg-transparent text-[hsl(var(--pv-text-muted))] hover:border-foreground/40 hover:text-foreground"
+                    )}
                   >
-                    <Move className="h-4 w-4" />
+                    <Move className="h-3.5 w-3.5" />
                     <span>{isReordering ? 'Exit Reorder' : 'Reorder'}</span>
-                  </Button>
+                  </button>
                 </div>
               </>
             )}
@@ -381,12 +400,18 @@ export const PagesList = ({
         </div>
 
         {activeModeLabel && (
-          <div className="flex items-center justify-between border-b border-border/60 bg-accent/40 px-4 py-2 text-sm">
-            <span className="font-medium text-accent-foreground">{activeModeLabel} mode is active</span>
-            <Button variant="ghost" size="sm" className="h-8 gap-1.5 px-2" onClick={exitActiveMode}>
-              <X className="h-4 w-4" />
+          <div className="flex items-center justify-between border-b border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))] px-5 py-2.5">
+            <span className="pv-mono text-[10.5px] uppercase tracking-[0.18em] text-[hsl(var(--pv-text-muted))]">
+              {activeModeLabel} mode is active
+            </span>
+            <button
+              type="button"
+              onClick={exitActiveMode}
+              className="pv-serif inline-flex h-8 items-center gap-1 rounded-full px-2.5 text-[13px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground"
+            >
+              <X className="h-3.5 w-3.5" />
               Exit
-            </Button>
+            </button>
           </div>
         )}
 
@@ -425,26 +450,7 @@ export const PagesList = ({
                 <>
                   {/* Add New Page card/list item at the beginning (only if >3 pages) */}
                   {canEdit && !isDeleteMode && !isReordering && items.length > 3 && (
-                    viewMode === 'list' ? (
-                      <div className="flex items-center p-3 border-b border-border group hover:bg-accent/50 transition-colors cursor-pointer" onClick={() => createNewPage('text')}>
-                        <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 mr-3">
-                          <Plus className="h-4 w-4 text-primary" />
-                        </div>
-                        <div className="flex-1">
-                          <p className="font-medium text-primary">Add New Page</p>
-                        </div>
-                      </div>
-                    ) : (
-                      <div
-                        className="flex flex-col items-center justify-center border border-dashed border-primary/40 rounded-md p-6 h-full min-h-[180px] hover:bg-accent/50 transition-colors cursor-pointer"
-                        onClick={() => createNewPage('text')}
-                      >
-                        <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-3">
-                          <Plus className="h-6 w-6 text-primary" />
-                        </div>
-                        <p className="font-medium text-primary text-center">Add New Page</p>
-                      </div>
-                    )
+                    <AddPageRow viewMode={viewMode} onClick={() => createNewPage('text')} />
                   )}
 
                   {items.map((page) => (
@@ -475,48 +481,59 @@ export const PagesList = ({
 
                   {/* Add New Page card/list item at the end (always shown) */}
                   {canEdit && !isDeleteMode && !isReordering && (
-                    viewMode === 'list' ? (
-                      <div className="flex items-center p-3 border-b border-border group hover:bg-accent/50 transition-colors cursor-pointer" onClick={() => createNewPage('text')}>
-                        <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 mr-3">
-                          <Plus className="h-4 w-4 text-primary" />
-                        </div>
-                        <div className="flex-1">
-                          <p className="font-medium text-primary">Add New Page</p>
-                        </div>
-                      </div>
-                    ) : (
-                      <div
-                        className="flex flex-col items-center justify-center border border-dashed border-primary/40 rounded-md p-6 h-full min-h-[180px] hover:bg-accent/50 transition-colors cursor-pointer"
-                        onClick={() => createNewPage('text')}
-                      >
-                        <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-3">
-                          <Plus className="h-6 w-6 text-primary" />
-                        </div>
-                        <p className="font-medium text-primary text-center">Add New Page</p>
-                      </div>
-                    )
+                    <AddPageRow viewMode={viewMode} onClick={() => createNewPage('text')} />
                   )}
                 </>
               )}
             </div>
           )}
 
-      </CardContent>
 
       {/* Floating Exit Mode Button */}
       {activeModeLabel && (
         <div className="fixed bottom-6 right-6 z-50">
           <Button
             size="lg"
-            variant="secondary"
             onClick={exitActiveMode}
-            className="flex items-center gap-2 rounded-full px-6 py-6 text-base font-semibold shadow-lg transition-all hover:shadow-xl"
+            className="pv-serif flex items-center gap-2 rounded-full bg-foreground px-6 py-6 text-base font-normal italic text-background shadow-lg transition-all hover:opacity-90 hover:shadow-xl"
           >
             <X className="h-5 w-5" />
             <span>Exit {activeModeLabel}</span>
           </Button>
         </div>
       )}
-    </Card>
+    </div>
   );
-}; 
+};
+
+function AddPageRow({
+  viewMode,
+  onClick,
+}: {
+  viewMode: 'list' | 'grid' | 'outline';
+  onClick: () => void;
+}) {
+  if (viewMode === 'list') {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="pv-serif flex w-full items-center gap-3 border-b border-dashed border-border px-5 py-3 text-left italic text-[hsl(var(--pv-text-muted))] transition-colors hover:bg-[hsl(var(--pv-surface-2))]/50 hover:text-foreground"
+      >
+        <Plus className="h-4 w-4" />
+        <span className="text-[14px]">Add a new page</span>
+      </button>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="pv-serif flex h-full min-h-[180px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-transparent p-6 italic text-[hsl(var(--pv-text-muted))] transition-colors hover:bg-[hsl(var(--pv-surface-2))]/50 hover:text-foreground"
+    >
+      <Plus className="h-6 w-6" />
+      <span className="text-[14px]">Add a new page</span>
+    </button>
+  );
+}

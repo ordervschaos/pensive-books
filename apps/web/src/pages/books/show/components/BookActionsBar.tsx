@@ -63,8 +63,12 @@ export const BookActionsBar = ({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" className="h-9 gap-2">
-          <MoreHorizontal className="h-4 w-4" />
+        <Button
+          variant="outline"
+          size="sm"
+          className="pv-serif h-9 gap-1.5 rounded-full border-border bg-transparent px-3.5 text-[13px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground"
+        >
+          <MoreHorizontal className="h-3.5 w-3.5" />
           <span>Actions</span>
         </Button>
       </DropdownMenuTrigger>
