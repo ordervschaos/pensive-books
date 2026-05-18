@@ -8,7 +8,8 @@ import {
   Sun,
   Moon,
   Coffee,
-  Package
+  Package,
+  BookOpen
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -99,6 +100,7 @@ export function PageSettingsDrawer({ onSearchOpen }: PageSettingsDrawerProps) {
   };
 
   const themes = [
+    { name: "paper" as const, label: "Paper", icon: BookOpen },
     { name: "default" as const, label: "Default", icon: Palette },
     { name: "coffee" as const, label: "Coffee", icon: Coffee },
     { name: "mujiyish" as const, label: "Mujiyish", icon: Package },

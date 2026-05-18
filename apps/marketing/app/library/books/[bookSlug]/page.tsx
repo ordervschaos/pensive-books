@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { Clock3, LibraryBig } from "lucide-react";
 import { ContinueReadingButton } from "@/components/ContinueReadingButton";
 import { getPublishedBook } from "@/lib/public-books";
 import { slugifyIdTitle } from "@/lib/pensive";
@@ -58,105 +57,148 @@ export default async function PublishedBookPage({ params }: Props) {
     redirect(`/library/books/${canonicalBookSlug}`);
   }
 
-  const firstPage = book.pages[0];
   const publishedDate = formatPublishedDate(book.published_at);
+  const pageCount = book.pages.length;
+  // Rough estimate: ~3 minutes per page; this is intentionally an approximation
+  // since the data set doesn't track word counts.
+  const minutes = pageCount * 3;
+  const hours = Math.floor(minutes / 60);
+  const remMinutes = minutes % 60;
 
   return (
-    <main className="container mx-auto max-w-6xl px-4 py-8">
-      <div className="mb-6">
-        <Link
-          href="/library"
-          className="text-sm text-muted-foreground transition-colors hover:text-foreground"
-        >
-          ← Back to library
-        </Link>
-      </div>
+    <main className="mx-auto max-w-[760px] px-6 pb-24 pt-14">
+      <Link
+        href="/library"
+        className="pv-serif text-[14px] italic text-[hsl(var(--pv-text-muted))] transition-colors hover:text-foreground"
+      >
+        ← back to the library
+      </Link>
 
-      <section className="grid gap-8 overflow-hidden rounded-3xl border bg-gradient-to-b from-card/60 to-card/30 p-6 shadow-xl backdrop-blur md:grid-cols-[280px_minmax(0,1fr)] md:p-8">
-        <div className="overflow-hidden rounded-2xl border bg-muted">
+      {/* Cover */}
+      <div className="mt-9 flex justify-center">
+        <div className="relative h-[312px] w-[240px] overflow-hidden rounded-[3px] border border-border bg-[hsl(var(--pv-surface-2))] shadow-[0_24px_50px_rgba(0,0,0,0.12)]">
           {book.cover_url ? (
             <img
               src={book.cover_url}
               alt={book.name}
-              className="aspect-[3/4] h-full w-full object-cover"
+              className="h-full w-full object-cover"
             />
           ) : (
-            <div className="flex aspect-[3/4] items-center justify-center p-8 text-center">
-              <h1 className="text-3xl font-semibold text-muted-foreground">
+            <div
+              className="flex h-full w-full items-center justify-center px-4 text-center"
+              style={{
+                backgroundImage:
+                  "repeating-linear-gradient(135deg, rgba(0,0,0,0.04) 0 14px, rgba(0,0,0,0.00) 14px 28px), linear-gradient(135deg, hsl(var(--pv-surface-2)), hsl(var(--pv-border-soft)))",
+              }}
+            >
+              <span className="pv-display text-[22px] italic leading-tight text-foreground">
                 {book.name}
-              </h1>
+              </span>
             </div>
           )}
         </div>
+      </div>
 
-        <div className="space-y-6">
-          <div className="space-y-3">
-            <h1 className="font-serif text-4xl font-bold text-primary md:text-5xl">
-              {book.name}
-            </h1>
-            {book.subtitle && (
-              <p className="text-xl text-muted-foreground">{book.subtitle}</p>
-            )}
-            {book.author && (
-              <p className="text-base text-muted-foreground">by {book.author}</p>
-            )}
-          </div>
+      {/* Title block */}
+      <div className="mt-10 text-center">
+        <div className="pv-eyebrow">a book on pensive</div>
+        <h1 className="pv-display mt-4 text-[52px] font-normal leading-none tracking-tight text-foreground md:text-[64px]">
+          {book.name}
+        </h1>
+        {book.subtitle && (
+          <p className="pv-serif mt-3 text-[20px] font-normal italic leading-snug text-[hsl(var(--pv-text-muted))] md:text-[22px]">
+            {book.subtitle}
+          </p>
+        )}
+        {book.author && (
+          <p className="pv-serif mt-5 text-[16px] text-foreground">
+            by {book.author}
+          </p>
+        )}
+      </div>
 
-          <div className="flex flex-wrap gap-3 text-sm text-muted-foreground">
-            <span className="inline-flex items-center gap-2 rounded-full bg-muted px-3 py-1.5">
-              <LibraryBig className="h-4 w-4" />
-              {book.pages.length} {book.pages.length === 1 ? "page" : "pages"}
+      {/* Meta line */}
+      <div className="pv-mono mt-6 flex flex-wrap items-center justify-center gap-2 text-[11px] uppercase tracking-[0.15em] text-[hsl(var(--pv-text-muted))]">
+        <span>
+          {pageCount} {pageCount === 1 ? "page" : "pages"}
+        </span>
+        {minutes > 0 && (
+          <>
+            <Dot />
+            <span>
+              ~{hours > 0 ? `${hours}h ` : ""}
+              {remMinutes}m
             </span>
-            {publishedDate && (
-              <span className="inline-flex items-center gap-2 rounded-full bg-muted px-3 py-1.5">
-                <Clock3 className="h-4 w-4" />
-                Published {publishedDate}
-              </span>
-            )}
-          </div>
+          </>
+        )}
+        {publishedDate && (
+          <>
+            <Dot />
+            <span>Published {publishedDate}</span>
+          </>
+        )}
+      </div>
 
-          <div className="flex flex-wrap gap-3">
-            <ContinueReadingButton
-              bookId={book.id}
-              bookSlug={canonicalBookSlug}
-              pages={book.pages.map((page) => ({
-                id: page.id,
-                title: page.title,
-              }))}
-            />
-            {firstPage && (
-              <Link
-                href={`/library/books/${canonicalBookSlug}/pages/${slugifyIdTitle(firstPage.id, firstPage.title)}`}
-                className="inline-flex items-center justify-center rounded-md border border-input px-4 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
-              >
-                Read from the start
-              </Link>
-            )}
-          </div>
-        </div>
-      </section>
+      {/* Primary actions */}
+      <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
+        <ContinueReadingButton
+          bookId={book.id}
+          bookSlug={canonicalBookSlug}
+          pages={book.pages.map((page) => ({
+            id: page.id,
+            title: page.title,
+          }))}
+        />
+        {book.pages[0] && (
+          <Link
+            href={`/library/books/${canonicalBookSlug}/pages/${slugifyIdTitle(book.pages[0].id, book.pages[0].title)}`}
+            className="pv-serif inline-flex items-center justify-center rounded-full border border-border bg-transparent px-6 py-3 text-[14px] tracking-[0.01em] text-foreground transition-colors hover:bg-[hsl(var(--pv-surface-2))]"
+          >
+            Read from the start
+          </Link>
+        )}
+      </div>
 
+      {/* Contents */}
       {book.pages.length > 0 && (
-        <section className="mt-8 rounded-3xl border bg-card shadow-sm">
-          <div className="border-b px-6 py-4 md:px-8">
-            <h2 className="text-lg font-semibold">Table of Contents</h2>
-          </div>
-          <div className="divide-y">
+        <>
+          <hr className="my-16 border-t border-border" />
+          <div className="pv-eyebrow text-center">Contents</div>
+          <ol className="m-0 mt-5 list-none p-0">
             {book.pages.map((page, index) => (
-              <Link
+              <li
                 key={page.id}
-                href={`/library/books/${canonicalBookSlug}/pages/${slugifyIdTitle(page.id, page.title)}`}
-                className="flex items-center gap-4 px-6 py-3 transition-colors hover:bg-accent md:px-8"
+                className="border-b border-dashed border-border"
               >
-                <span className="w-8 shrink-0 text-sm text-muted-foreground">
-                  {index + 1}.
-                </span>
-                <span className="text-sm font-medium">{page.title || "Untitled"}</span>
-              </Link>
+                <Link
+                  href={`/library/books/${canonicalBookSlug}/pages/${slugifyIdTitle(page.id, page.title)}`}
+                  className="pv-serif grid grid-cols-[36px_1fr_auto] items-baseline gap-4 px-1 py-4 text-[18px] text-foreground transition-colors hover:bg-[hsl(var(--pv-surface-2))]"
+                >
+                  <span
+                    className="text-[hsl(var(--pv-text-faint))]"
+                    style={{ fontVariantNumeric: "oldstyle-nums" }}
+                  >
+                    {index + 1}.
+                  </span>
+                  <span>{page.title || "Untitled"}</span>
+                  <span className="pv-mono text-[11px] uppercase tracking-[0.1em] text-[hsl(var(--pv-text-faint))]">
+                    page {index + 1}
+                  </span>
+                </Link>
+              </li>
             ))}
-          </div>
-        </section>
+          </ol>
+        </>
       )}
     </main>
+  );
+}
+
+function Dot() {
+  return (
+    <span
+      aria-hidden
+      className="inline-block h-[3px] w-[3px] rounded-full bg-[hsl(var(--pv-text-faint))]"
+    />
   );
 }

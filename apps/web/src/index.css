@@ -2,7 +2,10 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
- 
+
+/* Paper-minimal redesign typefaces. Loaded once at base so theme classes can swap variants. */
+@import url("https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;0,6..72,700;1,6..72,400;1,6..72,500&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap");
+
 @layer base {
   :root {
     /* ============================================
@@ -271,6 +274,80 @@
     --audio-block-hover-bg-opacity: 0.1;
     --audio-block-hover-shadow-opacity: 0.18;
   }
+
+  /* ============================================
+     PAPER THEME (Light)
+     ----------------------------------------------
+     The redesign baseline: warm cream surface,
+     deep ink text, maroon accent. Maps onto
+     shadcn tokens so existing components inherit
+     the look without needing markup changes.
+     ============================================ */
+  .theme-paper {
+    --pv-bg: 43 27% 94%;          /* #f6f3ec */
+    --pv-surface: 43 27% 94%;
+    --pv-surface-2: 40 27% 91%;   /* #efeae0 */
+    --pv-border: 40 24% 81%;      /* #d9d3c5 */
+    --pv-border-soft: 40 24% 86%;
+    --pv-text: 40 13% 11%;        /* #1f1d18 */
+    --pv-text-muted: 40 9% 40%;   /* #6f6a5e */
+    --pv-text-faint: 40 14% 60%;  /* #a39d8e */
+    --pv-accent: 8 58% 30%;       /* #7a2d20 */
+    --pv-accent-soft: 8 58% 30%;
+
+    --background: var(--pv-bg);
+    --foreground: var(--pv-text);
+    --card: var(--pv-surface);
+    --card-foreground: var(--pv-text);
+    --popover: var(--pv-surface);
+    --popover-foreground: var(--pv-text);
+    --primary: var(--pv-text);
+    --primary-foreground: var(--pv-bg);
+    --secondary: var(--pv-surface-2);
+    --secondary-foreground: var(--pv-text);
+    --muted: var(--pv-surface-2);
+    --muted-foreground: var(--pv-text-muted);
+    --accent: var(--pv-accent);
+    --accent-foreground: var(--pv-bg);
+    --destructive: 0 65% 46%;
+    --destructive-foreground: var(--pv-bg);
+    --border: var(--pv-border);
+    --input: var(--pv-border);
+    --ring: var(--pv-text);
+
+    --color-gray-900: #1f1d18;
+    --color-gray-700: #3a362d;
+    --color-gray-600: #6f6a5e;
+    --color-gray-500: #8a8478;
+    --color-gray-300: #c5bca8;
+    --color-gray-200: #d9d3c5;
+    --color-gray-100: #efeae0;
+  }
+
+  /* ============================================
+     PAPER THEME (Dark) — the "ink" variant
+     ============================================ */
+  .theme-paper.dark {
+    --pv-bg: 216 12% 5%;          /* #0b0c0e */
+    --pv-surface: 220 9% 8%;
+    --pv-surface-2: 218 11% 11%;
+    --pv-border: 218 11% 16%;
+    --pv-border-soft: 218 11% 12%;
+    --pv-text: 40 35% 91%;        /* #f1ece2 */
+    --pv-text-muted: 40 4% 53%;
+    --pv-text-faint: 40 7% 33%;
+    --pv-accent: 31 53% 65%;      /* #d4a574 */
+    --pv-accent-soft: 31 53% 65%;
+
+    --color-gray-900: #f1ece2;
+    --color-gray-700: #c5bca8;
+    --color-gray-600: #8e8a82;
+    --color-gray-500: #6f6a5e;
+    --color-gray-300: #3a362d;
+    --color-gray-200: #23262c;
+    --color-gray-100: #131316;
+  }
+
 /* ============================================
    MUJI THEME (Light)
    ============================================ */
@@ -489,6 +566,40 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+
+  /* Paper theme adopts serif as the base typeface across the app. Other
+     themes keep the system sans default that ships with shadcn. Matches the
+     marketing app's body shaping (ss01 + kern) so Newsreader renders the
+     same on both surfaces. */
+  .theme-paper body {
+    font-family: "Newsreader", "Iowan Old Style", Georgia, serif;
+    font-feature-settings: "ss01", "kern";
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+@layer utilities {
+  /* Paper-minimal typography helpers, mirrored from the marketing app so the
+     authoring side renders the same redesign vocabulary. */
+  .pv-serif {
+    font-family: "Newsreader", "Iowan Old Style", Georgia, serif;
+  }
+  .pv-display {
+    font-family: "Instrument Serif", "Newsreader", Georgia, serif;
+  }
+  .pv-mono {
+    font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  }
+  .pv-sans {
+    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Segoe UI", system-ui, sans-serif;
+  }
+  .pv-eyebrow {
+    font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: hsl(var(--pv-text-faint));
   }
 }
 

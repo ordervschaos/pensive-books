@@ -200,6 +200,16 @@ export default function Index() {
     { value: 'most-pages', label: 'Most pages' },
   ];
 
+  const totalBooks = filterCounts.all;
+  const publishedCount = filterCounts.published;
+  const privateCount = filterCounts.private;
+
+  const todayLabel = new Intl.DateTimeFormat("en", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  }).format(new Date());
+
   return (
     <div className="relative">
       {loading && (
@@ -209,12 +219,54 @@ export default function Index() {
           </div>
         </div>
       )}
-      <div className="container relative mx-auto max-w-7xl px-4 py-8 space-y-10">
+      <div className="container relative mx-auto max-w-7xl px-6 py-14 space-y-14 md:px-12">
+        {/* Masthead — "your desk" */}
+        <header className="flex flex-col items-start justify-between gap-8 md:flex-row md:items-end">
+          <div>
+            <div className="pv-eyebrow">
+              The desk · {todayLabel} · private to you
+            </div>
+            <h1 className="pv-display mt-3 text-[44px] font-normal italic leading-[1.0] tracking-tight text-foreground md:text-[60px]">
+              Your desk.
+            </h1>
+            <p className="pv-serif mt-3.5 max-w-[520px] text-[17px] italic leading-snug text-[hsl(var(--pv-text-muted))]">
+              Manuscripts in progress, drafts to return to, and the few you&apos;ve sent off to the Library.
+            </p>
+          </div>
+          <div className="flex flex-row gap-7 md:gap-8">
+            {[
+              { n: totalBooks, l: "books at the desk" },
+              { n: privateCount, l: "private drafts" },
+              { n: publishedCount, l: "in the Library" },
+            ].map((s) => (
+              <div key={s.l} className="text-left md:text-right">
+                <div
+                  className="pv-display text-[28px] leading-none text-foreground"
+                  style={{ fontVariantNumeric: "oldstyle-nums" }}
+                >
+                  {loading ? "—" : s.n}
+                </div>
+                <div className="pv-mono mt-1.5 text-[10.5px] uppercase tracking-[0.15em] text-[hsl(var(--pv-text-faint))]">
+                  {s.l}
+                </div>
+              </div>
+            ))}
+          </div>
+        </header>
+
         {/* Recent Books — top priority */}
         <RecentBooksCard />
 
         {/* Toolbar */}
         <div className="space-y-5">
+          <div className="flex items-baseline justify-between gap-4">
+            <div className="pv-display text-[26px] italic tracking-tight text-foreground md:text-[30px]">
+              Your manuscripts
+            </div>
+            <span className="pv-mono text-[11px] uppercase tracking-[0.15em] text-[hsl(var(--pv-text-faint))]">
+              {loading ? "" : `${totalBooks} ${totalBooks === 1 ? "book" : "books"}`}
+            </span>
+          </div>
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             {/* Search */}
             <div className="relative min-w-0 flex-1 lg:max-w-md">
@@ -280,16 +332,16 @@ export default function Index() {
               <Button
                 onClick={() => navigate("/books/new")}
                 size="sm"
-                className="h-10 rounded-md px-4 text-sm font-medium shadow-sm"
+                className="pv-serif h-10 rounded-full bg-foreground px-5 text-[14px] font-normal tracking-[0.01em] text-background hover:opacity-90"
               >
                 <Plus className="mr-1.5 h-4 w-4" />
-                New book
+                Start a new book
               </Button>
             </div>
           </div>
 
-          {/* Filter pills */}
-          <div className="flex flex-wrap gap-2">
+          {/* Filter pills — paper minimal: italic + 1px underline on active */}
+          <nav className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
             {filterOptions.map((filter) => {
               const isActive = activeFilter === filter.value;
               return (
@@ -297,18 +349,20 @@ export default function Index() {
                   key={filter.value}
                   onClick={() => setActiveFilter(filter.value)}
                   className={cn(
-                    "group inline-flex h-8 items-center gap-2 rounded-full border px-3.5 text-xs font-medium transition-all",
+                    "pv-serif group inline-flex items-baseline gap-1.5 pb-0.5 text-[15px] transition-colors",
                     isActive
-                      ? "border-foreground/80 bg-foreground text-background shadow-sm"
-                      : "border-border/60 bg-transparent text-muted-foreground hover:border-border hover:text-foreground"
+                      ? "italic text-foreground"
+                      : "text-[hsl(var(--pv-text-muted))] hover:text-foreground"
                   )}
+                  style={{
+                    borderBottom: isActive ? "1px solid hsl(var(--pv-text))" : "1px solid transparent",
+                  }}
                 >
                   <span>{filter.label}</span>
                   <span
                     className={cn(
-                      "inline-block min-w-[2.5ch] text-right text-[11px] tabular-nums",
+                      "pv-mono text-[11px] not-italic tabular-nums text-[hsl(var(--pv-text-faint))]",
                       filter.count === undefined && "opacity-0",
-                      isActive ? "text-primary-foreground/70" : "text-muted-foreground/70"
                     )}
                   >
                     {filter.count ?? 0}
@@ -316,7 +370,7 @@ export default function Index() {
                 </button>
               );
             })}
-          </div>
+          </nav>
         </div>
 
         {/* Unified Book Grid */}
@@ -334,11 +388,11 @@ export default function Index() {
               ))}
             </div>
           ) : filteredAndSortedBooks.length === 0 ? (
-            <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border/60 bg-card/30 py-16 text-center">
-              <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted/50">
-                <BookOpen className="h-5 w-5 text-muted-foreground" />
+            <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-[hsl(var(--pv-surface-2))] py-20 text-center">
+              <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full border border-border">
+                <BookOpen className="h-5 w-5 text-[hsl(var(--pv-text-muted))]" />
               </div>
-              <p className="text-sm text-muted-foreground">
+              <p className="pv-serif text-[15px] italic text-[hsl(var(--pv-text-muted))]">
                 {searchQuery ? `No books match "${searchQuery}"` : "No books here yet"}
               </p>
               {searchQuery && (

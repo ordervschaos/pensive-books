@@ -25,11 +25,18 @@ interface PageContentProps {
   hasActiveChat?: boolean;
   bookId?: string;
   onDeletePage?: () => void;
+  lastSavedAt?: Date | null;
+  /** Page position in the book (1-based) — used for the "page X of Y" eyebrow. */
+  currentIndex?: number;
+  totalPages?: number;
+  /** Name of the nearest preceding section, surfaced in the eyebrow as "Chapter". */
+  sectionLabel?: string | null;
 }
 
 export const PageContent = ({
   jsonContent,
   onSave,
+  saving,
   pageType = 'text',
   onPageTypeChange,
   editable = false,
@@ -42,6 +49,10 @@ export const PageContent = ({
   hasActiveChat,
   bookId,
   onDeletePage,
+  lastSavedAt,
+  currentIndex,
+  totalPages,
+  sectionLabel,
 }: PageContentProps) => {
   const [initialLoad, setInitialLoad] = useState(true);
   const [currentContent, setCurrentContent] = useState<EditorJSON | null>(jsonContent);
@@ -197,11 +208,22 @@ export const PageContent = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.marginSize]);
 
+  const showEyebrow =
+    pageType !== 'section' &&
+    typeof currentIndex === 'number' &&
+    typeof totalPages === 'number' &&
+    totalPages > 0;
+
   return (
     <div className="flex-1 flex flex-col bg-background">
       <div className="p-0 flex-1 flex flex-col">
         <div className="flex-1 flex justify-center">
           <div className="w-full max-w-3xl">
+            {showEyebrow && (
+              <div className="pv-eyebrow px-8 pt-10 pb-1">
+                {sectionLabel ? `${sectionLabel} · ` : ''}page {(currentIndex ?? 0) + 1} of {totalPages}
+              </div>
+            )}
             <div className={cn("flex-1 relative", marginClass)}>
               <TipTapEditor
                 content={currentContent}
@@ -216,6 +238,8 @@ export const PageContent = ({
                 bookId={bookId}
                 fontSizeClassName={fontSizeClassName}
                 fontFamilyStyle={fontFamilyStyle}
+                saving={saving}
+                lastSavedAt={lastSavedAt}
               />
 
               {/* Floating action buttons */}

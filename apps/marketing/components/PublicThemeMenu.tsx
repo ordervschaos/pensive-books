@@ -1,14 +1,15 @@
 "use client";
 
-import { Coffee, Flame, Moon, Package, Palette, Sun } from "lucide-react";
+import { BookOpen, Coffee, Flame, Moon, Package, Palette, Sun } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { IconButton } from "@pensive/shared/ui/icon-button";
 import { THEME_NAME_KEY, THEME_MODE_KEY, readThemeValue, writeThemeValue } from "@/lib/theme";
 
-type ThemeName = "default" | "coffee" | "mujiyish" | "pumpkin";
+type ThemeName = "default" | "paper" | "coffee" | "mujiyish" | "pumpkin";
 type ThemeMode = "light" | "dark";
 
 const themes = [
+  { name: "paper" as const, label: "Paper", Icon: BookOpen },
   { name: "default" as const, label: "Default", Icon: Palette },
   { name: "coffee" as const, label: "Coffee", Icon: Coffee },
   { name: "mujiyish" as const, label: "Mujiyish", Icon: Package },
@@ -22,6 +23,7 @@ function applyTheme(themeName: ThemeName, themeMode: ThemeMode) {
     "light",
     "dark",
     "theme-default",
+    "theme-paper",
     "theme-coffee",
     "theme-mujiyish",
     "theme-pumpkin",
@@ -36,13 +38,13 @@ function applyTheme(themeName: ThemeName, themeMode: ThemeMode) {
 
 export function PublicThemeMenu() {
   const [open, setOpen] = useState(false);
-  const [themeName, setThemeName] = useState<ThemeName>("coffee");
-  const [themeMode, setThemeMode] = useState<ThemeMode>("dark");
+  const [themeName, setThemeName] = useState<ThemeName>("paper");
+  const [themeMode, setThemeMode] = useState<ThemeMode>("light");
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const root = document.documentElement;
-    const storedTheme = readThemeValue(THEME_NAME_KEY, "coffee") as ThemeName;
+    const storedTheme = readThemeValue(THEME_NAME_KEY, "paper") as ThemeName;
     const storedMode = (readThemeValue(THEME_MODE_KEY, "") || (root.classList.contains("dark") ? "dark" : "light")) as ThemeMode;
 
     setThemeName(storedTheme);

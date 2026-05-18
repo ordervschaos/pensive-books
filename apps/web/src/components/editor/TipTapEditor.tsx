@@ -25,6 +25,8 @@ interface TipTapEditorProps {
   onPageTypeChange?: (newPageType: 'text' | 'section') => void;
   onDeletePage?: () => void;
   bookId?: string | null;
+  saving?: boolean;
+  lastSavedAt?: Date | null;
 }
 
 export const TipTapEditor = ({
@@ -42,7 +44,9 @@ export const TipTapEditor = ({
   pageType,
   onPageTypeChange,
   onDeletePage,
-  bookId
+  bookId,
+  saving,
+  lastSavedAt,
 }: TipTapEditorProps) => {
   const { toast } = useToast();
   const uploadImage = useSupabaseUpload();
@@ -161,6 +165,8 @@ export const TipTapEditor = ({
           pageType={pageType}
           onPageTypeChange={onPageTypeChange}
           onDeletePage={onDeletePage}
+          saving={saving}
+          lastSavedAt={lastSavedAt}
         />
       <div 
         className={cn(

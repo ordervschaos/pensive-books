@@ -23,9 +23,11 @@ interface EditorToolbarProps {
   pageType?: 'text' | 'section';
   onPageTypeChange?: (newPageType: 'text' | 'section') => void;
   onDeletePage?: () => void;
+  saving?: boolean;
+  lastSavedAt?: Date | null;
 }
 
-export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, customButtons, pageType, onPageTypeChange, onDeletePage }: EditorToolbarProps) => {
+export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, customButtons, pageType, onPageTypeChange, onDeletePage, saving, lastSavedAt }: EditorToolbarProps) => {
   const { toast } = useToast();
   const uploadImage = useSupabaseUpload();
   const isMobile = useMediaQuery("(max-width: 768px)");
@@ -201,11 +203,22 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
   const getActiveHeadingLabel = () => {
     for (let level = 1; level <= 6; level++) {
       if (editor.isActive('heading', { level: level as 1 | 2 | 3 | 4 | 5 | 6 })) {
-        return `H${level}`;
+        return `Heading ${level}`;
       }
     }
-    return 'T';
+    return 'Normal text';
   };
+
+  const savedAgo = (() => {
+    if (saving) return 'saving…';
+    if (!lastSavedAt) return null;
+    const diff = Date.now() - lastSavedAt.getTime();
+    if (diff < 60_000) return 'just now';
+    const mins = Math.floor(diff / 60_000);
+    if (mins < 60) return `${mins} min ago`;
+    const hrs = Math.floor(mins / 60);
+    return `${hrs}h ago`;
+  })();
 
   const divider = <div className="w-px h-4 bg-border/60 mx-1" />;
 
@@ -226,11 +239,11 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-7 px-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
+                  className="pv-serif h-7 gap-1 px-2 text-[13px] italic text-foreground hover:text-foreground"
                   title="Text Style"
                 >
-                  <span className="inline-block w-5 text-center">{getActiveHeadingLabel()}</span>
-                  <ChevronDown className="h-3 w-3 ml-0.5 opacity-50" />
+                  <span className="whitespace-nowrap">{getActiveHeadingLabel()}</span>
+                  <ChevronDown className="h-3 w-3 opacity-60" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-48">
@@ -363,18 +376,35 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
         )}
       </div>
 
-      {/* Right side: Read/Edit segmented toggle + meatballs */}
-      <div className="flex items-center gap-1 shrink-0">
+      {/* Right side: save status + Read/Edit segmented toggle + meatballs */}
+      <div className="flex items-center gap-3 shrink-0">
+        {editable && savedAgo && (
+          <span className="hidden items-center gap-2 sm:inline-flex">
+            <span
+              className="h-[7px] w-[7px] rounded-full"
+              style={{
+                background: saving ? 'hsl(var(--pv-text-faint))' : '#5a8a4a',
+                boxShadow: saving ? undefined : '0 0 0 3px rgba(90,138,74,0.18)',
+              }}
+            />
+            <span className="pv-mono text-[10.5px] uppercase tracking-[0.18em] text-[hsl(var(--pv-text-faint))]">
+              {saving ? savedAgo : `saved · ${savedAgo}`}
+            </span>
+          </span>
+        )}
         {onToggleEdit && editable && (
-          <div className="inline-flex items-center rounded-full bg-muted/60 p-0.5 text-xs">
+          <div
+            className="inline-flex items-center rounded-full border border-border p-[3px]"
+            style={{ background: 'hsl(var(--pv-surface-2))' }}
+          >
             <button
               type="button"
               onClick={() => { if (isEditing) onToggleEdit(); }}
               className={cn(
-                "px-3 h-7 rounded-full font-medium transition-colors",
+                "pv-serif h-7 rounded-full px-3.5 text-[13px] transition-colors",
                 !isEditing
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
+                  ? "bg-foreground italic text-background"
+                  : "text-[hsl(var(--pv-text-muted))] hover:text-foreground"
               )}
             >
               Read
@@ -383,10 +413,10 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
               type="button"
               onClick={() => { if (!isEditing) onToggleEdit(); }}
               className={cn(
-                "px-3 h-7 rounded-full font-medium transition-colors",
+                "pv-serif h-7 rounded-full px-3.5 text-[13px] transition-colors",
                 isEditing
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
+                  ? "bg-foreground italic text-background"
+                  : "text-[hsl(var(--pv-text-muted))] hover:text-foreground"
               )}
             >
               Edit

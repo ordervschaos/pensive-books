@@ -3,7 +3,7 @@
 
 import { createContext, useContext, useEffect, useState } from "react"
 
-type ThemeName = "default" | "coffee" | "mujiyish" | "pumpkin"
+type ThemeName = "default" | "paper" | "coffee" | "mujiyish" | "pumpkin"
 type ThemeMode = "light" | "dark"
 
 function isSharedProductionDomain(): boolean {
@@ -109,7 +109,7 @@ export function ThemeProvider({
     const root = window.document.documentElement
 
     // Remove all theme classes
-    root.classList.remove("light", "dark", "theme-default", "theme-coffee", "theme-mujiyish", "theme-pumpkin")
+    root.classList.remove("light", "dark", "theme-default", "theme-paper", "theme-coffee", "theme-mujiyish", "theme-pumpkin")
 
     // Add theme name class (only if not default)
     if (themeName !== "default") {

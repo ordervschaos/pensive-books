@@ -1,4 +1,4 @@
-import { LogOut, LogIn, Search, MoreVertical, Moon, Sun, Coffee, Palette, Package } from "lucide-react";
+import { LogOut, LogIn, Search, MoreVertical, Moon, Sun, Coffee, Palette, Package, BookOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@pensive/shared/ui/icon-button";
 import {
@@ -27,9 +27,9 @@ export const NavActions = ({
   const isPageRoute = location.pathname.includes('/pages/');
 
   return (
-    <div className="w-[120px] flex items-center gap-3 justify-end shrink-0">
+    <>
       {/* Desktop buttons */}
-      <div className="hidden sm:flex items-center gap-3">
+      <div className="hidden sm:flex items-center gap-1">
         {isBookRoute && (
           <IconButton aria-label="Search" onClick={() => setSearchOpen(true)}>
             <Search className="h-4 w-4" />
@@ -74,6 +74,13 @@ export const NavActions = ({
 
             <DropdownMenuSeparator />
             <DropdownMenuLabel>Theme</DropdownMenuLabel>
+            <DropdownMenuItem
+              onClick={() => setThemeName("paper")}
+              className={themeName === "paper" ? "bg-accent" : ""}
+            >
+              <BookOpen className="h-4 w-4 mr-2" />
+              <span>Paper</span>
+            </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => setThemeName("default")}
               className={themeName === "default" ? "bg-accent" : ""}
@@ -128,6 +135,6 @@ export const NavActions = ({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-    </div>
+    </>
   );
-}; 
+};

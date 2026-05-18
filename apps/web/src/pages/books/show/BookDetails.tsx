@@ -585,15 +585,15 @@ const BookDetails = () => {
         {book.published_at && <meta property="book:release_date" content={book.published_at} />}
       </Helmet>
       
-      <div className="container mx-auto px-4 py-6">
-        <div className="max-w-5xl mx-auto space-y-6">
+      <div className="container mx-auto px-6 py-10 md:px-8">
+        <div className="max-w-5xl mx-auto space-y-8">
           {/* Single Column Layout */}
-          <div className="space-y-6">
+          <div className="space-y-8">
             {/* Book Header with Cover and Info */}
-            <div className="rounded-2xl border border-border/50 bg-gradient-to-b from-card/60 to-card/30 shadow-xl backdrop-blur overflow-hidden relative">
+            <div className="relative">
               {/* Header Actions - Top Right */}
               {canEdit && (
-                <div className="absolute top-4 right-4 sm:top-5 sm:right-5 md:top-6 md:right-6 z-10 flex items-center gap-2">
+                <div className="absolute top-2 right-2 sm:top-3 sm:right-3 z-10 flex items-center gap-2">
                   {isBetaEnabled && (
                   <Button
                     size="sm"
@@ -636,11 +636,14 @@ const BookDetails = () => {
             </div>
 
             {/* Word Count & Version Control */}
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm text-muted-foreground">
-                {pages.reduce((acc, page) =>
-                  acc + (page.page_type === 'text' && page.content ? getWordCountFromContent(page.content) : 0), 0)} words
-              </p>
+            <div className="flex flex-col gap-3 border-t border-border pt-6 sm:flex-row sm:items-baseline sm:justify-between">
+              <div className="pv-eyebrow">
+                The manuscript ·{" "}
+                <span className="pv-serif text-[13px] normal-case not-italic tracking-normal text-[hsl(var(--pv-text-muted))]">
+                  {pages.reduce((acc, page) =>
+                    acc + (page.page_type === 'text' && page.content ? getWordCountFromContent(page.content) : 0), 0).toLocaleString()} words
+                </span>
+              </div>
 
               {canEdit && (
                 <div className="flex items-center gap-2">

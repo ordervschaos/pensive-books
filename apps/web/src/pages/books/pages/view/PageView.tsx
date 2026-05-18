@@ -234,6 +234,17 @@ const PageView = () => {
     );
   }
 
+  // Resolve the nearest preceding section page so the eyebrow can read
+  // "{Section title} · page X of Y". Falls back to no label if none found.
+  const sectionLabel = (() => {
+    if (!allPages || currentIndex < 0) return null;
+    for (let i = currentIndex; i >= 0; i--) {
+      const p = allPages[i] as { page_type?: string; title?: string | null };
+      if (p?.page_type === 'section') return p.title || null;
+    }
+    return null;
+  })();
+
   // 15. Main render - Pure composition
   return (
     <div className="min-h-screen flex bg-background w-full">
@@ -287,6 +298,14 @@ const PageView = () => {
               hasActiveChat={isChatOpen}
               bookId={numericBookId.toString()}
               onDeletePage={handleDeletePage}
+              lastSavedAt={
+                (page as { updated_at?: string | null }).updated_at
+                  ? new Date((page as { updated_at?: string | null }).updated_at as string)
+                  : null
+              }
+              currentIndex={currentIndex}
+              totalPages={totalPages}
+              sectionLabel={sectionLabel}
             />
 
             {/* Navigation Controls */}
@@ -309,7 +328,14 @@ const PageView = () => {
       </div>
 
       {/* Right Sidebar: Page TOC (hidden when chat is open) */}
-      {!isChatOpen && <PageTableOfContents pageId={numericPageId} />}
+      {!isChatOpen && (
+        <PageTableOfContents
+          pageId={numericPageId}
+          pageContent={page.content}
+          updatedAt={(page as { updated_at?: string | null }).updated_at ?? null}
+          saving={saving}
+        />
+      )}
 
       {/* Right Sidebar: AI Chat Panel */}
       <PageChatPanel

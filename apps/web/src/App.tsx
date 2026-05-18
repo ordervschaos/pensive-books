@@ -91,7 +91,7 @@ function ProtectedLayout() {
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider defaultTheme="coffee" defaultMode="dark">
+      <ThemeProvider defaultTheme="paper" defaultMode="light">
         <PageDisplaySettingsProvider>
           <Router>
             <div className="min-h-screen flex flex-col">

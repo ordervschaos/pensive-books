@@ -121,7 +121,7 @@ export function ContinueReadingButton({ bookId, bookSlug, pages }: Props) {
 
   if (!href) {
     return (
-      <span className="inline-flex items-center justify-center rounded-md border border-input px-4 py-2 text-sm text-muted-foreground">
+      <span className="pv-serif inline-flex items-center justify-center rounded-full border border-border px-6 py-3 text-[14px] italic text-[hsl(var(--pv-text-muted))]">
         {label}
       </span>
     );
@@ -130,7 +130,7 @@ export function ContinueReadingButton({ bookId, bookSlug, pages }: Props) {
   return (
     <Link
       href={href}
-      className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+      className="pv-serif inline-flex items-center justify-center rounded-full bg-foreground px-6 py-3 text-[14px] font-medium tracking-[0.01em] text-background transition-opacity hover:opacity-90"
     >
       {label}
     </Link>

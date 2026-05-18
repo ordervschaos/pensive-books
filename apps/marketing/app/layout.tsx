@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { PublicTopNav } from "@/components/PublicTopNav";
-import { LibraryNavTabs } from "@/components/LibraryNavTabs";
-import { getConfiguredAppOrigin } from "@/lib/pensive";
 
 const publicOrigin =
   process.env.PENSIVE_PUBLIC_ORIGIN ??
@@ -21,10 +19,8 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const appOrigin = getConfiguredAppOrigin();
-
   return (
-    <html lang="en" className="theme-coffee dark" suppressHydrationWarning>
+    <html lang="en" className="theme-paper light" suppressHydrationWarning>
       <body>
         <script
           dangerouslySetInnerHTML={{
@@ -35,11 +31,11 @@ export default function RootLayout({
                   return m ? decodeURIComponent(m[1]) : null;
                 }
                 var root = document.documentElement;
-                var themeName = getCookie("themeName") || localStorage.getItem("themeName") || "coffee";
+                var themeName = getCookie("themeName") || localStorage.getItem("themeName") || "paper";
                 var storedMode = getCookie("themeMode") || localStorage.getItem("themeMode");
-                var themeMode = storedMode || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+                var themeMode = storedMode || (themeName === "paper" ? "light" : (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
 
-                root.classList.remove("light", "dark", "theme-default", "theme-coffee", "theme-mujiyish", "theme-pumpkin");
+                root.classList.remove("light", "dark", "theme-default", "theme-paper", "theme-coffee", "theme-mujiyish", "theme-pumpkin");
                 if (themeName !== "default") root.classList.add("theme-" + themeName);
                 root.classList.add(themeMode);
               })();
@@ -47,7 +43,6 @@ export default function RootLayout({
           }}
         />
         <PublicTopNav />
-        <LibraryNavTabs appOrigin={appOrigin} />
         {children}
       </body>
     </html>

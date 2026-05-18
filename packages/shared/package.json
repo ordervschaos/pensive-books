@@ -8,7 +8,8 @@
     "./ui/icon-button": "./src/ui/icon-button.tsx",
     "./ui/book-card": "./src/ui/book-card.tsx",
     "./ui/book-cover-fallback": "./src/ui/book-cover-fallback.tsx",
-    "./ui/nav-tabs": "./src/ui/nav-tabs.tsx"
+    "./ui/nav-tabs": "./src/ui/nav-tabs.tsx",
+    "./ui/top-nav": "./src/ui/top-nav.tsx"
   },
   "peerDependencies": {
     "react": "^18.3.1"

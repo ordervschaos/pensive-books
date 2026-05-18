@@ -2,6 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Paper-minimal redesign typefaces. Loaded once at base so theme classes can swap variants. */
+@import url("https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;0,6..72,700;1,6..72,400;1,6..72,500&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap");
+
 @layer base {
   :root {
     --radius: 0.5rem;
@@ -25,6 +28,17 @@
     --border: 0 0% 89.8%;
     --input: 0 0% 89.8%;
     --ring: 0 0% 3.9%;
+
+    --pv-bg: 43 27% 94%;
+    --pv-surface: 43 27% 94%;
+    --pv-surface-2: 40 27% 91%;
+    --pv-border: 40 24% 81%;
+    --pv-border-soft: 40 24% 86%;
+    --pv-text: 40 13% 11%;
+    --pv-text-muted: 40 9% 40%;
+    --pv-text-faint: 40 14% 60%;
+    --pv-accent: 8 58% 30%;
+    --pv-accent-soft: 8 58% 30%;
   }
 
   .dark {
@@ -181,6 +195,54 @@
     --ring: 20 99% 65%;
   }
 
+  /* Paper-minimal theme — the redesigned look. Light by default. */
+  .theme-paper {
+    --pv-bg: 43 27% 94%;
+    --pv-surface: 43 27% 94%;
+    --pv-surface-2: 40 27% 91%;
+    --pv-border: 40 24% 81%;
+    --pv-border-soft: 40 24% 86%;
+    --pv-text: 40 13% 11%;
+    --pv-text-muted: 40 9% 40%;
+    --pv-text-faint: 40 14% 60%;
+    --pv-accent: 8 58% 30%;
+    --pv-accent-soft: 8 58% 30%;
+
+    --background: var(--pv-bg);
+    --foreground: var(--pv-text);
+    --card: var(--pv-surface);
+    --card-foreground: var(--pv-text);
+    --popover: var(--pv-surface);
+    --popover-foreground: var(--pv-text);
+    --primary: var(--pv-text);
+    --primary-foreground: var(--pv-bg);
+    --secondary: var(--pv-surface-2);
+    --secondary-foreground: var(--pv-text);
+    --muted: var(--pv-surface-2);
+    --muted-foreground: var(--pv-text-muted);
+    --accent: var(--pv-accent);
+    --accent-foreground: var(--pv-bg);
+    --destructive: 0 65% 46%;
+    --destructive-foreground: var(--pv-bg);
+    --border: var(--pv-border);
+    --input: var(--pv-border);
+    --ring: var(--pv-text);
+  }
+
+  /* Paper-dark ("ink") variant — same paper system, night mode. */
+  .theme-paper.dark {
+    --pv-bg: 216 12% 5%;
+    --pv-surface: 220 9% 8%;
+    --pv-surface-2: 218 11% 11%;
+    --pv-border: 218 11% 16%;
+    --pv-border-soft: 218 11% 12%;
+    --pv-text: 40 35% 91%;
+    --pv-text-muted: 40 4% 53%;
+    --pv-text-faint: 40 7% 33%;
+    --pv-accent: 31 53% 65%;
+    --pv-accent-soft: 31 53% 65%;
+  }
+
   * {
     @apply border-border;
     box-sizing: border-box;
@@ -194,6 +256,9 @@
   body {
     @apply bg-background text-foreground;
     margin: 0;
+    font-family: "Newsreader", "Iowan Old Style", Georgia, serif;
+    font-feature-settings: "ss01", "kern";
+    -webkit-font-smoothing: antialiased;
   }
 
   a {
@@ -202,5 +267,28 @@
 
   img {
     max-width: 100%;
+  }
+}
+
+@layer utilities {
+  /* Paper-minimal typography helpers, ported from the design canvas. */
+  .pv-serif {
+    font-family: "Newsreader", "Iowan Old Style", Georgia, serif;
+  }
+  .pv-display {
+    font-family: "Instrument Serif", "Newsreader", Georgia, serif;
+  }
+  .pv-mono {
+    font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  }
+  .pv-sans {
+    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Segoe UI", system-ui, sans-serif;
+  }
+  .pv-eyebrow {
+    font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: hsl(var(--pv-text-faint));
   }
 }

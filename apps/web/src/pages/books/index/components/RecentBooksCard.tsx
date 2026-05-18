@@ -234,18 +234,23 @@ export function RecentBooksCard() {
   }
 
   return (
-    <div className="space-y-3">
-      <h2
-        className={cn(
-          "w-fit text-[11px] font-semibold uppercase tracking-[0.14em]",
-          loading
-            ? "animate-pulse rounded bg-muted/60 text-transparent"
-            : "text-muted-foreground"
+    <div className="space-y-5">
+      <div className="flex items-baseline justify-between">
+        <h2
+          className={cn(
+            "pv-display text-[26px] italic tracking-tight text-foreground md:text-[30px]",
+            loading && "animate-pulse rounded bg-muted/60 text-transparent",
+          )}
+        >
+          Pick up where you left off
+        </h2>
+        {!loading && recentBooks.length > 0 && (
+          <span className="pv-mono text-[11px] uppercase tracking-[0.18em] text-[hsl(var(--pv-text-faint))]">
+            {recentBooks.length} in progress
+          </span>
         )}
-      >
-        Pick up where you left off
-      </h2>
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-2 lg:grid-cols-4">
+      </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {loading
           ? [1, 2, 3, 4].map((i) => (
               <Card
@@ -269,13 +274,13 @@ export function RecentBooksCard() {
               <Card
                 key={`${book.bookId}-${book.pageId}`}
                 className={cn(
-                  "group h-[88px] cursor-pointer border border-border/60 bg-transparent p-3 transition-colors hover:border-border hover:bg-card",
-                  index >= 2 && "hidden lg:block"
+                  "group flex cursor-pointer flex-col gap-3.5 rounded-xl border border-border bg-[hsl(var(--pv-surface-2))] p-4 transition-colors hover:border-[hsl(var(--pv-text-faint))]",
+                  index >= 2 && "hidden lg:flex"
                 )}
                 onClick={() => handleContinue(book)}
               >
-                <div className="flex items-start gap-3">
-                  <div className="h-14 w-10 flex-shrink-0 overflow-hidden rounded-[3px] shadow-sm">
+                <div className="flex items-start gap-3.5">
+                  <div className="h-14 w-11 flex-shrink-0 overflow-hidden rounded-[3px] border border-border shadow-sm">
                     {book.coverUrl ? (
                       <img
                         src={book.coverUrl}
@@ -292,17 +297,22 @@ export function RecentBooksCard() {
                   </div>
 
                   <div className="min-w-0 flex-1">
-                    <h3 className="line-clamp-1 font-serif text-sm font-semibold tracking-tight text-foreground">
+                    <h3 className="pv-serif line-clamp-1 text-[16px] text-foreground">
                       {book.bookName || 'Untitled Book'}
                     </h3>
-                    <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <div className="pv-mono mt-1.5 flex items-center gap-1.5 truncate text-[11px] uppercase tracking-[0.15em] text-[hsl(var(--pv-text-muted))]">
                       <Clock className="h-3 w-3 flex-shrink-0" />
                       <span className="truncate">{book.pageTitle || 'Untitled Page'}</span>
                     </div>
-                    <p className="mt-1 text-[11px] text-muted-foreground/70">
-                      {formatDistanceToNow(new Date(book.timestamp), { addSuffix: true })}
-                    </p>
                   </div>
+                </div>
+                <div className="flex items-baseline justify-between border-t border-dashed border-border pt-3">
+                  <span className="pv-mono text-[10.5px] uppercase tracking-[0.15em] text-[hsl(var(--pv-text-muted))]">
+                    last edited {formatDistanceToNow(new Date(book.timestamp), { addSuffix: true })}
+                  </span>
+                  <span className="pv-serif text-[13px] italic text-foreground">
+                    continue ›
+                  </span>
                 </div>
               </Card>
             ))}

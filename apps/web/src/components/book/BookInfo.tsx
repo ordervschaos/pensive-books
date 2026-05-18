@@ -325,9 +325,9 @@ export const BookInfo = ({
   const lastUpdatedLabel = lastUpdated ? formatDistanceToNow(new Date(lastUpdated), { addSuffix: true }) : null;
 
   return (
-    <div className="grid grid-cols-1 gap-6 p-5 sm:grid-cols-[160px,1fr] sm:p-6 md:grid-cols-[200px,1fr] md:gap-8 md:p-8">
+    <div className="grid grid-cols-1 gap-8 p-6 sm:grid-cols-[160px,1fr] md:grid-cols-[180px,1fr] md:gap-10 md:p-10">
           {/* Book Cover */}
-        <div className="relative overflow-hidden rounded-xl ring-1 ring-border/50 group">
+        <div className="group relative aspect-[3/4] overflow-hidden rounded-[3px] border border-border bg-[hsl(var(--pv-surface-2))] shadow-[0_18px_36px_rgba(0,0,0,0.10)]">
             {currentCoverUrl ? (
               <img
                 src={currentCoverUrl}
@@ -387,17 +387,25 @@ export const BookInfo = ({
           {/* Content Column */}
           <div className="flex flex-col">
             {/* Header */}
-            <header className="mb-3">
-              <h1 className="text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
+            <header className="mb-5">
+              <div className="pv-eyebrow">
+                {canEdit ? "You're writing · private" : "Reading"}
+              </div>
+              <h1 className="pv-display mt-3 text-[40px] font-normal italic leading-[1.02] tracking-tight text-foreground md:text-[56px]">
                 {name}
               </h1>
-              <div className="mt-1 flex flex-wrap items-center gap-x-3 text-sm text-muted-foreground">
+              {subtitle && (
+                <p className="pv-serif mt-3 max-w-[600px] text-[18px] leading-snug text-[hsl(var(--pv-text-muted))]">
+                  {subtitle}
+                </p>
+              )}
+              <div className="pv-mono mt-5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] uppercase tracking-[0.15em] text-[hsl(var(--pv-text-muted))]">
                 <span>
-                  {currentPage + 1} / {totalPages} chapters
+                  {currentPage + 1} of {totalPages} {totalPages === 1 ? "page" : "pages"}
                 </span>
                 {lastUpdatedLabel && (
                   <>
-                    <span className="hidden h-1 w-1 rounded-full bg-muted-foreground/50 sm:inline-block" />
+                    <span className="inline-block h-[3px] w-[3px] rounded-full bg-[hsl(var(--pv-text-faint))]" />
                     <span>Updated {lastUpdatedLabel}</span>
                   </>
                 )}
@@ -405,46 +413,39 @@ export const BookInfo = ({
             </header>
 
             {/* Action Buttons */}
-            <div className="mb-5">
+            <div className="mb-6 flex flex-wrap items-center gap-2.5">
               {showWritingButton && canEdit && onContinueWriting && lastUpdatedPageIndex !== undefined ? (
                 <Button
                   type="button"
                   onClick={onContinueWriting}
-                  className="group inline-flex items-center justify-center gap-2"
+                  className="pv-serif group inline-flex h-11 items-center justify-center gap-2 rounded-full bg-foreground px-5 text-[14px] tracking-[0.01em] text-background hover:opacity-90"
                   size="default"
                   variant="default"
                 >
                   <Pencil className="h-4 w-4 transition group-hover:translate-x-0.5" />
-                  <span className="font-medium">Continue Writing</span>
-                  <span className="text-xs opacity-70">(Page {lastUpdatedPageIndex + 1})</span>
+                  <span>Continue writing</span>
+                  <span className="pv-mono text-[11px] not-italic opacity-70">page {lastUpdatedPageIndex + 1}</span>
                 </Button>
               ) : onContinueReading ? (
                 <Button
                   type="button"
                   onClick={onContinueReading}
-                  className="group inline-flex items-center justify-center gap-2"
+                  className="pv-serif group inline-flex h-11 items-center justify-center gap-2 rounded-full bg-foreground px-5 text-[14px] tracking-[0.01em] text-background hover:opacity-90"
                   size="default"
                   variant="default"
                 >
                   <Play className="h-4 w-4 fill-current transition group-hover:translate-x-0.5" />
-                  <span className="font-medium">Continue Reading</span>
-                  <span className="text-xs opacity-70">(Page {currentPage + 1})</span>
+                  <span>Continue reading</span>
+                  <span className="pv-mono text-[11px] not-italic opacity-70">page {currentPage + 1}</span>
                 </Button>
               ) : null}
-            </div>
-
-            {/* Downloads Section */}
-            <div className="mt-auto">
-              <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                Downloads
-              </div>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
                     type="button"
                     variant="outline"
-                    size="sm"
-                    className="mt-2 h-9 gap-2 text-sm"
+                    size="default"
+                    className="pv-serif h-11 gap-2 rounded-full border-border bg-transparent px-5 text-[14px] tracking-[0.01em] text-foreground"
                   >
                     <Download className="h-4 w-4" />
                     Export

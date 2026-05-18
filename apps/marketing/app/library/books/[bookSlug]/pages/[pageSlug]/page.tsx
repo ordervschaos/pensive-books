@@ -1,7 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  ArrowLeft,
+  Bookmark,
+  ListTree,
+  Type,
+  X,
+} from "lucide-react";
 import { PublishedPageTracker } from "@/components/PublishedPageTracker";
 import { RichTextRenderer } from "@/components/RichTextRenderer";
 import { KeyboardPageNav } from "@/components/KeyboardPageNav";
@@ -63,81 +69,142 @@ export default async function PublishedPageRoute({ params }: Props) {
     ? `/library/books/${canonicalBookSlug}/pages/${slugifyIdTitle(detail.nextPage.id, detail.nextPage.title)}`
     : null;
 
+  const bookHref = `/library/books/${canonicalBookSlug}`;
+  const total = detail.book.pages.length;
+  const current = detail.currentIndex + 1;
+
   return (
-    <main className="min-h-[calc(100vh-56px)] bg-background">
+    <main className="relative min-h-[calc(100vh-56px)] bg-background">
       <PublishedPageTracker
         bookId={detail.book.id}
         pageIndex={detail.currentIndex}
       />
       <KeyboardPageNav prevHref={prevHref} nextHref={nextHref} />
 
-      <div className="container mx-auto max-w-5xl px-4 py-6">
-        <section className="rounded-3xl border bg-card px-5 py-8 shadow-sm md:px-8 md:py-10">
+      {/* Page header — sits in flow, scrolls away with the page */}
+      <header className="mx-auto flex max-w-[680px] items-center justify-between gap-4 px-6 pt-6">
+        <div className="flex min-w-0 items-center gap-3">
+          <Link
+            href={bookHref}
+            aria-label="Back to book"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[hsl(var(--pv-text-muted))] transition-colors hover:bg-[hsl(var(--pv-surface-2))] hover:text-foreground"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Link>
+          <div className="min-w-0">
+            <div className="pv-mono truncate text-[10.5px] uppercase tracking-[0.18em] text-[hsl(var(--pv-text-faint))]">
+              {detail.book.name}
+            </div>
+            {detail.book.author && (
+              <div className="pv-serif truncate text-[13px] italic text-[hsl(var(--pv-text-muted))]">
+                {detail.book.author}
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-0.5">
+          <ToolButton ariaLabel="Table of contents" href={bookHref}>
+            <ListTree className="h-4 w-4" />
+          </ToolButton>
+          <ToolButton ariaLabel="Reading settings">
+            <Type className="h-4 w-4" />
+          </ToolButton>
+          <ToolButton ariaLabel="Bookmark">
+            <Bookmark className="h-4 w-4" />
+          </ToolButton>
+          <ToolButton ariaLabel="Close reader" href={bookHref}>
+            <X className="h-4 w-4" />
+          </ToolButton>
+        </div>
+      </header>
+
+      {/* Reading column */}
+      <article className="mx-auto max-w-[640px] px-6 pb-20 pt-16">
+        <div className="text-center">
+          <div className="pv-eyebrow">
+            page {current} of {total}
+          </div>
+          <h1 className="pv-display mt-3.5 text-[44px] font-normal italic leading-[1.05] tracking-tight text-foreground md:text-[56px]">
+            {detail.page.title}
+          </h1>
+          <div
+            aria-hidden
+            className="mb-10 mt-7 text-[hsl(var(--pv-text-faint))]"
+            style={{ letterSpacing: "8px" }}
+          >
+            —
+          </div>
+        </div>
+
+        <div className="reader-body">
           <RichTextRenderer
             content={detail.page.content}
             bookId={detail.book.id}
             bookSlug={canonicalBookSlug}
             centerContent={detail.page.page_type === "section"}
           />
+        </div>
 
-          <div className="mt-12 border-t pt-6">
-            <div className="mb-6 flex items-center justify-between">
-              {detail.previousPage ? (
-                <Link
-                  href={`/library/books/${canonicalBookSlug}/pages/${slugifyIdTitle(detail.previousPage.id, detail.previousPage.title)}`}
-                  className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                  <span className="hidden sm:inline">Previous</span>
-                </Link>
-              ) : (
-                <span className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground">
-                  <ChevronLeft className="h-4 w-4" />
-                  <span className="hidden sm:inline">Previous</span>
-                </span>
-              )}
+        <div
+          aria-hidden
+          className="mt-9 text-center text-[22px] text-[hsl(var(--pv-text-faint))]"
+        >
+          §
+        </div>
 
-              <span className="text-sm font-medium text-muted-foreground">
-                {detail.currentIndex + 1} / {detail.book.pages.length}
-              </span>
-
-              {detail.nextPage ? (
-                <Link
-                  href={`/library/books/${canonicalBookSlug}/pages/${slugifyIdTitle(detail.nextPage.id, detail.nextPage.title)}`}
-                  className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
-                >
-                  <span className="hidden sm:inline">Next</span>
-                  <ChevronRight className="h-4 w-4" />
-                </Link>
-              ) : (
-                <span className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground">
-                  <span className="hidden sm:inline">Next</span>
-                  <ChevronRight className="h-4 w-4" />
-                </span>
-              )}
-            </div>
-
-            {detail.nextPage && (
-              <p className="mb-4 text-center text-sm text-muted-foreground">
-                Next:{" "}
-                <span className="font-medium text-foreground">
-                  {detail.nextPage.title}
-                </span>
-              </p>
-            )}
-
-            <div className="flex justify-center">
-              <Link
-                href={`/library/books/${canonicalBookSlug}`}
-                className="inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
-              >
-                <ChevronLeft className="h-4 w-4" />
-                Back to Book
-              </Link>
-            </div>
-          </div>
-        </section>
-      </div>
+        {/* Footer page navigation */}
+        <footer className="mt-14 grid grid-cols-[1fr_auto_1fr] items-baseline gap-6 border-t border-border pt-7">
+          {prevHref ? (
+            <Link
+              href={prevHref}
+              className="pv-serif justify-self-start text-[15px] italic text-[hsl(var(--pv-text-muted))] transition-colors hover:text-foreground"
+            >
+              ← previous page
+            </Link>
+          ) : (
+            <span />
+          )}
+          <span className="pv-mono text-[11px] uppercase tracking-[0.18em] text-[hsl(var(--pv-text-faint))]">
+            page {current} of {total}
+          </span>
+          {nextHref && detail.nextPage ? (
+            <Link
+              href={nextHref}
+              className="pv-serif justify-self-end border-b border-foreground pb-px text-[15px] text-foreground"
+            >
+              {detail.nextPage.title || "Next page"} →
+            </Link>
+          ) : (
+            <span />
+          )}
+        </footer>
+      </article>
     </main>
   );
 }
+
+function ToolButton({
+  children,
+  ariaLabel,
+  href,
+}: {
+  children: React.ReactNode;
+  ariaLabel: string;
+  href?: string;
+}) {
+  const className =
+    "inline-flex h-8 w-8 items-center justify-center rounded-md text-[hsl(var(--pv-text-muted))] transition-colors hover:bg-[hsl(var(--pv-surface-2))] hover:text-foreground";
+  if (href) {
+    return (
+      <Link href={href} aria-label={ariaLabel} className={className}>
+        {children}
+      </Link>
+    );
+  }
+  return (
+    <button type="button" aria-label={ariaLabel} className={className}>
+      {children}
+    </button>
+  );
+}
+

@@ -1,13 +1,29 @@
 import { useNavigate, useLocation } from "react-router-dom";
 import { supabase, hasSessionCookie } from "@/integrations/supabase/client";
 import { useToast } from "@/components/ui/use-toast";
-import { useTheme } from "@/components/theme/ThemeProvider";
 import { useState, useEffect } from "react";
+import { TopNavShell, type TopNavTab } from "@pensive/shared/ui/top-nav";
 import { SearchDialog } from "@/components/search/SearchDialog";
-import { NavBreadcrumb } from "./NavBreadcrumb";
 import { NavActions } from "./NavActions";
-import { NavTabs } from "./NavTabs";
-import { PageChangePayload } from "./types";
+import { buildPublicUrl } from "@/utils/publicOrigin";
+
+type NavMode = "full" | "compact";
+
+function pickMode(pathname: string): NavMode {
+  // The /books index is the writer's "desk" — full nav with tabs + search bar.
+  // Everything else is a focused view of a single book or page → compact nav.
+  if (pathname === "/" || pathname === "/books") return "full";
+  return "compact";
+}
+
+function deslug(slug: string) {
+  return slug
+    .replace(/^\d+-/, "")
+    .split("-")
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
 
 export function TopNav() {
   const navigate = useNavigate();
@@ -19,13 +35,11 @@ export function TopNav() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => hasSessionCookie());
 
   useEffect(() => {
-    // Check current auth status
     supabase.auth.getSession().then(({ data: { session } }) => {
       setIsAuthenticated(!!session);
     });
 
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setIsAuthenticated(!!session);
     });
 
@@ -49,12 +63,11 @@ export function TopNav() {
     navigate("/auth");
   };
 
-  // Effect for fetching book details
+  // Fetch the book name for the compact-mode crumb.
   useEffect(() => {
     let isSubscribed = true;
 
     const fetchBookDetails = async () => {
-      // Extract numeric ID from slug (e.g., "884-digest-nov" -> "884")
       const match = location.pathname.match(/\/books\/(\d+)/);
       const isNewBook = location.pathname.endsWith('/books/new');
 
@@ -62,9 +75,9 @@ export function TopNav() {
         setBookName("New Book");
         return;
       }
-      
+
       if (!match) {
-        setBookName(""); // Only reset if not on a book route
+        setBookName("");
         return;
       }
 
@@ -78,7 +91,7 @@ export function TopNav() {
           .single();
 
         if (error) throw error;
-        
+
         if (isSubscribed) {
           setBookName(bookData?.name || "Untitled");
         }
@@ -98,31 +111,27 @@ export function TopNav() {
     return () => { isSubscribed = false; };
   }, [location.pathname, toast]);
 
-  // Separate effect for fetching and subscribing to page details
+  // Page name fetch + realtime subscription.
   useEffect(() => {
     let isSubscribed = true;
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
     const fetchPageDetails = async () => {
-      // Skip fetching page details for version pages (they use page_index, not page ID)
       const isVersionPage = location.pathname.includes('/version/');
       if (isVersionPage) {
-        setPageName(""); // Clear page name for version pages
+        setPageName("");
         return;
       }
 
-      // Extract numeric page ID from slug (e.g., "123-page-title" -> "123")
       const match = location.pathname.match(/\/pages\/(\d+)/);
-      
       if (!match) {
-        setPageName(""); // Only reset if not on a page route
+        setPageName("");
         return;
       }
 
       const pageId = match[1];
 
       try {
-        // Fetch initial page data
         const { data: pageData, error } = await supabase
           .from("pages")
           .select("title")
@@ -135,7 +144,6 @@ export function TopNav() {
           setPageName(pageData?.title || "Untitled");
         }
 
-        // Set up real-time subscription
         channel = supabase
           .channel(`page_changes_${pageId}`)
           .on(
@@ -177,38 +185,81 @@ export function TopNav() {
     };
   }, [location.pathname, toast]);
 
+  const mode = pickMode(location.pathname);
   const isBookRoute = location.pathname.includes('/books/');
+  const onMyBooks = location.pathname === "/books" || location.pathname === "/";
+
+  // Intercept same-origin links so navigation stays client-side.
+  const intercept = (path: string) =>
+    (e: React.MouseEvent<HTMLAnchorElement>) => {
+      e.preventDefault();
+      navigate(path);
+    };
+
+  const actions = (
+    <NavActions
+      isAuthenticated={isAuthenticated}
+      isBookRoute={isBookRoute}
+      handleLogout={handleLogout}
+      handleLogin={handleLogin}
+      setSearchOpen={setSearchOpen}
+    />
+  );
 
   return (
     <>
-      <nav className="bg-background border-b h-14">
-        <div className="container max-w-7xl mx-auto px-4 h-full">
-          <div className="flex flex-row items-center h-full justify-between">
-            <div className="flex-1 flex min-w-0">
-              <NavBreadcrumb
-                bookName={bookName}
-                pageName={pageName}
-                location={location}
-                navigate={navigate}
-              />
-            </div>
-
-            <NavActions
-              isAuthenticated={isAuthenticated}
-              isBookRoute={isBookRoute}
-              handleLogout={handleLogout}
-              handleLogin={handleLogin}
-              setSearchOpen={setSearchOpen}
-            />
-          </div>
-        </div>
-
-        <SearchDialog
-          open={searchOpen}
-          onOpenChange={setSearchOpen}
+      {mode === "full" ? (
+        <TopNavShell
+          mode="full"
+          logoHref="/books"
+          onLogoClick={intercept("/books")}
+          tabs={[
+            {
+              label: "My Books",
+              href: "/books",
+              active: onMyBooks,
+              onClick: intercept("/books"),
+            } satisfies TopNavTab,
+            {
+              label: "Library",
+              href: buildPublicUrl("/library"),
+              active: false,
+            } satisfies TopNavTab,
+          ]}
+          search={{
+            placeholder: "Search your books, pages, drafts…",
+            shortcut: "⌘K",
+            onClick: () => setSearchOpen(true),
+          }}
+          actions={actions}
         />
-      </nav>
-      <NavTabs />
+      ) : (
+        <TopNavShell
+          mode="compact"
+          logoHref="/books"
+          onLogoClick={intercept("/books")}
+          crumb={buildCrumb(location.pathname, bookName, pageName)}
+          actions={actions}
+        />
+      )}
+
+      <SearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
     </>
   );
+}
+
+function buildCrumb(pathname: string, bookName: string, pageName: string) {
+  if (pathname.endsWith("/books/new")) {
+    return "My Books  /  New Book";
+  }
+  if (pathname.endsWith("/edit")) {
+    return `My Books  /  ${bookName || deslug(pathname.split("/")[2] ?? "")}  /  Edit`;
+  }
+  if (pageName) {
+    return `${bookName || ""}  /  ${pageName}`;
+  }
+  if (bookName) {
+    return `My Books  /  ${bookName}`;
+  }
+  return "My Books";
 }
