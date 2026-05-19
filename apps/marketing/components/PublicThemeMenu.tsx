@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen, Coffee, Flame, Moon, Package, Palette, Sun } from "lucide-react";
+import { BookOpen, Check, Coffee, Flame, Moon, Package, Palette, Sun } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { IconButton } from "@pensive/shared/ui/icon-button";
 import { THEME_NAME_KEY, THEME_MODE_KEY, readThemeValue, writeThemeValue } from "@/lib/theme";
@@ -96,42 +96,48 @@ export function PublicThemeMenu() {
       {open && (
         <div className="absolute right-0 z-50 mt-2 w-48 rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
           <div className="px-2 py-1.5 text-sm font-semibold">Theme</div>
-          {themes.map(({ name, label, Icon }) => (
-            <button
-              key={name}
-              type="button"
-              onClick={() => updateTheme(name, themeMode)}
-              className={`flex w-full items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground ${
-                themeName === name ? "bg-accent" : ""
-              }`}
-            >
-              <Icon className="mr-2 h-4 w-4" />
-              {label}
-            </button>
-          ))}
+          {themes.map(({ name, label, Icon }) => {
+            const selected = themeName === name;
+            return (
+              <button
+                key={name}
+                type="button"
+                role="menuitemradio"
+                aria-checked={selected}
+                onClick={() => updateTheme(name, themeMode)}
+                className="flex w-full items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground"
+              >
+                <Icon className="mr-2 h-4 w-4" />
+                <span className={selected ? "font-medium" : undefined}>{label}</span>
+                {selected && <Check className="ml-auto h-4 w-4" />}
+              </button>
+            );
+          })}
 
           <div className="my-1 h-px bg-border" />
 
           <div className="px-2 py-1.5 text-sm font-semibold">Mode</div>
           <button
             type="button"
+            role="menuitemradio"
+            aria-checked={themeMode === "light"}
             onClick={() => updateTheme(themeName, "light")}
-            className={`flex w-full items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground ${
-              themeMode === "light" ? "bg-accent" : ""
-            }`}
+            className="flex w-full items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground"
           >
             <Sun className="mr-2 h-4 w-4" />
-            Light
+            <span className={themeMode === "light" ? "font-medium" : undefined}>Light</span>
+            {themeMode === "light" && <Check className="ml-auto h-4 w-4" />}
           </button>
           <button
             type="button"
+            role="menuitemradio"
+            aria-checked={themeMode === "dark"}
             onClick={() => updateTheme(themeName, "dark")}
-            className={`flex w-full items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground ${
-              themeMode === "dark" ? "bg-accent" : ""
-            }`}
+            className="flex w-full items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground"
           >
             <Moon className="mr-2 h-4 w-4" />
-            Dark
+            <span className={themeMode === "dark" ? "font-medium" : undefined}>Dark</span>
+            {themeMode === "dark" && <Check className="ml-auto h-4 w-4" />}
           </button>
         </div>
       )}

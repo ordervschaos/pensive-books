@@ -62,7 +62,73 @@ const PageView = () => {
   const [isEditing, setIsEditing] = useEditMode(canEdit);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [pageSettingsOpen, setPageSettingsOpen] = useState(false);
+  const [isAuthed, setIsAuthed] = useState(false);
   const { toast } = useToast();
+
+  // Track auth state so the editor toolbar's meatball can offer the right
+  // sign-in / sign-out item (mobile editors don't see the floating kebab).
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setIsAuthed(!!session);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
+      setIsAuthed(!!session);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleSignOut = async () => {
+    try {
+      setIsAuthed(false);
+      try { await supabase.auth.signOut(); } catch (e) { console.warn("Signout failed:", e); }
+      const key = Object.keys(localStorage).find(
+        (k) => k.startsWith("sb-") && k.endsWith("-auth-token"),
+      );
+      if (key) localStorage.removeItem(key);
+      const isProd = window.location.hostname === "pensive.me";
+      const baseUrl = isProd ? "https://pensive.me" : "";
+      window.location.href = `${baseUrl}/auth`;
+    } catch (error) {
+      console.error("Logout error:", error);
+      const key = Object.keys(localStorage).find(
+        (k) => k.startsWith("sb-") && k.endsWith("-auth-token"),
+      );
+      if (key) localStorage.removeItem(key);
+      const isProd = window.location.hostname === "pensive.me";
+      const baseUrl = isProd ? "https://pensive.me" : "";
+      window.location.href = `${baseUrl}/auth`;
+    }
+  };
+
+  const toolbarExtraMenuItems = useMemo(
+    () => (
+      <>
+        <DropdownMenuItem
+          onClick={() => setPageSettingsOpen(true)}
+          className="flex items-center gap-2"
+        >
+          <Settings className="h-4 w-4" />
+          <span>Page settings</span>
+        </DropdownMenuItem>
+        {isAuthed ? (
+          <DropdownMenuItem onClick={handleSignOut} className="flex items-center gap-2">
+            <LogOut className="h-4 w-4" />
+            <span>Sign out</span>
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem
+            onClick={() => navigate("/auth")}
+            className="flex items-center gap-2"
+          >
+            <LogIn className="h-4 w-4" />
+            <span>Sign in</span>
+          </DropdownMenuItem>
+        )}
+      </>
+    ),
+    [isAuthed, navigate],
+  );
   
   // Use ref to track page type independently to avoid triggering content updates
   const pageTypeRef = useRef<'text' | 'section'>(page?.page_type as 'text' | 'section' || 'text');
@@ -254,7 +320,12 @@ const PageView = () => {
       <PageMeta page={page} book={book} />
 
       {/* Settings Drawer */}
-      <PageSettingsDrawer onSearchOpen={() => setSearchOpen(true)} />
+      <PageSettingsDrawer
+        onSearchOpen={() => setSearchOpen(true)}
+        canEdit={canEdit}
+        open={pageSettingsOpen}
+        onOpenChange={setPageSettingsOpen}
+      />
 
       {/* Login/Logout Button */}
       <PageViewSettings onSearchOpen={() => setSearchOpen(true)} />
@@ -308,6 +379,7 @@ const PageView = () => {
               currentIndex={currentIndex}
               totalPages={totalPages}
               sectionLabel={sectionLabel}
+              extraMenuItems={toolbarExtraMenuItems}
             />
 
             {/* Navigation Controls */}

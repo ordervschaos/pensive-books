@@ -8,7 +8,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Moon, Sun, Coffee, Palette, Package, Flame, BookOpen } from "lucide-react"
+import { Moon, Sun, Coffee, Palette, Package, Flame, BookOpen, Check } from "lucide-react"
 
 export function ThemeSwitcher() {
   const { themeName, themeMode, setThemeName, setThemeMode } = useTheme()
@@ -32,18 +32,21 @@ export function ThemeSwitcher() {
           )}
         </IconButton>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
+      <DropdownMenuContent align="end" className="min-w-[10rem]">
         <DropdownMenuLabel>Theme</DropdownMenuLabel>
         {themes.map((theme) => {
           const Icon = theme.icon
+          const selected = themeName === theme.name
           return (
             <DropdownMenuItem
               key={theme.name}
               onClick={() => setThemeName(theme.name)}
-              className={themeName === theme.name ? "bg-accent" : ""}
+              aria-checked={selected}
+              role="menuitemradio"
             >
               <Icon className="mr-2 h-4 w-4" />
-              {theme.label}
+              <span className={selected ? "font-medium" : undefined}>{theme.label}</span>
+              {selected && <Check className="ml-auto h-4 w-4" />}
             </DropdownMenuItem>
           )
         })}
@@ -53,17 +56,21 @@ export function ThemeSwitcher() {
         <DropdownMenuLabel>Mode</DropdownMenuLabel>
         <DropdownMenuItem
           onClick={() => setThemeMode("light")}
-          className={themeMode === "light" ? "bg-accent" : ""}
+          aria-checked={themeMode === "light"}
+          role="menuitemradio"
         >
           <Sun className="mr-2 h-4 w-4" />
-          Light
+          <span className={themeMode === "light" ? "font-medium" : undefined}>Light</span>
+          {themeMode === "light" && <Check className="ml-auto h-4 w-4" />}
         </DropdownMenuItem>
         <DropdownMenuItem
           onClick={() => setThemeMode("dark")}
-          className={themeMode === "dark" ? "bg-accent" : ""}
+          aria-checked={themeMode === "dark"}
+          role="menuitemradio"
         >
           <Moon className="mr-2 h-4 w-4" />
-          Dark
+          <span className={themeMode === "dark" ? "font-medium" : undefined}>Dark</span>
+          {themeMode === "dark" && <Check className="ml-auto h-4 w-4" />}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
