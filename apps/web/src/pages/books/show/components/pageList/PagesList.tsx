@@ -279,7 +279,7 @@ export const PagesList = ({
   return (
     <div className="mt-6 overflow-hidden rounded-2xl border border-border bg-[hsl(var(--pv-surface-2))]/40">
         <div className="border-b border-[hsl(var(--pv-border-soft))] px-5 py-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-row items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2">
               <nav className="flex flex-wrap items-center gap-1.5" aria-label="View mode">
                 {viewOptions.map(({ value, label, Icon }) => {

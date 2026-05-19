@@ -63,7 +63,12 @@ export function VersionControlButton({
   const versionLabel = latestVersion ? `v${latestVersion.version_number}` : "no version";
 
   return (
-    <div className="inline-flex items-stretch overflow-hidden rounded-full border border-border bg-transparent">
+    <div
+      className={cn(
+        "inline-flex items-stretch overflow-hidden rounded-full bg-transparent",
+        hasChanges ? "" : "border border-border",
+      )}
+    >
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger asChild>

@@ -69,7 +69,7 @@ export function PageViewSettings({ onSearchOpen }: PageViewSettingsProps) {
   };
 
   return (
-    <div className="fixed top-2 right-12 z-50 flex items-center gap-1">
+    <div className="fixed top-2 right-12 z-50 hidden items-center gap-1 sm:flex">
       {isAuthenticated ? (
         <Button variant="ghost" size="icon" onClick={handleLogout} className="h-8 w-8 hover:bg-accent/50">
           <LogOut className="h-4 w-4 opacity-60 hover:opacity-100 transition-opacity" />

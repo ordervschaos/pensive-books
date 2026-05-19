@@ -64,12 +64,13 @@ export const BookActionsBar = ({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
-          variant="outline"
+          variant="ghost"
           size="sm"
-          className="pv-serif h-9 gap-1.5 rounded-full border-border bg-transparent px-3.5 text-[13px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground"
+          aria-label="Actions"
+          className="pv-serif h-9 w-9 gap-0 rounded-full border-0 bg-transparent p-0 text-[13px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground sm:w-auto sm:gap-1.5 sm:border sm:border-border sm:px-3.5"
         >
-          <MoreHorizontal className="h-3.5 w-3.5" />
-          <span>Actions</span>
+          <MoreHorizontal className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
+          <span className="hidden sm:inline">Actions</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">

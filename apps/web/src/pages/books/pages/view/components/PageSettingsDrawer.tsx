@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Settings,
   Search,
@@ -9,8 +9,12 @@ import {
   Moon,
   Coffee,
   Package,
-  BookOpen
+  BookOpen,
+  MoreVertical,
+  LogIn,
+  LogOut,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -20,11 +24,18 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { usePageDisplaySettings, FontSize, MarginSize, FontFamily, FontStyle } from "@/contexts/PageDisplaySettingsContext";
 import { useTheme } from "@/components/theme/ThemeProvider";
+import { supabase } from "@/integrations/supabase/client";
 
 interface PageSettingsDrawerProps {
   onSearchOpen?: () => void;
@@ -32,8 +43,51 @@ interface PageSettingsDrawerProps {
 
 export function PageSettingsDrawer({ onSearchOpen }: PageSettingsDrawerProps) {
   const [open, setOpen] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const navigate = useNavigate();
   const { settings, setFontSize, setMarginSize, setFontFamily, setFontStyle } = usePageDisplaySettings();
   const { themeName, themeMode, setThemeName, setThemeMode } = useTheme();
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setIsAuthenticated(!!session);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsAuthenticated(!!session);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleLogout = async () => {
+    try {
+      setIsAuthenticated(false);
+      try {
+        await supabase.auth.signOut();
+      } catch (e) {
+        console.warn("Signout failed:", e);
+      }
+      const key = Object.keys(localStorage).find(
+        (k) => k.startsWith("sb-") && k.endsWith("-auth-token"),
+      );
+      if (key) localStorage.removeItem(key);
+      const isProd = window.location.hostname === "pensive.me";
+      const baseUrl = isProd ? "https://pensive.me" : "";
+      window.location.href = `${baseUrl}/auth`;
+    } catch (error) {
+      console.error("Logout error:", error);
+      const key = Object.keys(localStorage).find(
+        (k) => k.startsWith("sb-") && k.endsWith("-auth-token"),
+      );
+      if (key) localStorage.removeItem(key);
+      const isProd = window.location.hostname === "pensive.me";
+      const baseUrl = isProd ? "https://pensive.me" : "";
+      window.location.href = `${baseUrl}/auth`;
+    }
+  };
+
+  const handleLogin = () => {
+    navigate("/auth");
+  };
 
   const fontSizeLabels: Record<FontSize, string> = {
     small: 'Small',
@@ -115,13 +169,49 @@ export function PageSettingsDrawer({ onSearchOpen }: PageSettingsDrawerProps) {
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
+      {/* Mobile: single kebab combining settings + auth, no editor-toolbar overlap */}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="More options"
+            className="fixed top-2 right-2 z-50 h-8 w-8 hover:bg-accent/50 sm:hidden"
+          >
+            <MoreVertical className="h-4 w-4 opacity-60 transition-opacity hover:opacity-100" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-44">
+          <DropdownMenuItem
+            onClick={() => setOpen(true)}
+            className="flex items-center gap-2"
+          >
+            <Settings className="h-4 w-4" />
+            <span>Page settings</span>
+          </DropdownMenuItem>
+          {isAuthenticated ? (
+            <DropdownMenuItem onClick={handleLogout} className="flex items-center gap-2">
+              <LogOut className="h-4 w-4" />
+              <span>Sign out</span>
+            </DropdownMenuItem>
+          ) : (
+            <DropdownMenuItem onClick={handleLogin} className="flex items-center gap-2">
+              <LogIn className="h-4 w-4" />
+              <span>Sign in</span>
+            </DropdownMenuItem>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      {/* Desktop: gear icon opens the sheet directly */}
       <SheetTrigger asChild>
         <Button
           variant="ghost"
           size="icon"
-          className="h-8 w-8 hover:bg-accent/50 fixed top-2 right-2 z-50"
+          aria-label="Page settings"
+          className="fixed top-2 right-2 z-50 hidden h-8 w-8 hover:bg-accent/50 sm:flex"
         >
-          <Settings className="h-4 w-4 opacity-60 hover:opacity-100 transition-opacity" />
+          <Settings className="h-4 w-4 opacity-60 transition-opacity hover:opacity-100" />
         </Button>
       </SheetTrigger>
       <SheetContent side="right" className="w-[400px] sm:w-[440px] overflow-y-auto">

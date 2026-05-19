@@ -587,12 +587,13 @@ const BookDetails = () => {
                   {isBetaEnabled && (
                     <Button
                       size="sm"
-                      variant="outline"
+                      variant="ghost"
                       onClick={() => navigate(`/books/${bookSlug}/chat`)}
-                      className="pv-serif h-9 gap-1.5 rounded-full border-border bg-transparent px-3.5 text-[13px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground"
+                      aria-label="Chat with Book"
+                      className="pv-serif h-9 w-9 gap-0 rounded-full border-0 bg-transparent p-0 text-[13px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground sm:w-auto sm:gap-1.5 sm:border sm:border-border sm:px-3.5"
                     >
-                      <MessageSquare className="h-3.5 w-3.5" />
-                      Chat with Book
+                      <MessageSquare className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
+                      <span className="hidden sm:inline">Chat with Book</span>
                     </Button>
                   )}
 

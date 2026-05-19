@@ -339,12 +339,21 @@ export default function Index() {
                 </SelectContent>
               </Select>
 
+              <Button
+                onClick={() => navigate("/books/new")}
+                size="sm"
+                className="pv-serif h-10 rounded-full bg-foreground px-5 text-[14px] font-normal tracking-[0.01em] text-background hover:opacity-90"
+              >
+                <Plus className="mr-1.5 h-4 w-4" />
+                Start a new book
+              </Button>
+
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
-                    variant="outline"
+                    variant="ghost"
                     size="icon"
-                    className="h-10 w-10 rounded-full border-border bg-transparent text-[hsl(var(--pv-text-muted))] hover:text-foreground"
+                    className="h-10 w-10 rounded-full border-0 bg-transparent text-[hsl(var(--pv-text-muted))] hover:text-foreground"
                     aria-label="More options"
                   >
                     <MoreHorizontal className="h-4 w-4" />
@@ -363,15 +372,6 @@ export default function Index() {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-
-              <Button
-                onClick={() => navigate("/books/new")}
-                size="sm"
-                className="pv-serif h-10 rounded-full bg-foreground px-5 text-[14px] font-normal tracking-[0.01em] text-background hover:opacity-90"
-              >
-                <Plus className="mr-1.5 h-4 w-4" />
-                Start a new book
-              </Button>
             </div>
           </div>
 
