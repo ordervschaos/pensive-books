@@ -15,6 +15,7 @@
     "dev": "corepack pnpm --filter @pensive/web dev",
     "dev:web": "corepack pnpm --filter @pensive/web dev",
     "dev:marketing": "corepack pnpm --filter @pensive/marketing dev",
+    "dev:all": "corepack pnpm --parallel --filter @pensive/web --filter @pensive/marketing dev",
     "build": "corepack pnpm -r --if-present build",
     "build:web": "corepack pnpm --filter @pensive/web build",
     "build:marketing": "corepack pnpm --filter @pensive/marketing build",
