@@ -31,6 +31,8 @@ interface PageContentProps {
   totalPages?: number;
   /** Name of the nearest preceding section, surfaced in the eyebrow as "Chapter". */
   sectionLabel?: string | null;
+  /** Items appended to the editor toolbar's meatball menu. */
+  extraMenuItems?: React.ReactNode;
 }
 
 export const PageContent = ({
@@ -53,6 +55,7 @@ export const PageContent = ({
   currentIndex,
   totalPages,
   sectionLabel,
+  extraMenuItems,
 }: PageContentProps) => {
   const [initialLoad, setInitialLoad] = useState(true);
   const [currentContent, setCurrentContent] = useState<EditorJSON | null>(jsonContent);
@@ -240,6 +243,7 @@ export const PageContent = ({
                 fontFamilyStyle={fontFamilyStyle}
                 saving={saving}
                 lastSavedAt={lastSavedAt}
+                extraMenuItems={extraMenuItems}
               />
 
               {/* Floating action buttons */}

@@ -1,5 +1,7 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { Settings, LogIn, LogOut } from "lucide-react";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { PageNavigation } from "./components/PageNavigation";
 import { PageContent } from "./components/PageContent";
 import { PageLoading } from "@/components/page/PageLoading";

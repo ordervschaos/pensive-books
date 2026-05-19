@@ -39,10 +39,30 @@ import { supabase } from "@/integrations/supabase/client";
 
 interface PageSettingsDrawerProps {
   onSearchOpen?: () => void;
+  /**
+   * When true, the editor toolbar already renders its own meatball menu in the
+   * top-right. Suppress the floating mobile kebab to avoid stacking two
+   * menus in the same corner.
+   */
+  canEdit?: boolean;
+  /** Optional external control of the sheet open state. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
-export function PageSettingsDrawer({ onSearchOpen }: PageSettingsDrawerProps) {
-  const [open, setOpen] = useState(false);
+export function PageSettingsDrawer({
+  onSearchOpen,
+  canEdit = false,
+  open: externalOpen,
+  onOpenChange: externalOnOpenChange,
+}: PageSettingsDrawerProps) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = externalOpen !== undefined;
+  const open = isControlled ? externalOpen : internalOpen;
+  const setOpen = (next: boolean) => {
+    if (!isControlled) setInternalOpen(next);
+    externalOnOpenChange?.(next);
+  };
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const navigate = useNavigate();
   const { settings, setFontSize, setMarginSize, setFontFamily, setFontStyle } = usePageDisplaySettings();
@@ -169,14 +189,19 @@ export function PageSettingsDrawer({ onSearchOpen }: PageSettingsDrawerProps) {
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
-      {/* Mobile: single kebab combining settings + auth, no editor-toolbar overlap */}
+      {/* Mobile: single kebab combining settings + auth, no editor-toolbar overlap.
+          Hidden when canEdit=true because the editor toolbar renders its own
+          meatball menu at the same position. */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
             variant="ghost"
             size="icon"
             aria-label="More options"
-            className="fixed top-2 right-2 z-50 h-8 w-8 hover:bg-accent/50 sm:hidden"
+            className={cn(
+              "fixed top-2 right-2 z-50 h-8 w-8 hover:bg-accent/50 sm:hidden",
+              canEdit && "hidden",
+            )}
           >
             <MoreVertical className="h-4 w-4 opacity-60 transition-opacity hover:opacity-100" />
           </Button>

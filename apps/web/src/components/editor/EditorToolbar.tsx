@@ -25,9 +25,17 @@ interface EditorToolbarProps {
   onDeletePage?: () => void;
   saving?: boolean;
   lastSavedAt?: Date | null;
+  /**
+   * Additional items rendered inside the meatball "More options" dropdown,
+   * appended below the built-in page-type / delete-page items. Used by the
+   * page view to fold Page Settings + Sign in/out into the same menu on
+   * mobile so the editor toolbar doesn't compete with a separate floating
+   * kebab in the top-right.
+   */
+  extraMenuItems?: React.ReactNode;
 }
 
-export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, customButtons, pageType, onPageTypeChange, onDeletePage, saving, lastSavedAt }: EditorToolbarProps) => {
+export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, customButtons, pageType, onPageTypeChange, onDeletePage, saving, lastSavedAt, extraMenuItems }: EditorToolbarProps) => {
   const { toast } = useToast();
   const uploadImage = useSupabaseUpload();
   const isMobile = useMediaQuery("(max-width: 768px)");
@@ -424,7 +432,7 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
           </div>
         )}
 
-        {editable && (onDeletePage || onPageTypeChange) && (
+        {editable && (onDeletePage || onPageTypeChange || extraMenuItems) && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -453,7 +461,7 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
                     <Section className="h-4 w-4" />
                     <span>Section (centered)</span>
                   </DropdownMenuItem>
-                  {onDeletePage && <DropdownMenuSeparator />}
+                  {(onDeletePage || extraMenuItems) && <DropdownMenuSeparator />}
                 </>
               )}
               {onDeletePage && (
@@ -464,6 +472,12 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
                   <Trash2 className="h-4 w-4" />
                   <span>Delete page</span>
                 </DropdownMenuItem>
+              )}
+              {extraMenuItems && (
+                <>
+                  {onDeletePage && <DropdownMenuSeparator />}
+                  {extraMenuItems}
+                </>
               )}
             </DropdownMenuContent>
           </DropdownMenu>

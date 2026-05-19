@@ -27,6 +27,8 @@ interface TipTapEditorProps {
   bookId?: string | null;
   saving?: boolean;
   lastSavedAt?: Date | null;
+  /** Items appended to the toolbar's meatball "More options" dropdown. */
+  extraMenuItems?: React.ReactNode;
 }
 
 export const TipTapEditor = ({
@@ -47,6 +49,7 @@ export const TipTapEditor = ({
   bookId,
   saving,
   lastSavedAt,
+  extraMenuItems,
 }: TipTapEditorProps) => {
   const { toast } = useToast();
   const uploadImage = useSupabaseUpload();
@@ -167,6 +170,7 @@ export const TipTapEditor = ({
           onDeletePage={onDeletePage}
           saving={saving}
           lastSavedAt={lastSavedAt}
+          extraMenuItems={extraMenuItems}
         />
       <div 
         className={cn(
