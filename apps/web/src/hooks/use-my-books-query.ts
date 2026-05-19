@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
 export type FilterType = "all" | "published" | "private" | "pinned";
@@ -39,12 +39,11 @@ export interface MyBooksCounts {
   pinned: number;
 }
 
-interface UseMyBooksPageParams {
+interface UseMyBooksInfiniteParams {
   userId: string | null;
   filter: FilterType;
   search: string;
   sort: SortType;
-  page: number;
   pageSize: number;
 }
 
@@ -52,77 +51,107 @@ function escapeIlike(value: string) {
   return value.replace(/[%_,]/g, (m) => `\\${m}`);
 }
 
-export function useMyBooksPage({
+async function fetchMyBooksPage({
   userId,
   filter,
   search,
   sort,
-  page,
+  pageParam,
   pageSize,
-}: UseMyBooksPageParams) {
-  return useQuery({
+}: {
+  userId: string;
+  filter: FilterType;
+  search: string;
+  sort: SortType;
+  pageParam: number;
+  pageSize: number;
+}): Promise<MyBooksPage> {
+  let query = supabase
+    .from("books")
+    .select("*", { count: "exact" })
+    .eq("owner_id", userId)
+    .eq("is_archived", false);
+
+  if (filter === "published") query = query.eq("is_public", true);
+  else if (filter === "private") query = query.eq("is_public", false);
+  else if (filter === "pinned") query = query.eq("pinned", true);
+
+  const trimmed = search.trim();
+  if (trimmed) {
+    const term = `%${escapeIlike(trimmed)}%`;
+    query = query.or(
+      `name.ilike.${term},subtitle.ilike.${term},author.ilike.${term}`,
+    );
+  }
+
+  // Keep pinned items at the top unless the user is already filtering by pinned.
+  if (filter !== "pinned") {
+    query = query.order("pinned", { ascending: false, nullsFirst: false });
+  }
+
+  switch (sort) {
+    case "recently-updated":
+      query = query.order("updated_at", { ascending: false });
+      break;
+    case "recently-created":
+      query = query.order("created_at", { ascending: false });
+      break;
+    case "alphabetical-az":
+      query = query.order("name", { ascending: true });
+      break;
+    case "alphabetical-za":
+      query = query.order("name", { ascending: false });
+      break;
+  }
+
+  // Tie-break so range() is deterministic across pages when the primary sort has ties.
+  query = query.order("id", { ascending: false });
+
+  const offset = pageParam * pageSize;
+  const { data, error, count } = await query.range(
+    offset,
+    offset + pageSize - 1,
+  );
+
+  if (error) throw error;
+
+  return { books: (data ?? []) as OwnedBook[], total: count ?? 0 };
+}
+
+export function useInfiniteMyBooks({
+  userId,
+  filter,
+  search,
+  sort,
+  pageSize,
+}: UseMyBooksInfiniteParams) {
+  return useInfiniteQuery({
     queryKey: [
-      "my-books-page",
+      "my-books-infinite",
       userId,
       filter,
       search.trim().toLowerCase(),
       sort,
-      page,
       pageSize,
     ],
     enabled: Boolean(userId),
-    queryFn: async (): Promise<MyBooksPage> => {
-      if (!userId) return { books: [], total: 0 };
-
-      let query = supabase
-        .from("books")
-        .select("*", { count: "exact" })
-        .eq("owner_id", userId)
-        .eq("is_archived", false);
-
-      if (filter === "published") query = query.eq("is_public", true);
-      else if (filter === "private") query = query.eq("is_public", false);
-      else if (filter === "pinned") query = query.eq("pinned", true);
-
-      const trimmed = search.trim();
-      if (trimmed) {
-        const term = `%${escapeIlike(trimmed)}%`;
-        query = query.or(
-          `name.ilike.${term},subtitle.ilike.${term},author.ilike.${term}`,
-        );
-      }
-
-      // Keep pinned items at the top unless the user is already filtering by pinned.
-      if (filter !== "pinned") {
-        query = query.order("pinned", { ascending: false, nullsFirst: false });
-      }
-
-      switch (sort) {
-        case "recently-updated":
-          query = query.order("updated_at", { ascending: false });
-          break;
-        case "recently-created":
-          query = query.order("created_at", { ascending: false });
-          break;
-        case "alphabetical-az":
-          query = query.order("name", { ascending: true });
-          break;
-        case "alphabetical-za":
-          query = query.order("name", { ascending: false });
-          break;
-      }
-
-      const offset = (page - 1) * pageSize;
-      const { data, error, count } = await query.range(
-        offset,
-        offset + pageSize - 1,
-      );
-
-      if (error) throw error;
-
-      return { books: (data ?? []) as OwnedBook[], total: count ?? 0 };
+    initialPageParam: 0,
+    queryFn: async ({ pageParam }) => {
+      if (!userId) return { books: [], total: 0 } as MyBooksPage;
+      return fetchMyBooksPage({
+        userId,
+        filter,
+        search,
+        sort,
+        pageParam: pageParam as number,
+        pageSize,
+      });
     },
-    placeholderData: (prev) => prev,
+    getNextPageParam: (lastPage, allPages) => {
+      const loaded = allPages.reduce((sum, p) => sum + p.books.length, 0);
+      if (loaded >= lastPage.total) return undefined;
+      return allPages.length;
+    },
   });
 }
 

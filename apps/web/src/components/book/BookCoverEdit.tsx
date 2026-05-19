@@ -154,7 +154,7 @@ export const BookCoverEdit = ({
     <Card className="border bg-card">
       <CardHeader className="space-y-6">
         <div className="space-y-4">
-          <div className="w-full aspect-[3/4] relative rounded-lg overflow-hidden bg-muted">
+          <div className="w-full aspect-[4/5] relative rounded-lg overflow-hidden bg-muted">
             {coverUrl ? (
               <div className="relative w-full h-full">
                 <img 

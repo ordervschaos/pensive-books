@@ -18,12 +18,10 @@ import { Helmet } from "react-helmet-async";
 import { executeBookOperation } from "@/lib/book-operations";
 import { Button } from "@/components/ui/button";
 import { jsonToText, getWordCountFromContent } from "@/utils/tiptapHelpers";
-import { UncommittedChangesBadge } from "./components/UncommittedChangesBadge";
 import { CommitDialog } from "./components/CommitDialog";
 import { PublishingDialog } from "@/components/book/PublishingDialog";
-import { VersionService } from "@/services/VersionService";
-import { GitCommit, History, MessageSquare } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { VersionControlButton } from "./components/VersionControlButton";
+import { MessageSquare } from "lucide-react";
 import type { Session } from "@supabase/supabase-js";
 import type { EditorJSON } from "@/types/editor";
 
@@ -121,13 +119,6 @@ const BookDetails = () => {
   // Version control state
   const [isCommitDialogOpen, setIsCommitDialogOpen] = useState(false);
   const [isPublishingDialogOpen, setIsPublishingDialogOpen] = useState(false);
-
-  // Fetch latest version for version badge
-  const { data: latestVersion } = useQuery({
-    queryKey: ["latest-version", numericBookId],
-    queryFn: () => VersionService.getLatestVersion(numericBookId),
-    enabled: numericBookId > 0,
-  });
 
   const fetchBookmarkedPage = useCallback(async (session: Session | null) => {
     try {
@@ -645,42 +636,11 @@ const BookDetails = () => {
               </div>
 
               {canEdit && (
-                <div className="flex items-center gap-2">
-                  {/* Draft Badge */}
-                  <UncommittedChangesBadge
-                    bookId={getNumericId(bookSlug)}
-                    bookSlug={bookSlug}
-                    showCount
-                  />
-
-                  {/* Version Badge */}
-                  {latestVersion ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => navigate(`/books/${bookSlug}/versions`)}
-                      className="pv-mono h-9 gap-1.5 rounded-full border-border bg-transparent px-3.5 text-[12px] tabular-nums text-[hsl(var(--pv-text-muted))] hover:text-foreground"
-                    >
-                      <History className="h-3.5 w-3.5" />
-                      v{latestVersion.version_number}
-                    </Button>
-                  ) : (
-                    <span className="pv-serif inline-flex h-9 items-center gap-1.5 rounded-full border border-border bg-transparent px-3.5 text-[13px] italic text-[hsl(var(--pv-text-faint))]">
-                      <History className="h-3.5 w-3.5" />
-                      No version
-                    </span>
-                  )}
-
-                  {/* Save Button */}
-                  <Button
-                    size="sm"
-                    onClick={() => setIsCommitDialogOpen(true)}
-                    className="pv-serif h-9 gap-1.5 rounded-full bg-foreground px-4 text-[13px] font-normal text-background hover:opacity-90"
-                  >
-                    <GitCommit className="h-3.5 w-3.5" />
-                    Save this version
-                  </Button>
-                </div>
+                <VersionControlButton
+                  bookId={getNumericId(bookSlug)}
+                  bookSlug={bookSlug}
+                  onSaveVersion={() => setIsCommitDialogOpen(true)}
+                />
               )}
             </div>
 

@@ -9,6 +9,25 @@ type Props = {
   books: PublicBook[];
 };
 
+const FEATURED_COVER_PALETTES: Array<{ bg: string; text: string }> = [
+  { bg: "#1f2d44", text: "#e8dcc4" },
+  { bg: "#6b1f1f", text: "#f0e6d2" },
+  { bg: "#2d4a3e", text: "#e8e2cc" },
+  { bg: "#ebe1c8", text: "#2a2014" },
+  { bg: "#1f1f1f", text: "#d6c4a3" },
+  { bg: "#b8862d", text: "#2a1a08" },
+  { bg: "#4a3157", text: "#e8d4c4" },
+  { bg: "#a04b2c", text: "#f5e8d2" },
+];
+
+function pickFeaturedCoverPalette(book: PublicBook) {
+  const seed = Array.from(`${book.id}-${book.name ?? ""}`).reduce(
+    (acc, ch) => acc + ch.charCodeAt(0),
+    0,
+  );
+  return FEATURED_COVER_PALETTES[seed % FEATURED_COVER_PALETTES.length];
+}
+
 function scrollByAmount(container: HTMLDivElement | null, direction: 1 | -1) {
   if (!container) return;
 
@@ -34,7 +53,7 @@ export function FeaturedBooksCarousel({ books }: Props) {
             href={`/library/books/${slugifyIdTitle(book.id, book.name)}`}
             className="block min-w-[min(100%,280px)] flex-1 sm:min-w-[calc(50%-8px)] md:min-w-[calc(33.333%-11px)] lg:min-w-[calc(25%-12px)]"
           >
-            <div className="relative aspect-[3/4] cursor-pointer overflow-hidden rounded-lg border bg-card text-card-foreground shadow-sm group">
+            <div className="relative aspect-[4/5] cursor-pointer overflow-hidden rounded-lg border bg-card text-card-foreground shadow-sm group">
               {book.cover_url ? (
                 <div className="relative h-full w-full">
                   <img
@@ -60,13 +79,22 @@ export function FeaturedBooksCarousel({ books }: Props) {
                     </div>
                   )}
                 </div>
-              ) : (
-                <div className="flex h-full w-full items-center justify-center bg-muted p-4">
-                  <h3 className="line-clamp-3 break-words text-center text-xs font-semibold text-muted-foreground md:text-2xl">
-                    {book.name}
-                  </h3>
-                </div>
-              )}
+              ) : (() => {
+                const palette = pickFeaturedCoverPalette(book);
+                return (
+                  <div
+                    className="flex h-full w-full items-center justify-center p-4"
+                    style={{ backgroundColor: palette.bg }}
+                  >
+                    <h3
+                      className="line-clamp-4 break-words text-center text-xs font-semibold md:text-2xl"
+                      style={{ color: palette.text }}
+                    >
+                      {book.name}
+                    </h3>
+                  </div>
+                );
+              })()}
             </div>
           </a>
         ))}

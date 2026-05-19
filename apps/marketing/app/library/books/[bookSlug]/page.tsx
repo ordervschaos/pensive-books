@@ -13,6 +13,25 @@ type Props = {
   };
 };
 
+const DETAIL_COVER_PALETTES: Array<{ bg: string; text: string }> = [
+  { bg: "#1f2d44", text: "#e8dcc4" },
+  { bg: "#6b1f1f", text: "#f0e6d2" },
+  { bg: "#2d4a3e", text: "#e8e2cc" },
+  { bg: "#ebe1c8", text: "#2a2014" },
+  { bg: "#1f1f1f", text: "#d6c4a3" },
+  { bg: "#b8862d", text: "#2a1a08" },
+  { bg: "#4a3157", text: "#e8d4c4" },
+  { bg: "#a04b2c", text: "#f5e8d2" },
+];
+
+function pickDetailCoverPalette(id: number | string, title: string | null) {
+  const seed = Array.from(`${id}-${title ?? ""}`).reduce(
+    (acc, ch) => acc + ch.charCodeAt(0),
+    0,
+  );
+  return DETAIL_COVER_PALETTES[seed % DETAIL_COVER_PALETTES.length];
+}
+
 function formatPublishedDate(value: string | null) {
   if (!value) {
     return null;
@@ -76,26 +95,29 @@ export default async function PublishedBookPage({ params }: Props) {
 
       {/* Cover */}
       <div className="mt-9 flex justify-center">
-        <div className="relative h-[312px] w-[240px] overflow-hidden rounded-[3px] border border-border bg-[hsl(var(--pv-surface-2))] shadow-[0_24px_50px_rgba(0,0,0,0.12)]">
+        <div className="relative h-[300px] w-[240px] overflow-hidden rounded-[3px] border border-border bg-[hsl(var(--pv-surface-2))] shadow-[0_24px_50px_rgba(0,0,0,0.12)]">
           {book.cover_url ? (
             <img
               src={book.cover_url}
               alt={book.name}
               className="h-full w-full object-cover"
             />
-          ) : (
-            <div
-              className="flex h-full w-full items-center justify-center px-4 text-center"
-              style={{
-                backgroundImage:
-                  "repeating-linear-gradient(135deg, rgba(0,0,0,0.04) 0 14px, rgba(0,0,0,0.00) 14px 28px), linear-gradient(135deg, hsl(var(--pv-surface-2)), hsl(var(--pv-border-soft)))",
-              }}
-            >
-              <span className="pv-display text-[22px] italic leading-tight text-foreground">
-                {book.name}
-              </span>
-            </div>
-          )}
+          ) : (() => {
+            const palette = pickDetailCoverPalette(book.id, book.name);
+            return (
+              <div
+                className="flex h-full w-full items-center justify-center px-4 text-center"
+                style={{ backgroundColor: palette.bg }}
+              >
+                <span
+                  className="pv-display text-[22px] italic leading-[1.15]"
+                  style={{ color: palette.text }}
+                >
+                  {book.name}
+                </span>
+              </div>
+            );
+          })()}
         </div>
       </div>
 

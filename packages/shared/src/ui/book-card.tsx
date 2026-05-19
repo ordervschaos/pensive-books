@@ -45,7 +45,7 @@ export function BookCard({
 
   return (
     <div className="flex flex-col">
-      <div className="relative aspect-[3/4] w-full overflow-hidden rounded-xl border border-border/50 bg-card shadow-[0_1px_2px_rgba(0,0,0,0.06)] transition-all duration-300 group-hover:-translate-y-1 group-hover:border-border group-hover:shadow-[0_18px_40px_-12px_rgba(0,0,0,0.4)]">
+      <div className="relative aspect-[4/5] w-full overflow-hidden rounded-xl border border-border/50 bg-card shadow-[0_1px_2px_rgba(0,0,0,0.06)] transition-all duration-300 group-hover:-translate-y-1 group-hover:border-border group-hover:shadow-[0_18px_40px_-12px_rgba(0,0,0,0.4)]">
         {topRightOverlay && (
           <div className="absolute right-2 top-2 z-10">{topRightOverlay}</div>
         )}

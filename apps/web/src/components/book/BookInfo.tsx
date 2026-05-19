@@ -327,7 +327,7 @@ export const BookInfo = ({
   return (
     <div className="grid grid-cols-1 gap-8 p-6 sm:grid-cols-[160px,1fr] md:grid-cols-[180px,1fr] md:gap-10 md:p-10">
           {/* Book Cover */}
-        <div className="group relative aspect-[3/4] overflow-hidden rounded-[3px] border border-border bg-[hsl(var(--pv-surface-2))] shadow-[0_18px_36px_rgba(0,0,0,0.10)]">
+        <div className="group relative aspect-[4/5] overflow-hidden rounded-[3px] border border-border bg-[hsl(var(--pv-surface-2))] shadow-[0_18px_36px_rgba(0,0,0,0.10)]">
             {currentCoverUrl ? (
               <img
                 src={currentCoverUrl}

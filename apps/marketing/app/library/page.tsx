@@ -215,6 +215,25 @@ function CatalogCard({ book }: { book: PublicBook }) {
   );
 }
 
+const COVER_PALETTES: Array<{ bg: string; text: string }> = [
+  { bg: "#1f2d44", text: "#e8dcc4" },
+  { bg: "#6b1f1f", text: "#f0e6d2" },
+  { bg: "#2d4a3e", text: "#e8e2cc" },
+  { bg: "#ebe1c8", text: "#2a2014" },
+  { bg: "#1f1f1f", text: "#d6c4a3" },
+  { bg: "#b8862d", text: "#2a1a08" },
+  { bg: "#4a3157", text: "#e8d4c4" },
+  { bg: "#a04b2c", text: "#f5e8d2" },
+];
+
+function pickCoverPalette(book: PublicBook) {
+  const seed = Array.from(`${book.id}-${book.name ?? ""}`).reduce(
+    (acc, ch) => acc + ch.charCodeAt(0),
+    0,
+  );
+  return COVER_PALETTES[seed % COVER_PALETTES.length];
+}
+
 function Cover({ book, compact = false }: { book: PublicBook; compact?: boolean }) {
   const showsTitle = Boolean(book.cover_url && book.show_text_on_cover);
   const wrapperClass = `relative aspect-[4/5] w-full overflow-hidden rounded-[3px] border border-border bg-[hsl(var(--pv-surface-2))] transition-transform duration-300 group-hover:-translate-y-0.5 ${
@@ -240,16 +259,15 @@ function Cover({ book, compact = false }: { book: PublicBook; compact?: boolean 
     );
   }
 
+  const palette = pickCoverPalette(book);
+
   return (
-    <div
-      className={wrapperClass}
-      style={{
-        backgroundImage:
-          "repeating-linear-gradient(135deg, rgba(0,0,0,0.04) 0 14px, rgba(0,0,0,0.00) 14px 28px), linear-gradient(135deg, hsl(var(--pv-surface-2)), hsl(var(--pv-border-soft)))",
-      }}
-    >
+    <div className={wrapperClass} style={{ backgroundColor: palette.bg }}>
       <div className="flex h-full items-center justify-center px-4 text-center">
-        <span className="pv-display text-[20px] italic leading-tight text-foreground">
+        <span
+          className="pv-display text-[20px] italic leading-[1.15]"
+          style={{ color: palette.text }}
+        >
           {book.name}
         </span>
       </div>

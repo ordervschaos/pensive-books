@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Plus,
@@ -10,8 +10,7 @@ import {
   BookOpen,
   Globe2,
   Users,
-  ChevronLeft,
-  ChevronRight,
+  Loader2,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -27,7 +26,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { RecentBooksCard } from "./components/RecentBooksCard";
 import {
-  useMyBooksPage,
+  useInfiniteMyBooks,
   useMyBooksCounts,
   useSharedBooks,
   type FilterType,
@@ -60,11 +59,11 @@ export default function Index() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [activeFilter, setActiveFilter] = useState<FilterType>("all");
   const [sortType, setSortType] = useState<SortType>("recently-updated");
-  const [page, setPage] = useState(1);
 
   const { toast } = useToast();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -90,24 +89,21 @@ export default function Index() {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // Any change to filter/search/sort resets us to page 1.
-  useEffect(() => {
-    setPage(1);
-  }, [activeFilter, debouncedSearch, sortType]);
-
   const userId = session?.userId ?? null;
 
   const {
-    data: pageData,
+    data: infiniteData,
     isLoading: pageLoading,
     isFetching: pageFetching,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
     error: pageError,
-  } = useMyBooksPage({
+  } = useInfiniteMyBooks({
     userId,
     filter: activeFilter,
     search: debouncedSearch,
     sort: sortType,
-    page,
     pageSize: PAGE_SIZE,
   });
 
@@ -142,7 +138,7 @@ export default function Index() {
       if (error) throw error;
 
       // Invalidate book queries so counts + grid refresh.
-      queryClient.invalidateQueries({ queryKey: ["my-books-page"] });
+      queryClient.invalidateQueries({ queryKey: ["my-books-infinite"] });
       queryClient.invalidateQueries({ queryKey: ["my-books-counts"] });
 
       toast({
@@ -179,10 +175,12 @@ export default function Index() {
   const totalBooks = counts?.all ?? 0;
   const publishedCount = counts?.published ?? 0;
   const privateCount = counts?.private ?? 0;
-  const total = pageData?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const books = pageData?.books ?? [];
-  const isFirstLoad = pageLoading && !pageData;
+  const books = useMemo<OwnedBook[]>(
+    () => infiniteData?.pages.flatMap((p) => p.books) ?? [],
+    [infiniteData],
+  );
+  const total = infiniteData?.pages[0]?.total ?? 0;
+  const isFirstLoad = pageLoading && !infiniteData;
   const initializing = !authChecked || isFirstLoad;
 
   const clearSearch = () => setSearchQuery("");
@@ -197,6 +195,25 @@ export default function Index() {
     () => sharedBooks ?? [],
     [sharedBooks],
   );
+
+  // Autoload the next page when the sentinel scrolls into view.
+  useEffect(() => {
+    const node = loadMoreRef.current;
+    if (!node || !hasNextPage) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (entry?.isIntersecting && hasNextPage && !isFetchingNextPage) {
+          fetchNextPage();
+        }
+      },
+      { rootMargin: "400px 0px" },
+    );
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage, books.length]);
 
   return (
     <div className="relative">
@@ -395,7 +412,7 @@ export default function Index() {
             <div className={BOOK_GRID_CLASS}>
               {Array.from({ length: 12 }).map((_, i) => (
                 <div key={i} className="flex flex-col">
-                  <div className="aspect-[3/4] w-full animate-pulse rounded-xl border border-border/50 bg-muted/50" />
+                  <div className="aspect-[4/5] w-full animate-pulse rounded-xl border border-border/50 bg-muted/50" />
                   <div className="mt-3 min-h-[64px] space-y-1.5 px-0.5">
                     <div className="h-4 w-3/4 animate-pulse rounded bg-muted/60" />
                     <div className="h-3 w-1/2 animate-pulse rounded bg-muted/40" />
@@ -436,14 +453,31 @@ export default function Index() {
                 ))}
               </div>
 
-              {totalPages > 1 && (
-                <PaginationBar
-                  page={page}
-                  totalPages={totalPages}
-                  total={total}
-                  onPageChange={setPage}
-                />
-              )}
+              {/* Sentinel + status row for infinite scroll */}
+              <div
+                ref={loadMoreRef}
+                aria-live="polite"
+                className="flex items-center justify-center pt-6"
+              >
+                {hasNextPage ? (
+                  <span className="pv-mono inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-[hsl(var(--pv-text-faint))]">
+                    {isFetchingNextPage ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        Loading more…
+                      </>
+                    ) : (
+                      <>{books.length} of {total} {total === 1 ? "book" : "books"}</>
+                    )}
+                  </span>
+                ) : (
+                  total > PAGE_SIZE && (
+                    <span className="pv-mono text-[11px] uppercase tracking-[0.18em] text-[hsl(var(--pv-text-faint))]">
+                      {total} {total === 1 ? "book" : "books"} · end of list
+                    </span>
+                  )
+                )}
+              </div>
             </>
           )}
         </div>
@@ -529,50 +563,3 @@ function BookGridCard({
   );
 }
 
-function PaginationBar({
-  page,
-  totalPages,
-  total,
-  onPageChange,
-}: {
-  page: number;
-  totalPages: number;
-  total: number;
-  onPageChange: (page: number) => void;
-}) {
-  const hasPrev = page > 1;
-  const hasNext = page < totalPages;
-
-  return (
-    <nav
-      aria-label="My books pagination"
-      className="flex items-center justify-between border-t border-border pt-6"
-    >
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        onClick={() => onPageChange(Math.max(1, page - 1))}
-        disabled={!hasPrev}
-        className="pv-serif h-9 gap-1.5 rounded-full px-3 text-[14px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground disabled:opacity-30"
-      >
-        <ChevronLeft className="h-4 w-4" />
-        previous
-      </Button>
-      <span className="pv-mono text-[11px] uppercase tracking-[0.18em] text-[hsl(var(--pv-text-faint))]">
-        page {page} of {totalPages} · {total} {total === 1 ? "book" : "books"}
-      </span>
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        onClick={() => onPageChange(Math.min(totalPages, page + 1))}
-        disabled={!hasNext}
-        className="pv-serif h-9 gap-1.5 rounded-full px-3 text-[14px] text-foreground hover:text-foreground disabled:opacity-30"
-      >
-        next
-        <ChevronRight className="h-4 w-4" />
-      </Button>
-    </nav>
-  );
-}
