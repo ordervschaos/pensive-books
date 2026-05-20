@@ -142,7 +142,7 @@ export const PageContent = ({
 
   const getFontFamilyStyle = () => {
     const fontMap: Record<FontFamily, string> = {
-      default: '',
+      default: '"Newsreader", "Iowan Old Style", Georgia, serif',
       // Serif fonts
       merriweather: 'Merriweather, serif',
       lora: 'Lora, serif',
