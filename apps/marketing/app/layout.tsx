@@ -31,12 +31,14 @@ export default function RootLayout({
                   return m ? decodeURIComponent(m[1]) : null;
                 }
                 var root = document.documentElement;
-                var themeName = getCookie("themeName") || localStorage.getItem("themeName") || "paper";
+                var valid = ["paper", "coffee", "pumpkin"];
+                var raw = getCookie("themeName") || localStorage.getItem("themeName") || "paper";
+                var themeName = valid.indexOf(raw) >= 0 ? raw : "paper";
                 var storedMode = getCookie("themeMode") || localStorage.getItem("themeMode");
                 var themeMode = storedMode || (themeName === "paper" ? "light" : (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
 
                 root.classList.remove("light", "dark", "theme-default", "theme-paper", "theme-coffee", "theme-mujiyish", "theme-pumpkin");
-                if (themeName !== "default") root.classList.add("theme-" + themeName);
+                root.classList.add("theme-" + themeName);
                 root.classList.add(themeMode);
               })();
             `,

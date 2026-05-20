@@ -8,7 +8,6 @@ import {
   Sun,
   Moon,
   Coffee,
-  Package,
   BookOpen,
   MoreVertical,
   LogIn,
@@ -175,9 +174,7 @@ export function PageSettingsDrawer({
 
   const themes = [
     { name: "paper" as const, label: "Paper", icon: BookOpen },
-    { name: "default" as const, label: "Default", icon: Palette },
     { name: "coffee" as const, label: "Coffee", icon: Coffee },
-    { name: "mujiyish" as const, label: "Mujiyish", icon: Package },
   ];
 
   const handleSearchClick = () => {

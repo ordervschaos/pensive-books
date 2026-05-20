@@ -1,4 +1,4 @@
-import { LogOut, LogIn, Search, MoreVertical, Moon, Sun, Coffee, Palette, Package, BookOpen } from "lucide-react";
+import { LogOut, LogIn, Search, MoreVertical, Moon, Sun, Coffee, BookOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@pensive/shared/ui/icon-button";
 import {
@@ -82,25 +82,11 @@ export const NavActions = ({
               <span>Paper</span>
             </DropdownMenuItem>
             <DropdownMenuItem
-              onClick={() => setThemeName("default")}
-              className={themeName === "default" ? "bg-accent" : ""}
-            >
-              <Palette className="h-4 w-4 mr-2" />
-              <span>Default</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem
               onClick={() => setThemeName("coffee")}
               className={themeName === "coffee" ? "bg-accent" : ""}
             >
               <Coffee className="h-4 w-4 mr-2" />
               <span>Coffee</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() => setThemeName("mujiyish")}
-              className={themeName === "mujiyish" ? "bg-accent" : ""}
-            >
-              <Package className="h-4 w-4 mr-2" />
-              <span>Mujiyish</span>
             </DropdownMenuItem>
 
             <DropdownMenuSeparator />

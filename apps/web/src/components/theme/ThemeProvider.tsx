@@ -3,8 +3,17 @@
 
 import { createContext, useContext, useEffect, useState } from "react"
 
-type ThemeName = "default" | "paper" | "coffee" | "mujiyish" | "pumpkin"
+type ThemeName = "paper" | "coffee" | "pumpkin"
 type ThemeMode = "light" | "dark"
+
+const VALID_THEME_NAMES: ReadonlyArray<ThemeName> = ["paper", "coffee", "pumpkin"]
+
+function normalizeThemeName(value: string | null | undefined): ThemeName | null {
+  if (!value) return null
+  return (VALID_THEME_NAMES as ReadonlyArray<string>).includes(value)
+    ? (value as ThemeName)
+    : null
+}
 
 function isSharedProductionDomain(): boolean {
   return (
@@ -49,7 +58,7 @@ type ThemeProviderState = {
 }
 
 const initialState: ThemeProviderState = {
-  themeName: "default",
+  themeName: "paper",
   themeMode: "light",
   setThemeName: () => null,
   setThemeMode: () => null,
@@ -60,7 +69,7 @@ const ThemeProviderContext = createContext<ThemeProviderState>(initialState)
 
 export function ThemeProvider({
   children,
-  defaultTheme = "default",
+  defaultTheme = "paper",
   defaultMode,
 }: ThemeProviderProps) {
   // Get system preference for mode
@@ -71,10 +80,11 @@ export function ThemeProvider({
     return 'light'
   }
 
-  // Get initial theme and mode from cookie/localStorage or defaults
+  // Get initial theme and mode from cookie/localStorage or defaults.
+  // Legacy "default" / "mujiyish" values fall through to defaultTheme.
   const getInitialTheme = (): ThemeName => {
     if (typeof window !== 'undefined') {
-      const savedTheme = readTheme('themeName') as ThemeName
+      const savedTheme = normalizeThemeName(readTheme('themeName'))
       if (savedTheme) return savedTheme
     }
     return defaultTheme
@@ -108,13 +118,10 @@ export function ThemeProvider({
   useEffect(() => {
     const root = window.document.documentElement
 
-    // Remove all theme classes
+    // Remove all theme classes (legacy theme-default / theme-mujiyish included for stale DOM during HMR)
     root.classList.remove("light", "dark", "theme-default", "theme-paper", "theme-coffee", "theme-mujiyish", "theme-pumpkin")
 
-    // Add theme name class (only if not default)
-    if (themeName !== "default") {
-      root.classList.add(`theme-${themeName}`)
-    }
+    root.classList.add(`theme-${themeName}`)
 
     // Add theme mode class
     root.classList.add(themeMode)

@@ -1,24 +1,32 @@
 "use client";
 
-import { BookOpen, Check, Coffee, Flame, Moon, Package, Palette, Sun } from "lucide-react";
+import { BookOpen, Check, Coffee, Flame, Moon, Sun } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { IconButton } from "@pensive/shared/ui/icon-button";
 import { THEME_NAME_KEY, THEME_MODE_KEY, readThemeValue, writeThemeValue } from "@/lib/theme";
 
-type ThemeName = "default" | "paper" | "coffee" | "mujiyish" | "pumpkin";
+type ThemeName = "paper" | "coffee" | "pumpkin";
 type ThemeMode = "light" | "dark";
 
 const themes = [
   { name: "paper" as const, label: "Paper", Icon: BookOpen },
-  { name: "default" as const, label: "Default", Icon: Palette },
   { name: "coffee" as const, label: "Coffee", Icon: Coffee },
-  { name: "mujiyish" as const, label: "Mujiyish", Icon: Package },
   { name: "pumpkin" as const, label: "Charcoal", Icon: Flame },
 ];
+
+const VALID_THEME_NAMES: ReadonlyArray<ThemeName> = ["paper", "coffee", "pumpkin"];
+
+function normalizeThemeName(value: string | null | undefined): ThemeName {
+  if (value && (VALID_THEME_NAMES as ReadonlyArray<string>).includes(value)) {
+    return value as ThemeName;
+  }
+  return "paper";
+}
 
 function applyTheme(themeName: ThemeName, themeMode: ThemeMode) {
   const root = document.documentElement;
 
+  // Legacy theme-default / theme-mujiyish included so stale classes get scrubbed.
   root.classList.remove(
     "light",
     "dark",
@@ -29,10 +37,7 @@ function applyTheme(themeName: ThemeName, themeMode: ThemeMode) {
     "theme-pumpkin",
   );
 
-  if (themeName !== "default") {
-    root.classList.add(`theme-${themeName}`);
-  }
-
+  root.classList.add(`theme-${themeName}`);
   root.classList.add(themeMode);
 }
 
@@ -44,7 +49,7 @@ export function PublicThemeMenu() {
 
   useEffect(() => {
     const root = document.documentElement;
-    const storedTheme = readThemeValue(THEME_NAME_KEY, "paper") as ThemeName;
+    const storedTheme = normalizeThemeName(readThemeValue(THEME_NAME_KEY, "paper"));
     const storedMode = (readThemeValue(THEME_MODE_KEY, "") || (root.classList.contains("dark") ? "dark" : "light")) as ThemeMode;
 
     setThemeName(storedTheme);

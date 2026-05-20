@@ -8,16 +8,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Moon, Sun, Coffee, Palette, Package, Flame, BookOpen, Check } from "lucide-react"
+import { Moon, Sun, Coffee, Flame, BookOpen, Check } from "lucide-react"
 
 export function ThemeSwitcher() {
   const { themeName, themeMode, setThemeName, setThemeMode } = useTheme()
 
   const themes = [
     { name: "paper" as const, label: "Paper", icon: BookOpen },
-    { name: "default" as const, label: "Default", icon: Palette },
     { name: "coffee" as const, label: "Coffee", icon: Coffee },
-    { name: "mujiyish" as const, label: "Mujiyish", icon: Package },
     { name: "pumpkin" as const, label: "Charcoal", icon: Flame },
   ]
 
