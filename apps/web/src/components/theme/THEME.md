@@ -25,7 +25,7 @@ The theme system controls two things:
 
 | Dimension  | Options                                 | Stored as     |
 |------------|-----------------------------------------|---------------|
-| **Name**   | `default` `coffee` `mujiyish` `pumpkin` | `themeName`   |
+| **Name**   | `paper` `coffee` `pumpkin`              | `themeName`   |
 | **Mode**   | `light` `dark`                          | `themeMode`   |
 
 These two values get translated into CSS classes on `<html>`, which CSS variables pick up to change every colour on screen.

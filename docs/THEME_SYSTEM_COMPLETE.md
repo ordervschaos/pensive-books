@@ -3,6 +3,8 @@
 **Last Updated:** October 28, 2025
 **Status:** Production Ready ✅
 
+> **Theme list change (2026-05-19):** the `default` and `mujiyish` themes have been removed. The active theme list is now `paper` (default for everybody), `coffee`, and `pumpkin` (labelled "Charcoal" in the UI). Stored legacy values fall back to `paper`. Sections in this document that reference `default` or `mujiyish` are kept as historical reference but no longer reflect the shipped product.
+
 ---
 
 ## Table of Contents
