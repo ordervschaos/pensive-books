@@ -111,20 +111,20 @@ export function TableOfContents({
           <ArrowLeft className="h-3.5 w-3.5" />
           <span className="truncate">{bookName || "Back to book"}</span>
         </button>
+      </div>
+
+      <div className="pv-eyebrow flex items-center justify-between px-6 pt-3 pb-3">
+        <span>Pages · {pages.length}</span>
         {canEdit && onNewPage && renderAddMenu(
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 w-7 p-0 text-[hsl(var(--pv-text-muted))]"
+            className="h-5 w-5 p-0 text-[hsl(var(--pv-text-muted))]"
             title="Add new"
           >
             <Plus className="h-3.5 w-3.5" />
           </Button>
         )}
-      </div>
-
-      <div className="pv-eyebrow px-6 pt-3 pb-3">
-        Pages · {pages.length}
       </div>
 
       <nav ref={containerRef} className="sidebar-scroll flex-1 overflow-y-auto px-3 pb-3">
