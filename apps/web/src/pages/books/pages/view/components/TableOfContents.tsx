@@ -31,17 +31,17 @@ interface TableOfContentsProps {
 // Group pages so a `page_type === 'section'` row becomes a section heading and
 // the text pages beneath it are the section's body. Pages before the first
 // section land in an implicit "Untitled" group at the top.
-type Group = { label: string | null; pages: PageItem[] };
+type Group = { label: string | null; sectionPage: PageItem | null; pages: PageItem[] };
 
 function groupPages(pages: PageItem[]): Group[] {
   const groups: Group[] = [];
-  let current: Group = { label: null, pages: [] };
+  let current: Group = { label: null, sectionPage: null, pages: [] };
   for (const p of pages) {
     if (p.page_type === 'section') {
       if (current.pages.length || current.label) {
         groups.push(current);
       }
-      current = { label: p.title || `Section ${p.page_index + 1}`, pages: [] };
+      current = { label: p.title || `Section ${p.page_index + 1}`, sectionPage: p, pages: [] };
     } else {
       current.pages.push(p);
     }
@@ -130,11 +130,26 @@ export function TableOfContents({
       <nav ref={containerRef} className="sidebar-scroll flex-1 overflow-y-auto px-3 pb-3">
         {groups.map((group, gi) => (
           <div key={gi} className="mb-5">
-            {group.label && (
-              <div className="pv-mono px-3 pb-2 text-[10.5px] uppercase tracking-[0.2em] text-[hsl(var(--pv-text-faint))]">
-                {group.label}
-              </div>
-            )}
+            {group.label && group.sectionPage && (() => {
+              const sp = group.sectionPage;
+              const isActive = sp.id === currentPageId;
+              const slug = sp.title
+                ? `${sp.id}-${sp.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
+                : sp.id.toString();
+              return (
+                <PreloadLink
+                  data-page-id={sp.id}
+                  to={`/books/${bookId}/pages/${slug}`}
+                  bookId={parseInt(bookId)}
+                  pageId={sp.id}
+                  className="pv-mono block px-3 pb-2 text-[10.5px] uppercase tracking-[0.2em] transition-colors hover:text-foreground"
+                  style={{ color: isActive ? 'hsl(var(--pv-text))' : 'hsl(var(--pv-text-faint))' }}
+                  onClick={() => onPageSelect && onPageSelect()}
+                >
+                  {group.label}
+                </PreloadLink>
+              );
+            })()}
             <ul className="m-0 list-none p-0">
               {group.pages.map((page) => {
                 const isActive = page.id === currentPageId;
