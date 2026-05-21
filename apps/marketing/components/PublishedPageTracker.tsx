@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect } from "react";
-import { createClient } from "@/lib/supabase/client";
 
 type Props = {
   bookId: number;
@@ -20,59 +19,44 @@ export function PublishedPageTracker({ bookId, pageIndex }: Props) {
 
     async function persistBookmark() {
       const timestamp = new Date().toISOString();
-      const supabase = createClient();
 
       try {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
+        // Use the server-side route handler so the session is read from the
+        // cookie store (handles token refresh) rather than the browser client
+        // which has autoRefreshToken=false and may silently fail on expired tokens.
+        const response = await fetch("/api/bookmark", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ bookId, pageIndex }),
+        });
 
-        if (cancelled) {
+        if (cancelled) return;
+
+        if (response.ok) {
           return;
         }
 
-        if (session) {
-          const { data } = await supabase
-            .from("user_data")
-            .select("bookmarked_pages")
-            .eq("user_id", session.user.id)
-            .maybeSingle();
-
-          const bookmarks =
-            (data?.bookmarked_pages as Record<string, unknown>) || {};
-
-          await supabase
-            .from("user_data")
-            .update({
-              bookmarked_pages: {
-                ...bookmarks,
-                [bookId]: {
-                  pageIndex,
-                  timestamp,
-                },
-              },
-            })
-            .eq("user_id", session.user.id);
-
-          return;
+        if (response.status !== 401) {
+          const text = await response.text().catch(() => "");
+          console.error("[PublishedPageTracker] bookmark save failed:", response.status, text);
         }
-
-        const raw = window.localStorage.getItem(LOCALSTORAGE_BOOKMARKS_KEY);
-        const bookmarks = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
-
-        window.localStorage.setItem(
-          LOCALSTORAGE_BOOKMARKS_KEY,
-          JSON.stringify({
-            ...bookmarks,
-            [bookId]: {
-              pageIndex,
-              timestamp,
-            },
-          }),
-        );
-      } catch (error) {
-        console.error("Failed to persist public reading bookmark:", error);
+        // 401 = not logged in → fall through to localStorage
+      } catch (err) {
+        if (cancelled) return;
+        console.error("[PublishedPageTracker] network error:", err);
       }
+
+      // Fallback for anonymous users (or when the API is unreachable).
+      if (cancelled) return;
+      const raw = window.localStorage.getItem(LOCALSTORAGE_BOOKMARKS_KEY);
+      const bookmarks = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+      window.localStorage.setItem(
+        LOCALSTORAGE_BOOKMARKS_KEY,
+        JSON.stringify({
+          ...bookmarks,
+          [bookId]: { pageIndex, timestamp },
+        }),
+      );
     }
 
     persistBookmark();
