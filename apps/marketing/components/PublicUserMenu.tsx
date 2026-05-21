@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { LogIn, LogOut, User, BookOpen, UserCircle } from "lucide-react";
+import { LogIn, LogOut, User, BookOpen, UserCircle, MessageSquare } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { useCrisp } from "@/lib/useCrisp";
 
 type Props = {
   appOrigin: string;
@@ -27,6 +28,7 @@ export function PublicUserMenu({ appOrigin }: Props) {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  const { openFeedback } = useCrisp();
 
   useEffect(() => {
     const supabase = createClient();
@@ -139,6 +141,17 @@ export function PublicUserMenu({ appOrigin }: Props) {
               <div className="p-1">
                 <button
                   type="button"
+                  onClick={() => { openFeedback(); setOpen(false); }}
+                  className="flex w-full items-center rounded-sm px-2 py-1.5 text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+                >
+                  <MessageSquare className="mr-2 h-4 w-4" />
+                  Send Feedback
+                </button>
+              </div>
+              <div className="h-px bg-border" />
+              <div className="p-1">
+                <button
+                  type="button"
                   onClick={handleSignOut}
                   className="flex w-full items-center rounded-sm px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
                 >
@@ -156,6 +169,14 @@ export function PublicUserMenu({ appOrigin }: Props) {
                 <LogIn className="mr-2 h-4 w-4" />
                 Sign In
               </a>
+              <button
+                type="button"
+                onClick={() => { openFeedback(); setOpen(false); }}
+                className="flex w-full items-center rounded-sm px-2 py-1.5 text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+              >
+                <MessageSquare className="mr-2 h-4 w-4" />
+                Send Feedback
+              </button>
             </div>
           )}
         </div>

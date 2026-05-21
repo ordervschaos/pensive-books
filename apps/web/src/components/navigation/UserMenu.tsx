@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { LogOut, LogIn, User, Tablet } from "lucide-react";
+import { LogOut, LogIn, User, Tablet, MessageSquare } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -11,6 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { supabase } from "@/integrations/supabase/client";
+import { useCrisp } from "@/hooks/useCrisp";
 
 interface UserMenuProps {
   isAuthenticated: boolean;
@@ -42,6 +43,7 @@ function getInitials(profile: UserProfile | null): string {
 export function UserMenu({ isAuthenticated, handleLogout, handleLogin }: UserMenuProps) {
   const navigate = useNavigate();
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const { openFeedback } = useCrisp();
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -114,6 +116,11 @@ export function UserMenu({ isAuthenticated, handleLogout, handleLogin }: UserMen
             <DropdownMenuItem onClick={() => navigate("/settings/kindle")}>
               <Tablet className="mr-2 h-4 w-4" />
               Kindle Settings
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={openFeedback}>
+              <MessageSquare className="mr-2 h-4 w-4" />
+              Send Feedback
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleLogout} className="text-muted-foreground">
