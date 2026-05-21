@@ -6,12 +6,15 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { PageLoading } from "@/components/page/PageLoading";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Upload, Save, ArrowLeft } from "lucide-react";
+import { useMatureContent } from "@/hooks/use-mature-content";
 
 export default function ProfileEdit() {
+  const { enabled: matureEnabled, toggle: toggleMature } = useMatureContent();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [userData, setUserData] = useState<any>(null);
@@ -324,6 +327,25 @@ export default function ProfileEdit() {
               <p className="text-sm text-muted-foreground">
                 {intro.length}/500 characters
               </p>
+            </div>
+
+            {/* Content Preferences */}
+            <div className="space-y-3 border-t border-border pt-6">
+              <Label className="text-base">Content Preferences</Label>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium">Show mature content (18+)</p>
+                  <p className="text-sm text-muted-foreground">
+                    Allow books tagged as adult or explicit to appear without a content gate.
+                    You must be 18 or older to enable this.
+                  </p>
+                </div>
+                <Switch
+                  checked={matureEnabled}
+                  onCheckedChange={toggleMature}
+                  aria-label="Show mature content"
+                />
+              </div>
             </div>
 
             {/* Save Button */}

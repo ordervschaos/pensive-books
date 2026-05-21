@@ -21,6 +21,7 @@ export interface OwnedBook {
   created_at: string;
   updated_at: string;
   owner_id?: string;
+  content_tags?: string[] | null;
 }
 
 export interface SharedBook extends OwnedBook {

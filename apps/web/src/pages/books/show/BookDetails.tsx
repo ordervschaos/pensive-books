@@ -21,6 +21,10 @@ import { jsonToText, getWordCountFromContent } from "@/utils/tiptapHelpers";
 import { CommitDialog } from "./components/CommitDialog";
 import { PublishingDialog } from "@/components/book/PublishingDialog";
 import { VersionControlButton } from "./components/VersionControlButton";
+import { AdminTagPanel } from "@/components/book/AdminTagPanel";
+import { MatureContentGate } from "@/components/book/MatureContentGate";
+import { useAdmin } from "@/hooks/use-admin";
+import { useMatureContent } from "@/hooks/use-mature-content";
 import { MessageSquare } from "lucide-react";
 import type { Session } from "@supabase/supabase-js";
 import type { EditorJSON } from "@/types/editor";
@@ -50,6 +54,7 @@ interface BookRecord {
   is_public: boolean;
   updated_at?: string | null;
   published_at?: string | null;
+  content_tags?: string[] | null;
 }
 
 interface FlashcardRecord {
@@ -70,8 +75,11 @@ const BookDetails = () => {
   const [bookmarkedPageIndex, setBookmarkedPageIndex] = useState<number | null>(null);
   const [bookmarkTimestamp, setBookmarkTimestamp] = useState<string | null>(null);
   const [isChatOpen, setIsChatOpen] = useState(false);
-  const { canEdit, loading: permissionsLoading } = useBookPermissions(bookSlug);
-  
+  const { canEdit, isOwner, loading: permissionsLoading } = useBookPermissions(bookSlug);
+  const { isAdmin } = useAdmin();
+  const { enabled: matureEnabled, loading: matureLoading } = useMatureContent();
+  const [matureUnlocked, setMatureUnlocked] = useState(false);
+
   // Get user session for preferences
   const [session, setSession] = useState<Session | null>(null);
 
@@ -540,6 +548,18 @@ const BookDetails = () => {
     return null;
   }
 
+  const isMature = Boolean(book.content_tags?.includes('mature'));
+  const needsGate =
+    isMature &&
+    !isOwner &&
+    !matureEnabled &&
+    !matureUnlocked &&
+    !matureLoading;
+
+  if (needsGate) {
+    return <MatureContentGate onUnlock={() => setMatureUnlocked(true)} />;
+  }
+
   // Construct absolute URLs for Open Graph meta tags
   const currentUrl = window.location.href;
   const coverImageUrl = book.cover_url 
@@ -655,6 +675,15 @@ const BookDetails = () => {
               onChatToggle={() => setIsChatOpen(!isChatOpen)}
               hasActiveChat={isChatOpen}
             />
+
+            {/* Admin content tagging */}
+            {isAdmin && (
+              <AdminTagPanel
+                bookId={getNumericId(bookSlug)}
+                initialTags={book.content_tags ?? []}
+                onTagsChange={(tags) => setBook((b) => b ? { ...b, content_tags: tags } : b)}
+              />
+            )}
 
             {/* Integrated Flashcard Section - Only visible in beta */}
             {isBetaEnabled && (

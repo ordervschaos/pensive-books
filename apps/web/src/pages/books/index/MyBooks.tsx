@@ -531,7 +531,7 @@ function BookGridCard({
           </button>
         }
         topLeftOverlay={
-          book.is_public || accessLevel ? (
+          book.is_public || accessLevel || book.content_tags?.includes('mature') ? (
             <>
               {book.is_public && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-black/55 px-2 py-0.5 text-[10px] font-medium text-white shadow-sm">
@@ -543,6 +543,11 @@ function BookGridCard({
                 <span className="inline-flex items-center gap-1 rounded-full bg-black/55 px-2 py-0.5 text-[10px] font-medium text-white shadow-sm">
                   <Users className="h-2.5 w-2.5" />
                   {accessLevel}
+                </span>
+              )}
+              {book.content_tags?.includes('mature') && (
+                <span className="inline-flex items-center rounded-full bg-red-700/80 px-2 py-0.5 text-[10px] font-medium text-white shadow-sm">
+                  18+
                 </span>
               )}
             </>
