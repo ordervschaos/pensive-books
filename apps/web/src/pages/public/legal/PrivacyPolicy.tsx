@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 
 export const PrivacyPolicy = () => {
@@ -50,12 +51,24 @@ export const PrivacyPolicy = () => {
           </section>
 
           <section className="mb-8">
-            <h2 className="text-2xl font-semibold mb-4">4. Data Security</h2>
+            <h2 className="text-2xl font-semibold mb-4">4. Cookies</h2>
+            <p>
+              We use a small number of cookies and similar technologies. See
+              our{" "}
+              <Link to="/cookies" className="underline underline-offset-4">
+                Cookie Policy
+              </Link>{" "}
+              for details and to change your preferences.
+            </p>
+          </section>
+
+          <section className="mb-8">
+            <h2 className="text-2xl font-semibold mb-4">5. Data Security</h2>
             <p>We implement appropriate security measures to protect your personal information. However, no method of transmission over the Internet is 100% secure.</p>
           </section>
 
           <section className="mb-8">
-            <h2 className="text-2xl font-semibold mb-4">5. Your Rights</h2>
+            <h2 className="text-2xl font-semibold mb-4">6. Your Rights</h2>
             <p>You have the right to:</p>
             <ul className="list-disc pl-6">
               <li>Access your personal information</li>
@@ -66,7 +79,7 @@ export const PrivacyPolicy = () => {
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold mb-4">6. Contact Us</h2>
+            <h2 className="text-2xl font-semibold mb-4">7. Contact Us</h2>
             <p>If you have questions about this Privacy Policy, please contact us at:</p>
             <p className="mt-2">Email: toanzalansari@gmail.com</p>
           </section>

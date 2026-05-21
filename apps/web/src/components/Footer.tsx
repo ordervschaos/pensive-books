@@ -15,11 +15,17 @@ export function Footer() {
             >
               Contact Us
             </Link>
-            <Link 
-              to="/privacy" 
+            <Link
+              to="/privacy"
               className="text-sm text-muted-foreground hover:text-foreground transition-colors"
             >
               Privacy Policy
+            </Link>
+            <Link
+              to="/cookies"
+              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Cookies
             </Link>
             <Link 
               to="/terms" 

@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
+import { useCookieConsent } from '@/hooks/useCookieConsent';
 
 declare global {
   interface Window {
@@ -12,12 +13,15 @@ export const GA_TRACKING_ID = 'G-FGXKSH2GWE';
 
 export const useGoogleAnalytics = () => {
   const location = useLocation();
+  const { consent } = useCookieConsent();
 
   useEffect(() => {
+    if (consent !== 'accepted') return;
+
     const script1 = document.createElement('script');
     script1.async = true;
     script1.src = `https://www.googletagmanager.com/gtag/js?id=${GA_TRACKING_ID}`;
-    
+
     const script2 = document.createElement('script');
     script2.innerHTML = `
       window.dataLayer = window.dataLayer || [];
@@ -30,16 +34,15 @@ export const useGoogleAnalytics = () => {
     document.head.appendChild(script2);
 
     return () => {
-      document.head.removeChild(script1);
-      document.head.removeChild(script2);
+      script1.remove();
+      script2.remove();
     };
-  }, []);
+  }, [consent]);
 
   useEffect(() => {
-    if (window.gtag) {
-      window.gtag('event', 'page_view', {
-        page_path: location.pathname + location.search,
-      });
-    }
-  }, [location]);
-}; 
+    if (consent !== 'accepted' || !window.gtag) return;
+    window.gtag('event', 'page_view', {
+      page_path: location.pathname + location.search,
+    });
+  }, [location, consent]);
+};

@@ -12,10 +12,12 @@ import { useGoogleAnalytics } from "@/hooks/useGoogleAnalytics";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { LegacyRedirects } from "@/components/LegacyRedirects";
 import { PublicSiteRedirect } from "@/components/PublicSiteRedirect";
+import { CookieBanner } from "@/components/CookieBanner";
 
 const PrivacyPolicy = lazy(() => import("@/pages/public/legal/PrivacyPolicy"));
 const Terms = lazy(() => import("@/pages/public/legal/Terms"));
 const Contact = lazy(() => import("@/pages/public/legal/Contact"));
+const CookiesPage = lazy(() => import("@/pages/public/legal/Cookies"));
 
 // Auth pages
 const Auth = lazy(() => import("@/pages/auth/Auth"));
@@ -111,6 +113,7 @@ export default function App() {
                       <Route path="/accept-invitation" element={<AcceptInvitation />} />
                       <Route path="/privacy" element={<PrivacyPolicy />} />
                       <Route path="/terms" element={<Terms />} />
+                      <Route path="/cookies" element={<CookiesPage />} />
                       <Route path="/contact" element={<Contact />} />
                       <Route path="/books/:bookSlug/join/:token" element={<JoinBook />} />
 
@@ -141,6 +144,7 @@ export default function App() {
                 </ErrorBoundary>
               </main>
             </div>
+            <CookieBanner />
             <Toaster />
           </Router>
         </PageDisplaySettingsProvider>
