@@ -3,8 +3,8 @@
 import { usePathname } from "next/navigation";
 import { TopNavShell, type TopNavTab } from "@pensive/shared/ui/top-nav";
 import { getConfiguredAppOrigin } from "@/lib/pensive";
-import { PublicThemeMenu } from "@/components/PublicThemeMenu";
-import { AuthButton } from "@/components/AuthButton";
+import { PublicAppearanceMenu } from "@/components/PublicAppearanceMenu";
+import { PublicUserMenu } from "@/components/PublicUserMenu";
 
 type NavMode = "full" | "compact" | "hidden";
 
@@ -41,10 +41,10 @@ export function PublicTopNav() {
   if (mode === "hidden") return null;
 
   const themeAndAuth = (
-    <>
-      <PublicThemeMenu />
-      <AuthButton appOrigin={appOrigin} />
-    </>
+    <div className="flex items-center gap-1">
+      <PublicAppearanceMenu />
+      <PublicUserMenu appOrigin={appOrigin} />
+    </div>
   );
 
   if (mode === "compact") {
