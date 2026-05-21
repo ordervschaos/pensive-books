@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { PublicTopNav } from "@/components/PublicTopNav";
+import { CookieBanner } from "@/components/CookieBanner";
+import { GoogleAnalytics } from "@/components/GoogleAnalytics";
 
 const publicOrigin =
   process.env.PENSIVE_PUBLIC_ORIGIN ??
@@ -46,6 +48,8 @@ export default function RootLayout({
         />
         <PublicTopNav />
         {children}
+        <CookieBanner />
+        <GoogleAnalytics />
       </body>
     </html>
   );
