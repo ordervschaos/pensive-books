@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft} from "lucide-react";
+import { MatureContentGate } from "@/components/MatureContentGate";
 import { PublishedPageTracker } from "@/components/PublishedPageTracker";
 import { RichTextRenderer } from "@/components/RichTextRenderer";
 import { KeyboardPageNav } from "@/components/KeyboardPageNav";
@@ -66,8 +67,9 @@ export default async function PublishedPageRoute({ params }: Props) {
   const bookHref = `/library/books/${canonicalBookSlug}`;
   const total = detail.book.pages.length;
   const current = detail.currentIndex + 1;
+  const isMature = Boolean(detail.book.content_tags?.includes("mature"));
 
-  return (
+  const content = (
     <main className="relative min-h-[calc(100vh-56px)] bg-background">
       <PublishedPageTracker
         bookId={detail.book.id}
@@ -164,6 +166,14 @@ export default async function PublishedPageRoute({ params }: Props) {
       </article>
     </main>
   );
+
+  if (isMature) {
+    return (
+      <MatureContentGate bookName={detail.book.name}>{content}</MatureContentGate>
+    );
+  }
+
+  return content;
 }
 
 function ToolButton({

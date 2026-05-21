@@ -9,6 +9,7 @@ export interface PublicBook {
   subtitle: string | null;
   cover_url: string | null;
   show_text_on_cover: boolean;
+  content_tags?: string[] | null;
 }
 
 export interface PublicProfile {
@@ -86,7 +87,7 @@ const getLibraryBooksPageCached = unstable_cache(
   ): Promise<LibraryBooksPage> => {
     const { data, error, count } = await supabase
       .from("books")
-      .select("id, name, author, subtitle, cover_url, show_text_on_cover", {
+      .select("id, name, author, subtitle, cover_url, show_text_on_cover, content_tags", {
         count: "exact",
       })
       .eq("is_public", true)
@@ -109,7 +110,7 @@ const getFeaturedBooksCached = unstable_cache(
   async (): Promise<PublicBook[]> => {
     const { data, error } = await supabase
       .from("books")
-      .select("id, name, author, subtitle, cover_url, show_text_on_cover")
+      .select("id, name, author, subtitle, cover_url, show_text_on_cover, content_tags")
       .eq("is_public", true)
       .eq("is_archived", false)
       .order("created_at", { ascending: false })
@@ -149,7 +150,7 @@ const getPublicBooksByOwnerCached = unstable_cache(
   async (userId: string): Promise<PublicBook[]> => {
     const { data, error } = await supabase
       .from("books")
-      .select("id, name, author, subtitle, cover_url, show_text_on_cover")
+      .select("id, name, author, subtitle, cover_url, show_text_on_cover, content_tags")
       .eq("owner_id", userId)
       .eq("is_public", true)
       .eq("is_archived", false)
@@ -171,7 +172,7 @@ const getPublishedBookCached = unstable_cache(
     const { data: bookData, error: bookError } = await supabase
       .from("books")
       .select(
-        "id, name, author, subtitle, cover_url, show_text_on_cover, published_version_id",
+        "id, name, author, subtitle, cover_url, show_text_on_cover, content_tags, published_version_id",
       )
       .eq("id", bookId)
       .eq("is_public", true)
@@ -227,6 +228,7 @@ const getPublishedBookCached = unstable_cache(
       subtitle: versionData.subtitle ?? bookData.subtitle,
       cover_url: versionData.cover_url ?? bookData.cover_url,
       show_text_on_cover: bookData.show_text_on_cover,
+      content_tags: bookData.content_tags ?? null,
       published_at: versionData.published_at,
       pages: (pageRows ?? [])
         .map(toPageSummary)

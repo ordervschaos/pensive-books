@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ContinueReadingButton } from "@/components/ContinueReadingButton";
+import { MatureContentGate } from "@/components/MatureContentGate";
 import { getPublishedBook } from "@/lib/public-books";
 import { slugifyIdTitle } from "@/lib/pensive";
 
@@ -84,7 +85,9 @@ export default async function PublishedBookPage({ params }: Props) {
   const hours = Math.floor(minutes / 60);
   const remMinutes = minutes % 60;
 
-  return (
+  const isMature = Boolean(book.content_tags?.includes("mature"));
+
+  const content = (
     <main className="mx-auto max-w-[760px] px-6 pb-24 pt-14">
       <Link
         href="/library"
@@ -213,6 +216,12 @@ export default async function PublishedBookPage({ params }: Props) {
       )}
     </main>
   );
+
+  if (isMature) {
+    return <MatureContentGate bookName={book.name}>{content}</MatureContentGate>;
+  }
+
+  return content;
 }
 
 function Dot() {
