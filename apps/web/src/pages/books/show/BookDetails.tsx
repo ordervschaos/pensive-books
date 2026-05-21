@@ -23,8 +23,8 @@ import { PublishingDialog } from "@/components/book/PublishingDialog";
 import { VersionControlButton } from "./components/VersionControlButton";
 import { AdminTagPanel } from "@/components/book/AdminTagPanel";
 import { MatureContentGate } from "@/components/book/MatureContentGate";
-import { Brief, computeCompletion } from "@/lib/brief";
-import { Sparkles, X as XIcon } from "lucide-react";
+import { Brief } from "@/lib/brief";
+import { BookBriefSummary } from "@/components/book/BookBriefSummary";
 import { useAdmin } from "@/hooks/use-admin";
 import { useMatureContent } from "@/hooks/use-mature-content";
 import { MessageSquare } from "lucide-react";
@@ -82,22 +82,6 @@ const BookDetails = () => {
   const { isAdmin } = useAdmin();
   const { enabled: matureEnabled, loading: matureLoading } = useMatureContent();
   const [matureUnlocked, setMatureUnlocked] = useState(false);
-  const briefNudgeKey = `pv-brief-nudge-dismissed-${bookSlug ?? "none"}`;
-  const [briefNudgeDismissed, setBriefNudgeDismissed] = useState<boolean>(() => {
-    try {
-      return typeof window !== "undefined" && localStorage.getItem(briefNudgeKey) === "1";
-    } catch {
-      return false;
-    }
-  });
-  const dismissBriefNudge = () => {
-    setBriefNudgeDismissed(true);
-    try {
-      localStorage.setItem(briefNudgeKey, "1");
-    } catch {
-      /* noop */
-    }
-  };
 
   // Get user session for preferences
   const [session, setSession] = useState<Session | null>(null);
@@ -664,34 +648,11 @@ const BookDetails = () => {
                 showWritingButton={shouldShowWritingButton()}
               />
 
-              {canEdit && !briefNudgeDismissed && computeCompletion(book.brief) < 3 && (
-                <div className="mt-6 flex items-center justify-between gap-3 rounded-lg border border-dashed border-border bg-[hsl(var(--pv-surface-2))] px-4 py-3">
-                  <div className="flex items-center gap-2.5 text-sm text-[hsl(var(--pv-text-muted))]">
-                    <Sparkles className="h-3.5 w-3.5" />
-                    <span>
-                      {computeCompletion(book.brief) === 0
-                        ? "Want to set this book's intention? Takes about 90 seconds."
-                        : `${computeCompletion(book.brief)} of 6 fields filled — finish the brief.`}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => navigate(`/books/${bookSlug}/edit`)}
-                    >
-                      Open the brief →
-                    </Button>
-                    <button
-                      type="button"
-                      onClick={dismissBriefNudge}
-                      aria-label="Dismiss"
-                      className="text-[hsl(var(--pv-text-muted))] hover:text-foreground"
-                    >
-                      <XIcon className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
+              {canEdit && (
+                <BookBriefSummary
+                  brief={book.brief ?? null}
+                  onEdit={() => navigate(`/books/${bookSlug}/edit`)}
+                />
               )}
             </div>
 
