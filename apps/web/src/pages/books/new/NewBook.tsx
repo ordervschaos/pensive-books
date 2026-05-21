@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { UnsplashPicker } from "@/components/book/UnsplashPicker";
+import { BriefIntakeSheet } from "@/components/book/BriefIntakeSheet";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { setPageTitle } from "@/utils/pageTitle";
@@ -36,6 +37,8 @@ const NewBook = () => {
   const [saving, setSaving] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [authorDefault, setAuthorDefault] = useState("");
+  const [intakeBookId, setIntakeBookId] = useState<number | null>(null);
+  const [intakeOpen, setIntakeOpen] = useState(false);
 
   const [book, setBook] = useState<BookDraft>({
     name: "",
@@ -94,7 +97,8 @@ const NewBook = () => {
         title: "Book created",
         description: "Your first page is ready — happy writing.",
       });
-      navigate(`/books/${data.id}`);
+      setIntakeBookId(data.id);
+      setIntakeOpen(true);
     } catch (error: unknown) {
       toast({
         variant: "destructive",
@@ -142,6 +146,13 @@ const NewBook = () => {
 
   const previewTitle = book.name.trim() || "Untitled";
   const previewAuthor = (book.author || authorDefault).trim();
+
+  const closeIntake = (open: boolean) => {
+    setIntakeOpen(open);
+    if (!open && intakeBookId) {
+      navigate(`/books/${intakeBookId}`);
+    }
+  };
 
   return (
     <div className="mx-auto max-w-[1080px] px-6 pb-24 pt-12 md:px-12">
@@ -391,6 +402,17 @@ const NewBook = () => {
           </p>
         </div>
       </form>
+
+      {intakeBookId && (
+        <BriefIntakeSheet
+          bookId={intakeBookId}
+          open={intakeOpen}
+          onOpenChange={closeIntake}
+          onFinish={() => {
+            /* navigation handled by closeIntake via onOpenChange */
+          }}
+        />
+      )}
     </div>
   );
 };

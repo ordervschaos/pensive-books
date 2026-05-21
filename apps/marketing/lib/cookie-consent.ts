@@ -6,26 +6,61 @@ export type ConsentValue = "unknown" | "accepted" | "rejected";
 
 export const GA_TRACKING_ID = "G-FGXKSH2GWE";
 
-const STORAGE_KEY = "pensive.cookie-consent";
+const COOKIE_NAME = "pensive.cookie-consent";
+const LEGACY_STORAGE_KEY = "pensive.cookie-consent";
 const EVENT_NAME = "pensive:cookie-consent-change";
+const MAX_AGE = 60 * 60 * 24 * 365; // 1 year
+
+function cookieDomain(): string {
+  const host = window.location.hostname;
+  if (host === "localhost" || host === "127.0.0.1" || !host.includes(".")) return "";
+  const parts = host.split(".");
+  return "." + parts.slice(-2).join(".");
+}
 
 function readConsent(): ConsentValue {
   if (typeof window === "undefined") return "unknown";
   try {
-    const v = window.localStorage.getItem(STORAGE_KEY);
+    const match = document.cookie
+      .split(";")
+      .map((c) => c.trim())
+      .find((c) => c.startsWith(COOKIE_NAME + "="));
+    const v = match?.split("=")[1]?.trim();
     return v === "accepted" || v === "rejected" ? v : "unknown";
   } catch {
     return "unknown";
   }
 }
 
+// Migrate a previously-stored localStorage value into the shared cookie once.
+function migrateFromLocalStorage(): ConsentValue {
+  if (typeof window === "undefined") return "unknown";
+  try {
+    const v = window.localStorage.getItem(LEGACY_STORAGE_KEY);
+    if (v === "accepted" || v === "rejected") {
+      window.localStorage.removeItem(LEGACY_STORAGE_KEY);
+      writeConsent(v);
+      return v;
+    }
+  } catch {
+    // ignore
+  }
+  return "unknown";
+}
+
 function writeConsent(value: ConsentValue) {
   if (typeof window === "undefined") return;
   try {
-    if (value === "unknown") window.localStorage.removeItem(STORAGE_KEY);
-    else window.localStorage.setItem(STORAGE_KEY, value);
+    const domain = cookieDomain();
+    const domainAttr = domain ? `; domain=${domain}` : "";
+    const secure = window.location.protocol === "https:" ? "; Secure" : "";
+    if (value === "unknown") {
+      document.cookie = `${COOKIE_NAME}=; max-age=0; path=/${domainAttr}${secure}; SameSite=Lax`;
+    } else {
+      document.cookie = `${COOKIE_NAME}=${value}; max-age=${MAX_AGE}; path=/${domainAttr}${secure}; SameSite=Lax`;
+    }
   } catch {
-    // Ignore quota / private-mode errors — listeners still update via event.
+    // ignore
   }
   window.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: value }));
 }
@@ -65,21 +100,18 @@ export function useCookieConsent() {
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
-    setConsent(readConsent());
+    let value = readConsent();
+    if (value === "unknown") value = migrateFromLocalStorage();
+    setConsent(value);
     setHydrated(true);
 
     const onChange = (e: Event) => {
       const next = (e as CustomEvent<ConsentValue>).detail ?? readConsent();
       setConsent(next);
     };
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === STORAGE_KEY) setConsent(readConsent());
-    };
     window.addEventListener(EVENT_NAME, onChange);
-    window.addEventListener("storage", onStorage);
     return () => {
       window.removeEventListener(EVENT_NAME, onChange);
-      window.removeEventListener("storage", onStorage);
     };
   }, []);
 

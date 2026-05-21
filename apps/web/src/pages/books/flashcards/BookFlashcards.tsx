@@ -56,7 +56,7 @@ const BookFlashcards = () => {
 
       const { data: bookData, error: bookError } = await supabase
         .from("books")
-        .select("*")
+        .select("id, name, slug, cover_url, author, subtitle, published_at, is_public, is_archived, owner_id")
         .eq("id", numericBookId)
         .eq("is_archived", false)
         .single();

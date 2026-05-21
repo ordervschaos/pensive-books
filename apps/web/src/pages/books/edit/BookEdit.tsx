@@ -6,11 +6,13 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { BookInfo } from "@/components/book/BookInfo";
 import { BookEditForm } from "@/components/book/BookEditForm";
+import { BookBriefSection } from "@/components/book/BookBriefSection";
 import { ManageCollaboratorsSheet } from "./components/ManageCollaboratorsSheet";
 import { ShareBookSheet } from "./components/ShareBookSheet";
 import { BookCoverEdit } from "@/components/book/BookCoverEdit";
 import { BookVisibilityToggle } from "./components/BookVisibilityToggle";
 import { PublishingDialog } from "@/components/book/PublishingDialog";
+import { Brief } from "@/lib/brief";
 import { useBookPermissions } from "@/hooks/use-book-permissions";
 import { setPageTitle } from "@/utils/pageTitle";
 import { Card } from "@/components/ui/card";
@@ -31,6 +33,7 @@ interface Book {
   published_at?: string | null;
   view_invitation_token?: string;
   edit_invitation_token?: string;
+  brief?: Brief | null;
 }
 
 export default function BookEdit() {
@@ -218,6 +221,16 @@ export default function BookEdit() {
               onSave={handleSave}
               saving={saving}
             />
+
+            {id && (
+              <div className="mt-12">
+                <BookBriefSection
+                  bookId={id}
+                  brief={book.brief ?? null}
+                  onBriefChange={(brief) => setBook((prev) => ({ ...prev, brief }))}
+                />
+              </div>
+            )}
 
             {isOwner && (
               <div className="mt-12">

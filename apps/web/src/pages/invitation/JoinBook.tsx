@@ -50,7 +50,7 @@ export default function JoinBook() {
 
       const { data: bookData, error: bookError } = await supabase
         .from("books")
-        .select("*")
+        .select("id, name, slug, cover_url, author, subtitle, owner_id, is_public")
         .eq("id", bookIdNumber)
         .single();
 

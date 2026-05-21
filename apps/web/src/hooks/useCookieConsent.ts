@@ -2,12 +2,25 @@ import { useEffect, useState } from "react";
 
 export type ConsentValue = "unknown" | "accepted" | "rejected";
 
-const STORAGE_KEY = "pensive.cookie-consent";
+const COOKIE_NAME = "pensive.cookie-consent";
+const LEGACY_STORAGE_KEY = "pensive.cookie-consent";
 const EVENT_NAME = "pensive:cookie-consent-change";
+const MAX_AGE = 60 * 60 * 24 * 365; // 1 year
+
+function cookieDomain(): string {
+  const host = window.location.hostname;
+  if (host === "localhost" || host === "127.0.0.1" || !host.includes(".")) return "";
+  const parts = host.split(".");
+  return "." + parts.slice(-2).join(".");
+}
 
 function readConsent(): ConsentValue {
   try {
-    const v = localStorage.getItem(STORAGE_KEY);
+    const match = document.cookie
+      .split(";")
+      .map((c) => c.trim())
+      .find((c) => c.startsWith(COOKIE_NAME + "="));
+    const v = match?.split("=")[1]?.trim();
     return v === "accepted" || v === "rejected" ? v : "unknown";
   } catch {
     return "unknown";
@@ -16,17 +29,35 @@ function readConsent(): ConsentValue {
 
 function writeConsent(value: ConsentValue) {
   try {
-    if (value === "unknown") localStorage.removeItem(STORAGE_KEY);
-    else localStorage.setItem(STORAGE_KEY, value);
+    const domain = cookieDomain();
+    const domainAttr = domain ? `; domain=${domain}` : "";
+    const secure = window.location.protocol === "https:" ? "; Secure" : "";
+    if (value === "unknown") {
+      document.cookie = `${COOKIE_NAME}=; max-age=0; path=/${domainAttr}${secure}; SameSite=Lax`;
+    } else {
+      document.cookie = `${COOKIE_NAME}=${value}; max-age=${MAX_AGE}; path=/${domainAttr}${secure}; SameSite=Lax`;
+    }
   } catch {
-    // Ignore storage failures (private mode, quota, etc.) — UI still updates via event.
+    // ignore
   }
   window.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: value }));
 }
 
-// Best-effort removal of GA cookies after the user withdraws consent.
-// GA sets these on the eTLD+1, so we expire them on the current host and on
-// each parent domain we can derive.
+// Migrate a previously-stored localStorage value into the shared cookie once.
+function migrateFromLocalStorage(): ConsentValue {
+  try {
+    const v = localStorage.getItem(LEGACY_STORAGE_KEY);
+    if (v === "accepted" || v === "rejected") {
+      localStorage.removeItem(LEGACY_STORAGE_KEY);
+      writeConsent(v);
+      return v;
+    }
+  } catch {
+    // ignore
+  }
+  return "unknown";
+}
+
 function clearAnalyticsCookies() {
   const names = document.cookie
     .split(";")
@@ -51,21 +82,19 @@ function clearAnalyticsCookies() {
 }
 
 export function useCookieConsent() {
-  const [consent, setConsent] = useState<ConsentValue>(() => readConsent());
+  const [consent, setConsent] = useState<ConsentValue>(() => {
+    const fromCookie = readConsent();
+    return fromCookie !== "unknown" ? fromCookie : migrateFromLocalStorage();
+  });
 
   useEffect(() => {
     const onChange = (e: Event) => {
       const next = (e as CustomEvent<ConsentValue>).detail ?? readConsent();
       setConsent(next);
     };
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === STORAGE_KEY) setConsent(readConsent());
-    };
     window.addEventListener(EVENT_NAME, onChange);
-    window.addEventListener("storage", onStorage);
     return () => {
       window.removeEventListener(EVENT_NAME, onChange);
-      window.removeEventListener("storage", onStorage);
     };
   }, []);
 

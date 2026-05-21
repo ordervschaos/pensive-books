@@ -10,10 +10,11 @@ export const preloadPages = async (bookId: number, pageIds: number[]): Promise<v
   if (!bookId || !pageIds.length) return;
   
   try {
-    // Fetch book data once
+    // Fetch book data once. Explicit list to keep the author-only `brief`
+    // column off the wire on the reader path.
     const { data: bookData, error: bookError } = await supabase
       .from("books")
-      .select("*")
+      .select("id, name, slug, cover_url, author, subtitle, published_at, is_public, is_archived, owner_id")
       .eq("id", bookId)
       .eq("is_archived", false)
       .maybeSingle();

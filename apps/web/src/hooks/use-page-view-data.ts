@@ -108,10 +108,11 @@ export const usePageViewData = (
 
 
     try {
-      // Fetch parent book data
+      // Fetch parent book data. Explicit column list keeps the author-only
+      // `brief` column off the wire on the reader path.
       const { data: bookData, error: bookError } = await supabase
         .from('books')
-        .select('*')
+        .select('id, name, slug, cover_url, author, subtitle, published_at, is_public, is_archived, owner_id, show_text_on_cover')
         .eq('id', numericBookId)
         .eq('is_archived', false)
         .maybeSingle();
