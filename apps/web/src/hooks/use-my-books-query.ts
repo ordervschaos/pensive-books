@@ -162,7 +162,7 @@ export function useMyBooksCounts(userId: string | null) {
     queryKey: ["my-books-counts", userId],
     enabled: Boolean(userId),
     queryFn: async (): Promise<MyBooksCounts> => {
-      if (!userId) return { all: 0, published: 0, private: 0, pinned: 0 };
+      if (!userId) return { all: 0, published: 0, private: 0, pinned: 0, archived: 0 };
 
       const base = () =>
         supabase
