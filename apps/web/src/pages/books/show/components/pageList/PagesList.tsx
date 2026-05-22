@@ -56,7 +56,7 @@ export const PagesList = ({
   canEdit = false,
   onDeleteModeChange,
   onChatToggle,
-  hasActiveChat
+  hasActiveChat,
 }: PagesListProps) => {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -92,16 +92,6 @@ export const PagesList = ({
 
     loadBookmarkedPage();
   }, [bookId]);
-
-  // Scroll to bookmarked page when it's loaded
-  useEffect(() => {
-    if (bookmarkedPageIndex !== null && bookmarkedPageRef.current) {
-      bookmarkedPageRef.current.scrollIntoView({ 
-        behavior: 'smooth',
-        block: 'center'
-      });
-    }
-  }, [bookmarkedPageIndex]);
 
   useEffect(() => {
     setIsReordering(isReorderMode);

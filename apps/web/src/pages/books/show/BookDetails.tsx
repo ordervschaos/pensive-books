@@ -17,6 +17,7 @@ import { setPageTitle } from "@/utils/pageTitle";
 import { Helmet } from "react-helmet-async";
 import { executeBookOperation } from "@/lib/book-operations";
 import { Button } from "@/components/ui/button";
+import { ArchivedPagesSection } from "./components/pageList/ArchivedPagesSection";
 import { jsonToText, getWordCountFromContent } from "@/utils/tiptapHelpers";
 import { CommitDialog } from "./components/CommitDialog";
 import { PublishingDialog } from "@/components/book/PublishingDialog";
@@ -130,6 +131,7 @@ const BookDetails = () => {
   // Version control state
   const [isCommitDialogOpen, setIsCommitDialogOpen] = useState(false);
   const [isPublishingDialogOpen, setIsPublishingDialogOpen] = useState(false);
+  const [showArchivedPages, setShowArchivedPages] = useState(false);
 
   const fetchBookmarkedPage = useCallback(async (session: Session | null) => {
     try {
@@ -709,6 +711,39 @@ const BookDetails = () => {
                 onToggleEnabled={toggleFlashcards}
                 preferencesLoading={preferencesLoading}
               />
+            )}
+            {/* Archived pages — subtle link at the bottom, only for editors */}
+            {canEdit && (
+              <div className="mt-8 pb-2">
+                {!showArchivedPages ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowArchivedPages(true)}
+                    className="pv-serif text-[12px] italic text-[hsl(var(--pv-text-faint))] underline-offset-2 hover:text-[hsl(var(--pv-text-muted))] hover:underline transition-colors"
+                  >
+                    View archived pages
+                  </button>
+                ) : (
+                  <div className="overflow-hidden rounded-2xl border border-border bg-[hsl(var(--pv-surface-2))]/40">
+                    <div className="flex items-center justify-between border-b border-[hsl(var(--pv-border-soft))] px-5 py-2.5">
+                      <span className="pv-mono text-[10.5px] uppercase tracking-[0.18em] text-[hsl(var(--pv-text-muted))]">
+                        Archived pages
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowArchivedPages(false)}
+                        className="pv-serif text-[12px] italic text-[hsl(var(--pv-text-faint))] hover:text-[hsl(var(--pv-text-muted))] transition-colors"
+                      >
+                        Hide
+                      </button>
+                    </div>
+                    <ArchivedPagesSection
+                      bookId={getNumericId(bookSlug)}
+                      onRestore={fetchBookDetails}
+                    />
+                  </div>
+                )}
+              </div>
             )}
           </div>
 

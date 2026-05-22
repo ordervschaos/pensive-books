@@ -1,7 +1,7 @@
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
-export type FilterType = "all" | "published" | "private" | "pinned";
+export type FilterType = "all" | "published" | "private" | "pinned" | "archived";
 export type SortType =
   | "recently-updated"
   | "recently-created"
@@ -38,6 +38,7 @@ export interface MyBooksCounts {
   published: number;
   private: number;
   pinned: number;
+  archived: number;
 }
 
 interface UseMyBooksInfiniteParams {
@@ -71,7 +72,7 @@ async function fetchMyBooksPage({
     .from("books")
     .select("*", { count: "exact" })
     .eq("owner_id", userId)
-    .eq("is_archived", false);
+    .eq("is_archived", filter === "archived" ? true : false);
 
   if (filter === "published") query = query.eq("is_public", true);
   else if (filter === "private") query = query.eq("is_public", false);
@@ -170,11 +171,19 @@ export function useMyBooksCounts(userId: string | null) {
           .eq("owner_id", userId)
           .eq("is_archived", false);
 
-      const [allRes, publishedRes, privateRes, pinnedRes] = await Promise.all([
+      const archivedBase = () =>
+        supabase
+          .from("books")
+          .select("id", { count: "exact", head: true })
+          .eq("owner_id", userId)
+          .eq("is_archived", true);
+
+      const [allRes, publishedRes, privateRes, pinnedRes, archivedRes] = await Promise.all([
         base(),
         base().eq("is_public", true),
         base().eq("is_public", false),
         base().eq("pinned", true),
+        archivedBase(),
       ]);
 
       return {
@@ -182,6 +191,7 @@ export function useMyBooksCounts(userId: string | null) {
         published: publishedRes.count ?? 0,
         private: privateRes.count ?? 0,
         pinned: pinnedRes.count ?? 0,
+        archived: archivedRes.count ?? 0,
       };
     },
   });

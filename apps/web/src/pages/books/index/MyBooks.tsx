@@ -11,6 +11,8 @@ import {
   Globe2,
   Users,
   Loader2,
+  RotateCcw,
+  Archive,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -122,6 +124,37 @@ export default function Index() {
     }
   }, [pageError, toast]);
 
+  const handleRestoreBook = async (bookId: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const { error: bookError } = await supabase
+        .from("books")
+        .update({ is_archived: false })
+        .eq("id", bookId);
+      if (bookError) throw bookError;
+
+      await supabase
+        .from("pages")
+        .update({ archived: false })
+        .eq("book_id", bookId)
+        .eq("archived", true);
+
+      queryClient.invalidateQueries({ queryKey: ["my-books-infinite"] });
+      queryClient.invalidateQueries({ queryKey: ["my-books-counts"] });
+
+      toast({
+        title: "Book restored",
+        description: "The book and its pages have been restored to your desk",
+      });
+    } catch (error: unknown) {
+      toast({
+        variant: "destructive",
+        title: "Error restoring book",
+        description: error instanceof Error ? error.message : "Unknown error occurred",
+      });
+    }
+  };
+
   const handlePinToggle = async (
     bookId: number,
     currentlyPinned: boolean,
@@ -163,6 +196,7 @@ export default function Index() {
     { value: "published", label: "Published", count: counts?.published },
     { value: "private", label: "Private", count: counts?.private },
     { value: "pinned", label: "Pinned", count: counts?.pinned },
+    { value: "archived", label: "Archived", count: counts?.archived },
   ];
 
   const sortOptions: { value: SortType; label: string }[] = [
@@ -428,6 +462,8 @@ export default function Index() {
               <p className="pv-serif text-[15px] italic text-[hsl(var(--pv-text-muted))]">
                 {debouncedSearch
                   ? `No books match "${debouncedSearch}"`
+                  : activeFilter === "archived"
+                  ? "No archived books"
                   : "No books here yet"}
               </p>
               {debouncedSearch && (
@@ -448,7 +484,9 @@ export default function Index() {
                     key={book.id}
                     book={book}
                     onPinToggle={handlePinToggle}
-                    onClick={() => navigate(`/books/${book.id}`)}
+                    onClick={activeFilter === "archived" ? undefined : () => navigate(`/books/${book.id}`)}
+                    isArchived={activeFilter === "archived"}
+                    onRestore={activeFilter === "archived" ? handleRestoreBook : undefined}
                   />
                 ))}
               </div>
@@ -490,6 +528,8 @@ function BookGridCard({
   book,
   onPinToggle,
   onClick,
+  isArchived = false,
+  onRestore,
 }: {
   book: BookForCard;
   onPinToggle: (
@@ -497,7 +537,9 @@ function BookGridCard({
     currentlyPinned: boolean,
     e: React.MouseEvent,
   ) => void;
-  onClick: () => void;
+  onClick?: () => void;
+  isArchived?: boolean;
+  onRestore?: (bookId: number, e: React.MouseEvent) => void;
 }) {
   const isPinned = book.pinned === true;
   const timeAgo = formatDistanceToNow(
@@ -511,27 +553,43 @@ function BookGridCard({
 
   return (
     <div
-      className="group flex cursor-pointer flex-col"
+      className={cn("group flex flex-col", onClick ? "cursor-pointer" : "cursor-default")}
       onClick={onClick}
     >
       <BookCard
         book={book}
         topRightOverlay={
-          <button
-            onClick={(e) => onPinToggle(book.id, isPinned, e)}
-            aria-label={isPinned ? "Unpin book" : "Pin book"}
-            className={cn(
-              "flex h-7 w-7 items-center justify-center rounded-full transition-all",
-              isPinned
-                ? "bg-white text-black shadow-md opacity-100"
-                : "bg-black/50 text-white opacity-0 hover:bg-black/70 group-hover:opacity-100",
-            )}
-          >
-            <Pin className={cn("h-3.5 w-3.5", isPinned && "fill-current")} />
-          </button>
+          isArchived ? (
+            <button
+              onClick={(e) => onRestore?.(book.id, e)}
+              aria-label="Restore book"
+              className="flex items-center gap-1 rounded-full bg-black/60 px-2.5 py-1 text-[10px] font-medium text-white shadow-md opacity-0 transition-all hover:bg-black/80 group-hover:opacity-100"
+            >
+              <RotateCcw className="h-2.5 w-2.5" />
+              Restore
+            </button>
+          ) : (
+            <button
+              onClick={(e) => onPinToggle(book.id, isPinned, e)}
+              aria-label={isPinned ? "Unpin book" : "Pin book"}
+              className={cn(
+                "flex h-7 w-7 items-center justify-center rounded-full transition-all",
+                isPinned
+                  ? "bg-white text-black shadow-md opacity-100"
+                  : "bg-black/50 text-white opacity-0 hover:bg-black/70 group-hover:opacity-100",
+              )}
+            >
+              <Pin className={cn("h-3.5 w-3.5", isPinned && "fill-current")} />
+            </button>
+          )
         }
         topLeftOverlay={
-          book.is_public || accessLevel || book.content_tags?.includes('mature') ? (
+          isArchived ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-black/55 px-2 py-0.5 text-[10px] font-medium text-white shadow-sm">
+              <Archive className="h-2.5 w-2.5" />
+              Archived
+            </span>
+          ) : book.is_public || accessLevel || book.content_tags?.includes('mature') ? (
             <>
               {book.is_public && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-black/55 px-2 py-0.5 text-[10px] font-medium text-white shadow-sm">
@@ -560,7 +618,7 @@ function BookGridCard({
               coverShowsTitle ? "mt-0" : "mt-1.5",
             )}
           >
-            Updated {timeAgo}
+            {isArchived ? `Archived · Updated ${timeAgo}` : `Updated ${timeAgo}`}
           </p>
         }
       />
