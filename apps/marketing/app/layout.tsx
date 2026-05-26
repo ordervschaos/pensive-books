@@ -3,6 +3,7 @@ import "./globals.css";
 import { PublicTopNav } from "@/components/PublicTopNav";
 import { CookieBanner } from "@/components/CookieBanner";
 import { GoogleAnalytics } from "@/components/GoogleAnalytics";
+import { VercelAnalytics } from "@/components/VercelAnalytics";
 
 const publicOrigin =
   process.env.PENSIVE_PUBLIC_ORIGIN ??
@@ -50,6 +51,7 @@ export default function RootLayout({
         {children}
         <CookieBanner />
         <GoogleAnalytics />
+        <VercelAnalytics />
       </body>
     </html>
   );

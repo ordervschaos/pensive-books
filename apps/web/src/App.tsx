@@ -13,6 +13,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { LegacyRedirects } from "@/components/LegacyRedirects";
 import { PublicSiteRedirect } from "@/components/PublicSiteRedirect";
 import { CookieBanner } from "@/components/CookieBanner";
+import { VercelAnalytics } from "@/components/VercelAnalytics";
 
 const PrivacyPolicy = lazy(() => import("@/pages/public/legal/PrivacyPolicy"));
 const Terms = lazy(() => import("@/pages/public/legal/Terms"));
@@ -145,6 +146,7 @@ export default function App() {
               </main>
             </div>
             <CookieBanner />
+            <VercelAnalytics />
             <Toaster />
           </Router>
         </PageDisplaySettingsProvider>
