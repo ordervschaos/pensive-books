@@ -52,7 +52,7 @@ export interface TopNavFullProps extends BaseProps {
 export interface TopNavCompactProps extends BaseProps {
   mode: "compact";
   /** Single-line breadcrumb shown next to the logo. */
-  crumb: string;
+  crumb: React.ReactNode;
 }
 
 export type TopNavShellProps = TopNavFullProps | TopNavCompactProps;
@@ -148,10 +148,7 @@ function CompactLayout({
         >
           Pensive
         </a>
-        <span
-          className="pv-mono truncate text-[11px] uppercase tracking-[0.15em] text-[hsl(var(--pv-text-faint))]"
-          title={crumb.replace(/\s{2,}/g, " ")}
-        >
+        <span className="pv-mono truncate text-[11px] uppercase tracking-[0.15em] text-[hsl(var(--pv-text-faint))]">
           {crumb}
         </span>
       </div>

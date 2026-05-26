@@ -573,6 +573,12 @@ const BookDetails = () => {
   
   const bookDescription = book.subtitle || `A book by ${book.author || "Unknown author"}`;
 
+  const manuscriptWordCount = pages.reduce(
+    (acc, page) =>
+      acc + (page.page_type === 'text' && page.content ? getWordCountFromContent(page.content) : 0),
+    0
+  );
+
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Helmet>
@@ -653,6 +659,7 @@ const BookDetails = () => {
               {canEdit && (
                 <BookBriefSummary
                   brief={book.brief ?? null}
+                  wordCount={manuscriptWordCount}
                   onEdit={() => navigate(`/books/${bookSlug}/edit`)}
                 />
               )}
@@ -663,8 +670,7 @@ const BookDetails = () => {
               <div className="pv-eyebrow">
                 The manuscript ·{" "}
                 <span className="pv-serif text-[13px] normal-case not-italic tracking-normal text-[hsl(var(--pv-text-muted))]">
-                  {pages.reduce((acc, page) =>
-                    acc + (page.page_type === 'text' && page.content ? getWordCountFromContent(page.content) : 0), 0).toLocaleString()} words
+                  {manuscriptWordCount.toLocaleString()} words
                 </span>
               </div>
 

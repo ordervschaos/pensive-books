@@ -66,12 +66,22 @@ export const NavBreadcrumb = ({ bookName, pageName, location, navigate }: NavBre
                       {bookName}
                     </Link>
                     <span className="mx-2 text-muted-foreground shrink-0">›</span>
-                    <span className="text-foreground font-medium">Edit Book</span>
+                    <Link
+                      className="text-link hover:opacity-80 transition-opacity font-medium"
+                      to={location.pathname}
+                    >
+                      Edit Book
+                    </Link>
                   </>
                 ) : isNewBookRoute ? (
                   <span className="text-foreground font-medium">New Book</span>
                 ) : (
-                  <span className="text-foreground font-medium truncate max-w-[300px]">{bookName}</span>
+                  <Link
+                    className="text-link hover:opacity-80 transition-opacity font-medium truncate max-w-[300px]"
+                    to={location.pathname}
+                  >
+                    {bookName}
+                  </Link>
                 )}
               </>
             )}

@@ -15,9 +15,9 @@ import {
   Brief,
   GENRE_SUGGESTIONS,
   mergeBrief,
-  SCOPE_BANDS,
   TONE_SUGGESTIONS,
 } from "@/lib/brief";
+import { ScopeBandPicker } from "@/components/book/ScopeBandPicker";
 
 const STEPS = [
   "scope",
@@ -127,53 +127,10 @@ export function BriefIntakeSheet({ bookId, open, onOpenChange, onFinish }: Brief
         <div className="min-h-[200px] py-2">
           {step === "scope" && (
             <Step title="Roughly how long?" hint="Pick a band — refine later if you like.">
-              <div className="flex flex-wrap gap-2">
-                {SCOPE_BANDS.map((b) => {
-                  const active = brief.scope?.band === b.value;
-                  return (
-                    <button
-                      key={b.value}
-                      type="button"
-                      onClick={() =>
-                        setBrief((prev) => ({
-                          ...prev,
-                          scope: {
-                            band: b.value,
-                            word_target: b.value === "custom" ? prev.scope?.word_target : b.words,
-                          },
-                        }))
-                      }
-                      className={`rounded-full border px-3 py-1.5 text-sm transition ${
-                        active
-                          ? "border-foreground bg-foreground text-background"
-                          : "border-border hover:border-foreground/40"
-                      }`}
-                    >
-                      {b.label}
-                      <span className="ml-1.5 text-xs opacity-70">{b.hint}</span>
-                    </button>
-                  );
-                })}
-              </div>
-              {brief.scope?.band === "custom" && (
-                <Input
-                  type="number"
-                  min={0}
-                  className="mt-3 max-w-xs"
-                  placeholder="Target word count"
-                  value={brief.scope?.word_target ?? ""}
-                  onChange={(e) =>
-                    setBrief((prev) => ({
-                      ...prev,
-                      scope: {
-                        ...(prev.scope ?? {}),
-                        band: "custom",
-                        word_target: e.target.value ? Number(e.target.value) : undefined,
-                      },
-                    }))
-                  }
-                />
-              )}
+              <ScopeBandPicker
+                scope={brief.scope}
+                onChange={(scope) => setBrief((prev) => ({ ...prev, scope }))}
+              />
             </Step>
           )}
 

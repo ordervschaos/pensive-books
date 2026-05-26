@@ -18,9 +18,9 @@ import {
   computeCompletion,
   GENRE_SUGGESTIONS,
   mergeBrief,
-  SCOPE_BANDS,
   TONE_SUGGESTIONS,
 } from "@/lib/brief";
+import { ScopeBandPicker } from "@/components/book/ScopeBandPicker";
 
 interface BookBriefSectionProps {
   bookId: number;
@@ -90,51 +90,10 @@ export function BookBriefSection({ bookId, brief, onBriefChange }: BookBriefSect
             label="Scope"
             hint="Roughly how long are you thinking?"
           >
-            <div className="flex flex-wrap gap-2">
-              {SCOPE_BANDS.map((b) => {
-                const active = draft.scope?.band === b.value;
-                return (
-                  <button
-                    key={b.value}
-                    type="button"
-                    onClick={() =>
-                      updateDraft({
-                        scope: {
-                          band: b.value,
-                          word_target: b.value === "custom" ? draft.scope?.word_target : b.words,
-                        },
-                      })
-                    }
-                    className={`rounded-full border px-3 py-1.5 text-sm transition ${
-                      active
-                        ? "border-foreground bg-foreground text-background"
-                        : "border-border bg-background text-foreground hover:border-foreground/40"
-                    }`}
-                  >
-                    {b.label}
-                    <span className="ml-1.5 text-xs opacity-70">{b.hint}</span>
-                  </button>
-                );
-              })}
-            </div>
-            {draft.scope?.band === "custom" && (
-              <Input
-                type="number"
-                min={0}
-                placeholder="Target word count"
-                value={draft.scope?.word_target ?? ""}
-                onChange={(e) =>
-                  updateDraft({
-                    scope: {
-                      ...(draft.scope ?? {}),
-                      band: "custom",
-                      word_target: e.target.value ? Number(e.target.value) : undefined,
-                    },
-                  })
-                }
-                className="mt-3 max-w-xs"
-              />
-            )}
+            <ScopeBandPicker
+              scope={draft.scope}
+              onChange={(scope) => updateDraft({ scope })}
+            />
           </FieldRow>
 
           <FieldRow label="Genre" hint="Where would this sit on a shelf?">

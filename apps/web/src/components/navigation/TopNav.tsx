@@ -1,7 +1,7 @@
 import { useNavigate, useLocation } from "react-router-dom";
 import { supabase, hasSessionCookie } from "@/integrations/supabase/client";
 import { useToast } from "@/components/ui/use-toast";
-import { useState, useEffect } from "react";
+import React, { useState, useEffect, type ReactNode } from "react";
 import { TopNavShell, type TopNavTab } from "@pensive/shared/ui/top-nav";
 import { SearchDialog } from "@/components/search/SearchDialog";
 import { NavActions } from "./NavActions";
@@ -233,7 +233,7 @@ export function TopNav() {
           mode="compact"
           logoHref="/books"
           onLogoClick={intercept("/books")}
-          crumb={buildCrumb(location.pathname, bookName, pageName)}
+          crumb={buildCrumb(location.pathname, bookName, pageName, intercept)}
           actions={actions}
         />
       )}
@@ -243,18 +243,58 @@ export function TopNav() {
   );
 }
 
-function buildCrumb(pathname: string, bookName: string, pageName: string) {
+type Intercept = (path: string) => (e: React.MouseEvent<HTMLAnchorElement>) => void;
+
+function CrumbLink({ href, intercept, children }: { href: string; intercept: Intercept; children: ReactNode }) {
+  return (
+    <a
+      href={href}
+      onClick={intercept(href)}
+      className="hover:opacity-80 transition-opacity cursor-pointer"
+    >
+      {children}
+    </a>
+  );
+}
+
+const SEP = "  /  ";
+
+function buildCrumb(pathname: string, bookName: string, pageName: string, intercept: Intercept): ReactNode {
+  const bookSlug = pathname.split("/")[2] ?? "";
+  const bookPath = `/books/${bookSlug}`;
+
   if (pathname.endsWith("/books/new")) {
-    return "My Books  /  New Book";
+    return <><CrumbLink href="/books" intercept={intercept}>My Books</CrumbLink>{SEP}New Book</>;
   }
   if (pathname.endsWith("/edit")) {
-    return `My Books  /  ${bookName || deslug(pathname.split("/")[2] ?? "")}  /  Edit`;
+    const name = bookName || deslug(bookSlug);
+    return (
+      <>
+        <CrumbLink href="/books" intercept={intercept}>My Books</CrumbLink>
+        {SEP}
+        <CrumbLink href={bookPath} intercept={intercept}>{name}</CrumbLink>
+        {SEP}
+        <CrumbLink href={pathname} intercept={intercept}>Edit</CrumbLink>
+      </>
+    );
   }
   if (pageName) {
-    return `${bookName || ""}  /  ${pageName}`;
+    return (
+      <>
+        <CrumbLink href={bookPath} intercept={intercept}>{bookName || ""}</CrumbLink>
+        {SEP}
+        {pageName}
+      </>
+    );
   }
   if (bookName) {
-    return `My Books  /  ${bookName}`;
+    return (
+      <>
+        <CrumbLink href="/books" intercept={intercept}>My Books</CrumbLink>
+        {SEP}
+        <CrumbLink href={bookPath} intercept={intercept}>{bookName}</CrumbLink>
+      </>
+    );
   }
-  return "My Books";
+  return <CrumbLink href="/books" intercept={intercept}>My Books</CrumbLink>;
 }

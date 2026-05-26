@@ -1,4 +1,15 @@
-export type BriefScopeBand = "short" | "novella" | "novel" | "epic" | "custom";
+export type BriefScopeBand =
+  | "short"
+  | "novella"
+  | "novel"
+  | "epic"
+  | "essay"
+  | "guide"
+  | "nonfiction_book"
+  | "comprehensive"
+  | "custom";
+
+export type BriefScopeKind = "fiction" | "nonfiction";
 
 export interface BriefScope {
   band?: BriefScopeBand;
@@ -26,12 +37,30 @@ export const BRIEF_FIELDS = [
 
 export type BriefField = (typeof BRIEF_FIELDS)[number];
 
-export const SCOPE_BANDS: { value: BriefScopeBand; label: string; hint: string; words?: number }[] = [
-  { value: "short", label: "Short story", hint: "up to 10k words", words: 8000 },
-  { value: "novella", label: "Novella", hint: "10–40k words", words: 25000 },
-  { value: "novel", label: "Novel", hint: "40–100k words", words: 70000 },
-  { value: "epic", label: "Epic", hint: "100k+ words", words: 120000 },
+export const SCOPE_BANDS: {
+  value: BriefScopeBand;
+  label: string;
+  hint: string;
+  words?: number;
+  kind?: BriefScopeKind;
+}[] = [
+  // Fiction
+  { value: "short", label: "Short story", hint: "8,000 words", words: 8000, kind: "fiction" },
+  { value: "novella", label: "Novella", hint: "25,000 words", words: 25000, kind: "fiction" },
+  { value: "novel", label: "Novel", hint: "70,000 words", words: 70000, kind: "fiction" },
+  { value: "epic", label: "Epic", hint: "120,000 words", words: 120000, kind: "fiction" },
+  // Non-fiction
+  { value: "essay", label: "Essay", hint: "5,000 words", words: 5000, kind: "nonfiction" },
+  { value: "guide", label: "Guide / how-to", hint: "25,000 words", words: 25000, kind: "nonfiction" },
+  { value: "nonfiction_book", label: "Non-fiction book", hint: "60,000 words", words: 60000, kind: "nonfiction" },
+  { value: "comprehensive", label: "Comprehensive", hint: "110,000 words", words: 110000, kind: "nonfiction" },
+  // Other
   { value: "custom", label: "Something else", hint: "I'll set a number" },
+];
+
+export const SCOPE_GROUPS: { kind: BriefScopeKind; label: string }[] = [
+  { kind: "fiction", label: "Fiction" },
+  { kind: "nonfiction", label: "Non-fiction" },
 ];
 
 export const GENRE_SUGGESTIONS = [

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { TopNavShell, type TopNavTab } from "@pensive/shared/ui/top-nav";
 import { getConfiguredAppOrigin } from "@/lib/pensive";
@@ -27,10 +28,19 @@ function deslug(slug: string) {
     .join(" ");
 }
 
+const crumbLinkClass = "hover:opacity-80 transition-opacity cursor-pointer";
+
 function buildCrumb(pathname: string) {
   const match = pathname.match(/^\/library\/books\/([^/]+)$/);
-  if (!match) return "The Library";
-  return `The Library  /  ${deslug(match[1])}`;
+  const libraryLink = <Link href="/library" className={crumbLinkClass}>The Library</Link>;
+  if (!match) return libraryLink;
+  return (
+    <>
+      {libraryLink}
+      {"  /  "}
+      <Link href={pathname} className={crumbLinkClass}>{deslug(match[1])}</Link>
+    </>
+  );
 }
 
 export function PublicTopNav() {
