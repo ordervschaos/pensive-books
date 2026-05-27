@@ -29,3 +29,7 @@ dist-ssr
 supabase/.temp
 CLAUDE.md
 .vercel
+
+# AI evaluation: private manuscripts/reads + scratch working notes (keep local, never commit)
+reports/
+temp_*.md
