@@ -1,6 +1,9 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { debounce } from "lodash";
+import type { Editor } from "@tiptap/react";
+import { Sparkles, Loader2 } from "lucide-react";
 import { TipTapEditor } from "@/components/editor/TipTapEditor";
+import { useToast } from "@/hooks/use-toast";
 import { FloatingActions } from "./FloatingActions";
 import { useAudioHighlighting } from "@/hooks/use-audio-highlighting";
 import { useAdaptiveTextToSpeech } from "@/hooks/use-adaptive-text-to-speech";
@@ -66,10 +69,14 @@ export const PageContent = ({
   sectionLabel,
   extraMenuItems,
 }: PageContentProps) => {
+  const { toast } = useToast();
   const [initialLoad, setInitialLoad] = useState(true);
   const [currentContent, setCurrentContent] = useState<EditorJSON | null>(jsonContent);
   const debouncedSaveRef = useRef<ReturnType<typeof debounce>>();
   const currentPageIdRef = useRef<string | undefined>(pageId);
+  const editorRef = useRef<Editor | null>(null);
+  const [generatingPage, setGeneratingPage] = useState(false);
+  const handleEditorReady = useCallback((e: Editor | null) => { editorRef.current = e; }, []);
   // Local draft for the page objective bar; resynced when the page or its objective changes.
   const [objectiveDraft, setObjectiveDraft] = useState(objective ?? '');
   useEffect(() => {
@@ -143,6 +150,33 @@ export const PageContent = ({
     if (!data?.text) throw new Error(data?.error || "No text returned");
     return data.text as string;
   }, [bookId, pageId, objectiveDraft]);
+
+  // Generate the whole page's prose from the page objective and append it as paragraphs.
+  const handleGeneratePage = useCallback(async () => {
+    const objective = objectiveDraft.trim();
+    const editor = editorRef.current;
+    if (!objective || !editor || !bookId || !pageId || generatingPage) return;
+    try {
+      setGeneratingPage(true);
+      const { data, error } = await supabase.functions.invoke("generate-unit", {
+        body: { bookId: Number(bookId), pageId: Number(pageId), level: "page", objective },
+      });
+      if (error) throw error;
+      const text = String(data?.text ?? "").trim();
+      if (!text) throw new Error(data?.error || "No text returned");
+      // Split into paragraphs and insert as text nodes (avoids HTML injection from output).
+      const paras = text
+        .split(/\n{2,}/)
+        .map((p) => p.replace(/\s+/g, " ").trim())
+        .filter(Boolean)
+        .map((p) => ({ type: "paragraph", content: [{ type: "text", text: p }] }));
+      if (paras.length) editor.chain().focus("end").insertContent(paras).run();
+    } catch (e) {
+      toast({ title: "Couldn't generate page", description: String((e as Error)?.message ?? e), variant: "destructive" });
+    } finally {
+      setGeneratingPage(false);
+    }
+  }, [objectiveDraft, bookId, pageId, generatingPage, toast]);
 
   // Always use the current content - don't maintain separate state for display
   
@@ -243,38 +277,11 @@ export const PageContent = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.marginSize]);
 
-  const showEyebrow =
-    pageType !== 'section' &&
-    typeof currentIndex === 'number' &&
-    typeof totalPages === 'number' &&
-    totalPages > 0;
-
   return (
     <div className="flex-1 flex flex-col bg-background">
       <div className="p-0 flex-1 flex flex-col">
         <div className="flex-1 flex justify-center">
           <div className="w-full max-w-3xl">
-            {showEyebrow && (
-              <div className="pv-eyebrow px-8 pt-10 pb-1">
-                {sectionLabel ? `${sectionLabel} · ` : ''}page {(currentIndex ?? 0) + 1} of {totalPages}
-              </div>
-            )}
-            {canEdit && onObjectiveChange && objectivesEnabled && (
-              <div className="px-8 pt-6">
-                <input
-                  type="text"
-                  value={objectiveDraft}
-                  onChange={(e) => setObjectiveDraft(e.target.value)}
-                  onBlur={() => {
-                    const next = objectiveDraft.trim();
-                    if (next !== (objective ?? '')) onObjectiveChange(next || null);
-                  }}
-                  placeholder="Objective for this page — only you see this"
-                  title="Page objective (author-only — not shown to readers)"
-                  className="w-full bg-transparent text-sm italic text-muted-foreground placeholder:text-muted-foreground/50 focus:outline-none border-l-2 border-transparent focus:border-muted-foreground/30 pl-2 -ml-0.5"
-                />
-              </div>
-            )}
             <div className={cn("flex-1 relative", marginClass)}>
               <TipTapEditor
                 content={currentContent}
@@ -289,11 +296,43 @@ export const PageContent = ({
                 bookId={bookId}
                 objectivesEnabled={objectivesEnabled}
                 onGenerate={objectivesEnabled ? handleGenerate : undefined}
+                onEditorReady={handleEditorReady}
                 fontSizeClassName={fontSizeClassName}
                 fontFamilyStyle={fontFamilyStyle}
                 saving={saving}
                 lastSavedAt={lastSavedAt}
                 extraMenuItems={extraMenuItems}
+                currentIndex={currentIndex}
+                totalPages={totalPages}
+                sectionLabel={sectionLabel}
+                topContent={canEdit && onObjectiveChange && objectivesEnabled ? (
+                  <div className="px-8 pt-4 pb-2 flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={objectiveDraft}
+                      onChange={(e) => setObjectiveDraft(e.target.value)}
+                      onBlur={() => {
+                        const next = objectiveDraft.trim();
+                        if (next !== (objective ?? '')) onObjectiveChange(next || null);
+                      }}
+                      placeholder="Objective for this page — only you see this"
+                      title="Page objective (author-only — not shown to readers)"
+                      className="flex-1 bg-transparent text-sm italic text-muted-foreground placeholder:text-muted-foreground/50 focus:outline-none border-l-2 border-transparent focus:border-muted-foreground/30 pl-2 -ml-0.5"
+                    />
+                    {pageType !== 'section' && objectiveDraft.trim() && (
+                      <button
+                        type="button"
+                        onClick={handleGeneratePage}
+                        disabled={generatingPage}
+                        title="Generate this page's prose from its objective"
+                        className="flex-none inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-50"
+                      >
+                        {generatingPage ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                        Write page
+                      </button>
+                    )}
+                  </div>
+                ) : undefined}
               />
 
               {/* Floating action buttons */}

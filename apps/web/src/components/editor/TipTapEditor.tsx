@@ -1,9 +1,11 @@
-import { useEditor, EditorContent } from '@tiptap/react';
+import { useEditor, EditorContent, type Editor } from '@tiptap/react';
 import { useEffect, useCallback, useMemo } from 'react';
 import { useToast } from "@/hooks/use-toast";
 import { useSupabaseUpload } from '@/hooks/use-supabase-upload';
 import { getEditorConfig } from './config/editorConfig';
 import { EditorToolbar } from './EditorToolbar';
+import { SelectionBubble } from './SelectionBubble';
+import { EditorStatusBar } from './EditorStatusBar';
 import { cn } from "@/lib/utils";
 import { EditorChangeHandler, EditorJSON } from '@/types/editor';
 import { useNavigate } from 'react-router-dom';
@@ -29,10 +31,19 @@ interface TipTapEditorProps {
   objectivesEnabled?: boolean;
   /** Render prose from a block's objective (returns generated text). */
   onGenerate?: (objective: string) => Promise<string>;
+  /** Exposes the editor instance to the host (e.g. for page-level insertion). */
+  onEditorReady?: (editor: Editor | null) => void;
   saving?: boolean;
   lastSavedAt?: Date | null;
   /** Items appended to the toolbar's meatball "More options" dropdown. */
   extraMenuItems?: React.ReactNode;
+  /** Page position (0-based) + total — surfaced in the footer status bar's "page X / Y". */
+  currentIndex?: number;
+  totalPages?: number;
+  /** Nearest preceding section name, shown in the status bar before the page counter. */
+  sectionLabel?: string | null;
+  /** Content rendered between the toolbar spacer and the editor area — sits below the fixed bar. */
+  topContent?: React.ReactNode;
 }
 
 export const TipTapEditor = ({
@@ -53,9 +64,14 @@ export const TipTapEditor = ({
   bookId,
   objectivesEnabled = false,
   onGenerate,
+  onEditorReady,
   saving,
   lastSavedAt,
   extraMenuItems,
+  currentIndex,
+  totalPages,
+  sectionLabel,
+  topContent,
 }: TipTapEditorProps) => {
   const { toast } = useToast();
   const uploadImage = useSupabaseUpload();
@@ -187,6 +203,12 @@ export const TipTapEditor = ({
     return () => { storage.generate = null; };
   }, [editor, onGenerate, toast]);
 
+  // Expose the editor instance to the host (for page-level insertion).
+  useEffect(() => {
+    onEditorReady?.(editor ?? null);
+    return () => onEditorReady?.(null);
+  }, [editor, onEditorReady]);
+
   useEffect(() => {
     if (editor) {
       editor.setEditable(editable && isEditing);
@@ -229,7 +251,8 @@ export const TipTapEditor = ({
           extraMenuItems={extraMenuItems}
           objectivesEnabled={objectivesEnabled}
         />
-      <div 
+      {topContent}
+      <div
         className={cn(
           `${centerContent ? 'flex items-center justify-center text-center' : ''} prose dark:prose-invert prose-slate w-full max-w-none p-8 flex-1 [&_.ProseMirror:focus]:outline-none bg-background`,
           className,
@@ -257,6 +280,22 @@ export const TipTapEditor = ({
           [&_.ProseMirror]:min-h-full [&_.ProseMirror]:cursor-text`
         )} />
       </div>
+
+      {/* Selection-level formatting menu (floats over highlighted text) */}
+      <SelectionBubble editor={editor} />
+
+      {/* Footer status bar — page-view only (gated on a page counter being supplied) */}
+      {totalPages != null && (
+        <EditorStatusBar
+          editor={editor}
+          editable={editable}
+          saving={saving}
+          lastSavedAt={lastSavedAt}
+          currentIndex={currentIndex}
+          totalPages={totalPages}
+          sectionLabel={sectionLabel}
+        />
+      )}
     </div>
   );
 };
