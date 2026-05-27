@@ -7,6 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { BookInfo } from "@/components/book/BookInfo";
 import { BookEditForm } from "@/components/book/BookEditForm";
 import { BookBriefSection } from "@/components/book/BookBriefSection";
+import { BookBibleSection } from "@/components/book/BookBibleSection";
 import { ManageCollaboratorsSheet } from "./components/ManageCollaboratorsSheet";
 import { ShareBookSheet } from "./components/ShareBookSheet";
 import { BookCoverEdit } from "@/components/book/BookCoverEdit";
@@ -39,6 +40,7 @@ interface Book {
   view_invitation_token?: string;
   edit_invitation_token?: string;
   brief?: Brief | null;
+  bible?: { text?: string } | null;
 }
 
 export default function BookEdit() {
@@ -248,6 +250,14 @@ export default function BookEdit() {
                   brief={book.brief ?? null}
                   onBriefChange={(brief) => setBook((prev) => ({ ...prev, brief }))}
                 />
+
+                <div className="mt-12">
+                  <BookBibleSection
+                    bookId={id}
+                    bible={book.bible?.text ?? null}
+                    onBibleChange={(text) => setBook((prev) => ({ ...prev, bible: text ? { text } : null }))}
+                  />
+                </div>
               </div>
             )}
 

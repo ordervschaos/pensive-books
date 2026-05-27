@@ -47,7 +47,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: book, error: bookError } = await userClient
       .from("books")
-      .select("id, name, subtitle, brief, owner_id")
+      .select("id, name, subtitle, brief, bible, owner_id")
       .eq("id", bookId)
       .single();
     if (bookError || !book) return json({ error: "Book not found" }, 404);
@@ -64,7 +64,12 @@ Deno.serve(async (req: Request) => {
     const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!apiKey) return json({ error: "ANTHROPIC_API_KEY not configured" }, 500);
 
-    const scaffold = await callClaude(apiKey, book.name, book.brief as Brief | null);
+    const scaffold = await callClaude(
+      apiKey,
+      book.name,
+      book.brief as Brief | null,
+      (book.bible as { text?: string } | null)?.text?.trim() || null
+    );
     return json(scaffold);
   } catch (e) {
     console.error("generate-scaffold error:", e);
@@ -110,7 +115,7 @@ function briefContext(brief: Brief | null): string {
 interface ScaffoldPage { pageType: "section" | "text"; title: string; objective?: string }
 interface Scaffold { structure: string; pages: ScaffoldPage[] }
 
-async function callClaude(apiKey: string, bookName: string, brief: Brief | null): Promise<Scaffold> {
+async function callClaude(apiKey: string, bookName: string, brief: Brief | null, bible: string | null): Promise<Scaffold> {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -125,7 +130,7 @@ async function callClaude(apiKey: string, bookName: string, brief: Brief | null)
       messages: [
         {
           role: "user",
-          content: `BOOK: ${bookName}\n\nBRIEF:\n${briefContext(brief)}\n\nDesign the scaffold. JSON only.`,
+          content: `BOOK: ${bookName}\n\nBRIEF:\n${briefContext(brief)}${bible ? `\n\nBOOK BIBLE (established facts — characters, world, style):\n${bible}` : ""}\n\nDesign the scaffold. JSON only.`,
         },
       ],
     }),

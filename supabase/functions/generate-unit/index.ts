@@ -19,6 +19,7 @@ import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 
 const MODEL = "claude-opus-4-7";
+const SUMMARY_MODEL = "claude-haiku-4-5-20251001"; // cheap/fast for the per-page "story so far"
 const PRECEDING_PAGES = 2; // how many prior text pages of full prose to include for continuity
 
 const json = (body: unknown, status = 200) =>
@@ -67,7 +68,7 @@ Deno.serve(async (req: Request) => {
     // Book + access check (owner or accepted collaborator — mirrors evaluate-book).
     const { data: book, error: bookError } = await userClient
       .from("books")
-      .select("id, name, subtitle, author, brief, owner_id")
+      .select("id, name, subtitle, author, brief, bible, owner_id")
       .eq("id", bookId)
       .single();
     if (bookError || !book) return json({ error: "Book not found" }, 404);
@@ -88,15 +89,30 @@ Deno.serve(async (req: Request) => {
 
     const text = await callClaude(apiKey, {
       brief: book.brief as Brief | null,
+      bible: (book.bible as { text?: string } | null)?.text?.trim() || null,
       bookName: book.name,
       level,
       objective: objective.trim(),
       pageObjective: body.pageObjective?.trim() || null,
       precedingText: body.precedingText?.trim() || null,
       objectiveMap: ctx.objectiveMap,
+      storySoFar: ctx.storySoFar,
       precedingProse: ctx.precedingProse,
       currentPageLabel: ctx.currentPageLabel,
     });
+
+    // For a generated page, write a cheap one-paragraph summary into pages.metadata.summary
+    // — the "story so far" that later pages read for long-range coherence. Best-effort:
+    // a summary failure must not fail the generation. Done inline (a page render isn't
+    // latency-critical and we want it persisted before the next cascade step).
+    if (level === "page" && pageId) {
+      try {
+        const summary = await summarize(apiKey, text);
+        if (summary) await persistSummary(userClient, pageId, summary);
+      } catch (e) {
+        console.error("generate-unit: summary step failed (non-fatal):", e);
+      }
+    }
 
     return json({ text });
   } catch (e) {
@@ -111,7 +127,7 @@ interface PageLite {
   page_index: number;
   page_type: string | null;
   title: string | null;
-  metadata: { objective?: string } | null;
+  metadata: { objective?: string; summary?: string } | null;
 }
 
 async function buildUnitContext(
@@ -119,7 +135,7 @@ async function buildUnitContext(
   bookId: number,
   pageId: number | null,
   level: "paragraph" | "page"
-): Promise<{ objectiveMap: string; precedingProse: string | null; currentPageLabel: string | null }> {
+): Promise<{ objectiveMap: string; storySoFar: string | null; precedingProse: string | null; currentPageLabel: string | null }> {
   // B. The objective map — lightweight (no content), the whole arc in order.
   const { data: pages } = await client
     .from("pages")
@@ -146,11 +162,20 @@ async function buildUnitContext(
   // sequential cascade picks up pages written moments earlier. Page level only; paragraph
   // level uses the client-supplied precedingText (prose earlier within the same page).
   let precedingProse: string | null = null;
+  let storySoFar: string | null = null;
   if (level === "page" && current) {
-    const priorIds = list
-      .filter((p) => p.page_type === "text" && p.page_index < current.page_index)
-      .slice(-PRECEDING_PAGES)
-      .map((p) => p.id);
+    const priorText = list.filter((p) => p.page_type === "text" && p.page_index < current.page_index);
+
+    // D. Story so far — summaries of pages BEFORE the full-prose window, so a long book
+    // stays coherent without resending all prior prose. (Summaries are written after each
+    // page is generated; see persistSummary.)
+    const summarized = priorText.slice(0, Math.max(0, priorText.length - PRECEDING_PAGES));
+    const soFar = summarized
+      .map((p) => p.metadata?.summary?.trim())
+      .filter((s): s is string => !!s);
+    storySoFar = soFar.length ? soFar.join("\n") : null;
+
+    const priorIds = priorText.slice(-PRECEDING_PAGES).map((p) => p.id);
     if (priorIds.length) {
       const { data: priorPages } = await client
         .from("pages")
@@ -167,7 +192,7 @@ async function buildUnitContext(
     }
   }
 
-  return { objectiveMap, precedingProse, currentPageLabel };
+  return { objectiveMap, storySoFar, precedingProse, currentPageLabel };
 }
 
 function tiptapToText(node: unknown): string {
@@ -209,12 +234,14 @@ function briefContext(brief: Brief | null): string {
 
 interface PromptArgs {
   brief: Brief | null;
+  bible: string | null;
   bookName: string;
   level: "paragraph" | "page";
   objective: string;
   pageObjective: string | null;
   precedingText: string | null;
   objectiveMap: string;
+  storySoFar: string | null;
   precedingProse: string | null;
   currentPageLabel: string | null;
 }
@@ -225,6 +252,7 @@ function stablePrefix(args: PromptArgs): string {
   return [
     `BOOK: ${args.bookName}`,
     `\nBRIEF (the voice contract):\n${briefContext(args.brief)}`,
+    args.bible ? `\nBOOK BIBLE (established facts — characters, world, style; stay strictly consistent):\n${args.bible}` : "",
     args.objectiveMap ? `\nOUTLINE (the book's pages and their objectives, in order):\n${args.objectiveMap}` : "",
   ].filter(Boolean).join("\n");
 }
@@ -232,6 +260,9 @@ function stablePrefix(args: PromptArgs): string {
 // The variable part — what changes per unit.
 function variablePart(args: PromptArgs): string {
   const parts: string[] = [];
+  if (args.storySoFar) {
+    parts.push(`STORY SO FAR (summaries of earlier pages, for continuity):\n${args.storySoFar}`);
+  }
   if (args.precedingProse) {
     parts.push(`PRECEDING PROSE (the pages just before this one — continue from here, don't repeat):\n"""\n${args.precedingProse}\n"""`);
   }
@@ -282,4 +313,43 @@ async function callClaude(apiKey: string, args: PromptArgs): Promise<string> {
     .trim();
   if (!text) throw new Error("Claude returned no text content.");
   return text;
+}
+
+// ── Summary (layer D) ────────────────────────────────────────────────────────
+// One cheap Haiku call to compress a page's prose into a couple of sentences of plot/
+// state — what later pages need for continuity without resending full prose.
+async function summarize(apiKey: string, prose: string): Promise<string> {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      model: SUMMARY_MODEL,
+      max_tokens: 250,
+      system: [{
+        type: "text",
+        text: "Summarize this page of a book in 1-2 sentences: what happens and any new facts (characters, places, changes in state) a later page would need to stay consistent. Plain text only, no preamble.",
+        cache_control: { type: "ephemeral" },
+      }],
+      messages: [{ role: "user", content: prose.slice(0, 12000) }],
+    }),
+  });
+  if (!res.ok) throw new Error(`summary API ${res.status}`);
+  const data = await res.json();
+  return (data.content ?? [])
+    .filter((b: { type: string }) => b.type === "text")
+    .map((b: { text: string }) => b.text)
+    .join("")
+    .trim();
+}
+
+// Merge the summary into pages.metadata (preserving objective). Uses the caller's client
+// (RLS-allowed since they can edit the book).
+async function persistSummary(client: SupabaseClient, pageId: number, summary: string) {
+  const { data } = await client.from("pages").select("metadata").eq("id", pageId).maybeSingle();
+  const metadata = { ...((data?.metadata as Record<string, unknown> | null) ?? {}), summary };
+  await client.from("pages").update({ metadata }).eq("id", pageId);
 }

@@ -42,14 +42,47 @@ const envVars = Object.fromEntries(
 const SUPABASE_URL = `https://${envVars.VITE_SUPABASE_PROJECT_ID}.supabase.co`;
 const SUPABASE_KEY = envVars.SERVICE_ROLE_SECRET;
 
+const sbHeaders = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
+
 async function fetchBook(bookId) {
   const r = await fetch(
-    `${SUPABASE_URL}/rest/v1/books?id=eq.${bookId}&select=name%2Cbrief`,
-    { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
+    `${SUPABASE_URL}/rest/v1/books?id=eq.${bookId}&select=name%2Cbrief%2Cbible`,
+    { headers: sbHeaders }
   );
   if (!r.ok) throw new Error(`Supabase ${r.status}: ${await r.text()}`);
   const rows = await r.json();
   return rows?.[0] ?? null;
+}
+
+// All non-archived pages in order — for the objective map, preceding prose, story so far.
+async function fetchPages(bookId) {
+  const r = await fetch(
+    `${SUPABASE_URL}/rest/v1/pages?book_id=eq.${bookId}&archived=eq.false&select=id,page_index,page_type,title,content,metadata&order=page_index.asc`,
+    { headers: sbHeaders }
+  );
+  if (!r.ok) throw new Error(`Supabase ${r.status}: ${await r.text()}`);
+  return await r.json();
+}
+
+// Merge a summary into a page's metadata (preserving objective), via REST PATCH.
+async function persistSummary(pageId, summary) {
+  const g = await fetch(`${SUPABASE_URL}/rest/v1/pages?id=eq.${pageId}&select=metadata`, { headers: sbHeaders });
+  const cur = (await g.json())?.[0]?.metadata ?? {};
+  await fetch(`${SUPABASE_URL}/rest/v1/pages?id=eq.${pageId}`, {
+    method: "PATCH",
+    headers: { ...sbHeaders, "content-type": "application/json", Prefer: "return=minimal" },
+    body: JSON.stringify({ metadata: { ...cur, summary } }),
+  });
+}
+
+function tiptapToText(node) {
+  if (!node || typeof node !== "object") return "";
+  if (node.type === "text") return node.text ?? "";
+  if (node.type === "hardBreak") return "\n";
+  let out = "";
+  for (const child of node.content ?? []) out += tiptapToText(child);
+  if (["paragraph", "heading", "blockquote", "listItem", "codeBlock"].includes(node.type)) out += "\n\n";
+  return out;
 }
 
 function readBody(req) {
@@ -211,23 +244,58 @@ Draft the bible. Markdown only.`;
 }
 
 // ── /unit ─────────────────────────────────────────────────────────────────────
+// Kept at parity with supabase/functions/generate-unit so free local testing exercises
+// the same context (bible + objective map + story so far + preceding prose) and summary.
 const UNIT_SYSTEM = `You are a skilled prose writer helping an author render their book.
 The author works in OBJECTIVES: a short statement of what a unit of the book must achieve.
-Your job is to write the prose that achieves the given objective, in the book's voice.
+Your job is to write the prose that achieves the given objective, in the book's voice and
+consistent with the rest of the book.
 
 Rules:
 - Write ONLY the prose. No preamble, no headings, no markdown fences, no meta commentary.
 - Honor the book's brief — genre, audience, tone, premise — as the voice contract.
+- Stay consistent with the bible, outline, and preceding prose: keep names, facts, and tone
+  consistent, and don't repeat what's already been written.
 - Serve the objective precisely; do not wander beyond what it asks.
 - Match the requested length: a single paragraph means ONE paragraph.`;
 
+const PRECEDING_PAGES = 2;
+
 async function runUnit(body) {
-  const { bookId, level, objective, pageObjective, precedingText } = body;
+  const { bookId, pageId, level, objective, pageObjective, precedingText } = body;
   if (!bookId || !level || !objective?.trim()) return { error: "bookId, level, objective required" };
   if (level !== "paragraph" && level !== "page") return { error: "level must be paragraph or page" };
 
   const book = await fetchBook(bookId);
   if (!book) return { error: "Book not found" };
+  const bible = book.bible?.text?.trim() || null;
+
+  // Context (mirrors buildUnitContext in the edge function).
+  const pages = await fetchPages(bookId);
+  const current = pageId != null ? pages.find((p) => p.id === pageId) ?? null : null;
+  const objectiveMap = pages
+    .map((p) => {
+      const obj = p.metadata?.objective?.trim();
+      const here = current && p.id === current.id ? "  ← you are here" : "";
+      if (p.page_type === "section") return `\n# ${p.title || "(untitled section)"}${obj ? ` — ${obj}` : ""}${here}`;
+      return `- "${p.title || "(untitled)"}"${obj ? ` — ${obj}` : ""}${here}`;
+    })
+    .join("\n");
+
+  let storySoFar = null, precedingProse = null;
+  if (level === "page" && current) {
+    const priorText = pages.filter((p) => p.page_type === "text" && p.page_index < current.page_index);
+    const soFar = priorText
+      .slice(0, Math.max(0, priorText.length - PRECEDING_PAGES))
+      .map((p) => p.metadata?.summary?.trim())
+      .filter(Boolean);
+    storySoFar = soFar.length ? soFar.join("\n") : null;
+    const chunks = priorText
+      .slice(-PRECEDING_PAGES)
+      .map((p) => { const t = tiptapToText(p.content).trim(); return t ? `### ${p.title || "(untitled)"}\n${t}` : ""; })
+      .filter(Boolean);
+    precedingProse = chunks.length ? chunks.join("\n\n") : null;
+  }
 
   const parts = [
     UNIT_SYSTEM,
@@ -235,8 +303,12 @@ async function runUnit(body) {
     `BOOK: ${book.name}`,
     `\nBRIEF (the voice contract):\n${briefContext(book.brief)}`,
   ];
+  if (bible) parts.push(`\nBOOK BIBLE (established facts — characters, world, style; stay strictly consistent):\n${bible}`);
+  if (objectiveMap) parts.push(`\nOUTLINE (the book's pages and their objectives, in order):\n${objectiveMap}`);
+  if (storySoFar) parts.push(`\nSTORY SO FAR (summaries of earlier pages, for continuity):\n${storySoFar}`);
+  if (precedingProse) parts.push(`\nPRECEDING PROSE (the pages just before this one — continue from here, don't repeat):\n"""\n${precedingProse}\n"""`);
   if (pageObjective?.trim()) parts.push(`\nThis paragraph sits on a page whose objective is: ${pageObjective.trim()}`);
-  if (precedingText?.trim()) parts.push(`\nThe prose immediately before this unit (continue naturally, do not repeat it):\n"""\n${precedingText.trim()}\n"""`);
+  if (precedingText?.trim()) parts.push(`\nThe prose immediately before this paragraph (continue naturally):\n"""\n${precedingText.trim()}\n"""`);
   parts.push(
     level === "paragraph"
       ? `\nWrite ONE paragraph that achieves this objective:\n${objective.trim()}`
@@ -250,6 +322,18 @@ async function runUnit(body) {
   const fence = text.match(/```(?:\w+)?\s*([\s\S]*?)```/);
   if (fence) text = fence[1].trim();
   if (!text) return { error: "Claude returned no text content" };
+
+  // Persist a "story so far" summary for this page (best-effort), like the edge function.
+  if (level === "page" && pageId) {
+    try {
+      const s = await runClaude(`Summarize this page of a book in 1-2 sentences: what happens and any new facts (characters, places, changes in state) a later page would need to stay consistent. Plain text only, no preamble.\n\n${text.slice(0, 12000)}`, true);
+      const summary = s.text?.trim();
+      if (summary) await persistSummary(pageId, summary);
+    } catch (e) {
+      console.error("bridge unit: summary step failed (non-fatal):", e.message);
+    }
+  }
+
   return { text };
 }
 
