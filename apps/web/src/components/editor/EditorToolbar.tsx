@@ -25,6 +25,8 @@ interface EditorToolbarProps {
   onDeletePage?: () => void;
   saving?: boolean;
   lastSavedAt?: Date | null;
+  /** Book-level objectives switch — when false, hide the objective toolbar button. */
+  objectivesEnabled?: boolean;
   /**
    * Additional items rendered inside the meatball "More options" dropdown,
    * appended below the built-in page-type / delete-page items. Used by the
@@ -35,7 +37,7 @@ interface EditorToolbarProps {
   extraMenuItems?: React.ReactNode;
 }
 
-export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, customButtons, pageType, onPageTypeChange, onDeletePage, saving, lastSavedAt, extraMenuItems }: EditorToolbarProps) => {
+export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, customButtons, pageType, onPageTypeChange, onDeletePage, saving, lastSavedAt, objectivesEnabled, extraMenuItems }: EditorToolbarProps) => {
   const { toast } = useToast();
   const uploadImage = useSupabaseUpload();
   const isMobile = useMediaQuery("(max-width: 768px)");
@@ -404,15 +406,17 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
                 <ImageIcon className="h-3.5 w-3.5" />
               </Button>
             </div>
-            <Button
-        variant="ghost"
-        size="sm"
-        onClick={editObjective}
-        title="Set objective for this block (author-only)"
-        className={cn(iconBtn, currentObjective && iconBtnActive)}
-      >
-        <Target className="h-3.5 w-3.5" />
-      </Button>
+            {objectivesEnabled && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={editObjective}
+                title="Set objective for this block (author-only)"
+                className={cn(iconBtn, currentObjective && iconBtnActive)}
+              >
+                <Target className="h-3.5 w-3.5" />
+              </Button>
+            )}
 
             {divider}
             {renderHistoryButtons()}

@@ -627,8 +627,9 @@
    A muted note heading any block that carries an objective, shown ONLY while
    editing (contenteditable="true"). Readers and exports never see it: the
    read-only editor sets contenteditable="false", and jsonToHtml() omits the
-   ParagraphObjective extension so the data-objective attribute is dropped. */
-.ProseMirror[contenteditable="true"] [data-objective]::before {
+   ParagraphObjective extension so the data-objective attribute is dropped.
+   Gated by .objectives-enabled (the book-level switch) on the editor container. */
+.objectives-enabled .ProseMirror[contenteditable="true"] [data-objective]::before {
   content: "◎ " attr(data-objective);
   display: block;
   margin-bottom: 0.35rem;

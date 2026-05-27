@@ -25,6 +25,8 @@ interface TipTapEditorProps {
   onPageTypeChange?: (newPageType: 'text' | 'section') => void;
   onDeletePage?: () => void;
   bookId?: string | null;
+  /** Book-level master switch: when true, surface the page/paragraph objective UI. */
+  objectivesEnabled?: boolean;
   saving?: boolean;
   lastSavedAt?: Date | null;
   /** Items appended to the toolbar's meatball "More options" dropdown. */
@@ -47,6 +49,7 @@ export const TipTapEditor = ({
   onPageTypeChange,
   onDeletePage,
   bookId,
+  objectivesEnabled = false,
   saving,
   lastSavedAt,
   extraMenuItems,
@@ -73,10 +76,11 @@ export const TipTapEditor = ({
       isEditing,
       uploadImage,
       bookId,
-      handlePageLinkClick
+      handlePageLinkClick,
+      objectivesEnabled
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookId, editable]);
+  }, [bookId, editable, objectivesEnabled]);
 
   const config = editorConfig || defaultConfig;
 
@@ -171,12 +175,14 @@ export const TipTapEditor = ({
           saving={saving}
           lastSavedAt={lastSavedAt}
           extraMenuItems={extraMenuItems}
+          objectivesEnabled={objectivesEnabled}
         />
       <div 
         className={cn(
           `${centerContent ? 'flex items-center justify-center text-center' : ''} prose dark:prose-invert prose-slate w-full max-w-none p-8 flex-1 [&_.ProseMirror:focus]:outline-none bg-background`,
           className,
           `[&_img]:mx-auto [&_img]:block [&_p]:leading-relaxed [&_p]:mb-6 [&_table]:border-collapse [&_table]:w-full [&_th]:border [&_th]:border-muted [&_th]:p-2 [&_td]:border [&_td]:border-muted [&_td]:p-2 [&_.selectedCell]:bg-muted/30`,
+          objectivesEnabled && "objectives-enabled", // gates the paragraph-objective gutter CSS
           fontSizeClassName // Apply font size classes last to override prose defaults
         )}
         style={fontFamilyStyle && Object.keys(fontFamilyStyle).length > 0 ? fontFamilyStyle : undefined}

@@ -29,7 +29,8 @@ export const getEditorConfig = (
   isEditing = true,
   uploadImage: ImageUploadFn,
   bookId?: string | null,
-  onPageLinkClick?: (pageId: string, bookId: string) => void
+  onPageLinkClick?: (pageId: string, bookId: string) => void,
+  objectivesEnabled = false
 ) => {
 
   return {
@@ -37,7 +38,7 @@ export const getEditorConfig = (
       Title,
       SmartTypography,
       AudioBlocks,
-      ParagraphObjective,
+      ParagraphObjective.configure({ enabled: objectivesEnabled }),
       PageLink.configure({
         onPageLinkClick,
       }),

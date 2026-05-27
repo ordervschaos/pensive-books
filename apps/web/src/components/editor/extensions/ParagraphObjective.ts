@@ -41,6 +41,13 @@ export const ParagraphObjective = Extension.create({
   // unaffected. (editorConfig loads this extension early, i.e. at lower array priority.)
   priority: 1000,
 
+  // Gated by the book-level `objectives_enabled` switch (off by default). When disabled,
+  // the `//` planning trigger no-ops; existing objectives still parse/render so data is
+  // never lost, but no new ones can be created from the editor.
+  addOptions() {
+    return { enabled: false };
+  },
+
   addGlobalAttributes() {
     return [
       {
@@ -107,6 +114,7 @@ export const ParagraphObjective = Extension.create({
       // line becomes an empty paragraph whose objective is that text — ready for prose.
       // (`>` is taken by blockquote; `//` reads as "a comment, not part of the output".)
       Enter: () => {
+        if (!this.options.enabled) return false;
         const { editor } = this;
         const { $from, empty } = editor.state.selection;
         if (!empty) return false;

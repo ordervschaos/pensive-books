@@ -17,6 +17,8 @@ import { useBookPermissions } from "@/hooks/use-book-permissions";
 import { setPageTitle } from "@/utils/pageTitle";
 import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { SlugService } from "@/utils/slugService";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
@@ -28,6 +30,7 @@ interface Book {
   is_public: boolean;
   cover_url?: string | null;
   show_text_on_cover?: boolean;
+  objectives_enabled?: boolean;
   created_at?: string;
   updated_at?: string;
   published_at?: string | null;
@@ -120,6 +123,20 @@ export default function BookEdit() {
       });
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Book-level objectives switch. Saved immediately (it's a toggle), independent of the
+  // "Save changes" form button.
+  const handleObjectivesToggle = async (enabled: boolean) => {
+    setBook((prev) => ({ ...prev, objectives_enabled: enabled }));
+    const { error } = await supabase
+      .from("books")
+      .update({ objectives_enabled: enabled })
+      .eq("id", id);
+    if (error) {
+      setBook((prev) => ({ ...prev, objectives_enabled: !enabled })); // revert on failure
+      toast({ variant: "destructive", title: "Couldn't update setting", description: error.message });
     }
   };
 
@@ -229,6 +246,30 @@ export default function BookEdit() {
                   brief={book.brief ?? null}
                   onBriefChange={(brief) => setBook((prev) => ({ ...prev, brief }))}
                 />
+              </div>
+            )}
+
+            {id && (
+              <div className="mt-12">
+                <Card className="p-6">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <Label htmlFor="objectives-toggle" className="text-base font-medium">
+                        Page &amp; paragraph objectives
+                      </Label>
+                      <p className="text-sm text-muted-foreground">
+                        Track what each page and paragraph should achieve — private craft notes only you
+                        see. Turning this on adds the objective bar above each page and the <code>//</code>{" "}
+                        shortcut in the editor.
+                      </p>
+                    </div>
+                    <Switch
+                      id="objectives-toggle"
+                      checked={!!book.objectives_enabled}
+                      onCheckedChange={handleObjectivesToggle}
+                    />
+                  </div>
+                </Card>
               </div>
             )}
 

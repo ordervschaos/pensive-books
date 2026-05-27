@@ -18,6 +18,11 @@ interface PageContentProps {
   editable?: boolean;
   onEditingChange?: (isEditing: boolean) => void;
   canEdit?: boolean;
+  /** Author-only page objective (pages.metadata.objective) + setter. Shown only to editors. */
+  objective?: string | null;
+  onObjectiveChange?: (next: string | null) => void;
+  /** Book-level master switch; objective UI only shows when true. */
+  objectivesEnabled?: boolean;
   pageId?: string;
   isEditing?: boolean;
   setIsEditing?: (isEditing: boolean) => void;
@@ -44,6 +49,9 @@ export const PageContent = ({
   editable = false,
   onEditingChange,
   canEdit = false,
+  objective,
+  onObjectiveChange,
+  objectivesEnabled = false,
   pageId,
   isEditing = false,
   setIsEditing,
@@ -61,6 +69,11 @@ export const PageContent = ({
   const [currentContent, setCurrentContent] = useState<EditorJSON | null>(jsonContent);
   const debouncedSaveRef = useRef<ReturnType<typeof debounce>>();
   const currentPageIdRef = useRef<string | undefined>(pageId);
+  // Local draft for the page objective bar; resynced when the page or its objective changes.
+  const [objectiveDraft, setObjectiveDraft] = useState(objective ?? '');
+  useEffect(() => {
+    setObjectiveDraft(objective ?? '');
+  }, [objective, pageId]);
 
   useEffect(() => {
     // Update content when pageId changes (even in edit mode) or when not editing
@@ -227,6 +240,22 @@ export const PageContent = ({
                 {sectionLabel ? `${sectionLabel} · ` : ''}page {(currentIndex ?? 0) + 1} of {totalPages}
               </div>
             )}
+            {canEdit && onObjectiveChange && objectivesEnabled && (
+              <div className="px-8 pt-6">
+                <input
+                  type="text"
+                  value={objectiveDraft}
+                  onChange={(e) => setObjectiveDraft(e.target.value)}
+                  onBlur={() => {
+                    const next = objectiveDraft.trim();
+                    if (next !== (objective ?? '')) onObjectiveChange(next || null);
+                  }}
+                  placeholder="Objective for this page — only you see this"
+                  title="Page objective (author-only — not shown to readers)"
+                  className="w-full bg-transparent text-sm italic text-muted-foreground placeholder:text-muted-foreground/50 focus:outline-none border-l-2 border-transparent focus:border-muted-foreground/30 pl-2 -ml-0.5"
+                />
+              </div>
+            )}
             <div className={cn("flex-1 relative", marginClass)}>
               <TipTapEditor
                 content={currentContent}
@@ -239,6 +268,7 @@ export const PageContent = ({
                 onPageTypeChange={onPageTypeChange}
                 onDeletePage={onDeletePage}
                 bookId={bookId}
+                objectivesEnabled={objectivesEnabled}
                 fontSizeClassName={fontSizeClassName}
                 fontFamilyStyle={fontFamilyStyle}
                 saving={saving}
