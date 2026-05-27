@@ -13,6 +13,8 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
+const BRIDGE = import.meta.env.VITE_EVAL_BRIDGE_URL as string | undefined;
+
 interface ScaffoldPage {
   pageType: "section" | "text";
   title: string;
@@ -44,12 +46,22 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
   const generate = async () => {
     try {
       setGenerating(true);
-      const { data, error } = await supabase.functions.invoke("generate-scaffold", {
-        body: { bookId },
-      });
-      if (error) throw error;
-      if (!data?.pages?.length) throw new Error(data?.error || "No scaffold returned");
-      setProposal(data as Scaffold);
+      let data: Scaffold;
+      if (BRIDGE) {
+        const r = await fetch(`${BRIDGE}/scaffold/${bookId}`, { method: "POST" });
+        const d = await r.json();
+        if (d.error) throw new Error(d.error);
+        if (!d.pages?.length) throw new Error("No scaffold returned");
+        data = d as Scaffold;
+      } else {
+        const { data: fnData, error } = await supabase.functions.invoke("generate-scaffold", {
+          body: { bookId },
+        });
+        if (error) throw error;
+        if (!fnData?.pages?.length) throw new Error(fnData?.error || "No scaffold returned");
+        data = fnData as Scaffold;
+      }
+      setProposal(data);
       setOpen(true);
     } catch (e) {
       toast({ title: "Couldn't generate scaffold", description: String((e as Error)?.message ?? e), variant: "destructive" });

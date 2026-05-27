@@ -12,6 +12,8 @@ import { usePageDisplaySettings, FontFamily } from "@/contexts/PageDisplaySettin
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 
+const BRIDGE = import.meta.env.VITE_EVAL_BRIDGE_URL as string | undefined;
+
 
 interface PageContentProps {
   jsonContent: EditorJSON | null;  // Primary content source
@@ -133,19 +135,29 @@ export const PageContent = ({
     onEditingChange?.(editing);
   }, [setIsEditing, onEditingChange]);
 
-  // Render prose from a block's objective via the generate-unit edge function.
+  // Render prose from a block's objective via the generate-unit edge function (or local bridge).
   // Paragraph-level for now; the page objective is passed as parent context.
   const handleGenerate = useCallback(async (objective: string): Promise<string> => {
     if (!bookId || !pageId) throw new Error("Missing book or page id");
-    const { data, error } = await supabase.functions.invoke("generate-unit", {
-      body: {
-        bookId: Number(bookId),
-        pageId: Number(pageId),
-        level: "paragraph",
-        objective,
-        pageObjective: objectiveDraft.trim() || undefined,
-      },
-    });
+    const unitBody = {
+      bookId: Number(bookId),
+      pageId: Number(pageId),
+      level: "paragraph",
+      objective,
+      pageObjective: objectiveDraft.trim() || undefined,
+    };
+    if (BRIDGE) {
+      const r = await fetch(`${BRIDGE}/unit`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(unitBody),
+      });
+      const d = await r.json();
+      if (d.error) throw new Error(d.error);
+      if (!d.text) throw new Error("No text returned");
+      return d.text as string;
+    }
+    const { data, error } = await supabase.functions.invoke("generate-unit", { body: unitBody });
     if (error) throw error;
     if (!data?.text) throw new Error(data?.error || "No text returned");
     return data.text as string;
@@ -158,12 +170,23 @@ export const PageContent = ({
     if (!objective || !editor || !bookId || !pageId || generatingPage) return;
     try {
       setGeneratingPage(true);
-      const { data, error } = await supabase.functions.invoke("generate-unit", {
-        body: { bookId: Number(bookId), pageId: Number(pageId), level: "page", objective },
-      });
-      if (error) throw error;
-      const text = String(data?.text ?? "").trim();
-      if (!text) throw new Error(data?.error || "No text returned");
+      const unitBody = { bookId: Number(bookId), pageId: Number(pageId), level: "page", objective };
+      let text: string;
+      if (BRIDGE) {
+        const r = await fetch(`${BRIDGE}/unit`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(unitBody),
+        });
+        const d = await r.json();
+        if (d.error) throw new Error(d.error);
+        text = String(d.text ?? "").trim();
+      } else {
+        const { data, error } = await supabase.functions.invoke("generate-unit", { body: unitBody });
+        if (error) throw error;
+        text = String(data?.text ?? "").trim();
+      }
+      if (!text) throw new Error("No text returned");
       // Split into paragraphs and insert as text nodes (avoids HTML injection from output).
       const paras = text
         .split(/\n{2,}/)

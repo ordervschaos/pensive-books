@@ -5,6 +5,8 @@ import { Card } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
+const BRIDGE = import.meta.env.VITE_EVAL_BRIDGE_URL as string | undefined;
+
 interface WriteAllPagesProps {
   bookId: number;
 }
@@ -85,11 +87,23 @@ export function WriteAllPages({ bookId }: WriteAllPagesProps) {
       for (let i = 0; i < targets.length; i++) {
         const page = targets[i];
         try {
-          const { data, error: genErr } = await supabase.functions.invoke("generate-unit", {
-            body: { bookId, pageId: page.id, level: "page", objective: page.metadata!.objective },
-          });
-          if (genErr) throw genErr;
-          const text = String(data?.text ?? "").trim();
+          let text: string;
+          if (BRIDGE) {
+            const r = await fetch(`${BRIDGE}/unit`, {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ bookId, pageId: page.id, level: "page", objective: page.metadata!.objective }),
+            });
+            const d = await r.json();
+            if (d.error) throw new Error(d.error);
+            text = String(d.text ?? "").trim();
+          } else {
+            const { data, error: genErr } = await supabase.functions.invoke("generate-unit", {
+              body: { bookId, pageId: page.id, level: "page", objective: page.metadata!.objective },
+            });
+            if (genErr) throw genErr;
+            text = String(data?.text ?? "").trim();
+          }
           if (text) {
             const { error: upErr } = await supabase
               .from("pages")
