@@ -56,7 +56,15 @@ const PageView = () => {
   } = usePageViewData(bookSlug, pageSlug);
 
   // 4. Check permissions
-  const { canEdit, loading: permissionsLoading } = useBookPermissions(numericBookId.toString());
+  const { canEdit, hasAccess, loading: permissionsLoading } = useBookPermissions(numericBookId.toString());
+
+  // The editor is for the book's owner/collaborators only. Anyone else who can open this
+  // URL is reading a PUBLIC book — send them to the public reader, which never exposes the
+  // author-only objective metadata. (Private books aren't readable here without access.)
+  useEffect(() => {
+    if (permissionsLoading || hasAccess || !bookSlug || !pageSlug) return;
+    navigate(`/library/books/${bookSlug}/pages/${pageSlug}`, { replace: true });
+  }, [permissionsLoading, hasAccess, bookSlug, pageSlug, navigate]);
 
   // 5. Local UI state
   const [isEditing, setIsEditing] = useEditMode(canEdit);
@@ -319,8 +327,9 @@ const PageView = () => {
   // 12. Preload next page for faster navigation
   useNextPagePreloader(numericBookId, nextPageId);
 
-  // 13. Loading state
-  if (dataLoading || permissionsLoading) {
+  // 13. Loading state — also covers the brief moment before a non-collaborator is
+  // redirected to the public reader (don't render the editor / its objectives for them).
+  if (dataLoading || permissionsLoading || !hasAccess) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
         <PageViewSettings onSearchOpen={() => setSearchOpen(true)} />
