@@ -26,6 +26,7 @@ import { AdminTagPanel } from "@/components/book/AdminTagPanel";
 import { MatureContentGate } from "@/components/book/MatureContentGate";
 import { Brief } from "@/lib/brief";
 import { BookBriefSummary } from "@/components/book/BookBriefSummary";
+import { BookEvaluationSection } from "@/components/book/BookEvaluationSection";
 import { useAdmin } from "@/hooks/use-admin";
 import { useMatureContent } from "@/hooks/use-mature-content";
 import { MessageSquare } from "lucide-react";
@@ -663,6 +664,8 @@ const BookDetails = () => {
                   onEdit={() => navigate(`/books/${bookSlug}/edit`)}
                 />
               )}
+
+              {canEdit && <BookEvaluationSection bookId={getNumericId(bookSlug)} />}
             </div>
 
             {/* Word Count & Version Control */}
