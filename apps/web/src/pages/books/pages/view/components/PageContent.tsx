@@ -7,6 +7,7 @@ import { useAdaptiveTextToSpeech } from "@/hooks/use-adaptive-text-to-speech";
 import { EditorJSON, PageSaveHandler } from "@/types/editor";
 import { usePageDisplaySettings, FontFamily } from "@/contexts/PageDisplaySettingsContext";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/integrations/supabase/client";
 
 
 interface PageContentProps {
@@ -124,6 +125,24 @@ export const PageContent = ({
     setIsEditing?.(editing);
     onEditingChange?.(editing);
   }, [setIsEditing, onEditingChange]);
+
+  // Render prose from a block's objective via the generate-unit edge function.
+  // Paragraph-level for now; the page objective is passed as parent context.
+  const handleGenerate = useCallback(async (objective: string): Promise<string> => {
+    if (!bookId || !pageId) throw new Error("Missing book or page id");
+    const { data, error } = await supabase.functions.invoke("generate-unit", {
+      body: {
+        bookId: Number(bookId),
+        pageId: Number(pageId),
+        level: "paragraph",
+        objective,
+        pageObjective: objectiveDraft.trim() || undefined,
+      },
+    });
+    if (error) throw error;
+    if (!data?.text) throw new Error(data?.error || "No text returned");
+    return data.text as string;
+  }, [bookId, pageId, objectiveDraft]);
 
   // Always use the current content - don't maintain separate state for display
   
@@ -269,6 +288,7 @@ export const PageContent = ({
                 onDeletePage={onDeletePage}
                 bookId={bookId}
                 objectivesEnabled={objectivesEnabled}
+                onGenerate={objectivesEnabled ? handleGenerate : undefined}
                 fontSizeClassName={fontSizeClassName}
                 fontFamilyStyle={fontFamilyStyle}
                 saving={saving}

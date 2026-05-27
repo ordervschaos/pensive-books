@@ -27,6 +27,8 @@ interface TipTapEditorProps {
   bookId?: string | null;
   /** Book-level master switch: when true, surface the page/paragraph objective UI. */
   objectivesEnabled?: boolean;
+  /** Render prose from a block's objective (returns generated text). */
+  onGenerate?: (objective: string) => Promise<string>;
   saving?: boolean;
   lastSavedAt?: Date | null;
   /** Items appended to the toolbar's meatball "More options" dropdown. */
@@ -50,6 +52,7 @@ export const TipTapEditor = ({
   onDeletePage,
   bookId,
   objectivesEnabled = false,
+  onGenerate,
   saving,
   lastSavedAt,
   extraMenuItems,
@@ -134,6 +137,55 @@ export const TipTapEditor = ({
       return () => clearTimeout(timeoutId);
     }
   }, [editor, fontFamilyStyle]);
+
+  // Wire the gutter ✨ button (a ProseMirror widget in ParagraphObjective) to actually
+  // generate: find the objective's block, call onGenerate, insert the prose into it.
+  // Stored on editor.storage so updating onGenerate never recreates the editor.
+  useEffect(() => {
+    if (!editor) return;
+    const storage = (editor.storage as unknown as Record<string, unknown>).paragraphObjective as
+      | { generate: ((objectiveId: string, btn: HTMLElement | null) => void) | null }
+      | undefined;
+    if (!storage) return;
+
+    const findBlock = (objectiveId: string) => {
+      let res: { attrs: Record<string, unknown>; pos: number; nodeSize: number } | null = null;
+      editor.state.doc.descendants((node, pos) => {
+        if (res) return false;
+        if (node.attrs.objectiveId === objectiveId) {
+          res = { attrs: node.attrs, pos, nodeSize: node.nodeSize };
+          return false;
+        }
+        return true;
+      });
+      return res;
+    };
+
+    storage.generate = async (objectiveId, btn) => {
+      if (!onGenerate) return;
+      const target = findBlock(objectiveId);
+      if (!target) return;
+      const objective = String(target.attrs.objective ?? "");
+      if (!objective) return;
+      if (btn) { btn.setAttribute("disabled", "true"); btn.classList.add("is-generating"); }
+      try {
+        const text = (await onGenerate(objective)).trim();
+        if (text) {
+          const cur = findBlock(objectiveId); // re-find: positions may have shifted
+          if (cur) {
+            const endInside = cur.pos + cur.nodeSize - 1; // just before the block's close
+            editor.chain().focus().insertContentAt(endInside, text.replace(/\n{2,}/g, " ").trim()).run();
+          }
+        }
+      } catch (e) {
+        toast({ title: "Couldn't generate", description: String((e as Error)?.message ?? e), variant: "destructive" });
+      } finally {
+        if (btn) { btn.removeAttribute("disabled"); btn.classList.remove("is-generating"); }
+      }
+    };
+
+    return () => { storage.generate = null; };
+  }, [editor, onGenerate, toast]);
 
   useEffect(() => {
     if (editor) {

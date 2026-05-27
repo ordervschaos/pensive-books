@@ -17,6 +17,10 @@
 
 import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
+import { Decoration, DecorationSet } from '@tiptap/pm/view';
+
+/** Signature of the generate handler stored on the extension by the editor host. */
+type GenerateFn = (objectiveId: string, button: HTMLElement | null) => void;
 
 // Prose blocks an author would annotate with an objective. Intentionally narrower than
 // AudioBlocks (no listItem/codeBlock) — an objective on those is rarely meaningful.
@@ -46,6 +50,13 @@ export const ParagraphObjective = Extension.create({
   // never lost, but no new ones can be created from the editor.
   addOptions() {
     return { enabled: false };
+  },
+
+  // `generate` is set by the editor host (TipTapEditor) after mount, via
+  // editor.storage.paragraphObjective.generate. The gutter widget's ✨ button calls it.
+  // Kept in storage (not options) so updating it never recreates the editor.
+  addStorage() {
+    return { generate: null as GenerateFn | null };
   },
 
   addGlobalAttributes() {
@@ -146,7 +157,70 @@ export const ParagraphObjective = Extension.create({
   },
 
   addProseMirrorPlugins() {
+    const options = this.options;
+    const storage = this.storage;
+
+    // Build the gutter widget DOM for one block: "◎ <objective>" + a ✨ generate button.
+    // The button calls the host-provided generate handler from storage.
+    const buildGutter = (objective: string, objectiveId: string) => () => {
+      const wrap = document.createElement('div');
+      wrap.className = 'objective-gutter';
+      wrap.contentEditable = 'false';
+
+      const label = document.createElement('span');
+      label.className = 'objective-gutter__label';
+      label.textContent = `◎ ${objective}`;
+      wrap.appendChild(label);
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'objective-gutter__gen';
+      btn.title = 'Generate prose from this objective';
+      // Monochrome lucide "sparkles" icon (currentColor) + label, so it reads as a control.
+      btn.innerHTML =
+        '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" ' +
+        'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+        '<path d="M9.94 14.06 12 21l2.06-6.94L21 12l-6.94-2.06L12 3 9.94 9.94 3 12z"/>' +
+        '<path d="M19 3v4"/><path d="M21 5h-4"/></svg>' +
+        '<span>Write</span>';
+      // mousedown default would move selection/blur the editor before click fires.
+      btn.addEventListener('mousedown', (e) => e.preventDefault());
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (!objectiveId) return;
+        storage.generate?.(objectiveId, btn);
+      });
+      wrap.appendChild(btn);
+
+      return wrap;
+    };
+
     return [
+      new Plugin({
+        key: new PluginKey('paragraphObjectiveGutter'),
+        props: {
+          decorations(state) {
+            if (!options.enabled) return null;
+            const decos: Decoration[] = [];
+            state.doc.descendants((node, pos) => {
+              const objective = node.attrs.objective as string | null;
+              const objectiveId = node.attrs.objectiveId as string | null;
+              if (objective && objectiveId) {
+                // pos+1 = just inside the block's start; side:-1 keeps it before the text.
+                // key includes the objective text so the widget rebuilds when it changes.
+                decos.push(
+                  Decoration.widget(pos + 1, buildGutter(objective, objectiveId), {
+                    side: -1,
+                    key: `obj:${objectiveId}:${objective}`,
+                  })
+                );
+              }
+              return true;
+            });
+            return DecorationSet.create(state.doc, decos);
+          },
+        },
+      }),
       new Plugin({
         key: new PluginKey('paragraphObjectiveDedup'),
         // An objectiveId is unique to one block. Pressing Enter splits a block and copies
