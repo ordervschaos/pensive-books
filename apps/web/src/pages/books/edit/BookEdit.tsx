@@ -19,6 +19,8 @@ import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { ScaffoldGenerator } from "@/components/book/ScaffoldGenerator";
+import { WriteAllPages } from "@/components/book/WriteAllPages";
 import { SlugService } from "@/utils/slugService";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
@@ -270,6 +272,17 @@ export default function BookEdit() {
                     />
                   </div>
                 </Card>
+
+                <div className="mt-4">
+                  <ScaffoldGenerator
+                    bookId={id}
+                    onCreated={() => setBook((prev) => ({ ...prev, objectives_enabled: true }))}
+                  />
+                </div>
+
+                <div className="mt-4">
+                  <WriteAllPages bookId={id} />
+                </div>
               </div>
             )}
 
