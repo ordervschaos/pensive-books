@@ -16,7 +16,11 @@ import { common, createLowlight } from 'lowlight';
 
 const lowlight = createLowlight(common);
 
-// Extensions matching the editor config
+// Extensions matching the editor config.
+// NOTE: ParagraphObjective is intentionally EXCLUDED. Author-only paragraph objectives
+// live as `data-objective` attributes in the stored JSON; omitting the extension makes
+// generateHTML() drop those attributes, so objectives never leak into exported
+// EPUB/Kindle HTML. Do NOT add ParagraphObjective to this list.
 const extensions = [
   Title,
   SmartTypography,

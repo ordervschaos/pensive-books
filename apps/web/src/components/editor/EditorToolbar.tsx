@@ -1,6 +1,6 @@
 import { Editor } from '@tiptap/react';
 import { useEffect, useState } from 'react';
-import { Bold, Italic, Quote, Code2, Link2, List, ListOrdered, Image as ImageIcon, Undo, Redo, Table as TableIcon, Heading1, Heading2, Heading3, Heading, Type, Section, MoreHorizontal, Trash2, ChevronDown } from "lucide-react";
+import { Bold, Italic, Quote, Code2, Target, Link2, List, ListOrdered, Image as ImageIcon, Undo, Redo, Table as TableIcon, Heading1, Heading2, Heading3, Heading, Type, Section, MoreHorizontal, Trash2, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useSupabaseUpload } from "@/hooks/use-supabase-upload";
@@ -126,6 +126,34 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
 
   const iconBtn = "h-7 w-7 p-0 text-muted-foreground hover:text-foreground";
   const iconBtnActive = "bg-muted text-foreground";
+
+  // Author-only objective on the block at the cursor (paragraph / heading / blockquote).
+  // Recomputed each render via the selectionUpdate listener above.
+  const currentObjective: string | null = (() => {
+    const { $from } = editor.state.selection;
+    for (let d = $from.depth; d > 0; d--) {
+      const node = $from.node(d);
+      if (['paragraph', 'heading', 'blockquote'].includes(node.type.name)) {
+        return (node.attrs.objective as string | null) ?? null;
+      }
+    }
+    return null;
+  })();
+
+  // Annotate-after entry point (the planning entry is the `//` trigger in the editor).
+  // window.prompt mirrors addLink's pattern above. Empty input clears the objective.
+  const editObjective = () => {
+    const next = window.prompt(
+      'Objective for this block — what should it achieve? (only you see this)',
+      currentObjective ?? ''
+    );
+    if (next === null) return; // cancelled
+    if (next.trim() === '') {
+      editor.chain().focus().unsetObjective().run();
+    } else {
+      editor.chain().focus().setObjective(next.trim()).run();
+    }
+  };
 
   const renderTextFormattingButtons = () => (
     <>
@@ -376,6 +404,15 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
                 <ImageIcon className="h-3.5 w-3.5" />
               </Button>
             </div>
+            <Button
+        variant="ghost"
+        size="sm"
+        onClick={editObjective}
+        title="Set objective for this block (author-only)"
+        className={cn(iconBtn, currentObjective && iconBtnActive)}
+      >
+        <Target className="h-3.5 w-3.5" />
+      </Button>
 
             {divider}
             {renderHistoryButtons()}

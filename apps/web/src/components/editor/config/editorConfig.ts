@@ -6,6 +6,7 @@ import { Table, TableRow, TableCell, TableHeader } from '@tiptap/extension-table
 import { Title } from '../extensions/Title';
 import { SmartTypography } from '../extensions/SmartTypography';
 import { AudioBlocks } from '../extensions/AudioBlocks';
+import { ParagraphObjective } from '../extensions/ParagraphObjective';
 import { PageLink } from '../extensions/PageLink';
 import { PageLinkSuggestion } from '../extensions/PageLinkSuggestion';
 import { HeadingWithId } from '../extensions/HeadingWithId';
@@ -36,6 +37,7 @@ export const getEditorConfig = (
       Title,
       SmartTypography,
       AudioBlocks,
+      ParagraphObjective,
       PageLink.configure({
         onPageLinkClick,
       }),
