@@ -7,6 +7,7 @@ import { EditorToolbar } from './EditorToolbar';
 import { SelectionBubble } from './SelectionBubble';
 import { EditorStatusBar } from './EditorStatusBar';
 import { cn } from "@/lib/utils";
+import { inlineMarkdownToNodes } from "@/lib/inlineMarkdown";
 import { EditorChangeHandler, EditorJSON } from '@/types/editor';
 import { useNavigate } from 'react-router-dom';
 import 'tippy.js/dist/tippy.css';
@@ -190,7 +191,9 @@ export const TipTapEditor = ({
           const cur = findBlock(objectiveId); // re-find: positions may have shifted
           if (cur) {
             const endInside = cur.pos + cur.nodeSize - 1; // just before the block's close
-            editor.chain().focus().insertContentAt(endInside, text.replace(/\n{2,}/g, " ").trim()).run();
+            // Inline nodes so *italic* / **bold** become marks rather than literal text.
+            const content = inlineMarkdownToNodes(text.replace(/\n{2,}/g, " ").trim());
+            editor.chain().focus().insertContentAt(endInside, content).run();
           }
         }
       } catch (e) {

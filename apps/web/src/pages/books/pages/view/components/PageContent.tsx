@@ -10,6 +10,7 @@ import { useAdaptiveTextToSpeech } from "@/hooks/use-adaptive-text-to-speech";
 import { EditorJSON, PageSaveHandler } from "@/types/editor";
 import { usePageDisplaySettings, FontFamily } from "@/contexts/PageDisplaySettingsContext";
 import { cn } from "@/lib/utils";
+import { proseToParagraphs } from "@/lib/inlineMarkdown";
 import { supabase } from "@/integrations/supabase/client";
 
 const BRIDGE = import.meta.env.VITE_EVAL_BRIDGE_URL as string | undefined;
@@ -187,12 +188,8 @@ export const PageContent = ({
         text = String(data?.text ?? "").trim();
       }
       if (!text) throw new Error("No text returned");
-      // Split into paragraphs and insert as text nodes (avoids HTML injection from output).
-      const paras = text
-        .split(/\n{2,}/)
-        .map((p) => p.replace(/\s+/g, " ").trim())
-        .filter(Boolean)
-        .map((p) => ({ type: "paragraph", content: [{ type: "text", text: p }] }));
+      // Paragraph nodes with inline marks (so *italic* / **bold** render, not literal *).
+      const paras = proseToParagraphs(text);
       if (paras.length) editor.chain().focus("end").insertContent(paras).run();
     } catch (e) {
       toast({ title: "Couldn't generate page", description: String((e as Error)?.message ?? e), variant: "destructive" });

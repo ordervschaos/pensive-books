@@ -252,10 +252,14 @@ Your job is to write the prose that achieves the given objective, in the book's 
 consistent with the rest of the book.
 
 Rules:
-- Write ONLY the prose. No preamble, no headings, no markdown fences, no meta commentary.
+- Write ONLY the prose. No preamble, no titles, no headings (no "#" lines), no markdown
+  fences, no meta commentary. The page already has its title — never restate it.
 - Honor the book's brief — genre, audience, tone, premise — as the voice contract.
-- Stay consistent with the bible, outline, and preceding prose: keep names, facts, and tone
-  consistent, and don't repeat what's already been written.
+- Use the bible, outline, and preceding prose ONLY for consistency — keep names, facts, and
+  tone aligned, and don't repeat what's already been written. Do NOT continue or finish a
+  sentence from the preceding prose: begin this unit cleanly with a new sentence.
+- Write a COMPLETE passage that ends at a natural stopping point — a finished sentence.
+  Never stop mid-sentence.
 - Serve the objective precisely; do not wander beyond what it asks.
 - Match the requested length: a single paragraph means ONE paragraph.`;
 
@@ -306,7 +310,7 @@ async function runUnit(body) {
   if (bible) parts.push(`\nBOOK BIBLE (established facts — characters, world, style; stay strictly consistent):\n${bible}`);
   if (objectiveMap) parts.push(`\nOUTLINE (the book's pages and their objectives, in order):\n${objectiveMap}`);
   if (storySoFar) parts.push(`\nSTORY SO FAR (summaries of earlier pages, for continuity):\n${storySoFar}`);
-  if (precedingProse) parts.push(`\nPRECEDING PROSE (the pages just before this one — continue from here, don't repeat):\n"""\n${precedingProse}\n"""`);
+  if (precedingProse) parts.push(`\nPRECEDING PROSE (the pages just before this one — for continuity of voice and facts ONLY; do not continue or finish its last sentence, and don't repeat it):\n"""\n${precedingProse}\n"""`);
   if (pageObjective?.trim()) parts.push(`\nThis paragraph sits on a page whose objective is: ${pageObjective.trim()}`);
   if (precedingText?.trim()) parts.push(`\nThe prose immediately before this paragraph (continue naturally):\n"""\n${precedingText.trim()}\n"""`);
   parts.push(
@@ -321,6 +325,8 @@ async function runUnit(body) {
   let text = out.text.trim();
   const fence = text.match(/```(?:\w+)?\s*([\s\S]*?)```/);
   if (fence) text = fence[1].trim();
+  // Drop any leading markdown heading lines (model restating the page title).
+  { const lines = text.split("\n"); let i = 0; while (i < lines.length && (lines[i].trim() === "" || /^#{1,6}\s+/.test(lines[i].trim()))) i++; const s = lines.slice(i).join("\n").trim(); if (s) text = s; }
   if (!text) return { error: "Claude returned no text content" };
 
   // Persist a "story so far" summary for this page (best-effort), like the edge function.

@@ -213,10 +213,14 @@ Your job is to write the prose that achieves the given objective, in the book's 
 consistent with the rest of the book.
 
 Rules:
-- Write ONLY the prose. No preamble, no headings, no markdown fences, no meta commentary.
+- Write ONLY the prose. No preamble, no titles, no headings (no "#" lines), no markdown
+  fences, no meta commentary. The page already has its title — never restate it.
 - Honor the book's brief — genre, audience, tone, premise — as the voice contract.
-- Stay consistent with the outline and the preceding prose: continue naturally, keep names,
-  facts, and tone consistent, and don't repeat what's already been written.
+- Use the bible, outline, and preceding prose ONLY for consistency — keep names, facts, and
+  tone aligned, and don't repeat what's already been written. Do NOT continue or finish a
+  sentence from the preceding prose: begin this unit cleanly with a new sentence.
+- Write a COMPLETE passage that ends at a natural stopping point — a finished sentence.
+  Never stop mid-sentence.
 - Serve the objective precisely; do not wander beyond what it asks.
 - Match the requested length: a single paragraph means ONE paragraph.`;
 
@@ -264,7 +268,7 @@ function variablePart(args: PromptArgs): string {
     parts.push(`STORY SO FAR (summaries of earlier pages, for continuity):\n${args.storySoFar}`);
   }
   if (args.precedingProse) {
-    parts.push(`PRECEDING PROSE (the pages just before this one — continue from here, don't repeat):\n"""\n${args.precedingProse}\n"""`);
+    parts.push(`PRECEDING PROSE (the pages just before this one — for continuity of voice and facts ONLY; do not continue or finish its last sentence, and don't repeat it):\n"""\n${args.precedingProse}\n"""`);
   }
   if (args.level === "paragraph") {
     if (args.pageObjective) parts.push(`This paragraph sits on a page whose objective is: ${args.pageObjective}`);
@@ -288,7 +292,7 @@ async function callClaude(apiKey: string, args: PromptArgs): Promise<string> {
     },
     body: JSON.stringify({
       model: MODEL,
-      max_tokens: args.level === "page" ? 4000 : 600,
+      max_tokens: args.level === "page" ? 8000 : 600, // headroom so a full page isn't truncated mid-sentence
       system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
       messages: [
         {
@@ -312,7 +316,16 @@ async function callClaude(apiKey: string, args: PromptArgs): Promise<string> {
     .join("")
     .trim();
   if (!text) throw new Error("Claude returned no text content.");
-  return text;
+  return stripLeadingHeadings(text);
+}
+
+// Defensive: drop any leading markdown heading lines (e.g. the model restating the page
+// title as "### Title") — the page already carries its title separately.
+function stripLeadingHeadings(text: string): string {
+  const lines = text.split("\n");
+  let i = 0;
+  while (i < lines.length && (lines[i].trim() === "" || /^#{1,6}\s+/.test(lines[i].trim()))) i++;
+  return lines.slice(i).join("\n").trim() || text;
 }
 
 // ── Summary (layer D) ────────────────────────────────────────────────────────
