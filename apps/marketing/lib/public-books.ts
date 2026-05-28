@@ -46,6 +46,12 @@ export interface PublishedPageDetail {
 
 const REVALIDATE_SECONDS = 3600;
 
+// Cache tags for on-demand revalidation (see app/api/revalidate/route.ts).
+// `published-books` covers every listing surface (library, landing, profiles);
+// `book-<id>` covers a single book's detail page and all of its reader pages.
+const PUBLISHED_BOOKS_TAG = "published-books";
+const bookTag = (bookId: number) => `book-${bookId}`;
+
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
     autoRefreshToken: false,
@@ -103,7 +109,7 @@ const getLibraryBooksPageCached = unstable_cache(
     return { books: data ?? [], total: count ?? 0 };
   },
   ["public-library-books-page"],
-  { revalidate: REVALIDATE_SECONDS },
+  { revalidate: REVALIDATE_SECONDS, tags: [PUBLISHED_BOOKS_TAG] },
 );
 
 const getFeaturedBooksCached = unstable_cache(
@@ -124,7 +130,7 @@ const getFeaturedBooksCached = unstable_cache(
     return data ?? [];
   },
   ["landing-featured-books"],
-  { revalidate: REVALIDATE_SECONDS },
+  { revalidate: REVALIDATE_SECONDS, tags: [PUBLISHED_BOOKS_TAG] },
 );
 
 const getPublicProfileCached = unstable_cache(
@@ -164,11 +170,12 @@ const getPublicBooksByOwnerCached = unstable_cache(
     return data ?? [];
   },
   ["public-books-by-owner"],
-  { revalidate: REVALIDATE_SECONDS },
+  { revalidate: REVALIDATE_SECONDS, tags: [PUBLISHED_BOOKS_TAG] },
 );
 
-const getPublishedBookCached = unstable_cache(
-  async (bookId: number): Promise<PublishedBook | null> => {
+const getPublishedBookCached = (bookId: number) =>
+  unstable_cache(
+    async (): Promise<PublishedBook | null> => {
     const { data: bookData, error: bookError } = await supabase
       .from("books")
       .select(
@@ -235,15 +242,13 @@ const getPublishedBookCached = unstable_cache(
         .filter((page): page is PublishedPageSummary => page !== null),
     };
   },
-  ["published-book"],
-  { revalidate: REVALIDATE_SECONDS },
-);
+    ["published-book", String(bookId)],
+    { revalidate: REVALIDATE_SECONDS, tags: [PUBLISHED_BOOKS_TAG, bookTag(bookId)] },
+  )();
 
-const getPublishedPageCached = unstable_cache(
-  async (
-    bookId: number,
-    pageId: number,
-  ): Promise<PublishedPageDetail | null> => {
+const getPublishedPageCached = (bookId: number, pageId: number) =>
+  unstable_cache(
+    async (): Promise<PublishedPageDetail | null> => {
     const book = await getPublishedBookCached(bookId);
 
     if (!book) {
@@ -306,9 +311,9 @@ const getPublishedPageCached = unstable_cache(
           : null,
     };
   },
-  ["published-page"],
-  { revalidate: REVALIDATE_SECONDS },
-);
+    ["published-page", String(bookId), String(pageId)],
+    { revalidate: REVALIDATE_SECONDS, tags: [bookTag(bookId)] },
+  )();
 
 export function decodeUsernameParam(value: string): string {
   const decoded = decodeURIComponent(value);
