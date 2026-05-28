@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
-import { ChevronDown, FileEdit, GitCommit, History, Loader2 } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { ChevronDown, FileEdit, GitCommit, Globe, History, Loader2 } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,6 +18,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
 import { useUncommittedChanges } from "@/hooks/use-uncommitted-changes";
 import { VersionService } from "@/services/VersionService";
 
@@ -38,6 +39,8 @@ export function VersionControlButton({
   onSaveVersion,
 }: VersionControlButtonProps) {
   const navigate = useNavigate();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
   const { hasChanges, changedPages, lastCommitAt, isLoading } =
     useUncommittedChanges(bookId);
 
@@ -45,6 +48,43 @@ export function VersionControlButton({
     queryKey: ["latest-version", bookId],
     queryFn: () => VersionService.getLatestVersion(bookId),
     enabled: bookId > 0,
+  });
+
+  const { data: publishedVersion } = useQuery({
+    queryKey: ["published-version", bookId],
+    queryFn: () => VersionService.getPublishedVersion(bookId),
+    enabled: bookId > 0,
+  });
+
+  // True when a version is published but newer committed versions exist.
+  const publishedBehind =
+    !!publishedVersion &&
+    !!latestVersion &&
+    publishedVersion.version_number < latestVersion.version_number;
+
+  const publishLatestMutation = useMutation({
+    mutationFn: () => {
+      if (!latestVersion) throw new Error("No version to publish");
+      return VersionService.publishVersion(bookId, latestVersion.id);
+    },
+    onSuccess: () => {
+      toast({
+        title: "Latest version published",
+        description: `v${latestVersion?.version_number} is now the published version.`,
+      });
+      queryClient.invalidateQueries({ queryKey: ["published-version", bookId] });
+      queryClient.invalidateQueries({ queryKey: ["latest-version", bookId] });
+      queryClient.invalidateQueries({ queryKey: ["version-history", bookId] });
+      queryClient.invalidateQueries({ queryKey: ["books", bookId] });
+      queryClient.invalidateQueries({ queryKey: ["books"] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Publish failed",
+        description: error.message || "Failed to publish the latest version.",
+        variant: "destructive",
+      });
+    },
   });
 
   const tooltipText = (() => {
@@ -119,7 +159,7 @@ export function VersionControlButton({
             )}
           >
             <ChevronDown className="h-3.5 w-3.5" />
-            {hasChanges && (
+            {(hasChanges || publishedBehind) && (
               <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-amber-400" />
             )}
           </Button>
@@ -135,6 +175,26 @@ export function VersionControlButton({
             <GitCommit className="h-4 w-4" />
             <span>Save this version…</span>
           </DropdownMenuItem>
+          {publishedBehind && (
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.preventDefault();
+                publishLatestMutation.mutate();
+              }}
+              disabled={publishLatestMutation.isPending}
+              className="flex items-center gap-2"
+            >
+              {publishLatestMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Globe className="h-4 w-4" />
+              )}
+              <span>Publish latest version</span>
+              <span className="pv-mono ml-auto text-[11px] tabular-nums text-[hsl(var(--pv-text-muted))]">
+                v{latestVersion?.version_number}
+              </span>
+            </DropdownMenuItem>
+          )}
           <DropdownMenuSeparator />
           {hasChanges && bookSlug && (
             <DropdownMenuItem
