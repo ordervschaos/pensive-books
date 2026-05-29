@@ -19,6 +19,11 @@ type Props = {
   bookId: number;
   bookSlug: string;
   centerContent?: boolean;
+  /**
+   * When set, a leading heading whose text matches this title is dropped so the
+   * content body doesn't repeat the page title rendered above it.
+   */
+  pageTitle?: string;
 };
 
 type RenderContext = {
@@ -58,6 +63,45 @@ function getTextContent(node: RichTextNode | undefined): string {
   }
 
   return (node.content || []).map(getTextContent).join("");
+}
+
+function normalizeTitle(text: string): string {
+  return text.trim().toLowerCase();
+}
+
+/** Drop a leading in-body title when the page already renders it separately. */
+function stripDuplicateTitleHeading(
+  doc: RichTextNode,
+  pageTitle?: string,
+): RichTextNode {
+  if (!pageTitle?.trim() || doc.type !== "doc" || !Array.isArray(doc.content)) {
+    return doc;
+  }
+
+  const normalizedPageTitle = normalizeTitle(pageTitle);
+  const content = [...doc.content];
+
+  if (
+    content[0]?.type === "heading" &&
+    normalizeTitle(getTextContent(content[0])) === normalizedPageTitle
+  ) {
+    content.shift();
+  }
+
+  while (content.length > 0 && content[0]?.type === "paragraph") {
+    const text = getTextContent(content[0]).trim();
+    const isMarkdownHeading = /^#{1,6}\s+/.test(text);
+    const echoesTitle =
+      normalizeTitle(text.replace(/^#{1,6}\s+/, "")) === normalizedPageTitle;
+
+    if (isMarkdownHeading || echoesTitle) {
+      content.shift();
+    } else {
+      break;
+    }
+  }
+
+  return { ...doc, content };
 }
 
 function safeHref(raw: unknown): string | null {
@@ -392,12 +436,17 @@ export function RichTextRenderer({
   bookId,
   bookSlug,
   centerContent = false,
+  pageTitle,
 }: Props) {
   const parsed = parseContent(content);
 
   if (!parsed) {
     return <p className="text-muted-foreground">No content available.</p>;
   }
+
+  const doc = pageTitle
+    ? stripDuplicateTitleHeading(parsed, pageTitle)
+    : parsed;
 
   return (
     <div
@@ -406,7 +455,7 @@ export function RichTextRenderer({
       <div
         className={`mx-auto w-full max-w-4xl ${centerContent ? "text-center" : ""}`}
       >
-        {renderNode(parsed, { bookId, bookSlug }, "root")}
+        {renderNode(doc, { bookId, bookSlug }, "root")}
       </div>
     </div>
   );

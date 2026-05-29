@@ -127,6 +127,7 @@ export default async function PublishedPageRoute({ params }: Props) {
             bookId={detail.book.id}
             bookSlug={canonicalBookSlug}
             centerContent={detail.page.page_type === "section"}
+            pageTitle={detail.page.title}
           />
         </div>
 
