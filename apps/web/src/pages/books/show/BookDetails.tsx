@@ -27,6 +27,7 @@ import { MatureContentGate } from "@/components/book/MatureContentGate";
 import { Brief } from "@/lib/brief";
 import { BookBriefSummary } from "@/components/book/BookBriefSummary";
 import { BookEvaluationSection } from "@/components/book/BookEvaluationSection";
+import { ReviseWithAI, type RevisionPrefill } from "@/components/book/ReviseWithAI";
 import { useAdmin } from "@/hooks/use-admin";
 import { useMatureContent } from "@/hooks/use-mature-content";
 import { MessageSquare } from "lucide-react";
@@ -80,7 +81,14 @@ const BookDetails = () => {
   const [bookmarkedPageIndex, setBookmarkedPageIndex] = useState<number | null>(null);
   const [bookmarkTimestamp, setBookmarkTimestamp] = useState<string | null>(null);
   const [isChatOpen, setIsChatOpen] = useState(false);
-  const { canEdit, isOwner, loading: permissionsLoading } = useBookPermissions(bookSlug);
+  const { canEdit, isOwner, hasAccess, loading: permissionsLoading } = useBookPermissions(bookSlug);
+
+  // Owner/collaborators only in the app; everyone else reading a public book goes to the
+  // public reader (which never exposes author-only objective metadata). Mirrors PageView.
+  useEffect(() => {
+    if (permissionsLoading || hasAccess || !bookSlug) return;
+    navigate(`/library/books/${bookSlug}`, { replace: true });
+  }, [permissionsLoading, hasAccess, bookSlug, navigate]);
   const { isAdmin } = useAdmin();
   const { enabled: matureEnabled, loading: matureLoading } = useMatureContent();
   const [matureUnlocked, setMatureUnlocked] = useState(false);
@@ -128,6 +136,9 @@ const BookDetails = () => {
   const [viewingFlashcard, setViewingFlashcard] = useState<FlashcardRecord | null>(null);
   const [currentFlashcardIndex, setCurrentFlashcardIndex] = useState(0);
   const [editingFlashcard, setEditingFlashcard] = useState<FlashcardRecord | null>(null);
+
+  // Revise-with-AI: a prefill handed over from the editor's-read report.
+  const [revisionPrefill, setRevisionPrefill] = useState<RevisionPrefill | null>(null);
 
   // Version control state
   const [isCommitDialogOpen, setIsCommitDialogOpen] = useState(false);
@@ -550,7 +561,8 @@ const BookDetails = () => {
     }
   };
 
-  if (loading || !book) {
+  // Also covers the brief moment before a non-collaborator is redirected to the reader.
+  if (loading || permissionsLoading || !hasAccess || !book) {
     return null;
   }
 
@@ -665,7 +677,21 @@ const BookDetails = () => {
                 />
               )}
 
-              {canEdit && <BookEvaluationSection bookId={getNumericId(bookSlug)} />}
+              {canEdit && (
+                <ReviseWithAI
+                  bookId={getNumericId(bookSlug)}
+                  prefill={revisionPrefill}
+                  onPrefillConsumed={() => setRevisionPrefill(null)}
+                  onApplied={() => fetchBookDetails()}
+                />
+              )}
+
+              {canEdit && (
+                <BookEvaluationSection
+                  bookId={getNumericId(bookSlug)}
+                  onRevise={(evaluation) => setRevisionPrefill({ evaluation })}
+                />
+              )}
             </div>
 
             {/* Word Count & Version Control */}

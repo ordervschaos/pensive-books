@@ -56,7 +56,15 @@ const PageView = () => {
   } = usePageViewData(bookSlug, pageSlug);
 
   // 4. Check permissions
-  const { canEdit, loading: permissionsLoading } = useBookPermissions(numericBookId.toString());
+  const { canEdit, hasAccess, loading: permissionsLoading } = useBookPermissions(numericBookId.toString());
+
+  // The editor is for the book's owner/collaborators only. Anyone else who can open this
+  // URL is reading a PUBLIC book — send them to the public reader, which never exposes the
+  // author-only objective metadata. (Private books aren't readable here without access.)
+  useEffect(() => {
+    if (permissionsLoading || hasAccess || !bookSlug || !pageSlug) return;
+    navigate(`/library/books/${bookSlug}/pages/${pageSlug}`, { replace: true });
+  }, [permissionsLoading, hasAccess, bookSlug, pageSlug, navigate]);
 
   // 5. Local UI state
   const [isEditing, setIsEditing] = useEditMode(canEdit);
@@ -193,6 +201,47 @@ const PageView = () => {
     numericBookId // Pass bookId for proper cache updates
   );
 
+  // 7b. Page objective (author-only metadata). Fetched separately from the reader page
+  //     select and only when the user can edit AND the book has objectives enabled, so it
+  //     never reaches readers — the same protection books.brief gets. Stored in
+  //     pages.metadata.objective. Gated by the book-level objectives_enabled switch.
+  const objectivesEnabled = !!(book as { objectives_enabled?: boolean } | null)?.objectives_enabled;
+  const [pageObjective, setPageObjective] = useState<string | null>(null);
+  useEffect(() => {
+    if (!canEdit || !objectivesEnabled || !numericPageId) {
+      setPageObjective(null);
+      return;
+    }
+    let cancelled = false;
+    supabase
+      .from('pages')
+      .select('metadata')
+      .eq('id', numericPageId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!cancelled) {
+          setPageObjective((data?.metadata as { objective?: string } | null)?.objective ?? null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canEdit, objectivesEnabled, numericPageId]);
+
+  const handleObjectiveChange = async (next: string | null) => {
+    if (!canEdit || !numericPageId) return;
+    const trimmed = next?.trim() ?? '';
+    setPageObjective(trimmed || null);
+    // Phase 0: objective is the only metadata key, so a whole-object write is fine.
+    const { error } = await supabase
+      .from('pages')
+      .update({ metadata: trimmed ? { objective: trimmed } : {} })
+      .eq('id', numericPageId);
+    if (error) {
+      toast({ title: "Couldn't save objective", description: error.message, variant: 'destructive' });
+    }
+  };
+
   // 8. Navigation logic
   const { navigateToPage, navigateNext, navigatePrev } = usePageNavigation(
     bookSlug, // Used for URL generation only
@@ -278,8 +327,9 @@ const PageView = () => {
   // 12. Preload next page for faster navigation
   useNextPagePreloader(numericBookId, nextPageId);
 
-  // 13. Loading state
-  if (dataLoading || permissionsLoading) {
+  // 13. Loading state — also covers the brief moment before a non-collaborator is
+  // redirected to the public reader (don't render the editor / its objectives for them).
+  if (dataLoading || permissionsLoading || !hasAccess) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
         <PageViewSettings onSearchOpen={() => setSearchOpen(true)} />
@@ -364,6 +414,9 @@ const PageView = () => {
               editable={canEdit}
               onEditingChange={setIsEditing}
               canEdit={canEdit}
+              objective={pageObjective}
+              onObjectiveChange={handleObjectiveChange}
+              objectivesEnabled={objectivesEnabled}
               pageId={numericPageId.toString()}
               isEditing={isEditing}
               setIsEditing={setIsEditing}

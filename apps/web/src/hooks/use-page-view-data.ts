@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { SlugService } from '@/utils/slugService';
+import { READER_PAGE_COLUMNS } from '@/lib/pageColumns';
 
 interface Page {
   id: number;
@@ -74,7 +75,7 @@ export const usePageViewData = (
     queryFn: async () => {
       const { data, error } = await supabase
         .from('pages')
-        .select('*')
+        .select(READER_PAGE_COLUMNS) // excludes author-only `metadata`; fetched separately when canEdit
         .eq('id', numericPageId)
         .eq('book_id', numericBookId)
         .eq('archived', false)
@@ -112,7 +113,7 @@ export const usePageViewData = (
       // `brief` column off the wire on the reader path.
       const { data: bookData, error: bookError } = await supabase
         .from('books')
-        .select('id, name, slug, cover_url, author, subtitle, published_at, is_public, is_archived, owner_id, show_text_on_cover')
+        .select('id, name, slug, cover_url, author, subtitle, published_at, is_public, is_archived, owner_id, show_text_on_cover, objectives_enabled')
         .eq('id', numericBookId)
         .eq('is_archived', false)
         .maybeSingle();

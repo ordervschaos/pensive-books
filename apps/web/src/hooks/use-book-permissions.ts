@@ -4,6 +4,10 @@ import { supabase } from "@/integrations/supabase/client";
 export const useBookPermissions = (bookId: string | undefined) => {
   const [canEdit, setCanEdit] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
+  // True when the user is the owner OR an explicit collaborator (any access level).
+  // Distinguishes legitimate authed access from "can only see it because it's public" —
+  // the page view uses this to keep non-collaborators out of the editor.
+  const [hasAccess, setHasAccess] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -11,6 +15,7 @@ export const useBookPermissions = (bookId: string | undefined) => {
       if (!bookId) {
         setCanEdit(false);
         setIsOwner(false);
+        setHasAccess(false);
         setLoading(false);
         return;
       }
@@ -18,10 +23,11 @@ export const useBookPermissions = (bookId: string | undefined) => {
       try {
         // First get the current session
         const { data: { session } } = await supabase.auth.getSession();
-        
+
         if (!session) {
           setCanEdit(false);
           setIsOwner(false);
+          setHasAccess(false);
           setLoading(false);
           return;
         }
@@ -36,11 +42,12 @@ export const useBookPermissions = (bookId: string | undefined) => {
         if (book?.owner_id === session.user.id) {
           setCanEdit(true);
           setIsOwner(true);
+          setHasAccess(true);
           setLoading(false);
           return;
         }
 
-        // If not owner and user is authenticated, check for edit access
+        // If not owner and user is authenticated, check for a collaborator row.
         const { data: access } = await supabase
           .from("book_access")
           .select("access_level")
@@ -49,11 +56,13 @@ export const useBookPermissions = (bookId: string | undefined) => {
           .maybeSingle();
 
         setCanEdit(access?.access_level === 'edit');
+        setHasAccess(!!access);
         setIsOwner(false);
       } catch (error) {
         console.error("Error checking permissions:", error);
         setCanEdit(false);
         setIsOwner(false);
+        setHasAccess(false);
       } finally {
         setLoading(false);
       }
@@ -62,5 +71,5 @@ export const useBookPermissions = (bookId: string | undefined) => {
     checkPermissions();
   }, [bookId]);
 
-  return { canEdit, isOwner, loading };
+  return { canEdit, isOwner, hasAccess, loading };
 };

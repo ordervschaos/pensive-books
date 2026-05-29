@@ -11,16 +11,16 @@ const BRIDGE = import.meta.env.VITE_EVAL_BRIDGE_URL as string | undefined;
 const USE_BRIDGE = !!BRIDGE;
 
 type Stance = "strong" | "solid" | "needs work";
-type Severity = "high" | "medium" | "low";
+export type Severity = "high" | "medium" | "low";
 
-interface Issue {
+export interface Issue {
   severity: Severity;
   note: string;
   evidence?: string;
   suggestion?: string;
   page_ref?: { id: number | null; title: string; index: number | null } | null;
 }
-interface Section {
+export interface Section {
   id: string;
   title: string;
   stance: Stance;
@@ -28,7 +28,7 @@ interface Section {
   strengths?: string[];
   issues?: Issue[];
 }
-interface EvalResult {
+export interface EvalResult {
   verdict: { genre_contract: string; stance: string; letter: string; priorities: string[] };
   sections: Section[];
 }
@@ -58,7 +58,7 @@ const SEV_TONE: Record<Severity, string> = {
   low: "text-[hsl(var(--pv-text-faint))]",
 };
 
-export function BookEvaluationSection({ bookId }: { bookId: number }) {
+export function BookEvaluationSection({ bookId, onRevise }: { bookId: number; onRevise?: (result: EvalResult) => void }) {
   const [state, setState] = useState<State>({ status: "checking" });
   const mounted = useRef(true);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -234,12 +234,12 @@ export function BookEvaluationSection({ bookId }: { bookId: number }) {
         </p>
       )}
 
-      {state.status === "done" && <Report bookId={bookId} result={state.result} />}
+      {state.status === "done" && <Report bookId={bookId} result={state.result} onRevise={onRevise} />}
     </div>
   );
 }
 
-function Report({ bookId, result }: { bookId: number; result: EvalResult }) {
+function Report({ bookId, result, onRevise }: { bookId: number; result: EvalResult; onRevise?: (result: EvalResult) => void }) {
   const { verdict, sections } = result;
   return (
     <div className="mt-5 space-y-6">
@@ -263,6 +263,25 @@ function Report({ bookId, result }: { bookId: number; result: EvalResult }) {
               </li>
             ))}
           </ol>
+        </div>
+      )}
+
+      {/* Act on the notes — hands them to the durable "Revise with AI" surface above. */}
+      {onRevise && (
+        <div className="rounded-xl border border-[hsl(var(--pv-border-soft))] px-4 py-3">
+          <div className="flex items-baseline justify-between gap-3">
+            <div className="pv-eyebrow">Act on these notes</div>
+            <button
+              type="button"
+              onClick={() => onRevise(result)}
+              className="pv-serif text-[14px] italic text-[hsl(var(--pv-text-muted))] transition-colors hover:text-foreground"
+            >
+              Revise with AI →
+            </button>
+          </div>
+          <p className="pv-serif mt-1.5 text-[13.5px] leading-relaxed text-[hsl(var(--pv-text-muted))]">
+            Hands the editor's notes to “Revise with AI” above — propose a plan, review what changes, then build. You can add your own instruction too.
+          </p>
         </div>
       )}
 

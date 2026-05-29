@@ -6,6 +6,7 @@ import { Table, TableRow, TableCell, TableHeader } from '@tiptap/extension-table
 import { Title } from '../extensions/Title';
 import { SmartTypography } from '../extensions/SmartTypography';
 import { AudioBlocks } from '../extensions/AudioBlocks';
+import { ParagraphObjective } from '../extensions/ParagraphObjective';
 import { PageLink } from '../extensions/PageLink';
 import { PageLinkSuggestion } from '../extensions/PageLinkSuggestion';
 import { HeadingWithId } from '../extensions/HeadingWithId';
@@ -28,7 +29,8 @@ export const getEditorConfig = (
   isEditing = true,
   uploadImage: ImageUploadFn,
   bookId?: string | null,
-  onPageLinkClick?: (pageId: string, bookId: string) => void
+  onPageLinkClick?: (pageId: string, bookId: string) => void,
+  objectivesEnabled = false
 ) => {
 
   return {
@@ -36,6 +38,7 @@ export const getEditorConfig = (
       Title,
       SmartTypography,
       AudioBlocks,
+      ParagraphObjective.configure({ enabled: objectivesEnabled }),
       PageLink.configure({
         onPageLinkClick,
       }),
