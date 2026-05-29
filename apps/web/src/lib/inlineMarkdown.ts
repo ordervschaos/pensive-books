@@ -56,7 +56,7 @@ interface DocNode {
 
 // Build a page doc from generated/revised prose: a leading h1 title (the Title extension
 // requires it) followed by the prose as paragraphs. Shared by the generation cascade
-// (WriteAllPages) and the editor-notes reviser (ApplyEditorNotes).
+// (WriteAllPages) and the AI reviser (ReviseWithAI).
 export function buildDoc(title: string | null, prose: string): DocNode {
   const heading: HeadingNode = {
     type: "heading",

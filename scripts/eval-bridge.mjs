@@ -246,9 +246,9 @@ Draft the bible. Markdown only.`;
 // ── /replan ───────────────────────────────────────────────────────────────────
 // Mirrors supabase/functions/replan-from-notes: turn an evaluation into a revision plan
 // (the objective-tree diff). NO mutation — the plan is returned for review.
-const REPLAN_INSTRUCTIONS = `You are a book doctor revising an EXISTING book based on a developmental editor's evaluation. You work in OBJECTIVES (what each page must achieve), not prose.
+const REPLAN_INSTRUCTIONS = `You are a book doctor revising an EXISTING book based on the author's instruction and/or a developmental editor's evaluation. You work in OBJECTIVES (what each page must achieve), not prose.
 
-You are given: the brief, the bible, the CURRENT outline (each page with its real [id], type, title, and objective), and the full evaluation. Diagnose the STRUCTURAL problems the evaluation raises — passive protagonist, missing obligatory/"fix these first" scenes, abandoned setups, a sagging middle, redundancy — and fix them at the level of objectives and structure.
+You are given: the brief, the bible, the CURRENT outline (each page with its real [id], type, title, and objective), and — depending on the request — an author's instruction and/or a full editorial evaluation. The AUTHOR'S INSTRUCTION, when present, is the primary directive: do what it asks. The evaluation is the editor's diagnosis to act on. Diagnose the STRUCTURAL changes needed — fulfilling the author's intent, plus problems the evaluation raises (passive protagonist, missing obligatory/"fix these first" scenes, abandoned setups, a sagging middle, redundancy) — and fix them at the level of objectives and structure.
 
 Produce a REVISION PLAN: the book's NEW page list in final reading order, plus the existing pages to delete. For each page entry use one op:
 - "keep":     unchanged. (ref = its id; carry its title/objective forward)
@@ -356,12 +356,15 @@ function parsePlan(text, existing) {
   return { summary: String(parsed.summary ?? "").trim(), pages, deletes };
 }
 
-async function runReplan(bookId, evaluation) {
+async function runReplan(bookId, evaluation, instruction) {
   const book = await fetchBook(bookId);
   if (!book) return { error: "Book not found" };
-  // Fall back to the stored report if the client didn't pass the evaluation.
-  const ev = evaluation ?? loadReport(bookId)?.result;
-  if (!ev?.verdict || !Array.isArray(ev.sections)) return { error: "A valid evaluation is required" };
+  const instr = (instruction ?? "").trim();
+  // Fall back to the stored report only when there's no explicit ask — don't silently fold the
+  // old editor's notes into a pure free-text instruction (keeps parity with the edge function).
+  const ev = evaluation ?? (instr ? undefined : loadReport(bookId)?.result);
+  const hasEval = !!ev?.verdict && Array.isArray(ev.sections);
+  if (!hasEval && !instr) return { error: "An instruction or a valid evaluation is required" };
 
   const pages = await fetchPages(bookId);
   if (!pages.length) return { error: "Book has no pages to revise" };
@@ -374,10 +377,7 @@ BRIEF (the voice contract):
 ${briefContext(book.brief)}${book.bible?.text?.trim() ? `\n\nBOOK BIBLE (established facts):\n${book.bible.text.trim()}` : ""}
 
 CURRENT OUTLINE (edit against these real ids):
-${outlineContext(pages)}
-
-EDITOR'S EVALUATION:
-${evalContext(ev)}
+${outlineContext(pages)}${instr ? `\n\nAUTHOR'S INSTRUCTION (primary directive):\n${instr}` : ""}${hasEval ? `\n\nEDITOR'S EVALUATION:\n${evalContext(ev)}` : ""}
 
 Produce the revision plan. JSON only.`;
 
@@ -583,8 +583,8 @@ async function route(req, res) {
     if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
     const bookId = Number(replanMatch[1]);
     const body = await readBody(req);
-    console.log(`Replanning book ${bookId} from evaluation…`);
-    const out = await runReplan(bookId, body.evaluation);
+    console.log(`Replanning book ${bookId}${body.instruction ? " from instruction" : ""}${body.evaluation ? " from evaluation" : ""}…`);
+    const out = await runReplan(bookId, body.evaluation, body.instruction);
     if (out.error) return json(res, 500, { error: out.error });
     return json(res, 200, out);
   }

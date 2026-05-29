@@ -27,6 +27,7 @@ import { MatureContentGate } from "@/components/book/MatureContentGate";
 import { Brief } from "@/lib/brief";
 import { BookBriefSummary } from "@/components/book/BookBriefSummary";
 import { BookEvaluationSection } from "@/components/book/BookEvaluationSection";
+import { ReviseWithAI, type RevisionPrefill } from "@/components/book/ReviseWithAI";
 import { useAdmin } from "@/hooks/use-admin";
 import { useMatureContent } from "@/hooks/use-mature-content";
 import { MessageSquare } from "lucide-react";
@@ -135,6 +136,9 @@ const BookDetails = () => {
   const [viewingFlashcard, setViewingFlashcard] = useState<FlashcardRecord | null>(null);
   const [currentFlashcardIndex, setCurrentFlashcardIndex] = useState(0);
   const [editingFlashcard, setEditingFlashcard] = useState<FlashcardRecord | null>(null);
+
+  // Revise-with-AI: a prefill handed over from the editor's-read report.
+  const [revisionPrefill, setRevisionPrefill] = useState<RevisionPrefill | null>(null);
 
   // Version control state
   const [isCommitDialogOpen, setIsCommitDialogOpen] = useState(false);
@@ -673,7 +677,21 @@ const BookDetails = () => {
                 />
               )}
 
-              {canEdit && <BookEvaluationSection bookId={getNumericId(bookSlug)} />}
+              {canEdit && (
+                <ReviseWithAI
+                  bookId={getNumericId(bookSlug)}
+                  prefill={revisionPrefill}
+                  onPrefillConsumed={() => setRevisionPrefill(null)}
+                  onApplied={() => fetchBookDetails()}
+                />
+              )}
+
+              {canEdit && (
+                <BookEvaluationSection
+                  bookId={getNumericId(bookSlug)}
+                  onRevise={(evaluation) => setRevisionPrefill({ evaluation })}
+                />
+              )}
             </div>
 
             {/* Word Count & Version Control */}

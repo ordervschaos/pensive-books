@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { ApplyEditorNotes } from "./ApplyEditorNotes";
-import { ReviseStructure } from "./ReviseStructure";
 
 // Two backends, env-switched:
 //  - Production (default): the `evaluate-book` edge function writes a book_evaluations
@@ -60,7 +58,7 @@ const SEV_TONE: Record<Severity, string> = {
   low: "text-[hsl(var(--pv-text-faint))]",
 };
 
-export function BookEvaluationSection({ bookId }: { bookId: number }) {
+export function BookEvaluationSection({ bookId, onRevise }: { bookId: number; onRevise?: (result: EvalResult) => void }) {
   const [state, setState] = useState<State>({ status: "checking" });
   const mounted = useRef(true);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -236,12 +234,12 @@ export function BookEvaluationSection({ bookId }: { bookId: number }) {
         </p>
       )}
 
-      {state.status === "done" && <Report bookId={bookId} result={state.result} />}
+      {state.status === "done" && <Report bookId={bookId} result={state.result} onRevise={onRevise} />}
     </div>
   );
 }
 
-function Report({ bookId, result }: { bookId: number; result: EvalResult }) {
+function Report({ bookId, result, onRevise }: { bookId: number; result: EvalResult; onRevise?: (result: EvalResult) => void }) {
   const { verdict, sections } = result;
   return (
     <div className="mt-5 space-y-6">
@@ -268,11 +266,24 @@ function Report({ bookId, result }: { bookId: number; result: EvalResult }) {
         </div>
       )}
 
-      {/* Act on the notes: page-level prose fixes (v1) and structural revision (v2). */}
-      <div className="space-y-2">
-        <ApplyEditorNotes bookId={bookId} result={result} />
-        <ReviseStructure bookId={bookId} result={result} />
-      </div>
+      {/* Act on the notes — hands them to the durable "Revise with AI" surface above. */}
+      {onRevise && (
+        <div className="rounded-xl border border-[hsl(var(--pv-border-soft))] px-4 py-3">
+          <div className="flex items-baseline justify-between gap-3">
+            <div className="pv-eyebrow">Act on these notes</div>
+            <button
+              type="button"
+              onClick={() => onRevise(result)}
+              className="pv-serif text-[14px] italic text-[hsl(var(--pv-text-muted))] transition-colors hover:text-foreground"
+            >
+              Revise with AI →
+            </button>
+          </div>
+          <p className="pv-serif mt-1.5 text-[13.5px] leading-relaxed text-[hsl(var(--pv-text-muted))]">
+            Hands the editor's notes to “Revise with AI” above — propose a plan, review what changes, then build. You can add your own instruction too.
+          </p>
+        </div>
+      )}
 
       {/* Section cards */}
       <div className="space-y-1">
