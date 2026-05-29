@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { ApplyEditorNotes } from "./ApplyEditorNotes";
+import { ReviseStructure } from "./ReviseStructure";
 
 // Two backends, env-switched:
 //  - Production (default): the `evaluate-book` edge function writes a book_evaluations
@@ -11,16 +13,16 @@ const BRIDGE = import.meta.env.VITE_EVAL_BRIDGE_URL as string | undefined;
 const USE_BRIDGE = !!BRIDGE;
 
 type Stance = "strong" | "solid" | "needs work";
-type Severity = "high" | "medium" | "low";
+export type Severity = "high" | "medium" | "low";
 
-interface Issue {
+export interface Issue {
   severity: Severity;
   note: string;
   evidence?: string;
   suggestion?: string;
   page_ref?: { id: number | null; title: string; index: number | null } | null;
 }
-interface Section {
+export interface Section {
   id: string;
   title: string;
   stance: Stance;
@@ -28,7 +30,7 @@ interface Section {
   strengths?: string[];
   issues?: Issue[];
 }
-interface EvalResult {
+export interface EvalResult {
   verdict: { genre_contract: string; stance: string; letter: string; priorities: string[] };
   sections: Section[];
 }
@@ -265,6 +267,12 @@ function Report({ bookId, result }: { bookId: number; result: EvalResult }) {
           </ol>
         </div>
       )}
+
+      {/* Act on the notes: page-level prose fixes (v1) and structural revision (v2). */}
+      <div className="space-y-2">
+        <ApplyEditorNotes bookId={bookId} result={result} />
+        <ReviseStructure bookId={bookId} result={result} />
+      </div>
 
       {/* Section cards */}
       <div className="space-y-1">

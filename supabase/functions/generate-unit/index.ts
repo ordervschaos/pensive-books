@@ -37,6 +37,15 @@ interface Brief {
   success_criteria?: string;
 }
 
+// A single editorial note to address when revising a page (from book_evaluations result).
+interface ReviseIssue {
+  section?: string;    // rubric category the note came from (e.g. "Dialogue")
+  severity?: string;   // high | medium | low
+  note: string;
+  evidence?: string;
+  suggestion?: string;
+}
+
 interface GenerateRequest {
   bookId: number;
   pageId: number;
@@ -44,6 +53,8 @@ interface GenerateRequest {
   objective: string;        // the unit's objective (authoritative from the live editor)
   pageObjective?: string;   // parent page objective (paragraph-level context)
   precedingText?: string;   // prose before the unit within the page (paragraph level)
+  mode?: "write" | "revise"; // "revise": rewrite an existing page to fix editor notes
+  issues?: ReviseIssue[];    // revise mode: the editor's notes for this page
 }
 
 Deno.serve(async (req: Request) => {
@@ -61,9 +72,17 @@ Deno.serve(async (req: Request) => {
 
     const body = (await req.json().catch(() => ({}))) as Partial<GenerateRequest>;
     const { bookId, pageId, level, objective } = body;
+    const mode = body.mode === "revise" ? "revise" : "write";
     if (!bookId) return json({ error: "bookId is required" }, 400);
     if (level !== "paragraph" && level !== "page") return json({ error: "level must be 'paragraph' or 'page'" }, 400);
-    if (!objective || !objective.trim()) return json({ error: "objective is required" }, 400);
+    if (mode === "write") {
+      if (!objective || !objective.trim()) return json({ error: "objective is required" }, 400);
+    } else {
+      if (!pageId) return json({ error: "pageId is required for revise" }, 400);
+      if (!Array.isArray(body.issues) || body.issues.length === 0) {
+        return json({ error: "issues are required for revise" }, 400);
+      }
+    }
 
     // Book + access check (owner or accepted collaborator — mirrors evaluate-book).
     const { data: book, error: bookError } = await userClient
@@ -85,6 +104,14 @@ Deno.serve(async (req: Request) => {
     const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!apiKey) return json({ error: "ANTHROPIC_API_KEY not configured" }, 500);
 
+    // Revise mode edits the page's existing prose in place — fetch it.
+    let currentText: string | null = null;
+    if (mode === "revise") {
+      const { data: pg } = await userClient.from("pages").select("content").eq("id", pageId!).maybeSingle();
+      currentText = tiptapToText(pg?.content).trim() || null;
+      if (!currentText) return json({ error: "Page has no prose to revise" }, 400);
+    }
+
     const ctx = await buildUnitContext(userClient, bookId, pageId ?? null, level);
 
     const text = await callClaude(apiKey, {
@@ -92,7 +119,10 @@ Deno.serve(async (req: Request) => {
       bible: (book.bible as { text?: string } | null)?.text?.trim() || null,
       bookName: book.name,
       level,
-      objective: objective.trim(),
+      mode,
+      objective: (objective ?? "").trim(),
+      issues: mode === "revise" ? (body.issues ?? []) : null,
+      currentText,
       pageObjective: body.pageObjective?.trim() || null,
       precedingText: body.precedingText?.trim() || null,
       objectiveMap: ctx.objectiveMap,
@@ -105,7 +135,7 @@ Deno.serve(async (req: Request) => {
     // — the "story so far" that later pages read for long-range coherence. Best-effort:
     // a summary failure must not fail the generation. Done inline (a page render isn't
     // latency-critical and we want it persisted before the next cascade step).
-    if (level === "page" && pageId) {
+    if ((level === "page" || mode === "revise") && pageId) {
       try {
         const summary = await summarize(apiKey, text);
         if (summary) await persistSummary(userClient, pageId, summary);
@@ -224,6 +254,18 @@ Rules:
 - Serve the objective precisely; do not wander beyond what it asks.
 - Match the requested length: a single paragraph means ONE paragraph.`;
 
+const SYSTEM_REVISE = `You are a developmental line editor revising a page of an author's book to address specific editorial notes.
+
+Rules:
+- Output ONLY the revised page prose. No preamble, no titles, no headings ("#" lines), no
+  markdown fences, no meta commentary, no list of what you changed.
+- Address EVERY note. Make the concrete change each note calls for — don't merely gesture at it.
+- PRESERVE what works: keep the page's strengths, structure, and the author's voice. Change
+  only what the notes require — this is a revision, not a rewrite from scratch.
+- Honor the book's brief (genre, audience, tone, premise) and stay consistent with the bible
+  and the surrounding pages (names, facts, continuity).
+- Return a COMPLETE page that ends on a finished sentence.`;
+
 function briefContext(brief: Brief | null): string {
   if (!brief) return "(no brief set — infer a sensible neutral voice)";
   const lines: string[] = [];
@@ -241,13 +283,29 @@ interface PromptArgs {
   bible: string | null;
   bookName: string;
   level: "paragraph" | "page";
+  mode: "write" | "revise";
   objective: string;
+  issues: ReviseIssue[] | null;
+  currentText: string | null;
   pageObjective: string | null;
   precedingText: string | null;
   objectiveMap: string;
   storySoFar: string | null;
   precedingProse: string | null;
   currentPageLabel: string | null;
+}
+
+// Editor notes → a compact bulleted list for the revise prompt.
+function formatIssues(issues: ReviseIssue[]): string {
+  return issues
+    .map((is) => {
+      const sev = is.severity ? `[${is.severity}] ` : "";
+      const cat = is.section ? `(${is.section}) ` : "";
+      const ev = is.evidence ? `  evidence: "${is.evidence}"` : "";
+      const sug = is.suggestion ? `  → ${is.suggestion}` : "";
+      return `- ${sev}${cat}${is.note}${ev}${sug}`;
+    })
+    .join("\n");
 }
 
 // The stable, per-book prefix (brief + outline) — cached so a cascade of many page
@@ -263,6 +321,22 @@ function stablePrefix(args: PromptArgs): string {
 
 // The variable part — what changes per unit.
 function variablePart(args: PromptArgs): string {
+  if (args.mode === "revise") {
+    const parts: string[] = [];
+    if (args.storySoFar) {
+      parts.push(`STORY SO FAR (summaries of earlier pages, for continuity):\n${args.storySoFar}`);
+    }
+    if (args.precedingProse) {
+      parts.push(`PRECEDING PROSE (the page(s) just before this one — for continuity of voice and facts ONLY):\n"""\n${args.precedingProse}\n"""`);
+    }
+    const where = args.currentPageLabel ? ` ${args.currentPageLabel}` : "";
+    if (args.objective) parts.push(`This page${where} is meant to achieve: ${args.objective}`);
+    parts.push(`CURRENT PAGE PROSE (revise this in place):\n"""\n${args.currentText ?? ""}\n"""`);
+    parts.push(`THE EDITOR'S NOTES TO ADDRESS ON THIS PAGE:\n${formatIssues(args.issues ?? [])}`);
+    parts.push(`Revise the page to address every note above while preserving its strengths, the book's voice, and continuity with the rest of the book. Return the full revised page prose only.`);
+    return parts.join("\n\n");
+  }
+
   const parts: string[] = [];
   if (args.storySoFar) {
     parts.push(`STORY SO FAR (summaries of earlier pages, for continuity):\n${args.storySoFar}`);
@@ -292,8 +366,9 @@ async function callClaude(apiKey: string, args: PromptArgs): Promise<string> {
     },
     body: JSON.stringify({
       model: MODEL,
-      max_tokens: args.level === "page" ? 8000 : 600, // headroom so a full page isn't truncated mid-sentence
-      system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
+      // headroom so a full page (write or revise) isn't truncated mid-sentence
+      max_tokens: args.mode === "revise" || args.level === "page" ? 8000 : 600,
+      system: [{ type: "text", text: args.mode === "revise" ? SYSTEM_REVISE : SYSTEM, cache_control: { type: "ephemeral" } }],
       messages: [
         {
           role: "user",

@@ -43,3 +43,25 @@ export function proseToParagraphs(prose: string): ParagraphNode[] {
       return content.length ? { type: "paragraph" as const, content } : { type: "paragraph" as const };
     });
 }
+
+interface HeadingNode {
+  type: "heading";
+  attrs: { level: number };
+  content: InlineNode[];
+}
+interface DocNode {
+  type: "doc";
+  content: (HeadingNode | ParagraphNode)[];
+}
+
+// Build a page doc from generated/revised prose: a leading h1 title (the Title extension
+// requires it) followed by the prose as paragraphs. Shared by the generation cascade
+// (WriteAllPages) and the editor-notes reviser (ApplyEditorNotes).
+export function buildDoc(title: string | null, prose: string): DocNode {
+  const heading: HeadingNode = {
+    type: "heading",
+    attrs: { level: 1 },
+    content: title ? [{ type: "text", text: title }] : [],
+  };
+  return { type: "doc", content: [heading, ...proseToParagraphs(prose)] };
+}

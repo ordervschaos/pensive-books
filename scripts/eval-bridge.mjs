@@ -243,6 +243,149 @@ Draft the bible. Markdown only.`;
   return { text };
 }
 
+// ── /replan ───────────────────────────────────────────────────────────────────
+// Mirrors supabase/functions/replan-from-notes: turn an evaluation into a revision plan
+// (the objective-tree diff). NO mutation — the plan is returned for review.
+const REPLAN_INSTRUCTIONS = `You are a book doctor revising an EXISTING book based on a developmental editor's evaluation. You work in OBJECTIVES (what each page must achieve), not prose.
+
+You are given: the brief, the bible, the CURRENT outline (each page with its real [id], type, title, and objective), and the full evaluation. Diagnose the STRUCTURAL problems the evaluation raises — passive protagonist, missing obligatory/"fix these first" scenes, abandoned setups, a sagging middle, redundancy — and fix them at the level of objectives and structure.
+
+Produce a REVISION PLAN: the book's NEW page list in final reading order, plus the existing pages to delete. For each page entry use one op:
+- "keep":     unchanged. (ref = its id; carry its title/objective forward)
+- "revise":   keep the page and its objective, but its prose needs fixing per the evaluation. (ref = id)
+- "retarget": change the page's objective. Set "objective" to the NEW objective and "rebuild" to "rewrite" (objective changed materially) or "revise" (a minor shift → adapt existing prose). (ref = id)
+- "add":      a NEW page (ref = null). Give pageType, a title, and an objective. Use this for the missing beats/scenes the evaluation calls for.
+Reorder simply by placing entries in the desired final order. Separately, list in "deletes" any existing pages to remove.
+
+Rules:
+- Use ONLY the real [id]s given. Every existing page MUST appear in "pages" (with its ref) or in "deletes" — never drop a page silently.
+- "section" pages are dividers; "text" pages carry prose (keep an objective on every text page).
+- Be surgical: mark "keep" for what works; change only what the evaluation flags.
+- Address the verdict's "priorities" first — highest leverage.
+
+Output JSON ONLY (no prose, no fences), exactly:
+{ "summary": "...", "pages": [ { "ref": <id|null>, "op": "keep|revise|retarget|add", "pageType": "section|text", "title": "...", "objective": "...", "rebuild": "rewrite|revise", "why": "..." } ], "deletes": [ { "ref": <id>, "why": "..." } ] }`;
+
+function outlineContext(pages) {
+  return pages
+    .map((p) => {
+      const obj = p.metadata?.objective?.trim();
+      if (p.page_type === "section") return `[id=${p.id}] # ${p.title || "(untitled section)"}${obj ? ` — ${obj}` : ""}`;
+      return `[id=${p.id}] - "${p.title || "(untitled)"}"${obj ? ` — ${obj}` : ""}`;
+    })
+    .join("\n");
+}
+
+function evalContext(ev) {
+  const v = ev.verdict ?? {};
+  const head = [
+    v.genre_contract ? `Genre contract: ${v.genre_contract}` : "",
+    v.stance ? `Stance: ${v.stance}` : "",
+    v.letter ? `Editorial letter: ${v.letter}` : "",
+    v.priorities?.length ? `Fix these first:\n${v.priorities.map((p, i) => `  ${i + 1}. ${p}`).join("\n")}` : "",
+  ].filter(Boolean).join("\n");
+  const sections = (ev.sections ?? [])
+    .map((s) => {
+      const issues = (s.issues ?? [])
+        .map((is) => {
+          const sev = is.severity ? `[${is.severity}] ` : "";
+          const page = is.page_ref?.id != null ? ` (page id ${is.page_ref.id})` : "";
+          const sug = is.suggestion ? `  → ${is.suggestion}` : "";
+          return `  - ${sev}${is.note}${page}${sug}`;
+        })
+        .join("\n");
+      return `## ${s.title}${s.stance ? ` — ${s.stance}` : ""}${s.assessment ? `\n${s.assessment}` : ""}${issues ? `\n${issues}` : ""}`;
+    })
+    .join("\n\n");
+  return `${head}\n\n${sections}`.trim();
+}
+
+// Parse + sanitize the plan with the same guardrails as the edge function.
+function parsePlan(text, existing) {
+  let raw = text.trim();
+  const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fence) raw = fence[1].trim();
+  else {
+    const first = raw.indexOf("{");
+    const last = raw.lastIndexOf("}");
+    if (first !== -1 && last > first) raw = raw.slice(first, last + 1);
+  }
+  let parsed;
+  try { parsed = JSON.parse(raw); }
+  catch (e) { return { error: `Could not parse revision plan JSON: ${e.message}` }; }
+  if (!Array.isArray(parsed.pages)) return { error: "Revision plan has no pages." };
+
+  const byId = new Map(existing.map((p) => [p.id, p]));
+  const validIds = new Set(existing.map((p) => p.id));
+  const ops = new Set(["keep", "revise", "retarget", "add"]);
+  const seen = new Set();
+  const pages = [];
+  for (const p of parsed.pages) {
+    const op = ops.has(p?.op) ? p.op : "keep";
+    if (op === "add") {
+      if (typeof p.title !== "string" || !p.title.trim()) continue;
+      pages.push({ ref: null, op: "add", pageType: p.pageType === "section" ? "section" : "text", title: p.title.trim(), objective: (p.objective ?? "").trim(), why: typeof p.why === "string" ? p.why.trim() : "" });
+      continue;
+    }
+    const ref = typeof p.ref === "number" ? p.ref : null;
+    if (ref == null || !validIds.has(ref) || seen.has(ref)) continue;
+    seen.add(ref);
+    const cur = byId.get(ref);
+    pages.push({
+      ref, op,
+      pageType: cur.page_type === "section" ? "section" : "text",
+      title: typeof p.title === "string" && p.title.trim() ? p.title.trim() : (cur.title ?? ""),
+      objective: (p.objective ?? cur.metadata?.objective ?? "").trim(),
+      rebuild: p.rebuild === "rewrite" ? "rewrite" : p.rebuild === "revise" ? "revise" : undefined,
+      why: typeof p.why === "string" ? p.why.trim() : "",
+    });
+  }
+  const deletes = [];
+  const deletedIds = new Set();
+  for (const d of Array.isArray(parsed.deletes) ? parsed.deletes : []) {
+    const ref = typeof d?.ref === "number" ? d.ref : null;
+    if (ref == null || !validIds.has(ref) || seen.has(ref) || deletedIds.has(ref)) continue;
+    deletedIds.add(ref);
+    deletes.push({ ref, why: typeof d.why === "string" ? d.why.trim() : "" });
+  }
+  for (const p of existing) {
+    if (!seen.has(p.id) && !deletedIds.has(p.id)) {
+      pages.push({ ref: p.id, op: "keep", pageType: p.page_type === "section" ? "section" : "text", title: p.title ?? "", objective: (p.metadata?.objective ?? "").trim(), why: "" });
+    }
+  }
+  return { summary: String(parsed.summary ?? "").trim(), pages, deletes };
+}
+
+async function runReplan(bookId, evaluation) {
+  const book = await fetchBook(bookId);
+  if (!book) return { error: "Book not found" };
+  // Fall back to the stored report if the client didn't pass the evaluation.
+  const ev = evaluation ?? loadReport(bookId)?.result;
+  if (!ev?.verdict || !Array.isArray(ev.sections)) return { error: "A valid evaluation is required" };
+
+  const pages = await fetchPages(bookId);
+  if (!pages.length) return { error: "Book has no pages to revise" };
+
+  const prompt = `${REPLAN_INSTRUCTIONS}
+
+BOOK: ${book.name}
+
+BRIEF (the voice contract):
+${briefContext(book.brief)}${book.bible?.text?.trim() ? `\n\nBOOK BIBLE (established facts):\n${book.bible.text.trim()}` : ""}
+
+CURRENT OUTLINE (edit against these real ids):
+${outlineContext(pages)}
+
+EDITOR'S EVALUATION:
+${evalContext(ev)}
+
+Produce the revision plan. JSON only.`;
+
+  const out = await runClaude(prompt, true);
+  if (out.error) return out;
+  return parsePlan(out.text, pages);
+}
+
 // ── /unit ─────────────────────────────────────────────────────────────────────
 // Kept at parity with supabase/functions/generate-unit so free local testing exercises
 // the same context (bible + objective map + story so far + preceding prose) and summary.
@@ -263,12 +406,40 @@ Rules:
 - Serve the objective precisely; do not wander beyond what it asks.
 - Match the requested length: a single paragraph means ONE paragraph.`;
 
+const UNIT_SYSTEM_REVISE = `You are a developmental line editor revising a page of an author's book to address specific editorial notes.
+
+Rules:
+- Output ONLY the revised page prose. No preamble, no titles, no headings ("#" lines), no
+  markdown fences, no meta commentary, no list of what you changed.
+- Address EVERY note. Make the concrete change each note calls for — don't merely gesture at it.
+- PRESERVE what works: keep the page's strengths, structure, and the author's voice. Change
+  only what the notes require — this is a revision, not a rewrite from scratch.
+- Honor the book's brief (genre, audience, tone, premise) and stay consistent with the bible
+  and the surrounding pages (names, facts, continuity).
+- Return a COMPLETE page that ends on a finished sentence.`;
+
+// Editor notes → a compact bulleted list for the revise prompt.
+function formatIssues(issues) {
+  return (issues ?? [])
+    .map((is) => {
+      const sev = is.severity ? `[${is.severity}] ` : "";
+      const cat = is.section ? `(${is.section}) ` : "";
+      const ev = is.evidence ? `  evidence: "${is.evidence}"` : "";
+      const sug = is.suggestion ? `  → ${is.suggestion}` : "";
+      return `- ${sev}${cat}${is.note}${ev}${sug}`;
+    })
+    .join("\n");
+}
+
 const PRECEDING_PAGES = 2;
 
 async function runUnit(body) {
-  const { bookId, pageId, level, objective, pageObjective, precedingText } = body;
-  if (!bookId || !level || !objective?.trim()) return { error: "bookId, level, objective required" };
+  const { bookId, pageId, level, objective, pageObjective, precedingText, issues } = body;
+  const mode = body.mode === "revise" ? "revise" : "write";
+  if (!bookId || !level) return { error: "bookId and level required" };
   if (level !== "paragraph" && level !== "page") return { error: "level must be paragraph or page" };
+  if (mode === "write" && !objective?.trim()) return { error: "objective required" };
+  if (mode === "revise" && (!Array.isArray(issues) || issues.length === 0)) return { error: "issues required for revise" };
 
   const book = await fetchBook(bookId);
   if (!book) return { error: "Book not found" };
@@ -277,6 +448,8 @@ async function runUnit(body) {
   // Context (mirrors buildUnitContext in the edge function).
   const pages = await fetchPages(bookId);
   const current = pageId != null ? pages.find((p) => p.id === pageId) ?? null : null;
+  const currentText = mode === "revise" && current ? tiptapToText(current.content).trim() : null;
+  if (mode === "revise" && !currentText) return { error: "Page has no prose to revise" };
   const objectiveMap = pages
     .map((p) => {
       const obj = p.metadata?.objective?.trim();
@@ -287,7 +460,7 @@ async function runUnit(body) {
     .join("\n");
 
   let storySoFar = null, precedingProse = null;
-  if (level === "page" && current) {
+  if ((level === "page" || mode === "revise") && current) {
     const priorText = pages.filter((p) => p.page_type === "text" && p.page_index < current.page_index);
     const soFar = priorText
       .slice(0, Math.max(0, priorText.length - PRECEDING_PAGES))
@@ -302,7 +475,7 @@ async function runUnit(body) {
   }
 
   const parts = [
-    UNIT_SYSTEM,
+    mode === "revise" ? UNIT_SYSTEM_REVISE : UNIT_SYSTEM,
     "",
     `BOOK: ${book.name}`,
     `\nBRIEF (the voice contract):\n${briefContext(book.brief)}`,
@@ -310,14 +483,22 @@ async function runUnit(body) {
   if (bible) parts.push(`\nBOOK BIBLE (established facts — characters, world, style; stay strictly consistent):\n${bible}`);
   if (objectiveMap) parts.push(`\nOUTLINE (the book's pages and their objectives, in order):\n${objectiveMap}`);
   if (storySoFar) parts.push(`\nSTORY SO FAR (summaries of earlier pages, for continuity):\n${storySoFar}`);
-  if (precedingProse) parts.push(`\nPRECEDING PROSE (the pages just before this one — for continuity of voice and facts ONLY; do not continue or finish its last sentence, and don't repeat it):\n"""\n${precedingProse}\n"""`);
-  if (pageObjective?.trim()) parts.push(`\nThis paragraph sits on a page whose objective is: ${pageObjective.trim()}`);
-  if (precedingText?.trim()) parts.push(`\nThe prose immediately before this paragraph (continue naturally):\n"""\n${precedingText.trim()}\n"""`);
-  parts.push(
-    level === "paragraph"
-      ? `\nWrite ONE paragraph that achieves this objective:\n${objective.trim()}`
-      : `\nWrite the prose for a page that achieves this objective (multiple paragraphs as needed):\n${objective.trim()}`
-  );
+  if (mode === "revise") {
+    if (precedingProse) parts.push(`\nPRECEDING PROSE (the page(s) just before this one — for continuity of voice and facts ONLY):\n"""\n${precedingProse}\n"""`);
+    if (objective?.trim()) parts.push(`\nThis page is meant to achieve: ${objective.trim()}`);
+    parts.push(`\nCURRENT PAGE PROSE (revise this in place):\n"""\n${currentText}\n"""`);
+    parts.push(`\nTHE EDITOR'S NOTES TO ADDRESS ON THIS PAGE:\n${formatIssues(issues)}`);
+    parts.push(`\nRevise the page to address every note above while preserving its strengths, the book's voice, and continuity with the rest of the book. Return the full revised page prose only.`);
+  } else {
+    if (precedingProse) parts.push(`\nPRECEDING PROSE (the pages just before this one — for continuity of voice and facts ONLY; do not continue or finish its last sentence, and don't repeat it):\n"""\n${precedingProse}\n"""`);
+    if (pageObjective?.trim()) parts.push(`\nThis paragraph sits on a page whose objective is: ${pageObjective.trim()}`);
+    if (precedingText?.trim()) parts.push(`\nThe prose immediately before this paragraph (continue naturally):\n"""\n${precedingText.trim()}\n"""`);
+    parts.push(
+      level === "paragraph"
+        ? `\nWrite ONE paragraph that achieves this objective:\n${objective.trim()}`
+        : `\nWrite the prose for a page that achieves this objective (multiple paragraphs as needed):\n${objective.trim()}`
+    );
+  }
 
   const out = await runClaude(parts.join("\n"), true);
   if (out.error) return out;
@@ -347,6 +528,17 @@ async function runUnit(body) {
 const server = createServer(async (req, res) => {
   if (req.method === "OPTIONS") return res.writeHead(204, cors).end();
 
+  try {
+    return await route(req, res);
+  } catch (e) {
+    // A thrown handler (e.g. Supabase fetch error) must not take down the server —
+    // the clients retry per request and expect the bridge to stay up.
+    console.error("bridge request failed:", e?.message ?? e);
+    if (!res.headersSent) return json(res, 500, { error: String(e?.message ?? e) });
+  }
+});
+
+async function route(req, res) {
   const url = req.url ?? "";
 
   const evalMatch = url.match(/^\/eval\/(\d+)\/?$/);
@@ -386,6 +578,17 @@ const server = createServer(async (req, res) => {
     return json(res, 200, out);
   }
 
+  const replanMatch = url.match(/^\/replan\/(\d+)\/?$/);
+  if (replanMatch) {
+    if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
+    const bookId = Number(replanMatch[1]);
+    const body = await readBody(req);
+    console.log(`Replanning book ${bookId} from evaluation…`);
+    const out = await runReplan(bookId, body.evaluation);
+    if (out.error) return json(res, 500, { error: out.error });
+    return json(res, 200, out);
+  }
+
   if (url === "/unit" || url === "/unit/") {
     if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
     const body = await readBody(req);
@@ -396,9 +599,9 @@ const server = createServer(async (req, res) => {
   }
 
   return json(res, 404, { error: "use /eval/:bookId, /scaffold/:bookId, /bible/:bookId, or POST /unit" });
-});
+}
 
 server.listen(PORT, () => {
   console.log(`eval-bridge listening on http://localhost:${PORT}  (repo: ${repoRoot})`);
-  console.log(`  GET/POST /eval/:bookId   POST /scaffold/:bookId   POST /unit`);
+  console.log(`  GET/POST /eval/:bookId   POST /scaffold/:bookId   POST /bible/:bookId   POST /replan/:bookId   POST /unit`);
 });

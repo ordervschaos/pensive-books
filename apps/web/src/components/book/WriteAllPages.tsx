@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { proseToParagraphs } from "@/lib/inlineMarkdown";
+import { buildDoc } from "@/lib/inlineMarkdown";
 
 const BRIDGE = import.meta.env.VITE_EVAL_BRIDGE_URL as string | undefined;
 
@@ -38,17 +38,6 @@ function bodyText(content: unknown): string {
       ? String(n.text ?? "")
       : ((n.content as Array<Record<string, unknown>>) ?? []).map(walk).join("");
   return nodes.map(walk).join("").trim();
-}
-
-// Build a page doc: title heading (the Title extension requires a leading h1) + paragraphs.
-// Paragraphs carry inline marks so *italic* / **bold** render rather than literal asterisks.
-function buildDoc(title: string | null, prose: string) {
-  const heading = {
-    type: "heading",
-    attrs: { level: 1 },
-    content: title ? [{ type: "text", text: title }] : [],
-  };
-  return { type: "doc", content: [heading, ...proseToParagraphs(prose)] };
 }
 
 /**
