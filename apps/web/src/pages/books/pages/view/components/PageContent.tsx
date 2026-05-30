@@ -11,6 +11,8 @@ import { EditorJSON, PageSaveHandler } from "@/types/editor";
 import { usePageDisplaySettings, FontFamily } from "@/contexts/PageDisplaySettingsContext";
 import { cn } from "@/lib/utils";
 import { proseToParagraphs } from "@/lib/inlineMarkdown";
+import { jsonToText } from "@/utils/tiptapHelpers";
+import { RevisePageWithAI } from "@/components/book/RevisePageWithAI";
 import { supabase } from "@/integrations/supabase/client";
 
 const BRIDGE = import.meta.env.VITE_EVAL_BRIDGE_URL as string | undefined;
@@ -198,8 +200,36 @@ export const PageContent = ({
     }
   }, [objectiveDraft, bookId, pageId, generatingPage, toast]);
 
+  // Current page prose as plain text (paragraph-separated, title excluded) — the "before"
+  // side of the revise diff.
+  const currentText = useMemo(() => {
+    const blocks = (currentContent?.content ?? []) as EditorJSON[];
+    return blocks
+      .filter((n) => n.type !== "heading")
+      .map((n) => jsonToText(n))
+      .join("\n\n")
+      .trim();
+  }, [currentContent]);
+
+  // Apply an AI revision to the live editor: keep the existing title heading, replace the
+  // body with the revised prose. Manipulates the editor instance directly (like
+  // handleGeneratePage) so it shows immediately whether or not we're in edit mode, then
+  // persists via the normal save path.
+  const handleApplyRevision = useCallback((prose: string) => {
+    const blocks = (currentContent?.content ?? []) as EditorJSON[];
+    const heading = blocks.find((n) => n.type === "heading");
+    const doc = {
+      type: "doc",
+      content: [...(heading ? [heading] : []), ...proseToParagraphs(prose)],
+    } as unknown as EditorJSON;
+    editorRef.current?.commands.setContent(doc as Parameters<Editor["commands"]["setContent"]>[0]);
+    setCurrentContent(doc);
+    setInitialLoad(false);
+    onSave(doc);
+  }, [currentContent, onSave]);
+
   // Always use the current content - don't maintain separate state for display
-  
+
 
   // Audio state management
   const audioState = useAdaptiveTextToSpeech({
@@ -366,6 +396,18 @@ export const PageContent = ({
                 audioState={audioState}
               />
             </div>
+
+            {/* Page-level AI revision (author-only, text pages): act on the editor's
+                page-anchored notes, preview the diff, then apply. */}
+            {canEdit && pageType !== "section" && bookId && pageId && (
+              <RevisePageWithAI
+                bookId={Number(bookId)}
+                pageId={Number(pageId)}
+                pageObjective={objective ?? null}
+                currentText={currentText}
+                onApply={handleApplyRevision}
+              />
+            )}
           </div>
         </div>
       </div>
