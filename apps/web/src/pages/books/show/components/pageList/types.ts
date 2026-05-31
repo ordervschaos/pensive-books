@@ -7,6 +7,7 @@ export interface Page {
   title: string;
   content?: EditorJSON | null;
   page_type: 'text' | 'section';
+  metadata?: { objective?: string } | null;
 }
 
 export interface PagesListProps {
@@ -27,6 +28,8 @@ export interface PageItemProps {
   onDelete?: (pageId: number) => void;
   isBookmarked?: boolean;
   sectionNumber?: number;
+  /** For section rows: aggregate of the text pages that fall under this chapter. */
+  sectionMeta?: { pages: number; words: number };
 }
 
 export const LOCALSTORAGE_BOOKMARKS_KEY = 'bookmarked_pages'; 

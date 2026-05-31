@@ -5,14 +5,8 @@ import { useToast } from "@/hooks/use-toast";
 import { BookInfo } from "@/components/book/BookInfo";
 import { PagesList } from "./components/PagesList";
 import { useBookPermissions } from "@/hooks/use-book-permissions";
-import { useUserBookPreferences } from "@/hooks/use-user-book-preferences";
 import { BookActionsBar } from "./components/BookActionsBar";
 import { BookChatPanel } from "./components/BookChatPanel";
-import { IntegratedFlashcardSection } from "@/components/flashcard/IntegratedFlashcardSection";
-import { FlashcardEditor } from "@/components/flashcard/FlashcardEditor";
-import { GenerateFlashcardsDialog } from "@/components/flashcard/GenerateFlashcardsDialog";
-import { FlashcardModal } from "@/components/flashcard/FlashcardModal";
-import { useFlashcards } from "@/hooks/use-flashcards";
 import { setPageTitle } from "@/utils/pageTitle";
 import { Helmet } from "react-helmet-async";
 import { executeBookOperation } from "@/lib/book-operations";
@@ -28,6 +22,9 @@ import { Brief } from "@/lib/brief";
 import { BookBriefSummary } from "@/components/book/BookBriefSummary";
 import { BookEvaluationSection } from "@/components/book/BookEvaluationSection";
 import { ReviseWithAI, type RevisionPrefill } from "@/components/book/ReviseWithAI";
+import { BuildWithAI } from "@/components/book/BuildWithAI";
+import { computeCompletion } from "@/lib/brief";
+import { cn } from "@/lib/utils";
 import { useAdmin } from "@/hooks/use-admin";
 import { useMatureContent } from "@/hooks/use-mature-content";
 import { MessageSquare } from "lucide-react";
@@ -48,6 +45,7 @@ interface BookPage {
   updated_at?: string | null;
   content?: EditorJSON | null;
   page_type?: 'text' | 'section';
+  metadata?: { objective?: string } | null;
 }
 
 interface BookRecord {
@@ -61,12 +59,6 @@ interface BookRecord {
   published_at?: string | null;
   content_tags?: string[] | null;
   brief?: Brief | null;
-}
-
-interface FlashcardRecord {
-  id: number;
-  front?: string;
-  back?: string;
 }
 
 const BookDetails = () => {
@@ -93,9 +85,6 @@ const BookDetails = () => {
   const { enabled: matureEnabled, loading: matureLoading } = useMatureContent();
   const [matureUnlocked, setMatureUnlocked] = useState(false);
 
-  // Get user session for preferences
-  const [session, setSession] = useState<Session | null>(null);
-
   // Check beta flag
   const isBetaEnabled = localStorage.getItem('is_beta') === 'true';
 
@@ -107,35 +96,6 @@ const BookDetails = () => {
   
   // Extract numeric ID from slug
   const numericBookId = getNumericId(bookSlug);
-  
-  // User book preferences
-  const { 
-    preferences, 
-    loading: preferencesLoading, 
-    toggleFlashcards 
-  } = useUserBookPreferences({ 
-    bookId: getNumericId(bookSlug), 
-    userId: session?.user?.id || '' 
-  });
-
-  // Flashcard management
-  const {
-    flashcards,
-    loading: flashcardsLoading,
-    generating: flashcardsGenerating,
-    createFlashcard,
-    updateFlashcard,
-    deleteFlashcard,
-    generateFlashcards
-  } = useFlashcards(bookSlug);
-
-  // Flashcard UI state
-  const [isEditorOpen, setIsEditorOpen] = useState(false);
-  const [isGenerateDialogOpen, setIsGenerateDialogOpen] = useState(false);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [viewingFlashcard, setViewingFlashcard] = useState<FlashcardRecord | null>(null);
-  const [currentFlashcardIndex, setCurrentFlashcardIndex] = useState(0);
-  const [editingFlashcard, setEditingFlashcard] = useState<FlashcardRecord | null>(null);
 
   // Revise-with-AI: a prefill handed over from the editor's-read report.
   const [revisionPrefill, setRevisionPrefill] = useState<RevisionPrefill | null>(null);
@@ -307,7 +267,6 @@ const BookDetails = () => {
   useEffect(() => {
     const checkAuthAndFetch = async () => {
       const { data: { session } } = await supabase.auth.getSession();
-      setSession(session);
       fetchBookmarkedPage(session);
       fetchBookDetails();
     };
@@ -469,98 +428,6 @@ const BookDetails = () => {
     }
   };
 
-  // Flashcard handlers
-  const handleCreateFlashcard = async (front: string, back: string) => {
-    try {
-      await createFlashcard({ front, back });
-      setIsEditorOpen(false);
-      toast({
-        title: "Flashcard created",
-        description: "Your flashcard has been added successfully"
-      });
-    } catch (error) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to create flashcard"
-      });
-    }
-  };
-
-  const handleUpdateFlashcard = async (id: number, front: string, back: string) => {
-    try {
-      await updateFlashcard(id, { front, back });
-      setIsEditorOpen(false);
-      setEditingFlashcard(null);
-      toast({
-        title: "Flashcard updated",
-        description: "Your flashcard has been updated successfully"
-      });
-    } catch (error) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to update flashcard"
-      });
-    }
-  };
-
-  const handleDeleteFlashcard = async (flashcard: FlashcardRecord) => {
-    try {
-      await deleteFlashcard(flashcard.id);
-      toast({
-        title: "Flashcard deleted",
-        description: "Your flashcard has been removed"
-      });
-    } catch (error) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to delete flashcard"
-      });
-    }
-  };
-
-  const handleGenerateFlashcards = async () => {
-    try {
-      await generateFlashcards();
-      setIsGenerateDialogOpen(false);
-      toast({
-        title: "Flashcards generated",
-        description: "New flashcards have been created from your book content"
-      });
-    } catch (error) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to generate flashcards"
-      });
-    }
-  };
-
-  const handleViewFlashcard = (flashcard: FlashcardRecord) => {
-    const index = flashcards.findIndex(f => f.id === flashcard.id);
-    setCurrentFlashcardIndex(index);
-    setViewingFlashcard(flashcard);
-    setIsModalOpen(true);
-  };
-
-  const handleEditFlashcard = (flashcard: FlashcardRecord) => {
-    setEditingFlashcard(flashcard);
-    setIsEditorOpen(true);
-  };
-
-  const handleStudyFlashcard = (flashcard: FlashcardRecord) => {
-    handleViewFlashcard(flashcard);
-  };
-
-  const handleNavigateFlashcard = (index: number) => {
-    if (index >= 0 && index < flashcards.length) {
-      setCurrentFlashcardIndex(index);
-      setViewingFlashcard(flashcards[index]);
-    }
-  };
-
   // Also covers the brief moment before a non-collaborator is redirected to the reader.
   if (loading || permissionsLoading || !hasAccess || !book) {
     return null;
@@ -592,6 +459,9 @@ const BookDetails = () => {
     0
   );
 
+  // The brief gates AI planning (objectives are drawn from it). Empty brief → 0 fields filled.
+  const briefSet = computeCompletion(book.brief ?? null) > 0;
+
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Helmet>
@@ -620,8 +490,8 @@ const BookDetails = () => {
       </Helmet>
       
       <div className="container mx-auto px-6 py-10 md:px-8">
-        <div className="max-w-5xl mx-auto space-y-8">
-          {/* Single Column Layout */}
+        <div className="max-w-[1200px] mx-auto space-y-8">
+          {/* Two-column workspace: manuscript leads, planning in a right rail */}
           <div className="space-y-8">
             {/* Book Header with Cover and Info */}
             <div className="relative">
@@ -667,61 +537,81 @@ const BookDetails = () => {
                 canEdit={canEdit}
                 lastUpdatedPageIndex={getLastUpdatedPageIndex()}
                 showWritingButton={shouldShowWritingButton()}
+                wordCount={manuscriptWordCount}
+                wordTarget={book.brief?.scope?.word_target ?? 0}
               />
 
-              {canEdit && (
-                <BookBriefSummary
-                  brief={book.brief ?? null}
-                  wordCount={manuscriptWordCount}
-                  onEdit={() => navigate(`/books/${bookSlug}/edit`)}
-                />
-              )}
-
-              {canEdit && (
-                <ReviseWithAI
-                  bookId={getNumericId(bookSlug)}
-                  prefill={revisionPrefill}
-                  onPrefillConsumed={() => setRevisionPrefill(null)}
-                  onApplied={() => fetchBookDetails()}
-                />
-              )}
-
-              {canEdit && (
-                <BookEvaluationSection
-                  bookId={getNumericId(bookSlug)}
-                  onRevise={(evaluation) => setRevisionPrefill({ evaluation })}
-                />
-              )}
             </div>
 
-            {/* Word Count & Version Control */}
-            <div className="flex flex-col gap-3 border-t border-border pt-6 sm:flex-row sm:items-baseline sm:justify-between">
-              <div className="pv-eyebrow">
-                The manuscript ·{" "}
-                <span className="pv-serif text-[13px] normal-case not-italic tracking-normal text-[hsl(var(--pv-text-muted))]">
-                  {manuscriptWordCount.toLocaleString()} words
-                </span>
+            {/* Work area — manuscript and planning scroll together */}
+            <div
+              className={cn(
+                "grid grid-cols-1 gap-8 lg:gap-12",
+                canEdit && "lg:grid-cols-[minmax(0,1fr)_360px]"
+              )}
+            >
+              {/* Manuscript — primary column */}
+              <div className="min-w-0 space-y-6">
+                <div className="flex flex-col gap-3 border-t border-border pt-6 sm:flex-row sm:items-baseline sm:justify-between">
+                  <div className="pv-eyebrow">
+                    The manuscript ·{" "}
+                    <span className="pv-serif text-[13px] normal-case not-italic tracking-normal text-[hsl(var(--pv-text-muted))]">
+                      {manuscriptWordCount.toLocaleString()} words
+                    </span>
+                  </div>
+
+                  {canEdit && (
+                    <VersionControlButton
+                      bookId={getNumericId(bookSlug)}
+                      bookSlug={bookSlug}
+                      onSaveVersion={() => setIsCommitDialogOpen(true)}
+                    />
+                  )}
+                </div>
+
+                <PagesList
+                  pages={pages as any}
+                  bookId={getNumericId(bookSlug)}
+                  isDeleteMode={isDeleteMode}
+                  canEdit={canEdit}
+                  onDeleteModeChange={(isDelete) => setIsDeleteMode(isDelete)}
+                  onChatToggle={() => setIsChatOpen(!isChatOpen)}
+                  hasActiveChat={isChatOpen}
+                />
+
+                {canEdit && (
+                  <BuildWithAI
+                    bookId={getNumericId(bookSlug)}
+                    briefSet={briefSet}
+                    pages={pages}
+                    onEditBrief={() => navigate(`/books/${bookSlug}/edit`)}
+                    onChanged={fetchBookDetails}
+                  />
+                )}
               </div>
 
+              {/* Planning rail — brief · editor's read · revise */}
               {canEdit && (
-                <VersionControlButton
-                  bookId={getNumericId(bookSlug)}
-                  bookSlug={bookSlug}
-                  onSaveVersion={() => setIsCommitDialogOpen(true)}
-                />
+                <aside>
+                  <BookBriefSummary
+                    brief={book.brief ?? null}
+                    onEdit={() => navigate(`/books/${bookSlug}/edit`)}
+                  />
+
+                  <BookEvaluationSection
+                    bookId={getNumericId(bookSlug)}
+                    onRevise={(evaluation) => setRevisionPrefill({ evaluation })}
+                  />
+
+                  <ReviseWithAI
+                    bookId={getNumericId(bookSlug)}
+                    prefill={revisionPrefill}
+                    onPrefillConsumed={() => setRevisionPrefill(null)}
+                    onApplied={() => fetchBookDetails()}
+                  />
+                </aside>
               )}
             </div>
-
-            {/* Pages List - Center Stage */}
-            <PagesList
-              pages={pages as any}
-              bookId={getNumericId(bookSlug)}
-              isDeleteMode={isDeleteMode}
-              canEdit={canEdit}
-              onDeleteModeChange={(isDelete) => setIsDeleteMode(isDelete)}
-              onChatToggle={() => setIsChatOpen(!isChatOpen)}
-              hasActiveChat={isChatOpen}
-            />
 
             {/* Admin content tagging */}
             {isAdmin && (
@@ -732,21 +622,6 @@ const BookDetails = () => {
               />
             )}
 
-            {/* Integrated Flashcard Section - Only visible in beta */}
-            {isBetaEnabled && (
-              <IntegratedFlashcardSection
-                flashcards={flashcards}
-                loading={flashcardsLoading}
-                onGenerate={() => setIsGenerateDialogOpen(true)}
-                onEdit={handleEditFlashcard}
-                onDelete={handleDeleteFlashcard}
-                onStudy={handleStudyFlashcard}
-                onView={handleViewFlashcard}
-                isEnabled={preferences?.flashcards_enabled ?? true}
-                onToggleEnabled={toggleFlashcards}
-                preferencesLoading={preferencesLoading}
-              />
-            )}
             {/* Archived pages — subtle link at the bottom, only for editors */}
             {canEdit && (
               <div className="mt-8 pb-2">
@@ -790,39 +665,6 @@ const BookDetails = () => {
             isOpen={isChatOpen}
             onClose={() => setIsChatOpen(false)}
             onApplyOperation={handleApplyOperation}
-          />
-
-          {/* Flashcard Dialogs */}
-          <FlashcardEditor
-            flashcard={editingFlashcard as any}
-            isOpen={isEditorOpen}
-            onClose={() => {
-              setIsEditorOpen(false);
-              setEditingFlashcard(null);
-            }}
-            onSave={(data) => editingFlashcard
-              ? handleUpdateFlashcard(editingFlashcard.id, data.front, data.back)
-              : handleCreateFlashcard(data.front, data.back)
-            }
-          />
-
-          <GenerateFlashcardsDialog
-            isOpen={isGenerateDialogOpen}
-            onClose={() => setIsGenerateDialogOpen(false)}
-            onGenerate={handleGenerateFlashcards}
-            generating={flashcardsGenerating}
-          />
-
-          <FlashcardModal
-            flashcard={viewingFlashcard as any}
-            flashcards={flashcards}
-            currentIndex={currentFlashcardIndex}
-            isOpen={isModalOpen}
-            onClose={() => {
-              setIsModalOpen(false);
-              setViewingFlashcard(null);
-            }}
-            onNavigate={handleNavigateFlashcard}
           />
 
           {/* Version Control Dialog */}

@@ -1,6 +1,35 @@
 import { supabase } from "@/integrations/supabase/client";
 import { Page, LOCALSTORAGE_BOOKMARKS_KEY } from "./types";
 import { toast } from "@/components/ui/use-toast";
+import { getWordCountFromContent } from "@/utils/tiptapHelpers";
+
+export type PageStatus = "written" | "objective" | "blank";
+
+// Body text excluding the leading title heading — so a page that's only a title still
+// reads as "not written" (mirrors WriteAllPages / BuildWithAI).
+function bodyText(content: unknown): string {
+  if (!content || typeof content !== "object")
+    return typeof content === "string" ? content : "";
+  const doc = content as { content?: Array<Record<string, unknown>> };
+  if (!Array.isArray(doc.content)) return "";
+  const nodes = doc.content[0]?.type === "heading" ? doc.content.slice(1) : doc.content;
+  const walk = (n: Record<string, unknown>): string =>
+    n.type === "text"
+      ? String(n.text ?? "")
+      : ((n.content as Array<Record<string, unknown>>) ?? []).map(walk).join("");
+  return nodes.map(walk).join("").trim();
+}
+
+/** The stage a text page is at: blank → objective set → written. */
+export const getPageStatus = (page: Page): PageStatus => {
+  if (bodyText(page.content)) return "written";
+  if (page.metadata?.objective) return "objective";
+  return "blank";
+};
+
+/** Word count shown for a page — only counts once there's real prose, else 0. */
+export const getPageWords = (page: Page): number =>
+  bodyText(page.content) ? getWordCountFromContent(page.content) : 0;
 
 export const fetchBookmarkedPage = async (bookId: number): Promise<number | null> => {
   try {

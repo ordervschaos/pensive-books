@@ -42,7 +42,7 @@ Deno.serve(async (req: Request) => {
     const { bookId } = await req.json().catch(() => ({}));
     if (!bookId) return json({ error: "bookId is required" }, 400);
 
-    // Book + access check (owner or accepted collaborator — mirrors generate-flashcards).
+    // Book + access check (owner or accepted collaborator).
     const { data: book, error: bookError } = await userClient
       .from("books")
       .select("id, name, subtitle, author, brief, owner_id")

@@ -9,7 +9,6 @@ import {
   MoreVertical,
   MessageSquare,
   X,
-  List,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -39,13 +38,13 @@ import {
 import { SortablePageItem } from "./SortablePageItem";
 import { RegularPageItem } from "./RegularPageItem";
 import { PageCard } from "./PageCard";
-import { BookOutlineView } from "./BookOutlineView";
 import { PagesListProps, Page } from "./types";
 import {
   fetchBookmarkedPage,
   handleDeletePage as deletePageUtil,
   createNewPage as createPageUtil,
-  reorderPages
+  reorderPages,
+  getPageWords
 } from "./pageUtils";
 
 export const PagesList = ({
@@ -64,13 +63,11 @@ export const PagesList = ({
     [...pages].sort((a, b) => a.page_index - b.page_index)
   );
   const [isReordering, setIsReordering] = useState(isReorderMode);
-  const [viewMode, setViewMode] = useState<'list' | 'grid' | 'outline'>(() => {
-    const savedViewMode = localStorage.getItem('book-view-mode') as 'list' | 'grid' | 'outline' | null;
-    return savedViewMode || 'grid';
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>(() => {
+    return localStorage.getItem('book-view-mode') === 'list' ? 'list' : 'grid';
   });
-  const [previousViewMode, setPreviousViewMode] = useState<'list' | 'grid' | 'outline'>(() => {
-    const savedViewMode = localStorage.getItem('book-view-mode') as 'list' | 'grid' | 'outline' | null;
-    return savedViewMode || 'grid';
+  const [previousViewMode, setPreviousViewMode] = useState<'list' | 'grid'>(() => {
+    return localStorage.getItem('book-view-mode') === 'list' ? 'list' : 'grid';
   });
   const [bookmarkedPageIndex, setBookmarkedPageIndex] = useState<number | null>(null);
   const bookmarkedPageRef = useRef<HTMLDivElement>(null);
@@ -121,6 +118,21 @@ export const PagesList = ({
     if (item.page_type === "section") {
       sectionCount += 1;
       sectionNumbers.set(item.id, sectionCount);
+    }
+  });
+
+  // Per-chapter aggregate (pages + words) for the section heading rows: each section
+  // owns the text pages that follow it until the next section.
+  const sectionMeta = new Map<number, { pages: number; words: number }>();
+  let currentSection: number | null = null;
+  items.forEach((item) => {
+    if (item.page_type === "section") {
+      currentSection = item.id;
+      sectionMeta.set(item.id, { pages: 0, words: 0 });
+    } else if (currentSection != null) {
+      const meta = sectionMeta.get(currentSection)!;
+      meta.pages += 1;
+      meta.words += getPageWords(item);
     }
   });
 
@@ -260,10 +272,9 @@ export const PagesList = ({
     }
   };
 
-  const viewOptions: { value: 'grid' | 'list' | 'outline'; label: string; Icon: typeof LayoutGrid }[] = [
+  const viewOptions: { value: 'grid' | 'list'; label: string; Icon: typeof LayoutGrid }[] = [
     { value: 'grid', label: 'Grid', Icon: LayoutGrid },
     { value: 'list', label: 'List', Icon: LayoutList },
-    { value: 'outline', label: 'Outline', Icon: List },
   ];
 
   return (
@@ -405,14 +416,7 @@ export const PagesList = ({
           </div>
         )}
 
-          {viewMode === 'outline' ? (
-            <BookOutlineView
-              pages={items}
-              bookId={bookId}
-              onNavigate={(pageId) => navigate(`/books/${bookId}/pages/${pageId}`)}
-            />
-          ) : (
-            <div className={`${viewMode === 'grid' ? 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 p-4' : ''}`}>
+          <div className={`${viewMode === 'grid' ? 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 p-4' : ''}`}>
               {isReordering ? (
                 <DndContext
                   sensors={sensors}
@@ -453,6 +457,7 @@ export const PagesList = ({
                         onDelete={canEdit ? handleDeletePage : undefined}
                         isBookmarked={bookmarkedPageIndex === page.page_index}
                         sectionNumber={sectionNumbers.get(page.id)}
+                        sectionMeta={sectionMeta.get(page.id)}
                         ref={bookmarkedPageIndex === page.page_index ? bookmarkedPageRef : undefined}
                       />
                     ) : (
@@ -476,7 +481,6 @@ export const PagesList = ({
                 </>
               )}
             </div>
-          )}
 
 
       {/* Floating Exit Mode Button */}
@@ -500,7 +504,7 @@ function AddPageRow({
   viewMode,
   onClick,
 }: {
-  viewMode: 'list' | 'grid' | 'outline';
+  viewMode: 'list' | 'grid';
   onClick: () => void;
 }) {
   if (viewMode === 'list') {

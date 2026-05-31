@@ -34,7 +34,6 @@ const BookDetails = lazy(() => import("@/pages/books/show/BookDetails"));
 const DraftChanges = lazy(() => import("@/pages/books/show/DraftChanges"));
 const VersionHistoryPage = lazy(() => import("@/pages/books/show/VersionHistoryPage"));
 const BookEdit = lazy(() => import("@/pages/books/edit/BookEdit"));
-const BookFlashcards = lazy(() => import("@/pages/books/flashcards/BookFlashcards"));
 const GenerateBook = lazy(() => import("@/pages/books/generate/GenerateBook"));
 
 // Nested resources under books
@@ -136,7 +135,6 @@ export default function App() {
                         <Route path="/books/:bookSlug/chat" element={<BookChatPage />} />
                         <Route path="/books/:bookSlug" element={<BookDetails />} />
                         <Route path="/books/:bookSlug/edit" element={<BookEdit />} />
-                        <Route path="/books/:bookSlug/flashcards" element={<BookFlashcards />} />
                         <Route path="/books/:bookSlug/pages/:pageSlug" element={<PageView />} />
                         <Route path="/books/generate" element={<GenerateBook />} />
                       </Route>

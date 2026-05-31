@@ -34,6 +34,9 @@ interface BookInfoProps {
   canEdit?: boolean;
   lastUpdatedPageIndex?: number;
   showWritingButton?: boolean;
+  /** Manuscript word count + target — when both are present, the hero shows a target meter. */
+  wordCount?: number;
+  wordTarget?: number;
 }
 
 export const BookInfo = ({
@@ -50,7 +53,9 @@ export const BookInfo = ({
   lastUpdated,
   canEdit = false,
   lastUpdatedPageIndex,
-  showWritingButton = false
+  showWritingButton = false,
+  wordCount,
+  wordTarget
 }: BookInfoProps) => {
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -411,6 +416,32 @@ export const BookInfo = ({
                 )}
               </div>
             </header>
+
+            {/* Word target — glanceable progress toward the brief's goal (author view) */}
+            {canEdit && wordTarget && wordTarget > 0 && (
+              <div className="mb-6 max-w-[600px]">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="pv-eyebrow">Word target</span>
+                  <span className="pv-mono text-[11px] uppercase tracking-[0.15em] text-[hsl(var(--pv-text-muted))]">
+                    {(wordCount ?? 0).toLocaleString()} / {wordTarget.toLocaleString()} ·{" "}
+                    {Math.round(((wordCount ?? 0) / wordTarget) * 100)}%
+                  </span>
+                </div>
+                <div
+                  className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-[hsl(var(--pv-border))]"
+                  role="progressbar"
+                  aria-valuenow={Math.min(100, Math.round(((wordCount ?? 0) / wordTarget) * 100))}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-label="Progress toward word target"
+                >
+                  <div
+                    className="h-full rounded-full bg-foreground transition-all"
+                    style={{ width: `${Math.min(100, Math.round(((wordCount ?? 0) / wordTarget) * 100))}%` }}
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Action Buttons */}
             <div className="mb-6 flex flex-wrap items-center gap-2.5">
