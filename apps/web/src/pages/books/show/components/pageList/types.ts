@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { EditorJSON } from "@/types/editor";
 
 export interface Page {
@@ -19,6 +20,10 @@ export interface PagesListProps {
   onDeleteModeChange?: (isDelete: boolean) => void;
   onChatToggle?: () => void;
   hasActiveChat?: boolean;
+  /** Manuscript word count shown in the section header (text pages only). */
+  wordCount?: number;
+  /** Save-version control rendered in the manuscript header (editors only). */
+  versionControl?: ReactNode;
 }
 
 export interface PageItemProps {
@@ -32,6 +37,8 @@ export interface PageItemProps {
   sectionMeta?: { pages: number; words: number };
   /** Contiguous 1-based position among text pages only (chapters/sections don't consume a number). */
   displayNumber?: number;
+  /** List view: render section headings flat (no chapter spacing) vs. the roomier Outline view. */
+  flat?: boolean;
 }
 
 export const LOCALSTORAGE_BOOKMARKS_KEY = 'bookmarked_pages'; 

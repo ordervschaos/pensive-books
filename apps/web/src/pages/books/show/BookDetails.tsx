@@ -606,34 +606,23 @@ const BookDetails = () => {
 
                 {/* Manuscript tab — writing & page management, full width */}
                 {activeTab === "manuscript" && (
-                  <div className="space-y-6">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-baseline sm:justify-between">
-                      <div className="pv-eyebrow">
-                        The manuscript ·{" "}
-                        <span className="pv-serif text-[13px] normal-case not-italic tracking-normal text-[hsl(var(--pv-text-muted))]">
-                          {pages.length} {pages.length === 1 ? "page" : "pages"} ·{" "}
-                          {manuscriptWordCount.toLocaleString()}{" "}
-                          {manuscriptWordCount === 1 ? "word" : "words"}
-                        </span>
-                      </div>
-
+                  <PagesList
+                    pages={pages as any}
+                    bookId={getNumericId(bookSlug)}
+                    isDeleteMode={isDeleteMode}
+                    canEdit={canEdit}
+                    onDeleteModeChange={(isDelete) => setIsDeleteMode(isDelete)}
+                    onChatToggle={() => setIsChatOpen(!isChatOpen)}
+                    hasActiveChat={isChatOpen}
+                    wordCount={manuscriptWordCount}
+                    versionControl={
                       <VersionControlButton
                         bookId={getNumericId(bookSlug)}
                         bookSlug={bookSlug}
                         onSaveVersion={() => setIsCommitDialogOpen(true)}
                       />
-                    </div>
-
-                    <PagesList
-                      pages={pages as any}
-                      bookId={getNumericId(bookSlug)}
-                      isDeleteMode={isDeleteMode}
-                      canEdit={canEdit}
-                      onDeleteModeChange={(isDelete) => setIsDeleteMode(isDelete)}
-                      onChatToggle={() => setIsChatOpen(!isChatOpen)}
-                      hasActiveChat={isChatOpen}
-                    />
-                  </div>
+                    }
+                  />
                 )}
 
                 {/* AI tools tab — build · editor's read · revise */}
@@ -665,16 +654,7 @@ const BookDetails = () => {
               </div>
             ) : (
               /* Read-only owner view — manuscript only (collaborators are redirected to the reader). */
-              <div className="space-y-6">
-                <div className="border-t border-border pt-6 pv-eyebrow">
-                  The manuscript ·{" "}
-                  <span className="pv-serif text-[13px] normal-case not-italic tracking-normal text-[hsl(var(--pv-text-muted))]">
-                    {pages.length} {pages.length === 1 ? "page" : "pages"} ·{" "}
-                    {manuscriptWordCount.toLocaleString()}{" "}
-                    {manuscriptWordCount === 1 ? "word" : "words"}
-                  </span>
-                </div>
-
+              <div className="border-t border-border pt-6">
                 <PagesList
                   pages={pages as any}
                   bookId={getNumericId(bookSlug)}
@@ -683,6 +663,7 @@ const BookDetails = () => {
                   onDeleteModeChange={(isDelete) => setIsDeleteMode(isDelete)}
                   onChatToggle={() => setIsChatOpen(!isChatOpen)}
                   hasActiveChat={isChatOpen}
+                  wordCount={manuscriptWordCount}
                 />
               </div>
             )}

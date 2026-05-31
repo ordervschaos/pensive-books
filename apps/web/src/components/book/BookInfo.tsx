@@ -406,8 +406,16 @@ export const BookInfo = ({
               )}
               <div className="pv-mono mt-5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] uppercase tracking-[0.15em] text-[hsl(var(--pv-text-muted))]">
                 <span>
-                  {currentPage + 1} of {totalPages} {totalPages === 1 ? "page" : "pages"}
+                  {totalPages} {totalPages === 1 ? "page" : "pages"}
                 </span>
+                {typeof wordCount === "number" && (
+                  <>
+                    <span className="inline-block h-[3px] w-[3px] rounded-full bg-[hsl(var(--pv-text-faint))]" />
+                    <span>
+                      {wordCount.toLocaleString()} {wordCount === 1 ? "word" : "words"}
+                    </span>
+                  </>
+                )}
                 {lastUpdatedLabel && (
                   <>
                     <span className="inline-block h-[3px] w-[3px] rounded-full bg-[hsl(var(--pv-text-faint))]" />
@@ -455,7 +463,7 @@ export const BookInfo = ({
                 >
                   <Pencil className="h-4 w-4 transition group-hover:translate-x-0.5" />
                   <span>Continue writing</span>
-                  <span className="pv-mono text-[11px] not-italic opacity-70">page {lastUpdatedPageIndex + 1}</span>
+                  <span className="pv-mono text-[10px] not-italic uppercase tracking-[0.14em] opacity-70">page {lastUpdatedPageIndex + 1}</span>
                 </Button>
               ) : onContinueReading ? (
                 <Button
@@ -467,7 +475,7 @@ export const BookInfo = ({
                 >
                   <Play className="h-4 w-4 fill-current transition group-hover:translate-x-0.5" />
                   <span>Continue reading</span>
-                  <span className="pv-mono text-[11px] not-italic opacity-70">page {currentPage + 1}</span>
+                  <span className="pv-mono text-[10px] not-italic uppercase tracking-[0.14em] opacity-70">page {currentPage + 1}</span>
                 </Button>
               ) : null}
               <DropdownMenu>

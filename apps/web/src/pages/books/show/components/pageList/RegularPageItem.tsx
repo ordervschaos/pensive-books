@@ -17,12 +17,15 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-export const RegularPageItem = forwardRef<HTMLDivElement, PageItemProps>(({ page, onNavigate, onDelete, isBookmarked, sectionNumber, sectionMeta, displayNumber }, ref) => {
+export const RegularPageItem = forwardRef<HTMLDivElement, PageItemProps>(({ page, onNavigate, onDelete, isBookmarked, sectionNumber, sectionMeta, displayNumber, flat }, ref) => {
   if (page.page_type === "section") {
     return (
       <div
         ref={ref}
-        className="flex items-baseline justify-between gap-4 px-3 pb-2 pt-7 first:pt-2"
+        className={cn(
+          "flex items-baseline justify-between gap-4 border-b border-[hsl(var(--pv-border-soft))] px-3 pb-2",
+          flat ? "pt-4 first:pt-1" : "pt-7 first:pt-2"
+        )}
       >
         <button
           type="button"
@@ -74,7 +77,7 @@ export const RegularPageItem = forwardRef<HTMLDivElement, PageItemProps>(({ page
         />
         <h3
           className={cn(
-            "min-w-0 flex-1 truncate pv-serif text-[16px] text-foreground",
+            "min-w-0 flex-1 truncate pv-serif text-[18px] text-foreground",
             status === "blank" && "italic text-[hsl(var(--pv-text-muted))]"
           )}
         >
