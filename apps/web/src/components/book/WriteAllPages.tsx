@@ -1,7 +1,6 @@
 import { useState } from "react";
-import { Sparkles, Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { Sparkles } from "lucide-react";
+import { AIActionRow } from "./AIActionRow";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { buildDoc } from "@/lib/inlineMarkdown";
@@ -18,6 +17,8 @@ const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
 interface WriteAllPagesProps {
   bookId: number;
+  /** Number of pages ready to write (objective set, no prose) — folded into the row title. */
+  plannedCount?: number;
 }
 
 interface PageRow {
@@ -46,7 +47,7 @@ function bodyText(content: unknown): string {
  * skipped. Runs client-side (one generate-unit call per page) so it shows progress and
  * never hits an edge-function timeout.
  */
-export function WriteAllPages({ bookId }: WriteAllPagesProps) {
+export function WriteAllPages({ bookId, plannedCount }: WriteAllPagesProps) {
   const { toast } = useToast();
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number; retrying?: number } | null>(null);
@@ -139,25 +140,23 @@ export function WriteAllPages({ bookId }: WriteAllPagesProps) {
     }
   };
 
+  const title = progress
+    ? progress.retrying
+      ? `Retrying ${progress.done + 1}/${progress.total}…`
+      : `Writing ${progress.done}/${progress.total}…`
+    : running
+      ? "Working…"
+      : plannedCount && plannedCount > 0
+        ? `Write ${plannedCount} planned page${plannedCount === 1 ? "" : "s"}`
+        : "Write all pages from objectives";
+
   return (
-    <Card className="p-6">
-      <div className="flex items-center justify-between gap-4">
-        <div className="space-y-1">
-          <h3 className="text-base font-medium">Write all pages from objectives</h3>
-          <p className="text-sm text-muted-foreground">
-            Render prose for every empty page that has an objective. Pages you've already written are
-            left untouched.
-          </p>
-        </div>
-        <Button onClick={run} disabled={running} variant="outline" className="flex-none">
-          {running ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
-          {progress
-            ? progress.retrying
-              ? `Retrying ${progress.done + 1}/${progress.total}…`
-              : `Writing ${progress.done}/${progress.total}…`
-            : running ? "Working…" : "Write all pages"}
-        </Button>
-      </div>
-    </Card>
+    <AIActionRow
+      icon={<Sparkles className="h-4 w-4" />}
+      title={title}
+      description="Render prose from each objective — pages you've already written are left untouched."
+      onClick={run}
+      loading={running}
+    />
   );
 }

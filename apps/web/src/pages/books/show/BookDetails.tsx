@@ -625,7 +625,7 @@ const BookDetails = () => {
                   />
                 )}
 
-                {/* AI tools tab — build · editor's read · revise */}
+                {/* AI tools tab — Build full-width on top; editor's read + revise paired below */}
                 {activeTab === "ai" && (
                   <div className="space-y-6">
                     <BuildWithAI
@@ -634,21 +634,24 @@ const BookDetails = () => {
                       pages={pages}
                       onEditBrief={() => navigate(`/books/${bookSlug}/edit`)}
                       onChanged={fetchBookDetails}
+                      onReviseStructure={() => setRevisionPrefill({ instruction: "" })}
                     />
 
-                    <BookEvaluationSection
-                      bookId={getNumericId(bookSlug)}
-                      onRevise={(evaluation, instruction) =>
-                        setRevisionPrefill({ evaluation, instruction })
-                      }
-                    />
+                    <div className="grid items-start gap-6 lg:grid-cols-2">
+                      <BookEvaluationSection
+                        bookId={getNumericId(bookSlug)}
+                        onRevise={(evaluation, instruction) =>
+                          setRevisionPrefill({ evaluation, instruction })
+                        }
+                      />
 
-                    <ReviseWithAI
-                      bookId={getNumericId(bookSlug)}
-                      prefill={revisionPrefill}
-                      onPrefillConsumed={() => setRevisionPrefill(null)}
-                      onApplied={() => fetchBookDetails()}
-                    />
+                      <ReviseWithAI
+                        bookId={getNumericId(bookSlug)}
+                        prefill={revisionPrefill}
+                        onPrefillConsumed={() => setRevisionPrefill(null)}
+                        onApplied={() => fetchBookDetails()}
+                      />
+                    </div>
                   </div>
                 )}
               </div>

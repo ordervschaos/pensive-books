@@ -544,7 +544,7 @@ export function ReviseWithAI({
   const changeCount = counts ? counts.revise + counts.retarget + counts.add + (row?.plan?.deletes.length ?? 0) : 0;
 
   return (
-    <section ref={rootRef} className="mt-8 border-t border-border pt-6">
+    <section ref={rootRef} className="rounded-2xl border border-border bg-[hsl(var(--pv-surface-2))]/40 p-5">
       <div className="flex items-baseline justify-between gap-3">
         <div className="pv-eyebrow">
           Revise with AI ·{" "}

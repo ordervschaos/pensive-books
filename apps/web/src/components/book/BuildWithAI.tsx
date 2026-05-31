@@ -1,6 +1,7 @@
-import { Lock, Check } from "lucide-react";
+import { Lock, Check, Wand2 } from "lucide-react";
 import { ScaffoldGenerator } from "./ScaffoldGenerator";
 import { WriteAllPages } from "./WriteAllPages";
+import { AIActionRow } from "./AIActionRow";
 import type { EditorJSON } from "@/types/editor";
 
 interface BuildPage {
@@ -18,6 +19,12 @@ interface BuildWithAIProps {
   onEditBrief: () => void;
   /** Called after scaffold creates pages, so the host can refresh. */
   onChanged: () => void;
+  /**
+   * Route a structural change into "Revise with AI". Once a book has prose, scaffolding
+   * (append-only) no longer fits — restructuring is a diff against existing pages, which is
+   * exactly what the revise architect plans (add / cut / merge / retarget, reviewed first).
+   */
+  onReviseStructure: () => void;
 }
 
 // Body text excluding the leading title heading — mirrors WriteAllPages, so "written"
@@ -44,7 +51,7 @@ const SEGMENTS = [
   { key: "written", label: "written", sub: "has prose", color: "hsl(var(--pv-accent))" },
 ] as const;
 
-export function BuildWithAI({ bookId, briefSet, pages, onEditBrief, onChanged }: BuildWithAIProps) {
+export function BuildWithAI({ bookId, briefSet, pages, onEditBrief, onChanged, onReviseStructure }: BuildWithAIProps) {
   const counts = { blank: 0, objective: 0, written: 0 };
   for (const p of pages) {
     if (p.page_type === "section") continue;
@@ -52,6 +59,14 @@ export function BuildWithAI({ bookId, briefSet, pages, onEditBrief, onChanged }:
     else if (p.metadata?.objective) counts.objective += 1;
     else counts.blank += 1;
   }
+
+  // The book's regime decides which moves are offered:
+  //  - hasWritten → renovation: structural change goes through the revise architect (a diff
+  //    against existing pages); the append-only scaffold is retired.
+  //  - !hasWritten → construction: scaffold the objective tree from the brief.
+  // Write-all bridges them: it renders prose for any page that already has an objective.
+  const hasWritten = counts.written > 0;
+  const hasObjectives = counts.objective > 0;
 
   return (
     <section className="mt-8 overflow-hidden rounded-2xl border border-border bg-[hsl(var(--pv-surface-2))]/40">
@@ -119,12 +134,26 @@ export function BuildWithAI({ bookId, briefSet, pages, onEditBrief, onChanged }:
         </p>
         <div className="mt-3 space-y-3">
           {briefSet ? (
-            <ScaffoldGenerator bookId={bookId} onCreated={onChanged} />
+            <>
+              {/* Renovation first: once there's prose, structural change is a reviewed diff. */}
+              {hasWritten && (
+                <AIActionRow
+                  icon={<Wand2 className="h-4 w-4" />}
+                  title="Revise the structure"
+                  description="Add, cut, merge or reorder chapters — the AI proposes a plan you review first."
+                  onClick={onReviseStructure}
+                />
+              )}
+              {/* Bridge: render prose for any page that already has an objective. */}
+              {hasObjectives && <WriteAllPages bookId={bookId} plannedCount={counts.objective} />}
+              {/* Construction: scaffold from the brief — only while nothing is written yet. */}
+              {!hasWritten && <ScaffoldGenerator bookId={bookId} onCreated={onChanged} />}
+            </>
           ) : (
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-border bg-transparent p-5">
               <div className="space-y-1">
                 <div className="pv-serif flex items-center gap-2 text-[15px] text-[hsl(var(--pv-text-muted))]">
-                  <Lock className="h-4 w-4" /> Plan blank pages
+                  <Lock className="h-4 w-4" /> Plan from your brief
                 </div>
                 <p className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))]">
                   Set your brief first — objectives are drawn from it.
@@ -139,11 +168,12 @@ export function BuildWithAI({ bookId, briefSet, pages, onEditBrief, onChanged }:
               </button>
             </div>
           )}
-          <WriteAllPages bookId={bookId} />
         </div>
-        <p className="pv-serif mt-4 text-[13px] italic text-[hsl(var(--pv-text-faint))]">
-          Blank pages are skipped by “Write” until they have an objective.
-        </p>
+        {briefSet && hasObjectives && (
+          <p className="pv-serif mt-4 text-[13px] italic text-[hsl(var(--pv-text-faint))]">
+            Blank pages are skipped by “Write” until they have an objective.
+          </p>
+        )}
       </div>
     </section>
   );

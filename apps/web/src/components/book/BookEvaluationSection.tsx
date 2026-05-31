@@ -192,7 +192,7 @@ export function BookEvaluationSection({ bookId, onRevise }: { bookId: number; on
   };
 
   return (
-    <div className="mt-8 border-t border-border pt-6">
+    <div className="rounded-2xl border border-border bg-[hsl(var(--pv-surface-2))]/40 p-5">
       <div className="flex items-baseline justify-between gap-3">
         <div className="pv-eyebrow">
           The editor's read ·{" "}
@@ -253,6 +253,20 @@ function Report({ bookId, result, onRevise }: { bookId: number; result: EvalResu
         <p className="pv-serif text-[15.5px] leading-relaxed text-foreground">{verdict.letter}</p>
       </div>
 
+      {/* The single "do it all" button — hand the whole evaluation to the revise architect,
+          which plans a revision across every note. Per-note "Revise this" stays below for
+          when the author wants to address one thing at a time. */}
+      {onRevise && (
+        <button
+          type="button"
+          onClick={() => onRevise(result)}
+          className="pv-mono group inline-flex items-center gap-1.5 rounded-full bg-[hsl(var(--pv-accent))] px-3.5 py-2 text-[10.5px] uppercase tracking-[0.12em] text-background transition-opacity hover:opacity-90"
+        >
+          Address all the editor's notes{" "}
+          <span className="transition-transform group-hover:translate-x-0.5">→</span>
+        </button>
+      )}
+
       {verdict.genre_contract && (
         <dl className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-[120px_1fr]">
           <dt className="pv-eyebrow pt-[2px]">Genre</dt>
@@ -289,17 +303,6 @@ function Report({ bookId, result, onRevise }: { bookId: number; result: EvalResu
             ))}
           </div>
         </div>
-      )}
-
-      {/* Fallback when there are no enumerated priorities but we can still hand off the notes. */}
-      {onRevise && !verdict.priorities?.length && (
-        <button
-          type="button"
-          onClick={() => onRevise(result)}
-          className="pv-serif text-[14px] italic text-[hsl(var(--pv-text-muted))] transition-colors hover:text-foreground"
-        >
-          Revise with AI →
-        </button>
       )}
 
       {/* Section cards */}

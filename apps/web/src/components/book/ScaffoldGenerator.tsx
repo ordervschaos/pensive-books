@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Sparkles, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { AIActionRow } from "./AIActionRow";
 import {
   Dialog,
   DialogContent,
@@ -109,21 +109,13 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
 
   return (
     <>
-      <Card className="p-6">
-        <div className="flex items-center justify-between gap-4">
-          <div className="space-y-1">
-            <h3 className="text-base font-medium">Generate scaffold from brief</h3>
-            <p className="text-sm text-muted-foreground">
-              Let AI propose the book's chapters and pages as objectives (no prose). You review the
-              plan, then create the pages — each with its objective set, ready to write.
-            </p>
-          </div>
-          <Button onClick={generate} disabled={generating} variant="outline" className="flex-none">
-            {generating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
-            {generating ? "Designing…" : "Generate scaffold"}
-          </Button>
-        </div>
-      </Card>
+      <AIActionRow
+        icon={<Sparkles className="h-4 w-4" />}
+        title={generating ? "Designing…" : "Generate scaffold from brief"}
+        description="Propose the book's chapters and pages as objectives (no prose) — review, then create."
+        onClick={generate}
+        loading={generating}
+      />
 
       <Dialog open={open} onOpenChange={(v) => !creating && setOpen(v)}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
