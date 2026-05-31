@@ -105,7 +105,7 @@ export function VersionControlButton({
   return (
     <div
       className={cn(
-        "inline-flex items-stretch overflow-hidden rounded-full bg-transparent",
+        "inline-flex w-fit items-stretch overflow-hidden rounded-full bg-transparent",
         hasChanges ? "" : "border border-border",
       )}
     >

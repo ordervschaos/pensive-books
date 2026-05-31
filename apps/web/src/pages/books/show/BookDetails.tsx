@@ -23,6 +23,7 @@ import { BookBriefSummary } from "@/components/book/BookBriefSummary";
 import { BookEvaluationSection } from "@/components/book/BookEvaluationSection";
 import { ReviseWithAI, type RevisionPrefill } from "@/components/book/ReviseWithAI";
 import { BuildWithAI } from "@/components/book/BuildWithAI";
+import { getPageStatus } from "./components/pageList/pageUtils";
 import { computeCompletion } from "@/lib/brief";
 import { cn } from "@/lib/utils";
 import { useAdmin } from "@/hooks/use-admin";
@@ -104,6 +105,8 @@ const BookDetails = () => {
   const [isCommitDialogOpen, setIsCommitDialogOpen] = useState(false);
   const [isPublishingDialogOpen, setIsPublishingDialogOpen] = useState(false);
   const [showArchivedPages, setShowArchivedPages] = useState(false);
+  // Manuscript leads; all AI tools live behind their own tab (brief stays common above).
+  const [activeTab, setActiveTab] = useState<"manuscript" | "ai">("manuscript");
 
   const fetchBookmarkedPage = useCallback(async (session: Session | null) => {
     try {
@@ -462,6 +465,9 @@ const BookDetails = () => {
   // The brief gates AI planning (objectives are drawn from it). Empty brief → 0 fields filled.
   const briefSet = computeCompletion(book.brief ?? null) > 0;
 
+  // Pages with an objective but no prose yet are "ready to write" — surfaced as a dot on the AI tab.
+  const plannedCount = pages.filter((p) => getPageStatus(p as any) === "objective").length;
+
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Helmet>
@@ -543,32 +549,130 @@ const BookDetails = () => {
 
             </div>
 
-            {/* Work area — manuscript and planning scroll together */}
-            <div
-              className={cn(
-                "grid grid-cols-1 gap-8 lg:gap-12",
-                canEdit && "lg:grid-cols-[minmax(0,1fr)_360px]"
-              )}
-            >
-              {/* Manuscript — primary column */}
-              <div className="min-w-0 space-y-6">
-                <div className="flex flex-col gap-3 border-t border-border pt-6 sm:flex-row sm:items-baseline sm:justify-between">
-                  <div className="pv-eyebrow">
-                    The manuscript ·{" "}
-                    <span className="pv-serif text-[13px] normal-case not-italic tracking-normal text-[hsl(var(--pv-text-muted))]">
-                      {pages.length} {pages.length === 1 ? "page" : "pages"} ·{" "}
-                      {manuscriptWordCount.toLocaleString()}{" "}
-                      {manuscriptWordCount === 1 ? "word" : "words"}
-                    </span>
-                  </div>
+            {/* Work area — the brief is common context above Manuscript / AI-tools tabs */}
+            {canEdit ? (
+              <div className="space-y-6">
+                {/* The brief — shared context every AI tool plans from */}
+                <BookBriefSummary
+                  brief={book.brief ?? null}
+                  onEdit={() => navigate(`/books/${bookSlug}/edit`)}
+                />
 
-                  {canEdit && (
-                    <VersionControlButton
+                {/* Tabs: Manuscript stays focused on writing; AI lives on its own tab */}
+                <div
+                  role="tablist"
+                  aria-label="Book workspace"
+                  className="flex flex-wrap gap-1 border-b border-[hsl(var(--pv-border-soft))]"
+                >
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={activeTab === "manuscript"}
+                    onClick={() => setActiveTab("manuscript")}
+                    className={cn(
+                      "pv-serif -mb-px inline-flex items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-[18px] transition-colors",
+                      activeTab === "manuscript"
+                        ? "border-foreground text-foreground"
+                        : "border-transparent text-[hsl(var(--pv-text-muted))] hover:text-foreground"
+                    )}
+                  >
+                    Manuscript
+                    <span className="pv-mono rounded-full bg-[hsl(var(--pv-surface-2))] px-2 py-0.5 text-[11px] tabular-nums text-[hsl(var(--pv-text-muted))]">
+                      {pages.length}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={activeTab === "ai"}
+                    onClick={() => setActiveTab("ai")}
+                    className={cn(
+                      "pv-serif -mb-px inline-flex items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-[18px] transition-colors",
+                      activeTab === "ai"
+                        ? "border-foreground text-foreground"
+                        : "border-transparent text-[hsl(var(--pv-text-muted))] hover:text-foreground"
+                    )}
+                  >
+                    AI tools
+                    {plannedCount > 0 && (
+                      <span
+                        className="h-[7px] w-[7px] rounded-full bg-[#5b6db8]"
+                        title={`${plannedCount} ${plannedCount === 1 ? "page" : "pages"} ready to write`}
+                        aria-label={`${plannedCount} pages ready to write`}
+                      />
+                    )}
+                  </button>
+                </div>
+
+                {/* Manuscript tab — writing & page management, full width */}
+                {activeTab === "manuscript" && (
+                  <div className="space-y-6">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-baseline sm:justify-between">
+                      <div className="pv-eyebrow">
+                        The manuscript ·{" "}
+                        <span className="pv-serif text-[13px] normal-case not-italic tracking-normal text-[hsl(var(--pv-text-muted))]">
+                          {pages.length} {pages.length === 1 ? "page" : "pages"} ·{" "}
+                          {manuscriptWordCount.toLocaleString()}{" "}
+                          {manuscriptWordCount === 1 ? "word" : "words"}
+                        </span>
+                      </div>
+
+                      <VersionControlButton
+                        bookId={getNumericId(bookSlug)}
+                        bookSlug={bookSlug}
+                        onSaveVersion={() => setIsCommitDialogOpen(true)}
+                      />
+                    </div>
+
+                    <PagesList
+                      pages={pages as any}
                       bookId={getNumericId(bookSlug)}
-                      bookSlug={bookSlug}
-                      onSaveVersion={() => setIsCommitDialogOpen(true)}
+                      isDeleteMode={isDeleteMode}
+                      canEdit={canEdit}
+                      onDeleteModeChange={(isDelete) => setIsDeleteMode(isDelete)}
+                      onChatToggle={() => setIsChatOpen(!isChatOpen)}
+                      hasActiveChat={isChatOpen}
                     />
-                  )}
+                  </div>
+                )}
+
+                {/* AI tools tab — build · editor's read · revise */}
+                {activeTab === "ai" && (
+                  <div className="space-y-6">
+                    <BuildWithAI
+                      bookId={getNumericId(bookSlug)}
+                      briefSet={briefSet}
+                      pages={pages}
+                      onEditBrief={() => navigate(`/books/${bookSlug}/edit`)}
+                      onChanged={fetchBookDetails}
+                    />
+
+                    <BookEvaluationSection
+                      bookId={getNumericId(bookSlug)}
+                      onRevise={(evaluation, instruction) =>
+                        setRevisionPrefill({ evaluation, instruction })
+                      }
+                    />
+
+                    <ReviseWithAI
+                      bookId={getNumericId(bookSlug)}
+                      prefill={revisionPrefill}
+                      onPrefillConsumed={() => setRevisionPrefill(null)}
+                      onApplied={() => fetchBookDetails()}
+                    />
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* Read-only owner view — manuscript only (collaborators are redirected to the reader). */
+              <div className="space-y-6">
+                <div className="border-t border-border pt-6 pv-eyebrow">
+                  The manuscript ·{" "}
+                  <span className="pv-serif text-[13px] normal-case not-italic tracking-normal text-[hsl(var(--pv-text-muted))]">
+                    {pages.length} {pages.length === 1 ? "page" : "pages"} ·{" "}
+                    {manuscriptWordCount.toLocaleString()}{" "}
+                    {manuscriptWordCount === 1 ? "word" : "words"}
+                  </span>
                 </div>
 
                 <PagesList
@@ -580,42 +684,8 @@ const BookDetails = () => {
                   onChatToggle={() => setIsChatOpen(!isChatOpen)}
                   hasActiveChat={isChatOpen}
                 />
-
-                {canEdit && (
-                  <BuildWithAI
-                    bookId={getNumericId(bookSlug)}
-                    briefSet={briefSet}
-                    pages={pages}
-                    onEditBrief={() => navigate(`/books/${bookSlug}/edit`)}
-                    onChanged={fetchBookDetails}
-                  />
-                )}
               </div>
-
-              {/* Planning rail — brief · editor's read · revise */}
-              {canEdit && (
-                <aside>
-                  <BookBriefSummary
-                    brief={book.brief ?? null}
-                    onEdit={() => navigate(`/books/${bookSlug}/edit`)}
-                  />
-
-                  <BookEvaluationSection
-                    bookId={getNumericId(bookSlug)}
-                    onRevise={(evaluation, instruction) =>
-                      setRevisionPrefill({ evaluation, instruction })
-                    }
-                  />
-
-                  <ReviseWithAI
-                    bookId={getNumericId(bookSlug)}
-                    prefill={revisionPrefill}
-                    onPrefillConsumed={() => setRevisionPrefill(null)}
-                    onApplied={() => fetchBookDetails()}
-                  />
-                </aside>
-              )}
-            </div>
+            )}
 
             {/* Admin content tagging */}
             {isAdmin && (
