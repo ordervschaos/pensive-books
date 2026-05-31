@@ -58,7 +58,7 @@ const SEV_TONE: Record<Severity, string> = {
   low: "text-[hsl(var(--pv-text-faint))]",
 };
 
-export function BookEvaluationSection({ bookId, onRevise }: { bookId: number; onRevise?: (result: EvalResult) => void }) {
+export function BookEvaluationSection({ bookId, onRevise }: { bookId: number; onRevise?: (result: EvalResult, instruction?: string) => void }) {
   const [state, setState] = useState<State>({ status: "checking" });
   const mounted = useRef(true);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -239,50 +239,67 @@ export function BookEvaluationSection({ bookId, onRevise }: { bookId: number; on
   );
 }
 
-function Report({ bookId, result, onRevise }: { bookId: number; result: EvalResult; onRevise?: (result: EvalResult) => void }) {
+function Report({ bookId, result, onRevise }: { bookId: number; result: EvalResult; onRevise?: (result: EvalResult, instruction?: string) => void }) {
   const { verdict, sections } = result;
   return (
     <div className="mt-5 space-y-6">
-      {/* Editorial letter */}
-      <p className="pv-serif text-[15.5px] leading-relaxed text-foreground">{verdict.letter}</p>
+      {/* Verdict — stance badge + the editorial letter, in a tinted box */}
+      <div className="flex gap-3 rounded-xl bg-[hsl(var(--pv-accent))]/[0.08] p-4">
+        {verdict.stance && (
+          <span className="pv-mono shrink-0 self-start rounded-full bg-[hsl(var(--pv-accent))] px-2.5 py-1 text-[9.5px] font-medium uppercase tracking-[0.14em] text-background">
+            {verdict.stance}
+          </span>
+        )}
+        <p className="pv-serif text-[15.5px] leading-relaxed text-foreground">{verdict.letter}</p>
+      </div>
 
-      <dl className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-[120px_1fr]">
-        <dt className="pv-eyebrow pt-[2px]">Genre</dt>
-        <dd className="pv-serif text-[15px] text-foreground">{verdict.genre_contract}</dd>
-        <dt className="pv-eyebrow pt-[2px]">Stance</dt>
-        <dd className="pv-serif text-[15px] text-foreground">{verdict.stance}</dd>
-      </dl>
+      {verdict.genre_contract && (
+        <dl className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-[120px_1fr]">
+          <dt className="pv-eyebrow pt-[2px]">Genre</dt>
+          <dd className="pv-serif text-[15px] text-foreground">{verdict.genre_contract}</dd>
+        </dl>
+      )}
 
+      {/* Top priorities — each note becomes a one-click revision (prefills "Revise with AI"). */}
       {verdict.priorities?.length > 0 && (
         <div>
-          <div className="pv-eyebrow">Fix these first</div>
-          <ol className="mt-2 list-decimal space-y-1 pl-5">
+          <div className="pv-eyebrow">
+            {onRevise ? "Top priorities · turn a note into a revision" : "Fix these first"}
+          </div>
+          <div className="mt-3 space-y-3.5">
             {verdict.priorities.map((p, i) => (
-              <li key={i} className="pv-serif text-[15px] leading-relaxed text-foreground">
-                {p}
-              </li>
+              <div key={i} className="flex gap-3">
+                <span className="pv-mono shrink-0 pt-0.5 text-[12px] tabular-nums text-[hsl(var(--pv-text-faint))]">
+                  {i + 1}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="pv-serif text-[15px] leading-snug text-foreground">{p}</p>
+                  {onRevise && (
+                    <button
+                      type="button"
+                      onClick={() => onRevise(result, p)}
+                      className="pv-mono group mt-1.5 inline-flex items-center gap-1 text-[10.5px] uppercase tracking-[0.1em] text-[hsl(var(--pv-accent))] transition-opacity hover:opacity-80"
+                    >
+                      Revise this{" "}
+                      <span className="transition-transform group-hover:translate-x-0.5">→</span>
+                    </button>
+                  )}
+                </div>
+              </div>
             ))}
-          </ol>
+          </div>
         </div>
       )}
 
-      {/* Act on the notes — hands them to the durable "Revise with AI" surface above. */}
-      {onRevise && (
-        <div className="rounded-xl border border-[hsl(var(--pv-border-soft))] px-4 py-3">
-          <div className="flex items-baseline justify-between gap-3">
-            <div className="pv-eyebrow">Act on these notes</div>
-            <button
-              type="button"
-              onClick={() => onRevise(result)}
-              className="pv-serif text-[14px] italic text-[hsl(var(--pv-text-muted))] transition-colors hover:text-foreground"
-            >
-              Revise with AI →
-            </button>
-          </div>
-          <p className="pv-serif mt-1.5 text-[13.5px] leading-relaxed text-[hsl(var(--pv-text-muted))]">
-            Hands the editor's notes to “Revise with AI” above — propose a plan, review what changes, then build. You can add your own instruction too.
-          </p>
-        </div>
+      {/* Fallback when there are no enumerated priorities but we can still hand off the notes. */}
+      {onRevise && !verdict.priorities?.length && (
+        <button
+          type="button"
+          onClick={() => onRevise(result)}
+          className="pv-serif text-[14px] italic text-[hsl(var(--pv-text-muted))] transition-colors hover:text-foreground"
+        >
+          Revise with AI →
+        </button>
       )}
 
       {/* Section cards */}

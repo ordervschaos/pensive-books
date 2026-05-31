@@ -556,7 +556,9 @@ const BookDetails = () => {
                   <div className="pv-eyebrow">
                     The manuscript ·{" "}
                     <span className="pv-serif text-[13px] normal-case not-italic tracking-normal text-[hsl(var(--pv-text-muted))]">
-                      {manuscriptWordCount.toLocaleString()} words
+                      {pages.length} {pages.length === 1 ? "page" : "pages"} ·{" "}
+                      {manuscriptWordCount.toLocaleString()}{" "}
+                      {manuscriptWordCount === 1 ? "word" : "words"}
                     </span>
                   </div>
 
@@ -600,7 +602,9 @@ const BookDetails = () => {
 
                   <BookEvaluationSection
                     bookId={getNumericId(bookSlug)}
-                    onRevise={(evaluation) => setRevisionPrefill({ evaluation })}
+                    onRevise={(evaluation, instruction) =>
+                      setRevisionPrefill({ evaluation, instruction })
+                    }
                   />
 
                   <ReviseWithAI

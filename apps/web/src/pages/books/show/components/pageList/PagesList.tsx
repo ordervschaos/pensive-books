@@ -122,17 +122,24 @@ export const PagesList = ({
   });
 
   // Per-chapter aggregate (pages + words) for the section heading rows: each section
-  // owns the text pages that follow it until the next section.
+  // owns the text pages that follow it until the next section. Also number the text
+  // pages contiguously (1..N) so chapter rows don't consume a page number.
   const sectionMeta = new Map<number, { pages: number; words: number }>();
+  const displayNumbers = new Map<number, number>();
   let currentSection: number | null = null;
+  let textPageNumber = 0;
   items.forEach((item) => {
     if (item.page_type === "section") {
       currentSection = item.id;
       sectionMeta.set(item.id, { pages: 0, words: 0 });
-    } else if (currentSection != null) {
-      const meta = sectionMeta.get(currentSection)!;
-      meta.pages += 1;
-      meta.words += getPageWords(item);
+    } else {
+      textPageNumber += 1;
+      displayNumbers.set(item.id, textPageNumber);
+      if (currentSection != null) {
+        const meta = sectionMeta.get(currentSection)!;
+        meta.pages += 1;
+        meta.words += getPageWords(item);
+      }
     }
   });
 
@@ -282,7 +289,10 @@ export const PagesList = ({
         <div className="border-b border-[hsl(var(--pv-border-soft))] px-5 py-4">
           <div className="flex flex-row items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2">
-              <nav className="flex flex-wrap items-center gap-1.5" aria-label="View mode">
+              <nav
+                className="inline-flex items-center gap-0.5 rounded-full bg-[hsl(var(--pv-surface-2))] p-[3px]"
+                aria-label="View mode"
+              >
                 {viewOptions.map(({ value, label, Icon }) => {
                   const isActive = viewMode === value;
                   return (
@@ -294,10 +304,10 @@ export const PagesList = ({
                       aria-pressed={isActive}
                       aria-label={`${label} view`}
                       className={cn(
-                        "pv-serif inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-[13px] transition-colors disabled:cursor-not-allowed disabled:opacity-40",
+                        "pv-serif inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[13px] transition-colors disabled:cursor-not-allowed disabled:opacity-40",
                         isActive
-                          ? "border-foreground bg-foreground text-background"
-                          : "border-border bg-transparent text-[hsl(var(--pv-text-muted))] hover:border-foreground/40 hover:text-foreground"
+                          ? "bg-foreground text-background"
+                          : "bg-transparent text-[hsl(var(--pv-text-muted))] hover:text-foreground"
                       )}
                     >
                       <Icon className="h-3.5 w-3.5" />
@@ -458,6 +468,7 @@ export const PagesList = ({
                         isBookmarked={bookmarkedPageIndex === page.page_index}
                         sectionNumber={sectionNumbers.get(page.id)}
                         sectionMeta={sectionMeta.get(page.id)}
+                        displayNumber={displayNumbers.get(page.id)}
                         ref={bookmarkedPageIndex === page.page_index ? bookmarkedPageRef : undefined}
                       />
                     ) : (

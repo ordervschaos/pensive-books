@@ -418,7 +418,7 @@ export const BookInfo = ({
             </header>
 
             {/* Word target — glanceable progress toward the brief's goal (author view) */}
-            {canEdit && wordTarget && wordTarget > 0 && (
+            {canEdit && (wordTarget ?? 0) > 0 && (
               <div className="mb-6 max-w-[600px]">
                 <div className="flex items-baseline justify-between gap-3">
                   <span className="pv-eyebrow">Word target</span>

@@ -3,7 +3,13 @@ import { Button } from "@/components/ui/button";
 import { PageItemProps } from "./types";
 import { forwardRef } from "react";
 import { cn } from "@/lib/utils";
-import { getPageStatus, getPageWords, type PageStatus } from "./pageUtils";
+import {
+  getPageStatus,
+  getPageWords,
+  STATUS_LABEL,
+  STATUS_PILL,
+  STATUS_DOT_COLOR,
+} from "./pageUtils";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,26 +17,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-const STATUS_LABEL: Record<PageStatus, string> = {
-  written: "written",
-  objective: "objective set",
-  blank: "blank",
-};
-
-// Status pill colors — sage for prose, indigo for a set objective, muted for blank.
-const STATUS_PILL: Record<PageStatus, string> = {
-  written: "bg-[hsl(var(--pv-accent))]/15 text-[hsl(var(--pv-accent))]",
-  objective: "bg-[#5b6db8]/15 text-[#4a5aa0]",
-  blank: "bg-[hsl(var(--pv-surface-2))] text-[hsl(var(--pv-text-faint))] ring-1 ring-inset ring-[hsl(var(--pv-border-soft))]",
-};
-
-const DOT_COLOR: Record<PageStatus, string> = {
-  written: "hsl(var(--pv-accent))",
-  objective: "#5b6db8",
-  blank: "transparent",
-};
-
-export const RegularPageItem = forwardRef<HTMLDivElement, PageItemProps>(({ page, onNavigate, onDelete, isBookmarked, sectionNumber, sectionMeta }, ref) => {
+export const RegularPageItem = forwardRef<HTMLDivElement, PageItemProps>(({ page, onNavigate, onDelete, isBookmarked, sectionNumber, sectionMeta, displayNumber }, ref) => {
   if (page.page_type === "section") {
     return (
       <div
@@ -75,14 +62,14 @@ export const RegularPageItem = forwardRef<HTMLDivElement, PageItemProps>(({ page
         <span
           className="pv-mono w-7 shrink-0 text-[11px] tabular-nums text-[hsl(var(--pv-text-faint))]"
         >
-          {String(page.page_index + 1).padStart(2, "0")}
+          {String(displayNumber ?? page.page_index + 1).padStart(2, "0")}
         </span>
         <span
           className={cn(
             "h-[9px] w-[9px] shrink-0 rounded-full",
             status === "blank" && "border-[1.5px] border-dashed border-[hsl(var(--pv-text-faint))]"
           )}
-          style={status === "blank" ? undefined : { background: DOT_COLOR[status] }}
+          style={status === "blank" ? undefined : { background: STATUS_DOT_COLOR[status] }}
           aria-hidden
         />
         <h3

@@ -30,6 +30,8 @@ export interface PageItemProps {
   sectionNumber?: number;
   /** For section rows: aggregate of the text pages that fall under this chapter. */
   sectionMeta?: { pages: number; words: number };
+  /** Contiguous 1-based position among text pages only (chapters/sections don't consume a number). */
+  displayNumber?: number;
 }
 
 export const LOCALSTORAGE_BOOKMARKS_KEY = 'bookmarked_pages'; 

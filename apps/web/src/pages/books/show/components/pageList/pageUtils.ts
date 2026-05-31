@@ -31,6 +31,25 @@ export const getPageStatus = (page: Page): PageStatus => {
 export const getPageWords = (page: Page): number =>
   bodyText(page.content) ? getWordCountFromContent(page.content) : 0;
 
+export const STATUS_LABEL: Record<PageStatus, string> = {
+  written: "written",
+  objective: "objective set",
+  blank: "blank",
+};
+
+// Status pill colors — sage for prose, indigo for a set objective, muted for blank.
+export const STATUS_PILL: Record<PageStatus, string> = {
+  written: "bg-[hsl(var(--pv-accent))]/15 text-[hsl(var(--pv-accent))]",
+  objective: "bg-[#5b6db8]/15 text-[#4a5aa0]",
+  blank: "bg-[hsl(var(--pv-surface-2))] text-[hsl(var(--pv-text-faint))] ring-1 ring-inset ring-[hsl(var(--pv-border-soft))]",
+};
+
+export const STATUS_DOT_COLOR: Record<PageStatus, string> = {
+  written: "hsl(var(--pv-accent))",
+  objective: "#5b6db8",
+  blank: "transparent",
+};
+
 export const fetchBookmarkedPage = async (bookId: number): Promise<number | null> => {
   try {
     const { data: { session } } = await supabase.auth.getSession();
