@@ -228,8 +228,12 @@ function countWords(text: string): number {
 
 // ── Claude call ──────────────────────────────────────────────────────────────
 async function callClaude(apiKey: string, book: BookRow, manuscript: string) {
+  // 120s hard cap: if Claude hangs or is slow the Supabase wall-clock limit would kill the
+  // worker silently (no catch, row stays pending forever). Aborting here gives the catch block
+  // enough time to write an "error" row and report to Sentry before the worker exits.
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
+    signal: AbortSignal.timeout(120_000),
     headers: {
       "x-api-key": apiKey,
       "anthropic-version": "2023-06-01",

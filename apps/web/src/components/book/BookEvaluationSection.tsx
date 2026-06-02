@@ -44,7 +44,7 @@ interface EvalRow {
 // A background eval (EdgeRuntime.waitUntil) that dies before writing done/error leaves its row
 // stuck `pending` forever, and Realtime never fires — so the UI would "read" indefinitely. Treat a
 // pending row this old as failed. Evals take ~30–90s; 5 min is comfortably past any live run.
-const STALE_MS = 5 * 60 * 1000;
+const STALE_MS = 10 * 60 * 1000;
 const STALE_ERROR = "The editor's read didn't finish — try running it again.";
 const isStale = (createdAt: string) => Date.now() - new Date(createdAt).getTime() >= STALE_MS;
 
