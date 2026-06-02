@@ -23,6 +23,7 @@ import { BookBriefSummary } from "@/components/book/BookBriefSummary";
 import { BookEvaluationSection } from "@/components/book/BookEvaluationSection";
 import { ReviseWithAI, type RevisionPrefill } from "@/components/book/ReviseWithAI";
 import { BuildWithAI } from "@/components/book/BuildWithAI";
+import { ThreadsSection } from "@/components/book/ThreadsSection";
 import { getPageStatus } from "./components/pageList/pageUtils";
 import { computeCompletion } from "@/lib/brief";
 import { cn } from "@/lib/utils";
@@ -648,6 +649,11 @@ const BookDetails = () => {
                         onApplied={() => fetchBookDetails()}
                       />
                     </div>
+
+                    <ThreadsSection
+                      bookId={getNumericId(bookSlug)}
+                      manuscriptWordCount={manuscriptWordCount}
+                    />
                   </div>
                 )}
               </div>

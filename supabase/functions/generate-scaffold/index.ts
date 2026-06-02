@@ -91,12 +91,24 @@ self-help; a curated arc for memoir). Lay the book out as an ordered list of pag
 Keep the size proportional to the scope: a short story is a handful of text pages; a novel
 is chapters (section pages) each followed by several text pages.
 
+Also plan the book's THREADS — the promises it will make and keep: foreshadowing, planted
+questions, setups that want a payoff. A good book seeds a thread early and lands it later, at a
+deliberate DISTANCE. For each thread, name it, say what it promises, and anchor it to the pages
+that should SET IT UP and PAY IT OFF — referenced by their 0-based index in the "pages" array.
+Estimate the setup→payoff distance in words ("targetDistance") from the scope and where the
+pages fall. Plan only a handful of real threads; don't over-seed.
+
 Output JSON ONLY (no prose, no fences), exactly:
 {
   "structure": "<the structure you chose>",
   "pages": [
     { "pageType": "section", "title": "Chapter 1 — ...", "objective": "" },
     { "pageType": "text", "title": "...", "objective": "..." }
+  ],
+  "threads": [
+    { "name": "...", "description": "what it promises / how it pays off",
+      "setupPageIndex": <index into pages[]>, "payoffPageIndex": <index into pages[]>,
+      "targetDistance": <approx words from setup to payoff> }
   ]
 }`;
 
@@ -113,7 +125,16 @@ function briefContext(brief: Brief | null): string {
 }
 
 interface ScaffoldPage { pageType: "section" | "text"; title: string; objective?: string }
-interface Scaffold { structure: string; pages: ScaffoldPage[] }
+// A planned thread anchored to pages by their index in pages[] (no page ids exist yet — the
+// client maps index → created page id when it writes the scaffold).
+interface ScaffoldThread {
+  name: string;
+  description: string;
+  setupPageIndex: number | null;
+  payoffPageIndex: number | null;
+  targetDistance: number | null;
+}
+interface Scaffold { structure: string; pages: ScaffoldPage[]; threads: ScaffoldThread[] }
 
 async function callClaude(apiKey: string, bookName: string, brief: Brief | null, bible: string | null): Promise<Scaffold> {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -170,5 +191,20 @@ function parseScaffold(text: string): Scaffold {
   parsed.pages = parsed.pages
     .filter((p) => p && (p.pageType === "section" || p.pageType === "text") && typeof p.title === "string")
     .map((p) => ({ pageType: p.pageType, title: p.title.trim(), objective: (p.objective ?? "").trim() }));
-  return { structure: String(parsed.structure ?? "").trim(), pages: parsed.pages };
+
+  // Sanitize threads: must be named; page indices must point inside pages[] (else null).
+  const n = parsed.pages.length;
+  const validIndex = (v: unknown): number | null =>
+    typeof v === "number" && Number.isInteger(v) && v >= 0 && v < n ? v : null;
+  const threads: ScaffoldThread[] = (Array.isArray(parsed.threads) ? parsed.threads : [])
+    .filter((t): t is ScaffoldThread => !!t && typeof (t as ScaffoldThread).name === "string" && !!(t as ScaffoldThread).name.trim())
+    .map((t) => ({
+      name: t.name.trim(),
+      description: typeof t.description === "string" ? t.description.trim() : "",
+      setupPageIndex: validIndex(t.setupPageIndex),
+      payoffPageIndex: validIndex(t.payoffPageIndex),
+      targetDistance: typeof t.targetDistance === "number" && t.targetDistance > 0 ? Math.round(t.targetDistance) : null,
+    }));
+
+  return { structure: String(parsed.structure ?? "").trim(), pages: parsed.pages, threads };
 }

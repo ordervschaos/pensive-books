@@ -58,6 +58,14 @@ interface PageRow {
   metadata: { objective?: string } | null;
 }
 
+// Open/planned threads, fed in so restructuring keeps their setup→payoff anchors intact.
+interface ThreadLite {
+  name: string;
+  status: string;
+  setup_page_id: number | null;
+  payoff_page_id: number | null;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -108,6 +116,13 @@ Deno.serve(async (req: Request) => {
     if (pagesError) throw new Error(`fetch pages: ${pagesError.message}`);
     if (!pages || pages.length === 0) return json({ error: "Book has no pages to revise" }, 400);
 
+    // Tracked threads — fed in so the plan doesn't orphan a setup or its payoff when restructuring.
+    const { data: threads } = await userClient
+      .from("book_threads")
+      .select("name, status, setup_page_id, payoff_page_id")
+      .eq("book_id", bookId)
+      .neq("status", "closed");
+
     const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!apiKey) return json({ error: "ANTHROPIC_API_KEY not configured" }, 500);
 
@@ -117,6 +132,7 @@ Deno.serve(async (req: Request) => {
       book.brief as Brief | null,
       (book.bible as { text?: string } | null)?.text?.trim() || null,
       pages as PageRow[],
+      (threads as ThreadLite[] | null) ?? [],
       hasEval ? evaluation! : null,
       instr || null
     );
@@ -151,6 +167,8 @@ Rules:
 - Be surgical: mark "keep" for what works; change only what the evaluation flags. Do not rewrite
   the whole book if the notes don't demand it.
 - Address the verdict's "priorities" (fix these first) — those are the highest-leverage changes.
+- TRACKED THREADS (if any) are promises the book must keep. Do NOT delete a page that sets up or
+  pays off an open thread without relocating that beat — never orphan a setup or its payoff.
 
 Output JSON ONLY (no prose, no fences), exactly:
 {
@@ -180,6 +198,17 @@ function outlineContext(pages: PageRow[]): string {
       const obj = p.metadata?.objective?.trim();
       if (p.page_type === "section") return `[id=${p.id}] # ${p.title || "(untitled section)"}${obj ? ` — ${obj}` : ""}`;
       return `[id=${p.id}] - "${p.title || "(untitled)"}"${obj ? ` — ${obj}` : ""}`;
+    })
+    .join("\n");
+}
+
+// Tracked threads as a compact digest, anchored to page ids the model can keep intact.
+function threadsContext(threads: ThreadLite[]): string {
+  return threads
+    .map((t) => {
+      const setup = t.setup_page_id != null ? ` setup@page ${t.setup_page_id}` : "";
+      const payoff = t.payoff_page_id != null ? ` payoff@page ${t.payoff_page_id}` : "";
+      return `- "${t.name}" (${t.status})${setup}${payoff}`;
     })
     .join("\n");
 }
@@ -232,6 +261,7 @@ async function callClaude(
   brief: Brief | null,
   bible: string | null,
   pages: PageRow[],
+  threads: ThreadLite[],
   evaluation: EvalResult | null,
   instruction: string | null
 ): Promise<RevisionPlan> {
@@ -254,6 +284,7 @@ async function callClaude(
             `BOOK: ${bookName}\n\nBRIEF (the voice contract):\n${briefContext(brief)}` +
             (bible ? `\n\nBOOK BIBLE (established facts):\n${bible}` : "") +
             `\n\nCURRENT OUTLINE (edit against these real ids):\n${outlineContext(pages)}` +
+            (threads.length ? `\n\nTRACKED THREADS (keep their setups & payoffs intact):\n${threadsContext(threads)}` : "") +
             (instruction ? `\n\nAUTHOR'S INSTRUCTION (primary directive):\n${instruction}` : "") +
             (evaluation ? `\n\nEDITOR'S EVALUATION:\n${evalContext(evaluation)}` : "") +
             `\n\nProduce the revision plan. JSON only.`,

@@ -20,9 +20,18 @@ interface ScaffoldPage {
   title: string;
   objective?: string;
 }
+// A planned thread the scaffold proposes, anchored to pages by their index in pages[].
+interface ScaffoldThread {
+  name: string;
+  description: string;
+  setupPageIndex: number | null;
+  payoffPageIndex: number | null;
+  targetDistance: number | null;
+}
 interface Scaffold {
   structure: string;
   pages: ScaffoldPage[];
+  threads?: ScaffoldThread[];
 }
 
 interface ScaffoldGeneratorProps {
@@ -75,13 +84,17 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
     try {
       setCreating(true);
       // Create each page via the canonical RPC (handles page_index + valid defaults),
-      // then set its title / type / objective.
+      // then set its title / type / objective. Track the created id at each page index so the
+      // planned threads can be anchored to real page ids afterward.
+      const createdIds: number[] = [];
       for (const page of proposal.pages) {
         const { data: newPage, error } = await supabase
           .rpc("create_next_page", { p_book_id: bookId })
           .select()
           .single();
         if (error) throw error;
+        const newId = (newPage as { id: number }).id;
+        createdIds.push(newId);
         const update: Record<string, unknown> = {
           title: page.title,
           page_type: page.pageType,
@@ -90,13 +103,32 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
         const { error: upErr } = await supabase
           .from("pages")
           .update(update)
-          .eq("id", (newPage as { id: number }).id);
+          .eq("id", newId);
         if (upErr) throw upErr;
       }
       // Scaffolding sets objectives, so turn the objective UI on for this book.
       await supabase.from("books").update({ objectives_enabled: true }).eq("id", bookId);
 
-      toast({ title: "Scaffold created", description: `${proposal.pages.length} pages added with objectives.` });
+      // Persist the planned threads, mapping each page-index anchor to its created page id.
+      const threadRows = (proposal.threads ?? [])
+        .filter((t) => t.name.trim())
+        .map((t) => ({
+          book_id: bookId,
+          name: t.name.trim(),
+          description: t.description || null,
+          status: "planned",
+          source: "ai",
+          setup_page_id: t.setupPageIndex != null ? createdIds[t.setupPageIndex] ?? null : null,
+          payoff_page_id: t.payoffPageIndex != null ? createdIds[t.payoffPageIndex] ?? null : null,
+          target_distance: t.targetDistance,
+        }));
+      if (threadRows.length) {
+        const { error: thErr } = await supabase.from("book_threads").insert(threadRows);
+        if (thErr) throw thErr;
+      }
+
+      const threadNote = threadRows.length ? ` and ${threadRows.length} planned threads` : "";
+      toast({ title: "Scaffold created", description: `${proposal.pages.length} pages added with objectives${threadNote}.` });
       setOpen(false);
       setProposal(null);
       onCreated?.();
