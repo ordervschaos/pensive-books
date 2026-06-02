@@ -4,6 +4,7 @@ import react from "@vitejs/plugin-react";
 import path from "path";
 import { componentTagger } from "lovable-tagger";
 import componentTaggerPlugin from "@ordervschaos/babel-plugin-react-component-tagger";
+import { sentryVitePlugin } from "@sentry/vite-plugin";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
@@ -23,6 +24,13 @@ export default defineConfig(({ mode }) => ({
       : reactSwc(),
     mode === 'development' &&
     componentTagger(),
+    ...(mode === 'production' && process.env.SENTRY_AUTH_TOKEN
+      ? [sentryVitePlugin({
+          org: "o4508145966514176",
+          project: "4508145967431680",
+          authToken: process.env.SENTRY_AUTH_TOKEN,
+        })]
+      : []),
   ].filter(Boolean),
   resolve: {
     alias: {

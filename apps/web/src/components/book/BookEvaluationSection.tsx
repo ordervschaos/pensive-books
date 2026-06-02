@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { sanitizeAIError, captureException } from "@/lib/sentry";
 
 // Two backends, env-switched:
 //  - Production (default): the `evaluate-book` edge function writes a book_evaluations
@@ -92,7 +93,7 @@ export function BookEvaluationSection({ bookId, onRevise }: { bookId: number; on
       setState({ status: "done", result: row.result });
       cleanupChannel();
     } else if (row.status === "error") {
-      setState({ status: "error", error: row.error || "evaluation failed" });
+      setState({ status: "error", error: sanitizeAIError(row.error || "evaluation failed") });
       cleanupChannel();
     }
     // pending → keep waiting on the channel
@@ -106,7 +107,7 @@ export function BookEvaluationSection({ bookId, onRevise }: { bookId: number; on
     cleanupChannel();
     watchdogRef.current = setTimeout(() => {
       if (!mounted.current) return;
-      setState((s) => (s.status === "running" ? { status: "error", error: STALE_ERROR } : s));
+      setState((s) => (s.status === "running" ? { status: "error", error: sanitizeAIError(STALE_ERROR, STALE_ERROR) } : s));
       cleanupChannel();
     }, Math.max(0, STALE_MS - (Date.now() - new Date(createdAt).getTime())));
     channelRef.current = supabase
@@ -162,7 +163,7 @@ export function BookEvaluationSection({ bookId, onRevise }: { bookId: number; on
               watchRow(row.id, row.created_at);
             }
           } else if (row.status === "error") {
-            setState({ status: "error", error: row.error || "previous evaluation failed" });
+            setState({ status: "error", error: sanitizeAIError(row.error || "previous evaluation failed") });
           } else setState({ status: "idle" });
         });
     }
@@ -203,14 +204,15 @@ export function BookEvaluationSection({ bookId, onRevise }: { bookId: number; on
             /* keep default */
           }
         } else if (error.message) msg = error.message;
-        setState({ status: "error", error: msg });
+        setState({ status: "error", error: sanitizeAIError(msg) });
         return;
       }
       const ev = (data as { evaluation?: { id: number; created_at: string } })?.evaluation;
       if (!ev?.id) return setState({ status: "error", error: "No evaluation was started." });
       watchRow(ev.id, ev.created_at);
     } catch (e) {
-      setState({ status: "error", error: e instanceof Error ? e.message : "Evaluation failed." });
+      captureException(e);
+      setState({ status: "error", error: "Evaluation failed." });
     }
   };
 

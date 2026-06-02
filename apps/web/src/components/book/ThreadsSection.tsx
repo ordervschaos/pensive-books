@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Loader2, Lock, LockOpen, X } from "lucide-react";
+import { sanitizeAIError, captureException } from "@/lib/sentry";
 import { useToast } from "@/hooks/use-toast";
 import {
   type Thread,
@@ -74,7 +75,8 @@ export function ThreadsSection({ bookId, manuscriptWordCount }: { bookId: number
           : { kind: "list" };
       });
     } catch (e) {
-      setView({ kind: "error", error: e instanceof Error ? e.message : "Couldn't load threads." });
+      captureException(e);
+      setView({ kind: "error", error: sanitizeAIError(e instanceof Error ? e.message : "Couldn't load threads.") });
     }
   };
 
@@ -89,7 +91,8 @@ export function ThreadsSection({ bookId, manuscriptWordCount }: { bookId: number
       const result = await scanThreads(bookId);
       setView({ kind: "review", scan: result, accepted: result.changes.map(() => true) });
     } catch (e) {
-      setView({ kind: "error", error: e instanceof Error ? e.message : "Scan failed." });
+      captureException(e);
+      setView({ kind: "error", error: sanitizeAIError(e instanceof Error ? e.message : "Scan failed.") });
     }
   };
 

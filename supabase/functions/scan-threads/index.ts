@@ -17,6 +17,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { cumulativeWordOffsets, tiptapToText } from "../_shared/words.ts";
+import { captureException, isBillingError } from "../_shared/sentry.ts";
 
 const MODEL = "claude-opus-4-7";
 const PER_PAGE_PROSE_CAP = 8000; // chars; very long pages are truncated to bound the prompt
@@ -141,7 +142,12 @@ Deno.serve(async (req: Request) => {
     return json({ ...resolved, scanId: scanRow.id });
   } catch (e) {
     console.error("scan-threads error:", e);
-    return json({ error: String((e as Error)?.message ?? e).slice(0, 500) }, 500);
+    const billing = isBillingError(e);
+    await captureException(e, { function: "scan-threads", billing: String(billing) });
+    const userMsg = billing
+      ? "AI credits exhausted — the team has been notified."
+      : String((e as Error)?.message ?? e).slice(0, 500);
+    return json({ error: userMsg }, billing ? 503 : 500);
   }
 });
 
@@ -265,7 +271,15 @@ async function callClaude(
     }),
   });
 
-  if (!res.ok) throw new Error(`Claude API ${res.status}: ${(await res.text()).slice(0, 500)}`);
+  if (!res.ok) {
+    const body = await res.text();
+    let parsed: { error?: { type?: string; message?: string } } = {};
+    try { parsed = JSON.parse(body); } catch { /* ignore */ }
+    const msg = parsed.error?.message ?? body;
+    const err = new Error(`Claude API ${res.status}: ${msg.slice(0, 500)}`);
+    if (parsed.error?.message?.toLowerCase().includes("credit balance")) (err as Error & { billing?: boolean }).billing = true;
+    throw err;
+  }
 
   const data = await res.json();
   const text = (data.content ?? [])

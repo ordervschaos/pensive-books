@@ -15,8 +15,9 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { EDITOR_SYSTEM, FICTION_RUBRIC } from "./rubric.ts";
+import { captureException, isBillingError } from "../_shared/sentry.ts";
 
-const MODEL = "claude-opus-4-7";
+const MODEL = "claude-opus-4-8";
 // brief.scope.band values that mean non-fiction (mirrors apps/web/src/lib/brief.ts).
 const NONFICTION_BANDS = new Set(["essay", "guide", "nonfiction_book", "comprehensive"]);
 
@@ -141,9 +142,14 @@ async function runEvaluation(
     if (updateError) throw new Error(`save result: ${updateError.message}`);
   } catch (e) {
     console.error(`evaluate-book run ${evalId} failed:`, e);
+    const billing = isBillingError(e);
+    await captureException(e, { function: "evaluate-book", book_id: String(book.id), billing: String(billing) });
+    const userMsg = billing
+      ? "AI credits exhausted — the team has been notified."
+      : String((e as Error)?.message ?? e).slice(0, 1000);
     await service
       .from("book_evaluations")
-      .update({ status: "error", error: String((e as Error)?.message ?? e).slice(0, 1000) })
+      .update({ status: "error", error: userMsg })
       .eq("id", evalId);
   }
 }
@@ -231,8 +237,8 @@ async function callClaude(apiKey: string, book: BookRow, manuscript: string) {
     },
     body: JSON.stringify({
       model: MODEL,
-      max_tokens: 20000,
-      thinking: { type: "adaptive" }, // adaptive thinking is GA on Opus 4.7
+      max_tokens: 32000,
+      thinking: { type: "adaptive" }, // Opus 4.8: adaptive is the only mode; high effort is default
       // Rubric is stable across books → cache it so re-runs are cheap.
       system: [
         { type: "text", text: EDITOR_SYSTEM },
@@ -248,7 +254,13 @@ async function callClaude(apiKey: string, book: BookRow, manuscript: string) {
   });
 
   if (!res.ok) {
-    throw new Error(`Claude API ${res.status}: ${(await res.text()).slice(0, 500)}`);
+    const body = await res.text();
+    let parsed: { error?: { type?: string; message?: string } } = {};
+    try { parsed = JSON.parse(body); } catch { /* ignore */ }
+    const msg = parsed.error?.message ?? body;
+    const err = new Error(`Claude API ${res.status}: ${msg.slice(0, 500)}`);
+    if (parsed.error?.message?.toLowerCase().includes("credit balance")) (err as Error & { billing?: boolean }).billing = true;
+    throw err;
   }
 
   const data = await res.json();
