@@ -55,7 +55,7 @@ interface PageRow {
   page_index: number;
   page_type: string | null;
   title: string | null;
-  metadata: { objective?: string } | null;
+  metadata: { objective?: string; summary?: string } | null;
 }
 
 // Open/planned threads, fed in so restructuring keeps their setup→payoff anchors intact.
@@ -83,11 +83,21 @@ Deno.serve(async (req: Request) => {
       bookId?: number;
       evaluation?: EvalResult;
       instruction?: string;
-      ctx?: { brief?: boolean; bible?: boolean; threads?: boolean };
+      ctx?: {
+        brief?: boolean;
+        bible?: boolean;
+        threads?: boolean;
+        summaries?: boolean;
+        pageIds?: number[] | null;
+        threadIds?: number[] | null;
+      };
     };
     const useBrief = ctx?.brief !== false;
     const useBible = ctx?.bible !== false;
     const useThreads = ctx?.threads !== false;
+    const useSummaries = ctx?.summaries === true;
+    const pageIdFilter = ctx?.pageIds ?? null;    // null = all
+    const threadIdFilter = ctx?.threadIds ?? null; // null = all
     if (!bookId) return json({ error: "bookId is required" }, 400);
     const hasEval = !!evaluation?.verdict && Array.isArray(evaluation.sections);
     const instr = (instruction ?? "").trim();
@@ -130,15 +140,29 @@ Deno.serve(async (req: Request) => {
     const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!apiKey) return json({ error: "ANTHROPIC_API_KEY not configured" }, 500);
 
+    // Apply page/thread filters. Sections always appear (structural); only text pages are filtered.
+    const allPages = pages as PageRow[];
+    const filteredPages = pageIdFilter
+      ? allPages.filter(p => p.page_type === "section" || pageIdFilter.includes(p.id))
+      : allPages;
+
+    const allThreads: ThreadLite[] = (threads as ThreadLite[] | null) ?? [];
+    const filteredThreads = !useThreads
+      ? []
+      : threadIdFilter
+        ? allThreads.filter(t => threadIdFilter.includes(t.id))
+        : allThreads;
+
     const plan = await callClaude(
       apiKey,
       book.name,
       useBrief ? (book.brief as Brief | null) : null,
       useBible ? ((book.bible as { text?: string } | null)?.text?.trim() || null) : null,
-      pages as PageRow[],
-      useThreads ? ((threads as ThreadLite[] | null) ?? []) : [],
+      filteredPages,
+      filteredThreads,
       hasEval ? evaluation! : null,
-      instr || null
+      instr || null,
+      useSummaries
     );
     return json(plan);
   } catch (e) {
@@ -196,12 +220,16 @@ function briefContext(brief: Brief | null): string {
 }
 
 // Current book as an id-tagged outline the model edits against.
-function outlineContext(pages: PageRow[]): string {
+function outlineContext(pages: PageRow[], includeSummaries = false): string {
   return pages
     .map((p) => {
       const obj = p.metadata?.objective?.trim();
-      if (p.page_type === "section") return `[id=${p.id}] # ${p.title || "(untitled section)"}${obj ? ` — ${obj}` : ""}`;
-      return `[id=${p.id}] - "${p.title || "(untitled)"}"${obj ? ` — ${obj}` : ""}`;
+      const sum = includeSummaries ? p.metadata?.summary?.trim() : null;
+      let line = p.page_type === "section"
+        ? `[id=${p.id}] # ${p.title || "(untitled section)"}${obj ? ` — ${obj}` : ""}`
+        : `[id=${p.id}] - "${p.title || "(untitled)"}"${obj ? ` — ${obj}` : ""}`;
+      if (sum) line += `\n  [summary: ${sum}]`;
+      return line;
     })
     .join("\n");
 }
@@ -267,7 +295,8 @@ async function callClaude(
   pages: PageRow[],
   threads: ThreadLite[],
   evaluation: EvalResult | null,
-  instruction: string | null
+  instruction: string | null,
+  includeSummaries = false
 ): Promise<RevisionPlan> {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -287,7 +316,7 @@ async function callClaude(
           content:
             `BOOK: ${bookName}\n\nBRIEF (the voice contract):\n${briefContext(brief)}` +
             (bible ? `\n\nBOOK BIBLE (established facts):\n${bible}` : "") +
-            `\n\nCURRENT OUTLINE (edit against these real ids):\n${outlineContext(pages)}` +
+            `\n\nCURRENT OUTLINE (edit against these real ids):\n${outlineContext(pages, includeSummaries)}` +
             (threads.length ? `\n\nTRACKED THREADS (keep their setups & payoffs intact):\n${threadsContext(threads)}` : "") +
             (instruction ? `\n\nAUTHOR'S INSTRUCTION (primary directive):\n${instruction}` : "") +
             (evaluation ? `\n\nEDITOR'S EVALUATION:\n${evalContext(evaluation)}` : "") +

@@ -84,8 +84,10 @@ interface RevisionRow {
 const ROW_COLS = "id, book_id, status, source, instruction, evaluation, plan, progress, version_id, cancel_requested, error";
 const ACTIVE: RevStatus[] = ["planning", "awaiting_review", "building"];
 
-interface ContextMeta { hasBrief: boolean; hasBible: boolean; threadCount: number }
-interface CtxOn { brief: boolean; bible: boolean; threads: boolean }
+interface PageLite { id: number; title: string | null; page_type: string | null; page_index: number }
+interface ThreadLite { id: number; name: string; status: string; description: string | null }
+interface ContextMeta { hasBrief: boolean; hasBible: boolean; pages: PageLite[]; threads: ThreadLite[] }
+interface CtxOn { brief: boolean; bible: boolean; threads: boolean; summaries: boolean }
 
 const OP_LABEL: Record<PlanPage["op"], string> = {
   keep: "keep",
@@ -185,7 +187,11 @@ export function ReviseWithAI({
   const [reviewOpen, setReviewOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [contextMeta, setContextMeta] = useState<ContextMeta | null>(null);
-  const [ctxOn, setCtxOn] = useState<CtxOn>({ brief: true, bible: true, threads: true });
+  const [ctxOn, setCtxOn] = useState<CtxOn>({ brief: true, bible: true, threads: true, summaries: false });
+  // null = all selected; array = specific IDs chosen by user
+  const [selectedPageIds, setSelectedPageIds] = useState<number[] | null>(null);
+  const [selectedThreadIds, setSelectedThreadIds] = useState<number[] | null>(null);
+  const [openPicker, setOpenPicker] = useState<"pages" | "threads" | null>(null);
 
   const patch = async (id: number, fields: Partial<RevisionRow>) => {
     const { error } = await supabase.from("book_revisions").update(fields).eq("id", id);
@@ -200,16 +206,22 @@ export function ReviseWithAI({
       supabase.from("book_revisions").select(ROW_COLS).eq("book_id", bookId)
         .order("created_at", { ascending: false }).limit(1).maybeSingle(),
       supabase.from("books").select("brief, bible").eq("id", bookId).single(),
-      supabase.from("book_threads").select("id", { count: "exact", head: true })
+      supabase.from("pages")
+        .select("id, title, page_type, page_index")
+        .eq("book_id", bookId).eq("archived", false)
+        .order("page_index", { ascending: true }),
+      supabase.from("book_threads")
+        .select("id, name, status, description")
         .eq("book_id", bookId).neq("status", "closed"),
-    ]).then(([revResult, bookResult, threadResult]) => {
+    ]).then(([revResult, bookResult, pagesResult, threadsResult]) => {
       if (!mounted.current) return;
       setRow((revResult.data as RevisionRow | null) ?? null);
       const b = bookResult.data;
       setContextMeta({
         hasBrief: !!(b?.brief && typeof b.brief === "object" && Object.keys(b.brief as object).length > 0),
         hasBible: !!(b?.bible && (b.bible as { text?: string })?.text?.trim()),
-        threadCount: threadResult.count ?? 0,
+        pages: (pagesResult.data as PageLite[] | null) ?? [],
+        threads: (threadsResult.data as ThreadLite[] | null) ?? [],
       });
       setLoading(false);
     });
@@ -262,7 +274,11 @@ export function ReviseWithAI({
       bookId,
       evaluation: current.evaluation ?? undefined,
       instruction: current.instruction ?? undefined,
-      ctx: ctxOn,
+      ctx: {
+        ...ctxOn,
+        pageIds: selectedPageIds,
+        threadIds: selectedThreadIds,
+      },
     };
     if (BRIDGE) {
       const r = await fetch(`${BRIDGE}/replan/${bookId}`, {
@@ -587,29 +603,58 @@ export function ReviseWithAI({
             className="min-h-[88px] pv-serif text-[14.5px] leading-relaxed"
           />
 
-          {/* Context chips -- show what the AI will see and let the author adjust */}
-          {contextMeta && (
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="pv-eyebrow mr-0.5 text-[9px] text-[hsl(var(--pv-text-faint))]">Context</span>
-              {/* Outline is always included and not toggleable */}
-              <CtxChip label="Outline" fixed />
-              {contextMeta.hasBrief && (
-                <CtxChip label="Brief" on={ctxOn.brief}
-                  onToggle={() => setCtxOn(c => ({ ...c, brief: !c.brief }))} />
-              )}
-              {contextMeta.hasBible && (
-                <CtxChip label="Bible" on={ctxOn.bible}
-                  onToggle={() => setCtxOn(c => ({ ...c, bible: !c.bible }))} />
-              )}
-              {contextMeta.threadCount > 0 && (
-                <CtxChip label={`Threads · ${contextMeta.threadCount}`} on={ctxOn.threads}
-                  onToggle={() => setCtxOn(c => ({ ...c, threads: !c.threads }))} />
-              )}
-              {attachedEval && (
-                <CtxChip label="Editor's notes" accent onRemove={() => setAttachedEval(null)} />
-              )}
-            </div>
-          )}
+          {/* Context row -- chips reveal what the AI sees; picker chips expand inline */}
+          {contextMeta && (() => {
+            const textPages = contextMeta.pages.filter(p => p.page_type !== "section");
+            const selPages = selectedPageIds ?? textPages.map(p => p.id);
+            const selThreads = selectedThreadIds ?? contextMeta.threads.map(t => t.id);
+            const pageLabel = selectedPageIds
+              ? `Outline ${selectedPageIds.length}/${textPages.length}`
+              : "Outline";
+            const threadLabel = selectedThreadIds
+              ? `Threads ${selectedThreadIds.length}/${contextMeta.threads.length}`
+              : `Threads ${contextMeta.threads.length}`;
+            return (
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="pv-eyebrow mr-0.5 text-[9px] text-[hsl(var(--pv-text-faint))]">Context</span>
+                  <CtxChip label={pageLabel} picker expanded={openPicker === "pages"}
+                    on={selPages.length > 0}
+                    onClick={() => setOpenPicker(p => p === "pages" ? null : "pages")} />
+                  {contextMeta.hasBrief && (
+                    <CtxChip label="Brief" on={ctxOn.brief}
+                      onToggle={() => setCtxOn(c => ({ ...c, brief: !c.brief }))} />
+                  )}
+                  {contextMeta.hasBible && (
+                    <CtxChip label="Bible" on={ctxOn.bible}
+                      onToggle={() => setCtxOn(c => ({ ...c, bible: !c.bible }))} />
+                  )}
+                  <CtxChip label="Summaries" on={ctxOn.summaries}
+                    onToggle={() => setCtxOn(c => ({ ...c, summaries: !c.summaries }))} />
+                  {contextMeta.threads.length > 0 && (
+                    <CtxChip label={threadLabel} picker expanded={openPicker === "threads"}
+                      on={ctxOn.threads && selThreads.length > 0}
+                      onClick={() => {
+                        if (!ctxOn.threads) { setCtxOn(c => ({ ...c, threads: true })); return; }
+                        setOpenPicker(p => p === "threads" ? null : "threads");
+                      }} />
+                  )}
+                  {attachedEval && (
+                    <CtxChip label="Editor's notes" accent onRemove={() => setAttachedEval(null)} />
+                  )}
+                </div>
+                {openPicker === "pages" && (
+                  <PagePicker pages={contextMeta.pages} selected={selectedPageIds}
+                    onChange={setSelectedPageIds} />
+                )}
+                {openPicker === "threads" && ctxOn.threads && (
+                  <ThreadPicker threads={contextMeta.threads} selected={selectedThreadIds}
+                    onDisable={() => { setCtxOn(c => ({ ...c, threads: false })); setOpenPicker(null); }}
+                    onChange={setSelectedThreadIds} />
+                )}
+              </div>
+            );
+          })()}
 
           <div className="flex items-center justify-between gap-3">
             <p className="pv-serif text-[12.5px] leading-relaxed text-[hsl(var(--pv-text-faint))]">
@@ -776,47 +821,144 @@ function BuildStatus({
 }
 
 function CtxChip({
-  label,
-  fixed,
-  on,
-  accent,
-  onToggle,
-  onRemove,
+  label, on, accent, picker, expanded, onToggle, onRemove, onClick,
 }: {
   label: string;
-  fixed?: boolean;
   on?: boolean;
   accent?: boolean;
+  picker?: boolean;
+  expanded?: boolean;
   onToggle?: () => void;
   onRemove?: () => void;
+  onClick?: () => void;
 }) {
-  const base = "pv-mono inline-flex items-center rounded-full px-2 py-0.5 text-[10px] uppercase tracking-[0.12em]";
-  if (fixed) {
-    return (
-      <span className={cn(base, "bg-[hsl(var(--pv-surface-2))] text-[hsl(var(--pv-text-faint))]")}>
-        {label}
-      </span>
-    );
-  }
+  const base = "pv-mono inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] transition-all";
   if (onRemove) {
     return (
-      <span className={cn(base, "gap-1", accent
+      <span className={cn(base, accent
         ? "bg-[hsl(var(--pv-accent))]/10 text-[hsl(var(--pv-accent))]"
         : "bg-[hsl(var(--pv-surface-2))] text-[hsl(var(--pv-text-muted))]")}>
         {label}
-        <button type="button" onClick={onRemove} className="opacity-50 hover:opacity-100" aria-label="remove">✕</button>
+        <button type="button" onClick={onRemove} className="opacity-50 hover:opacity-100" aria-label="remove">x</button>
       </span>
     );
   }
+  if (picker) {
+    return (
+      <button type="button" onClick={onClick}
+        className={cn(base,
+          expanded ? "bg-foreground text-background" : "bg-[hsl(var(--pv-surface-2))]",
+          on || expanded ? "text-[hsl(var(--pv-text-muted))]" : "opacity-40 text-[hsl(var(--pv-text-faint))]",
+          expanded && "bg-foreground text-background opacity-100")}>
+        {label}
+        <span className="opacity-50">{expanded ? "^" : "v"}</span>
+      </button>
+    );
+  }
   return (
-    <button
-      type="button"
-      onClick={onToggle}
-      title={on ? "Click to exclude from context" : "Click to include in context"}
-      className={cn(base, "transition-opacity bg-[hsl(var(--pv-surface-2))]",
-        on ? "text-[hsl(var(--pv-text-muted))]" : "text-[hsl(var(--pv-text-faint))] opacity-40")}
-    >
+    <button type="button" onClick={onToggle}
+      title={on ? "Click to exclude" : "Click to include"}
+      className={cn(base, "bg-[hsl(var(--pv-surface-2))]",
+        on ? "text-[hsl(var(--pv-text-muted))]" : "opacity-40 text-[hsl(var(--pv-text-faint))]")}>
       {label}
     </button>
+  );
+}
+
+function PagePicker({
+  pages, selected, onChange,
+}: {
+  pages: PageLite[];
+  selected: number[] | null;
+  onChange: (ids: number[] | null) => void;
+}) {
+  const textPages = pages.filter(p => p.page_type !== "section");
+  const allIds = textPages.map(p => p.id);
+  const effective = selected ?? allIds;
+  const toggle = (id: number) => {
+    const next = effective.includes(id) ? effective.filter(x => x !== id) : [...effective, id];
+    onChange(next.length === allIds.length ? null : next);
+  };
+  return (
+    <div className="rounded-lg border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/50 p-2.5">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="pv-eyebrow text-[9px] text-[hsl(var(--pv-text-faint))]">
+          Pages in outline ({effective.length}/{allIds.length})
+        </span>
+        <div className="flex gap-3">
+          <button type="button" onClick={() => onChange(null)}
+            className="pv-mono text-[10px] text-[hsl(var(--pv-text-muted))] hover:text-foreground">All</button>
+          <button type="button" onClick={() => onChange([])}
+            className="pv-mono text-[10px] text-[hsl(var(--pv-text-muted))] hover:text-foreground">None</button>
+        </div>
+      </div>
+      <div className="max-h-52 space-y-0.5 overflow-y-auto pr-1">
+        {pages.map(p => {
+          if (p.page_type === "section") {
+            return (
+              <p key={p.id} className="pv-serif pt-2 text-[11px] font-medium uppercase tracking-wide text-[hsl(var(--pv-text-faint))]">
+                {p.title || "(section)"}
+              </p>
+            );
+          }
+          const on = effective.includes(p.id);
+          return (
+            <label key={p.id} className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 hover:bg-[hsl(var(--pv-surface-2))]">
+              <input type="checkbox" checked={on} onChange={() => toggle(p.id)}
+                className="h-3 w-3 shrink-0 accent-[hsl(var(--pv-accent))]" />
+              <span className={cn("pv-serif text-[13px]", on ? "text-foreground" : "text-[hsl(var(--pv-text-faint))]")}>
+                {p.title || "(untitled)"}
+              </span>
+            </label>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ThreadPicker({
+  threads, selected, onDisable, onChange,
+}: {
+  threads: ThreadLite[];
+  selected: number[] | null;
+  onDisable: () => void;
+  onChange: (ids: number[] | null) => void;
+}) {
+  const allIds = threads.map(t => t.id);
+  const effective = selected ?? allIds;
+  const toggle = (id: number) => {
+    const next = effective.includes(id) ? effective.filter(x => x !== id) : [...effective, id];
+    onChange(next.length === allIds.length ? null : next);
+  };
+  return (
+    <div className="rounded-lg border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/50 p-2.5">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="pv-eyebrow text-[9px] text-[hsl(var(--pv-text-faint))]">
+          Threads ({effective.length}/{allIds.length})
+        </span>
+        <div className="flex gap-3">
+          <button type="button" onClick={() => onChange(null)}
+            className="pv-mono text-[10px] text-[hsl(var(--pv-text-muted))] hover:text-foreground">All</button>
+          <button type="button" onClick={onDisable}
+            className="pv-mono text-[10px] text-[hsl(var(--pv-text-muted))] hover:text-foreground">None</button>
+        </div>
+      </div>
+      <div className="max-h-52 space-y-0.5 overflow-y-auto pr-1">
+        {threads.map(t => {
+          const on = effective.includes(t.id);
+          return (
+            <label key={t.id} className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 hover:bg-[hsl(var(--pv-surface-2))]">
+              <input type="checkbox" checked={on} onChange={() => toggle(t.id)}
+                className="h-3 w-3 shrink-0 accent-[hsl(var(--pv-accent))]" />
+              <span className={cn("pv-serif min-w-0 flex-1 truncate text-[13px]", on ? "text-foreground" : "text-[hsl(var(--pv-text-faint))]")}>
+                {t.name}
+              </span>
+              <span className="pv-mono shrink-0 text-[9px] text-[hsl(var(--pv-text-faint))]">{t.status}</span>
+            </label>
+          );
+        })}
+      </div>
+    </div>
   );
 }
