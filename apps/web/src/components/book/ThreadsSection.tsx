@@ -8,8 +8,10 @@ import {
   type ThreadScan,
   type ThreadStatus,
   fetchThreads,
+  fetchPendingScan,
   scanThreads,
   applyThreadScan,
+  markScanReviewed,
   setThreadLocked,
   deleteThread,
   formatWords,
@@ -61,8 +63,16 @@ export function ThreadsSection({ bookId, manuscriptWordCount }: { bookId: number
 
   const load = async () => {
     try {
-      setThreads(await fetchThreads(bookId));
-      setView((v) => (v.kind === "loading" || v.kind === "scanning" ? { kind: "list" } : v));
+      // Resume an unreviewed scan if one is waiting — a scan is a paid Claude call, so its diff is
+      // persisted (book_thread_scans) and must survive a refresh rather than vanish.
+      const [ts, pending] = await Promise.all([fetchThreads(bookId), fetchPendingScan(bookId)]);
+      setThreads(ts);
+      setView((v) => {
+        if (v.kind !== "loading" && v.kind !== "scanning") return v;
+        return pending
+          ? { kind: "review", scan: pending, accepted: pending.changes.map(() => true) }
+          : { kind: "list" };
+      });
     } catch (e) {
       setView({ kind: "error", error: e instanceof Error ? e.message : "Couldn't load threads." });
     }
@@ -83,9 +93,17 @@ export function ThreadsSection({ bookId, manuscriptWordCount }: { bookId: number
     }
   };
 
-  const cancelReview = () => {
+  // Discard a reviewed scan: mark the persisted row dismissed so it won't resume on reload.
+  const cancelReview = async (scanId?: number | null) => {
+    if (scanId != null) {
+      try {
+        await markScanReviewed(scanId, "dismissed");
+      } catch {
+        /* non-fatal: a lingering pending row just means the review reappears on reload */
+      }
+    }
     setView({ kind: "loading" });
-    load();
+    await load();
   };
 
   const apply = async (scanResult: ThreadScan, accepted: boolean[]) => {
@@ -93,6 +111,7 @@ export function ThreadsSection({ bookId, manuscriptWordCount }: { bookId: number
     setApplying(true);
     try {
       await applyThreadScan(bookId, picked);
+      if (scanResult.scanId != null) await markScanReviewed(scanResult.scanId, "applied");
       toast({ title: "Threads updated", description: `${picked.length} change${picked.length === 1 ? "" : "s"} applied.` });
       setView({ kind: "loading" });
       await load();
@@ -255,7 +274,7 @@ export function ThreadsSection({ bookId, manuscriptWordCount }: { bookId: number
             {view.scan.changes.length > 0 && (
               <button
                 type="button"
-                onClick={cancelReview}
+                onClick={() => cancelReview(view.scan.scanId)}
                 disabled={applying}
                 className="pv-serif text-[14px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground disabled:opacity-60"
               >
@@ -264,7 +283,7 @@ export function ThreadsSection({ bookId, manuscriptWordCount }: { bookId: number
             )}
             <button
               type="button"
-              onClick={() => (view.scan.changes.length === 0 ? cancelReview() : apply(view.scan, view.accepted))}
+              onClick={() => (view.scan.changes.length === 0 ? cancelReview(view.scan.scanId) : apply(view.scan, view.accepted))}
               disabled={applying || (view.scan.changes.length > 0 && view.accepted.every((a) => !a))}
               className="pv-mono inline-flex items-center gap-1.5 rounded-full bg-[hsl(var(--pv-accent))] px-3.5 py-2 text-[10.5px] uppercase tracking-[0.12em] text-background transition-opacity hover:opacity-90 disabled:opacity-50"
             >

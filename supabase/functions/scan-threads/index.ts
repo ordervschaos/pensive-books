@@ -121,7 +121,24 @@ Deno.serve(async (req: Request) => {
     // The model returns page-id anchors + semantics; the SERVER resolves word offsets and
     // distances from the offset map, and flags drift on still-open threads past their budget.
     const resolved = resolveOffsets(scan, positions, total);
-    return json(resolved);
+
+    // Persist the diff immediately so this paid scan survives a refresh: the client resumes the
+    // review from the newest pending_review row (see book_thread_scans). Returns scanId so the
+    // client can mark it applied/dismissed once the author acts on it.
+    const { data: scanRow, error: scanInsertError } = await userClient
+      .from("book_thread_scans")
+      .insert({
+        book_id: bookId,
+        status: "pending_review",
+        summary: resolved.summary,
+        changes: resolved.changes,
+        model: MODEL,
+      })
+      .select("id")
+      .single();
+    if (scanInsertError) throw new Error(`save scan: ${scanInsertError.message}`);
+
+    return json({ ...resolved, scanId: scanRow.id });
   } catch (e) {
     console.error("scan-threads error:", e);
     return json({ error: String((e as Error)?.message ?? e).slice(0, 500) }, 500);

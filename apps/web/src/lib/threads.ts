@@ -41,6 +41,9 @@ export interface ThreadChange {
 export interface ThreadScan {
   summary: string;
   changes: ThreadChange[];
+  // Id of the persisted book_thread_scans row this diff lives in. Present on a fresh scan and on a
+  // resumed (pending_review) scan; used to mark the row applied/dismissed once the author acts.
+  scanId?: number | null;
 }
 
 const THREAD_COLS =
@@ -75,6 +78,34 @@ export async function scanThreads(bookId: number): Promise<ThreadScan> {
   }
   if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
   return data as ThreadScan;
+}
+
+/**
+ * The latest scan still awaiting review (book_thread_scans, status pending_review), or null. Lets
+ * the panel resume an expensive scan after a refresh instead of discarding it. The newest scan row
+ * wins: if it's already applied/dismissed, there is nothing to resume.
+ */
+export async function fetchPendingScan(bookId: number): Promise<ThreadScan | null> {
+  const { data, error } = await supabase
+    .from("book_thread_scans")
+    .select("id, status, summary, changes")
+    .eq("book_id", bookId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data || data.status !== "pending_review") return null;
+  return {
+    scanId: data.id as number,
+    summary: (data.summary as string | null) ?? "",
+    changes: (data.changes as ThreadChange[] | null) ?? [],
+  };
+}
+
+/** Mark a persisted scan as consumed: 'applied' once changes are written, 'dismissed' on cancel. */
+export async function markScanReviewed(scanId: number, status: "applied" | "dismissed"): Promise<void> {
+  const { error } = await supabase.from("book_thread_scans").update({ status }).eq("id", scanId);
+  if (error) throw error;
 }
 
 /**
