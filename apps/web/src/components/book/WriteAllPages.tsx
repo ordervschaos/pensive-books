@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Sparkles } from "lucide-react";
+import { AnimatedEllipsis } from "./AnimatedEllipsis";
 import { AIActionRow } from "./AIActionRow";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -142,10 +143,10 @@ export function WriteAllPages({ bookId, plannedCount }: WriteAllPagesProps) {
 
   const title = progress
     ? progress.retrying
-      ? `Retrying ${progress.done + 1}/${progress.total}…`
-      : `Writing ${progress.done}/${progress.total}…`
+      ? <span>Retrying {progress.done + 1}/{progress.total}<AnimatedEllipsis /></span>
+      : <span>Writing {progress.done}/{progress.total}<AnimatedEllipsis /></span>
     : running
-      ? "Working…"
+      ? <span>Working<AnimatedEllipsis /></span>
       : plannedCount && plannedCount > 0
         ? `Write ${plannedCount} planned page${plannedCount === 1 ? "" : "s"}`
         : "Write all pages from objectives";

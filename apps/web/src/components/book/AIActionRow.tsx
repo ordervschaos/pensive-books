@@ -4,7 +4,7 @@ import { ArrowRight, Loader2 } from "lucide-react";
 interface AIActionRowProps {
   /** Small glyph shown in the leading box (e.g. <Sparkles className="h-4 w-4" />). */
   icon: ReactNode;
-  title: string;
+  title: ReactNode;
   description: string;
   onClick: () => void;
   disabled?: boolean;

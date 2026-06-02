@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Sparkles, Loader2 } from "lucide-react";
+import { AnimatedEllipsis } from "./AnimatedEllipsis";
 import { Button } from "@/components/ui/button";
 import { AIActionRow } from "./AIActionRow";
 import {
@@ -143,7 +144,7 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
     <>
       <AIActionRow
         icon={<Sparkles className="h-4 w-4" />}
-        title={generating ? "Designing…" : "Generate scaffold from brief"}
+        title={generating ? <span>Designing<AnimatedEllipsis /></span> : "Generate scaffold from brief"}
         description="Propose the book's chapters and pages as objectives (no prose) — review, then create."
         onClick={generate}
         loading={generating}

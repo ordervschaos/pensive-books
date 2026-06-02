@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
+import { AnimatedEllipsis } from "./AnimatedEllipsis";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -554,7 +555,7 @@ export function ReviseWithAI({
         </div>
       </div>
 
-      {loading && <p className="pv-serif mt-3 text-[14px] italic text-[hsl(var(--pv-text-faint))]">Checking…</p>}
+      {loading && <p className="pv-serif mt-3 text-[14px] italic text-[hsl(var(--pv-text-faint))]">Checking<AnimatedEllipsis /></p>}
 
       {/* The input form — shown when there's no active revision. */}
       {!loading && !active && (
@@ -713,8 +714,8 @@ function BuildStatus({
       <div className="flex items-center justify-between gap-3">
         <p className="pv-serif text-[15px] italic text-[hsl(var(--pv-text-muted))]">
           {progress.structureDone
-            ? <>Writing pages — {progress.done}/{total} done{busy ? "…" : ""}</>
-            : <>{progress.phase ?? "Working…"}</>}
+            ? <>Writing pages — {progress.done}/{total} done{busy ? <AnimatedEllipsis /> : ""}</>
+            : <>{progress.phase ?? <>Working<AnimatedEllipsis /></>}</>}
         </p>
         <div className="flex gap-2">
           {!busy && <Button variant="ghost" onClick={onResume}>Resume</Button>}
