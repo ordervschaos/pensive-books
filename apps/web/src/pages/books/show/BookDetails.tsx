@@ -622,7 +622,7 @@ const BookDetails = () => {
                   />
                 )}
 
-                {/* AI tools tab — Build full-width on top; editor's read + revise paired below */}
+                {/* AI tools tab — Build, then editor's read + revise, all stacked full-width */}
                 {activeTab === "ai" && (
                   <div className="space-y-6">
                     <BuildWithAI
@@ -634,7 +634,7 @@ const BookDetails = () => {
                       onReviseStructure={() => setRevisionPrefill({ instruction: "" })}
                     />
 
-                    <div className="grid items-start gap-6 lg:grid-cols-2">
+                    <div className="space-y-6">
                       <BookEvaluationSection
                         bookId={getNumericId(bookSlug)}
                         onRevise={(evaluation, instruction) =>
