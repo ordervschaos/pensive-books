@@ -233,7 +233,7 @@ async function callClaude(apiKey: string, book: BookRow, manuscript: string) {
   // enough time to write an "error" row and report to Sentry before the worker exits.
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
-    signal: AbortSignal.timeout(120_000),
+    signal: AbortSignal.timeout(280_000), // headroom under the 400s paid-plan wall-clock limit
     headers: {
       "x-api-key": apiKey,
       "anthropic-version": "2023-06-01",
@@ -242,7 +242,11 @@ async function callClaude(apiKey: string, book: BookRow, manuscript: string) {
     body: JSON.stringify({
       model: MODEL,
       max_tokens: 32000,
-      thinking: { type: "adaptive" }, // Opus 4.8: adaptive is the only mode; high effort is default
+      thinking: { type: "adaptive" }, // Opus 4.8: adaptive is the only mode
+      // effort defaults to "high" (max thinking depth) — too slow for a rubric eval and it
+      // blew past the old 120s cap. "medium" is the documented balanced level: good quality,
+      // far less thinking time. Lives in output_config, NOT inside `thinking`.
+      output_config: { effort: "medium" },
       // Rubric is stable across books → cache it so re-runs are cheap.
       system: [
         { type: "text", text: EDITOR_SYSTEM },
