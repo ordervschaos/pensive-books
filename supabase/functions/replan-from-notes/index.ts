@@ -79,11 +79,15 @@ Deno.serve(async (req: Request) => {
     const { data: { user }, error: authError } = await userClient.auth.getUser();
     if (authError || !user) return json({ error: "Unauthorized" }, 401);
 
-    const { bookId, evaluation, instruction } = (await req.json().catch(() => ({}))) as {
+    const { bookId, evaluation, instruction, ctx } = (await req.json().catch(() => ({}))) as {
       bookId?: number;
       evaluation?: EvalResult;
       instruction?: string;
+      ctx?: { brief?: boolean; bible?: boolean; threads?: boolean };
     };
+    const useBrief = ctx?.brief !== false;
+    const useBible = ctx?.bible !== false;
+    const useThreads = ctx?.threads !== false;
     if (!bookId) return json({ error: "bookId is required" }, 400);
     const hasEval = !!evaluation?.verdict && Array.isArray(evaluation.sections);
     const instr = (instruction ?? "").trim();
@@ -129,10 +133,10 @@ Deno.serve(async (req: Request) => {
     const plan = await callClaude(
       apiKey,
       book.name,
-      book.brief as Brief | null,
-      (book.bible as { text?: string } | null)?.text?.trim() || null,
+      useBrief ? (book.brief as Brief | null) : null,
+      useBible ? ((book.bible as { text?: string } | null)?.text?.trim() || null) : null,
       pages as PageRow[],
-      (threads as ThreadLite[] | null) ?? [],
+      useThreads ? ((threads as ThreadLite[] | null) ?? []) : [],
       hasEval ? evaluation! : null,
       instr || null
     );

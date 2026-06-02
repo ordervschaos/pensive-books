@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { AnimatedEllipsis } from "./AnimatedEllipsis";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -83,6 +84,9 @@ interface RevisionRow {
 const ROW_COLS = "id, book_id, status, source, instruction, evaluation, plan, progress, version_id, cancel_requested, error";
 const ACTIVE: RevStatus[] = ["planning", "awaiting_review", "building"];
 
+interface ContextMeta { hasBrief: boolean; hasBible: boolean; threadCount: number }
+interface CtxOn { brief: boolean; bible: boolean; threads: boolean }
+
 const OP_LABEL: Record<PlanPage["op"], string> = {
   keep: "keep",
   revise: "revise prose",
@@ -148,7 +152,7 @@ export interface RevisionPrefill {
 }
 
 /**
- * Revise with AI — one durable, resumable surface for asking the AI to change the book.
+ * Revise with AI -- one durable, resumable surface for asking the AI to change the book.
  *
  * The author types an instruction (or hands over the editor's notes); the architect proposes
  * a plan (what changes, and why, per page); the author reviews and builds. The whole task
@@ -180,28 +184,35 @@ export function ReviseWithAI({
   const [attachedEval, setAttachedEval] = useState<EvalResult | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [contextMeta, setContextMeta] = useState<ContextMeta | null>(null);
+  const [ctxOn, setCtxOn] = useState<CtxOn>({ brief: true, bible: true, threads: true });
 
   const patch = async (id: number, fields: Partial<RevisionRow>) => {
     const { error } = await supabase.from("book_revisions").update(fields).eq("id", id);
     if (error) throw error;
   };
 
-  // ── Load the latest revision for this book + subscribe to it over Realtime ──
+  // ── Load the latest revision + context metadata in parallel ──
   useEffect(() => {
     mounted.current = true;
     setLoading(true);
-    supabase
-      .from("book_revisions")
-      .select(ROW_COLS)
-      .eq("book_id", bookId)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (!mounted.current) return;
-        setRow((data as RevisionRow | null) ?? null);
-        setLoading(false);
+    Promise.all([
+      supabase.from("book_revisions").select(ROW_COLS).eq("book_id", bookId)
+        .order("created_at", { ascending: false }).limit(1).maybeSingle(),
+      supabase.from("books").select("brief, bible").eq("id", bookId).single(),
+      supabase.from("book_threads").select("id", { count: "exact", head: true })
+        .eq("book_id", bookId).neq("status", "closed"),
+    ]).then(([revResult, bookResult, threadResult]) => {
+      if (!mounted.current) return;
+      setRow((revResult.data as RevisionRow | null) ?? null);
+      const b = bookResult.data;
+      setContextMeta({
+        hasBrief: !!(b?.brief && typeof b.brief === "object" && Object.keys(b.brief as object).length > 0),
+        hasBible: !!(b?.bible && (b.bible as { text?: string })?.text?.trim()),
+        threadCount: threadResult.count ?? 0,
       });
+      setLoading(false);
+    });
     return () => {
       mounted.current = false;
       if (channelRef.current) {
@@ -251,6 +262,7 @@ export function ReviseWithAI({
       bookId,
       evaluation: current.evaluation ?? undefined,
       instruction: current.instruction ?? undefined,
+      ctx: ctxOn,
     };
     if (BRIDGE) {
       const r = await fetch(`${BRIDGE}/replan/${bookId}`, {
@@ -341,7 +353,7 @@ export function ReviseWithAI({
     }
   };
 
-  // ── The build cascade — idempotent + resumable off `progress` ──
+  // ── The build cascade -- idempotent + resumable off `progress` ──
   const runBuild = async (start: RevisionRow) => {
     if (!start.plan) return;
     busyRef.current = true;
@@ -396,7 +408,7 @@ export function ReviseWithAI({
           await patch(current.id, { progress }); // persist incrementally so resume never re-adds
         }
 
-        // 4. Retargets — set the new objective; drop the stale summary.
+        // 4. Retargets -- set the new objective; drop the stale summary.
         progress = { ...progress, phase: "Updating objectives…" };
         await patch(current.id, { progress });
         setRow((r) => (r ? { ...r, progress } : r));
@@ -454,7 +466,7 @@ export function ReviseWithAI({
         setRow(current);
       }
 
-      // 6. Prose cascade — resume skips pages already done; checks cancel between pages.
+      // 6. Prose cascade -- resume skips pages already done; checks cancel between pages.
       const tasks = [...progress.tasks];
       for (let i = 0; i < tasks.length; i++) {
         if (tasks[i].state === "done") continue;
@@ -495,7 +507,7 @@ export function ReviseWithAI({
         title: failures ? "Revised with some failures" : "Revision complete",
         description:
           `${tasks.length - failures} of ${tasks.length} page${tasks.length === 1 ? "" : "s"} rebuilt` +
-          `${failures ? ` (${failures} failed)` : ""}. Review the changes under “View drafts”, then save a version to keep — or revert to discard.`,
+          `${failures ? ` (${failures} failed)` : ""}. Review the changes under "View drafts", then save a version to keep -- or revert to discard.`,
         variant: failures ? "destructive" : undefined,
       });
       onApplied?.();
@@ -557,12 +569,12 @@ export function ReviseWithAI({
 
       {loading && <p className="pv-serif mt-3 text-[14px] italic text-[hsl(var(--pv-text-faint))]">Checking<AnimatedEllipsis /></p>}
 
-      {/* The input form — shown when there's no active revision. */}
+      {/* The input form -- shown when there's no active revision. */}
       {!loading && !active && (
         <div className="mt-3 space-y-3">
           {row && row.status !== "planning" && (
             <p className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))]">
-              {row.status === "done" && "Last revision complete — review it under “View drafts”."}
+              {row.status === "done" && 'Last revision complete -- review it under "View drafts".'}
               {row.status === "cancelled" && "Last revision cancelled."}
               {row.status === "error" && `Last revision failed: ${row.error ?? "unknown error"}`}
             </p>
@@ -571,17 +583,34 @@ export function ReviseWithAI({
             ref={textareaRef}
             value={instruction}
             onChange={(e) => setInstruction(e.target.value)}
-            placeholder="Describe the change you want — e.g. “Make chapter 3 darker, give the protagonist a real decision in the middle, and cut the subplot about the map.”"
+            placeholder={'Describe the change you want -- e.g. "Make chapter 3 darker, give the protagonist a real decision in the middle, and cut the subplot about the map."'}
             className="min-h-[88px] pv-serif text-[14.5px] leading-relaxed"
           />
-          {attachedEval && (
-            <div className="flex items-center gap-2">
-              <span className="pv-mono rounded-full bg-[hsl(var(--pv-surface-2))] px-2.5 py-1 text-[10.5px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-muted))]">
-                ◎ acting on the editor's notes
-              </span>
-              <button type="button" onClick={() => setAttachedEval(null)} className="text-[hsl(var(--pv-text-faint))] hover:text-foreground" aria-label="detach editor's notes">✕</button>
+
+          {/* Context chips -- show what the AI will see and let the author adjust */}
+          {contextMeta && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="pv-eyebrow mr-0.5 text-[9px] text-[hsl(var(--pv-text-faint))]">Context</span>
+              {/* Outline is always included and not toggleable */}
+              <CtxChip label="Outline" fixed />
+              {contextMeta.hasBrief && (
+                <CtxChip label="Brief" on={ctxOn.brief}
+                  onToggle={() => setCtxOn(c => ({ ...c, brief: !c.brief }))} />
+              )}
+              {contextMeta.hasBible && (
+                <CtxChip label="Bible" on={ctxOn.bible}
+                  onToggle={() => setCtxOn(c => ({ ...c, bible: !c.bible }))} />
+              )}
+              {contextMeta.threadCount > 0 && (
+                <CtxChip label={`Threads · ${contextMeta.threadCount}`} on={ctxOn.threads}
+                  onToggle={() => setCtxOn(c => ({ ...c, threads: !c.threads }))} />
+              )}
+              {attachedEval && (
+                <CtxChip label="Editor's notes" accent onRemove={() => setAttachedEval(null)} />
+              )}
             </div>
           )}
+
           <div className="flex items-center justify-between gap-3">
             <p className="pv-serif text-[12.5px] leading-relaxed text-[hsl(var(--pv-text-faint))]">
               The AI proposes a plan you review before anything changes. A version is saved first; results land in your drafts.
@@ -607,11 +636,11 @@ export function ReviseWithAI({
         </div>
       )}
 
-      {/* Plan ready — review inline summary; the dialog holds the detail. */}
+      {/* Plan ready -- review inline summary; the dialog holds the detail. */}
       {!loading && active && row!.status === "awaiting_review" && (
         <div className="mt-3 flex items-center justify-between gap-3">
           <p className="pv-serif text-[14.5px] leading-relaxed text-foreground">
-            A revision plan is ready — {changeCount} change{changeCount === 1 ? "" : "s"} across the book.
+            A revision plan is ready -- {changeCount} change{changeCount === 1 ? "" : "s"} across the book.
           </p>
           <div className="flex gap-2">
             <Button variant="ghost" onClick={discard}>Discard</Button>
@@ -620,7 +649,7 @@ export function ReviseWithAI({
         </div>
       )}
 
-      {/* Building — live per-page status, survives reload, cancellable + resumable. */}
+      {/* Building -- live per-page status, survives reload, cancellable + resumable. */}
       {!loading && active && row!.status === "building" && row!.progress && (
         <BuildStatus
           progress={row!.progress}
@@ -669,10 +698,10 @@ export function ReviseWithAI({
 
             {(row?.plan?.deletes.length ?? 0) > 0 && (
               <div className="mt-3 border-t border-[hsl(var(--pv-border-soft))] pt-2">
-                <div className="pv-eyebrow mb-1">Deleted (archived — reversible)</div>
+                <div className="pv-eyebrow mb-1">Deleted (archived -- reversible)</div>
                 {row?.plan?.deletes.map((d) => (
                   <div key={d.ref} className="pv-serif text-[12.5px] text-[hsl(var(--pv-text-faint))]">
-                    · page {d.ref}{d.why ? ` — ${d.why}` : ""}
+                    · page {d.ref}{d.why ? ` -- ${d.why}` : ""}
                   </div>
                 ))}
               </div>
@@ -694,7 +723,7 @@ export function ReviseWithAI({
   );
 }
 
-// Live build status — the per-page changelog the author watches (and can leave / resume).
+// Live build status -- the per-page changelog the author watches (and can leave / resume).
 function BuildStatus({
   progress,
   busy,
@@ -714,7 +743,7 @@ function BuildStatus({
       <div className="flex items-center justify-between gap-3">
         <p className="pv-serif text-[15px] italic text-[hsl(var(--pv-text-muted))]">
           {progress.structureDone
-            ? <>Writing pages — {progress.done}/{total} done{busy ? <AnimatedEllipsis /> : ""}</>
+            ? <>Writing pages -- {progress.done}/{total} done{busy ? <AnimatedEllipsis /> : ""}</>
             : <>{progress.phase ?? <>Working<AnimatedEllipsis /></>}</>}
         </p>
         <div className="flex gap-2">
@@ -730,7 +759,7 @@ function BuildStatus({
             <div key={t.id} className="flex items-baseline justify-between gap-3 pl-3">
               <span className="pv-serif text-[13.5px] text-foreground">
                 {t.title || "(untitled)"}
-                {t.why && <span className="ml-2 text-[hsl(var(--pv-text-faint))]">— {t.why}</span>}
+                {t.why && <span className="ml-2 text-[hsl(var(--pv-text-faint))]">-- {t.why}</span>}
               </span>
               <span className={`pv-mono shrink-0 text-[10px] uppercase tracking-[0.14em] ${TASK_TONE[t.state]}`}>
                 {t.state === "writing" ? "writing…" : t.state === "done" ? "done" : t.state === "failed" ? "failed" : "queued"}
@@ -740,8 +769,54 @@ function BuildStatus({
         </div>
       )}
       <p className="pv-serif text-[12px] italic text-[hsl(var(--pv-text-faint))]">
-        You can leave this page — the work persists. Reopen the book to resume or cancel.
+        You can leave this page -- the work persists. Reopen the book to resume or cancel.
       </p>
     </div>
+  );
+}
+
+function CtxChip({
+  label,
+  fixed,
+  on,
+  accent,
+  onToggle,
+  onRemove,
+}: {
+  label: string;
+  fixed?: boolean;
+  on?: boolean;
+  accent?: boolean;
+  onToggle?: () => void;
+  onRemove?: () => void;
+}) {
+  const base = "pv-mono inline-flex items-center rounded-full px-2 py-0.5 text-[10px] uppercase tracking-[0.12em]";
+  if (fixed) {
+    return (
+      <span className={cn(base, "bg-[hsl(var(--pv-surface-2))] text-[hsl(var(--pv-text-faint))]")}>
+        {label}
+      </span>
+    );
+  }
+  if (onRemove) {
+    return (
+      <span className={cn(base, "gap-1", accent
+        ? "bg-[hsl(var(--pv-accent))]/10 text-[hsl(var(--pv-accent))]"
+        : "bg-[hsl(var(--pv-surface-2))] text-[hsl(var(--pv-text-muted))]")}>
+        {label}
+        <button type="button" onClick={onRemove} className="opacity-50 hover:opacity-100" aria-label="remove">✕</button>
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      title={on ? "Click to exclude from context" : "Click to include in context"}
+      className={cn(base, "transition-opacity bg-[hsl(var(--pv-surface-2))]",
+        on ? "text-[hsl(var(--pv-text-muted))]" : "text-[hsl(var(--pv-text-faint))] opacity-40")}
+    >
+      {label}
+    </button>
   );
 }
