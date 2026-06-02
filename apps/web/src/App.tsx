@@ -13,6 +13,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { LegacyRedirects } from "@/components/LegacyRedirects";
 import { PublicSiteRedirect } from "@/components/PublicSiteRedirect";
 import { CookieBanner } from "@/components/CookieBanner";
+import { AdminRoute } from "@/components/AdminRoute";
 import { VercelAnalytics } from "@/components/VercelAnalytics";
 
 const PrivacyPolicy = lazy(() => import("@/pages/public/legal/PrivacyPolicy"));
@@ -48,6 +49,9 @@ const JoinBook = lazy(() => import("@/pages/invitation/JoinBook"));
 
 // Settings pages
 const KindleSettings = lazy(() => import("@/pages/settings/KindleSettings"));
+
+// Admin pages
+const AdminDashboard = lazy(() => import("@/pages/admin/AdminDashboard"));
 
 const queryClient = new QueryClient();
 
@@ -120,6 +124,18 @@ export default function App() {
                       {/* Public published content routes */}
                       <Route path="/library/books/:bookSlug" element={<PublicSiteRedirect />} />
                       <Route path="/library/books/:bookSlug/pages/:pageSlug" element={<PublicSiteRedirect />} />
+
+                      {/* Admin routes */}
+                      <Route
+                        path="/admin"
+                        element={
+                          <PrivateRoute>
+                            <AdminRoute>
+                              <AdminDashboard />
+                            </AdminRoute>
+                          </PrivateRoute>
+                        }
+                      />
 
                       {/* Protected routes */}
                       <Route element={<ProtectedLayout />}>
