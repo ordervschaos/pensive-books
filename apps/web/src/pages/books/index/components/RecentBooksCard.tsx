@@ -231,15 +231,10 @@ export function RecentBooksCard() {
   const handleContinue = (book: RecentBook) => {
     if (!book.isOwned) {
       const bookSlug = SlugService.generateSlug(book.bookId, book.bookName);
-      const pageSlug = SlugService.generateSlug(book.pageId, book.pageTitle || '');
-      window.location.href = buildPublicUrl(`/library/books/${bookSlug}/pages/${pageSlug}`);
+      window.location.href = buildPublicUrl(`/library/books/${bookSlug}`);
       return;
     }
-
-    const url = book.wasEditing
-      ? `/books/${book.bookId}/pages/${book.pageId}?edit=true`
-      : `/books/${book.bookId}/pages/${book.pageId}`;
-    navigate(url);
+    navigate(`/books/${book.bookId}`);
   };
 
   if (!loading && recentBooks.length === 0) {
