@@ -112,7 +112,7 @@ export function ThreadsSection({ bookId, manuscriptWordCount }: { bookId: number
     try {
       await applyThreadScan(bookId, picked);
       if (scanResult.scanId != null) await markScanReviewed(scanResult.scanId, "applied");
-      toast({ title: "Threads updated", description: `${picked.length} change${picked.length === 1 ? "" : "s"} applied.` });
+      toast({ title: "Thread tracker updated", description: `${picked.length} thread${picked.length === 1 ? "" : "s"} updated.` });
       setView({ kind: "loading" });
       await load();
     } catch (e) {
@@ -229,6 +229,9 @@ export function ThreadsSection({ bookId, manuscriptWordCount }: { bookId: number
       {/* Review the scan diff before applying */}
       {view.kind === "review" && (
         <div className="mt-4 space-y-4">
+          <p className="pv-mono text-[10px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-faint))]">
+            Updates the thread tracker — does not edit the manuscript
+          </p>
           {view.scan.summary && (
             <p className="pv-serif text-[14.5px] leading-relaxed text-foreground">{view.scan.summary}</p>
           )}
@@ -290,7 +293,7 @@ export function ThreadsSection({ bookId, manuscriptWordCount }: { bookId: number
               {applying && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
               {view.scan.changes.length === 0
                 ? "Done"
-                : `Apply ${view.accepted.filter(Boolean).length} change${view.accepted.filter(Boolean).length === 1 ? "" : "s"}`}
+                : `Update ${view.accepted.filter(Boolean).length} thread${view.accepted.filter(Boolean).length === 1 ? "" : "s"}`}
             </button>
           </div>
         </div>
