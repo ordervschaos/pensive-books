@@ -107,7 +107,15 @@ const BookDetails = () => {
   const [isPublishingDialogOpen, setIsPublishingDialogOpen] = useState(false);
   const [showArchivedPages, setShowArchivedPages] = useState(false);
   // Manuscript leads; all AI tools live behind their own tab (brief stays common above).
-  const [activeTab, setActiveTab] = useState<"manuscript" | "ai">("manuscript");
+  // Persisted to localStorage so the choice survives a refresh.
+  const tabKey = `book-tab:${bookSlug}`;
+  const [activeTab, setActiveTab] = useState<"manuscript" | "ai">(
+    () => (localStorage.getItem(tabKey) === "ai" ? "ai" : "manuscript")
+  );
+  const switchTab = (tab: "manuscript" | "ai") => {
+    setActiveTab(tab);
+    localStorage.setItem(tabKey, tab);
+  };
 
   const fetchBookmarkedPage = useCallback(async (session: Session | null) => {
     try {
@@ -565,7 +573,7 @@ const BookDetails = () => {
                     type="button"
                     role="tab"
                     aria-selected={activeTab === "manuscript"}
-                    onClick={() => setActiveTab("manuscript")}
+                    onClick={() => switchTab("manuscript")}
                     className={cn(
                       "pv-serif -mb-px inline-flex items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-[18px] transition-colors",
                       activeTab === "manuscript"
@@ -582,7 +590,7 @@ const BookDetails = () => {
                     type="button"
                     role="tab"
                     aria-selected={activeTab === "ai"}
-                    onClick={() => setActiveTab("ai")}
+                    onClick={() => switchTab("ai")}
                     className={cn(
                       "pv-serif -mb-px inline-flex items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-[18px] transition-colors",
                       activeTab === "ai"
