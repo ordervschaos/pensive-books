@@ -37,7 +37,15 @@ interface EvalRow {
   status: "pending" | "done" | "error";
   result: EvalResult | null;
   error: string | null;
+  created_at: string;
 }
+
+// A background eval (EdgeRuntime.waitUntil) that dies before writing done/error leaves its row
+// stuck `pending` forever, and Realtime never fires — so the UI would "read" indefinitely. Treat a
+// pending row this old as failed. Evals take ~30–90s; 5 min is comfortably past any live run.
+const STALE_MS = 5 * 60 * 1000;
+const STALE_ERROR = "The editor's read didn't finish — try running it again.";
+const isStale = (createdAt: string) => Date.now() - new Date(createdAt).getTime() >= STALE_MS;
 
 type State =
   | { status: "idle" }
@@ -62,11 +70,18 @@ export function BookEvaluationSection({ bookId, onRevise }: { bookId: number; on
   const [state, setState] = useState<State>({ status: "checking" });
   const mounted = useRef(true);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Tear down the Realtime watch and its staleness watchdog together — every caller that stops
+  // watching (done, error, unmount, re-watch) wants both gone.
   const cleanupChannel = () => {
     if (channelRef.current) {
       supabase.removeChannel(channelRef.current);
       channelRef.current = null;
+    }
+    if (watchdogRef.current) {
+      clearTimeout(watchdogRef.current);
+      watchdogRef.current = null;
     }
   };
 
@@ -83,9 +98,17 @@ export function BookEvaluationSection({ bookId, onRevise }: { bookId: number; on
     // pending → keep waiting on the channel
   };
 
-  // Watch an in-flight evaluation row until it finishes (edge backend only).
-  const watchRow = (evalId: number) => {
+  // Watch an in-flight evaluation row until it finishes (edge backend only). `createdAt` arms a
+  // watchdog: if the background job dies, Realtime never fires, so we flip to error once the row is
+  // stale (counted from when it was created, not from now — so a resumed near-stale row times out
+  // promptly rather than waiting a fresh full interval).
+  const watchRow = (evalId: number, createdAt: string) => {
     cleanupChannel();
+    watchdogRef.current = setTimeout(() => {
+      if (!mounted.current) return;
+      setState((s) => (s.status === "running" ? { status: "error", error: STALE_ERROR } : s));
+      cleanupChannel();
+    }, Math.max(0, STALE_MS - (Date.now() - new Date(createdAt).getTime())));
     channelRef.current = supabase
       .channel(`book_eval_${evalId}`)
       .on(
@@ -97,7 +120,7 @@ export function BookEvaluationSection({ bookId, onRevise }: { bookId: number; on
     // Catch a completion that landed before the subscription was live.
     supabase
       .from("book_evaluations")
-      .select("id, status, result, error")
+      .select("id, status, result, error, created_at")
       .eq("id", evalId)
       .maybeSingle()
       .then(({ data }) => data && applyRow(data as EvalRow));
@@ -120,7 +143,7 @@ export function BookEvaluationSection({ bookId, onRevise }: { bookId: number; on
       // Load the latest stored evaluation; resume watching if one is still running.
       supabase
         .from("book_evaluations")
-        .select("id, status, result, error")
+        .select("id, status, result, error, created_at")
         .eq("book_id", bookId)
         .order("created_at", { ascending: false })
         .limit(1)
@@ -131,8 +154,13 @@ export function BookEvaluationSection({ bookId, onRevise }: { bookId: number; on
           if (!row) return setState({ status: "idle" });
           if (row.status === "done" && row.result) setState({ status: "done", result: row.result });
           else if (row.status === "pending") {
-            setState({ status: "running" });
-            watchRow(row.id);
+            // A pending row from a dead job is stuck forever — fail it instead of watching.
+            if (isStale(row.created_at)) {
+              setState({ status: "error", error: STALE_ERROR });
+            } else {
+              setState({ status: "running" });
+              watchRow(row.id, row.created_at);
+            }
           } else if (row.status === "error") {
             setState({ status: "error", error: row.error || "previous evaluation failed" });
           } else setState({ status: "idle" });
@@ -178,9 +206,9 @@ export function BookEvaluationSection({ bookId, onRevise }: { bookId: number; on
         setState({ status: "error", error: msg });
         return;
       }
-      const evalId = (data as { evaluation?: { id: number } })?.evaluation?.id;
-      if (!evalId) return setState({ status: "error", error: "No evaluation was started." });
-      watchRow(evalId);
+      const ev = (data as { evaluation?: { id: number; created_at: string } })?.evaluation;
+      if (!ev?.id) return setState({ status: "error", error: "No evaluation was started." });
+      watchRow(ev.id, ev.created_at);
     } catch (e) {
       setState({ status: "error", error: e instanceof Error ? e.message : "Evaluation failed." });
     }
@@ -243,12 +271,14 @@ function Report({ bookId, result, onRevise }: { bookId: number; result: EvalResu
   const { verdict, sections } = result;
   return (
     <div className="mt-5 space-y-6">
-      {/* Verdict — stance badge + the editorial letter, in a tinted box */}
-      <div className="flex gap-3 rounded-xl bg-[hsl(var(--pv-accent))]/[0.08] p-4">
+      {/* Verdict — a one-line stance headline over the editorial letter, in a tinted box.
+          `stance` is a free-text headline (often a full sentence), not a short tag, so it gets
+          its own full-width line rather than an inline pill that would squeeze the letter. */}
+      <div className="space-y-2.5 rounded-xl bg-[hsl(var(--pv-accent))]/[0.08] p-4">
         {verdict.stance && (
-          <span className="pv-mono shrink-0 self-start rounded-full bg-[hsl(var(--pv-accent))] px-2.5 py-1 text-[9.5px] font-medium uppercase tracking-[0.14em] text-background">
+          <p className="pv-mono text-[11px] font-medium uppercase leading-relaxed tracking-[0.12em] text-[hsl(var(--pv-accent))]">
             {verdict.stance}
-          </span>
+          </p>
         )}
         <p className="pv-serif text-[15.5px] leading-relaxed text-foreground">{verdict.letter}</p>
       </div>
