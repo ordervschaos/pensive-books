@@ -220,6 +220,41 @@ export const getWordCountFromContent = (jsonContent: any): number => {
   return text.trim().split(/\s+/).length;
 };
 
+/** Where a page sits in the manuscript, measured in words. */
+export interface PageWordPosition {
+  /** Number of manuscript words BEFORE this page begins. */
+  start: number;
+  /** This page's own word count (0 for non-text or empty pages). */
+  count: number;
+}
+
+/**
+ * Cumulative word offsets across an ordered list of pages.
+ *
+ * `start` is the distance primitive that foreshadowing / thread tracking is built on:
+ * the number of words before a page begins, so the gap between any two anchors is just a
+ * subtraction. Only `text` pages contribute to the running total; section/other pages get
+ * count 0 and carry the current offset forward.
+ *
+ * Pages MUST already be in reading (page_index) order — only the per-page `start` depends on
+ * order; `total` is order-independent.
+ */
+export const cumulativeWordOffsets = <
+  T extends { id: number; page_type?: string | null; content?: any }
+>(
+  pages: T[]
+): { positions: Map<number, PageWordPosition>; total: number } => {
+  const positions = new Map<number, PageWordPosition>();
+  let running = 0;
+  for (const page of pages) {
+    const count =
+      page.page_type === 'text' && page.content ? getWordCountFromContent(page.content) : 0;
+    positions.set(page.id, { start: running, count });
+    running += count;
+  }
+  return { positions, total: running };
+};
+
 /**
  * Convert TipTap JSON content to Markdown string
  */

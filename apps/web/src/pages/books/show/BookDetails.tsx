@@ -12,7 +12,7 @@ import { Helmet } from "react-helmet-async";
 import { executeBookOperation } from "@/lib/book-operations";
 import { Button } from "@/components/ui/button";
 import { ArchivedPagesSection } from "./components/pageList/ArchivedPagesSection";
-import { jsonToText, getWordCountFromContent } from "@/utils/tiptapHelpers";
+import { jsonToText, cumulativeWordOffsets } from "@/utils/tiptapHelpers";
 import { CommitDialog } from "./components/CommitDialog";
 import { PublishingDialog } from "@/components/book/PublishingDialog";
 import { VersionControlButton } from "./components/VersionControlButton";
@@ -456,11 +456,7 @@ const BookDetails = () => {
   
   const bookDescription = book.subtitle || `A book by ${book.author || "Unknown author"}`;
 
-  const manuscriptWordCount = pages.reduce(
-    (acc, page) =>
-      acc + (page.page_type === 'text' && page.content ? getWordCountFromContent(page.content) : 0),
-    0
-  );
+  const manuscriptWordCount = cumulativeWordOffsets(pages).total;
 
   // The brief gates AI planning (objectives are drawn from it). Empty brief → 0 fields filled.
   const briefSet = computeCompletion(book.brief ?? null) > 0;

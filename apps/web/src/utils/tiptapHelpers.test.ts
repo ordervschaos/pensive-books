@@ -9,6 +9,7 @@ import {
   getTextFromContent,
   convertJSONToHTML,
   getWordCountFromContent,
+  cumulativeWordOffsets,
 } from './tiptapHelpers';
 
 describe('tiptapHelpers', () => {
@@ -385,6 +386,58 @@ describe('tiptapHelpers', () => {
 
       const count = getWordCountFromContent(jsonContent);
       expect(count).toBe(5);
+    });
+  });
+
+  describe('cumulativeWordOffsets', () => {
+    const para = (text: string) => ({
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [{ type: 'text', text }] }],
+    });
+
+    it('accumulates start offsets across text pages in order', () => {
+      const pages = [
+        { id: 1, page_type: 'text', content: para('one two three') }, // 3
+        { id: 2, page_type: 'text', content: para('four five') },      // 2
+        { id: 3, page_type: 'text', content: para('six') },            // 1
+      ];
+
+      const { positions, total } = cumulativeWordOffsets(pages);
+      expect(positions.get(1)).toEqual({ start: 0, count: 3 });
+      expect(positions.get(2)).toEqual({ start: 3, count: 2 });
+      expect(positions.get(3)).toEqual({ start: 5, count: 1 });
+      expect(total).toBe(6);
+    });
+
+    it('skips non-text and empty pages (count 0, offset carried forward)', () => {
+      const pages = [
+        { id: 1, page_type: 'section', content: para('ignored heading') },
+        { id: 2, page_type: 'text', content: para('real words here') }, // 3
+        { id: 3, page_type: 'text', content: null },                    // 0
+        { id: 4, page_type: 'text', content: para('more prose') },      // 2
+      ];
+
+      const { positions, total } = cumulativeWordOffsets(pages);
+      expect(positions.get(1)).toEqual({ start: 0, count: 0 });
+      expect(positions.get(2)).toEqual({ start: 0, count: 3 });
+      expect(positions.get(3)).toEqual({ start: 3, count: 0 });
+      expect(positions.get(4)).toEqual({ start: 3, count: 2 });
+      expect(total).toBe(5);
+    });
+
+    it('returns zero total for an empty book', () => {
+      expect(cumulativeWordOffsets([])).toEqual({ positions: new Map(), total: 0 });
+    });
+
+    it('distance between two anchors is a subtraction of starts', () => {
+      const pages = [
+        { id: 1, page_type: 'text', content: para('a b c d') }, // 4
+        { id: 2, page_type: 'text', content: para('e f') },     // 2
+        { id: 3, page_type: 'text', content: para('g h i') },   // 3
+      ];
+      const { positions } = cumulativeWordOffsets(pages);
+      // foreshadowing distance: setup on page 1, payoff on page 3
+      expect(positions.get(3)!.start - positions.get(1)!.start).toBe(6);
     });
   });
 
