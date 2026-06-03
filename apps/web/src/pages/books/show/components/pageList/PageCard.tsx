@@ -1,6 +1,5 @@
 import { Trash2, BookmarkCheck, MoreVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { AudioPlayer } from "@/pages/books/pages/view/components/AudioPlayer";
 import { PageItemProps } from "./types";
 import { forwardRef } from "react";
 import { convertJSONToHTML } from "@/utils/tiptapHelpers";
@@ -153,7 +152,6 @@ export const PageCard = forwardRef<HTMLDivElement, PageItemProps>(({ page, onNav
               {STATUS_LABEL[status]}
             </span>
             <div className="pv-mono flex items-center gap-2 text-[10.5px] uppercase tracking-[0.15em] text-[hsl(var(--pv-text-faint))]">
-              <AudioPlayer pageId={page.id} content={htmlContent} compact={true} />
               <span className="tabular-nums">{words ? `${words.toLocaleString()} w` : "—"}</span>
             </div>
           </div>
