@@ -87,6 +87,28 @@ export const LANDING_FEATURES: LandingFeature[] = [
   },
 ];
 
+export interface JourneyStep {
+  /** Marketing voice — the title of this stage. */
+  title: string;
+  /** One line on what happens here. */
+  blurb: string;
+}
+
+/**
+ * The whole arc, start to shelf — the same seven-step journey the app walks you
+ * through (create → brief → scaffold → write → read → revise → publish), shown
+ * as an at-a-glance staircase before the spotlight deep-dives.
+ */
+export const JOURNEY_STEPS: JourneyStep[] = [
+  { title: "Create your book", blurb: "Start with a title and a blank shelf. That's all it takes to begin." },
+  { title: "Set a brief", blurb: "Tell Pensive what you're writing — premise, genre, length. Everything downstream is drawn from this." },
+  { title: "Generate the scaffold", blurb: "Pensive proposes the chapters and pages as objectives — no prose yet. Review the plan, then create it in a click." },
+  { title: "Write the pages", blurb: "Turn every objective into prose, page by page, with live progress — or write any page yourself." },
+  { title: "Get an editor's read", blurb: "An expert AI editor reads the whole manuscript: a verdict, a grade, and prioritised, page-anchored notes." },
+  { title: "Revise", blurb: "Apply the notes as a reviewed revision, or restructure freely. You approve every change before it sticks." },
+  { title: "Publish", blurb: "Flip one switch and your book is live in the public library — readable anywhere, downloadable as EPUB." },
+];
+
 export interface LandingExtra {
   title: string;
   blurb: string;

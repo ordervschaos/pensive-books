@@ -3,6 +3,7 @@ import { getFeaturedBooks } from "@/lib/public-books";
 import { getConfiguredAppOrigin } from "@/lib/pensive";
 import { FeaturedBooksCarousel } from "@/components/FeaturedBooksCarousel";
 import { FeatureSection } from "@/components/landing/FeatureSection";
+import { JourneySection } from "@/components/landing/JourneySection";
 import { LANDING_FEATURES, LANDING_EXTRAS } from "@/lib/landing-content";
 
 export const metadata: Metadata = {
@@ -63,6 +64,11 @@ export default async function HomePage() {
           <FeaturedBooksCarousel books={featuredBooks} />
         </section>
       )}
+
+      {/* How it works — the whole seven-step arc as a staircase */}
+      <div className="mt-24 md:mt-32">
+        <JourneySection />
+      </div>
 
       {/* Spotlight features — driven entirely by LANDING_FEATURES */}
       <div className="mt-24 space-y-24 md:mt-32 md:space-y-32">
