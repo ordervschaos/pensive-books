@@ -819,6 +819,9 @@ function BuildStatus({
   );
 }
 
+// CtxChip — two variants:
+//   toggle (Brief, Bible, Editor's notes): simple on/off, looks like a labeled checkbox
+//   picker (Outline, Threads): opens a sub-panel; shows a chevron and current selection count
 function CtxChip({
   label, on, accent, picker, expanded, onToggle, onRemove, onClick,
 }: {
@@ -831,47 +834,53 @@ function CtxChip({
   onRemove?: () => void;
   onClick?: () => void;
 }) {
-  const base = "pv-mono inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] transition-all";
+  // Removable badge (Editor's notes)
   if (onRemove) {
     return (
-      <span className={cn(base, accent
-        ? "bg-[hsl(var(--pv-accent))]/10 text-[hsl(var(--pv-accent))]"
-        : "bg-[hsl(var(--pv-surface-2))] text-[hsl(var(--pv-text-muted))]")}>
+      <span className={cn(
+        "pv-mono inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.12em]",
+        accent
+          ? "border-[hsl(var(--pv-accent))]/30 bg-[hsl(var(--pv-accent))]/10 text-[hsl(var(--pv-accent))]"
+          : "border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))] text-[hsl(var(--pv-text-muted))]"
+      )}>
         {label}
-        <button type="button" onClick={onRemove} className="opacity-50 hover:opacity-100" aria-label="remove">x</button>
+        <button type="button" onClick={onRemove} aria-label={`Remove ${label}`}
+          className="ml-0.5 opacity-50 hover:opacity-100">×</button>
       </span>
     );
   }
+
+  // Picker chip (Outline, Threads) — clicking opens/closes a sub-panel
   if (picker) {
     return (
-      <button type="button" onClick={onClick}
-        className={cn(base,
-          expanded ? "bg-foreground text-background" : "bg-[hsl(var(--pv-surface-2))]",
-          on || expanded ? "text-[hsl(var(--pv-text-muted))]" : "opacity-40 text-[hsl(var(--pv-text-faint))]",
-          expanded && "bg-foreground text-background opacity-100")}>
+      <button type="button" onClick={onClick} aria-expanded={expanded}
+        className={cn(
+          "pv-mono inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] transition-colors",
+          expanded
+            ? "border-foreground bg-foreground text-background"
+            : on
+              ? "border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))] text-[hsl(var(--pv-text-muted))] hover:border-foreground/30"
+              : "border-[hsl(var(--pv-border-soft))]/40 bg-transparent text-[hsl(var(--pv-text-faint))] opacity-50"
+        )}>
         {label}
-        <span className="opacity-50">{expanded ? "^" : "v"}</span>
+        <span aria-hidden>{expanded ? "▴" : "▾"}</span>
       </button>
     );
   }
-  return (
-    <button type="button" onClick={onToggle}
-      title={on ? "Click to exclude" : "Click to include"}
-      className={cn(base, "bg-[hsl(var(--pv-surface-2))]",
-        on ? "text-[hsl(var(--pv-text-muted))]" : "opacity-40 text-[hsl(var(--pv-text-faint))]")}>
-      {label}
-    </button>
-  );
-}
 
-function ExtraToggle({ on, onClick, label }: { on: boolean; onClick: () => void; label: string }) {
+  // Toggle chip (Brief, Bible) — simple yes/no
   return (
-    <button type="button" onClick={onClick}
+    <button type="button" onClick={onToggle} aria-pressed={on}
+      title={on ? `${label} included — click to exclude` : `${label} excluded — click to include`}
       className={cn(
-        "pv-mono w-9 shrink-0 rounded py-0.5 text-[9px] uppercase tracking-wide transition-colors",
-        on ? "bg-[hsl(var(--pv-accent))]/15 text-[hsl(var(--pv-accent))]"
-           : "text-[hsl(var(--pv-text-faint))] hover:text-[hsl(var(--pv-text-muted))]"
+        "pv-mono inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] transition-colors",
+        on
+          ? "border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))] text-[hsl(var(--pv-text-muted))] hover:border-foreground/30"
+          : "border-[hsl(var(--pv-border-soft))]/40 bg-transparent text-[hsl(var(--pv-text-faint))] opacity-40 hover:opacity-70"
       )}>
+      <span aria-hidden className={on ? "text-[hsl(var(--pv-accent))]" : "text-[hsl(var(--pv-text-faint))]"}>
+        {on ? "✓" : "○"}
+      </span>
       {label}
     </button>
   );
@@ -906,45 +915,59 @@ function PageContextPicker({
     onChange(next);
   };
 
+  const anySum = textPages.some(p => extras.get(p.id)?.summary);
+  const anyFull = textPages.some(p => extras.get(p.id)?.full);
   const allSum = textPages.length > 0 && textPages.every(p => extras.get(p.id)?.summary);
   const allFull = textPages.length > 0 && textPages.every(p => extras.get(p.id)?.full);
 
   return (
-    <div className="rounded-lg border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/50 p-2.5">
-      {/* Header */}
-      <div className="mb-1.5 grid grid-cols-[1fr_auto_auto] items-center gap-2">
+    <div className="overflow-hidden rounded-lg border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/40">
+      {/* Sticky column-header row */}
+      <div className="grid grid-cols-[1fr_56px_56px] items-center border-b border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))] px-3 py-2">
         <span className="pv-eyebrow text-[9px] text-[hsl(var(--pv-text-faint))]">
-          All pages · outline always included
+          Outline always included
         </span>
         <button type="button" onClick={() => setAll("summary", !allSum)}
-          className={cn("pv-mono w-9 rounded py-0.5 text-[9px] uppercase tracking-wide",
-            allSum ? "text-[hsl(var(--pv-accent))]" : "text-[hsl(var(--pv-text-faint))] hover:text-[hsl(var(--pv-text-muted))]")}>
-          Sum
+          aria-label={allSum ? "Remove summaries from all pages" : "Add summaries to all pages"}
+          className={cn("pv-mono text-center text-[9px] uppercase tracking-wide transition-colors",
+            anySum ? "text-[hsl(var(--pv-accent))]" : "text-[hsl(var(--pv-text-faint))] hover:text-foreground")}>
+          Summary
         </button>
         <button type="button" onClick={() => setAll("full", !allFull)}
-          className={cn("pv-mono w-9 rounded py-0.5 text-[9px] uppercase tracking-wide",
-            allFull ? "text-[hsl(var(--pv-accent))]" : "text-[hsl(var(--pv-text-faint))] hover:text-[hsl(var(--pv-text-muted))]")}>
+          aria-label={allFull ? "Remove full content from all pages" : "Add full content to all pages"}
+          className={cn("pv-mono text-center text-[9px] uppercase tracking-wide transition-colors",
+            anyFull ? "text-[hsl(var(--pv-accent))]" : "text-[hsl(var(--pv-text-faint))] hover:text-foreground")}>
           Full
         </button>
       </div>
+
       {/* Page rows */}
-      <div className="max-h-56 overflow-y-auto pr-1">
+      <div className="max-h-56 overflow-y-auto">
         {pages.map(p => {
           if (p.page_type === "section") {
             return (
-              <p key={p.id} className="pv-serif pb-0.5 pt-2.5 text-[10px] font-semibold uppercase tracking-widest text-[hsl(var(--pv-text-faint))]">
+              <p key={p.id} className="pv-serif px-3 pb-0.5 pt-3 text-[10px] font-semibold uppercase tracking-widest text-[hsl(var(--pv-text-faint))]">
                 {p.title || "(section)"}
               </p>
             );
           }
           const ex = extras.get(p.id) ?? { summary: false, full: false };
           return (
-            <div key={p.id} className="grid grid-cols-[1fr_auto_auto] items-center gap-2 rounded px-0.5 py-0.5 hover:bg-[hsl(var(--pv-surface-2))]">
-              <span className="pv-serif truncate text-[13px] text-foreground">
+            <div key={p.id} className="grid grid-cols-[1fr_56px_56px] items-center px-3 py-1.5 hover:bg-[hsl(var(--pv-surface-2))]/60">
+              <span className="pv-serif truncate pr-2 text-[13.5px] text-foreground">
                 {p.title || "(untitled)"}
               </span>
-              <ExtraToggle on={ex.summary} label="sum" onClick={() => toggle(p.id, "summary")} />
-              <ExtraToggle on={ex.full} label="full" onClick={() => toggle(p.id, "full")} />
+              {/* Native checkboxes — keyboard accessible + screen-reader friendly */}
+              <div className="flex justify-center">
+                <input type="checkbox" checked={ex.summary} onChange={() => toggle(p.id, "summary")}
+                  aria-label={`Include summary for ${p.title || "this page"}`}
+                  className="h-3.5 w-3.5 cursor-pointer accent-[hsl(var(--pv-accent))]" />
+              </div>
+              <div className="flex justify-center">
+                <input type="checkbox" checked={ex.full} onChange={() => toggle(p.id, "full")}
+                  aria-label={`Include full prose for ${p.title || "this page"}`}
+                  className="h-3.5 w-3.5 cursor-pointer accent-[hsl(var(--pv-accent))]" />
+              </div>
             </div>
           );
         })}
@@ -968,10 +991,10 @@ function ThreadPicker({
     onChange(next.length === allIds.length ? null : next);
   };
   return (
-    <div className="rounded-lg border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/50 p-2.5">
-      <div className="mb-2 flex items-center justify-between">
+    <div className="overflow-hidden rounded-lg border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/40">
+      <div className="flex items-center justify-between border-b border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))] px-3 py-2">
         <span className="pv-eyebrow text-[9px] text-[hsl(var(--pv-text-faint))]">
-          Threads ({effective.length}/{allIds.length})
+          {effective.length} of {allIds.length} threads included
         </span>
         <div className="flex gap-3">
           <button type="button" onClick={() => onChange(null)}
@@ -980,14 +1003,16 @@ function ThreadPicker({
             className="pv-mono text-[10px] text-[hsl(var(--pv-text-muted))] hover:text-foreground">None</button>
         </div>
       </div>
-      <div className="max-h-52 space-y-0.5 overflow-y-auto pr-1">
+      <div className="max-h-52 overflow-y-auto">
         {threads.map(t => {
           const on = effective.includes(t.id);
           return (
-            <label key={t.id} className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 hover:bg-[hsl(var(--pv-surface-2))]">
+            <label key={t.id} className="flex cursor-pointer items-center gap-2.5 px-3 py-1.5 hover:bg-[hsl(var(--pv-surface-2))]/60">
               <input type="checkbox" checked={on} onChange={() => toggle(t.id)}
-                className="h-3 w-3 shrink-0 accent-[hsl(var(--pv-accent))]" />
-              <span className={cn("pv-serif min-w-0 flex-1 truncate text-[13px]", on ? "text-foreground" : "text-[hsl(var(--pv-text-faint))]")}>
+                aria-label={t.name}
+                className="h-3.5 w-3.5 shrink-0 cursor-pointer accent-[hsl(var(--pv-accent))]" />
+              <span className={cn("pv-serif min-w-0 flex-1 truncate text-[13.5px]",
+                on ? "text-foreground" : "text-[hsl(var(--pv-text-faint))]")}>
                 {t.name}
               </span>
               <span className="pv-mono shrink-0 text-[9px] text-[hsl(var(--pv-text-faint))]">{t.status}</span>
