@@ -220,6 +220,20 @@ export class DiffService {
   }
 
   /**
+   * Rough similarity between two strings (Jaccard over word sets, 0..1). Used to
+   * pair a reworded paragraph with its counterpart when aligning block changes.
+   */
+  static textSimilarity(t1: string, t2: string): number {
+    const w1 = new Set(t1.toLowerCase().split(/\s+/).filter(Boolean));
+    const w2 = new Set(t2.toLowerCase().split(/\s+/).filter(Boolean));
+    if (w1.size === 0 && w2.size === 0) return 1;
+    if (w1.size === 0 || w2.size === 0) return 0;
+    let inter = 0;
+    for (const w of w1) if (w2.has(w)) inter++;
+    return inter / (w1.size + w2.size - inter);
+  }
+
+  /**
    * Signature of a block's inline formatting (marks per text run). Used to detect
    * formatting-only changes between two blocks whose plain text is identical.
    */
