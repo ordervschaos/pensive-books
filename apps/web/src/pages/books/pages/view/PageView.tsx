@@ -7,6 +7,7 @@ import { PageContent } from "./components/PageContent";
 import { PageLoading } from "@/components/page/PageLoading";
 import { PageNotFound } from "./components/PageNotFound";
 import { useBookPermissions } from "@/hooks/use-book-permissions";
+import { AdminViewBanner } from "@/components/book/AdminViewBanner";
 import { TableOfContents } from "./components/TableOfContents";
 import { PageChatPanel } from "./components/PageChatPanel";
 import { PageMeta } from "./components/PageMeta";
@@ -56,7 +57,7 @@ const PageView = () => {
   } = usePageViewData(bookSlug, pageSlug);
 
   // 4. Check permissions
-  const { canEdit, hasAccess, loading: permissionsLoading } = useBookPermissions(numericBookId.toString());
+  const { canEdit, hasAccess, viaAdmin, ownerLabel, loading: permissionsLoading } = useBookPermissions(numericBookId.toString());
 
   // The editor is for the book's owner/collaborators only. Anyone else who can open this
   // URL is reading a PUBLIC book — send them to the public reader, which never exposes the
@@ -401,6 +402,7 @@ const PageView = () => {
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col">
         <div className="flex-1 container max-w-5xl mx-auto px-4 py-4 flex flex-col gap-4">
+          {viaAdmin && <AdminViewBanner ownerLabel={ownerLabel} />}
           <div className="flex-1 flex flex-col">
 
             {/* Page Editor/Viewer */}

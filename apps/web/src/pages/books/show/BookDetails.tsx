@@ -17,6 +17,7 @@ import { CommitDialog } from "./components/CommitDialog";
 import { PublishingDialog } from "@/components/book/PublishingDialog";
 import { VersionControlButton } from "./components/VersionControlButton";
 import { AdminTagPanel } from "@/components/book/AdminTagPanel";
+import { AdminViewBanner } from "@/components/book/AdminViewBanner";
 import { MatureContentGate } from "@/components/book/MatureContentGate";
 import { Brief } from "@/lib/brief";
 import { BookBriefSummary } from "@/components/book/BookBriefSummary";
@@ -75,7 +76,7 @@ const BookDetails = () => {
   const [bookmarkedPageIndex, setBookmarkedPageIndex] = useState<number | null>(null);
   const [bookmarkTimestamp, setBookmarkTimestamp] = useState<string | null>(null);
   const [isChatOpen, setIsChatOpen] = useState(false);
-  const { canEdit, isOwner, hasAccess, loading: permissionsLoading } = useBookPermissions(bookSlug);
+  const { canEdit, isOwner, hasAccess, viaAdmin, ownerLabel, loading: permissionsLoading } = useBookPermissions(bookSlug);
 
   // Owner/collaborators only in the app; everyone else reading a public book goes to the
   // public reader (which never exposes author-only objective metadata). Mirrors PageView.
@@ -502,6 +503,7 @@ const BookDetails = () => {
       
       <div className="container mx-auto px-6 py-10 md:px-8">
         <div className="max-w-[1200px] mx-auto space-y-8">
+          {viaAdmin && <AdminViewBanner ownerLabel={ownerLabel} />}
           {/* Two-column workspace: manuscript leads, planning in a right rail */}
           <div className="space-y-8">
             {/* Book Header with Cover and Info */}
