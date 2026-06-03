@@ -87,17 +87,16 @@ Deno.serve(async (req: Request) => {
         brief?: boolean;
         bible?: boolean;
         threads?: boolean;
-        summaries?: boolean;
-        pageIds?: number[] | null;
+        pageCtx?: { id: number; summary: boolean; full: boolean }[] | null;
         threadIds?: number[] | null;
       };
     };
     const useBrief = ctx?.brief !== false;
     const useBible = ctx?.bible !== false;
     const useThreads = ctx?.threads !== false;
-    const useSummaries = ctx?.summaries === true;
-    const pageIdFilter = ctx?.pageIds ?? null;    // null = all
     const threadIdFilter = ctx?.threadIds ?? null; // null = all
+    // pageCtx: per-page extras { id, summary, full }. null = outline only for all pages.
+    const pageCtxArr = ctx?.pageCtx ?? null;
     if (!bookId) return json({ error: "bookId is required" }, 400);
     const hasEval = !!evaluation?.verdict && Array.isArray(evaluation.sections);
     const instr = (instruction ?? "").trim();
@@ -140,11 +139,23 @@ Deno.serve(async (req: Request) => {
     const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!apiKey) return json({ error: "ANTHROPIC_API_KEY not configured" }, 500);
 
-    // Apply page/thread filters. Sections always appear (structural); only text pages are filtered.
-    const allPages = pages as PageRow[];
-    const filteredPages = pageIdFilter
-      ? allPages.filter(p => p.page_type === "section" || pageIdFilter.includes(p.id))
-      : allPages;
+    // Build page context map from pageCtxArr
+    const pageCtxMap = new Map<number, { summary: boolean; full: boolean }>();
+    for (const pc of pageCtxArr ?? []) {
+      pageCtxMap.set(pc.id, { summary: !!pc.summary, full: !!pc.full });
+    }
+
+    // Fetch prose content for pages where full=true
+    const fullPageIds = [...pageCtxMap.entries()].filter(([, e]) => e.full).map(([id]) => id);
+    const contentMap = new Map<number, string>();
+    if (fullPageIds.length > 0) {
+      const { data: fullPages } = await userClient
+        .from("pages").select("id, content").in("id", fullPageIds);
+      for (const fp of fullPages ?? []) {
+        const text = tiptapToText(fp.content).trim();
+        if (text) contentMap.set(fp.id, text);
+      }
+    }
 
     const allThreads: ThreadLite[] = (threads as ThreadLite[] | null) ?? [];
     const filteredThreads = !useThreads
@@ -158,11 +169,12 @@ Deno.serve(async (req: Request) => {
       book.name,
       useBrief ? (book.brief as Brief | null) : null,
       useBible ? ((book.bible as { text?: string } | null)?.text?.trim() || null) : null,
-      filteredPages,
+      pages as PageRow[],
       filteredThreads,
       hasEval ? evaluation! : null,
       instr || null,
-      useSummaries
+      pageCtxMap,
+      contentMap
     );
     return json(plan);
   } catch (e) {
@@ -219,16 +231,40 @@ function briefContext(brief: Brief | null): string {
   return lines.length ? lines.join("\n") : "(brief is empty — infer a sensible neutral voice)";
 }
 
+// Minimal Tiptap JSON → plain text (mirrors evaluate-book).
+function tiptapToText(node: unknown): string {
+  if (!node || typeof node !== "object") return "";
+  const n = node as { type?: string; text?: string; content?: unknown[] };
+  if (n.type === "text") return n.text ?? "";
+  if (n.type === "hardBreak") return "\n";
+  let out = "";
+  for (const child of n.content ?? []) out += tiptapToText(child);
+  if (["paragraph", "heading", "blockquote", "listItem", "codeBlock"].includes(n.type ?? "")) out += "\n\n";
+  return out;
+}
+
 // Current book as an id-tagged outline the model edits against.
-function outlineContext(pages: PageRow[], includeSummaries = false): string {
+// pageCtxMap: per-page extras { summary, full }. contentMap: prose for full pages.
+function outlineContext(
+  pages: PageRow[],
+  pageCtxMap: Map<number, { summary: boolean; full: boolean }>,
+  contentMap: Map<number, string>
+): string {
   return pages
     .map((p) => {
       const obj = p.metadata?.objective?.trim();
-      const sum = includeSummaries ? p.metadata?.summary?.trim() : null;
+      const ex = pageCtxMap.get(p.id) ?? { summary: false, full: false };
       let line = p.page_type === "section"
-        ? `[id=${p.id}] # ${p.title || "(untitled section)"}${obj ? ` — ${obj}` : ""}`
-        : `[id=${p.id}] - "${p.title || "(untitled)"}"${obj ? ` — ${obj}` : ""}`;
-      if (sum) line += `\n  [summary: ${sum}]`;
+        ? `[id=${p.id}] # ${p.title || "(untitled section)"}${obj ? ` -- ${obj}` : ""}`
+        : `[id=${p.id}] - "${p.title || "(untitled)"}"${obj ? ` -- ${obj}` : ""}`;
+      if (ex.summary && p.page_type !== "section") {
+        const sum = p.metadata?.summary?.trim();
+        if (sum) line += `\n  [summary: ${sum}]`;
+      }
+      if (ex.full && p.page_type !== "section") {
+        const prose = contentMap.get(p.id);
+        if (prose) line += `\n  [content:\n${prose.slice(0, 3000)}\n  ]`;
+      }
       return line;
     })
     .join("\n");
@@ -296,7 +332,8 @@ async function callClaude(
   threads: ThreadLite[],
   evaluation: EvalResult | null,
   instruction: string | null,
-  includeSummaries = false
+  pageCtxMap: Map<number, { summary: boolean; full: boolean }>,
+  contentMap: Map<number, string>
 ): Promise<RevisionPlan> {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -316,7 +353,7 @@ async function callClaude(
           content:
             `BOOK: ${bookName}\n\nBRIEF (the voice contract):\n${briefContext(brief)}` +
             (bible ? `\n\nBOOK BIBLE (established facts):\n${bible}` : "") +
-            `\n\nCURRENT OUTLINE (edit against these real ids):\n${outlineContext(pages, includeSummaries)}` +
+            `\n\nCURRENT OUTLINE (edit against these real ids):\n${outlineContext(pages, pageCtxMap, contentMap)}` +
             (threads.length ? `\n\nTRACKED THREADS (keep their setups & payoffs intact):\n${threadsContext(threads)}` : "") +
             (instruction ? `\n\nAUTHOR'S INSTRUCTION (primary directive):\n${instruction}` : "") +
             (evaluation ? `\n\nEDITOR'S EVALUATION:\n${evalContext(evaluation)}` : "") +
