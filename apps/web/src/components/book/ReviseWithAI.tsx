@@ -216,10 +216,15 @@ export function ReviseWithAI({
     ]).then(([revResult, , pagesResult, threadsResult]) => {
       if (!mounted.current) return;
       setRow((revResult.data as RevisionRow | null) ?? null);
-      setContextMeta({
-        pages: (pagesResult.data as PageLite[] | null) ?? [],
-        threads: (threadsResult.data as ThreadLite[] | null) ?? [],
+      const pages = (pagesResult.data as PageLite[] | null) ?? [];
+      setContextMeta({ pages, threads: (threadsResult.data as ThreadLite[] | null) ?? [] });
+      // Default depths: last 2 text pages = full, everything else = summary
+      const textPages = pages.filter(p => p.page_type !== "section");
+      const defaults = new Map<number, PageDepth>();
+      textPages.forEach((p, i) => {
+        defaults.set(p.id, i >= textPages.length - 2 ? "full" : "summary");
       });
+      setPageDepth(defaults);
       setLoading(false);
     });
     return () => {
@@ -272,13 +277,11 @@ export function ReviseWithAI({
       evaluation: current.evaluation ?? undefined,
       instruction: current.instruction ?? undefined,
       ctx: {
-        pageCtx: pageDepth.size > 0
-          ? Array.from(pageDepth.entries()).map(([id, depth]) => ({
-              id,
-              summary: depth === "summary",
-              full: depth === "full",
-            }))
-          : null,
+        pageCtx: Array.from(pageDepth.entries()).map(([id, depth]) => ({
+          id,
+          summary: depth === "summary",
+          full: depth === "full",
+        })),
         threadIds: selectedThreadIds,
       },
     };
@@ -609,8 +612,7 @@ export function ReviseWithAI({
           {contextMeta && (() => {
             const sumCount = Array.from(pageDepth.values()).filter(d => d === "summary").length;
             const fullCount = Array.from(pageDepth.values()).filter(d => d === "full").length;
-            const extras = [sumCount > 0 ? `${sumCount}s` : null, fullCount > 0 ? `${fullCount}f` : null].filter(Boolean).join(" ");
-            const pageLabel = extras ? `Pages · ${extras}` : "Pages";
+            const pageLabel = pageDepth.size > 0 ? `Pages · ${sumCount}s ${fullCount}f` : "Pages";
             const threadCount = selectedThreadIds === null
               ? contextMeta.threads.length
               : selectedThreadIds.length;
@@ -885,32 +887,26 @@ function PageContextPicker({
 }) {
   const textPages = pages.filter(p => p.page_type !== "section");
 
-  const setDepth = (id: number, d: PageDepth | null) => {
-    const next = new Map(depth);
-    if (d === null) next.delete(id); else next.set(id, d);
-    onChange(next);
+  const setDepth = (id: number, d: PageDepth) => {
+    onChange(new Map(depth).set(id, d));
   };
 
-  const setAll = (d: PageDepth | null) => {
+  const setAll = (d: PageDepth) => {
     const next = new Map(depth);
-    for (const p of textPages) {
-      if (d === null) next.delete(p.id); else next.set(p.id, d);
-    }
+    for (const p of textPages) next.set(p.id, d);
     onChange(next);
   };
 
   return (
     <div className="overflow-hidden rounded-lg border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/40">
       {/* Column headers -- clicking sets ALL pages to that depth */}
-      <div className="grid grid-cols-[1fr_40px_80px_56px] items-center border-b border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))] px-3 py-2">
+      <div className="grid grid-cols-[1fr_80px_56px] items-center border-b border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))] px-3 py-2">
         <span className="pv-eyebrow text-[9px] text-[hsl(var(--pv-text-faint))]">
           Outline always included
         </span>
-        <button type="button" onClick={() => setAll(null)} title="Set all pages to outline only"
-          className="pv-mono text-center text-[9px] text-[hsl(var(--pv-text-faint))] hover:text-foreground">--</button>
-        <button type="button" onClick={() => setAll("summary")} title="Add summary to all pages"
+        <button type="button" onClick={() => setAll("summary")} title="Set all to summary"
           className="pv-mono text-center text-[9px] text-[hsl(var(--pv-text-faint))] hover:text-foreground">Summary</button>
-        <button type="button" onClick={() => setAll("full")} title="Add full prose to all pages"
+        <button type="button" onClick={() => setAll("full")} title="Set all to full prose"
           className="pv-mono text-center text-[9px] text-[hsl(var(--pv-text-faint))] hover:text-foreground">Full</button>
       </div>
 
@@ -924,27 +920,21 @@ function PageContextPicker({
               </p>
             );
           }
-          const cur = depth.get(p.id) ?? null;
+          const cur = depth.get(p.id) ?? "summary";
           const name = p.title || "this page";
           return (
-            <div key={p.id} className="grid grid-cols-[1fr_40px_80px_56px] items-center px-3 py-1.5 hover:bg-[hsl(var(--pv-surface-2))]/60">
+            <div key={p.id} className="grid grid-cols-[1fr_80px_56px] items-center px-3 py-1.5 hover:bg-[hsl(var(--pv-surface-2))]/60">
               <span className="pv-serif truncate pr-2 text-[13.5px] text-foreground">{p.title || "(untitled)"}</span>
-              <div className="flex justify-center">
-                <input type="radio" name={`pd-${p.id}`} checked={cur === null}
-                  onChange={() => setDepth(p.id, null)}
-                  aria-label={`${name}: outline only`}
-                  className="h-3.5 w-3.5 cursor-pointer accent-[hsl(var(--pv-accent))]" />
-              </div>
               <div className="flex justify-center">
                 <input type="radio" name={`pd-${p.id}`} checked={cur === "summary"}
                   onChange={() => setDepth(p.id, "summary")}
-                  aria-label={`${name}: add summary`}
+                  aria-label={`${name}: summary`}
                   className="h-3.5 w-3.5 cursor-pointer accent-[hsl(var(--pv-accent))]" />
               </div>
               <div className="flex justify-center">
                 <input type="radio" name={`pd-${p.id}`} checked={cur === "full"}
                   onChange={() => setDepth(p.id, "full")}
-                  aria-label={`${name}: add full prose`}
+                  aria-label={`${name}: full prose`}
                   className="h-3.5 w-3.5 cursor-pointer accent-[hsl(var(--pv-accent))]" />
               </div>
             </div>
