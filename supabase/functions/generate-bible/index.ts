@@ -1,17 +1,25 @@
-// generate-bible — seed a book's "bible" (established facts) from its brief.
+// generate-bible — seed or extract a book's "bible" (established facts).
 //
 // The bible is layer A of generation context: characters, world, style — the truth every
-// page must stay consistent with. This proposes a first draft as markdown from the brief;
-// the author then edits and saves it (books.bible.text). Returns text, does NOT write.
+// page must stay consistent with. Two sources, two jobs:
+//   source="brief"      → draft a FIRST version from the brief alone (Opus). For a book with
+//                         little/no prose yet; invents sensible specifics to edit.
+//   source="manuscript" → EXTRACT the bible from the actual prose (Haiku, cheap/fast). Reads
+//                         the whole book and records only what the manuscript establishes.
+// Either way it RETURNS markdown text; it does NOT write. The author reviews and saves
+// (books.bible.text).
 //
-//   client → POST { bookId } → verify edit access → Claude → { text }
+//   client → POST { bookId, source? } → verify edit access → Claude → { text }
 //
 // Needs the ANTHROPIC_API_KEY secret (shared with the other generation functions).
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
+import { tiptapToText } from "../_shared/words.ts";
 
-const MODEL = "claude-opus-4-7";
+const BRIEF_MODEL = "claude-opus-4-7";              // drafting from the brief — richer invention
+const SCAN_MODEL = "claude-haiku-4-5-20251001";     // extracting from prose — cheap/fast over the whole book
+const PER_PAGE_PROSE_CAP = 8000;                    // chars; very long pages are truncated to bound the prompt
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -28,6 +36,14 @@ interface Brief {
   success_criteria?: string;
 }
 
+interface PageRow {
+  id: number;
+  page_index: number;
+  page_type: string | null;
+  title: string | null;
+  content: unknown;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -41,7 +57,10 @@ Deno.serve(async (req: Request) => {
     const { data: { user }, error: authError } = await userClient.auth.getUser();
     if (authError || !user) return json({ error: "Unauthorized" }, 401);
 
-    const { bookId } = (await req.json().catch(() => ({}))) as { bookId?: number };
+    const { bookId, source = "brief" } = (await req.json().catch(() => ({}))) as {
+      bookId?: number;
+      source?: "brief" | "manuscript";
+    };
     if (!bookId) return json({ error: "bookId is required" }, 400);
 
     const { data: book, error: bookError } = await userClient
@@ -63,7 +82,21 @@ Deno.serve(async (req: Request) => {
     const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!apiKey) return json({ error: "ANTHROPIC_API_KEY not configured" }, 500);
 
-    const text = await callClaude(apiKey, book.name, book.brief as Brief | null);
+    if (source === "manuscript") {
+      const { data: pages, error: pagesError } = await userClient
+        .from("pages")
+        .select("id, page_index, page_type, title, content")
+        .eq("book_id", bookId)
+        .eq("archived", false)
+        .order("page_index", { ascending: true });
+      if (pagesError) throw new Error(`fetch pages: ${pagesError.message}`);
+      if (!pages || pages.length === 0) return json({ error: "Book has no pages to scan" }, 400);
+
+      const text = await scanFromManuscript(apiKey, book.name, book.brief as Brief | null, pages as PageRow[]);
+      return json({ text });
+    }
+
+    const text = await draftFromBrief(apiKey, book.name, book.brief as Brief | null);
     return json({ text });
   } catch (e) {
     console.error("generate-bible error:", e);
@@ -71,19 +104,36 @@ Deno.serve(async (req: Request) => {
   }
 });
 
-const SYSTEM = `You are a story bible editor. From an author's brief, draft the book's
+// ── Shared output shape ────────────────────────────────────────────────────────
+const SECTIONS = `## Premise
+## Characters        (name — role; their want, their wound/flaw; voice in one line)
+## World & Setting   (time, place, rules/constraints that matter)
+## Style & Voice     (POV, tense, tone, diction notes)
+## Names & Terms     (proper nouns to keep consistent)`;
+
+// ── Brief draft (Opus): invent a coherent first version from the brief ─────────
+const BRIEF_SYSTEM = `You are a story bible editor. From an author's brief, draft the book's
 "bible" — the established facts every page must stay consistent with. Output MARKDOWN
 (not JSON), concise and scannable, with these sections (omit any that don't apply to the
 genre):
 
-## Premise
-## Characters        (name — role; their want, their wound/flaw; voice in one line)
-## World & Setting   (time, place, rules/constraints that matter)
-## Style & Voice     (POV, tense, tone, diction notes)
-## Names & Terms     (proper nouns to keep consistent)
+${SECTIONS}
 
 Keep it a reference, not prose — bullet points and short lines. Invent sensible specifics
 where the brief is silent, so the author has something concrete to edit. No preamble.`;
+
+// ── Manuscript scan (Haiku): extract only what the prose actually establishes ──
+const SCAN_SYSTEM = `You are a story bible editor reading a book's ACTUAL prose. Extract its
+"bible" — the established facts every page must stay consistent with — from what the
+manuscript itself sets down: character names and traits, places, rules, recurring terms, and
+the narrative voice as written. Output MARKDOWN (not JSON), concise and scannable, with these
+sections (omit any the manuscript doesn't establish):
+
+${SECTIONS}
+
+Record ONLY what the prose actually establishes — do NOT invent or extrapolate. Where the
+manuscript is silent, leave it out. Prefer the book's own words for names and terms. Keep it a
+reference — bullet points and short lines. No preamble.`;
 
 function briefContext(brief: Brief | null): string {
   if (!brief) return "(no brief set — invent a coherent book from a neutral premise)";
@@ -97,7 +147,47 @@ function briefContext(brief: Brief | null): string {
   return lines.length ? lines.join("\n") : "(brief is empty — invent a coherent book)";
 }
 
-async function callClaude(apiKey: string, bookName: string, brief: Brief | null): Promise<string> {
+// The book as title + prose per page, in reading order (sections become headings).
+function bookContext(pages: PageRow[]): string {
+  return pages
+    .map((p) => {
+      if (p.page_type === "section") return `\n# ${p.title || "(untitled section)"}`;
+      const prose = tiptapToText(p.content).trim();
+      const body = prose ? prose.slice(0, PER_PAGE_PROSE_CAP) : "(no prose yet)";
+      return `## ${p.title || "(untitled)"}\n${body}`;
+    })
+    .join("\n\n");
+}
+
+async function draftFromBrief(apiKey: string, bookName: string, brief: Brief | null): Promise<string> {
+  return callClaude(apiKey, BRIEF_MODEL, BRIEF_SYSTEM, [
+    { role: "user", content: `BOOK: ${bookName}\n\nBRIEF:\n${briefContext(brief)}\n\nDraft the bible. Markdown only.` },
+  ]);
+}
+
+async function scanFromManuscript(
+  apiKey: string,
+  bookName: string,
+  brief: Brief | null,
+  pages: PageRow[]
+): Promise<string> {
+  return callClaude(apiKey, SCAN_MODEL, SCAN_SYSTEM, [
+    {
+      role: "user",
+      content:
+        `BOOK: ${bookName}\n\nBRIEF (light context — defer to the prose where they differ):\n${briefContext(brief)}` +
+        `\n\nTHE MANUSCRIPT:\n${bookContext(pages)}` +
+        `\n\nExtract the bible from what the prose establishes. Markdown only.`,
+    },
+  ]);
+}
+
+async function callClaude(
+  apiKey: string,
+  model: string,
+  system: string,
+  messages: { role: "user"; content: string }[]
+): Promise<string> {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -106,12 +196,10 @@ async function callClaude(apiKey: string, bookName: string, brief: Brief | null)
       "content-type": "application/json",
     },
     body: JSON.stringify({
-      model: MODEL,
+      model,
       max_tokens: 4000,
-      system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
-      messages: [
-        { role: "user", content: `BOOK: ${bookName}\n\nBRIEF:\n${briefContext(brief)}\n\nDraft the bible. Markdown only.` },
-      ],
+      system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+      messages,
     }),
   });
 

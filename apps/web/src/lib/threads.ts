@@ -151,6 +151,49 @@ export async function applyThreadScan(bookId: number, accepted: ThreadChange[]):
   }
 }
 
+// The author-editable fields of a thread. Page anchors / word offsets stay the scan's job
+// (it resolves them server-side from page ids); a hand-made thread starts unanchored and a
+// later scan can advance or close it.
+export interface ThreadDraft {
+  name: string;
+  description: string;
+  status: ThreadStatus;
+  target_distance: number | null;
+}
+
+/** Create a thread by hand. Marked source 'author' and locked so a scan won't clobber it. */
+export async function createThread(bookId: number, draft: ThreadDraft): Promise<Thread> {
+  const { data, error } = await supabase
+    .from("book_threads")
+    .insert({
+      book_id: bookId,
+      name: draft.name,
+      description: draft.description || null,
+      status: draft.status,
+      target_distance: draft.target_distance,
+      source: "author",
+      author_locked: true,
+    })
+    .select(THREAD_COLS)
+    .single();
+  if (error) throw error;
+  return data as Thread;
+}
+
+/** Edit a thread's author-owned fields in place (name/description/status/budget). */
+export async function updateThread(id: number, draft: ThreadDraft): Promise<void> {
+  const { error } = await supabase
+    .from("book_threads")
+    .update({
+      name: draft.name,
+      description: draft.description || null,
+      status: draft.status,
+      target_distance: draft.target_distance,
+    })
+    .eq("id", id);
+  if (error) throw error;
+}
+
 /** Toggle the author-lock on a thread (locked rows are protected from applied scans). */
 export async function setThreadLocked(id: number, locked: boolean): Promise<void> {
   const { error } = await supabase.from("book_threads").update({ author_locked: locked }).eq("id", id);
