@@ -457,7 +457,6 @@ export function ReviseWithAI({
           const { error } = await supabase.from("pages").update({ page_index: i }).eq("id", finalOrder[i]);
           if (error) throw error;
         }
-        await supabase.from("books").update({ objectives_enabled: true }).eq("id", bookId);
 
         // Build the prose task list (in final reading order so the cascade flows forward).
         const notesByPage = current.evaluation ? groupByPage(current.evaluation) : new Map<number, FixIssue[]>();

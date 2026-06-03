@@ -203,13 +203,11 @@ const PageView = () => {
   );
 
   // 7b. Page objective (author-only metadata). Fetched separately from the reader page
-  //     select and only when the user can edit AND the book has objectives enabled, so it
-  //     never reaches readers — the same protection books.brief gets. Stored in
-  //     pages.metadata.objective. Gated by the book-level objectives_enabled switch.
-  const objectivesEnabled = !!(book as { objectives_enabled?: boolean } | null)?.objectives_enabled;
+  //     select and only when the user can edit, so it never reaches readers — the same
+  //     protection books.brief gets. Stored in pages.metadata.objective.
   const [pageObjective, setPageObjective] = useState<string | null>(null);
   useEffect(() => {
-    if (!canEdit || !objectivesEnabled || !numericPageId) {
+    if (!canEdit || !numericPageId) {
       setPageObjective(null);
       return;
     }
@@ -227,7 +225,7 @@ const PageView = () => {
     return () => {
       cancelled = true;
     };
-  }, [canEdit, objectivesEnabled, numericPageId]);
+  }, [canEdit, numericPageId]);
 
   const handleObjectiveChange = async (next: string | null) => {
     if (!canEdit || !numericPageId) return;
@@ -418,7 +416,6 @@ const PageView = () => {
               canEdit={canEdit}
               objective={pageObjective}
               onObjectiveChange={handleObjectiveChange}
-              objectivesEnabled={objectivesEnabled}
               pageId={numericPageId.toString()}
               isEditing={isEditing}
               setIsEditing={setIsEditing}

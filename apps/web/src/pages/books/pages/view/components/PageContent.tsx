@@ -30,8 +30,6 @@ interface PageContentProps {
   /** Author-only page objective (pages.metadata.objective) + setter. Shown only to editors. */
   objective?: string | null;
   onObjectiveChange?: (next: string | null) => void;
-  /** Book-level master switch; objective UI only shows when true. */
-  objectivesEnabled?: boolean;
   pageId?: string;
   isEditing?: boolean;
   setIsEditing?: (isEditing: boolean) => void;
@@ -60,7 +58,6 @@ export const PageContent = ({
   canEdit = false,
   objective,
   onObjectiveChange,
-  objectivesEnabled = false,
   pageId,
   isEditing = false,
   setIsEditing,
@@ -137,34 +134,6 @@ export const PageContent = ({
     setIsEditing?.(editing);
     onEditingChange?.(editing);
   }, [setIsEditing, onEditingChange]);
-
-  // Render prose from a block's objective via the generate-unit edge function (or local bridge).
-  // Paragraph-level for now; the page objective is passed as parent context.
-  const handleGenerate = useCallback(async (objective: string): Promise<string> => {
-    if (!bookId || !pageId) throw new Error("Missing book or page id");
-    const unitBody = {
-      bookId: Number(bookId),
-      pageId: Number(pageId),
-      level: "paragraph",
-      objective,
-      pageObjective: objectiveDraft.trim() || undefined,
-    };
-    if (BRIDGE) {
-      const r = await fetch(`${BRIDGE}/unit`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(unitBody),
-      });
-      const d = await r.json();
-      if (d.error) throw new Error(d.error);
-      if (!d.text) throw new Error("No text returned");
-      return d.text as string;
-    }
-    const { data, error } = await supabase.functions.invoke("generate-unit", { body: unitBody });
-    if (error) throw error;
-    if (!data?.text) throw new Error(data?.error || "No text returned");
-    return data.text as string;
-  }, [bookId, pageId, objectiveDraft]);
 
   // Generate the whole page's prose from the page objective and append it as paragraphs.
   const handleGeneratePage = useCallback(async () => {
@@ -344,8 +313,6 @@ export const PageContent = ({
                 onPageTypeChange={onPageTypeChange}
                 onDeletePage={onDeletePage}
                 bookId={bookId}
-                objectivesEnabled={objectivesEnabled}
-                onGenerate={objectivesEnabled ? handleGenerate : undefined}
                 onEditorReady={handleEditorReady}
                 fontSizeClassName={fontSizeClassName}
                 fontFamilyStyle={fontFamilyStyle}
@@ -355,7 +322,7 @@ export const PageContent = ({
                 currentIndex={currentIndex}
                 totalPages={totalPages}
                 sectionLabel={sectionLabel}
-                topContent={canEdit && onObjectiveChange && objectivesEnabled ? (
+                topContent={canEdit && onObjectiveChange ? (
                   <div className="px-8 pt-4 pb-2 flex items-center gap-2">
                     <input
                       type="text"
