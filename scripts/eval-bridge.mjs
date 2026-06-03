@@ -64,6 +64,21 @@ async function fetchPages(bookId) {
   return await r.json();
 }
 
+// Persist a completed evaluation to book_evaluations — the same table the edge function
+// writes — so a local-bridge run shows up in the UI exactly like a prod run (the client reads
+// evaluations from the table in both modes now; the bridge differs only in *where the AI runs*).
+// created_by is left null (the bridge has no auth user); the service role bypasses RLS.
+async function persistEvaluation(bookId, result) {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/book_evaluations`, {
+    method: "POST",
+    headers: { ...sbHeaders, "content-type": "application/json", Prefer: "return=representation" },
+    body: JSON.stringify({ book_id: bookId, kind: "fiction", model: "claude-code-local", status: "done", result }),
+  });
+  if (!r.ok) return { error: `Supabase ${r.status}: ${await r.text()}` };
+  const rows = await r.json();
+  return { row: rows?.[0] ?? null };
+}
+
 // Merge a summary into a page's metadata (preserving objective), via REST PATCH.
 async function persistSummary(pageId, summary) {
   const g = await fetch(`${SUPABASE_URL}/rest/v1/pages?id=eq.${pageId}&select=metadata`, { headers: sbHeaders });
@@ -553,6 +568,10 @@ async function route(req, res) {
       console.log(`Evaluating book ${bookId}…`);
       const out = await runEvaluation(bookId);
       if (out.error) return json(res, 500, { status: "error", error: out.error });
+      // Save it to book_evaluations so the report lives in the table, not just on disk. Best-effort:
+      // a save failure shouldn't discard an expensive run — still return the result (it's on disk too).
+      const saved = await persistEvaluation(bookId, out.result);
+      if (saved.error) console.error(`bridge eval: failed to persist to book_evaluations: ${saved.error}`);
       return json(res, 200, { status: "done", result: out.result });
     }
     return json(res, 405, { error: "method not allowed" });

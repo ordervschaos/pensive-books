@@ -124,8 +124,8 @@ export function PageWorkshop({
   }, [objective, pageId]);
 
   // Load this page's notes from the latest completed evaluation (if any). Reset on page change.
-  // Same dual backend as BookEvaluationSection: the local bridge stores reports on disk (not in
-  // book_evaluations), so in bridge mode we must read from it, not the table.
+  // Evaluations live in book_evaluations in both modes (the bridge writes there too now), so we
+  // always read from the table — only generation routes through the dual backend (callUnit).
   useEffect(() => {
     mounted.current = true;
     setNotes([]);
@@ -137,22 +137,15 @@ export function PageWorkshop({
       if (mounted.current && result) setNotes(notesForPage(result, pageId));
     };
 
-    if (BRIDGE) {
-      fetch(`${BRIDGE}/eval/${bookId}`)
-        .then((r) => r.json())
-        .then((d) => apply(d?.status === "done" ? (d.result as EvalResult) : null))
-        .catch(() => {/* no notes available */});
-    } else {
-      supabase
-        .from("book_evaluations")
-        .select("result")
-        .eq("book_id", bookId)
-        .eq("status", "done")
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle()
-        .then(({ data }) => apply((data?.result as EvalResult | null) ?? null));
-    }
+    supabase
+      .from("book_evaluations")
+      .select("result")
+      .eq("book_id", bookId)
+      .eq("status", "done")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }) => apply((data?.result as EvalResult | null) ?? null));
 
     return () => {
       mounted.current = false;

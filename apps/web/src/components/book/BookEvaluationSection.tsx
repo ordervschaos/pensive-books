@@ -6,11 +6,12 @@ import { WorkingIndicator, WORKING_PHRASES } from "./WorkingIndicator";
 import { NotifyWhenDone } from "./NotifyWhenDone";
 import { notify as fireNotification } from "@/lib/notify";
 
-// Two backends, env-switched:
-//  - Production (default): the `evaluate-book` edge function writes a book_evaluations
-//    row; we invoke it, then watch the row over Realtime for pending → done.
-//  - Local dev: if VITE_EVAL_BRIDGE_URL is set, talk to scripts/eval-bridge.mjs instead
-//    (runs Claude Code on your own machine, zero API cost).
+// Evaluations always live in the book_evaluations table — that's where we READ them from
+// (initial load, below), in both modes. The two backends differ only in WHERE the AI runs:
+//  - Production (default): the `evaluate-book` edge function inserts a pending row, runs the
+//    paid API in the background, and flips it done; we watch over Realtime.
+//  - Local dev: if VITE_EVAL_BRIDGE_URL is set, scripts/eval-bridge.mjs runs Claude Code on
+//    your machine (zero API cost), then writes a done row to the same table.
 const BRIDGE = import.meta.env.VITE_EVAL_BRIDGE_URL as string | undefined;
 const USE_BRIDGE = !!BRIDGE;
 
@@ -174,52 +175,42 @@ export function BookEvaluationSection({ bookId, onRevise, onStatusChange }: { bo
     mounted.current = true;
     setState({ status: "checking" });
 
-    if (USE_BRIDGE) {
-      fetch(`${BRIDGE}/eval/${bookId}`)
-        .then((r) => r.json())
-        .then((d) => {
-          if (!mounted.current) return;
-          if (d.status === "done") setState({ status: "done", result: d.result });
-          else setState({ status: "idle" });
-        })
-        .catch(() => mounted.current && setState({ status: "idle" }));
-    } else {
-      // Load recent evaluations; resume watching if one is still running. We pull a few rows (not
-      // just the newest) so a failed or stale re-run can't bury an earlier completed read — the
-      // author should still see their last good editor's read.
-      supabase
-        .from("book_evaluations")
-        .select("id, status, result, error, created_at")
-        .eq("book_id", bookId)
-        .order("created_at", { ascending: false })
-        .limit(5)
-        .then(({ data }) => {
-          if (!mounted.current) return;
-          const rows = (data ?? []) as EvalRow[];
-          if (!rows.length) return setState({ status: "idle" });
+    // Load recent evaluations from the table (both modes — see header comment). We pull a few rows
+    // (not just the newest) so a failed or stale re-run can't bury an earlier completed read — the
+    // author should still see their last good editor's read. A pending row only ever appears in edge
+    // mode (the bridge writes done directly), so resuming the Realtime watch is harmless locally.
+    supabase
+      .from("book_evaluations")
+      .select("id, status, result, error, created_at")
+      .eq("book_id", bookId)
+      .order("created_at", { ascending: false })
+      .limit(5)
+      .then(({ data }) => {
+        if (!mounted.current) return;
+        const rows = (data ?? []) as EvalRow[];
+        if (!rows.length) return setState({ status: "idle" });
 
-          // A genuinely in-flight run (newest row still pending, not stale) wins — resume watching.
-          const newest = rows[0];
-          if (newest.status === "pending" && !isStale(newest.created_at)) {
-            setState({ status: "running" });
-            return watchRow(newest.id, newest.created_at);
-          }
+        // A genuinely in-flight run (newest row still pending, not stale) wins — resume watching.
+        const newest = rows[0];
+        if (newest.status === "pending" && !isStale(newest.created_at)) {
+          setState({ status: "running" });
+          return watchRow(newest.id, newest.created_at);
+        }
 
-          // Otherwise show the most recent completed read, regardless of a later error/stale attempt.
-          // If a newer (failed/stale) attempt sits above it, flag staleRetry so we can offer a retry.
-          const done = rows.find((r) => r.status === "done" && r.result);
-          if (done) {
-            return setState({ status: "done", result: done.result as EvalResult, staleRetry: rows.indexOf(done) > 0 });
-          }
+        // Otherwise show the most recent completed read, regardless of a later error/stale attempt.
+        // If a newer (failed/stale) attempt sits above it, flag staleRetry so we can offer a retry.
+        const done = rows.find((r) => r.status === "done" && r.result);
+        if (done) {
+          return setState({ status: "done", result: done.result as EvalResult, staleRetry: rows.indexOf(done) > 0 });
+        }
 
-          // No completed read to fall back on — surface the newest terminal state.
-          if (newest.status === "error") {
-            return setState({ status: "error", error: sanitizeAIError(newest.error || "previous evaluation failed") });
-          }
-          if (newest.status === "pending") return setState({ status: "error", error: STALE_ERROR });
-          setState({ status: "idle" });
-        });
-    }
+        // No completed read to fall back on — surface the newest terminal state.
+        if (newest.status === "error") {
+          return setState({ status: "error", error: sanitizeAIError(newest.error || "previous evaluation failed") });
+        }
+        if (newest.status === "pending") return setState({ status: "error", error: STALE_ERROR });
+        setState({ status: "idle" });
+      });
 
     return () => {
       mounted.current = false;
