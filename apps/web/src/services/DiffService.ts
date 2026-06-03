@@ -220,146 +220,147 @@ export class DiffService {
   }
 
   /**
-   * Compares blocks between two versions and generates block-level diffs
-   * Uses a smart matching algorithm that handles reordering and modifications
-   * Includes context blocks (unchanged blocks) around changes for better understanding
+   * Signature of a block's inline formatting (marks per text run). Used to detect
+   * formatting-only changes between two blocks whose plain text is identical.
+   */
+  static blockInlineSignature(block: any): string {
+    const runs: string[] = [];
+    const walk = (nodes: any[]) => {
+      for (const n of nodes || []) {
+        if (n?.type === "text") {
+          runs.push(`${n.text || ""}${(n.marks || []).map((m: any) => m.type).sort().join(",")}`);
+        } else if (n?.content) {
+          walk(n.content);
+        }
+      }
+    };
+    walk(block?.content || []);
+    return runs.join("");
+  }
+
+  /**
+   * Content key used to align blocks across versions. Ignores marks so a block is
+   * matched to its counterpart by text/type even if formatting changed; mark
+   * differences are then surfaced as "modified" via blockInlineSignature.
+   */
+  static blockMatchKey(block: any): string {
+    const level = block?.attrs?.level ?? "";
+    return `${block?.type || "unknown"}${level}${this.blockToText(block)}`;
+  }
+
+  /**
+   * Compares blocks between two versions and generates block-level diffs.
+   *
+   * Alignment uses a Longest-Common-Subsequence over block content keys, so
+   * inserting/deleting/reordering blocks no longer shifts every later block out
+   * of alignment (the previous positional matching compared block N against
+   * block N, which broke as soon as a block was added). Adjacent deleted/inserted
+   * blocks at the same spot are paired into a single "modified" entry so the
+   * word-level diff can highlight what actually changed within them.
+   * Unchanged blocks are kept only within `contextLines` of a change.
    */
   static compareBlocks(oldContent: any, newContent: any, contextLines: number = 2): BlockDiff[] {
     const oldBlocks = this.extractBlocks(oldContent);
     const newBlocks = this.extractBlocks(newContent);
-    const diffs: BlockDiff[] = [];
 
-    // Track which blocks we've processed
-    const processedOld = new Set<number>();
-    const processedNew = new Set<number>();
-    const changeIndices: number[] = []; // Track indices where changes occur
-
-    // First pass: Identify all changes and unchanged blocks
+    const changeIndices: number[] = [];
     const allBlocks: Array<{
-      oldIndex?: number;
-      newIndex?: number;
       type: BlockChangeType;
       oldBlock?: any;
       newBlock?: any;
     }> = [];
 
-    // Build a mapping of all blocks with their change status
-    const maxLength = Math.max(oldBlocks.length, newBlocks.length);
-    for (let i = 0; i < maxLength; i++) {
-      const oldBlock = oldBlocks[i];
-      const newBlock = newBlocks[i];
-
-      if (oldBlock && newBlock) {
-        if (this.areBlocksEqual(oldBlock, newBlock)) {
-          // Unchanged block
-          allBlocks.push({
-            oldIndex: i,
-            newIndex: i,
-            type: "unchanged",
-            oldBlock: oldBlock,
-            newBlock: newBlock,
-          });
-          processedOld.add(i);
-          processedNew.add(i);
-        } else if (oldBlock.type === newBlock.type) {
-          // Modified block
-          allBlocks.push({
-            oldIndex: i,
-            newIndex: i,
-            type: "modified",
-            oldBlock: oldBlock,
-            newBlock: newBlock,
-          });
-          changeIndices.push(allBlocks.length - 1);
-          processedOld.add(i);
-          processedNew.add(i);
-        }
-      } else if (oldBlock && !newBlock) {
-        // Removed block
-        allBlocks.push({
-          oldIndex: i,
-          type: "removed",
-          oldBlock: oldBlock,
-        });
-        changeIndices.push(allBlocks.length - 1);
-        processedOld.add(i);
-      } else if (!oldBlock && newBlock) {
-        // Added block
-        allBlocks.push({
-          newIndex: i,
-          type: "added",
-          newBlock: newBlock,
-        });
-        changeIndices.push(allBlocks.length - 1);
-        processedNew.add(i);
+    // --- Block-level LCS alignment by content key ---
+    const a = oldBlocks.map((b) => this.blockMatchKey(b));
+    const b = newBlocks.map((bl) => this.blockMatchKey(bl));
+    const n = a.length;
+    const m = b.length;
+    const dp: number[][] = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+    for (let i = n - 1; i >= 0; i--) {
+      for (let j = m - 1; j >= 0; j--) {
+        dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
       }
     }
 
-    // Second pass: Find added blocks that weren't matched by position
-    newBlocks.forEach((newBlock, newIndex) => {
-      if (!processedNew.has(newIndex)) {
-        let foundMatch = false;
+    // Walk the alignment into a sequence of equal / del / ins steps.
+    type Step = { op: "equal" | "del" | "ins"; oldBlock?: any; newBlock?: any };
+    const steps: Step[] = [];
+    let i = 0;
+    let j = 0;
+    while (i < n && j < m) {
+      if (a[i] === b[j]) {
+        steps.push({ op: "equal", oldBlock: oldBlocks[i], newBlock: newBlocks[j] });
+        i++;
+        j++;
+      } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+        steps.push({ op: "del", oldBlock: oldBlocks[i] });
+        i++;
+      } else {
+        steps.push({ op: "ins", newBlock: newBlocks[j] });
+        j++;
+      }
+    }
+    while (i < n) steps.push({ op: "del", oldBlock: oldBlocks[i++] });
+    while (j < m) steps.push({ op: "ins", newBlock: newBlocks[j++] });
 
-        for (let oldIndex = 0; oldIndex < oldBlocks.length; oldIndex++) {
-          if (processedOld.has(oldIndex)) continue;
+    // Collapse the steps into ordered diff entries, pairing each run of adjacent
+    // deletions+insertions into "modified" entries (a replaced paragraph).
+    const pushEntry = (entry: { type: BlockChangeType; oldBlock?: any; newBlock?: any }) => {
+      allBlocks.push(entry);
+      if (entry.type !== "unchanged") changeIndices.push(allBlocks.length - 1);
+    };
 
-          const oldBlock = oldBlocks[oldIndex];
-          const sameAudioBlock =
-            oldBlock.attrs?.audioBlock !== undefined &&
-            oldBlock.attrs?.audioBlock === newBlock.attrs?.audioBlock;
-          const similarContent =
-            oldBlock.type === newBlock.type &&
-            this.blockToText(oldBlock).length > 0 &&
-            this.blockToText(oldBlock) === this.blockToText(newBlock);
+    let k = 0;
+    while (k < steps.length) {
+      const step = steps[k];
+      if (step.op === "equal") {
+        // Same text — but flag mark-only changes as modified so they're visible.
+        const formattingChanged =
+          this.blockInlineSignature(step.oldBlock) !== this.blockInlineSignature(step.newBlock);
+        pushEntry({
+          type: formattingChanged ? "modified" : "unchanged",
+          oldBlock: step.oldBlock,
+          newBlock: step.newBlock,
+        });
+        k++;
+        continue;
+      }
 
-          if (sameAudioBlock || similarContent) {
-            if (!this.areBlocksEqual(oldBlock, newBlock)) {
-              allBlocks.push({
-                oldIndex,
-                newIndex,
-                type: "modified",
-                oldBlock: oldBlock,
-                newBlock: newBlock,
-              });
-              changeIndices.push(allBlocks.length - 1);
-            }
-            processedOld.add(oldIndex);
-            processedNew.add(newIndex);
-            foundMatch = true;
-            break;
+      // Gather a contiguous run of dels and ins.
+      const dels: any[] = [];
+      const ins: any[] = [];
+      while (k < steps.length && steps[k].op !== "equal") {
+        if (steps[k].op === "del") dels.push(steps[k].oldBlock);
+        else ins.push(steps[k].newBlock);
+        k++;
+      }
+
+      // Pair a deleted block with the most similar inserted block (so a reworded
+      // paragraph is matched to its counterpart, not just by position). Anything
+      // left unpaired is a pure removal / addition.
+      const usedIns = new Set<number>();
+      for (let di = 0; di < dels.length; di++) {
+        let bestIdx = -1;
+        let bestScore = 0;
+        for (let ii = 0; ii < ins.length; ii++) {
+          if (usedIns.has(ii)) continue;
+          const score = this.textSimilarity(this.blockToText(dels[di]), this.blockToText(ins[ii]));
+          if (score > bestScore) {
+            bestScore = score;
+            bestIdx = ii;
           }
         }
-
-        if (!foundMatch) {
-          allBlocks.push({
-            newIndex,
-            type: "added",
-            newBlock: newBlock,
-          });
-          changeIndices.push(allBlocks.length - 1);
-          processedNew.add(newIndex);
+        if (bestIdx >= 0 && bestScore >= 0.25) {
+          usedIns.add(bestIdx);
+          pushEntry({ type: "modified", oldBlock: dels[di], newBlock: ins[bestIdx] });
+        } else {
+          pushEntry({ type: "removed", oldBlock: dels[di] });
         }
       }
-    });
-
-    // Third pass: Find removed blocks
-    oldBlocks.forEach((oldBlock, oldIndex) => {
-      if (!processedOld.has(oldIndex)) {
-        allBlocks.push({
-          oldIndex,
-          type: "removed",
-          oldBlock: oldBlock,
-        });
-        changeIndices.push(allBlocks.length - 1);
+      for (let ii = 0; ii < ins.length; ii++) {
+        if (!usedIns.has(ii)) pushEntry({ type: "added", newBlock: ins[ii] });
       }
-    });
-
-    // Sort all blocks by their position (oldIndex or newIndex)
-    allBlocks.sort((a, b) => {
-      const aIndex = a.oldIndex ?? a.newIndex ?? -1;
-      const bIndex = b.oldIndex ?? b.newIndex ?? -1;
-      return aIndex - bIndex;
-    });
+    }
 
     // Build final diff array with context
     const finalDiffs: BlockDiff[] = [];

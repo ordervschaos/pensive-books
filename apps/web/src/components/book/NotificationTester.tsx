@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Bell, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
-import { isSupported, permission, requestPermission, notify } from "@/lib/notify";
+import { isSupported, permission, requestPermission } from "@/lib/notify";
 
 /**
  * A diagnostic panel (author-only) for the two notification channels, since
@@ -17,23 +17,50 @@ export function NotificationTester() {
   const [emailMsg, setEmailMsg] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
 
+  // Verbose on purpose: the real lib swallows errors, which hid why nothing
+  // showed. Here we surface each step — permission, constructor throw, and the
+  // onshow/onerror events — to separate "browser refused" from "OS suppressed".
   const testWeb = async () => {
     if (!isSupported()) {
-      setWebMsg("This browser doesn't support notifications (on iOS, install the app to your home screen first).");
+      setWebMsg("This browser doesn't support the Notification API. On iOS you must install the app to your home screen (PWA) first; some in-app browsers also lack it.");
       return;
     }
     let perm = permission();
-    if (perm === "default") perm = await requestPermission();
+    if (perm === "default") perm = (await requestPermission()) as NotificationPermission;
     if (perm !== "granted") {
-      setWebMsg(`Permission is "${perm}". Allow notifications for this site in your browser, then try again.`);
+      setWebMsg(`Permission is "${perm}" — the browser won't show anything until you allow notifications for this site (and the request can't be re-shown once "denied"; reset it in the site settings / address-bar lock icon).`);
       return;
     }
-    setWebMsg('Permission "granted" — firing in 5s. Switch to another tab/app now to test whether it shows when this tab is NOT focused (some OSes suppress notifications for the focused tab).');
-    setTimeout(() => {
-      notify("Pensive — test notification", {
-        body: "If you can see this, browser notifications work.",
-        tag: "pensive-test",
-      });
+
+    setWebMsg('Permission "granted". Firing in 5s — switch away if you like…');
+    window.setTimeout(() => {
+      let n: Notification;
+      try {
+        n = new Notification("Pensive — test notification", {
+          body: "If you can see this, browser notifications work.",
+          tag: "pensive-test",
+        });
+      } catch (err) {
+        setWebMsg(
+          `✗ new Notification() threw: ${err instanceof Error ? err.message : String(err)}. ` +
+            "On Android Chrome / many mobile browsers this is expected — they require a service worker (Web Push), which this app doesn't have.",
+        );
+        return;
+      }
+      let shown = false;
+      n.onshow = () => {
+        shown = true;
+        setWebMsg(
+          "✓ onshow fired — the browser created and displayed the notification. If you still saw NOTHING on screen, the OS is suppressing the banner. On macOS: System Settings → Notifications → your browser → Allow Notifications ON + style Banners/Alerts, and turn OFF Focus / Do Not Disturb. In Chrome also check chrome://settings/content/notifications.",
+        );
+      };
+      n.onerror = () => setWebMsg("✗ onerror fired — the browser refused to display it (often an OS-level block or a missing/blocked icon).");
+      window.setTimeout(() => {
+        if (!shown)
+          setWebMsg(
+            "⚠️ No onshow event after 3s — the browser didn't display it. Most likely OS-level suppression (macOS Focus/Do Not Disturb, or your browser is set to 'None'/blocked in System Settings → Notifications), or an aggressive notification setting in the browser itself.",
+          );
+      }, 3000);
     }, 5000);
   };
 
