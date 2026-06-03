@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Link } from "react-router-dom";
+import { CheckCircle2, Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AnimatedEllipsis } from "./AnimatedEllipsis";
 import { WorkingIndicator, WORKING_PHRASES } from "./WorkingIndicator";
@@ -185,6 +186,9 @@ export function ReviseWithAI({
 
   const [loading, setLoading] = useState(true);
   const [row, setRow] = useState<RevisionRow | null>(null);
+  // The success banner persists until the author dismisses it; keyed by revision id
+  // so a fresh "done" revision shows its own banner again.
+  const [dismissedDoneId, setDismissedDoneId] = useState<number | null>(null);
   const [instruction, setInstruction] = useState("");
   const [attachedEval, setAttachedEval] = useState<EvalResult | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -629,12 +633,20 @@ export function ReviseWithAI({
 
       {loading && <p className="pv-serif mt-3 text-[14px] italic text-[hsl(var(--pv-text-faint))]">Checking<AnimatedEllipsis /></p>}
 
+      {/* Success — stays until the author dismisses it, with a link to proofread the drafts. */}
+      {!loading && !active && row?.status === "done" && dismissedDoneId !== row.id && (
+        <DoneBanner
+          bookId={bookId}
+          progress={row.progress}
+          onDismiss={() => setDismissedDoneId(row.id)}
+        />
+      )}
+
       {/* The input form -- shown when there's no active revision. */}
       {!loading && !active && (
         <div className="mt-3 space-y-3">
-          {row && row.status !== "planning" && (
+          {row && row.status !== "planning" && row.status !== "done" && (
             <p className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))]">
-              {row.status === "done" && 'Last revision complete -- review it under "View drafts".'}
               {row.status === "cancelled" && "Last revision cancelled."}
               {row.status === "error" && `Last revision failed: ${row.error ?? "unknown error"}`}
             </p>
@@ -800,6 +812,47 @@ export function ReviseWithAI({
         </DialogContent>
       </Dialog>
     </section>
+  );
+}
+
+// Success banner — shown after a revision finishes, until the author dismisses it.
+// The work landed as drafts, so the call to action is to proofread them.
+function DoneBanner({
+  bookId,
+  progress,
+  onDismiss,
+}: {
+  bookId: number;
+  progress: Progress | null;
+  onDismiss: () => void;
+}) {
+  const done = progress?.done ?? 0;
+  const failures = progress?.tasks.filter((t) => t.state === "failed").length ?? 0;
+  const pageWord = done === 1 ? "page" : "pages";
+  return (
+    <div className="mt-3 flex items-start gap-3 rounded-xl border border-[hsl(var(--pv-accent))]/30 bg-[hsl(var(--pv-accent))]/10 p-4">
+      <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-[hsl(var(--pv-accent))]" />
+      <div className="min-w-0 flex-1 space-y-2">
+        <p className="pv-serif text-[14.5px] leading-relaxed text-foreground">
+          Revision complete — {done} {pageWord} rebuilt
+          {failures ? ` (${failures} failed)` : ""}. The changes are saved as drafts.
+        </p>
+        <Link
+          to={`/books/${bookId}/draft`}
+          className="pv-mono inline-flex items-center text-[11px] uppercase tracking-[0.14em] text-[hsl(var(--pv-accent))] underline-offset-4 hover:underline"
+        >
+          Proofread the drafts →
+        </Link>
+      </div>
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="Dismiss"
+        className="shrink-0 text-[hsl(var(--pv-text-faint))] hover:text-foreground"
+      >
+        <X className="h-4 w-4" />
+      </button>
+    </div>
   );
 }
 
