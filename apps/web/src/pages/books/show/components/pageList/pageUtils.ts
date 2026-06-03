@@ -6,7 +6,7 @@ import { getWordCountFromContent } from "@/utils/tiptapHelpers";
 export type PageStatus = "written" | "objective" | "blank";
 
 // Body text excluding the leading title heading — so a page that's only a title still
-// reads as "not written" (mirrors WriteAllPages / BuildWithAI).
+// reads as "not written" (mirrors WriteAllPages / BookJourney).
 function bodyText(content: unknown): string {
   if (!content || typeof content !== "object")
     return typeof content === "string" ? content : "";

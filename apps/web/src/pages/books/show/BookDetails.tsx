@@ -21,9 +21,8 @@ import { AdminViewBanner } from "@/components/book/AdminViewBanner";
 import { MatureContentGate } from "@/components/book/MatureContentGate";
 import { Brief } from "@/lib/brief";
 import { BookBriefSection } from "@/components/book/BookBriefSection";
-import { BookEvaluationSection } from "@/components/book/BookEvaluationSection";
-import { ReviseWithAI, type RevisionPrefill } from "@/components/book/ReviseWithAI";
-import { BuildWithAI } from "@/components/book/BuildWithAI";
+import { type RevisionPrefill } from "@/components/book/ReviseWithAI";
+import { BookJourney } from "@/components/book/BookJourney";
 import { ThreadsSection } from "@/components/book/ThreadsSection";
 import { BookBibleSection } from "@/components/book/BookBibleSection";
 import { getPageStatus } from "./components/pageList/pageUtils";
@@ -709,34 +708,21 @@ const BookDetails = () => {
                   />
                 )}
 
-                {/* AI tools tab — Build, then editor's read + revise, all stacked full-width */}
+                {/* AI tools tab — the whole build journey, created → brief → scaffold → write →
+                    editor's read → revise → publish, as one guided staircase. */}
                 {activeTab === "ai" && (
-                  <div className="space-y-6">
-                    <BuildWithAI
-                      bookId={getNumericId(bookSlug)}
-                      briefSet={briefSet}
-                      pages={pages}
-                      onEditBrief={() => switchTab("brief")}
-                      onChanged={fetchBookDetails}
-                      onReviseStructure={() => setRevisionPrefill({ instruction: "" })}
-                    />
-
-                    <div className="space-y-6">
-                      <BookEvaluationSection
-                        bookId={getNumericId(bookSlug)}
-                        onRevise={(evaluation, instruction) =>
-                          setRevisionPrefill({ evaluation, instruction })
-                        }
-                      />
-
-                      <ReviseWithAI
-                        bookId={getNumericId(bookSlug)}
-                        prefill={revisionPrefill}
-                        onPrefillConsumed={() => setRevisionPrefill(null)}
-                        onApplied={() => fetchBookDetails()}
-                      />
-                    </div>
-                  </div>
+                  <BookJourney
+                    bookId={getNumericId(bookSlug)}
+                    briefSet={briefSet}
+                    pages={pages}
+                    isPublic={book.is_public}
+                    onEditBrief={() => switchTab("brief")}
+                    onChanged={fetchBookDetails}
+                    onPublish={handlePublish}
+                    revisionPrefill={revisionPrefill}
+                    onRevisePrefill={setRevisionPrefill}
+                    onRevisionApplied={() => fetchBookDetails()}
+                  />
                 )}
               </div>
             ) : (

@@ -68,9 +68,15 @@ const SEV_TONE: Record<Severity, string> = {
   low: "text-[hsl(var(--pv-text-faint))]",
 };
 
-export function BookEvaluationSection({ bookId, onRevise }: { bookId: number; onRevise?: (result: EvalResult, instruction?: string) => void }) {
+export function BookEvaluationSection({ bookId, onRevise, onStatusChange }: { bookId: number; onRevise?: (result: EvalResult, instruction?: string) => void; onStatusChange?: (hasCompletedRead: boolean) => void }) {
   const [state, setState] = useState<State>({ status: "checking" });
   const mounted = useRef(true);
+
+  // Surface "a completed read exists" to a host (the journey stepper) so it can mark the step
+  // done. Fires on every status change; idempotent.
+  useEffect(() => {
+    onStatusChange?.(state.status === "done");
+  }, [state.status, onStatusChange]);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
