@@ -1,15 +1,10 @@
 import { useState } from "react";
-import { ChevronDown, Lock } from "lucide-react";
+import { Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -69,24 +64,18 @@ export function BookBriefSection({ bookId, brief, onBriefChange }: BookBriefSect
   };
 
   return (
-    <Collapsible defaultOpen={completion === 0}>
-      <CollapsibleTrigger asChild>
-        <Button variant="ghost" className="flex items-center gap-2 px-2">
-          <h2 className="text-xl font-semibold">Creative brief</h2>
-          <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
-            <Lock className="h-3 w-3" /> author-only
-          </span>
-          <ChevronDown className="h-4 w-4" />
-        </Button>
-      </CollapsibleTrigger>
+    <Card className="p-6 space-y-6">
+      <div className="flex items-center gap-2">
+        <h2 className="text-xl font-semibold">Creative brief</h2>
+        <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+          <Lock className="h-3 w-3" /> author-only
+        </span>
+      </div>
+      <p className="text-sm text-muted-foreground">
+        Optional scaffolding for yourself and any co-authors. Never shown to readers.
+      </p>
 
-      <CollapsibleContent>
-        <Card className="p-6 mt-4 space-y-6">
-          <p className="text-sm text-muted-foreground">
-            Optional scaffolding for yourself and any co-authors. Never shown to readers.
-          </p>
-
-          <FieldRow
+      <FieldRow
             label="Scope"
             hint="Roughly how long are you thinking?"
           >
@@ -196,9 +185,7 @@ export function BookBriefSection({ bookId, brief, onBriefChange }: BookBriefSect
               {saving ? "Saving…" : "Save brief"}
             </Button>
           </div>
-        </Card>
-      </CollapsibleContent>
-    </Collapsible>
+    </Card>
   );
 }
 

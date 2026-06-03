@@ -6,8 +6,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { BookInfo } from "@/components/book/BookInfo";
 import { BookEditForm } from "@/components/book/BookEditForm";
-import { BookBriefSection } from "@/components/book/BookBriefSection";
-import { BookBibleSection } from "@/components/book/BookBibleSection";
 import { ManageCollaboratorsSheet } from "./components/ManageCollaboratorsSheet";
 import { ShareBookSheet } from "./components/ShareBookSheet";
 import { BookCoverEdit } from "@/components/book/BookCoverEdit";
@@ -242,24 +240,6 @@ export default function BookEdit() {
               onSave={handleSave}
               saving={saving}
             />
-
-            {id && (
-              <div className="mt-12">
-                <BookBriefSection
-                  bookId={id}
-                  brief={book.brief ?? null}
-                  onBriefChange={(brief) => setBook((prev) => ({ ...prev, brief }))}
-                />
-
-                <div className="mt-12">
-                  <BookBibleSection
-                    bookId={id}
-                    bible={book.bible?.text ?? null}
-                    onBibleChange={(text) => setBook((prev) => ({ ...prev, bible: text ? { text } : null }))}
-                  />
-                </div>
-              </div>
-            )}
 
             {id && (
               <div className="mt-12">

@@ -20,11 +20,12 @@ import { AdminTagPanel } from "@/components/book/AdminTagPanel";
 import { AdminViewBanner } from "@/components/book/AdminViewBanner";
 import { MatureContentGate } from "@/components/book/MatureContentGate";
 import { Brief } from "@/lib/brief";
-import { BookBriefSummary } from "@/components/book/BookBriefSummary";
+import { BookBriefSection } from "@/components/book/BookBriefSection";
 import { BookEvaluationSection } from "@/components/book/BookEvaluationSection";
 import { ReviseWithAI, type RevisionPrefill } from "@/components/book/ReviseWithAI";
 import { BuildWithAI } from "@/components/book/BuildWithAI";
 import { ThreadsSection } from "@/components/book/ThreadsSection";
+import { BookBibleSection } from "@/components/book/BookBibleSection";
 import { getPageStatus } from "./components/pageList/pageUtils";
 import { computeCompletion } from "@/lib/brief";
 import { cn } from "@/lib/utils";
@@ -62,6 +63,7 @@ interface BookRecord {
   published_at?: string | null;
   content_tags?: string[] | null;
   brief?: Brief | null;
+  bible?: { text: string } | null;
 }
 
 const BookDetails = () => {
@@ -107,13 +109,17 @@ const BookDetails = () => {
   const [isCommitDialogOpen, setIsCommitDialogOpen] = useState(false);
   const [isPublishingDialogOpen, setIsPublishingDialogOpen] = useState(false);
   const [showArchivedPages, setShowArchivedPages] = useState(false);
-  // Manuscript leads; all AI tools live behind their own tab (brief stays common above).
+  // Manuscript leads the work; the brief and all AI tools live behind their own tabs.
   // Persisted to localStorage so the choice survives a refresh.
   const tabKey = `book-tab:${bookSlug}`;
-  const [activeTab, setActiveTab] = useState<"manuscript" | "ai">(
-    () => (localStorage.getItem(tabKey) === "ai" ? "ai" : "manuscript")
-  );
-  const switchTab = (tab: "manuscript" | "ai") => {
+  type WorkspaceTab = "brief" | "manuscript" | "threads" | "bible" | "ai";
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>(() => {
+    const saved = localStorage.getItem(tabKey);
+    return saved === "brief" || saved === "threads" || saved === "bible" || saved === "ai"
+      ? (saved as WorkspaceTab)
+      : "manuscript";
+  });
+  const switchTab = (tab: WorkspaceTab) => {
     setActiveTab(tab);
     localStorage.setItem(tabKey, tab);
   };
@@ -556,16 +562,10 @@ const BookDetails = () => {
 
             </div>
 
-            {/* Work area — the brief is common context above Manuscript / AI-tools tabs */}
+            {/* Work area — Brief / Manuscript / Threads / Bible / AI, each on its own tab */}
             {canEdit ? (
               <div className="space-y-6">
-                {/* The brief — shared context every AI tool plans from */}
-                <BookBriefSummary
-                  brief={book.brief ?? null}
-                  onEdit={() => navigate(`/books/${bookSlug}/edit`)}
-                />
-
-                {/* Tabs: Manuscript stays focused on writing; AI lives on its own tab */}
+                {/* Tabs: Manuscript leads the work; Brief holds the foundation AI tools plan from */}
                 <div
                   role="tablist"
                   aria-label="Book workspace"
@@ -591,6 +591,55 @@ const BookDetails = () => {
                   <button
                     type="button"
                     role="tab"
+                    aria-selected={activeTab === "brief"}
+                    onClick={() => switchTab("brief")}
+                    className={cn(
+                      "pv-serif -mb-px inline-flex items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-[18px] transition-colors",
+                      activeTab === "brief"
+                        ? "border-foreground text-foreground"
+                        : "border-transparent text-[hsl(var(--pv-text-muted))] hover:text-foreground"
+                    )}
+                  >
+                    Brief
+                    {!briefSet && (
+                      <span
+                        className="h-[7px] w-[7px] rounded-full bg-[#5b6db8]"
+                        title="Brief not set yet"
+                        aria-label="Brief not set yet"
+                      />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={activeTab === "threads"}
+                    onClick={() => switchTab("threads")}
+                    className={cn(
+                      "pv-serif -mb-px inline-flex items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-[18px] transition-colors",
+                      activeTab === "threads"
+                        ? "border-foreground text-foreground"
+                        : "border-transparent text-[hsl(var(--pv-text-muted))] hover:text-foreground"
+                    )}
+                  >
+                    Threads
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={activeTab === "bible"}
+                    onClick={() => switchTab("bible")}
+                    className={cn(
+                      "pv-serif -mb-px inline-flex items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-[18px] transition-colors",
+                      activeTab === "bible"
+                        ? "border-foreground text-foreground"
+                        : "border-transparent text-[hsl(var(--pv-text-muted))] hover:text-foreground"
+                    )}
+                  >
+                    Bible
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
                     aria-selected={activeTab === "ai"}
                     onClick={() => switchTab("ai")}
                     className={cn(
@@ -610,6 +659,15 @@ const BookDetails = () => {
                     )}
                   </button>
                 </div>
+
+                {/* Brief tab — edit the shared context every AI tool plans from, in place */}
+                {activeTab === "brief" && (
+                  <BookBriefSection
+                    bookId={getNumericId(bookSlug)}
+                    brief={book.brief ?? null}
+                    onBriefChange={(brief) => setBook((b) => (b ? { ...b, brief } : b))}
+                  />
+                )}
 
                 {/* Manuscript tab — writing & page management, full width */}
                 {activeTab === "manuscript" && (
@@ -632,6 +690,25 @@ const BookDetails = () => {
                   />
                 )}
 
+                {/* Threads tab — open loops & foreshadowing, an artifact parallel to the manuscript */}
+                {activeTab === "threads" && (
+                  <ThreadsSection
+                    bookId={getNumericId(bookSlug)}
+                    manuscriptWordCount={manuscriptWordCount}
+                  />
+                )}
+
+                {/* Bible tab — established canon (characters, world, style) every page must stay true to */}
+                {activeTab === "bible" && (
+                  <BookBibleSection
+                    bookId={getNumericId(bookSlug)}
+                    bible={book.bible?.text ?? null}
+                    onBibleChange={(text) =>
+                      setBook((b) => (b ? { ...b, bible: text ? { text } : null } : b))
+                    }
+                  />
+                )}
+
                 {/* AI tools tab — Build, then editor's read + revise, all stacked full-width */}
                 {activeTab === "ai" && (
                   <div className="space-y-6">
@@ -639,7 +716,7 @@ const BookDetails = () => {
                       bookId={getNumericId(bookSlug)}
                       briefSet={briefSet}
                       pages={pages}
-                      onEditBrief={() => navigate(`/books/${bookSlug}/edit`)}
+                      onEditBrief={() => switchTab("brief")}
                       onChanged={fetchBookDetails}
                       onReviseStructure={() => setRevisionPrefill({ instruction: "" })}
                     />
@@ -659,11 +736,6 @@ const BookDetails = () => {
                         onApplied={() => fetchBookDetails()}
                       />
                     </div>
-
-                    <ThreadsSection
-                      bookId={getNumericId(bookSlug)}
-                      manuscriptWordCount={manuscriptWordCount}
-                    />
                   </div>
                 )}
               </div>
