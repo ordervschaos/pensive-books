@@ -84,18 +84,12 @@ Deno.serve(async (req: Request) => {
       evaluation?: EvalResult;
       instruction?: string;
       ctx?: {
-        brief?: boolean;
-        bible?: boolean;
-        threads?: boolean;
         pageCtx?: { id: number; summary: boolean; full: boolean }[] | null;
-        threadIds?: number[] | null;
+        threadIds?: number[] | null; // null=all, []=none, [ids]=subset
       };
     };
-    const useBrief = ctx?.brief !== false;
-    const useBible = ctx?.bible !== false;
-    const useThreads = ctx?.threads !== false;
-    const threadIdFilter = ctx?.threadIds ?? null; // null = all
-    // pageCtx: per-page extras { id, summary, full }. null = outline only for all pages.
+    // Brief and bible are always included; only page depth and thread selection are variable.
+    const threadIdFilter = ctx?.threadIds ?? null;
     const pageCtxArr = ctx?.pageCtx ?? null;
     if (!bookId) return json({ error: "bookId is required" }, 400);
     const hasEval = !!evaluation?.verdict && Array.isArray(evaluation.sections);
@@ -158,17 +152,15 @@ Deno.serve(async (req: Request) => {
     }
 
     const allThreads: ThreadLite[] = (threads as ThreadLite[] | null) ?? [];
-    const filteredThreads = !useThreads
-      ? []
-      : threadIdFilter
-        ? allThreads.filter(t => threadIdFilter.includes(t.id))
-        : allThreads;
+    const filteredThreads = threadIdFilter !== null
+      ? allThreads.filter(t => threadIdFilter.includes(t.id))
+      : allThreads;
 
     const plan = await callClaude(
       apiKey,
       book.name,
-      useBrief ? (book.brief as Brief | null) : null,
-      useBible ? ((book.bible as { text?: string } | null)?.text?.trim() || null) : null,
+      book.brief as Brief | null,
+      (book.bible as { text?: string } | null)?.text?.trim() || null,
       pages as PageRow[],
       filteredThreads,
       hasEval ? evaluation! : null,

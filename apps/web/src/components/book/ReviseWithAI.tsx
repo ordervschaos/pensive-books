@@ -86,9 +86,8 @@ const ACTIVE: RevStatus[] = ["planning", "awaiting_review", "building"];
 
 interface PageLite { id: number; title: string | null; page_type: string | null; page_index: number }
 interface ThreadLite { id: number; name: string; status: string; description: string | null }
-interface ContextMeta { hasBrief: boolean; hasBible: boolean; pages: PageLite[]; threads: ThreadLite[] }
-interface CtxOn { brief: boolean; bible: boolean; threads: boolean }
-interface PageExtra { summary: boolean; full: boolean }
+interface ContextMeta { pages: PageLite[]; threads: ThreadLite[] }
+type PageDepth = "summary" | "full";
 
 const OP_LABEL: Record<PlanPage["op"], string> = {
   keep: "keep",
@@ -188,9 +187,9 @@ export function ReviseWithAI({
   const [reviewOpen, setReviewOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [contextMeta, setContextMeta] = useState<ContextMeta | null>(null);
-  const [ctxOn, setCtxOn] = useState<CtxOn>({ brief: true, bible: true, threads: true });
-  // per-page extras: key=pageId, value={summary,full}. Empty map = outline only for all pages.
-  const [pageExtras, setPageExtras] = useState<Map<number, PageExtra>>(new Map());
+  // per-page depth: only pages wanting extra context appear here; absent = outline only
+  const [pageDepth, setPageDepth] = useState<Map<number, PageDepth>>(new Map());
+  // null = all threads; [] = none; [ids] = specific subset
   const [selectedThreadIds, setSelectedThreadIds] = useState<number[] | null>(null);
   const [openPicker, setOpenPicker] = useState<"pages" | "threads" | null>(null);
 
@@ -214,13 +213,10 @@ export function ReviseWithAI({
       supabase.from("book_threads")
         .select("id, name, status, description")
         .eq("book_id", bookId).neq("status", "closed"),
-    ]).then(([revResult, bookResult, pagesResult, threadsResult]) => {
+    ]).then(([revResult, , pagesResult, threadsResult]) => {
       if (!mounted.current) return;
       setRow((revResult.data as RevisionRow | null) ?? null);
-      const b = bookResult.data;
       setContextMeta({
-        hasBrief: !!(b?.brief && typeof b.brief === "object" && Object.keys(b.brief as object).length > 0),
-        hasBible: !!(b?.bible && (b.bible as { text?: string })?.text?.trim()),
         pages: (pagesResult.data as PageLite[] | null) ?? [],
         threads: (threadsResult.data as ThreadLite[] | null) ?? [],
       });
@@ -276,9 +272,12 @@ export function ReviseWithAI({
       evaluation: current.evaluation ?? undefined,
       instruction: current.instruction ?? undefined,
       ctx: {
-        ...ctxOn,
-        pageCtx: pageExtras.size > 0
-          ? Array.from(pageExtras.entries()).map(([id, e]) => ({ id, ...e }))
+        pageCtx: pageDepth.size > 0
+          ? Array.from(pageDepth.entries()).map(([id, depth]) => ({
+              id,
+              summary: depth === "summary",
+              full: depth === "full",
+            }))
           : null,
         threadIds: selectedThreadIds,
       },
@@ -606,49 +605,40 @@ export function ReviseWithAI({
             className="min-h-[88px] pv-serif text-[14.5px] leading-relaxed"
           />
 
-          {/* Context row -- chips reveal what the AI sees; Outline and Threads open inline pickers */}
+          {/* Context row -- brief + outline always sent; choose page depth and threads */}
           {contextMeta && (() => {
-            const summaryCount = Array.from(pageExtras.values()).filter(e => e.summary).length;
-            const fullCount = Array.from(pageExtras.values()).filter(e => e.full).length;
-            const extras = [summaryCount > 0 ? `${summaryCount}s` : null, fullCount > 0 ? `${fullCount}f` : null].filter(Boolean).join(" ");
-            const pageLabel = extras ? `Outline · ${extras}` : "Outline";
-            const selThreads = selectedThreadIds ?? contextMeta.threads.map(t => t.id);
-            const threadLabel = selectedThreadIds
-              ? `Threads ${selectedThreadIds.length}/${contextMeta.threads.length}`
+            const sumCount = Array.from(pageDepth.values()).filter(d => d === "summary").length;
+            const fullCount = Array.from(pageDepth.values()).filter(d => d === "full").length;
+            const extras = [sumCount > 0 ? `${sumCount}s` : null, fullCount > 0 ? `${fullCount}f` : null].filter(Boolean).join(" ");
+            const pageLabel = extras ? `Pages · ${extras}` : "Pages";
+            const threadCount = selectedThreadIds === null
+              ? contextMeta.threads.length
+              : selectedThreadIds.length;
+            const threadLabel = selectedThreadIds !== null
+              ? `Threads ${threadCount}/${contextMeta.threads.length}`
               : `Threads ${contextMeta.threads.length}`;
+            const threadsOn = selectedThreadIds === null || selectedThreadIds.length > 0;
             return (
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span className="pv-eyebrow mr-0.5 text-[9px] text-[hsl(var(--pv-text-faint))]">Context</span>
                   <CtxChip label={pageLabel} picker expanded={openPicker === "pages"} on
                     onClick={() => setOpenPicker(p => p === "pages" ? null : "pages")} />
-                  {contextMeta.hasBrief && (
-                    <CtxChip label="Brief" on={ctxOn.brief}
-                      onToggle={() => setCtxOn(c => ({ ...c, brief: !c.brief }))} />
-                  )}
-                  {contextMeta.hasBible && (
-                    <CtxChip label="Bible" on={ctxOn.bible}
-                      onToggle={() => setCtxOn(c => ({ ...c, bible: !c.bible }))} />
-                  )}
                   {contextMeta.threads.length > 0 && (
                     <CtxChip label={threadLabel} picker expanded={openPicker === "threads"}
-                      on={ctxOn.threads && selThreads.length > 0}
-                      onClick={() => {
-                        if (!ctxOn.threads) { setCtxOn(c => ({ ...c, threads: true })); return; }
-                        setOpenPicker(p => p === "threads" ? null : "threads");
-                      }} />
+                      on={threadsOn}
+                      onClick={() => setOpenPicker(p => p === "threads" ? null : "threads")} />
                   )}
                   {attachedEval && (
                     <CtxChip label="Editor's notes" accent onRemove={() => setAttachedEval(null)} />
                   )}
                 </div>
                 {openPicker === "pages" && (
-                  <PageContextPicker pages={contextMeta.pages} extras={pageExtras}
-                    onChange={setPageExtras} />
+                  <PageContextPicker pages={contextMeta.pages} depth={pageDepth}
+                    onChange={setPageDepth} />
                 )}
-                {openPicker === "threads" && ctxOn.threads && (
+                {openPicker === "threads" && (
                   <ThreadPicker threads={contextMeta.threads} selected={selectedThreadIds}
-                    onDisable={() => { setCtxOn(c => ({ ...c, threads: false })); setOpenPicker(null); }}
                     onChange={setSelectedThreadIds} />
                 )}
               </div>
@@ -887,58 +877,41 @@ function CtxChip({
 }
 
 function PageContextPicker({
-  pages, extras, onChange,
+  pages, depth, onChange,
 }: {
   pages: PageLite[];
-  extras: Map<number, PageExtra>;
-  onChange: (next: Map<number, PageExtra>) => void;
+  depth: Map<number, PageDepth>;
+  onChange: (next: Map<number, PageDepth>) => void;
 }) {
   const textPages = pages.filter(p => p.page_type !== "section");
 
-  const toggle = (id: number, field: "summary" | "full") => {
-    const next = new Map(extras);
-    const cur = next.get(id) ?? { summary: false, full: false };
-    const updated = { ...cur, [field]: !cur[field] };
-    if (!updated.summary && !updated.full) next.delete(id);
-    else next.set(id, updated);
+  const setDepth = (id: number, d: PageDepth | null) => {
+    const next = new Map(depth);
+    if (d === null) next.delete(id); else next.set(id, d);
     onChange(next);
   };
 
-  const setAll = (field: "summary" | "full", value: boolean) => {
-    const next = new Map(extras);
+  const setAll = (d: PageDepth | null) => {
+    const next = new Map(depth);
     for (const p of textPages) {
-      const cur = next.get(p.id) ?? { summary: false, full: false };
-      const updated = { ...cur, [field]: value };
-      if (!updated.summary && !updated.full) next.delete(p.id);
-      else next.set(p.id, updated);
+      if (d === null) next.delete(p.id); else next.set(p.id, d);
     }
     onChange(next);
   };
 
-  const anySum = textPages.some(p => extras.get(p.id)?.summary);
-  const anyFull = textPages.some(p => extras.get(p.id)?.full);
-  const allSum = textPages.length > 0 && textPages.every(p => extras.get(p.id)?.summary);
-  const allFull = textPages.length > 0 && textPages.every(p => extras.get(p.id)?.full);
-
   return (
     <div className="overflow-hidden rounded-lg border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/40">
-      {/* Sticky column-header row */}
-      <div className="grid grid-cols-[1fr_56px_56px] items-center border-b border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))] px-3 py-2">
+      {/* Column headers -- clicking sets ALL pages to that depth */}
+      <div className="grid grid-cols-[1fr_40px_80px_56px] items-center border-b border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))] px-3 py-2">
         <span className="pv-eyebrow text-[9px] text-[hsl(var(--pv-text-faint))]">
           Outline always included
         </span>
-        <button type="button" onClick={() => setAll("summary", !allSum)}
-          aria-label={allSum ? "Remove summaries from all pages" : "Add summaries to all pages"}
-          className={cn("pv-mono text-center text-[9px] uppercase tracking-wide transition-colors",
-            anySum ? "text-[hsl(var(--pv-accent))]" : "text-[hsl(var(--pv-text-faint))] hover:text-foreground")}>
-          Summary
-        </button>
-        <button type="button" onClick={() => setAll("full", !allFull)}
-          aria-label={allFull ? "Remove full content from all pages" : "Add full content to all pages"}
-          className={cn("pv-mono text-center text-[9px] uppercase tracking-wide transition-colors",
-            anyFull ? "text-[hsl(var(--pv-accent))]" : "text-[hsl(var(--pv-text-faint))] hover:text-foreground")}>
-          Full
-        </button>
+        <button type="button" onClick={() => setAll(null)} title="Set all pages to outline only"
+          className="pv-mono text-center text-[9px] text-[hsl(var(--pv-text-faint))] hover:text-foreground">--</button>
+        <button type="button" onClick={() => setAll("summary")} title="Add summary to all pages"
+          className="pv-mono text-center text-[9px] text-[hsl(var(--pv-text-faint))] hover:text-foreground">Summary</button>
+        <button type="button" onClick={() => setAll("full")} title="Add full prose to all pages"
+          className="pv-mono text-center text-[9px] text-[hsl(var(--pv-text-faint))] hover:text-foreground">Full</button>
       </div>
 
       {/* Page rows */}
@@ -951,21 +924,27 @@ function PageContextPicker({
               </p>
             );
           }
-          const ex = extras.get(p.id) ?? { summary: false, full: false };
+          const cur = depth.get(p.id) ?? null;
+          const name = p.title || "this page";
           return (
-            <div key={p.id} className="grid grid-cols-[1fr_56px_56px] items-center px-3 py-1.5 hover:bg-[hsl(var(--pv-surface-2))]/60">
-              <span className="pv-serif truncate pr-2 text-[13.5px] text-foreground">
-                {p.title || "(untitled)"}
-              </span>
-              {/* Native checkboxes — keyboard accessible + screen-reader friendly */}
+            <div key={p.id} className="grid grid-cols-[1fr_40px_80px_56px] items-center px-3 py-1.5 hover:bg-[hsl(var(--pv-surface-2))]/60">
+              <span className="pv-serif truncate pr-2 text-[13.5px] text-foreground">{p.title || "(untitled)"}</span>
               <div className="flex justify-center">
-                <input type="checkbox" checked={ex.summary} onChange={() => toggle(p.id, "summary")}
-                  aria-label={`Include summary for ${p.title || "this page"}`}
+                <input type="radio" name={`pd-${p.id}`} checked={cur === null}
+                  onChange={() => setDepth(p.id, null)}
+                  aria-label={`${name}: outline only`}
                   className="h-3.5 w-3.5 cursor-pointer accent-[hsl(var(--pv-accent))]" />
               </div>
               <div className="flex justify-center">
-                <input type="checkbox" checked={ex.full} onChange={() => toggle(p.id, "full")}
-                  aria-label={`Include full prose for ${p.title || "this page"}`}
+                <input type="radio" name={`pd-${p.id}`} checked={cur === "summary"}
+                  onChange={() => setDepth(p.id, "summary")}
+                  aria-label={`${name}: add summary`}
+                  className="h-3.5 w-3.5 cursor-pointer accent-[hsl(var(--pv-accent))]" />
+              </div>
+              <div className="flex justify-center">
+                <input type="radio" name={`pd-${p.id}`} checked={cur === "full"}
+                  onChange={() => setDepth(p.id, "full")}
+                  aria-label={`${name}: add full prose`}
                   className="h-3.5 w-3.5 cursor-pointer accent-[hsl(var(--pv-accent))]" />
               </div>
             </div>
@@ -977,11 +956,10 @@ function PageContextPicker({
 }
 
 function ThreadPicker({
-  threads, selected, onDisable, onChange,
+  threads, selected, onChange,
 }: {
   threads: ThreadLite[];
   selected: number[] | null;
-  onDisable: () => void;
   onChange: (ids: number[] | null) => void;
 }) {
   const allIds = threads.map(t => t.id);
@@ -999,7 +977,7 @@ function ThreadPicker({
         <div className="flex gap-3">
           <button type="button" onClick={() => onChange(null)}
             className="pv-mono text-[10px] text-[hsl(var(--pv-text-muted))] hover:text-foreground">All</button>
-          <button type="button" onClick={onDisable}
+          <button type="button" onClick={() => onChange([])}
             className="pv-mono text-[10px] text-[hsl(var(--pv-text-muted))] hover:text-foreground">None</button>
         </div>
       </div>
