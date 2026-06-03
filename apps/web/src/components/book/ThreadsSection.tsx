@@ -5,10 +5,13 @@ import { sanitizeAIError, captureException } from "@/lib/sentry";
 import { useToast } from "@/hooks/use-toast";
 import {
   type Thread,
-  type ThreadChange,
+  type ThreadAnchor,
+  type AnchorEvent,
   type ThreadDraft,
   type ThreadScan,
   type ThreadStatus,
+  firstPromise,
+  lastResolution,
   fetchThreads,
   fetchPendingScan,
   scanThreads,
@@ -21,35 +24,52 @@ import {
   formatWords,
 } from "@/lib/threads";
 
-// ── tone maps (match the editorial palette used across the AI tab) ──────────────
 const STATUS_TONE: Record<ThreadStatus, string> = {
   planned: "text-[hsl(var(--pv-text-faint))]",
   open: "text-amber-600 dark:text-amber-500",
   closed: "text-[hsl(var(--pv-text-muted))]",
 };
-const ACTION_TONE: Record<ThreadChange["action"], string> = {
-  new: "text-[hsl(var(--pv-accent))]",
-  close: "text-emerald-600 dark:text-emerald-500",
-  advance: "text-[hsl(var(--pv-text-muted))]",
-  update: "text-amber-600 dark:text-amber-500",
-};
 
-// How a thread reads on the shelf: planned budget, words-open-so-far (+ drift), or paid-off span.
+// How a thread reads on the shelf: distance from first promise to last resolution (or end of book).
 function distanceLine(t: Thread, total: number): { text: string; drift: boolean } {
+  const fp: ThreadAnchor | null = firstPromise(t);
+  const lr: ThreadAnchor | null = lastResolution(t);
+
   if (t.status === "closed") {
-    const span = t.setup_word_offset != null && t.payoff_word_offset != null
-      ? t.payoff_word_offset - t.setup_word_offset
-      : null;
-    return { text: span != null ? `closed · ${formatWords(Math.max(0, span))} setup→payoff` : "closed", drift: false };
+    const span =
+      fp?.word_offset != null && lr?.word_offset != null
+        ? Math.max(0, lr.word_offset - fp.word_offset)
+        : null;
+    return {
+      text: span != null ? `closed · ${formatWords(span)} setup→payoff` : "closed",
+      drift: false,
+    };
   }
-  if (t.status === "open" && t.setup_word_offset != null) {
-    const openFor = Math.max(0, total - t.setup_word_offset);
+  if (t.status === "open" && fp?.word_offset != null) {
+    const openFor = Math.max(0, total - fp.word_offset);
     const drift = t.target_distance != null && openFor > t.target_distance;
     const budget = t.target_distance != null ? ` / ~${formatWords(t.target_distance)} budget` : "";
     return { text: `open · ${formatWords(openFor)} so far${budget}`, drift };
   }
-  // planned (not yet seeded in prose)
-  return { text: t.target_distance != null ? `planned · ~${formatWords(t.target_distance)} budget` : "planned", drift: false };
+  return {
+    text: t.target_distance != null ? `planned · ~${formatWords(t.target_distance)} budget` : "planned",
+    drift: false,
+  };
+}
+
+// Group scan events by threadKey, preserving the order of first appearance.
+function groupEvents(events: AnchorEvent[]): { key: string; events: AnchorEvent[] }[] {
+  const groups: { key: string; events: AnchorEvent[] }[] = [];
+  const seen = new Set<string>();
+  for (const e of events) {
+    if (!seen.has(e.threadKey)) {
+      seen.add(e.threadKey);
+      groups.push({ key: e.threadKey, events: [e] });
+    } else {
+      groups.find((g) => g.key === e.threadKey)!.events.push(e);
+    }
+  }
+  return groups;
 }
 
 type View =
@@ -64,19 +84,16 @@ export function ThreadsSection({ bookId, manuscriptWordCount }: { bookId: number
   const [threads, setThreads] = useState<Thread[]>([]);
   const [view, setView] = useState<View>({ kind: "loading" });
   const [applying, setApplying] = useState(false);
-  // Manual editor: null = closed; { thread: null } = adding; { thread } = editing that row.
   const [editor, setEditor] = useState<{ thread: Thread | null } | null>(null);
 
   const load = async () => {
     try {
-      // Resume an unreviewed scan if one is waiting — a scan is a paid Claude call, so its diff is
-      // persisted (book_thread_scans) and must survive a refresh rather than vanish.
       const [ts, pending] = await Promise.all([fetchThreads(bookId), fetchPendingScan(bookId)]);
       setThreads(ts);
       setView((v) => {
         if (v.kind !== "loading" && v.kind !== "scanning") return v;
         return pending
-          ? { kind: "review", scan: pending, accepted: pending.changes.map(() => true) }
+          ? { kind: "review", scan: pending, accepted: pending.events.map(() => true) }
           : { kind: "list" };
       });
     } catch (e) {
@@ -94,33 +111,33 @@ export function ThreadsSection({ bookId, manuscriptWordCount }: { bookId: number
     setView({ kind: "scanning" });
     try {
       const result = await scanThreads(bookId);
-      setView({ kind: "review", scan: result, accepted: result.changes.map(() => true) });
+      setView({ kind: "review", scan: result, accepted: result.events.map(() => true) });
     } catch (e) {
       captureException(e);
       setView({ kind: "error", error: sanitizeAIError(e instanceof Error ? e.message : "Scan failed.") });
     }
   };
 
-  // Discard a reviewed scan: mark the persisted row dismissed so it won't resume on reload.
   const cancelReview = async (scanId?: number | null) => {
     if (scanId != null) {
-      try {
-        await markScanReviewed(scanId, "dismissed");
-      } catch {
-        /* non-fatal: a lingering pending row just means the review reappears on reload */
-      }
+      try { await markScanReviewed(scanId, "dismissed"); } catch { /* non-fatal */ }
     }
     setView({ kind: "loading" });
     await load();
   };
 
   const apply = async (scanResult: ThreadScan, accepted: boolean[]) => {
-    const picked = scanResult.changes.filter((_, i) => accepted[i]);
+    const picked = scanResult.events.filter((_, i) => accepted[i]);
     setApplying(true);
     try {
       await applyThreadScan(bookId, picked);
       if (scanResult.scanId != null) await markScanReviewed(scanResult.scanId, "applied");
-      toast({ title: "Thread tracker updated", description: `${picked.length} thread${picked.length === 1 ? "" : "s"} updated.` });
+      const anchorCount = picked.length;
+      const newCount = new Set(picked.filter((e) => e.isNewThread).map((e) => e.threadKey)).size;
+      toast({
+        title: "Thread tracker updated",
+        description: `${newCount} thread${newCount !== 1 ? "s" : ""} created, ${anchorCount} anchor${anchorCount !== 1 ? "s" : ""} added.`,
+      });
       setView({ kind: "loading" });
       await load();
     } catch (e) {
@@ -148,7 +165,6 @@ export function ThreadsSection({ bookId, manuscriptWordCount }: { bookId: number
     }
   };
 
-  // Create or edit a thread by hand, then reflect it in the list and close the editor.
   const saveThread = async (draft: ThreadDraft) => {
     const target = editor?.thread ?? null;
     try {
@@ -200,7 +216,6 @@ export function ThreadsSection({ bookId, manuscriptWordCount }: { bookId: number
         )}
       </div>
 
-      {/* Manual add / edit form — sits above the list while open */}
       {editor && view.kind !== "scanning" && view.kind !== "review" && (
         <ThreadEditor
           key={editor.thread?.id ?? "new"}
@@ -216,7 +231,8 @@ export function ThreadsSection({ bookId, manuscriptWordCount }: { bookId: number
 
       {view.kind === "scanning" && (
         <p className="pv-serif mt-3 text-[15px] italic text-[hsl(var(--pv-text-muted))]">
-          Reading the manuscript for setups and payoffs… <span className="text-[hsl(var(--pv-text-faint))]">(~30–90s)</span>
+          Scanning page by page for promises and payoffs…{" "}
+          <span className="text-[hsl(var(--pv-text-faint))]">(~1–2s per page)</span>
         </p>
       )}
 
@@ -224,7 +240,7 @@ export function ThreadsSection({ bookId, manuscriptWordCount }: { bookId: number
         <p className="pv-serif mt-3 max-w-[640px] text-[14px] leading-relaxed text-red-600 dark:text-red-400">{view.error}</p>
       )}
 
-      {/* Idle list of tracked threads */}
+      {/* Idle thread list */}
       {view.kind === "list" && (
         threads.length === 0 ? (
           <p className="pv-serif mt-3 max-w-[640px] text-[15px] italic leading-relaxed text-[hsl(var(--pv-text-muted))]">
@@ -235,6 +251,8 @@ export function ThreadsSection({ bookId, manuscriptWordCount }: { bookId: number
           <div className="mt-4 space-y-1">
             {threads.map((t) => {
               const { text, drift } = distanceLine(t, manuscriptWordCount);
+              const fp = firstPromise(t);
+              const lr = lastResolution(t);
               return (
                 <div key={t.id} className="group flex items-start justify-between gap-3 rounded-lg px-2 py-2 hover:bg-[hsl(var(--pv-surface-2))]/50">
                   <div className="min-w-0 flex-1">
@@ -250,11 +268,21 @@ export function ThreadsSection({ bookId, manuscriptWordCount }: { bookId: number
                       {drift && (
                         <span className="pv-mono text-[10.5px] uppercase tracking-[0.12em] text-red-600 dark:text-red-400">⚠ past budget</span>
                       )}
-                      {t.setup_page_id != null && (
-                        <Link to={`/books/${bookId}/pages/${t.setup_page_id}`} className="text-[12px] italic text-[hsl(var(--pv-text-faint))] underline-offset-2 hover:text-[hsl(var(--pv-text-muted))] hover:underline">↪ setup</Link>
+                      {fp?.page_id != null && (
+                        <Link
+                          to={`/books/${bookId}/pages/${fp.page_id}`}
+                          className="text-[12px] italic text-[hsl(var(--pv-text-faint))] underline-offset-2 hover:text-[hsl(var(--pv-text-muted))] hover:underline"
+                        >
+                          ↪ first promise
+                        </Link>
                       )}
-                      {t.payoff_page_id != null && (
-                        <Link to={`/books/${bookId}/pages/${t.payoff_page_id}`} className="text-[12px] italic text-[hsl(var(--pv-text-faint))] underline-offset-2 hover:text-[hsl(var(--pv-text-muted))] hover:underline">↪ payoff</Link>
+                      {lr?.page_id != null && (
+                        <Link
+                          to={`/books/${bookId}/pages/${lr.page_id}`}
+                          className="text-[12px] italic text-[hsl(var(--pv-text-faint))] underline-offset-2 hover:text-[hsl(var(--pv-text-muted))] hover:underline"
+                        >
+                          ↪ last resolution
+                        </Link>
                       )}
                     </div>
                   </div>
@@ -276,7 +304,7 @@ export function ThreadsSection({ bookId, manuscriptWordCount }: { bookId: number
         )
       )}
 
-      {/* Review the scan diff before applying */}
+      {/* Scan review — grouped by thread, one checkbox per anchor event */}
       {view.kind === "review" && (
         <div className="mt-4 space-y-4">
           <p className="pv-mono text-[10px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-faint))]">
@@ -286,45 +314,88 @@ export function ThreadsSection({ bookId, manuscriptWordCount }: { bookId: number
             <p className="pv-serif text-[14.5px] leading-relaxed text-foreground">{view.scan.summary}</p>
           )}
 
-          {view.scan.changes.length === 0 ? (
-            <p className="pv-serif text-[15px] italic text-[hsl(var(--pv-text-muted))]">No changes — the tracked threads are in sync with the prose.</p>
+          {view.scan.events.length === 0 ? (
+            <p className="pv-serif text-[15px] italic text-[hsl(var(--pv-text-muted))]">
+              No thread activity found — the book has no new promises or resolutions to log.
+            </p>
           ) : (
-            <div className="space-y-1">
-              {view.scan.changes.map((c, i) => (
-                <label key={i} className="flex cursor-pointer items-start gap-3 rounded-lg px-2 py-2 hover:bg-[hsl(var(--pv-surface-2))]/50">
-                  <input
-                    type="checkbox"
-                    checked={view.accepted[i]}
-                    onChange={(e) => {
-                      const accepted = view.accepted.slice();
-                      accepted[i] = e.target.checked;
-                      setView({ ...view, accepted });
-                    }}
-                    className="mt-1 h-4 w-4 shrink-0 accent-[hsl(var(--pv-accent))]"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-baseline gap-x-2">
-                      <span className={`pv-mono text-[10px] uppercase tracking-[0.14em] ${ACTION_TONE[c.action]}`}>{c.action}</span>
-                      <span className="pv-serif text-[15px] text-foreground">{c.name}</span>
-                      <span className={`pv-mono text-[10px] uppercase tracking-[0.12em] ${STATUS_TONE[c.status]}`}>{c.status}</span>
-                      {c.distance != null && (
-                        <span className="pv-mono text-[10px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-faint))]">{formatWords(c.distance)}w</span>
+            <div className="space-y-4">
+              {groupEvents(view.scan.events).map(({ key, events: groupEvts }) => {
+                const isNew = key.startsWith("new:");
+                const first = groupEvts[0];
+                return (
+                  <div key={key}>
+                    {/* Thread header */}
+                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 px-2">
+                      {isNew && (
+                        <span className="pv-mono text-[10px] uppercase tracking-[0.14em] text-[hsl(var(--pv-accent))]">new</span>
+                      )}
+                      <span className="pv-serif text-[15px] text-foreground">{first.threadName}</span>
+                      {first.threadDescription && (
+                        <span className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-muted))]">— {first.threadDescription}</span>
                       )}
                     </div>
-                    {c.description && (
-                      <p className="pv-serif text-[13.5px] leading-snug text-[hsl(var(--pv-text-muted))]">{c.description}</p>
-                    )}
-                    {c.why && (
-                      <p className="pv-serif text-[13px] italic leading-snug text-[hsl(var(--pv-text-faint))]">{c.why}</p>
-                    )}
+                    {/* Anchor events for this thread */}
+                    <div className="mt-1 space-y-0.5">
+                      {groupEvts.map((e) => {
+                        const globalIndex = view.scan.events.indexOf(e);
+                        return (
+                          <label
+                            key={globalIndex}
+                            className="flex cursor-pointer items-start gap-3 rounded-lg px-2 py-1.5 pl-4 hover:bg-[hsl(var(--pv-surface-2))]/50"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={view.accepted[globalIndex]}
+                              onChange={(ev) => {
+                                const next = view.accepted.slice();
+                                next[globalIndex] = ev.target.checked;
+                                setView({ ...view, accepted: next });
+                              }}
+                              className="mt-1 h-4 w-4 shrink-0 accent-[hsl(var(--pv-accent))]"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-baseline gap-x-2">
+                                <span
+                                  className={`pv-mono text-[10px] uppercase tracking-[0.12em] ${
+                                    e.role === "resolution"
+                                      ? "text-emerald-600 dark:text-emerald-500"
+                                      : "text-[hsl(var(--pv-text-muted))]"
+                                  }`}
+                                >
+                                  {e.role}
+                                </span>
+                                <Link
+                                  to={`/books/${bookId}/pages/${e.pageId}`}
+                                  onClick={(ev) => ev.stopPropagation()}
+                                  className="text-[12px] italic text-[hsl(var(--pv-text-faint))] underline-offset-2 hover:text-[hsl(var(--pv-text-muted))] hover:underline"
+                                >
+                                  ↪ page
+                                </Link>
+                                {e.wordOffset > 0 && (
+                                  <span className="pv-mono text-[10px] text-[hsl(var(--pv-text-faint))]">
+                                    {formatWords(e.wordOffset)}w in
+                                  </span>
+                                )}
+                              </div>
+                              {e.note && (
+                                <p className="pv-serif text-[13px] italic leading-snug text-[hsl(var(--pv-text-faint))]">
+                                  {e.note}
+                                </p>
+                              )}
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
                   </div>
-                </label>
-              ))}
+                );
+              })}
             </div>
           )}
 
           <div className="flex items-center justify-end gap-4 pt-1">
-            {view.scan.changes.length > 0 && (
+            {view.scan.events.length > 0 && (
               <button
                 type="button"
                 onClick={() => cancelReview(view.scan.scanId)}
@@ -336,14 +407,18 @@ export function ThreadsSection({ bookId, manuscriptWordCount }: { bookId: number
             )}
             <button
               type="button"
-              onClick={() => (view.scan.changes.length === 0 ? cancelReview(view.scan.scanId) : apply(view.scan, view.accepted))}
-              disabled={applying || (view.scan.changes.length > 0 && view.accepted.every((a) => !a))}
+              onClick={() =>
+                view.scan.events.length === 0
+                  ? cancelReview(view.scan.scanId)
+                  : apply(view.scan, view.accepted)
+              }
+              disabled={applying || (view.scan.events.length > 0 && view.accepted.every((a) => !a))}
               className="pv-mono inline-flex items-center gap-1.5 rounded-full bg-[hsl(var(--pv-accent))] px-3.5 py-2 text-[10.5px] uppercase tracking-[0.12em] text-background transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               {applying && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              {view.scan.changes.length === 0
+              {view.scan.events.length === 0
                 ? "Done"
-                : `Update ${view.accepted.filter(Boolean).length} thread${view.accepted.filter(Boolean).length === 1 ? "" : "s"}`}
+                : `Apply ${view.accepted.filter(Boolean).length} anchor${view.accepted.filter(Boolean).length === 1 ? "" : "s"}`}
             </button>
           </div>
         </div>
@@ -353,8 +428,6 @@ export function ThreadsSection({ bookId, manuscriptWordCount }: { bookId: number
 }
 
 // ── Manual add / edit form ─────────────────────────────────────────────────────
-// Covers the "promise" fields an author sets by hand. Page anchors stay the scan's job, so a
-// hand-made thread starts unanchored; a later scan (if unlocked) can advance or close it.
 const STATUSES: ThreadStatus[] = ["planned", "open", "closed"];
 
 function ThreadEditor({
