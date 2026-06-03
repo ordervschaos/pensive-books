@@ -24,6 +24,7 @@ import { BookBriefSection } from "@/components/book/BookBriefSection";
 import { type RevisionPrefill } from "@/components/book/ReviseWithAI";
 import { BookJourney } from "@/components/book/BookJourney";
 import { ThreadsSection } from "@/components/book/ThreadsSection";
+import { NotificationTester } from "@/components/book/NotificationTester";
 import { BookBibleSection } from "@/components/book/BookBibleSection";
 import { getPageStatus } from "./components/pageList/pageUtils";
 import { computeCompletion } from "@/lib/brief";
@@ -740,6 +741,9 @@ const BookDetails = () => {
                 />
               </div>
             )}
+
+            {/* Notification diagnostic — author-only test buttons for email + web */}
+            {canEdit && <NotificationTester />}
 
             {/* Admin content tagging */}
             {isAdmin && (

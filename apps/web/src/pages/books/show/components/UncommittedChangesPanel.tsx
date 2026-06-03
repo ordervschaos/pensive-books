@@ -11,7 +11,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { VersionService } from "@/services/VersionService";
-import { DiffService, type FileStatus } from "@/services/DiffService";
+import type { FileStatus } from "@/services/DiffService";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -116,7 +116,6 @@ const getStatusBadge = (status: FileStatus) => {
 export function UncommittedChangesPanel({
   bookId,
   bookSlug,
-  pages,
   canEdit,
   vsCodeMode = false,
   onFileSelect,
@@ -132,14 +131,16 @@ export function UncommittedChangesPanel({
   const [expandedDiffs, setExpandedDiffs] = useState<Set<number>>(new Set());
 
   // Data Fetching
+  // Single server-side query for the change list (status + metadata, no content).
   const {
-    data: modifiedPageIds,
-    isLoading: loadingIds,
+    data: draftChanges,
+    isLoading: loadingChanges,
   } = useQuery({
-    queryKey: ["modified-pages", bookId],
-    queryFn: () => VersionService.getModifiedPageIds(bookId),
+    queryKey: ["draft-changes", bookId],
+    queryFn: () => VersionService.getDraftChanges(bookId),
   });
 
+  // Cheap accurate summary (just the count + last-commit timestamp).
   const {
     data: changesSummary,
     isLoading: loadingSummary,
@@ -147,6 +148,8 @@ export function UncommittedChangesPanel({
     queryKey: ["uncommitted-changes", bookId],
     queryFn: () => VersionService.getUncommittedChanges(bookId),
   });
+
+  const modifiedPageIds = draftChanges?.map((c) => c.pageId);
 
   // Revert Logic
   const revertPages = async (pageIds: number[]) => {
@@ -183,7 +186,7 @@ export function UncommittedChangesPanel({
       });
 
       // Refresh data
-      queryClient.invalidateQueries({ queryKey: ["modified-pages", bookId] });
+      queryClient.invalidateQueries({ queryKey: ["draft-changes", bookId] });
       queryClient.invalidateQueries({ queryKey: ["uncommitted-changes", bookId] });
       queryClient.invalidateQueries({ queryKey: ["pages"] });
       queryClient.invalidateQueries({ queryKey: ["books", bookId] });
@@ -279,45 +282,19 @@ export function UncommittedChangesPanel({
     }
   };
 
-  // Fetch page statuses for all modified pages
-  const { data: pageStatuses } = useQuery({
-    queryKey: ["page-statuses", bookId, modifiedPageIds],
-    queryFn: async () => {
-      if (!modifiedPageIds || modifiedPageIds.length === 0) return {};
-
-      const statuses: Record<number, FileStatus | null> = {};
-      for (const pageId of modifiedPageIds) {
-        const status = await DiffService.getPageStatus(pageId, bookId);
-        statuses[pageId] = status;
-      }
-      return statuses;
-    },
-    enabled: !!modifiedPageIds && modifiedPageIds.length > 0,
-  });
-
-  // Process changed pages with status information
-  const changedPages: PageChange[] = (modifiedPageIds || [])
-    .map((pageId) => {
-      const page = pages.find((p) => p.id === pageId);
-      if (!page) return null;
-
-      const status = pageStatuses?.[pageId];
-      // Only include pages with actual changes (non-null status)
-      if (status === null || status === undefined) return null;
-
-      return {
-        id: page.id,
-        title: page.title || "Untitled",
-        pageIndex: page.page_index,
-        lastModified: page.updated_at,
-        slug: page.slug || page.id.toString(),
-        status: status as FileStatus,
-      };
-    })
-    .filter((page): page is PageChange => page !== null && page.status !== undefined);
+  // Process changed pages — the RPC already filtered to real changes and
+  // resolved status server-side, so this is just a shape mapping.
+  const changedPages: PageChange[] = (draftChanges || []).map((c) => ({
+    id: c.pageId,
+    title: c.title || "Untitled",
+    pageIndex: c.pageIndex,
+    lastModified: c.updatedAt || new Date().toISOString(),
+    slug: c.pageId.toString(),
+    status: c.status,
+  }));
 
   // Computed Values
-  const isLoading = loadingIds || loadingSummary;
+  const isLoading = loadingChanges || loadingSummary;
   const hasChanges = changesSummary?.hasChanges && changedPages.length > 0;
 
   // Loading State

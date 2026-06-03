@@ -45,6 +45,16 @@ export interface UncommittedChanges {
   hasChanges: boolean;
 }
 
+export type DraftFileStatus = "added" | "deleted" | "modified";
+
+export interface DraftChange {
+  pageId: number;
+  title: string;
+  pageIndex: number;
+  status: DraftFileStatus;
+  updatedAt: string | null;
+}
+
 export class VersionService {
   /**
    * Creates a new version (commit) of a book
@@ -158,69 +168,57 @@ export class VersionService {
   }
 
   /**
-   * Gets count of pages modified since last commit
-   * Only counts pages with actual content changes (not just timestamp changes)
+   * Gets count of pages changed since last commit.
+   * Accurate (hash-based) and resolved entirely server-side — no content is
+   * fetched or diffed in the browser.
    */
   static async getUncommittedChanges(
     bookId: number
   ): Promise<UncommittedChanges> {
-    // Get last commit info
-    const { data: commitInfo, error: commitError } = await supabase.rpc(
-      "get_uncommitted_changes_count",
-      {
-        p_book_id: bookId,
-      }
-    );
+    const { data, error } = await supabase.rpc("get_uncommitted_changes_count", {
+      p_book_id: bookId,
+    });
 
-    if (commitError) {
-      console.error("Error fetching uncommitted changes:", commitError);
-      throw new Error(`Failed to get uncommitted changes: ${commitError.message}`);
+    if (error) {
+      console.error("Error fetching uncommitted changes:", error);
+      throw new Error(`Failed to get uncommitted changes: ${error.message}`);
     }
 
-    if (!commitInfo || commitInfo.length === 0) {
-      return {
-        changedPages: 0,
-        lastCommitAt: null,
-        hasChanges: false,
-      };
+    if (!data || data.length === 0) {
+      return { changedPages: 0, lastCommitAt: null, hasChanges: false };
     }
 
-    const lastCommitAt = commitInfo[0].last_commit_at;
-
-    // Get modified page IDs (by timestamp)
-    const modifiedPageIds = await this.getModifiedPageIds(bookId);
-
-    if (modifiedPageIds.length === 0) {
-      return {
-        changedPages: 0,
-        lastCommitAt,
-        hasChanges: false,
-      };
-    }
-
-    // Get latest version for content comparison
-    const latestVersion = await this.getLatestVersion(bookId);
-
-    // Import DiffService dynamically to avoid circular dependencies
-    const { DiffService } = await import("./DiffService");
-
-    // Get statuses for all modified pages (filters out unchanged content)
-    const pageStatuses = await DiffService.getPageStatusesBatch(
-      modifiedPageIds,
-      bookId,
-      latestVersion
-    );
-
-    // Count only pages with actual changes (status is not null)
-    const actualChangedPages = pageStatuses.filter(
-      (s) => s.status !== null
-    ).length;
+    const changedPages = data[0].changed_pages ?? 0;
 
     return {
-      changedPages: actualChangedPages,
-      lastCommitAt,
-      hasChanges: actualChangedPages > 0,
+      changedPages,
+      lastCommitAt: data[0].last_commit_at ?? null,
+      hasChanges: changedPages > 0,
     };
+  }
+
+  /**
+   * Gets the list of pages that differ from the last committed version, with
+   * their status (added / deleted / modified). Single server-side RPC; content
+   * is only fetched lazily (per page) when a diff is opened.
+   */
+  static async getDraftChanges(bookId: number): Promise<DraftChange[]> {
+    const { data, error } = await supabase.rpc("get_draft_changes", {
+      p_book_id: bookId,
+    });
+
+    if (error) {
+      console.error("Error fetching draft changes:", error);
+      throw new Error(`Failed to get draft changes: ${error.message}`);
+    }
+
+    return (data ?? []).map((row: any) => ({
+      pageId: row.page_id,
+      title: row.title,
+      pageIndex: row.page_index,
+      status: row.status as DraftFileStatus,
+      updatedAt: row.updated_at ?? null,
+    }));
   }
 
   /**
@@ -340,51 +338,5 @@ export class VersionService {
     }
 
     return data as number;
-  }
-
-  /**
-   * Gets list of page IDs that have been modified since last commit
-   */
-  static async getModifiedPageIds(bookId: number): Promise<number[]> {
-    // Get last commit timestamp
-    const { data: book } = await supabase
-      .from("books")
-      .select("last_commit_version_id")
-      .eq("id", bookId)
-      .single();
-
-    if (!book || !book.last_commit_version_id) {
-      // No commits yet - all pages are "modified"
-      const { data: pages } = await supabase
-        .from("pages")
-        .select("id")
-        .eq("book_id", bookId)
-        .eq("archived", false);
-
-      return pages?.map((p) => p.id) || [];
-    }
-
-    // Get last commit time
-    const { data: version } = await supabase
-      .from("book_versions")
-      .select("committed_at")
-      .eq("id", book.last_commit_version_id)
-      .single();
-
-    if (!version) {
-      return [];
-    }
-
-    // Find pages modified after last commit
-    const { data: pages } = await supabase
-      .from("pages")
-      .select("id")
-      .eq("book_id", bookId)
-      .eq("archived", false)
-      .or(
-        `updated_at.gt.${version.committed_at},created_at.gt.${version.committed_at}`
-      );
-
-    return pages?.map((p) => p.id) || [];
   }
 }

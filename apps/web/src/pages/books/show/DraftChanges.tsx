@@ -5,11 +5,11 @@
  * Git-style diff interface with side-by-side comparison
  */
 
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { VersionService } from "@/services/VersionService";
-import { DiffService, type FileStatus } from "@/services/DiffService";
+import type { FileStatus } from "@/services/DiffService";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageDiffViewer } from "@/components/book/PageDiffViewer";
@@ -73,94 +73,28 @@ export default function DraftChanges() {
 
   const bookId = getNumericId(bookSlug);
 
-  // Fetch modified page IDs
-  const { data: modifiedPageIdsData } = useQuery({
-    queryKey: ["modified-pages", bookId],
-    queryFn: () => VersionService.getModifiedPageIds(bookId),
+  // Single server-side query: which pages differ from the last commit and how.
+  // Content is never fetched here — only the per-page diff (lazy, on click) does.
+  const { data: changedPages = [], isLoading } = useQuery({
+    queryKey: ["draft-changes", bookId],
+    queryFn: () => VersionService.getDraftChanges(bookId),
     enabled: bookId > 0,
   });
 
-  const modifiedPageIds = modifiedPageIdsData ?? [];
-
-  // Create a stable string representation of the array for the query key
-  // This prevents infinite loops caused by array reference changes
-  // Serialize sorted array to compare by value, not reference
-  const modifiedPageIdsKey = useMemo(() => {
-    if (!modifiedPageIds.length) return "";
-    const sorted = [...modifiedPageIds].sort((a, b) => a - b);
-    return sorted.join(",");
-  }, [
-    // Use JSON.stringify of sorted array to compare by value, not reference
-    modifiedPageIds.length > 0 ? JSON.stringify([...modifiedPageIds].sort((a, b) => a - b)) : ""
-  ]);
-
-  // Fetch latest version once (used by all page status checks)
-  const { data: latestVersion } = useQuery({
-    queryKey: ["latest-version", bookId],
-    queryFn: () => VersionService.getLatestVersion(bookId),
-    enabled: bookId > 0,
-  });
-
-  // Fetch page statuses in batch (much more efficient than individual queries)
-  const { data: pageStatuses = [] } = useQuery({
-    queryKey: ["page-statuses", bookId, modifiedPageIdsKey, latestVersion?.id],
-    queryFn: async () => {
-      // Fetch latest version once if not already fetched
-      const version = latestVersion || await VersionService.getLatestVersion(bookId);
-      
-      // Use batch function to fetch all statuses at once
-      return await DiffService.getPageStatusesBatch(modifiedPageIds, bookId, version);
-    },
-    enabled: modifiedPageIds.length > 0 && modifiedPageIdsKey !== "",
-  });
-
-  // Fetch book and pages data
+  // Lightweight book header (name only)
   const { data: book } = useQuery({
-    queryKey: ["book", bookId],
+    queryKey: ["book-name", bookId],
     queryFn: async () => {
       const { supabase } = await import("@/integrations/supabase/client");
       const { data } = await supabase
         .from("books")
-        .select("*")
+        .select("name")
         .eq("id", bookId)
         .single();
       return data;
     },
     enabled: bookId > 0,
   });
-
-  const { data: pages = [] } = useQuery({
-    queryKey: ["pages", bookId],
-    queryFn: async () => {
-      const { supabase } = await import("@/integrations/supabase/client");
-      const { data } = await supabase
-        .from("pages")
-        .select("*")
-        .eq("book_id", bookId)
-        .eq("archived", false)
-        .order("page_index", { ascending: true });
-      return data || [];
-    },
-    enabled: bookId > 0,
-  });
-
-  // Combine page data with status, filtering out unchanged pages
-  const changedPages = modifiedPageIds
-    .map((pageId) => {
-      const page = pages.find((p) => p.id === pageId);
-      const statusInfo = pageStatuses.find((s) => s.pageId === pageId);
-      // Filter out pages with null status (unchanged content)
-      if (!statusInfo || statusInfo.status === null) {
-        return null;
-      }
-      return page && statusInfo
-        ? {
-            ...page,
-            status: statusInfo.status,
-          }
-        : null;
-    })
-    .filter(Boolean);
 
   const toggleFile = (pageId: number) => {
     const newExpanded = new Set(expandedFiles);
@@ -193,7 +127,9 @@ export default function DraftChanges() {
               <div>
                 <h1 className="text-lg font-semibold">{book?.name || "Book"}</h1>
                 <p className="text-sm text-muted-foreground">
-                  {changedPages.length} file{changedPages.length !== 1 ? "s" : ""} changed
+                  {isLoading
+                    ? "Checking for changes…"
+                    : `${changedPages.length} file${changedPages.length !== 1 ? "s" : ""} changed`}
                 </p>
               </div>
             </div>
@@ -214,17 +150,17 @@ export default function DraftChanges() {
                 Changed Files
               </h2>
               <div className="space-y-1">
-                {changedPages.map((page: any) => (
+                {changedPages.map((page) => (
                   <div
-                    key={page.id}
+                    key={page.pageId}
                     className={cn(
                       "flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer transition-colors",
                       "hover:bg-accent/50",
-                      selectedFile === page.id && "bg-accent"
+                      selectedFile === page.pageId && "bg-accent"
                     )}
-                    onClick={() => toggleFile(page.id)}
+                    onClick={() => toggleFile(page.pageId)}
                   >
-                    {expandedFiles.has(page.id) ? (
+                    {expandedFiles.has(page.pageId) ? (
                       <ChevronDown className="h-3 w-3 flex-shrink-0" />
                     ) : (
                       <ChevronRight className="h-3 w-3 flex-shrink-0" />
@@ -246,7 +182,7 @@ export default function DraftChanges() {
                 <div className="flex items-center justify-between pb-3 border-b">
                   <div className="flex items-center gap-3">
                     {(() => {
-                      const page = changedPages.find((p: any) => p.id === selectedFile);
+                      const page = changedPages.find((p) => p.pageId === selectedFile);
                       return (
                         <>
                           {page && getStatusIcon(page.status)}
@@ -260,9 +196,9 @@ export default function DraftChanges() {
                   </div>
                   <span className="text-sm text-muted-foreground">
                     {(() => {
-                      const page = changedPages.find((p: any) => p.id === selectedFile);
-                      return page?.updated_at
-                        ? formatDistanceToNow(new Date(page.updated_at), {
+                      const page = changedPages.find((p) => p.pageId === selectedFile);
+                      return page?.updatedAt
+                        ? formatDistanceToNow(new Date(page.updatedAt), {
                             addSuffix: true,
                           })
                         : "";
