@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { sanitizeAIError, captureException } from "@/lib/sentry";
+import { WorkingIndicator, WORKING_PHRASES } from "./WorkingIndicator";
+import { NotifyWhenDone } from "./NotifyWhenDone";
+import { notify as fireNotification } from "@/lib/notify";
 
 // Two backends, env-switched:
 //  - Production (default): the `evaluate-book` edge function writes a book_evaluations
@@ -72,6 +75,22 @@ export function BookEvaluationSection({ bookId, onRevise, onStatusChange }: { bo
   const [state, setState] = useState<State>({ status: "checking" });
   const mounted = useRef(true);
 
+  // "Notify me when done": email (persisted as notify_email on the row, so the
+  // DB trigger mails even if this tab closes) + a browser notification this tab
+  // fires when it observes completion. notifyRef mirrors the state for the
+  // channel callback's stale closure; evalIdRef is the row to flag.
+  const [notify, setNotify] = useState(false);
+  const notifyRef = useRef(false);
+  const evalIdRef = useRef<number | null>(null);
+
+  const onToggleNotify = (next: boolean) => {
+    setNotify(next);
+    notifyRef.current = next;
+    if (evalIdRef.current != null) {
+      void supabase.from("book_evaluations").update({ notify_email: next }).eq("id", evalIdRef.current);
+    }
+  };
+
   // Surface "a completed read exists" to a host (the journey stepper) so it can mark the step
   // done. Fires on every status change; idempotent.
   useEffect(() => {
@@ -99,9 +118,21 @@ export function BookEvaluationSection({ bookId, onRevise, onStatusChange }: { bo
     if (row.status === "done" && row.result) {
       setState({ status: "done", result: row.result });
       cleanupChannel();
+      if (notifyRef.current)
+        fireNotification("The editor's read is ready", {
+          body: "Your verdict, priorities, and section notes are waiting.",
+          url: window.location.href,
+          tag: `eval-${row.id}`,
+        });
     } else if (row.status === "error") {
       setState({ status: "error", error: sanitizeAIError(row.error || "evaluation failed") });
       cleanupChannel();
+      if (notifyRef.current)
+        fireNotification("The editor's read didn't finish", {
+          body: "It ran into a problem — you can try running it again.",
+          url: window.location.href,
+          tag: `eval-${row.id}`,
+        });
     }
     // pending → keep waiting on the channel
   };
@@ -112,6 +143,11 @@ export function BookEvaluationSection({ bookId, onRevise, onStatusChange }: { bo
   // promptly rather than waiting a fresh full interval).
   const watchRow = (evalId: number, createdAt: string) => {
     cleanupChannel();
+    evalIdRef.current = evalId;
+    // If the user opted in before the row existed (toggled during the brief
+    // pre-insert window), persist the flag now that we have the id.
+    if (notifyRef.current)
+      void supabase.from("book_evaluations").update({ notify_email: true }).eq("id", evalId);
     watchdogRef.current = setTimeout(() => {
       if (!mounted.current) return;
       setState((s) => (s.status === "running" ? { status: "error", error: sanitizeAIError(STALE_ERROR, STALE_ERROR) } : s));
@@ -270,9 +306,14 @@ export function BookEvaluationSection({ bookId, onRevise, onStatusChange }: { bo
       )}
 
       {state.status === "running" && (
-        <p className="pv-serif mt-3 text-[15px] italic text-[hsl(var(--pv-text-muted))]">
-          The editor is reading… <span className="text-[hsl(var(--pv-text-faint))]">(~30–90s)</span>
-        </p>
+        <>
+          <WorkingIndicator phrases={WORKING_PHRASES.editor} hint="~30–90s" />
+          {!USE_BRIDGE && (
+            <div className="mt-2 flex justify-end">
+              <NotifyWhenDone enabled={notify} onChange={onToggleNotify} />
+            </div>
+          )}
+        </>
       )}
 
       {state.status === "error" && (

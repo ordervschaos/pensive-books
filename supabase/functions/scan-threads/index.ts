@@ -90,7 +90,7 @@ Deno.serve(async (req: Request) => {
     const { data: { user }, error: authError } = await userClient.auth.getUser();
     if (authError || !user) return json({ error: "Unauthorized" }, 401);
 
-    const { bookId } = (await req.json().catch(() => ({}))) as { bookId?: number };
+    const { bookId, notify } = (await req.json().catch(() => ({}))) as { bookId?: number; notify?: boolean };
     if (!bookId) return json({ error: "bookId is required" }, 400);
 
     const { data: book, error: bookError } = await userClient
@@ -258,6 +258,8 @@ Deno.serve(async (req: Request) => {
         summary,
         changes: events,
         model: SCAN_MODEL,
+        // Opt-in email: the INSERT trigger (20260603160000) mails the author.
+        notify_email: notify === true,
       })
       .select("id")
       .single();

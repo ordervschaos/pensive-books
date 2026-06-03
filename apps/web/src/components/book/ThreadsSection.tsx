@@ -23,6 +23,9 @@ import {
   deleteThread,
   formatWords,
 } from "@/lib/threads";
+import { WorkingIndicator, WORKING_PHRASES } from "./WorkingIndicator";
+import { NotifyWhenDone } from "./NotifyWhenDone";
+import { notify as fireNotification } from "@/lib/notify";
 
 const STATUS_TONE: Record<ThreadStatus, string> = {
   planned: "text-[hsl(var(--pv-text-faint))]",
@@ -85,6 +88,11 @@ export function ThreadsSection({ bookId, manuscriptWordCount }: { bookId: number
   const [view, setView] = useState<View>({ kind: "loading" });
   const [applying, setApplying] = useState(false);
   const [editor, setEditor] = useState<{ thread: Thread | null } | null>(null);
+  // "Notify me when done" is pre-flight here: a scan persists its row only when
+  // it finishes, so the email opt-in must travel into the scan request (the
+  // edge fn sets notify_email at insert → the INSERT trigger mails). The browser
+  // notification is fired below when this awaiting tab gets the result.
+  const [notify, setNotify] = useState(false);
 
   const load = async () => {
     try {
@@ -110,11 +118,23 @@ export function ThreadsSection({ bookId, manuscriptWordCount }: { bookId: number
   const scan = async () => {
     setView({ kind: "scanning" });
     try {
-      const result = await scanThreads(bookId);
+      const result = await scanThreads(bookId, notify);
       setView({ kind: "review", scan: result, accepted: result.events.map(() => true) });
+      if (notify)
+        fireNotification("Your thread scan is ready", {
+          body: "Review the promises, payoffs, and open loops it surfaced.",
+          url: window.location.href,
+          tag: `scan-${bookId}`,
+        });
     } catch (e) {
       captureException(e);
       setView({ kind: "error", error: sanitizeAIError(e instanceof Error ? e.message : "Scan failed.") });
+      if (notify)
+        fireNotification("Your thread scan didn't finish", {
+          body: "It ran into a problem — you can try scanning again.",
+          url: window.location.href,
+          tag: `scan-${bookId}`,
+        });
     }
   };
 
@@ -204,6 +224,7 @@ export function ThreadsSection({ bookId, manuscriptWordCount }: { bookId: number
             >
               <Plus className="h-3.5 w-3.5" /> Add thread
             </button>
+            <NotifyWhenDone enabled={notify} onChange={setNotify} />
             <button
               type="button"
               onClick={scan}
@@ -230,10 +251,7 @@ export function ThreadsSection({ bookId, manuscriptWordCount }: { bookId: number
       )}
 
       {view.kind === "scanning" && (
-        <p className="pv-serif mt-3 text-[15px] italic text-[hsl(var(--pv-text-muted))]">
-          Scanning page by page for promises and payoffs…{" "}
-          <span className="text-[hsl(var(--pv-text-faint))]">(~1–2s per page)</span>
-        </p>
+        <WorkingIndicator phrases={WORKING_PHRASES.scan} hint="~1–2s per page" />
       )}
 
       {view.kind === "error" && (

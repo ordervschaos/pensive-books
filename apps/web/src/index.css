@@ -517,6 +517,21 @@
   animation: progress 2s ease-in-out infinite;
 }
 
+/* Indeterminate "something is happening" sweep — a soft accent segment
+   sliding across a track. Used by WorkingIndicator while AI tasks run. */
+@keyframes pv-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
+}
+
+.animate-pv-sweep {
+  animation: pv-sweep 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
 /* Audio Block Highlighting */
 .audio-highlighted {
   background-color: rgba(var(--audio-highlight-bg), var(--audio-highlight-bg-opacity));

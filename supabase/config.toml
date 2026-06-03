@@ -327,6 +327,12 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
+# Called by the notify_task_done() DB trigger (pg_net), not by a logged-in user,
+# so it can't carry a user JWT. It authenticates with the x-notify-secret header
+# instead (see the function + migration 20260603160000).
+[functions.notify-task-done]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

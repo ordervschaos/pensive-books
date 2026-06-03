@@ -93,9 +93,10 @@ export async function fetchThreads(bookId: number): Promise<Thread[]> {
   });
 }
 
-/** Run the explicit scan pass — returns a reviewable event list; writes nothing. */
-export async function scanThreads(bookId: number): Promise<ThreadScan> {
-  const { data, error } = await supabase.functions.invoke("scan-threads", { body: { bookId } });
+/** Run the explicit scan pass — returns a reviewable event list. `notify` opts the
+ *  author into an email when it lands (set on the persisted scan row at insert). */
+export async function scanThreads(bookId: number, notify = false): Promise<ThreadScan> {
+  const { data, error } = await supabase.functions.invoke("scan-threads", { body: { bookId, notify } });
   if (error) {
     const ctx = (error as { context?: Response }).context;
     if (ctx) {

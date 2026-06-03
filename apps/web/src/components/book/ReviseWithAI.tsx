@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AnimatedEllipsis } from "./AnimatedEllipsis";
+import { WorkingIndicator, WORKING_PHRASES } from "./WorkingIndicator";
+import { NotifyWhenDone } from "./NotifyWhenDone";
+import { notify as fireNotification } from "@/lib/notify";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -192,6 +195,43 @@ export function ReviseWithAI({
   // null = all threads; [] = none; [ids] = specific subset
   const [selectedThreadIds, setSelectedThreadIds] = useState<number[] | null>(null);
   const [openPicker, setOpenPicker] = useState<"pages" | "threads" | null>(null);
+
+  // "Notify me when done": email (notify_email on the row → DB trigger) + a
+  // browser notification this tab fires when the build/plan reaches a terminal
+  // state. notifyRef mirrors the state for the status-transition effect below.
+  const [notify, setNotify] = useState(false);
+  const notifyRef = useRef(false);
+  const prevStatusRef = useRef<RevStatus | null>(null);
+
+  const onToggleNotify = (next: boolean) => {
+    setNotify(next);
+    notifyRef.current = next;
+    if (row?.id != null)
+      void supabase.from("book_revisions").update({ notify_email: next }).eq("id", row.id);
+  };
+
+  // Fire a browser notification on the transition into done/error (not on the
+  // initial load of an already-finished row — prevStatus starts null).
+  useEffect(() => {
+    const s = row?.status;
+    const prev = prevStatusRef.current;
+    prevStatusRef.current = s ?? null;
+    if (!notifyRef.current || !s || !prev) return;
+    const wasTerminal = prev === "done" || prev === "error" || prev === "cancelled";
+    if (!wasTerminal && (s === "done" || s === "error")) {
+      fireNotification(
+        s === "done" ? "Your AI revision is done" : "Your AI revision didn't finish",
+        {
+          body:
+            s === "done"
+              ? "Review the changes under “View drafts”."
+              : "It ran into a problem and stopped.",
+          url: window.location.href,
+          tag: `revision-${row!.id}`,
+        },
+      );
+    }
+  }, [row?.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const patch = async (id: number, fields: Partial<RevisionRow>) => {
     const { error } = await supabase.from("book_revisions").update(fields).eq("id", id);
@@ -660,15 +700,18 @@ export function ReviseWithAI({
 
       {/* Planning in flight. */}
       {!loading && active && row!.status === "planning" && (
-        <div className="mt-3 flex items-center justify-between gap-3">
-          <p className="pv-serif text-[15px] italic text-[hsl(var(--pv-text-muted))]">
-            <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-            Planning the revision…
-          </p>
-          {!busy && (
-            <Button variant="ghost" onClick={() => runPlanning(row!)}>Resume</Button>
-          )}
-        </div>
+        <>
+          <WorkingIndicator
+            phrases={row!.source === "evaluation" ? WORKING_PHRASES.planFromNotes : WORKING_PHRASES.planFromPrompt}
+          />
+          <div className="mt-2 flex items-center justify-end gap-3">
+            {busy ? (
+              <NotifyWhenDone enabled={notify} onChange={onToggleNotify} />
+            ) : (
+              <Button variant="ghost" onClick={() => runPlanning(row!)}>Resume</Button>
+            )}
+          </div>
+        </>
       )}
 
       {/* Plan ready -- review inline summary; the dialog holds the detail. */}
@@ -692,6 +735,8 @@ export function ReviseWithAI({
           cancelRequested={row!.cancel_requested}
           onResume={() => runBuild(row!)}
           onCancel={requestCancel}
+          notify={notify}
+          onToggleNotify={onToggleNotify}
         />
       )}
 
@@ -765,28 +810,39 @@ function BuildStatus({
   cancelRequested,
   onResume,
   onCancel,
+  notify,
+  onToggleNotify,
 }: {
   progress: Progress;
   busy: boolean;
   cancelRequested: boolean;
   onResume: () => void;
   onCancel: () => void;
+  notify: boolean;
+  onToggleNotify: (enabled: boolean) => void;
 }) {
   const total = progress.total || progress.tasks.length;
+  // The build narrates its real phase (structure work, then per-page writing).
+  // We feed that single live phrase to WorkingIndicator so it reads as truthful
+  // progress, not invented verbs — but with the same prominent animated chrome.
+  const phase = progress.structureDone
+    ? `Writing pages — ${progress.done}/${total} done`
+    : progress.phase ?? "Working";
   return (
     <div className="mt-3 space-y-3">
-      <div className="flex items-center justify-between gap-3">
+      {busy ? (
+        <WorkingIndicator phrases={[phase]} />
+      ) : (
         <p className="pv-serif text-[15px] italic text-[hsl(var(--pv-text-muted))]">
-          {progress.structureDone
-            ? <>Writing pages -- {progress.done}/{total} done{busy ? <AnimatedEllipsis /> : ""}</>
-            : <>{progress.phase ?? <>Working<AnimatedEllipsis /></>}</>}
+          Paused — {phase}.
         </p>
-        <div className="flex gap-2">
-          {!busy && <Button variant="ghost" onClick={onResume}>Resume</Button>}
-          <Button variant="ghost" onClick={onCancel} disabled={cancelRequested}>
-            {cancelRequested ? "Stopping…" : "Cancel"}
-          </Button>
-        </div>
+      )}
+      <div className="flex items-center justify-end gap-3">
+        {busy && <NotifyWhenDone enabled={notify} onChange={onToggleNotify} className="mr-auto" />}
+        {!busy && <Button variant="ghost" onClick={onResume}>Resume</Button>}
+        <Button variant="ghost" onClick={onCancel} disabled={cancelRequested}>
+          {cancelRequested ? "Stopping…" : "Cancel"}
+        </Button>
       </div>
       {progress.tasks.length > 0 && (
         <div className="space-y-1">

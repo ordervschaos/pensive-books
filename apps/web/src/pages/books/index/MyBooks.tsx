@@ -2,11 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Plus,
-  Wand2,
   Search,
   X,
   Pin,
-  MoreHorizontal,
   BookOpen,
   Globe2,
   Users,
@@ -37,12 +35,6 @@ import {
   type SharedBook,
 } from "@/hooks/use-my-books-query";
 import { formatDistanceToNow } from "date-fns";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { BookCard, BOOK_GRID_CLASS } from "@pensive/shared/ui/book-card";
 
@@ -382,30 +374,6 @@ export default function Index() {
                 Start a new book
               </Button>
 
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-10 w-10 rounded-full border-0 bg-transparent text-[hsl(var(--pv-text-muted))] hover:text-foreground"
-                    aria-label="More options"
-                  >
-                    <MoreHorizontal className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuItem
-                    onClick={() => navigate("/generate-book")}
-                    className="flex items-center gap-2"
-                  >
-                    <Wand2 className="h-4 w-4" />
-                    <span>Generate book</span>
-                    <span className="pv-mono ml-auto rounded-full bg-foreground/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-foreground">
-                      Beta
-                    </span>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
             </div>
           </div>
 
