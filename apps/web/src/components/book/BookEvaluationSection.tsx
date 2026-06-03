@@ -318,20 +318,6 @@ function Report({ bookId, result, onRevise }: { bookId: number; result: EvalResu
         <p className="pv-serif text-[15.5px] leading-relaxed text-foreground">{verdict.letter}</p>
       </div>
 
-      {/* The single "do it all" button — hand the whole evaluation to the revise architect,
-          which plans a revision across every note. Per-note "Revise this" stays below for
-          when the author wants to address one thing at a time. */}
-      {onRevise && (
-        <button
-          type="button"
-          onClick={() => onRevise(result)}
-          className="pv-mono group inline-flex items-center gap-1.5 rounded-full bg-[hsl(var(--pv-accent))] px-3.5 py-2 text-[10.5px] uppercase tracking-[0.12em] text-background transition-opacity hover:opacity-90"
-        >
-          Address all the editor's notes{" "}
-          <span className="transition-transform group-hover:translate-x-0.5">→</span>
-        </button>
-      )}
-
       {verdict.genre_contract && (
         <dl className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-[120px_1fr]">
           <dt className="pv-eyebrow pt-[2px]">Genre</dt>
@@ -376,6 +362,20 @@ function Report({ bookId, result, onRevise }: { bookId: number; result: EvalResu
           <SectionCard key={s.id} bookId={bookId} section={s} />
         ))}
       </div>
+
+      {/* The single "do it all" button, at the end of the report — hand the whole evaluation to
+          the revise architect, which plans a revision across every note. Per-note "Revise this"
+          stays inline above for addressing one thing at a time. */}
+      {onRevise && (
+        <button
+          type="button"
+          onClick={() => onRevise(result)}
+          className="pv-mono group inline-flex items-center gap-1.5 rounded-full bg-[hsl(var(--pv-accent))] px-3.5 py-2 text-[10.5px] uppercase tracking-[0.12em] text-background transition-opacity hover:opacity-90"
+        >
+          Address all the editor's notes{" "}
+          <span className="transition-transform group-hover:translate-x-0.5">→</span>
+        </button>
+      )}
     </div>
   );
 }
