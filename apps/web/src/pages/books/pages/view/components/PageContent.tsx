@@ -1,9 +1,7 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { debounce } from "lodash";
 import type { Editor } from "@tiptap/react";
-import { Sparkles, Loader2 } from "lucide-react";
 import { TipTapEditor } from "@/components/editor/TipTapEditor";
-import { useToast } from "@/hooks/use-toast";
 import { FloatingActions } from "./FloatingActions";
 import { useAudioHighlighting } from "@/hooks/use-audio-highlighting";
 import { useAdaptiveTextToSpeech } from "@/hooks/use-adaptive-text-to-speech";
@@ -12,10 +10,7 @@ import { usePageDisplaySettings, FontFamily } from "@/contexts/PageDisplaySettin
 import { cn } from "@/lib/utils";
 import { proseToParagraphs } from "@/lib/inlineMarkdown";
 import { jsonToText } from "@/utils/tiptapHelpers";
-import { RevisePageWithAI } from "@/components/book/RevisePageWithAI";
-import { supabase } from "@/integrations/supabase/client";
-
-const BRIDGE = import.meta.env.VITE_EVAL_BRIDGE_URL as string | undefined;
+import { PageWorkshop } from "@/components/book/PageWorkshop";
 
 
 interface PageContentProps {
@@ -71,19 +66,12 @@ export const PageContent = ({
   sectionLabel,
   extraMenuItems,
 }: PageContentProps) => {
-  const { toast } = useToast();
   const [initialLoad, setInitialLoad] = useState(true);
   const [currentContent, setCurrentContent] = useState<EditorJSON | null>(jsonContent);
   const debouncedSaveRef = useRef<ReturnType<typeof debounce>>();
   const currentPageIdRef = useRef<string | undefined>(pageId);
   const editorRef = useRef<Editor | null>(null);
-  const [generatingPage, setGeneratingPage] = useState(false);
   const handleEditorReady = useCallback((e: Editor | null) => { editorRef.current = e; }, []);
-  // Local draft for the page objective bar; resynced when the page or its objective changes.
-  const [objectiveDraft, setObjectiveDraft] = useState(objective ?? '');
-  useEffect(() => {
-    setObjectiveDraft(objective ?? '');
-  }, [objective, pageId]);
 
   useEffect(() => {
     // Update content when pageId changes (even in edit mode) or when not editing
@@ -135,39 +123,14 @@ export const PageContent = ({
     onEditingChange?.(editing);
   }, [setIsEditing, onEditingChange]);
 
-  // Generate the whole page's prose from the page objective and append it as paragraphs.
-  const handleGeneratePage = useCallback(async () => {
-    const objective = objectiveDraft.trim();
+  // Append generated prose to the live editor as paragraph nodes (the create flow). Paragraph
+  // nodes carry inline marks so *italic* / **bold** render, not literal asterisks.
+  const handleAppendProse = useCallback((prose: string) => {
     const editor = editorRef.current;
-    if (!objective || !editor || !bookId || !pageId || generatingPage) return;
-    try {
-      setGeneratingPage(true);
-      const unitBody = { bookId: Number(bookId), pageId: Number(pageId), level: "page", objective };
-      let text: string;
-      if (BRIDGE) {
-        const r = await fetch(`${BRIDGE}/unit`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(unitBody),
-        });
-        const d = await r.json();
-        if (d.error) throw new Error(d.error);
-        text = String(d.text ?? "").trim();
-      } else {
-        const { data, error } = await supabase.functions.invoke("generate-unit", { body: unitBody });
-        if (error) throw error;
-        text = String(data?.text ?? "").trim();
-      }
-      if (!text) throw new Error("No text returned");
-      // Paragraph nodes with inline marks (so *italic* / **bold** render, not literal *).
-      const paras = proseToParagraphs(text);
-      if (paras.length) editor.chain().focus("end").insertContent(paras).run();
-    } catch (e) {
-      toast({ title: "Couldn't generate page", description: String((e as Error)?.message ?? e), variant: "destructive" });
-    } finally {
-      setGeneratingPage(false);
-    }
-  }, [objectiveDraft, bookId, pageId, generatingPage, toast]);
+    if (!editor) return;
+    const paras = proseToParagraphs(prose);
+    if (paras.length) editor.chain().focus("end").insertContent(paras).run();
+  }, []);
 
   // Current page prose as plain text (paragraph-separated, title excluded) — the "before"
   // side of the revise diff.
@@ -182,7 +145,7 @@ export const PageContent = ({
 
   // Apply an AI revision to the live editor: keep the existing title heading, replace the
   // body with the revised prose. Manipulates the editor instance directly (like
-  // handleGeneratePage) so it shows immediately whether or not we're in edit mode, then
+  // handleAppendProse) so it shows immediately whether or not we're in edit mode, then
   // persists via the normal save path.
   const handleApplyRevision = useCallback((prose: string) => {
     const blocks = (currentContent?.content ?? []) as EditorJSON[];
@@ -322,34 +285,6 @@ export const PageContent = ({
                 currentIndex={currentIndex}
                 totalPages={totalPages}
                 sectionLabel={sectionLabel}
-                topContent={canEdit && onObjectiveChange ? (
-                  <div className="px-8 pt-4 pb-2 flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={objectiveDraft}
-                      onChange={(e) => setObjectiveDraft(e.target.value)}
-                      onBlur={() => {
-                        const next = objectiveDraft.trim();
-                        if (next !== (objective ?? '')) onObjectiveChange(next || null);
-                      }}
-                      placeholder="Objective for this page — only you see this"
-                      title="Page objective (author-only — not shown to readers)"
-                      className="flex-1 bg-transparent text-sm italic text-muted-foreground placeholder:text-muted-foreground/50 focus:outline-none border-l-2 border-transparent focus:border-muted-foreground/30 pl-2 -ml-0.5"
-                    />
-                    {pageType !== 'section' && objectiveDraft.trim() && (
-                      <button
-                        type="button"
-                        onClick={handleGeneratePage}
-                        disabled={generatingPage}
-                        title="Generate this page's prose from its objective"
-                        className="flex-none inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-50"
-                      >
-                        {generatingPage ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-                        Write page
-                      </button>
-                    )}
-                  </div>
-                ) : undefined}
               />
 
               {/* Floating action buttons */}
@@ -364,14 +299,17 @@ export const PageContent = ({
               />
             </div>
 
-            {/* Page-level AI revision (author-only, text pages): act on the editor's
-                page-anchored notes, preview the diff, then apply. */}
-            {canEdit && pageType !== "section" && bookId && pageId && (
-              <RevisePageWithAI
+            {/* The page's AI unit (author-only): set/edit the objective, then write an empty
+                page or revise one with content — against the editor's notes + a comment. */}
+            {canEdit && onObjectiveChange && bookId && pageId && (
+              <PageWorkshop
                 bookId={Number(bookId)}
                 pageId={Number(pageId)}
-                pageObjective={objective ?? null}
+                pageType={pageType}
+                objective={objective ?? null}
+                onObjectiveChange={onObjectiveChange}
                 currentText={currentText}
+                onAppendProse={handleAppendProse}
                 onApply={handleApplyRevision}
               />
             )}
