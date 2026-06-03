@@ -296,26 +296,28 @@ export class DiffService {
       }
     }
 
-    // Walk the alignment into a sequence of equal / del / ins steps.
-    type Step = { op: "equal" | "del" | "ins"; oldBlock?: any; newBlock?: any };
+    // Walk the alignment into a sequence of equal / del / ins steps. `newPos` is
+    // the position in the new document (for del, the insertion point), used to
+    // keep entries in current-document order after pairing.
+    type Step = { op: "equal" | "del" | "ins"; oldBlock?: any; newBlock?: any; newPos: number };
     const steps: Step[] = [];
     let i = 0;
     let j = 0;
     while (i < n && j < m) {
       if (a[i] === b[j]) {
-        steps.push({ op: "equal", oldBlock: oldBlocks[i], newBlock: newBlocks[j] });
+        steps.push({ op: "equal", oldBlock: oldBlocks[i], newBlock: newBlocks[j], newPos: j });
         i++;
         j++;
       } else if (dp[i + 1][j] >= dp[i][j + 1]) {
-        steps.push({ op: "del", oldBlock: oldBlocks[i] });
+        steps.push({ op: "del", oldBlock: oldBlocks[i], newPos: j });
         i++;
       } else {
-        steps.push({ op: "ins", newBlock: newBlocks[j] });
+        steps.push({ op: "ins", newBlock: newBlocks[j], newPos: j });
         j++;
       }
     }
-    while (i < n) steps.push({ op: "del", oldBlock: oldBlocks[i++] });
-    while (j < m) steps.push({ op: "ins", newBlock: newBlocks[j++] });
+    while (i < n) steps.push({ op: "del", oldBlock: oldBlocks[i++], newPos: m });
+    while (j < m) steps.push({ op: "ins", newBlock: newBlocks[j], newPos: j++ });
 
     // Collapse the steps into ordered diff entries, pairing each run of adjacent
     // deletions+insertions into "modified" entries (a replaced paragraph).
@@ -341,24 +343,26 @@ export class DiffService {
       }
 
       // Gather a contiguous run of dels and ins.
-      const dels: any[] = [];
-      const ins: any[] = [];
+      const dels: Step[] = [];
+      const ins: Step[] = [];
       while (k < steps.length && steps[k].op !== "equal") {
-        if (steps[k].op === "del") dels.push(steps[k].oldBlock);
-        else ins.push(steps[k].newBlock);
+        if (steps[k].op === "del") dels.push(steps[k]);
+        else ins.push(steps[k]);
         k++;
       }
 
       // Pair a deleted block with the most similar inserted block (so a reworded
       // paragraph is matched to its counterpart, not just by position). Anything
-      // left unpaired is a pure removal / addition.
+      // left unpaired is a pure removal / addition. Entries are then ordered by
+      // their new-document position so the render matches the current content.
       const usedIns = new Set<number>();
+      const runEntries: Array<{ type: BlockChangeType; oldBlock?: any; newBlock?: any; pos: number }> = [];
       for (let di = 0; di < dels.length; di++) {
         let bestIdx = -1;
         let bestScore = 0;
         for (let ii = 0; ii < ins.length; ii++) {
           if (usedIns.has(ii)) continue;
-          const score = this.textSimilarity(this.blockToText(dels[di]), this.blockToText(ins[ii]));
+          const score = this.textSimilarity(this.blockToText(dels[di].oldBlock), this.blockToText(ins[ii].newBlock));
           if (score > bestScore) {
             bestScore = score;
             bestIdx = ii;
@@ -366,13 +370,18 @@ export class DiffService {
         }
         if (bestIdx >= 0 && bestScore >= 0.25) {
           usedIns.add(bestIdx);
-          pushEntry({ type: "modified", oldBlock: dels[di], newBlock: ins[bestIdx] });
+          runEntries.push({ type: "modified", oldBlock: dels[di].oldBlock, newBlock: ins[bestIdx].newBlock, pos: ins[bestIdx].newPos });
         } else {
-          pushEntry({ type: "removed", oldBlock: dels[di] });
+          runEntries.push({ type: "removed", oldBlock: dels[di].oldBlock, pos: dels[di].newPos });
         }
       }
       for (let ii = 0; ii < ins.length; ii++) {
-        if (!usedIns.has(ii)) pushEntry({ type: "added", newBlock: ins[ii] });
+        if (!usedIns.has(ii)) runEntries.push({ type: "added", newBlock: ins[ii].newBlock, pos: ins[ii].newPos });
+      }
+
+      runEntries.sort((x, y) => x.pos - y.pos);
+      for (const e of runEntries) {
+        pushEntry({ type: e.type, oldBlock: e.oldBlock, newBlock: e.newBlock });
       }
     }
 
