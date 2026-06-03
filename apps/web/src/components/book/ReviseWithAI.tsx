@@ -184,6 +184,9 @@ export function ReviseWithAI({
   const [row, setRow] = useState<RevisionRow | null>(null);
   const [instruction, setInstruction] = useState("");
   const [attachedEval, setAttachedEval] = useState<EvalResult | null>(null);
+  // The latest completed editor's read, if any — lets the author pull all its notes into a
+  // revision right here, without scrolling back up to the report.
+  const [latestEval, setLatestEval] = useState<EvalResult | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [contextMeta, setContextMeta] = useState<ContextMeta | null>(null);
@@ -213,9 +216,13 @@ export function ReviseWithAI({
       supabase.from("book_threads")
         .select("id, name, status, description")
         .eq("book_id", bookId).neq("status", "closed"),
-    ]).then(([revResult, , pagesResult, threadsResult]) => {
+      supabase.from("book_evaluations").select("result")
+        .eq("book_id", bookId).eq("status", "done")
+        .order("created_at", { ascending: false }).limit(1).maybeSingle(),
+    ]).then(([revResult, , pagesResult, threadsResult, evalResult]) => {
       if (!mounted.current) return;
       setRow((revResult.data as RevisionRow | null) ?? null);
+      setLatestEval((evalResult.data as { result: EvalResult | null } | null)?.result ?? null);
       const pages = (pagesResult.data as PageLite[] | null) ?? [];
       setContextMeta({ pages, threads: (threadsResult.data as ThreadLite[] | null) ?? [] });
       // Default depths: last 2 text pages = full, everything else = summary
@@ -598,6 +605,18 @@ export function ReviseWithAI({
               {row.status === "cancelled" && "Last revision cancelled."}
               {row.status === "error" && `Last revision failed: ${row.error ?? "unknown error"}`}
             </p>
+          )}
+          {/* Pull the whole editor's read into the revision, mirroring the report's button —
+              so you can address all the notes without scrolling back up. */}
+          {latestEval && !attachedEval && (
+            <button
+              type="button"
+              onClick={() => setAttachedEval(latestEval)}
+              className="pv-mono group inline-flex items-center gap-1.5 rounded-full bg-[hsl(var(--pv-accent))] px-3.5 py-2 text-[10.5px] uppercase tracking-[0.12em] text-background transition-opacity hover:opacity-90"
+            >
+              Address all the editor's notes{" "}
+              <span className="transition-transform group-hover:translate-x-0.5">→</span>
+            </button>
           )}
           <Textarea
             ref={textareaRef}
