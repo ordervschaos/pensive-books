@@ -16,8 +16,6 @@ import { useBookPermissions } from "@/hooks/use-book-permissions";
 import { setPageTitle } from "@/utils/pageTitle";
 import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { ScaffoldGenerator } from "@/components/book/ScaffoldGenerator";
-import { WriteAllPages } from "@/components/book/WriteAllPages";
 import { SlugService } from "@/utils/slugService";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
@@ -224,16 +222,6 @@ export default function BookEdit() {
               onSave={handleSave}
               saving={saving}
             />
-
-            {id && (
-              <div className="mt-12">
-                <ScaffoldGenerator bookId={id} />
-
-                <div className="mt-4">
-                  <WriteAllPages bookId={id} />
-                </div>
-              </div>
-            )}
 
             {isOwner && (
               <div className="mt-12">
