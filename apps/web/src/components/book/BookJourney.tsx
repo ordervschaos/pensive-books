@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { Lock, Check, Wand2, BookOpen, Send } from "lucide-react";
+import { Lock, Check, BookOpen, Send } from "lucide-react";
 import { ScaffoldGenerator } from "./ScaffoldGenerator";
 import { WriteAllPages } from "./WriteAllPages";
 import { AIActionRow } from "./AIActionRow";
@@ -313,20 +313,12 @@ export function BookJourney({
           {!hasWritten ? (
             <LockedNote reason="Write some pages first." />
           ) : (
-            <div className="space-y-3">
-              <AIActionRow
-                icon={<Wand2 className="h-4 w-4" />}
-                title="Revise the structure"
-                description="Add, cut, merge or reorder chapters — the AI proposes a plan you review first."
-                onClick={() => onRevisePrefill({ instruction: "" })}
-              />
-              <ReviseWithAI
-                bookId={bookId}
-                prefill={revisionPrefill}
-                onPrefillConsumed={() => onRevisePrefill(null)}
-                onApplied={onRevisionApplied}
-              />
-            </div>
+            <ReviseWithAI
+              bookId={bookId}
+              prefill={revisionPrefill}
+              onPrefillConsumed={() => onRevisePrefill(null)}
+              onApplied={onRevisionApplied}
+            />
           )}
         </StepRow>
 
@@ -344,11 +336,18 @@ export function BookJourney({
         >
           {!hasWritten ? (
             <LockedNote reason="Write some pages first." />
+          ) : isPublic ? (
+            <AIActionRow
+              icon={<Lock className="h-4 w-4" />}
+              title="Unpublish"
+              description="Make it private and remove it from the public library — you'll confirm first."
+              onClick={onPublish}
+            />
           ) : (
             <AIActionRow
               icon={<Send className="h-4 w-4" />}
-              title={isPublic ? "Manage publishing" : "Publish the book"}
-              description={isPublic ? "Update or unpublish — opens the publishing dialog." : "Make it public — opens the publishing dialog."}
+              title="Publish the book"
+              description="Make it public on pensive.me — opens the publishing flow."
               onClick={onPublish}
             />
           )}

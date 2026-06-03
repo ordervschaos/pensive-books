@@ -39,6 +39,7 @@ interface PublishingDialogProps {
 
 enum PublishingStep {
   CHECKING = "checking",
+  AWAITING_UNPUBLISH_CONFIRM = "awaiting_unpublish_confirm",
   AWAITING_FIRST_COMMIT = "awaiting_first_commit",
   AWAITING_CHOICE = "awaiting_choice",
   CREATING_VERSION = "creating_version",
@@ -86,9 +87,8 @@ export function PublishingDialog({
       // Publishing flow - check version status
       checkPublishingStatus();
     } else {
-      // Unpublishing flow - do it directly
-      setStep(PublishingStep.PUBLISHING);
-      unpublishBook();
+      // Unpublishing flow - confirm first (don't silently unpublish on open)
+      setStep(PublishingStep.AWAITING_UNPUBLISH_CONFIRM);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]); // CRITICAL: Only depend on `open`, not `isPublic`
@@ -303,6 +303,13 @@ export function PublishingDialog({
   const getDialogContent = () => {
     if (initialPublicState) {
       // Unpublishing flow
+      if (step === PublishingStep.AWAITING_UNPUBLISH_CONFIRM) {
+        return {
+          title: "Unpublish this book?",
+          description: "It will be removed from the public library and become private.",
+          icon: <AlertTriangle className="h-6 w-6 text-amber-500" />,
+        };
+      }
       if (step === PublishingStep.COMPLETED) {
         return {
           title: "Book Unpublished",
@@ -420,6 +427,18 @@ export function PublishingDialog({
         </DialogHeader>
 
         <div className="py-4 space-y-4">
+          {/* Awaiting Unpublish Confirm - require an explicit click before going private */}
+          {step === PublishingStep.AWAITING_UNPUBLISH_CONFIRM && (
+            <Alert>
+              <Lock className="h-4 w-4" />
+              <AlertDescription>
+                <strong>"{bookName}"</strong> is currently public. Unpublishing removes it from the
+                public library; readers will no longer be able to find or open it. You can publish
+                it again anytime.
+              </AlertDescription>
+            </Alert>
+          )}
+
           {/* Awaiting First Commit - Ask user for commit message and confirmation */}
           {step === PublishingStep.AWAITING_FIRST_COMMIT && (
             <>
@@ -557,6 +576,23 @@ export function PublishingDialog({
 
         {/* Footer Buttons */}
         <DialogFooter className="flex-col sm:flex-row gap-2">
+          {step === PublishingStep.AWAITING_UNPUBLISH_CONFIRM && (
+            <>
+              <Button variant="outline" onClick={() => onOpenChange(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  setStep(PublishingStep.PUBLISHING);
+                  unpublishBook();
+                }}
+              >
+                Unpublish
+              </Button>
+            </>
+          )}
+
           {step === PublishingStep.AWAITING_FIRST_COMMIT && (
             <>
               <Button variant="outline" onClick={() => onOpenChange(false)}>
