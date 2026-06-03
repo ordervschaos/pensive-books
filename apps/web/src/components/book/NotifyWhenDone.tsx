@@ -1,4 +1,4 @@
-import { Bell, BellRing } from "lucide-react";
+import { Check } from "lucide-react";
 import { isSupported, permission, requestPermission } from "@/lib/notify";
 
 /**
@@ -34,31 +34,40 @@ export function NotifyWhenDone({
     onChange(next);
   };
 
-  const note =
-    enabled && !isSupported()
-      ? "we'll email you"
-      : enabled && perm === "denied"
-        ? "browser blocked — we'll email you"
-        : enabled
-          ? "email + browser"
-          : null;
+  // What actually happens when it's on — set expectations honestly.
+  const note = !enabled
+    ? null
+    : !isSupported()
+      ? "by email"
+      : perm === "denied"
+        ? "by email (browser notifications are blocked)"
+        : perm === "granted"
+          ? "by email + browser notification"
+          : "by email + browser notification";
 
   return (
     <button
       type="button"
       onClick={toggle}
-      aria-pressed={enabled}
-      className={`pv-mono inline-flex items-center gap-1.5 text-[10.5px] uppercase tracking-[0.12em] transition-colors ${
-        enabled
-          ? "text-[hsl(var(--pv-accent))]"
-          : "text-[hsl(var(--pv-text-faint))] hover:text-[hsl(var(--pv-text-muted))]"
-      } ${className ?? ""}`}
+      role="checkbox"
+      aria-checked={enabled}
+      className={`group inline-flex items-center gap-2 text-left transition-colors ${className ?? ""}`}
     >
-      {enabled ? <BellRing className="h-3.5 w-3.5" /> : <Bell className="h-3.5 w-3.5" />}
-      {enabled ? "Notify me" : "Notify when done"}
-      {note && (
-        <span className="normal-case tracking-normal text-[hsl(var(--pv-text-faint))]">· {note}</span>
-      )}
+      <span
+        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
+          enabled
+            ? "border-[hsl(var(--pv-accent))] bg-[hsl(var(--pv-accent))] text-background"
+            : "border-[hsl(var(--pv-text-faint))] group-hover:border-foreground"
+        }`}
+      >
+        {enabled && <Check className="h-3 w-3" strokeWidth={3} />}
+      </span>
+      <span className="pv-serif text-[13.5px] leading-tight text-foreground">
+        Notify me when it&apos;s done
+        {note && (
+          <span className="ml-1 text-[hsl(var(--pv-text-faint))]">— {note}</span>
+        )}
+      </span>
     </button>
   );
 }

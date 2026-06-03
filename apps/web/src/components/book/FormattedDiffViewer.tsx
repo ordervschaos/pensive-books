@@ -17,6 +17,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Link } from "react-router-dom";
+import { InlineWordDiff } from "./InlineWordDiff";
 
 interface FormattedDiffViewerProps {
   diff: PageDiff;
@@ -249,8 +250,12 @@ export function FormattedDiffViewer({ diff, compact = false, bookSlug }: Formatt
                       return null;
                     }
 
+                    // Modified blocks get a word-level highlight (only changed
+                    // words pop); removed blocks stay fully red.
+                    const isModified = blockDiff.type === "modified" && blockDiff.oldBlock && blockDiff.newBlock;
                     const bgColor =
                       blockDiff.type === "removed" ? "bg-red-100 dark:bg-red-900/30 border-l-4 border-red-500" :
+                      isModified ? "border-l-4 border-orange-400 dark:border-orange-500" :
                       blockDiff.type === "modified" ? "bg-red-100 dark:bg-red-900/30 border-l-4 border-red-500" :
                       isContext ? "bg-muted/30 border-l-2 border-muted-foreground/20" :
                       "";
@@ -281,11 +286,15 @@ export function FormattedDiffViewer({ diff, compact = false, bookSlug }: Formatt
                           </div>
                         )}
                         <div className={cn("p-2", isContext && !isExpanded && "max-h-20 overflow-hidden")}>
-                          <div className="prose prose-sm max-w-none prose-foreground dark:prose-invert">
-                            {blockDiff.oldBlock && (
-                              <DiffBlockViewer block={blockDiff.oldBlock} type="old" />
-                            )}
-                          </div>
+                          {isModified ? (
+                            <InlineWordDiff oldBlock={blockDiff.oldBlock} newBlock={blockDiff.newBlock} side="old" />
+                          ) : (
+                            <div className="prose prose-sm max-w-none prose-foreground dark:prose-invert">
+                              {blockDiff.oldBlock && (
+                                <DiffBlockViewer block={blockDiff.oldBlock} type="old" />
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
@@ -349,8 +358,10 @@ export function FormattedDiffViewer({ diff, compact = false, bookSlug }: Formatt
                       return null;
                     }
 
+                    const isModified = blockDiff.type === "modified" && blockDiff.oldBlock && blockDiff.newBlock;
                     const bgColor =
                       blockDiff.type === "added" ? "bg-green-100 dark:bg-green-900/30 border-l-4 border-green-500" :
+                      isModified ? "border-l-4 border-orange-400 dark:border-orange-500" :
                       blockDiff.type === "modified" ? "bg-green-100 dark:bg-green-900/30 border-l-4 border-green-500" :
                       isContext ? "bg-muted/30 border-l-2 border-muted-foreground/20" :
                       "";
@@ -381,11 +392,15 @@ export function FormattedDiffViewer({ diff, compact = false, bookSlug }: Formatt
                           </div>
                         )}
                         <div className={cn("p-2", isContext && !isExpanded && "max-h-20 overflow-hidden")}>
-                          <div className="prose prose-sm max-w-none prose-foreground dark:prose-invert">
-                            {blockDiff.newBlock && (
-                              <DiffBlockViewer block={blockDiff.newBlock} type="new" />
-                            )}
-                          </div>
+                          {isModified ? (
+                            <InlineWordDiff oldBlock={blockDiff.oldBlock} newBlock={blockDiff.newBlock} side="new" />
+                          ) : (
+                            <div className="prose prose-sm max-w-none prose-foreground dark:prose-invert">
+                              {blockDiff.newBlock && (
+                                <DiffBlockViewer block={blockDiff.newBlock} type="new" />
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                     );

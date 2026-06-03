@@ -60,6 +60,64 @@ const TASKS: Record<
   },
 };
 
+// All the slow work (DB reads + getUserById + Mailgun). Runs in the background
+// so the HTTP response returns immediately — pg_net's default timeout is only 5s,
+// well under a cold start + Mailgun round-trip, which left the trigger reporting
+// "Timeout was reached" and the email unreliable.
+async function send(table: string, id: number, spec: (typeof TASKS)[string]) {
+  const service = createClient(
+    Deno.env.get("SUPABASE_URL") ?? "",
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+  );
+
+  const { data: row, error: rowError } = await service
+    .from(table)
+    .select("book_id, created_by, status")
+    .eq("id", id)
+    .single();
+  if (rowError || !row) return console.error("notify-task-done: task not found", table, id);
+
+  // book_thread_scans has no error state — treat anything non-done as success.
+  const failed = row.status === "error";
+  if (failed && !spec.failed) return; // a table that can't fail but reports error: skip
+
+  const { data: book } = await service.from("books").select("name").eq("id", row.book_id).single();
+  const bookName = book?.name || "your book";
+
+  const { data: userRes } = await service.auth.admin.getUserById(row.created_by);
+  const email = userRes?.user?.email;
+  if (!email) return console.error("notify-task-done: no recipient for", table, id);
+
+  const msg = failed ? spec.failed!(bookName) : spec.done(bookName);
+
+  const MAILGUN_API_KEY = Deno.env.get("MAILGUN_API_KEY");
+  const MAILGUN_DOMAIN = Deno.env.get("MAILGUN_DOMAIN");
+  if (!MAILGUN_API_KEY || !MAILGUN_DOMAIN) return console.error("notify-task-done: missing Mailgun config");
+
+  const siteUrl = Deno.env.get("PUBLIC_SITE_URL") ?? "https://app.pensive.me";
+  const bookUrl = `${siteUrl}/books/${row.book_id}`;
+
+  const formData = new FormData();
+  formData.append("from", `Pensive <mailgun@${MAILGUN_DOMAIN}>`);
+  formData.append("to", email);
+  formData.append("subject", msg.subject);
+  formData.append(
+    "html",
+    `
+    <p>${msg.line}</p>
+    <p><a href="${bookUrl}">Open "${bookName}" →</a></p>
+    <p style="color:#888;font-size:12px">You're getting this because you asked to be notified when ${spec.label} finished.</p>
+  `,
+  );
+
+  const res = await fetch(`https://api.mailgun.net/v3/${MAILGUN_DOMAIN}/messages`, {
+    method: "POST",
+    headers: { Authorization: `Basic ${btoa(`api:${MAILGUN_API_KEY}`)}` },
+    body: formData,
+  });
+  if (!res.ok) console.error("notify-task-done mailgun error:", await res.text());
+}
+
 Deno.serve(async (req: Request) => {
   try {
     if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
@@ -72,71 +130,11 @@ Deno.serve(async (req: Request) => {
     const spec = table ? TASKS[table] : undefined;
     if (!spec || typeof id !== "number") return json({ error: "Bad request" }, 400);
 
-    const service = createClient(
-      Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
-    );
+    // Fire-and-forget: do the work in the background, ack immediately.
+    const work = send(table!, id, spec).catch((e) => console.error("notify-task-done error:", e));
+    if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(work);
 
-    // Read the task row: who to mail, which book, did it succeed.
-    const { data: row, error: rowError } = await service
-      .from(table!)
-      .select("book_id, created_by, status")
-      .eq("id", id)
-      .single();
-    if (rowError || !row) return json({ error: "Task not found" }, 404);
-
-    // book_thread_scans has no error state — treat anything non-done as success.
-    const failed = row.status === "error";
-    // A table that can't fail (no `failed` builder) but somehow reports error: skip.
-    if (failed && !spec.failed) return json({ skipped: "no message for state" });
-
-    const { data: book } = await service
-      .from("books")
-      .select("name")
-      .eq("id", row.book_id)
-      .single();
-    const bookName = book?.name || "your book";
-
-    const { data: userRes } = await service.auth.admin.getUserById(row.created_by);
-    const email = userRes?.user?.email;
-    if (!email) return json({ skipped: "no recipient" });
-
-    const msg = failed ? spec.failed!(bookName) : spec.done(bookName);
-
-    const MAILGUN_API_KEY = Deno.env.get("MAILGUN_API_KEY");
-    const MAILGUN_DOMAIN = Deno.env.get("MAILGUN_DOMAIN");
-    if (!MAILGUN_API_KEY || !MAILGUN_DOMAIN) {
-      return json({ error: "Missing Mailgun configuration" }, 500);
-    }
-
-    const siteUrl = Deno.env.get("PUBLIC_SITE_URL") ?? "https://app.pensive.me";
-    const bookUrl = `${siteUrl}/books/${row.book_id}`;
-
-    const formData = new FormData();
-    formData.append("from", `Pensive <mailgun@${MAILGUN_DOMAIN}>`);
-    formData.append("to", email);
-    formData.append("subject", msg.subject);
-    formData.append(
-      "html",
-      `
-      <p>${msg.line}</p>
-      <p><a href="${bookUrl}">Open "${bookName}" →</a></p>
-      <p style="color:#888;font-size:12px">You're getting this because you asked to be notified when ${spec.label} finished.</p>
-    `,
-    );
-
-    const res = await fetch(`https://api.mailgun.net/v3/${MAILGUN_DOMAIN}/messages`, {
-      method: "POST",
-      headers: { Authorization: `Basic ${btoa(`api:${MAILGUN_API_KEY}`)}` },
-      body: formData,
-    });
-    if (!res.ok) {
-      const err = await res.text();
-      console.error("notify-task-done mailgun error:", err);
-      return json({ error: "Failed to send email" }, 502);
-    }
-
-    return json({ sent: true });
+    return json({ queued: true }, 202);
   } catch (e) {
     console.error("notify-task-done error:", e);
     return json({ error: "Internal server error" }, 500);

@@ -800,10 +800,14 @@ export function ReviseWithAI({
             )}
           </div>
 
-          <DialogFooter className="items-center gap-2 sm:justify-between">
-            <span className="pv-serif text-[12.5px] italic text-[hsl(var(--pv-text-faint))]">
-              {changeCount} change{changeCount === 1 ? "" : "s"} · rebuilds prose for changed pages
-            </span>
+          <DialogFooter className="items-center gap-3 sm:justify-between">
+            <div className="flex flex-col gap-1">
+              {/* The build can run for minutes — opt into a heads-up before you walk away. */}
+              <NotifyWhenDone enabled={notify} onChange={onToggleNotify} />
+              <span className="pv-serif text-[12px] italic text-[hsl(var(--pv-text-faint))]">
+                {changeCount} change{changeCount === 1 ? "" : "s"} · rebuilds prose for changed pages
+              </span>
+            </div>
             <div className="flex gap-2">
               <Button variant="ghost" onClick={discard} disabled={busy}>Discard</Button>
               <Button onClick={approve} disabled={busy || changeCount === 0}>Build</Button>

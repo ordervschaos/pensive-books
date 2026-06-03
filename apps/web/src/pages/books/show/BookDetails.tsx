@@ -742,8 +742,8 @@ const BookDetails = () => {
               </div>
             )}
 
-            {/* Notification diagnostic — author-only test buttons for email + web */}
-            {canEdit && <NotificationTester />}
+            {/* Notification diagnostic — admin-only test buttons for email + web */}
+            {isAdmin && <NotificationTester />}
 
             {/* Admin content tagging */}
             {isAdmin && (

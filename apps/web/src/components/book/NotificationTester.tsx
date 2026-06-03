@@ -28,11 +28,13 @@ export function NotificationTester() {
       setWebMsg(`Permission is "${perm}". Allow notifications for this site in your browser, then try again.`);
       return;
     }
-    notify("Pensive — test notification", {
-      body: "If you can see this, browser notifications work.",
-      tag: "pensive-test",
-    });
-    setWebMsg('Fired a notification (permission "granted"). If you didn\'t see it, check OS Do-Not-Disturb / notification settings for your browser. Note: some OSes suppress it while this tab is focused.');
+    setWebMsg('Permission "granted" — firing in 5s. Switch to another tab/app now to test whether it shows when this tab is NOT focused (some OSes suppress notifications for the focused tab).');
+    setTimeout(() => {
+      notify("Pensive — test notification", {
+        body: "If you can see this, browser notifications work.",
+        tag: "pensive-test",
+      });
+    }, 5000);
   };
 
   const testEmail = async () => {
