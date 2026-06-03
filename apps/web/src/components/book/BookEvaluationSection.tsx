@@ -52,7 +52,8 @@ type State =
   | { status: "idle" }
   | { status: "checking" }
   | { status: "running" }
-  | { status: "done"; result: EvalResult }
+  // staleRetry: we're showing an older completed read because a newer attempt errored/stalled.
+  | { status: "done"; result: EvalResult; staleRetry?: boolean }
   | { status: "error"; error: string };
 
 const STANCE_TONE: Record<Stance, string> = {
@@ -141,30 +142,40 @@ export function BookEvaluationSection({ bookId, onRevise }: { bookId: number; on
         })
         .catch(() => mounted.current && setState({ status: "idle" }));
     } else {
-      // Load the latest stored evaluation; resume watching if one is still running.
+      // Load recent evaluations; resume watching if one is still running. We pull a few rows (not
+      // just the newest) so a failed or stale re-run can't bury an earlier completed read — the
+      // author should still see their last good editor's read.
       supabase
         .from("book_evaluations")
         .select("id, status, result, error, created_at")
         .eq("book_id", bookId)
         .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle()
+        .limit(5)
         .then(({ data }) => {
           if (!mounted.current) return;
-          const row = data as EvalRow | null;
-          if (!row) return setState({ status: "idle" });
-          if (row.status === "done" && row.result) setState({ status: "done", result: row.result });
-          else if (row.status === "pending") {
-            // A pending row from a dead job is stuck forever — fail it instead of watching.
-            if (isStale(row.created_at)) {
-              setState({ status: "error", error: STALE_ERROR });
-            } else {
-              setState({ status: "running" });
-              watchRow(row.id, row.created_at);
-            }
-          } else if (row.status === "error") {
-            setState({ status: "error", error: sanitizeAIError(row.error || "previous evaluation failed") });
-          } else setState({ status: "idle" });
+          const rows = (data ?? []) as EvalRow[];
+          if (!rows.length) return setState({ status: "idle" });
+
+          // A genuinely in-flight run (newest row still pending, not stale) wins — resume watching.
+          const newest = rows[0];
+          if (newest.status === "pending" && !isStale(newest.created_at)) {
+            setState({ status: "running" });
+            return watchRow(newest.id, newest.created_at);
+          }
+
+          // Otherwise show the most recent completed read, regardless of a later error/stale attempt.
+          // If a newer (failed/stale) attempt sits above it, flag staleRetry so we can offer a retry.
+          const done = rows.find((r) => r.status === "done" && r.result);
+          if (done) {
+            return setState({ status: "done", result: done.result as EvalResult, staleRetry: rows.indexOf(done) > 0 });
+          }
+
+          // No completed read to fall back on — surface the newest terminal state.
+          if (newest.status === "error") {
+            return setState({ status: "error", error: sanitizeAIError(newest.error || "previous evaluation failed") });
+          }
+          if (newest.status === "pending") return setState({ status: "error", error: STALE_ERROR });
+          setState({ status: "idle" });
         });
     }
 
@@ -264,7 +275,23 @@ export function BookEvaluationSection({ bookId, onRevise }: { bookId: number; on
         </p>
       )}
 
-      {state.status === "done" && <Report bookId={bookId} result={state.result} onRevise={onRevise} />}
+      {state.status === "done" && (
+        <>
+          {state.staleRetry && (
+            <p className="pv-serif mt-3 text-[14px] leading-relaxed text-amber-600 dark:text-amber-500">
+              Your last re-run didn't finish — showing your previous read.{" "}
+              <button
+                type="button"
+                onClick={run}
+                className="italic underline-offset-2 hover:underline"
+              >
+                Retry →
+              </button>
+            </p>
+          )}
+          <Report bookId={bookId} result={state.result} onRevise={onRevise} />
+        </>
+      )}
     </div>
   );
 }
