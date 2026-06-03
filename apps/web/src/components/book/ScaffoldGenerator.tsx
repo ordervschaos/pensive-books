@@ -107,8 +107,6 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
           .eq("id", newId);
         if (upErr) throw upErr;
       }
-      // Scaffolding sets objectives, so turn the objective UI on for this book.
-      await supabase.from("books").update({ objectives_enabled: true }).eq("id", bookId);
 
       // Persist the planned threads, mapping each page-index anchor to its created page id.
       const threadRows = (proposal.threads ?? [])

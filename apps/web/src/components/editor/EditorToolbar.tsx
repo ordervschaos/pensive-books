@@ -1,6 +1,6 @@
 import { Editor } from '@tiptap/react';
 import { useEffect, useRef, useState } from 'react';
-import { Undo, Redo, Table as TableIcon, Image as ImageIcon, Heading1, Heading2, Heading3, Type, List, ListOrdered, Quote, Code2, Minus, Section, MoreHorizontal, Trash2, ChevronDown, Target } from "lucide-react";
+import { Undo, Redo, Table as TableIcon, Image as ImageIcon, Heading1, Heading2, Heading3, Type, List, ListOrdered, Quote, Code2, Minus, Section, MoreHorizontal, Trash2, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useSupabaseUpload } from "@/hooks/use-supabase-upload";
@@ -24,8 +24,6 @@ interface EditorToolbarProps {
   onDeletePage?: () => void;
   saving?: boolean;
   lastSavedAt?: Date | null;
-  /** Book-level objectives switch — when false, hide the objective toolbar button. */
-  objectivesEnabled?: boolean;
   /**
    * Additional items rendered inside the meatball "More options" dropdown,
    * appended below the built-in undo/redo + page-type / delete-page items. Used by the
@@ -36,7 +34,7 @@ interface EditorToolbarProps {
   extraMenuItems?: React.ReactNode;
 }
 
-export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, customButtons, pageType, onPageTypeChange, onDeletePage, objectivesEnabled, extraMenuItems }: EditorToolbarProps) => {
+export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, customButtons, pageType, onPageTypeChange, onDeletePage, extraMenuItems }: EditorToolbarProps) => {
   const { toast } = useToast();
   const uploadImage = useSupabaseUpload();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -98,36 +96,7 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
   const isTableActive = editor.isActive('table');
 
   const iconBtn = "h-7 w-7 p-0 text-muted-foreground hover:text-foreground";
-  const iconBtnActive = "bg-muted text-foreground";
   const chip = "pv-serif h-7 gap-1 px-2 text-[13px] italic text-foreground hover:text-foreground";
-
-  // Author-only objective on the block at the cursor (paragraph / heading / blockquote).
-  // Recomputed each render via the selectionUpdate listener above.
-  const currentObjective: string | null = (() => {
-    const { $from } = editor.state.selection;
-    for (let d = $from.depth; d > 0; d--) {
-      const node = $from.node(d);
-      if (['paragraph', 'heading', 'blockquote'].includes(node.type.name)) {
-        return (node.attrs.objective as string | null) ?? null;
-      }
-    }
-    return null;
-  })();
-
-  // Annotate-after entry point (the planning entry is the `//` trigger in the editor).
-  // window.prompt mirrors the link flow. Empty input clears the objective.
-  const editObjective = () => {
-    const next = window.prompt(
-      'Objective for this block — what should it achieve? (only you see this)',
-      currentObjective ?? ''
-    );
-    if (next === null) return; // cancelled
-    if (next.trim() === '') {
-      editor.chain().focus().unsetObjective().run();
-    } else {
-      editor.chain().focus().setObjective(next.trim()).run();
-    }
-  };
 
   // Converting to a non-list block type (heading/paragraph/quote/code) is a no-op while the
   // selection is still inside a list item, so lift it out of the list first, then apply.
@@ -260,17 +229,6 @@ export const EditorToolbar = ({ editor, isEditing, onToggleEdit, editable, custo
                     </DropdownMenuContent>
                   </DropdownMenu>
 
-                  {objectivesEnabled && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={editObjective}
-                      title="Set objective for this block (author-only)"
-                      className={cn(iconBtn, currentObjective && iconBtnActive)}
-                    >
-                      <Target className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
                   {customButtons}
                 </div>
               )}

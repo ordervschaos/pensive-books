@@ -7,7 +7,6 @@ import { EditorToolbar } from './EditorToolbar';
 import { SelectionBubble } from './SelectionBubble';
 import { EditorStatusBar } from './EditorStatusBar';
 import { cn } from "@/lib/utils";
-import { inlineMarkdownToNodes } from "@/lib/inlineMarkdown";
 import { EditorChangeHandler, EditorJSON } from '@/types/editor';
 import { useNavigate } from 'react-router-dom';
 import 'tippy.js/dist/tippy.css';
@@ -28,10 +27,6 @@ interface TipTapEditorProps {
   onPageTypeChange?: (newPageType: 'text' | 'section') => void;
   onDeletePage?: () => void;
   bookId?: string | null;
-  /** Book-level master switch: when true, surface the page/paragraph objective UI. */
-  objectivesEnabled?: boolean;
-  /** Render prose from a block's objective (returns generated text). */
-  onGenerate?: (objective: string) => Promise<string>;
   /** Exposes the editor instance to the host (e.g. for page-level insertion). */
   onEditorReady?: (editor: Editor | null) => void;
   saving?: boolean;
@@ -63,8 +58,6 @@ export const TipTapEditor = ({
   onPageTypeChange,
   onDeletePage,
   bookId,
-  objectivesEnabled = false,
-  onGenerate,
   onEditorReady,
   saving,
   lastSavedAt,
@@ -96,11 +89,10 @@ export const TipTapEditor = ({
       isEditing,
       uploadImage,
       bookId,
-      handlePageLinkClick,
-      objectivesEnabled
+      handlePageLinkClick
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookId, editable, objectivesEnabled]);
+  }, [bookId, editable]);
 
   const config = editorConfig || defaultConfig;
 
@@ -155,57 +147,6 @@ export const TipTapEditor = ({
     }
   }, [editor, fontFamilyStyle]);
 
-  // Wire the gutter ✨ button (a ProseMirror widget in ParagraphObjective) to actually
-  // generate: find the objective's block, call onGenerate, insert the prose into it.
-  // Stored on editor.storage so updating onGenerate never recreates the editor.
-  useEffect(() => {
-    if (!editor) return;
-    const storage = (editor.storage as unknown as Record<string, unknown>).paragraphObjective as
-      | { generate: ((objectiveId: string, btn: HTMLElement | null) => void) | null }
-      | undefined;
-    if (!storage) return;
-
-    const findBlock = (objectiveId: string) => {
-      let res: { attrs: Record<string, unknown>; pos: number; nodeSize: number } | null = null;
-      editor.state.doc.descendants((node, pos) => {
-        if (res) return false;
-        if (node.attrs.objectiveId === objectiveId) {
-          res = { attrs: node.attrs, pos, nodeSize: node.nodeSize };
-          return false;
-        }
-        return true;
-      });
-      return res;
-    };
-
-    storage.generate = async (objectiveId, btn) => {
-      if (!onGenerate) return;
-      const target = findBlock(objectiveId);
-      if (!target) return;
-      const objective = String(target.attrs.objective ?? "");
-      if (!objective) return;
-      if (btn) { btn.setAttribute("disabled", "true"); btn.classList.add("is-generating"); }
-      try {
-        const text = (await onGenerate(objective)).trim();
-        if (text) {
-          const cur = findBlock(objectiveId); // re-find: positions may have shifted
-          if (cur) {
-            const endInside = cur.pos + cur.nodeSize - 1; // just before the block's close
-            // Inline nodes so *italic* / **bold** become marks rather than literal text.
-            const content = inlineMarkdownToNodes(text.replace(/\n{2,}/g, " ").trim());
-            editor.chain().focus().insertContentAt(endInside, content).run();
-          }
-        }
-      } catch (e) {
-        toast({ title: "Couldn't generate", description: String((e as Error)?.message ?? e), variant: "destructive" });
-      } finally {
-        if (btn) { btn.removeAttribute("disabled"); btn.classList.remove("is-generating"); }
-      }
-    };
-
-    return () => { storage.generate = null; };
-  }, [editor, onGenerate, toast]);
-
   // Expose the editor instance to the host (for page-level insertion).
   useEffect(() => {
     onEditorReady?.(editor ?? null);
@@ -252,7 +193,6 @@ export const TipTapEditor = ({
           saving={saving}
           lastSavedAt={lastSavedAt}
           extraMenuItems={extraMenuItems}
-          objectivesEnabled={objectivesEnabled}
         />
       {topContent}
       <div
@@ -260,7 +200,6 @@ export const TipTapEditor = ({
           `${centerContent ? 'flex items-center justify-center text-center' : ''} prose dark:prose-invert prose-slate w-full max-w-none p-8 flex-1 [&_.ProseMirror:focus]:outline-none bg-background`,
           className,
           `[&_img]:mx-auto [&_img]:block [&_p]:leading-relaxed [&_p]:mb-6 [&_table]:border-collapse [&_table]:w-full [&_th]:border [&_th]:border-muted [&_th]:p-2 [&_td]:border [&_td]:border-muted [&_td]:p-2 [&_.selectedCell]:bg-muted/30`,
-          objectivesEnabled && "objectives-enabled", // gates the paragraph-objective gutter CSS
           fontSizeClassName // Apply font size classes last to override prose defaults
         )}
         style={fontFamilyStyle && Object.keys(fontFamilyStyle).length > 0 ? fontFamilyStyle : undefined}

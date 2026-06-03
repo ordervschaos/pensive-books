@@ -1,41 +1,31 @@
-// scan-threads — reconcile a book's narrative threads against its current prose.
+// scan-threads — rolling per-page thread scan using Haiku.
 //
-// Threads (foreshadowing / open loops / setups) are AI-extracted by default but author-editable.
-// This is the "explicit scan pass": the author triggers it, we read the WHOLE book + the existing
-// thread rows, and Claude proposes a DIFF — what got set up, advanced, closed, or is newly opened —
-// reconciled against what's already tracked. Like replan-from-notes, NOTHING is written here: the
-// diff is RETURNED, the author reviews it, and the client applies it to book_threads on confirm.
+// Instead of one large Opus call over the full book, we loop page-by-page with a cheap Haiku
+// call per page. Each call sees the current page prose + the full thread registry accumulated
+// so far, and returns:
+//   - new_threads:        a fresh promise planted on this page (becomes the first promise anchor)
+//   - promise_reinforced: an existing thread deepened on this page (adds a promise anchor)
+//   - resolved:           an existing thread paid off on this page (adds a resolution anchor)
 //
-//   client → POST { bookId } → verify edit access → Claude → ThreadScan { summary, changes[] }
+// Threads are NEVER removed from the registry after closing — a thread can be resolved more than
+// once. The output is an ordered list of AnchorEvent[], one per anchor to be inserted. The client
+// reviews and applies them; nothing is written to book_threads or book_thread_anchors here.
 //
-// The model picks page anchors (real ids from the outline) and the semantics; the SERVER computes
-// word offsets and distances from those ids — never trust the model with the arithmetic. Threads
-// the author has marked `author_locked` are shown to the model as fixed and excluded from the diff.
-//
-// Needs the ANTHROPIC_API_KEY secret (shared with evaluate-book / generate-unit / scaffold).
+// Needs the ANTHROPIC_API_KEY secret (shared with other AI functions).
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { cumulativeWordOffsets, tiptapToText } from "../_shared/words.ts";
 import { captureException, isBillingError } from "../_shared/sentry.ts";
 
-const MODEL = "claude-opus-4-7";
-const PER_PAGE_PROSE_CAP = 8000; // chars; very long pages are truncated to bound the prompt
+const SCAN_MODEL = "claude-haiku-4-5-20251001";
+const PER_PAGE_PROSE_CAP = 6000; // chars — Haiku context is smaller than Opus
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
-
-interface Brief {
-  scope?: { band?: string; word_target?: number };
-  genre?: string;
-  audience?: string;
-  premise?: string;
-  tone?: string[];
-  success_criteria?: string;
-}
 
 interface PageRow {
   id: number;
@@ -49,11 +39,42 @@ interface ThreadRow {
   id: number;
   name: string;
   description: string | null;
-  status: "planned" | "open" | "closed";
-  setup_page_id: number | null;
-  payoff_page_id: number | null;
-  target_distance: number | null;
   author_locked: boolean;
+}
+
+interface ExistingAnchorRow {
+  thread_id: number;
+  role: string;
+}
+
+// An anchor event: one notable moment to be stored as a book_thread_anchors row.
+export interface AnchorEvent {
+  threadKey: string;         // "db:42" for existing threads, "new:0" for newly found
+  threadName: string;
+  threadDescription: string;
+  role: "promise" | "resolution";
+  pageId: number;
+  wordOffset: number;
+  sequence: number;          // nth anchor of this role for this thread (server-computed)
+  note: string;
+  isNewThread: boolean;      // true = also create a book_threads row for this key
+}
+
+export interface ThreadScan {
+  summary: string;
+  events: AnchorEvent[];
+  scanId?: number | null;
+}
+
+// In-memory state during the rolling loop.
+interface RegistryEntry {
+  key: string;           // "db:42" or "new:0"
+  dbId: number | null;
+  name: string;
+  description: string;
+  authorLocked: boolean;
+  promiseCount: number;      // total promise anchors emitted this scan (for sequence numbering)
+  resolutionCount: number;
 }
 
 Deno.serve(async (req: Request) => {
@@ -74,7 +95,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: book, error: bookError } = await userClient
       .from("books")
-      .select("id, name, brief, bible, owner_id")
+      .select("id, name, owner_id")
       .eq("id", bookId)
       .single();
     if (bookError || !book) return json({ error: "Book not found" }, 404);
@@ -99,8 +120,23 @@ Deno.serve(async (req: Request) => {
 
     const { data: threads } = await userClient
       .from("book_threads")
-      .select("id, name, description, status, setup_page_id, payoff_page_id, target_distance, author_locked")
+      .select("id, name, description, author_locked")
       .eq("book_id", bookId);
+    const existingThreads = (threads as ThreadRow[] | null) ?? [];
+    const existingIds = existingThreads.map((t) => t.id);
+
+    // Count existing anchors per thread+role to set starting sequence numbers for new anchors.
+    const existingCounts = new Map<string, number>(); // "db:${id}:${role}" → count
+    if (existingIds.length > 0) {
+      const { data: anchors } = await userClient
+        .from("book_thread_anchors")
+        .select("thread_id, role")
+        .in("thread_id", existingIds);
+      for (const a of (anchors as ExistingAnchorRow[] | null) ?? []) {
+        const k = `db:${a.thread_id}:${a.role}`;
+        existingCounts.set(k, (existingCounts.get(k) ?? 0) + 1);
+      }
+    }
 
     const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!apiKey) return json({ error: "ANTHROPIC_API_KEY not configured" }, 500);
@@ -108,38 +144,126 @@ Deno.serve(async (req: Request) => {
     const pageRows = pages as PageRow[];
     const { positions, total } = cumulativeWordOffsets(pageRows);
 
-    const scan = await callClaude(
-      apiKey,
-      book.name,
-      book.brief as Brief | null,
-      (book.bible as { text?: string } | null)?.text?.trim() || null,
-      pageRows,
-      positions,
-      (threads as ThreadRow[] | null) ?? [],
-      total
-    );
+    // Build the initial registry from existing threads.
+    const registry: RegistryEntry[] = existingThreads.map((t) => ({
+      key: `db:${t.id}`,
+      dbId: t.id,
+      name: t.name,
+      description: t.description ?? "",
+      authorLocked: t.author_locked,
+      promiseCount: existingCounts.get(`db:${t.id}:promise`) ?? 0,
+      resolutionCount: existingCounts.get(`db:${t.id}:resolution`) ?? 0,
+    }));
 
-    // The model returns page-id anchors + semantics; the SERVER resolves word offsets and
-    // distances from the offset map, and flags drift on still-open threads past their budget.
-    const resolved = resolveOffsets(scan, positions, total);
+    // Raw events collected during the loop (word offsets resolved after).
+    interface RawEvent {
+      threadKey: string;
+      name: string;
+      description: string;
+      role: "promise" | "resolution";
+      pageId: number;
+      note: string;
+      isNewThread: boolean;
+    }
+    const rawEvents: RawEvent[] = [];
+    let newThreadCounter = 0;
 
-    // Persist the diff immediately so this paid scan survives a refresh: the client resumes the
-    // review from the newest pending_review row (see book_thread_scans). Returns scanId so the
-    // client can mark it applied/dismissed once the author acts on it.
+    for (const page of pageRows) {
+      if (page.page_type === "section") continue;
+      const prose = tiptapToText(page.content).trim();
+      if (!prose) continue;
+
+      let result: PageResult;
+      try {
+        result = await callHaiku(apiKey, page, prose, registry);
+      } catch (e) {
+        // A single page failure is non-fatal: log and continue the loop.
+        console.error(`scan-threads: page ${page.id} skipped:`, e);
+        continue;
+      }
+
+      for (const nt of result.new_threads) {
+        const key = `new:${newThreadCounter++}`;
+        const entry: RegistryEntry = {
+          key,
+          dbId: null,
+          name: nt.name,
+          description: nt.description,
+          authorLocked: false,
+          promiseCount: 0,
+          resolutionCount: 0,
+        };
+        registry.push(entry);
+        rawEvents.push({ threadKey: key, name: nt.name, description: nt.description, role: "promise", pageId: page.id, note: nt.note, isNewThread: true });
+        entry.promiseCount++;
+      }
+
+      for (const pr of result.promise_reinforced) {
+        const entry = registry.find((e) => e.key === pr.thread_key);
+        if (!entry || entry.authorLocked) continue;
+        rawEvents.push({ threadKey: entry.key, name: entry.name, description: entry.description, role: "promise", pageId: page.id, note: pr.note, isNewThread: false });
+        entry.promiseCount++;
+      }
+
+      for (const res of result.resolved) {
+        const entry = registry.find((e) => e.key === res.thread_key);
+        if (!entry || entry.authorLocked) continue;
+        rawEvents.push({ threadKey: entry.key, name: entry.name, description: entry.description, role: "resolution", pageId: page.id, note: res.note, isNewThread: false });
+        entry.resolutionCount++;
+        // Entry stays in the registry — a thread can be resolved multiple times.
+      }
+    }
+
+    // Resolve word offsets and compute sequence numbers (server-side, never trusted from AI).
+    // Sequence for each anchor = (existing anchors of that role for this thread) + (prior events
+    // of same role for same thread in this scan).
+    const seqCounters = new Map<string, number>(); // "${threadKey}:${role}" → next seq
+    // Seed with existing counts for db: threads.
+    for (const entry of registry) {
+      if (entry.dbId !== null) {
+        seqCounters.set(`db:${entry.dbId}:promise`, existingCounts.get(`db:${entry.dbId}:promise`) ?? 0);
+        seqCounters.set(`db:${entry.dbId}:resolution`, existingCounts.get(`db:${entry.dbId}:resolution`) ?? 0);
+      }
+    }
+
+    const events: AnchorEvent[] = rawEvents.map((e) => {
+      const seqKey = `${e.threadKey}:${e.role}`;
+      const seq = seqCounters.get(seqKey) ?? 0;
+      seqCounters.set(seqKey, seq + 1);
+      const pos = positions.get(e.pageId);
+      return {
+        threadKey: e.threadKey,
+        threadName: e.name,
+        threadDescription: e.description,
+        role: e.role,
+        pageId: e.pageId,
+        wordOffset: pos?.start ?? 0,
+        sequence: seq,
+        note: e.note,
+        isNewThread: e.isNewThread,
+      };
+    });
+
+    const newCount = new Set(rawEvents.filter((e) => e.isNewThread).map((e) => e.threadKey)).size;
+    const resolvedCount = rawEvents.filter((e) => e.role === "resolution").length;
+    const reinforcedCount = rawEvents.filter((e) => e.role === "promise" && !e.isNewThread).length;
+    const summary = buildSummary(newCount, resolvedCount, reinforcedCount, total);
+
+    // Persist the scan diff so a refresh can resume review without re-running the AI loop.
     const { data: scanRow, error: scanInsertError } = await userClient
       .from("book_thread_scans")
       .insert({
         book_id: bookId,
         status: "pending_review",
-        summary: resolved.summary,
-        changes: resolved.changes,
-        model: MODEL,
+        summary,
+        changes: events,
+        model: SCAN_MODEL,
       })
       .select("id")
       .single();
     if (scanInsertError) throw new Error(`save scan: ${scanInsertError.message}`);
 
-    return json({ ...resolved, scanId: scanRow.id });
+    return json({ summary, events, scanId: scanRow.id });
   } catch (e) {
     console.error("scan-threads error:", e);
     const billing = isBillingError(e);
@@ -151,100 +275,55 @@ Deno.serve(async (req: Request) => {
   }
 });
 
-// ── Prompt ───────────────────────────────────────────────────────────────────
-const SYSTEM = `You are a story-continuity editor tracking a book's narrative THREADS — the promises it makes and must keep: foreshadowing, planted questions, open loops, setups that want a payoff.
+// ── Per-page Haiku prompt ─────────────────────────────────────────────────────
 
-You are given the brief, the bible, the book's pages (each with a real [id], its cumulative WORD-OFFSET — the manuscript words before it begins — and its prose), and the threads ALREADY TRACKED. Your job is to RECONCILE: compare the tracked threads against what the prose actually does now, and propose a DIFF.
+const PAGE_SYSTEM = `You track narrative threads — the promises a book makes and must keep (foreshadowing, setups, planted questions, open loops that want a payoff).
 
-For each change, choose an action:
-- "new":     a thread the prose opens that is NOT yet tracked. (threadId = null)
-- "advance": a tracked thread the prose develops but does NOT yet resolve. (threadId = its id)
-- "close":   a tracked (or newly-found) thread the prose PAYS OFF. Set the payoff page. (threadId = id, or null if also new)
-- "update":  correct a tracked thread's name/description/setup page to match the prose. (threadId = id)
+You are given ONE PAGE of prose and the current THREAD REGISTRY.
 
-Anchor every thread to real page [id]s: setupPageId = where it is planted; payoffPageId = where it lands (null if still open). Use ONLY ids from the list. Do NOT compute word distances — that is done for you from the page ids.
+Identify on this page:
+1. new_threads: a fresh narrative promise this page opens (only if genuinely distinct from every thread in the registry)
+2. promise_reinforced: this page deepens an existing thread's setup without paying it off yet
+3. resolved: this page pays off an existing thread (partially or fully)
 
-A thread is "planned" if it is tracked but the prose has not seeded it yet; "open" once the prose plants the setup; "closed" once paid off. Set "status" to the thread's state AFTER this change.
-
-Be conservative: only flag a real promise the reader is meant to remember — not ordinary description. Do not duplicate a thread already tracked; reconcile to it via its id. Threads marked LOCKED are author-owned — do NOT propose changes to them.
-
-Output JSON ONLY (no prose, no fences), exactly:
+Output JSON only — no prose, no markdown fences:
 {
-  "summary": "<2-3 sentences: the state of the book's threads and what this scan changes>",
-  "changes": [
-    { "action": "new|advance|close|update", "threadId": <id|null>, "name": "...", "description": "...", "status": "planned|open|closed", "setupPageId": <id|null>, "payoffPageId": <id|null>, "why": "<one line of evidence from the prose>" }
-  ]
-}`;
-
-function briefContext(brief: Brief | null): string {
-  if (!brief) return "(no brief set)";
-  const lines: string[] = [];
-  if (brief.scope?.band) lines.push(`- Scope: ${brief.scope.band}${brief.scope.word_target ? ` (≈${brief.scope.word_target} words)` : ""}`);
-  if (brief.genre) lines.push(`- Genre: ${brief.genre}`);
-  if (brief.audience) lines.push(`- Audience: ${brief.audience}`);
-  if (brief.premise) lines.push(`- Premise: ${brief.premise}`);
-  if (brief.tone?.length) lines.push(`- Tone: ${brief.tone.join(", ")}`);
-  if (brief.success_criteria) lines.push(`- Success looks like: ${brief.success_criteria}`);
-  return lines.length ? lines.join("\n") : "(brief is empty)";
+  "new_threads": [{ "name": "...", "description": "what it promises the reader", "note": "exact moment or line that plants it" }],
+  "promise_reinforced": [{ "thread_key": "...", "note": "how this page deepens the setup" }],
+  "resolved": [{ "thread_key": "...", "note": "how this page pays it off" }]
 }
 
-// The book as id-tagged pages with their word-offset and prose, in reading order.
-function bookContext(pages: PageRow[], positions: Map<number, { start: number; count: number }>): string {
-  return pages
-    .map((p) => {
-      const pos = positions.get(p.id);
-      const at = pos ? `word ${pos.start}` : "word ?";
-      if (p.page_type === "section") return `\n[id=${p.id}] # ${p.title || "(untitled section)"}  (@${at})`;
-      const prose = tiptapToText(p.content).trim();
-      const body = prose ? prose.slice(0, PER_PAGE_PROSE_CAP) : "(no prose yet)";
-      return `[id=${p.id}] "${p.title || "(untitled)"}"  (@${at}, ${pos?.count ?? 0} words)\n${body}`;
-    })
-    .join("\n\n");
+Rules:
+- thread_key must match exactly a key in the registry (e.g. "db:42" or "new:0")
+- Only flag promises the reader is meant to carry forward — not ordinary scene-setting or description
+- If nothing notable happens on this page, return all three arrays empty`;
+
+interface PageResult {
+  new_threads: { name: string; description: string; note: string }[];
+  promise_reinforced: { thread_key: string; note: string }[];
+  resolved: { thread_key: string; note: string }[];
 }
 
-// Existing threads as a digest the model reconciles against.
-function threadsContext(threads: ThreadRow[]): string {
-  if (!threads.length) return "(none tracked yet — this is the first scan)";
-  return threads
-    .map((t) => {
-      const lock = t.author_locked ? " [LOCKED — do not change]" : "";
-      const setup = t.setup_page_id != null ? ` setup@page ${t.setup_page_id}` : "";
-      const payoff = t.payoff_page_id != null ? ` payoff@page ${t.payoff_page_id}` : "";
-      return `- [id=${t.id}] "${t.name}" (${t.status})${setup}${payoff}${lock}${t.description ? ` — ${t.description}` : ""}`;
-    })
-    .join("\n");
-}
-
-// ── Output contract (shared with the client applier) ──────────────────────────
-export interface ThreadChange {
-  action: "new" | "advance" | "close" | "update";
-  threadId: number | null;
-  name: string;
-  description: string;
-  status: "planned" | "open" | "closed";
-  setupPageId: number | null;
-  payoffPageId: number | null;
-  why: string;
-  // server-resolved (not from the model):
-  setupWordOffset: number | null;
-  payoffWordOffset: number | null;
-  distance: number | null;     // payoff − setup, or (current end − setup) if still open
-}
-export interface ThreadScan {
-  summary: string;
-  changes: ThreadChange[];
-}
-
-async function callClaude(
+async function callHaiku(
   apiKey: string,
-  bookName: string,
-  brief: Brief | null,
-  bible: string | null,
-  pages: PageRow[],
-  positions: Map<number, { start: number; count: number }>,
-  threads: ThreadRow[],
-  totalWords: number
-): Promise<RawScan> {
+  page: PageRow,
+  prose: string,
+  registry: RegistryEntry[]
+): Promise<PageResult> {
+  const registryDigest = registry.length === 0
+    ? "(none yet)"
+    : registry
+        .map((e) => `- [${e.key}] "${e.name}": ${e.description || "(no description)"}`)
+        .join("\n");
+
+  const capped = prose.length > PER_PAGE_PROSE_CAP
+    ? prose.slice(0, PER_PAGE_PROSE_CAP) + "…"
+    : prose;
+
+  const userMsg =
+    `THREAD REGISTRY:\n${registryDigest}\n\n` +
+    `PAGE [id=${page.id}] "${page.title || "(untitled)"}":\n${capped}\n\nJSON only.`;
+
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -253,31 +332,21 @@ async function callClaude(
       "content-type": "application/json",
     },
     body: JSON.stringify({
-      model: MODEL,
-      max_tokens: 16000,
-      thinking: { type: "adaptive" },
-      system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
-      messages: [
-        {
-          role: "user",
-          content:
-            `BOOK: ${bookName} (${totalWords} words)\n\nBRIEF:\n${briefContext(brief)}` +
-            (bible ? `\n\nBOOK BIBLE:\n${bible}` : "") +
-            `\n\nTHREADS ALREADY TRACKED:\n${threadsContext(threads)}` +
-            `\n\nTHE BOOK (pages with [id], word-offset, and prose):\n${bookContext(pages, positions)}` +
-            `\n\nReconcile the threads against the prose. JSON only.`,
-        },
-      ],
+      model: SCAN_MODEL,
+      max_tokens: 1024,
+      system: PAGE_SYSTEM,
+      messages: [{ role: "user", content: userMsg }],
     }),
   });
 
   if (!res.ok) {
     const body = await res.text();
-    let parsed: { error?: { type?: string; message?: string } } = {};
+    let parsed: { error?: { message?: string } } = {};
     try { parsed = JSON.parse(body); } catch { /* ignore */ }
     const msg = parsed.error?.message ?? body;
     const err = new Error(`Claude API ${res.status}: ${msg.slice(0, 500)}`);
-    if (parsed.error?.message?.toLowerCase().includes("credit balance")) (err as Error & { billing?: boolean }).billing = true;
+    if (parsed.error?.message?.toLowerCase().includes("credit balance"))
+      (err as Error & { billing?: boolean }).billing = true;
     throw err;
   }
 
@@ -287,26 +356,11 @@ async function callClaude(
     .map((b: { text: string }) => b.text)
     .join("")
     .trim();
-  if (!text) throw new Error("Claude returned no text content.");
-  return parseScan(text, new Set(threads.map((t) => t.id)), new Set(threads.filter((t) => t.author_locked).map((t) => t.id)));
+
+  return parsePageResult(text, new Set(registry.map((e) => e.key)));
 }
 
-interface RawChange {
-  action: "new" | "advance" | "close" | "update";
-  threadId: number | null;
-  name: string;
-  description: string;
-  status: "planned" | "open" | "closed";
-  setupPageId: number | null;
-  payoffPageId: number | null;
-  why: string;
-}
-interface RawScan {
-  summary: string;
-  changes: RawChange[];
-}
-
-function parseScan(text: string, validThreadIds: Set<number>, lockedIds: Set<number>): RawScan {
+function parsePageResult(text: string, validKeys: Set<string>): PageResult {
   let raw = text.trim();
   const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (fence) raw = fence[1].trim();
@@ -316,68 +370,53 @@ function parseScan(text: string, validThreadIds: Set<number>, lockedIds: Set<num
     if (first !== -1 && last > first) raw = raw.slice(first, last + 1);
   }
 
-  let parsed: Partial<RawScan>;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (e) {
-    throw new Error(`Could not parse thread scan JSON: ${(e as Error).message}`);
-  }
-  const actions = new Set(["new", "advance", "close", "update"]);
-  const statuses = new Set(["planned", "open", "closed"]);
+  let parsed: Record<string, unknown>;
+  try { parsed = JSON.parse(raw); }
+  catch { return { new_threads: [], promise_reinforced: [], resolved: [] }; }
 
-  const changes: RawChange[] = [];
-  for (const entry of Array.isArray(parsed.changes) ? parsed.changes : []) {
-    const c = entry as Partial<RawChange>;
-    if (!c.name || typeof c.name !== "string" || !c.name.trim()) continue;
-    const action = actions.has(c.action as string) ? (c.action as RawChange["action"]) : "new";
-    // threadId must reference a real existing thread; otherwise treat as new.
-    let threadId = typeof c.threadId === "number" && validThreadIds.has(c.threadId) ? c.threadId : null;
-    // Safety net: never touch a locked thread, whatever the model said.
-    if (threadId != null && lockedIds.has(threadId)) continue;
-    const isNew = action === "new" || threadId == null;
-    if (isNew) threadId = null;
-    changes.push({
-      action: isNew ? "new" : action,
-      threadId,
-      name: c.name.trim(),
-      description: typeof c.description === "string" ? c.description.trim() : "",
-      status: statuses.has(c.status as string) ? (c.status as RawChange["status"]) : "open",
-      setupPageId: typeof c.setupPageId === "number" ? c.setupPageId : null,
-      payoffPageId: typeof c.payoffPageId === "number" ? c.payoffPageId : null,
-      why: typeof c.why === "string" ? c.why.trim() : "",
-    });
+  const new_threads: PageResult["new_threads"] = [];
+  for (const nt of Array.isArray(parsed.new_threads) ? parsed.new_threads : []) {
+    const n = nt as Record<string, unknown>;
+    if (typeof n.name === "string" && n.name.trim()) {
+      new_threads.push({
+        name: n.name.trim(),
+        description: typeof n.description === "string" ? n.description.trim() : "",
+        note: typeof n.note === "string" ? n.note.trim() : "",
+      });
+    }
   }
-  return { summary: String(parsed.summary ?? "").trim(), changes };
+
+  const promise_reinforced: PageResult["promise_reinforced"] = [];
+  for (const pr of Array.isArray(parsed.promise_reinforced) ? parsed.promise_reinforced : []) {
+    const p = pr as Record<string, unknown>;
+    if (typeof p.thread_key === "string" && validKeys.has(p.thread_key)) {
+      promise_reinforced.push({
+        thread_key: p.thread_key,
+        note: typeof p.note === "string" ? p.note.trim() : "",
+      });
+    }
+  }
+
+  const resolved: PageResult["resolved"] = [];
+  for (const res of Array.isArray(parsed.resolved) ? parsed.resolved : []) {
+    const r = res as Record<string, unknown>;
+    if (typeof r.thread_key === "string" && validKeys.has(r.thread_key)) {
+      resolved.push({
+        thread_key: r.thread_key,
+        note: typeof r.note === "string" ? r.note.trim() : "",
+      });
+    }
+  }
+
+  return { new_threads, promise_reinforced, resolved };
 }
 
-// Resolve page-id anchors → word offsets + distance, server-side. Page ids not in the offset
-// map (e.g. hallucinated) resolve to null so the arithmetic stays trustworthy.
-function resolveOffsets(
-  scan: RawScan,
-  positions: Map<number, { start: number; count: number }>,
-  total: number
-): ThreadScan {
-  const offsetOf = (pageId: number | null): number | null =>
-    pageId != null && positions.has(pageId) ? positions.get(pageId)!.start : null;
-
-  const changes: ThreadChange[] = scan.changes.map((c) => {
-    const setupWordOffset = offsetOf(c.setupPageId);
-    const payoffWordOffset = offsetOf(c.payoffPageId);
-    // Distance: setup→payoff if closed; otherwise setup→end-of-book (how long it's been open).
-    let distance: number | null = null;
-    if (setupWordOffset != null) {
-      const end = payoffWordOffset != null ? payoffWordOffset : total;
-      distance = Math.max(0, end - setupWordOffset);
-    }
-    return {
-      ...c,
-      // a payoff page implies the thread is closed even if the model mislabeled status
-      status: c.payoffPageId != null ? "closed" : c.status,
-      setupWordOffset,
-      payoffWordOffset,
-      distance,
-    };
-  });
-
-  return { summary: scan.summary, changes };
+function buildSummary(newCount: number, resolvedCount: number, reinforcedCount: number, totalWords: number): string {
+  const kw = Math.round(totalWords / 1000);
+  const parts: string[] = [];
+  if (newCount > 0) parts.push(`${newCount} new thread${newCount !== 1 ? "s" : ""} found`);
+  if (resolvedCount > 0) parts.push(`${resolvedCount} resolution${resolvedCount !== 1 ? "s" : ""} logged`);
+  if (reinforcedCount > 0) parts.push(`${reinforcedCount} promise${reinforcedCount !== 1 ? "s" : ""} deepened`);
+  if (parts.length === 0) return `No thread activity found across ${kw}k words.`;
+  return `Scanned ${kw}k words: ${parts.join(", ")}.`;
 }

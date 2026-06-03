@@ -1,70 +1,102 @@
 // Narrative threads (foreshadowing / open loops) — client service + types.
 //
-// A thread is a promise the book makes and must keep: a setup that wants a payoff. Distance is
-// measured in words (setup_word_offset → payoff_word_offset). Threads are AI-extracted by the
-// `scan-threads` edge function (which RETURNS a reviewable diff — see ThreadScan) but
-// author-editable; `author_locked` rows are never touched by an applied scan.
+// A thread is a promise the book makes and must keep. Its promise can be seeded and reinforced
+// across multiple pages; its resolution can unfold across multiple pages too. Each notable moment
+// is stored as a book_thread_anchors row (role='promise' | role='resolution').
+//
+// Threads are AI-extracted by the `scan-threads` edge function (rolling per-page Haiku loop)
+// but author-editable; `author_locked` rows are never touched by an applied scan.
 import { supabase } from "@/integrations/supabase/client";
 
 export type ThreadStatus = "planned" | "open" | "closed";
 
-// A stored thread row (book_threads).
+// One anchor: a page where a thread's promise is planted/deepened, or where it is resolved.
+export interface ThreadAnchor {
+  id: number;
+  page_id: number | null;
+  role: "promise" | "resolution";
+  sequence: number;   // ordering within thread+role (0 = first)
+  note: string | null;
+  word_offset: number | null;
+}
+
+// A stored thread row (book_threads) with its anchors joined.
 export interface Thread {
   id: number;
   name: string;
   description: string | null;
   status: ThreadStatus;
-  setup_page_id: number | null;
-  setup_word_offset: number | null;
-  payoff_page_id: number | null;
-  payoff_word_offset: number | null;
   target_distance: number | null;
   source: "ai" | "author";
   author_locked: boolean;
+  book_thread_anchors: ThreadAnchor[];
 }
 
-// One proposed change in a scan diff — the contract returned by scan-threads. The model picks
-// page anchors + semantics; the server resolves the *WordOffset/distance fields.
-export interface ThreadChange {
-  action: "new" | "advance" | "close" | "update";
-  threadId: number | null;
-  name: string;
-  description: string;
-  status: ThreadStatus;
-  setupPageId: number | null;
-  payoffPageId: number | null;
-  why: string;
-  setupWordOffset: number | null;
-  payoffWordOffset: number | null;
-  distance: number | null;
+// One anchor event from a scan — the output unit of the rolling Haiku loop.
+// Each event represents one anchor row to be inserted. isNewThread=true means a thread row
+// must also be created (book_threads insert) before the anchor can be linked to it.
+export interface AnchorEvent {
+  threadKey: string;          // "db:42" for existing, "new:0" for newly discovered
+  threadName: string;
+  threadDescription: string;
+  role: "promise" | "resolution";
+  pageId: number;
+  wordOffset: number;
+  sequence: number;           // server-computed: nth anchor of this role for this thread
+  note: string;
+  isNewThread: boolean;
 }
+
 export interface ThreadScan {
   summary: string;
-  changes: ThreadChange[];
-  // Id of the persisted book_thread_scans row this diff lives in. Present on a fresh scan and on a
-  // resumed (pending_review) scan; used to mark the row applied/dismissed once the author acts.
+  events: AnchorEvent[];
   scanId?: number | null;
 }
 
-const THREAD_COLS =
-  "id, name, description, status, setup_page_id, setup_word_offset, payoff_page_id, payoff_word_offset, target_distance, source, author_locked";
+const THREAD_SELECT =
+  "id, name, description, status, target_distance, source, author_locked, " +
+  "book_thread_anchors(id, page_id, role, sequence, note, word_offset)";
 
-/** Current threads for a book, ordered by where they're set up (planned/unseeded first). */
+/** Convenience: first promise anchor (lowest sequence). */
+export function firstPromise(t: Thread): ThreadAnchor | null {
+  return (
+    t.book_thread_anchors
+      .filter((a) => a.role === "promise")
+      .sort((a, b) => a.sequence - b.sequence)[0] ?? null
+  );
+}
+
+/** Convenience: last resolution anchor (highest sequence). */
+export function lastResolution(t: Thread): ThreadAnchor | null {
+  return (
+    t.book_thread_anchors
+      .filter((a) => a.role === "resolution")
+      .sort((a, b) => b.sequence - a.sequence)[0] ?? null
+  );
+}
+
+/** Current threads for a book, sorted by first promise word offset (unanchored first). */
 export async function fetchThreads(bookId: number): Promise<Thread[]> {
   const { data, error } = await supabase
     .from("book_threads")
-    .select(THREAD_COLS)
-    .eq("book_id", bookId)
-    .order("setup_word_offset", { ascending: true, nullsFirst: true });
+    .select(THREAD_SELECT)
+    .eq("book_id", bookId);
   if (error) throw error;
-  return (data as Thread[] | null) ?? [];
+  const threads = (data as unknown as Thread[] | null) ?? [];
+  return threads.sort((a, b) => {
+    const ao = firstPromise(a)?.word_offset ?? null;
+    const bo = firstPromise(b)?.word_offset ?? null;
+    if (ao === null && bo === null) return 0;
+    if (ao === null) return -1; // unanchored threads listed first
+    if (bo === null) return 1;
+    return ao - bo;
+  });
 }
 
-/** Run the explicit scan pass — returns a reviewable diff; writes nothing. */
+/** Run the explicit scan pass — returns a reviewable event list; writes nothing. */
 export async function scanThreads(bookId: number): Promise<ThreadScan> {
   const { data, error } = await supabase.functions.invoke("scan-threads", { body: { bookId } });
   if (error) {
-    // Surface the function's own { error } body when present (mirrors BookEvaluationSection).
     const ctx = (error as { context?: Response }).context;
     if (ctx) {
       try {
@@ -81,9 +113,9 @@ export async function scanThreads(bookId: number): Promise<ThreadScan> {
 }
 
 /**
- * The latest scan still awaiting review (book_thread_scans, status pending_review), or null. Lets
- * the panel resume an expensive scan after a refresh instead of discarding it. The newest scan row
- * wins: if it's already applied/dismissed, there is nothing to resume.
+ * Resume a pending scan from the last persisted book_thread_scans row. The events field is
+ * stored in the `changes` JSONB column. Old-format rows (pre-anchor model) will produce an
+ * empty event list and the author can dismiss them cleanly.
  */
 export async function fetchPendingScan(bookId: number): Promise<ThreadScan | null> {
   const { data, error } = await supabase
@@ -95,65 +127,89 @@ export async function fetchPendingScan(bookId: number): Promise<ThreadScan | nul
     .maybeSingle();
   if (error) throw error;
   if (!data || data.status !== "pending_review") return null;
+  // Validate shape: AnchorEvent has `role`; old ThreadChange has `action`. Discard old format.
+  const raw = (data.changes as unknown[]) ?? [];
+  const isNewFormat = raw.length === 0 || ("role" in (raw[0] as object));
   return {
     scanId: data.id as number,
     summary: (data.summary as string | null) ?? "",
-    changes: (data.changes as ThreadChange[] | null) ?? [],
+    events: isNewFormat ? (raw as AnchorEvent[]) : [],
   };
 }
 
-/** Mark a persisted scan as consumed: 'applied' once changes are written, 'dismissed' on cancel. */
+/** Mark a persisted scan row as consumed: 'applied' or 'dismissed'. */
 export async function markScanReviewed(scanId: number, status: "applied" | "dismissed"): Promise<void> {
   const { error } = await supabase.from("book_thread_scans").update({ status }).eq("id", scanId);
   if (error) throw error;
 }
 
 /**
- * Apply the accepted changes from a scan to book_threads. New threads (threadId == null) are
- * inserted; existing ones are updated. Updates are guarded by author_locked = false so a locked
- * row is never modified even if a stale change slips through.
+ * Apply accepted anchor events to the database.
+ * - For events with isNewThread=true: a book_threads row is inserted (using the name/description
+ *   from the first accepted event for that threadKey).
+ * - For all accepted events: a book_thread_anchors row is inserted.
+ * Author-locked threads are guarded server-side by RLS; we don't filter them here.
  */
-export async function applyThreadScan(bookId: number, accepted: ThreadChange[]): Promise<void> {
-  const inserts = accepted
-    .filter((c) => c.threadId == null)
-    .map((c) => ({
-      book_id: bookId,
-      name: c.name,
-      description: c.description || null,
-      status: c.status,
-      source: "ai",
-      setup_page_id: c.setupPageId,
-      setup_word_offset: c.setupWordOffset,
-      payoff_page_id: c.payoffPageId,
-      payoff_word_offset: c.payoffWordOffset,
-    }));
-  if (inserts.length) {
-    const { error } = await supabase.from("book_threads").insert(inserts);
-    if (error) throw error;
+export async function applyThreadScan(bookId: number, accepted: AnchorEvent[]): Promise<void> {
+  if (accepted.length === 0) return;
+
+  // Collect distinct new-thread keys among accepted events (in order of first appearance).
+  const newKeys: string[] = [];
+  const seenNewKeys = new Set<string>();
+  for (const e of accepted) {
+    if (e.threadKey.startsWith("new:") && !seenNewKeys.has(e.threadKey)) {
+      seenNewKeys.add(e.threadKey);
+      newKeys.push(e.threadKey);
+    }
   }
 
-  for (const c of accepted) {
-    if (c.threadId == null) continue;
-    const { error } = await supabase
+  // Insert new thread rows, mapping tempKey → real DB id.
+  const keyToId = new Map<string, number>();
+  for (const key of newKeys) {
+    // Name/description come from the first accepted event for this key (the isNewThread event).
+    const src = accepted.find((e) => e.threadKey === key)!;
+    const { data, error } = await supabase
       .from("book_threads")
-      .update({
-        name: c.name,
-        description: c.description || null,
-        status: c.status,
-        setup_page_id: c.setupPageId,
-        setup_word_offset: c.setupWordOffset,
-        payoff_page_id: c.payoffPageId,
-        payoff_word_offset: c.payoffWordOffset,
+      .insert({
+        book_id: bookId,
+        name: src.threadName,
+        description: src.threadDescription || null,
+        status: "open",
+        source: "ai",
+        author_locked: false,
       })
-      .eq("id", c.threadId)
-      .eq("author_locked", false);
+      .select("id")
+      .single();
+    if (error) throw error;
+    keyToId.set(key, (data as { id: number }).id);
+  }
+
+  // Build anchor rows.
+  const anchorRows = accepted
+    .map((e) => {
+      const threadId = e.threadKey.startsWith("new:")
+        ? keyToId.get(e.threadKey)
+        : parseInt(e.threadKey.replace("db:", ""), 10);
+      if (!threadId) return null;
+      return {
+        thread_id: threadId,
+        page_id: e.pageId,
+        role: e.role,
+        sequence: e.sequence,
+        note: e.note || null,
+        word_offset: e.wordOffset,
+      };
+    })
+    .filter(Boolean);
+
+  if (anchorRows.length > 0) {
+    const { error } = await supabase.from("book_thread_anchors").insert(anchorRows);
     if (error) throw error;
   }
 }
 
-// The author-editable fields of a thread. Page anchors / word offsets stay the scan's job
-// (it resolves them server-side from page ids); a hand-made thread starts unanchored and a
-// later scan can advance or close it.
+// The author-editable fields of a thread. Anchors are the scan's job; a hand-made thread
+// starts unanchored and a later scan (if unlocked) can add anchors to it.
 export interface ThreadDraft {
   name: string;
   description: string;
@@ -161,7 +217,7 @@ export interface ThreadDraft {
   target_distance: number | null;
 }
 
-/** Create a thread by hand. Marked source 'author' and locked so a scan won't clobber it. */
+/** Create a thread by hand. Marked source 'author' and locked so scans won't clobber it. */
 export async function createThread(bookId: number, draft: ThreadDraft): Promise<Thread> {
   const { data, error } = await supabase
     .from("book_threads")
@@ -174,13 +230,13 @@ export async function createThread(bookId: number, draft: ThreadDraft): Promise<
       source: "author",
       author_locked: true,
     })
-    .select(THREAD_COLS)
+    .select(THREAD_SELECT)
     .single();
   if (error) throw error;
-  return data as Thread;
+  return data as unknown as Thread;
 }
 
-/** Edit a thread's author-owned fields in place (name/description/status/budget). */
+/** Edit a thread's author-owned fields (name / description / status / budget). */
 export async function updateThread(id: number, draft: ThreadDraft): Promise<void> {
   const { error } = await supabase
     .from("book_threads")
@@ -194,7 +250,7 @@ export async function updateThread(id: number, draft: ThreadDraft): Promise<void
   if (error) throw error;
 }
 
-/** Toggle the author-lock on a thread (locked rows are protected from applied scans). */
+/** Toggle the author-lock. Locked rows are skipped by the rolling scan. */
 export async function setThreadLocked(id: number, locked: boolean): Promise<void> {
   const { error } = await supabase.from("book_threads").update({ author_locked: locked }).eq("id", id);
   if (error) throw error;

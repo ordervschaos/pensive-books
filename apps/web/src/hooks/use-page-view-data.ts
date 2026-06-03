@@ -113,7 +113,7 @@ export const usePageViewData = (
       // `brief` column off the wire on the reader path.
       const { data: bookData, error: bookError } = await supabase
         .from('books')
-        .select('id, name, slug, cover_url, author, subtitle, published_at, is_public, is_archived, owner_id, show_text_on_cover, objectives_enabled')
+        .select('id, name, slug, cover_url, author, subtitle, published_at, is_public, is_archived, owner_id, show_text_on_cover')
         .eq('id', numericBookId)
         .eq('is_archived', false)
         .maybeSingle();

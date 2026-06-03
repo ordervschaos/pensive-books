@@ -15,7 +15,7 @@ export const preloadPages = async (bookId: number, pageIds: number[]): Promise<v
     // column off the wire on the reader path.
     const { data: bookData, error: bookError } = await supabase
       .from("books")
-      .select("id, name, slug, cover_url, author, subtitle, published_at, is_public, is_archived, owner_id, objectives_enabled")
+      .select("id, name, slug, cover_url, author, subtitle, published_at, is_public, is_archived, owner_id")
       .eq("id", bookId)
       .eq("is_archived", false)
       .maybeSingle();
