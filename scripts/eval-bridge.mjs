@@ -678,6 +678,117 @@ async function runUnit(body) {
   return { text };
 }
 
+// ── /eval-call — on-demand judge of one logged ai_call (phase 2) ───────────────
+// Mirrors supabase/functions/evaluate-ai-call, but runs via local Claude Code — which has the repo,
+// so the judge can ground "code" amendments in the real prompt-assembly files. Writes the same
+// ai_call_evals row the edge function writes, so analysis is identical across backends.
+const JUDGE_MODEL_LOCAL = "claude-code-local";
+
+// Where each fn assembles its prompt — given to the local judge so "code" amendments can be specific.
+const FN_PROMPT_SOURCE = {
+  "generate-unit": "supabase/functions/_shared/generate-unit-core.ts (and scripts/eval-bridge.mjs runUnit)",
+  "summarize": "supabase/functions/_shared/generate-unit-core.ts (summarize)",
+  "generate-scaffold": "supabase/functions/generate-scaffold/index.ts (and scripts/eval-bridge.mjs runScaffold)",
+  "generate-bible": "supabase/functions/generate-bible/index.ts (and scripts/eval-bridge.mjs runBible)",
+  "replan-from-notes": "supabase/functions/replan-from-notes/index.ts (and scripts/eval-bridge.mjs runReplan)",
+  "scan-page": "supabase/functions/scan-threads/index.ts (callHaiku)",
+  "evaluate-book": "supabase/functions/evaluate-book/index.ts (runTriage/runGroup/runVerdict)",
+};
+
+async function fetchAiCall(id) {
+  const r = await fetch(
+    `${SUPABASE_URL}/rest/v1/ai_calls?id=eq.${id}&select=id,book_id,fn,system,input,output`,
+    { headers: sbHeaders }
+  );
+  if (!r.ok) throw new Error(`Supabase ${r.status}: ${await r.text()}`);
+  return (await r.json())?.[0] ?? null;
+}
+
+async function insertCallEval(call) {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/ai_call_evals`, {
+    method: "POST",
+    headers: { ...sbHeaders, "content-type": "application/json", Prefer: "return=representation" },
+    body: JSON.stringify({ ai_call_id: call.id, book_id: call.book_id, status: "running", judge_model: JUDGE_MODEL_LOCAL }),
+  });
+  if (!r.ok) throw new Error(`Supabase ${r.status}: ${await r.text()}`);
+  return (await r.json())?.[0] ?? null;
+}
+
+async function updateCallEval(id, patch) {
+  await fetch(`${SUPABASE_URL}/rest/v1/ai_call_evals?id=eq.${id}`, {
+    method: "PATCH",
+    headers: { ...sbHeaders, "content-type": "application/json", Prefer: "return=minimal" },
+    body: JSON.stringify(patch),
+  });
+}
+
+// The logged input is a messages array; flatten it back to readable context for the judge.
+function contextFromInput(input) {
+  if (input == null) return "(no context recorded)";
+  if (typeof input === "string") return input;
+  if (!Array.isArray(input)) return JSON.stringify(input);
+  return input
+    .map((m) => {
+      const c = m?.content;
+      if (typeof c === "string") return c;
+      if (Array.isArray(c)) return c.map((b) => (typeof b === "string" ? b : b?.text ?? "")).join("\n");
+      return "";
+    })
+    .join("\n\n");
+}
+
+function parseJudgement(text) {
+  let raw = text.trim();
+  const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fence) raw = fence[1].trim();
+  else {
+    const first = raw.indexOf("{");
+    const last = raw.lastIndexOf("}");
+    if (first !== -1 && last > first) raw = raw.slice(first, last + 1);
+  }
+  const parsed = JSON.parse(raw);
+  const s = parsed.scores ?? {};
+  const clamp = (v) => { const n = Math.round(Number(v)); return Number.isFinite(n) ? Math.min(5, Math.max(1, n)) : 0; };
+  return {
+    scores: {
+      objective_fidelity: clamp(s.objective_fidelity),
+      context_use: clamp(s.context_use),
+      instruction_following: clamp(s.instruction_following),
+      quality: clamp(s.quality),
+    },
+    verdict: String(parsed.verdict ?? "").trim(),
+    findings: Array.isArray(parsed.findings) ? parsed.findings : [],
+    amendments: Array.isArray(parsed.amendments) ? parsed.amendments : [],
+  };
+}
+
+async function runCallEval(call) {
+  const ctx = contextFromInput(call.input);
+  const source = FN_PROMPT_SOURCE[call.fn] ?? `supabase/functions/${call.fn}/index.ts`;
+  const prompt =
+    `You are a strict evaluation judge for an AI book-writing system. You ALSO have access to this ` +
+    `repository, so your "code" amendments can name the real file/function to change.\n\n` +
+    `You are given one AI call: the INSTRUCTIONS (system), the CONTEXT (the assembled prompt), and ` +
+    `the OUTPUT it produced. Judge ONLY whether the output served the instructions and context it ` +
+    `was given.\n\n` +
+    `Score each 1-5 (5=excellent): objective_fidelity (achieved what was asked), context_use ` +
+    `(honored the bible/continuity/outline given), instruction_following (obeyed format/length/` +
+    `"no headings"/JSON-only constraints), quality (well-crafted for its kind).\n\n` +
+    `For "code"-target amendments, you MAY read the prompt-assembly code for this call type ` +
+    `(fn="${call.fn}"): ${source}. Name the specific function/lines to change.\n\n` +
+    `Output ONLY this JSON (no prose, no fences):\n` +
+    `{ "scores": { "objective_fidelity": <1-5>, "context_use": <1-5>, "instruction_following": <1-5>, ` +
+    `"quality": <1-5> }, "verdict": "<one short line>", "findings": [ { "criterion": "<one of the ` +
+    `four>", "severity": "high|medium|low", "note": "<problem>", "evidence": "<quote from output>" } ], ` +
+    `"amendments": [ { "target": "output|prompt|code", "suggestion": "<fix>", "rationale": "<why>" } ] }\n\n` +
+    `CALL TYPE (fn): ${call.fn}\n\nINSTRUCTIONS (system):\n${call.system ?? "(none — baked into the context)"}\n\n` +
+    `CONTEXT:\n"""\n${ctx.slice(0, 24000)}\n"""\n\nOUTPUT:\n"""\n${(call.output ?? "(no output)").slice(0, 16000)}\n"""\n\nJSON only.`;
+
+  const out = await runClaude(prompt, true, { fn: "judge-ai-call", bookId: call.book_id });
+  if (out.error) throw new Error(out.error);
+  return parseJudgement(out.text);
+}
+
 // ── Server ────────────────────────────────────────────────────────────────────
 const server = createServer(async (req, res) => {
   if (req.method === "OPTIONS") return res.writeHead(204, cors).end();
@@ -812,7 +923,28 @@ async function route(req, res) {
     return json(res, 200, out);
   }
 
-  return json(res, 404, { error: "use /eval/:bookId, /scaffold/:bookId, /bible/:bookId, or POST /unit" });
+  const evalCallMatch = url.match(/^\/eval-call\/(\d+)\/?$/);
+  if (evalCallMatch) {
+    if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
+    const aiCallId = Number(evalCallMatch[1]);
+    const call = await fetchAiCall(aiCallId);
+    if (!call) return json(res, 404, { error: "AI call not found" });
+    // Authorize against the call's book — same per-book edit check as every other endpoint.
+    if (!(await authorize(req, res, Number(call.book_id)))) return;
+    console.log(`Judging ai_call ${aiCallId} (fn=${call.fn}, book ${call.book_id})…`);
+    const row = await insertCallEval(call);
+    if (!row) return json(res, 500, { error: "could not create eval row" });
+    try {
+      const j = await runCallEval(call);
+      await updateCallEval(row.id, { status: "done", ...j });
+      return json(res, 200, { status: "done", eval: { ...row, ...j } });
+    } catch (e) {
+      await updateCallEval(row.id, { status: "error", error: String(e?.message ?? e).slice(0, 1000) });
+      return json(res, 500, { error: String(e?.message ?? e) });
+    }
+  }
+
+  return json(res, 404, { error: "use /eval/:bookId, /scaffold/:bookId, /bible/:bookId, /eval-call/:aiCallId, or POST /unit" });
 }
 
 server.listen(PORT, () => {
