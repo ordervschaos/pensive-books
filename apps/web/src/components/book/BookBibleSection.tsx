@@ -19,8 +19,15 @@ import { Card } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { useLatestTaskRow, type TaskRow } from "@/hooks/useLatestTaskRow";
 
 const BRIDGE = import.meta.env.VITE_EVAL_BRIDGE_URL as string | undefined;
+
+interface BibleRow extends TaskRow {
+  input: { source?: "brief" | "manuscript" } | null;
+  result: { text?: string } | null;
+  error: string | null;
+}
 
 interface BookBibleSectionProps {
   bookId: number;
@@ -97,9 +104,18 @@ function BibleToolbar({ editor }: { editor: Editor }) {
 export function BookBibleSection({ bookId, bible, onBibleChange }: BookBibleSectionProps) {
   const { toast } = useToast();
   const [saving, setSaving] = useState(false);
-  const [drafting, setDrafting] = useState(false);
-  const [scanning, setScanning] = useState(false);
   const [dirty, setDirty] = useState(false);
+  // The AI draft is a durable book_generations row (kind 'bible'), watched over Realtime — so a
+  // refresh resumes the loader and a finished draft is still offered for review. `input.source`
+  // distinguishes "draft from brief" (Opus) from "scan the book" (Haiku).
+  const { row, refetch } = useLatestTaskRow<BibleRow>({
+    table: "book_generations",
+    bookId,
+    match: { kind: "bible" },
+    activeStatuses: ["pending", "running"],
+  });
+  const drafting = (row?.status === "pending" || row?.status === "running") && row?.input?.source !== "manuscript";
+  const scanning = (row?.status === "pending" || row?.status === "running") && row?.input?.source === "manuscript";
   const busy = drafting || scanning;
 
   const editor = useEditor({
@@ -148,55 +164,44 @@ export function BookBibleSection({ bookId, bible, onBibleChange }: BookBibleSect
     }
   };
 
-  // Drop an AI-generated markdown bible into the editor for review (not saved until Save).
-  const applyDraft = (text: string) => {
-    editor?.commands.setContent(text.trim());
-    setDirty(true);
-  };
-
-  const draftFromBrief = async () => {
-    if (editor?.getText().trim() && !window.confirm("Replace the current bible with an AI draft from the brief?")) return;
+  // Kick off an AI bible draft. The result lands asynchronously as a 'ready' book_generations row
+  // (watched above) — so we don't await prose here; we just start the task and let the row drive UI.
+  const startBible = async (source: "brief" | "manuscript") => {
     try {
-      setDrafting(true);
-      let text: string;
-      if (BRIDGE) {
-        const r = await fetch(`${BRIDGE}/bible/${bookId}`, { method: "POST" });
-        const d = await r.json();
-        if (d.error) throw new Error(d.error);
-        text = String(d.text ?? "").trim();
+      if (BRIDGE && source === "brief") {
+        // Dev bridge writes the same book_generations row; just kick it and watch the row.
+        await fetch(`${BRIDGE}/bible/${bookId}`, { method: "POST" }).catch(() => {});
       } else {
-        const { data, error } = await supabase.functions.invoke("generate-bible", { body: { bookId } });
+        const { error } = await supabase.functions.invoke("generate-bible", {
+          body: { bookId, source },
+        });
         if (error) throw error;
-        if (!data?.text) throw new Error(data?.error || "No text returned");
-        text = String(data.text).trim();
       }
-      applyDraft(text);
-      toast({ title: "Draft ready", description: "Review and edit, then Save." });
+      refetch();
     } catch (e) {
-      toast({ variant: "destructive", title: "Couldn't draft bible", description: String((e as Error)?.message ?? e) });
-    } finally {
-      setDrafting(false);
+      toast({ variant: "destructive", title: "Couldn't start the bible draft", description: String((e as Error)?.message ?? e) });
     }
   };
 
-  // Read the actual manuscript and extract the bible from what the prose establishes (Haiku).
-  const scanFromBook = async () => {
-    if (editor?.getText().trim() && !window.confirm("Replace the current bible with one extracted from the manuscript?")) return;
-    try {
-      setScanning(true);
-      const { data, error } = await supabase.functions.invoke("generate-bible", {
-        body: { bookId, source: "manuscript" },
-      });
-      if (error) throw error;
-      if (!data?.text) throw new Error(data?.error || "No text returned");
-      applyDraft(String(data.text));
-      toast({ title: "Bible extracted", description: "Pulled from the prose. Review and Save." });
-    } catch (e) {
-      toast({ variant: "destructive", title: "Couldn't scan the book", description: String((e as Error)?.message ?? e) });
-    } finally {
-      setScanning(false);
-    }
+  // A finished draft is waiting (survives refresh). Drop it into the editor for review (not saved
+  // until Save), confirming first if the editor already has content. Then mark the row applied.
+  const acceptDraft = async () => {
+    const text = row?.result?.text?.trim();
+    if (!text || !row) return;
+    if (editor?.getText().trim() && !window.confirm("Replace the current bible with the AI draft?")) return;
+    editor?.commands.setContent(text);
+    setDirty(true);
+    await supabase.from("book_generations").update({ status: "applied" }).eq("id", row.id);
+    refetch();
+    toast({ title: "Draft applied", description: "Review and edit, then Save." });
   };
+
+  const discardDraft = async () => {
+    if (row) await supabase.from("book_generations").update({ status: "dismissed" }).eq("id", row.id);
+    refetch();
+  };
+
+  const readyDraft = row?.status === "ready" ? row.result?.text?.trim() : null;
 
   return (
     <Card className="p-6 space-y-4">
@@ -209,16 +214,34 @@ export function BookBibleSection({ bookId, bible, onBibleChange }: BookBibleSect
           </p>
         </div>
         <div className="flex flex-none flex-wrap items-center gap-2">
-          <Button onClick={scanFromBook} disabled={busy} variant="outline" size="sm">
+          <Button onClick={() => void startBible("manuscript")} disabled={busy} variant="outline" size="sm">
             {scanning ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ScanText className="h-4 w-4 mr-2" />}
             {scanning ? "Scanning…" : "Scan the book"}
           </Button>
-          <Button onClick={draftFromBrief} disabled={busy} variant="outline" size="sm">
+          <Button onClick={() => void startBible("brief")} disabled={busy} variant="outline" size="sm">
             {drafting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
             {drafting ? "Drafting…" : "Draft from brief"}
           </Button>
         </div>
       </div>
+
+      {row?.status === "error" && (
+        <p className="text-sm text-red-600 dark:text-red-400">{row.error}</p>
+      )}
+
+      {readyDraft && (
+        // A finished AI draft is waiting (survives refresh until applied or discarded).
+        <div className="flex items-start justify-between gap-4 rounded-md border border-[hsl(var(--pv-accent))]/30 bg-[hsl(var(--pv-accent))]/[0.06] px-4 py-3">
+          <p className="text-sm text-foreground">
+            An AI bible draft{row?.input?.source === "manuscript" ? " (from the manuscript)" : " (from the brief)"} is ready
+            — applying it replaces the editor's contents below. Review and Save when happy.
+          </p>
+          <div className="flex flex-none items-center gap-2">
+            <Button onClick={() => void discardDraft()} variant="ghost" size="sm">Discard</Button>
+            <Button onClick={() => void acceptDraft()} size="sm">Apply draft</Button>
+          </div>
+        </div>
+      )}
 
       <div className="rounded-md border border-input bg-background focus-within:ring-1 focus-within:ring-ring">
         {editor && <BibleToolbar editor={editor} />}

@@ -2,15 +2,21 @@
 //
 // Given books.brief, Claude designs a chapter/page scaffold: section (chapter) + text
 // pages, each with a title and an OBJECTIVE (what it must achieve) — NO prose. The
-// proposal is RETURNED, not written: the author reviews the plan (the high-value step)
-// and the client creates the pages on confirm.
+// proposal is a REVIEWABLE artifact (the author reviews the plan, the high-value step, and the
+// client creates the pages on confirm), so it's persisted as a book_generations task row instead
+// of returned inline — a refresh resumes the loader, and the proposal survives until applied.
 //
-//   client → POST { bookId } → verify edit access → Claude → { structure, pages[] }
+//   client → POST { bookId }
+//     → verify edit access
+//     → INSERT book_generations { kind:'scaffold', status:'running' }   ← returned in ~1s
+//     → background: Claude → UPDATE row { status:'ready', result:{structure,pages,threads} }
+//     → client watches book_generations via Realtime
 //
 // Needs the ANTHROPIC_API_KEY secret (shared with evaluate-book / generate-unit).
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
+import { runInBackground, serviceClient } from "../_shared/task.ts";
 
 const MODEL = "claude-opus-4-7";
 
@@ -64,13 +70,26 @@ Deno.serve(async (req: Request) => {
     const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!apiKey) return json({ error: "ANTHROPIC_API_KEY not configured" }, 500);
 
-    const scaffold = await callClaude(
-      apiKey,
-      book.name,
-      book.brief as Brief | null,
-      (book.bible as { text?: string } | null)?.text?.trim() || null
-    );
-    return json(scaffold);
+    const bookName = book.name;
+    const brief = book.brief as Brief | null;
+    const bible = (book.bible as { text?: string } | null)?.text?.trim() || null;
+
+    // Insert the task row (service role; the client watches it over Realtime), then hand the
+    // proposal to the background and return the row immediately.
+    const service = serviceClient();
+    const { data: gen, error: insertError } = await service
+      .from("book_generations")
+      .insert({ book_id: bookId, created_by: user.id, kind: "scaffold", scope: "book", status: "running", input: {} })
+      .select()
+      .single();
+    if (insertError || !gen) return json({ error: "Could not start scaffold" }, 500);
+
+    runInBackground(service, "book_generations", gen.id, "generate-scaffold", async () => {
+      const scaffold = await callClaude(apiKey, bookName, brief, bible);
+      return { status: "ready", result: scaffold };
+    });
+
+    return json({ status: "running", generation: gen }, 202);
   } catch (e) {
     console.error("generate-scaffold error:", e);
     return json({ error: String((e as Error)?.message ?? e).slice(0, 500) }, 500);

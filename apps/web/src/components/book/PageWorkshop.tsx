@@ -4,14 +4,19 @@ import { Loader2, Sparkles } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useLatestTaskRow, type TaskRow } from "@/hooks/useLatestTaskRow";
 import type { EvalResult, Severity } from "./BookEvaluationSection";
 
 // The page's single AI unit: it looks at one page (its author-only objective + the editor's
 // notes), takes the author's comment, then writes or revises. Empty text pages can only set an
 // objective and *create* the page (generate mode); pages with prose can edit the objective, add
 // a comment, and *revise* (revise mode, with a diff preview). Section pages get just the
-// objective field. Both calls hit generate-unit through the same dual backend as the rest of the
-// AI features: local bridge in dev, edge in prod.
+// objective field.
+//
+// The generation is a DURABLE task: it runs as a book_generations row (kind page_write/page_revise,
+// scoped to this page) written server-side by the generate-page edge function and watched here over
+// Realtime. So a refresh mid-generation resumes the loader, and a finished proposal is still here to
+// review/apply — nothing lives only in React. The dev bridge writes the same row.
 const BRIDGE = import.meta.env.VITE_EVAL_BRIDGE_URL as string | undefined;
 
 // Mirrors generate-unit's ReviseIssue (and ReviseWithAI's FixIssue): one editorial note.
@@ -38,11 +43,12 @@ interface Props {
   onApply: (prose: string) => void;
 }
 
-type State =
-  | { status: "idle" }
-  | { status: "running" }
-  | { status: "preview"; proposed: string }
-  | { status: "error"; error: string };
+// The page-generation task row (book_generations, scoped to this page).
+interface PageGenRow extends TaskRow {
+  kind: "page_write" | "page_revise";
+  result: { text?: string } | null;
+  error: string | null;
+}
 
 const SEV_TONE: Record<Severity, string> = {
   high: "text-red-600 dark:text-red-400",
@@ -83,21 +89,22 @@ const diffStyles = {
   },
 };
 
-// One generate-unit round, dual backend. Returns the generated/revised prose text.
-async function callUnit(body: Record<string, unknown>): Promise<string> {
+// Kick off a durable page-generation task (dual backend). Returns once the task is STARTED — the
+// prose lands later as a 'ready' book_generations row the component watches. The dev bridge writes
+// the same row, so dev resumes-on-refresh identically.
+async function startPageGen(body: Record<string, unknown>): Promise<void> {
   if (BRIDGE) {
-    const r = await fetch(`${BRIDGE}/unit`, {
+    const r = await fetch(`${BRIDGE}/page`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     });
     const d = await r.json();
     if (d.error) throw new Error(d.error);
-    return String(d.text ?? "").trim();
+    return;
   }
-  const { data, error } = await supabase.functions.invoke("generate-unit", { body });
+  const { error } = await supabase.functions.invoke("generate-page", { body });
   if (error) throw error;
-  return String((data as { text?: string })?.text ?? "").trim();
 }
 
 export function PageWorkshop({
@@ -116,8 +123,26 @@ export function PageWorkshop({
   const [open, setOpen] = useState(false);
   const [notes, setNotes] = useState<ReviseIssue[]>([]);
   const [instruction, setInstruction] = useState("");
-  const [state, setState] = useState<State>({ status: "idle" });
   const mounted = useRef(true);
+
+  // The durable generation task for THIS page (create or revise). Watched over Realtime, so a
+  // refresh mid-generation resumes the loader and a finished proposal is still here to review.
+  const { row, refetch } = useLatestTaskRow<PageGenRow>({
+    table: "book_generations",
+    bookId,
+    match: { target_page_id: pageId, kind: ["page_write", "page_revise"] },
+    activeStatuses: ["pending", "running"],
+  });
+  const running = row?.status === "pending" || row?.status === "running";
+  const proposed = row?.status === "ready" ? (row.result?.text ?? "").trim() || null : null;
+  const genError = row?.status === "error" ? row.error : null;
+
+  // Editable copy of a ready proposal — the author can tweak the prose before applying. Reseeded
+  // when a new proposal arrives; left alone while the author edits it.
+  const [proposedDraft, setProposedDraft] = useState("");
+  useEffect(() => {
+    setProposedDraft(proposed ?? "");
+  }, [row?.id, proposed]);
 
   useEffect(() => {
     setObjectiveDraft(objective ?? "");
@@ -125,12 +150,11 @@ export function PageWorkshop({
 
   // Load this page's notes from the latest completed evaluation (if any). Reset on page change.
   // Evaluations live in book_evaluations in both modes (the bridge writes there too now), so we
-  // always read from the table — only generation routes through the dual backend (callUnit).
+  // always read from the table — generation is now a watched book_generations row (see the hook).
   useEffect(() => {
     mounted.current = true;
     setNotes([]);
     setInstruction("");
-    setState({ status: "idle" });
     setOpen(false);
 
     const apply = (result: EvalResult | null) => {
@@ -160,24 +184,26 @@ export function PageWorkshop({
   const hasProse = currentText.trim().length > 0;
   const objectiveText = objectiveDraft.trim();
 
-  // Empty page: generate the page's prose from its objective and append it.
-  const createPage = async () => {
-    if (!objectiveText || state.status === "running") return;
+  // Start a generation task (write or revise). The result arrives as a 'ready' row.
+  const start = async (mode: "write" | "revise", issues?: ReviseIssue[]) => {
+    if (running) return;
     commitObjective();
-    setState({ status: "running" });
     try {
-      const text = await callUnit({ bookId, pageId, level: "page", objective: objectiveText });
-      if (!text) throw new Error("The editor returned no text.");
-      onAppendProse(text);
-      if (mounted.current) setState({ status: "idle" });
+      await startPageGen({ bookId, pageId, objective: objectiveText, mode, issues });
+      refetch();
     } catch (e) {
-      if (mounted.current) setState({ status: "error", error: String((e as Error)?.message ?? e) });
+      toast({ variant: "destructive", title: "Couldn't start the editor", description: String((e as Error)?.message ?? e) });
     }
   };
 
+  // Empty page: generate the page's prose from its objective (review, then add).
+  const createPage = () => {
+    if (!objectiveText) return;
+    void start("write");
+  };
+
   // Page with prose: revise it against the editor's notes + the author's comment, then preview.
-  const propose = async () => {
-    commitObjective();
+  const propose = () => {
     const issues: ReviseIssue[] = [...notes];
     const instr = instruction.trim();
     if (instr) issues.push({ section: "Author instruction", severity: "high", note: instr });
@@ -188,34 +214,30 @@ export function PageWorkshop({
         note: "Tighten and polish this page: sharpen the prose, cut redundancy, and improve flow without changing what happens.",
       });
     }
-
-    setState({ status: "running" });
-    try {
-      const text = await callUnit({
-        bookId,
-        pageId,
-        level: "page",
-        mode: "revise",
-        objective: objectiveText,
-        issues,
-      });
-      if (!text) throw new Error("The editor returned no revision.");
-      if (mounted.current) setState({ status: "preview", proposed: text });
-    } catch (e) {
-      if (mounted.current) setState({ status: "error", error: String((e as Error)?.message ?? e) });
-    }
+    void start("revise", issues);
   };
 
-  const applyRevision = () => {
-    if (state.status !== "preview") return;
-    onApply(state.proposed);
-    toast({ title: "Revision applied", description: "Review the page and save when you're happy with it." });
-    setState({ status: "idle" });
+  // Apply a ready proposal: a create result is appended; a revise result replaces the body. Either
+  // way mark the row applied so it doesn't re-open on the next load.
+  const applyProposal = async () => {
+    const text = proposedDraft.trim();
+    if (!proposed || !row || !text) return;
+    if (row.kind === "page_write") onAppendProse(text);
+    else onApply(text);
+    await supabase.from("book_generations").update({ status: "applied" }).eq("id", row.id);
+    toast({
+      title: row.kind === "page_write" ? "Page created" : "Revision applied",
+      description: "Review the page and save when you're happy with it.",
+    });
     setInstruction("");
     setOpen(false);
+    refetch();
   };
 
-  const running = state.status === "running";
+  const discardProposal = async () => {
+    if (row) await supabase.from("book_generations").update({ status: "dismissed" }).eq("id", row.id);
+    refetch();
+  };
 
   return (
     <div className="mx-8 mt-2 mb-6 border-t border-[hsl(var(--pv-border-soft))] pt-4">
@@ -233,24 +255,55 @@ export function PageWorkshop({
 
       {/* Section pages stop here — nothing to write or revise. */}
       {pageType !== "section" && !hasProse && (
-        // Empty page: only create. The objective is the brief.
-        <div className="mt-4 flex items-center gap-3">
-          <button
-            type="button"
-            onClick={createPage}
-            disabled={!objectiveText || running}
-            className="pv-serif inline-flex items-center gap-2 text-[14px] italic text-[hsl(var(--pv-accent))] transition-colors hover:text-foreground disabled:opacity-50"
-          >
-            {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-            {running ? "The editor is writing…" : "Create page →"}
-          </button>
-          {!objectiveText && (
-            <span className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))]">
-              Set an objective first.
-            </span>
-          )}
-          {state.status === "error" && (
-            <span className="pv-serif text-[13px] italic text-red-600 dark:text-red-400">{state.error}</span>
+        // Empty page: generate prose from the objective, then review and add it.
+        <div className="mt-4 space-y-3">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={createPage}
+              disabled={!objectiveText || running}
+              className="pv-serif inline-flex items-center gap-2 text-[14px] italic text-[hsl(var(--pv-accent))] transition-colors hover:text-foreground disabled:opacity-50"
+            >
+              {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+              {running ? "The editor is writing…" : proposed ? "Rewrite →" : "Create page →"}
+            </button>
+            {!objectiveText && (
+              <span className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))]">
+                Set an objective first.
+              </span>
+            )}
+            {genError && (
+              <span className="pv-serif text-[13px] italic text-red-600 dark:text-red-400">{genError}</span>
+            )}
+          </div>
+
+          {/* Ready draft for an empty page: review/edit, then add it. Survives a refresh. */}
+          {proposed && row?.kind === "page_write" && (
+            <div className="space-y-3">
+              <div className="pv-eyebrow">Proposed prose</div>
+              <Textarea
+                value={proposedDraft}
+                onChange={(e) => setProposedDraft(e.target.value)}
+                className="min-h-[200px] pv-serif text-[14.5px] leading-relaxed"
+              />
+              <div className="flex items-center gap-4">
+                <button
+                  type="button"
+                  onClick={applyProposal}
+                  disabled={!proposedDraft.trim()}
+                  className="pv-serif text-[14px] italic text-[hsl(var(--pv-accent))] transition-colors hover:text-foreground disabled:opacity-50"
+                >
+                  Add to page →
+                </button>
+                <button
+                  type="button"
+                  onClick={discardProposal}
+                  className="pv-serif text-[14px] italic text-[hsl(var(--pv-text-faint))] transition-colors hover:text-foreground"
+                >
+                  Discard
+                </button>
+              </div>
+            </div>
           )}
         </div>
       )}
@@ -298,7 +351,7 @@ export function PageWorkshop({
               )}
 
               {/* The author's comment, layered on top of (or instead of) the notes. */}
-              {state.status !== "preview" && (
+              {!proposed && (
                 <div className="space-y-2">
                   <Textarea
                     value={instruction}
@@ -319,18 +372,18 @@ export function PageWorkshop({
                 </div>
               )}
 
-              {state.status === "error" && (
-                <p className="pv-serif text-[14px] leading-relaxed text-red-600 dark:text-red-400">{state.error}</p>
+              {genError && (
+                <p className="pv-serif text-[14px] leading-relaxed text-red-600 dark:text-red-400">{genError}</p>
               )}
 
               {/* Diff + editable proposal: the author can tweak the prose before applying. */}
-              {state.status === "preview" && (
+              {proposed && row?.kind === "page_revise" && (
                 <div className="space-y-3">
                   <div className="pv-eyebrow">Proposed changes</div>
                   <div className="overflow-x-auto rounded-lg border border-[hsl(var(--pv-border-soft))] text-[13px]">
                     <ReactDiffViewer
                       oldValue={currentText}
-                      newValue={state.proposed}
+                      newValue={proposedDraft}
                       splitView={false}
                       compareMethod={DiffMethod.WORDS}
                       useDarkTheme={false}
@@ -343,8 +396,8 @@ export function PageWorkshop({
                   <div className="space-y-1.5">
                     <div className="pv-eyebrow">Edit before applying</div>
                     <Textarea
-                      value={state.proposed}
-                      onChange={(e) => setState({ status: "preview", proposed: e.target.value })}
+                      value={proposedDraft}
+                      onChange={(e) => setProposedDraft(e.target.value)}
                       className="min-h-[200px] pv-serif text-[14.5px] leading-relaxed"
                     />
                   </div>
@@ -352,8 +405,8 @@ export function PageWorkshop({
                   <div className="flex items-center gap-4">
                     <button
                       type="button"
-                      onClick={applyRevision}
-                      disabled={!state.proposed.trim()}
+                      onClick={applyProposal}
+                      disabled={!proposedDraft.trim()}
                       className="pv-serif text-[14px] italic text-[hsl(var(--pv-accent))] transition-colors hover:text-foreground disabled:opacity-50"
                     >
                       Apply to page →
@@ -367,7 +420,7 @@ export function PageWorkshop({
                     </button>
                     <button
                       type="button"
-                      onClick={() => setState({ status: "idle" })}
+                      onClick={discardProposal}
                       className="pv-serif text-[14px] italic text-[hsl(var(--pv-text-faint))] transition-colors hover:text-foreground"
                     >
                       Discard

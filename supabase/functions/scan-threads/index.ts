@@ -11,12 +11,19 @@
 // once. The output is an ordered list of AnchorEvent[], one per anchor to be inserted. The client
 // reviews and applies them; nothing is written to book_threads or book_thread_anchors here.
 //
+// DURABILITY: the scan is a long, paid loop. It used to run synchronously and only persist the diff
+// at the very end, so a worker that died mid-scan (or a closed tab) lost everything. Now we insert a
+// book_thread_scans row in a 'running' state FIRST, run the loop in the background
+// (EdgeRuntime.waitUntil), and flip the row to 'pending_review' (or 'error') when it finishes — so a
+// refresh resumes the loader and the result lands over Realtime regardless of the tab.
+//
 // Needs the ANTHROPIC_API_KEY secret (shared with other AI functions).
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { cumulativeWordOffsets, tiptapToText } from "../_shared/words.ts";
 import { captureException, isBillingError } from "../_shared/sentry.ts";
+import { runInBackground, serviceClient } from "../_shared/task.ts";
 
 const SCAN_MODEL = "claude-haiku-4-5-20251001";
 const PER_PAGE_PROSE_CAP = 6000; // chars — Haiku context is smaller than Opus
@@ -142,7 +149,6 @@ Deno.serve(async (req: Request) => {
     if (!apiKey) return json({ error: "ANTHROPIC_API_KEY not configured" }, 500);
 
     const pageRows = pages as PageRow[];
-    const { positions, total } = cumulativeWordOffsets(pageRows);
 
     // Build the initial registry from existing threads.
     const registry: RegistryEntry[] = existingThreads.map((t) => ({
@@ -155,117 +161,30 @@ Deno.serve(async (req: Request) => {
       resolutionCount: existingCounts.get(`db:${t.id}:resolution`) ?? 0,
     }));
 
-    // Raw events collected during the loop (word offsets resolved after).
-    interface RawEvent {
-      threadKey: string;
-      name: string;
-      description: string;
-      role: "promise" | "resolution";
-      pageId: number;
-      note: string;
-      isNewThread: boolean;
-    }
-    const rawEvents: RawEvent[] = [];
-    let newThreadCounter = 0;
-
-    for (const page of pageRows) {
-      if (page.page_type === "section") continue;
-      const prose = tiptapToText(page.content).trim();
-      if (!prose) continue;
-
-      let result: PageResult;
-      try {
-        result = await callHaiku(apiKey, page, prose, registry);
-      } catch (e) {
-        // A single page failure is non-fatal: log and continue the loop.
-        console.error(`scan-threads: page ${page.id} skipped:`, e);
-        continue;
-      }
-
-      for (const nt of result.new_threads) {
-        const key = `new:${newThreadCounter++}`;
-        const entry: RegistryEntry = {
-          key,
-          dbId: null,
-          name: nt.name,
-          description: nt.description,
-          authorLocked: false,
-          promiseCount: 0,
-          resolutionCount: 0,
-        };
-        registry.push(entry);
-        rawEvents.push({ threadKey: key, name: nt.name, description: nt.description, role: "promise", pageId: page.id, note: nt.note, isNewThread: true });
-        entry.promiseCount++;
-      }
-
-      for (const pr of result.promise_reinforced) {
-        const entry = registry.find((e) => e.key === pr.thread_key);
-        if (!entry || entry.authorLocked) continue;
-        rawEvents.push({ threadKey: entry.key, name: entry.name, description: entry.description, role: "promise", pageId: page.id, note: pr.note, isNewThread: false });
-        entry.promiseCount++;
-      }
-
-      for (const res of result.resolved) {
-        const entry = registry.find((e) => e.key === res.thread_key);
-        if (!entry || entry.authorLocked) continue;
-        rawEvents.push({ threadKey: entry.key, name: entry.name, description: entry.description, role: "resolution", pageId: page.id, note: res.note, isNewThread: false });
-        entry.resolutionCount++;
-        // Entry stays in the registry — a thread can be resolved multiple times.
-      }
-    }
-
-    // Resolve word offsets and compute sequence numbers (server-side, never trusted from AI).
-    // Sequence for each anchor = (existing anchors of that role for this thread) + (prior events
-    // of same role for same thread in this scan).
-    const seqCounters = new Map<string, number>(); // "${threadKey}:${role}" → next seq
-    // Seed with existing counts for db: threads.
-    for (const entry of registry) {
-      if (entry.dbId !== null) {
-        seqCounters.set(`db:${entry.dbId}:promise`, existingCounts.get(`db:${entry.dbId}:promise`) ?? 0);
-        seqCounters.set(`db:${entry.dbId}:resolution`, existingCounts.get(`db:${entry.dbId}:resolution`) ?? 0);
-      }
-    }
-
-    const events: AnchorEvent[] = rawEvents.map((e) => {
-      const seqKey = `${e.threadKey}:${e.role}`;
-      const seq = seqCounters.get(seqKey) ?? 0;
-      seqCounters.set(seqKey, seq + 1);
-      const pos = positions.get(e.pageId);
-      return {
-        threadKey: e.threadKey,
-        threadName: e.name,
-        threadDescription: e.description,
-        role: e.role,
-        pageId: e.pageId,
-        wordOffset: pos?.start ?? 0,
-        sequence: seq,
-        note: e.note,
-        isNewThread: e.isNewThread,
-      };
-    });
-
-    const newCount = new Set(rawEvents.filter((e) => e.isNewThread).map((e) => e.threadKey)).size;
-    const resolvedCount = rawEvents.filter((e) => e.role === "resolution").length;
-    const reinforcedCount = rawEvents.filter((e) => e.role === "promise" && !e.isNewThread).length;
-    const summary = buildSummary(newCount, resolvedCount, reinforcedCount, total);
-
-    // Persist the scan diff so a refresh can resume review without re-running the AI loop.
-    const { data: scanRow, error: scanInsertError } = await userClient
+    // Insert the scan row in a running state FIRST, then run the loop in the background and flip it
+    // terminal. The client watches this row over Realtime (resumes on refresh).
+    const service = serviceClient();
+    const { data: scanRow, error: scanInsertError } = await service
       .from("book_thread_scans")
       .insert({
         book_id: bookId,
-        status: "pending_review",
-        summary,
-        changes: events,
+        created_by: user.id,
+        status: "running",
         model: SCAN_MODEL,
-        // Opt-in email: the INSERT trigger (20260603160000) mails the author.
+        changes: [],
+        // Opt-in email: the terminal-transition trigger (migration 20260603200000) mails the author.
         notify_email: notify === true,
       })
-      .select("id")
+      .select()
       .single();
-    if (scanInsertError) throw new Error(`save scan: ${scanInsertError.message}`);
+    if (scanInsertError || !scanRow) return json({ error: "Could not start scan" }, 500);
 
-    return json({ summary, events, scanId: scanRow.id });
+    runInBackground(service, "book_thread_scans", scanRow.id, "scan-threads", async () => {
+      const { summary, events } = await runScan(apiKey, pageRows, registry, existingCounts);
+      return { status: "pending_review", summary, changes: events };
+    });
+
+    return json({ status: "running", scanId: scanRow.id, scan: scanRow }, 202);
   } catch (e) {
     console.error("scan-threads error:", e);
     const billing = isBillingError(e);
@@ -276,6 +195,114 @@ Deno.serve(async (req: Request) => {
     return json({ error: userMsg }, billing ? 503 : 500);
   }
 });
+
+// ── The rolling scan loop ──────────────────────────────────────────────────────
+// Walks the book page by page (Haiku per page), accumulating anchor events, then resolves word
+// offsets + sequence numbers server-side. Pure compute over its inputs — runs in the background.
+async function runScan(
+  apiKey: string,
+  pageRows: PageRow[],
+  registry: RegistryEntry[],
+  existingCounts: Map<string, number>
+): Promise<{ summary: string; events: AnchorEvent[] }> {
+  const { positions, total } = cumulativeWordOffsets(pageRows);
+
+  // Raw events collected during the loop (word offsets resolved after).
+  interface RawEvent {
+    threadKey: string;
+    name: string;
+    description: string;
+    role: "promise" | "resolution";
+    pageId: number;
+    note: string;
+    isNewThread: boolean;
+  }
+  const rawEvents: RawEvent[] = [];
+  let newThreadCounter = 0;
+
+  for (const page of pageRows) {
+    if (page.page_type === "section") continue;
+    const prose = tiptapToText(page.content).trim();
+    if (!prose) continue;
+
+    let result: PageResult;
+    try {
+      result = await callHaiku(apiKey, page, prose, registry);
+    } catch (e) {
+      // A single page failure is non-fatal: log and continue the loop.
+      console.error(`scan-threads: page ${page.id} skipped:`, e);
+      continue;
+    }
+
+    for (const nt of result.new_threads) {
+      const key = `new:${newThreadCounter++}`;
+      const entry: RegistryEntry = {
+        key,
+        dbId: null,
+        name: nt.name,
+        description: nt.description,
+        authorLocked: false,
+        promiseCount: 0,
+        resolutionCount: 0,
+      };
+      registry.push(entry);
+      rawEvents.push({ threadKey: key, name: nt.name, description: nt.description, role: "promise", pageId: page.id, note: nt.note, isNewThread: true });
+      entry.promiseCount++;
+    }
+
+    for (const pr of result.promise_reinforced) {
+      const entry = registry.find((e) => e.key === pr.thread_key);
+      if (!entry || entry.authorLocked) continue;
+      rawEvents.push({ threadKey: entry.key, name: entry.name, description: entry.description, role: "promise", pageId: page.id, note: pr.note, isNewThread: false });
+      entry.promiseCount++;
+    }
+
+    for (const res of result.resolved) {
+      const entry = registry.find((e) => e.key === res.thread_key);
+      if (!entry || entry.authorLocked) continue;
+      rawEvents.push({ threadKey: entry.key, name: entry.name, description: entry.description, role: "resolution", pageId: page.id, note: res.note, isNewThread: false });
+      entry.resolutionCount++;
+      // Entry stays in the registry — a thread can be resolved multiple times.
+    }
+  }
+
+  // Resolve word offsets and compute sequence numbers (server-side, never trusted from AI).
+  // Sequence for each anchor = (existing anchors of that role for this thread) + (prior events
+  // of same role for same thread in this scan).
+  const seqCounters = new Map<string, number>(); // "${threadKey}:${role}" → next seq
+  // Seed with existing counts for db: threads.
+  for (const entry of registry) {
+    if (entry.dbId !== null) {
+      seqCounters.set(`db:${entry.dbId}:promise`, existingCounts.get(`db:${entry.dbId}:promise`) ?? 0);
+      seqCounters.set(`db:${entry.dbId}:resolution`, existingCounts.get(`db:${entry.dbId}:resolution`) ?? 0);
+    }
+  }
+
+  const events: AnchorEvent[] = rawEvents.map((e) => {
+    const seqKey = `${e.threadKey}:${e.role}`;
+    const seq = seqCounters.get(seqKey) ?? 0;
+    seqCounters.set(seqKey, seq + 1);
+    const pos = positions.get(e.pageId);
+    return {
+      threadKey: e.threadKey,
+      threadName: e.name,
+      threadDescription: e.description,
+      role: e.role,
+      pageId: e.pageId,
+      wordOffset: pos?.start ?? 0,
+      sequence: seq,
+      note: e.note,
+      isNewThread: e.isNewThread,
+    };
+  });
+
+  const newCount = new Set(rawEvents.filter((e) => e.isNewThread).map((e) => e.threadKey)).size;
+  const resolvedCount = rawEvents.filter((e) => e.role === "resolution").length;
+  const reinforcedCount = rawEvents.filter((e) => e.role === "promise" && !e.isNewThread).length;
+  const summary = buildSummary(newCount, resolvedCount, reinforcedCount, total);
+
+  return { summary, events };
+}
 
 // ── Per-page Haiku prompt ─────────────────────────────────────────────────────
 

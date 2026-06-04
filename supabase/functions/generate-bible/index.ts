@@ -6,15 +6,21 @@
 //                         little/no prose yet; invents sensible specifics to edit.
 //   source="manuscript" → EXTRACT the bible from the actual prose (Haiku, cheap/fast). Reads
 //                         the whole book and records only what the manuscript establishes.
-// Either way it RETURNS markdown text; it does NOT write. The author reviews and saves
-// (books.bible.text).
+// Either way it produces markdown text the author reviews before saving (books.bible.text). The
+// draft is persisted as a book_generations task row (not returned inline) so a refresh resumes the
+// loader and the pending draft survives until the author accepts or discards it.
 //
-//   client → POST { bookId, source? } → verify edit access → Claude → { text }
+//   client → POST { bookId, source? }
+//     → verify edit access
+//     → INSERT book_generations { kind:'bible', status:'running', input:{source} }  ← returned ~1s
+//     → background: Claude → UPDATE row { status:'ready', result:{text} }
+//     → client watches book_generations via Realtime
 //
 // Needs the ANTHROPIC_API_KEY secret (shared with the other generation functions).
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
+import { runInBackground, serviceClient } from "../_shared/task.ts";
 import { tiptapToText } from "../_shared/words.ts";
 
 const BRIEF_MODEL = "claude-opus-4-7";              // drafting from the brief — richer invention
@@ -82,22 +88,40 @@ Deno.serve(async (req: Request) => {
     const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!apiKey) return json({ error: "ANTHROPIC_API_KEY not configured" }, 500);
 
+    const bookName = book.name;
+    const brief = book.brief as Brief | null;
+
+    // For a manuscript scan, fetch the prose up front so an empty book fails fast (400) rather than
+    // creating a task row that errors in the background.
+    let pages: PageRow[] | null = null;
     if (source === "manuscript") {
-      const { data: pages, error: pagesError } = await userClient
+      const { data, error: pagesError } = await userClient
         .from("pages")
         .select("id, page_index, page_type, title, content")
         .eq("book_id", bookId)
         .eq("archived", false)
         .order("page_index", { ascending: true });
       if (pagesError) throw new Error(`fetch pages: ${pagesError.message}`);
-      if (!pages || pages.length === 0) return json({ error: "Book has no pages to scan" }, 400);
-
-      const text = await scanFromManuscript(apiKey, book.name, book.brief as Brief | null, pages as PageRow[]);
-      return json({ text });
+      if (!data || data.length === 0) return json({ error: "Book has no pages to scan" }, 400);
+      pages = data as PageRow[];
     }
 
-    const text = await draftFromBrief(apiKey, book.name, book.brief as Brief | null);
-    return json({ text });
+    const service = serviceClient();
+    const { data: gen, error: insertError } = await service
+      .from("book_generations")
+      .insert({ book_id: bookId, created_by: user.id, kind: "bible", scope: "book", status: "running", input: { source } })
+      .select()
+      .single();
+    if (insertError || !gen) return json({ error: "Could not start bible draft" }, 500);
+
+    runInBackground(service, "book_generations", gen.id, "generate-bible", async () => {
+      const text = source === "manuscript"
+        ? await scanFromManuscript(apiKey, bookName, brief, pages!)
+        : await draftFromBrief(apiKey, bookName, brief);
+      return { status: "ready", result: { text } };
+    });
+
+    return json({ status: "running", generation: gen }, 202);
   } catch (e) {
     console.error("generate-bible error:", e);
     return json({ error: String((e as Error)?.message ?? e).slice(0, 500) }, 500);

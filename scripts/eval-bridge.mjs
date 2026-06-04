@@ -68,6 +68,32 @@ async function fetchPages(bookId) {
 // writes — so a local-bridge run shows up in the UI exactly like a prod run (the client reads
 // evaluations from the table in both modes now; the bridge differs only in *where the AI runs*).
 // created_by is left null (the bridge has no auth user); the service role bypasses RLS.
+// Insert a 'pending' book_evaluations row BEFORE the (slow) local eval runs, so a refresh mid-run
+// finds it and resumes the loader — matching the edge function's insert-pending-first pattern.
+// Returns the new row's id (or null on failure; the eval still runs, just not refresh-durable).
+async function startEvaluation(bookId) {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/book_evaluations`, {
+    method: "POST",
+    headers: { ...sbHeaders, "content-type": "application/json", Prefer: "return=representation" },
+    body: JSON.stringify({ book_id: bookId, kind: "fiction", model: "claude-code-local", status: "pending" }),
+  });
+  if (!r.ok) { console.error(`bridge eval: couldn't create pending row: ${r.status} ${await r.text()}`); return null; }
+  const rows = await r.json();
+  return rows?.[0]?.id ?? null;
+}
+
+// Flip the pending row to its terminal state. The UPDATE fires Realtime, so a watching/refreshed
+// client learns the result without polling (book_evaluations is in the realtime publication).
+async function finishEvaluation(id, patch) {
+  await fetch(`${SUPABASE_URL}/rest/v1/book_evaluations?id=eq.${id}`, {
+    method: "PATCH",
+    headers: { ...sbHeaders, "content-type": "application/json", Prefer: "return=minimal" },
+    body: JSON.stringify(patch),
+  });
+}
+
+// Fallback for when no pending row was created (couldn't insert up front): write a done row so the
+// report still lands in the table.
 async function persistEvaluation(bookId, result) {
   const r = await fetch(`${SUPABASE_URL}/rest/v1/book_evaluations`, {
     method: "POST",
@@ -77,6 +103,44 @@ async function persistEvaluation(bookId, result) {
   if (!r.ok) return { error: `Supabase ${r.status}: ${await r.text()}` };
   const rows = await r.json();
   return { row: rows?.[0] ?? null };
+}
+
+// ── book_generations parity ─────────────────────────────────────────────────
+// The web UI now watches a book_generations task row for scaffold/bible/page generation (so a
+// refresh resumes the loader / proposal). The bridge writes the SAME rows — insert 'running',
+// then update 'ready'/'error' when local Claude Code finishes — so dev behaves identically to prod.
+// created_by is left null (the bridge has no auth user); the service role bypasses RLS.
+async function insertGeneration(bookId, fields) {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/book_generations`, {
+    method: "POST",
+    headers: { ...sbHeaders, "content-type": "application/json", Prefer: "return=representation" },
+    body: JSON.stringify({ book_id: bookId, status: "running", ...fields }),
+  });
+  if (!r.ok) throw new Error(`Supabase ${r.status}: ${await r.text()}`);
+  return (await r.json())?.[0] ?? null;
+}
+
+async function updateGeneration(id, patch) {
+  await fetch(`${SUPABASE_URL}/rest/v1/book_generations?id=eq.${id}`, {
+    method: "PATCH",
+    headers: { ...sbHeaders, "content-type": "application/json", Prefer: "return=minimal" },
+    body: JSON.stringify(patch),
+  });
+}
+
+// Run a generation `work()` against a freshly-inserted row, writing the terminal state. Mirrors the
+// edge functions' runInBackground, minus the background (the bridge has no wall-clock cap).
+async function runGeneration(bookId, fields, work) {
+  const row = await insertGeneration(bookId, fields);
+  if (!row) return { error: "could not create generation row" };
+  try {
+    const patch = await work();
+    await updateGeneration(row.id, patch);
+    return { generation: { ...row, ...patch } };
+  } catch (e) {
+    await updateGeneration(row.id, { status: "error", error: String(e?.message ?? e).slice(0, 1000) });
+    return { error: String(e?.message ?? e) };
+  }
 }
 
 // Merge a summary into a page's metadata (preserving objective), via REST PATCH.
@@ -566,12 +630,21 @@ async function route(req, res) {
     }
     if (req.method === "POST") {
       console.log(`Evaluating book ${bookId}…`);
+      // Insert the pending row first so a refresh mid-run resumes the loader (parity with the edge
+      // function); then run the slow local eval and flip the row terminal.
+      const evalId = await startEvaluation(bookId);
       const out = await runEvaluation(bookId);
-      if (out.error) return json(res, 500, { status: "error", error: out.error });
-      // Save it to book_evaluations so the report lives in the table, not just on disk. Best-effort:
-      // a save failure shouldn't discard an expensive run — still return the result (it's on disk too).
-      const saved = await persistEvaluation(bookId, out.result);
-      if (saved.error) console.error(`bridge eval: failed to persist to book_evaluations: ${saved.error}`);
+      if (out.error) {
+        if (evalId != null) await finishEvaluation(evalId, { status: "error", error: out.error });
+        return json(res, 500, { status: "error", error: out.error });
+      }
+      if (evalId != null) {
+        await finishEvaluation(evalId, { status: "done", result: out.result });
+      } else {
+        // No pending row was created — fall back to writing a done row so the report still persists.
+        const saved = await persistEvaluation(bookId, out.result);
+        if (saved.error) console.error(`bridge eval: failed to persist to book_evaluations: ${saved.error}`);
+      }
       return json(res, 200, { status: "done", result: out.result });
     }
     return json(res, 405, { error: "method not allowed" });
@@ -582,9 +655,15 @@ async function route(req, res) {
     if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
     const bookId = Number(scaffoldMatch[1]);
     console.log(`Generating scaffold for book ${bookId}…`);
-    const out = await runScaffold(bookId);
+    // Write the same book_generations row the edge fn does (insert running → ready), so the UI
+    // watches the row identically in dev.
+    const out = await runGeneration(bookId, { kind: "scaffold", scope: "book", input: {} }, async () => {
+      const scaffold = await runScaffold(bookId);
+      if (scaffold.error) throw new Error(scaffold.error);
+      return { status: "ready", result: scaffold };
+    });
     if (out.error) return json(res, 500, { error: out.error });
-    return json(res, 200, out);
+    return json(res, 200, { status: "running", generation: out.generation });
   }
 
   const bibleMatch = url.match(/^\/bible\/(\d+)\/?$/);
@@ -592,9 +671,32 @@ async function route(req, res) {
     if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
     const bookId = Number(bibleMatch[1]);
     console.log(`Drafting bible for book ${bookId}…`);
-    const out = await runBible(bookId);
+    const out = await runGeneration(bookId, { kind: "bible", scope: "book", input: { source: "brief" } }, async () => {
+      const bible = await runBible(bookId);
+      if (bible.error) throw new Error(bible.error);
+      return { status: "ready", result: { text: bible.text } };
+    });
     if (out.error) return json(res, 500, { error: out.error });
-    return json(res, 200, out);
+    return json(res, 200, { status: "running", generation: out.generation });
+  }
+
+  if (url === "/page" || url === "/page/") {
+    if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
+    const body = await readBody(req);
+    const mode = body.mode === "revise" ? "revise" : "write";
+    console.log(`Generating page (book ${body.bookId}, page ${body.pageId}, ${mode})…`);
+    const out = await runGeneration(
+      body.bookId,
+      { kind: mode === "revise" ? "page_revise" : "page_write", scope: "page", target_page_id: body.pageId, input: { objective: body.objective ?? null, mode, issues: body.issues ?? null } },
+      async () => {
+        const unit = await runUnit({ ...body, level: "page", mode });
+        if (unit.error) throw new Error(unit.error);
+        if (!unit.text) throw new Error("The editor returned no text.");
+        return { status: "ready", result: { text: unit.text } };
+      }
+    );
+    if (out.error) return json(res, 500, { error: out.error });
+    return json(res, 200, { status: "running", generation: out.generation });
   }
 
   const replanMatch = url.match(/^\/replan\/(\d+)\/?$/);

@@ -57,6 +57,23 @@ const TASKS: Record<
       subject: `Your thread scan of "${b}" is ready`,
       line: `The thread scan of "${b}" has finished. Review the promises, payoffs, and open loops it surfaced.`,
     }),
+    failed: (b) => ({
+      subject: `Your thread scan of "${b}" didn't finish`,
+      line: `The thread scan of "${b}" ran into a problem and didn't finish. You can try running it again.`,
+    }),
+  },
+  // The write-all cascade is the book_generations flow that opts into notify (proposal flows
+  // don't, so the wording targets it).
+  book_generations: {
+    label: "the AI writing",
+    done: (b) => ({
+      subject: `Your book draft for "${b}" is written`,
+      line: `The AI has finished writing the planned pages of "${b}". Open the book to review them.`,
+    }),
+    failed: (b) => ({
+      subject: `The AI writing for "${b}" didn't finish`,
+      line: `The AI run for "${b}" ran into a problem and stopped. Reopen the book to see how far it got and resume.`,
+    }),
   },
 };
 

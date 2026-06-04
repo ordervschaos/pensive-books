@@ -93,9 +93,13 @@ export async function fetchThreads(bookId: number): Promise<Thread[]> {
   });
 }
 
-/** Run the explicit scan pass — returns a reviewable event list. `notify` opts the
- *  author into an email when it lands (set on the persisted scan row at insert). */
-export async function scanThreads(bookId: number, notify = false): Promise<ThreadScan> {
+/**
+ * Start an explicit scan pass. The scan is now a durable book_thread_scans row that runs in the
+ * background and survives a refresh, so this only KICKS IT OFF (returns the new scan's id) — the
+ * caller watches the row over Realtime for the result. `notify` opts the author into an email when
+ * it lands (set on the scan row at insert; the terminal-transition trigger mails).
+ */
+export async function scanThreads(bookId: number, notify = false): Promise<number | null> {
   const { data, error } = await supabase.functions.invoke("scan-threads", { body: { bookId, notify } });
   if (error) {
     const ctx = (error as { context?: Response }).context;
@@ -110,7 +114,19 @@ export async function scanThreads(bookId: number, notify = false): Promise<Threa
     throw error;
   }
   if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
-  return data as ThreadScan;
+  return (data as { scanId?: number | null })?.scanId ?? null;
+}
+
+// Convert a watched book_thread_scans row into a ThreadScan for review. Mirrors fetchPendingScan's
+// shape validation (old pre-anchor rows carry `action`, not `role`, and are treated as empty).
+export function scanRowToThreadScan(row: { id: number; summary: string | null; changes: unknown }): ThreadScan {
+  const raw = (row.changes as unknown[]) ?? [];
+  const isNewFormat = raw.length === 0 || ("role" in (raw[0] as object));
+  return {
+    scanId: row.id,
+    summary: row.summary ?? "",
+    events: isNewFormat ? (raw as AnchorEvent[]) : [],
+  };
 }
 
 /**

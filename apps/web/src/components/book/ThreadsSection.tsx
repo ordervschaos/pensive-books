@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Loader2, Lock, LockOpen, Pencil, Plus, X } from "lucide-react";
 import { sanitizeAIError, captureException } from "@/lib/sentry";
 import { useToast } from "@/hooks/use-toast";
+import { useLatestTaskRow, type TaskRow } from "@/hooks/useLatestTaskRow";
 import {
   type Thread,
   type ThreadAnchor,
@@ -13,8 +14,8 @@ import {
   firstPromise,
   lastResolution,
   fetchThreads,
-  fetchPendingScan,
   scanThreads,
+  scanRowToThreadScan,
   applyThreadScan,
   markScanReviewed,
   createThread,
@@ -26,6 +27,14 @@ import {
 import { WorkingIndicator, WORKING_PHRASES } from "./WorkingIndicator";
 import { NotifyWhenDone } from "./NotifyWhenDone";
 import { notify as fireNotification } from "@/lib/notify";
+
+// The scan task row (book_thread_scans). The scan runs server-side and is watched here, so a
+// refresh resumes the loader or the pending review without re-running the paid loop.
+interface ScanRow extends TaskRow {
+  summary: string | null;
+  changes: unknown;
+  error?: string | null;
+}
 
 const STATUS_TONE: Record<ThreadStatus, string> = {
   planned: "text-[hsl(var(--pv-text-faint))]",
@@ -85,56 +94,89 @@ type View =
 export function ThreadsSection({ bookId, manuscriptWordCount }: { bookId: number; manuscriptWordCount: number }) {
   const { toast } = useToast();
   const [threads, setThreads] = useState<Thread[]>([]);
-  const [view, setView] = useState<View>({ kind: "loading" });
+  const [loadingThreads, setLoadingThreads] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [applying, setApplying] = useState(false);
   const [editor, setEditor] = useState<{ thread: Thread | null } | null>(null);
-  // "Notify me when done" is pre-flight here: a scan persists its row only when
-  // it finishes, so the email opt-in must travel into the scan request (the
-  // edge fn sets notify_email at insert → the INSERT trigger mails). The browser
-  // notification is fired below when this awaiting tab gets the result.
+  // Per-anchor accept toggles for the scan under review; seeded when a pending scan arrives.
+  const [accepted, setAccepted] = useState<boolean[]>([]);
+  // True from the click until the scan row is observed running — keeps the loader instant.
+  const [starting, setStarting] = useState(false);
+  // "Notify me when done" is pre-flight here: the email opt-in travels into the scan request (the
+  // edge fn sets notify_email at insert → the terminal-transition trigger mails). The browser
+  // notification is fired by the effect below when this tab observes the scan finish.
   const [notify, setNotify] = useState(false);
+  const notifyRef = useRef(false);
+  const notifiedScanRef = useRef<number | null>(null);
+  useEffect(() => { notifyRef.current = notify; }, [notify]);
 
-  const load = async () => {
+  // Watch the latest scan row for this book — the single source of scan state.
+  const { row: scanRow, refetch: refetchScan } = useLatestTaskRow<ScanRow>({
+    table: "book_thread_scans",
+    bookId,
+    activeStatuses: ["pending", "running"],
+  });
+
+  const scanning = starting || scanRow?.status === "pending" || scanRow?.status === "running";
+  const reviewScan: ThreadScan | null = scanRow?.status === "pending_review" ? scanRowToThreadScan(scanRow) : null;
+  const scanError = scanRow?.status === "error" ? (scanRow.error ?? "Scan failed.") : null;
+
+  const loadThreads = async () => {
     try {
-      const [ts, pending] = await Promise.all([fetchThreads(bookId), fetchPendingScan(bookId)]);
-      setThreads(ts);
-      setView((v) => {
-        if (v.kind !== "loading" && v.kind !== "scanning") return v;
-        return pending
-          ? { kind: "review", scan: pending, accepted: pending.events.map(() => true) }
-          : { kind: "list" };
-      });
+      setThreads(await fetchThreads(bookId));
+      setLoadError(null);
     } catch (e) {
       captureException(e);
-      setView({ kind: "error", error: sanitizeAIError(e instanceof Error ? e.message : "Couldn't load threads.") });
+      setLoadError(sanitizeAIError(e instanceof Error ? e.message : "Couldn't load threads."));
+    } finally {
+      setLoadingThreads(false);
     }
   };
 
   useEffect(() => {
-    load();
+    setLoadingThreads(true);
+    loadThreads();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookId]);
 
+  // Once a scan row shows up (running or terminal), the click-time loader can stand down.
+  useEffect(() => {
+    if (scanRow) setStarting(false);
+  }, [scanRow?.id, scanRow?.status]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Seed the per-anchor toggles when a fresh pending scan arrives (keyed on the row).
+  useEffect(() => {
+    if (reviewScan) setAccepted(reviewScan.events.map(() => true));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scanRow?.id, scanRow?.status]);
+
+  // Browser notification when this tab observes the scan finish (the email half is server-side).
+  useEffect(() => {
+    if (!scanRow || !notifyRef.current) return;
+    if (scanRow.status !== "pending_review" && scanRow.status !== "error") return;
+    if (notifiedScanRef.current === scanRow.id) return;
+    notifiedScanRef.current = scanRow.id;
+    fireNotification(
+      scanRow.status === "error" ? "Your thread scan didn't finish" : "Your thread scan is ready",
+      {
+        body: scanRow.status === "error"
+          ? "It ran into a problem — you can try scanning again."
+          : "Review the promises, payoffs, and open loops it surfaced.",
+        url: window.location.href,
+        tag: `scan-${bookId}`,
+      }
+    );
+  }, [scanRow?.id, scanRow?.status, bookId]);
+
   const scan = async () => {
-    setView({ kind: "scanning" });
+    setStarting(true);
     try {
-      const result = await scanThreads(bookId, notify);
-      setView({ kind: "review", scan: result, accepted: result.events.map(() => true) });
-      if (notify)
-        fireNotification("Your thread scan is ready", {
-          body: "Review the promises, payoffs, and open loops it surfaced.",
-          url: window.location.href,
-          tag: `scan-${bookId}`,
-        });
+      await scanThreads(bookId, notify);
+      refetchScan();
     } catch (e) {
       captureException(e);
-      setView({ kind: "error", error: sanitizeAIError(e instanceof Error ? e.message : "Scan failed.") });
-      if (notify)
-        fireNotification("Your thread scan didn't finish", {
-          body: "It ran into a problem — you can try scanning again.",
-          url: window.location.href,
-          tag: `scan-${bookId}`,
-        });
+      setStarting(false);
+      setLoadError(sanitizeAIError(e instanceof Error ? e.message : "Scan failed."));
     }
   };
 
@@ -142,12 +184,12 @@ export function ThreadsSection({ bookId, manuscriptWordCount }: { bookId: number
     if (scanId != null) {
       try { await markScanReviewed(scanId, "dismissed"); } catch { /* non-fatal */ }
     }
-    setView({ kind: "loading" });
-    await load();
+    refetchScan();
+    await loadThreads();
   };
 
-  const apply = async (scanResult: ThreadScan, accepted: boolean[]) => {
-    const picked = scanResult.events.filter((_, i) => accepted[i]);
+  const apply = async (scanResult: ThreadScan, acceptedFlags: boolean[]) => {
+    const picked = scanResult.events.filter((_, i) => acceptedFlags[i]);
     setApplying(true);
     try {
       await applyThreadScan(bookId, picked);
@@ -158,14 +200,23 @@ export function ThreadsSection({ bookId, manuscriptWordCount }: { bookId: number
         title: "Thread tracker updated",
         description: `${newCount} thread${newCount !== 1 ? "s" : ""} created, ${anchorCount} anchor${anchorCount !== 1 ? "s" : ""} added.`,
       });
-      setView({ kind: "loading" });
-      await load();
+      refetchScan();
+      await loadThreads();
     } catch (e) {
       toast({ title: "Couldn't apply changes", description: e instanceof Error ? e.message : String(e), variant: "destructive" });
     } finally {
       setApplying(false);
     }
   };
+
+  // Derive the render view from the watched row + thread-load state (no view state machine).
+  const view: View =
+    scanError ? { kind: "error", error: scanError }
+    : loadError ? { kind: "error", error: loadError }
+    : scanning ? { kind: "scanning" }
+    : reviewScan ? { kind: "review", scan: reviewScan, accepted }
+    : loadingThreads ? { kind: "loading" }
+    : { kind: "list" };
 
   const toggleLock = async (t: Thread) => {
     try {
@@ -368,7 +419,7 @@ export function ThreadsSection({ bookId, manuscriptWordCount }: { bookId: number
                               onChange={(ev) => {
                                 const next = view.accepted.slice();
                                 next[globalIndex] = ev.target.checked;
-                                setView({ ...view, accepted: next });
+                                setAccepted(next);
                               }}
                               className="mt-1 h-4 w-4 shrink-0 accent-[hsl(var(--pv-accent))]"
                             />

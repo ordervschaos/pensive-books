@@ -220,8 +220,14 @@ export function ReviseWithAI({
     const s = row?.status;
     const prev = prevStatusRef.current;
     prevStatusRef.current = s ?? null;
-    if (!notifyRef.current || !s || !prev) return;
+    if (!s || !prev) return;
     const wasTerminal = prev === "done" || prev === "error" || prev === "cancelled";
+    if (!wasTerminal && s === "done" && !BRIDGE) {
+      // The edge job (prod) drove the build to completion — refresh the host's drafts here.
+      // In dev runBuild's own success path already calls onApplied, so skip to avoid double-firing.
+      onApplied?.();
+    }
+    if (!notifyRef.current) return;
     if (!wasTerminal && (s === "done" || s === "error")) {
       fireNotification(
         s === "done" ? "Your AI revision is done" : "Your AI revision didn't finish",
@@ -592,7 +598,22 @@ export function ReviseWithAI({
     await patch(row.id, { status: "building" }).catch(() => {});
     const next = { ...row, status: "building" as const };
     setRow(next);
-    await runBuild(next);
+    if (BRIDGE) {
+      // Dev: drive the build client-side via the bridge (free local generation). It's row-backed,
+      // so a refresh still resumes; it just doesn't progress with the tab closed (dev only).
+      await runBuild(next);
+    } else {
+      // Prod: hand the build to the self-chaining edge job. We only watch the row from here — the
+      // Realtime channel (activeId watches 'building') streams progress, and a pg_cron watchdog
+      // restarts the chain if a link dies, so the build survives a closed tab.
+      const { error } = await supabase.functions.invoke("build-revision", { body: { revisionId: row.id } });
+      if (error) {
+        const msg = String((error as Error)?.message ?? error);
+        await patch(row.id, { status: "error", error: msg }).catch(() => {});
+        setRow((r) => (r ? { ...r, status: "error", error: msg } : r));
+        toast({ title: "Couldn't start the build", description: msg, variant: "destructive" });
+      }
+    }
   };
 
   const requestCancel = async () => {

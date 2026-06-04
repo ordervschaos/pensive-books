@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useLatestTaskRow, type TaskRow } from "@/hooks/useLatestTaskRow";
 
 const BRIDGE = import.meta.env.VITE_EVAL_BRIDGE_URL as string | undefined;
 
@@ -41,52 +42,63 @@ interface ScaffoldGeneratorProps {
   onCreated?: () => void;
 }
 
+interface ScaffoldRow extends TaskRow {
+  result: Scaffold | null;
+  error: string | null;
+}
+
 /**
  * G2 — generate a book's objective tree from its brief. Proposes a chapter/page scaffold
  * (titles + objectives, no prose), lets the author review it, then creates the pages with
  * their objectives set. Honors the thesis: the author reviews the plan before committing.
+ *
+ * The proposal is a durable book_generations task row (kind 'scaffold'), not React state: a
+ * refresh resumes the loader if it's still designing, or re-opens the review dialog if a proposal
+ * is waiting. Creating the pages marks the row 'applied'; cancelling marks it 'dismissed' — so it
+ * doesn't keep re-opening.
  */
 export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps) {
   const { toast } = useToast();
-  const [generating, setGenerating] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [proposal, setProposal] = useState<Scaffold | null>(null);
-  const [open, setOpen] = useState(false);
+
+  const { row, refetch } = useLatestTaskRow<ScaffoldRow>({
+    table: "book_generations",
+    bookId,
+    match: { kind: "scaffold" },
+    activeStatuses: ["pending", "running"],
+  });
+
+  const generating = row?.status === "pending" || row?.status === "running";
+  const proposal = row?.status === "ready" ? row.result : null;
+  const open = !!proposal && !creating ? true : creating; // dialog visible while reviewing or creating
 
   const generate = async () => {
     try {
-      setGenerating(true);
-      let data: Scaffold;
       if (BRIDGE) {
-        const r = await fetch(`${BRIDGE}/scaffold/${bookId}`, { method: "POST" });
-        const d = await r.json();
-        if (d.error) throw new Error(d.error);
-        if (!d.pages?.length) throw new Error("No scaffold returned");
-        data = d as Scaffold;
+        // Dev bridge writes the same book_generations row; we just kick it and watch the row.
+        await fetch(`${BRIDGE}/scaffold/${bookId}`, { method: "POST" }).catch(() => {});
       } else {
-        const { data: fnData, error } = await supabase.functions.invoke("generate-scaffold", {
-          body: { bookId },
-        });
+        const { error } = await supabase.functions.invoke("generate-scaffold", { body: { bookId } });
         if (error) throw error;
-        if (!fnData?.pages?.length) throw new Error(fnData?.error || "No scaffold returned");
-        data = fnData as Scaffold;
       }
-      setProposal(data);
-      setOpen(true);
+      refetch();
     } catch (e) {
       toast({ title: "Couldn't generate scaffold", description: String((e as Error)?.message ?? e), variant: "destructive" });
-    } finally {
-      setGenerating(false);
     }
   };
 
+  const dismiss = async () => {
+    if (row) await supabase.from("book_generations").update({ status: "dismissed" }).eq("id", row.id);
+    refetch();
+  };
+
   const create = async () => {
-    if (!proposal) return;
+    if (!proposal || !row) return;
     try {
       setCreating(true);
-      // Create each page via the canonical RPC (handles page_index + valid defaults),
-      // then set its title / type / objective. Track the created id at each page index so the
-      // planned threads can be anchored to real page ids afterward.
+      // Create each page via the canonical RPC (handles page_index + valid defaults), then set its
+      // title / type / objective. Track the created id at each page index so the planned threads can
+      // be anchored to real page ids afterward.
       const createdIds: number[] = [];
       for (const page of proposal.pages) {
         const { data: newPage, error } = await supabase
@@ -126,15 +138,17 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
         if (thErr) throw thErr;
       }
 
+      // Mark the proposal applied so it doesn't re-open on the next load.
+      await supabase.from("book_generations").update({ status: "applied" }).eq("id", row.id);
+
       const threadNote = threadRows.length ? ` and ${threadRows.length} planned threads` : "";
       toast({ title: "Scaffold created", description: `${proposal.pages.length} pages added with objectives${threadNote}.` });
-      setOpen(false);
-      setProposal(null);
+      setCreating(false);
+      refetch();
       onCreated?.();
     } catch (e) {
-      toast({ title: "Couldn't create pages", description: String((e as Error)?.message ?? e), variant: "destructive" });
-    } finally {
       setCreating(false);
+      toast({ title: "Couldn't create pages", description: String((e as Error)?.message ?? e), variant: "destructive" });
     }
   };
 
@@ -147,8 +161,11 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
         onClick={generate}
         loading={generating}
       />
+      {row?.status === "error" && (
+        <p className="px-5 pt-1 pv-serif text-[13px] italic text-red-600 dark:text-red-400">{row.error}</p>
+      )}
 
-      <Dialog open={open} onOpenChange={(v) => !creating && setOpen(v)}>
+      <Dialog open={open} onOpenChange={(v) => !creating && !v && void dismiss()}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle>Review the proposed scaffold</DialogTitle>
@@ -175,7 +192,7 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
           </div>
 
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setOpen(false)} disabled={creating}>Cancel</Button>
+            <Button variant="ghost" onClick={() => void dismiss()} disabled={creating}>Cancel</Button>
             <Button onClick={create} disabled={creating}>
               {creating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
               {creating ? "Creating…" : `Create ${proposal?.pages.length ?? 0} pages`}

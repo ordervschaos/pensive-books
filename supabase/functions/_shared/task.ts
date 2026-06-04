@@ -1,0 +1,46 @@
+// task.ts — the single-shot orchestrator helper.
+//
+// Every "fast" AI task (scaffold, bible, one page, a thread scan) follows the evaluate-book shape:
+// insert a row in a running/pending status FIRST, hand the slow work to the background
+// (EdgeRuntime.waitUntil) so the HTTP response returns in ~1s, then write the terminal row when the
+// work finishes — so a closed/refreshed tab loses nothing and learns the result over Realtime.
+//
+// This wraps the background half: run the body, write the success patch it returns, or turn a throw
+// into a graceful error row (with the shared billing/Sentry handling). The caller owns auth, the
+// access check, and the initial insert.
+import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { captureException, isBillingError } from "./sentry.ts";
+
+export function serviceClient(): SupabaseClient {
+  return createClient(
+    Deno.env.get("SUPABASE_URL") ?? "",
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
+  );
+}
+
+// Run `work` in the background and write the terminal row. `work` resolves to the success patch
+// (e.g. { status: 'ready', result }); a throw becomes { status: 'error', error } on the same row.
+export function runInBackground(
+  service: SupabaseClient,
+  table: string,
+  id: number,
+  fnName: string,
+  work: () => Promise<Record<string, unknown>>
+): void {
+  const p = (async () => {
+    try {
+      const patch = await work();
+      const { error } = await service.from(table).update(patch).eq("id", id);
+      if (error) throw new Error(`save result: ${error.message}`);
+    } catch (e) {
+      console.error(`${fnName} run ${id} failed:`, e);
+      const billing = isBillingError(e);
+      await captureException(e, { function: fnName, billing: String(billing) });
+      const msg = billing
+        ? "AI credits exhausted — the team has been notified."
+        : String((e as Error)?.message ?? e).slice(0, 1000);
+      await service.from(table).update({ status: "error", error: msg }).eq("id", id);
+    }
+  })();
+  if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(p);
+}
