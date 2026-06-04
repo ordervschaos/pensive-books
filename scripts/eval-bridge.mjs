@@ -27,7 +27,7 @@ const CLAUDE_FLAGS = (process.env.EVAL_CLAUDE_FLAGS || "--dangerously-skip-permi
 const cors = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "content-type",
+  "Access-Control-Allow-Headers": "content-type, authorization",
 };
 const json = (res, code, body) =>
   res.writeHead(code, { ...cors, "content-type": "application/json" }).end(JSON.stringify(body));
@@ -41,8 +41,44 @@ const envVars = Object.fromEntries(
 );
 const SUPABASE_URL = `https://${envVars.VITE_SUPABASE_PROJECT_ID}.supabase.co`;
 const SUPABASE_KEY = envVars.SERVICE_ROLE_SECRET;
+const ANON_KEY = envVars.VITE_SUPABASE_ANON_KEY;
 
 const sbHeaders = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
+
+// ── Authorization ─────────────────────────────────────────────────────────────
+// The bridge writes with the service role (bypasses RLS), and it listens on localhost with CORS '*'
+// — so without a check, ANY caller (including a malicious site open in the same browser) could run
+// AI + write rows for ANY book. We close that by requiring the caller to prove they can edit THIS
+// book, using the SAME predicate the edge functions use: the client forwards its Supabase access
+// token (see apps/web/src/lib/bridge.ts), and we call user_can_edit_book() AS that user. Running the
+// RPC under the user's JWT (anon key + their bearer) resolves auth.uid() correctly; an invalid or
+// missing token can't satisfy the predicate, so it's denied. This is true parity with prod.
+function bearerToken(req) {
+  const h = req.headers.authorization || req.headers.Authorization;
+  const m = h && String(h).match(/^Bearer\s+(.+)$/i);
+  return m ? m[1] : null;
+}
+
+async function userCanEditBook(token, bookId) {
+  if (!token || !ANON_KEY) return false;
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/user_can_edit_book`, {
+    method: "POST",
+    headers: { apikey: ANON_KEY, Authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify({ _book_id: bookId }),
+  });
+  if (!r.ok) return false;
+  return (await r.json()) === true;
+}
+
+// Gate a handler: returns true if the caller may edit `bookId`, else writes a 403 and returns false.
+async function authorize(req, res, bookId) {
+  const ok = await userCanEditBook(bearerToken(req), bookId);
+  if (!ok) {
+    json(res, 403, { error: "Not authorized to edit this book." });
+    return false;
+  }
+  return true;
+}
 
 async function fetchBook(bookId) {
   const r = await fetch(
@@ -629,6 +665,7 @@ async function route(req, res) {
       return json(res, 200, { status: "none", ...(report?.error && { error: report.error }) });
     }
     if (req.method === "POST") {
+      if (!(await authorize(req, res, bookId))) return;
       console.log(`Evaluating book ${bookId}…`);
       // Insert the pending row first so a refresh mid-run resumes the loader (parity with the edge
       // function); then run the slow local eval and flip the row terminal.
@@ -654,6 +691,7 @@ async function route(req, res) {
   if (scaffoldMatch) {
     if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
     const bookId = Number(scaffoldMatch[1]);
+    if (!(await authorize(req, res, bookId))) return;
     console.log(`Generating scaffold for book ${bookId}…`);
     // Write the same book_generations row the edge fn does (insert running → ready), so the UI
     // watches the row identically in dev.
@@ -670,6 +708,7 @@ async function route(req, res) {
   if (bibleMatch) {
     if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
     const bookId = Number(bibleMatch[1]);
+    if (!(await authorize(req, res, bookId))) return;
     console.log(`Drafting bible for book ${bookId}…`);
     const out = await runGeneration(bookId, { kind: "bible", scope: "book", input: { source: "brief" } }, async () => {
       const bible = await runBible(bookId);
@@ -683,6 +722,7 @@ async function route(req, res) {
   if (url === "/page" || url === "/page/") {
     if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
     const body = await readBody(req);
+    if (!(await authorize(req, res, Number(body.bookId)))) return;
     const mode = body.mode === "revise" ? "revise" : "write";
     console.log(`Generating page (book ${body.bookId}, page ${body.pageId}, ${mode})…`);
     const out = await runGeneration(
@@ -703,6 +743,7 @@ async function route(req, res) {
   if (replanMatch) {
     if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
     const bookId = Number(replanMatch[1]);
+    if (!(await authorize(req, res, bookId))) return;
     const body = await readBody(req);
     console.log(`Replanning book ${bookId}${body.instruction ? " from instruction" : ""}${body.evaluation ? " from evaluation" : ""}…`);
     const out = await runReplan(bookId, body.evaluation, body.instruction);
@@ -713,6 +754,7 @@ async function route(req, res) {
   if (url === "/unit" || url === "/unit/") {
     if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
     const body = await readBody(req);
+    if (!(await authorize(req, res, Number(body.bookId)))) return;
     console.log(`Generating unit (book ${body.bookId}, level: ${body.level})…`);
     const out = await runUnit(body);
     if (out.error) return json(res, 500, { error: out.error });

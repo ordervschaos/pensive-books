@@ -5,6 +5,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useLatestTaskRow, type TaskRow } from "@/hooks/useLatestTaskRow";
+import { BRIDGE, bridgeFetch } from "@/lib/bridge";
 import type { EvalResult, Severity } from "./BookEvaluationSection";
 
 // The page's single AI unit: it looks at one page (its author-only objective + the editor's
@@ -17,7 +18,6 @@ import type { EvalResult, Severity } from "./BookEvaluationSection";
 // scoped to this page) written server-side by the generate-page edge function and watched here over
 // Realtime. So a refresh mid-generation resumes the loader, and a finished proposal is still here to
 // review/apply — nothing lives only in React. The dev bridge writes the same row.
-const BRIDGE = import.meta.env.VITE_EVAL_BRIDGE_URL as string | undefined;
 
 // Mirrors generate-unit's ReviseIssue (and ReviseWithAI's FixIssue): one editorial note.
 interface ReviseIssue {
@@ -94,7 +94,7 @@ const diffStyles = {
 // the same row, so dev resumes-on-refresh identically.
 async function startPageGen(body: Record<string, unknown>): Promise<void> {
   if (BRIDGE) {
-    const r = await fetch(`${BRIDGE}/page`, {
+    const r = await bridgeFetch(`/page`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),

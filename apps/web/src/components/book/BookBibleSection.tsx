@@ -20,8 +20,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { useLatestTaskRow, type TaskRow } from "@/hooks/useLatestTaskRow";
-
-const BRIDGE = import.meta.env.VITE_EVAL_BRIDGE_URL as string | undefined;
+import { BRIDGE, bridgeFetch } from "@/lib/bridge";
 
 interface BibleRow extends TaskRow {
   input: { source?: "brief" | "manuscript" } | null;
@@ -170,7 +169,7 @@ export function BookBibleSection({ bookId, bible, onBibleChange }: BookBibleSect
     try {
       if (BRIDGE && source === "brief") {
         // Dev bridge writes the same book_generations row; just kick it and watch the row.
-        await fetch(`${BRIDGE}/bible/${bookId}`, { method: "POST" }).catch(() => {});
+        await bridgeFetch(`/bible/${bookId}`, { method: "POST" }).catch(() => {});
       } else {
         const { error } = await supabase.functions.invoke("generate-bible", {
           body: { bookId, source },
