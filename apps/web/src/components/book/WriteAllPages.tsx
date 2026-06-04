@@ -6,9 +6,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useLatestTaskRow, type TaskRow } from "@/hooks/useLatestTaskRow";
 import { notify as fireNotification } from "@/lib/notify";
+import { BRIDGE, bridgeFetch } from "@/lib/bridge";
 import { useEffect, useRef, useState } from "react";
-
-const BRIDGE = import.meta.env.VITE_EVAL_BRIDGE_URL as string | undefined;
 
 interface WriteAllPagesProps {
   bookId: number;
@@ -172,7 +171,7 @@ async function runViaBridge(bookId: number, notify: boolean, refetch: () => void
   for (let i = 0; i < targets.length; i++) {
     const page = targets[i];
     try {
-      const r = await fetch(`${BRIDGE}/unit`, {
+      const r = await bridgeFetch(`/unit`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ bookId, pageId: page.id, level: "page", objective: page.metadata!.objective }),

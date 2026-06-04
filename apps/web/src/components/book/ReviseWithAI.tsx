@@ -19,11 +19,11 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { buildDoc } from "@/lib/inlineMarkdown";
+import { BRIDGE, bridgeFetch } from "@/lib/bridge";
 import { VersionService } from "@/services/VersionService";
 import type { EvalResult, Severity } from "./BookEvaluationSection";
 
 // Same dual backend as the rest of the AI features: local bridge in dev, edge in prod.
-const BRIDGE = import.meta.env.VITE_EVAL_BRIDGE_URL as string | undefined;
 
 const MAX_ATTEMPTS = 3; // 1 try + 2 retries
 const RETRY_BASE_MS = 1000;
@@ -336,7 +336,7 @@ export function ReviseWithAI({
       },
     };
     if (BRIDGE) {
-      const r = await fetch(`${BRIDGE}/replan/${bookId}`, {
+      const r = await bridgeFetch(`/replan/${bookId}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
@@ -409,7 +409,7 @@ export function ReviseWithAI({
     if (task.mode === "revise") body.issues = task.issues;
     let text: string;
     if (BRIDGE) {
-      const r = await fetch(`${BRIDGE}/unit`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      const r = await bridgeFetch(`/unit`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
       const d = await r.json();
       if (d.error) throw new Error(d.error);
       text = String(d.text ?? "").trim();

@@ -5,6 +5,7 @@ import { sanitizeAIError, captureException } from "@/lib/sentry";
 import { WorkingIndicator, WORKING_PHRASES } from "./WorkingIndicator";
 import { NotifyWhenDone } from "./NotifyWhenDone";
 import { notify as fireNotification } from "@/lib/notify";
+import { BRIDGE, bridgeFetch } from "@/lib/bridge";
 
 // Evaluations always live in the book_evaluations table — that's where we READ them from
 // (initial load, below), in both modes. The two backends differ only in WHERE the AI runs:
@@ -12,7 +13,6 @@ import { notify as fireNotification } from "@/lib/notify";
 //    paid API in the background, and flips it done; we watch over Realtime.
 //  - Local dev: if VITE_EVAL_BRIDGE_URL is set, scripts/eval-bridge.mjs runs Claude Code on
 //    your machine (zero API cost), then writes a done row to the same table.
-const BRIDGE = import.meta.env.VITE_EVAL_BRIDGE_URL as string | undefined;
 const USE_BRIDGE = !!BRIDGE;
 
 type Stance = "strong" | "solid" | "needs work";
@@ -221,7 +221,7 @@ export function BookEvaluationSection({ bookId, onRevise, onStatusChange }: { bo
 
   const runBridge = async () => {
     try {
-      const r = await fetch(`${BRIDGE}/eval/${bookId}`, { method: "POST" });
+      const r = await bridgeFetch(`/eval/${bookId}`, { method: "POST" });
       const d = await r.json();
       if (d.status === "done") setState({ status: "done", result: d.result });
       else setState({ status: "error", error: d.error || "evaluation failed" });
