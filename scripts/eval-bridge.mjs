@@ -208,11 +208,39 @@ function readBody(req) {
   });
 }
 
+// Log one AI call to ai_calls (source='bridge') so local Claude-Code runs are analyzable alongside
+// prod's edge calls. The bridge bakes the system prompt into the user message, so `system` stays
+// null and the assembled prompt goes in `input` (same messages shape the edge rows use). Best-effort
+// — a logging failure must never break the bridge response. Links to a task row are omitted here
+// (dev convenience); prod records the full (task_table, task_id) join.
+async function logAiCall({ bookId = null, fn, prompt = null, output = null, error = null, latencyMs = null }) {
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/ai_calls`, {
+      method: "POST",
+      headers: { ...sbHeaders, "content-type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify({
+        book_id: bookId,
+        fn,
+        source: "bridge",
+        model: "claude-code-local",
+        input: prompt == null ? null : [{ role: "user", content: prompt }],
+        output,
+        latency_ms: latencyMs,
+        error,
+      }),
+    });
+  } catch (e) {
+    console.error("bridge ai_calls log failed (non-fatal):", e.message);
+  }
+}
+
 // ── Claude runner ─────────────────────────────────────────────────────────────
 // captureStdout=true: buffer + return stdout as `text`.
 // captureStdout=false (eval): just pipe to terminal; result comes from a file.
-function runClaude(prompt, captureStdout = false) {
+// `meta` ({ fn, bookId }), when given, logs the call (prompt + output/error + latency) to ai_calls.
+function runClaude(prompt, captureStdout = false, meta = null) {
   return new Promise((resolve) => {
+    const started = Date.now();
     const args = ["-p", prompt, ...CLAUDE_FLAGS];
     console.log(`→ claude -p "${prompt.slice(0, 80).replace(/\n/g, " ")}…"`);
     const child = spawn("claude", args, { cwd: repoRoot });
@@ -222,10 +250,21 @@ function runClaude(prompt, captureStdout = false) {
       process.stdout.write(d);
     });
     child.stderr.on("data", (d) => (stderr += d));
-    child.on("error", (e) => resolve({ error: `failed to spawn claude: ${e.message}` }));
+    child.on("error", (e) => {
+      const error = `failed to spawn claude: ${e.message}`;
+      if (meta) logAiCall({ ...meta, prompt, error, latencyMs: Date.now() - started });
+      resolve({ error });
+    });
     child.on("close", (code) => {
-      if (code !== 0) return resolve({ error: `claude exited ${code}: ${stderr.slice(-500)}` });
-      resolve({ text: stdout.trim() });
+      const latencyMs = Date.now() - started;
+      if (code !== 0) {
+        const error = `claude exited ${code}: ${stderr.slice(-500)}`;
+        if (meta) logAiCall({ ...meta, prompt, error, latencyMs });
+        return resolve({ error });
+      }
+      const text = stdout.trim();
+      if (meta) logAiCall({ ...meta, prompt, output: text, latencyMs });
+      resolve({ text });
     });
   });
 }
@@ -304,7 +343,7 @@ ${briefContext(book.brief)}
 
 Design the scaffold. JSON only.`;
 
-  const out = await runClaude(prompt, true);
+  const out = await runClaude(prompt, true, { fn: "generate-scaffold", bookId });
   if (out.error) return out;
 
   let raw = out.text.trim();
@@ -351,7 +390,7 @@ ${briefContext(book.brief)}
 
 Draft the bible. Markdown only.`;
 
-  const out = await runClaude(prompt, true);
+  const out = await runClaude(prompt, true, { fn: "generate-bible", bookId });
   if (out.error) return out;
   const text = out.text.trim();
   if (!text) return { error: "Claude returned no text content" };
@@ -496,7 +535,7 @@ ${outlineContext(pages)}${instr ? `\n\nAUTHOR'S INSTRUCTION (primary directive):
 
 Produce the revision plan. JSON only.`;
 
-  const out = await runClaude(prompt, true);
+  const out = await runClaude(prompt, true, { fn: "replan-from-notes", bookId });
   if (out.error) return out;
   return parsePlan(out.text, pages);
 }
@@ -615,7 +654,7 @@ async function runUnit(body) {
     );
   }
 
-  const out = await runClaude(parts.join("\n"), true);
+  const out = await runClaude(parts.join("\n"), true, { fn: "generate-unit", bookId });
   if (out.error) return out;
 
   let text = out.text.trim();
@@ -628,7 +667,7 @@ async function runUnit(body) {
   // Persist a "story so far" summary for this page (best-effort), like the edge function.
   if (level === "page" && pageId) {
     try {
-      const s = await runClaude(`Summarize this page of a book in 1-2 sentences: what happens and any new facts (characters, places, changes in state) a later page would need to stay consistent. Plain text only, no preamble.\n\n${text.slice(0, 12000)}`, true);
+      const s = await runClaude(`Summarize this page of a book in 1-2 sentences: what happens and any new facts (characters, places, changes in state) a later page would need to stay consistent. Plain text only, no preamble.\n\n${text.slice(0, 12000)}`, true, { fn: "summarize", bookId });
       const summary = s.text?.trim();
       if (summary) await persistSummary(pageId, summary);
     } catch (e) {
@@ -670,7 +709,19 @@ async function route(req, res) {
       // Insert the pending row first so a refresh mid-run resumes the loader (parity with the edge
       // function); then run the slow local eval and flip the row terminal.
       const evalId = await startEvaluation(bookId);
+      const startedEval = Date.now();
       const out = await runEvaluation(bookId);
+      // Coarse log: the eval's real prompts are built INSIDE the spawned `claude` session (the
+      // /evaluate-book slash command), invisible to the bridge — so we record the command + the
+      // resulting report, not the internal context. Prod's edge eval logs each phase's full prompt.
+      await logAiCall({
+        fn: "evaluate-book",
+        bookId,
+        prompt: `/evaluate-book ${bookId}`,
+        output: out.error ? null : JSON.stringify(out.result),
+        error: out.error ?? null,
+        latencyMs: Date.now() - startedEval,
+      });
       if (out.error) {
         if (evalId != null) await finishEvaluation(evalId, { status: "error", error: out.error });
         return json(res, 500, { status: "error", error: out.error });

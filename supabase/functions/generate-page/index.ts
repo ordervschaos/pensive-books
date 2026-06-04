@@ -99,6 +99,7 @@ Deno.serve(async (req: Request) => {
         objective: body.objective,
         mode,
         issues: body.issues,
+        log: { taskTable: "book_generations", taskId: gen.id },
       });
       if (!text) throw new Error("The editor returned no text.");
       return { status: "ready", result: { text } };

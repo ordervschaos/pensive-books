@@ -154,7 +154,7 @@ async function advance(service: SupabaseClient, apiKey: string, revisionId: numb
     let lastErr: unknown = null;
     for (let attempt = 1; attempt <= MAX_ATTEMPTS && !ok; attempt++) {
       try {
-        await buildPage(service, apiKey, row.book_id, tasks[i]);
+        await buildPage(service, apiKey, row.book_id, tasks[i], revisionId);
         ok = true;
       } catch (e) {
         lastErr = e;
@@ -260,7 +260,7 @@ async function runStructure(service: SupabaseClient, row: RevisionRow, progressI
 }
 
 // Generate + persist one page's prose (write or revise), via the shared per-page worker.
-async function buildPage(service: SupabaseClient, apiKey: string, bookId: number, task: ProseTask) {
+async function buildPage(service: SupabaseClient, apiKey: string, bookId: number, task: ProseTask, revisionId: number) {
   const text = await generateUnit(service, apiKey, {
     bookId,
     pageId: task.id,
@@ -268,6 +268,7 @@ async function buildPage(service: SupabaseClient, apiKey: string, bookId: number
     mode: task.mode,
     objective: task.objective,
     issues: task.mode === "revise" ? (task.issues as ReviseIssue[]) : undefined,
+    log: { taskTable: "book_revisions", taskId: revisionId },
   });
   if (text) {
     const { error } = await service.from("pages").update({ content: buildDoc(task.title, text) }).eq("id", task.id);

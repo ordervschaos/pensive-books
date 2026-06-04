@@ -176,7 +176,7 @@ async function advance(service: ReturnType<typeof serviceClient>, apiKey: string
       let lastErr: unknown = null;
       for (let attempt = 1; attempt <= MAX_ATTEMPTS && !written; attempt++) {
         try {
-          const text = await generateUnit(service, apiKey, { bookId: row.book_id, pageId, level: "page", objective });
+          const text = await generateUnit(service, apiKey, { bookId: row.book_id, pageId, level: "page", objective, log: { taskTable: "book_generations", taskId: row.id } });
           if (text) {
             const { error: upErr } = await service.from("pages").update({ content: buildDoc(page.title, text) }).eq("id", pageId);
             if (upErr) throw new Error(upErr.message);

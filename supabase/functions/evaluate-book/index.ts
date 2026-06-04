@@ -16,6 +16,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { EDITOR_STANCE, FICTION_RUBRIC } from "./rubric.ts";
 import { captureException, isBillingError } from "../_shared/sentry.ts";
+import { callClaude as callClaudeApi, type CallMeta } from "../_shared/claude.ts";
 
 const MODEL = "claude-opus-4-8";
 
@@ -163,7 +164,8 @@ async function runEvaluation(
     if (!pages || pages.length === 0) throw new Error("Book has no pages to evaluate.");
 
     const { manuscript, wordCount } = buildManuscript(book, pages);
-    const result = await evaluateMapReduce(apiKey, book, manuscript);
+    const logBase: Omit<CallMeta, "fn"> = { bookId: book.id, taskTable: "book_evaluations", taskId: evalId };
+    const result = await evaluateMapReduce(apiKey, book, manuscript, logBase);
 
     const { error: updateError } = await service
       .from("book_evaluations")
@@ -266,7 +268,7 @@ interface Section {
 // Orchestrator: triage (warms the manuscript cache) → 3 parallel dimension groups (read the warm
 // cache) → verdict synthesized from their findings. Phases are sequential but the expensive middle
 // runs in parallel, so wall-clock ≈ triage + slowest group + verdict (~120s), under the worker cap.
-async function evaluateMapReduce(apiKey: string, book: BookRow, manuscript: string) {
+async function evaluateMapReduce(apiKey: string, book: BookRow, manuscript: string, logBase: Omit<CallMeta, "fn">) {
   // Identical cached prefix for triage + every group → the manuscript is encoded & billed once,
   // then read from cache by the rest. EDITOR_STANCE+RUBRIC are stable across books (outer cache);
   // the manuscript is stable across this eval's calls (inner cache).
@@ -278,12 +280,12 @@ async function evaluateMapReduce(apiKey: string, book: BookRow, manuscript: stri
 
   // Phase 1 — triage. Runs first (alone) so it WRITES the manuscript cache the parallel groups
   // then read; also fixes one genre contract they all judge against. Billing failures surface here.
-  const triage = await runTriage(apiKey, sharedSystem);
+  const triage = await runTriage(apiKey, sharedSystem, logBase);
 
   // Phase 2 — the three dimension groups, in parallel. Each reads the whole book (warm cache) and
   // emits only its slice of the report. allSettled so one bad group degrades to a partial report.
   const settled = await Promise.allSettled(
-    GROUPS.map((g) => runGroup(apiKey, sharedSystem, g, triage))
+    GROUPS.map((g) => runGroup(apiKey, sharedSystem, g, triage, logBase))
   );
   const sections: Section[] = [];
   for (const r of settled) {
@@ -305,7 +307,7 @@ async function evaluateMapReduce(apiKey: string, book: BookRow, manuscript: stri
   // succeeded, so a verdict hiccup falls back to a synthesized stub rather than losing the report.
   let verdict;
   try {
-    verdict = await runVerdict(apiKey, book, ordered, triage);
+    verdict = await runVerdict(apiKey, book, ordered, triage, logBase);
   } catch (e) {
     await captureException(e, { function: "evaluate-book", phase: "verdict" });
     verdict = fallbackVerdict(ordered, triage);
@@ -314,8 +316,8 @@ async function evaluateMapReduce(apiKey: string, book: BookRow, manuscript: stri
   return { verdict, sections: ordered };
 }
 
-async function runTriage(apiKey: string, system: unknown[]): Promise<Triage> {
-  const text = await anthropicCall(apiKey, {
+async function runTriage(apiKey: string, system: unknown[], logBase: Omit<CallMeta, "fn">): Promise<Triage> {
+  const text = await anthropicCall(apiKey, { ...logBase, fn: "evaluate-triage" }, {
     system,
     user:
       `You have the full manuscript above. In one pass, identify the book's genre contract so the ` +
@@ -340,11 +342,12 @@ async function runGroup(
   apiKey: string,
   system: unknown[],
   group: { name: string; sections: string[] },
-  triage: Triage
+  triage: Triage,
+  logBase: Omit<CallMeta, "fn">
 ): Promise<Section[]> {
   const ids = group.sections.filter((id) => id !== "world_building" || triage.is_speculative);
   const menu = ids.map((id) => `${id} ("${SECTION_TITLES[id]}")`).join(", ");
-  const text = await anthropicCall(apiKey, {
+  const text = await anthropicCall(apiKey, { ...logBase, fn: `evaluate-group:${group.name}` }, {
     system,
     user:
       `You have read the full manuscript above. The genre contract (already identified) is: ` +
@@ -371,7 +374,7 @@ async function runGroup(
     .map((s) => ({ ...s, title: SECTION_TITLES[s.id] ?? s.title }));
 }
 
-async function runVerdict(apiKey: string, book: BookRow, sections: Section[], triage: Triage) {
+async function runVerdict(apiKey: string, book: BookRow, sections: Section[], triage: Triage, logBase: Omit<CallMeta, "fn">) {
   // Feed only the digested findings (not the prose) so this call is small and fast.
   const lite = sections.map((s) => ({
     id: s.id,
@@ -382,7 +385,7 @@ async function runVerdict(apiKey: string, book: BookRow, sections: Section[], tr
       note: i.note,
     })),
   }));
-  const text = await anthropicCall(apiKey, {
+  const text = await anthropicCall(apiKey, { ...logBase, fn: "evaluate-verdict" }, {
     system: [{ type: "text", text: EDITOR_STANCE }],
     user:
       `You are writing the top-level verdict of an editor's read of "${book.name}". The per-dimension ` +
@@ -431,39 +434,22 @@ function fallbackVerdict(sections: Section[], triage: Triage) {
 // ── Anthropic plumbing ───────────────────────────────────────────────────────
 async function anthropicCall(
   apiKey: string,
+  meta: CallMeta,
   opts: { system: unknown[]; user: string; maxTokens: number; effort: string; timeoutMs: number }
 ): Promise<string> {
   // AbortSignal so a hung/slow call rejects in time for the orchestrator's catch to record it —
   // never let a call outlive the Supabase worker silently (the old "stuck pending forever" bug).
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    signal: AbortSignal.timeout(opts.timeoutMs),
-    headers: {
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      max_tokens: opts.maxTokens,
-      thinking: { type: "adaptive" }, // Opus 4.8: adaptive thinking; effort controls depth
-      output_config: { effort: opts.effort }, // top-level field; budget_tokens is rejected here
-      system: opts.system,
-      messages: [{ role: "user", content: opts.user }],
-    }),
-  });
+  // Billing detection is preserved: the wrapper's error message carries the raw body, which
+  // isBillingError() matches on "credit balance".
+  const data = await callClaudeApi(apiKey, {
+    model: MODEL,
+    max_tokens: opts.maxTokens,
+    thinking: { type: "adaptive" }, // Opus 4.8: adaptive thinking; effort controls depth
+    output_config: { effort: opts.effort }, // top-level field; budget_tokens is rejected here
+    system: opts.system,
+    messages: [{ role: "user", content: opts.user }],
+  }, meta, { signal: AbortSignal.timeout(opts.timeoutMs) });
 
-  if (!res.ok) {
-    const body = await res.text();
-    let parsed: { error?: { message?: string } } = {};
-    try { parsed = JSON.parse(body); } catch { /* ignore */ }
-    const msg = parsed.error?.message ?? body;
-    const err = new Error(`Claude API ${res.status}: ${msg.slice(0, 500)}`);
-    if (parsed.error?.message?.toLowerCase().includes("credit balance")) (err as Error & { billing?: boolean }).billing = true;
-    throw err;
-  }
-
-  const data = await res.json();
   const text = (data.content ?? [])
     .filter((b: { type: string }) => b.type === "text")
     .map((b: { text: string }) => b.text)

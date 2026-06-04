@@ -10,6 +10,7 @@
 // calls Claude. The callers own auth and the task row. Prompt assembly is byte-for-byte the same as
 // the original generate-unit (the dev bridge mirrors it), so the output is unchanged.
 import { type SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { callClaude as callClaudeApi, type CallMeta } from "./claude.ts";
 
 export const MODEL = "claude-opus-4-7";
 const SUMMARY_MODEL = "claude-haiku-4-5-20251001"; // cheap/fast for the per-page "story so far"
@@ -42,6 +43,8 @@ export interface UnitParams {
   precedingText?: string;
   mode?: "write" | "revise";
   issues?: ReviseIssue[];
+  // Optional link to the durable task row this render serves, recorded on the ai_calls log.
+  log?: { taskTable?: string; taskId?: number };
 }
 
 interface BookRow {
@@ -80,6 +83,13 @@ export async function generateUnit(client: SupabaseClient, apiKey: string, p: Un
 
   const ctx = await buildUnitContext(client, p.bookId, p.pageId ?? null, p.level);
 
+  const meta: CallMeta = {
+    fn: "generate-unit",
+    bookId: p.bookId,
+    taskTable: p.log?.taskTable ?? null,
+    taskId: p.log?.taskId ?? null,
+  };
+
   const text = await callClaude(apiKey, {
     brief: b.brief,
     bible: b.bible?.text?.trim() || null,
@@ -95,12 +105,12 @@ export async function generateUnit(client: SupabaseClient, apiKey: string, p: Un
     storySoFar: ctx.storySoFar,
     precedingProse: ctx.precedingProse,
     currentPageLabel: ctx.currentPageLabel,
-  });
+  }, meta);
 
   // Cheap one-paragraph "story so far" summary for later pages' continuity. Best-effort.
   if ((p.level === "page" || mode === "revise") && p.pageId) {
     try {
-      const summary = await summarize(apiKey, text);
+      const summary = await summarize(apiKey, text, meta);
       if (summary) await persistSummary(client, p.pageId, summary);
     } catch (e) {
       console.error("generate-unit-core: summary step failed (non-fatal):", e);
@@ -304,33 +314,22 @@ function variablePart(args: PromptArgs): string {
 }
 
 // ── Claude call ──────────────────────────────────────────────────────────────
-async function callClaude(apiKey: string, args: PromptArgs): Promise<string> {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      max_tokens: args.mode === "revise" || args.level === "page" ? 8000 : 600,
-      system: [{ type: "text", text: args.mode === "revise" ? SYSTEM_REVISE : SYSTEM, cache_control: { type: "ephemeral" } }],
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: stablePrefix(args), cache_control: { type: "ephemeral" } },
-            { type: "text", text: variablePart(args) },
-          ],
-        },
-      ],
-    }),
-  });
+async function callClaude(apiKey: string, args: PromptArgs, meta: CallMeta): Promise<string> {
+  const data = await callClaudeApi(apiKey, {
+    model: MODEL,
+    max_tokens: args.mode === "revise" || args.level === "page" ? 8000 : 600,
+    system: [{ type: "text", text: args.mode === "revise" ? SYSTEM_REVISE : SYSTEM, cache_control: { type: "ephemeral" } }],
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: stablePrefix(args), cache_control: { type: "ephemeral" } },
+          { type: "text", text: variablePart(args) },
+        ],
+      },
+    ],
+  }, meta);
 
-  if (!res.ok) throw new Error(`Claude API ${res.status}: ${(await res.text()).slice(0, 500)}`);
-
-  const data = await res.json();
   const text = (data.content ?? [])
     .filter((b: { type: string }) => b.type === "text")
     .map((b: { text: string }) => b.text)
@@ -348,27 +347,17 @@ function stripLeadingHeadings(text: string): string {
 }
 
 // ── Summary (layer D) ────────────────────────────────────────────────────────
-async function summarize(apiKey: string, prose: string): Promise<string> {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model: SUMMARY_MODEL,
-      max_tokens: 250,
-      system: [{
-        type: "text",
-        text: "Summarize this page of a book in 1-2 sentences: what happens and any new facts (characters, places, changes in state) a later page would need to stay consistent. Plain text only, no preamble.",
-        cache_control: { type: "ephemeral" },
-      }],
-      messages: [{ role: "user", content: prose.slice(0, 12000) }],
-    }),
-  });
-  if (!res.ok) throw new Error(`summary API ${res.status}`);
-  const data = await res.json();
+async function summarize(apiKey: string, prose: string, meta: CallMeta): Promise<string> {
+  const data = await callClaudeApi(apiKey, {
+    model: SUMMARY_MODEL,
+    max_tokens: 250,
+    system: [{
+      type: "text",
+      text: "Summarize this page of a book in 1-2 sentences: what happens and any new facts (characters, places, changes in state) a later page would need to stay consistent. Plain text only, no preamble.",
+      cache_control: { type: "ephemeral" },
+    }],
+    messages: [{ role: "user", content: prose.slice(0, 12000) }],
+  }, { ...meta, fn: "summarize" });
   return (data.content ?? [])
     .filter((b: { type: string }) => b.type === "text")
     .map((b: { text: string }) => b.text)
