@@ -26,6 +26,7 @@ interface AiCall {
   task_id: number | null;
   fn: string;
   source: string;
+  status: string;
   model: string | null;
   system: string | null;
   input: unknown;
@@ -103,7 +104,13 @@ export default function AiCalls() {
     setLoading(false);
   };
 
-  useEffect(() => { load(); }, []);
+  // Load on mount, then poll so calls from an in-flight task (eval, scan, revise build…) appear
+  // without a manual reload. load() never flips `loading`, so the poll updates silently.
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 4000);
+    return () => clearInterval(t);
+  }, []);
 
   const fns = useMemo(() => Array.from(new Set(calls.map((c) => c.fn))).sort(), [calls]);
   const visible = fnFilter === "all" ? calls : calls.filter((c) => c.fn === fnFilter);
@@ -186,14 +193,22 @@ export default function AiCalls() {
               return (
                 <TableRow key={c.id} className="cursor-pointer" onClick={() => setSelected(c)}>
                   <TableCell className="tabular-nums text-muted-foreground">{c.id}</TableCell>
-                  <TableCell className="font-medium">{c.fn}{c.error && <Badge variant="destructive" className="ml-2 text-xs">error</Badge>}</TableCell>
+                  <TableCell className="font-medium">
+                    {c.fn}
+                    {c.status === "running" && (
+                      <Badge variant="outline" className="ml-2 text-xs gap-1">
+                        <Loader2 className="h-3 w-3 animate-spin" />running
+                      </Badge>
+                    )}
+                    {c.error && <Badge variant="destructive" className="ml-2 text-xs">error</Badge>}
+                  </TableCell>
                   <TableCell><Badge variant={c.source === "bridge" ? "outline" : "secondary"} className="text-xs">{c.source}</Badge></TableCell>
                   <TableCell className="text-muted-foreground text-xs">{c.model}</TableCell>
                   <TableCell className="text-right tabular-nums text-xs text-muted-foreground">
                     {c.input_tokens != null ? `${c.input_tokens}/${c.output_tokens}` : "—"}
                   </TableCell>
                   <TableCell className="text-right tabular-nums text-xs text-muted-foreground">
-                    {c.latency_ms != null ? `${(c.latency_ms / 1000).toFixed(1)}s` : "—"}
+                    {c.status === "running" ? <Loader2 className="h-3.5 w-3.5 animate-spin inline" /> : c.latency_ms != null ? `${(c.latency_ms / 1000).toFixed(1)}s` : "—"}
                   </TableCell>
                   <TableCell>
                     {ev ? (

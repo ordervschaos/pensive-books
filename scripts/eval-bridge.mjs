@@ -23,6 +23,10 @@ const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const reportsDir = join(repoRoot, "reports");
 const PORT = Number(process.env.EVAL_BRIDGE_PORT || 8787);
 const CLAUDE_FLAGS = (process.env.EVAL_CLAUDE_FLAGS || "--dangerously-skip-permissions").split(" ").filter(Boolean);
+// `claude -p` latency on the CC subscription is congestion-bound and wildly variable (2–21 min,
+// occasionally a dropped socket). Past this many ms we kill the child and fail fast so the caller
+// can retry/re-roll instead of stranding (and never leave a zombie 'running' ai_calls row). 0 = off.
+const CLAUDE_TIMEOUT_MS = Number(process.env.EVAL_CLAUDE_TIMEOUT_MS ?? 6 * 60 * 1000);
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -227,6 +231,7 @@ async function logAiCall({ bookId = null, fn, prompt = null, output = null, erro
         output,
         latency_ms: latencyMs,
         error,
+        status: error ? "error" : "done",
       }),
     });
   } catch (e) {
@@ -234,37 +239,103 @@ async function logAiCall({ bookId = null, fn, prompt = null, output = null, erro
   }
 }
 
+// Insert a 'running' row BEFORE the local claude run, so a long call is visible in /admin while it's
+// still going (the bridge otherwise only logs on subprocess close). Returns the row id (or null →
+// fall back to a single terminal insert via logAiCall). Best-effort.
+async function logAiStart({ bookId = null, fn, prompt = null }) {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/ai_calls`, {
+      method: "POST",
+      headers: { ...sbHeaders, "content-type": "application/json", Prefer: "return=representation" },
+      body: JSON.stringify({
+        book_id: bookId,
+        fn,
+        source: "bridge",
+        model: "claude-code-local",
+        input: prompt == null ? null : [{ role: "user", content: prompt }],
+        status: "running",
+      }),
+    });
+    const rows = await res.json().catch(() => []);
+    return Array.isArray(rows) && rows[0]?.id != null ? rows[0].id : null;
+  } catch (e) {
+    console.error("bridge ai_calls start log failed (non-fatal):", e.message);
+    return null;
+  }
+}
+
+async function logAiEnd(id, { output = null, error = null, latencyMs = null }) {
+  if (id == null) return;
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/ai_calls?id=eq.${id}`, {
+      method: "PATCH",
+      headers: { ...sbHeaders, "content-type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify({ output, error, latency_ms: latencyMs, status: error ? "error" : "done" }),
+    });
+  } catch (e) {
+    console.error("bridge ai_calls end log failed (non-fatal):", e.message);
+  }
+}
+
 // ── Claude runner ─────────────────────────────────────────────────────────────
 // captureStdout=true: buffer + return stdout as `text`.
 // captureStdout=false (eval): just pipe to terminal; result comes from a file.
 // `meta` ({ fn, bookId }), when given, logs the call (prompt + output/error + latency) to ai_calls.
-function runClaude(prompt, captureStdout = false, meta = null) {
+// `noTools`: run `claude -p` with the agentic toolset DISABLED (`--tools ""`), so it does a single
+// model completion instead of reading the repo / multi-step tool work. The prompt-based generators
+// (scaffold, bible, replan, unit, summarize) are self-contained "return this answer" prompts — with
+// tools on, claude treats them as agentic tasks and can run for many minutes or hang (the cause of
+// the 7–30 min replan runs + `exit 1`). The judge and the `/evaluate-book` slash command DO want
+// tools (they read the repo), so they leave noTools off.
+function runClaude(prompt, captureStdout = false, meta = null, { noTools = false } = {}) {
   return new Promise((resolve) => {
     const started = Date.now();
-    const args = ["-p", prompt, ...CLAUDE_FLAGS];
+    // Insert the 'running' row up front so the call shows in /admin while in flight (the close
+    // handler below updates it to done/error). logId is a promise; close() awaits it.
+    const logIdP = meta ? logAiStart({ ...meta, prompt }) : Promise.resolve(null);
+    const args = ["-p", prompt, ...CLAUDE_FLAGS, ...(noTools ? ["--tools", ""] : [])];
     console.log(`→ claude -p "${prompt.slice(0, 80).replace(/\n/g, " ")}…"`);
-    const child = spawn("claude", args, { cwd: repoRoot });
+    // stdin = /dev/null so `claude -p` gets immediate EOF instead of waiting on an empty pipe
+    // ("no stdin data received in 3s…"); the prompt is passed via the -p arg, not stdin.
+    const child = spawn("claude", args, { cwd: repoRoot, stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "", stderr = "";
     child.stdout.on("data", (d) => {
       if (captureStdout) stdout += d;
       process.stdout.write(d);
     });
     child.stderr.on("data", (d) => (stderr += d));
-    child.on("error", (e) => {
-      const error = `failed to spawn claude: ${e.message}`;
-      if (meta) logAiCall({ ...meta, prompt, error, latencyMs: Date.now() - started });
-      resolve({ error });
-    });
-    child.on("close", (code) => {
+
+    // Settle exactly once — a timeout kill triggers 'close' too, so guard against a double-resolve.
+    let settled = false;
+    const finish = async ({ output = null, error = null }) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
       const latencyMs = Date.now() - started;
-      if (code !== 0) {
-        const error = `claude exited ${code}: ${stderr.slice(-500)}`;
-        if (meta) logAiCall({ ...meta, prompt, error, latencyMs });
-        return resolve({ error });
+      if (meta) {
+        const id = await logIdP;
+        if (id != null) await logAiEnd(id, { output, error, latencyMs });
+        else logAiCall({ ...meta, prompt, output, error, latencyMs }); // start insert didn't land
       }
-      const text = stdout.trim();
-      if (meta) logAiCall({ ...meta, prompt, output: text, latencyMs });
-      resolve({ text });
+      resolve(error != null ? { error } : { text: output });
+    };
+
+    let timedOut = false;
+    const timer = CLAUDE_TIMEOUT_MS > 0
+      ? setTimeout(() => {
+          timedOut = true;
+          console.warn(`✗ claude -p exceeded ${CLAUDE_TIMEOUT_MS / 1000}s — killing`);
+          child.kill("SIGTERM");
+          setTimeout(() => child.kill("SIGKILL"), 2000).unref?.();
+        }, CLAUDE_TIMEOUT_MS)
+      : null;
+    timer?.unref?.(); // don't keep the bridge alive just for this timer
+
+    child.on("error", (e) => finish({ error: `failed to spawn claude: ${e.message}` }));
+    child.on("close", (code) => {
+      if (timedOut) return finish({ error: `claude timed out after ${CLAUDE_TIMEOUT_MS / 1000}s` });
+      if (code !== 0) return finish({ error: `claude exited ${code}: ${stderr.slice(-500)}` });
+      finish({ output: stdout.trim() });
     });
   });
 }
@@ -343,7 +414,7 @@ ${briefContext(book.brief)}
 
 Design the scaffold. JSON only.`;
 
-  const out = await runClaude(prompt, true, { fn: "generate-scaffold", bookId });
+  const out = await runClaude(prompt, true, { fn: "generate-scaffold", bookId }, { noTools: true });
   if (out.error) return out;
 
   let raw = out.text.trim();
@@ -390,7 +461,7 @@ ${briefContext(book.brief)}
 
 Draft the bible. Markdown only.`;
 
-  const out = await runClaude(prompt, true, { fn: "generate-bible", bookId });
+  const out = await runClaude(prompt, true, { fn: "generate-bible", bookId }, { noTools: true });
   if (out.error) return out;
   const text = out.text.trim();
   if (!text) return { error: "Claude returned no text content" };
@@ -535,7 +606,7 @@ ${outlineContext(pages)}${instr ? `\n\nAUTHOR'S INSTRUCTION (primary directive):
 
 Produce the revision plan. JSON only.`;
 
-  const out = await runClaude(prompt, true, { fn: "replan-from-notes", bookId });
+  const out = await runClaude(prompt, true, { fn: "replan-from-notes", bookId }, { noTools: true });
   if (out.error) return out;
   return parsePlan(out.text, pages);
 }
@@ -654,7 +725,7 @@ async function runUnit(body) {
     );
   }
 
-  const out = await runClaude(parts.join("\n"), true, { fn: "generate-unit", bookId });
+  const out = await runClaude(parts.join("\n"), true, { fn: "generate-unit", bookId }, { noTools: true });
   if (out.error) return out;
 
   let text = out.text.trim();
@@ -667,7 +738,7 @@ async function runUnit(body) {
   // Persist a "story so far" summary for this page (best-effort), like the edge function.
   if (level === "page" && pageId) {
     try {
-      const s = await runClaude(`Summarize this page of a book in 1-2 sentences: what happens and any new facts (characters, places, changes in state) a later page would need to stay consistent. Plain text only, no preamble.\n\n${text.slice(0, 12000)}`, true, { fn: "summarize", bookId });
+      const s = await runClaude(`Summarize this page of a book in 1-2 sentences: what happens and any new facts (characters, places, changes in state) a later page would need to stay consistent. Plain text only, no preamble.\n\n${text.slice(0, 12000)}`, true, { fn: "summarize", bookId }, { noTools: true });
       const summary = s.text?.trim();
       if (summary) await persistSummary(pageId, summary);
     } catch (e) {

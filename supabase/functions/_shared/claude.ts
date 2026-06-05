@@ -32,6 +32,10 @@ export async function callClaude(
   // deno-lint-ignore no-explicit-any
 ): Promise<any> {
   const started = Date.now();
+  // Insert a 'running' row BEFORE the call so it's visible in /admin while in flight. Awaited
+  // (we need the id to close it out) but best-effort — a null id just means we fall back to a
+  // single insert at the end, the pre-existing behavior.
+  const logId = await logStart(body, meta);
   let raw = "";
   // deno-lint-ignore no-explicit-any
   let data: any = null;
@@ -55,8 +59,8 @@ export async function callClaude(
   }
   const latencyMs = Date.now() - started;
 
-  // Fire-and-forget the log; never let it throw into the caller.
-  void logCall(body, data, meta, latencyMs, errMsg);
+  // Fire-and-forget the terminal log; never let it throw into the caller.
+  void logEnd(logId, body, data, meta, latencyMs, errMsg);
 
   if (errMsg) throw new Error(errMsg);
   return data;
@@ -81,7 +85,32 @@ function systemText(system: unknown): string | null {
   return JSON.stringify(system);
 }
 
-async function logCall(
+// Insert the 'running' row (prompt context known up front). Returns the row id, or null if the
+// insert failed — callers fall back to a single terminal insert so logging never blocks a call.
+async function logStart(body: Record<string, unknown>, meta: CallMeta): Promise<number | null> {
+  try {
+    const { data, error } = await serviceClient().from("ai_calls").insert({
+      book_id: meta.bookId ?? null,
+      task_table: meta.taskTable ?? null,
+      task_id: meta.taskId ?? null,
+      fn: meta.fn,
+      source: meta.source ?? "edge",
+      model: (body.model as string) ?? null,
+      system: systemText(body.system),
+      input: body.messages ?? null,
+      status: "running",
+    }).select("id").single();
+    if (error) { console.error("ai_calls start log failed (non-fatal):", error.message); return null; }
+    return (data as { id: number }).id;
+  } catch (e) {
+    console.error("ai_calls start log threw (non-fatal):", (e as Error)?.message ?? e);
+    return null;
+  }
+}
+
+// Close out the call: UPDATE the running row (or INSERT a complete one if the start insert failed).
+async function logEnd(
+  logId: number | null,
   body: Record<string, unknown>,
   // deno-lint-ignore no-explicit-any
   data: any,
@@ -89,7 +118,22 @@ async function logCall(
   latencyMs: number,
   errMsg: string | null,
 ): Promise<void> {
+  const terminal = {
+    output: data ? textFromContent(data) : null,
+    input_tokens: data?.usage?.input_tokens ?? null,
+    output_tokens: data?.usage?.output_tokens ?? null,
+    latency_ms: latencyMs,
+    stop_reason: data?.stop_reason ?? null,
+    error: errMsg,
+    status: errMsg ? "error" : "done",
+  };
   try {
+    if (logId != null) {
+      const { error } = await serviceClient().from("ai_calls").update(terminal).eq("id", logId);
+      if (error) console.error("ai_calls end log failed (non-fatal):", error.message);
+      return;
+    }
+    // Fallback: the start insert didn't land — record the whole call in one row.
     const { error } = await serviceClient().from("ai_calls").insert({
       book_id: meta.bookId ?? null,
       task_table: meta.taskTable ?? null,
@@ -99,15 +143,10 @@ async function logCall(
       model: (body.model as string) ?? null,
       system: systemText(body.system),
       input: body.messages ?? null,
-      output: data ? textFromContent(data) : null,
-      input_tokens: data?.usage?.input_tokens ?? null,
-      output_tokens: data?.usage?.output_tokens ?? null,
-      latency_ms: latencyMs,
-      stop_reason: data?.stop_reason ?? null,
-      error: errMsg,
+      ...terminal,
     });
     if (error) console.error("ai_calls log failed (non-fatal):", error.message);
   } catch (e) {
-    console.error("ai_calls log threw (non-fatal):", (e as Error)?.message ?? e);
+    console.error("ai_calls end log threw (non-fatal):", (e as Error)?.message ?? e);
   }
 }
