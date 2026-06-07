@@ -21,6 +21,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { runInBackground, serviceClient } from "../_shared/task.ts";
+import { callClaude as callClaudeApi, type CallMeta } from "../_shared/claude.ts";
 import { tiptapToText } from "../_shared/words.ts";
 
 const BRIEF_MODEL = "claude-opus-4-7";              // drafting from the brief — richer invention
@@ -115,9 +116,10 @@ Deno.serve(async (req: Request) => {
     if (insertError || !gen) return json({ error: "Could not start bible draft" }, 500);
 
     runInBackground(service, "book_generations", gen.id, "generate-bible", async () => {
+      const meta: CallMeta = { fn: "generate-bible", bookId, taskTable: "book_generations", taskId: gen.id };
       const text = source === "manuscript"
-        ? await scanFromManuscript(apiKey, bookName, brief, pages!)
-        : await draftFromBrief(apiKey, bookName, brief);
+        ? await scanFromManuscript(apiKey, bookName, brief, pages!, meta)
+        : await draftFromBrief(apiKey, bookName, brief, meta);
       return { status: "ready", result: { text } };
     });
 
@@ -183,17 +185,18 @@ function bookContext(pages: PageRow[]): string {
     .join("\n\n");
 }
 
-async function draftFromBrief(apiKey: string, bookName: string, brief: Brief | null): Promise<string> {
+async function draftFromBrief(apiKey: string, bookName: string, brief: Brief | null, meta: CallMeta): Promise<string> {
   return callClaude(apiKey, BRIEF_MODEL, BRIEF_SYSTEM, [
     { role: "user", content: `BOOK: ${bookName}\n\nBRIEF:\n${briefContext(brief)}\n\nDraft the bible. Markdown only.` },
-  ]);
+  ], meta);
 }
 
 async function scanFromManuscript(
   apiKey: string,
   bookName: string,
   brief: Brief | null,
-  pages: PageRow[]
+  pages: PageRow[],
+  meta: CallMeta
 ): Promise<string> {
   return callClaude(apiKey, SCAN_MODEL, SCAN_SYSTEM, [
     {
@@ -203,33 +206,23 @@ async function scanFromManuscript(
         `\n\nTHE MANUSCRIPT:\n${bookContext(pages)}` +
         `\n\nExtract the bible from what the prose establishes. Markdown only.`,
     },
-  ]);
+  ], meta);
 }
 
 async function callClaude(
   apiKey: string,
   model: string,
   system: string,
-  messages: { role: "user"; content: string }[]
+  messages: { role: "user"; content: string }[],
+  meta: CallMeta
 ): Promise<string> {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: 4000,
-      system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
-      messages,
-    }),
-  });
+  const data = await callClaudeApi(apiKey, {
+    model,
+    max_tokens: 4000,
+    system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+    messages,
+  }, meta);
 
-  if (!res.ok) throw new Error(`Claude API ${res.status}: ${(await res.text()).slice(0, 500)}`);
-
-  const data = await res.json();
   const text = (data.content ?? [])
     .filter((b: { type: string }) => b.type === "text")
     .map((b: { text: string }) => b.text)

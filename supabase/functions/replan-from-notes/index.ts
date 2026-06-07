@@ -12,6 +12,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
+import { callClaude as callClaudeApi } from "../_shared/claude.ts";
 
 const MODEL = "claude-opus-4-7";
 
@@ -166,7 +167,8 @@ Deno.serve(async (req: Request) => {
       hasEval ? evaluation! : null,
       instr || null,
       pageCtxMap,
-      contentMap
+      contentMap,
+      bookId
     );
     return json(plan);
   } catch (e) {
@@ -325,39 +327,29 @@ async function callClaude(
   evaluation: EvalResult | null,
   instruction: string | null,
   pageCtxMap: Map<number, { summary: boolean; full: boolean }>,
-  contentMap: Map<number, string>
+  contentMap: Map<number, string>,
+  bookId: number
 ): Promise<RevisionPlan> {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      max_tokens: 16000,
-      thinking: { type: "adaptive" },
-      system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
-      messages: [
-        {
-          role: "user",
-          content:
-            `BOOK: ${bookName}\n\nBRIEF (the voice contract):\n${briefContext(brief)}` +
-            (bible ? `\n\nBOOK BIBLE (established facts):\n${bible}` : "") +
-            `\n\nCURRENT OUTLINE (edit against these real ids):\n${outlineContext(pages, pageCtxMap, contentMap)}` +
-            (threads.length ? `\n\nTRACKED THREADS (keep their setups & payoffs intact):\n${threadsContext(threads)}` : "") +
-            (instruction ? `\n\nAUTHOR'S INSTRUCTION (primary directive):\n${instruction}` : "") +
-            (evaluation ? `\n\nEDITOR'S EVALUATION:\n${evalContext(evaluation)}` : "") +
-            `\n\nProduce the revision plan. JSON only.`,
-        },
-      ],
-    }),
-  });
+  const data = await callClaudeApi(apiKey, {
+    model: MODEL,
+    max_tokens: 16000,
+    thinking: { type: "adaptive" },
+    system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
+    messages: [
+      {
+        role: "user",
+        content:
+          `BOOK: ${bookName}\n\nBRIEF (the voice contract):\n${briefContext(brief)}` +
+          (bible ? `\n\nBOOK BIBLE (established facts):\n${bible}` : "") +
+          `\n\nCURRENT OUTLINE (edit against these real ids):\n${outlineContext(pages, pageCtxMap, contentMap)}` +
+          (threads.length ? `\n\nTRACKED THREADS (keep their setups & payoffs intact):\n${threadsContext(threads)}` : "") +
+          (instruction ? `\n\nAUTHOR'S INSTRUCTION (primary directive):\n${instruction}` : "") +
+          (evaluation ? `\n\nEDITOR'S EVALUATION:\n${evalContext(evaluation)}` : "") +
+          `\n\nProduce the revision plan. JSON only.`,
+      },
+    ],
+  }, { fn: "replan-from-notes", bookId });
 
-  if (!res.ok) throw new Error(`Claude API ${res.status}: ${(await res.text()).slice(0, 500)}`);
-
-  const data = await res.json();
   const text = (data.content ?? [])
     .filter((b: { type: string }) => b.type === "text")
     .map((b: { text: string }) => b.text)

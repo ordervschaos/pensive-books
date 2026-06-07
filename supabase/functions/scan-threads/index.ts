@@ -24,6 +24,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { cumulativeWordOffsets, tiptapToText } from "../_shared/words.ts";
 import { captureException, isBillingError } from "../_shared/sentry.ts";
 import { runInBackground, serviceClient } from "../_shared/task.ts";
+import { callClaude as callClaudeApi, type CallMeta } from "../_shared/claude.ts";
 
 const SCAN_MODEL = "claude-haiku-4-5-20251001";
 const PER_PAGE_PROSE_CAP = 6000; // chars — Haiku context is smaller than Opus
@@ -180,7 +181,7 @@ Deno.serve(async (req: Request) => {
     if (scanInsertError || !scanRow) return json({ error: "Could not start scan" }, 500);
 
     runInBackground(service, "book_thread_scans", scanRow.id, "scan-threads", async () => {
-      const { summary, events } = await runScan(apiKey, pageRows, registry, existingCounts);
+      const { summary, events } = await runScan(apiKey, pageRows, registry, existingCounts, bookId, scanRow.id);
       return { status: "pending_review", summary, changes: events };
     });
 
@@ -203,8 +204,11 @@ async function runScan(
   apiKey: string,
   pageRows: PageRow[],
   registry: RegistryEntry[],
-  existingCounts: Map<string, number>
+  existingCounts: Map<string, number>,
+  bookId: number,
+  scanId: number
 ): Promise<{ summary: string; events: AnchorEvent[] }> {
+  const meta: CallMeta = { fn: "scan-page", bookId, taskTable: "book_thread_scans", taskId: scanId };
   const { positions, total } = cumulativeWordOffsets(pageRows);
 
   // Raw events collected during the loop (word offsets resolved after).
@@ -227,7 +231,7 @@ async function runScan(
 
     let result: PageResult;
     try {
-      result = await callHaiku(apiKey, page, prose, registry);
+      result = await callHaiku(apiKey, page, prose, registry, meta);
     } catch (e) {
       // A single page failure is non-fatal: log and continue the loop.
       console.error(`scan-threads: page ${page.id} skipped:`, e);
@@ -337,7 +341,8 @@ async function callHaiku(
   apiKey: string,
   page: PageRow,
   prose: string,
-  registry: RegistryEntry[]
+  registry: RegistryEntry[],
+  meta: CallMeta
 ): Promise<PageResult> {
   const registryDigest = registry.length === 0
     ? "(none yet)"
@@ -353,33 +358,15 @@ async function callHaiku(
     `THREAD REGISTRY:\n${registryDigest}\n\n` +
     `PAGE [id=${page.id}] "${page.title || "(untitled)"}":\n${capped}\n\nJSON only.`;
 
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model: SCAN_MODEL,
-      max_tokens: 1024,
-      system: PAGE_SYSTEM,
-      messages: [{ role: "user", content: userMsg }],
-    }),
-  });
+  // Billing detection is preserved: callClaudeApi throws "Claude API <status>: <body>" with the raw
+  // body, and isBillingError() (used by the task runner) matches "credit balance" in that message.
+  const data = await callClaudeApi(apiKey, {
+    model: SCAN_MODEL,
+    max_tokens: 1024,
+    system: PAGE_SYSTEM,
+    messages: [{ role: "user", content: userMsg }],
+  }, meta);
 
-  if (!res.ok) {
-    const body = await res.text();
-    let parsed: { error?: { message?: string } } = {};
-    try { parsed = JSON.parse(body); } catch { /* ignore */ }
-    const msg = parsed.error?.message ?? body;
-    const err = new Error(`Claude API ${res.status}: ${msg.slice(0, 500)}`);
-    if (parsed.error?.message?.toLowerCase().includes("credit balance"))
-      (err as Error & { billing?: boolean }).billing = true;
-    throw err;
-  }
-
-  const data = await res.json();
   const text = (data.content ?? [])
     .filter((b: { type: string }) => b.type === "text")
     .map((b: { text: string }) => b.text)

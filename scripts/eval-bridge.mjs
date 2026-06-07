@@ -23,6 +23,10 @@ const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const reportsDir = join(repoRoot, "reports");
 const PORT = Number(process.env.EVAL_BRIDGE_PORT || 8787);
 const CLAUDE_FLAGS = (process.env.EVAL_CLAUDE_FLAGS || "--dangerously-skip-permissions").split(" ").filter(Boolean);
+// `claude -p` latency on the CC subscription is congestion-bound and wildly variable (2–21 min,
+// occasionally a dropped socket). Past this many ms we kill the child and fail fast so the caller
+// can retry/re-roll instead of stranding (and never leave a zombie 'running' ai_calls row). 0 = off.
+const CLAUDE_TIMEOUT_MS = Number(process.env.EVAL_CLAUDE_TIMEOUT_MS ?? 6 * 60 * 1000);
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -208,24 +212,130 @@ function readBody(req) {
   });
 }
 
+// Log one AI call to ai_calls (source='bridge') so local Claude-Code runs are analyzable alongside
+// prod's edge calls. The bridge bakes the system prompt into the user message, so `system` stays
+// null and the assembled prompt goes in `input` (same messages shape the edge rows use). Best-effort
+// — a logging failure must never break the bridge response. Links to a task row are omitted here
+// (dev convenience); prod records the full (task_table, task_id) join.
+async function logAiCall({ bookId = null, fn, prompt = null, output = null, error = null, latencyMs = null }) {
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/ai_calls`, {
+      method: "POST",
+      headers: { ...sbHeaders, "content-type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify({
+        book_id: bookId,
+        fn,
+        source: "bridge",
+        model: "claude-code-local",
+        input: prompt == null ? null : [{ role: "user", content: prompt }],
+        output,
+        latency_ms: latencyMs,
+        error,
+        status: error ? "error" : "done",
+      }),
+    });
+  } catch (e) {
+    console.error("bridge ai_calls log failed (non-fatal):", e.message);
+  }
+}
+
+// Insert a 'running' row BEFORE the local claude run, so a long call is visible in /admin while it's
+// still going (the bridge otherwise only logs on subprocess close). Returns the row id (or null →
+// fall back to a single terminal insert via logAiCall). Best-effort.
+async function logAiStart({ bookId = null, fn, prompt = null }) {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/ai_calls`, {
+      method: "POST",
+      headers: { ...sbHeaders, "content-type": "application/json", Prefer: "return=representation" },
+      body: JSON.stringify({
+        book_id: bookId,
+        fn,
+        source: "bridge",
+        model: "claude-code-local",
+        input: prompt == null ? null : [{ role: "user", content: prompt }],
+        status: "running",
+      }),
+    });
+    const rows = await res.json().catch(() => []);
+    return Array.isArray(rows) && rows[0]?.id != null ? rows[0].id : null;
+  } catch (e) {
+    console.error("bridge ai_calls start log failed (non-fatal):", e.message);
+    return null;
+  }
+}
+
+async function logAiEnd(id, { output = null, error = null, latencyMs = null }) {
+  if (id == null) return;
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/ai_calls?id=eq.${id}`, {
+      method: "PATCH",
+      headers: { ...sbHeaders, "content-type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify({ output, error, latency_ms: latencyMs, status: error ? "error" : "done" }),
+    });
+  } catch (e) {
+    console.error("bridge ai_calls end log failed (non-fatal):", e.message);
+  }
+}
+
 // ── Claude runner ─────────────────────────────────────────────────────────────
 // captureStdout=true: buffer + return stdout as `text`.
 // captureStdout=false (eval): just pipe to terminal; result comes from a file.
-function runClaude(prompt, captureStdout = false) {
+// `meta` ({ fn, bookId }), when given, logs the call (prompt + output/error + latency) to ai_calls.
+// `noTools`: run `claude -p` with the agentic toolset DISABLED (`--tools ""`), so it does a single
+// model completion instead of reading the repo / multi-step tool work. The prompt-based generators
+// (scaffold, bible, replan, unit, summarize) are self-contained "return this answer" prompts — with
+// tools on, claude treats them as agentic tasks and can run for many minutes or hang (the cause of
+// the 7–30 min replan runs + `exit 1`). The judge and the `/evaluate-book` slash command DO want
+// tools (they read the repo), so they leave noTools off.
+function runClaude(prompt, captureStdout = false, meta = null, { noTools = false } = {}) {
   return new Promise((resolve) => {
-    const args = ["-p", prompt, ...CLAUDE_FLAGS];
+    const started = Date.now();
+    // Insert the 'running' row up front so the call shows in /admin while in flight (the close
+    // handler below updates it to done/error). logId is a promise; close() awaits it.
+    const logIdP = meta ? logAiStart({ ...meta, prompt }) : Promise.resolve(null);
+    const args = ["-p", prompt, ...CLAUDE_FLAGS, ...(noTools ? ["--tools", ""] : [])];
     console.log(`→ claude -p "${prompt.slice(0, 80).replace(/\n/g, " ")}…"`);
-    const child = spawn("claude", args, { cwd: repoRoot });
+    // stdin = /dev/null so `claude -p` gets immediate EOF instead of waiting on an empty pipe
+    // ("no stdin data received in 3s…"); the prompt is passed via the -p arg, not stdin.
+    const child = spawn("claude", args, { cwd: repoRoot, stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "", stderr = "";
     child.stdout.on("data", (d) => {
       if (captureStdout) stdout += d;
       process.stdout.write(d);
     });
     child.stderr.on("data", (d) => (stderr += d));
-    child.on("error", (e) => resolve({ error: `failed to spawn claude: ${e.message}` }));
+
+    // Settle exactly once — a timeout kill triggers 'close' too, so guard against a double-resolve.
+    let settled = false;
+    const finish = async ({ output = null, error = null }) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      const latencyMs = Date.now() - started;
+      if (meta) {
+        const id = await logIdP;
+        if (id != null) await logAiEnd(id, { output, error, latencyMs });
+        else logAiCall({ ...meta, prompt, output, error, latencyMs }); // start insert didn't land
+      }
+      resolve(error != null ? { error } : { text: output });
+    };
+
+    let timedOut = false;
+    const timer = CLAUDE_TIMEOUT_MS > 0
+      ? setTimeout(() => {
+          timedOut = true;
+          console.warn(`✗ claude -p exceeded ${CLAUDE_TIMEOUT_MS / 1000}s — killing`);
+          child.kill("SIGTERM");
+          setTimeout(() => child.kill("SIGKILL"), 2000).unref?.();
+        }, CLAUDE_TIMEOUT_MS)
+      : null;
+    timer?.unref?.(); // don't keep the bridge alive just for this timer
+
+    child.on("error", (e) => finish({ error: `failed to spawn claude: ${e.message}` }));
     child.on("close", (code) => {
-      if (code !== 0) return resolve({ error: `claude exited ${code}: ${stderr.slice(-500)}` });
-      resolve({ text: stdout.trim() });
+      if (timedOut) return finish({ error: `claude timed out after ${CLAUDE_TIMEOUT_MS / 1000}s` });
+      if (code !== 0) return finish({ error: `claude exited ${code}: ${stderr.slice(-500)}` });
+      finish({ output: stdout.trim() });
     });
   });
 }
@@ -304,7 +414,7 @@ ${briefContext(book.brief)}
 
 Design the scaffold. JSON only.`;
 
-  const out = await runClaude(prompt, true);
+  const out = await runClaude(prompt, true, { fn: "generate-scaffold", bookId }, { noTools: true });
   if (out.error) return out;
 
   let raw = out.text.trim();
@@ -351,7 +461,7 @@ ${briefContext(book.brief)}
 
 Draft the bible. Markdown only.`;
 
-  const out = await runClaude(prompt, true);
+  const out = await runClaude(prompt, true, { fn: "generate-bible", bookId }, { noTools: true });
   if (out.error) return out;
   const text = out.text.trim();
   if (!text) return { error: "Claude returned no text content" };
@@ -496,7 +606,7 @@ ${outlineContext(pages)}${instr ? `\n\nAUTHOR'S INSTRUCTION (primary directive):
 
 Produce the revision plan. JSON only.`;
 
-  const out = await runClaude(prompt, true);
+  const out = await runClaude(prompt, true, { fn: "replan-from-notes", bookId }, { noTools: true });
   if (out.error) return out;
   return parsePlan(out.text, pages);
 }
@@ -615,7 +725,7 @@ async function runUnit(body) {
     );
   }
 
-  const out = await runClaude(parts.join("\n"), true);
+  const out = await runClaude(parts.join("\n"), true, { fn: "generate-unit", bookId }, { noTools: true });
   if (out.error) return out;
 
   let text = out.text.trim();
@@ -628,7 +738,7 @@ async function runUnit(body) {
   // Persist a "story so far" summary for this page (best-effort), like the edge function.
   if (level === "page" && pageId) {
     try {
-      const s = await runClaude(`Summarize this page of a book in 1-2 sentences: what happens and any new facts (characters, places, changes in state) a later page would need to stay consistent. Plain text only, no preamble.\n\n${text.slice(0, 12000)}`, true);
+      const s = await runClaude(`Summarize this page of a book in 1-2 sentences: what happens and any new facts (characters, places, changes in state) a later page would need to stay consistent. Plain text only, no preamble.\n\n${text.slice(0, 12000)}`, true, { fn: "summarize", bookId }, { noTools: true });
       const summary = s.text?.trim();
       if (summary) await persistSummary(pageId, summary);
     } catch (e) {
@@ -637,6 +747,117 @@ async function runUnit(body) {
   }
 
   return { text };
+}
+
+// ── /eval-call — on-demand judge of one logged ai_call (phase 2) ───────────────
+// Mirrors supabase/functions/evaluate-ai-call, but runs via local Claude Code — which has the repo,
+// so the judge can ground "code" amendments in the real prompt-assembly files. Writes the same
+// ai_call_evals row the edge function writes, so analysis is identical across backends.
+const JUDGE_MODEL_LOCAL = "claude-code-local";
+
+// Where each fn assembles its prompt — given to the local judge so "code" amendments can be specific.
+const FN_PROMPT_SOURCE = {
+  "generate-unit": "supabase/functions/_shared/generate-unit-core.ts (and scripts/eval-bridge.mjs runUnit)",
+  "summarize": "supabase/functions/_shared/generate-unit-core.ts (summarize)",
+  "generate-scaffold": "supabase/functions/generate-scaffold/index.ts (and scripts/eval-bridge.mjs runScaffold)",
+  "generate-bible": "supabase/functions/generate-bible/index.ts (and scripts/eval-bridge.mjs runBible)",
+  "replan-from-notes": "supabase/functions/replan-from-notes/index.ts (and scripts/eval-bridge.mjs runReplan)",
+  "scan-page": "supabase/functions/scan-threads/index.ts (callHaiku)",
+  "evaluate-book": "supabase/functions/evaluate-book/index.ts (runTriage/runGroup/runVerdict)",
+};
+
+async function fetchAiCall(id) {
+  const r = await fetch(
+    `${SUPABASE_URL}/rest/v1/ai_calls?id=eq.${id}&select=id,book_id,fn,system,input,output`,
+    { headers: sbHeaders }
+  );
+  if (!r.ok) throw new Error(`Supabase ${r.status}: ${await r.text()}`);
+  return (await r.json())?.[0] ?? null;
+}
+
+async function insertCallEval(call) {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/ai_call_evals`, {
+    method: "POST",
+    headers: { ...sbHeaders, "content-type": "application/json", Prefer: "return=representation" },
+    body: JSON.stringify({ ai_call_id: call.id, book_id: call.book_id, status: "running", judge_model: JUDGE_MODEL_LOCAL }),
+  });
+  if (!r.ok) throw new Error(`Supabase ${r.status}: ${await r.text()}`);
+  return (await r.json())?.[0] ?? null;
+}
+
+async function updateCallEval(id, patch) {
+  await fetch(`${SUPABASE_URL}/rest/v1/ai_call_evals?id=eq.${id}`, {
+    method: "PATCH",
+    headers: { ...sbHeaders, "content-type": "application/json", Prefer: "return=minimal" },
+    body: JSON.stringify(patch),
+  });
+}
+
+// The logged input is a messages array; flatten it back to readable context for the judge.
+function contextFromInput(input) {
+  if (input == null) return "(no context recorded)";
+  if (typeof input === "string") return input;
+  if (!Array.isArray(input)) return JSON.stringify(input);
+  return input
+    .map((m) => {
+      const c = m?.content;
+      if (typeof c === "string") return c;
+      if (Array.isArray(c)) return c.map((b) => (typeof b === "string" ? b : b?.text ?? "")).join("\n");
+      return "";
+    })
+    .join("\n\n");
+}
+
+function parseJudgement(text) {
+  let raw = text.trim();
+  const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fence) raw = fence[1].trim();
+  else {
+    const first = raw.indexOf("{");
+    const last = raw.lastIndexOf("}");
+    if (first !== -1 && last > first) raw = raw.slice(first, last + 1);
+  }
+  const parsed = JSON.parse(raw);
+  const s = parsed.scores ?? {};
+  const clamp = (v) => { const n = Math.round(Number(v)); return Number.isFinite(n) ? Math.min(5, Math.max(1, n)) : 0; };
+  return {
+    scores: {
+      objective_fidelity: clamp(s.objective_fidelity),
+      context_use: clamp(s.context_use),
+      instruction_following: clamp(s.instruction_following),
+      quality: clamp(s.quality),
+    },
+    verdict: String(parsed.verdict ?? "").trim(),
+    findings: Array.isArray(parsed.findings) ? parsed.findings : [],
+    amendments: Array.isArray(parsed.amendments) ? parsed.amendments : [],
+  };
+}
+
+async function runCallEval(call) {
+  const ctx = contextFromInput(call.input);
+  const source = FN_PROMPT_SOURCE[call.fn] ?? `supabase/functions/${call.fn}/index.ts`;
+  const prompt =
+    `You are a strict evaluation judge for an AI book-writing system. You ALSO have access to this ` +
+    `repository, so your "code" amendments can name the real file/function to change.\n\n` +
+    `You are given one AI call: the INSTRUCTIONS (system), the CONTEXT (the assembled prompt), and ` +
+    `the OUTPUT it produced. Judge ONLY whether the output served the instructions and context it ` +
+    `was given.\n\n` +
+    `Score each 1-5 (5=excellent): objective_fidelity (achieved what was asked), context_use ` +
+    `(honored the bible/continuity/outline given), instruction_following (obeyed format/length/` +
+    `"no headings"/JSON-only constraints), quality (well-crafted for its kind).\n\n` +
+    `For "code"-target amendments, you MAY read the prompt-assembly code for this call type ` +
+    `(fn="${call.fn}"): ${source}. Name the specific function/lines to change.\n\n` +
+    `Output ONLY this JSON (no prose, no fences):\n` +
+    `{ "scores": { "objective_fidelity": <1-5>, "context_use": <1-5>, "instruction_following": <1-5>, ` +
+    `"quality": <1-5> }, "verdict": "<one short line>", "findings": [ { "criterion": "<one of the ` +
+    `four>", "severity": "high|medium|low", "note": "<problem>", "evidence": "<quote from output>" } ], ` +
+    `"amendments": [ { "target": "output|prompt|code", "suggestion": "<fix>", "rationale": "<why>" } ] }\n\n` +
+    `CALL TYPE (fn): ${call.fn}\n\nINSTRUCTIONS (system):\n${call.system ?? "(none — baked into the context)"}\n\n` +
+    `CONTEXT:\n"""\n${ctx.slice(0, 24000)}\n"""\n\nOUTPUT:\n"""\n${(call.output ?? "(no output)").slice(0, 16000)}\n"""\n\nJSON only.`;
+
+  const out = await runClaude(prompt, true, { fn: "judge-ai-call", bookId: call.book_id });
+  if (out.error) throw new Error(out.error);
+  return parseJudgement(out.text);
 }
 
 // ── Server ────────────────────────────────────────────────────────────────────
@@ -670,7 +891,19 @@ async function route(req, res) {
       // Insert the pending row first so a refresh mid-run resumes the loader (parity with the edge
       // function); then run the slow local eval and flip the row terminal.
       const evalId = await startEvaluation(bookId);
+      const startedEval = Date.now();
       const out = await runEvaluation(bookId);
+      // Coarse log: the eval's real prompts are built INSIDE the spawned `claude` session (the
+      // /evaluate-book slash command), invisible to the bridge — so we record the command + the
+      // resulting report, not the internal context. Prod's edge eval logs each phase's full prompt.
+      await logAiCall({
+        fn: "evaluate-book",
+        bookId,
+        prompt: `/evaluate-book ${bookId}`,
+        output: out.error ? null : JSON.stringify(out.result),
+        error: out.error ?? null,
+        latencyMs: Date.now() - startedEval,
+      });
       if (out.error) {
         if (evalId != null) await finishEvaluation(evalId, { status: "error", error: out.error });
         return json(res, 500, { status: "error", error: out.error });
@@ -761,7 +994,28 @@ async function route(req, res) {
     return json(res, 200, out);
   }
 
-  return json(res, 404, { error: "use /eval/:bookId, /scaffold/:bookId, /bible/:bookId, or POST /unit" });
+  const evalCallMatch = url.match(/^\/eval-call\/(\d+)\/?$/);
+  if (evalCallMatch) {
+    if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
+    const aiCallId = Number(evalCallMatch[1]);
+    const call = await fetchAiCall(aiCallId);
+    if (!call) return json(res, 404, { error: "AI call not found" });
+    // Authorize against the call's book — same per-book edit check as every other endpoint.
+    if (!(await authorize(req, res, Number(call.book_id)))) return;
+    console.log(`Judging ai_call ${aiCallId} (fn=${call.fn}, book ${call.book_id})…`);
+    const row = await insertCallEval(call);
+    if (!row) return json(res, 500, { error: "could not create eval row" });
+    try {
+      const j = await runCallEval(call);
+      await updateCallEval(row.id, { status: "done", ...j });
+      return json(res, 200, { status: "done", eval: { ...row, ...j } });
+    } catch (e) {
+      await updateCallEval(row.id, { status: "error", error: String(e?.message ?? e).slice(0, 1000) });
+      return json(res, 500, { error: String(e?.message ?? e) });
+    }
+  }
+
+  return json(res, 404, { error: "use /eval/:bookId, /scaffold/:bookId, /bible/:bookId, /eval-call/:aiCallId, or POST /unit" });
 }
 
 server.listen(PORT, () => {

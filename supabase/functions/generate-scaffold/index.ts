@@ -17,6 +17,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { runInBackground, serviceClient } from "../_shared/task.ts";
+import { callClaude as callClaudeApi, type CallMeta } from "../_shared/claude.ts";
 
 const MODEL = "claude-opus-4-7";
 
@@ -85,7 +86,7 @@ Deno.serve(async (req: Request) => {
     if (insertError || !gen) return json({ error: "Could not start scaffold" }, 500);
 
     runInBackground(service, "book_generations", gen.id, "generate-scaffold", async () => {
-      const scaffold = await callClaude(apiKey, bookName, brief, bible);
+      const scaffold = await callClaude(apiKey, bookName, brief, bible, { fn: "generate-scaffold", bookId, taskTable: "book_generations", taskId: gen.id });
       return { status: "ready", result: scaffold };
     });
 
@@ -155,30 +156,19 @@ interface ScaffoldThread {
 }
 interface Scaffold { structure: string; pages: ScaffoldPage[]; threads: ScaffoldThread[] }
 
-async function callClaude(apiKey: string, bookName: string, brief: Brief | null, bible: string | null): Promise<Scaffold> {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      max_tokens: 8000,
-      system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
-      messages: [
-        {
-          role: "user",
-          content: `BOOK: ${bookName}\n\nBRIEF:\n${briefContext(brief)}${bible ? `\n\nBOOK BIBLE (established facts — characters, world, style):\n${bible}` : ""}\n\nDesign the scaffold. JSON only.`,
-        },
-      ],
-    }),
-  });
+async function callClaude(apiKey: string, bookName: string, brief: Brief | null, bible: string | null, meta: CallMeta): Promise<Scaffold> {
+  const data = await callClaudeApi(apiKey, {
+    model: MODEL,
+    max_tokens: 8000,
+    system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
+    messages: [
+      {
+        role: "user",
+        content: `BOOK: ${bookName}\n\nBRIEF:\n${briefContext(brief)}${bible ? `\n\nBOOK BIBLE (established facts — characters, world, style):\n${bible}` : ""}\n\nDesign the scaffold. JSON only.`,
+      },
+    ],
+  }, meta);
 
-  if (!res.ok) throw new Error(`Claude API ${res.status}: ${(await res.text()).slice(0, 500)}`);
-
-  const data = await res.json();
   const text = (data.content ?? [])
     .filter((b: { type: string }) => b.type === "text")
     .map((b: { text: string }) => b.text)

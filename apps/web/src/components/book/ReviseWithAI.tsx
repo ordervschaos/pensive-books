@@ -355,8 +355,20 @@ export function ReviseWithAI({
     busyRef.current = true;
     setBusy(true);
     try {
-      const plan = await callArchitect(current);
-      if (!plan?.pages?.length) throw new Error("No revision plan returned.");
+      // Retry the architect call: the dev bridge's `claude -p` is congestion-bound and can time out
+      // or drop a socket (prod's edge call is steadier but can blip too). Same backoff the build
+      // cascade uses per page — so a single flaky call doesn't dump the author back to the form.
+      let plan: RevisionPlan | null = null;
+      let lastErr: unknown = null;
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS && !plan?.pages?.length; attempt++) {
+        try {
+          plan = await callArchitect(current);
+        } catch (e) {
+          lastErr = e;
+          if (attempt < MAX_ATTEMPTS) await sleep(RETRY_BASE_MS * 2 ** (attempt - 1) + Math.random() * 250);
+        }
+      }
+      if (!plan?.pages?.length) throw lastErr ?? new Error("No revision plan returned.");
       await patch(current.id, { plan, status: "awaiting_review" });
       const next = { ...current, plan, status: "awaiting_review" as const };
       setRow(next);
@@ -592,6 +604,25 @@ export function ReviseWithAI({
     }
   };
 
+  // Auto-resume a job this fresh mount finds mid-flight, so a refresh never strands an active
+  // revision behind a manual "Resume" click. Planning is always client-driven (a single replan
+  // call), so re-drive it on either backend. A build in dev (bridge) is client-driven too, so
+  // re-drive it; in prod the build is owned by the self-chaining edge job + the pg_cron watchdog,
+  // so we only watch here (re-driving client-side would race the live chain).
+  const autoResumedRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (loading || !row || busyRef.current) return;
+    if (autoResumedRef.current === row.id) return;
+    if (row.status === "planning") {
+      autoResumedRef.current = row.id;
+      void runPlanning(row);
+    } else if (row.status === "building" && BRIDGE) {
+      autoResumedRef.current = row.id;
+      void runBuild(row);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, row?.id, row?.status]);
+
   const approve = async () => {
     if (!row) return;
     setReviewOpen(false);
@@ -765,6 +796,7 @@ export function ReviseWithAI({
         <BuildStatus
           progress={row!.progress}
           busy={busy}
+          serverDriven={!BRIDGE}
           cancelRequested={row!.cancel_requested}
           onResume={() => runBuild(row!)}
           onCancel={requestCancel}
@@ -885,6 +917,7 @@ function DoneBanner({
 function BuildStatus({
   progress,
   busy,
+  serverDriven,
   cancelRequested,
   onResume,
   onCancel,
@@ -893,6 +926,7 @@ function BuildStatus({
 }: {
   progress: Progress;
   busy: boolean;
+  serverDriven: boolean;
   cancelRequested: boolean;
   onResume: () => void;
   onCancel: () => void;
@@ -900,6 +934,10 @@ function BuildStatus({
   onToggleNotify: (enabled: boolean) => void;
 }) {
   const total = progress.total || progress.tasks.length;
+  // "Running" means work is actively progressing: either this tab is driving it (busy), or the
+  // self-chaining edge job owns it (serverDriven). In prod we never show a "Paused/Resume" state —
+  // the chain + pg_cron watchdog keep it moving even with the tab closed.
+  const running = busy || serverDriven;
   // The build narrates its real phase (structure work, then per-page writing).
   // We feed that single live phrase to WorkingIndicator so it reads as truthful
   // progress, not invented verbs — but with the same prominent animated chrome.
@@ -908,7 +946,7 @@ function BuildStatus({
     : progress.phase ?? "Working";
   return (
     <div className="mt-3 space-y-3">
-      {busy ? (
+      {running ? (
         <WorkingIndicator phrases={[phase]} />
       ) : (
         <p className="pv-serif text-[15px] italic text-[hsl(var(--pv-text-muted))]">
@@ -916,8 +954,8 @@ function BuildStatus({
         </p>
       )}
       <div className="flex items-center justify-end gap-3">
-        {busy && <NotifyWhenDone enabled={notify} onChange={onToggleNotify} className="mr-auto" />}
-        {!busy && <Button variant="ghost" onClick={onResume}>Resume</Button>}
+        {running && <NotifyWhenDone enabled={notify} onChange={onToggleNotify} className="mr-auto" />}
+        {!running && <Button variant="ghost" onClick={onResume}>Resume</Button>}
         <Button variant="ghost" onClick={onCancel} disabled={cancelRequested}>
           {cancelRequested ? "Stopping…" : "Cancel"}
         </Button>
