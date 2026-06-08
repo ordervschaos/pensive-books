@@ -59,6 +59,7 @@ interface ScaffoldRow extends TaskRow {
 export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps) {
   const { toast } = useToast();
   const [creating, setCreating] = useState(false);
+  const [kicking, setKicking] = useState(false); // true between clicking Generate and the run row appearing
 
   const { row, refetch } = useLatestTaskRow<ScaffoldRow>({
     table: "book_generations",
@@ -72,6 +73,10 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
   const open = !!proposal && !creating ? true : creating; // dialog visible while reviewing or creating
 
   const generate = async () => {
+    // Guard the gap between the click and the run row existing: until the row appears, `generating`
+    // is still false, so without this a burst of clicks would spawn several scaffold runs.
+    if (generating || kicking) return;
+    setKicking(true);
     try {
       if (BRIDGE) {
         // Dev bridge writes the same book_generations row; we just kick it and watch the row.
@@ -83,6 +88,8 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
       refetch();
     } catch (e) {
       toast({ title: "Couldn't generate scaffold", description: String((e as Error)?.message ?? e), variant: "destructive" });
+    } finally {
+      setKicking(false);
     }
   };
 
@@ -93,8 +100,26 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
 
   const create = async () => {
     if (!proposal || !row) return;
+    // Stacking scaffolds onto an already-populated book is how a book ends up with hundreds of
+    // pages. Confirm before adding to a book that clearly already has content.
+    const { count } = await supabase
+      .from("pages")
+      .select("id", { count: "exact", head: true })
+      .eq("book_id", bookId)
+      .eq("archived", false);
+    if (
+      (count ?? 0) > 5 &&
+      !window.confirm(`This book already has ${count} pages. Add ${proposal.pages.length} more from this scaffold?`)
+    ) {
+      return;
+    }
     try {
       setCreating(true);
+      // Claim the proposal up front: marking it 'applied' before creating any pages means a refresh
+      // or second tab mid-create can't re-open this dialog and run the whole scaffold again (the
+      // path that produced runaway page counts). A partial failure leaves a few pages to delete —
+      // far better than a duplicated scaffold.
+      await supabase.from("book_generations").update({ status: "applied" }).eq("id", row.id);
       // Create each page via the canonical RPC (handles page_index + valid defaults), then set its
       // title / type / objective. Track the created id at each page index so the planned threads can
       // be anchored to real page ids afterward.
@@ -137,9 +162,6 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
         if (thErr) throw thErr;
       }
 
-      // Mark the proposal applied so it doesn't re-open on the next load.
-      await supabase.from("book_generations").update({ status: "applied" }).eq("id", row.id);
-
       const threadNote = threadRows.length ? ` and ${threadRows.length} planned threads` : "";
       toast({ title: "Scaffold created", description: `${proposal.pages.length} pages added with objectives${threadNote}.` });
       setCreating(false);
@@ -158,7 +180,7 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
         title={generating ? <span>Designing<AnimatedEllipsis /></span> : "Generate scaffold from brief"}
         description="Propose the book's chapters and pages as objectives (no prose) — review, then create."
         onClick={generate}
-        loading={generating}
+        loading={generating || kicking}
       />
       {row?.status === "error" && (
         <p className="px-5 pt-1 pv-serif text-[13px] italic text-red-600 dark:text-red-400">{row.error}</p>
