@@ -41,6 +41,10 @@ export function WriteAllPages({ bookId, plannedCount }: WriteAllPagesProps) {
   const [notify, setNotify] = useState(false);
   const notifyRef = useRef(false);
   const notifiedRef = useRef<number | null>(null);
+  // The id of a run we've watched actually working this session. We only announce a terminal
+  // outcome (done/error) for a run we saw run — never for a row that was already terminal when the
+  // book opened, which would re-toast an old failure ("credits exhausted") on every visit.
+  const watchedRef = useRef<number | null>(null);
   useEffect(() => { notifyRef.current = notify; }, [notify]);
 
   const { row, refetch } = useLatestTaskRow<WriteAllRow>({
@@ -71,9 +75,12 @@ export function WriteAllPages({ bookId, plannedCount }: WriteAllPagesProps) {
     );
   }, [row?.id, row?.status, bookId]);
 
-  // Surface a finished run's outcome once (toast), then it falls back to the idle row.
+  // Surface a finished run's outcome once (toast), then it falls back to the idle row. Gated on
+  // having seen the run active first, so a terminal row loaded at mount doesn't re-announce.
   useEffect(() => {
-    if (row?.status === "done") {
+    if (running && row) { watchedRef.current = row.id; return; }
+    if (!row || watchedRef.current !== row.id) return;
+    if (row.status === "done") {
       const failures = row.progress?.failures ?? 0;
       const total = row.progress?.total ?? 0;
       toast({
