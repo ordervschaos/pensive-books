@@ -2,7 +2,9 @@ import { useState, type ReactNode } from "react";
 import { Lock, Check, BookOpen, Send } from "lucide-react";
 import { ScaffoldGenerator } from "./ScaffoldGenerator";
 import { WriteAllPages } from "./WriteAllPages";
+import { WriteNextPage } from "./WriteNextPage";
 import { AIActionRow } from "./AIActionRow";
+import { useAdmin } from "@/hooks/use-admin";
 import { BookEvaluationSection, type EvalResult } from "./BookEvaluationSection";
 import { ReviseWithAI, type RevisionPrefill } from "./ReviseWithAI";
 import type { EditorJSON } from "@/types/editor";
@@ -144,6 +146,7 @@ export function BookJourney({
   onRevisePrefill,
   onRevisionApplied,
 }: BookJourneyProps) {
+  const { isAdmin } = useAdmin();
   const [hasRead, setHasRead] = useState(false);
 
   const counts = { blank: 0, objective: 0, written: 0 };
@@ -199,12 +202,12 @@ export function BookJourney({
           </button>
         </StepRow>
 
-        {/* 3 — Generate scaffold (+ review, which is built into the generator's dialog). */}
+        {/* 3 — Generate outline (+ review, which is built into the generator's dialog). */}
         <StepRow
           index={2}
           total={TOTAL}
           status={!briefSet ? "locked" : hasScaffold ? "done" : "actionable"}
-          title="Generate the scaffold"
+          title="Generate the outline"
           caption="Propose the chapters and pages as objectives — review the plan, then create. No prose yet."
         >
           {!briefSet ? (
@@ -257,25 +260,24 @@ export function BookJourney({
           )}
         </StepRow>
 
-        {/* 4 — Write the pages (AI cascade). Locked until a scaffold exists. */}
+        {/* 4 — Write the pages. The default is incremental (WriteNextPage): write one page, read it,
+            write the next — an attended loop that can't run away. The book-wide cascade
+            (WriteAllPages) is the unbounded accelerator, gated to admins; non-admins don't see it. */}
         <StepRow
           index={3}
           total={TOTAL}
           status={!hasScaffold ? "locked" : allWritten ? "done" : "actionable"}
           title="Write the pages"
-          caption="Render prose from each objective. Pages you've already written are left untouched."
+          caption="Render prose from each objective, one page at a time — read and revise as you go."
         >
           {!hasScaffold ? (
-            <LockedNote reason="Generate a scaffold first." />
+            <LockedNote reason="Generate an outline first." />
           ) : (
             <div className="space-y-3">
-              {counts.objective > 0 ? (
-                <WriteAllPages bookId={bookId} plannedCount={counts.objective} />
-              ) : (
-                <p className="pv-serif flex items-center gap-2 text-[13px] italic text-[hsl(var(--pv-text-faint))]">
-                  <BookOpen className="h-3.5 w-3.5" /> Every planned page has prose.
-                </p>
-              )}
+              {/* Incremental driver owns every state here (incl. "all written"), so it stays mounted
+                  through the final page and keeps its read-after-write affordance. */}
+              <WriteNextPage bookId={bookId} onWritten={onChanged} />
+              {isAdmin && counts.objective > 0 && <WriteAllPages bookId={bookId} plannedCount={counts.objective} />}
               <p className="pv-serif text-[12.5px] italic text-[hsl(var(--pv-text-faint))]">
                 You can also write or edit any page by hand in the Manuscript tab.
               </p>

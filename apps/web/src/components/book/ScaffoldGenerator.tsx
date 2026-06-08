@@ -1,7 +1,9 @@
-import { useState } from "react";
-import { Sparkles, Loader2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Sparkles, Loader2, X } from "lucide-react";
 import { AnimatedEllipsis } from "./AnimatedEllipsis";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { AIActionRow } from "./AIActionRow";
 import {
   Dialog,
@@ -72,6 +74,31 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
   const proposal = row?.status === "ready" ? row.result : null;
   const open = !!proposal && !creating ? true : creating; // dialog visible while reviewing or creating
 
+  // Editable copy of the proposal — the author revises titles/objectives and removes pages HERE,
+  // before any pages are created (the dialog was previously a read-only preview). Seeded per row id,
+  // so re-renders don't clobber in-progress edits; a refresh re-seeds from the durable row.
+  const [draft, setDraft] = useState<Scaffold | null>(null);
+  useEffect(() => {
+    const p = row?.status === "ready" ? row.result : null;
+    setDraft(p ? { structure: p.structure, pages: p.pages.map((x) => ({ ...x })), threads: (p.threads ?? []).map((t) => ({ ...t })) } : null);
+  }, [row?.id, row?.status]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const updatePage = (i: number, patch: Partial<ScaffoldPage>) =>
+    setDraft((d) => (d ? { ...d, pages: d.pages.map((p, idx) => (idx === i ? { ...p, ...patch } : p)) } : d));
+
+  // Drop a page and keep the planned threads' page-index anchors valid: an anchor at the deleted
+  // index becomes null, anchors after it shift down by one.
+  const deletePage = (i: number) =>
+    setDraft((d) => {
+      if (!d) return d;
+      const remap = (idx: number | null) => (idx == null ? null : idx === i ? null : idx > i ? idx - 1 : idx);
+      return {
+        ...d,
+        pages: d.pages.filter((_, idx) => idx !== i),
+        threads: (d.threads ?? []).map((t) => ({ ...t, setupPageIndex: remap(t.setupPageIndex), payoffPageIndex: remap(t.payoffPageIndex) })),
+      };
+    });
+
   const generate = async () => {
     // Guard the gap between the click and the run row existing: until the row appears, `generating`
     // is still false, so without this a burst of clicks would spawn several scaffold runs.
@@ -87,7 +114,7 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
       }
       refetch();
     } catch (e) {
-      toast({ title: "Couldn't generate scaffold", description: String((e as Error)?.message ?? e), variant: "destructive" });
+      toast({ title: "Couldn't generate outline", description: String((e as Error)?.message ?? e), variant: "destructive" });
     } finally {
       setKicking(false);
     }
@@ -99,7 +126,12 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
   };
 
   const create = async () => {
-    if (!proposal || !row) return;
+    if (!draft || !row) return;
+    // The author may have edited/removed pages; create from the live draft, not the AI's original.
+    // Kept 1:1 with draft.pages (removals go through the X button, which also remaps thread anchors),
+    // so createdIds[index] still lines up with each thread's setup/payoff page index below.
+    const pages = draft.pages.map((p) => ({ pageType: p.pageType, title: p.title.trim(), objective: (p.objective ?? "").trim() }));
+    if (pages.length === 0) return;
     // Stacking scaffolds onto an already-populated book is how a book ends up with hundreds of
     // pages. Confirm before adding to a book that clearly already has content.
     const { count } = await supabase
@@ -109,7 +141,7 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
       .eq("archived", false);
     if (
       (count ?? 0) > 5 &&
-      !window.confirm(`This book already has ${count} pages. Add ${proposal.pages.length} more from this scaffold?`)
+      !window.confirm(`This book already has ${count} pages. Add ${pages.length} more from this outline?`)
     ) {
       return;
     }
@@ -124,7 +156,7 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
       // title / type / objective. Track the created id at each page index so the planned threads can
       // be anchored to real page ids afterward.
       const createdIds: number[] = [];
-      for (const page of proposal.pages) {
+      for (const page of pages) {
         const { data: newPage, error } = await supabase
           .rpc("create_next_page", { p_book_id: bookId })
           .select()
@@ -145,7 +177,7 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
       }
 
       // Persist the planned threads, mapping each page-index anchor to its created page id.
-      const threadRows = (proposal.threads ?? [])
+      const threadRows = (draft.threads ?? [])
         .filter((t) => t.name.trim())
         .map((t) => ({
           book_id: bookId,
@@ -163,7 +195,7 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
       }
 
       const threadNote = threadRows.length ? ` and ${threadRows.length} planned threads` : "";
-      toast({ title: "Scaffold created", description: `${proposal.pages.length} pages added with objectives${threadNote}.` });
+      toast({ title: "Outline created", description: `${pages.length} pages added with objectives${threadNote}.` });
       setCreating(false);
       refetch();
       onCreated?.();
@@ -177,7 +209,7 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
     <>
       <AIActionRow
         icon={<Sparkles className="h-4 w-4" />}
-        title={generating ? <span>Designing<AnimatedEllipsis /></span> : "Generate scaffold from brief"}
+        title={generating ? <span>Designing<AnimatedEllipsis /></span> : "Generate outline from brief"}
         description="Propose the book's chapters and pages as objectives (no prose) — review, then create."
         onClick={generate}
         loading={generating || kicking}
@@ -189,34 +221,56 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
       <Dialog open={open} onOpenChange={(v) => !creating && !v && void dismiss()}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
           <DialogHeader>
-            <DialogTitle>Review the proposed scaffold</DialogTitle>
+            <DialogTitle>Review &amp; edit the outline</DialogTitle>
             <DialogDescription>
-              {proposal?.structure ? `Structure: ${proposal.structure}. ` : ""}
-              {proposal?.pages.length ?? 0} pages. Creating them sets each page's objective and turns on
-              the objectives UI. You can edit anything afterward.
+              {draft?.structure ? `Structure: ${draft.structure}. ` : ""}
+              {draft?.pages.length ?? 0} pages. Edit any title or objective, remove pages you don't want,
+              then create. Creating sets each page's objective and turns on the objectives UI.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="overflow-y-auto flex-1 -mx-2 px-2 space-y-1">
-            {proposal?.pages.map((p, i) => (
-              <div key={i} className={p.pageType === "section" ? "pt-3" : "pl-4"}>
-                {p.pageType === "section" ? (
-                  <div className="text-sm font-semibold">{p.title}</div>
-                ) : (
-                  <div className="py-1">
-                    <div className="text-sm">{p.title}</div>
-                    {p.objective && <div className="text-xs italic text-muted-foreground">◎ {p.objective}</div>}
-                  </div>
-                )}
+          <div className="overflow-y-auto flex-1 -mx-2 px-2 space-y-2 py-1">
+            {draft?.pages.map((p, i) => (
+              <div
+                key={i}
+                className={`group flex items-start gap-2 rounded-md ${p.pageType === "section" ? "pt-3" : "pl-4"}`}
+              >
+                <div className="flex-1 space-y-1">
+                  <Input
+                    value={p.title}
+                    onChange={(e) => updatePage(i, { title: e.target.value })}
+                    placeholder={p.pageType === "section" ? "Chapter / part title" : "Page title"}
+                    className={`h-8 ${p.pageType === "section" ? "font-semibold" : ""}`}
+                  />
+                  {p.pageType === "text" && (
+                    <Textarea
+                      value={p.objective ?? ""}
+                      onChange={(e) => updatePage(i, { objective: e.target.value })}
+                      placeholder="Objective — what this page must achieve (one sentence)"
+                      rows={2}
+                      className="text-xs italic resize-none"
+                    />
+                  )}
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 shrink-0 text-muted-foreground opacity-60 hover:opacity-100"
+                  onClick={() => deletePage(i)}
+                  aria-label="Remove this page"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
               </div>
             ))}
           </div>
 
           <DialogFooter>
             <Button variant="ghost" onClick={() => void dismiss()} disabled={creating}>Cancel</Button>
-            <Button onClick={create} disabled={creating}>
+            <Button onClick={create} disabled={creating || (draft?.pages.length ?? 0) === 0}>
               {creating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              {creating ? "Creating…" : `Create ${proposal?.pages.length ?? 0} pages`}
+              {creating ? "Creating…" : `Create ${draft?.pages.length ?? 0} pages`}
             </Button>
           </DialogFooter>
         </DialogContent>
