@@ -201,6 +201,12 @@ function parseScaffold(text: string): Scaffold {
     .filter((p) => p && (p.pageType === "section" || p.pageType === "text") && typeof p.title === "string")
     .map((p) => ({ pageType: p.pageType, title: p.title.trim(), objective: (p.objective ?? "").trim() }));
 
+  // Hard cap the proposal. A scaffold is objectives-only (no prose), so even a long novel needs at
+  // most ~100-odd pages; anything past this is a runaway proposal the author shouldn't be asked to
+  // review or create wholesale.
+  const MAX_PAGES = 150;
+  if (parsed.pages.length > MAX_PAGES) parsed.pages = parsed.pages.slice(0, MAX_PAGES);
+
   // Sanitize threads: must be named; page indices must point inside pages[] (else null).
   const n = parsed.pages.length;
   const validIndex = (v: unknown): number | null =>
