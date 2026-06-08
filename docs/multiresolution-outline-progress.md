@@ -44,7 +44,15 @@ step 4) lists pages where `isProseStale(metadata, hasProse)` and offers **Re-ren
   Migration `20260609010000` widens the `kind` CHECK and the `revive_stalled_chains` watchdog to
   cover it. Dev mirrors via `rerenderViaBridge`.
 
-**Not yet started:** Phase 1 Task C (per-page stale badge + inline re-render), Phase 2, Phase 3.
+**Shipped — Phase 1 Task C: per-page stale badge + inline re-render.** `PageWorkshop.tsx` fetches the
+page's `prose_src_hash`, flags "Plan moved — this prose was written from an earlier objective" when
+`isProseStale`, and offers **Re-render from the objective →** — which runs the existing revise flow
+with a synthetic note (a reviewable diff). Applying re-stamps provenance (host `handleApplyRevision`
+→ `stampProse`), and the badge clears optimistically. No edge changes (reuses `generate-page`).
+
+**Phase 1 is complete.** Plan and prose are now separate planes joined by a visible dirty-graph:
+outline edits mark prose stale instead of rewriting it, and re-render is offered at book and page
+level. **Not yet started:** Phase 2 (visible beat layer), Phase 3 (full ladder + reverse flow).
 
 ---
 

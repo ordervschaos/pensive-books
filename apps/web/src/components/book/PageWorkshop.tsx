@@ -6,6 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useLatestTaskRow, type TaskRow } from "@/hooks/useLatestTaskRow";
 import { BRIDGE, bridgeFetch } from "@/lib/bridge";
+import { isProseStale, metaHash, type PageMeta } from "@/lib/planProvenance";
 import type { EvalResult, Severity } from "./BookEvaluationSection";
 
 // The page's single AI unit: it looks at one page (its author-only objective + the editor's
@@ -184,6 +185,18 @@ export function PageWorkshop({
   const hasProse = currentText.trim().length > 0;
   const objectiveText = objectiveDraft.trim();
 
+  // Plan↔prose staleness: this page's prose was stamped with the objective it was generated from.
+  // We fetch that stamp and flag the page when the (saved) objective has since moved on. Refetched
+  // when the page changes or a generation finishes (a re-render re-stamps it back in sync).
+  const [proseSrcHash, setProseSrcHash] = useState<string | null>(null);
+  useEffect(() => {
+    let active = true;
+    void supabase.from("pages").select("metadata").eq("id", pageId).maybeSingle()
+      .then(({ data }) => { if (active) setProseSrcHash(((data?.metadata as PageMeta | null)?.prose_src_hash) ?? null); });
+    return () => { active = false; };
+  }, [pageId, row?.status]);
+  const stale = isProseStale({ objective: objective ?? undefined, prose_src_hash: proseSrcHash ?? undefined }, hasProse);
+
   // Start a generation task (write or revise). The result arrives as a 'ready' row.
   const start = async (mode: "write" | "revise", issues?: ReviseIssue[]) => {
     if (running) return;
@@ -200,6 +213,18 @@ export function PageWorkshop({
   const createPage = () => {
     if (!objectiveText) return;
     void start("write");
+  };
+
+  // Re-render this page's prose from its (updated) objective, replacing the body. Reuses the revise
+  // flow with a synthetic note so it lands as a reviewable diff; applying it re-stamps provenance.
+  const rerenderFromObjective = () => {
+    commitObjective();
+    setOpen(true);
+    void start("revise", [{
+      section: "Plan",
+      severity: "high",
+      note: `The objective for this page has changed to: "${objectiveText}". Rewrite the prose to fulfil the new objective while keeping the book's voice and continuity.`,
+    }]);
   };
 
   // Page with prose: revise it against the editor's notes + the author's comment, then preview.
@@ -224,6 +249,9 @@ export function PageWorkshop({
     if (!proposed || !row || !text) return;
     if (row.kind === "page_write") onAppendProse(text);
     else onApply(text);
+    // The host re-stamps prose_src_hash from the current objective on apply; mirror it locally so the
+    // "out of sync" badge clears immediately rather than waiting on the async stamp + a refetch.
+    setProseSrcHash(metaHash(objective ?? ""));
     await supabase.from("book_generations").update({ status: "applied" }).eq("id", row.id);
     toast({
       title: row.kind === "page_write" ? "Page created" : "Revision applied",
@@ -252,6 +280,25 @@ export function PageWorkshop({
         title="Page objective (author-only — not shown to readers)"
         className="mt-1.5 w-full border-l-2 border-transparent bg-transparent pl-2 -ml-0.5 pv-serif text-[14.5px] italic leading-relaxed text-foreground placeholder:text-[hsl(var(--pv-text-faint))] focus:border-[hsl(var(--pv-border-soft))] focus:outline-none"
       />
+
+      {/* Out of sync: the objective moved after this prose was written. Offer a one-click re-render
+          (a reviewable revise proposal); applying it re-stamps provenance and clears the flag. */}
+      {pageType !== "section" && hasProse && stale && (
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-amber-500/40 bg-amber-500/5 px-3 py-2">
+          <span className="pv-serif text-[13.5px] leading-snug text-foreground">
+            Plan moved — this prose was written from an earlier objective.
+          </span>
+          <button
+            type="button"
+            onClick={rerenderFromObjective}
+            disabled={running || !objectiveText}
+            className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-accent))] transition-colors hover:text-foreground disabled:opacity-50"
+          >
+            {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+            Re-render from the objective →
+          </button>
+        </div>
+      )}
 
       {/* Section pages stop here — nothing to write or revise. */}
       {pageType !== "section" && !hasProse && (
