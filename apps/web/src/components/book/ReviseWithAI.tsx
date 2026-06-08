@@ -452,6 +452,9 @@ export function ReviseWithAI({
     busyRef.current = true;
     setBusy(true);
     let current = start;
+    // The author's requested mode governs the build — not whether the planner echoed planOnly into
+    // the plan. Outline-only writes no prose even if the plan still carries rebuild hints.
+    const planOnly = current.plan_only === true || current.plan.planOnly === true;
     try {
       let progress: Progress = current.progress ?? { structureDone: false, addedIds: {}, tasks: [], done: 0, total: 0 };
       let versionId = current.version_id;
@@ -511,7 +514,7 @@ export function ReviseWithAI({
           const meta = { ...((cur?.metadata as Record<string, unknown>) ?? {}), objective: p.objective };
           // Plan-only leaves prose (so its summary still matches it) and lets the page go out-of-sync;
           // a prose rebuild drops the now-stale summary.
-          if (!current.plan.planOnly) delete (meta as { summary?: unknown }).summary;
+          if (!planOnly) delete (meta as { summary?: unknown }).summary;
           const { error } = await supabase.from("pages").update({ metadata: meta }).eq("id", p.ref);
           if (error) throw error;
         }
@@ -537,7 +540,7 @@ export function ReviseWithAI({
         // structural phase, leaving changed pages flagged out-of-sync to re-render later.
         const notesByPage = current.evaluation ? groupByPage(current.evaluation) : new Map<number, FixIssue[]>();
         const tasks: ProseTask[] = [];
-        for (let i = 0; !current.plan.planOnly && i < current.plan.pages.length; i++) {
+        for (let i = 0; !planOnly && i < current.plan.pages.length; i++) {
           const p = current.plan.pages[i];
           if (p.pageType === "section" || p.op === "keep") continue;
           const id = p.op === "add" ? addedIds[i] : p.ref;

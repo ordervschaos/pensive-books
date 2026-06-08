@@ -61,11 +61,11 @@ interface Progress {
 }
 interface EvalResult { sections: { title: string; issues?: { severity: string; note: string; evidence?: string; suggestion?: string; page_ref?: { id?: number } }[] }[] }
 interface RevisionRow {
-  id: number; book_id: number; status: string; plan: RevisionPlan | null; evaluation: EvalResult | null;
+  id: number; book_id: number; status: string; plan: RevisionPlan | null; plan_only: boolean; evaluation: EvalResult | null;
   progress: Progress | null; version_id: number | null; cancel_requested: boolean;
 }
 
-const ROW_COLS = "id, book_id, status, plan, evaluation, progress, version_id, cancel_requested";
+const ROW_COLS = "id, book_id, status, plan, plan_only, evaluation, progress, version_id, cancel_requested";
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -189,6 +189,10 @@ async function runStructure(service: SupabaseClient, row: RevisionRow, progressI
   const plan = row.plan!;
   const bookId = row.book_id;
   let progress = progressIn;
+  // The author's REQUESTED mode is authoritative — not whether the planner echoed planOnly into the
+  // plan. An outline-only revision writes no prose even if the plan still carries rebuild hints (e.g.
+  // a planner that didn't honor the flag). plan_only is the contract; plan.planOnly is a convenience.
+  const planOnly = row.plan_only === true || plan.planOnly === true;
 
   // 1. Restore point before any mutation (always snapshot if we haven't already).
   if (row.version_id == null) {
@@ -226,7 +230,7 @@ async function runStructure(service: SupabaseClient, row: RevisionRow, progressI
     if (p.op !== "retarget" || p.ref == null) continue;
     const { data: cur } = await service.from("pages").select("metadata").eq("id", p.ref).maybeSingle();
     const meta = { ...((cur?.metadata as Record<string, unknown>) ?? {}), objective: p.objective };
-    if (!plan.planOnly) delete (meta as { summary?: unknown }).summary;
+    if (!planOnly) delete (meta as { summary?: unknown }).summary;
     const { error } = await service.from("pages").update({ metadata: meta }).eq("id", p.ref);
     if (error) throw new Error(error.message);
   }
@@ -247,7 +251,7 @@ async function runStructure(service: SupabaseClient, row: RevisionRow, progressI
   // phase, leaving changed pages flagged out-of-sync for the author to re-render on their terms.
   const notesByPage = row.evaluation ? groupByPage(row.evaluation) : new Map<number, FixIssue[]>();
   const tasks: ProseTask[] = [];
-  for (let i = 0; !plan.planOnly && i < plan.pages.length; i++) {
+  for (let i = 0; !planOnly && i < plan.pages.length; i++) {
     const p = plan.pages[i];
     if (p.pageType === "section" || p.op === "keep") continue;
     const id = p.op === "add" ? addedIds[i] : p.ref;
