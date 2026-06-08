@@ -3,6 +3,7 @@ import { Lock, Check, BookOpen, Send } from "lucide-react";
 import { ScaffoldGenerator } from "./ScaffoldGenerator";
 import { WriteAllPages } from "./WriteAllPages";
 import { WriteNextPage } from "./WriteNextPage";
+import { StalePanel } from "./StalePanel";
 import { AIActionRow } from "./AIActionRow";
 import { useAdmin } from "@/hooks/use-admin";
 import { BookEvaluationSection, type EvalResult } from "./BookEvaluationSection";
@@ -284,6 +285,9 @@ export function BookJourney({
             <LockedNote reason="Generate an outline first." />
           ) : (
             <div className="space-y-3">
+              {/* Pages whose objective changed after their prose was written (e.g. an outline-only
+                  revise). Invisible until something is out of sync. */}
+              <StalePanel bookId={bookId} onRerendered={onChanged} />
               {/* Incremental driver owns every state here (incl. "all written"), so it stays mounted
                   through the final page and keeps its read-after-write affordance. */}
               <WriteNextPage bookId={bookId} writtenCount={counts.written} onWritten={onChanged} />

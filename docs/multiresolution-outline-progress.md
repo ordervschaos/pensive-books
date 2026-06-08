@@ -35,7 +35,16 @@ change objectives + structure and write NO prose; changed pages are left flagged
   instruction → plan shows only new/retargeted/deleted/kept (0 revised) → Apply → objectives change,
   written pages keep their prose but now read stale (Task B/C will surface the badge).
 
-**Not yet started:** Phase 1 Task B (book-level stale panel), Task C (per-page stale badge), Phase 2, Phase 3.
+**Shipped — Phase 1 Task B: book-level stale panel.** `StalePanel.tsx` (mounted in `BookJourney`
+step 4) lists pages where `isProseStale(metadata, hasProse)` and offers **Re-render … from the plan**.
+- `generate-book` gained a `pageIds` **re-render mode**: targets the named pages (even ones that
+  already have prose), and `advance()` bypasses its clobber-guard when `input.rerender` — overwriting
+  the prose then re-stamping `prose_src_hash` so the page is back in sync. (deployed)
+- New `kind = 'rerender_stale'` (distinct from `write_all` so the "Write all" watcher ignores it).
+  Migration `20260609010000` widens the `kind` CHECK and the `revive_stalled_chains` watchdog to
+  cover it. Dev mirrors via `rerenderViaBridge`.
+
+**Not yet started:** Phase 1 Task C (per-page stale badge + inline re-render), Phase 2, Phase 3.
 
 ---
 

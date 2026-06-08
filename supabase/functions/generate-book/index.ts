@@ -76,6 +76,7 @@ Deno.serve(async (req: Request) => {
       notify?: boolean;
       generationId?: number;
       chain?: boolean;
+      pageIds?: number[]; // re-render mode: rewrite THESE pages (even ones that already have prose)
     };
 
     // ── Continue call (self/watchdog): advance the chain by one page ──
@@ -95,8 +96,12 @@ Deno.serve(async (req: Request) => {
     const { data: { user }, error: authError } = await userClient.auth.getUser();
     if (authError || !user) return json({ error: "Unauthorized" }, 401);
 
-    const { bookId, notify } = body;
+    const { bookId, notify, pageIds } = body;
     if (!bookId) return json({ error: "bookId is required" }, 400);
+    // Re-render mode: an explicit page set (e.g. "re-render stale") rewrites those pages from their
+    // (updated) objectives, overwriting existing prose. The default fill mode targets empty pages.
+    const rerenderIds = Array.isArray(pageIds) ? pageIds.filter((n) => typeof n === "number") : [];
+    const rerender = rerenderIds.length > 0;
 
     const { data: book, error: bookError } = await userClient
       .from("books")
@@ -124,16 +129,22 @@ Deno.serve(async (req: Request) => {
       .order("page_index", { ascending: true });
     if (pagesError) return json({ error: pagesError.message }, 500);
 
-    const remaining = ((pages as Array<{ id: number; content: unknown; metadata: { objective?: string } | null }>) ?? [])
-      .filter((p) => p.metadata?.objective && !bodyText(p.content))
-      .map((p) => p.id);
+    const allPages = (pages as Array<{ id: number; content: unknown; metadata: { objective?: string } | null }>) ?? [];
+    const remaining = rerender
+      // Re-render: the given pages (in reading order) that still carry an objective. Existing prose
+      // is intentionally overwritten — advance() bypasses its clobber-guard in this mode.
+      ? allPages.filter((p) => rerenderIds.includes(p.id) && p.metadata?.objective).map((p) => p.id)
+      // Fill: every empty, objective-bearing page.
+      : allPages.filter((p) => p.metadata?.objective && !bodyText(p.content)).map((p) => p.id);
 
-    if (remaining.length === 0) return json({ error: "No empty pages with an objective were found." }, 400);
+    if (remaining.length === 0) {
+      return json({ error: rerender ? "None of those pages can be re-rendered (no objective)." : "No empty pages with an objective were found." }, 400);
+    }
 
     const progress: Progress = { done: 0, total: remaining.length, remaining, failures: 0, phase: `Writing 0/${remaining.length}` };
     const { data: gen, error: insertError } = await service
       .from("book_generations")
-      .insert({ book_id: bookId, created_by: user.id, kind: "write_all", scope: "book", status: "running", input: {}, progress, notify_email: notify === true })
+      .insert({ book_id: bookId, created_by: user.id, kind: rerender ? "rerender_stale" : "write_all", scope: "book", status: "running", input: { rerender }, progress, notify_email: notify === true })
       .select()
       .single();
     if (insertError || !gen) return json({ error: "Could not start the writing run" }, 500);
@@ -152,11 +163,12 @@ Deno.serve(async (req: Request) => {
 async function advance(service: ReturnType<typeof serviceClient>, apiKey: string, genId: number) {
   const { data: row } = await service
     .from("book_generations")
-    .select("id, book_id, status, progress")
+    .select("id, book_id, status, progress, input")
     .eq("id", genId)
     .maybeSingle();
   if (!row || row.status !== "running") return; // finished, errored, or gone — stop the chain
 
+  const rerender = (row.input as { rerender?: boolean } | null)?.rerender === true;
   const progress = (row.progress as Progress) ?? { done: 0, total: 0, remaining: [], failures: 0 };
   const remaining = [...progress.remaining];
 
@@ -203,7 +215,9 @@ async function advance(service: ReturnType<typeof serviceClient>, apiKey: string
     const objective = (page?.metadata as { objective?: string } | null)?.objective;
     const alreadyWritten = page ? bodyText(page.content) : true;
 
-    if (page && objective && !alreadyWritten) {
+    // Fill mode skips a page that already has prose (clobber-safe). Re-render mode is an explicit
+    // overwrite, so it proceeds regardless — stampProse afterward re-syncs prose_src_hash.
+    if (page && objective && (rerender || !alreadyWritten)) {
       let written = false;
       let lastErr: unknown = null;
       for (let attempt = 1; attempt <= MAX_ATTEMPTS && !written; attempt++) {
