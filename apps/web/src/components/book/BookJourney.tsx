@@ -259,7 +259,7 @@ export function BookJourney({
                   </p>
                   <button
                     type="button"
-                    onClick={() => onRevisePrefill({})}
+                    onClick={() => onRevisePrefill({ planOnly: true })}
                     className="pv-serif text-[14px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground"
                   >
                     Revise the outline with AI →

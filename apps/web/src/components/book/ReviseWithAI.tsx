@@ -50,6 +50,7 @@ interface RevisionPlan {
   summary: string;
   pages: PlanPage[];
   deletes: { ref: number; why?: string }[];
+  planOnly?: boolean; // outline-only revision: apply changes the plan and writes no prose
 }
 interface ProseTask {
   id: number; // resolved page id
@@ -79,13 +80,14 @@ interface RevisionRow {
   instruction: string | null;
   evaluation: EvalResult | null;
   plan: RevisionPlan | null;
+  plan_only: boolean;
   progress: Progress | null;
   version_id: number | null;
   cancel_requested: boolean;
   error: string | null;
 }
 
-const ROW_COLS = "id, book_id, status, source, instruction, evaluation, plan, progress, version_id, cancel_requested, error";
+const ROW_COLS = "id, book_id, status, source, instruction, evaluation, plan, plan_only, progress, version_id, cancel_requested, error";
 const ACTIVE: RevStatus[] = ["planning", "awaiting_review", "building"];
 
 interface PageLite { id: number; title: string | null; page_type: string | null; page_index: number }
@@ -155,6 +157,8 @@ function reviseIssues(notes: FixIssue[] | undefined, objective: string, retarget
 export interface RevisionPrefill {
   instruction?: string;
   evaluation?: EvalResult;
+  /** Enter in outline-only mode (change objectives/structure, leave prose to re-render). */
+  planOnly?: boolean;
 }
 
 /**
@@ -190,6 +194,9 @@ export function ReviseWithAI({
   // so a fresh "done" revision shows its own banner again.
   const [dismissedDoneId, setDismissedDoneId] = useState<number | null>(null);
   const [instruction, setInstruction] = useState("");
+  // Outline-only mode: the architect changes objectives + structure and writes no prose; changed
+  // pages are left flagged "out of sync" to re-render later. Set by the "Revise the outline" entry.
+  const [planOnly, setPlanOnly] = useState(false);
   const [attachedEval, setAttachedEval] = useState<EvalResult | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -314,6 +321,7 @@ export function ReviseWithAI({
     if (!prefill) return;
     if (prefill.evaluation) setAttachedEval(prefill.evaluation);
     if (prefill.instruction) setInstruction((cur) => cur || prefill.instruction!);
+    if (prefill.planOnly) setPlanOnly(true);
     rootRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
     setTimeout(() => textareaRef.current?.focus(), 300);
     onPrefillConsumed?.();
@@ -326,6 +334,7 @@ export function ReviseWithAI({
       bookId,
       evaluation: current.evaluation ?? undefined,
       instruction: current.instruction ?? undefined,
+      planOnly: current.plan_only || undefined,
       ctx: {
         pageCtx: Array.from(pageDepth.entries()).map(([id, depth]) => ({
           id,
@@ -398,6 +407,7 @@ export function ReviseWithAI({
           source: attachedEval ? "evaluation" : "prompt",
           instruction: instr || null,
           evaluation: attachedEval ?? null,
+          plan_only: planOnly,
         })
         .select(ROW_COLS)
         .single();
@@ -499,7 +509,9 @@ export function ReviseWithAI({
           if (p.op !== "retarget" || p.ref == null) continue;
           const { data: cur } = await supabase.from("pages").select("metadata").eq("id", p.ref).maybeSingle();
           const meta = { ...((cur?.metadata as Record<string, unknown>) ?? {}), objective: p.objective };
-          delete (meta as { summary?: unknown }).summary;
+          // Plan-only leaves prose (so its summary still matches it) and lets the page go out-of-sync;
+          // a prose rebuild drops the now-stale summary.
+          if (!current.plan.planOnly) delete (meta as { summary?: unknown }).summary;
           const { error } = await supabase.from("pages").update({ metadata: meta }).eq("id", p.ref);
           if (error) throw error;
         }
@@ -521,9 +533,11 @@ export function ReviseWithAI({
         }
 
         // Build the prose task list (in final reading order so the cascade flows forward).
+        // Plan-only writes no prose: the empty task list makes the build finish right after this
+        // structural phase, leaving changed pages flagged out-of-sync to re-render later.
         const notesByPage = current.evaluation ? groupByPage(current.evaluation) : new Map<number, FixIssue[]>();
         const tasks: ProseTask[] = [];
-        for (let i = 0; i < current.plan.pages.length; i++) {
+        for (let i = 0; !current.plan.planOnly && i < current.plan.pages.length; i++) {
           const p = current.plan.pages[i];
           if (p.pageType === "section" || p.op === "keep") continue;
           const id = p.op === "add" ? addedIds[i] : p.ref;
@@ -664,6 +678,8 @@ export function ReviseWithAI({
 
   // ── Render ──
   const active = row && ACTIVE.includes(row.status);
+  // The plan under review: outline-only changes the plan and writes no prose.
+  const reviewPlanOnly = !!(row?.plan_only || row?.plan?.planOnly);
   const counts = row?.plan
     ? row.plan.pages.reduce(
         (acc, p) => ((acc[p.op]++), acc),
@@ -707,9 +723,15 @@ export function ReviseWithAI({
             ref={textareaRef}
             value={instruction}
             onChange={(e) => setInstruction(e.target.value)}
-            placeholder={'Describe the change you want -- e.g. "Make chapter 3 darker, give the protagonist a real decision in the middle, and cut the subplot about the map."'}
+            placeholder={planOnly
+              ? 'Reshape the outline -- e.g. "Split chapter 2 into two, add a turning-point scene before the climax, and cut the detour to the harbour."'
+              : 'Describe the change you want -- e.g. "Make chapter 3 darker, give the protagonist a real decision in the middle, and cut the subplot about the map."'}
             className="min-h-[88px] pv-serif text-[14.5px] leading-relaxed"
           />
+
+          {/* Mode: outline-only re-plans objectives/structure and leaves prose to re-render; full also
+              rewrites prose for changed pages. The "Revise the outline" entry preselects outline-only. */}
+          <ModeToggle planOnly={planOnly} onChange={setPlanOnly} />
 
           {/* Context row -- brief + outline always sent; choose page depth and threads */}
           {contextMeta && (() => {
@@ -752,11 +774,13 @@ export function ReviseWithAI({
 
           <div className="flex items-center justify-between gap-3">
             <p className="pv-serif text-[12.5px] leading-relaxed text-[hsl(var(--pv-text-faint))]">
-              The AI proposes a plan you review before anything changes. A version is saved first; results land in your drafts.
+              {planOnly
+                ? "The AI proposes outline changes you review before anything sticks. A version is saved first; changed pages are left flagged out-of-sync to re-render."
+                : "The AI proposes a plan you review before anything changes. A version is saved first; results land in your drafts."}
             </p>
             <Button onClick={startRevision} disabled={busy || (!instruction.trim() && !attachedEval)}>
               {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              {busy ? "Planning…" : "Plan the revision →"}
+              {busy ? "Planning…" : planOnly ? "Plan the outline →" : "Plan the revision →"}
             </Button>
           </div>
         </div>
@@ -786,7 +810,7 @@ export function ReviseWithAI({
           </p>
           <div className="flex gap-2">
             <Button variant="ghost" onClick={discard}>Discard</Button>
-            <Button onClick={() => setReviewOpen(true)}>Review &amp; build</Button>
+            <Button onClick={() => setReviewOpen(true)}>{reviewPlanOnly ? "Review changes" : "Review & build"}</Button>
           </div>
         </div>
       )}
@@ -809,7 +833,7 @@ export function ReviseWithAI({
       <Dialog open={reviewOpen} onOpenChange={(v) => !busy && setReviewOpen(v)}>
         <DialogContent className="max-w-2xl max-h-[82vh] overflow-hidden flex flex-col">
           <DialogHeader>
-            <DialogTitle>Review the revision plan</DialogTitle>
+            <DialogTitle>{reviewPlanOnly ? "Review the outline changes" : "Review the revision plan"}</DialogTitle>
             <DialogDescription>{row?.plan?.summary}</DialogDescription>
           </DialogHeader>
 
@@ -817,7 +841,7 @@ export function ReviseWithAI({
             <div className="pv-mono flex flex-wrap gap-x-4 gap-y-1 text-[11px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-faint))]">
               <span>{counts.add} new</span>
               <span>{counts.retarget} retargeted</span>
-              <span>{counts.revise} revised</span>
+              {!reviewPlanOnly && <span>{counts.revise} revised</span>}
               <span>{row?.plan?.deletes.length ?? 0} deleted</span>
               <span>{counts.keep} kept</span>
             </div>
@@ -856,14 +880,18 @@ export function ReviseWithAI({
           <DialogFooter className="items-center gap-3 sm:justify-between">
             <div className="flex flex-col gap-1">
               {/* The build can run for minutes — opt into a heads-up before you walk away. */}
-              <NotifyWhenDone enabled={notify} onChange={onToggleNotify} />
+              {!reviewPlanOnly && <NotifyWhenDone enabled={notify} onChange={onToggleNotify} />}
               <span className="pv-serif text-[12px] italic text-[hsl(var(--pv-text-faint))]">
-                {changeCount} change{changeCount === 1 ? "" : "s"} · rebuilds prose for changed pages
+                {changeCount} change{changeCount === 1 ? "" : "s"} · {reviewPlanOnly
+                  ? "changed pages left to re-render (flagged out-of-sync)"
+                  : "rebuilds prose for changed pages"}
               </span>
             </div>
             <div className="flex gap-2">
               <Button variant="ghost" onClick={discard} disabled={busy}>Discard</Button>
-              <Button onClick={approve} disabled={busy || changeCount === 0}>Build</Button>
+              <Button onClick={approve} disabled={busy || changeCount === 0}>
+                {reviewPlanOnly ? "Apply outline changes" : "Build"}
+              </Button>
             </div>
           </DialogFooter>
         </DialogContent>
@@ -978,6 +1006,41 @@ function BuildStatus({
       <p className="pv-serif text-[12px] italic text-[hsl(var(--pv-text-faint))]">
         You can leave this page -- the work persists. Reopen the book to resume or cancel.
       </p>
+    </div>
+  );
+}
+
+// ModeToggle — outline-only vs full revision. A two-segment pill: outline-only re-plans objectives
+// and structure (no prose written; changed pages go out-of-sync); full also rewrites prose.
+function ModeToggle({ planOnly, onChange }: { planOnly: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="inline-flex w-fit rounded-full border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))] p-0.5">
+        {[
+          { v: true, label: "Outline only" },
+          { v: false, label: "Rewrite prose" },
+        ].map((m) => (
+          <button
+            key={String(m.v)}
+            type="button"
+            aria-pressed={planOnly === m.v}
+            onClick={() => onChange(m.v)}
+            className={cn(
+              "pv-mono rounded-full px-3 py-1 text-[10px] uppercase tracking-[0.12em] transition-colors",
+              planOnly === m.v
+                ? "bg-foreground text-background"
+                : "text-[hsl(var(--pv-text-faint))] hover:text-foreground"
+            )}
+          >
+            {m.label}
+          </button>
+        ))}
+      </div>
+      <span className="pv-serif text-[12px] italic text-[hsl(var(--pv-text-faint))]">
+        {planOnly
+          ? "Change objectives & structure only — prose is left to re-render, changed pages flagged out-of-sync."
+          : "Re-plan and rebuild prose for changed pages."}
+      </span>
     </div>
   );
 }

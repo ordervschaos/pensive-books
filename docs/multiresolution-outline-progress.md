@@ -19,7 +19,23 @@ the plan↔prose dirty-graph plumbing, no user-visible behavior change yet.
   - `apps/web/src/pages/books/pages/view/components/PageContent.tsx` (`handleAppendProse`, `handleApplyRevision`) — per-page workshop apply.
 - Effect: every AI prose write now stamps `pages.metadata.prose_src_hash = metaHash(objective)`.
 
-**Not yet started:** the rest of Phase 1 (the actual user-facing fix), Phase 2, Phase 3.
+**Shipped — Phase 1 Task A: plan-only "Revise the outline"** (the bug fix). Outline revisions now
+change objectives + structure and write NO prose; changed pages are left flagged out-of-sync.
+- `replan-from-notes`: `planOnly` body flag → `SYSTEM_PLAN_ONLY` prompt; `parsePlan` collapses any
+  `revise`→`keep`, strips `rebuild`, stamps `plan.planOnly`. (deployed)
+- `build-revision`: when `plan.planOnly`, skip the summary-drop on retarget and build an EMPTY prose
+  task list → the structural phase runs, then the build finishes with no prose written. (deployed)
+- `book_revisions.plan_only` column (migration `20260609000000`) — carries the mode so a refresh
+  mid-planning re-drives the architect in the right mode (planning is resumable).
+- `ReviseWithAI.tsx`: a visible **Outline only / Rewrite prose** `ModeToggle`; the "Revise the
+  outline" entry in `BookJourney` preselects outline-only via `prefill.planOnly`. Review dialog,
+  buttons, and copy adapt (no "rebuilds prose" line; "Apply outline changes"). Dev `runBuild` mirrors
+  the edge gating. `scripts/eval-bridge.mjs` (`runReplan`/`parsePlan`) mirrors the backend.
+- Commit: see git log. Verify hands-on: at the outline step, "Revise the outline with AI →" →
+  instruction → plan shows only new/retargeted/deleted/kept (0 revised) → Apply → objectives change,
+  written pages keep their prose but now read stale (Task B/C will surface the badge).
+
+**Not yet started:** Phase 1 Task B (book-level stale panel), Task C (per-page stale badge), Phase 2, Phase 3.
 
 ---
 

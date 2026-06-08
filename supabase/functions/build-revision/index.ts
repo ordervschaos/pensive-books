@@ -46,7 +46,7 @@ interface PlanPage {
   rebuild?: "rewrite" | "revise";
   why?: string;
 }
-interface RevisionPlan { summary: string; pages: PlanPage[]; deletes: { ref: number; why?: string }[] }
+interface RevisionPlan { summary: string; pages: PlanPage[]; deletes: { ref: number; why?: string }[]; planOnly?: boolean }
 interface ProseTask {
   id: number; planIndex: number; title: string; mode: "write" | "revise"; objective: string;
   why?: string; issues?: FixIssue[]; state: "pending" | "writing" | "done" | "failed"; changed?: string;
@@ -219,12 +219,14 @@ async function runStructure(service: SupabaseClient, row: RevisionRow, progressI
     await service.from("book_revisions").update({ progress }).eq("id", row.id); // persist incrementally
   }
 
-  // 4. Retargets — set the new objective; drop the stale summary.
+  // 4. Retargets — set the new objective. When prose is being rebuilt we drop the now-stale summary;
+  // in plan-only mode the prose is left untouched (so its summary still matches it) and instead goes
+  // "out of sync" — the mismatch between the new objective and the prose's prose_src_hash flags it.
   for (const p of plan.pages) {
     if (p.op !== "retarget" || p.ref == null) continue;
     const { data: cur } = await service.from("pages").select("metadata").eq("id", p.ref).maybeSingle();
     const meta = { ...((cur?.metadata as Record<string, unknown>) ?? {}), objective: p.objective };
-    delete (meta as { summary?: unknown }).summary;
+    if (!plan.planOnly) delete (meta as { summary?: unknown }).summary;
     const { error } = await service.from("pages").update({ metadata: meta }).eq("id", p.ref);
     if (error) throw new Error(error.message);
   }
@@ -240,10 +242,12 @@ async function runStructure(service: SupabaseClient, row: RevisionRow, progressI
     if (error) throw new Error(error.message);
   }
 
-  // 6. Build the prose task list (final reading order, so the cascade flows forward).
+  // 6. Build the prose task list (final reading order, so the cascade flows forward). Plan-only
+  // revisions write NO prose — the empty list makes the build finish right after this structural
+  // phase, leaving changed pages flagged out-of-sync for the author to re-render on their terms.
   const notesByPage = row.evaluation ? groupByPage(row.evaluation) : new Map<number, FixIssue[]>();
   const tasks: ProseTask[] = [];
-  for (let i = 0; i < plan.pages.length; i++) {
+  for (let i = 0; !plan.planOnly && i < plan.pages.length; i++) {
     const p = plan.pages[i];
     if (p.pageType === "section" || p.op === "keep") continue;
     const id = p.op === "add" ? addedIds[i] : p.ref;

@@ -80,10 +80,11 @@ Deno.serve(async (req: Request) => {
     const { data: { user }, error: authError } = await userClient.auth.getUser();
     if (authError || !user) return json({ error: "Unauthorized" }, 401);
 
-    const { bookId, evaluation, instruction, ctx } = (await req.json().catch(() => ({}))) as {
+    const { bookId, evaluation, instruction, ctx, planOnly } = (await req.json().catch(() => ({}))) as {
       bookId?: number;
       evaluation?: EvalResult;
       instruction?: string;
+      planOnly?: boolean; // outline-only: change objectives/structure, never propose prose rewrites
       ctx?: {
         pageCtx?: { id: number; summary: boolean; full: boolean }[] | null;
         threadIds?: number[] | null; // null=all, []=none, [ids]=subset
@@ -170,6 +171,7 @@ Deno.serve(async (req: Request) => {
       contentMap,
       bookId,
       user.id,
+      planOnly === true,
     );
     return json(plan);
   } catch (e) {
@@ -210,6 +212,36 @@ Output JSON ONLY (no prose, no fences), exactly:
   "summary": "<2-3 sentences: what this revision changes and why>",
   "pages": [
     { "ref": <id|null>, "op": "keep|revise|retarget|add", "pageType": "section|text", "title": "...", "objective": "...", "rebuild": "rewrite|revise", "why": "<one line tied to the evaluation>" }
+  ],
+  "deletes": [ { "ref": <id>, "why": "..." } ]
+}`;
+
+// Plan-only variant: the author is reshaping the OUTLINE, not reworking prose. The model changes
+// objectives + structure and never rewrites a word — pages whose objective changes are left for the
+// author to re-render (they get flagged "out of sync"). No "revise", no "rebuild".
+const SYSTEM_PLAN_ONLY = `You are a book architect revising an EXISTING book's OUTLINE based on the author's instruction. You work purely in the PLAN: each page's objective (what it must achieve) and the book's structure (which pages exist, and in what order). You do NOT touch prose — pages whose objective changes will be re-rendered later by the author.
+
+You are given: the brief, the bible, the CURRENT outline (each page with its real [id], type, title, and objective), and the author's instruction (the primary directive). Make the structural and objective changes the instruction asks for, and only those.
+
+Produce a REVISION PLAN: the book's NEW page list in final reading order, plus the existing pages to delete. For each page entry use one op:
+- "keep":     unchanged. (ref = its id; carry its title/objective forward)
+- "retarget": change the page's objective. Set "objective" to the NEW objective. (ref = id)
+- "add":      a NEW page (ref = null). Give pageType, a title, and an objective.
+Reorder simply by placing entries in the desired final order. Separately, list in "deletes" any existing pages to remove.
+
+NEVER use a "revise" op and NEVER rewrite or adapt prose — this step changes the plan only.
+
+Rules:
+- Use ONLY the real [id]s given. Every existing page MUST appear either in "pages" (with its ref) or in "deletes" — never drop a page silently.
+- "section" pages are chapter/part dividers; "text" pages carry prose. Keep an objective on every text page.
+- Be surgical: mark "keep" for what already fits; change only what the instruction requires.
+- TRACKED THREADS (if any) are promises the book must keep. Do NOT delete a page that sets up or pays off an open thread without relocating that beat — never orphan a setup or its payoff.
+
+Output JSON ONLY (no prose, no fences), exactly:
+{
+  "summary": "<2-3 sentences: what this outline revision changes and why>",
+  "pages": [
+    { "ref": <id|null>, "op": "keep|retarget|add", "pageType": "section|text", "title": "...", "objective": "...", "why": "<one line>" }
   ],
   "deletes": [ { "ref": <id>, "why": "..." } ]
 }`;
@@ -316,6 +348,7 @@ export interface RevisionPlan {
   summary: string;
   pages: PlanPage[];
   deletes: { ref: number; why?: string }[];
+  planOnly?: boolean; // outline-only revision: the apply path changes the plan and writes no prose
 }
 
 async function callClaude(
@@ -331,12 +364,13 @@ async function callClaude(
   contentMap: Map<number, string>,
   bookId: number,
   userId?: string | null,
+  planOnly = false,
 ): Promise<RevisionPlan> {
   const data = await callClaudeApi(apiKey, {
     model: MODEL,
     max_tokens: 16000,
     thinking: { type: "adaptive" },
-    system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
+    system: [{ type: "text", text: planOnly ? SYSTEM_PLAN_ONLY : SYSTEM, cache_control: { type: "ephemeral" } }],
     messages: [
       {
         role: "user",
@@ -358,7 +392,7 @@ async function callClaude(
     .join("")
     .trim();
   if (!text) throw new Error("Claude returned no text content.");
-  return parsePlan(text, pages);
+  return parsePlan(text, pages, planOnly);
 }
 
 // Parse + sanitize the model's plan, enforcing the safety guardrails:
@@ -366,7 +400,7 @@ async function callClaude(
 //  - every existing page must be carried (in pages[]) or deleted — any the model omitted
 //    are appended as "keep" so a page is NEVER silently dropped.
 //  - de-duplicate refs (first wins).
-function parsePlan(text: string, existing: PageRow[]): RevisionPlan {
+function parsePlan(text: string, existing: PageRow[], planOnly = false): RevisionPlan {
   let raw = text.trim();
   const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (fence) raw = fence[1].trim();
@@ -392,7 +426,10 @@ function parsePlan(text: string, existing: PageRow[]): RevisionPlan {
   const pages: PlanPage[] = [];
   for (const entry of parsed.pages) {
     const p = entry as Partial<PlanPage>;
-    const op = ops.has(p.op as string) ? (p.op as PlanPage["op"]) : "keep";
+    let op = ops.has(p.op as string) ? (p.op as PlanPage["op"]) : "keep";
+    // Plan-only edits the outline, never prose: a "revise" (prose-fix, no objective change) has no
+    // place here, so collapse it to a no-op "keep". rebuild hints are dropped below.
+    if (planOnly && op === "revise") op = "keep";
     if (op === "add") {
       if (typeof p.title !== "string" || !p.title.trim()) continue;
       pages.push({
@@ -416,7 +453,7 @@ function parsePlan(text: string, existing: PageRow[]): RevisionPlan {
       pageType: cur.page_type === "section" ? "section" : "text",
       title: typeof p.title === "string" && p.title.trim() ? p.title.trim() : (cur.title ?? ""),
       objective: (p.objective ?? cur.metadata?.objective ?? "").trim(),
-      rebuild: p.rebuild === "rewrite" ? "rewrite" : p.rebuild === "revise" ? "revise" : undefined,
+      rebuild: planOnly ? undefined : p.rebuild === "rewrite" ? "rewrite" : p.rebuild === "revise" ? "revise" : undefined,
       why: typeof p.why === "string" ? p.why.trim() : "",
     });
   }
@@ -445,5 +482,5 @@ function parsePlan(text: string, existing: PageRow[]): RevisionPlan {
     }
   }
 
-  return { summary: String(parsed.summary ?? "").trim(), pages, deletes };
+  return { summary: String(parsed.summary ?? "").trim(), pages, deletes, planOnly: planOnly || undefined };
 }

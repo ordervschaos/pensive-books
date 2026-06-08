@@ -511,6 +511,28 @@ Rules:
 Output JSON ONLY (no prose, no fences), exactly:
 { "summary": "...", "pages": [ { "ref": <id|null>, "op": "keep|revise|retarget|add", "pageType": "section|text", "title": "...", "objective": "...", "rebuild": "rewrite|revise", "why": "..." } ], "deletes": [ { "ref": <id>, "why": "..." } ] }`;
 
+// Plan-only variant: reshape the OUTLINE (objectives + structure) and never rewrite prose. Mirrors
+// SYSTEM_PLAN_ONLY in supabase/functions/replan-from-notes.
+const REPLAN_PLAN_ONLY_INSTRUCTIONS = `You are a book architect revising an EXISTING book's OUTLINE based on the author's instruction. You work purely in the PLAN: each page's objective (what it must achieve) and the book's structure (which pages exist, and in what order). You do NOT touch prose — pages whose objective changes will be re-rendered later by the author.
+
+You are given: the brief, the bible, the CURRENT outline (each page with its real [id], type, title, and objective), and the author's instruction (the primary directive). Make the structural and objective changes the instruction asks for, and only those.
+
+Produce a REVISION PLAN: the book's NEW page list in final reading order, plus the existing pages to delete. For each page entry use one op:
+- "keep":     unchanged. (ref = its id; carry its title/objective forward)
+- "retarget": change the page's objective. Set "objective" to the NEW objective. (ref = id)
+- "add":      a NEW page (ref = null). Give pageType, a title, and an objective.
+Reorder by placing entries in the desired final order. Separately, list in "deletes" any existing pages to remove.
+
+NEVER use a "revise" op and NEVER rewrite or adapt prose — this step changes the plan only.
+
+Rules:
+- Use ONLY the real [id]s given. Every existing page MUST appear in "pages" (with its ref) or in "deletes" — never drop a page silently.
+- "section" pages are dividers; "text" pages carry prose (keep an objective on every text page).
+- Be surgical: mark "keep" for what already fits; change only what the instruction requires.
+
+Output JSON ONLY (no prose, no fences), exactly:
+{ "summary": "...", "pages": [ { "ref": <id|null>, "op": "keep|retarget|add", "pageType": "section|text", "title": "...", "objective": "...", "why": "..." } ], "deletes": [ { "ref": <id>, "why": "..." } ] }`;
+
 function outlineContext(pages) {
   return pages
     .map((p) => {
@@ -546,7 +568,7 @@ function evalContext(ev) {
 }
 
 // Parse + sanitize the plan with the same guardrails as the edge function.
-function parsePlan(text, existing) {
+function parsePlan(text, existing, planOnly = false) {
   let raw = text.trim();
   const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (fence) raw = fence[1].trim();
@@ -566,7 +588,8 @@ function parsePlan(text, existing) {
   const seen = new Set();
   const pages = [];
   for (const p of parsed.pages) {
-    const op = ops.has(p?.op) ? p.op : "keep";
+    let op = ops.has(p?.op) ? p.op : "keep";
+    if (planOnly && op === "revise") op = "keep"; // outline edits never carry a prose-only revise
     if (op === "add") {
       if (typeof p.title !== "string" || !p.title.trim()) continue;
       pages.push({ ref: null, op: "add", pageType: p.pageType === "section" ? "section" : "text", title: p.title.trim(), objective: (p.objective ?? "").trim(), why: typeof p.why === "string" ? p.why.trim() : "" });
@@ -581,7 +604,7 @@ function parsePlan(text, existing) {
       pageType: cur.page_type === "section" ? "section" : "text",
       title: typeof p.title === "string" && p.title.trim() ? p.title.trim() : (cur.title ?? ""),
       objective: (p.objective ?? cur.metadata?.objective ?? "").trim(),
-      rebuild: p.rebuild === "rewrite" ? "rewrite" : p.rebuild === "revise" ? "revise" : undefined,
+      rebuild: planOnly ? undefined : p.rebuild === "rewrite" ? "rewrite" : p.rebuild === "revise" ? "revise" : undefined,
       why: typeof p.why === "string" ? p.why.trim() : "",
     });
   }
@@ -598,10 +621,10 @@ function parsePlan(text, existing) {
       pages.push({ ref: p.id, op: "keep", pageType: p.page_type === "section" ? "section" : "text", title: p.title ?? "", objective: (p.metadata?.objective ?? "").trim(), why: "" });
     }
   }
-  return { summary: String(parsed.summary ?? "").trim(), pages, deletes };
+  return { summary: String(parsed.summary ?? "").trim(), pages, deletes, planOnly: planOnly || undefined };
 }
 
-async function runReplan(bookId, evaluation, instruction) {
+async function runReplan(bookId, evaluation, instruction, planOnly = false) {
   const book = await fetchBook(bookId);
   if (!book) return { error: "Book not found" };
   const instr = (instruction ?? "").trim();
@@ -614,7 +637,7 @@ async function runReplan(bookId, evaluation, instruction) {
   const pages = await fetchPages(bookId);
   if (!pages.length) return { error: "Book has no pages to revise" };
 
-  const prompt = `${REPLAN_INSTRUCTIONS}
+  const prompt = `${planOnly ? REPLAN_PLAN_ONLY_INSTRUCTIONS : REPLAN_INSTRUCTIONS}
 
 BOOK: ${book.name}
 
@@ -628,7 +651,7 @@ Produce the revision plan. JSON only.`;
 
   const out = await runClaude(prompt, true, { fn: "replan-from-notes", bookId }, { noTools: true });
   if (out.error) return out;
-  return parsePlan(out.text, pages);
+  return parsePlan(out.text, pages, planOnly);
 }
 
 // ── /unit ─────────────────────────────────────────────────────────────────────
@@ -998,8 +1021,8 @@ async function route(req, res) {
     const bookId = Number(replanMatch[1]);
     if (!(await authorize(req, res, bookId))) return;
     const body = await readBody(req);
-    console.log(`Replanning book ${bookId}${body.instruction ? " from instruction" : ""}${body.evaluation ? " from evaluation" : ""}…`);
-    const out = await runReplan(bookId, body.evaluation, body.instruction);
+    console.log(`Replanning book ${bookId}${body.instruction ? " from instruction" : ""}${body.evaluation ? " from evaluation" : ""}${body.planOnly ? " (outline only)" : ""}…`);
+    const out = await runReplan(bookId, body.evaluation, body.instruction, body.planOnly === true);
     if (out.error) return json(res, 500, { error: out.error });
     return json(res, 200, out);
   }
