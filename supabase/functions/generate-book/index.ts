@@ -30,6 +30,10 @@ import { reinvoke, isChainCall } from "../_shared/self-chain.ts";
 import { captureException, isBillingError } from "../_shared/sentry.ts";
 
 const MAX_ATTEMPTS = 3; // 1 try + 2 retries per page (matches the old client loop)
+// Across invocations: give up on a page after this many invocations fail to get past it. Guards the
+// "stuck at N%" stall where a page keeps exceeding the worker's wall-clock cap, killing the worker
+// mid-call (before progress is persisted) so the watchdog re-kicks the same head page forever.
+const MAX_HEAD_ATTEMPTS = 3;
 const RETRY_BASE_MS = 1000;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -45,6 +49,8 @@ interface Progress {
   remaining: number[]; // page ids still to write
   failures: number;
   phase?: string;
+  headPageId?: number | null; // the page at the front of `remaining` we're currently attempting
+  headAttempts?: number;      // how many invocations have tried that head page (poison-page guard)
 }
 
 // Body text excluding the leading title heading — decides if a page is still "empty".
@@ -158,7 +164,32 @@ async function advance(service: ReturnType<typeof serviceClient>, apiKey: string
     return;
   }
 
-  const pageId = remaining.shift()!;
+  const pageId = remaining[0];
+
+  // Poison-page guard. Count attempts on the current head page across invocations. A worker killed
+  // mid-generation (page over the wall-clock cap) never reaches the progress write below, so the
+  // head page would otherwise be retried forever. Past the limit, skip it as a failure and move on.
+  const headAttempts = (progress.headPageId === pageId ? progress.headAttempts ?? 0 : 0) + 1;
+  if (headAttempts > MAX_HEAD_ATTEMPTS) {
+    console.error(`generate-book: skipping page ${pageId} after ${MAX_HEAD_ATTEMPTS} stalled attempts`);
+    const done = progress.done + 1;
+    const skipped: Progress = {
+      ...progress, remaining: remaining.slice(1), done, failures: progress.failures + 1,
+      headPageId: null, headAttempts: 0, phase: `Writing ${done}/${progress.total}`,
+    };
+    if (skipped.remaining.length > 0) {
+      await service.from("book_generations").update({ progress: skipped }).eq("id", genId);
+      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("generate-book", { generationId: genId }));
+    } else {
+      await service.from("book_generations").update({ status: "done", progress: { ...skipped, phase: "Done" } }).eq("id", genId);
+    }
+    return;
+  }
+
+  // Record the attempt BEFORE the slow generation, so a worker killed mid-call still counts toward
+  // the guard above (this persisted write is what lets the next invocation know we already tried).
+  await service.from("book_generations").update({ progress: { ...progress, headPageId: pageId, headAttempts } }).eq("id", genId);
+
   let failures = progress.failures;
 
   try {
@@ -206,9 +237,10 @@ async function advance(service: ReturnType<typeof serviceClient>, apiKey: string
   }
 
   const done = progress.done + 1;
-  const next: Progress = { ...progress, remaining, done, failures, phase: `Writing ${done}/${progress.total}` };
+  const rest = remaining.slice(1);
+  const next: Progress = { ...progress, remaining: rest, done, failures, headPageId: null, headAttempts: 0, phase: `Writing ${done}/${progress.total}` };
 
-  if (remaining.length > 0) {
+  if (rest.length > 0) {
     await service.from("book_generations").update({ progress: next }).eq("id", genId);
     if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("generate-book", { generationId: genId }));
   } else {

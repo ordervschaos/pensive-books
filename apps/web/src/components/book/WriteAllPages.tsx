@@ -2,6 +2,7 @@ import { Sparkles } from "lucide-react";
 import { AnimatedEllipsis } from "./AnimatedEllipsis";
 import { AIActionRow } from "./AIActionRow";
 import { NotifyWhenDone } from "./NotifyWhenDone";
+import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useLatestTaskRow, type TaskRow } from "@/hooks/useLatestTaskRow";
@@ -43,7 +44,7 @@ export function WriteAllPages({ bookId, plannedCount }: WriteAllPagesProps) {
   const notifiedRef = useRef<number | null>(null);
   useEffect(() => { notifyRef.current = notify; }, [notify]);
 
-  const { row, refetch } = useLatestTaskRow<WriteAllRow>({
+  const { row, refetch, stale } = useLatestTaskRow<WriteAllRow>({
     table: "book_generations",
     bookId,
     match: { kind: "write_all" },
@@ -87,6 +88,18 @@ export function WriteAllPages({ bookId, plannedCount }: WriteAllPagesProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [row?.id, row?.status]);
 
+  // Stop a stalled run: setting it terminal makes the next chained call (and the pg_cron watchdog,
+  // which only revives 'running' rows) stand down. The server already self-heals a single poison
+  // page; this is the manual escape hatch for a run the author just wants to end.
+  const stop = async () => {
+    if (!row) return;
+    await supabase
+      .from("book_generations")
+      .update({ status: "error", error: "Stopped — the run was taking too long." })
+      .eq("id", row.id);
+    refetch();
+  };
+
   const run = async () => {
     if (running) return;
     if (!window.confirm("Generate prose for every empty page that has an objective?")) return;
@@ -123,6 +136,14 @@ export function WriteAllPages({ bookId, plannedCount }: WriteAllPagesProps) {
         onClick={run}
         loading={running}
       />
+      {running && stale && (
+        <div className="px-5 pt-2 flex items-center justify-between gap-3">
+          <span className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))]">
+            This run has stalled. It should auto-recover shortly — or stop it.
+          </span>
+          <Button variant="ghost" size="sm" onClick={() => void stop()}>Stop</Button>
+        </div>
+      )}
       {!running && (
         <div className="px-5 pt-2">
           <NotifyWhenDone enabled={notify} onChange={setNotify} />
