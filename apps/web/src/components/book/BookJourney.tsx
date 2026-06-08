@@ -253,9 +253,18 @@ export function BookJourney({
               {!hasScaffold ? (
                 <ScaffoldGenerator bookId={bookId} onCreated={onChanged} />
               ) : (
-                <p className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))]">
-                  Your outline is in place. Edit or remove pages in the Manuscript tab, or use “Revise” below to restructure with AI.
-                </p>
+                <div className="space-y-1.5">
+                  <p className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))]">
+                    Your outline is in place. Edit or remove pages in the Manuscript tab — or revise the whole plan with AI.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => onRevisePrefill({})}
+                    className="pv-serif text-[14px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground"
+                  >
+                    Revise the outline with AI →
+                  </button>
+                </div>
               )}
             </div>
           )}
@@ -305,16 +314,17 @@ export function BookJourney({
           )}
         </StepRow>
 
-        {/* 6 — Revise. Locked until there's prose, but a read is NOT required first. */}
+        {/* 6 — Revise. Works on the objective tree, so it's available once an OUTLINE exists — you
+            can re-plan the structure before writing a word, or rework the prose after. */}
         <StepRow
           index={5}
           total={TOTAL}
-          status={!hasWritten ? "locked" : "actionable"}
+          status={!hasScaffold ? "locked" : "actionable"}
           title="Revise with AI"
-          caption="Restructure or rework the draft — the AI proposes a plan you review before it sticks. A read isn't required."
+          caption="Re-plan the outline or rework the draft — describe the change and the AI proposes a plan you review before it sticks."
         >
-          {!hasWritten ? (
-            <LockedNote reason="Write some pages first." />
+          {!hasScaffold ? (
+            <LockedNote reason="Generate an outline first." />
           ) : (
             <ReviseWithAI
               bookId={bookId}

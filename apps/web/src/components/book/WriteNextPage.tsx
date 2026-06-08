@@ -126,9 +126,20 @@ export function WriteNextPage({ bookId, writtenCount = 0, onWritten }: WriteNext
 
   // Fresh start: a single action that writes the next empty page.
   const firstTimeLabel = writtenCount === 0 ? 'Write the first page' : 'Write the next page';
-  const reviewTarget = lastWrittenFromDb;
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
+      {lastWrittenFromDb && (
+        <div className="rounded-xl border border-border px-5 py-4">
+          <p className="pv-serif text-sm text-foreground">
+            Last written: <span className="italic">"{lastWrittenFromDb.title || "Untitled"}"</span>. Read it to verify or revise before continuing.
+          </p>
+          <div className="mt-3">
+            <Button variant="outline" size="sm" onClick={() => navigate(`/books/${bookId}/pages/${lastWrittenFromDb.id}`)}>
+              <BookOpen className="mr-2 h-4 w-4" /> Read this page
+            </Button>
+          </div>
+        </div>
+      )}
       <AIActionRow
         icon={<Sparkles className="h-4 w-4" />}
         title={working ? <span>Writing<AnimatedEllipsis /></span> : firstTimeLabel}
@@ -136,14 +147,6 @@ export function WriteNextPage({ bookId, writtenCount = 0, onWritten }: WriteNext
         onClick={() => void writeNext()}
         loading={working}
       />
-      {reviewTarget && (
-        <AIActionRow
-          icon={<BookOpen className="h-4 w-4" />}
-          title="Review last written page"
-          description={`"${reviewTarget.title || "Untitled"}" -- read, revise, or continue from here.`}
-          onClick={() => navigate(`/books/${bookId}/pages/${reviewTarget.id}`)}
-        />
-      )}
     </div>
   );
 }
