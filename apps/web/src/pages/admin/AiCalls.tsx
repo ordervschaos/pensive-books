@@ -18,6 +18,13 @@ import { Activity, Sparkles, Loader2 } from "lucide-react";
 const AI_CALLS: string = "ai_calls";
 const AI_CALL_EVALS: string = "ai_call_evals";
 
+// The list query polls every few seconds; `system`/`input`/`output` hold the full prompt + whole-book
+// context + completion (tens of KB–MBs each). Fetching them for 200 rows on every poll was burning GBs
+// of DB egress, so the list pulls metadata only and the detail panel fetches the heavy fields on demand.
+const AI_CALL_LIST_COLUMNS =
+  "id, created_at, book_id, user_id, task_table, task_id, fn, source, status, model, input_tokens, output_tokens, latency_ms, stop_reason, error";
+const AI_CALL_HEAVY_COLUMNS = "system, input, output";
+
 interface AiCall {
   id: number;
   created_at: string;
@@ -98,7 +105,7 @@ export default function AiCalls() {
 
   const load = async () => {
     const [{ data: callRows, error: e1 }, { data: evalRows, error: e2 }] = await Promise.all([
-      supabase.from(AI_CALLS).select("*").order("id", { ascending: false }).limit(200),
+      supabase.from(AI_CALLS).select(AI_CALL_LIST_COLUMNS).order("id", { ascending: false }).limit(200),
       supabase.from(AI_CALL_EVALS).select("*").order("id", { ascending: false }).limit(400),
     ]);
     if (e1 || e2) { setError((e1 ?? e2)!.message); setLoading(false); return; }
@@ -129,12 +136,37 @@ export default function AiCalls() {
     setLoading(false);
   };
 
+  // Open the detail panel immediately with the metadata we already have, then pull the heavy
+  // payload columns (excluded from the polled list query) for just this one row.
+  const selectCall = async (c: AiCall) => {
+    setSelected(c);
+    const { data } = await supabase
+      .from(AI_CALLS)
+      .select(AI_CALL_HEAVY_COLUMNS)
+      .eq("id", c.id)
+      .maybeSingle();
+    if (data) {
+      setSelected((prev) => (prev && prev.id === c.id ? { ...prev, ...(data as Partial<AiCall>) } : prev));
+    }
+  };
+
   // Load on mount, then poll so calls from an in-flight task (eval, scan, revise build…) appear
-  // without a manual reload. load() never flips `loading`, so the poll updates silently.
+  // without a manual reload. load() never flips `loading`, so the poll updates silently. The poll
+  // pauses while the tab is hidden so a forgotten background tab can't keep hitting the DB forever.
   useEffect(() => {
-    load();
-    const t = setInterval(load, 4000);
-    return () => clearInterval(t);
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const start = () => {
+      if (timer) return;
+      load();
+      timer = setInterval(load, 4000);
+    };
+    const stop = () => {
+      if (timer) { clearInterval(timer); timer = null; }
+    };
+    const onVisibility = () => (document.hidden ? stop() : start());
+    onVisibility(); // start now if the tab is visible
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => { stop(); document.removeEventListener("visibilitychange", onVisibility); };
   }, []);
 
   const fns = useMemo(() => Array.from(new Set(calls.map((c) => c.fn))).sort(), [calls]);
@@ -218,7 +250,7 @@ export default function AiCalls() {
               const ev = latestEval(c.id);
               const score = avgScore(ev?.scores ?? null);
               return (
-                <TableRow key={c.id} className="cursor-pointer" onClick={() => setSelected(c)}>
+                <TableRow key={c.id} className="cursor-pointer" onClick={() => selectCall(c)}>
                   <TableCell className="tabular-nums text-muted-foreground">{c.id}</TableCell>
                   <TableCell className="font-medium">
                     {c.fn}
