@@ -28,6 +28,7 @@ import { buildDoc } from "../_shared/build-doc.ts";
 import { serviceClient } from "../_shared/task.ts";
 import { reinvoke, isChainCall } from "../_shared/self-chain.ts";
 import { captureException, isBillingError } from "../_shared/sentry.ts";
+import { stampProse } from "../_shared/plan-provenance.ts";
 
 const MAX_ATTEMPTS = 3; // 1 try + 2 retries per page (matches the old client loop)
 // Across invocations: give up on a page after this many invocations fail to get past it. Guards the
@@ -211,6 +212,8 @@ async function advance(service: ReturnType<typeof serviceClient>, apiKey: string
           if (text) {
             const { error: upErr } = await service.from("pages").update({ content: buildDoc(page.title, text) }).eq("id", pageId);
             if (upErr) throw new Error(upErr.message);
+            // Plan↔prose provenance: record which objective this prose was written from.
+            await stampProse(service, pageId, objective);
           }
           written = true;
         } catch (e) {

@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { proseToParagraphs } from "@/lib/inlineMarkdown";
 import { jsonToText } from "@/utils/tiptapHelpers";
 import { PageWorkshop } from "@/components/book/PageWorkshop";
+import { stampProse } from "@/lib/planProvenance";
 
 
 interface PageContentProps {
@@ -130,7 +131,9 @@ export const PageContent = ({
     if (!editor) return;
     const paras = proseToParagraphs(prose);
     if (paras.length) editor.chain().focus("end").insertContent(paras).run();
-  }, []);
+    // Plan↔prose provenance: this prose was written from the page's objective.
+    if (pageId) void stampProse(Number(pageId), objective);
+  }, [pageId, objective]);
 
   // Current page prose as plain text (paragraph-separated, title excluded) — the "before"
   // side of the revise diff.
@@ -158,7 +161,8 @@ export const PageContent = ({
     setCurrentContent(doc);
     setInitialLoad(false);
     onSave(doc);
-  }, [currentContent, onSave]);
+    if (pageId) void stampProse(Number(pageId), objective);
+  }, [currentContent, onSave, pageId, objective]);
 
   // Always use the current content - don't maintain separate state for display
 
