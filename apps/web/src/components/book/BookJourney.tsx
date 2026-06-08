@@ -277,7 +277,7 @@ export function BookJourney({
             <div className="space-y-3">
               {/* Incremental driver owns every state here (incl. "all written"), so it stays mounted
                   through the final page and keeps its read-after-write affordance. */}
-              <WriteNextPage bookId={bookId} onWritten={onChanged} />
+              <WriteNextPage bookId={bookId} writtenCount={counts.written} onWritten={onChanged} />
               {isAdmin && counts.objective > 0 && <WriteAllPages bookId={bookId} plannedCount={counts.objective} />}
               <p className="pv-serif text-[12.5px] italic text-[hsl(var(--pv-text-faint))]">
                 You can also write or edit any page by hand in the Manuscript tab.

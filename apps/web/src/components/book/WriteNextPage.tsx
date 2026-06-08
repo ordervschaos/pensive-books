@@ -10,6 +10,8 @@ import { BRIDGE, bridgeFetch } from "@/lib/bridge";
 
 interface WriteNextPageProps {
   bookId: number;
+  /** How many pages already have prose (from the host's page list). Used to label the first CTA. */
+  writtenCount?: number;
   /** Called after a page is written, so the host can refresh its page counts. */
   onWritten?: () => void;
 }
@@ -23,20 +25,21 @@ interface Target {
 /**
  * Incremental, in-the-loop alternative to the book-wide cascade (WriteAllPages, admin-only): write
  * ONE page from its objective, then offer to read/verify it before writing the next. The author
- * stays in control and reviews as they go, so nothing ever "runs away" — the small, attended commit
+ * stays in control and reviews as they go, so nothing ever "runs away" -- the small, attended commit
  * the bulk run isn't.
  *
  * Engine: a synchronous generate-unit call (returns prose; we write the page client-side, like the
- * dev cascade). No durable task row — this is an attended action, so resume-on-refresh isn't worth
+ * dev cascade). No durable task row -- this is an attended action, so resume-on-refresh isn't worth
  * the machinery; a refresh mid-write just leaves the page empty to click again.
  */
-export function WriteNextPage({ bookId, onWritten }: WriteNextPageProps) {
+export function WriteNextPage({ bookId, writtenCount = 0, onWritten }: WriteNextPageProps) {
   const { toast } = useToast();
   const navigate = useNavigate();
   const [next, setNext] = useState<Target | null>(null);
   const [remaining, setRemaining] = useState<number | null>(null); // null = still loading
   const [working, setWorking] = useState(false);
   const [lastWritten, setLastWritten] = useState<{ id: number; title: string | null } | null>(null);
+  const [lastWrittenFromDb, setLastWrittenFromDb] = useState<{ id: number; title: string | null } | null>(null);
 
   const loadNext = useCallback(async () => {
     const { data: pages } = await supabase
@@ -46,11 +49,16 @@ export function WriteNextPage({ bookId, onWritten }: WriteNextPageProps) {
       .eq("page_type", "text")
       .eq("archived", false)
       .order("page_index", { ascending: true });
-    const targets = ((pages as Array<{ id: number; title: string | null; content: unknown; metadata: { objective?: string } | null }>) ?? [])
+    const allPages = (pages as Array<{ id: number; title: string | null; content: unknown; metadata: { objective?: string } | null }>) ?? [];
+    const targets = allPages
       .filter((p) => p.metadata?.objective && !bodyText(p.content))
       .map((p) => ({ id: p.id, title: p.title, objective: p.metadata!.objective! }));
     setRemaining(targets.length);
     setNext(targets[0] ?? null);
+    // Track the last page that already has prose (for the "Review last written page" link).
+    const writtenPages = allPages.filter((p) => bodyText(p.content));
+    const dbLast = writtenPages[writtenPages.length - 1] ?? null;
+    setLastWrittenFromDb(dbLast ? { id: dbLast.id, title: dbLast.title } : null);
   }, [bookId]);
 
   useEffect(() => { void loadNext(); }, [loadNext]);
@@ -80,7 +88,7 @@ export function WriteNextPage({ bookId, onWritten }: WriteNextPageProps) {
     if (lastWritten) navigate(`/books/${bookId}/pages/${lastWritten.id}`);
   };
 
-  if (remaining === null) return null; // initial load — say nothing
+  if (remaining === null) return null; // initial load -- say nothing
 
   // Nothing left and nothing written this session (e.g. arriving at a finished book).
   if (remaining === 0 && !lastWritten) {
@@ -96,10 +104,10 @@ export function WriteNextPage({ bookId, onWritten }: WriteNextPageProps) {
     return (
       <div className="rounded-xl border border-border px-5 py-4">
         <p className="pv-serif text-sm text-foreground">
-          Wrote <span className="italic">“{lastWritten.title || "Untitled"}”</span>.
+          Wrote <span className="italic">"{lastWritten.title || "Untitled"}"</span>.
           {remaining === 0
             ? " Every planned page now has prose."
-            : " Read it to verify or revise — or write the next page."}
+            : " Read it to verify or revise -- or write the next page."}
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Button variant="outline" size="sm" onClick={readLast}>
@@ -117,18 +125,30 @@ export function WriteNextPage({ bookId, onWritten }: WriteNextPageProps) {
   }
 
   // Fresh start: a single action that writes the next empty page.
+  const firstTimeLabel = writtenCount === 0 ? 'Write the first page' : 'Write the next page';
+  const reviewTarget = lastWrittenFromDb;
   return (
-    <AIActionRow
-      icon={<Sparkles className="h-4 w-4" />}
-      title={working ? <span>Writing<AnimatedEllipsis /></span> : "Write the next page"}
-      description={next ? `Next: “${next.title || "Untitled"}” — review it after, then continue.` : "Render one page from its objective."}
-      onClick={() => void writeNext()}
-      loading={working}
-    />
+    <div className="space-y-2">
+      <AIActionRow
+        icon={<Sparkles className="h-4 w-4" />}
+        title={working ? <span>Writing<AnimatedEllipsis /></span> : firstTimeLabel}
+        description={next ? `Next: "${next.title || "Untitled"}" -- review it after, then continue.` : "Render one page from its objective."}
+        onClick={() => void writeNext()}
+        loading={working}
+      />
+      {reviewTarget && (
+        <AIActionRow
+          icon={<BookOpen className="h-4 w-4" />}
+          title="Review last written page"
+          description={`"${reviewTarget.title || "Untitled"}" -- read, revise, or continue from here.`}
+          onClick={() => navigate(`/books/${bookId}/pages/${reviewTarget.id}`)}
+        />
+      )}
+    </div>
   );
 }
 
-// Body text excluding the leading title heading — decides if a page is still "empty".
+// Body text excluding the leading title heading -- decides if a page is still "empty".
 function bodyText(content: unknown): string {
   if (!content || typeof content !== "object") return typeof content === "string" ? content : "";
   const doc = content as { content?: Array<Record<string, unknown>> };
