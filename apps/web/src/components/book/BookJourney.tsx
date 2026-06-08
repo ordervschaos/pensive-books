@@ -247,13 +247,14 @@ export function BookJourney({
                   </div>
                 </div>
               )}
-              {/* Construction is append-only — once there's prose, structural change goes through
-                  Revise (step 6), so the generator retires. */}
-              {!hasWritten ? (
+              {/* Generating is append-only — it ADDS pages. Once an outline exists, the generator
+                  retires so a second click can't stack a duplicate outline (stray pages). Changing
+                  the structure now goes through editing pages or Revise (step 6). */}
+              {!hasScaffold ? (
                 <ScaffoldGenerator bookId={bookId} onCreated={onChanged} />
               ) : (
                 <p className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))]">
-                  Structure is in place. To restructure now, use “Revise” below.
+                  Your outline is in place. Edit or remove pages in the Manuscript tab, or use “Revise” below to restructure with AI.
                 </p>
               )}
             </div>
