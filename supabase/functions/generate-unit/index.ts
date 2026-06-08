@@ -80,6 +80,7 @@ Deno.serve(async (req: Request) => {
       precedingText: body.precedingText,
       mode: body.mode,
       issues: body.issues,
+      userId: user.id,
     });
 
     return json({ text });

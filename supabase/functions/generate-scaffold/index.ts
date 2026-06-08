@@ -86,7 +86,7 @@ Deno.serve(async (req: Request) => {
     if (insertError || !gen) return json({ error: "Could not start scaffold" }, 500);
 
     runInBackground(service, "book_generations", gen.id, "generate-scaffold", async () => {
-      const scaffold = await callClaude(apiKey, bookName, brief, bible, { fn: "generate-scaffold", bookId, taskTable: "book_generations", taskId: gen.id });
+      const scaffold = await callClaude(apiKey, bookName, brief, bible, { fn: "generate-scaffold", bookId, taskTable: "book_generations", taskId: gen.id, userId: user.id });
       return { status: "ready", result: scaffold };
     });
 

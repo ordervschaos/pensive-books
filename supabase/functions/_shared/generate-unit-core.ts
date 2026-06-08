@@ -45,6 +45,8 @@ export interface UnitParams {
   issues?: ReviseIssue[];
   // Optional link to the durable task row this render serves, recorded on the ai_calls log.
   log?: { taskTable?: string; taskId?: number };
+  // Auth user who triggered this render; null/absent = automated/system call.
+  userId?: string | null;
 }
 
 interface BookRow {
@@ -88,6 +90,7 @@ export async function generateUnit(client: SupabaseClient, apiKey: string, p: Un
     bookId: p.bookId,
     taskTable: p.log?.taskTable ?? null,
     taskId: p.log?.taskId ?? null,
+    userId: p.userId ?? null,
   };
 
   const text = await callClaude(apiKey, {

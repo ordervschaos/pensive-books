@@ -22,6 +22,7 @@ interface AiCall {
   id: number;
   created_at: string;
   book_id: number | null;
+  user_id: string | null;
   task_table: string | null;
   task_id: number | null;
   fn: string;
@@ -36,6 +37,13 @@ interface AiCall {
   latency_ms: number | null;
   stop_reason: string | null;
   error: string | null;
+}
+
+interface UserProfile {
+  user_id: string;
+  name: string | null;
+  username: string | null;
+  profile_pic: string | null;
 }
 
 interface Finding { criterion?: string; severity?: string; note?: string; evidence?: string }
@@ -81,6 +89,7 @@ export default function AiCalls() {
   const { toast } = useToast();
   const [calls, setCalls] = useState<AiCall[]>([]);
   const [evalsByCall, setEvalsByCall] = useState<Map<number, AiCallEval[]>>(new Map());
+  const [profileMap, setProfileMap] = useState<Map<string, UserProfile>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [fnFilter, setFnFilter] = useState<string>("all");
@@ -93,7 +102,23 @@ export default function AiCalls() {
       supabase.from(AI_CALL_EVALS).select("*").order("id", { ascending: false }).limit(400),
     ]);
     if (e1 || e2) { setError((e1 ?? e2)!.message); setLoading(false); return; }
-    setCalls((callRows ?? []) as unknown as AiCall[]);
+    const rows = (callRows ?? []) as unknown as AiCall[];
+    setCalls(rows);
+
+    // Load profiles for all distinct user_ids recorded on the calls themselves.
+    const userIds = [...new Set(rows.map((c) => c.user_id).filter(Boolean))] as string[];
+    if (userIds.length) {
+      const { data: profiles } = await supabase
+        .from("public_user_profiles" as string)
+        .select("user_id, name, username, profile_pic")
+        .in("user_id", userIds);
+      if (profiles) {
+        const map = new Map<string, UserProfile>();
+        for (const p of profiles as unknown as UserProfile[]) map.set(p.user_id, p);
+        setProfileMap(map);
+      }
+    }
+
     const map = new Map<number, AiCallEval[]>();
     for (const ev of (evalRows ?? []) as unknown as AiCallEval[]) {
       const arr = map.get(ev.ai_call_id) ?? [];
@@ -182,6 +207,8 @@ export default function AiCalls() {
               <TableHead>model</TableHead>
               <TableHead className="text-right">tokens</TableHead>
               <TableHead className="text-right">latency</TableHead>
+              <TableHead>who</TableHead>
+              <TableHead>when</TableHead>
               <TableHead>eval</TableHead>
               <TableHead></TableHead>
             </TableRow>
@@ -210,6 +237,22 @@ export default function AiCalls() {
                   <TableCell className="text-right tabular-nums text-xs text-muted-foreground">
                     {c.status === "running" ? <Loader2 className="h-3.5 w-3.5 animate-spin inline" /> : c.latency_ms != null ? `${(c.latency_ms / 1000).toFixed(1)}s` : "—"}
                   </TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {c.user_id ? (() => {
+                      const p = profileMap.get(c.user_id);
+                      return (
+                        <span className="flex items-center gap-1.5">
+                          {p?.profile_pic
+                            ? <img src={p.profile_pic} className="h-5 w-5 rounded-full object-cover flex-shrink-0" />
+                            : <span className="h-5 w-5 rounded-full bg-muted flex-shrink-0 inline-block" />}
+                          <span className="truncate max-w-[80px]">{p?.name ?? p?.username ?? c.user_id.slice(0, 8)}</span>
+                        </span>
+                      );
+                    })() : <span className="italic">system</span>}
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                    {new Date(c.created_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                  </TableCell>
                   <TableCell>
                     {ev ? (
                       <span className="text-xs">
@@ -229,7 +272,7 @@ export default function AiCalls() {
               );
             })}
             {visible.length === 0 && (
-              <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">No AI calls yet — run something AI in the app.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground py-8">No AI calls yet — run something AI in the app.</TableCell></TableRow>
             )}
           </TableBody>
         </Table>
@@ -241,17 +284,19 @@ export default function AiCalls() {
         onClose={() => setSelected(null)}
         onJudge={selected ? () => judge(selected) : undefined}
         judging={selected ? judging.has(selected.id) : false}
+        profile={selected?.user_id ? profileMap.get(selected.user_id) : null}
       />
     </div>
   );
 }
 
-function CallDialog({ call, evals, onClose, onJudge, judging }: {
+function CallDialog({ call, evals, onClose, onJudge, judging, profile }: {
   call: AiCall | null;
   evals: AiCallEval[];
   onClose: () => void;
   onJudge?: () => void;
   judging: boolean;
+  profile?: UserProfile | null;
 }) {
   if (!call) return null;
   return (
@@ -266,7 +311,13 @@ function CallDialog({ call, evals, onClose, onJudge, judging }: {
         </DialogHeader>
         <ScrollArea className="max-h-[70vh] pr-4">
           <div className="space-y-4 text-sm">
-            <div className="text-xs text-muted-foreground flex gap-4 flex-wrap">
+            <div className="text-xs text-muted-foreground flex gap-4 flex-wrap items-center">
+              {profile ? (
+                <span className="flex items-center gap-1.5">
+                  {profile.profile_pic && <img src={profile.profile_pic} className="h-4 w-4 rounded-full object-cover" />}
+                  {profile.name ?? profile.username}
+                </span>
+              ) : null}
               <span>book {call.book_id ?? "—"}</span>
               {call.task_table && <span>→ {call.task_table}#{call.task_id}</span>}
               {call.input_tokens != null && <span>tokens {call.input_tokens}/{call.output_tokens}</span>}

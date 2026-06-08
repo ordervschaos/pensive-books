@@ -116,7 +116,7 @@ Deno.serve(async (req: Request) => {
     if (insertError || !gen) return json({ error: "Could not start bible draft" }, 500);
 
     runInBackground(service, "book_generations", gen.id, "generate-bible", async () => {
-      const meta: CallMeta = { fn: "generate-bible", bookId, taskTable: "book_generations", taskId: gen.id };
+      const meta: CallMeta = { fn: "generate-bible", bookId, taskTable: "book_generations", taskId: gen.id, userId: user.id };
       const text = source === "manuscript"
         ? await scanFromManuscript(apiKey, bookName, brief, pages!, meta)
         : await draftFromBrief(apiKey, bookName, brief, meta);

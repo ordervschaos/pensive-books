@@ -19,6 +19,7 @@ export interface CallMeta {
   taskTable?: string | null;        // the durable task table this call serves
   taskId?: number | null;           // …and the row id, for the join
   source?: "edge" | "bridge";       // defaults to 'edge'
+  userId?: string | null;           // auth user who triggered this call; null = automated/system
 }
 
 // deno-lint-ignore no-explicit-any
@@ -95,6 +96,7 @@ async function logStart(body: Record<string, unknown>, meta: CallMeta): Promise<
       task_id: meta.taskId ?? null,
       fn: meta.fn,
       source: meta.source ?? "edge",
+      user_id: meta.userId ?? null,
       model: (body.model as string) ?? null,
       system: systemText(body.system),
       input: body.messages ?? null,
@@ -140,6 +142,7 @@ async function logEnd(
       task_id: meta.taskId ?? null,
       fn: meta.fn,
       source: meta.source ?? "edge",
+      user_id: meta.userId ?? null,
       model: (body.model as string) ?? null,
       system: systemText(body.system),
       input: body.messages ?? null,

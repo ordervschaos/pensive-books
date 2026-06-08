@@ -212,6 +212,22 @@ function readBody(req) {
   });
 }
 
+// Cache book_id → owner_id so we only look it up once per bridge session.
+const bookOwnerCache = new Map();
+async function getBookOwner(bookId) {
+  if (!bookId) return null;
+  if (bookOwnerCache.has(bookId)) return bookOwnerCache.get(bookId);
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/books?id=eq.${bookId}&select=owner_id`, { headers: sbHeaders });
+    const rows = await res.json().catch(() => []);
+    const ownerId = Array.isArray(rows) && rows[0]?.owner_id ? rows[0].owner_id : null;
+    bookOwnerCache.set(bookId, ownerId);
+    return ownerId;
+  } catch {
+    return null;
+  }
+}
+
 // Log one AI call to ai_calls (source='bridge') so local Claude-Code runs are analyzable alongside
 // prod's edge calls. The bridge bakes the system prompt into the user message, so `system` stays
 // null and the assembled prompt goes in `input` (same messages shape the edge rows use). Best-effort
@@ -219,11 +235,13 @@ function readBody(req) {
 // (dev convenience); prod records the full (task_table, task_id) join.
 async function logAiCall({ bookId = null, fn, prompt = null, output = null, error = null, latencyMs = null }) {
   try {
+    const userId = await getBookOwner(bookId);
     await fetch(`${SUPABASE_URL}/rest/v1/ai_calls`, {
       method: "POST",
       headers: { ...sbHeaders, "content-type": "application/json", Prefer: "return=minimal" },
       body: JSON.stringify({
         book_id: bookId,
+        user_id: userId,
         fn,
         source: "bridge",
         model: "claude-code-local",
@@ -244,11 +262,13 @@ async function logAiCall({ bookId = null, fn, prompt = null, output = null, erro
 // fall back to a single terminal insert via logAiCall). Best-effort.
 async function logAiStart({ bookId = null, fn, prompt = null }) {
   try {
+    const userId = await getBookOwner(bookId);
     const res = await fetch(`${SUPABASE_URL}/rest/v1/ai_calls`, {
       method: "POST",
       headers: { ...sbHeaders, "content-type": "application/json", Prefer: "return=representation" },
       body: JSON.stringify({
         book_id: bookId,
+        user_id: userId,
         fn,
         source: "bridge",
         model: "claude-code-local",

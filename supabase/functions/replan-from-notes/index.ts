@@ -168,7 +168,8 @@ Deno.serve(async (req: Request) => {
       instr || null,
       pageCtxMap,
       contentMap,
-      bookId
+      bookId,
+      user.id,
     );
     return json(plan);
   } catch (e) {
@@ -328,7 +329,8 @@ async function callClaude(
   instruction: string | null,
   pageCtxMap: Map<number, { summary: boolean; full: boolean }>,
   contentMap: Map<number, string>,
-  bookId: number
+  bookId: number,
+  userId?: string | null,
 ): Promise<RevisionPlan> {
   const data = await callClaudeApi(apiKey, {
     model: MODEL,
@@ -348,7 +350,7 @@ async function callClaude(
           `\n\nProduce the revision plan. JSON only.`,
       },
     ],
-  }, { fn: "replan-from-notes", bookId });
+  }, { fn: "replan-from-notes", bookId, userId: userId ?? null });
 
   const text = (data.content ?? [])
     .filter((b: { type: string }) => b.type === "text")
