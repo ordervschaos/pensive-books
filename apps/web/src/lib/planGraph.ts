@@ -58,10 +58,11 @@ export interface RawPage {
 export function buildMap(input: {
   briefFilled: boolean;
   spineText: string | null | undefined;
+  spineStale?: boolean; // spine present but its source brief has changed since
   pages: RawPage[];
 }): MapModel {
   const brief: CellState = input.briefFilled ? "synced" : "gap";
-  const spine: CellState = filled(input.spineText) ? "synced" : "gap";
+  const spine: CellState = !filled(input.spineText) ? "gap" : input.spineStale ? "drift" : "synced";
 
   // A filled node is "drift" when its incoming (parent→me) edge is stale, else "synced".
   const cell = (text: string | null | undefined, stale: boolean): CellState =>

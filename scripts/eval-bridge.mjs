@@ -739,6 +739,45 @@ Write the beat this prose implements. One paragraph, plan only.`;
   return { beat: (out.text ?? "").trim() };
 }
 
+// ── /brief-to-spine ───────────────────────────────────────────────────────────
+// Mirrors supabase/functions/brief-to-spine: brief → the book spine (the throughline). No mutation —
+// the client writes books.spine = { text, brief_hash }.
+const BRIEF_TO_SPINE_INSTRUCTIONS = `You are a book architect writing the BOOK SPINE — the throughline of the whole book. In 1–2 short paragraphs, state what this book is fundamentally DOING: its central objective/promise and the arc from beginning to end. This is the book-level objective every page will serve.
+
+Rules:
+- Output 1–2 short paragraphs. No title, no heading, no preamble, no markdown, no meta commentary — just the spine.
+- It is the structural throughline, NOT a blurb or marketing copy and NOT a chapter list. Name the central aim, the through-arc, and what changes by the end.
+- Derive it from the brief (genre, audience, premise, tone). Honour them as the voice/intent contract.
+- If an outline is given, stay consistent with it, but write the spine at the BOOK level — above any single page.`;
+
+async function runBriefToSpine(body) {
+  const { bookId } = body;
+  if (!bookId) return { error: "bookId required" };
+  const book = await fetchBook(bookId);
+  if (!book) return { error: "Book not found" };
+  const pages = await fetchPages(bookId);
+  const outline = pages
+    .map((p) => {
+      const obj = p.metadata?.objective?.trim();
+      if (p.page_type === "section") return `# ${p.title || "(untitled section)"}${obj ? ` — ${obj}` : ""}`;
+      return `- "${p.title || "(untitled)"}"${obj ? ` — ${obj}` : ""}`;
+    })
+    .join("\n");
+
+  const prompt = `${BRIEF_TO_SPINE_INSTRUCTIONS}
+
+BOOK: ${book.name}
+
+BRIEF (the voice/intent contract):
+${briefContext(book.brief)}${outline ? `\n\nCURRENT OUTLINE (for consistency — write the spine ABOVE these):\n${outline}` : ""}
+
+Write the book spine. 1–2 short paragraphs, the throughline only.`;
+
+  const out = await runClaude(prompt, true, { fn: "brief-to-spine", bookId }, { noTools: true });
+  if (out.error) return out;
+  return { spine: (out.text ?? "").trim() };
+}
+
 // ── /unit ─────────────────────────────────────────────────────────────────────
 // Kept at parity with supabase/functions/generate-unit so free local testing exercises
 // the same context (bible + objective map + story so far + preceding prose) and summary.
@@ -897,6 +936,7 @@ const FN_PROMPT_SOURCE = {
   "replan-from-notes": "supabase/functions/replan-from-notes/index.ts (and scripts/eval-bridge.mjs runReplan)",
   "objective-to-beat": "supabase/functions/objective-to-beat/index.ts (and scripts/eval-bridge.mjs runObjectiveToBeat)",
   "prose-to-beat": "supabase/functions/prose-to-beat/index.ts (and scripts/eval-bridge.mjs runProseToBeat)",
+  "brief-to-spine": "supabase/functions/brief-to-spine/index.ts (and scripts/eval-bridge.mjs runBriefToSpine)",
   "scan-page": "supabase/functions/scan-threads/index.ts (callHaiku)",
   "evaluate-book": "supabase/functions/evaluate-book/index.ts (runTriage/runGroup/runVerdict)",
 };
@@ -1149,6 +1189,16 @@ async function route(req, res) {
     return json(res, 200, out);
   }
 
+  if (url === "/brief-to-spine" || url === "/brief-to-spine/") {
+    if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
+    const body = await readBody(req);
+    if (!(await authorize(req, res, Number(body.bookId)))) return;
+    console.log(`Writing book spine (book ${body.bookId})…`);
+    const out = await runBriefToSpine(body);
+    if (out.error) return json(res, 500, { error: out.error });
+    return json(res, 200, out);
+  }
+
   const evalCallMatch = url.match(/^\/eval-call\/(\d+)\/?$/);
   if (evalCallMatch) {
     if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
@@ -1175,5 +1225,5 @@ async function route(req, res) {
 
 server.listen(PORT, () => {
   console.log(`eval-bridge listening on http://localhost:${PORT}  (repo: ${repoRoot})`);
-  console.log(`  GET/POST /eval/:bookId   POST /scaffold/:bookId   POST /bible/:bookId   POST /replan/:bookId   POST /unit   POST /objective-to-beat   POST /prose-to-beat`);
+  console.log(`  GET/POST /eval/:bookId   POST /scaffold/:bookId   POST /bible/:bookId   POST /replan/:bookId   POST /unit   POST /objective-to-beat   POST /prose-to-beat   POST /brief-to-spine`);
 });

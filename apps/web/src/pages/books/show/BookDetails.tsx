@@ -24,6 +24,7 @@ import { BookBriefSection } from "@/components/book/BookBriefSection";
 import { type RevisionPrefill } from "@/components/book/ReviseWithAI";
 import { BookJourney } from "@/components/book/BookJourney";
 import { ResolutionMap } from "@/components/book/ResolutionMap";
+import { BookSpine } from "@/components/book/BookSpine";
 import { ThreadsSection } from "@/components/book/ThreadsSection";
 import { BookBibleSection } from "@/components/book/BookBibleSection";
 import { getPageStatus } from "./components/pageList/pageUtils";
@@ -716,6 +717,7 @@ const BookDetails = () => {
                     {/* Resolution Map (admin preview, read-only): the multi-resolution completeness
                         chart that will become the primary build surface once its cells are interactive. */}
                     {isAdmin && <ResolutionMap bookId={getNumericId(bookSlug)} refreshKey={pages.length} />}
+                    {isAdmin && <BookSpine bookId={getNumericId(bookSlug)} onChanged={fetchBookDetails} />}
                     <BookJourney
                     bookId={getNumericId(bookSlug)}
                     briefSet={briefSet}

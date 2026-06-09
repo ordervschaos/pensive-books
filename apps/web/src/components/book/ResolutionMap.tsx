@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { computeCompletion, type Brief } from "@/lib/brief";
+import { briefToPromptContext, computeCompletion, type Brief } from "@/lib/brief";
 import { buildMap, type CellState, type MapModel, type RawPage } from "@/lib/planGraph";
-import type { PageMeta } from "@/lib/planProvenance";
+import { metaHash, type PageMeta } from "@/lib/planProvenance";
 
 interface ResolutionMapProps {
   bookId: number;
@@ -27,11 +27,14 @@ export function ResolutionMap({ bookId, refreshKey }: ResolutionMapProps) {
       supabase.from("pages").select("id, title, page_type, content, metadata")
         .eq("book_id", bookId).eq("archived", false).order("page_index", { ascending: true }),
     ]);
-    const briefFilled = computeCompletion((book?.brief as Brief | null) ?? null) > 0;
-    const spineText = (book?.spine as { text?: string } | null)?.text ?? null;
+    const brief = (book?.brief as Brief | null) ?? null;
+    const briefFilled = computeCompletion(brief) > 0;
+    const spine = (book?.spine as { text?: string; brief_hash?: string } | null) ?? null;
+    const spineText = spine?.text ?? null;
+    const spineStale = !!spine?.brief_hash && spine.brief_hash !== metaHash(briefToPromptContext(brief) ?? "");
     const raw: RawPage[] = ((pages as Array<{ id: number; title: string | null; page_type: "text" | "section"; content: unknown; metadata: PageMeta | null }>) ?? [])
       .map((p) => ({ id: p.id, title: p.title, pageType: p.page_type === "section" ? "section" : "text", metadata: p.metadata, proseText: bodyText(p.content) }));
-    setModel(buildMap({ briefFilled, spineText, pages: raw }));
+    setModel(buildMap({ briefFilled, spineText, spineStale, pages: raw }));
   }, [bookId]);
 
   useEffect(() => { void load(); }, [load, refreshKey]);
