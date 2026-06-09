@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import ReactDiffViewer, { DiffMethod } from "react-diff-viewer-continued";
-import { Loader2, Sparkles } from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2, Sparkles } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -121,36 +121,6 @@ async function objectiveToBeat(bookId: number, pageId: number, objective: string
   if (error) throw error;
   if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
   return String((data as { beat?: string })?.beat ?? "").trim();
-}
-
-// prose→beat: distill a beat from a page's prose (the reverse transform). Returns the beat text; the
-// caller writes metadata.beat + reconciles the objective_beat & beat_prose edges.
-async function proseToBeat(bookId: number, pageId: number, proseText: string): Promise<string> {
-  if (BRIDGE) {
-    const r = await bridgeFetch(`/prose-to-beat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ bookId, pageId, proseText }) });
-    const d = await r.json();
-    if (d.error) throw new Error(d.error);
-    return String(d.beat ?? "").trim();
-  }
-  const { data, error } = await supabase.functions.invoke("prose-to-beat", { body: { bookId, pageId, proseText } });
-  if (error) throw error;
-  if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
-  return String((data as { beat?: string })?.beat ?? "").trim();
-}
-
-// beat→objective: distill a page's objective from its beat (reverse, up). Returns the objective text;
-// the caller sets the page objective (host-owned) and reconciles the objective_beat edge.
-async function beatToObjective(bookId: number, pageId: number, beat: string): Promise<string> {
-  if (BRIDGE) {
-    const r = await bridgeFetch(`/beat-to-objective`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ bookId, pageId, beat }) });
-    const d = await r.json();
-    if (d.error) throw new Error(d.error);
-    return String(d.objective ?? "").trim();
-  }
-  const { data, error } = await supabase.functions.invoke("beat-to-objective", { body: { bookId, pageId, beat } });
-  if (error) throw error;
-  if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
-  return String((data as { objective?: string })?.objective ?? "").trim();
 }
 
 // revise-node: rewrite a short plan node (objective/beat) against an instruction, PRESERVING what
@@ -289,6 +259,16 @@ export function PageWorkshop({
   onApply,
 }: Props) {
   const { toast } = useToast();
+  // The whole plan panel collapses, so a manual writer gets a clean editor and an AI-collaborator
+  // keeps it open. The choice is a global preference (one writer, all pages) persisted in localStorage.
+  const [planOpen, setPlanOpen] = useState(() => {
+    try { return localStorage.getItem("pv-plan-open") !== "0"; } catch { return true; }
+  });
+  const togglePlan = () => setPlanOpen((v) => {
+    const next = !v;
+    try { localStorage.setItem("pv-plan-open", next ? "1" : "0"); } catch { /* ignore */ }
+    return next;
+  });
   // Local draft for the objective field; resynced when the page or its objective changes.
   const [objectiveDraft, setObjectiveDraft] = useState(objective ?? "");
   const [open, setOpen] = useState(false);
@@ -409,60 +389,6 @@ export function PageWorkshop({
     catch (e) { toast({ variant: "destructive", title: "Couldn't save the beat", description: String((e as Error)?.message ?? e) }); }
   };
 
-  // Distill the beat FROM the prose (the upward transform): backfill a missing beat, or pull a
-  // hand-rewritten page back up into its plan. Reconciles BOTH edges — the beat now represents this
-  // objective and this prose — so the page reads in sync top to bottom.
-  const distillBeat = async () => {
-    if (beatBusy || !hasProse) return;
-    commitObjective();
-    setBeatBusy(true);
-    try {
-      const text = await proseToBeat(bookId, pageId, currentText);
-      if (text) {
-        const { data } = await supabase.from("pages").select("metadata").eq("id", pageId).maybeSingle();
-        let m: PageMeta = { ...((data?.metadata as PageMeta | null) ?? {}), beat: text };
-        m = stampEdge(m, "objective_beat", objectiveText, text);
-        m = stampEdge(m, "beat_prose", text, currentText);
-        delete m.prose_src_hash;
-        const { error } = await supabase.from("pages").update({ metadata: m }).eq("id", pageId);
-        if (error) throw error;
-        await loadMeta();
-      }
-    } catch (e) {
-      toast({ variant: "destructive", title: "Couldn't distill the beat", description: String((e as Error)?.message ?? e) });
-    } finally {
-      setBeatBusy(false);
-    }
-  };
-
-  // Distill the page OBJECTIVE up from its beat (beat→objective): pull a hand-edited beat into the
-  // objective. Sets the objective via the host (its persistence owner), then stamps the objective_beat
-  // edge as reconciled with the new objective + the beat it was distilled from.
-  const distillObjective = async () => {
-    const beat = (meta?.beat ?? "").trim();
-    if (beatBusy || !beat) return;
-    setBeatBusy(true);
-    try {
-      const next = await beatToObjective(bookId, pageId, beat);
-      if (next) {
-        // One owned write sets BOTH the objective and the reconciled objective_beat edge, so they
-        // can't be split by a race. Done FIRST and awaited; then the host call updates parent state
-        // (its merge-safe write re-reads this and preserves the sync stamp).
-        const { data } = await supabase.from("pages").select("metadata").eq("id", pageId).maybeSingle();
-        const m = stampEdge({ ...((data?.metadata as PageMeta | null) ?? {}), objective: next }, "objective_beat", next, beat);
-        const { error } = await supabase.from("pages").update({ metadata: m }).eq("id", pageId);
-        if (error) throw error;
-        setObjectiveDraft(next);
-        onObjectiveChange(next); // sync parent state (host persistence is now merge-safe)
-        await loadMeta();
-      }
-    } catch (e) {
-      toast({ variant: "destructive", title: "Couldn't distill the objective", description: String((e as Error)?.message ?? e) });
-    } finally {
-      setBeatBusy(false);
-    }
-  };
-
   // Accept a revised objective (preserve path): persist via the host; the beat, generated from the
   // OLD objective, is left to go stale (objective_beat now mismatches) — surfaced + re-syncable.
   const acceptObjectiveRevision = async (proposed: string) => {
@@ -553,9 +479,30 @@ export function PageWorkshop({
     refetch();
   };
 
-  return (
-    <div className="mx-8 mt-2 mb-6 border-t border-[hsl(var(--pv-border-soft))] pt-4">
+  const planDrift = stale || beatStale;
 
+  return (
+    <div className="mx-8 mt-1 mb-3 border-b border-[hsl(var(--pv-border-soft))] pb-3">
+
+      {/* Collapsible header: folds the whole AI plan away for manual writing, opens for AI collaboration. */}
+      <button
+        type="button"
+        onClick={togglePlan}
+        className="flex w-full items-center gap-2 text-left"
+        title={planOpen ? "Hide the plan (objective & beat)" : "Show the plan (objective & beat) and AI tools"}
+      >
+        {planOpen ? <ChevronDown className="h-3.5 w-3.5 text-[hsl(var(--pv-text-faint))]" /> : <ChevronRight className="h-3.5 w-3.5 text-[hsl(var(--pv-text-faint))]" />}
+        <span className="pv-eyebrow">Plan &amp; AI · author only</span>
+        {!planOpen && planDrift && (
+          <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500" title="the plan moved — open to re-sync" />
+        )}
+        {!planOpen && objectiveText && (
+          <span className="pv-serif min-w-0 flex-1 truncate text-[12.5px] italic text-[hsl(var(--pv-text-faint))]">— {objectiveText}</span>
+        )}
+      </button>
+
+      {planOpen && (
+       <div className="mt-3">
       {/* ── LAYER · OBJECTIVE ── */}
       <div className="flex items-baseline justify-between gap-3">
         <div className="pv-eyebrow">Objective for this page · author only</div>
@@ -580,10 +527,9 @@ export function PageWorkshop({
 
       {pageType !== "section" && (
         <>
-          {/* ── re-create between objective ↔ beat (both directions REPLACE the target) ── */}
+          {/* ── re-create the beat from the objective (downward; replaces it) ── */}
           <Connector
             down={{ label: meta?.beat?.trim() ? "re-create beat" : "create beat", onClick: () => void generateBeat(), disabled: beatBusy || !objectiveText, busy: beatBusy }}
-            up={meta?.beat?.trim() ? { label: "re-create objective", onClick: () => void distillObjective(), disabled: beatBusy } : undefined}
           />
 
           {/* ── LAYER · BEAT ── */}
@@ -612,34 +558,22 @@ export function PageWorkshop({
             </p>
           )}
 
-          {/* ── re-create between beat ↔ prose (both directions REPLACE the target) ── */}
+          {/* ── re-create the prose from the plan (downward; replaces the page body in the editor) ── */}
           <Connector
             down={
               !hasProse
-                ? { label: running ? "Writing…" : "create prose", onClick: createPage, disabled: !objectiveText || running, busy: running }
+                ? { label: running ? "Writing…" : "write prose", onClick: createPage, disabled: !objectiveText || running, busy: running }
                 : { label: "re-create prose", onClick: rerenderFromObjective, disabled: running || !objectiveText, busy: running && row?.kind !== "page_revise" }
             }
-            up={hasProse ? { label: "re-create beat", onClick: () => void distillBeat(), disabled: beatBusy } : undefined}
           />
 
-          {/* ── LAYER · PROSE ── */}
-          <div className="pv-eyebrow">Prose · this page</div>
-          {hasProse ? (
-            <div className="mt-2 max-h-[200px] overflow-y-auto border-l-2 border-[hsl(var(--pv-border-soft))] pl-3 pv-serif text-[14px] leading-relaxed text-foreground whitespace-pre-wrap">
-              {currentText}
-            </div>
-          ) : (
-            <p className="mt-2 pv-serif text-[14px] italic text-[hsl(var(--pv-text-faint))]">
-              No prose yet — use ↓ create prose above to generate it.
-            </p>
-          )}
-
-          {/* Stale notice (informational only — re-render is always in the connector above). */}
-          {hasProse && stale && (
-            <p className="mt-1.5 pv-serif text-[13px] italic text-amber-600 dark:text-amber-500">
-              Plan moved — this prose was written from an earlier objective.
-            </p>
-          )}
+          {/* The prose itself is the page editor above — these are just its AI controls. */}
+          <div className="flex items-baseline justify-between gap-3">
+            <div className="pv-eyebrow">Prose · the page above</div>
+            {hasProse && stale && (
+              <span className="pv-serif text-[13px] italic text-amber-600 dark:text-amber-500">plan moved — prose may be stale</span>
+            )}
+          </div>
 
           {genError && !open && (
             <p className="mt-1.5 mb-0 pv-serif text-[13px] italic text-red-600 dark:text-red-400">{genError}</p>
@@ -797,6 +731,8 @@ export function PageWorkshop({
             </div>
           )}
         </>
+      )}
+       </div>
       )}
     </div>
   );

@@ -289,6 +289,23 @@ export const PageContent = ({
                 currentIndex={currentIndex}
                 totalPages={totalPages}
                 sectionLabel={sectionLabel}
+                topContent={
+                  /* The plan (objective + beat) + AI tools sit ABOVE the prose, collapsible — out of a
+                     manual writer's way, open for an AI-collaborator. Rendered in the editor's topContent
+                     slot so it clears the fixed toolbar. The prose layer IS the editor below. */
+                  canEdit && onObjectiveChange && bookId && pageId ? (
+                    <PageWorkshop
+                      bookId={Number(bookId)}
+                      pageId={Number(pageId)}
+                      pageType={pageType}
+                      objective={objective ?? null}
+                      onObjectiveChange={onObjectiveChange}
+                      currentText={currentText}
+                      onAppendProse={handleAppendProse}
+                      onApply={handleApplyRevision}
+                    />
+                  ) : undefined
+                }
               />
 
               {/* Floating action buttons */}
@@ -302,21 +319,6 @@ export const PageContent = ({
                 audioState={audioState}
               />
             </div>
-
-            {/* The page's AI unit (author-only): set/edit the objective, then write an empty
-                page or revise one with content — against the editor's notes + a comment. */}
-            {canEdit && onObjectiveChange && bookId && pageId && (
-              <PageWorkshop
-                bookId={Number(bookId)}
-                pageId={Number(pageId)}
-                pageType={pageType}
-                objective={objective ?? null}
-                onObjectiveChange={onObjectiveChange}
-                currentText={currentText}
-                onAppendProse={handleAppendProse}
-                onApply={handleApplyRevision}
-              />
-            )}
           </div>
         </div>
       </div>
