@@ -17,8 +17,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { EDITOR_STANCE, FICTION_RUBRIC } from "./rubric.ts";
 import { captureException, isBillingError } from "../_shared/sentry.ts";
 import { callClaude as callClaudeApi, type CallMeta } from "../_shared/claude.ts";
-
-const MODEL = "claude-opus-4-8";
+import { getActiveModels } from "../_shared/model-config.ts";
 
 // ── Map-reduce taxonomy ──────────────────────────────────────────────────────
 // A 50+ page book needs a ~9k-token report; generating that in ONE call takes ~150s and collides
@@ -106,13 +105,15 @@ Deno.serve(async (req: Request) => {
     const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!apiKey) return json({ error: "ANTHROPIC_API_KEY not configured" }, 500);
 
+    const { high: evalModel } = await getActiveModels();
+
     const { data: evalRow, error: insertError } = await service
       .from("book_evaluations")
       .insert({
         book_id: book.id,
         created_by: user.id,
         kind: "fiction",
-        model: MODEL,
+        model: evalModel,
         status: "pending",
         brief_snapshot: book.brief ?? null,
       })
@@ -121,7 +122,7 @@ Deno.serve(async (req: Request) => {
     if (insertError || !evalRow) return json({ error: "Could not start evaluation" }, 500);
 
     // Hand the slow work to the background; respond now with the pending row.
-    const work = runEvaluation(service, apiKey, evalRow.id, book);
+    const work = runEvaluation(service, apiKey, evalRow.id, book, evalModel);
     if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(work);
 
     return json({ status: "pending", evaluation: evalRow }, 202);
@@ -151,7 +152,8 @@ async function runEvaluation(
   service: ReturnType<typeof createClient>,
   apiKey: string,
   evalId: number,
-  book: BookRow
+  book: BookRow,
+  evalModel: string,
 ) {
   try {
     const { data: pages, error: pagesError } = await service
@@ -165,7 +167,7 @@ async function runEvaluation(
 
     const { manuscript, wordCount } = buildManuscript(book, pages);
     const logBase: Omit<CallMeta, "fn"> = { bookId: book.id, taskTable: "book_evaluations", taskId: evalId };
-    const result = await evaluateMapReduce(apiKey, book, manuscript, logBase);
+    const result = await evaluateMapReduce(apiKey, evalModel, book, manuscript, logBase);
 
     const { error: updateError } = await service
       .from("book_evaluations")
@@ -268,7 +270,7 @@ interface Section {
 // Orchestrator: triage (warms the manuscript cache) → 3 parallel dimension groups (read the warm
 // cache) → verdict synthesized from their findings. Phases are sequential but the expensive middle
 // runs in parallel, so wall-clock ≈ triage + slowest group + verdict (~120s), under the worker cap.
-async function evaluateMapReduce(apiKey: string, book: BookRow, manuscript: string, logBase: Omit<CallMeta, "fn">) {
+async function evaluateMapReduce(apiKey: string, evalModel: string, book: BookRow, manuscript: string, logBase: Omit<CallMeta, "fn">) {
   // Identical cached prefix for triage + every group → the manuscript is encoded & billed once,
   // then read from cache by the rest. EDITOR_STANCE+RUBRIC are stable across books (outer cache);
   // the manuscript is stable across this eval's calls (inner cache).
@@ -280,12 +282,12 @@ async function evaluateMapReduce(apiKey: string, book: BookRow, manuscript: stri
 
   // Phase 1 — triage. Runs first (alone) so it WRITES the manuscript cache the parallel groups
   // then read; also fixes one genre contract they all judge against. Billing failures surface here.
-  const triage = await runTriage(apiKey, sharedSystem, logBase);
+  const triage = await runTriage(apiKey, evalModel, sharedSystem, logBase);
 
   // Phase 2 — the three dimension groups, in parallel. Each reads the whole book (warm cache) and
   // emits only its slice of the report. allSettled so one bad group degrades to a partial report.
   const settled = await Promise.allSettled(
-    GROUPS.map((g) => runGroup(apiKey, sharedSystem, g, triage, logBase))
+    GROUPS.map((g) => runGroup(apiKey, evalModel, sharedSystem, g, triage, logBase))
   );
   const sections: Section[] = [];
   for (const r of settled) {
@@ -307,7 +309,7 @@ async function evaluateMapReduce(apiKey: string, book: BookRow, manuscript: stri
   // succeeded, so a verdict hiccup falls back to a synthesized stub rather than losing the report.
   let verdict;
   try {
-    verdict = await runVerdict(apiKey, book, ordered, triage, logBase);
+    verdict = await runVerdict(apiKey, evalModel, book, ordered, triage, logBase);
   } catch (e) {
     await captureException(e, { function: "evaluate-book", phase: "verdict" });
     verdict = fallbackVerdict(ordered, triage);
@@ -316,8 +318,8 @@ async function evaluateMapReduce(apiKey: string, book: BookRow, manuscript: stri
   return { verdict, sections: ordered };
 }
 
-async function runTriage(apiKey: string, system: unknown[], logBase: Omit<CallMeta, "fn">): Promise<Triage> {
-  const text = await anthropicCall(apiKey, { ...logBase, fn: "evaluate-triage" }, {
+async function runTriage(apiKey: string, evalModel: string, system: unknown[], logBase: Omit<CallMeta, "fn">): Promise<Triage> {
+  const text = await anthropicCall(apiKey, evalModel, { ...logBase, fn: "evaluate-triage" }, {
     system,
     user:
       `You have the full manuscript above. In one pass, identify the book's genre contract so the ` +
@@ -340,6 +342,7 @@ async function runTriage(apiKey: string, system: unknown[], logBase: Omit<CallMe
 
 async function runGroup(
   apiKey: string,
+  evalModel: string,
   system: unknown[],
   group: { name: string; sections: string[] },
   triage: Triage,
@@ -347,7 +350,7 @@ async function runGroup(
 ): Promise<Section[]> {
   const ids = group.sections.filter((id) => id !== "world_building" || triage.is_speculative);
   const menu = ids.map((id) => `${id} ("${SECTION_TITLES[id]}")`).join(", ");
-  const text = await anthropicCall(apiKey, { ...logBase, fn: `evaluate-group:${group.name}` }, {
+  const text = await anthropicCall(apiKey, evalModel, { ...logBase, fn: `evaluate-group:${group.name}` }, {
     system,
     user:
       `You have read the full manuscript above. The genre contract (already identified) is: ` +
@@ -374,7 +377,7 @@ async function runGroup(
     .map((s) => ({ ...s, title: SECTION_TITLES[s.id] ?? s.title }));
 }
 
-async function runVerdict(apiKey: string, book: BookRow, sections: Section[], triage: Triage, logBase: Omit<CallMeta, "fn">) {
+async function runVerdict(apiKey: string, evalModel: string, book: BookRow, sections: Section[], triage: Triage, logBase: Omit<CallMeta, "fn">) {
   // Feed only the digested findings (not the prose) so this call is small and fast.
   const lite = sections.map((s) => ({
     id: s.id,
@@ -385,7 +388,7 @@ async function runVerdict(apiKey: string, book: BookRow, sections: Section[], tr
       note: i.note,
     })),
   }));
-  const text = await anthropicCall(apiKey, { ...logBase, fn: "evaluate-verdict" }, {
+  const text = await anthropicCall(apiKey, evalModel, { ...logBase, fn: "evaluate-verdict" }, {
     system: [{ type: "text", text: EDITOR_STANCE }],
     user:
       `You are writing the top-level verdict of an editor's read of "${book.name}". The per-dimension ` +
@@ -434,6 +437,7 @@ function fallbackVerdict(sections: Section[], triage: Triage) {
 // ── Anthropic plumbing ───────────────────────────────────────────────────────
 async function anthropicCall(
   apiKey: string,
+  evalModel: string,
   meta: CallMeta,
   opts: { system: unknown[]; user: string; maxTokens: number; effort: string; timeoutMs: number }
 ): Promise<string> {
@@ -442,7 +446,7 @@ async function anthropicCall(
   // Billing detection is preserved: the wrapper's error message carries the raw body, which
   // isBillingError() matches on "credit balance".
   const data = await callClaudeApi(apiKey, {
-    model: MODEL,
+    model: evalModel,
     max_tokens: opts.maxTokens,
     thinking: { type: "adaptive" }, // Opus 4.8: adaptive thinking; effort controls depth
     output_config: { effort: opts.effort }, // top-level field; budget_tokens is rejected here

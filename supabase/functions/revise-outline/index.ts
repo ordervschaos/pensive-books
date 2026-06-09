@@ -14,8 +14,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { callClaude as callClaudeApi } from "../_shared/claude.ts";
-
-const MODEL = "claude-opus-4-7";
+import { getActiveModels } from "../_shared/model-config.ts";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -367,8 +366,9 @@ async function callClaude(
   userId?: string | null,
   planOnly = false,
 ): Promise<RevisionPlan> {
+  const { high: model } = await getActiveModels();
   const data = await callClaudeApi(apiKey, {
-    model: MODEL,
+    model,
     max_tokens: 16000,
     thinking: { type: "adaptive" },
     system: [{ type: "text", text: planOnly ? SYSTEM_PLAN_ONLY : SYSTEM, cache_control: { type: "ephemeral" } }],

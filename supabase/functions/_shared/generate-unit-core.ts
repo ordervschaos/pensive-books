@@ -11,9 +11,7 @@
 // the original generate-unit (the dev bridge mirrors it), so the output is unchanged.
 import { type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { callClaude as callClaudeApi, type CallMeta } from "./claude.ts";
-
-export const MODEL = "claude-opus-4-7";
-const SUMMARY_MODEL = "claude-haiku-4-5-20251001"; // cheap/fast for the per-page "story so far"
+import { getActiveModels } from "./model-config.ts";
 const PRECEDING_PAGES = 2; // how many prior text pages of full prose to include for continuity
 
 export interface Brief {
@@ -87,8 +85,11 @@ async function loadBook(client: SupabaseClient, bookId: number): Promise<BookRow
 // — an empty page creates, a written page re-renders (the caller overwrites). NOT for revising prose.
 export async function beatToProse(client: SupabaseClient, apiKey: string, p: WriteParams): Promise<string> {
   if (!p.objective?.trim()) throw new Error("objective is required");
-  const b = await loadBook(client, p.bookId);
-  const ctx = await buildUnitContext(client, p.bookId, p.pageId ?? null, p.level);
+  const [b, ctx, models] = await Promise.all([
+    loadBook(client, p.bookId),
+    buildUnitContext(client, p.bookId, p.pageId ?? null, p.level),
+    getActiveModels(),
+  ]);
 
   // Prose is written from the page's BEAT when one exists (the concrete plan), else the objective.
   let beat: string | null = null;
@@ -98,14 +99,14 @@ export async function beatToProse(client: SupabaseClient, apiKey: string, p: Wri
   }
 
   const m = meta("beat-to-prose", p);
-  const text = await renderProse(apiKey, {
+  const text = await renderProse(apiKey, models.high, {
     brief: b.brief, bible: b.bible?.text?.trim() || null, bookName: b.name,
     level: p.level, mode: "write", objective: (p.objective ?? "").trim(), beat, issues: null, currentText: null,
     pageObjective: p.pageObjective?.trim() || null, precedingText: p.precedingText?.trim() || null,
     objectiveMap: ctx.objectiveMap, storySoFar: ctx.storySoFar, precedingProse: ctx.precedingProse, currentPageLabel: ctx.currentPageLabel,
   }, m);
 
-  if (p.level === "page" && p.pageId) await maybeSummarize(client, apiKey, p.pageId, text, m);
+  if (p.level === "page" && p.pageId) await maybeSummarize(client, apiKey, p.pageId, text, m, models.low);
   return text;
 }
 
@@ -114,29 +115,32 @@ export async function beatToProse(client: SupabaseClient, apiKey: string, p: Wri
 export async function revisePage(client: SupabaseClient, apiKey: string, p: ReviseParams): Promise<string> {
   if (!p.pageId) throw new Error("pageId is required for revise");
   if (!Array.isArray(p.issues) || p.issues.length === 0) throw new Error("issues are required for revise");
-  const b = await loadBook(client, p.bookId);
+  const [b, ctx, models] = await Promise.all([
+    loadBook(client, p.bookId),
+    buildUnitContext(client, p.bookId, p.pageId, "page"),
+    getActiveModels(),
+  ]);
 
   const { data: pg } = await client.from("pages").select("content").eq("id", p.pageId).maybeSingle();
   const currentText = tiptapToText(pg?.content).trim() || null;
   if (!currentText) throw new Error("Page has no prose to revise");
 
-  const ctx = await buildUnitContext(client, p.bookId, p.pageId, "page");
   const m = meta("revise-prose", p);
-  const text = await renderProse(apiKey, {
+  const text = await renderProse(apiKey, models.high, {
     brief: b.brief, bible: b.bible?.text?.trim() || null, bookName: b.name,
     level: "page", mode: "revise", objective: (p.objective ?? "").trim(), beat: null, issues: p.issues, currentText,
     pageObjective: null, precedingText: null,
     objectiveMap: ctx.objectiveMap, storySoFar: ctx.storySoFar, precedingProse: ctx.precedingProse, currentPageLabel: ctx.currentPageLabel,
   }, m);
 
-  await maybeSummarize(client, apiKey, p.pageId, text, m);
+  await maybeSummarize(client, apiKey, p.pageId, text, m, models.low);
   return text;
 }
 
 // Cheap one-paragraph "story so far" summary for later pages' continuity. Best-effort.
-async function maybeSummarize(client: SupabaseClient, apiKey: string, pageId: number, text: string, m: CallMeta) {
+async function maybeSummarize(client: SupabaseClient, apiKey: string, pageId: number, text: string, m: CallMeta, summaryModel?: string) {
   try {
-    const summary = await summarize(apiKey, text, m);
+    const summary = await summarize(apiKey, text, m, summaryModel);
     if (summary) await persistSummary(client, pageId, summary);
   } catch (e) {
     console.error("generate-unit-core: summary step failed (non-fatal):", e);
@@ -343,9 +347,9 @@ function variablePart(args: PromptArgs): string {
 }
 
 // ── Claude call ──────────────────────────────────────────────────────────────
-async function renderProse(apiKey: string, args: PromptArgs, meta: CallMeta): Promise<string> {
+async function renderProse(apiKey: string, model: string, args: PromptArgs, meta: CallMeta): Promise<string> {
   const data = await callClaudeApi(apiKey, {
-    model: MODEL,
+    model,
     max_tokens: args.mode === "revise" || args.level === "page" ? 8000 : 600,
     system: [{ type: "text", text: args.mode === "revise" ? SYSTEM_REVISE : SYSTEM, cache_control: { type: "ephemeral" } }],
     messages: [
@@ -376,9 +380,9 @@ function stripLeadingHeadings(text: string): string {
 }
 
 // ── Summary (layer D) ────────────────────────────────────────────────────────
-async function summarize(apiKey: string, prose: string, meta: CallMeta): Promise<string> {
+async function summarize(apiKey: string, prose: string, meta: CallMeta, summaryModel?: string): Promise<string> {
   const data = await callClaudeApi(apiKey, {
-    model: SUMMARY_MODEL,
+    model: summaryModel ?? "claude-haiku-4-5-20251001",
     max_tokens: 250,
     system: [{
       type: "text",

@@ -10,7 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { BookOpen, FileText, Users, Shield, ExternalLink, Activity } from "lucide-react";
+import { BookOpen, FileText, Users, Shield, ExternalLink, Activity, Settings } from "lucide-react";
 import { Link } from "react-router-dom";
 
 interface BookRow {
@@ -100,9 +100,14 @@ export default function AdminDashboard() {
       <div className="flex items-center gap-2">
         <Shield className="h-5 w-5 text-amber-600" />
         <h1 className="text-xl font-semibold">Admin Dashboard</h1>
-        <Link to="/admin/ai-calls" className="ml-auto text-sm text-muted-foreground hover:text-foreground flex items-center gap-1">
-          <Activity className="h-4 w-4" /> AI Calls
-        </Link>
+        <div className="ml-auto flex items-center gap-4">
+          <Link to="/admin/ai-calls" className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1">
+            <Activity className="h-4 w-4" /> AI Calls
+          </Link>
+          <Link to="/admin/settings" className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1">
+            <Settings className="h-4 w-4" /> Settings
+          </Link>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">

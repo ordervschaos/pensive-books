@@ -23,8 +23,8 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { runInBackground, serviceClient } from "../_shared/task.ts";
 import { callClaude as callClaudeApi, type CallMeta } from "../_shared/claude.ts";
 import { tiptapToText } from "../_shared/words.ts";
+import { getActiveModels } from "../_shared/model-config.ts";
 
-const BRIEF_MODEL = "claude-opus-4-7";              // drafting from the brief — richer invention
 const SCAN_MODEL = "claude-haiku-4-5-20251001";     // extracting from prose — cheap/fast over the whole book
 const PER_PAGE_PROSE_CAP = 8000;                    // chars; very long pages are truncated to bound the prompt
 
@@ -186,7 +186,8 @@ function bookContext(pages: PageRow[]): string {
 }
 
 async function draftFromBrief(apiKey: string, bookName: string, brief: Brief | null, meta: CallMeta): Promise<string> {
-  return callClaude(apiKey, BRIEF_MODEL, BRIEF_SYSTEM, [
+  const { high: briefModel } = await getActiveModels();
+  return callClaude(apiKey, briefModel, BRIEF_SYSTEM, [
     { role: "user", content: `BOOK: ${bookName}\n\nBRIEF:\n${briefContext(brief)}\n\nDraft the bible. Markdown only.` },
   ], meta);
 }

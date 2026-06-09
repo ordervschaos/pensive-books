@@ -20,8 +20,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { runInBackground, serviceClient } from "../_shared/task.ts";
 import { callClaude as callClaudeApi, type CallMeta } from "../_shared/claude.ts";
-
-const MODEL = "claude-opus-4-7";
+import { getActiveModels } from "../_shared/model-config.ts";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -161,8 +160,9 @@ interface ScaffoldThread {
 interface Scaffold { structure: string; pages: ScaffoldPage[]; threads: ScaffoldThread[] }
 
 async function callClaude(apiKey: string, bookName: string, brief: Brief | null, bible: string | null, spine: string | null, meta: CallMeta): Promise<Scaffold> {
+  const { high: model } = await getActiveModels();
   const data = await callClaudeApi(apiKey, {
-    model: MODEL,
+    model,
     max_tokens: 8000,
     system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
     messages: [

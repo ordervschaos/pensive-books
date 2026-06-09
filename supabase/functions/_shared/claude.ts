@@ -12,6 +12,7 @@
 import { serviceClient } from "./task.ts";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
+const DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions";
 
 export interface CallMeta {
   fn: string;                       // logical step name recorded on the log row
@@ -37,24 +38,44 @@ export async function callClaude(
   // (we need the id to close it out) but best-effort — a null id just means we fall back to a
   // single insert at the end, the pre-existing behavior.
   const logId = await logStart(body, meta);
+  const model = body.model as string ?? "";
+  const isDeepSeek = model.startsWith("deepseek");
+
   let raw = "";
   // deno-lint-ignore no-explicit-any
   let data: any = null;
   let errMsg: string | null = null;
   try {
-    const res = await fetch(ANTHROPIC_URL, {
-      method: "POST",
-      signal: opts?.signal,
-      headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
+    let res: Response;
+    if (isDeepSeek) {
+      const deepseekKey = Deno.env.get("DEEPSEEK_API_KEY") ?? apiKey;
+      res = await fetch(DEEPSEEK_URL, {
+        method: "POST",
+        signal: opts?.signal,
+        headers: {
+          "Authorization": `Bearer ${deepseekKey}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(anthropicToOpenAI(body)),
+      });
+    } else {
+      res = await fetch(ANTHROPIC_URL, {
+        method: "POST",
+        signal: opts?.signal,
+        headers: {
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+    }
     raw = await res.text();
-    if (!res.ok) errMsg = `Claude API ${res.status}: ${raw.slice(0, 500)}`;
-    else data = JSON.parse(raw);
+    if (!res.ok) errMsg = `${isDeepSeek ? "DeepSeek" : "Claude"} API ${res.status}: ${raw.slice(0, 500)}`;
+    else {
+      const parsed = JSON.parse(raw);
+      data = isDeepSeek ? openAIToAnthropic(parsed) : parsed;
+    }
   } catch (e) {
     errMsg = String((e as Error)?.message ?? e);
   }
@@ -73,6 +94,55 @@ function textFromContent(data: any): string {
     .filter((b: { type: string }) => b.type === "text")
     .map((b: { text: string }) => b.text)
     .join("");
+}
+
+// Convert an Anthropic-format request body to OpenAI-compatible format for DeepSeek.
+// Strips cache_control blocks (DeepSeek doesn't support prompt caching).
+function anthropicToOpenAI(body: Record<string, unknown>): Record<string, unknown> {
+  // deno-lint-ignore no-explicit-any
+  const stripCacheControl = (msg: any): any => {
+    if (Array.isArray(msg.content)) {
+      return { ...msg, content: msg.content.map((b: any) => {
+        const { cache_control: _cc, ...rest } = b;
+        return rest;
+      })};
+    }
+    return msg;
+  };
+
+  const systemStr = systemText(body.system);
+  // deno-lint-ignore no-explicit-any
+  const messages: any[] = [];
+  if (systemStr) messages.push({ role: "system", content: systemStr });
+  // deno-lint-ignore no-explicit-any
+  const userMsgs = ((body.messages ?? []) as any[]).map(stripCacheControl);
+  messages.push(...userMsgs);
+
+  const out: Record<string, unknown> = {
+    model: body.model,
+    messages,
+    max_tokens: body.max_tokens ?? 8192,
+  };
+  if (body.temperature != null) out.temperature = body.temperature;
+  if (body.top_p != null) out.top_p = body.top_p;
+  if (body.stop_sequences != null) out.stop = body.stop_sequences;
+  // `thinking` and other Anthropic-specific extended params are not supported by DeepSeek — omit them.
+  return out;
+}
+
+// Normalize an OpenAI-format response to the Anthropic shape that all callers expect.
+// deno-lint-ignore no-explicit-any
+function openAIToAnthropic(parsed: any): Record<string, unknown> {
+  const text = parsed?.choices?.[0]?.message?.content ?? "";
+  return {
+    content: [{ type: "text", text }],
+    usage: {
+      input_tokens: parsed?.usage?.prompt_tokens ?? null,
+      output_tokens: parsed?.usage?.completion_tokens ?? null,
+    },
+    stop_reason: "end_turn",
+    model: parsed?.model ?? null,
+  };
 }
 
 // `system` may be a plain string or an array of { type:'text', text } blocks (with cache_control).
