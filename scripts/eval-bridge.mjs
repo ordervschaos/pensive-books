@@ -780,6 +780,55 @@ Write the book spine. 1–2 short paragraphs, the throughline only.`;
   return { spine: (out.text ?? "").trim() };
 }
 
+// ── /revise-node ──────────────────────────────────────────────────────────────
+// Mirrors supabase/functions/revise-node: revise a short plan node (spine/objective/beat) against an
+// instruction, preserving what works. The signal-driven preserve path for the small layers.
+const NODE_SHAPE = {
+  spine: "the BOOK SPINE — the throughline of the whole book, 1–2 short paragraphs naming its central aim and arc",
+  objective: "a page OBJECTIVE — 1–2 sentences stating what that page must achieve (its job in the book)",
+  beat: "a page BEAT — one paragraph planning, in order, what the page does to fulfil its objective",
+};
+
+async function runReviseNode(body) {
+  const { bookId, layer, current, instruction } = body;
+  if (!bookId) return { error: "bookId required" };
+  if (!NODE_SHAPE[layer]) return { error: "layer must be spine|objective|beat" };
+  const cur = (current ?? "").trim();
+  const instr = (instruction ?? "").trim();
+  if (!cur) return { error: "nothing to revise" };
+  if (!instr) return { error: "instruction required" };
+
+  const book = await fetchBook(bookId);
+  if (!book) return { error: "Book not found" };
+  const spine = book.spine?.text?.trim() || null;
+
+  const system = `You are revising ${NODE_SHAPE[layer]}. Apply the author's INSTRUCTION while PRESERVING what already works — change only what the instruction asks for, keep the rest. This is a revision, not a rewrite from scratch.
+
+Rules:
+- Output only the revised ${layer}. No title, no heading, no preamble, no markdown, no meta commentary, no list of changes.
+- Keep the same kind of statement and length as the original (it is ${NODE_SHAPE[layer]}).
+- Honour the book's brief (genre, audience, tone) and stay consistent with the book spine if given.`;
+
+  const prompt = `${system}
+
+BOOK: ${book.name}
+
+BRIEF:
+${briefContext(book.brief)}${spine && layer !== "spine" ? `\n\nBOOK SPINE:\n${spine}` : ""}
+
+CURRENT ${layer.toUpperCase()}:
+${cur}
+
+AUTHOR'S INSTRUCTION:
+${instr}
+
+Return the revised ${layer} only.`;
+
+  const out = await runClaude(prompt, true, { fn: "revise-node", bookId }, { noTools: true });
+  if (out.error) return out;
+  return { text: (out.text ?? "").trim() };
+}
+
 // ── /beat-to-objective ────────────────────────────────────────────────────────
 // Mirrors supabase/functions/beat-to-objective: beat → the page objective it serves (reverse, up).
 const BEAT_TO_OBJECTIVE_INSTRUCTIONS = `You are a book architect ABSTRACTING UP: given a page's BEAT (a paragraph planning, in order, what the page does), write the page's OBJECTIVE — a single short statement (1–2 sentences) of what that page must ACHIEVE in the book: its job, not its moves. You are stepping up one level of abstraction, from the concrete plan to the page's purpose.
@@ -1020,6 +1069,7 @@ const FN_PROMPT_SOURCE = {
   "brief-to-spine": "supabase/functions/brief-to-spine/index.ts (and scripts/eval-bridge.mjs runBriefToSpine)",
   "beat-to-objective": "supabase/functions/beat-to-objective/index.ts (and scripts/eval-bridge.mjs runBeatToObjective)",
   "objectives-to-spine": "supabase/functions/objectives-to-spine/index.ts (and scripts/eval-bridge.mjs runObjectivesToSpine)",
+  "revise-node": "supabase/functions/revise-node/index.ts (and scripts/eval-bridge.mjs runReviseNode)",
   "scan-page": "supabase/functions/scan-threads/index.ts (callHaiku)",
   "evaluate-book": "supabase/functions/evaluate-book/index.ts (runTriage/runGroup/runVerdict)",
 };
@@ -1293,6 +1343,16 @@ async function route(req, res) {
     return json(res, 200, out);
   }
 
+  if (url === "/revise-node" || url === "/revise-node/") {
+    if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
+    const body = await readBody(req);
+    if (!(await authorize(req, res, Number(body.bookId)))) return;
+    console.log(`Revising ${body.layer} (book ${body.bookId})…`);
+    const out = await runReviseNode(body);
+    if (out.error) return json(res, 500, { error: out.error });
+    return json(res, 200, out);
+  }
+
   if (url === "/beat-to-objective" || url === "/beat-to-objective/") {
     if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
     const body = await readBody(req);
@@ -1339,5 +1399,5 @@ async function route(req, res) {
 
 server.listen(PORT, () => {
   console.log(`eval-bridge listening on http://localhost:${PORT}  (repo: ${repoRoot})`);
-  console.log(`  GET/POST /eval/:bookId   POST /spine-to-objectives/:bookId   POST /bible/:bookId   POST /revise-outline/:bookId   POST /beat-to-prose   POST /revise-prose   POST /objective-to-beat   POST /prose-to-beat   POST /brief-to-spine   POST /beat-to-objective   POST /objectives-to-spine`);
+  console.log(`  GET/POST /eval/:bookId   POST /spine-to-objectives/:bookId   POST /bible/:bookId   POST /revise-outline/:bookId   POST /beat-to-prose   POST /revise-prose   POST /objective-to-beat   POST /prose-to-beat   POST /brief-to-spine   POST /beat-to-objective   POST /objectives-to-spine   POST /revise-node`);
 });

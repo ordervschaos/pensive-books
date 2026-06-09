@@ -153,6 +153,131 @@ async function beatToObjective(bookId: number, pageId: number, beat: string): Pr
   return String((data as { objective?: string })?.objective ?? "").trim();
 }
 
+// revise-node: rewrite a short plan node (objective/beat) against an instruction, PRESERVING what
+// works. Returns the proposed text; the caller shows a diff and persists on accept.
+async function reviseNode(bookId: number, pageId: number, layer: "objective" | "beat", current: string, instruction: string): Promise<string> {
+  const body = { bookId, pageId, layer, current, instruction };
+  if (BRIDGE) {
+    const r = await bridgeFetch(`/revise-node`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    return String(d.text ?? "").trim();
+  }
+  const { data, error } = await supabase.functions.invoke("revise-node", { body });
+  if (error) throw error;
+  if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
+  return String((data as { text?: string })?.text ?? "").trim();
+}
+
+// A reusable diff-based reviser for a SHORT node (objective / beat): the author types an instruction,
+// the AI proposes a revision (preserving the rest), and the change lands as a before→after diff to
+// accept or reject. Mirrors the prose revise flow's gate, at node scale.
+function NodeReviser({
+  current, busy, onRevise, onAccept,
+}: {
+  current: string;
+  busy: boolean;
+  onRevise: (instruction: string) => Promise<string>; // returns the proposed text
+  onAccept: (proposed: string) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [instruction, setInstruction] = useState("");
+  const [proposed, setProposed] = useState<string | null>(null);
+  const [working, setWorking] = useState(false);
+
+  const run = async () => {
+    if (!instruction.trim() || working) return;
+    setWorking(true);
+    try { setProposed(await onRevise(instruction.trim())); }
+    finally { setWorking(false); }
+  };
+  const accept = async () => {
+    if (proposed == null) return;
+    setWorking(true);
+    try { await onAccept(proposed); setOpen(false); setProposed(null); setInstruction(""); }
+    finally { setWorking(false); }
+  };
+  const reset = () => { setOpen(false); setProposed(null); setInstruction(""); };
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} disabled={busy}
+        className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-muted))] transition-colors hover:text-foreground disabled:opacity-50"
+        title="Revise this — preserves what's here, applies your change">
+        ✎ Revise
+      </button>
+    );
+  }
+  return (
+    <div className="mt-2 space-y-2 rounded-lg border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/40 p-3">
+      {proposed == null ? (
+        <>
+          <Textarea
+            value={instruction} onChange={(e) => setInstruction(e.target.value)} autoFocus
+            placeholder="What should change? e.g. “make it colder, less wistful” — the rest is preserved."
+            className="min-h-[56px] text-[13.5px]" disabled={working}
+          />
+          <div className="flex items-center gap-3">
+            <button type="button" onClick={() => void run()} disabled={working || !instruction.trim()}
+              className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-accent))] transition-colors hover:text-foreground disabled:opacity-50">
+              {working ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+              {working ? "Revising…" : "Revise →"}
+            </button>
+            <button type="button" onClick={reset} className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">Cancel</button>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="overflow-x-auto rounded border border-[hsl(var(--pv-border-soft))] text-[13px]">
+            <ReactDiffViewer oldValue={current} newValue={proposed} splitView={false}
+              compareMethod={DiffMethod.WORDS} useDarkTheme={false} styles={diffStyles} hideLineNumbers showDiffOnly={false} />
+          </div>
+          <div className="flex items-center gap-3">
+            <button type="button" onClick={() => void accept()} disabled={working}
+              className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-accent))] transition-colors hover:text-foreground disabled:opacity-50">
+              {working ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} Accept →
+            </button>
+            <button type="button" onClick={() => setProposed(null)} className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground">Re-do</button>
+            <button type="button" onClick={reset} className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">Discard</button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// A re-create control between two layers. Both directions REPLACE their target; the arrow shows the
+// direction (↓ expand from above, ↑ distill from below). One verb — "re-create" — so the operation
+// reads the same both ways, distinct from the per-node ✎ Revise (which preserves).
+interface RecreateAction { label: string; onClick: () => void; disabled?: boolean; busy?: boolean }
+function ConnectorBtn({ dir, action }: { dir: "down" | "up"; action: RecreateAction }) {
+  return (
+    <button
+      type="button" onClick={action.onClick} disabled={action.disabled}
+      title={dir === "down" ? "Re-create the lower layer from the upper — replaces it" : "Re-create the upper layer from the lower — replaces it"}
+      className="pv-serif inline-flex items-center gap-1 text-[13px] italic text-[hsl(var(--pv-accent))] transition-colors hover:text-foreground disabled:opacity-50"
+    >
+      {action.busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+      {dir === "down" ? "↓" : "↑"} {action.label}
+    </button>
+  );
+}
+function Connector({ down, up }: { down: RecreateAction; up?: RecreateAction }) {
+  return (
+    <div className="my-4 flex items-center gap-3">
+      <div className="h-px flex-1 bg-[hsl(var(--pv-border-soft))]" />
+      <ConnectorBtn dir="down" action={down} />
+      {up && (
+        <>
+          <span className="text-[hsl(var(--pv-border-soft))]">·</span>
+          <ConnectorBtn dir="up" action={up} />
+        </>
+      )}
+      <div className="h-px flex-1 bg-[hsl(var(--pv-border-soft))]" />
+    </div>
+  );
+}
+
 export function PageWorkshop({
   bookId,
   pageId,
@@ -338,6 +463,19 @@ export function PageWorkshop({
     }
   };
 
+  // Accept a revised objective (preserve path): persist via the host; the beat, generated from the
+  // OLD objective, is left to go stale (objective_beat now mismatches) — surfaced + re-syncable.
+  const acceptObjectiveRevision = async (proposed: string) => {
+    setObjectiveDraft(proposed);
+    onObjectiveChange(proposed);
+  };
+
+  // Accept a revised beat (preserve path): the beat still serves this objective, so stamp
+  // objective_beat in-sync; the prose, from the OLD beat, is left to go stale (beat_prose mismatches).
+  const acceptBeatRevision = async (proposed: string) => {
+    await persistBeat(proposed);
+  };
+
   // Start a generation task (write or revise). The result arrives as a 'ready' row.
   const start = async (mode: "write" | "revise", issues?: ReviseIssue[]) => {
     if (running) return;
@@ -356,16 +494,17 @@ export function PageWorkshop({
     void start("write");
   };
 
-  // Re-render this page's prose from its (updated) objective, replacing the body. Reuses the revise
-  // flow with a synthetic note so it lands as a reviewable diff; applying it re-stamps provenance.
+  // Re-create this page's prose from its plan (the beat when present, else the objective), replacing
+  // the body. Routed through the durable revise flow (slow gen + resume) with a strong rewrite note,
+  // so it lands as a reviewable diff; applying re-stamps provenance.
   const rerenderFromObjective = () => {
     commitObjective();
     setOpen(true);
-    void start("revise", [{
-      section: "Plan",
-      severity: "high",
-      note: `The objective for this page has changed to: "${objectiveText}". Rewrite the prose to fulfil the new objective while keeping the book's voice and continuity.`,
-    }]);
+    const beat = beatDraft.trim();
+    const note = beat
+      ? `Rewrite this page's prose from scratch to realize this BEAT (its plan), fulfilling the objective. Replace the current prose; keep the book's voice and continuity.\nBEAT: ${beat}\nOBJECTIVE: ${objectiveText}`
+      : `The objective for this page is: "${objectiveText}". Rewrite the prose from scratch to fulfil it, replacing the current prose, while keeping the book's voice and continuity.`;
+    void start("revise", [{ section: "Plan", severity: "high", note }]);
   };
 
   // Page with prose: revise it against the editor's notes + the author's comment, then preview.
@@ -416,19 +555,17 @@ export function PageWorkshop({
 
   return (
     <div className="mx-8 mt-2 mb-6 border-t border-[hsl(var(--pv-border-soft))] pt-4">
-      {/* The object: this page's author-only objective. Always set/editable. */}
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+
+      {/* ── LAYER · OBJECTIVE ── */}
+      <div className="flex items-baseline justify-between gap-3">
         <div className="pv-eyebrow">Objective for this page · author only</div>
-        {pageType !== "section" && meta?.beat?.trim() && (
-          <button
-            type="button"
-            onClick={() => void distillObjective()}
-            disabled={beatBusy}
-            className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-text-muted))] transition-colors hover:text-foreground disabled:opacity-50"
-            title="Reverse-outline: derive the objective from the beat (bottom-up)"
-          >
-            ↑ Distill from beat
-          </button>
+        {pageType !== "section" && objectiveText && (
+          <NodeReviser
+            current={objectiveText}
+            busy={beatBusy || running}
+            onRevise={(instr) => reviseNode(bookId, pageId, "objective", objectiveText, instr)}
+            onAccept={acceptObjectiveRevision}
+          />
         )}
       </div>
       <input
@@ -441,35 +578,25 @@ export function PageWorkshop({
         className="mt-1.5 w-full border-l-2 border-transparent bg-transparent pl-2 -ml-0.5 pv-serif text-[14.5px] italic leading-relaxed text-foreground placeholder:text-[hsl(var(--pv-text-faint))] focus:border-[hsl(var(--pv-border-soft))] focus:outline-none"
       />
 
-      {/* Beat — the page's one-paragraph plan (the resolution between objective and prose). Generate
-          it from the objective, or write it by hand; it stamps the objective→beat edge as in sync. */}
       {pageType !== "section" && (
-        <div className="mt-4">
-          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <>
+          {/* ── re-create between objective ↔ beat (both directions REPLACE the target) ── */}
+          <Connector
+            down={{ label: meta?.beat?.trim() ? "re-create beat" : "create beat", onClick: () => void generateBeat(), disabled: beatBusy || !objectiveText, busy: beatBusy }}
+            up={meta?.beat?.trim() ? { label: "re-create objective", onClick: () => void distillObjective(), disabled: beatBusy } : undefined}
+          />
+
+          {/* ── LAYER · BEAT ── */}
+          <div className="flex items-baseline justify-between gap-3">
             <div className="pv-eyebrow">Beat · the page's plan · author only</div>
-            <div className="flex items-center gap-4">
-              <button
-                type="button"
-                onClick={() => void generateBeat()}
-                disabled={beatBusy || !objectiveText}
-                className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-accent))] transition-colors hover:text-foreground disabled:opacity-50"
-                title={!objectiveText ? "Set an objective first" : "Write the beat from the objective (top-down)"}
-              >
-                {beatBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-                {beatBusy ? "Working…" : meta?.beat?.trim() ? "Regenerate from objective →" : "Generate from objective →"}
-              </button>
-              {hasProse && (
-                <button
-                  type="button"
-                  onClick={() => void distillBeat()}
-                  disabled={beatBusy}
-                  className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-text-muted))] transition-colors hover:text-foreground disabled:opacity-50"
-                  title="Reverse-outline: derive the beat from the prose (bottom-up)"
-                >
-                  ↑ Distill from prose
-                </button>
-              )}
-            </div>
+            {beatDraft.trim() && (
+              <NodeReviser
+                current={beatDraft}
+                busy={beatBusy || running}
+                onRevise={(instr) => reviseNode(bookId, pageId, "beat", beatDraft.trim(), instr)}
+                onAccept={acceptBeatRevision}
+              />
+            )}
           </div>
           <Textarea
             value={beatDraft}
@@ -481,57 +608,45 @@ export function PageWorkshop({
           />
           {beatStale && (
             <p className="pv-serif mt-1.5 text-[13px] italic text-amber-600 dark:text-amber-500">
-              The objective changed since this beat — regenerate it from the objective, or edit it to match.
+              The objective moved on — re-create this beat from the objective, or edit it to match.
             </p>
           )}
-        </div>
-      )}
 
-      {/* Out of sync: the objective moved after this prose was written. Offer a one-click re-render
-          (a reviewable revise proposal); applying it re-stamps provenance and clears the flag. */}
-      {pageType !== "section" && hasProse && stale && (
-        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-amber-500/40 bg-amber-500/5 px-3 py-2">
-          <span className="pv-serif text-[13.5px] leading-snug text-foreground">
-            Plan moved — this prose was written from an earlier objective.
-          </span>
-          <button
-            type="button"
-            onClick={rerenderFromObjective}
-            disabled={running || !objectiveText}
-            className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-accent))] transition-colors hover:text-foreground disabled:opacity-50"
-          >
-            {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-            Re-render from the objective →
-          </button>
-        </div>
-      )}
+          {/* ── re-create between beat ↔ prose (both directions REPLACE the target) ── */}
+          <Connector
+            down={
+              !hasProse
+                ? { label: running ? "Writing…" : "create prose", onClick: createPage, disabled: !objectiveText || running, busy: running }
+                : { label: "re-create prose", onClick: rerenderFromObjective, disabled: running || !objectiveText, busy: running && row?.kind !== "page_revise" }
+            }
+            up={hasProse ? { label: "re-create beat", onClick: () => void distillBeat(), disabled: beatBusy } : undefined}
+          />
 
-      {/* Section pages stop here — nothing to write or revise. */}
-      {pageType !== "section" && !hasProse && (
-        // Empty page: generate prose from the objective, then review and add it.
-        <div className="mt-4 space-y-3">
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={createPage}
-              disabled={!objectiveText || running}
-              className="pv-serif inline-flex items-center gap-2 text-[14px] italic text-[hsl(var(--pv-accent))] transition-colors hover:text-foreground disabled:opacity-50"
-            >
-              {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-              {running ? "The editor is writing…" : proposed ? "Rewrite →" : "Create page →"}
-            </button>
-            {!objectiveText && (
-              <span className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))]">
-                Set an objective first.
-              </span>
-            )}
-            {genError && (
-              <span className="pv-serif text-[13px] italic text-red-600 dark:text-red-400">{genError}</span>
-            )}
-          </div>
+          {/* ── LAYER · PROSE ── */}
+          <div className="pv-eyebrow">Prose · this page</div>
+          {hasProse ? (
+            <div className="mt-2 max-h-[200px] overflow-y-auto border-l-2 border-[hsl(var(--pv-border-soft))] pl-3 pv-serif text-[14px] leading-relaxed text-foreground whitespace-pre-wrap">
+              {currentText}
+            </div>
+          ) : (
+            <p className="mt-2 pv-serif text-[14px] italic text-[hsl(var(--pv-text-faint))]">
+              No prose yet — use ↓ create prose above to generate it.
+            </p>
+          )}
 
-          {/* Ready draft for an empty page: review/edit, then add it. Survives a refresh. */}
-          {proposed && row?.kind === "page_write" && (
+          {/* Stale notice (informational only — re-render is always in the connector above). */}
+          {hasProse && stale && (
+            <p className="mt-1.5 pv-serif text-[13px] italic text-amber-600 dark:text-amber-500">
+              Plan moved — this prose was written from an earlier objective.
+            </p>
+          )}
+
+          {genError && !open && (
+            <p className="mt-1.5 mb-0 pv-serif text-[13px] italic text-red-600 dark:text-red-400">{genError}</p>
+          )}
+
+          {/* Empty page: ready draft to review and add. */}
+          {!hasProse && proposed && row?.kind === "page_write" && (
             <div className="space-y-3">
               <div className="pv-eyebrow">Proposed prose</div>
               <Textarea
@@ -558,132 +673,130 @@ export function PageWorkshop({
               </div>
             </div>
           )}
-        </div>
-      )}
 
-      {pageType !== "section" && hasProse && (
-        // Page with prose: revise against the editor's notes + an optional comment.
-        <div className="mt-4">
-          <div className="flex items-baseline justify-between gap-3">
-            <div className="pv-eyebrow">
-              Revise this page ·{" "}
-              <span className="pv-serif text-[13px] normal-case not-italic tracking-normal text-[hsl(var(--pv-text-muted))]">
-                AI · author only
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setOpen((v) => !v)}
-              className="pv-serif text-[14px] italic text-[hsl(var(--pv-text-muted))] transition-colors hover:text-foreground"
-            >
-              {open ? "Hide" : notes.length ? `${notes.length} ${notes.length === 1 ? "note" : "notes"} →` : "Open →"}
-            </button>
-          </div>
+          {/* Page with prose: revise (the preserve path). */}
+          {hasProse && (
+            <div>
+              <div className="flex items-baseline justify-between gap-3">
+                <div className="pv-eyebrow">
+                  Revise this page ·{" "}
+                  <span className="pv-serif text-[13px] normal-case not-italic tracking-normal text-[hsl(var(--pv-text-muted))]">
+                    preserves content · AI · author only
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setOpen((v) => !v)}
+                  className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-muted))] transition-colors hover:text-foreground"
+                  title="Revise this page — preserves what's here, applies your change"
+                >
+                  {open ? "Hide" : notes.length ? `✎ Revise · ${notes.length} ${notes.length === 1 ? "note" : "notes"}` : "✎ Revise"}
+                </button>
+              </div>
 
-          {open && (
-            <div className="mt-4 space-y-4">
-              {/* The editor's notes for this page, if an evaluation has flagged it. */}
-              {notes.length > 0 ? (
-                <div className="space-y-2">
-                  <div className="pv-eyebrow">The editor's notes on this page</div>
-                  {notes.map((n, i) => (
-                    <div key={i} className="pv-serif text-[14px] leading-relaxed">
-                      <p className="text-foreground">
-                        <span className={`${SEV_TONE[n.severity]} font-medium`}>{n.severity}</span>{" "}
-                        <span className="text-[hsl(var(--pv-text-faint))]">({n.section})</span> — {n.note}
-                      </p>
-                      {n.suggestion && <p className="mt-0.5 text-[hsl(var(--pv-text-muted))]">→ {n.suggestion}</p>}
+              {open && (
+                <div className="mt-4 space-y-4">
+                  {notes.length > 0 ? (
+                    <div className="space-y-2">
+                      <div className="pv-eyebrow">The editor's notes on this page</div>
+                      {notes.map((n, i) => (
+                        <div key={i} className="pv-serif text-[14px] leading-relaxed">
+                          <p className="text-foreground">
+                            <span className={`${SEV_TONE[n.severity]} font-medium`}>{n.severity}</span>{" "}
+                            <span className="text-[hsl(var(--pv-text-faint))]">({n.section})</span> — {n.note}
+                          </p>
+                          {n.suggestion && <p className="mt-0.5 text-[hsl(var(--pv-text-muted))]">→ {n.suggestion}</p>}
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="pv-serif text-[14px] italic leading-relaxed text-[hsl(var(--pv-text-muted))]">
-                  No editor's notes flag this page. You can still give an instruction below, or revise to
-                  polish.
-                </p>
-              )}
+                  ) : (
+                    <p className="pv-serif text-[14px] italic leading-relaxed text-[hsl(var(--pv-text-muted))]">
+                      No editor's notes flag this page. You can still give an instruction below, or revise to
+                      polish.
+                    </p>
+                  )}
 
-              {/* The author's comment, layered on top of (or instead of) the notes. */}
-              {!proposed && (
-                <div className="space-y-2">
-                  <Textarea
-                    value={instruction}
-                    onChange={(e) => setInstruction(e.target.value)}
-                    placeholder="Optional: tell the editor what to focus on for this page…"
-                    className="min-h-[64px] text-[14px]"
-                    disabled={running}
-                  />
-                  <button
-                    type="button"
-                    onClick={propose}
-                    disabled={running}
-                    className="pv-serif inline-flex items-center gap-2 text-[14px] italic text-[hsl(var(--pv-text-muted))] transition-colors hover:text-foreground disabled:opacity-50"
-                  >
-                    {running && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                    {running ? "The editor is revising…" : "Propose a revision →"}
-                  </button>
-                </div>
-              )}
+                  {!proposed && (
+                    <div className="space-y-2">
+                      <Textarea
+                        value={instruction}
+                        onChange={(e) => setInstruction(e.target.value)}
+                        placeholder="Optional: tell the editor what to focus on for this page…"
+                        className="min-h-[64px] text-[14px]"
+                        disabled={running}
+                      />
+                      <button
+                        type="button"
+                        onClick={propose}
+                        disabled={running}
+                        className="pv-serif inline-flex items-center gap-2 text-[14px] italic text-[hsl(var(--pv-text-muted))] transition-colors hover:text-foreground disabled:opacity-50"
+                      >
+                        {running && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                        {running ? "The editor is revising…" : "Propose a revision →"}
+                      </button>
+                    </div>
+                  )}
 
-              {genError && (
-                <p className="pv-serif text-[14px] leading-relaxed text-red-600 dark:text-red-400">{genError}</p>
-              )}
+                  {genError && (
+                    <p className="pv-serif text-[14px] leading-relaxed text-red-600 dark:text-red-400">{genError}</p>
+                  )}
 
-              {/* Diff + editable proposal: the author can tweak the prose before applying. */}
-              {proposed && row?.kind === "page_revise" && (
-                <div className="space-y-3">
-                  <div className="pv-eyebrow">Proposed changes</div>
-                  <div className="overflow-x-auto rounded-lg border border-[hsl(var(--pv-border-soft))] text-[13px]">
-                    <ReactDiffViewer
-                      oldValue={currentText}
-                      newValue={proposedDraft}
-                      splitView={false}
-                      compareMethod={DiffMethod.WORDS}
-                      useDarkTheme={false}
-                      styles={diffStyles}
-                      hideLineNumbers
-                      showDiffOnly={false}
-                    />
-                  </div>
+                  {proposed && row?.kind === "page_revise" && (
+                    <div className="space-y-3">
+                      <div className="pv-eyebrow">Proposed changes</div>
+                      <div className="overflow-x-auto rounded-lg border border-[hsl(var(--pv-border-soft))] text-[13px]">
+                        <ReactDiffViewer
+                          oldValue={currentText}
+                          newValue={proposedDraft}
+                          splitView={false}
+                          compareMethod={DiffMethod.WORDS}
+                          useDarkTheme={false}
+                          styles={diffStyles}
+                          hideLineNumbers
+                          showDiffOnly={false}
+                        />
+                      </div>
 
-                  <div className="space-y-1.5">
-                    <div className="pv-eyebrow">Edit before applying</div>
-                    <Textarea
-                      value={proposedDraft}
-                      onChange={(e) => setProposedDraft(e.target.value)}
-                      className="min-h-[200px] pv-serif text-[14.5px] leading-relaxed"
-                    />
-                  </div>
+                      <div className="space-y-1.5">
+                        <div className="pv-eyebrow">Edit before applying</div>
+                        <Textarea
+                          value={proposedDraft}
+                          onChange={(e) => setProposedDraft(e.target.value)}
+                          className="min-h-[200px] pv-serif text-[14.5px] leading-relaxed"
+                        />
+                      </div>
 
-                  <div className="flex items-center gap-4">
-                    <button
-                      type="button"
-                      onClick={applyProposal}
-                      disabled={!proposedDraft.trim()}
-                      className="pv-serif text-[14px] italic text-[hsl(var(--pv-accent))] transition-colors hover:text-foreground disabled:opacity-50"
-                    >
-                      Apply to page →
-                    </button>
-                    <button
-                      type="button"
-                      onClick={propose}
-                      className="pv-serif text-[14px] italic text-[hsl(var(--pv-text-muted))] transition-colors hover:text-foreground"
-                    >
-                      Re-propose
-                    </button>
-                    <button
-                      type="button"
-                      onClick={discardProposal}
-                      className="pv-serif text-[14px] italic text-[hsl(var(--pv-text-faint))] transition-colors hover:text-foreground"
-                    >
-                      Discard
-                    </button>
-                  </div>
+                      <div className="flex items-center gap-4">
+                        <button
+                          type="button"
+                          onClick={applyProposal}
+                          disabled={!proposedDraft.trim()}
+                          className="pv-serif text-[14px] italic text-[hsl(var(--pv-accent))] transition-colors hover:text-foreground disabled:opacity-50"
+                        >
+                          Apply to page →
+                        </button>
+                        <button
+                          type="button"
+                          onClick={propose}
+                          className="pv-serif text-[14px] italic text-[hsl(var(--pv-text-muted))] transition-colors hover:text-foreground"
+                        >
+                          Re-propose
+                        </button>
+                        <button
+                          type="button"
+                          onClick={discardProposal}
+                          className="pv-serif text-[14px] italic text-[hsl(var(--pv-text-faint))] transition-colors hover:text-foreground"
+                        >
+                          Discard
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           )}
-        </div>
+        </>
       )}
     </div>
   );

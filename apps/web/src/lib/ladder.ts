@@ -40,6 +40,9 @@ export const transforms = {
   objectivesToSpine: (bookId: number) => call("objectives-to-spine", { bookId }, "spine"),
   beatToObjective: (bookId: number, pageId: number, beat: string) => call("beat-to-objective", { bookId, pageId, beat }, "objective"),
   proseToBeat: (bookId: number, pageId: number, proseText: string) => call("prose-to-beat", { bookId, pageId, proseText }, "beat"),
+  // revise (signal-driven, preserves) — the short plan nodes; prose has its own heavier reviser.
+  reviseNode: (bookId: number, layer: NodeLayer, current: string, instruction: string, pageId?: number) =>
+    call("revise-node", { bookId, pageId, layer, current, instruction }, "text"),
 };
 
 // ── Node reads ───────────────────────────────────────────────────────────────
