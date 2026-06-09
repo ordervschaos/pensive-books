@@ -231,10 +231,15 @@ const PageView = () => {
     if (!canEdit || !numericPageId) return;
     const trimmed = next?.trim() ?? '';
     setPageObjective(trimmed || null);
-    // Phase 0: objective is the only metadata key, so a whole-object write is fine.
+    // Merge: metadata now also holds beat, sync (edge hashes), summary — read fresh and patch only
+    // the objective key so editing it never clobbers the rest of the resolution-ladder state.
+    const { data } = await supabase.from('pages').select('metadata').eq('id', numericPageId).maybeSingle();
+    const metadata = { ...((data?.metadata as Record<string, unknown> | null) ?? {}) };
+    if (trimmed) metadata.objective = trimmed;
+    else delete metadata.objective;
     const { error } = await supabase
       .from('pages')
-      .update({ metadata: trimmed ? { objective: trimmed } : {} })
+      .update({ metadata })
       .eq('id', numericPageId);
     if (error) {
       toast({ title: "Couldn't save objective", description: error.message, variant: 'destructive' });
