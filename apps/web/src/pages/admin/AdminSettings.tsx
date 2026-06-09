@@ -45,7 +45,6 @@ export default function AdminSettings() {
   const { toast } = useToast();
 
   useEffect(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any)
       .from(ADMIN_SETTINGS)
       .select("value")
@@ -63,7 +62,6 @@ export default function AdminSettings() {
 
   async function save() {
     setSaving(true);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error } = await (supabase as any)
       .from(ADMIN_SETTINGS)
       .update({ value: tier, updated_at: new Date().toISOString() })
