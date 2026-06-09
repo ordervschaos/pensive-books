@@ -108,31 +108,31 @@ async function startPageGen(body: Record<string, unknown>): Promise<void> {
   if (error) throw error;
 }
 
-// Generate a beat from a page's objective (the objective→beat transform). Synchronous; returns the
-// beat text (the caller writes metadata.beat + stamps the edge). Dual backend, like generateOnePage.
-async function callExpandBeat(bookId: number, pageId: number, objective: string): Promise<string> {
+// objective→beat: generate a beat from a page's objective (downward transform). Synchronous; returns
+// the beat text (the caller writes metadata.beat + stamps the edge). Dual backend, like generateOnePage.
+async function objectiveToBeat(bookId: number, pageId: number, objective: string): Promise<string> {
   if (BRIDGE) {
-    const r = await bridgeFetch(`/beat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ bookId, pageId, objective }) });
+    const r = await bridgeFetch(`/objective-to-beat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ bookId, pageId, objective }) });
     const d = await r.json();
     if (d.error) throw new Error(d.error);
     return String(d.beat ?? "").trim();
   }
-  const { data, error } = await supabase.functions.invoke("expand-beat", { body: { bookId, pageId, objective } });
+  const { data, error } = await supabase.functions.invoke("objective-to-beat", { body: { bookId, pageId, objective } });
   if (error) throw error;
   if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
   return String((data as { beat?: string })?.beat ?? "").trim();
 }
 
-// Distill a beat from a page's prose (the prose→beat reverse transform). Returns the beat text; the
+// prose→beat: distill a beat from a page's prose (the reverse transform). Returns the beat text; the
 // caller writes metadata.beat + reconciles the objective_beat & beat_prose edges.
-async function callDistillBeat(bookId: number, pageId: number, proseText: string): Promise<string> {
+async function proseToBeat(bookId: number, pageId: number, proseText: string): Promise<string> {
   if (BRIDGE) {
-    const r = await bridgeFetch(`/distill-beat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ bookId, pageId, proseText }) });
+    const r = await bridgeFetch(`/prose-to-beat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ bookId, pageId, proseText }) });
     const d = await r.json();
     if (d.error) throw new Error(d.error);
     return String(d.beat ?? "").trim();
   }
-  const { data, error } = await supabase.functions.invoke("distill-beat", { body: { bookId, pageId, proseText } });
+  const { data, error } = await supabase.functions.invoke("prose-to-beat", { body: { bookId, pageId, proseText } });
   if (error) throw error;
   if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
   return String((data as { beat?: string })?.beat ?? "").trim();
@@ -252,7 +252,7 @@ export function PageWorkshop({
     commitObjective();
     setBeatBusy(true);
     try {
-      const text = await callExpandBeat(bookId, pageId, objectiveText);
+      const text = await objectiveToBeat(bookId, pageId, objectiveText);
       if (text) { await persistBeat(text); }
     } catch (e) {
       toast({ variant: "destructive", title: "Couldn't write the beat", description: String((e as Error)?.message ?? e) });
@@ -277,7 +277,7 @@ export function PageWorkshop({
     commitObjective();
     setBeatBusy(true);
     try {
-      const text = await callDistillBeat(bookId, pageId, currentText);
+      const text = await proseToBeat(bookId, pageId, currentText);
       if (text) {
         const { data } = await supabase.from("pages").select("metadata").eq("id", pageId).maybeSingle();
         let m: PageMeta = { ...((data?.metadata as PageMeta | null) ?? {}), beat: text };

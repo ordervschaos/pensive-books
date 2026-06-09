@@ -1,4 +1,4 @@
-// distill-beat — the prose→beat transform (the first UPWARD/reverse edge of the resolution ladder).
+// prose-to-beat — the prose→beat transform (the first UPWARD/reverse edge of the resolution ladder).
 //
 // Reverse-outlining: read a page's PROSE and abstract it back into a BEAT — the one-paragraph plan
 // the prose implements. Two uses: (1) backfill beats for books written before the beat layer existed;
@@ -7,7 +7,7 @@
 //   client → POST { bookId, pageId, proseText }
 //     → verify edit access → Claude (brief + spine + objective + the prose) → { beat }
 //
-// Synchronous, like expand-beat. The client writes metadata.beat and reconciles BOTH neighbouring
+// Synchronous, like objective-to-beat. The client writes metadata.beat and reconciles BOTH neighbouring
 // edges (objective_beat + beat_prose), since distilling-and-accepting declares the beat sits
 // correctly between this objective and this prose. Needs ANTHROPIC_API_KEY.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
@@ -96,7 +96,7 @@ Deno.serve(async (req: Request) => {
           (objective ? `\n\nTHIS PAGE'S OBJECTIVE (for framing the abstraction level only):\n${objective}` : "") +
           `\n\nTHE PAGE'S PROSE${title ? ` ("${title}")` : ""} — reverse-outline this into its beat:\n"""\n${prose.slice(0, 12000)}\n"""\n\nWrite the beat this prose implements. One paragraph, plan only.`,
       }],
-    }, { fn: "distill-beat", bookId, userId: user.id });
+    }, { fn: "prose-to-beat", bookId, userId: user.id });
 
     const beat = ((data.content ?? []) as Array<{ type: string; text?: string }>)
       .filter((b) => b.type === "text").map((b) => b.text ?? "").join("").trim();
@@ -104,7 +104,7 @@ Deno.serve(async (req: Request) => {
 
     return json({ beat });
   } catch (e) {
-    console.error("distill-beat error:", e);
+    console.error("prose-to-beat error:", e);
     return json({ error: String((e as Error)?.message ?? e).slice(0, 500) }, 500);
   }
 });

@@ -1,4 +1,4 @@
-// expand-beat — the objective→beat transform (one downward edge of the resolution ladder).
+// objective-to-beat — the objective→beat transform (one downward edge of the resolution ladder).
 //
 // A BEAT is a single paragraph that plans, in concrete order, what one page does to fulfil its
 // objective — the middle resolution between the OBJECTIVE (what the page must achieve) and the PROSE
@@ -112,7 +112,7 @@ Deno.serve(async (req: Request) => {
           `\n\nOUTLINE (for continuity — the target page is marked):\n${outlineContext((pages as Array<{ id: number; page_type: string | null; title: string | null; metadata: { objective?: string } | null }>) ?? [], pageId)}` +
           `\n\nTHIS PAGE'S OBJECTIVE:\n${obj}\n\nWrite the beat for THIS PAGE. One paragraph, plan only.`,
       }],
-    }, { fn: "expand-beat", bookId, userId: user.id });
+    }, { fn: "objective-to-beat", bookId, userId: user.id });
 
     const beat = ((data.content ?? []) as Array<{ type: string; text?: string }>)
       .filter((b) => b.type === "text").map((b) => b.text ?? "").join("").trim();
@@ -120,7 +120,7 @@ Deno.serve(async (req: Request) => {
 
     return json({ beat });
   } catch (e) {
-    console.error("expand-beat error:", e);
+    console.error("objective-to-beat error:", e);
     return json({ error: String((e as Error)?.message ?? e).slice(0, 500) }, 500);
   }
 });

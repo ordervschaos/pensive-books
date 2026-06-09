@@ -654,8 +654,8 @@ Produce the revision plan. JSON only.`;
   return parsePlan(out.text, pages, planOnly);
 }
 
-// ── /beat ───────────────────────────────────────────────────────────────────
-// Mirrors supabase/functions/expand-beat: objective → a one-paragraph beat (the plan of what the
+// ── /objective-to-beat ─────────────────────────────────────────────────────────
+// Mirrors supabase/functions/objective-to-beat: objective → a one-paragraph beat (the plan of what the
 // page does), in book context. No mutation — the client writes metadata.beat + stamps the edge.
 const BEAT_INSTRUCTIONS = `You are a book architect writing a BEAT — a single paragraph that plans, in concrete order, what ONE page of the book does to fulfil its objective. A beat sits between the OBJECTIVE (what the page must achieve) and the PROSE (the actual words): it commits to the specific moves, turns, and images — the "how" — without writing the page itself.
 
@@ -665,7 +665,7 @@ Rules:
 - Fulfil the page's objective exactly. Honour the book's brief (genre, audience, tone, premise) and the book spine as the voice/throughline contract.
 - Keep continuity: lead from what the preceding pages set up, don't repeat a neighbouring page's beat, and set up what follows.`;
 
-async function runBeat(body) {
+async function runObjectiveToBeat(body) {
   const { bookId, pageId, objective } = body;
   if (!bookId || !pageId) return { error: "bookId and pageId required" };
   const obj = (objective ?? "").trim();
@@ -691,13 +691,13 @@ ${obj}
 
 Write the beat for THIS PAGE. One paragraph, plan only.`;
 
-  const out = await runClaude(prompt, true, { fn: "expand-beat", bookId }, { noTools: true });
+  const out = await runClaude(prompt, true, { fn: "objective-to-beat", bookId }, { noTools: true });
   if (out.error) return out;
   return { beat: (out.text ?? "").trim() };
 }
 
-// ── /distill-beat ─────────────────────────────────────────────────────────────
-// Mirrors supabase/functions/distill-beat: prose → the beat it implements (reverse-outlining). No
+// ── /prose-to-beat ────────────────────────────────────────────────────────────
+// Mirrors supabase/functions/prose-to-beat: prose → the beat it implements (reverse-outlining). No
 // mutation — the client writes metadata.beat + reconciles the objective_beat & beat_prose edges.
 const DISTILL_BEAT_INSTRUCTIONS = `You are a book architect REVERSE-OUTLINING a page: given the page's finished PROSE, write the BEAT it implements — a single paragraph that states, in concrete order, what the page actually does (its moves, turns, and images). You are abstracting the prose UP into its plan, not editing or judging it.
 
@@ -707,7 +707,7 @@ Rules:
 - Be faithful to the prose as written (this is reverse-outlining); use the objective only to frame the level of abstraction, not to "correct" the prose.
 - Stay in the register the brief and book spine imply.`;
 
-async function runDistillBeat(body) {
+async function runProseToBeat(body) {
   const { bookId, pageId, proseText } = body;
   if (!bookId || !pageId) return { error: "bookId and pageId required" };
   const prose = (proseText ?? "").trim();
@@ -734,7 +734,7 @@ ${prose.slice(0, 12000)}
 
 Write the beat this prose implements. One paragraph, plan only.`;
 
-  const out = await runClaude(prompt, true, { fn: "distill-beat", bookId }, { noTools: true });
+  const out = await runClaude(prompt, true, { fn: "prose-to-beat", bookId }, { noTools: true });
   if (out.error) return out;
   return { beat: (out.text ?? "").trim() };
 }
@@ -895,8 +895,8 @@ const FN_PROMPT_SOURCE = {
   "generate-scaffold": "supabase/functions/generate-scaffold/index.ts (and scripts/eval-bridge.mjs runScaffold)",
   "generate-bible": "supabase/functions/generate-bible/index.ts (and scripts/eval-bridge.mjs runBible)",
   "replan-from-notes": "supabase/functions/replan-from-notes/index.ts (and scripts/eval-bridge.mjs runReplan)",
-  "expand-beat": "supabase/functions/expand-beat/index.ts (and scripts/eval-bridge.mjs runBeat)",
-  "distill-beat": "supabase/functions/distill-beat/index.ts (and scripts/eval-bridge.mjs runDistillBeat)",
+  "objective-to-beat": "supabase/functions/objective-to-beat/index.ts (and scripts/eval-bridge.mjs runObjectiveToBeat)",
+  "prose-to-beat": "supabase/functions/prose-to-beat/index.ts (and scripts/eval-bridge.mjs runProseToBeat)",
   "scan-page": "supabase/functions/scan-threads/index.ts (callHaiku)",
   "evaluate-book": "supabase/functions/evaluate-book/index.ts (runTriage/runGroup/runVerdict)",
 };
@@ -1129,22 +1129,22 @@ async function route(req, res) {
     return json(res, 200, out);
   }
 
-  if (url === "/beat" || url === "/beat/") {
+  if (url === "/objective-to-beat" || url === "/objective-to-beat/") {
     if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
     const body = await readBody(req);
     if (!(await authorize(req, res, Number(body.bookId)))) return;
     console.log(`Writing beat (book ${body.bookId}, page ${body.pageId})…`);
-    const out = await runBeat(body);
+    const out = await runObjectiveToBeat(body);
     if (out.error) return json(res, 500, { error: out.error });
     return json(res, 200, out);
   }
 
-  if (url === "/distill-beat" || url === "/distill-beat/") {
+  if (url === "/prose-to-beat" || url === "/prose-to-beat/") {
     if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
     const body = await readBody(req);
     if (!(await authorize(req, res, Number(body.bookId)))) return;
     console.log(`Distilling beat from prose (book ${body.bookId}, page ${body.pageId})…`);
-    const out = await runDistillBeat(body);
+    const out = await runProseToBeat(body);
     if (out.error) return json(res, 500, { error: out.error });
     return json(res, 200, out);
   }
@@ -1175,5 +1175,5 @@ async function route(req, res) {
 
 server.listen(PORT, () => {
   console.log(`eval-bridge listening on http://localhost:${PORT}  (repo: ${repoRoot})`);
-  console.log(`  GET/POST /eval/:bookId   POST /scaffold/:bookId   POST /bible/:bookId   POST /replan/:bookId   POST /unit   POST /beat   POST /distill-beat`);
+  console.log(`  GET/POST /eval/:bookId   POST /scaffold/:bookId   POST /bible/:bookId   POST /replan/:bookId   POST /unit   POST /objective-to-beat   POST /prose-to-beat`);
 });
