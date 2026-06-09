@@ -138,6 +138,21 @@ async function proseToBeat(bookId: number, pageId: number, proseText: string): P
   return String((data as { beat?: string })?.beat ?? "").trim();
 }
 
+// beat→objective: distill a page's objective from its beat (reverse, up). Returns the objective text;
+// the caller sets the page objective (host-owned) and reconciles the objective_beat edge.
+async function beatToObjective(bookId: number, pageId: number, beat: string): Promise<string> {
+  if (BRIDGE) {
+    const r = await bridgeFetch(`/beat-to-objective`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ bookId, pageId, beat }) });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    return String(d.objective ?? "").trim();
+  }
+  const { data, error } = await supabase.functions.invoke("beat-to-objective", { body: { bookId, pageId, beat } });
+  if (error) throw error;
+  if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
+  return String((data as { objective?: string })?.objective ?? "").trim();
+}
+
 export function PageWorkshop({
   bookId,
   pageId,
@@ -295,6 +310,34 @@ export function PageWorkshop({
     }
   };
 
+  // Distill the page OBJECTIVE up from its beat (beat→objective): pull a hand-edited beat into the
+  // objective. Sets the objective via the host (its persistence owner), then stamps the objective_beat
+  // edge as reconciled with the new objective + the beat it was distilled from.
+  const distillObjective = async () => {
+    const beat = (meta?.beat ?? "").trim();
+    if (beatBusy || !beat) return;
+    setBeatBusy(true);
+    try {
+      const next = await beatToObjective(bookId, pageId, beat);
+      if (next) {
+        // One owned write sets BOTH the objective and the reconciled objective_beat edge, so they
+        // can't be split by a race. Done FIRST and awaited; then the host call updates parent state
+        // (its merge-safe write re-reads this and preserves the sync stamp).
+        const { data } = await supabase.from("pages").select("metadata").eq("id", pageId).maybeSingle();
+        const m = stampEdge({ ...((data?.metadata as PageMeta | null) ?? {}), objective: next }, "objective_beat", next, beat);
+        const { error } = await supabase.from("pages").update({ metadata: m }).eq("id", pageId);
+        if (error) throw error;
+        setObjectiveDraft(next);
+        onObjectiveChange(next); // sync parent state (host persistence is now merge-safe)
+        await loadMeta();
+      }
+    } catch (e) {
+      toast({ variant: "destructive", title: "Couldn't distill the objective", description: String((e as Error)?.message ?? e) });
+    } finally {
+      setBeatBusy(false);
+    }
+  };
+
   // Start a generation task (write or revise). The result arrives as a 'ready' row.
   const start = async (mode: "write" | "revise", issues?: ReviseIssue[]) => {
     if (running) return;
@@ -374,7 +417,20 @@ export function PageWorkshop({
   return (
     <div className="mx-8 mt-2 mb-6 border-t border-[hsl(var(--pv-border-soft))] pt-4">
       {/* The object: this page's author-only objective. Always set/editable. */}
-      <div className="pv-eyebrow">Objective for this page · author only</div>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <div className="pv-eyebrow">Objective for this page · author only</div>
+        {pageType !== "section" && meta?.beat?.trim() && (
+          <button
+            type="button"
+            onClick={() => void distillObjective()}
+            disabled={beatBusy}
+            className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-text-muted))] transition-colors hover:text-foreground disabled:opacity-50"
+            title="Reverse-outline: derive the objective from the beat (bottom-up)"
+          >
+            ↑ Distill from beat
+          </button>
+        )}
+      </div>
       <input
         type="text"
         value={objectiveDraft}

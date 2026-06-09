@@ -57,6 +57,22 @@ export function BookSpine({ bookId, onChanged }: { bookId: number; onChanged?: (
     }
   };
 
+  // Distill the spine UP from the book's page objectives (objectives→spine): pull a hand-shaped
+  // outline back into the book-level statement. Still stamps the current brief hash (the spine is now
+  // reconciled with both — it reflects the outline and is current with the brief).
+  const distill = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const text = await objectivesToSpine(bookId);
+      if (text) { setDraft(text); await persist(text); }
+    } catch (e) {
+      toast({ variant: "destructive", title: "Couldn't distill the spine", description: String((e as Error)?.message ?? e) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const save = async () => {
     const next = draft.trim();
     if (next === (spine?.text ?? "").trim()) return;
@@ -70,15 +86,27 @@ export function BookSpine({ bookId, onChanged }: { bookId: number; onChanged?: (
     <section className="rounded-2xl border border-border bg-[hsl(var(--pv-surface-2))]/40 p-5">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <div className="pv-eyebrow">Book spine · the throughline · author only</div>
-        <button
-          type="button"
-          onClick={() => void generate()}
-          disabled={busy}
-          className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-accent))] transition-colors hover:text-foreground disabled:opacity-50"
-        >
-          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-          {busy ? "Writing…" : spine?.text?.trim() ? "Regenerate from brief →" : "Generate from brief →"}
-        </button>
+        <div className="flex items-center gap-4">
+          <button
+            type="button"
+            onClick={() => void generate()}
+            disabled={busy}
+            className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-accent))] transition-colors hover:text-foreground disabled:opacity-50"
+            title="Write the spine from the brief (top-down)"
+          >
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+            {busy ? "Working…" : spine?.text?.trim() ? "Regenerate from brief →" : "Generate from brief →"}
+          </button>
+          <button
+            type="button"
+            onClick={() => void distill()}
+            disabled={busy}
+            className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-text-muted))] transition-colors hover:text-foreground disabled:opacity-50"
+            title="Reverse-outline: derive the spine from the page objectives (bottom-up)"
+          >
+            ↑ Distill from outline
+          </button>
+        </div>
       </div>
       <Textarea
         value={draft}
@@ -106,6 +134,20 @@ async function briefToSpine(bookId: number): Promise<string> {
     return String(d.spine ?? "").trim();
   }
   const { data, error } = await supabase.functions.invoke("brief-to-spine", { body: { bookId } });
+  if (error) throw error;
+  if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
+  return String((data as { spine?: string })?.spine ?? "").trim();
+}
+
+// objectives→spine: distill the book spine from the page objectives (reverse, up). Returns the text.
+async function objectivesToSpine(bookId: number): Promise<string> {
+  if (BRIDGE) {
+    const r = await bridgeFetch(`/objectives-to-spine`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ bookId }) });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    return String(d.spine ?? "").trim();
+  }
+  const { data, error } = await supabase.functions.invoke("objectives-to-spine", { body: { bookId } });
   if (error) throw error;
   if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
   return String((data as { spine?: string })?.spine ?? "").trim();

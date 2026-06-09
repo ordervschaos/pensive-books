@@ -132,10 +132,15 @@ them durably/in bulk and call them — "the UI is the orchestrator" going forwar
 
 | Edge | Expand (down; create==re-derive) | Distill (up) | Revise (signal-driven) |
 |---|---|---|---|
-| brief → spine | `brief-to-spine` ✅ | — (one-way) | — |
-| spine → objectives | `spine-to-objectives` ✅ *(= the scaffold; the one 1→N edge)* | `objectives-to-spine` (future) | `revise-outline` ✅ *(was replan-from-notes)* |
-| objective → beat | `objective-to-beat` ✅ | `prose-to-beat` ✅ *(reverse-outline)* | — |
-| beat → prose | `beat-to-prose` ✅ *(was generate-unit write)* | (prose-to-beat above) | `revise-prose` ✅ *(was generate-unit revise)* |
+| brief → spine | `brief-to-spine` ✅ | — (one-way, by design) | — |
+| spine → objectives | `spine-to-objectives` ✅ *(= the scaffold; the one 1→N edge)* | `objectives-to-spine` ✅ *(N→1)* | `revise-outline` ✅ *(was replan-from-notes)* |
+| objective → beat | `objective-to-beat` ✅ | `beat-to-objective` ✅ | — |
+| beat → prose | `beat-to-prose` ✅ *(was generate-unit write)* | `prose-to-beat` ✅ *(reverse-outline)* | `revise-prose` ✅ *(was generate-unit revise)* |
+
+**The loop is closed** — every edge is bidirectional except brief→spine (one-way by design). All
+transforms shipped + deployed. UI: `BookSpine` has Generate-from-brief + ↑Distill-from-outline;
+`PageWorkshop` has objective↑(distill-from-beat) / beat↓↑ / prose. Fixed a latent clobber:
+`PageView.handleObjectiveChange` now merge-patches metadata (was wiping beat/sync/summary).
 
 All shipped + deployed. Old fns (`generate-unit`, `generate-scaffold`, `replan-from-notes`,
 `expand-beat`, `distill-beat`) deleted. `_shared/generate-unit-core` exports `beatToProse`+`revisePage`.

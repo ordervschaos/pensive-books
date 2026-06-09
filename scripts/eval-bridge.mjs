@@ -780,6 +780,84 @@ Write the book spine. 1–2 short paragraphs, the throughline only.`;
   return { spine: (out.text ?? "").trim() };
 }
 
+// ── /beat-to-objective ────────────────────────────────────────────────────────
+// Mirrors supabase/functions/beat-to-objective: beat → the page objective it serves (reverse, up).
+const BEAT_TO_OBJECTIVE_INSTRUCTIONS = `You are a book architect ABSTRACTING UP: given a page's BEAT (a paragraph planning, in order, what the page does), write the page's OBJECTIVE — a single short statement (1–2 sentences) of what that page must ACHIEVE in the book: its job, not its moves. You are stepping up one level of abstraction, from the concrete plan to the page's purpose.
+
+Rules:
+- Output the objective only: 1–2 sentences, no title, no heading, no preamble, no markdown, no meta commentary.
+- State the page's JOB (what it accomplishes / what changes), not a retelling of the beat's steps and not prose.
+- Be faithful to what the beat actually does (this is reverse-outlining); the spine only frames the level of abstraction.`;
+
+async function runBeatToObjective(body) {
+  const { bookId, pageId, beat } = body;
+  if (!bookId || !pageId) return { error: "bookId and pageId required" };
+  const beatText = (beat ?? "").trim();
+  if (!beatText) return { error: "beat required" };
+  const book = await fetchBook(bookId);
+  if (!book) return { error: "Book not found" };
+  const pages = await fetchPages(bookId);
+  const current = pages.find((p) => p.id === pageId) ?? null;
+  const spine = book.spine?.text?.trim() || null;
+
+  const prompt = `${BEAT_TO_OBJECTIVE_INSTRUCTIONS}
+
+BOOK: ${book.name}
+
+BRIEF:
+${briefContext(book.brief)}${spine ? `\n\nBOOK SPINE (for framing the abstraction level):\n${spine}` : ""}
+
+THE PAGE'S BEAT${current?.title ? ` ("${current.title}")` : ""} — abstract this up into the page's objective:
+${beatText}
+
+Write the objective this beat serves. 1–2 sentences, the page's job only.`;
+
+  const out = await runClaude(prompt, true, { fn: "beat-to-objective", bookId }, { noTools: true });
+  if (out.error) return out;
+  return { objective: (out.text ?? "").trim() };
+}
+
+// ── /objectives-to-spine ──────────────────────────────────────────────────────
+// Mirrors supabase/functions/objectives-to-spine: the book's outline → the spine (reverse, N→1).
+const OBJECTIVES_TO_SPINE_INSTRUCTIONS = `You are a book architect ABSTRACTING UP: given the book's full outline (its chapters and pages, each with its objective), write the BOOK SPINE — the throughline. In 1–2 short paragraphs, state what this book is fundamentally DOING across all these pages: its central objective/promise and the arc from beginning to end.
+
+Rules:
+- Output 1–2 short paragraphs. No title, no heading, no preamble, no markdown, no meta commentary — just the spine.
+- It is the structural throughline that the pages collectively realize — NOT a blurb, NOT a chapter list, NOT a summary of each page. Name the central aim, the through-arc, and what changes by the end.
+- Be faithful to what the outline actually does (this is reverse-outlining); the brief only frames the register.`;
+
+async function runObjectivesToSpine(body) {
+  const { bookId } = body;
+  if (!bookId) return { error: "bookId required" };
+  const book = await fetchBook(bookId);
+  if (!book) return { error: "Book not found" };
+  const pages = await fetchPages(bookId);
+  if (!pages.some((p) => p.metadata?.objective?.trim())) return { error: "no page objectives to distill a spine from" };
+  const outline = pages
+    .map((p) => {
+      const obj = p.metadata?.objective?.trim();
+      if (p.page_type === "section") return `# ${p.title || "(untitled section)"}${obj ? ` — ${obj}` : ""}`;
+      return `- "${p.title || "(untitled)"}"${obj ? ` — ${obj}` : ""}`;
+    })
+    .join("\n");
+
+  const prompt = `${OBJECTIVES_TO_SPINE_INSTRUCTIONS}
+
+BOOK: ${book.name}
+
+BRIEF (for register only):
+${briefContext(book.brief)}
+
+THE BOOK'S OUTLINE (chapters & pages with objectives) — abstract this up into the spine:
+${outline}
+
+Write the book spine the outline realizes. 1–2 short paragraphs, the throughline only.`;
+
+  const out = await runClaude(prompt, true, { fn: "objectives-to-spine", bookId }, { noTools: true });
+  if (out.error) return out;
+  return { spine: (out.text ?? "").trim() };
+}
+
 // ── /unit ─────────────────────────────────────────────────────────────────────
 // Kept at parity with _shared/generate-unit-core (beatToProse/revisePage) so local testing exercises
 // the same context (bible + objective map + story so far + preceding prose) and summary.
@@ -940,6 +1018,8 @@ const FN_PROMPT_SOURCE = {
   "objective-to-beat": "supabase/functions/objective-to-beat/index.ts (and scripts/eval-bridge.mjs runObjectiveToBeat)",
   "prose-to-beat": "supabase/functions/prose-to-beat/index.ts (and scripts/eval-bridge.mjs runProseToBeat)",
   "brief-to-spine": "supabase/functions/brief-to-spine/index.ts (and scripts/eval-bridge.mjs runBriefToSpine)",
+  "beat-to-objective": "supabase/functions/beat-to-objective/index.ts (and scripts/eval-bridge.mjs runBeatToObjective)",
+  "objectives-to-spine": "supabase/functions/objectives-to-spine/index.ts (and scripts/eval-bridge.mjs runObjectivesToSpine)",
   "scan-page": "supabase/functions/scan-threads/index.ts (callHaiku)",
   "evaluate-book": "supabase/functions/evaluate-book/index.ts (runTriage/runGroup/runVerdict)",
 };
@@ -1213,6 +1293,26 @@ async function route(req, res) {
     return json(res, 200, out);
   }
 
+  if (url === "/beat-to-objective" || url === "/beat-to-objective/") {
+    if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
+    const body = await readBody(req);
+    if (!(await authorize(req, res, Number(body.bookId)))) return;
+    console.log(`Distilling objective from beat (book ${body.bookId}, page ${body.pageId})…`);
+    const out = await runBeatToObjective(body);
+    if (out.error) return json(res, 500, { error: out.error });
+    return json(res, 200, out);
+  }
+
+  if (url === "/objectives-to-spine" || url === "/objectives-to-spine/") {
+    if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
+    const body = await readBody(req);
+    if (!(await authorize(req, res, Number(body.bookId)))) return;
+    console.log(`Distilling spine from outline (book ${body.bookId})…`);
+    const out = await runObjectivesToSpine(body);
+    if (out.error) return json(res, 500, { error: out.error });
+    return json(res, 200, out);
+  }
+
   const evalCallMatch = url.match(/^\/eval-call\/(\d+)\/?$/);
   if (evalCallMatch) {
     if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
@@ -1239,5 +1339,5 @@ async function route(req, res) {
 
 server.listen(PORT, () => {
   console.log(`eval-bridge listening on http://localhost:${PORT}  (repo: ${repoRoot})`);
-  console.log(`  GET/POST /eval/:bookId   POST /spine-to-objectives/:bookId   POST /bible/:bookId   POST /revise-outline/:bookId   POST /beat-to-prose   POST /revise-prose   POST /objective-to-beat   POST /prose-to-beat   POST /brief-to-spine`);
+  console.log(`  GET/POST /eval/:bookId   POST /spine-to-objectives/:bookId   POST /bible/:bookId   POST /revise-outline/:bookId   POST /beat-to-prose   POST /revise-prose   POST /objective-to-beat   POST /prose-to-beat   POST /brief-to-spine   POST /beat-to-objective   POST /objectives-to-spine`);
 });
