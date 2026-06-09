@@ -304,7 +304,7 @@ async function logAiEnd(id, { output = null, error = null, latencyMs = null }) {
 // `meta` ({ fn, bookId }), when given, logs the call (prompt + output/error + latency) to ai_calls.
 // `noTools`: run `claude -p` with the agentic toolset DISABLED (`--tools ""`), so it does a single
 // model completion instead of reading the repo / multi-step tool work. The prompt-based generators
-// (scaffold, bible, replan, unit, summarize) are self-contained "return this answer" prompts — with
+// (scaffold, bible, revise-outline, beat-to-prose, summarize) are self-contained "return this answer" prompts — with
 // tools on, claude treats them as agentic tasks and can run for many minutes or hang (the cause of
 // the 7–30 min replan runs + `exit 1`). The judge and the `/evaluate-book` slash command DO want
 // tools (they read the repo), so they leave noTools off.
@@ -489,8 +489,8 @@ Draft the bible. Markdown only.`;
   return { text };
 }
 
-// ── /replan ───────────────────────────────────────────────────────────────────
-// Mirrors supabase/functions/replan-from-notes: turn an evaluation into a revision plan
+// ── /revise-outline ──────────────────────────────────────────────────────────
+// Mirrors supabase/functions/revise-outline: instruction/evaluation -> a reviewable revision plan
 // (the objective-tree diff). NO mutation — the plan is returned for review.
 const REPLAN_INSTRUCTIONS = `You are a book doctor revising an EXISTING book based on the author's instruction and/or a developmental editor's evaluation. You work in OBJECTIVES (what each page must achieve), not prose.
 
@@ -513,7 +513,7 @@ Output JSON ONLY (no prose, no fences), exactly:
 { "summary": "...", "pages": [ { "ref": <id|null>, "op": "keep|revise|retarget|add", "pageType": "section|text", "title": "...", "objective": "...", "rebuild": "rewrite|revise", "why": "..." } ], "deletes": [ { "ref": <id>, "why": "..." } ] }`;
 
 // Plan-only variant: reshape the OUTLINE (objectives + structure) and never rewrite prose. Mirrors
-// SYSTEM_PLAN_ONLY in supabase/functions/replan-from-notes.
+// SYSTEM_PLAN_ONLY in supabase/functions/revise-outline.
 const REPLAN_PLAN_ONLY_INSTRUCTIONS = `You are a book architect revising an EXISTING book's OUTLINE based on the author's instruction. You work purely in the PLAN: each page's objective (what it must achieve) and the book's structure (which pages exist, and in what order). You do NOT touch prose — pages whose objective changes will be re-rendered later by the author.
 
 You are given: the brief, the bible, the CURRENT outline (each page with its real [id], type, title, and objective), and the author's instruction (the primary directive). Make the structural and objective changes the instruction asks for, and only those.
@@ -650,7 +650,7 @@ ${outlineContext(pages)}${instr ? `\n\nAUTHOR'S INSTRUCTION (primary directive):
 
 Produce the revision plan. JSON only.`;
 
-  const out = await runClaude(prompt, true, { fn: "replan-from-notes", bookId }, { noTools: true });
+  const out = await runClaude(prompt, true, { fn: "revise-outline", bookId }, { noTools: true });
   if (out.error) return out;
   return parsePlan(out.text, pages, planOnly);
 }
@@ -935,7 +935,7 @@ const FN_PROMPT_SOURCE = {
   "summarize": "supabase/functions/_shared/generate-unit-core.ts (summarize)",
   "generate-scaffold": "supabase/functions/generate-scaffold/index.ts (and scripts/eval-bridge.mjs runScaffold)",
   "generate-bible": "supabase/functions/generate-bible/index.ts (and scripts/eval-bridge.mjs runBible)",
-  "replan-from-notes": "supabase/functions/replan-from-notes/index.ts (and scripts/eval-bridge.mjs runReplan)",
+  "revise-outline": "supabase/functions/revise-outline/index.ts (and scripts/eval-bridge.mjs runReplan)",
   "objective-to-beat": "supabase/functions/objective-to-beat/index.ts (and scripts/eval-bridge.mjs runObjectiveToBeat)",
   "prose-to-beat": "supabase/functions/prose-to-beat/index.ts (and scripts/eval-bridge.mjs runProseToBeat)",
   "brief-to-spine": "supabase/functions/brief-to-spine/index.ts (and scripts/eval-bridge.mjs runBriefToSpine)",
@@ -1149,7 +1149,7 @@ async function route(req, res) {
     return json(res, 200, { status: "running", generation: out.generation });
   }
 
-  const replanMatch = url.match(/^\/replan\/(\d+)\/?$/);
+  const replanMatch = url.match(/^\/revise-outline\/(\d+)\/?$/);
   if (replanMatch) {
     if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
     const bookId = Number(replanMatch[1]);
@@ -1238,5 +1238,5 @@ async function route(req, res) {
 
 server.listen(PORT, () => {
   console.log(`eval-bridge listening on http://localhost:${PORT}  (repo: ${repoRoot})`);
-  console.log(`  GET/POST /eval/:bookId   POST /scaffold/:bookId   POST /bible/:bookId   POST /replan/:bookId   POST /beat-to-prose   POST /revise-prose   POST /objective-to-beat   POST /prose-to-beat   POST /brief-to-spine`);
+  console.log(`  GET/POST /eval/:bookId   POST /scaffold/:bookId   POST /bible/:bookId   POST /revise-outline/:bookId   POST /beat-to-prose   POST /revise-prose   POST /objective-to-beat   POST /prose-to-beat   POST /brief-to-spine`);
 });

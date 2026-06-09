@@ -29,7 +29,7 @@ const MAX_ATTEMPTS = 3; // 1 try + 2 retries
 const RETRY_BASE_MS = 1000;
 const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
-// ── Types (the revision plan mirrors replan-from-notes; the row mirrors the migration) ──
+// ── Types (the revision plan mirrors revise-outline; the row mirrors the migration) ──
 interface FixIssue {
   section: string;
   severity: Severity;
@@ -345,7 +345,7 @@ export function ReviseWithAI({
       },
     };
     if (BRIDGE) {
-      const r = await bridgeFetch(`/replan/${bookId}`, {
+      const r = await bridgeFetch(`/revise-outline/${bookId}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
@@ -354,7 +354,7 @@ export function ReviseWithAI({
       if (d.error) throw new Error(d.error);
       return d as RevisionPlan;
     }
-    const { data, error } = await supabase.functions.invoke("replan-from-notes", { body });
+    const { data, error } = await supabase.functions.invoke("revise-outline", { body });
     if (error) throw error;
     if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
     return data as RevisionPlan;

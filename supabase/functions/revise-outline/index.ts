@@ -1,4 +1,5 @@
-// replan-from-notes — the "book doctor" (v2 / structural revision step 1).
+// revise-outline — the structural "book doctor": instruction/evaluation → a reviewable revision plan
+// (the structural-revise transform, parallel to revise-prose). Applied by build-revision.
 //
 // Given a book's current objective tree + a developmental editor's evaluation, Claude
 // proposes a REVISION PLAN: the book's new page structure (keep / revise / retarget / add,
@@ -175,7 +176,7 @@ Deno.serve(async (req: Request) => {
     );
     return json(plan);
   } catch (e) {
-    console.error("replan-from-notes error:", e);
+    console.error("revise-outline error:", e);
     return json({ error: String((e as Error)?.message ?? e).slice(0, 500) }, 500);
   }
 });
@@ -384,7 +385,7 @@ async function callClaude(
           `\n\nProduce the revision plan. JSON only.`,
       },
     ],
-  }, { fn: "replan-from-notes", bookId, userId: userId ?? null });
+  }, { fn: "revise-outline", bookId, userId: userId ?? null });
 
   const text = (data.content ?? [])
     .filter((b: { type: string }) => b.type === "text")
