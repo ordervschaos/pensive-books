@@ -131,8 +131,8 @@ export const PageContent = ({
     if (!editor) return;
     const paras = proseToParagraphs(prose);
     if (paras.length) editor.chain().focus("end").insertContent(paras).run();
-    // Plan↔prose provenance: this prose was written from the page's objective.
-    if (pageId) void stampProse(Number(pageId), objective);
+    // Plan↔prose provenance: record which layer (beat or objective) this prose came from.
+    if (pageId) void stampProse(Number(pageId), objective, prose);
   }, [pageId, objective]);
 
   // Current page prose as plain text (paragraph-separated, title excluded) — the "before"
@@ -161,7 +161,7 @@ export const PageContent = ({
     setCurrentContent(doc);
     setInitialLoad(false);
     onSave(doc);
-    if (pageId) void stampProse(Number(pageId), objective);
+    if (pageId) void stampProse(Number(pageId), objective, prose);
   }, [currentContent, onSave, pageId, objective]);
 
   // Always use the current content - don't maintain separate state for display

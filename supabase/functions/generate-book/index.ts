@@ -226,8 +226,8 @@ async function advance(service: ReturnType<typeof serviceClient>, apiKey: string
           if (text) {
             const { error: upErr } = await service.from("pages").update({ content: buildDoc(page.title, text) }).eq("id", pageId);
             if (upErr) throw new Error(upErr.message);
-            // Plan↔prose provenance: record which objective this prose was written from.
-            await stampProse(service, pageId, objective);
+            // Plan↔prose provenance: record which layer (beat or objective) this prose came from.
+            await stampProse(service, pageId, objective, text);
           }
           written = true;
         } catch (e) {

@@ -29,12 +29,33 @@ export function metaHash(text: string | null | undefined): string {
   return cyrb53(normalize(text)).toString(16);
 }
 
+interface EdgeHash { p: string; c: string }
+
 /**
  * Stamp prose provenance after prose has been written to `pageId`. Reads metadata fresh (to preserve
- * a just-persisted summary), merges prose_src_hash = metaHash(objective). Best-effort.
+ * a just-persisted summary), then records which layer the prose was written FROM:
+ *  - beat present → the beat_prose edge {p: hash(beat), c: hash(prose)} (and drop the legacy hash)
+ *  - no beat      → the legacy prose_src_hash = hash(objective)
+ * This keeps the resolution-ladder dirty graph correct: prose goes stale against its real source.
+ * Best-effort.
  */
-export async function stampProse(client: SupabaseClient, pageId: number, objective: string | null | undefined): Promise<void> {
+export async function stampProse(
+  client: SupabaseClient,
+  pageId: number,
+  objective: string | null | undefined,
+  proseText?: string | null,
+): Promise<void> {
   const { data } = await client.from("pages").select("metadata").eq("id", pageId).maybeSingle();
-  const metadata = { ...(((data?.metadata as Record<string, unknown> | null) ?? {})), prose_src_hash: metaHash(objective) };
+  const metadata = { ...((data?.metadata as Record<string, unknown> | null) ?? {}) } as Record<string, unknown>;
+  const beat = typeof metadata.beat === "string" ? metadata.beat.trim() : "";
+  if (beat) {
+    const sync = { ...((metadata.sync as Record<string, EdgeHash> | undefined) ?? {}) };
+    sync.beat_prose = { p: metaHash(beat), c: metaHash(proseText ?? "") };
+    metadata.sync = sync;
+    delete metadata.prose_src_hash;
+  } else {
+    metadata.prose_src_hash = metaHash(objective);
+    if (metadata.sync && typeof metadata.sync === "object") delete (metadata.sync as Record<string, unknown>).beat_prose;
+  }
   await client.from("pages").update({ metadata }).eq("id", pageId);
 }

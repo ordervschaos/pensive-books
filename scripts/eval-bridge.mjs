@@ -758,6 +758,9 @@ async function runUnit(body) {
   // Context (mirrors buildUnitContext in the edge function).
   const pages = await fetchPages(bookId);
   const current = pageId != null ? pages.find((p) => p.id === pageId) ?? null : null;
+  // Resolution ladder: write prose from the page's BEAT when present (the concrete plan), else the
+  // objective. Write mode + page level only — mirrors generate-unit-core.
+  const beat = mode === "write" && level === "page" ? (current?.metadata?.beat?.trim() || null) : null;
   const currentText = mode === "revise" && current ? tiptapToText(current.content).trim() : null;
   if (mode === "revise" && !currentText) return { error: "Page has no prose to revise" };
   const objectiveMap = pages
@@ -806,7 +809,9 @@ async function runUnit(body) {
     parts.push(
       level === "paragraph"
         ? `\nWrite ONE paragraph that achieves this objective:\n${objective.trim()}`
-        : `\nWrite the prose for a page that achieves this objective (multiple paragraphs as needed):\n${objective.trim()}`
+        : beat
+          ? `\nWrite the prose for a page (multiple paragraphs as needed) that realizes this BEAT — the page's plan for what happens, in order — while fulfilling its objective.\nOBJECTIVE (the aim): ${objective.trim()}\nBEAT (follow this plan): ${beat}`
+          : `\nWrite the prose for a page that achieves this objective (multiple paragraphs as needed):\n${objective.trim()}`
     );
   }
 

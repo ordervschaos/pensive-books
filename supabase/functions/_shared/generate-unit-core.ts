@@ -85,6 +85,14 @@ export async function generateUnit(client: SupabaseClient, apiKey: string, p: Un
 
   const ctx = await buildUnitContext(client, p.bookId, p.pageId ?? null, p.level);
 
+  // Resolution ladder: prose is written from the page's BEAT when one exists (the concrete plan),
+  // falling back to the objective. Only write mode — revise adapts existing prose to notes.
+  let beat: string | null = null;
+  if (mode === "write" && p.pageId) {
+    const { data: pg } = await client.from("pages").select("metadata").eq("id", p.pageId).maybeSingle();
+    beat = ((pg?.metadata as { beat?: string } | null)?.beat ?? "").trim() || null;
+  }
+
   const meta: CallMeta = {
     fn: "generate-unit",
     bookId: p.bookId,
@@ -100,6 +108,7 @@ export async function generateUnit(client: SupabaseClient, apiKey: string, p: Un
     level: p.level,
     mode,
     objective: (p.objective ?? "").trim(),
+    beat,
     issues: mode === "revise" ? (p.issues ?? []) : null,
     currentText,
     pageObjective: p.pageObjective?.trim() || null,
@@ -250,6 +259,7 @@ interface PromptArgs {
   level: "paragraph" | "page";
   mode: "write" | "revise";
   objective: string;
+  beat: string | null;
   issues: ReviseIssue[] | null;
   currentText: string | null;
   pageObjective: string | null;
@@ -311,7 +321,12 @@ function variablePart(args: PromptArgs): string {
     parts.push(`\nWrite ONE paragraph that achieves this objective:\n${args.objective}`);
   } else {
     const where = args.currentPageLabel ? ` for the page ${args.currentPageLabel}` : "";
-    parts.push(`\nWrite the prose${where} that achieves this objective (multiple paragraphs as needed):\n${args.objective}`);
+    if (args.beat) {
+      // Beat present: write to the beat (the page's concrete plan), in service of the objective.
+      parts.push(`\nWrite the prose${where} (multiple paragraphs as needed) that realizes this BEAT — the page's plan for what happens, in order — while fulfilling its objective.\nOBJECTIVE (the aim): ${args.objective}\nBEAT (follow this plan): ${args.beat}`);
+    } else {
+      parts.push(`\nWrite the prose${where} that achieves this objective (multiple paragraphs as needed):\n${args.objective}`);
+    }
   }
   return parts.join("\n\n");
 }

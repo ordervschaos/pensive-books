@@ -74,8 +74,8 @@ export function WriteNextPage({ bookId, writtenCount = 0, onWritten }: WriteNext
         const { buildDoc } = await import("@/lib/inlineMarkdown");
         const { error } = await supabase.from("pages").update({ content: buildDoc(target.title, text) }).eq("id", target.id);
         if (error) throw error;
-        // Record which objective this prose came from (plan↔prose dirty-graph).
-        await stampProse(target.id, target.objective);
+        // Record which layer (beat or objective) this prose came from (plan↔prose dirty-graph).
+        await stampProse(target.id, target.objective, text);
       }
       setLastWritten({ id: target.id, title: target.title });
       await loadNext();

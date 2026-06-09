@@ -154,9 +154,15 @@ above**, **distill from below**, or **revise** with an instruction; AI proposes 
     `metadata.beat` + stamps `objective_beat` via `stampEdge`. `isProseStale` fixed to compare prose
     against the layer it was *actually* written from (so adding a beat never false-flags prose). The
     Map's beat column now lights up as beats are written.
-  - **3b next — reroute prose to read `beat ?? objective`** (behavior-sensitive: change
-    `generate-unit-core`, stamp `beat_prose`), then `distill-beat` (prose→beat, up) to backfill beats
-    for existing books, then `expand-book-spine` / `expand-page-objectives` + their distills.
+  - **3b — reroute prose to `beat ?? objective`. ✅ SHIPPED.** `generate-unit-core` (+ bridge `runUnit`)
+    write-mode page-level prompt now writes from the beat when present (objective kept as the aim);
+    no-beat output is byte-identical. `stampProse` (client + edge) is beat-aware: beat present → stamp
+    `sync.beat_prose={p:hash(beat),c:hash(prose)}` and drop legacy `prose_src_hash`; else legacy. The 3
+    prose-write sites pass the prose text for the child hash. `isProseStale` already prefers
+    `beat_prose`. So: edit objective → beat stale; regenerate beat → beat synced; edit beat → prose
+    stale; re-render → prose synced (the one-layer-at-a-time downward cascade).
+  - **3c next — `distill-beat` (prose→beat, up)** to backfill beats for existing books, then
+    `expand-book-spine` / `expand-page-objectives` + their distills.
 - **Step 4 — interactive Map + node cell.** Make cells clickable → the node editor (hand / expand /
   distill / revise). "Sync down from here" cascades; per-node "pull up". Then retire the journey.
 - **Threads** fold into the dirty graph later (orphaned setup/payoff flagged) — unchanged from before.

@@ -306,9 +306,15 @@ export function PageWorkshop({
     if (!proposed || !row || !text) return;
     if (row.kind === "page_write") onAppendProse(text);
     else onApply(text);
-    // The host re-stamps prose_src_hash from the current objective on apply; mirror it locally so the
-    // "out of sync" badge clears immediately rather than waiting on the async stamp + a refetch.
-    setMeta((m) => ({ ...(m ?? {}), prose_src_hash: metaHash(objective ?? "") }));
+    // The host re-stamps provenance from the current source on apply; mirror it locally so the "out
+    // of sync" badge clears immediately rather than waiting on the async stamp + a refetch. Match the
+    // beat-aware rule: beat present → stamp beat_prose, else the legacy objective hash.
+    setMeta((m) => {
+      const base = m ?? {};
+      const beat = base.beat?.trim();
+      if (beat) return { ...base, sync: { ...(base.sync ?? {}), beat_prose: { p: metaHash(beat), c: metaHash(text) } } };
+      return { ...base, prose_src_hash: metaHash(objective ?? "") };
+    });
     await supabase.from("book_generations").update({ status: "applied" }).eq("id", row.id);
     toast({
       title: row.kind === "page_write" ? "Page created" : "Revision applied",

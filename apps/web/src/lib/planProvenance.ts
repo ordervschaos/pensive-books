@@ -102,12 +102,26 @@ export function stampEdge(
 }
 
 /**
- * Stamp prose provenance after prose has been written to a page. Reads the current metadata fresh
- * (so it doesn't clobber a summary the generator just persisted), merges prose_src_hash, writes back.
+ * Stamp prose provenance after prose has been written to a page. Reads metadata fresh (so it doesn't
+ * clobber a just-persisted summary), then records which layer the prose was written FROM:
+ *  - beat present → the beat_prose edge {p: hash(beat), c: hash(prose)} (and drop the legacy hash)
+ *  - no beat      → the legacy prose_src_hash = hash(objective)
  * Call AFTER the content update. Best-effort: a failure here only means a page might look stale.
  */
-export async function stampProse(pageId: number, objective: string | null | undefined): Promise<void> {
+export async function stampProse(
+  pageId: number,
+  objective: string | null | undefined,
+  proseText?: string | null,
+): Promise<void> {
   const { data } = await supabase.from("pages").select("metadata").eq("id", pageId).maybeSingle();
-  const metadata = { ...(((data?.metadata as PageMeta | null) ?? {})), prose_src_hash: metaHash(objective) };
+  const metadata = { ...((data?.metadata as PageMeta | null) ?? {}) };
+  const beat = metadata.beat?.trim();
+  if (beat) {
+    metadata.sync = { ...(metadata.sync ?? {}), beat_prose: { p: metaHash(beat), c: metaHash(proseText ?? "") } };
+    delete metadata.prose_src_hash;
+  } else {
+    metadata.prose_src_hash = metaHash(objective);
+    if (metadata.sync) delete metadata.sync.beat_prose;
+  }
   await supabase.from("pages").update({ metadata }).eq("id", pageId);
 }
