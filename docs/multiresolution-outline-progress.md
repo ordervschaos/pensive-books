@@ -125,14 +125,21 @@ brief → book spine → page objective → beat → prose
 beat/objective). Drift is detected per edge by remembering **both endpoints' hashes** at last
 reconcile (generalizes Phase 1's parent-only `prose_src_hash`).
 
-**Transformation functions (one per edge, shared core, separate prompts):**
+**Transformation functions — STRUCTURAL `<source>-to-<target>` names (refactored).** Rule: **create ==
+re-derive → one idempotent expand transform per edge; revise is its own signal-driven function.**
+Transforms are pure (one edge); orchestrators (`generate-book`/`build-revision`/`generate-page`) run
+them durably/in bulk and call them — "the UI is the orchestrator" going forward.
 
-| Edge | Down (expand) | Up (distill) |
-|---|---|---|
-| brief → spine | `expand-book-spine` | — (one-way) |
-| spine ↔ page-obj | `expand-page-objectives` | `distill-book-spine` |
-| page-obj ↔ beat | `expand-beat` | `distill-page-objective` |
-| beat ↔ prose | `expand-prose` *(today's generate-unit)* | `distill-beat` *(reverse-outline)* |
+| Edge | Expand (down; create==re-derive) | Distill (up) | Revise (signal-driven) |
+|---|---|---|---|
+| brief → spine | `brief-to-spine` ✅ | — (one-way) | — |
+| spine → objectives | `spine-to-objectives` ✅ *(= the scaffold; the one 1→N edge)* | `objectives-to-spine` (future) | `revise-outline` ✅ *(was replan-from-notes)* |
+| objective → beat | `objective-to-beat` ✅ | `prose-to-beat` ✅ *(reverse-outline)* | — |
+| beat → prose | `beat-to-prose` ✅ *(was generate-unit write)* | (prose-to-beat above) | `revise-prose` ✅ *(was generate-unit revise)* |
+
+All shipped + deployed. Old fns (`generate-unit`, `generate-scaffold`, `replan-from-notes`,
+`expand-beat`, `distill-beat`) deleted. `_shared/generate-unit-core` exports `beatToProse`+`revisePage`.
+`book_generations.kind='scaffold'` enum kept (cosmetic rename deferred — needs a CHECK migration).
 
 **Collaboration (the node cell):** every node has the same contract — type it by hand, **expand from
 above**, **distill from below**, or **revise** with an instruction; AI proposes into a diff you accept.
