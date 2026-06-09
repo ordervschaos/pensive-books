@@ -1,13 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { briefToPromptContext, computeCompletion, type Brief } from "@/lib/brief";
 import { buildMap, type CellState, type MapModel, type RawPage } from "@/lib/planGraph";
 import { metaHash, type PageMeta } from "@/lib/planProvenance";
+import { NodeEditor, type NodeTarget } from "./NodeEditor";
+import type { NodeLayer } from "@/lib/ladder";
 
 interface ResolutionMapProps {
   bookId: number;
   /** Bump to refetch (e.g. after an edit elsewhere on the page). */
   refreshKey?: number;
+  /** Called after a node is edited in the map, so the host can refresh its own views. */
+  onChanged?: () => void;
 }
 
 /**
@@ -18,8 +23,12 @@ interface ResolutionMapProps {
  * Read-only for now: it visualizes the model the transforms will later fill in. It self-fetches the
  * layers so it stays decoupled from the host's page list (mirrors StalePanel).
  */
-export function ResolutionMap({ bookId, refreshKey }: ResolutionMapProps) {
+export function ResolutionMap({ bookId, refreshKey, onChanged }: ResolutionMapProps) {
+  const navigate = useNavigate();
   const [model, setModel] = useState<MapModel | null>(null);
+  const [editing, setEditing] = useState<NodeTarget | null>(null);
+  // Local bump so a node edit reloads the map without needing the host to re-render.
+  const [localKey, setLocalKey] = useState(0);
 
   const load = useCallback(async () => {
     const [{ data: book }, { data: pages }] = await Promise.all([
@@ -37,9 +46,15 @@ export function ResolutionMap({ bookId, refreshKey }: ResolutionMapProps) {
     setModel(buildMap({ briefFilled, spineText, spineStale, pages: raw }));
   }, [bookId]);
 
-  useEffect(() => { void load(); }, [load, refreshKey]);
+  useEffect(() => { void load(); }, [load, refreshKey, localKey]);
 
   if (!model) return null;
+
+  // Open the node editor for an editable plan node (spine/objective/beat). Prose opens the page;
+  // brief lives in its own tab (not editable from the map).
+  const openNode = (layer: NodeLayer, state: CellState, page?: { id: number; title: string | null }) =>
+    setEditing({ layer, state, pageId: page?.id, pageTitle: page?.title });
+  const onSaved = () => { setLocalKey((k) => k + 1); onChanged?.(); };
 
   const { totals } = model;
   const summary = model.complete
@@ -58,11 +73,11 @@ export function ResolutionMap({ bookId, refreshKey }: ResolutionMapProps) {
       </div>
 
       <div className="px-5 py-5">
-        {/* Book-level band: brief → spine (one-way edge). */}
+        {/* Book-level band: brief → spine (one-way edge). Spine is editable; brief lives in its tab. */}
         <div className="mb-4 flex items-center gap-2">
           <BandNode label="Brief" state={model.brief} />
           <Connector oneWay />
-          <BandNode label="Book spine" state={model.spine} />
+          <BandNode label="Book spine" state={model.spine} onClick={() => openNode("spine", model.spine)} />
         </div>
 
         {/* Per-page grid: objective → beat → prose. */}
@@ -83,9 +98,10 @@ export function ResolutionMap({ bookId, refreshKey }: ResolutionMapProps) {
               ) : (
                 <div key={p.id} className="grid grid-cols-[1fr_repeat(3,72px)] items-center py-1">
                   <span className="pv-serif truncate pr-2 text-[13.5px] text-foreground">{p.title || "(untitled)"}</span>
-                  <Cell state={p.objective} layer="objective" />
-                  <Cell state={p.beat} layer="beat" />
-                  <Cell state={p.prose} layer="prose" />
+                  <Cell state={p.objective} layer="objective" onClick={() => openNode("objective", p.objective, p)} />
+                  <Cell state={p.beat} layer="beat" onClick={() => openNode("beat", p.beat, p)} />
+                  {/* Prose isn't a short plan node — open the page to write/read it. */}
+                  <Cell state={p.prose} layer="prose" onClick={() => navigate(`/books/${bookId}/pages/${p.id}`)} />
                 </div>
               )
             )}
@@ -94,18 +110,25 @@ export function ResolutionMap({ bookId, refreshKey }: ResolutionMapProps) {
 
         <Legend />
       </div>
+
+      <NodeEditor bookId={bookId} target={editing} onClose={() => setEditing(null)} onSaved={onSaved} />
     </section>
   );
 }
 
 const STATE_LABEL: Record<CellState, string> = { gap: "empty", drift: "out of sync", synced: "in sync" };
 
-// A single grid cell — a dot whose colour encodes the node's state.
-function Cell({ state, layer }: { state: CellState; layer: string }) {
+// A single grid cell — a dot whose colour encodes the node's state. Clicking opens its editor.
+function Cell({ state, layer, onClick }: { state: CellState; layer: string; onClick?: () => void }) {
   return (
-    <div className="flex justify-center" title={`${layer}: ${STATE_LABEL[state]}`}>
+    <button
+      type="button"
+      onClick={onClick}
+      title={`${layer}: ${STATE_LABEL[state]} — click to open`}
+      className="flex justify-center rounded py-1.5 transition-colors hover:bg-[hsl(var(--pv-surface-2))]"
+    >
       <Dot state={state} />
-    </div>
+    </button>
   );
 }
 
@@ -119,14 +142,19 @@ function Dot({ state }: { state: CellState }) {
   return <span className="inline-block h-3 w-3 rounded-full bg-[hsl(var(--pv-accent))]" aria-label="in sync" />;
 }
 
-// A labelled node in the book-level band (brief / spine).
-function BandNode({ label, state }: { label: string; state: CellState }) {
-  return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))] px-2.5 py-1" title={`${label}: ${STATE_LABEL[state]}`}>
-      <Dot state={state} />
-      <span className="pv-serif text-[13px] text-foreground">{label}</span>
-    </span>
-  );
+// A labelled node in the book-level band (brief / spine). Clickable when an editor is wired.
+function BandNode({ label, state, onClick }: { label: string; state: CellState; onClick?: () => void }) {
+  const className = "inline-flex items-center gap-1.5 rounded-full border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))] px-2.5 py-1";
+  const inner = <><Dot state={state} /><span className="pv-serif text-[13px] text-foreground">{label}</span></>;
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} title={`${label}: ${STATE_LABEL[state]} — click to open`}
+        className={`${className} transition-colors hover:border-foreground/30`}>
+        {inner}
+      </button>
+    );
+  }
+  return <span className={className} title={`${label}: ${STATE_LABEL[state]}`}>{inner}</span>;
 }
 
 // The connector between two book-level nodes. brief→spine is one-way (AI drafts down, never up).

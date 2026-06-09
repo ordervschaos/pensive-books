@@ -716,7 +716,7 @@ const BookDetails = () => {
                   <div className="space-y-6">
                     {/* Resolution Map (admin preview, read-only): the multi-resolution completeness
                         chart that will become the primary build surface once its cells are interactive. */}
-                    {isAdmin && <ResolutionMap bookId={getNumericId(bookSlug)} refreshKey={pages.length} />}
+                    {isAdmin && <ResolutionMap bookId={getNumericId(bookSlug)} refreshKey={pages.length} onChanged={fetchBookDetails} />}
                     {isAdmin && <BookSpine bookId={getNumericId(bookSlug)} onChanged={fetchBookDetails} />}
                     <BookJourney
                     bookId={getNumericId(bookSlug)}

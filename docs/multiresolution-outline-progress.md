@@ -184,8 +184,14 @@ above**, **distill from below**, or **revise** with an instruction; AI proposes 
     the universal beat-gap across a whole existing book. Per-page distill ships the transform now.
   - **Next — `expand-book-spine` (brief→spine, down-only)** + `expand-page-objectives` (spine→page
     objs) + their distills, to light up the spine + objective columns end-to-end.
-- **Step 4 — interactive Map + node cell.** Make cells clickable → the node editor (hand / expand /
-  distill / revise). "Sync down from here" cascades; per-node "pull up". Then retire the journey.
+- **Step 4 — interactive Map + node cell. ✅ SHIPPED (v1).** `lib/ladder.ts` centralizes every
+  transform call + per-node persistence/stamping (`transforms.*`, `readNode`, `saveSpine/Objective/Beat`).
+  `NodeEditor.tsx` (a right Sheet) opens for a clicked spine/objective/beat cell: hand-edit + expand
+  (down) + distill (up), layer-driven; persists + stamps the right edges, then refreshes the map +
+  host (`onChanged`). Prose cell → navigates to the page; brief band-node → non-interactive (own tab).
+  Objective has no per-page expand (its parent edge is the 1→N scaffold). Still admin-gated.
+  **Remaining for Step 4:** in-editor "revise" (signal-driven), "sync down from here" cascade, then
+  retire the linear journey + un-gate.
 - **Threads** fold into the dirty graph later (orphaned setup/payoff flagged) — unchanged from before.
 
 ### Open design questions deferred to Step 2+
