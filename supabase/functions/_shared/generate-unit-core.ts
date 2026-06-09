@@ -34,19 +34,27 @@ export interface ReviseIssue {
   suggestion?: string;
 }
 
-export interface UnitParams {
+interface CommonParams {
   bookId: number;
   pageId?: number | null;
-  level: "paragraph" | "page";
-  objective?: string;
-  pageObjective?: string;
-  precedingText?: string;
-  mode?: "write" | "revise";
-  issues?: ReviseIssue[];
   // Optional link to the durable task row this render serves, recorded on the ai_calls log.
   log?: { taskTable?: string; taskId?: number };
   // Auth user who triggered this render; null/absent = automated/system call.
   userId?: string | null;
+}
+
+// beat-to-prose (write): render prose from the page's beat (or objective). No existing prose involved.
+export interface WriteParams extends CommonParams {
+  level: "paragraph" | "page";
+  objective?: string;
+  pageObjective?: string;
+  precedingText?: string;
+}
+
+// revise-prose: rework a page's EXISTING prose to address editorial notes, preserving what works.
+export interface ReviseParams extends CommonParams {
+  objective?: string;
+  issues: ReviseIssue[];
 }
 
 interface BookRow {
@@ -56,80 +64,83 @@ interface BookRow {
   bible: { text?: string } | null;
 }
 
-// ── Top-level entry ──────────────────────────────────────────────────────────
-// Fetch the book + context, render the prose, persist the "story so far" summary (best-effort),
-// and return the text. `client` may be a user-scoped or service-role client (callers choose).
-export async function generateUnit(client: SupabaseClient, apiKey: string, p: UnitParams): Promise<string> {
-  const mode = p.mode === "revise" ? "revise" : "write";
-  if (mode === "write" && !p.objective?.trim()) throw new Error("objective is required");
-  if (mode === "revise") {
-    if (!p.pageId) throw new Error("pageId is required for revise");
-    if (!Array.isArray(p.issues) || p.issues.length === 0) throw new Error("issues are required for revise");
-  }
+// ── Transforms ───────────────────────────────────────────────────────────────
+// Two isolated unit transforms share the context + Claude + summary machinery below but keep their
+// own entry points and context decisions (the create/render path vs the signal-driven revise path).
 
-  const { data: book, error: bookError } = await client
-    .from("books")
-    .select("id, name, subtitle, author, brief, bible")
-    .eq("id", p.bookId)
-    .single();
-  if (bookError || !book) throw new Error("Book not found");
-  const b = book as unknown as BookRow & { subtitle: string | null; author: string | null };
+const meta = (fn: string, p: CommonParams): CallMeta => ({
+  fn,
+  bookId: p.bookId,
+  taskTable: p.log?.taskTable ?? null,
+  taskId: p.log?.taskId ?? null,
+  userId: p.userId ?? null,
+});
 
-  // Revise mode edits the page's existing prose in place — fetch it.
-  let currentText: string | null = null;
-  if (mode === "revise") {
-    const { data: pg } = await client.from("pages").select("content").eq("id", p.pageId!).maybeSingle();
-    currentText = tiptapToText(pg?.content).trim() || null;
-    if (!currentText) throw new Error("Page has no prose to revise");
-  }
+async function loadBook(client: SupabaseClient, bookId: number): Promise<BookRow> {
+  const { data: book, error } = await client
+    .from("books").select("id, name, subtitle, author, brief, bible").eq("id", bookId).single();
+  if (error || !book) throw new Error("Book not found");
+  return book as unknown as BookRow;
+}
 
+// beat-to-prose (the beat→prose edge): render a page's prose from its beat (or objective). Idempotent
+// — an empty page creates, a written page re-renders (the caller overwrites). NOT for revising prose.
+export async function beatToProse(client: SupabaseClient, apiKey: string, p: WriteParams): Promise<string> {
+  if (!p.objective?.trim()) throw new Error("objective is required");
+  const b = await loadBook(client, p.bookId);
   const ctx = await buildUnitContext(client, p.bookId, p.pageId ?? null, p.level);
 
-  // Resolution ladder: prose is written from the page's BEAT when one exists (the concrete plan),
-  // falling back to the objective. Only write mode — revise adapts existing prose to notes.
+  // Prose is written from the page's BEAT when one exists (the concrete plan), else the objective.
   let beat: string | null = null;
-  if (mode === "write" && p.pageId) {
+  if (p.pageId) {
     const { data: pg } = await client.from("pages").select("metadata").eq("id", p.pageId).maybeSingle();
     beat = ((pg?.metadata as { beat?: string } | null)?.beat ?? "").trim() || null;
   }
 
-  const meta: CallMeta = {
-    fn: "generate-unit",
-    bookId: p.bookId,
-    taskTable: p.log?.taskTable ?? null,
-    taskId: p.log?.taskId ?? null,
-    userId: p.userId ?? null,
-  };
+  const m = meta("beat-to-prose", p);
+  const text = await renderProse(apiKey, {
+    brief: b.brief, bible: b.bible?.text?.trim() || null, bookName: b.name,
+    level: p.level, mode: "write", objective: (p.objective ?? "").trim(), beat, issues: null, currentText: null,
+    pageObjective: p.pageObjective?.trim() || null, precedingText: p.precedingText?.trim() || null,
+    objectiveMap: ctx.objectiveMap, storySoFar: ctx.storySoFar, precedingProse: ctx.precedingProse, currentPageLabel: ctx.currentPageLabel,
+  }, m);
 
-  const text = await callClaude(apiKey, {
-    brief: b.brief,
-    bible: b.bible?.text?.trim() || null,
-    bookName: b.name,
-    level: p.level,
-    mode,
-    objective: (p.objective ?? "").trim(),
-    beat,
-    issues: mode === "revise" ? (p.issues ?? []) : null,
-    currentText,
-    pageObjective: p.pageObjective?.trim() || null,
-    precedingText: p.precedingText?.trim() || null,
-    objectiveMap: ctx.objectiveMap,
-    storySoFar: ctx.storySoFar,
-    precedingProse: ctx.precedingProse,
-    currentPageLabel: ctx.currentPageLabel,
-  }, meta);
-
-  // Cheap one-paragraph "story so far" summary for later pages' continuity. Best-effort.
-  if ((p.level === "page" || mode === "revise") && p.pageId) {
-    try {
-      const summary = await summarize(apiKey, text, meta);
-      if (summary) await persistSummary(client, p.pageId, summary);
-    } catch (e) {
-      console.error("generate-unit-core: summary step failed (non-fatal):", e);
-    }
-  }
-
+  if (p.level === "page" && p.pageId) await maybeSummarize(client, apiKey, p.pageId, text, m);
   return text;
+}
+
+// revise-prose: rework a page's EXISTING prose to address editorial notes, preserving its strengths
+// and the author's voice. Signal-driven (the notes), always page-level — never creates from scratch.
+export async function revisePage(client: SupabaseClient, apiKey: string, p: ReviseParams): Promise<string> {
+  if (!p.pageId) throw new Error("pageId is required for revise");
+  if (!Array.isArray(p.issues) || p.issues.length === 0) throw new Error("issues are required for revise");
+  const b = await loadBook(client, p.bookId);
+
+  const { data: pg } = await client.from("pages").select("content").eq("id", p.pageId).maybeSingle();
+  const currentText = tiptapToText(pg?.content).trim() || null;
+  if (!currentText) throw new Error("Page has no prose to revise");
+
+  const ctx = await buildUnitContext(client, p.bookId, p.pageId, "page");
+  const m = meta("revise-prose", p);
+  const text = await renderProse(apiKey, {
+    brief: b.brief, bible: b.bible?.text?.trim() || null, bookName: b.name,
+    level: "page", mode: "revise", objective: (p.objective ?? "").trim(), beat: null, issues: p.issues, currentText,
+    pageObjective: null, precedingText: null,
+    objectiveMap: ctx.objectiveMap, storySoFar: ctx.storySoFar, precedingProse: ctx.precedingProse, currentPageLabel: ctx.currentPageLabel,
+  }, m);
+
+  await maybeSummarize(client, apiKey, p.pageId, text, m);
+  return text;
+}
+
+// Cheap one-paragraph "story so far" summary for later pages' continuity. Best-effort.
+async function maybeSummarize(client: SupabaseClient, apiKey: string, pageId: number, text: string, m: CallMeta) {
+  try {
+    const summary = await summarize(apiKey, text, m);
+    if (summary) await persistSummary(client, pageId, summary);
+  } catch (e) {
+    console.error("generate-unit-core: summary step failed (non-fatal):", e);
+  }
 }
 
 // ── Context assembly ─────────────────────────────────────────────────────────
@@ -332,7 +343,7 @@ function variablePart(args: PromptArgs): string {
 }
 
 // ── Claude call ──────────────────────────────────────────────────────────────
-async function callClaude(apiKey: string, args: PromptArgs, meta: CallMeta): Promise<string> {
+async function renderProse(apiKey: string, args: PromptArgs, meta: CallMeta): Promise<string> {
   const data = await callClaudeApi(apiKey, {
     model: MODEL,
     max_tokens: args.mode === "revise" || args.level === "page" ? 8000 : 600,

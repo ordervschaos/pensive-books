@@ -425,18 +425,21 @@ export function ReviseWithAI({
     }
   };
 
-  // ── Generate + persist one page's prose (write or revise mode) ──
+  // ── Generate + persist one page's prose: write = beat-to-prose, revise = revise-prose ──
   const buildPage = async (task: ProseTask) => {
-    const body: Record<string, unknown> = { bookId, pageId: task.id, level: "page", mode: task.mode, objective: task.objective };
-    if (task.mode === "revise") body.issues = task.issues;
+    const isRevise = task.mode === "revise";
+    const fn = isRevise ? "revise-prose" : "beat-to-prose";
+    const body: Record<string, unknown> = isRevise
+      ? { bookId, pageId: task.id, objective: task.objective, issues: task.issues }
+      : { bookId, pageId: task.id, level: "page", objective: task.objective };
     let text: string;
     if (BRIDGE) {
-      const r = await bridgeFetch(`/unit`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      const r = await bridgeFetch(`/${fn}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
       const d = await r.json();
       if (d.error) throw new Error(d.error);
       text = String(d.text ?? "").trim();
     } else {
-      const { data, error } = await supabase.functions.invoke("generate-unit", { body });
+      const { data, error } = await supabase.functions.invoke(fn, { body });
       if (error) throw error;
       text = String(data?.text ?? "").trim();
     }

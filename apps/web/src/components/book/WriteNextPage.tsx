@@ -29,7 +29,7 @@ interface Target {
  * stays in control and reviews as they go, so nothing ever "runs away" -- the small, attended commit
  * the bulk run isn't.
  *
- * Engine: a synchronous generate-unit call (returns prose; we write the page client-side, like the
+ * Engine: a synchronous beat-to-prose call (returns prose; we write the page client-side, like the
  * dev cascade). No durable task row -- this is an attended action, so resume-on-refresh isn't worth
  * the machinery; a refresh mid-write just leaves the page empty to click again.
  */
@@ -165,11 +165,11 @@ function bodyText(content: unknown): string {
   return nodes.map(walk).join("").trim();
 }
 
-// Generate one page's prose from its objective. Returns the text; the caller writes the page.
-// Mirrors the dev cascade: bridge in dev, the generate-unit edge function in prod. Both return { text }.
+// Render one page's prose from its beat/objective (the beat-to-prose edge). Returns the text; the
+// caller writes the page. Dual backend: bridge in dev, the beat-to-prose edge function in prod.
 async function generateOnePage(bookId: number, pageId: number, objective: string): Promise<string> {
   if (BRIDGE) {
-    const r = await bridgeFetch(`/unit`, {
+    const r = await bridgeFetch(`/beat-to-prose`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ bookId, pageId, level: "page", objective }),
@@ -178,7 +178,7 @@ async function generateOnePage(bookId: number, pageId: number, objective: string
     if (d.error) throw new Error(d.error);
     return String(d.text ?? "").trim();
   }
-  const { data, error } = await supabase.functions.invoke("generate-unit", { body: { bookId, pageId, level: "page", objective } });
+  const { data, error } = await supabase.functions.invoke("beat-to-prose", { body: { bookId, pageId, level: "page", objective } });
   if (error) throw error;
   if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
   return String((data as { text?: string })?.text ?? "").trim();

@@ -22,7 +22,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
-import { generateUnit, type ReviseIssue } from "../_shared/generate-unit-core.ts";
+import { beatToProse, revisePage, type ReviseIssue } from "../_shared/generate-unit-core.ts";
 import { buildDoc } from "../_shared/build-doc.ts";
 import { serviceClient } from "../_shared/task.ts";
 import { reinvoke, isChainCall } from "../_shared/self-chain.ts";
@@ -267,17 +267,12 @@ async function runStructure(service: SupabaseClient, row: RevisionRow, progressI
   return { structureDone: true, addedIds, tasks, done: 0, total: tasks.length, phase: undefined };
 }
 
-// Generate + persist one page's prose (write or revise), via the shared per-page worker.
+// Generate + persist one page's prose (write or revise), via the shared per-page transforms.
 async function buildPage(service: SupabaseClient, apiKey: string, bookId: number, task: ProseTask, revisionId: number) {
-  const text = await generateUnit(service, apiKey, {
-    bookId,
-    pageId: task.id,
-    level: "page",
-    mode: task.mode,
-    objective: task.objective,
-    issues: task.mode === "revise" ? (task.issues as ReviseIssue[]) : undefined,
-    log: { taskTable: "book_revisions", taskId: revisionId },
-  });
+  const log = { taskTable: "book_revisions", taskId: revisionId };
+  const text = task.mode === "revise"
+    ? await revisePage(service, apiKey, { bookId, pageId: task.id, objective: task.objective, issues: (task.issues ?? []) as ReviseIssue[], log })
+    : await beatToProse(service, apiKey, { bookId, pageId: task.id, level: "page", objective: task.objective, log });
   if (text) {
     const { error } = await service.from("pages").update({ content: buildDoc(task.title, text) }).eq("id", task.id);
     if (error) throw new Error(error.message);

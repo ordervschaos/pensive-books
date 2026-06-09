@@ -1,26 +1,19 @@
-// generate-unit — render prose from an objective, with book context (the "render(objective)
-// → prose" step). Synchronous (a paragraph/page is quick), unlike evaluate-book's job.
+// beat-to-prose — render a page's prose from its beat (or objective), with book context (the
+// beat→prose edge of the resolution ladder). Synchronous (a paragraph/page is quick). Idempotent:
+// an empty page creates, a written page re-renders (the caller overwrites). For REVISING existing
+// prose against editorial notes, see revise-prose — a separate transform.
 //
-//   client → POST { bookId, pageId, level, objective, ... }
-//     → verify edit access
-//     → generateUnit (shared core: brief + objective map + preceding prose → Claude)
-//     → { text }
+//   client → POST { bookId, pageId, level, objective, ... } → verify edit access → { text }
 //
-// The context-building + Claude logic lives in _shared/generate-unit-core.ts so it can be reused by
-// the async orchestrators (generate-page, generate-book, build-revision). This function keeps the
-// synchronous HTTP contract its callers (paragraph-level, dev parity) still rely on.
-//
-// Needs the ANTHROPIC_API_KEY secret (shared with evaluate-book / generate-scaffold).
+// The context-building + Claude logic lives in _shared/generate-unit-core.ts (beatToProse), reused by
+// the orchestrators (generate-page, generate-book). Needs the ANTHROPIC_API_KEY secret.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
-import { generateUnit, type ReviseIssue } from "../_shared/generate-unit-core.ts";
+import { beatToProse } from "../_shared/generate-unit-core.ts";
 
 const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
+  new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
 interface GenerateRequest {
   bookId: number;
@@ -29,8 +22,6 @@ interface GenerateRequest {
   objective: string;
   pageObjective?: string;
   precedingText?: string;
-  mode?: "write" | "revise";
-  issues?: ReviseIssue[];
 }
 
 Deno.serve(async (req: Request) => {
@@ -51,41 +42,31 @@ Deno.serve(async (req: Request) => {
     if (!bookId) return json({ error: "bookId is required" }, 400);
     if (level !== "paragraph" && level !== "page") return json({ error: "level must be 'paragraph' or 'page'" }, 400);
 
-    // Book + access check (owner or accepted collaborator — mirrors evaluate-book).
+    // Book + access check (owner or accepted collaborator).
     const { data: book, error: bookError } = await userClient
-      .from("books")
-      .select("id, owner_id")
-      .eq("id", bookId)
-      .single();
+      .from("books").select("id, owner_id").eq("id", bookId).single();
     if (bookError || !book) return json({ error: "Book not found" }, 404);
 
     const { data: access } = await userClient
-      .from("book_access")
-      .select("id")
-      .eq("book_id", bookId)
-      .eq("user_id", user.id)
-      .eq("status", "accepted")
-      .maybeSingle();
+      .from("book_access").select("id").eq("book_id", bookId).eq("user_id", user.id).eq("status", "accepted").maybeSingle();
     if (book.owner_id !== user.id && !access) return json({ error: "Access denied" }, 403);
 
     const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!apiKey) return json({ error: "ANTHROPIC_API_KEY not configured" }, 500);
 
-    const text = await generateUnit(userClient, apiKey, {
+    const text = await beatToProse(userClient, apiKey, {
       bookId,
       pageId: body.pageId ?? null,
       level,
       objective: body.objective,
       pageObjective: body.pageObjective,
       precedingText: body.precedingText,
-      mode: body.mode,
-      issues: body.issues,
       userId: user.id,
     });
 
     return json({ text });
   } catch (e) {
-    console.error("generate-unit error:", e);
+    console.error("beat-to-prose error:", e);
     return json({ error: String((e as Error)?.message ?? e).slice(0, 500) }, 500);
   }
 });

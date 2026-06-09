@@ -8,7 +8,8 @@
 //   GET  /eval/:bookId      -> existing report  { status: 'done'|'none', result? }
 //   POST /eval/:bookId      -> run evaluation   { status: 'done'|'error', result?, error? }
 //   POST /scaffold/:bookId  -> generate scaffold { structure, pages[] } | { error }
-//   POST /unit              -> generate prose    { text } | { error }
+//   POST /beat-to-prose      -> render prose      { text } | { error }
+//   POST /revise-prose       -> revise prose      { text } | { error }
 //
 // Env:
 //   EVAL_BRIDGE_PORT   default 8787
@@ -779,7 +780,7 @@ Write the book spine. 1–2 short paragraphs, the throughline only.`;
 }
 
 // ── /unit ─────────────────────────────────────────────────────────────────────
-// Kept at parity with supabase/functions/generate-unit so free local testing exercises
+// Kept at parity with _shared/generate-unit-core (beatToProse/revisePage) so local testing exercises
 // the same context (bible + objective map + story so far + preceding prose) and summary.
 const UNIT_SYSTEM = `You are a skilled prose writer helping an author render their book.
 The author works in OBJECTIVES: a short statement of what a unit of the book must achieve.
@@ -897,7 +898,7 @@ async function runUnit(body) {
     );
   }
 
-  const out = await runClaude(parts.join("\n"), true, { fn: "generate-unit", bookId }, { noTools: true });
+  const out = await runClaude(parts.join("\n"), true, { fn: mode === "revise" ? "revise-prose" : "beat-to-prose", bookId }, { noTools: true });
   if (out.error) return out;
 
   let text = out.text.trim();
@@ -929,7 +930,8 @@ const JUDGE_MODEL_LOCAL = "claude-code-local";
 
 // Where each fn assembles its prompt — given to the local judge so "code" amendments can be specific.
 const FN_PROMPT_SOURCE = {
-  "generate-unit": "supabase/functions/_shared/generate-unit-core.ts (and scripts/eval-bridge.mjs runUnit)",
+  "beat-to-prose": "supabase/functions/beat-to-prose/index.ts + _shared/generate-unit-core.ts (beatToProse; bridge runUnit)",
+  "revise-prose": "supabase/functions/revise-prose/index.ts + _shared/generate-unit-core.ts (revisePage; bridge runUnit)",
   "summarize": "supabase/functions/_shared/generate-unit-core.ts (summarize)",
   "generate-scaffold": "supabase/functions/generate-scaffold/index.ts (and scripts/eval-bridge.mjs runScaffold)",
   "generate-bible": "supabase/functions/generate-bible/index.ts (and scripts/eval-bridge.mjs runBible)",
@@ -1159,12 +1161,23 @@ async function route(req, res) {
     return json(res, 200, out);
   }
 
-  if (url === "/unit" || url === "/unit/") {
+  // beat-to-prose (write) + revise-prose (revise) — two endpoints over the shared runUnit.
+  if (url === "/beat-to-prose" || url === "/beat-to-prose/") {
     if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
     const body = await readBody(req);
     if (!(await authorize(req, res, Number(body.bookId)))) return;
-    console.log(`Generating unit (book ${body.bookId}, level: ${body.level})…`);
-    const out = await runUnit(body);
+    console.log(`beat-to-prose (book ${body.bookId}, level: ${body.level})…`);
+    const out = await runUnit({ ...body, mode: "write" });
+    if (out.error) return json(res, 500, { error: out.error });
+    return json(res, 200, out);
+  }
+
+  if (url === "/revise-prose" || url === "/revise-prose/") {
+    if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
+    const body = await readBody(req);
+    if (!(await authorize(req, res, Number(body.bookId)))) return;
+    console.log(`revise-prose (book ${body.bookId}, page ${body.pageId})…`);
+    const out = await runUnit({ ...body, level: "page", mode: "revise" });
     if (out.error) return json(res, 500, { error: out.error });
     return json(res, 200, out);
   }
@@ -1220,10 +1233,10 @@ async function route(req, res) {
     }
   }
 
-  return json(res, 404, { error: "use /eval/:bookId, /scaffold/:bookId, /bible/:bookId, /eval-call/:aiCallId, or POST /unit" });
+  return json(res, 404, { error: "use /eval/:bookId, /scaffold/:bookId, /bible/:bookId, /eval-call/:aiCallId, or POST /beat-to-prose" });
 }
 
 server.listen(PORT, () => {
   console.log(`eval-bridge listening on http://localhost:${PORT}  (repo: ${repoRoot})`);
-  console.log(`  GET/POST /eval/:bookId   POST /scaffold/:bookId   POST /bible/:bookId   POST /replan/:bookId   POST /unit   POST /objective-to-beat   POST /prose-to-beat   POST /brief-to-spine`);
+  console.log(`  GET/POST /eval/:bookId   POST /scaffold/:bookId   POST /bible/:bookId   POST /replan/:bookId   POST /beat-to-prose   POST /revise-prose   POST /objective-to-beat   POST /prose-to-beat   POST /brief-to-spine`);
 });

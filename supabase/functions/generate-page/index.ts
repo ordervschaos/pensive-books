@@ -15,7 +15,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
-import { generateUnit, type ReviseIssue } from "../_shared/generate-unit-core.ts";
+import { beatToProse, revisePage, type ReviseIssue } from "../_shared/generate-unit-core.ts";
 import { runInBackground, serviceClient } from "../_shared/task.ts";
 
 const json = (body: unknown, status = 200) =>
@@ -92,15 +92,10 @@ Deno.serve(async (req: Request) => {
     if (insertError || !gen) return json({ error: "Could not start page generation" }, 500);
 
     runInBackground(service, "book_generations", gen.id, "generate-page", async () => {
-      const text = await generateUnit(service, apiKey, {
-        bookId,
-        pageId,
-        level: "page",
-        objective: body.objective,
-        mode,
-        issues: body.issues,
-        log: { taskTable: "book_generations", taskId: gen.id },
-      });
+      const log = { taskTable: "book_generations", taskId: gen.id };
+      const text = mode === "revise"
+        ? await revisePage(service, apiKey, { bookId, pageId, objective: body.objective, issues: body.issues ?? [], log })
+        : await beatToProse(service, apiKey, { bookId, pageId, level: "page", objective: body.objective, log });
       if (!text) throw new Error("The editor returned no text.");
       return { status: "ready", result: { text } };
     });
