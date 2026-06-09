@@ -81,8 +81,9 @@ export async function callClaude(
   }
   const latencyMs = Date.now() - started;
 
-  // Fire-and-forget the terminal log; never let it throw into the caller.
-  void logEnd(logId, body, data, meta, latencyMs, errMsg);
+  // Await the terminal log so the status flip lands before the worker exits.
+  // logEnd has its own try/catch and never throws, so this is safe.
+  await logEnd(logId, body, data, meta, latencyMs, errMsg);
 
   if (errMsg) throw new Error(errMsg);
   return data;
