@@ -23,6 +23,7 @@ import { Brief } from "@/lib/brief";
 import { BookBriefSection } from "@/components/book/BookBriefSection";
 import { type RevisionPrefill } from "@/components/book/ReviseWithAI";
 import { BookJourney } from "@/components/book/BookJourney";
+import { ResolutionMap } from "@/components/book/ResolutionMap";
 import { ThreadsSection } from "@/components/book/ThreadsSection";
 import { BookBibleSection } from "@/components/book/BookBibleSection";
 import { getPageStatus } from "./components/pageList/pageUtils";
@@ -711,7 +712,11 @@ const BookDetails = () => {
                 {/* AI tools tab — the whole build journey, created → brief → scaffold → write →
                     editor's read → revise → publish, as one guided staircase. */}
                 {activeTab === "ai" && (
-                  <BookJourney
+                  <div className="space-y-6">
+                    {/* Resolution Map (admin preview, read-only): the multi-resolution completeness
+                        chart that will become the primary build surface once its cells are interactive. */}
+                    {isAdmin && <ResolutionMap bookId={getNumericId(bookSlug)} refreshKey={pages.length} />}
+                    <BookJourney
                     bookId={getNumericId(bookSlug)}
                     briefSet={briefSet}
                     pages={pages}
@@ -722,7 +727,8 @@ const BookDetails = () => {
                     revisionPrefill={revisionPrefill}
                     onRevisePrefill={setRevisionPrefill}
                     onRevisionApplied={() => fetchBookDetails()}
-                  />
+                    />
+                  </div>
                 )}
               </div>
             ) : (

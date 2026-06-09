@@ -37,6 +37,7 @@ export function metaHash(text: string | null | undefined): string {
 
 export interface PageMeta {
   objective?: string;
+  beat?: string; // the page's beat (one-paragraph middle resolution between objective and prose)
   summary?: string;
   prose_src_hash?: string;
 }

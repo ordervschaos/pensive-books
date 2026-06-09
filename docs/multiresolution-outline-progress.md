@@ -101,16 +101,63 @@ level. **Not yet started:** Phase 2 (visible beat layer), Phase 3 (full ladder +
 
 ---
 
-## Phase 2 — Visible beat layer (the middle resolution)
-- New `metadata.beat` (string) + `metadata.beat_src_hash` (= `metaHash(objective)` it was built from).
-- New `generate-beat` step (objective → one paragraph). Prose generation reads `beat ?? objective`; `prose_src_hash` then hashes the beat when a beat exists (update `stampProse` callers to pass the effective source text, or stamp from beat).
-- Beat shown + editable in `PageWorkshop` and carried in the outline review dialog (`ScaffoldGenerator.tsx`) so the plan is paragraph-resolution.
-- Dirty graph extends to two edges: objective→beat, beat→prose. Generalize `isProseStale` into a small per-edge check (`isStale(parentText, childSrcHash)`).
+## Phase 2 — The full ladder + Resolution Map (LOCKED design)
 
-## Phase 3 — Full ladder + reverse flow
-- Book premise → movement (section pages) → page objective cascade, with a `books`-level `brief_hash`; pages record the brief_hash they were planned under → movement/page objectives go stale when the premise changes.
-- Reverse-outline op: prose → objective/beat (re-distill to re-sync after hand-edits to prose). New edge fn or mode.
-- Threads woven into the dirty graph (orphaned setup/payoff flagged).
+Supersedes the old "visible beat layer / reverse flow" sketch. The book is a **5-layer resolution
+ladder**, every layer co-drafted by human + AI, kept honest by a both-endpoint dirty graph:
+
+```
+brief → book spine → page objective → beat → prose
+```
+
+**Locked decisions** (author, this session):
+1. **Map replaces journey** — the Resolution Map (pages × layers completeness grid) becomes the
+   primary build surface. Shipped read-only first (alongside the journey); graduates to primary once
+   cells are interactive. The linear journey retires then.
+2. **Single book spine** — one book-level objective node (`books.spine` jsonb `{text, brief_hash}`)
+   between brief and page objectives. brief→spine is the ONE one-way edge (AI drafts down, never up).
+3. **Beats required** — every page needs a beat before prose; prose generates from the beat.
+   `metadata.beat`.
+4. **Build order: model + read-only Map first**, then wire transforms edge by edge.
+
+**Directionality:** below the brief everything is two-way. On drift the **default repair is downward**
+(parent rewrites child); **upward is opt-in** (you rewrote prose → "pull it up" re-distills the
+beat/objective). Drift is detected per edge by remembering **both endpoints' hashes** at last
+reconcile (generalizes Phase 1's parent-only `prose_src_hash`).
+
+**Transformation functions (one per edge, shared core, separate prompts):**
+
+| Edge | Down (expand) | Up (distill) |
+|---|---|---|
+| brief → spine | `expand-book-spine` | — (one-way) |
+| spine ↔ page-obj | `expand-page-objectives` | `distill-book-spine` |
+| page-obj ↔ beat | `expand-beat` | `distill-page-objective` |
+| beat ↔ prose | `expand-prose` *(today's generate-unit)* | `distill-beat` *(reverse-outline)* |
+
+**Collaboration (the node cell):** every node has the same contract — type it by hand, **expand from
+above**, **distill from below**, or **revise** with an instruction; AI proposes into a diff you accept.
+
+### Phase 2 build steps
+- **Step 1 — model + read-only Map. ✅ SHIPPED.** `books.spine` migration; `apps/web/src/lib/planGraph.ts`
+  read-model (gap/drift/synced per cell, completeness totals); `ResolutionMap.tsx` read-only grid
+  (admin-gated for now — "beats required" makes every existing book read incomplete until backfilled).
+  Mounted above `BookJourney` in the `ai` tab of `BookDetails`. No transforms yet: spine/beat read as
+  gaps; only the prose↔objective edge has drift (reuses `prose_src_hash`).
+- **Step 2 — both-endpoint hash model.** Generalize provenance: store `metadata.sync.<edge> = {p,c}`
+  at each reconcile; a small `edgeState(parentText, childText, recorded)` powering planGraph for every
+  edge (replaces the prose-only check). Backfill semantics: missing hash = synced (don't badge legacy).
+- **Step 3 — transforms, edge by edge.** Build each `expand-*`/`distill-*` as its own edge fn (dual
+  backend + bridge parity), each stamping both-endpoint hashes. Start with `beat` (page-obj↔beat↔prose),
+  since prose-from-beat is the biggest behavior change; `distill-beat` also backfills beats for existing
+  books (clears the universal beat-gap).
+- **Step 4 — interactive Map + node cell.** Make cells clickable → the node editor (hand / expand /
+  distill / revise). "Sync down from here" cascades; per-node "pull up". Then retire the journey.
+- **Threads** fold into the dirty graph later (orphaned setup/payoff flagged) — unchanged from before.
+
+### Open design questions deferred to Step 2+
+- Canonical hash text for the **brief** (structured jsonb) so spine drift can be detected.
+- Whether section pages get their own objective layer or stay pure dividers (currently: dividers).
+- Bulk "sync the whole book down" UX + cost guardrails (reuses the durable `generate-book` machinery).
 
 ---
 
