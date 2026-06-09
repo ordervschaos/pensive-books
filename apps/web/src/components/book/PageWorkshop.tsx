@@ -170,13 +170,7 @@ function NodeReviser({
   const reset = () => { setOpen(false); setProposed(null); setInstruction(""); };
 
   if (!open) {
-    return (
-      <button type="button" onClick={() => setOpen(true)} disabled={busy}
-        className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-muted))] transition-colors hover:text-foreground disabled:opacity-50"
-        title="Revise this — preserves what's here, applies your change">
-        ✎ Revise
-      </button>
-    );
+    return <ReviseButton onClick={() => setOpen(true)} disabled={busy} />;
   }
   return (
     <div className="mt-2 space-y-2 rounded-lg border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/40 p-3">
@@ -234,7 +228,7 @@ function ConnectorBtn({ dir, action }: { dir: "down" | "up"; action: RecreateAct
 }
 function Connector({ down, up }: { down: RecreateAction; up?: RecreateAction }) {
   return (
-    <div className="my-4 flex items-center gap-3">
+    <div className="my-3 flex items-center gap-3">
       <div className="h-px flex-1 bg-[hsl(var(--pv-border-soft))]" />
       <ConnectorBtn dir="down" action={down} />
       {up && (
@@ -245,6 +239,28 @@ function Connector({ down, up }: { down: RecreateAction; up?: RecreateAction }) 
       )}
       <div className="h-px flex-1 bg-[hsl(var(--pv-border-soft))]" />
     </div>
+  );
+}
+
+// A layer label — readable (muted, not faint) and short. The panel header carries "author only" once,
+// so the per-layer labels don't repeat it.
+function NodeLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="pv-mono text-[10.5px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-muted))]">
+      {children}
+    </span>
+  );
+}
+
+// The ✎ Revise affordance, consistent across nodes: a small button with a clear target.
+function ReviseButton({ onClick, label = "Revise", title, disabled }: { onClick: () => void; label?: string; title?: string; disabled?: boolean }) {
+  return (
+    <button
+      type="button" onClick={onClick} disabled={disabled} title={title ?? "Revise — keeps what's here, applies your change"}
+      className="pv-serif inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[13px] italic text-[hsl(var(--pv-text-muted))] transition-colors hover:bg-[hsl(var(--pv-surface-2))] hover:text-foreground disabled:opacity-50"
+    >
+      ✎ {label}
+    </button>
   );
 }
 
@@ -488,24 +504,26 @@ export function PageWorkshop({
       <button
         type="button"
         onClick={togglePlan}
-        className="flex w-full items-center gap-2 text-left"
-        title={planOpen ? "Hide the plan (objective & beat)" : "Show the plan (objective & beat) and AI tools"}
+        aria-expanded={planOpen}
+        className="flex w-full items-center gap-2 rounded py-1 text-left transition-colors hover:bg-[hsl(var(--pv-surface-2))]/60"
+        title={planOpen ? "Hide the plan & AI tools" : "Show the plan & AI tools"}
       >
-        {planOpen ? <ChevronDown className="h-3.5 w-3.5 text-[hsl(var(--pv-text-faint))]" /> : <ChevronRight className="h-3.5 w-3.5 text-[hsl(var(--pv-text-faint))]" />}
-        <span className="pv-eyebrow">Plan &amp; AI · author only</span>
+        {planOpen ? <ChevronDown className="h-4 w-4 text-[hsl(var(--pv-text-muted))]" /> : <ChevronRight className="h-4 w-4 text-[hsl(var(--pv-text-muted))]" />}
+        <NodeLabel>Plan &amp; AI tools</NodeLabel>
+        <span className="pv-serif text-[12px] italic text-[hsl(var(--pv-text-faint))]">· author only</span>
         {!planOpen && planDrift && (
           <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500" title="the plan moved — open to re-sync" />
         )}
         {!planOpen && objectiveText && (
-          <span className="pv-serif min-w-0 flex-1 truncate text-[12.5px] italic text-[hsl(var(--pv-text-faint))]">— {objectiveText}</span>
+          <span className="pv-serif min-w-0 flex-1 truncate text-[12.5px] italic text-[hsl(var(--pv-text-muted))]">— {objectiveText}</span>
         )}
       </button>
 
       {planOpen && (
-       <div className="mt-3">
+       <div className="mt-3 space-y-1">
       {/* ── LAYER · OBJECTIVE ── */}
-      <div className="flex items-baseline justify-between gap-3">
-        <div className="pv-eyebrow">Objective for this page · author only</div>
+      <div className="flex items-center justify-between gap-3">
+        <NodeLabel>Objective</NodeLabel>
         {pageType !== "section" && objectiveText && (
           <NodeReviser
             current={objectiveText}
@@ -515,14 +533,14 @@ export function PageWorkshop({
           />
         )}
       </div>
-      <input
-        type="text"
+      <Textarea
         value={objectiveDraft}
         onChange={(e) => setObjectiveDraft(e.target.value)}
         onBlur={commitObjective}
-        placeholder="Objective for this page — only you see this"
-        title="Page objective (author-only — not shown to readers)"
-        className="mt-1.5 w-full border-l-2 border-transparent bg-transparent pl-2 -ml-0.5 pv-serif text-[14.5px] italic leading-relaxed text-foreground placeholder:text-[hsl(var(--pv-text-faint))] focus:border-[hsl(var(--pv-border-soft))] focus:outline-none"
+        aria-label="Page objective (only you see this)"
+        placeholder="What this page must achieve — only you see this."
+        rows={2}
+        className="mt-1 min-h-[44px] pv-serif text-[14.5px] italic leading-relaxed"
       />
 
       {pageType !== "section" && (
@@ -533,8 +551,8 @@ export function PageWorkshop({
           />
 
           {/* ── LAYER · BEAT ── */}
-          <div className="flex items-baseline justify-between gap-3">
-            <div className="pv-eyebrow">Beat · the page's plan · author only</div>
+          <div className="flex items-center justify-between gap-3">
+            <NodeLabel>Beat <span className="text-[hsl(var(--pv-text-faint))]">· the page's plan</span></NodeLabel>
             {beatDraft.trim() && (
               <NodeReviser
                 current={beatDraft}
@@ -548,8 +566,9 @@ export function PageWorkshop({
             value={beatDraft}
             onChange={(e) => setBeatDraft(e.target.value)}
             onBlur={() => void saveBeat()}
+            aria-label="Beat — the page's one-paragraph plan"
             placeholder="One paragraph: what this page does, in order, to fulfil its objective — a plan, not prose."
-            className="mt-2 min-h-[80px] pv-serif text-[14px] italic leading-relaxed"
+            className="mt-1 min-h-[80px] pv-serif text-[14px] italic leading-relaxed"
             disabled={beatBusy}
           />
           {beatStale && (
@@ -567,11 +586,22 @@ export function PageWorkshop({
             }
           />
 
-          {/* The prose itself is the page editor above — these are just its AI controls. */}
-          <div className="flex items-baseline justify-between gap-3">
-            <div className="pv-eyebrow">Prose · the page above</div>
-            {hasProse && stale && (
-              <span className="pv-serif text-[13px] italic text-amber-600 dark:text-amber-500">plan moved — prose may be stale</span>
+          {/* The prose itself is the page editor below — this is just its label + AI revise control. */}
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <NodeLabel>Prose <span className="text-[hsl(var(--pv-text-faint))]">· in the page below</span></NodeLabel>
+              {hasProse && stale && (
+                <span className="inline-flex items-center gap-1 text-[12px] italic text-amber-600 dark:text-amber-500" title="the objective/beat moved after this prose was written">
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500" /> may be stale
+                </span>
+              )}
+            </div>
+            {hasProse && (
+              <ReviseButton
+                onClick={() => setOpen((v) => !v)}
+                label={open ? "Hide" : notes.length ? `Revise · ${notes.length} ${notes.length === 1 ? "note" : "notes"}` : "Revise"}
+                title="Revise this page — preserves what's here, applies your change"
+              />
             )}
           </div>
 
@@ -608,28 +638,11 @@ export function PageWorkshop({
             </div>
           )}
 
-          {/* Page with prose: revise (the preserve path). */}
+          {/* Page with prose: the revise panel (opened from the Prose label's ✎ Revise above). */}
           {hasProse && (
             <div>
-              <div className="flex items-baseline justify-between gap-3">
-                <div className="pv-eyebrow">
-                  Revise this page ·{" "}
-                  <span className="pv-serif text-[13px] normal-case not-italic tracking-normal text-[hsl(var(--pv-text-muted))]">
-                    preserves content · AI · author only
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setOpen((v) => !v)}
-                  className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-muted))] transition-colors hover:text-foreground"
-                  title="Revise this page — preserves what's here, applies your change"
-                >
-                  {open ? "Hide" : notes.length ? `✎ Revise · ${notes.length} ${notes.length === 1 ? "note" : "notes"}` : "✎ Revise"}
-                </button>
-              </div>
-
               {open && (
-                <div className="mt-4 space-y-4">
+                <div className="mt-3 space-y-4">
                   {notes.length > 0 ? (
                     <div className="space-y-2">
                       <div className="pv-eyebrow">The editor's notes on this page</div>
