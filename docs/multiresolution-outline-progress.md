@@ -161,8 +161,17 @@ above**, **distill from below**, or **revise** with an instruction; AI proposes 
     prose-write sites pass the prose text for the child hash. `isProseStale` already prefers
     `beat_prose`. So: edit objective → beat stale; regenerate beat → beat synced; edit beat → prose
     stale; re-render → prose synced (the one-layer-at-a-time downward cascade).
-  - **3c next — `distill-beat` (prose→beat, up)** to backfill beats for existing books, then
-    `expand-book-spine` / `expand-page-objectives` + their distills.
+  - **3c — `distill-beat` (prose→beat, the first UPWARD transform). ✅ SHIPPED.** Edge fn
+    `supabase/functions/distill-beat` (sonnet, reverse-outlines prose → `{beat}`) + bridge
+    `/distill-beat`/`runDistillBeat`. `PageWorkshop` Beat header now has two actions: "Generate from
+    objective →" (down) and "↑ Distill from prose" (up, shown when the page has prose). Distill writes
+    `metadata.beat` and reconciles BOTH edges (`stampEdge` objective_beat + beat_prose) + drops legacy
+    `prose_src_hash`, so the page reads in sync top-to-bottom. Covers per-page backfill + "pull up".
+  - **3c follow-up (deferred): book-wide beat backfill** — a durable cascade (new `book_generations`
+    kind, like `rerender_stale`) to distill beats for every prose-bearing page in one run, clearing
+    the universal beat-gap across a whole existing book. Per-page distill ships the transform now.
+  - **Next — `expand-book-spine` (brief→spine, down-only)** + `expand-page-objectives` (spine→page
+    objs) + their distills, to light up the spine + objective columns end-to-end.
 - **Step 4 — interactive Map + node cell.** Make cells clickable → the node editor (hand / expand /
   distill / revise). "Sync down from here" cascades; per-node "pull up". Then retire the journey.
 - **Threads** fold into the dirty graph later (orphaned setup/payoff flagged) — unchanged from before.

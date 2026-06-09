@@ -123,6 +123,21 @@ async function callExpandBeat(bookId: number, pageId: number, objective: string)
   return String((data as { beat?: string })?.beat ?? "").trim();
 }
 
+// Distill a beat from a page's prose (the prose→beat reverse transform). Returns the beat text; the
+// caller writes metadata.beat + reconciles the objective_beat & beat_prose edges.
+async function callDistillBeat(bookId: number, pageId: number, proseText: string): Promise<string> {
+  if (BRIDGE) {
+    const r = await bridgeFetch(`/distill-beat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ bookId, pageId, proseText }) });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    return String(d.beat ?? "").trim();
+  }
+  const { data, error } = await supabase.functions.invoke("distill-beat", { body: { bookId, pageId, proseText } });
+  if (error) throw error;
+  if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
+  return String((data as { beat?: string })?.beat ?? "").trim();
+}
+
 export function PageWorkshop({
   bookId,
   pageId,
@@ -254,6 +269,32 @@ export function PageWorkshop({
     catch (e) { toast({ variant: "destructive", title: "Couldn't save the beat", description: String((e as Error)?.message ?? e) }); }
   };
 
+  // Distill the beat FROM the prose (the upward transform): backfill a missing beat, or pull a
+  // hand-rewritten page back up into its plan. Reconciles BOTH edges — the beat now represents this
+  // objective and this prose — so the page reads in sync top to bottom.
+  const distillBeat = async () => {
+    if (beatBusy || !hasProse) return;
+    commitObjective();
+    setBeatBusy(true);
+    try {
+      const text = await callDistillBeat(bookId, pageId, currentText);
+      if (text) {
+        const { data } = await supabase.from("pages").select("metadata").eq("id", pageId).maybeSingle();
+        let m: PageMeta = { ...((data?.metadata as PageMeta | null) ?? {}), beat: text };
+        m = stampEdge(m, "objective_beat", objectiveText, text);
+        m = stampEdge(m, "beat_prose", text, currentText);
+        delete m.prose_src_hash;
+        const { error } = await supabase.from("pages").update({ metadata: m }).eq("id", pageId);
+        if (error) throw error;
+        await loadMeta();
+      }
+    } catch (e) {
+      toast({ variant: "destructive", title: "Couldn't distill the beat", description: String((e as Error)?.message ?? e) });
+    } finally {
+      setBeatBusy(false);
+    }
+  };
+
   // Start a generation task (write or revise). The result arrives as a 'ready' row.
   const start = async (mode: "write" | "revise", issues?: ReviseIssue[]) => {
     if (running) return;
@@ -348,18 +389,31 @@ export function PageWorkshop({
           it from the objective, or write it by hand; it stamps the objective→beat edge as in sync. */}
       {pageType !== "section" && (
         <div className="mt-4">
-          <div className="flex items-baseline justify-between gap-3">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
             <div className="pv-eyebrow">Beat · the page's plan · author only</div>
-            <button
-              type="button"
-              onClick={() => void generateBeat()}
-              disabled={beatBusy || !objectiveText}
-              className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-accent))] transition-colors hover:text-foreground disabled:opacity-50"
-              title={!objectiveText ? "Set an objective first" : undefined}
-            >
-              {beatBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-              {beatBusy ? "Writing the beat…" : meta?.beat?.trim() ? "Regenerate from objective →" : "Generate from objective →"}
-            </button>
+            <div className="flex items-center gap-4">
+              <button
+                type="button"
+                onClick={() => void generateBeat()}
+                disabled={beatBusy || !objectiveText}
+                className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-accent))] transition-colors hover:text-foreground disabled:opacity-50"
+                title={!objectiveText ? "Set an objective first" : "Write the beat from the objective (top-down)"}
+              >
+                {beatBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                {beatBusy ? "Working…" : meta?.beat?.trim() ? "Regenerate from objective →" : "Generate from objective →"}
+              </button>
+              {hasProse && (
+                <button
+                  type="button"
+                  onClick={() => void distillBeat()}
+                  disabled={beatBusy}
+                  className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-text-muted))] transition-colors hover:text-foreground disabled:opacity-50"
+                  title="Reverse-outline: derive the beat from the prose (bottom-up)"
+                >
+                  ↑ Distill from prose
+                </button>
+              )}
+            </div>
           </div>
           <Textarea
             value={beatDraft}
