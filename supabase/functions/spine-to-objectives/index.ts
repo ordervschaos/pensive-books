@@ -1,7 +1,9 @@
-// generate-scaffold — propose a book's objective tree from its brief (G2 / Step 1).
+// spine-to-objectives — propose a book's objective tree (the spine→objectives edge of the ladder).
 //
-// Given books.brief, Claude designs a chapter/page scaffold: section (chapter) + text
-// pages, each with a title and an OBJECTIVE (what it must achieve) — NO prose. The
+// From the book SPINE (the throughline) — falling back to the brief if no spine is set — Claude
+// designs the chapter/page outline: section (chapter) + text pages, each with a title and an
+// OBJECTIVE (what it must achieve) — NO prose. This is the one one-to-many transform: it mints the
+// page units everything below renders 1:1. The
 // proposal is a REVIEWABLE artifact (the author reviews the plan, the high-value step, and the
 // client creates the pages on confirm), so it's persisted as a book_generations task row instead
 // of returned inline — a refresh resumes the loader, and the proposal survives until applied.
@@ -12,7 +14,7 @@
 //     → background: Claude → UPDATE row { status:'ready', result:{structure,pages,threads} }
 //     → client watches book_generations via Realtime
 //
-// Needs the ANTHROPIC_API_KEY secret (shared with evaluate-book / generate-unit).
+// Needs the ANTHROPIC_API_KEY secret (shared with the other AI steps).
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
@@ -54,7 +56,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: book, error: bookError } = await userClient
       .from("books")
-      .select("id, name, subtitle, brief, bible, owner_id")
+      .select("id, name, subtitle, brief, bible, spine, owner_id")
       .eq("id", bookId)
       .single();
     if (bookError || !book) return json({ error: "Book not found" }, 404);
@@ -74,6 +76,7 @@ Deno.serve(async (req: Request) => {
     const bookName = book.name;
     const brief = book.brief as Brief | null;
     const bible = (book.bible as { text?: string } | null)?.text?.trim() || null;
+    const spine = (book.spine as { text?: string } | null)?.text?.trim() || null;
 
     // Insert the task row (service role; the client watches it over Realtime), then hand the
     // proposal to the background and return the row immediately.
@@ -85,21 +88,22 @@ Deno.serve(async (req: Request) => {
       .single();
     if (insertError || !gen) return json({ error: "Could not start scaffold" }, 500);
 
-    runInBackground(service, "book_generations", gen.id, "generate-scaffold", async () => {
-      const scaffold = await callClaude(apiKey, bookName, brief, bible, { fn: "generate-scaffold", bookId, taskTable: "book_generations", taskId: gen.id, userId: user.id });
+    runInBackground(service, "book_generations", gen.id, "spine-to-objectives", async () => {
+      const scaffold = await callClaude(apiKey, bookName, brief, bible, spine, { fn: "spine-to-objectives", bookId, taskTable: "book_generations", taskId: gen.id, userId: user.id });
       return { status: "ready", result: scaffold };
     });
 
     return json({ status: "running", generation: gen }, 202);
   } catch (e) {
-    console.error("generate-scaffold error:", e);
+    console.error("spine-to-objectives error:", e);
     return json({ error: String((e as Error)?.message ?? e).slice(0, 500) }, 500);
   }
 });
 
 // ── Prompt ───────────────────────────────────────────────────────────────────
-const SYSTEM = `You are a book architect. Given an author's brief, design the book's
-SCAFFOLD — its chapters and pages — as objectives, not prose.
+const SYSTEM = `You are a book architect. Given the book's SPINE (its throughline) — or, if no spine
+is set, the author's brief — design the book's chapters and pages as OBJECTIVES, not prose. The
+outline must realize the spine: every page serves the book-level aim.
 
 Choose a structure appropriate to the genre and scope (e.g. Save the Cat or the Hero's
 Journey for commercial fiction; the Fichtean curve for thrillers; a five-part arc for
@@ -156,7 +160,7 @@ interface ScaffoldThread {
 }
 interface Scaffold { structure: string; pages: ScaffoldPage[]; threads: ScaffoldThread[] }
 
-async function callClaude(apiKey: string, bookName: string, brief: Brief | null, bible: string | null, meta: CallMeta): Promise<Scaffold> {
+async function callClaude(apiKey: string, bookName: string, brief: Brief | null, bible: string | null, spine: string | null, meta: CallMeta): Promise<Scaffold> {
   const data = await callClaudeApi(apiKey, {
     model: MODEL,
     max_tokens: 8000,
@@ -164,7 +168,11 @@ async function callClaude(apiKey: string, bookName: string, brief: Brief | null,
     messages: [
       {
         role: "user",
-        content: `BOOK: ${bookName}\n\nBRIEF:\n${briefContext(brief)}${bible ? `\n\nBOOK BIBLE (established facts — characters, world, style):\n${bible}` : ""}\n\nDesign the scaffold. JSON only.`,
+        content: `BOOK: ${bookName}` +
+          (spine ? `\n\nBOOK SPINE (the throughline — the outline must realize this):\n${spine}` : "") +
+          `\n\nBRIEF:\n${briefContext(brief)}` +
+          (bible ? `\n\nBOOK BIBLE (established facts — characters, world, style):\n${bible}` : "") +
+          `\n\nDesign the outline. JSON only.`,
       },
     ],
   }, meta);

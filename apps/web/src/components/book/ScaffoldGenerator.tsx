@@ -107,9 +107,9 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
     try {
       if (BRIDGE) {
         // Dev bridge writes the same book_generations row; we just kick it and watch the row.
-        await bridgeFetch(`/scaffold/${bookId}`, { method: "POST" }).catch(() => {});
+        await bridgeFetch(`/spine-to-objectives/${bookId}`, { method: "POST" }).catch(() => {});
       } else {
-        const { error } = await supabase.functions.invoke("generate-scaffold", { body: { bookId } });
+        const { error } = await supabase.functions.invoke("spine-to-objectives", { body: { bookId } });
         if (error) throw error;
       }
       refetch();

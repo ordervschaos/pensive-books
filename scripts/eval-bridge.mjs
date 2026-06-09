@@ -7,7 +7,7 @@
 //
 //   GET  /eval/:bookId      -> existing report  { status: 'done'|'none', result? }
 //   POST /eval/:bookId      -> run evaluation   { status: 'done'|'error', result?, error? }
-//   POST /scaffold/:bookId  -> generate scaffold { structure, pages[] } | { error }
+//   POST /spine-to-objectives/:bookId -> outline { structure, pages[] } | { error }
 //   POST /beat-to-prose      -> render prose      { text } | { error }
 //   POST /revise-prose       -> revise prose      { text } | { error }
 //
@@ -410,8 +410,8 @@ function runEvaluation(bookId) {
   });
 }
 
-// ── /scaffold ─────────────────────────────────────────────────────────────────
-const SCAFFOLD_INSTRUCTIONS = `You are a book architect. Given an author's brief, design the book's SCAFFOLD — its chapters and pages — as objectives, not prose.
+// ── /spine-to-objectives ──────────────────────────────────────────────────────
+const SCAFFOLD_INSTRUCTIONS = `You are a book architect. Given the book's SPINE (its throughline) — or, if no spine is set, the author's brief — design the book's chapters and pages as OBJECTIVES, not prose. The outline must realize the spine: every page serves the book-level aim.
 
 Choose a structure appropriate to the genre and scope (e.g. Save the Cat or the Hero's Journey for commercial fiction; the Fichtean curve for thrillers; a five-part arc for self-help; a curated arc for memoir). Lay the book out as an ordered list of pages:
 - "section" pages are chapter/part dividers (a title; an objective is optional).
@@ -425,17 +425,18 @@ Output JSON ONLY (no prose, no fences), exactly:
 async function runScaffold(bookId) {
   const book = await fetchBook(bookId);
   if (!book) return { error: "Book not found" };
+  const spine = book.spine?.text?.trim() || null;
 
   const prompt = `${SCAFFOLD_INSTRUCTIONS}
 
-BOOK: ${book.name}
+BOOK: ${book.name}${spine ? `\n\nBOOK SPINE (the throughline — the outline must realize this):\n${spine}` : ""}
 
 BRIEF:
 ${briefContext(book.brief)}
 
-Design the scaffold. JSON only.`;
+Design the outline. JSON only.`;
 
-  const out = await runClaude(prompt, true, { fn: "generate-scaffold", bookId }, { noTools: true });
+  const out = await runClaude(prompt, true, { fn: "spine-to-objectives", bookId }, { noTools: true });
   if (out.error) return out;
 
   let raw = out.text.trim();
@@ -933,7 +934,7 @@ const FN_PROMPT_SOURCE = {
   "beat-to-prose": "supabase/functions/beat-to-prose/index.ts + _shared/generate-unit-core.ts (beatToProse; bridge runUnit)",
   "revise-prose": "supabase/functions/revise-prose/index.ts + _shared/generate-unit-core.ts (revisePage; bridge runUnit)",
   "summarize": "supabase/functions/_shared/generate-unit-core.ts (summarize)",
-  "generate-scaffold": "supabase/functions/generate-scaffold/index.ts (and scripts/eval-bridge.mjs runScaffold)",
+  "spine-to-objectives": "supabase/functions/spine-to-objectives/index.ts (and scripts/eval-bridge.mjs runScaffold)",
   "generate-bible": "supabase/functions/generate-bible/index.ts (and scripts/eval-bridge.mjs runBible)",
   "revise-outline": "supabase/functions/revise-outline/index.ts (and scripts/eval-bridge.mjs runReplan)",
   "objective-to-beat": "supabase/functions/objective-to-beat/index.ts (and scripts/eval-bridge.mjs runObjectiveToBeat)",
@@ -1097,7 +1098,7 @@ async function route(req, res) {
     return json(res, 405, { error: "method not allowed" });
   }
 
-  const scaffoldMatch = url.match(/^\/scaffold\/(\d+)\/?$/);
+  const scaffoldMatch = url.match(/^\/spine-to-objectives\/(\d+)\/?$/);
   if (scaffoldMatch) {
     if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
     const bookId = Number(scaffoldMatch[1]);
@@ -1233,10 +1234,10 @@ async function route(req, res) {
     }
   }
 
-  return json(res, 404, { error: "use /eval/:bookId, /scaffold/:bookId, /bible/:bookId, /eval-call/:aiCallId, or POST /beat-to-prose" });
+  return json(res, 404, { error: "use /eval/:bookId, /spine-to-objectives/:bookId, /bible/:bookId, /eval-call/:aiCallId, or POST /beat-to-prose" });
 }
 
 server.listen(PORT, () => {
   console.log(`eval-bridge listening on http://localhost:${PORT}  (repo: ${repoRoot})`);
-  console.log(`  GET/POST /eval/:bookId   POST /scaffold/:bookId   POST /bible/:bookId   POST /revise-outline/:bookId   POST /beat-to-prose   POST /revise-prose   POST /objective-to-beat   POST /prose-to-beat   POST /brief-to-spine`);
+  console.log(`  GET/POST /eval/:bookId   POST /spine-to-objectives/:bookId   POST /bible/:bookId   POST /revise-outline/:bookId   POST /beat-to-prose   POST /revise-prose   POST /objective-to-beat   POST /prose-to-beat   POST /brief-to-spine`);
 });
