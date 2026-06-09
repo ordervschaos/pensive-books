@@ -86,7 +86,7 @@ async function authorize(req, res, bookId) {
 
 async function fetchBook(bookId) {
   const r = await fetch(
-    `${SUPABASE_URL}/rest/v1/books?id=eq.${bookId}&select=name%2Cbrief%2Cbible`,
+    `${SUPABASE_URL}/rest/v1/books?id=eq.${bookId}&select=name%2Cbrief%2Cbible%2Cspine`,
     { headers: sbHeaders }
   );
   if (!r.ok) throw new Error(`Supabase ${r.status}: ${await r.text()}`);
@@ -654,6 +654,48 @@ Produce the revision plan. JSON only.`;
   return parsePlan(out.text, pages, planOnly);
 }
 
+// ── /beat ───────────────────────────────────────────────────────────────────
+// Mirrors supabase/functions/expand-beat: objective → a one-paragraph beat (the plan of what the
+// page does), in book context. No mutation — the client writes metadata.beat + stamps the edge.
+const BEAT_INSTRUCTIONS = `You are a book architect writing a BEAT — a single paragraph that plans, in concrete order, what ONE page of the book does to fulfil its objective. A beat sits between the OBJECTIVE (what the page must achieve) and the PROSE (the actual words): it commits to the specific moves, turns, and images — the "how" — without writing the page itself.
+
+Rules:
+- Output ONE paragraph (3–6 sentences). No title, no heading, no preamble, no markdown, no meta commentary — just the beat.
+- It is a PLAN, not prose: say what happens and in what order; do NOT write the page's actual sentences or dialogue.
+- Fulfil the page's objective exactly. Honour the book's brief (genre, audience, tone, premise) and the book spine as the voice/throughline contract.
+- Keep continuity: lead from what the preceding pages set up, don't repeat a neighbouring page's beat, and set up what follows.`;
+
+async function runBeat(body) {
+  const { bookId, pageId, objective } = body;
+  if (!bookId || !pageId) return { error: "bookId and pageId required" };
+  const obj = (objective ?? "").trim();
+  if (!obj) return { error: "objective required" };
+
+  const book = await fetchBook(bookId);
+  if (!book) return { error: "Book not found" };
+  const pages = await fetchPages(bookId);
+  const spine = book.spine?.text?.trim() || null;
+
+  const prompt = `${BEAT_INSTRUCTIONS}
+
+BOOK: ${book.name}
+
+BRIEF (the voice contract):
+${briefContext(book.brief)}${spine ? `\n\nBOOK SPINE (the throughline):\n${spine}` : ""}
+
+OUTLINE (for continuity):
+${outlineContext(pages)}
+
+THIS PAGE'S OBJECTIVE:
+${obj}
+
+Write the beat for THIS PAGE. One paragraph, plan only.`;
+
+  const out = await runClaude(prompt, true, { fn: "expand-beat", bookId }, { noTools: true });
+  if (out.error) return out;
+  return { beat: (out.text ?? "").trim() };
+}
+
 // ── /unit ─────────────────────────────────────────────────────────────────────
 // Kept at parity with supabase/functions/generate-unit so free local testing exercises
 // the same context (bible + objective map + story so far + preceding prose) and summary.
@@ -805,6 +847,7 @@ const FN_PROMPT_SOURCE = {
   "generate-scaffold": "supabase/functions/generate-scaffold/index.ts (and scripts/eval-bridge.mjs runScaffold)",
   "generate-bible": "supabase/functions/generate-bible/index.ts (and scripts/eval-bridge.mjs runBible)",
   "replan-from-notes": "supabase/functions/replan-from-notes/index.ts (and scripts/eval-bridge.mjs runReplan)",
+  "expand-beat": "supabase/functions/expand-beat/index.ts (and scripts/eval-bridge.mjs runBeat)",
   "scan-page": "supabase/functions/scan-threads/index.ts (callHaiku)",
   "evaluate-book": "supabase/functions/evaluate-book/index.ts (runTriage/runGroup/runVerdict)",
 };
@@ -1037,6 +1080,16 @@ async function route(req, res) {
     return json(res, 200, out);
   }
 
+  if (url === "/beat" || url === "/beat/") {
+    if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
+    const body = await readBody(req);
+    if (!(await authorize(req, res, Number(body.bookId)))) return;
+    console.log(`Writing beat (book ${body.bookId}, page ${body.pageId})…`);
+    const out = await runBeat(body);
+    if (out.error) return json(res, 500, { error: out.error });
+    return json(res, 200, out);
+  }
+
   const evalCallMatch = url.match(/^\/eval-call\/(\d+)\/?$/);
   if (evalCallMatch) {
     if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
@@ -1063,5 +1116,5 @@ async function route(req, res) {
 
 server.listen(PORT, () => {
   console.log(`eval-bridge listening on http://localhost:${PORT}  (repo: ${repoRoot})`);
-  console.log(`  GET/POST /eval/:bookId   POST /scaffold/:bookId   POST /bible/:bookId   POST /replan/:bookId   POST /unit`);
+  console.log(`  GET/POST /eval/:bookId   POST /scaffold/:bookId   POST /bible/:bookId   POST /replan/:bookId   POST /unit   POST /beat`);
 });

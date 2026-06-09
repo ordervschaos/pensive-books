@@ -72,19 +72,21 @@ export function isEdgeStale(
 }
 
 /**
- * Is this page's prose out of sync with the layer it was written from? Checks PARENT drift only (the
- * source moved on) — the downward concern these callers care about; they pass a `hasProse` boolean,
- * not the prose text, so the child side isn't available here (child-edited "pull up" is surfaced at
- * the node cell, not as staleness). Parent = the beat if the page has one, else the objective; the
- * recorded hash = the new beat_prose snapshot's parent side, else the legacy prose_src_hash string.
+ * Is this page's prose out of sync with the layer it was actually written FROM? Checks PARENT drift
+ * only (the source moved on) — the downward concern these callers care about; they pass a `hasProse`
+ * boolean, not the prose text, so the child side isn't available here (child-edited "pull up" is
+ * surfaced at the node cell, not as staleness).
+ *
+ * The parent is whichever layer the prose was generated from, recorded by which snapshot exists — NOT
+ * "the beat if one exists": prose generated from the objective (before any beat-prose reroute) must
+ * keep comparing against the OBJECTIVE, so merely adding a beat never falsely marks that prose stale.
  */
 export function isProseStale(metadata: PageMeta | null | undefined, hasProse: boolean): boolean {
   if (!hasProse || !metadata) return false;
-  const parent = metadata.beat?.trim() ? metadata.beat : metadata.objective;
-  const recorded = metadata.sync?.beat_prose ?? metadata.prose_src_hash;
-  if (!recorded) return false;
-  const parentHash = typeof recorded === "string" ? recorded : recorded.p;
-  return parentHash !== metaHash(parent);
+  const beatProse = metadata.sync?.beat_prose;
+  if (beatProse) return beatProse.p !== metaHash(metadata.beat); // prose was written from the beat
+  if (metadata.prose_src_hash) return metadata.prose_src_hash !== metaHash(metadata.objective); // from the objective
+  return false; // never stamped → don't badge
 }
 
 /** Record an edge's reconcile snapshot into a metadata object (returns a new metadata). */

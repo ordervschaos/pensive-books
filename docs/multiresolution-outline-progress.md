@@ -147,9 +147,16 @@ above**, **distill from below**, or **revise** with an instruction; AI proposes 
   at each reconcile; a small `edgeState(parentText, childText, recorded)` powering planGraph for every
   edge (replaces the prose-only check). Backfill semantics: missing hash = synced (don't badge legacy).
 - **Step 3 — transforms, edge by edge.** Build each `expand-*`/`distill-*` as its own edge fn (dual
-  backend + bridge parity), each stamping both-endpoint hashes. Start with `beat` (page-obj↔beat↔prose),
-  since prose-from-beat is the biggest behavior change; `distill-beat` also backfills beats for existing
-  books (clears the universal beat-gap).
+  backend + bridge parity), each stamping both-endpoint hashes.
+  - **3a — `expand-beat` (objective→beat). ✅ SHIPPED** (additive: prose path untouched). Edge fn
+    `supabase/functions/expand-beat` (sonnet, returns `{beat}`) + bridge `/beat`/`runBeat`. Client:
+    `PageWorkshop` beat editor — generate-from-objective / hand-edit / regenerate-when-stale; writes
+    `metadata.beat` + stamps `objective_beat` via `stampEdge`. `isProseStale` fixed to compare prose
+    against the layer it was *actually* written from (so adding a beat never false-flags prose). The
+    Map's beat column now lights up as beats are written.
+  - **3b next — reroute prose to read `beat ?? objective`** (behavior-sensitive: change
+    `generate-unit-core`, stamp `beat_prose`), then `distill-beat` (prose→beat, up) to backfill beats
+    for existing books, then `expand-book-spine` / `expand-page-objectives` + their distills.
 - **Step 4 — interactive Map + node cell.** Make cells clickable → the node editor (hand / expand /
   distill / revise). "Sync down from here" cascades; per-node "pull up". Then retire the journey.
 - **Threads** fold into the dirty graph later (orphaned setup/payoff flagged) — unchanged from before.

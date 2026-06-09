@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import ReactDiffViewer, { DiffMethod } from "react-diff-viewer-continued";
 import { Loader2, Sparkles } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
@@ -6,7 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useLatestTaskRow, type TaskRow } from "@/hooks/useLatestTaskRow";
 import { BRIDGE, bridgeFetch } from "@/lib/bridge";
-import { isProseStale, metaHash, type PageMeta } from "@/lib/planProvenance";
+import { isEdgeStale, isProseStale, metaHash, stampEdge, type PageMeta } from "@/lib/planProvenance";
 import type { EvalResult, Severity } from "./BookEvaluationSection";
 
 // The page's single AI unit: it looks at one page (its author-only objective + the editor's
@@ -108,6 +108,21 @@ async function startPageGen(body: Record<string, unknown>): Promise<void> {
   if (error) throw error;
 }
 
+// Generate a beat from a page's objective (the objective→beat transform). Synchronous; returns the
+// beat text (the caller writes metadata.beat + stamps the edge). Dual backend, like generateOnePage.
+async function callExpandBeat(bookId: number, pageId: number, objective: string): Promise<string> {
+  if (BRIDGE) {
+    const r = await bridgeFetch(`/beat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ bookId, pageId, objective }) });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    return String(d.beat ?? "").trim();
+  }
+  const { data, error } = await supabase.functions.invoke("expand-beat", { body: { bookId, pageId, objective } });
+  if (error) throw error;
+  if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
+  return String((data as { beat?: string })?.beat ?? "").trim();
+}
+
 export function PageWorkshop({
   bookId,
   pageId,
@@ -185,17 +200,59 @@ export function PageWorkshop({
   const hasProse = currentText.trim().length > 0;
   const objectiveText = objectiveDraft.trim();
 
-  // Plan↔prose staleness: this page's prose was stamped with the objective it was generated from.
-  // We fetch that stamp and flag the page when the (saved) objective has since moved on. Refetched
-  // when the page changes or a generation finishes (a re-render re-stamps it back in sync).
-  const [proseSrcHash, setProseSrcHash] = useState<string | null>(null);
-  useEffect(() => {
-    let active = true;
-    void supabase.from("pages").select("metadata").eq("id", pageId).maybeSingle()
-      .then(({ data }) => { if (active) setProseSrcHash(((data?.metadata as PageMeta | null)?.prose_src_hash) ?? null); });
-    return () => { active = false; };
-  }, [pageId, row?.status]);
-  const stale = isProseStale({ objective: objective ?? undefined, prose_src_hash: proseSrcHash ?? undefined }, hasProse);
+  // The page's stored metadata (objective stamp, beat, edge sync hashes) — the source for the
+  // staleness badges and the beat editor. Refetched on page change and when a generation finishes.
+  const [meta, setMeta] = useState<PageMeta | null>(null);
+  const [beatDraft, setBeatDraft] = useState("");
+  const [beatBusy, setBeatBusy] = useState(false);
+  const loadMeta = useCallback(async () => {
+    const { data } = await supabase.from("pages").select("metadata").eq("id", pageId).maybeSingle();
+    const m = (data?.metadata as PageMeta | null) ?? null;
+    setMeta(m);
+    setBeatDraft(m?.beat ?? "");
+  }, [pageId]);
+  useEffect(() => { void loadMeta(); }, [loadMeta, row?.status]);
+
+  // Compare against the LIVE saved objective (the prop), not the possibly-lagging fetched copy.
+  const liveMeta: PageMeta = { ...(meta ?? {}), objective: objective ?? undefined };
+  const stale = isProseStale(liveMeta, hasProse);
+  // Beat is out of sync when the objective moved after the beat was written from it.
+  const beatStale = !!meta?.beat?.trim() && isEdgeStale(objective, meta.beat, meta.sync?.objective_beat);
+
+  // Write a beat to the page (generated or hand-edited): merge into metadata + stamp the
+  // objective→beat edge as reconciled with the current objective. Reads metadata fresh to avoid
+  // clobbering a concurrently-persisted summary/prose stamp.
+  const persistBeat = async (text: string) => {
+    const { data } = await supabase.from("pages").select("metadata").eq("id", pageId).maybeSingle();
+    const base = (data?.metadata as PageMeta | null) ?? {};
+    const stamped = stampEdge({ ...base, beat: text }, "objective_beat", objectiveText, text);
+    const { error } = await supabase.from("pages").update({ metadata: stamped }).eq("id", pageId);
+    if (error) throw error;
+    await loadMeta();
+  };
+
+  // Generate the beat from the page's objective (the objective→beat transform).
+  const generateBeat = async () => {
+    if (beatBusy || !objectiveText) return;
+    commitObjective();
+    setBeatBusy(true);
+    try {
+      const text = await callExpandBeat(bookId, pageId, objectiveText);
+      if (text) { await persistBeat(text); }
+    } catch (e) {
+      toast({ variant: "destructive", title: "Couldn't write the beat", description: String((e as Error)?.message ?? e) });
+    } finally {
+      setBeatBusy(false);
+    }
+  };
+
+  // Persist a hand-edited beat on blur (reconciled with the current objective).
+  const saveBeat = async () => {
+    const next = beatDraft.trim();
+    if (next === (meta?.beat ?? "").trim()) return;
+    try { await persistBeat(next); }
+    catch (e) { toast({ variant: "destructive", title: "Couldn't save the beat", description: String((e as Error)?.message ?? e) }); }
+  };
 
   // Start a generation task (write or revise). The result arrives as a 'ready' row.
   const start = async (mode: "write" | "revise", issues?: ReviseIssue[]) => {
@@ -251,7 +308,7 @@ export function PageWorkshop({
     else onApply(text);
     // The host re-stamps prose_src_hash from the current objective on apply; mirror it locally so the
     // "out of sync" badge clears immediately rather than waiting on the async stamp + a refetch.
-    setProseSrcHash(metaHash(objective ?? ""));
+    setMeta((m) => ({ ...(m ?? {}), prose_src_hash: metaHash(objective ?? "") }));
     await supabase.from("book_generations").update({ status: "applied" }).eq("id", row.id);
     toast({
       title: row.kind === "page_write" ? "Page created" : "Revision applied",
@@ -280,6 +337,39 @@ export function PageWorkshop({
         title="Page objective (author-only — not shown to readers)"
         className="mt-1.5 w-full border-l-2 border-transparent bg-transparent pl-2 -ml-0.5 pv-serif text-[14.5px] italic leading-relaxed text-foreground placeholder:text-[hsl(var(--pv-text-faint))] focus:border-[hsl(var(--pv-border-soft))] focus:outline-none"
       />
+
+      {/* Beat — the page's one-paragraph plan (the resolution between objective and prose). Generate
+          it from the objective, or write it by hand; it stamps the objective→beat edge as in sync. */}
+      {pageType !== "section" && (
+        <div className="mt-4">
+          <div className="flex items-baseline justify-between gap-3">
+            <div className="pv-eyebrow">Beat · the page's plan · author only</div>
+            <button
+              type="button"
+              onClick={() => void generateBeat()}
+              disabled={beatBusy || !objectiveText}
+              className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-accent))] transition-colors hover:text-foreground disabled:opacity-50"
+              title={!objectiveText ? "Set an objective first" : undefined}
+            >
+              {beatBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+              {beatBusy ? "Writing the beat…" : meta?.beat?.trim() ? "Regenerate from objective →" : "Generate from objective →"}
+            </button>
+          </div>
+          <Textarea
+            value={beatDraft}
+            onChange={(e) => setBeatDraft(e.target.value)}
+            onBlur={() => void saveBeat()}
+            placeholder="One paragraph: what this page does, in order, to fulfil its objective — a plan, not prose."
+            className="mt-2 min-h-[80px] pv-serif text-[14px] italic leading-relaxed"
+            disabled={beatBusy}
+          />
+          {beatStale && (
+            <p className="pv-serif mt-1.5 text-[13px] italic text-amber-600 dark:text-amber-500">
+              The objective changed since this beat — regenerate it from the objective, or edit it to match.
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Out of sync: the objective moved after this prose was written. Offer a one-click re-render
           (a reviewable revise proposal); applying it re-stamps provenance and clears the flag. */}
