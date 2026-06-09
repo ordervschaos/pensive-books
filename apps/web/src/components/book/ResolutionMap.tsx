@@ -2,10 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { briefToPromptContext, computeCompletion, type Brief } from "@/lib/brief";
-import { buildMap, type CellState, type MapModel, type RawPage } from "@/lib/planGraph";
+import { buildMap, type CellState, type MapModel, type MapPage, type RawPage } from "@/lib/planGraph";
 import { metaHash, type PageMeta } from "@/lib/planProvenance";
-import { NodeEditor, type NodeTarget } from "./NodeEditor";
-import type { NodeLayer } from "@/lib/ladder";
+import { NodeEditor, type NodeTarget, type SheetLayer } from "./NodeEditor";
 
 interface ResolutionMapProps {
   bookId: number;
@@ -16,12 +15,16 @@ interface ResolutionMapProps {
 }
 
 /**
- * The Resolution Map (read-only, Step 1). A completeness chart of the book's resolution ladder —
- * brief → spine → page objective → beat → prose — showing, per layer, where content is missing (gap)
- * or out of sync with the layer above (drift). The book is "done" only when the whole grid is green.
+ * The Resolution Map — the book's resolution ladder drawn as a connected node-graph:
  *
- * Read-only for now: it visualizes the model the transforms will later fill in. It self-fetches the
- * layers so it stays decoupled from the host's page list (mirrors StalePanel).
+ *   brief → spine → (per page) objective → beat → prose
+ *
+ * Every node shows a text preview + a state colour (gap / drift / synced). Clicking any node opens
+ * the node sheet (NodeEditor) — act (re-create / revise) and review (diff) right there, with this
+ * graph still visible behind it. Prose edits write the page body without opening the page; you only
+ * jump into the full editor if you want to ("Open page ↗" inside the sheet).
+ *
+ * This is the AI-tools surface: the whole book, actionable and reviewable from one screen.
  */
 export function ResolutionMap({ bookId, refreshKey, onChanged }: ResolutionMapProps) {
   const navigate = useNavigate();
@@ -50,9 +53,8 @@ export function ResolutionMap({ bookId, refreshKey, onChanged }: ResolutionMapPr
 
   if (!model) return null;
 
-  // Open the node editor for an editable plan node (spine/objective/beat). Prose opens the page;
-  // brief lives in its own tab (not editable from the map).
-  const openNode = (layer: NodeLayer, state: CellState, page?: { id: number; title: string | null }) =>
+  // Open the node sheet for an editable node (spine/objective/beat/prose). Brief lives in its own tab.
+  const openNode = (layer: SheetLayer, state: CellState, page?: { id: number; title: string | null }) =>
     setEditing({ layer, state, pageId: page?.id, pageTitle: page?.title });
   const onSaved = () => { setLocalKey((k) => k + 1); onChanged?.(); };
 
@@ -66,116 +68,154 @@ export function ResolutionMap({ bookId, refreshKey, onChanged }: ResolutionMapPr
   return (
     <section className="overflow-hidden rounded-2xl border border-border bg-[hsl(var(--pv-surface-2))]/40">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[hsl(var(--pv-border-soft))] px-5 py-4">
-        <span className="pv-eyebrow">Resolution map · completeness</span>
+        <span className="pv-eyebrow">Resolution graph</span>
         <span className="pv-serif text-[12.5px] italic text-[hsl(var(--pv-text-faint))]">
           {pct}% in sync — {summary}
         </span>
       </div>
 
       <div className="px-5 py-5">
-        {/* Book-level band: brief → spine (one-way edge). Spine is editable; brief lives in its tab. */}
-        <div className="mb-4 flex items-center gap-2">
-          <BandNode label="Brief" state={model.brief} />
-          <Connector oneWay />
-          <BandNode label="Book spine" state={model.spine} onClick={() => openNode("spine", model.spine)} />
+        {/* Book band: brief → spine (one-way edge — AI drafts down, never up). */}
+        <div className="flex items-stretch gap-2">
+          <NodeBox layer="brief" label="Brief" text={model.brief === "gap" ? "" : "Set — the book's premise"} state={model.brief} placeholder="No brief yet — set it in the Brief tab" />
+          <Arrow oneWay />
+          <NodeBox layer="spine" label="Spine" text={model.spineText} state={model.spine} placeholder="Empty — re-create from the brief" onClick={() => openNode("spine", model.spine)} />
         </div>
 
-        {/* Per-page grid: objective → beat → prose. */}
-        <div className="overflow-x-auto">
-          <div className="min-w-[420px]">
-            <div className="grid grid-cols-[1fr_repeat(3,72px)] items-center border-b border-[hsl(var(--pv-border-soft))] pb-1.5">
-              <span className="pv-eyebrow text-[9px] text-[hsl(var(--pv-text-faint))]">Page</span>
-              {(["Objective", "Beat", "Prose"] as const).map((h) => (
-                <span key={h} className="pv-mono text-center text-[9px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-faint))]">{h}</span>
-              ))}
-            </div>
-
-            {model.pages.map((p) =>
-              p.pageType === "section" ? (
-                <p key={p.id} className="pv-serif px-1 pb-0.5 pt-3 text-[10px] font-semibold uppercase tracking-widest text-[hsl(var(--pv-text-faint))]">
+        {/* Fan-out: the spine branches to every page. A left rail + per-row tick draws the branch. */}
+        <div className="relative mt-1 pl-5">
+          <span aria-hidden className="absolute left-[7px] top-0 bottom-3 w-px bg-[hsl(var(--pv-border-soft))]" />
+          {model.pages.map((p) =>
+            p.pageType === "section" ? (
+              <div key={p.id} className="relative pt-5 pb-1">
+                <p className="pv-serif text-[10px] font-semibold uppercase tracking-widest text-[hsl(var(--pv-text-faint))]">
                   {p.title || "(section)"}
                 </p>
-              ) : (
-                <div key={p.id} className="grid grid-cols-[1fr_repeat(3,72px)] items-center py-1">
-                  <span className="pv-serif truncate pr-2 text-[13.5px] text-foreground">{p.title || "(untitled)"}</span>
-                  <Cell state={p.objective} layer="objective" onClick={() => openNode("objective", p.objective, p)} />
-                  <Cell state={p.beat} layer="beat" onClick={() => openNode("beat", p.beat, p)} />
-                  {/* Prose isn't a short plan node — open the page to write/read it. */}
-                  <Cell state={p.prose} layer="prose" onClick={() => navigate(`/books/${bookId}/pages/${p.id}`)} />
-                </div>
-              )
-            )}
-          </div>
+              </div>
+            ) : (
+              <PageRow key={p.id} page={p} onOpen={openNode} onOpenPage={(id) => navigate(`/books/${bookId}/pages/${id}`)} />
+            )
+          )}
         </div>
 
         <Legend />
       </div>
 
-      <NodeEditor bookId={bookId} target={editing} onClose={() => setEditing(null)} onSaved={onSaved} />
+      <NodeEditor bookId={bookId} target={editing} onClose={() => setEditing(null)} onSaved={onSaved} onOpenPage={(pid) => navigate(`/books/${bookId}/pages/${pid}`)} />
     </section>
+  );
+}
+
+// One page's chain: objective → beat → prose, with a branch tick off the spine rail.
+function PageRow({
+  page, onOpen, onOpenPage,
+}: {
+  page: MapPage;
+  onOpen: (layer: SheetLayer, state: CellState, page: { id: number; title: string | null }) => void;
+  onOpenPage: (id: number) => void;
+}) {
+  const ref = { id: page.id, title: page.title };
+  return (
+    <div className="relative py-2">
+      {/* horizontal tick linking the rail to this row */}
+      <span aria-hidden className="absolute left-[-13px] top-[26px] h-px w-3 bg-[hsl(var(--pv-border-soft))]" />
+      <div className="mb-1.5 truncate pv-serif text-[13px] text-foreground">{page.title || "(untitled)"}</div>
+      <div className="flex items-stretch gap-1.5 overflow-x-auto pb-1">
+        <NodeBox layer="objective" label="Objective" text={page.objectiveText} state={page.objective} placeholder="Empty — re-create from the beat" onClick={() => onOpen("objective", page.objective, ref)} />
+        <Arrow />
+        <NodeBox layer="beat" label="Beat" text={page.beatText} state={page.beat} placeholder="Empty — re-create from the objective" onClick={() => onOpen("beat", page.beat, ref)} />
+        <Arrow />
+        <NodeBox
+          layer="prose" label="Prose"
+          text={page.proseText ? snippet(page.proseText) : ""}
+          state={page.prose}
+          placeholder="Empty — write from the plan"
+          onClick={() => onOpen("prose", page.prose, ref)}
+          onDoubleClick={() => onOpenPage(page.id)}
+        />
+      </div>
+    </div>
   );
 }
 
 const STATE_LABEL: Record<CellState, string> = { gap: "empty", drift: "out of sync", synced: "in sync" };
 
-// A single grid cell — a dot whose colour encodes the node's state. Clicking opens its editor.
-function Cell({ state, layer, onClick }: { state: CellState; layer: string; onClick?: () => void }) {
+// Per-state visual tone for a node box (border + dot + text weight).
+const BOX_TONE: Record<CellState, string> = {
+  gap: "border-dashed border-[hsl(var(--pv-text-faint))]/50 hover:border-[hsl(var(--pv-text-faint))]",
+  drift: "border-amber-400/60 bg-amber-500/[0.04] hover:border-amber-500",
+  synced: "border-[hsl(var(--pv-border-soft))] hover:border-foreground/30",
+};
+
+// A node in the graph: a small box with a state dot, layer label, and a text preview. Clickable when
+// editable (spine/objective/beat/prose); brief is a static label (it lives in its own tab).
+function NodeBox({
+  layer, label, text, state, placeholder, onClick, onDoubleClick,
+}: {
+  layer: SheetLayer | "brief";
+  label: string;
+  text: string;
+  state: CellState;
+  placeholder: string;
+  onClick?: () => void;
+  onDoubleClick?: () => void;
+}) {
+  const interactive = !!onClick;
+  const tone = layer === "brief" ? "border-[hsl(var(--pv-border-soft))]" : BOX_TONE[state];
+  const className = `min-w-[150px] flex-1 rounded-lg border px-3 py-2 text-left transition-colors ${tone} ${interactive ? "cursor-pointer" : "cursor-default"}`;
+  const body = (
+    <>
+      <div className="flex items-center gap-1.5">
+        <Dot state={state} />
+        <span className="pv-mono text-[9px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-faint))]">{label}</span>
+      </div>
+      {text ? (
+        <p className="mt-1 line-clamp-2 pv-serif text-[12.5px] leading-snug text-foreground">{text}</p>
+      ) : (
+        <p className="mt-1 line-clamp-2 pv-serif text-[12.5px] italic leading-snug text-[hsl(var(--pv-text-faint))]">{placeholder}</p>
+      )}
+    </>
+  );
+  if (!interactive) return <div className={className} title={`${label}: ${STATE_LABEL[state]}`}>{body}</div>;
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={`${layer}: ${STATE_LABEL[state]} — click to open`}
-      className="flex justify-center rounded py-1.5 transition-colors hover:bg-[hsl(var(--pv-surface-2))]"
-    >
-      <Dot state={state} />
+    <button type="button" onClick={onClick} onDoubleClick={onDoubleClick} title={`${label}: ${STATE_LABEL[state]} — click to open`} className={className}>
+      {body}
     </button>
   );
 }
 
 function Dot({ state }: { state: CellState }) {
-  if (state === "gap") {
-    return <span className="inline-block h-3 w-3 rounded-full border border-dashed border-[hsl(var(--pv-text-faint))]" aria-label="empty" />;
-  }
-  if (state === "drift") {
-    return <span className="inline-block h-3 w-3 rounded-full bg-amber-500" aria-label="out of sync" />;
-  }
-  return <span className="inline-block h-3 w-3 rounded-full bg-[hsl(var(--pv-accent))]" aria-label="in sync" />;
+  if (state === "gap") return <span className="inline-block h-2.5 w-2.5 rounded-full border border-dashed border-[hsl(var(--pv-text-faint))]" aria-label="empty" />;
+  if (state === "drift") return <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-500" aria-label="out of sync" />;
+  return <span className="inline-block h-2.5 w-2.5 rounded-full bg-[hsl(var(--pv-accent))]" aria-label="in sync" />;
 }
 
-// A labelled node in the book-level band (brief / spine). Clickable when an editor is wired.
-function BandNode({ label, state, onClick }: { label: string; state: CellState; onClick?: () => void }) {
-  const className = "inline-flex items-center gap-1.5 rounded-full border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))] px-2.5 py-1";
-  const inner = <><Dot state={state} /><span className="pv-serif text-[13px] text-foreground">{label}</span></>;
-  if (onClick) {
-    return (
-      <button type="button" onClick={onClick} title={`${label}: ${STATE_LABEL[state]} — click to open`}
-        className={`${className} transition-colors hover:border-foreground/30`}>
-        {inner}
-      </button>
-    );
-  }
-  return <span className={className} title={`${label}: ${STATE_LABEL[state]}`}>{inner}</span>;
-}
-
-// The connector between two book-level nodes. brief→spine is one-way (AI drafts down, never up).
-function Connector({ oneWay }: { oneWay?: boolean }) {
+// The connector between two nodes. brief→spine is one-way (drawn as →); the rest are two-way edges.
+function Arrow({ oneWay }: { oneWay?: boolean }) {
   return (
-    <span className="pv-mono text-[12px] text-[hsl(var(--pv-text-faint))]" title={oneWay ? "drafted downward only" : "two-way"}>
-      {oneWay ? "→" : "↔"}
+    <span className="flex shrink-0 select-none items-center pv-mono text-[13px] text-[hsl(var(--pv-text-faint))]" title={oneWay ? "drafted downward only" : "two-way"}>
+      {oneWay ? "→" : "›"}
     </span>
   );
 }
 
 function Legend() {
   return (
-    <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 border-t border-[hsl(var(--pv-border-soft))] pt-3">
+    <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-[hsl(var(--pv-border-soft))] pt-3">
       {(["synced", "drift", "gap"] as const).map((s) => (
         <span key={s} className="pv-serif inline-flex items-center gap-1.5 text-[12px] text-[hsl(var(--pv-text-muted))]">
           <Dot state={s} /> {STATE_LABEL[s]}
         </span>
       ))}
+      <span className="pv-serif text-[12px] italic text-[hsl(var(--pv-text-faint))]">— click a node to act &amp; review</span>
     </div>
   );
+}
+
+// First ~140 chars of prose for the node preview.
+function snippet(text: string): string {
+  const t = text.replace(/\s+/g, " ").trim();
+  return t.length > 140 ? t.slice(0, 140) + "…" : t;
 }
 
 // Body text excluding the leading title heading — decides if a page has real prose.

@@ -21,10 +21,8 @@ import { AdminViewBanner } from "@/components/book/AdminViewBanner";
 import { MatureContentGate } from "@/components/book/MatureContentGate";
 import { Brief } from "@/lib/brief";
 import { BookBriefSection } from "@/components/book/BookBriefSection";
-import { type RevisionPrefill } from "@/components/book/ReviseWithAI";
-import { BookJourney } from "@/components/book/BookJourney";
 import { ResolutionMap } from "@/components/book/ResolutionMap";
-import { BookSpine } from "@/components/book/BookSpine";
+import { GraphActions } from "@/components/book/GraphActions";
 import { ThreadsSection } from "@/components/book/ThreadsSection";
 import { BookBibleSection } from "@/components/book/BookBibleSection";
 import { getPageStatus } from "./components/pageList/pageUtils";
@@ -102,9 +100,6 @@ const BookDetails = () => {
   
   // Extract numeric ID from slug
   const numericBookId = getNumericId(bookSlug);
-
-  // Revise-with-AI: a prefill handed over from the editor's-read report.
-  const [revisionPrefill, setRevisionPrefill] = useState<RevisionPrefill | null>(null);
 
   // Version control state
   const [isCommitDialogOpen, setIsCommitDialogOpen] = useState(false);
@@ -710,25 +705,21 @@ const BookDetails = () => {
                   />
                 )}
 
-                {/* AI tools tab — the whole build journey, created → brief → scaffold → write →
-                    editor's read → revise → publish, as one guided staircase. */}
+                {/* AI tools tab — the book's resolution ladder as a connected, actionable graph
+                    (brief → spine → objective → beat → prose), with the book-level build actions
+                    (outline · write · editor's read · revise · publish) beneath it. The old linear
+                    BookJourney is kept in the codebase for reference; its functionality lives here now. */}
                 {activeTab === "ai" && (
                   <div className="space-y-6">
-                    {/* Resolution Map (admin preview, read-only): the multi-resolution completeness
-                        chart that will become the primary build surface once its cells are interactive. */}
-                    {isAdmin && <ResolutionMap bookId={getNumericId(bookSlug)} refreshKey={pages.length} onChanged={fetchBookDetails} />}
-                    {isAdmin && <BookSpine bookId={getNumericId(bookSlug)} onChanged={fetchBookDetails} />}
-                    <BookJourney
-                    bookId={getNumericId(bookSlug)}
-                    briefSet={briefSet}
-                    pages={pages}
-                    isPublic={book.is_public}
-                    onEditBrief={() => switchTab("brief")}
-                    onChanged={fetchBookDetails}
-                    onPublish={handlePublish}
-                    revisionPrefill={revisionPrefill}
-                    onRevisePrefill={setRevisionPrefill}
-                    onRevisionApplied={() => fetchBookDetails()}
+                    <ResolutionMap bookId={getNumericId(bookSlug)} refreshKey={pages.length} onChanged={fetchBookDetails} />
+                    <GraphActions
+                      bookId={getNumericId(bookSlug)}
+                      briefSet={briefSet}
+                      pages={pages}
+                      isPublic={book.is_public}
+                      onEditBrief={() => switchTab("brief")}
+                      onChanged={fetchBookDetails}
+                      onPublish={handlePublish}
                     />
                   </div>
                 )}

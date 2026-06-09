@@ -1,27 +1,33 @@
 import { useEffect, useState } from "react";
-import { Loader2, Sparkles } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import type { CellState } from "@/lib/planGraph";
 import { readNode, readProse, saveBeat, saveObjective, saveSpine, transforms, type NodeLayer } from "@/lib/ladder";
+import { NodeLabel, NodeReviser, RecreateButton } from "./ladder-ui";
+import { ProseNodePanel } from "./ProseNodePanel";
+
+// A node target the sheet can open. prose is supported too (rendered by ProseNodePanel); brief lives
+// in its own tab and isn't editable here.
+export type SheetLayer = NodeLayer | "prose";
 
 export interface NodeTarget {
-  layer: NodeLayer;       // spine | objective | beat (prose/brief open elsewhere)
-  pageId?: number;        // for objective/beat
+  layer: SheetLayer;
+  pageId?: number;        // for objective/beat/prose
   pageTitle?: string | null;
   state: CellState;
 }
 
-const LABEL: Record<NodeLayer, string> = { spine: "Book spine", objective: "Objective", beat: "Beat" };
+const LABEL: Record<SheetLayer, string> = { spine: "Book spine", objective: "Objective", beat: "Beat", prose: "Prose" };
 const PLACEHOLDER: Record<NodeLayer, string> = {
   spine: "What the whole book is doing — its central objective and arc.",
   objective: "What this page must achieve — its job in the book.",
   beat: "One paragraph: what this page does, in order, to fulfil its objective.",
 };
-// Per layer: the parent it expands from (down) and the child it distills from (up). Objective has no
-// per-page expand — its parent edge (spine→objectives) is the whole-book scaffold, not a single node.
+// Per layer: the parent it RE-CREATES from (down) and the child it re-creates from (up). Objective has
+// no per-page down — its parent edge (spine→objectives) is the whole-book scaffold, not a single node.
 const PARENT: Partial<Record<NodeLayer, string>> = { spine: "brief", beat: "objective" };
 const CHILD: Partial<Record<NodeLayer, string>> = { spine: "outline", objective: "beat", beat: "prose" };
 
@@ -33,29 +39,45 @@ const STATE_TONE: Record<CellState, string> = {
 };
 
 /**
- * NodeEditor — the resolution-map node workbench. Opens in a side sheet for a clicked spine /
- * objective / beat cell. One consistent contract per node: type it by hand, EXPAND from the layer
- * above (down), or DISTILL from the layer below (up); every path persists + stamps the right edges
- * (via lib/ladder), then tells the map to refresh. Down is the default (accent); up is deliberate (↑).
+ * NodeEditor — the resolution-map node workbench (a side sheet, so the map stays visible behind it).
+ * One grammar everywhere, matching the page workshop:
+ *   RE-CREATE (↓ from parent / ↑ from child) — regenerate the node. REPLACES.
+ *   REVISE    (✎)                            — nudge with an instruction. PRESERVES, shows a diff.
+ * Short plan nodes (spine/objective/beat) edit inline here; prose is delegated to ProseNodePanel
+ * (durable generation, writes the page body without opening the editor).
  */
 export function NodeEditor({
-  bookId, target, onClose, onSaved,
+  bookId, target, onClose, onSaved, onOpenPage,
 }: {
   bookId: number;
   target: NodeTarget | null;
   onClose: () => void;
   onSaved: () => void;
+  onOpenPage: (pageId: number) => void;
 }) {
   const { toast } = useToast();
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState<"expand" | "distill" | "save" | null>(null);
+  // Prose needs its neighbours (objective = stamp source, beat = re-create parent) + current prose.
+  const [prose, setProse] = useState<{ objective: string; beat: string; text: string } | null>(null);
 
   const layer = target?.layer ?? "spine";
   const pageId = target?.pageId;
+  const isProse = layer === "prose";
 
   useEffect(() => {
     if (!target) return;
+    if (target.layer === "prose") {
+      setLoading(true);
+      Promise.all([
+        readNode(bookId, "objective", target.pageId),
+        readNode(bookId, "beat", target.pageId),
+        readProse(target.pageId!),
+      ]).then(([objective, beat, text]) => setProse({ objective, beat, text }))
+        .finally(() => setLoading(false));
+      return;
+    }
     setLoading(true);
     void readNode(bookId, target.layer, target.pageId)
       .then((t) => setDraft(t))
@@ -67,11 +89,11 @@ export function NodeEditor({
   const fail = (title: string, e: unknown) =>
     toast({ variant: "destructive", title, description: String((e as Error)?.message ?? e) });
 
-  // Persist whatever text is current for this layer (hand-edit save, or after a transform).
+  // Persist whatever text is current for this short layer (hand-edit save, revise-accept, or re-create).
   const persist = async (text: string, extra?: { proseText?: string; reconcileBeat?: boolean }) => {
     if (layer === "spine") await saveSpine(bookId, text);
     else if (layer === "objective") await saveObjective(bookId, pageId!, text, { reconcileBeat: extra?.reconcileBeat });
-    else await saveBeat(bookId, pageId!, text, { proseText: extra?.proseText });
+    else if (layer === "beat") await saveBeat(bookId, pageId!, text, { proseText: extra?.proseText });
   };
 
   const save = async () => {
@@ -81,7 +103,7 @@ export function NodeEditor({
     finally { setBusy(null); }
   };
 
-  // Down: generate this node from its parent.
+  // RE-CREATE ↓: regenerate this node from its parent (replaces it).
   const expand = async () => {
     setBusy("expand");
     try {
@@ -93,11 +115,11 @@ export function NodeEditor({
         text = await transforms.objectiveToBeat(bookId, pageId!, objective);
       }
       if (text) { setDraft(text); await persist(text); onSaved(); }
-    } catch (e) { fail("Couldn't generate", e); }
+    } catch (e) { fail("Couldn't re-create", e); }
     finally { setBusy(null); }
   };
 
-  // Up: distill this node from its child.
+  // RE-CREATE ↑: regenerate this node from its child (reverse-outline; replaces it).
   const distill = async () => {
     setBusy("distill");
     try {
@@ -105,24 +127,32 @@ export function NodeEditor({
       if (layer === "spine") { text = await transforms.objectivesToSpine(bookId); if (text) { setDraft(text); await persist(text); } }
       else if (layer === "objective") {
         const beat = await readNode(bookId, "beat", pageId);
-        if (!beat) throw new Error("No beat to distill from.");
+        if (!beat) throw new Error("No beat to re-create from.");
         text = await transforms.beatToObjective(bookId, pageId!, beat);
         if (text) { setDraft(text); await persist(text, { reconcileBeat: true }); }
       } else { // beat ← prose
-        const prose = await readProse(pageId!);
-        if (!prose) throw new Error("No prose to distill from.");
-        text = await transforms.proseToBeat(bookId, pageId!, prose);
-        if (text) { setDraft(text); await persist(text, { proseText: prose }); }
+        const proseText = await readProse(pageId!);
+        if (!proseText) throw new Error("No prose to re-create from.");
+        text = await transforms.proseToBeat(bookId, pageId!, proseText);
+        if (text) { setDraft(text); await persist(text, { proseText }); }
       }
       if (text) onSaved();
-    } catch (e) { fail("Couldn't distill", e); }
+    } catch (e) { fail("Couldn't re-create", e); }
     finally { setBusy(null); }
   };
 
-  const parent = PARENT[layer];
-  const child = CHILD[layer];
-  const heading = layer === "spine" ? "Book spine"
-    : `${target.pageTitle || "Untitled"} · ${LABEL[layer]}`;
+  // Accept a revised short node (preserve path). saveObjective/saveBeat carry the right reconcile
+  // semantics: a revised objective leaves the beat to go stale; a revised beat stays in sync with its
+  // objective (and leaves the prose to go stale).
+  const acceptRevision = async (proposed: string) => {
+    setDraft(proposed);
+    await persist(proposed);
+    onSaved();
+  };
+
+  const parent = layer === "prose" ? undefined : PARENT[layer];
+  const child = layer === "prose" ? undefined : CHILD[layer];
+  const heading = layer === "spine" ? "Book spine" : `${target.pageTitle || "Untitled"} · ${LABEL[layer]}`;
 
   return (
     <Sheet open={!!target} onOpenChange={(o) => { if (!o) onClose(); }}>
@@ -136,46 +166,64 @@ export function NodeEditor({
         </SheetHeader>
 
         <div className="mt-4 flex flex-1 flex-col gap-3 overflow-y-auto">
-          <Textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder={loading ? "Loading…" : PLACEHOLDER[layer]}
-            disabled={loading || busy !== null}
-            className={`pv-serif text-[14.5px] leading-relaxed ${layer === "beat" || layer === "spine" ? "min-h-[200px]" : "min-h-[96px]"}`}
-          />
+          {isProse ? (
+            loading || !prose ? (
+              <p className="pv-serif inline-flex items-center gap-2 text-[13.5px] italic text-[hsl(var(--pv-text-muted))]">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading…
+              </p>
+            ) : (
+              <ProseNodePanel
+                bookId={bookId}
+                pageId={pageId!}
+                pageTitle={target.pageTitle ?? null}
+                objective={prose.objective}
+                beat={prose.beat}
+                prose={prose.text}
+                onSaved={onSaved}
+                onOpenPage={() => onOpenPage(pageId!)}
+              />
+            )
+          ) : (
+            <>
+              <Textarea
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                placeholder={loading ? "Loading…" : PLACEHOLDER[layer as NodeLayer]}
+                disabled={loading || busy !== null}
+                className={`pv-serif text-[14.5px] leading-relaxed ${layer === "beat" || layer === "spine" ? "min-h-[200px]" : "min-h-[96px]"}`}
+              />
 
-          {/* Transforms: down (expand from parent) is the default motion; up (distill) is deliberate. */}
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            {parent && (
-              <button
-                type="button" onClick={() => void expand()} disabled={busy !== null}
-                className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-accent))] transition-colors hover:text-foreground disabled:opacity-50"
-                title={`Generate this from the ${parent} (top-down)`}
-              >
-                {busy === "expand" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-                {busy === "expand" ? "Working…" : `Generate from ${parent} →`}
-              </button>
-            )}
-            {child && (
-              <button
-                type="button" onClick={() => void distill()} disabled={busy !== null}
-                className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-text-muted))] transition-colors hover:text-foreground disabled:opacity-50"
-                title={`Reverse-outline: derive this from the ${child} (bottom-up)`}
-              >
-                {busy === "distill" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                ↑ Distill from {child}
-              </button>
-            )}
+              {/* RE-CREATE (replaces). ↓ from the parent, ↑ from the child — same affordance as the page workshop. */}
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                {parent && <RecreateButton dir="down" action={{ label: `re-create from ${parent}`, onClick: () => void expand(), disabled: busy !== null, busy: busy === "expand" }} />}
+                {child && <RecreateButton dir="up" action={{ label: `re-create from ${child}`, onClick: () => void distill(), disabled: busy !== null, busy: busy === "distill" }} />}
+              </div>
+
+              {/* REVISE (preserves). Available once the node has content. */}
+              {draft.trim() && (
+                <div className="flex items-center justify-between gap-3">
+                  <NodeLabel>Revise · keeps what's here</NodeLabel>
+                  <NodeReviser
+                    current={draft.trim()}
+                    busy={busy !== null}
+                    onRevise={(instr) => transforms.reviseNode(bookId, layer as NodeLayer, draft.trim(), instr, pageId)}
+                    onAccept={acceptRevision}
+                  />
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {!isProse && (
+          <div className="mt-4 flex items-center justify-end gap-2 border-t border-[hsl(var(--pv-border-soft))] pt-3">
+            <Button variant="ghost" onClick={onClose} disabled={busy !== null}>Close</Button>
+            <Button onClick={() => void save()} disabled={loading || busy !== null}>
+              {busy === "save" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Save
+            </Button>
           </div>
-        </div>
-
-        <div className="mt-4 flex items-center justify-end gap-2 border-t border-[hsl(var(--pv-border-soft))] pt-3">
-          <Button variant="ghost" onClick={onClose} disabled={busy !== null}>Close</Button>
-          <Button onClick={() => void save()} disabled={loading || busy !== null}>
-            {busy === "save" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-            Save
-          </Button>
-        </div>
+        )}
       </SheetContent>
     </Sheet>
   );

@@ -32,11 +32,16 @@ export interface MapPage {
   objective: CellState;
   beat: CellState;
   prose: CellState;
+  // Node text for previews in the graph ("" when empty).
+  objectiveText: string;
+  beatText: string;
+  proseText: string;
 }
 
 export interface MapModel {
   brief: CellState;
   spine: CellState;
+  spineText: string; // book spine text for its node preview ("" when empty)
   pages: MapPage[]; // section pages included, as group headers (their cells aren't counted)
   totals: { gaps: number; drift: number; cells: number; filled: number };
   complete: boolean;
@@ -72,13 +77,16 @@ export function buildMap(input: {
     // Section pages are structural dividers (under the single-spine model they carry no objective of
     // their own); they head a group of text pages and contribute no countable cells.
     if (p.pageType === "section") {
-      return { id: p.id, title: p.title, pageType: "section", objective: "synced", beat: "synced", prose: "synced" };
+      return { id: p.id, title: p.title, pageType: "section", objective: "synced", beat: "synced", prose: "synced", objectiveText: "", beatText: "", proseText: "" };
     }
     const m = p.metadata;
     const objective = cell(m?.objective, isEdgeStale(input.spineText, m?.objective, m?.sync?.spine_objective));
     const beat = cell(m?.beat, isEdgeStale(m?.objective, m?.beat, m?.sync?.objective_beat));
     const prose = cell(p.proseText, isProseStale(m, true));
-    return { id: p.id, title: p.title, pageType: "text", objective, beat, prose };
+    return {
+      id: p.id, title: p.title, pageType: "text", objective, beat, prose,
+      objectiveText: (m?.objective ?? "").trim(), beatText: (m?.beat ?? "").trim(), proseText: p.proseText.trim(),
+    };
   });
 
   let gaps = 0, drift = 0, cells = 0, filledCount = 0;
@@ -96,5 +104,5 @@ export function buildMap(input: {
     tally(p.prose);
   }
 
-  return { brief, spine, pages, totals: { gaps, drift, cells, filled: filledCount }, complete: gaps === 0 && drift === 0 };
+  return { brief, spine, spineText: (input.spineText ?? "").trim(), pages, totals: { gaps, drift, cells, filled: filledCount }, complete: gaps === 0 && drift === 0 };
 }
