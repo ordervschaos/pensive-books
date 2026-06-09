@@ -19,7 +19,7 @@
 // read as gaps; the other edges have no recorded hashes so they default to "synced" (we never badge
 // what we didn't generate). Drift on those edges lights up as each transform lands and starts
 // stamping both-endpoint hashes.
-import { isProseStale, type PageMeta } from "@/lib/planProvenance";
+import { isEdgeStale, isProseStale, type PageMeta } from "@/lib/planProvenance";
 
 export type CellState = "gap" | "drift" | "synced";
 
@@ -63,16 +63,20 @@ export function buildMap(input: {
   const brief: CellState = input.briefFilled ? "synced" : "gap";
   const spine: CellState = filled(input.spineText) ? "synced" : "gap";
 
+  // A filled node is "drift" when its incoming (parent→me) edge is stale, else "synced".
+  const cell = (text: string | null | undefined, stale: boolean): CellState =>
+    !filled(text) ? "gap" : stale ? "drift" : "synced";
+
   const pages: MapPage[] = input.pages.map((p) => {
     // Section pages are structural dividers (under the single-spine model they carry no objective of
     // their own); they head a group of text pages and contribute no countable cells.
     if (p.pageType === "section") {
       return { id: p.id, title: p.title, pageType: "section", objective: "synced", beat: "synced", prose: "synced" };
     }
-    const objective: CellState = filled(p.metadata?.objective) ? "synced" : "gap";
-    const beat: CellState = filled(p.metadata?.beat) ? "synced" : "gap";
-    const hasProse = filled(p.proseText);
-    const prose: CellState = !hasProse ? "gap" : isProseStale(p.metadata, true) ? "drift" : "synced";
+    const m = p.metadata;
+    const objective = cell(m?.objective, isEdgeStale(input.spineText, m?.objective, m?.sync?.spine_objective));
+    const beat = cell(m?.beat, isEdgeStale(m?.objective, m?.beat, m?.sync?.objective_beat));
+    const prose = cell(p.proseText, isProseStale(m, true));
     return { id: p.id, title: p.title, pageType: "text", objective, beat, prose };
   });
 

@@ -35,24 +35,68 @@ export function metaHash(text: string | null | undefined): string {
   return cyrb53(normalize(text)).toString(16);
 }
 
+// Per-edge reconcile snapshot: the hashes of BOTH endpoints the last time this edge was synced.
+// An edge is stale when either side has changed since — which is what makes drift detectable in both
+// directions (parent edited → regenerate child downward; child edited → re-distill parent upward).
+export interface EdgeHash {
+  p: string; // hash of the parent text at last reconcile
+  c: string; // hash of the child text at last reconcile
+}
+
+// Edge names in the resolution ladder (stored under metadata.sync). Each names a parent→child pair.
+export type EdgeName = "spine_objective" | "objective_beat" | "beat_prose";
+
 export interface PageMeta {
   objective?: string;
   beat?: string; // the page's beat (one-paragraph middle resolution between objective and prose)
   summary?: string;
-  prose_src_hash?: string;
+  prose_src_hash?: string; // legacy (Phase 1): parent-only hash for the objective→prose edge
+  sync?: Partial<Record<EdgeName, EdgeHash>>; // both-endpoint snapshots, one per edge
 }
 
 /**
- * Is this page's prose out of sync with its objective?
- * True only when the page HAS prose, was AI-stamped (prose_src_hash present), and the objective has
- * since changed. Legacy/hand-written prose (no stamp) is treated as NOT stale — we don't badge what
- * we never generated. `hasProse` is the host's own "does this page have real body text" decision.
+ * Generic edge staleness from a recorded reconcile snapshot. The contract is "don't badge what we
+ * didn't generate": with no recorded hash, or no child content, an edge is NOT stale. A snapshot can
+ * be the new both-endpoint {p,c} form, or the legacy parent-only string (Phase 1's prose_src_hash) —
+ * the latter only detects parent drift, which is all it ever could.
+ */
+export function isEdgeStale(
+  parentText: string | null | undefined,
+  childText: string | null | undefined,
+  recorded: EdgeHash | string | null | undefined,
+): boolean {
+  if (!childText || !String(childText).trim()) return false; // no child → nothing to be stale
+  if (!recorded) return false; // never reconciled (legacy / hand-authored) → not stale
+  if (typeof recorded === "string") return recorded !== metaHash(parentText); // legacy parent-only
+  return recorded.p !== metaHash(parentText) || recorded.c !== metaHash(childText);
+}
+
+/**
+ * Is this page's prose out of sync with the layer it was written from? Checks PARENT drift only (the
+ * source moved on) — the downward concern these callers care about; they pass a `hasProse` boolean,
+ * not the prose text, so the child side isn't available here (child-edited "pull up" is surfaced at
+ * the node cell, not as staleness). Parent = the beat if the page has one, else the objective; the
+ * recorded hash = the new beat_prose snapshot's parent side, else the legacy prose_src_hash string.
  */
 export function isProseStale(metadata: PageMeta | null | undefined, hasProse: boolean): boolean {
   if (!hasProse || !metadata) return false;
-  const src = metadata.prose_src_hash;
-  if (!src) return false;
-  return src !== metaHash(metadata.objective);
+  const parent = metadata.beat?.trim() ? metadata.beat : metadata.objective;
+  const recorded = metadata.sync?.beat_prose ?? metadata.prose_src_hash;
+  if (!recorded) return false;
+  const parentHash = typeof recorded === "string" ? recorded : recorded.p;
+  return parentHash !== metaHash(parent);
+}
+
+/** Record an edge's reconcile snapshot into a metadata object (returns a new metadata). */
+export function stampEdge(
+  metadata: PageMeta | null | undefined,
+  edge: EdgeName,
+  parentText: string | null | undefined,
+  childText: string | null | undefined,
+): PageMeta {
+  const meta = { ...(metadata ?? {}) };
+  meta.sync = { ...(meta.sync ?? {}), [edge]: { p: metaHash(parentText), c: metaHash(childText) } };
+  return meta;
 }
 
 /**
