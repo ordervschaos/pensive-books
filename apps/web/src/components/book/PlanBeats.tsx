@@ -4,6 +4,7 @@ import { AIActionRow } from "./AIActionRow";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useLatestTaskRow, type TaskRow } from "@/hooks/useLatestTaskRow";
+import { RunControls } from "./RunControls";
 
 interface BuildProgress { done: number; total: number; phase?: string; beatsTotal?: number; beatsDone?: number }
 interface BuildRow extends TaskRow { progress: BuildProgress | null; error: string | null }
@@ -22,11 +23,12 @@ interface PlanBeatsProps {
  */
 export function PlanBeats({ bookId, remaining, onChanged }: PlanBeatsProps) {
   const { toast } = useToast();
-  const { row, refetch } = useLatestTaskRow<BuildRow>({
+  const { row, refetch, stale } = useLatestTaskRow<BuildRow>({
     table: "book_generations",
     bookId,
     match: { kind: "write_all" },
     activeStatuses: ["pending", "running"],
+    staleMs: 180_000,
   });
 
   const running = row?.status === "pending" || row?.status === "running";
@@ -46,13 +48,16 @@ export function PlanBeats({ bookId, remaining, onChanged }: PlanBeatsProps) {
   };
 
   return (
-    <AIActionRow
-      icon={<Sparkles className="h-4 w-4" />}
-      title={running ? <span>{progress?.phase ?? "Planning beats"}<AnimatedEllipsis /></span> : remaining === 0 ? "All beats planned" : `Plan ${remaining} beat${remaining === 1 ? "" : "s"}`}
-      description="Plan what each page does — in causal order, with a value flip and a concrete image — before any prose is written. Best-of-3 per page."
-      onClick={run}
-      loading={running}
-      disabled={remaining === 0}
-    />
+    <div>
+      <AIActionRow
+        icon={<Sparkles className="h-4 w-4" />}
+        title={running ? <span>{progress?.phase ?? "Planning beats"}<AnimatedEllipsis /></span> : remaining === 0 ? "All beats planned" : `Plan ${remaining} beat${remaining === 1 ? "" : "s"}`}
+        description="Plan what each page does — in causal order, with a value flip and a concrete image — before any prose is written. Best-of-3 per page."
+        onClick={run}
+        loading={running}
+        disabled={remaining === 0}
+      />
+      <RunControls table="book_generations" row={row} stale={stale} onRestart={run} refetch={refetch} />
+    </div>
   );
 }

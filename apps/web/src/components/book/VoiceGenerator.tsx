@@ -14,6 +14,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useLatestTaskRow, type TaskRow } from "@/hooks/useLatestTaskRow";
+import { RunControls } from "./RunControls";
 import { BRIDGE, bridgeFetch } from "@/lib/bridge";
 
 interface VoiceResult { samples: string[] }
@@ -43,11 +44,12 @@ export function VoiceGenerator({ bookId, onStatusChange, onChosen }: VoiceGenera
   const [current, setCurrent] = useState<string | null | undefined>(undefined); // undefined = loading
   const [open, setOpen] = useState(false);
 
-  const { row, refetch } = useLatestTaskRow<VoiceRow>({
+  const { row, refetch, stale } = useLatestTaskRow<VoiceRow>({
     table: "book_generations",
     bookId,
     match: { kind: "voice" },
     activeStatuses: ["pending", "running"],
+    staleMs: 120_000,
   });
 
   const generating = row?.status === "pending" || row?.status === "running";
@@ -126,6 +128,7 @@ export function VoiceGenerator({ bookId, onStatusChange, onChosen }: VoiceGenera
         onClick={generate}
         loading={generating || kicking}
       />
+      <RunControls table="book_generations" row={row} stale={stale} onRestart={generate} refetch={refetch} />
       {current && (
         <p className="px-5 pt-1 pv-serif text-[12.5px] italic text-[hsl(var(--pv-text-faint))] line-clamp-2">
           Current voice: “{current.slice(0, 200)}{current.length > 200 ? "…" : ""}”

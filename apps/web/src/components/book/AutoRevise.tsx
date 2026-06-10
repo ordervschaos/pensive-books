@@ -6,6 +6,7 @@ import { NotifyWhenDone } from "./NotifyWhenDone";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useLatestTaskRow, type TaskRow } from "@/hooks/useLatestTaskRow";
+import { RunControls } from "./RunControls";
 import { notify as fireNotification } from "@/lib/notify";
 import { BRIDGE, bridgeFetch } from "@/lib/bridge";
 
@@ -43,11 +44,12 @@ export function AutoRevise({ bookId, onRevised }: AutoReviseProps) {
   const watchedRef = useRef<number | null>(null);
   useEffect(() => { notifyRef.current = notify; }, [notify]);
 
-  const { row, refetch } = useLatestTaskRow<AutoReviseRow>({
+  const { row, refetch, stale } = useLatestTaskRow<AutoReviseRow>({
     table: "book_generations",
     bookId,
     match: { kind: "auto_revise" },
     activeStatuses: ["pending", "running"],
+    staleMs: 180_000,
   });
 
   const running = row?.status === "pending" || row?.status === "running";
@@ -105,6 +107,7 @@ export function AutoRevise({ bookId, onRevised }: AutoReviseProps) {
         onClick={run}
         loading={running}
       />
+      <RunControls table="book_generations" row={row} stale={stale} onRestart={run} refetch={refetch} />
       {lastDone && (
         <p className="px-5 pt-1 pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))]">
           {lastDone.label ?? `Revised ${lastDone.revised ?? 0} page${(lastDone.revised ?? 0) === 1 ? "" : "s"}.`} Read the draft to see the result.

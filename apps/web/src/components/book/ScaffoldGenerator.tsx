@@ -16,6 +16,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useLatestTaskRow, type TaskRow } from "@/hooks/useLatestTaskRow";
+import { RunControls } from "./RunControls";
 import { BRIDGE, bridgeFetch } from "@/lib/bridge";
 import { stampEdge } from "@/lib/planProvenance";
 
@@ -67,11 +68,12 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
   const [creating, setCreating] = useState(false);
   const [kicking, setKicking] = useState(false); // true between clicking Generate and the run row appearing
 
-  const { row, refetch } = useLatestTaskRow<ScaffoldRow>({
+  const { row, refetch, stale } = useLatestTaskRow<ScaffoldRow>({
     table: "book_generations",
     bookId,
     match: { kind: "scaffold" },
     activeStatuses: ["pending", "running"],
+    staleMs: 120_000,
   });
 
   const generating = row?.status === "pending" || row?.status === "running";
@@ -222,6 +224,7 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
         onClick={generate}
         loading={generating || kicking}
       />
+      <RunControls table="book_generations" row={row} stale={stale} onRestart={generate} refetch={refetch} />
       {row?.status === "error" && (
         <p className="px-5 pt-1 pv-serif text-[13px] italic text-red-600 dark:text-red-400">{row.error}</p>
       )}

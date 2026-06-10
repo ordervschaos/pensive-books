@@ -6,6 +6,7 @@ import { NotifyWhenDone } from "./NotifyWhenDone";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useLatestTaskRow, type TaskRow } from "@/hooks/useLatestTaskRow";
+import { RunControls } from "./RunControls";
 import { notify as fireNotification } from "@/lib/notify";
 
 interface BuildProgress { done: number; total: number; phase?: string }
@@ -31,11 +32,12 @@ export function DraftProse({ bookId, remaining, onChanged }: DraftProseProps) {
   const watchedRef = useRef<number | null>(null);
   useEffect(() => { notifyRef.current = notify; }, [notify]);
 
-  const { row, refetch } = useLatestTaskRow<BuildRow>({
+  const { row, refetch, stale } = useLatestTaskRow<BuildRow>({
     table: "book_generations",
     bookId,
     match: { kind: "write_all" },
     activeStatuses: ["pending", "running"],
+    staleMs: 180_000,
   });
 
   const running = row?.status === "pending" || row?.status === "running";
@@ -90,6 +92,7 @@ export function DraftProse({ bookId, remaining, onChanged }: DraftProseProps) {
         loading={running}
         disabled={!running && !paused && remaining === 0}
       />
+      <RunControls table="book_generations" row={row} stale={stale} onRestart={run} refetch={refetch} />
       {!running && remaining > 0 && (
         <div className="px-5 pt-2">
           <NotifyWhenDone enabled={notify} onChange={setNotify} />
