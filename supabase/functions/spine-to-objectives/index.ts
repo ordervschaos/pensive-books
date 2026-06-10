@@ -88,8 +88,15 @@ Deno.serve(async (req: Request) => {
     if (insertError || !gen) return json({ error: "Could not start scaffold" }, 500);
 
     runInBackground(service, "book_generations", gen.id, "spine-to-objectives", async () => {
-      const scaffold = await callClaude(apiKey, bookName, brief, bible, spine, { fn: "spine-to-objectives", bookId, taskTable: "book_generations", taskId: gen.id, userId: user.id });
-      return { status: "ready", result: scaffold };
+      const meta: CallMeta = { fn: "spine-to-objectives", bookId, taskTable: "book_generations", taskId: gen.id, userId: user.id };
+      const { high: model } = await getActiveModels();
+      // Self-critique loop (Self-Refine): a single forward pass gives the modal, predictable outline.
+      // Pressure-test the PLAN against story craft, then revise once — errors here compound into every
+      // page, so a dollar of quality at the outline is worth ~10 at the prose.
+      const draft = await draftScaffold(apiKey, model, bookName, brief, bible, spine, meta);
+      const critique = await critiqueScaffold(apiKey, model, bookName, brief, spine, draft, { ...meta, fn: "spine-critique" });
+      const revised = await reviseScaffold(apiKey, model, bookName, brief, bible, spine, draft, critique, { ...meta, fn: "spine-revise" });
+      return { status: "ready", result: { ...revised, critique } };
     });
 
     return json({ status: "running", generation: gen }, 202);
@@ -159,30 +166,80 @@ interface ScaffoldThread {
 }
 interface Scaffold { structure: string; pages: ScaffoldPage[]; threads: ScaffoldThread[] }
 
-async function callClaude(apiKey: string, bookName: string, brief: Brief | null, bible: string | null, spine: string | null, meta: CallMeta): Promise<Scaffold> {
-  const { high: model } = await getActiveModels();
+function textOf(data: { content?: Array<{ type: string; text?: string }> }): string {
+  return (data.content ?? [])
+    .filter((b) => b.type === "text")
+    .map((b) => b.text ?? "")
+    .join("")
+    .trim();
+}
+
+// The brief/bible/spine context block, shared by the draft and revise prompts.
+function bookContext(bookName: string, brief: Brief | null, bible: string | null, spine: string | null): string {
+  return `BOOK: ${bookName}` +
+    (spine ? `\n\nBOOK SPINE (the throughline — the outline must realize this):\n${spine}` : "") +
+    `\n\nBRIEF:\n${briefContext(brief)}` +
+    (bible ? `\n\nBOOK BIBLE (established facts — characters, world, style):\n${bible}` : "");
+}
+
+async function draftScaffold(apiKey: string, model: string, bookName: string, brief: Brief | null, bible: string | null, spine: string | null, meta: CallMeta): Promise<Scaffold> {
   const data = await callClaudeApi(apiKey, {
     model,
     max_tokens: 8000,
     system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
-    messages: [
-      {
-        role: "user",
-        content: `BOOK: ${bookName}` +
-          (spine ? `\n\nBOOK SPINE (the throughline — the outline must realize this):\n${spine}` : "") +
-          `\n\nBRIEF:\n${briefContext(brief)}` +
-          (bible ? `\n\nBOOK BIBLE (established facts — characters, world, style):\n${bible}` : "") +
-          `\n\nDesign the outline. JSON only.`,
-      },
-    ],
+    messages: [{ role: "user", content: `${bookContext(bookName, brief, bible, spine)}\n\nDesign the outline. JSON only.` }],
   }, meta);
-
-  const text = (data.content ?? [])
-    .filter((b: { type: string }) => b.type === "text")
-    .map((b: { text: string }) => b.text)
-    .join("")
-    .trim();
+  const text = textOf(data);
   if (!text) throw new Error("Claude returned no text content.");
+  return parseScaffold(text);
+}
+
+const CRITIQUE_SYSTEM = `You are a tough developmental story editor pressure-testing a book's OUTLINE (objectives only — no prose has been written yet). Flaws in the PLAN compound into every page, so your job is to find them now.
+
+Judge the outline on three axes ONLY:
+1. PLOT LOGIC — does each beat CAUSE the next ("therefore"/"but", not "and then")? Does tension escalate? Is there a soft or sagging middle? Any unmotivated turns, coincidences, or conveniences?
+2. CHARACTER ARC — is the protagonist's surface WANT and deeper NEED legible? Do they change across the outline? Are the stakes personal, not merely external?
+3. GENRE CONTRACT — does the outline deliver the obligatory scenes the genre/premise promises? What is the reader owed that's missing?
+
+Output 4–8 SPECIFIC, actionable notes: name the page/section, what's wrong, and what it needs. No praise padding — if an axis is genuinely strong, say so in one line and move on. Plain text, terse, no preamble.`;
+
+async function critiqueScaffold(apiKey: string, model: string, bookName: string, brief: Brief | null, spine: string | null, draft: Scaffold, meta: CallMeta): Promise<string> {
+  const outline = draft.pages
+    .map((p, i) => (p.pageType === "section" ? `\n[${i}] # ${p.title}${p.objective ? ` — ${p.objective}` : ""}` : `[${i}] - ${p.title}${p.objective ? ` — ${p.objective}` : ""}`))
+    .join("\n");
+  const threads = draft.threads.length
+    ? "\n\nTHREADS:\n" + draft.threads.map((t) => `- ${t.name}: ${t.description} (setup ${t.setupPageIndex} → payoff ${t.payoffPageIndex})`).join("\n")
+    : "";
+  const data = await callClaudeApi(apiKey, {
+    model,
+    max_tokens: 2000,
+    system: [{ type: "text", text: CRITIQUE_SYSTEM, cache_control: { type: "ephemeral" } }],
+    messages: [{
+      role: "user",
+      content: `BOOK: ${bookName}\n\nBRIEF:\n${briefContext(brief)}` +
+        (spine ? `\n\nSPINE:\n${spine}` : "") +
+        `\n\nOUTLINE (structure: ${draft.structure}):${outline}${threads}\n\nCritique this outline.`,
+    }],
+  }, meta);
+  return textOf(data);
+}
+
+const REVISE_SYSTEM = `${SYSTEM}
+
+You are REVISING an existing outline to address an editor's critique. Apply EVERY note that improves plot logic, character arc, or genre delivery — change objectives, re-order or add/cut pages, and re-anchor threads as needed. Preserve what already works; this is a revision, not a fresh start. Output the full improved outline as JSON ONLY, in the exact schema above.`;
+
+async function reviseScaffold(apiKey: string, model: string, bookName: string, brief: Brief | null, bible: string | null, spine: string | null, draft: Scaffold, critique: string, meta: CallMeta): Promise<Scaffold> {
+  const data = await callClaudeApi(apiKey, {
+    model,
+    max_tokens: 8000,
+    system: [{ type: "text", text: REVISE_SYSTEM, cache_control: { type: "ephemeral" } }],
+    messages: [{
+      role: "user",
+      content: `${bookContext(bookName, brief, bible, spine)}\n\nDRAFT OUTLINE (JSON):\n${JSON.stringify({ structure: draft.structure, pages: draft.pages, threads: draft.threads })}\n\nEDITOR'S CRITIQUE TO ADDRESS:\n${critique}\n\nReturn the revised outline. JSON only.`,
+    }],
+  }, meta);
+  const text = textOf(data);
+  if (!text) throw new Error("Claude returned no revised outline.");
   return parseScaffold(text);
 }
 

@@ -32,6 +32,27 @@ export function metaHash(text: string | null | undefined): string {
 interface EdgeHash { p: string; c: string }
 
 /**
+ * Persist a freshly-generated BEAT to `pageId` and stamp the objective→beat edge {p: hash(objective),
+ * c: hash(beat)}, mirroring the web stampEdge("objective_beat", …). Used by generate-book's beat
+ * phase (server-side), where the client isn't in the loop to stamp it. Reads metadata fresh so it
+ * preserves any sibling fields. Best-effort.
+ */
+export async function stampBeat(
+  client: SupabaseClient,
+  pageId: number,
+  objective: string | null | undefined,
+  beatText: string,
+): Promise<void> {
+  const { data } = await client.from("pages").select("metadata").eq("id", pageId).maybeSingle();
+  const metadata = { ...((data?.metadata as Record<string, unknown> | null) ?? {}) } as Record<string, unknown>;
+  metadata.beat = beatText;
+  const sync = { ...((metadata.sync as Record<string, EdgeHash> | undefined) ?? {}) };
+  sync.objective_beat = { p: metaHash(objective), c: metaHash(beatText) };
+  metadata.sync = sync;
+  await client.from("pages").update({ metadata }).eq("id", pageId);
+}
+
+/**
  * Stamp prose provenance after prose has been written to `pageId`. Reads metadata fresh (to preserve
  * a just-persisted summary), then records which layer the prose was written FROM:
  *  - beat present → the beat_prose edge {p: hash(beat), c: hash(prose)} (and drop the legacy hash)

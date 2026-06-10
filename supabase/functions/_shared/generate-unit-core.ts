@@ -32,6 +32,21 @@ export interface ReviseIssue {
   suggestion?: string;
 }
 
+// Character ledger (the state axis, ledger 1): a snapshot of one character's state at a point in the
+// story. want/wound are the stable arc poles; knows/feels/has/believes change page-to-page. A full
+// snapshot of every character is stamped onto each prose page (pages.metadata.character_states) after
+// it's written, and the most recent prior snapshot is fed into the next page's prose context — so
+// characters accrete history instead of resetting each chapter.
+export interface CharacterState {
+  name: string;
+  want?: string;       // external goal (stable across the book)
+  wound?: string;      // internal flaw the arc resolves (stable)
+  believes?: string;   // current conviction (changes)
+  knows?: string[];    // facts currently held (changes)
+  feels?: string;      // emotional state right now (changes)
+  has?: string[];      // objects/resources/relationships (changes)
+}
+
 interface CommonParams {
   bookId: number;
   pageId?: number | null;
@@ -59,7 +74,7 @@ interface BookRow {
   id: number;
   name: string;
   brief: Brief | null;
-  bible: { text?: string } | null;
+  bible: { text?: string; voice_sample?: string } | null;
 }
 
 // ── Transforms ───────────────────────────────────────────────────────────────
@@ -100,13 +115,16 @@ export async function beatToProse(client: SupabaseClient, apiKey: string, p: Wri
 
   const m = meta("beat-to-prose", p);
   const text = await renderProse(apiKey, models.high, {
-    brief: b.brief, bible: b.bible?.text?.trim() || null, bookName: b.name,
+    brief: b.brief, bible: b.bible?.text?.trim() || null, voiceSample: b.bible?.voice_sample?.trim() || null, bookName: b.name,
     level: p.level, mode: "write", objective: (p.objective ?? "").trim(), beat, issues: null, currentText: null,
     pageObjective: p.pageObjective?.trim() || null, precedingText: p.precedingText?.trim() || null,
-    objectiveMap: ctx.objectiveMap, storySoFar: ctx.storySoFar, precedingProse: ctx.precedingProse, currentPageLabel: ctx.currentPageLabel,
+    objectiveMap: ctx.objectiveMap, storySoFar: ctx.storySoFar, precedingProse: ctx.precedingProse, currentPageLabel: ctx.currentPageLabel, openLoops: ctx.openLoops, characterStates: ctx.characterStates,
   }, m);
 
-  if (p.level === "page" && p.pageId) await maybeSummarize(client, apiKey, p.pageId, text, m, models.low);
+  if (p.level === "page" && p.pageId) {
+    await maybeSummarize(client, apiKey, p.pageId, text, m, models.low);
+    await maybeExtractCharacterStates(client, apiKey, p.bookId, p.pageId, text, m, models.low);
+  }
   return text;
 }
 
@@ -127,13 +145,14 @@ export async function revisePage(client: SupabaseClient, apiKey: string, p: Revi
 
   const m = meta("revise-prose", p);
   const text = await renderProse(apiKey, models.high, {
-    brief: b.brief, bible: b.bible?.text?.trim() || null, bookName: b.name,
+    brief: b.brief, bible: b.bible?.text?.trim() || null, voiceSample: b.bible?.voice_sample?.trim() || null, bookName: b.name,
     level: "page", mode: "revise", objective: (p.objective ?? "").trim(), beat: null, issues: p.issues, currentText,
     pageObjective: null, precedingText: null,
-    objectiveMap: ctx.objectiveMap, storySoFar: ctx.storySoFar, precedingProse: ctx.precedingProse, currentPageLabel: ctx.currentPageLabel,
+    objectiveMap: ctx.objectiveMap, storySoFar: ctx.storySoFar, precedingProse: ctx.precedingProse, currentPageLabel: ctx.currentPageLabel, openLoops: ctx.openLoops, characterStates: ctx.characterStates,
   }, m);
 
   await maybeSummarize(client, apiKey, p.pageId, text, m, models.low);
+  await maybeExtractCharacterStates(client, apiKey, p.bookId, p.pageId, text, m, models.low);
   return text;
 }
 
@@ -153,7 +172,7 @@ interface PageLite {
   page_index: number;
   page_type: string | null;
   title: string | null;
-  metadata: { objective?: string; summary?: string } | null;
+  metadata: { objective?: string; summary?: string; character_states?: CharacterState[] } | null;
 }
 
 export async function buildUnitContext(
@@ -161,7 +180,7 @@ export async function buildUnitContext(
   bookId: number,
   pageId: number | null,
   level: "paragraph" | "page"
-): Promise<{ objectiveMap: string; storySoFar: string | null; precedingProse: string | null; currentPageLabel: string | null }> {
+): Promise<{ objectiveMap: string; storySoFar: string | null; precedingProse: string | null; currentPageLabel: string | null; openLoops: string | null; characterStates: string | null }> {
   const { data: pages } = await client
     .from("pages")
     .select("id, page_index, page_type, title, metadata")
@@ -211,7 +230,75 @@ export async function buildUnitContext(
     }
   }
 
-  return { objectiveMap, storySoFar, precedingProse, currentPageLabel };
+  const openLoops = current ? await buildOpenLoops(client, bookId, list, current) : null;
+
+  // Character ledger: the latest full snapshot from the most recent prior page that carries one.
+  let characterStates: string | null = null;
+  if (level === "page" && current) {
+    const prior = list.filter((p) => p.page_index < current.page_index && (p.metadata?.character_states?.length ?? 0) > 0);
+    const latest = prior.at(-1)?.metadata?.character_states;
+    if (latest?.length) characterStates = formatCharacterStates(latest);
+  }
+
+  return { objectiveMap, storySoFar, precedingProse, currentPageLabel, openLoops, characterStates };
+}
+
+// The character ledger as a prompt block: stable arc poles in parens, then the changing state.
+export function formatCharacterStates(states: CharacterState[]): string {
+  const lines = states.map((c) => {
+    const arc = [c.want && `wants ${c.want}`, c.wound && `wound: ${c.wound}`].filter(Boolean).join("; ");
+    const now = [
+      c.knows?.length ? `knows ${c.knows.join("; ")}` : "",
+      c.feels ? `feels ${c.feels}` : "",
+      c.has?.length ? `has ${c.has.join("; ")}` : "",
+      c.believes ? `believes ${c.believes}` : "",
+    ].filter(Boolean).join(", ");
+    return `- ${c.name}${arc ? ` (${arc})` : ""}: ${now || "—"}`;
+  });
+  return `CHARACTER STATES (as of the previous page — keep each character consistent with what they currently know, feel, have and believe; do not reset them, and let what happens here move them):\n${lines.join("\n")}`;
+}
+
+// Promise/payoff ledger as page-level instruction: which threads to SEED, PAY OFF, or WITHHOLD on
+// this page. Derived from book_threads' page anchors + reading position (robust while a build is in
+// flight and statuses are still flipping) — the prose renderer needs to know what to plant vs. hold.
+async function buildOpenLoops(
+  client: SupabaseClient,
+  bookId: number,
+  list: PageLite[],
+  current: PageLite,
+): Promise<string | null> {
+  const { data: rows } = await client
+    .from("book_threads")
+    .select("name, description, setup_page_id, payoff_page_id, status")
+    .eq("book_id", bookId)
+    .neq("status", "closed");
+  const threads = (rows as Array<{ name: string; description: string | null; setup_page_id: number | null; payoff_page_id: number | null; status: string }> | null) ?? [];
+  if (threads.length === 0) return null;
+
+  const indexOf = (pid: number | null): number | null => {
+    if (pid == null) return null;
+    const p = list.find((x) => x.id === pid);
+    return p ? p.page_index : null;
+  };
+  const ci = current.page_index;
+
+  const lines: string[] = [];
+  for (const t of threads) {
+    const desc = t.description ? ` — ${t.description}` : "";
+    if (t.setup_page_id === current.id) {
+      lines.push(`- SEED "${t.name}"${desc}: plant this naturally; it pays off LATER, so do NOT resolve it here.`);
+    } else if (t.payoff_page_id === current.id) {
+      lines.push(`- PAY OFF "${t.name}"${desc}: deliver this promise here; make it feel earned.`);
+    } else {
+      const si = indexOf(t.setup_page_id);
+      const pi = indexOf(t.payoff_page_id);
+      // In the air: seeded at/before this page and not yet due to pay off after it.
+      if (si != null && si < ci && (pi == null || pi > ci)) {
+        lines.push(`- WITHHOLD "${t.name}"${desc}: already in play; keep it alive but do NOT resolve it here.`);
+      }
+    }
+  }
+  return lines.length ? `OPEN LOOPS (promises in play on this page — manage them deliberately):\n${lines.join("\n")}` : null;
 }
 
 export function tiptapToText(node: unknown): string {
@@ -270,6 +357,7 @@ function briefContext(brief: Brief | null): string {
 interface PromptArgs {
   brief: Brief | null;
   bible: string | null;
+  voiceSample: string | null;
   bookName: string;
   level: "paragraph" | "page";
   mode: "write" | "revise";
@@ -283,6 +371,8 @@ interface PromptArgs {
   storySoFar: string | null;
   precedingProse: string | null;
   currentPageLabel: string | null;
+  openLoops: string | null;
+  characterStates: string | null;
 }
 
 function formatIssues(issues: ReviseIssue[]): string {
@@ -297,10 +387,17 @@ function formatIssues(issues: ReviseIssue[]): string {
     .join("\n");
 }
 
+// A short blocklist of phrases that read as machine-generated; paired with the voice sample so the
+// renderer has both a target to imitate and tells to avoid (the biggest single "this is AI" signal).
+const VOICE_TELLS = `"a testament to", "in a world where", "little did they know", "sent shivers down", "couldn't help but", "a mix of … and …", "navigating the complexities of", and neat moral-of-the-story endings`;
+
 function stablePrefix(args: PromptArgs): string {
   return [
     `BOOK: ${args.bookName}`,
     `\nBRIEF (the voice contract):\n${briefContext(args.brief)}`,
+    args.voiceSample
+      ? `\nVOICE SAMPLE (write in THIS voice — match its rhythm, sentence shapes, diction and restraint; this exemplar is a stronger style anchor than any instruction):\n"""\n${args.voiceSample}\n"""\nAvoid AI-tell crutches: ${VOICE_TELLS}.`
+      : "",
     args.bible ? `\nBOOK BIBLE (established facts — characters, world, style; stay strictly consistent):\n${args.bible}` : "",
     args.objectiveMap ? `\nOUTLINE (the book's pages and their objectives, in order):\n${args.objectiveMap}` : "",
   ].filter(Boolean).join("\n");
@@ -317,6 +414,8 @@ function variablePart(args: PromptArgs): string {
     }
     const where = args.currentPageLabel ? ` ${args.currentPageLabel}` : "";
     if (args.objective) parts.push(`This page${where} is meant to achieve: ${args.objective}`);
+    if (args.characterStates) parts.push(args.characterStates);
+    if (args.openLoops) parts.push(args.openLoops);
     parts.push(`CURRENT PAGE PROSE (revise this in place):\n"""\n${args.currentText ?? ""}\n"""`);
     parts.push(`THE EDITOR'S NOTES TO ADDRESS ON THIS PAGE:\n${formatIssues(args.issues ?? [])}`);
     parts.push(`Revise the page to address every note above while preserving its strengths, the book's voice, and continuity with the rest of the book. Return the full revised page prose only.`);
@@ -329,6 +428,12 @@ function variablePart(args: PromptArgs): string {
   }
   if (args.precedingProse) {
     parts.push(`PRECEDING PROSE (the pages just before this one — for continuity of voice and facts ONLY; do not continue or finish its last sentence, and don't repeat it):\n"""\n${args.precedingProse}\n"""`);
+  }
+  if (args.characterStates && args.level === "page") {
+    parts.push(args.characterStates);
+  }
+  if (args.openLoops && args.level === "page") {
+    parts.push(args.openLoops);
   }
   if (args.level === "paragraph") {
     if (args.pageObjective) parts.push(`This paragraph sits on a page whose objective is: ${args.pageObjective}`);
@@ -402,4 +507,99 @@ async function persistSummary(client: SupabaseClient, pageId: number, summary: s
   const { data } = await client.from("pages").select("metadata").eq("id", pageId).maybeSingle();
   const metadata = { ...((data?.metadata as Record<string, unknown> | null) ?? {}), summary };
   await client.from("pages").update({ metadata }).eq("id", pageId);
+}
+
+// ── Character ledger (the state axis) ─────────────────────────────────────────
+// After a page's prose is written, stamp a FULL snapshot of every character's state onto the page
+// (pages.metadata.character_states), carrying the most recent prior snapshot forward and updating
+// whoever the new prose affected. The next page's prose context reads this (buildUnitContext) — so
+// characters accrete what they know/feel/have/believe instead of resetting. Best-effort: a failure
+// here only weakens continuity, it never fails the write.
+async function maybeExtractCharacterStates(
+  client: SupabaseClient,
+  apiKey: string,
+  bookId: number,
+  pageId: number,
+  prose: string,
+  m: CallMeta,
+  model?: string,
+) {
+  try {
+    const prior = await priorCharacterStates(client, bookId, pageId);
+    const states = await extractCharacterStates(apiKey, prose, prior, m, model);
+    if (states.length) {
+      const { data } = await client.from("pages").select("metadata").eq("id", pageId).maybeSingle();
+      const metadata = { ...((data?.metadata as Record<string, unknown> | null) ?? {}), character_states: states };
+      await client.from("pages").update({ metadata }).eq("id", pageId);
+    }
+  } catch (e) {
+    console.error("generate-unit-core: character-state extraction failed (non-fatal):", e);
+  }
+}
+
+// The latest full character snapshot from a page strictly before this one (most recent wins).
+async function priorCharacterStates(client: SupabaseClient, bookId: number, pageId: number): Promise<CharacterState[]> {
+  const { data: rows } = await client
+    .from("pages").select("id, page_index, metadata")
+    .eq("book_id", bookId).eq("archived", false).order("page_index", { ascending: true });
+  const list = (rows as PageLite[] | null) ?? [];
+  const cur = list.find((p) => p.id === pageId);
+  if (!cur) return [];
+  const prior = list.filter((p) => p.page_index < cur.page_index && (p.metadata?.character_states?.length ?? 0) > 0).at(-1);
+  return prior?.metadata?.character_states ?? [];
+}
+
+async function extractCharacterStates(apiKey: string, prose: string, prior: CharacterState[], meta: CallMeta, model?: string): Promise<CharacterState[]> {
+  const priorBlock = prior.length ? JSON.stringify(prior) : "(none yet — this is the first page with characters)";
+  const data = await callClaudeApi(apiKey, {
+    model: model ?? "claude-haiku-4-5-20251001",
+    max_tokens: 1500,
+    system: [{
+      type: "text",
+      text: `You track character state across a story for continuity. Given the PRIOR character states and a NEW page of prose, output the UPDATED state of EVERY character.
+Rules: carry forward unchanged characters exactly; update knows/feels/has/believes for any the page affected; keep want and wound stable once set; add a character only if they clearly matter going forward. Be terse; omit empty fields.
+Output JSON ONLY (no prose, no fences): {"characters":[{"name":"","want":"","wound":"","believes":"","knows":[""],"feels":"","has":[""]}]}`,
+      cache_control: { type: "ephemeral" },
+    }],
+    messages: [{ role: "user", content: `PRIOR CHARACTER STATES:\n${priorBlock}\n\nNEW PAGE PROSE:\n${prose.slice(0, 12000)}\n\nOutput the updated states for every character. JSON only.` }],
+  }, { ...meta, fn: "extract-character-states" });
+
+  const text = (data.content ?? [])
+    .filter((b: { type: string }) => b.type === "text")
+    .map((b: { text: string }) => b.text)
+    .join("")
+    .trim();
+  return parseCharacterStates(text);
+}
+
+function parseCharacterStates(text: string): CharacterState[] {
+  let raw = text.trim();
+  const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fence) raw = fence[1].trim();
+  else {
+    const first = raw.indexOf("{");
+    const last = raw.lastIndexOf("}");
+    if (first !== -1 && last > first) raw = raw.slice(first, last + 1);
+  }
+  let parsed: { characters?: unknown };
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return []; // best-effort: a parse miss just skips this page's ledger update
+  }
+  if (!Array.isArray(parsed.characters)) return [];
+  const str = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v.trim() : undefined);
+  const arr = (v: unknown): string[] | undefined => {
+    if (!Array.isArray(v)) return undefined;
+    const out = v.map((x) => String(x ?? "").trim()).filter(Boolean);
+    return out.length ? out : undefined;
+  };
+  return (parsed.characters as Array<Record<string, unknown>>)
+    .map((c) => ({
+      name: str(c.name) ?? "",
+      want: str(c.want), wound: str(c.wound), believes: str(c.believes),
+      knows: arr(c.knows), feels: str(c.feels), has: arr(c.has),
+    }))
+    .filter((c) => c.name)
+    .slice(0, 24); // guard against a runaway roster
 }
