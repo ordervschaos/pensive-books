@@ -7,6 +7,7 @@ import { WriteNextPage } from "./WriteNextPage";
 import { StalePanel } from "./StalePanel";
 import { AIActionRow } from "./AIActionRow";
 import { BookEvaluationSection } from "./BookEvaluationSection";
+import { AutoRevise } from "./AutoRevise";
 import { ReviseWithAI, type RevisionPrefill } from "./ReviseWithAI";
 import type { EditorJSON } from "@/types/editor";
 
@@ -114,6 +115,9 @@ export function GraphActions({ bookId, briefSet, pages, isPublic, onEditBrief, o
               bookId={bookId}
               onRevise={(evaluation, instruction) => setRevisionPrefill({ evaluation, instruction })}
             />
+            {/* The closed loop: read → auto-fix critical/major page issues → re-read, one pass. The
+                manual read above stays the human gate; this is the accelerator. */}
+            <AutoRevise bookId={bookId} onRevised={onChanged} />
           </div>
         )}
 

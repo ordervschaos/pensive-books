@@ -23,6 +23,7 @@ import { Brief } from "@/lib/brief";
 import { BookBriefSection } from "@/components/book/BookBriefSection";
 import { ResolutionMap } from "@/components/book/ResolutionMap";
 import { GraphActions } from "@/components/book/GraphActions";
+import { GuidedBuild } from "@/components/book/GuidedBuild";
 import { ThreadsSection } from "@/components/book/ThreadsSection";
 import { BookBibleSection } from "@/components/book/BookBibleSection";
 import { getPageStatus } from "./components/pageList/pageUtils";
@@ -63,6 +64,8 @@ interface BookRecord {
   content_tags?: string[] | null;
   brief?: Brief | null;
   bible?: { text: string } | null;
+  /** Guided-build approval ledger: each step key → ISO timestamp the author approved it. */
+  journey?: Partial<Record<"brief" | "spine" | "outline" | "voice" | "beats" | "draft", string>> | null;
 }
 
 const BookDetails = () => {
@@ -119,6 +122,13 @@ const BookDetails = () => {
     setActiveTab(tab);
     localStorage.setItem(tabKey, tab);
   };
+
+  // Guided build: new/early books open straight into the blocked ladder instead of the tabbed
+  // workspace. The author can leave it for the workspace at any time (guided-only lock); that choice
+  // is remembered per book so we don't yank them back into the flow on every visit.
+  const guidedExitKey = `book-guided-exit:${bookSlug}`;
+  const [guidedExited, setGuidedExited] = useState<boolean>(() => localStorage.getItem(guidedExitKey) === "1");
+  const exitGuided = () => { setGuidedExited(true); localStorage.setItem(guidedExitKey, "1"); };
 
   const fetchBookmarkedPage = useCallback(async (session: Session | null) => {
     try {
@@ -476,6 +486,11 @@ const BookDetails = () => {
   // Pages with an objective but no prose yet are "ready to write" — surfaced as a dot on the AI tab.
   const plannedCount = pages.filter((p) => getPageStatus(p as any) === "objective").length;
 
+  // The guided ladder is the default surface until its final step is approved (books.journey.draft)
+  // or the author opts out. Only for editors.
+  const journey = (book.journey as Partial<Record<string, string>> | null) ?? {};
+  const showGuided = canEdit && !guidedExited && !journey.draft;
+
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Helmet>
@@ -558,8 +573,19 @@ const BookDetails = () => {
 
             </div>
 
-            {/* Work area — Brief / Manuscript / Threads / Bible / AI, each on its own tab */}
-            {canEdit ? (
+            {/* Work area — Brief / Manuscript / Threads / Bible / AI, each on its own tab.
+                Early-stage books open into the focused guided ladder instead (see showGuided). */}
+            {canEdit && showGuided ? (
+              <GuidedBuild
+                bookId={getNumericId(bookSlug)}
+                briefSet={briefSet}
+                pages={pages as any}
+                journey={journey as any}
+                onEditBrief={() => { exitGuided(); switchTab("brief"); }}
+                onChanged={fetchBookDetails}
+                onExit={exitGuided}
+              />
+            ) : canEdit ? (
               <div className="space-y-6">
                 {/* Tabs: Manuscript leads the work; Brief holds the foundation AI tools plan from */}
                 <div
@@ -711,6 +737,16 @@ const BookDetails = () => {
                     BookJourney is kept in the codebase for reference; its functionality lives here now. */}
                 {activeTab === "ai" && (
                   <div className="space-y-6">
+                    {/* Left the guided ladder but not finished it? Offer the way back in. */}
+                    {guidedExited && !journey.draft && (
+                      <button
+                        type="button"
+                        onClick={() => { localStorage.removeItem(guidedExitKey); setGuidedExited(false); }}
+                        className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground"
+                      >
+                        ← Resume the guided build
+                      </button>
+                    )}
                     <ResolutionMap bookId={getNumericId(bookSlug)} refreshKey={pages.length} onChanged={fetchBookDetails} />
                     <GraphActions
                       bookId={getNumericId(bookSlug)}

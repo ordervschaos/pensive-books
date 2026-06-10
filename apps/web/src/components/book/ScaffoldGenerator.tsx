@@ -17,6 +17,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useLatestTaskRow, type TaskRow } from "@/hooks/useLatestTaskRow";
 import { BRIDGE, bridgeFetch } from "@/lib/bridge";
+import { stampEdge } from "@/lib/planProvenance";
 
 interface ScaffoldPage {
   pageType: "section" | "text";
@@ -35,6 +36,9 @@ interface Scaffold {
   structure: string;
   pages: ScaffoldPage[];
   threads?: ScaffoldThread[];
+  // The self-critique the architect produced before revising the outline — shown to the author so the
+  // plan-pressure is visible (what the editor pass caught).
+  critique?: string;
 }
 
 interface ScaffoldGeneratorProps {
@@ -152,6 +156,10 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
       // path that produced runaway page counts). A partial failure leaves a few pages to delete —
       // far better than a duplicated scaffold.
       await supabase.from("book_generations").update({ status: "applied" }).eq("id", row.id);
+      // The spine each objective was derived from — used to stamp the spine→objective edge (C1 fix) so
+      // an objective goes "stale" if the spine is later rewritten.
+      const { data: bookRow } = await supabase.from("books").select("spine").eq("id", bookId).maybeSingle();
+      const spineText = ((bookRow?.spine as { text?: string } | null)?.text ?? "").trim();
       // Create each page via the canonical RPC (handles page_index + valid defaults), then set its
       // title / type / objective. Track the created id at each page index so the planned threads can
       // be anchored to real page ids afterward.
@@ -168,7 +176,7 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
           title: page.title,
           page_type: page.pageType,
         };
-        if (page.objective) update.metadata = { objective: page.objective };
+        if (page.objective) update.metadata = stampEdge({ objective: page.objective }, "spine_objective", spineText, page.objective);
         const { error: upErr } = await supabase
           .from("pages")
           .update(update)
@@ -228,6 +236,15 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
               then create. Creating sets each page's objective and turns on the objectives UI.
             </DialogDescription>
           </DialogHeader>
+
+          {row?.result?.critique?.trim() && (
+            <details className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs">
+              <summary className="cursor-pointer select-none font-medium text-muted-foreground">
+                What the editor pass caught (the outline was revised to address this)
+              </summary>
+              <pre className="mt-2 whitespace-pre-wrap pv-serif italic text-[hsl(var(--pv-text-faint))]">{row.result.critique.trim()}</pre>
+            </details>
+          )}
 
           <div className="overflow-y-auto flex-1 -mx-2 px-2 space-y-2 py-1">
             {draft?.pages.map((p, i) => (

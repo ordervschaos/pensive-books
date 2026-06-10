@@ -1,12 +1,14 @@
 import { useState, type ReactNode } from "react";
 import { Lock, Check, BookOpen, Send } from "lucide-react";
 import { ScaffoldGenerator } from "./ScaffoldGenerator";
+import { VoiceGenerator } from "./VoiceGenerator";
 import { WriteAllPages } from "./WriteAllPages";
 import { WriteNextPage } from "./WriteNextPage";
 import { StalePanel } from "./StalePanel";
 import { AIActionRow } from "./AIActionRow";
 import { useAdmin } from "@/hooks/use-admin";
 import { BookEvaluationSection, type EvalResult } from "./BookEvaluationSection";
+import { AutoRevise } from "./AutoRevise";
 import { ReviseWithAI, type RevisionPrefill } from "./ReviseWithAI";
 import type { EditorJSON } from "@/types/editor";
 
@@ -149,6 +151,7 @@ export function BookJourney({
 }: BookJourneyProps) {
   const { isAdmin } = useAdmin();
   const [hasRead, setHasRead] = useState(false);
+  const [hasVoice, setHasVoice] = useState(false);
 
   const counts = { blank: 0, objective: 0, written: 0 };
   for (const p of pages) {
@@ -161,7 +164,7 @@ export function BookJourney({
   const hasWritten = counts.written > 0;
   const allWritten = hasWritten && counts.objective === 0;
 
-  const TOTAL = 7;
+  const TOTAL = 8;
 
   return (
     <section className="overflow-hidden rounded-2xl border border-border bg-[hsl(var(--pv-surface-2))]/40">
@@ -271,11 +274,27 @@ export function BookJourney({
           )}
         </StepRow>
 
-        {/* 4 — Write the pages. The default is incremental (WriteNextPage): write one page, read it,
+        {/* 4 — Find the voice. The single biggest lever against generic, "this is AI" prose: pick a
+            voice exemplar BEFORE writing, so every render is anchored to it. Needs only the brief. */}
+        <StepRow
+          index={3}
+          total={TOTAL}
+          status={!briefSet ? "locked" : hasVoice ? "done" : "actionable"}
+          title="Find the voice"
+          caption="Pick how the book sounds from three candidate samples — it anchors every page the AI writes."
+        >
+          {!briefSet ? (
+            <LockedNote reason="Set your brief first." />
+          ) : (
+            <VoiceGenerator bookId={bookId} onStatusChange={setHasVoice} onChosen={onChanged} />
+          )}
+        </StepRow>
+
+        {/* 5 — Write the pages. The default is incremental (WriteNextPage): write one page, read it,
             write the next — an attended loop that can't run away. The book-wide cascade
             (WriteAllPages) is the unbounded accelerator, gated to admins; non-admins don't see it. */}
         <StepRow
-          index={3}
+          index={4}
           total={TOTAL}
           status={!hasScaffold ? "locked" : allWritten ? "done" : "actionable"}
           title="Write the pages"
@@ -299,9 +318,9 @@ export function BookJourney({
           )}
         </StepRow>
 
-        {/* 5 — Editor's read. Locked until there's prose to read. */}
+        {/* 6 — Editor's read. Locked until there's prose to read. */}
         <StepRow
-          index={4}
+          index={5}
           total={TOTAL}
           status={!hasWritten ? "locked" : hasRead ? "done" : "actionable"}
           title="Get an editor's read"
@@ -310,18 +329,23 @@ export function BookJourney({
           {!hasWritten ? (
             <LockedNote reason="Write some pages first." />
           ) : (
-            <BookEvaluationSection
-              bookId={bookId}
-              onStatusChange={setHasRead}
-              onRevise={(evaluation, instruction) => onRevisePrefill({ evaluation, instruction })}
-            />
+            <div className="space-y-3">
+              <BookEvaluationSection
+                bookId={bookId}
+                onStatusChange={setHasRead}
+                onRevise={(evaluation, instruction) => onRevisePrefill({ evaluation, instruction })}
+              />
+              {/* The closed loop: let the AI read, fix critical/major page issues, and re-read on its
+                  own — one pass. The manual read above stays the human gate; this is the accelerator. */}
+              <AutoRevise bookId={bookId} onRevised={onChanged} />
+            </div>
           )}
         </StepRow>
 
-        {/* 6 — Revise. Works on the objective tree, so it's available once an OUTLINE exists — you
+        {/* 7 — Revise. Works on the objective tree, so it's available once an OUTLINE exists — you
             can re-plan the structure before writing a word, or rework the prose after. */}
         <StepRow
-          index={5}
+          index={6}
           total={TOTAL}
           status={!hasScaffold ? "locked" : "actionable"}
           title="Revise with AI"
@@ -339,9 +363,9 @@ export function BookJourney({
           )}
         </StepRow>
 
-        {/* 7 — Publish. Locked until there's prose; nothing beyond that is required. */}
+        {/* 8 — Publish. Locked until there's prose; nothing beyond that is required. */}
         <StepRow
-          index={6}
+          index={7}
           total={TOTAL}
           status={!hasWritten ? "locked" : isPublic ? "done" : "actionable"}
           title="Publish"
