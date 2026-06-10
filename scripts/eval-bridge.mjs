@@ -205,6 +205,37 @@ function tiptapToText(node) {
   return out;
 }
 
+// buildDoc — port of supabase/functions/_shared/build-doc.ts: prose (with inline *italic*/**bold**)
+// → a TipTap doc (leading h1 title + paragraphs). Used by the auto-revise loop to write revised pages
+// (in dev the bridge writes pages itself, since there's no per-page client in the loop).
+function inlineMarkdownToNodes(text) {
+  const nodes = [];
+  const re = /(\*\*|__)(.+?)\1|(\*|_)(.+?)\3/g;
+  let last = 0, m;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) nodes.push({ type: "text", text: text.slice(last, m.index) });
+    if (m[1]) nodes.push({ type: "text", text: m[2], marks: [{ type: "bold" }] });
+    else nodes.push({ type: "text", text: m[4], marks: [{ type: "italic" }] });
+    last = re.lastIndex;
+  }
+  if (last < text.length) nodes.push({ type: "text", text: text.slice(last) });
+  return nodes.filter((n) => n.text.length > 0);
+}
+
+function buildDoc(title, prose) {
+  const paras = prose.split(/\n{2,}/).map((p) => p.replace(/\s+/g, " ").trim()).filter(Boolean)
+    .map((p) => { const content = inlineMarkdownToNodes(p); return content.length ? { type: "paragraph", content } : { type: "paragraph" }; });
+  return { type: "doc", content: [{ type: "heading", attrs: { level: 1 }, content: title ? [{ type: "text", text: title }] : [] }, ...paras] };
+}
+
+async function writePageContent(pageId, title, text) {
+  await fetch(`${SUPABASE_URL}/rest/v1/pages?id=eq.${pageId}`, {
+    method: "PATCH",
+    headers: { ...sbHeaders, "content-type": "application/json", Prefer: "return=minimal" },
+    body: JSON.stringify({ content: buildDoc(title, text) }),
+  });
+}
+
 function readBody(req) {
   return new Promise((resolve) => {
     let data = "";
@@ -488,6 +519,144 @@ Draft the bible. Markdown only.`;
   const text = out.text.trim();
   if (!text) return { error: "Claude returned no text content" };
   return { text };
+}
+
+// ── /generate-voice ───────────────────────────────────────────────────────────
+// Mirrors supabase/functions/generate-voice: draft 3 candidate voice samples for the picker.
+const VOICE_INSTRUCTIONS = `You are a literary stylist. From a book's brief, spine, and bible, write THREE distinct candidate VOICE SAMPLES — short passages of finished prose that each commit to a different, specific take on how this book could sound. The author will pick one to anchor the whole book's voice.
+
+Each sample:
+- 300–450 words of actual PROSE from somewhere in the book (an opening, a charged moment) — not a description of the voice, the voice itself.
+- A DISTINCT register from the other two (e.g. spare vs. lush; wry vs. earnest; close-third vs. first-person) so the choice is real.
+- True to the genre, audience, and tone in the brief; consistent with any bible facts.
+- Voice-forward: rhythm, diction, sentence shapes, restraint. Show range within a committed style.
+- NO clichés or AI tells ("a testament to", "in a world where", "little did they know", "sent shivers down", "couldn't help but", tidy moral endings).
+
+Output using XML tags ONLY (no other text), exactly:
+<samples>
+<sample>PASSAGE 1</sample>
+<sample>PASSAGE 2</sample>
+<sample>PASSAGE 3</sample>
+</samples>`;
+
+async function runVoice(bookId) {
+  const book = await fetchBook(bookId);
+  if (!book) return { error: "Book not found" };
+  const spine = book.spine?.text?.trim() || null;
+  const bible = book.bible?.text?.trim() || null;
+
+  const prompt = `${VOICE_INSTRUCTIONS}
+
+BOOK: ${book.name}${spine ? `\n\nSPINE (the throughline):\n${spine}` : ""}
+
+BRIEF:
+${briefContext(book.brief)}${bible ? `\n\nBIBLE (facts to stay consistent with):\n${bible}` : ""}
+
+Write the three voice samples. XML tags only.`;
+
+  const out = await runClaude(prompt, true, { fn: "generate-voice", bookId }, { noTools: true });
+  if (out.error) return out;
+
+  // Primary: XML tags (prose can contain quotes without escaping issues). JSON fallback for safety.
+  const text = out.text.trim();
+  const xml = [...text.matchAll(/<sample>([\s\S]*?)<\/sample>/g)].map((m) => m[1].trim()).filter(Boolean);
+  if (xml.length > 0) return { samples: xml.slice(0, 3) };
+  try {
+    let raw = text;
+    const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (fence) raw = fence[1].trim();
+    else { const a = raw.indexOf("{"), b = raw.lastIndexOf("}"); if (a !== -1 && b > a) raw = raw.slice(a, b + 1); }
+    const parsed = JSON.parse(raw);
+    const samples = Array.isArray(parsed.samples) ? parsed.samples.map((s) => String(s ?? "").trim()).filter(Boolean).slice(0, 3) : [];
+    if (samples.length === 0) throw new Error("no samples");
+    return { samples };
+  } catch (e) {
+    return { error: `Could not parse voice samples: ${e.message}` };
+  }
+}
+
+// ── /auto-revise ──────────────────────────────────────────────────────────────
+// Mirrors supabase/functions/auto-revise: the closed loop eval → revise critical/major pages →
+// re-eval. The bridge runs it LINEARLY (no self-chain; no wall-clock cap) and writes the SAME
+// book_generations row (kind 'auto_revise') so the AutoRevise UI watches it identically.
+const AR_MAX_PAGES = 30, AR_MAX_ISSUES = 8;
+
+// Run one editor's read end to end: insert a pending book_evaluations row, run the local eval, flip
+// the row to done/error. Returns { result, evalId } or { error }.
+async function runOneEvaluation(bookId) {
+  const evalId = await startEvaluation(bookId);
+  const out = await runEvaluation(bookId);
+  if (out.error) {
+    if (evalId) await finishEvaluation(evalId, { status: "error", error: out.error.slice(0, 1000) });
+    return { error: out.error };
+  }
+  if (evalId) await finishEvaluation(evalId, { status: "done", result: out.result });
+  else await persistEvaluation(bookId, out.result);
+  return { result: out.result, evalId };
+}
+
+// Group the eval's CRITICAL (high) + MAJOR (medium) page-anchored issues into a per-page queue, in
+// reading order. Whole-book issues (no page_ref) are left for the human read. Mirrors prod buildQueue.
+function buildAutoReviseQueue(result, pages) {
+  const byPage = new Map();
+  for (const s of result?.sections ?? []) {
+    for (const raw of s.issues ?? []) {
+      if (raw.severity !== "high" && raw.severity !== "medium") continue;
+      const pid = raw.page_ref?.id;
+      if (typeof pid !== "number") continue;
+      const note = String(raw.note ?? "").trim();
+      if (!note) continue;
+      const issue = { section: s.id, severity: raw.severity === "high" ? "critical" : "major", note, evidence: raw.evidence, suggestion: raw.suggestion };
+      const list = byPage.get(pid) ?? [];
+      if (list.length < AR_MAX_ISSUES) { list.push(issue); byPage.set(pid, list); }
+    }
+  }
+  const queue = [];
+  for (const p of pages) {
+    if (p.page_type !== "text") continue;
+    const issues = byPage.get(p.id);
+    if (issues?.length) queue.push({ pageId: p.id, title: p.title, objective: p.metadata?.objective, issues });
+    if (queue.length >= AR_MAX_PAGES) break;
+  }
+  return queue;
+}
+
+async function runAutoReviseBridge(bookId) {
+  const row = await insertGeneration(bookId, { kind: "auto_revise", scope: "book", input: {}, progress: { phase: "eval", label: "Evaluating the draft", revised: 0, failures: 0 } });
+  if (!row) return { error: "could not create generation row" };
+  try {
+    // Phase 1 — eval.
+    const first = await runOneEvaluation(bookId);
+    if (first.error) throw new Error(first.error);
+    const pages = await fetchPages(bookId);
+    const queue = buildAutoReviseQueue(first.result, pages);
+    if (queue.length === 0) {
+      await updateGeneration(row.id, { status: "done", progress: { phase: "done", evalId: first.evalId, total: 0, revised: 0, label: "Done — no critical or major page-level issues to fix" } });
+      return { generation: row };
+    }
+    // Phase 2 — revise each queued page, writing the new prose ourselves.
+    await updateGeneration(row.id, { progress: { phase: "revise", evalId: first.evalId, total: queue.length, revised: 0, failures: 0, label: `Revising 0/${queue.length}` } });
+    let revised = 0, failures = 0;
+    for (const item of queue) {
+      try {
+        const unit = await runUnit({ bookId, pageId: item.pageId, level: "page", mode: "revise", objective: item.objective, issues: item.issues });
+        if (unit.error) throw new Error(unit.error);
+        if (unit.text) { await writePageContent(item.pageId, item.title, unit.text); revised++; }
+      } catch (e) {
+        failures++;
+        console.error(`bridge auto-revise: page ${item.pageId} failed: ${e.message}`);
+      }
+      await updateGeneration(row.id, { progress: { phase: "revise", evalId: first.evalId, total: queue.length, revised, failures, label: `Revising ${revised}/${queue.length}` } });
+    }
+    // Phase 3 — re-eval so the result is comparable.
+    await updateGeneration(row.id, { progress: { phase: "reeval", total: queue.length, revised, failures, label: "Re-reading the revised draft" } });
+    const second = await runOneEvaluation(bookId);
+    await updateGeneration(row.id, { status: "done", progress: { phase: "done", revised, failures, reEvalId: second.evalId, label: `Done — revised ${revised} page${revised === 1 ? "" : "s"}; re-read ready` } });
+    return { generation: row };
+  } catch (e) {
+    await updateGeneration(row.id, { status: "error", error: String(e?.message ?? e).slice(0, 1000) });
+    return { error: String(e?.message ?? e) };
+  }
 }
 
 // ── /revise-outline ──────────────────────────────────────────────────────────
@@ -1241,6 +1410,33 @@ async function route(req, res) {
       if (scaffold.error) throw new Error(scaffold.error);
       return { status: "ready", result: scaffold };
     });
+    if (out.error) return json(res, 500, { error: out.error });
+    return json(res, 200, { status: "running", generation: out.generation });
+  }
+
+  const voiceMatch = url.match(/^\/generate-voice\/(\d+)\/?$/);
+  if (voiceMatch) {
+    if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
+    const bookId = Number(voiceMatch[1]);
+    if (!(await authorize(req, res, bookId))) return;
+    console.log(`Drafting voice samples for book ${bookId}…`);
+    // Same book_generations row the edge fn writes (insert running → ready), so the picker watches it.
+    const out = await runGeneration(bookId, { kind: "voice", scope: "book", input: {} }, async () => {
+      const voice = await runVoice(bookId);
+      if (voice.error) throw new Error(voice.error);
+      return { status: "ready", result: { samples: voice.samples } };
+    });
+    if (out.error) return json(res, 500, { error: out.error });
+    return json(res, 200, { status: "running", generation: out.generation });
+  }
+
+  const autoReviseMatch = url.match(/^\/auto-revise\/(\d+)\/?$/);
+  if (autoReviseMatch) {
+    if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
+    const bookId = Number(autoReviseMatch[1]);
+    if (!(await authorize(req, res, bookId))) return;
+    console.log(`Auto-revising book ${bookId} (eval → revise → re-eval)…`);
+    const out = await runAutoReviseBridge(bookId);
     if (out.error) return json(res, 500, { error: out.error });
     return json(res, 200, { status: "running", generation: out.generation });
   }
