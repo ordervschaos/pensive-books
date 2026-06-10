@@ -16,7 +16,6 @@ import { jsonToText, cumulativeWordOffsets } from "@/utils/tiptapHelpers";
 import { CommitDialog } from "./components/CommitDialog";
 import { PublishingDialog } from "@/components/book/PublishingDialog";
 import { VersionControlButton } from "./components/VersionControlButton";
-import { AdminTagPanel } from "@/components/book/AdminTagPanel";
 import { AdminViewBanner } from "@/components/book/AdminViewBanner";
 import { MatureContentGate } from "@/components/book/MatureContentGate";
 import { Brief } from "@/lib/brief";
@@ -28,7 +27,6 @@ import { BookBibleSection } from "@/components/book/BookBibleSection";
 import { getPageStatus } from "./components/pageList/pageUtils";
 import { computeCompletion } from "@/lib/brief";
 import { cn } from "@/lib/utils";
-import { useAdmin } from "@/hooks/use-admin";
 import { useMatureContent } from "@/hooks/use-mature-content";
 import { MessageSquare } from "lucide-react";
 import type { Session } from "@supabase/supabase-js";
@@ -87,7 +85,6 @@ const BookDetails = () => {
     if (permissionsLoading || hasAccess || !bookSlug) return;
     navigate(`/library/books/${bookSlug}`, { replace: true });
   }, [permissionsLoading, hasAccess, bookSlug, navigate]);
-  const { isAdmin } = useAdmin();
   const { enabled: matureEnabled, loading: matureLoading } = useMatureContent();
   const [matureUnlocked, setMatureUnlocked] = useState(false);
 
@@ -748,15 +745,6 @@ const BookDetails = () => {
                   wordCount={manuscriptWordCount}
                 />
               </div>
-            )}
-
-            {/* Admin content tagging */}
-            {isAdmin && (
-              <AdminTagPanel
-                bookId={getNumericId(bookSlug)}
-                initialTags={book.content_tags ?? []}
-                onTagsChange={(tags) => setBook((b) => b ? { ...b, content_tags: tags } : b)}
-              />
             )}
 
             {/* Archived pages — subtle link at the bottom, only for editors */}
