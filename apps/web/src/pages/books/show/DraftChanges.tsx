@@ -7,19 +7,30 @@
 
 import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { VersionService } from "@/services/VersionService";
 import type { FileStatus } from "@/services/DiffService";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageDiffViewer } from "@/components/book/PageDiffViewer";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   ArrowLeft,
   FileEdit,
   FilePlus,
   FileX,
   ChevronRight,
-  ChevronDown
+  ChevronDown,
+  RotateCcw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
@@ -61,8 +72,11 @@ const getStatusBadge = (status: FileStatus) => {
 export default function DraftChanges() {
   const { bookSlug } = useParams();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [selectedFile, setSelectedFile] = useState<number | null>(null);
   const [expandedFiles, setExpandedFiles] = useState<Set<number>>(new Set());
+  const [revertTarget, setRevertTarget] = useState<{ pageId: number; title: string } | null>(null);
+  const [reverting, setReverting] = useState(false);
 
   // Extract numeric ID from slug
   const getNumericId = (param: string | undefined) => {
@@ -95,6 +109,25 @@ export default function DraftChanges() {
     },
     enabled: bookId > 0,
   });
+
+  const handleRevert = async () => {
+    if (!revertTarget) return;
+    setReverting(true);
+    try {
+      await VersionService.revertPage(bookId, revertTarget.pageId);
+      if (selectedFile === revertTarget.pageId) setSelectedFile(null);
+      setExpandedFiles((prev) => {
+        const next = new Set(prev);
+        next.delete(revertTarget.pageId);
+        return next;
+      });
+      queryClient.invalidateQueries({ queryKey: ["draft-changes", bookId] });
+      queryClient.invalidateQueries({ queryKey: ["uncommitted-changes", bookId] });
+    } finally {
+      setReverting(false);
+      setRevertTarget(null);
+    }
+  };
 
   const toggleFile = (pageId: number) => {
     const newExpanded = new Set(expandedFiles);
@@ -154,7 +187,7 @@ export default function DraftChanges() {
                   <div
                     key={page.pageId}
                     className={cn(
-                      "flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer transition-colors",
+                      "group flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer transition-colors",
                       "hover:bg-accent/50",
                       selectedFile === page.pageId && "bg-accent"
                     )}
@@ -168,6 +201,18 @@ export default function DraftChanges() {
                     {getStatusBadge(page.status)}
                     {getStatusIcon(page.status)}
                     <span className="text-sm truncate flex-1">{page.title}</span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 opacity-0 group-hover:opacity-100 flex-shrink-0 text-muted-foreground hover:text-destructive"
+                      title="Discard changes"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setRevertTarget({ pageId: page.pageId, title: page.title });
+                      }}
+                    >
+                      <RotateCcw className="h-3 w-3" />
+                    </Button>
                   </div>
                 ))}
               </div>
@@ -227,6 +272,26 @@ export default function DraftChanges() {
           </div>
         </div>
       </div>
+      <AlertDialog open={!!revertTarget} onOpenChange={(open) => { if (!open) setRevertTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discard changes to "{revertTarget?.title}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will restore the page to its last committed state. Uncommitted edits will be lost.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={reverting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={reverting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={handleRevert}
+            >
+              {reverting ? "Discarding…" : "Discard changes"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

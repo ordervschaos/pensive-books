@@ -315,6 +315,22 @@ export class VersionService {
   }
 
   /**
+   * Reverts a single page to its last committed state.
+   * If the page was added since the last commit, it is archived (discarded).
+   */
+  static async revertPage(bookId: number, pageId: number): Promise<void> {
+    const { error } = await supabase.rpc("revert_page", {
+      p_book_id: bookId,
+      p_page_id: pageId,
+    });
+
+    if (error) {
+      console.error("Error reverting page:", error);
+      throw new Error(`Failed to revert page: ${error.message}`);
+    }
+  }
+
+  /**
    * Rolls back workspace to a specific version
    * Restores all pages to the state they were in at that version
    * Creates a new commit documenting the rollback
