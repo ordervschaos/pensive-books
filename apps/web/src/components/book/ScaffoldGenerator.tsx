@@ -5,14 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { AIActionRow } from "./AIActionRow";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useLatestTaskRow, type TaskRow } from "@/hooks/useLatestTaskRow";
@@ -78,7 +70,6 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
 
   const generating = row?.status === "pending" || row?.status === "running";
   const proposal = row?.status === "ready" ? row.result : null;
-  const open = !!proposal && !creating ? true : creating; // dialog visible while reviewing or creating
 
   // Editable copy of the proposal — the author revises titles/objectives and removes pages HERE,
   // before any pages are created (the dialog was previously a read-only preview). Seeded per row id,
@@ -88,6 +79,8 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
     const p = row?.status === "ready" ? row.result : null;
     setDraft(p ? { structure: p.structure, pages: p.pages.map((x) => ({ ...x })), threads: (p.threads ?? []).map((t) => ({ ...t })) } : null);
   }, [row?.id, row?.status]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const showReview = (!!proposal || creating) && !!draft;
 
   const updatePage = (i: number, patch: Partial<ScaffoldPage>) =>
     setDraft((d) => (d ? { ...d, pages: d.pages.map((p, idx) => (idx === i ? { ...p, ...patch } : p)) } : d));
@@ -229,16 +222,16 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
         <p className="px-5 pt-1 pv-serif text-[13px] italic text-red-600 dark:text-red-400">{row.error}</p>
       )}
 
-      <Dialog open={open} onOpenChange={(v) => !creating && !v && void dismiss()}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
-          <DialogHeader>
-            <DialogTitle>Review &amp; edit the outline</DialogTitle>
-            <DialogDescription>
+      {showReview && (
+        <div className="mt-3 rounded-lg border border-border bg-card space-y-3 p-4">
+          <div>
+            <p className="text-sm font-medium">Review &amp; edit the outline</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
               {draft?.structure ? `Structure: ${draft.structure}. ` : ""}
               {draft?.pages.length ?? 0} pages. Edit any title or objective, remove pages you don't want,
               then create. Creating sets each page's objective and turns on the objectives UI.
-            </DialogDescription>
-          </DialogHeader>
+            </p>
+          </div>
 
           {row?.result?.critique?.trim() && (
             <details className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs">
@@ -249,7 +242,7 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
             </details>
           )}
 
-          <div className="overflow-y-auto flex-1 -mx-2 px-2 space-y-2 py-1">
+          <div className="space-y-2">
             {draft?.pages.map((p, i) => (
               <div
                 key={i}
@@ -286,15 +279,15 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
             ))}
           </div>
 
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => void dismiss()} disabled={creating}>Cancel</Button>
-            <Button onClick={create} disabled={creating || (draft?.pages.length ?? 0) === 0}>
+          <div className="flex justify-end gap-2 pt-1">
+            <Button variant="ghost" size="sm" onClick={() => void dismiss()} disabled={creating}>Cancel</Button>
+            <Button size="sm" onClick={create} disabled={creating || (draft?.pages.length ?? 0) === 0}>
               {creating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
               {creating ? "Creating…" : `Create ${draft?.pages.length ?? 0} pages`}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </div>
+      )}
     </>
   );
 }
