@@ -1,0 +1,285 @@
+// foundations-core — the pure candidate-generation workers for the Foundations stage and the spine
+// routes (pin-driven flow, docs/pinned_method.md §3.2–3.3). No auth, no access check, no row writes —
+// callers own those (mirrors options-core.ts / spine-core.ts). The ai-run dispatcher runs these as
+// durable rows; the CLIENT applies a chosen candidate into books.foundations / books.spine.
+//
+// Pin enforcement (§4 rule 2) at this layer:
+//   (a) every prompt receives the pinned records in scope, verbatim, as hard constraints;
+//   (b) workers never write rows, so they structurally cannot overwrite a pinned record;
+//   (c) spineRoutes validates post-hoc that every pinned tentpole appears (and no killed one does)
+//       in every route, and retries once on violation.
+import { type SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { callClaude, type CallMeta } from "./claude.ts";
+import { getActiveModels } from "./model-config.ts";
+
+export type FoundationsStep = "argument" | "ending" | "cast" | "tentpoles" | "voice";
+
+// ── books.foundations shape (the client owns writes; this is the read contract) ─────────────────
+export interface FCandidate { id: string; text: string; implied_ending?: string; label?: string }
+export interface FNode { text?: string; pinned?: boolean; author_edited_at?: string; candidates?: FCandidate[] }
+export interface CastMember {
+  id: string; name: string;
+  want?: string; wound?: string; lie?: string;
+  pinned_fields?: string[];
+  role?: "protagonist" | "major" | "minor";
+}
+export interface Tentpole {
+  id: string; text: string;
+  source: "author" | "ai";
+  status: "pinned" | "fluid" | "killed";
+  placed_page_id?: number;
+}
+export interface Foundations {
+  argument?: FNode;
+  ending?: FNode;
+  cast?: CastMember[];
+  tentpoles?: Tentpole[];
+  voice_exemplar?: FNode;
+}
+
+export interface SpineRoute { id: string; summary: string; tentpole_order: string[] }
+
+interface Brief {
+  scope?: { band?: string; word_target?: number };
+  genre?: string;
+  audience?: string;
+  premise?: string;
+  tone?: string[];
+  success_criteria?: string;
+}
+
+function briefContext(brief: Brief | null): string {
+  if (!brief) return "(no brief set)";
+  const lines: string[] = [];
+  if (brief.scope?.band) lines.push(`- Scope: ${brief.scope.band}${brief.scope.word_target ? ` (≈${brief.scope.word_target} words)` : ""}`);
+  if (brief.genre) lines.push(`- Genre: ${brief.genre}`);
+  if (brief.audience) lines.push(`- Audience: ${brief.audience}`);
+  if (brief.premise) lines.push(`- Premise: ${brief.premise}`);
+  if (brief.tone?.length) lines.push(`- Tone: ${brief.tone.join(", ")}`);
+  if (brief.success_criteria) lines.push(`- Success looks like: ${brief.success_criteria}`);
+  return lines.length ? lines.join("\n") : "(brief is empty)";
+}
+
+// The already-settled foundations, rendered as hard constraints for downstream steps. Pinned items
+// are called out as immovable; selected-but-fluid items are context to stay consistent with.
+// Exported: outline generation (spine-to-objectives) reuses it as its constraint block.
+export function settledContext(f: Foundations): string {
+  const lines: string[] = [];
+  const node = (label: string, n?: FNode) => {
+    if (n?.text?.trim()) lines.push(`${label}${n.pinned ? " (PINNED by the author — immutable, honor verbatim)" : ""}:\n${n.text.trim()}`);
+  };
+  node("ARGUMENT (the book's claim)", f.argument);
+  node("ENDING", f.ending);
+  if (f.cast?.length) {
+    const cast = f.cast.map((c) => {
+      const pf = c.pinned_fields ?? [];
+      const line = (k: "want" | "wound" | "lie") =>
+        c[k] ? `  ${k}: ${c[k]}${pf.includes(k) ? " [PINNED]" : ""}` : null;
+      return [`- ${c.name} (${c.role ?? "major"})`, line("want"), line("wound"), line("lie")].filter(Boolean).join("\n");
+    }).join("\n");
+    lines.push(`CAST (pinned lines are immutable):\n${cast}`);
+  }
+  const live = (f.tentpoles ?? []).filter((t) => t.status !== "killed");
+  const killed = (f.tentpoles ?? []).filter((t) => t.status === "killed");
+  if (live.length) {
+    lines.push(`TENTPOLE MOMENTS (id · status · text — pinned ones MUST survive into any structure):\n${
+      live.map((t) => `- [${t.id}] (${t.status}) ${t.text}`).join("\n")}`);
+  }
+  if (killed.length) {
+    lines.push(`KILLED DIRECTIONS (the author rejected these — do NOT propose anything like them):\n${
+      killed.map((t) => `- ${t.text}`).join("\n")}`);
+  }
+  node("VOICE EXEMPLAR", f.voice_exemplar);
+  return lines.length ? lines.join("\n\n") : "(nothing settled yet)";
+}
+
+function textOf(data: { content?: Array<{ type: string; text?: string }> }): string {
+  return (data.content ?? []).filter((b) => b.type === "text").map((b) => b.text ?? "").join("").trim();
+}
+
+function parseJson<T>(text: string): T {
+  let raw = text.trim();
+  const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fence) raw = fence[1].trim();
+  else {
+    const first = raw.search(/[{[]/);
+    const last = Math.max(raw.lastIndexOf("}"), raw.lastIndexOf("]"));
+    if (first !== -1 && last > first) raw = raw.slice(first, last + 1);
+  }
+  return JSON.parse(raw) as T;
+}
+
+const uid = () => crypto.randomUUID().slice(0, 8);
+
+// ── Per-step prompts ─────────────────────────────────────────────────────────
+const STEP_SYSTEM: Record<FoundationsStep, string> = {
+  argument: `You are a book architect proposing the book's ARGUMENT — the claim the whole story argues (e.g. "loyalty to a dead man can cost you every living one"). Generate exactly 3 candidates, genuinely different claims pulled from different tensions in the brief. Each: ~2 sentences, plus the ending it implies in one line.
+
+Output JSON ONLY:
+{ "candidates": [{ "text": "<~2 sentence claim>", "implied_ending": "<one line>" }, …] }`,
+
+  ending: `You are a book architect proposing ENDINGS consistent with the book's selected argument. Generate exactly 3 candidates — same argument, different final images/costs/resolutions. Each ~2–3 sentences, concrete (who stands where, what it cost), not a synopsis.
+
+Output JSON ONLY:
+{ "candidates": [{ "text": "<the ending>" }, …] }`,
+
+  cast: `You are a book architect drafting the core CAST: the protagonist and up to 2 major characters. For each: a name, then three labeled lines — want (external goal), wound (the unhealed injury driving them), lie (the false belief the arc will break). Honor any PINNED cast lines verbatim and never contradict them; if existing characters are given, keep their names/ids and only fill their empty fields, plus add missing majors.
+
+Output JSON ONLY:
+{ "candidates": [{ "name": "…", "role": "protagonist" | "major", "want": "…", "wound": "…", "lie": "…" }, …] }`,
+
+  tentpoles: `You are a book architect proposing TENTPOLE MOMENTS — vivid, concrete scenes the author can already see (1–3 sentences each, a moment not a summary). Generate exactly 6 proposals, spread across the book's whole arc, consistent with the settled argument/ending/cast. Never duplicate an existing tentpole; never resemble a killed direction.
+
+Output JSON ONLY:
+{ "candidates": [{ "text": "<the moment>" }, …] }`,
+
+  voice: `You are a prose stylist. Render the given TENTPOLE MOMENT as ~120 words of finished prose in 3 DISTINCT voices — different sentence rhythm, distance, temperature. Label each with a 2–4 word descriptor (e.g. "spare and cold", "lush close-third"). Same moment, three soundscapes.
+
+Output JSON ONLY:
+{ "candidates": [{ "label": "<descriptor>", "text": "<~120 words>" }, …] }`,
+};
+
+export interface FoundationsOptionsParams {
+  bookId: number;
+  step: FoundationsStep;
+  userId?: string | null;
+}
+
+// Generate candidates for one Foundations sub-step. Returns step-shaped candidates with server ids.
+export async function foundationsOptions(
+  client: SupabaseClient, apiKey: string, p: FoundationsOptionsParams,
+): Promise<{ candidates: FCandidate[] } | { candidates: CastMember[] } | { candidates: Tentpole[] }> {
+  const { data: book, error } = await client.from("books").select("id, name, brief, foundations").eq("id", p.bookId).single();
+  if (error || !book) throw new Error("Book not found");
+  const brief = book.brief as Brief | null;
+  const f = (book.foundations as Foundations | null) ?? {};
+
+  let stepInput = "";
+  if (p.step === "ending" && !f.argument?.text?.trim()) throw new Error("Select an argument first.");
+  if (p.step === "voice") {
+    const t = (f.tentpoles ?? []).filter((x) => x.status !== "killed");
+    const moment = t.find((x) => x.status === "pinned") ?? t[0];
+    if (!moment) throw new Error("Add at least one tentpole moment first.");
+    stepInput = `\n\nTENTPOLE MOMENT TO RENDER:\n${moment.text}`;
+  }
+
+  const { high: model } = await getActiveModels();
+  const meta: CallMeta = { fn: `foundations-${p.step}`, bookId: p.bookId, userId: p.userId ?? null };
+  const data = await callClaude(apiKey, {
+    model,
+    max_tokens: 2048,
+    temperature: 1,
+    system: [{ type: "text", text: STEP_SYSTEM[p.step], cache_control: { type: "ephemeral" } }],
+    messages: [{
+      role: "user",
+      content: `BOOK: ${book.name}\n\nBRIEF:\n${briefContext(brief)}\n\nSETTLED FOUNDATIONS SO FAR:\n${settledContext(f)}${stepInput}\n\nGenerate the candidates. JSON only.`,
+    }],
+  }, meta);
+
+  const text = textOf(data);
+  if (!text) throw new Error("Claude returned no candidates.");
+  const parsed = parseJson<{ candidates?: Array<Record<string, unknown>> }>(text);
+  const raw = Array.isArray(parsed.candidates) ? parsed.candidates : [];
+  if (raw.length === 0) throw new Error("Claude returned an empty candidate list.");
+
+  if (p.step === "cast") {
+    const candidates = raw.map((c) => ({
+      id: uid(),
+      name: String(c.name ?? "").trim(),
+      role: (c.role === "protagonist" ? "protagonist" : "major") as CastMember["role"],
+      want: String(c.want ?? "").trim(),
+      wound: String(c.wound ?? "").trim(),
+      lie: String(c.lie ?? "").trim(),
+      pinned_fields: [],
+    })).filter((c) => c.name);
+    return { candidates };
+  }
+  if (p.step === "tentpoles") {
+    const candidates = raw.map((c) => ({
+      id: uid(),
+      text: String(c.text ?? "").trim(),
+      source: "ai" as const,
+      status: "fluid" as const,
+    })).filter((c) => c.text);
+    return { candidates };
+  }
+  const candidates = raw.map((c) => ({
+    id: uid(),
+    text: String(c.text ?? "").trim(),
+    ...(c.implied_ending ? { implied_ending: String(c.implied_ending).trim() } : {}),
+    ...(c.label ? { label: String(c.label).trim() } : {}),
+  })).filter((c) => c.text);
+  return { candidates };
+}
+
+// ── Spine routes (§3.3) ──────────────────────────────────────────────────────
+const ROUTES_SYSTEM = `You are a book architect proposing ROUTES — alternative paths from this book's beginning to its settled ending, through its tentpole moments. A route is ~250 words: the causal road the story takes, not a blurb.
+
+Generate exactly 3 routes. Each must:
+- Realize the settled argument and land on the settled ending
+- Include EVERY pinned tentpole (reference them by their [id]) — order may differ between routes
+- Never include a killed direction
+- Differ genuinely from the other routes: different orderings, different connective tissue, different midpoints
+
+Output JSON ONLY:
+{ "routes": [{ "summary": "<~250 words>", "tentpole_order": ["<tentpole id>", …] }, …] }`;
+
+export interface SpineRoutesParams {
+  bookId: number;
+  /** Summaries to vary away from (re-route keeps the selected one client-side). */
+  avoid?: string[];
+  userId?: string | null;
+}
+
+// brief+foundations → 3 candidate routes. Validates pin survival (§4 rule 2c): every pinned tentpole
+// in every route's tentpole_order, no killed ones. One retry on violation, then throw.
+export async function spineRoutes(client: SupabaseClient, apiKey: string, p: SpineRoutesParams): Promise<SpineRoute[]> {
+  const { data: book, error } = await client.from("books").select("id, name, brief, foundations").eq("id", p.bookId).single();
+  if (error || !book) throw new Error("Book not found");
+  const brief = book.brief as Brief | null;
+  const f = (book.foundations as Foundations | null) ?? {};
+  const pinnedIds = (f.tentpoles ?? []).filter((t) => t.status === "pinned").map((t) => t.id);
+  const killedIds = new Set((f.tentpoles ?? []).filter((t) => t.status === "killed").map((t) => t.id));
+
+  const { high: model } = await getActiveModels();
+  const meta: CallMeta = { fn: "spine-routes", bookId: p.bookId, userId: p.userId ?? null };
+  const userContent =
+    `BOOK: ${book.name}\n\nBRIEF:\n${briefContext(brief)}\n\nSETTLED FOUNDATIONS:\n${settledContext(f)}` +
+    (p.avoid?.length ? `\n\nEXISTING ROUTES (vary away from these — don't paraphrase them):\n${p.avoid.map((s) => `---\n${s}`).join("\n")}` : "") +
+    `\n\nGenerate 3 routes. JSON only.`;
+
+  const attempt = async (extra?: string): Promise<SpineRoute[]> => {
+    const data = await callClaude(apiKey, {
+      model,
+      max_tokens: 4096,
+      temperature: 1,
+      system: [{ type: "text", text: ROUTES_SYSTEM, cache_control: { type: "ephemeral" } }],
+      messages: [{ role: "user", content: userContent + (extra ?? "") }],
+    }, meta);
+    const text = textOf(data);
+    if (!text) throw new Error("Claude returned no routes.");
+    const parsed = parseJson<{ routes?: Array<{ summary?: string; tentpole_order?: unknown[] }> }>(text);
+    return (parsed.routes ?? [])
+      .map((r) => ({
+        id: uid(),
+        summary: String(r.summary ?? "").trim(),
+        tentpole_order: (Array.isArray(r.tentpole_order) ? r.tentpole_order : []).map(String),
+      }))
+      .filter((r) => r.summary);
+  };
+
+  const violates = (routes: SpineRoute[]) =>
+    routes.length === 0 ||
+    routes.some((r) =>
+      pinnedIds.some((id) => !r.tentpole_order.includes(id)) ||
+      r.tentpole_order.some((id) => killedIds.has(id)));
+
+  let routes = await attempt();
+  if (violates(routes)) {
+    routes = await attempt(
+      `\n\nIMPORTANT: a previous attempt violated the constraints. EVERY route's tentpole_order must contain ALL of these pinned ids: ${JSON.stringify(pinnedIds)} and NONE of these killed ids: ${JSON.stringify([...killedIds])}.`,
+    );
+    if (violates(routes)) throw new Error("Couldn't generate routes that honor every pinned tentpole — try unpinning or rewording a tentpole.");
+  }
+  return routes;
+}

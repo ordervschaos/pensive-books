@@ -20,6 +20,7 @@ import { objectiveOptions } from "../_shared/options-core.ts";
 import { generateSpine, spineOptions } from "../_shared/spine-core.ts";
 import { reviseNode, type ReviseLayer } from "../_shared/revise-core.ts";
 import { beatCandidates } from "../_shared/beat-core.ts";
+import { foundationsOptions, spineRoutes, type FoundationsStep } from "../_shared/foundations-core.ts";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -68,6 +69,21 @@ async function runWorker(
         userId: ctx.userId,
       }, 3);
       return { options };
+    }
+    case "foundations_options": {
+      return await foundationsOptions(ctx.client, ctx.apiKey, {
+        bookId: ctx.bookId,
+        step: params.step as FoundationsStep,
+        userId: ctx.userId,
+      });
+    }
+    case "spine_routes": {
+      const routes = await spineRoutes(ctx.client, ctx.apiKey, {
+        bookId: ctx.bookId,
+        avoid: params.avoid as string[] | undefined,
+        userId: ctx.userId,
+      });
+      return { routes };
     }
     default:
       throw new Error(`Unknown ai-run kind: ${kind}`);

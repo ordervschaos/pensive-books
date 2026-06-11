@@ -87,7 +87,7 @@ async function authorize(req, res, bookId) {
 
 async function fetchBook(bookId) {
   const r = await fetch(
-    `${SUPABASE_URL}/rest/v1/books?id=eq.${bookId}&select=name%2Cbrief%2Cbible%2Cspine`,
+    `${SUPABASE_URL}/rest/v1/books?id=eq.${bookId}&select=name%2Cbrief%2Cbible%2Cspine%2Cfoundations`,
     { headers: sbHeaders }
   );
   if (!r.ok) throw new Error(`Supabase ${r.status}: ${await r.text()}`);
@@ -453,17 +453,37 @@ Keep the size proportional to the scope: a short story is a handful of text page
 Output JSON ONLY (no prose, no fences), exactly:
 { "structure": "<the structure you chose>", "pages": [ { "pageType": "section", "title": "...", "objective": "" }, { "pageType": "text", "title": "...", "objective": "..." } ] }`;
 
+// Mirrors FOUNDATIONS_ADDENDUM in supabase/functions/spine-to-objectives (pin-driven flow §3.4).
+const SCAFFOLD_FOUNDATIONS_ADDENDUM = `
+
+This book has SETTLED FOUNDATIONS (argument, ending, cast, tentpole moments — given in the input).
+Honor them as hard constraints: anything marked PINNED is the author's and must survive verbatim
+into the plan; KILLED directions must not appear.
+
+Two additions to your output:
+
+1. Each "text" page also gets "delta" — what this page CHANGES in the narrative state (1–3 entries,
+   coarse). A page that changes nothing is a dead page; don't plan one. Each entry:
+   { "type": "character" | "thread" | "value" | "world",
+     "subject": "<character name / thread name / value name / world fact>",
+     "from": "<state before (optional)>", "to": "<state after>" }
+
+2. Top-level "tentpolePlacements": place EVERY non-killed tentpole moment on exactly ONE text page
+   (the page whose objective realizes that moment). Pinned tentpoles MUST all be placed.
+   [{ "tentpoleId": "<the tentpole's [id] from the input>", "pageIndex": <index into pages[]> }]`;
+
 async function runScaffold(bookId) {
   const book = await fetchBook(bookId);
   if (!book) return { error: "Book not found" };
   const spine = book.spine?.text?.trim() || null;
+  const foundations = book.foundations ?? null;
 
-  const prompt = `${SCAFFOLD_INSTRUCTIONS}
+  const prompt = `${SCAFFOLD_INSTRUCTIONS}${foundations ? SCAFFOLD_FOUNDATIONS_ADDENDUM : ""}
 
 BOOK: ${book.name}${spine ? `\n\nBOOK SPINE (the throughline — the outline must realize this):\n${spine}` : ""}
 
 BRIEF:
-${briefContext(book.brief)}
+${briefContext(book.brief)}${foundations ? `\n\nSETTLED FOUNDATIONS (pinned items are immutable constraints):\n${foundationsContext(foundations)}` : ""}
 
 Design the outline. JSON only.`;
 
@@ -481,10 +501,26 @@ Design the outline. JSON only.`;
   try {
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed.pages) || parsed.pages.length === 0) throw new Error("no pages");
+    const DELTA_TYPES = new Set(["character", "thread", "value", "world"]);
+    const cleanDelta = (arr) => {
+      if (!Array.isArray(arr)) return undefined;
+      const out = arr
+        .filter((d) => d && DELTA_TYPES.has(d.type) && typeof d.subject === "string" && d.subject.trim() && typeof d.to === "string" && d.to.trim())
+        .map((d) => ({ type: d.type, subject: d.subject.trim(), to: d.to.trim(), ...(typeof d.from === "string" && d.from.trim() ? { from: d.from.trim() } : {}) }));
+      return out.length ? out : undefined;
+    };
     parsed.pages = parsed.pages
       .filter((p) => p && (p.pageType === "section" || p.pageType === "text") && typeof p.title === "string")
-      .map((p) => ({ pageType: p.pageType, title: p.title.trim(), objective: (p.objective ?? "").trim() }));
-    return { structure: String(parsed.structure ?? "").trim(), pages: parsed.pages };
+      .map((p) => {
+        const d = p.pageType === "text" ? cleanDelta(p.delta) : undefined;
+        return { pageType: p.pageType, title: p.title.trim(), objective: (p.objective ?? "").trim(), ...(d ? { delta: d } : {}) };
+      });
+    const n = parsed.pages.length;
+    const tentpolePlacements = (Array.isArray(parsed.tentpolePlacements) ? parsed.tentpolePlacements : [])
+      .filter((tp) => tp && typeof tp.tentpoleId === "string" && tp.tentpoleId.trim() &&
+        Number.isInteger(tp.pageIndex) && tp.pageIndex >= 0 && tp.pageIndex < n && parsed.pages[tp.pageIndex].pageType === "text")
+      .map((tp) => ({ tentpoleId: tp.tentpoleId.trim(), pageIndex: tp.pageIndex }));
+    return { structure: String(parsed.structure ?? "").trim(), pages: parsed.pages, tentpolePlacements };
   } catch (e) {
     return { error: `Could not parse scaffold JSON: ${e.message}` };
   }
@@ -1229,6 +1265,164 @@ async function runObjectiveOptions(body) {
   }
 }
 
+// ── foundations options + spine routes ───────────────────────────────────────
+// Mirrors supabase/functions/_shared/foundations-core.ts (the pin-driven flow's candidate workers).
+const FOUNDATIONS_STEP_SYSTEM = {
+  argument: `You are a book architect proposing the book's ARGUMENT — the claim the whole story argues (e.g. "loyalty to a dead man can cost you every living one"). Generate exactly 3 candidates, genuinely different claims pulled from different tensions in the brief. Each: ~2 sentences, plus the ending it implies in one line.
+
+Output JSON ONLY:
+{ "candidates": [{ "text": "<~2 sentence claim>", "implied_ending": "<one line>" }, …] }`,
+  ending: `You are a book architect proposing ENDINGS consistent with the book's selected argument. Generate exactly 3 candidates — same argument, different final images/costs/resolutions. Each ~2–3 sentences, concrete (who stands where, what it cost), not a synopsis.
+
+Output JSON ONLY:
+{ "candidates": [{ "text": "<the ending>" }, …] }`,
+  cast: `You are a book architect drafting the core CAST: the protagonist and up to 2 major characters. For each: a name, then three labeled lines — want (external goal), wound (the unhealed injury driving them), lie (the false belief the arc will break). Honor any PINNED cast lines verbatim and never contradict them; if existing characters are given, keep their names/ids and only fill their empty fields, plus add missing majors.
+
+Output JSON ONLY:
+{ "candidates": [{ "name": "…", "role": "protagonist" | "major", "want": "…", "wound": "…", "lie": "…" }, …] }`,
+  tentpoles: `You are a book architect proposing TENTPOLE MOMENTS — vivid, concrete scenes the author can already see (1–3 sentences each, a moment not a summary). Generate exactly 6 proposals, spread across the book's whole arc, consistent with the settled argument/ending/cast. Never duplicate an existing tentpole; never resemble a killed direction.
+
+Output JSON ONLY:
+{ "candidates": [{ "text": "<the moment>" }, …] }`,
+  voice: `You are a prose stylist. Render the given TENTPOLE MOMENT as ~120 words of finished prose in 3 DISTINCT voices — different sentence rhythm, distance, temperature. Label each with a 2–4 word descriptor (e.g. "spare and cold", "lush close-third"). Same moment, three soundscapes.
+
+Output JSON ONLY:
+{ "candidates": [{ "label": "<descriptor>", "text": "<~120 words>" }, …] }`,
+};
+
+const SPINE_ROUTES_SYSTEM = `You are a book architect proposing ROUTES — alternative paths from this book's beginning to its settled ending, through its tentpole moments. A route is ~250 words: the causal road the story takes, not a blurb.
+
+Generate exactly 3 routes. Each must:
+- Realize the settled argument and land on the settled ending
+- Include EVERY pinned tentpole (reference them by their [id]) — order may differ between routes
+- Never include a killed direction
+- Differ genuinely from the other routes: different orderings, different connective tissue, different midpoints
+
+Output JSON ONLY:
+{ "routes": [{ "summary": "<~250 words>", "tentpole_order": ["<tentpole id>", …] }, …] }`;
+
+const bridgeUid = () => crypto.randomUUID().slice(0, 8);
+
+// The settled foundations rendered as hard constraints (pinned = immutable) — mirrors settledContext.
+function foundationsContext(f) {
+  const lines = [];
+  const node = (label, n) => {
+    if (n?.text?.trim()) lines.push(`${label}${n.pinned ? " (PINNED by the author — immutable, honor verbatim)" : ""}:\n${n.text.trim()}`);
+  };
+  node("ARGUMENT (the book's claim)", f.argument);
+  node("ENDING", f.ending);
+  if (f.cast?.length) {
+    const cast = f.cast.map((c) => {
+      const pf = c.pinned_fields ?? [];
+      const line = (k) => (c[k] ? `  ${k}: ${c[k]}${pf.includes(k) ? " [PINNED]" : ""}` : null);
+      return [`- ${c.name} (${c.role ?? "major"})`, line("want"), line("wound"), line("lie")].filter(Boolean).join("\n");
+    }).join("\n");
+    lines.push(`CAST (pinned lines are immutable):\n${cast}`);
+  }
+  const live = (f.tentpoles ?? []).filter((t) => t.status !== "killed");
+  const killed = (f.tentpoles ?? []).filter((t) => t.status === "killed");
+  if (live.length) lines.push(`TENTPOLE MOMENTS (id · status · text — pinned ones MUST survive into any structure):\n${live.map((t) => `- [${t.id}] (${t.status}) ${t.text}`).join("\n")}`);
+  if (killed.length) lines.push(`KILLED DIRECTIONS (the author rejected these — do NOT propose anything like them):\n${killed.map((t) => `- ${t.text}`).join("\n")}`);
+  node("VOICE EXEMPLAR", f.voice_exemplar);
+  return lines.length ? lines.join("\n\n") : "(nothing settled yet)";
+}
+
+function parseLooseJson(text) {
+  let raw = (text ?? "").trim();
+  const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fence) raw = fence[1].trim();
+  else {
+    const f = raw.search(/[{[]/);
+    const l = Math.max(raw.lastIndexOf("}"), raw.lastIndexOf("]"));
+    if (f !== -1 && l > f) raw = raw.slice(f, l + 1);
+  }
+  return JSON.parse(raw);
+}
+
+async function runFoundationsOptions(body) {
+  const { bookId, step } = body;
+  if (!bookId || !FOUNDATIONS_STEP_SYSTEM[step]) return { error: "bookId and a valid step required" };
+  const book = await fetchBook(bookId);
+  if (!book) return { error: "Book not found" };
+  const f = book.foundations ?? {};
+
+  let stepInput = "";
+  if (step === "ending" && !f.argument?.text?.trim()) return { error: "Select an argument first." };
+  if (step === "voice") {
+    const live = (f.tentpoles ?? []).filter((t) => t.status !== "killed");
+    const moment = live.find((t) => t.status === "pinned") ?? live[0];
+    if (!moment) return { error: "Add at least one tentpole moment first." };
+    stepInput = `\n\nTENTPOLE MOMENT TO RENDER:\n${moment.text}`;
+  }
+
+  const prompt = `${FOUNDATIONS_STEP_SYSTEM[step]}\n\nBOOK: ${book.name}\n\nBRIEF:\n${briefContext(book.brief)}\n\nSETTLED FOUNDATIONS SO FAR:\n${foundationsContext(f)}${stepInput}\n\nGenerate the candidates. JSON only.`;
+  const out = await runClaude(prompt, true, { fn: `foundations-${step}`, bookId }, { noTools: true });
+  if (out.error) return out;
+  try {
+    const raw = parseLooseJson(out.text);
+    const arr = Array.isArray(raw.candidates) ? raw.candidates : [];
+    if (arr.length === 0) return { error: "No candidates returned" };
+    let candidates;
+    if (step === "cast") {
+      candidates = arr.map((c) => ({
+        id: bridgeUid(), name: String(c.name ?? "").trim(),
+        role: c.role === "protagonist" ? "protagonist" : "major",
+        want: String(c.want ?? "").trim(), wound: String(c.wound ?? "").trim(), lie: String(c.lie ?? "").trim(),
+        pinned_fields: [],
+      })).filter((c) => c.name);
+    } else if (step === "tentpoles") {
+      candidates = arr.map((c) => ({ id: bridgeUid(), text: String(c.text ?? "").trim(), source: "ai", status: "fluid" })).filter((c) => c.text);
+    } else {
+      candidates = arr.map((c) => ({
+        id: bridgeUid(), text: String(c.text ?? "").trim(),
+        ...(c.implied_ending ? { implied_ending: String(c.implied_ending).trim() } : {}),
+        ...(c.label ? { label: String(c.label).trim() } : {}),
+      })).filter((c) => c.text);
+    }
+    return { candidates };
+  } catch (e) {
+    return { error: `Could not parse candidates JSON: ${e.message}` };
+  }
+}
+
+async function runSpineRoutes(body) {
+  const { bookId, avoid } = body;
+  if (!bookId) return { error: "bookId required" };
+  const book = await fetchBook(bookId);
+  if (!book) return { error: "Book not found" };
+  const f = book.foundations ?? {};
+  const pinnedIds = (f.tentpoles ?? []).filter((t) => t.status === "pinned").map((t) => t.id);
+  const killedIds = new Set((f.tentpoles ?? []).filter((t) => t.status === "killed").map((t) => t.id));
+
+  const userContent =
+    `BOOK: ${book.name}\n\nBRIEF:\n${briefContext(book.brief)}\n\nSETTLED FOUNDATIONS:\n${foundationsContext(f)}` +
+    (avoid?.length ? `\n\nEXISTING ROUTES (vary away from these — don't paraphrase them):\n${avoid.map((s) => `---\n${s}`).join("\n")}` : "") +
+    `\n\nGenerate 3 routes. JSON only.`;
+
+  const attempt = async (extra) => {
+    const out = await runClaude(`${SPINE_ROUTES_SYSTEM}\n\n${userContent}${extra ?? ""}`, true, { fn: "spine-routes", bookId }, { noTools: true });
+    if (out.error) throw new Error(out.error);
+    const parsed = parseLooseJson(out.text);
+    return (parsed.routes ?? [])
+      .map((r) => ({ id: bridgeUid(), summary: String(r.summary ?? "").trim(), tentpole_order: (Array.isArray(r.tentpole_order) ? r.tentpole_order : []).map(String) }))
+      .filter((r) => r.summary);
+  };
+  const violates = (routes) =>
+    routes.length === 0 ||
+    routes.some((r) => pinnedIds.some((id) => !r.tentpole_order.includes(id)) || r.tentpole_order.some((id) => killedIds.has(id)));
+
+  try {
+    let routes = await attempt();
+    if (violates(routes)) {
+      routes = await attempt(`\n\nIMPORTANT: a previous attempt violated the constraints. EVERY route's tentpole_order must contain ALL of these pinned ids: ${JSON.stringify(pinnedIds)} and NONE of these killed ids: ${JSON.stringify([...killedIds])}.`);
+      if (violates(routes)) return { error: "Couldn't generate routes that honor every pinned tentpole — try unpinning or rewording a tentpole." };
+    }
+    return { routes };
+  } catch (e) {
+    return { error: `Route generation failed: ${e.message}` };
+  }
+}
+
 // ── /ai-run ───────────────────────────────────────────────────────────────────
 // Mirrors supabase/functions/ai-run: the durable harness for short ops. The bridge has no wall-clock
 // cap, so it inserts the running row, runs the worker, and writes the terminal row synchronously
@@ -1246,6 +1440,10 @@ async function aiRunWorker(kind, params, bookId) {
       return { text: fail(await runReviseNode({ bookId, ...params })).text };
     case "beat_candidates":
       return { options: fail(await runObjectiveToBeat({ bookId, pageId: params.pageId, objective: params.objective, candidates: 3 })).candidates };
+    case "foundations_options":
+      return { candidates: fail(await runFoundationsOptions({ bookId, step: params.step })).candidates };
+    case "spine_routes":
+      return { routes: fail(await runSpineRoutes({ bookId, avoid: params.avoid })).routes };
     default:
       throw new Error(`Unknown ai-run kind: ${kind}`);
   }

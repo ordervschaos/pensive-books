@@ -16,12 +16,33 @@ export function OutlineStep({ bookId, model, onChanged, onSelectPage }: { bookId
   }
   return (
     <div className="space-y-3">
+      {model.lints.length > 0 && (
+        <div className="rounded-2xl border border-amber-500/40 bg-[hsl(var(--pv-surface-2))]/40 px-5 py-4">
+          <div className="pv-mono mb-2 text-[10px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-muted))]">
+            Flags · {model.lints.filter((l) => l.severity === "error").length} need attention
+          </div>
+          <div className="space-y-1.5">
+            {model.lints.map((l, i) => (
+              <div key={`${l.rule}-${i}`} className="flex items-baseline gap-2.5">
+                <span className={`h-1.5 w-1.5 shrink-0 translate-y-[-1px] rounded-full ${l.severity === "error" ? "bg-amber-500" : "bg-[hsl(var(--pv-text-faint))]"}`} aria-hidden />
+                <span className="pv-serif flex-1 text-[13px] leading-snug text-[hsl(var(--pv-text-muted))]">{l.message}</span>
+                {l.pageId != null && (
+                  <button type="button" onClick={() => onSelectPage(l.pageId!)}
+                    className="pv-serif shrink-0 text-[12px] italic text-[hsl(var(--pv-text-faint))] hover:text-[hsl(var(--pv-accent))]">
+                    open →
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {model.movements.map((m) => (
         <div key={m.key} className="rounded-2xl border border-border bg-[hsl(var(--pv-surface-2))]/40 px-5 py-4">
           <div className="pv-mono mb-2.5 text-[10px] uppercase tracking-[0.14em] text-[hsl(var(--pv-accent))]">{m.num ? `${m.num} · ` : ""}{m.title}</div>
           <div className="space-y-2">
             {m.pages.map((p) => (
-              <PageCard key={p.id} bookId={bookId} page={p} onSelectPage={onSelectPage} onChanged={onChanged} />
+              <PageCard key={p.id} bookId={bookId} page={p} tentpole={model.tentpolePageIds.has(p.id)} onSelectPage={onSelectPage} onChanged={onChanged} />
             ))}
           </div>
         </div>
@@ -31,9 +52,10 @@ export function OutlineStep({ bookId, model, onChanged, onSelectPage }: { bookId
   );
 }
 
-function PageCard({ bookId, page, onSelectPage, onChanged }: {
+function PageCard({ bookId, page, tentpole, onSelectPage, onChanged }: {
   bookId: number;
   page: MapPage;
+  tentpole?: boolean;
   onSelectPage: (id: number) => void;
   onChanged: () => void;
 }) {
@@ -56,7 +78,10 @@ function PageCard({ bookId, page, onSelectPage, onChanged }: {
   return (
     <div className="rounded-lg border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/30 px-3.5 py-3">
       <div className="flex items-start justify-between gap-2">
-        <span className="pv-serif text-[15.5px] leading-snug text-foreground">{page.title || "(untitled)"}</span>
+        <span className="pv-serif text-[15.5px] leading-snug text-foreground">
+          {tentpole && <span className="mr-1.5 text-[hsl(var(--pv-accent))]" title="A tentpole moment lands here" aria-hidden>◆</span>}
+          {page.title || "(untitled)"}
+        </span>
         <button
           type="button"
           onClick={() => onSelectPage(page.id)}

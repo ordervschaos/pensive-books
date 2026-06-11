@@ -11,10 +11,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { briefToPromptContext, type Brief } from "@/lib/brief";
+import { seedGenreThreads, type Foundations } from "@/lib/foundations";
+import type { LintThread } from "@/lib/lints";
 import { metaHash } from "@/lib/planProvenance";
 import type { RevisionPrefill } from "../ReviseWithAI";
 import {
-  BUILD_STEPS, buildStudioModel, type Journey, type StepKey, type StudioPageRow,
+  buildStudioModel, type Journey, type StepKey, type StudioPageRow,
 } from "./studioModel";
 import { StudioNavigator } from "./StudioNavigator";
 import { StudioStage } from "./StudioStage";
@@ -42,18 +44,22 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
   const [approving, setApproving] = useState<StepKey | null>(null);
   const [revisionPrefill, setRevisionPrefill] = useState<RevisionPrefill | null>(null);
 
-  // The three non-page-derived flags. Seeded from a fetch, then kept live by the leaf tools' callbacks.
+  // The non-page-derived flags. Seeded from a fetch, then kept live by the leaf tools' callbacks.
+  // `foundations` doubles as the flow flag (null = old rail); undefined = still loading.
   const [spine, setSpine] = useState<{ text: string; stale: boolean }>({ text: "", stale: false });
   const [hasVoice, setHasVoice] = useState(false);
   const [hasRead, setHasRead] = useState(false);
+  const [foundations, setFoundations] = useState<Foundations | null | undefined>(undefined);
+  const [threads, setThreads] = useState<LintThread[]>([]);
   const [infoKey, setInfoKey] = useState(0);
 
   useEffect(() => {
     let alive = true;
     void (async () => {
-      const [{ data: book }, { data: ev }] = await Promise.all([
-        supabase.from("books").select("spine, bible").eq("id", bookId).maybeSingle(),
+      const [{ data: book }, { data: ev }, { data: th }] = await Promise.all([
+        supabase.from("books").select("spine, bible, foundations").eq("id", bookId).maybeSingle(),
         supabase.from("book_evaluations").select("id").eq("book_id", bookId).eq("status", "done").limit(1),
+        supabase.from("book_threads").select("id, name, status, book_thread_anchors(role)").eq("book_id", bookId),
       ]);
       if (!alive) return;
       const sp = (book?.spine as { text?: string; brief_hash?: string } | null) ?? null;
@@ -62,6 +68,9 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
       setSpine({ text, stale });
       setHasVoice(!!((book?.bible as { voice_sample?: string } | null)?.voice_sample ?? "").trim());
       setHasRead((ev?.length ?? 0) > 0);
+      setFoundations((book?.foundations as Foundations | null) ?? null);
+      setThreads(((th as Array<{ id: number; name: string; status: string; book_thread_anchors: Array<{ role: string }> }> | null) ?? [])
+        .map((t) => ({ id: t.id, name: t.name, status: t.status, resolutionCount: (t.book_thread_anchors ?? []).filter((a) => a.role === "resolution").length })));
     })();
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -71,8 +80,8 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
   const refresh = useCallback(() => { onChanged(); setInfoKey((k) => k + 1); }, [onChanged]);
 
   const model = useMemo(
-    () => buildStudioModel({ briefSet, spineText: spine.text, spineStale: spine.stale, pages, journey, hasVoice, hasRead, isPublic }),
-    [briefSet, spine.text, spine.stale, pages, journey, hasVoice, hasRead, isPublic]
+    () => buildStudioModel({ briefSet, spineText: spine.text, spineStale: spine.stale, pages, journey, hasVoice, hasRead, isPublic, foundations: foundations ?? null, threads }),
+    [briefSet, spine.text, spine.stale, pages, journey, hasVoice, hasRead, isPublic, foundations, threads]
   );
 
   const selection: Selection = selected ?? { kind: "step", step: model.current };
@@ -85,8 +94,8 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
       const next = { ...((data?.journey as Journey | null) ?? {}), [k]: new Date().toISOString() };
       const { error } = await supabase.from("books").update({ journey: next }).eq("id", bookId);
       if (error) throw error;
-      const idx = BUILD_STEPS.indexOf(k);
-      const nextStep: StepKey = idx >= 0 && idx < BUILD_STEPS.length - 1 ? BUILD_STEPS[idx + 1] : "read";
+      const idx = model.buildSteps.indexOf(k);
+      const nextStep: StepKey = idx >= 0 && idx < model.buildSteps.length - 1 ? model.buildSteps[idx + 1] : "read";
       setSelected({ kind: "step", step: nextStep });
       refresh();
     } catch (e) {
@@ -95,6 +104,17 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
       setApproving(null);
     }
   };
+
+  // Brief saves also seed the genre's promise-ledger threads in the new flow (§3.1) — idempotent.
+  const handleBriefChange = useCallback((b: Brief) => {
+    onBriefChange(b);
+    if (foundations != null) void seedGenreThreads(bookId, b.genre).catch(() => {});
+  }, [onBriefChange, foundations, bookId]);
+
+  // Hold rendering until the flow flag is known, so the rail doesn't flash old→new.
+  if (foundations === undefined) {
+    return <section className="h-[78vh] min-h-[620px] max-h-[940px] rounded-2xl border border-border bg-background" />;
+  }
 
   return (
     <section className="grid h-[78vh] min-h-[620px] max-h-[940px] grid-rows-[minmax(0,38%)_1fr] overflow-hidden rounded-2xl border border-border bg-background md:grid-cols-[320px_1fr] md:grid-rows-1">
@@ -111,12 +131,13 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
         bookId={bookId}
         selection={selection}
         brief={brief}
+        foundations={foundations}
         isPublic={isPublic}
         revisionPrefill={revisionPrefill}
         approving={approving}
         onApprove={approve}
         onChanged={refresh}
-        onBriefChange={onBriefChange}
+        onBriefChange={handleBriefChange}
         onSpineStatus={() => setInfoKey((k) => k + 1)}
         onVoiceStatus={setHasVoice}
         onReadStatus={setHasRead}

@@ -21,6 +21,8 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { runInBackground, serviceClient } from "../_shared/task.ts";
 import { callClaude as callClaudeApi, type CallMeta } from "../_shared/claude.ts";
 import { getActiveModels } from "../_shared/model-config.ts";
+import { type Foundations } from "../_shared/foundations-core.ts";
+import { type Delta } from "../_shared/page-state.ts";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -55,7 +57,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: book, error: bookError } = await userClient
       .from("books")
-      .select("id, name, subtitle, brief, bible, spine, owner_id")
+      .select("id, name, subtitle, brief, bible, spine, foundations, owner_id")
       .eq("id", bookId)
       .single();
     if (bookError || !book) return json({ error: "Book not found" }, 404);
@@ -76,6 +78,7 @@ Deno.serve(async (req: Request) => {
     const brief = book.brief as Brief | null;
     const bible = (book.bible as { text?: string } | null)?.text?.trim() || null;
     const spine = (book.spine as { text?: string } | null)?.text?.trim() || null;
+    const foundations = (book.foundations as Foundations | null) ?? null;
 
     // Insert the task row (service role; the client watches it over Realtime), then hand the
     // proposal to the background and return the row immediately.
@@ -93,9 +96,9 @@ Deno.serve(async (req: Request) => {
       // Self-critique loop (Self-Refine): a single forward pass gives the modal, predictable outline.
       // Pressure-test the PLAN against story craft, then revise once — errors here compound into every
       // page, so a dollar of quality at the outline is worth ~10 at the prose.
-      const draft = await draftScaffold(apiKey, model, bookName, brief, bible, spine, meta);
+      const draft = await draftScaffold(apiKey, model, bookName, brief, bible, spine, foundations, meta);
       const critique = await critiqueScaffold(apiKey, model, bookName, brief, spine, draft, { ...meta, fn: "spine-critique" });
-      const revised = await reviseScaffold(apiKey, model, bookName, brief, bible, spine, draft, critique, { ...meta, fn: "spine-revise" });
+      const revised = await reviseScaffold(apiKey, model, bookName, brief, bible, spine, foundations, draft, critique, { ...meta, fn: "spine-revise" });
       return { status: "ready", result: { ...revised, critique } };
     });
 
@@ -142,6 +145,26 @@ Output JSON ONLY (no prose, no fences), exactly:
   ]
 }`;
 
+// Appended for pin-driven-flow books (docs/pinned_method.md §3.4): the outline also plans each
+// page's narrative DELTA and places the tentpole moments. Pinned foundations are hard constraints.
+const FOUNDATIONS_ADDENDUM = `
+
+This book has SETTLED FOUNDATIONS (argument, ending, cast, tentpole moments — given in the input).
+Honor them as hard constraints: anything marked PINNED is the author's and must survive verbatim
+into the plan; KILLED directions must not appear.
+
+Two additions to your output:
+
+1. Each "text" page also gets "delta" — what this page CHANGES in the narrative state (1–3 entries,
+   coarse). A page that changes nothing is a dead page; don't plan one. Each entry:
+   { "type": "character" | "thread" | "value" | "world",
+     "subject": "<character name / thread name / value name / world fact>",
+     "from": "<state before (optional)>", "to": "<state after>" }
+
+2. Top-level "tentpolePlacements": place EVERY non-killed tentpole moment on exactly ONE text page
+   (the page whose objective realizes that moment). Pinned tentpoles MUST all be placed.
+   [{ "tentpoleId": "<the tentpole's [id] from the input>", "pageIndex": <index into pages[]> }]`;
+
 function briefContext(brief: Brief | null): string {
   if (!brief) return "(no brief set — infer a sensible book from a neutral premise)";
   const lines: string[] = [];
@@ -154,7 +177,7 @@ function briefContext(brief: Brief | null): string {
   return lines.length ? lines.join("\n") : "(brief is empty — infer a sensible book)";
 }
 
-interface ScaffoldPage { pageType: "section" | "text"; title: string; objective?: string }
+interface ScaffoldPage { pageType: "section" | "text"; title: string; objective?: string; delta?: Delta[] }
 // A planned thread anchored to pages by their index in pages[] (no page ids exist yet — the
 // client maps index → created page id when it writes the scaffold).
 interface ScaffoldThread {
@@ -164,7 +187,9 @@ interface ScaffoldThread {
   payoffPageIndex: number | null;
   targetDistance: number | null;
 }
-interface Scaffold { structure: string; pages: ScaffoldPage[]; threads: ScaffoldThread[] }
+// New-flow only: which text page realizes each tentpole moment (page ids minted client-side).
+interface TentpolePlacement { tentpoleId: string; pageIndex: number }
+interface Scaffold { structure: string; pages: ScaffoldPage[]; threads: ScaffoldThread[]; tentpolePlacements?: TentpolePlacement[] }
 
 function textOf(data: { content?: Array<{ type: string; text?: string }> }): string {
   return (data.content ?? [])
@@ -175,19 +200,20 @@ function textOf(data: { content?: Array<{ type: string; text?: string }> }): str
 }
 
 // The brief/bible/spine context block, shared by the draft and revise prompts.
-function bookContext(bookName: string, brief: Brief | null, bible: string | null, spine: string | null): string {
+function bookContext(bookName: string, brief: Brief | null, bible: string | null, spine: string | null, foundations: Foundations | null): string {
   return `BOOK: ${bookName}` +
     (spine ? `\n\nBOOK SPINE (the throughline — the outline must realize this):\n${spine}` : "") +
     `\n\nBRIEF:\n${briefContext(brief)}` +
+    (foundations ? `\n\nSETTLED FOUNDATIONS (pinned items are immutable constraints):\n${settledContext(foundations)}` : "") +
     (bible ? `\n\nBOOK BIBLE (established facts — characters, world, style):\n${bible}` : "");
 }
 
-async function draftScaffold(apiKey: string, model: string, bookName: string, brief: Brief | null, bible: string | null, spine: string | null, meta: CallMeta): Promise<Scaffold> {
+async function draftScaffold(apiKey: string, model: string, bookName: string, brief: Brief | null, bible: string | null, spine: string | null, foundations: Foundations | null, meta: CallMeta): Promise<Scaffold> {
   const data = await callClaudeApi(apiKey, {
     model,
     max_tokens: 8000,
-    system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
-    messages: [{ role: "user", content: `${bookContext(bookName, brief, bible, spine)}\n\nDesign the outline. JSON only.` }],
+    system: [{ type: "text", text: SYSTEM + (foundations ? FOUNDATIONS_ADDENDUM : ""), cache_control: { type: "ephemeral" } }],
+    messages: [{ role: "user", content: `${bookContext(bookName, brief, bible, spine, foundations)}\n\nDesign the outline. JSON only.` }],
   }, meta);
   const text = textOf(data);
   if (!text) throw new Error("Claude returned no text content.");
@@ -224,18 +250,18 @@ async function critiqueScaffold(apiKey: string, model: string, bookName: string,
   return textOf(data);
 }
 
-const REVISE_SYSTEM = `${SYSTEM}
+const REVISE_INSTRUCTION = `
 
 You are REVISING an existing outline to address an editor's critique. Apply EVERY note that improves plot logic, character arc, or genre delivery — change objectives, re-order or add/cut pages, and re-anchor threads as needed. Preserve what already works; this is a revision, not a fresh start. Output the full improved outline as JSON ONLY, in the exact schema above.`;
 
-async function reviseScaffold(apiKey: string, model: string, bookName: string, brief: Brief | null, bible: string | null, spine: string | null, draft: Scaffold, critique: string, meta: CallMeta): Promise<Scaffold> {
+async function reviseScaffold(apiKey: string, model: string, bookName: string, brief: Brief | null, bible: string | null, spine: string | null, foundations: Foundations | null, draft: Scaffold, critique: string, meta: CallMeta): Promise<Scaffold> {
   const data = await callClaudeApi(apiKey, {
     model,
     max_tokens: 8000,
-    system: [{ type: "text", text: REVISE_SYSTEM, cache_control: { type: "ephemeral" } }],
+    system: [{ type: "text", text: SYSTEM + (foundations ? FOUNDATIONS_ADDENDUM : "") + REVISE_INSTRUCTION, cache_control: { type: "ephemeral" } }],
     messages: [{
       role: "user",
-      content: `${bookContext(bookName, brief, bible, spine)}\n\nDRAFT OUTLINE (JSON):\n${JSON.stringify({ structure: draft.structure, pages: draft.pages, threads: draft.threads })}\n\nEDITOR'S CRITIQUE TO ADDRESS:\n${critique}\n\nReturn the revised outline. JSON only.`,
+      content: `${bookContext(bookName, brief, bible, spine, foundations)}\n\nDRAFT OUTLINE (JSON):\n${JSON.stringify({ structure: draft.structure, pages: draft.pages, threads: draft.threads, tentpolePlacements: draft.tentpolePlacements ?? [] })}\n\nEDITOR'S CRITIQUE TO ADDRESS:\n${critique}\n\nReturn the revised outline. JSON only.`,
     }],
   }, meta);
   const text = textOf(data);
@@ -261,10 +287,26 @@ function parseScaffold(text: string): Scaffold {
   if (!Array.isArray(parsed.pages) || parsed.pages.length === 0) {
     throw new Error("Scaffold has no pages.");
   }
-  // Sanitize: keep only valid page shapes.
+  // Sanitize: keep only valid page shapes (+ each text page's planned delta, new flow only).
+  const DELTA_TYPES = new Set(["character", "thread", "value", "world"]);
+  const cleanDelta = (raw: unknown): Delta[] | undefined => {
+    if (!Array.isArray(raw)) return undefined;
+    const out = raw
+      .filter((d): d is Delta => !!d && typeof d === "object" && DELTA_TYPES.has((d as Delta).type) &&
+        typeof (d as Delta).subject === "string" && !!(d as Delta).subject.trim() &&
+        typeof (d as Delta).to === "string" && !!(d as Delta).to.trim())
+      .map((d) => ({
+        type: d.type, subject: d.subject.trim(), to: d.to.trim(),
+        ...(typeof d.from === "string" && d.from.trim() ? { from: d.from.trim() } : {}),
+      }));
+    return out.length ? out : undefined;
+  };
   parsed.pages = parsed.pages
     .filter((p) => p && (p.pageType === "section" || p.pageType === "text") && typeof p.title === "string")
-    .map((p) => ({ pageType: p.pageType, title: p.title.trim(), objective: (p.objective ?? "").trim() }));
+    .map((p) => ({
+      pageType: p.pageType, title: p.title.trim(), objective: (p.objective ?? "").trim(),
+      ...(p.pageType === "text" ? (() => { const d = cleanDelta(p.delta); return d ? { delta: d } : {}; })() : {}),
+    }));
 
   // Hard cap the proposal. A scaffold is objectives-only (no prose), so even a long novel needs at
   // most ~100-odd pages; anything past this is a runaway proposal the author shouldn't be asked to
@@ -286,5 +328,13 @@ function parseScaffold(text: string): Scaffold {
       targetDistance: typeof t.targetDistance === "number" && t.targetDistance > 0 ? Math.round(t.targetDistance) : null,
     }));
 
-  return { structure: String(parsed.structure ?? "").trim(), pages: parsed.pages, threads };
+  // Sanitize tentpole placements: must name a tentpole and point at a text page inside pages[].
+  const tentpolePlacements: TentpolePlacement[] = (Array.isArray(parsed.tentpolePlacements) ? parsed.tentpolePlacements : [])
+    .filter((tp): tp is TentpolePlacement =>
+      !!tp && typeof (tp as TentpolePlacement).tentpoleId === "string" && !!(tp as TentpolePlacement).tentpoleId.trim() &&
+      validIndex((tp as TentpolePlacement).pageIndex) != null &&
+      parsed.pages[(tp as TentpolePlacement).pageIndex].pageType === "text")
+    .map((tp) => ({ tentpoleId: tp.tentpoleId.trim(), pageIndex: tp.pageIndex }));
+
+  return { structure: String(parsed.structure ?? "").trim(), pages: parsed.pages, threads, tentpolePlacements };
 }

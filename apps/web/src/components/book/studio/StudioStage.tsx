@@ -10,9 +10,11 @@ import { BookBriefSection } from "../BookBriefSection";
 import { BookEvaluationSection } from "../BookEvaluationSection";
 import { ReviseWithAI, type RevisionPrefill } from "../ReviseWithAI";
 import type { Brief } from "@/lib/brief";
+import type { Foundations } from "@/lib/foundations";
 import { STEP_CAPTION, STEP_LABEL, type StepKey, type StudioModel } from "./studioModel";
 import { Gate, StageHead } from "./studioUi";
 import { PageReview } from "./PageReview";
+import { FoundationsStep } from "./steps/FoundationsStep";
 import { VoiceStep } from "./steps/VoiceStep";
 import { BeatsStep } from "./steps/BeatsStep";
 import { SpineStep } from "./steps/SpineStep";
@@ -25,6 +27,7 @@ interface StageProps {
   bookId: number;
   selection: Selection;
   brief: Brief | null;
+  foundations: Foundations | null;
   isPublic: boolean;
   revisionPrefill: RevisionPrefill | null;
   approving: StepKey | null;
@@ -95,9 +98,15 @@ function StepView(props: StageProps & { stepKey: StepKey }) {
           {gate("Approve & continue", "a deliberate sign-off — one of six gates")}
         </>
       )}
+      {k === "foundations" && (
+        <>
+          <FoundationsStep bookId={bookId} foundations={props.foundations ?? {}} onChanged={props.onChanged} onVoiceStatus={props.onVoiceStatus} />
+          {gate("Approve the foundations & continue", "what you pinned, every step below must keep")}
+        </>
+      )}
       {k === "spine" && (
         <>
-          <SpineStep bookId={bookId} onStatusChange={props.onSpineStatus} onChanged={props.onChanged} />
+          <SpineStep bookId={bookId} newFlow={model.newFlow} foundations={props.foundations} onStatusChange={props.onSpineStatus} onChanged={props.onChanged} />
           {gate("Approve the spine & continue", "the outline is built to realize it")}
         </>
       )}

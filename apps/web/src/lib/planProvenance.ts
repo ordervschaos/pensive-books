@@ -58,6 +58,19 @@ export interface CharacterState {
   has?: string[];
 }
 
+// ── Deltas (pin-driven flow, docs/pinned_method.md §2) ───────────────────────
+// Mirrors the edge copy in supabase/functions/_shared/page-state.ts — keep in sync.
+export type DeltaType = "character" | "thread" | "value" | "world";
+export interface Delta {
+  type: DeltaType;
+  subject: string; // character id/name, thread id, value name, world fact
+  from?: string;
+  to: string;
+  note?: string;
+}
+export type DeltaSync = "planned_only" | "in_sync" | "drifted" | "stale";
+export interface LintFlag { rule: string; severity: "warn" | "error"; message: string }
+
 // The full shape of pages.metadata — author-only page-progression state, never shown to readers. This
 // IS the object that dictates how the next page progresses (the next page reads the latest prior
 // character_states). The canonical copy is supabase/functions/_shared/page-state.ts (PageState); keep
@@ -70,6 +83,30 @@ export interface PageMeta {
   character_states?: CharacterState[]; // full character ledger as of this page (the state axis)
   prose_src_hash?: string; // legacy (Phase 1): parent-only hash for the objective→prose edge
   sync?: Partial<Record<EdgeName, EdgeHash>>; // both-endpoint snapshots, one per edge
+  planned_delta?: Delta[]; // authored at Beats stage (the page's contract)
+  extracted_delta?: Delta[] | null; // distilled from prose after it exists
+  delta_sync?: DeltaSync;
+  lint_flags?: LintFlag[];
+  pinned?: boolean; // author touched objective+beat → regeneration must hold it
+}
+
+/**
+ * Fold the deltas of the given pages (reading order, 1..n-1) into the state ENTERING the next page:
+ * per delta type, subject → latest `to`. Prefers extracted_delta (prose is truth once it exists).
+ * Mirrors foldStateIn in the edge copy.
+ */
+export function foldStateIn(
+  pages: Array<Pick<PageMeta, "planned_delta" | "extracted_delta">>,
+): Record<DeltaType, Record<string, string>> {
+  const out: Record<DeltaType, Record<string, string>> = { character: {}, thread: {}, value: {}, world: {} };
+  for (const p of pages) {
+    const deltas = (p.extracted_delta?.length ? p.extracted_delta : p.planned_delta) ?? [];
+    for (const d of deltas) {
+      if (!d?.type || !d.subject || !(d.type in out)) continue;
+      out[d.type][d.subject] = d.to;
+    }
+  }
+  return out;
 }
 
 /** Canonical name for the per-page state object; alias of PageMeta. */

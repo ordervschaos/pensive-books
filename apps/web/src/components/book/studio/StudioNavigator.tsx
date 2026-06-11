@@ -3,7 +3,7 @@
 // step → the Stage becomes that step's tool; click a page → the Stage becomes that page's resolution
 // ladder. Status comes entirely from the derived model.
 import { ChevronRight, ChevronDown } from "lucide-react";
-import { BUILD_STEPS, POST_STEPS, STEP_LABEL, type StepKey, type StudioModel } from "./studioModel";
+import { POST_STEPS, STEP_LABEL, type StepKey, type StudioModel } from "./studioModel";
 import { Pip3, StepDot } from "./studioUi";
 import type { Selection } from "./BuildStudio";
 
@@ -17,14 +17,14 @@ interface NavigatorProps {
 }
 
 export function StudioNavigator({ model, selection, collapsed, onSelectStep, onSelectPage, onToggleMovement }: NavigatorProps) {
-  const stepNo = BUILD_STEPS.findIndex((k) => model.statusOf(k) === "active" || model.statusOf(k) === "awaiting");
-  const stepLabel = stepNo === -1 ? 6 : stepNo + 1;
+  const stepNo = model.buildSteps.findIndex((k) => model.statusOf(k) === "active" || model.statusOf(k) === "awaiting");
+  const stepLabel = stepNo === -1 ? model.buildSteps.length : stepNo + 1;
 
   return (
     <div className="relative overflow-y-auto border-r border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/40 px-4 pb-12 pt-5">
       <section className="relative">
         <Head left="Build" right={`step ${stepLabel} / 9`} />
-        {BUILD_STEPS.map((k, i) => (
+        {model.buildSteps.map((k, i) => (
           <StepItem key={k} k={k} n={i + 1} model={model} selection={selection} onSelect={onSelectStep} />
         ))}
         <div className="mx-2.5 my-1.5 h-px bg-[hsl(var(--pv-border-soft))]" />
@@ -67,6 +67,9 @@ export function StudioNavigator({ model, selection, collapsed, onSelectStep, onS
                       }}
                     />
                     <span className={`flex-1 truncate pv-serif text-[13.5px] ${active ? "font-semibold text-foreground" : "text-[hsl(var(--pv-text-muted))]"}`}>
+                      {model.tentpolePageIds.has(p.id) && (
+                        <span className="mr-1 text-[hsl(var(--pv-accent))]" title="A tentpole moment lands here" aria-hidden>◆</span>
+                      )}
                       {p.title || "(untitled)"}
                     </span>
                     <Pip3 objective={p.objective} beat={p.beat} prose={p.prose} />

@@ -10,13 +10,16 @@ import { useToast } from "@/hooks/use-toast";
 import { useLatestTaskRow, type TaskRow } from "@/hooks/useLatestTaskRow";
 import { RunControls } from "./RunControls";
 import { BRIDGE, bridgeFetch } from "@/lib/bridge";
-import { stampEdge } from "@/lib/planProvenance";
+import { stampEdge, type Delta } from "@/lib/planProvenance";
+import { type Foundations } from "@/lib/foundations";
 import { DurableOptions } from "./DurableOptions";
 
 interface ScaffoldPage {
   pageType: "section" | "text";
   title: string;
   objective?: string;
+  /** New flow: the page's planned narrative delta (docs/pinned_method.md §3.4). */
+  delta?: Delta[];
 }
 // A planned thread the scaffold proposes, anchored to pages by their index in pages[].
 interface ScaffoldThread {
@@ -30,6 +33,8 @@ interface Scaffold {
   structure: string;
   pages: ScaffoldPage[];
   threads?: ScaffoldThread[];
+  /** New flow: which text page realizes each tentpole (index into pages[]). */
+  tentpolePlacements?: { tentpoleId: string; pageIndex: number }[];
   // The self-critique the architect produced before revising the outline — shown to the author so the
   // plan-pressure is visible (what the editor pass caught).
   critique?: string;
@@ -81,7 +86,12 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
   const [draft, setDraft] = useState<Scaffold | null>(null);
   useEffect(() => {
     const p = row?.status === "ready" ? row.result : null;
-    setDraft(p ? { structure: p.structure, pages: p.pages.map((x) => ({ ...x })), threads: (p.threads ?? []).map((t) => ({ ...t })) } : null);
+    setDraft(p ? {
+      structure: p.structure,
+      pages: p.pages.map((x) => ({ ...x })),
+      threads: (p.threads ?? []).map((t) => ({ ...t })),
+      tentpolePlacements: (p.tentpolePlacements ?? []).map((tp) => ({ ...tp })),
+    } : null);
   }, [row?.id, row?.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const showReview = (!!proposal || creating) && !!draft;
@@ -102,8 +112,8 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
     }
   };
 
-  // Drop a page and keep the planned threads' page-index anchors valid: an anchor at the deleted
-  // index becomes null, anchors after it shift down by one.
+  // Drop a page and keep the planned threads' (and tentpoles') page-index anchors valid: an anchor
+  // at the deleted index becomes null/dropped, anchors after it shift down by one.
   const deletePage = (i: number) =>
     setDraft((d) => {
       if (!d) return d;
@@ -112,6 +122,9 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
         ...d,
         pages: d.pages.filter((_, idx) => idx !== i),
         threads: (d.threads ?? []).map((t) => ({ ...t, setupPageIndex: remap(t.setupPageIndex), payoffPageIndex: remap(t.payoffPageIndex) })),
+        tentpolePlacements: (d.tentpolePlacements ?? [])
+          .map((tp) => ({ ...tp, pageIndex: remap(tp.pageIndex) }))
+          .filter((tp): tp is { tentpoleId: string; pageIndex: number } => tp.pageIndex != null),
       };
     });
 
@@ -184,7 +197,7 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
     // The author may have edited/removed pages; create from the live draft, not the AI's original.
     // Kept 1:1 with draft.pages (removals go through the X button, which also remaps thread anchors),
     // so createdIds[index] still lines up with each thread's setup/payoff page index below.
-    const pages = draft.pages.map((p) => ({ pageType: p.pageType, title: p.title.trim(), objective: (p.objective ?? "").trim() }));
+    const pages = draft.pages.map((p) => ({ pageType: p.pageType, title: p.title.trim(), objective: (p.objective ?? "").trim(), delta: p.delta }));
     if (pages.length === 0) return;
     // Stacking scaffolds onto an already-populated book is how a book ends up with hundreds of
     // pages. Confirm before adding to a book that clearly already has content.
@@ -226,7 +239,14 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
           title: page.title,
           page_type: page.pageType,
         };
-        if (page.objective) update.metadata = stampEdge({ objective: page.objective }, "spine_objective", spineText, page.objective);
+        if (page.objective) {
+          // Seed the page state: the objective (edge-stamped against the spine) plus, in the new
+          // flow, the planned delta — the page's narrative contract, awaiting prose.
+          const seed = page.delta?.length
+            ? { objective: page.objective, planned_delta: page.delta, delta_sync: "planned_only" as const }
+            : { objective: page.objective };
+          update.metadata = stampEdge(seed, "spine_objective", spineText, page.objective);
+        }
         const { error: upErr } = await supabase
           .from("pages")
           .update(update)
@@ -234,25 +254,50 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
         if (upErr) throw upErr;
       }
 
-      // Persist the planned threads, mapping each page-index anchor to its created page id.
-      const threadRows = (draft.threads ?? [])
-        .filter((t) => t.name.trim())
-        .map((t) => ({
-          book_id: bookId,
-          name: t.name.trim(),
-          description: t.description || null,
-          status: "planned",
-          source: "ai",
-          setup_page_id: t.setupPageIndex != null ? createdIds[t.setupPageIndex] ?? null : null,
-          payoff_page_id: t.payoffPageIndex != null ? createdIds[t.payoffPageIndex] ?? null : null,
-          target_distance: t.targetDistance,
-        }));
-      if (threadRows.length) {
-        const { error: thErr } = await supabase.from("book_threads").insert(threadRows);
+      // Persist the planned threads, then anchor them via book_thread_anchors (the flat
+      // setup/payoff_page_id columns were dropped by the anchors migration — a planned setup is a
+      // 'promise' anchor, a planned payoff a 'resolution' anchor, both sequence 0).
+      const plannedThreads = (draft.threads ?? []).filter((t) => t.name.trim());
+      if (plannedThreads.length) {
+        const { data: inserted, error: thErr } = await supabase.from("book_threads").insert(
+          plannedThreads.map((t) => ({
+            book_id: bookId,
+            name: t.name.trim(),
+            description: t.description || null,
+            status: "planned",
+            source: "ai",
+            target_distance: t.targetDistance,
+          })),
+        ).select("id");
         if (thErr) throw thErr;
+        const anchorRows = (inserted ?? []).flatMap((row, i) => {
+          const t = plannedThreads[i];
+          const setupId = t.setupPageIndex != null ? createdIds[t.setupPageIndex] : null;
+          const payoffId = t.payoffPageIndex != null ? createdIds[t.payoffPageIndex] : null;
+          return [
+            ...(setupId ? [{ thread_id: row.id, page_id: setupId, role: "promise", sequence: 0 }] : []),
+            ...(payoffId ? [{ thread_id: row.id, page_id: payoffId, role: "resolution", sequence: 0 }] : []),
+          ];
+        });
+        if (anchorRows.length) {
+          const { error: anErr } = await supabase.from("book_thread_anchors").insert(anchorRows);
+          if (anErr) throw anErr;
+        }
       }
 
-      const threadNote = threadRows.length ? ` and ${threadRows.length} planned threads` : "";
+      // New flow: stamp each placed tentpole with its created page id (foundations.tentpoles[].placed_page_id).
+      const placements = (draft.tentpolePlacements ?? []).filter((tp) => createdIds[tp.pageIndex] != null);
+      if (placements.length) {
+        const { data: bookF } = await supabase.from("books").select("foundations").eq("id", bookId).maybeSingle();
+        const f = (bookF?.foundations as Foundations | null);
+        if (f?.tentpoles?.length) {
+          const byTentpole = new Map(placements.map((tp) => [tp.tentpoleId, createdIds[tp.pageIndex]]));
+          const tentpoles = f.tentpoles.map((t) => (byTentpole.has(t.id) ? { ...t, placed_page_id: byTentpole.get(t.id) } : t));
+          await supabase.from("books").update({ foundations: { ...f, tentpoles } }).eq("id", bookId);
+        }
+      }
+
+      const threadNote = plannedThreads.length ? ` and ${plannedThreads.length} planned threads` : "";
       toast({ title: "Outline created", description: `${pages.length} pages added with objectives${threadNote}.` });
       setCreating(false);
       refetch();

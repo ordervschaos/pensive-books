@@ -94,11 +94,21 @@ export async function readProse(pageId: number): Promise<string> {
 }
 
 // ── Node writes (persist + stamp the touched edges) ──────────────────────────
-/** Save the book spine, reconciled with the current brief (brief→spine is the one-way top edge). */
-export async function saveSpine(bookId: number, text: string): Promise<void> {
-  const { data } = await supabase.from("books").select("brief").eq("id", bookId).maybeSingle();
+/**
+ * Save the book spine, reconciled with the current brief (brief→spine is the one-way top edge).
+ * MERGES into the existing jsonb — the new flow keeps routes/selected_route_id alongside text
+ * (lib/foundations.ts SpineNode) and a plain overwrite would drop them. `pinned` marks an explicit
+ * author gesture (edit / picked option) per the pin rules; AI auto-applies leave the pin alone.
+ */
+export async function saveSpine(bookId: number, text: string, opts: { pinned?: boolean } = {}): Promise<void> {
+  const { data } = await supabase.from("books").select("brief, spine").eq("id", bookId).maybeSingle();
   const brief_hash = metaHash(briefToPromptContext((data?.brief as Brief | null) ?? null) ?? "");
-  const { error } = await supabase.from("books").update({ spine: { text, brief_hash } }).eq("id", bookId);
+  const prev = (data?.spine as Record<string, unknown> | null) ?? {};
+  const spine = {
+    ...prev, text, brief_hash,
+    ...(opts.pinned ? { pinned: true, author_edited_at: new Date().toISOString() } : {}),
+  };
+  const { error } = await supabase.from("books").update({ spine }).eq("id", bookId);
   if (error) throw error;
 }
 
