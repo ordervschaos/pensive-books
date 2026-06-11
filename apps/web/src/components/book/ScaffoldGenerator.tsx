@@ -59,6 +59,8 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
   const { toast } = useToast();
   const [creating, setCreating] = useState(false);
   const [kicking, setKicking] = useState(false); // true between clicking Generate and the run row appearing
+  const [reviseInstruction, setReviseInstruction] = useState("");
+  const [revising, setRevising] = useState(false);
 
   const { row, refetch, stale } = useLatestTaskRow<ScaffoldRow>({
     table: "book_generations",
@@ -122,6 +124,44 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
   const dismiss = async () => {
     if (row) await supabase.from("book_generations").update({ status: "dismissed" }).eq("id", row.id);
     refetch();
+  };
+
+  const revise = async () => {
+    const instr = reviseInstruction.trim();
+    if (!instr || !draft || revising) return;
+    setRevising(true);
+    try {
+      const body = { bookId, scaffold: draft, instruction: instr };
+      let revised: Scaffold;
+      if (BRIDGE) {
+        const r = await bridgeFetch("/revise-scaffold", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+        const d = await r.json();
+        if (d.error) throw new Error(d.error);
+        revised = d as Scaffold;
+      } else {
+        const { data, error } = await supabase.functions.invoke("revise-scaffold", { body });
+        if (error) throw error;
+        if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
+        revised = data as Scaffold;
+      }
+      const next: Scaffold = {
+        structure: revised.structure,
+        pages: revised.pages.map((p) => ({ ...p })),
+        threads: (revised.threads ?? []).map((t) => ({ ...t })),
+      };
+      setDraft(next);
+      if (row) {
+        await supabase.from("book_generations").update({
+          result: { ...next, critique: row.result?.critique },
+        }).eq("id", row.id);
+      }
+      setReviseInstruction("");
+      toast({ title: "Outline revised", description: `${next.pages.length} pages — review the changes, then create when ready.` });
+    } catch (e) {
+      toast({ title: "Couldn't revise the outline", description: String((e as Error)?.message ?? e), variant: "destructive" });
+    } finally {
+      setRevising(false);
+    }
   };
 
   const create = async () => {
@@ -241,6 +281,31 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
               <pre className="mt-2 whitespace-pre-wrap pv-serif italic text-[hsl(var(--pv-text-faint))]">{row.result.critique.trim()}</pre>
             </details>
           )}
+
+          <div className="rounded-md border border-border bg-muted/30 px-3 py-3">
+            <p className="pv-serif text-[13px] italic text-muted-foreground">
+              Revise with a prompt — brief and spine stay in context, the rest is preserved.
+            </p>
+            <Textarea
+              value={reviseInstruction}
+              onChange={(e) => setReviseInstruction(e.target.value)}
+              placeholder='What should change? e.g. "cut the middle act to 8 pages" or "make the ending less neat"'
+              rows={2}
+              disabled={revising || creating}
+              className="mt-2 min-h-[56px] resize-none text-[13.5px]"
+            />
+            <div className="mt-2 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => void revise()}
+                disabled={revising || creating || !reviseInstruction.trim()}
+                className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-accent))] transition-colors hover:text-foreground disabled:opacity-50"
+              >
+                {revising ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                {revising ? "Revising…" : "Revise →"}
+              </button>
+            </div>
+          </div>
 
           <div className="space-y-2">
             {draft?.pages.map((p, i) => (

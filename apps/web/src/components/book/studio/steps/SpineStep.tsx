@@ -17,6 +17,7 @@ export function SpineStep({ bookId, onStatusChange, onChanged }: { bookId: numbe
   const [working, setWorking] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [showRevise, setShowRevise] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -76,35 +77,46 @@ export function SpineStep({ bookId, onStatusChange, onChanged }: { bookId: numbe
         <button type="button" onClick={generate} disabled={working} className="inline-flex items-center gap-1.5 italic text-[hsl(var(--pv-accent))] hover:opacity-75 disabled:opacity-50">
           <RefreshCw className="h-3.5 w-3.5" /> re-draft from the brief
         </button>
-        {dirty && (
-          <button type="button" onClick={() => void save()} disabled={saving} className="ml-auto inline-flex items-center gap-1.5 italic text-[hsl(var(--pv-text-muted))] hover:text-foreground">
-            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} save edits
-          </button>
-        )}
+        <div className="ml-auto flex items-center gap-4">
+          {dirty && (
+            <button type="button" onClick={() => void save()} disabled={saving} className="inline-flex items-center gap-1.5 italic text-[hsl(var(--pv-text-muted))] hover:text-foreground">
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} save edits
+            </button>
+          )}
+          {!showRevise && (
+            <button type="button" onClick={() => setShowRevise(true)} className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-muted))] hover:text-[hsl(var(--pv-accent))] transition-colors">
+              revise →
+            </button>
+          )}
+        </div>
       </div>
-      <div className="mt-4 border-t border-[hsl(var(--pv-border-soft))] pt-4">
-        <p className="pv-serif mb-2 text-[13px] italic text-[hsl(var(--pv-text-muted))]">Revise with a prompt — the brief stays in context, the rest is preserved.</p>
-        <NodeReviser
-          inline
-          current={spine.trim()}
-          busy={working}
-          onRevise={async (instr) => {
-            try {
-              return await transforms.reviseNode(bookId, "spine", spine.trim(), instr);
-            } catch (e) {
-              toast({ title: "Couldn't revise the spine", description: String((e as Error)?.message ?? e), variant: "destructive" });
-              throw e;
-            }
-          }}
-          onAccept={async (proposed) => {
-            await saveSpine(bookId, proposed);
-            setSpine(proposed);
-            setDirty(false);
-            onStatusChange(!!proposed.trim());
-            onChanged();
-          }}
-        />
-      </div>
+      {showRevise && (
+        <div className="mt-4 border-t border-[hsl(var(--pv-border-soft))] pt-4">
+          <p className="pv-serif mb-2 text-[13px] italic text-[hsl(var(--pv-text-muted))]">Revise with a prompt.</p>
+          <NodeReviser
+            inline
+            current={spine.trim()}
+            busy={working}
+            onRevise={async (instr) => {
+              try {
+                return await transforms.reviseNode(bookId, "spine", spine.trim(), instr);
+              } catch (e) {
+                toast({ title: "Couldn't revise the spine", description: String((e as Error)?.message ?? e), variant: "destructive" });
+                throw e;
+              }
+            }}
+            onAccept={async (proposed) => {
+              await saveSpine(bookId, proposed);
+              setSpine(proposed);
+              setDirty(false);
+              setShowRevise(false);
+              onStatusChange(!!proposed.trim());
+              onChanged();
+            }}
+            onCancel={() => setShowRevise(false)}
+          />
+        </div>
+      )}
     </div>
   );
 }

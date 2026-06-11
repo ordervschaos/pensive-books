@@ -961,6 +961,79 @@ Write the book spine. 1–2 short paragraphs, the throughline only.`;
   return { spine: (out.text ?? "").trim() };
 }
 
+// ── /revise-scaffold ──────────────────────────────────────────────────────────
+// Mirrors supabase/functions/revise-scaffold: revise a proposed outline from an author instruction.
+const REVISE_SCAFFOLD_INSTRUCTIONS = `You are a book architect revising an EXISTING outline (objectives only — no prose). The author's INSTRUCTION is the primary directive: do what it asks while PRESERVING what already works. Brief and spine stay in context throughout.
+
+You may change objectives, re-order pages, add or cut pages, and re-anchor threads as needed — but be surgical: change only what the instruction requires.
+
+Output JSON ONLY (no prose, no fences), exactly:
+{ "structure": "<the structure>", "pages": [ { "pageType": "section", "title": "...", "objective": "" }, { "pageType": "text", "title": "...", "objective": "..." } ], "threads": [ { "name": "...", "description": "...", "setupPageIndex": <index>, "payoffPageIndex": <index>, "targetDistance": <approx words> } ] }`;
+
+function parseScaffoldJson(text) {
+  let raw = text.trim();
+  const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fence) raw = fence[1].trim();
+  else {
+    const first = raw.indexOf("{");
+    const last = raw.lastIndexOf("}");
+    if (first !== -1 && last > first) raw = raw.slice(first, last + 1);
+  }
+  const parsed = JSON.parse(raw);
+  if (!Array.isArray(parsed.pages) || parsed.pages.length === 0) throw new Error("no pages");
+  parsed.pages = parsed.pages
+    .filter((p) => p && (p.pageType === "section" || p.pageType === "text") && typeof p.title === "string")
+    .map((p) => ({ pageType: p.pageType, title: p.title.trim(), objective: (p.objective ?? "").trim() }));
+  const n = parsed.pages.length;
+  const validIndex = (v) => typeof v === "number" && Number.isInteger(v) && v >= 0 && v < n ? v : null;
+  const threads = (Array.isArray(parsed.threads) ? parsed.threads : [])
+    .filter((t) => t && typeof t.name === "string" && t.name.trim())
+    .map((t) => ({
+      name: t.name.trim(),
+      description: typeof t.description === "string" ? t.description.trim() : "",
+      setupPageIndex: validIndex(t.setupPageIndex),
+      payoffPageIndex: validIndex(t.payoffPageIndex),
+      targetDistance: typeof t.targetDistance === "number" && t.targetDistance > 0 ? Math.round(t.targetDistance) : null,
+    }));
+  return { structure: String(parsed.structure ?? "").trim(), pages: parsed.pages, threads };
+}
+
+async function runReviseScaffold(body) {
+  const { bookId, scaffold, instruction } = body;
+  if (!bookId) return { error: "bookId required" };
+  const instr = (instruction ?? "").trim();
+  if (!instr) return { error: "instruction required" };
+  if (!scaffold?.pages?.length) return { error: "scaffold with pages required" };
+
+  const book = await fetchBook(bookId);
+  if (!book) return { error: "Book not found" };
+  const spine = book.spine?.text?.trim() || null;
+  const bible = book.bible?.text?.trim() || null;
+
+  const prompt = `${REVISE_SCAFFOLD_INSTRUCTIONS}
+
+BOOK: ${book.name}${spine ? `\n\nBOOK SPINE (the throughline — the outline must realize this):\n${spine}` : ""}
+
+BRIEF:
+${briefContext(book.brief)}${bible ? `\n\nBOOK BIBLE (established facts):\n${bible}` : ""}
+
+CURRENT OUTLINE (JSON):
+${JSON.stringify({ structure: scaffold.structure ?? "", pages: scaffold.pages, threads: scaffold.threads ?? [] })}
+
+AUTHOR'S INSTRUCTION:
+${instr}
+
+Return the revised outline. JSON only.`;
+
+  const out = await runClaude(prompt, true, { fn: "revise-scaffold", bookId }, { noTools: true });
+  if (out.error) return out;
+  try {
+    return parseScaffoldJson(out.text);
+  } catch (e) {
+    return { error: `Could not parse scaffold JSON: ${e.message}` };
+  }
+}
+
 // ── /revise-node ──────────────────────────────────────────────────────────────
 // Mirrors supabase/functions/revise-node: revise a short plan node (spine/objective/beat) against an
 // instruction, preserving what works. The signal-driven preserve path for the small layers.
@@ -1251,6 +1324,7 @@ const FN_PROMPT_SOURCE = {
   "beat-to-objective": "supabase/functions/beat-to-objective/index.ts (and scripts/eval-bridge.mjs runBeatToObjective)",
   "objectives-to-spine": "supabase/functions/objectives-to-spine/index.ts (and scripts/eval-bridge.mjs runObjectivesToSpine)",
   "revise-node": "supabase/functions/revise-node/index.ts (and scripts/eval-bridge.mjs runReviseNode)",
+  "revise-scaffold": "supabase/functions/revise-scaffold/index.ts (and scripts/eval-bridge.mjs runReviseScaffold)",
   "scan-page": "supabase/functions/scan-threads/index.ts (callHaiku)",
   "evaluate-book": "supabase/functions/evaluate-book/index.ts (runTriage/runGroup/runVerdict)",
 };
@@ -1561,6 +1635,16 @@ async function route(req, res) {
     return json(res, 200, out);
   }
 
+  if (url === "/revise-scaffold" || url === "/revise-scaffold/") {
+    if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
+    const body = await readBody(req);
+    if (!(await authorize(req, res, Number(body.bookId)))) return;
+    console.log(`Revising scaffold (book ${body.bookId})…`);
+    const out = await runReviseScaffold(body);
+    if (out.error) return json(res, 500, { error: out.error });
+    return json(res, 200, out);
+  }
+
   if (url === "/beat-to-objective" || url === "/beat-to-objective/") {
     if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
     const body = await readBody(req);
@@ -1607,5 +1691,5 @@ async function route(req, res) {
 
 server.listen(PORT, () => {
   console.log(`eval-bridge listening on http://localhost:${PORT}  (repo: ${repoRoot})`);
-  console.log(`  GET/POST /eval/:bookId   POST /spine-to-objectives/:bookId   POST /bible/:bookId   POST /revise-outline/:bookId   POST /beat-to-prose   POST /revise-prose   POST /objective-to-beat   POST /prose-to-beat   POST /brief-to-spine   POST /beat-to-objective   POST /objectives-to-spine   POST /revise-node`);
+  console.log(`  GET/POST /eval/:bookId   POST /spine-to-objectives/:bookId   POST /bible/:bookId   POST /revise-outline/:bookId   POST /beat-to-prose   POST /revise-prose   POST /objective-to-beat   POST /prose-to-beat   POST /brief-to-spine   POST /beat-to-objective   POST /objectives-to-spine   POST /revise-node   POST /revise-scaffold`);
 });
