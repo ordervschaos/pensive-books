@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { readNode, readProse, saveBeat, saveObjective, transforms } from "@/lib/ladder";
 import type { CellState } from "@/lib/planGraph";
+import { NodeOptions, NodeReviser } from "../ladder-ui";
 import { ProseNodePanel } from "../ProseNodePanel";
 import type { StudioModel } from "./studioModel";
 import { Pip } from "./studioUi";
@@ -116,6 +117,28 @@ export function PageReview({ bookId, model, pageId, onChanged, onSelectPage }: P
               className="pv-serif border-none bg-transparent px-0 text-[15.5px] leading-[1.55] focus-visible:ring-0"
               placeholder="What this page must achieve…"
             />
+            <div className="mt-3 flex items-center gap-4 border-t border-[hsl(var(--pv-border-soft))] pt-3">
+              <NodeReviser
+                current={objective.trim()}
+                busy={busy !== null}
+                buttonLabel="revise"
+                onRevise={(instr) => transforms.reviseNode(bookId, "objective", objective.trim(), instr, pageId)}
+                onAccept={async (proposed) => {
+                  setObjective(proposed);
+                  await saveObjective(bookId, pageId, proposed);
+                  onChanged();
+                }}
+              />
+              <NodeOptions
+                busy={busy !== null}
+                onGenerate={() => transforms.objectiveOptions(bookId, pageId)}
+                onAccept={async (proposed) => {
+                  setObjective(proposed);
+                  await saveObjective(bookId, pageId, proposed);
+                  onChanged();
+                }}
+              />
+            </div>
           </LevelCard>
 
           <DownArrow />

@@ -961,6 +961,55 @@ Write the book spine. 1–2 short paragraphs, the throughline only.`;
   return { spine: (out.text ?? "").trim() };
 }
 
+// ── /spine-options ────────────────────────────────────────────────────────────
+// Mirrors supabase/functions/spine-options: generate 3 wide alternative spines from the brief.
+const SPINE_OPTIONS_SYSTEM = `You are a book architect generating ALTERNATIVE SPINES from an author's brief.
+
+A SPINE is the book's throughline: 1–2 short paragraphs stating what this book is fundamentally DOING — its central objective/promise and the arc from beginning to end. It is not a blurb or marketing copy. It names the central aim, the through-arc, and what changes by the end.
+
+Generate exactly 3 ALTERNATIVES. Each must:
+- Honor the brief (genre, audience, premise, tone, scope) as the non-negotiable contract
+- Be GENUINELY DIFFERENT from each other — pull different threads from the premise, foreground different tensions, land on different emotional arcs
+- Vary in register: one could be intimate and interior, one structural and external, one thematic/philosophical
+- If a current spine is provided, vary away from it — don't paraphrase it
+
+Output JSON ONLY (no prose, no fences):
+{ "options": ["<1–2 paragraphs>", "<1–2 paragraphs>", "<1–2 paragraphs>"] }`;
+
+async function runSpineOptions(body) {
+  const { bookId } = body;
+  if (!bookId) return { error: "bookId required" };
+  const book = await fetchBook(bookId);
+  if (!book) return { error: "Book not found" };
+  const current = book.spine?.text?.trim() || null;
+
+  const userContent =
+    `BOOK: ${book.name}\n\nBRIEF:\n${briefContext(book.brief)}` +
+    (current ? `\n\nCURRENT SPINE (what's there now — vary away from it):\n${current}` : "\n\n(No spine set yet.)") +
+    `\n\nGenerate 3 wide-varying alternative spines. JSON only.`;
+
+  const prompt = `${SPINE_OPTIONS_SYSTEM}\n\n${userContent}`;
+  const out = await runClaude(prompt, true, { fn: "spine-options", bookId }, { noTools: true });
+  if (out.error) return out;
+  try {
+    const raw = (out.text ?? "").trim();
+    let json = raw;
+    const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (fence) json = fence[1].trim();
+    else {
+      const f = raw.indexOf("{"), l = raw.lastIndexOf("}");
+      if (f !== -1 && l > f) json = raw.slice(f, l + 1);
+    }
+    const parsed = JSON.parse(json);
+    const arr = Array.isArray(parsed) ? parsed : (Array.isArray(parsed.options) ? parsed.options : []);
+    const options = arr.map((s) => String(s).trim()).filter(Boolean);
+    if (options.length === 0) return { error: "No options returned" };
+    return { options };
+  } catch (e) {
+    return { error: `Could not parse options JSON: ${e.message}` };
+  }
+}
+
 // ── /revise-scaffold ──────────────────────────────────────────────────────────
 // Mirrors supabase/functions/revise-scaffold: revise a proposed outline from an author instruction.
 const REVISE_SCAFFOLD_INSTRUCTIONS = `You are a book architect revising an EXISTING outline (objectives only — no prose). The author's INSTRUCTION is the primary directive: do what it asks while PRESERVING what already works. Brief and spine stay in context throughout.
@@ -1081,6 +1130,88 @@ Return the revised ${layer} only.`;
   const out = await runClaude(prompt, true, { fn: "revise-node", bookId }, { noTools: true });
   if (out.error) return out;
   return { text: (out.text ?? "").trim() };
+}
+
+// ── /objective-options ───────────────────────────────────────────────────────
+// Mirrors supabase/functions/objective-options: generate 3 wide alternative objectives for a slot.
+const OBJECTIVE_OPTIONS_SYSTEM = `You are a book architect generating ALTERNATIVE OBJECTIVES for one outline slot.
+
+An OBJECTIVE is 1–2 sentences stating what a page must achieve — its job in the story, not what happens beat-by-beat. The objective is the contract the beat and prose will fulfill.
+
+You will be given the committed objectives for all pages before this slot as the story-so-far context. Use them as the causal foundation — something has to happen here that follows from where the story has arrived.
+
+Generate exactly 3 ALTERNATIVES. Each must:
+- Connect causally to the committed prefix (follow "therefore" or "but" from what came before)
+- Honor the spine's throughline
+- Be GENUINELY DIFFERENT from each other — different angle, direction, or emotional register
+- Vary in ambition: one quieter interior move, one larger external turn, one unexpected diagonal
+
+Output JSON ONLY (no prose, no fences):
+{ "options": ["<option 1>", "<option 2>", "<option 3>"] }`;
+
+function objectivePrefixContext(pages, targetId) {
+  const targetIdx = pages.findIndex((p) => p.id === targetId);
+  const target = pages[targetIdx] ?? null;
+  const lines = [];
+  for (let i = 0; i < targetIdx; i++) {
+    const p = pages[i];
+    if (p.page_type === "section") {
+      lines.push(`# ${p.title || "(untitled section)"}`);
+    } else {
+      const obj = p.metadata?.objective?.trim();
+      lines.push(`- "${p.title || "(untitled)"}" — ${obj || "(no objective yet)"}`);
+    }
+  }
+  return {
+    prefix: lines.join("\n") || "(this is the first page — no preceding objectives)",
+    current: target?.metadata?.objective?.trim() || "",
+    title: target?.title?.trim() || "(untitled)",
+  };
+}
+
+function parseObjectiveOptions(text) {
+  let raw = text.trim();
+  const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fence) raw = fence[1].trim();
+  else {
+    const first = raw.indexOf("{");
+    const last = raw.lastIndexOf("}");
+    if (first !== -1 && last > first) raw = raw.slice(first, last + 1);
+  }
+  const parsed = JSON.parse(raw);
+  const arr = Array.isArray(parsed) ? parsed : (Array.isArray(parsed.options) ? parsed.options : []);
+  return arr.map((s) => String(s).trim()).filter(Boolean);
+}
+
+async function runObjectiveOptions(body) {
+  const { bookId, pageId } = body;
+  if (!bookId || !pageId) return { error: "bookId and pageId required" };
+
+  const book = await fetchBook(bookId);
+  if (!book) return { error: "Book not found" };
+  const pages = await fetchPages(bookId);
+
+  const { prefix, current, title } = objectivePrefixContext(pages, pageId);
+  const spine = book.spine?.text?.trim() || null;
+
+  const userContent =
+    `BOOK: ${book.name}\n\nBRIEF:\n${briefContext(book.brief)}` +
+    (spine ? `\n\nBOOK SPINE (the throughline — alternatives must serve it):\n${spine}` : "") +
+    `\n\nCOMMITTED OBJECTIVES (story-so-far — use as causal foundation):\n${prefix}` +
+    `\n\nTHIS SLOT: "${title}"` +
+    (current ? `\n\nCURRENT OBJECTIVE (what's there now — vary away from it):\n${current}` : "\n\n(No objective set yet for this slot.)") +
+    `\n\nGenerate 3 wide-varying alternatives for this slot. JSON only.`;
+
+  const prompt = `${OBJECTIVE_OPTIONS_SYSTEM}\n\n${userContent}`;
+  const out = await runClaude(prompt, true, { fn: "objective-options", bookId }, { noTools: true });
+  if (out.error) return out;
+  try {
+    const options = parseObjectiveOptions(out.text ?? "");
+    if (options.length === 0) return { error: "No options returned" };
+    return { options };
+  } catch (e) {
+    return { error: `Could not parse options JSON: ${e.message}` };
+  }
 }
 
 // ── /beat-to-objective ────────────────────────────────────────────────────────
@@ -1325,6 +1456,8 @@ const FN_PROMPT_SOURCE = {
   "objectives-to-spine": "supabase/functions/objectives-to-spine/index.ts (and scripts/eval-bridge.mjs runObjectivesToSpine)",
   "revise-node": "supabase/functions/revise-node/index.ts (and scripts/eval-bridge.mjs runReviseNode)",
   "revise-scaffold": "supabase/functions/revise-scaffold/index.ts (and scripts/eval-bridge.mjs runReviseScaffold)",
+  "objective-options": "supabase/functions/objective-options/index.ts (and scripts/eval-bridge.mjs runObjectiveOptions)",
+  "spine-options": "supabase/functions/spine-options/index.ts (and scripts/eval-bridge.mjs runSpineOptions)",
   "scan-page": "supabase/functions/scan-threads/index.ts (callHaiku)",
   "evaluate-book": "supabase/functions/evaluate-book/index.ts (runTriage/runGroup/runVerdict)",
 };
@@ -1645,6 +1778,26 @@ async function route(req, res) {
     return json(res, 200, out);
   }
 
+  if (url === "/objective-options" || url === "/objective-options/") {
+    if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
+    const body = await readBody(req);
+    if (!(await authorize(req, res, Number(body.bookId)))) return;
+    console.log(`Generating objective options (book ${body.bookId}, page ${body.pageId})…`);
+    const out = await runObjectiveOptions(body);
+    if (out.error) return json(res, 500, { error: out.error });
+    return json(res, 200, out);
+  }
+
+  if (url === "/spine-options" || url === "/spine-options/") {
+    if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
+    const body = await readBody(req);
+    if (!(await authorize(req, res, Number(body.bookId)))) return;
+    console.log(`Generating spine options (book ${body.bookId})…`);
+    const out = await runSpineOptions(body);
+    if (out.error) return json(res, 500, { error: out.error });
+    return json(res, 200, out);
+  }
+
   if (url === "/beat-to-objective" || url === "/beat-to-objective/") {
     if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
     const body = await readBody(req);
@@ -1691,5 +1844,5 @@ async function route(req, res) {
 
 server.listen(PORT, () => {
   console.log(`eval-bridge listening on http://localhost:${PORT}  (repo: ${repoRoot})`);
-  console.log(`  GET/POST /eval/:bookId   POST /spine-to-objectives/:bookId   POST /bible/:bookId   POST /revise-outline/:bookId   POST /beat-to-prose   POST /revise-prose   POST /objective-to-beat   POST /prose-to-beat   POST /brief-to-spine   POST /beat-to-objective   POST /objectives-to-spine   POST /revise-node   POST /revise-scaffold`);
+  console.log(`  GET/POST /eval/:bookId   POST /spine-to-objectives/:bookId   POST /bible/:bookId   POST /revise-outline/:bookId   POST /beat-to-prose   POST /revise-prose   POST /objective-to-beat   POST /prose-to-beat   POST /brief-to-spine   POST /beat-to-objective   POST /objectives-to-spine   POST /revise-node   POST /revise-scaffold   POST /objective-options   POST /spine-options`);
 });

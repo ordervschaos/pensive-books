@@ -60,6 +60,12 @@ export const transforms = {
   // revise (signal-driven, preserves) — the short plan nodes; prose has its own heavier reviser.
   reviseNode: (bookId: number, layer: NodeLayer, current: string, instruction: string, pageId?: number) =>
     call("revise-node", { bookId, pageId, layer, current, instruction }, "text"),
+  // wide alternatives for one objective slot, grounded on the committed prefix before it.
+  objectiveOptions: (bookId: number, pageId: number) =>
+    callList("objective-options", { bookId, pageId }, "options"),
+  // wide alternative spines from the brief — 3 different directions to choose from.
+  spineOptions: (bookId: number) =>
+    callList("spine-options", { bookId }, "options"),
 };
 
 // ── Node reads ───────────────────────────────────────────────────────────────

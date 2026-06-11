@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { Loader2, RefreshCw, Sparkles } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { NodeReviser } from "../../ladder-ui";
+import { NodeOptions, NodeReviser } from "../../ladder-ui";
 import { readNode, saveSpine, transforms } from "@/lib/ladder";
 import { Hero } from "../studioUi";
 
@@ -84,9 +84,22 @@ export function SpineStep({ bookId, onStatusChange, onChanged }: { bookId: numbe
             </button>
           )}
           {!showRevise && (
-            <button type="button" onClick={() => setShowRevise(true)} className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-muted))] hover:text-[hsl(var(--pv-accent))] transition-colors">
-              revise →
-            </button>
+            <>
+              <button type="button" onClick={() => setShowRevise(true)} className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-muted))] hover:text-[hsl(var(--pv-accent))] transition-colors">
+                revise →
+              </button>
+              <NodeOptions
+                busy={working || saving}
+                onGenerate={() => transforms.spineOptions(bookId)}
+                onAccept={async (proposed) => {
+                  await saveSpine(bookId, proposed);
+                  setSpine(proposed);
+                  setDirty(false);
+                  onStatusChange(!!proposed.trim());
+                  onChanged();
+                }}
+              />
+            </>
           )}
         </div>
       </div>

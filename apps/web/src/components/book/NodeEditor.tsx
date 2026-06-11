@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import type { CellState } from "@/lib/planGraph";
 import { readNode, readProse, saveBeat, saveObjective, saveSpine, transforms, type NodeLayer } from "@/lib/ladder";
-import { NodeLabel, NodeReviser, RecreateButton } from "./ladder-ui";
+import { NodeLabel, NodeOptions, NodeReviser, RecreateButton } from "./ladder-ui";
 import { ProseNodePanel } from "./ProseNodePanel";
 
 // A node target the sheet can open. prose is supported too (rendered by ProseNodePanel); brief lives
@@ -207,6 +207,18 @@ export function NodeEditor({
                     current={draft.trim()}
                     busy={busy !== null}
                     onRevise={(instr) => transforms.reviseNode(bookId, layer as NodeLayer, draft.trim(), instr, pageId)}
+                    onAccept={acceptRevision}
+                  />
+                </div>
+              )}
+
+              {/* OPTIONS — wide alternatives grounded on the committed prefix. Objective only. */}
+              {layer === "objective" && pageId && (
+                <div>
+                  <NodeLabel>Options · wide takes from the story-so-far</NodeLabel>
+                  <NodeOptions
+                    busy={busy !== null}
+                    onGenerate={() => transforms.objectiveOptions(bookId, pageId)}
                     onAccept={acceptRevision}
                   />
                 </div>
