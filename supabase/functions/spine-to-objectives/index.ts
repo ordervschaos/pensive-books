@@ -21,7 +21,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { runInBackground, serviceClient } from "../_shared/task.ts";
 import { callClaude as callClaudeApi, type CallMeta } from "../_shared/claude.ts";
 import { getActiveModels } from "../_shared/model-config.ts";
-import { type Foundations } from "../_shared/foundations-core.ts";
+import { type Foundations, settledContext } from "../_shared/foundations-core.ts";
 import { type Delta } from "../_shared/page-state.ts";
 
 const json = (body: unknown, status = 200) =>
