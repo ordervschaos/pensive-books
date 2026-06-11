@@ -61,6 +61,7 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
   const [kicking, setKicking] = useState(false); // true between clicking Generate and the run row appearing
   const [reviseInstruction, setReviseInstruction] = useState("");
   const [revising, setRevising] = useState(false);
+  const [showRevise, setShowRevise] = useState(false);
 
   const { row, refetch, stale } = useLatestTaskRow<ScaffoldRow>({
     table: "book_generations",
@@ -155,7 +156,7 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
           result: { ...next, critique: row.result?.critique },
         }).eq("id", row.id);
       }
-      setReviseInstruction("");
+      setReviseInstruction(""); setShowRevise(false);
       toast({ title: "Outline revised", description: `${next.pages.length} pages — review the changes, then create when ready.` });
     } catch (e) {
       toast({ title: "Couldn't revise the outline", description: String((e as Error)?.message ?? e), variant: "destructive" });
@@ -282,69 +283,80 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
             </details>
           )}
 
-          <div className="rounded-md border border-border bg-muted/30 px-3 py-3">
-            <p className="pv-serif text-[13px] italic text-muted-foreground">
-              Revise with a prompt — brief and spine stay in context, the rest is preserved.
-            </p>
-            <Textarea
-              value={reviseInstruction}
-              onChange={(e) => setReviseInstruction(e.target.value)}
-              placeholder='What should change? e.g. "cut the middle act to 8 pages" or "make the ending less neat"'
-              rows={2}
-              disabled={revising || creating}
-              className="mt-2 min-h-[56px] resize-none text-[13.5px]"
-            />
-            <div className="mt-2 flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => void revise()}
-                disabled={revising || creating || !reviseInstruction.trim()}
-                className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-accent))] transition-colors hover:text-foreground disabled:opacity-50"
-              >
-                {revising ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                {revising ? "Revising…" : "Revise →"}
-              </button>
-            </div>
-          </div>
-
-          <div className="space-y-2">
+          <div className="space-y-3">
             {draft?.pages.map((p, i) => (
-              <div
-                key={i}
-                className={`group flex items-start gap-2 rounded-md ${p.pageType === "section" ? "pt-3" : "pl-4"}`}
-              >
-                <div className="flex-1 space-y-1">
+              p.pageType === "section" ? (
+                <div key={i} className="group flex items-center gap-2 pt-4 first:pt-1">
                   <Input
                     value={p.title}
                     onChange={(e) => updatePage(i, { title: e.target.value })}
-                    placeholder={p.pageType === "section" ? "Chapter / part title" : "Page title"}
-                    className={`h-8 ${p.pageType === "section" ? "font-semibold" : ""}`}
+                    placeholder="Chapter / part title"
+                    className="h-8 font-semibold"
                   />
-                  {p.pageType === "text" && (
-                    <Textarea
-                      value={p.objective ?? ""}
-                      onChange={(e) => updatePage(i, { objective: e.target.value })}
-                      placeholder="Objective — what this page must achieve (one sentence)"
-                      rows={2}
-                      className="text-xs italic resize-none"
-                    />
-                  )}
+                  <Button type="button" variant="ghost" size="icon"
+                    className="h-7 w-7 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-60 hover:!opacity-100"
+                    onClick={() => deletePage(i)} aria-label="Remove">
+                    <X className="h-4 w-4" />
+                  </Button>
                 </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 shrink-0 text-muted-foreground opacity-60 hover:opacity-100"
-                  onClick={() => deletePage(i)}
-                  aria-label="Remove this page"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
+              ) : (
+                <div key={i} className="group relative rounded-md border border-border overflow-hidden">
+                  <Input
+                    value={p.title}
+                    onChange={(e) => updatePage(i, { title: e.target.value })}
+                    placeholder="Page title"
+                    className="h-8 rounded-none border-0 border-b border-border focus-visible:ring-0 focus-visible:ring-offset-0"
+                  />
+                  <Textarea
+                    value={p.objective ?? ""}
+                    onChange={(e) => updatePage(i, { objective: e.target.value })}
+                    placeholder="Objective — what this page must achieve (one sentence)"
+                    rows={2}
+                    className="rounded-none border-0 text-xs italic resize-none focus-visible:ring-0 focus-visible:ring-offset-0"
+                  />
+                  <Button type="button" variant="ghost" size="icon"
+                    className="absolute top-0.5 right-0.5 h-7 w-7 text-muted-foreground opacity-0 group-hover:opacity-60 hover:!opacity-100"
+                    onClick={() => deletePage(i)} aria-label="Remove">
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              )
             ))}
           </div>
 
-          <div className="flex justify-end gap-2 pt-1">
+          {showRevise && (
+            <div className="rounded-md border border-border bg-muted/30 px-3 py-3">
+              <Textarea
+                value={reviseInstruction}
+                onChange={(e) => setReviseInstruction(e.target.value)}
+                placeholder='What should change? e.g. "cut the middle act to 8 pages" or "make the ending less neat"'
+                rows={2}
+                disabled={revising || creating}
+                className="min-h-[56px] resize-none text-[13.5px]"
+                autoFocus
+              />
+              <div className="mt-2 flex items-center gap-3">
+                <button type="button" onClick={() => void revise()}
+                  disabled={revising || creating || !reviseInstruction.trim()}
+                  className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-accent))] transition-colors hover:text-foreground disabled:opacity-50">
+                  {revising ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                  {revising ? "Revising…" : "Revise →"}
+                </button>
+                <button type="button" onClick={() => { setShowRevise(false); setReviseInstruction(""); }}
+                  className="pv-serif text-[13px] italic text-muted-foreground hover:text-foreground">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center gap-2 pt-1">
+            {!showRevise && (
+              <button type="button" onClick={() => setShowRevise(true)} disabled={revising || creating}
+                className="pv-serif text-[13px] italic text-muted-foreground hover:text-[hsl(var(--pv-accent))] transition-colors disabled:opacity-50 mr-auto">
+                revise →
+              </button>
+            )}
             <Button variant="ghost" size="sm" onClick={() => void dismiss()} disabled={creating}>Cancel</Button>
             <Button size="sm" onClick={create} disabled={creating || (draft?.pages.length ?? 0) === 0}>
               {creating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
