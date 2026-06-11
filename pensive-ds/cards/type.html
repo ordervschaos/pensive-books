@@ -1,0 +1,57 @@
+<!-- @dsCard group="Type" -->
+<!doctype html>
+<html lang="en" class="theme-paper">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pensive · Type</title>
+<link rel="stylesheet" href="../tokens/typography.css" />
+<link rel="stylesheet" href="../tokens/colors.css" />
+<link rel="stylesheet" href="../cards/_card.css" />
+<style>
+  .fam { border: 1px solid hsl(var(--border)); border-radius: var(--radius-lg); padding: 22px 24px; margin-bottom: 14px; }
+  .fam-top { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+  .fam-name { font-size: 15px; font-weight: 600; }
+  .fam-role { font-size: 13.5px; color: hsl(var(--muted-foreground)); font-style: italic; }
+  .fam-stack { font-family: var(--font-mono); font-size: 10.5px; color: hsl(var(--muted-foreground)); }
+  .scale-row { display: flex; align-items: baseline; gap: 18px; padding: 9px 0; border-top: 1px solid hsl(var(--border) / 0.5); }
+  .scale-row .lbl { font-family: var(--font-mono); font-size: 10px; color: hsl(var(--muted-foreground)); width: 132px; flex: 0 0 auto; letter-spacing: 0.04em; }
+</style>
+</head>
+<body>
+<div class="card-head">
+  <div class="card-kicker">Foundations · Type</div>
+  <h1 class="card-h1">A serif that reads like a book</h1>
+  <p class="card-lede">Pensive is a writing tool, so the UI itself is set in a serif. <b>Newsreader</b> carries body and interface, <b>Instrument Serif</b> handles large display, and <b>JetBrains Mono</b> labels everything structural — eyebrows, meta, resolution states.</p>
+</div>
+
+<div class="fam pv-display">
+  <div class="fam-top"><span class="fam-name pv-sans">Instrument Serif — Display</span><span class="fam-role pv-sans">book &amp; page titles, the wordmark</span></div>
+  <div style="font-size:52px;line-height:1;letter-spacing:-0.02em">Testing sota 3</div>
+  <div style="font-size:30px;line-height:1.1;margin-top:10px;font-style:italic;color:hsl(var(--muted-foreground))">A man defined by attention</div>
+  <div class="fam-stack pv-sans" style="margin-top:14px">var(--font-display)</div>
+</div>
+
+<div class="fam pv-serif">
+  <div class="fam-top"><span class="fam-name pv-sans">Newsreader — Serif (base UI + prose)</span><span class="fam-role pv-sans">everything you read &amp; most controls</span></div>
+  <div class="scale-row"><span class="lbl">display · 40</span><span style="font-size:40px;letter-spacing:-0.015em">It is never too late.</span></div>
+  <div class="scale-row"><span class="lbl">2xl · 27 / 600</span><span style="font-size:27px;font-weight:600">Find the book's voice</span></div>
+  <div class="scale-row"><span class="lbl">xl · 22 / 600</span><span style="font-size:22px;font-weight:600">The page's resolution ladder</span></div>
+  <div class="scale-row"><span class="lbl">body · 16 / 1.65</span><span style="font-size:16px;line-height:1.65;max-width:520px">He had spent so long not noticing that noticing itself felt like a muscle pulled after years of disuse.</span></div>
+  <div class="scale-row"><span class="lbl">base · 15.5</span><span style="font-size:15.5px">Pick how the book sounds — it anchors every page.</span></div>
+  <div class="scale-row"><span class="lbl">italic · 15.5</span><span style="font-size:15.5px;font-style:italic;color:hsl(var(--muted-foreground))">Empty — re-create from the brief</span></div>
+  <div class="fam-stack pv-sans" style="margin-top:14px">var(--font-serif) · font-feature-settings: "ss01","kern"</div>
+</div>
+
+<div class="fam">
+  <div class="fam-top"><span class="fam-name pv-sans">JetBrains Mono — Structural labels</span><span class="fam-role pv-sans">eyebrows, meta, resolution &amp; status</span></div>
+  <div class="row" style="gap:28px">
+    <span class="eyebrow">Build with AI</span>
+    <span class="pv-mono" style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:hsl(var(--muted-foreground))">Resolution graph</span>
+    <span class="pv-mono" style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:hsl(var(--accent))">in sync</span>
+    <span class="pv-mono" style="font-size:12.5px;color:hsl(var(--muted-foreground))">19 pages · 8,000 words</span>
+  </div>
+  <div class="fam-stack pv-sans" style="margin-top:16px">var(--font-mono) · eyebrow = 11px / .18em / uppercase</div>
+</div>
+</body>
+</html>

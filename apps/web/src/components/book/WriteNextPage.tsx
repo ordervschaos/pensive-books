@@ -8,6 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { BRIDGE, bridgeFetch } from "@/lib/bridge";
 import { stampProse } from "@/lib/planProvenance";
+import { transforms, saveBeat } from "@/lib/ladder";
 
 interface WriteNextPageProps {
   bookId: number;
@@ -69,6 +70,14 @@ export function WriteNextPage({ bookId, writtenCount = 0, onWritten }: WriteNext
     const target = next;
     setWorking(true);
     try {
+      // Beat-first: the same causality-checked plan the bulk build uses. If this page has no beat
+      // yet, draft and persist one (beat-to-prose reads it server-side) — no second-class pages.
+      const { data: meta } = await supabase.from("pages").select("metadata").eq("id", target.id).maybeSingle();
+      const hasBeat = ((meta?.metadata as { beat?: string } | null)?.beat ?? "").trim();
+      if (!hasBeat) {
+        const beat = await transforms.objectiveToBeat(bookId, target.id, target.objective);
+        await saveBeat(bookId, target.id, beat);
+      }
       const text = await generateOnePage(bookId, target.id, target.objective);
       if (text) {
         const { buildDoc } = await import("@/lib/inlineMarkdown");

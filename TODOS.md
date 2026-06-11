@@ -41,12 +41,13 @@ currently the theme selection is not accessibility compliant.
 --active--
 
 ---to-do-
-- Let's be able to analyze a book - 
-- Now let's focus on the AI agents and AI features of this app.
-
+- be able to revise the outline, acceptt/repeject each outline element. 
+- be able to revise the voice options
+- persist voice options generated
 ---Later--
 - Also build a payment portal for publishing paid books. We will show maybe a sample for free. but resgt are gated behnd payment. We should also figure out a way to pay the authors who publish these books for anything they get.
 
 
 
 ---
+

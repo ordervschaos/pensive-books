@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/table";
 import { BookOpen, FileText, Users, Shield, ExternalLink, Activity, Settings } from "lucide-react";
 import { Link } from "react-router-dom";
+import { AdminTagPanel } from "@/components/book/AdminTagPanel";
 
 interface BookRow {
   id: number;
@@ -23,6 +24,7 @@ interface BookRow {
   created_at: string;
   is_public: boolean;
   published_at: string | null;
+  content_tags?: string[] | null;
 }
 
 interface AdminStats {
@@ -58,18 +60,26 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [expandedBookId, setExpandedBookId] = useState<number | null>(null);
+  const [bookTags, setBookTags] = useState<Record<number, string[]>>({});
 
   useEffect(() => {
-    supabase
-      .rpc("get_admin_stats")
-      .then(({ data, error }) => {
-        if (error) {
-          setError(error.message);
-        } else {
-          setStats(data as AdminStats);
-        }
-        setLoading(false);
-      });
+    Promise.all([
+      supabase.rpc("get_admin_stats"),
+      supabase.from("books").select("id, content_tags").eq("is_archived", false),
+    ]).then(([{ data: statsData, error: statsError }, { data: tagsData }]) => {
+      if (statsError) {
+        setError(statsError.message);
+      } else {
+        setStats(statsData as AdminStats);
+      }
+      if (tagsData) {
+        const map: Record<number, string[]> = {};
+        for (const row of tagsData) map[row.id] = row.content_tags ?? [];
+        setBookTags(map);
+      }
+      setLoading(false);
+    });
   }, []);
 
   if (loading) {
@@ -129,49 +139,77 @@ export default function AdminDashboard() {
                 <TableHead>Owner</TableHead>
                 <TableHead className="text-right">Pages</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Tags</TableHead>
                 <TableHead>Created</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {stats.books.map((book) => (
-                <TableRow key={book.id}>
-                  <TableCell className="font-medium max-w-[200px] truncate">
-                    <Link
-                      to={`/books/${book.id}${book.slug ? `-${book.slug}` : ""}`}
-                      className="hover:underline flex items-center gap-1.5"
-                    >
-                      {book.name || "Untitled"}
-                      <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground" />
-                    </Link>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground text-sm">
-                    {book.owner_username ?? book.owner_email ?? "—"}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {book.page_count}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex gap-1 flex-wrap">
-                      {book.published_at && (
-                        <Badge variant="secondary" className="text-xs">
-                          Published
-                        </Badge>
-                      )}
-                      {book.is_public && (
-                        <Badge variant="outline" className="text-xs">
-                          Public
-                        </Badge>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground text-sm tabular-nums">
-                    {new Date(book.created_at).toLocaleDateString()}
-                  </TableCell>
-                </TableRow>
+                <>
+                  <TableRow key={book.id}>
+                    <TableCell className="font-medium max-w-[200px] truncate">
+                      <Link
+                        to={`/books/${book.id}${book.slug ? `-${book.slug}` : ""}`}
+                        className="hover:underline flex items-center gap-1.5"
+                      >
+                        {book.name || "Untitled"}
+                        <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground" />
+                      </Link>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-sm">
+                      {book.owner_username ?? book.owner_email ?? "—"}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {book.page_count}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-1 flex-wrap">
+                        {book.published_at && (
+                          <Badge variant="secondary" className="text-xs">
+                            Published
+                          </Badge>
+                        )}
+                        {book.is_public && (
+                          <Badge variant="outline" className="text-xs">
+                            Public
+                          </Badge>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <button
+                        onClick={() => setExpandedBookId(expandedBookId === book.id ? null : book.id)}
+                        className="flex items-center gap-1.5 text-xs text-amber-600 hover:text-amber-700 dark:text-amber-500 dark:hover:text-amber-400"
+                        title="Edit content tags"
+                      >
+                        <Shield className="h-3.5 w-3.5" />
+                        {(bookTags[book.id] ?? []).length > 0
+                          ? (bookTags[book.id] ?? []).join(", ")
+                          : <span className="text-muted-foreground">none</span>}
+                      </button>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-sm tabular-nums">
+                      {new Date(book.created_at).toLocaleDateString()}
+                    </TableCell>
+                  </TableRow>
+                  {expandedBookId === book.id && (
+                    <TableRow key={`${book.id}-tags`}>
+                      <TableCell colSpan={6} className="bg-amber-50/40 dark:bg-amber-950/10 px-4 py-3">
+                        <AdminTagPanel
+                          bookId={book.id}
+                          initialTags={bookTags[book.id] ?? []}
+                          onTagsChange={(tags) =>
+                            setBookTags((prev) => ({ ...prev, [book.id]: tags }))
+                          }
+                        />
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </>
               ))}
               {stats.books.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
                     No books yet
                   </TableCell>
                 </TableRow>

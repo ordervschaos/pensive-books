@@ -20,7 +20,9 @@ interface WriteAllProgress {
   done: number;
   total: number;
   failures?: number;
-  phase?: string;
+  phase?: string;        // human label, or the marker 'beats_done' while paused for review
+  beatsTotal?: number;
+  beatsDone?: number;
 }
 interface WriteAllRow extends TaskRow {
   progress: WriteAllProgress | null;
@@ -40,6 +42,8 @@ interface WriteAllRow extends TaskRow {
 export function WriteAllPages({ bookId, plannedCount }: WriteAllPagesProps) {
   const { toast } = useToast();
   const [notify, setNotify] = useState(false);
+  const [pauseAfterBeats, setPauseAfterBeats] = useState(false);
+  const [continuing, setContinuing] = useState(false);
   const notifyRef = useRef(false);
   const notifiedRef = useRef<number | null>(null);
   // The id of a run we've watched actually working this session. We only announce a terminal
@@ -57,6 +61,8 @@ export function WriteAllPages({ bookId, plannedCount }: WriteAllPagesProps) {
 
   const running = row?.status === "pending" || row?.status === "running";
   const progress = running ? row?.progress ?? null : null;
+  // The mid-build checkpoint: beats are planned and the run is waiting for the author to continue.
+  const paused = row?.status === "ready" && row?.progress?.phase === "beats_done";
 
   // Browser notification when this tab observes the run finish (email half is server-side).
   useEffect(() => {
@@ -113,10 +119,11 @@ export function WriteAllPages({ bookId, plannedCount }: WriteAllPagesProps) {
     try {
       if (BRIDGE) {
         // Dev: no self-chaining server. Run the cascade client-side via the bridge, writing the
-        // same book_generations row so the UI shows progress. (Kept minimal — dev convenience.)
+        // same book_generations row so the UI shows progress. (Kept minimal — dev convenience; the
+        // beat phase and pause checkpoint are prod-only.)
         await runViaBridge(bookId, notify, refetch);
       } else {
-        const { data, error } = await supabase.functions.invoke("generate-book", { body: { bookId, notify } });
+        const { data, error } = await supabase.functions.invoke("generate-book", { body: { bookId, notify, pauseAfterBeats } });
         if (error) throw error;
         if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
       }
@@ -126,20 +133,54 @@ export function WriteAllPages({ bookId, plannedCount }: WriteAllPagesProps) {
     }
   };
 
+  // Resume a build paused for beat review: kick the prose stage on the same durable row.
+  const continueBuild = async () => {
+    if (!row || continuing) return;
+    setContinuing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("generate-book", { body: { generationId: row.id, resume: true } });
+      if (error) throw error;
+      if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
+      refetch();
+    } catch (e) {
+      toast({ title: "Couldn't continue", description: String((e as Error)?.message ?? e), variant: "destructive" });
+    } finally {
+      setContinuing(false);
+    }
+  };
+
+  // The phase string already carries counts ("Planning beats 12/40", "Writing 3/40").
   const title = progress
-    ? <span>Writing {progress.done}/{progress.total}<AnimatedEllipsis /></span>
+    ? <span>{progress.phase ?? `Writing ${progress.done}/${progress.total}`}<AnimatedEllipsis /></span>
     : running
       ? <span>Working<AnimatedEllipsis /></span>
       : plannedCount && plannedCount > 0
-        ? `Write ${plannedCount} planned page${plannedCount === 1 ? "" : "s"}`
-        : "Write all pages from objectives";
+        ? `Build ${plannedCount} planned page${plannedCount === 1 ? "" : "s"}`
+        : "Build the draft from objectives";
+
+  if (paused) {
+    const beatsTotal = row?.progress?.beatsTotal ?? 0;
+    return (
+      <div className="rounded-xl border border-border px-5 py-4">
+        <p className="pv-serif text-sm text-foreground">
+          Beats planned{beatsTotal ? ` for ${beatsTotal} page${beatsTotal === 1 ? "" : "s"}` : ""}. Review them in the outline — then continue to write the prose.
+        </p>
+        <div className="mt-3">
+          <Button size="sm" onClick={() => void continueBuild()} disabled={continuing}>
+            <Sparkles className="mr-2 h-4 w-4" />
+            {continuing ? <span>Continuing<AnimatedEllipsis /></span> : "Continue — write the prose"}
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
       <AIActionRow
         icon={<Sparkles className="h-4 w-4" />}
         title={title}
-        description="Render prose from each objective — pages you've already written are left untouched."
+        description="Plan a beat for each page, then render prose — pages you've already written are left untouched."
         onClick={run}
         loading={running}
       />
@@ -152,8 +193,17 @@ export function WriteAllPages({ bookId, plannedCount }: WriteAllPagesProps) {
         </div>
       )}
       {!running && (
-        <div className="px-5 pt-2">
+        <div className="px-5 pt-2 space-y-2">
           <NotifyWhenDone enabled={notify} onChange={setNotify} />
+          <label className="flex cursor-pointer items-center gap-2 pv-serif text-[13px] text-[hsl(var(--pv-text-faint))]">
+            <input
+              type="checkbox"
+              checked={pauseAfterBeats}
+              onChange={(e) => setPauseAfterBeats(e.target.checked)}
+              className="h-3.5 w-3.5 accent-[hsl(var(--primary))]"
+            />
+            Pause after planning beats, so I can review them before any prose is written
+          </label>
         </div>
       )}
     </div>

@@ -16,19 +16,16 @@ import { jsonToText, cumulativeWordOffsets } from "@/utils/tiptapHelpers";
 import { CommitDialog } from "./components/CommitDialog";
 import { PublishingDialog } from "@/components/book/PublishingDialog";
 import { VersionControlButton } from "./components/VersionControlButton";
-import { AdminTagPanel } from "@/components/book/AdminTagPanel";
 import { AdminViewBanner } from "@/components/book/AdminViewBanner";
 import { MatureContentGate } from "@/components/book/MatureContentGate";
 import { Brief } from "@/lib/brief";
 import { BookBriefSection } from "@/components/book/BookBriefSection";
-import { ResolutionMap } from "@/components/book/ResolutionMap";
-import { GraphActions } from "@/components/book/GraphActions";
+import { BuildStudio } from "@/components/book/studio/BuildStudio";
 import { ThreadsSection } from "@/components/book/ThreadsSection";
 import { BookBibleSection } from "@/components/book/BookBibleSection";
 import { getPageStatus } from "./components/pageList/pageUtils";
 import { computeCompletion } from "@/lib/brief";
 import { cn } from "@/lib/utils";
-import { useAdmin } from "@/hooks/use-admin";
 import { useMatureContent } from "@/hooks/use-mature-content";
 import { MessageSquare } from "lucide-react";
 import type { Session } from "@supabase/supabase-js";
@@ -63,6 +60,8 @@ interface BookRecord {
   content_tags?: string[] | null;
   brief?: Brief | null;
   bible?: { text: string } | null;
+  /** Guided-build approval ledger: each step key → ISO timestamp the author approved it. */
+  journey?: Partial<Record<"brief" | "spine" | "outline" | "voice" | "beats" | "draft", string>> | null;
 }
 
 const BookDetails = () => {
@@ -85,7 +84,6 @@ const BookDetails = () => {
     if (permissionsLoading || hasAccess || !bookSlug) return;
     navigate(`/library/books/${bookSlug}`, { replace: true });
   }, [permissionsLoading, hasAccess, bookSlug, navigate]);
-  const { isAdmin } = useAdmin();
   const { enabled: matureEnabled, loading: matureLoading } = useMatureContent();
   const [matureUnlocked, setMatureUnlocked] = useState(false);
 
@@ -119,6 +117,7 @@ const BookDetails = () => {
     setActiveTab(tab);
     localStorage.setItem(tabKey, tab);
   };
+
 
   const fetchBookmarkedPage = useCallback(async (session: Session | null) => {
     try {
@@ -476,6 +475,9 @@ const BookDetails = () => {
   // Pages with an objective but no prose yet are "ready to write" — surfaced as a dot on the AI tab.
   const plannedCount = pages.filter((p) => getPageStatus(p as any) === "objective").length;
 
+  // Approval ledger for the build studio's step gates (brief→…→draft).
+  const journey = (book.journey as Partial<Record<string, string>> | null) ?? {};
+
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Helmet>
@@ -558,7 +560,7 @@ const BookDetails = () => {
 
             </div>
 
-            {/* Work area — Brief / Manuscript / Threads / Bible / AI, each on its own tab */}
+            {/* Work area — Brief / Manuscript / Threads / Bible / AI, each on its own tab. */}
             {canEdit ? (
               <div className="space-y-6">
                 {/* Tabs: Manuscript leads the work; Brief holds the foundation AI tools plan from */}
@@ -705,23 +707,22 @@ const BookDetails = () => {
                   />
                 )}
 
-                {/* AI tools tab — the book's resolution ladder as a connected, actionable graph
-                    (brief → spine → objective → beat → prose), with the book-level build actions
-                    (outline · write · editor's read · revise · publish) beneath it. The old linear
-                    BookJourney is kept in the codebase for reference; its functionality lives here now. */}
+                {/* AI tools tab — the build studio: one two-pane workbench (the 9-step ladder + the
+                    whole-book map beside an in-place Stage for every step and page). Replaces the old
+                    step-rail-over-dense-graph; the resolution ladder now lives inside the Navigator map
+                    and the per-page Stage. */}
                 {activeTab === "ai" && (
-                  <div className="space-y-6">
-                    <ResolutionMap bookId={getNumericId(bookSlug)} refreshKey={pages.length} onChanged={fetchBookDetails} />
-                    <GraphActions
-                      bookId={getNumericId(bookSlug)}
-                      briefSet={briefSet}
-                      pages={pages}
-                      isPublic={book.is_public}
-                      onEditBrief={() => switchTab("brief")}
-                      onChanged={fetchBookDetails}
-                      onPublish={handlePublish}
-                    />
-                  </div>
+                  <BuildStudio
+                    bookId={getNumericId(bookSlug)}
+                    briefSet={briefSet}
+                    brief={book.brief ?? null}
+                    pages={pages}
+                    journey={journey as any}
+                    isPublic={book.is_public}
+                    onBriefChange={(brief) => setBook((b) => (b ? { ...b, brief } : b))}
+                    onChanged={fetchBookDetails}
+                    onPublish={handlePublish}
+                  />
                 )}
               </div>
             ) : (
@@ -738,15 +739,6 @@ const BookDetails = () => {
                   wordCount={manuscriptWordCount}
                 />
               </div>
-            )}
-
-            {/* Admin content tagging */}
-            {isAdmin && (
-              <AdminTagPanel
-                bookId={getNumericId(bookSlug)}
-                initialTags={book.content_tags ?? []}
-                onTagsChange={(tags) => setBook((b) => b ? { ...b, content_tags: tags } : b)}
-              />
             )}
 
             {/* Archived pages — subtle link at the bottom, only for editors */}

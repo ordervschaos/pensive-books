@@ -10,7 +10,6 @@ import { usePageDisplaySettings, FontFamily } from "@/contexts/PageDisplaySettin
 import { cn } from "@/lib/utils";
 import { proseToParagraphs } from "@/lib/inlineMarkdown";
 import { jsonToText } from "@/utils/tiptapHelpers";
-import { PageWorkshop } from "@/components/book/PageWorkshop";
 import { stampProse } from "@/lib/planProvenance";
 
 
@@ -53,7 +52,6 @@ export const PageContent = ({
   onEditingChange,
   canEdit = false,
   objective,
-  onObjectiveChange,
   pageId,
   isEditing = false,
   setIsEditing,
@@ -289,23 +287,6 @@ export const PageContent = ({
                 currentIndex={currentIndex}
                 totalPages={totalPages}
                 sectionLabel={sectionLabel}
-                topContent={
-                  /* The plan (objective + beat) + AI tools sit ABOVE the prose, collapsible — out of a
-                     manual writer's way, open for an AI-collaborator. Rendered in the editor's topContent
-                     slot so it clears the fixed toolbar. The prose layer IS the editor below. */
-                  canEdit && onObjectiveChange && bookId && pageId ? (
-                    <PageWorkshop
-                      bookId={Number(bookId)}
-                      pageId={Number(pageId)}
-                      pageType={pageType}
-                      objective={objective ?? null}
-                      onObjectiveChange={onObjectiveChange}
-                      currentText={currentText}
-                      onAppendProse={handleAppendProse}
-                      onApply={handleApplyRevision}
-                    />
-                  ) : undefined
-                }
               />
 
               {/* Floating action buttons */}
