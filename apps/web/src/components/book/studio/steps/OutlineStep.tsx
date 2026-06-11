@@ -4,9 +4,9 @@
 import { useEffect, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { ScaffoldGenerator } from "../../ScaffoldGenerator";
-import { NodeReviser } from "../../ladder-ui";
 import { DurableOptions } from "../../DurableOptions";
-import { saveObjective, transforms } from "@/lib/ladder";
+import { DurableReviser } from "../../DurableReviser";
+import { saveObjective } from "@/lib/ladder";
 import type { MapPage } from "@/lib/planGraph";
 import type { StudioModel } from "../studioModel";
 
@@ -71,12 +71,13 @@ function PageCard({ bookId, page, onSelectPage, onChanged }: {
       )}
 
       <div className="mt-2.5 flex items-center gap-4 border-t border-[hsl(var(--pv-border-soft))]/60 pt-2.5">
-        <NodeReviser
+        <DurableReviser
+          bookId={bookId}
+          layer="objective"
+          targetKey={`revise:objective:${page.id}`}
+          targetPageId={page.id}
           current={objectiveText}
-          busy={false}
-          buttonLabel="revise"
-          onRevise={(instr) => transforms.reviseNode(bookId, "objective", objectiveText, instr, page.id)}
-          onAccept={accept}
+          onApply={accept}
         />
         <DurableOptions
           bookId={bookId}

@@ -1,20 +1,21 @@
-// BeatsStep — the Beats step's Stage body: the serial, human-pick beat flow (handoff §5) reshaped as
-// the prototype's page-by-page take-picker. Same wiring as SerialBeats — walk the objective-bearing
-// pages in order, draft three un-judged takes for the current page (grounded on the beat just
-// approved, so structural drift can't compound), author picks/edits one, save, advance. A beat-rail
-// gives the whole book at a glance; the Stage owns the head + approve gate.
-import { useCallback, useEffect, useRef, useState } from "react";
+// BeatsStep — the serial, human-pick beat flow. Walk the objective-bearing pages in order; for the
+// current page, three un-judged takes are drafted, the author picks/edits one, saves, and advances.
+//
+// The take generation is now a DURABLE run (useAIRun, kind 'beat_candidates', keyed by page): drafting
+// survives navigation/refresh, is cancellable, and the takes reattach. The cursor/pick/edit stay
+// client-side (navigation, not AI state). Picking a take saves the beat and marks the run applied.
+import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Check, Loader2, RefreshCw } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { transforms, saveBeat } from "@/lib/ladder";
+import { useAIRun } from "@/hooks/useAIRun";
+import { saveBeat } from "@/lib/ladder";
 import type { MapPage } from "@/lib/planGraph";
 import type { StudioModel } from "../studioModel";
 import { DoneStrip } from "../studioUi";
 
-export function BeatsStep({ bookId, model, onChanged, onSelectPage }: { bookId: number; model: StudioModel; onChanged: () => void; onSelectPage: (pageId: number) => void }) {
+export function BeatsStep({ bookId, model, onChanged }: { bookId: number; model: StudioModel; onChanged: () => void }) {
   const { toast } = useToast();
-  // The beat decisions: text pages that carry an objective, in reading order.
   const beatPages = model.textPages.filter((p) => p.objectiveText.trim());
   const doneCount = beatPages.filter((p) => p.beat !== "gap").length;
   const total = beatPages.length;
@@ -22,44 +23,52 @@ export function BeatsStep({ bookId, model, onChanged, onSelectPage }: { bookId: 
 
   const firstGap = beatPages.findIndex((p) => p.beat === "gap");
   const [cursor, setCursor] = useState(firstGap === -1 ? 0 : firstGap);
-  const [takes, setTakes] = useState<string[]>([]);
-  const [takesForId, setTakesForId] = useState<number | null>(null);
   const [draft, setDraft] = useState("");
   const [pick, setPick] = useState<number | null>(null);
-  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const reqRef = useRef(0);
+  const seatedRun = useRef<number | null>(null);
+  const kickedFor = useRef<number | null>(null);
 
   const page: MapPage | undefined = beatPages[cursor];
+  const committed = !!page && page.beat !== "gap";
 
-  const draftTakes = useCallback(async (p: MapPage) => {
-    const req = ++reqRef.current;
-    setLoading(true); setTakes([]); setTakesForId(null); setPick(null);
-    try {
-      const got = await transforms.beatCandidates(bookId, p.id, p.objectiveText.trim(), 3);
-      if (req !== reqRef.current) return;
-      setTakes(got); setTakesForId(p.id); setDraft(got[0] ?? ""); setPick(got.length ? 0 : null);
-    } catch (e) {
-      if (req !== reqRef.current) return;
-      toast({ title: "Couldn't draft the takes", description: String((e as Error)?.message ?? e), variant: "destructive" });
-    } finally { if (req === reqRef.current) setLoading(false); }
-  }, [bookId, toast]);
+  // Durable take generation for the current (gap) page.
+  const cand = useAIRun<{ options: string[] }>({ bookId, kind: "beat_candidates", targetPageId: page?.id, enabled: !!page && !committed });
+  const takes = cand.run?.result?.options ?? [];
+  const generating = cand.run?.status === "running" || cand.run?.status === "pending" || cand.starting;
+  const ready = cand.run?.status === "ready";
 
-  // Landing on a page: seat its saved beat for review, or auto-draft three takes if it has none.
+  const draftTakes = () => { if (page) { kickedFor.current = page.id; void cand.start({ pageId: page.id, objective: page.objectiveText.trim() }); } };
+
+  // Landing on a committed page: seat its saved beat for review.
   useEffect(() => {
-    if (!page) return;
-    if (page.beat !== "gap") {
-      reqRef.current++; setTakes([]); setTakesForId(null); setPick(null); setDraft(page.beatText); setLoading(false);
-    } else if (takesForId !== page.id) {
-      void draftTakes(page);
+    if (page && committed) { setPick(null); setDraft(page.beatText); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page?.id, committed]);
+
+  // Auto-draft three takes when landing on a gap page with no run — but only once the watcher has
+  // settled for THIS page (loading false), so a stale run from the previous page can't suppress it.
+  useEffect(() => {
+    if (!page || committed || cand.loading || cand.starting || cand.run) return;
+    if (kickedFor.current === page.id) return;
+    kickedFor.current = page.id;
+    setPick(null); setDraft("");
+    void cand.start({ pageId: page.id, objective: page.objectiveText.trim() });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page?.id, committed, cand.loading, cand.starting, cand.run?.id]);
+
+  // When a fresh run of takes lands, seat the first as the default pick/edit (once per run).
+  useEffect(() => {
+    if (ready && cand.run && seatedRun.current !== cand.run.id && takes.length) {
+      seatedRun.current = cand.run.id;
+      setPick(0); setDraft(takes[0]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page?.id]);
+  }, [cand.run?.id, cand.run?.status]);
 
   if (total === 0) {
     return <p className="pv-serif text-[14px] italic text-[hsl(var(--pv-text-faint))]">No pages with an objective yet — generate the outline first.</p>;
   }
-
   if (allDone) {
     return (
       <DoneStrip icon={<Check className="h-5 w-5" />} title="Every beat chosen">
@@ -69,7 +78,6 @@ export function BeatsStep({ bookId, model, onChanged, onSelectPage }: { bookId: 
   }
   if (!page) return null;
 
-  const committed = page.beat !== "gap";
   const advance = () => {
     const rest = beatPages.slice(cursor + 1).findIndex((p) => p.beat === "gap");
     setCursor(rest === -1 ? cursor + 1 : cursor + 1 + rest);
@@ -80,8 +88,8 @@ export function BeatsStep({ bookId, model, onChanged, onSelectPage }: { bookId: 
     setSaving(true);
     try {
       await saveBeat(bookId, page.id, text);
+      if (cand.run?.status === "ready") await cand.accept(async () => {}); // mark the run applied
       toast({ title: "Beat set", description: `“${page.title || "page"}” — ${doneCount + 1} of ${total}.` });
-      setTakes([]); setTakesForId(null);
       onChanged();
       advance();
     } catch (e) {
@@ -108,10 +116,13 @@ export function BeatsStep({ bookId, model, onChanged, onSelectPage }: { bookId: 
         <p className="pv-serif mt-2 text-[15.5px] leading-[1.6] text-[hsl(var(--pv-text-muted))]">{page.objectiveText}</p>
       </div>
 
-      {loading ? (
-        <p className="pv-serif mt-5 inline-flex items-center gap-2 text-[14px] italic text-[hsl(var(--pv-text-muted))]">
-          <Loader2 className="h-4 w-4 animate-spin" /> Drafting three takes…
-        </p>
+      {generating ? (
+        <div className="mt-5 flex items-center gap-4">
+          <p className="pv-serif inline-flex items-center gap-2 text-[14px] italic text-[hsl(var(--pv-text-muted))]">
+            <Loader2 className="h-4 w-4 animate-spin" /> Drafting three takes…
+          </p>
+          <button type="button" onClick={() => void cand.cancel()} className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">cancel</button>
+        </div>
       ) : committed ? (
         <div className="mt-5">
           <div className="pv-mono mb-3 text-[10px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-faint))]">Chosen beat</div>
@@ -120,7 +131,7 @@ export function BeatsStep({ bookId, model, onChanged, onSelectPage }: { bookId: 
               className="pv-serif border-none bg-transparent px-0 text-[15.5px] leading-[1.6] focus-visible:ring-0" />
           </div>
           <div className="mt-4 flex flex-wrap items-center gap-5">
-            <button type="button" onClick={() => void draftTakes(page)} className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-accent))] hover:opacity-75">
+            <button type="button" onClick={draftTakes} className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-accent))] hover:opacity-75">
               <RefreshCw className="h-3.5 w-3.5" /> re-pick this beat
             </button>
             <div className="ml-auto flex gap-5">
@@ -129,7 +140,7 @@ export function BeatsStep({ bookId, model, onChanged, onSelectPage }: { bookId: 
             </div>
           </div>
         </div>
-      ) : takes.length > 0 ? (
+      ) : ready && takes.length > 0 ? (
         <div className="mt-5">
           <div className="pv-mono mb-3 text-[10px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-faint))]">Three takes — pick one to keep &amp; edit</div>
           <div className="space-y-3">
@@ -155,13 +166,24 @@ export function BeatsStep({ bookId, model, onChanged, onSelectPage }: { bookId: 
               className="pv-serif inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-[14.5px] text-primary-foreground disabled:opacity-40">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Use this beat &amp; continue
             </button>
-            <button type="button" onClick={() => void draftTakes(page)} className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] text-[hsl(var(--pv-text-muted))] hover:text-foreground">
+            <button type="button" onClick={draftTakes} className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] text-[hsl(var(--pv-text-muted))] hover:text-foreground">
               <RefreshCw className="h-3.5 w-3.5" /> Redraft three takes
             </button>
             {cursor > 0 && <button type="button" onClick={() => setCursor(cursor - 1)} className="pv-serif text-[13.5px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground"><ArrowLeft className="mr-1 inline h-3.5 w-3.5" />back</button>}
           </div>
         </div>
-      ) : null}
+      ) : cand.run?.status === "error" ? (
+        <div className="mt-5 flex items-center gap-4">
+          <p className="pv-serif text-[13.5px] italic text-red-600 dark:text-red-400">{cand.run.error ?? "Couldn't draft the takes."}</p>
+          <button type="button" onClick={draftTakes} className="pv-serif text-[13.5px] italic text-[hsl(var(--pv-accent))] hover:opacity-75">try again →</button>
+        </div>
+      ) : (
+        <div className="mt-5">
+          <button type="button" onClick={draftTakes} className="pv-serif inline-flex items-center gap-1.5 text-[14px] italic text-[hsl(var(--pv-accent))] hover:opacity-75">
+            <RefreshCw className="h-3.5 w-3.5" /> draft three takes
+          </button>
+        </div>
+      )}
     </div>
   );
 }

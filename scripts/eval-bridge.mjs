@@ -1234,12 +1234,21 @@ async function runObjectiveOptions(body) {
 // cap, so it inserts the running row, runs the worker, and writes the terminal row synchronously
 // (runGeneration) — the client watches the SAME book_generations row over Realtime either way.
 async function aiRunWorker(kind, params, bookId) {
-  if (kind === "objective_options") {
-    const out = await runObjectiveOptions({ bookId, ...params });
-    if (out.error) throw new Error(out.error);
-    return { options: out.options };
+  const fail = (out) => { if (out.error) throw new Error(out.error); return out; };
+  switch (kind) {
+    case "objective_options":
+      return { options: fail(await runObjectiveOptions({ bookId, ...params })).options };
+    case "spine":
+      return { text: fail(await runBriefToSpine({ bookId })).spine };
+    case "spine_options":
+      return { options: fail(await runSpineOptions({ bookId })).options };
+    case "node_revise":
+      return { text: fail(await runReviseNode({ bookId, ...params })).text };
+    case "beat_candidates":
+      return { options: fail(await runObjectiveToBeat({ bookId, pageId: params.pageId, objective: params.objective, candidates: 3 })).candidates };
+    default:
+      throw new Error(`Unknown ai-run kind: ${kind}`);
   }
-  throw new Error(`Unknown ai-run kind: ${kind}`);
 }
 
 // ── /beat-to-objective ────────────────────────────────────────────────────────

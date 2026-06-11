@@ -9,8 +9,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { readNode, readProse, saveBeat, saveObjective, transforms } from "@/lib/ladder";
 import type { CellState } from "@/lib/planGraph";
-import { NodeReviser } from "../ladder-ui";
 import { DurableOptions } from "../DurableOptions";
+import { DurableReviser } from "../DurableReviser";
 import { ProseNodePanel } from "../ProseNodePanel";
 import type { StudioModel } from "./studioModel";
 import { Pip } from "./studioUi";
@@ -119,12 +119,14 @@ export function PageReview({ bookId, model, pageId, onChanged, onSelectPage }: P
               placeholder="What this page must achieve…"
             />
             <div className="mt-3 flex items-center gap-4 border-t border-[hsl(var(--pv-border-soft))] pt-3">
-              <NodeReviser
+              <DurableReviser
+                bookId={bookId}
+                layer="objective"
+                targetKey={`revise:objective:${pageId}`}
+                targetPageId={pageId}
                 current={objective.trim()}
                 busy={busy !== null}
-                buttonLabel="revise"
-                onRevise={(instr) => transforms.reviseNode(bookId, "objective", objective.trim(), instr, pageId)}
-                onAccept={async (proposed) => {
+                onApply={async (proposed) => {
                   setObjective(proposed);
                   await saveObjective(bookId, pageId, proposed);
                   onChanged();

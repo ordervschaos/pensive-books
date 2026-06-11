@@ -43,7 +43,7 @@ export function useAIRun<R = unknown>(opts: Options) {
   if (targetKey != null) match.target_key = targetKey;
   if (targetPageId != null) match.target_page_id = targetPageId;
 
-  const { row, refetch, stale } = useLatestTaskRow<AIRunRow<R>>({
+  const { row, refetch, stale, loading } = useLatestTaskRow<AIRunRow<R>>({
     table: "book_generations",
     bookId,
     match,
@@ -95,5 +95,5 @@ export function useAIRun<R = unknown>(opts: Options) {
   // A run worth showing: running (with its spinner) or ready (a proposal awaiting accept/reject).
   const live = row && (row.status === "running" || row.status === "pending" || row.status === "ready" || row.status === "error") ? row : null;
 
-  return { run: live, starting, stale, start, accept, reject, cancel };
+  return { run: live, starting, stale, loading, start, accept, reject, cancel };
 }

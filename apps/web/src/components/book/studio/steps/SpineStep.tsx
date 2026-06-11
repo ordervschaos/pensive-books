@@ -1,23 +1,30 @@
 // SpineStep — the Spine step's Stage body: the book's one-paragraph throughline, derived from the
-// brief. Same wiring as SpineGenerator (transforms.briefToSpine → saveSpine; hand-edits persist via
-// saveSpine), reshaped into the prototype's calm editable field with a re-draft affordance. A loud
-// hero when there's no spine yet; the editable paragraph once there is one. The Stage owns the gate.
-import { useEffect, useState } from "react";
+// brief. Every AI op here is now a DURABLE run (useAIRun → ai-run): generating/re-drafting the spine,
+// generating wide alternatives, and revising survive navigation and refresh. A loud hero when there's
+// no spine yet; the editable paragraph (autosaved on blur) once there is one. The Stage owns the gate.
+import { useEffect, useRef, useState } from "react";
 import { Loader2, RefreshCw, Sparkles } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { NodeOptions, NodeReviser } from "../../ladder-ui";
-import { readNode, saveSpine, transforms } from "@/lib/ladder";
+import { useAIRun } from "@/hooks/useAIRun";
+import { DurableOptions } from "../../DurableOptions";
+import { DurableReviser } from "../../DurableReviser";
+import { readNode, saveSpine } from "@/lib/ladder";
 import { Hero } from "../studioUi";
 
 export function SpineStep({ bookId, onStatusChange, onChanged }: { bookId: number; onStatusChange: (v: boolean) => void; onChanged: () => void }) {
   const { toast } = useToast();
   const [spine, setSpine] = useState("");
   const [loaded, setLoaded] = useState(false);
-  const [working, setWorking] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [showRevise, setShowRevise] = useState(false);
+  const appliedRef = useRef<number | null>(null);
+
+  // Durable spine generation (single-candidate → auto-applies on ready).
+  const gen = useAIRun<{ text: string }>({ bookId, kind: "spine", targetKey: "book" });
+  // Keep the spinner through the ready→applied window so the auto-apply doesn't flash the hero.
+  const generating = gen.run?.status === "running" || gen.run?.status === "pending" || gen.starting
+    || (gen.run?.status === "ready" && !!gen.run.result?.text);
 
   useEffect(() => {
     let alive = true;
@@ -30,17 +37,19 @@ export function SpineStep({ bookId, onStatusChange, onChanged }: { bookId: numbe
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookId]);
 
-  const generate = async () => {
-    if (working) return;
-    setWorking(true);
-    try {
-      const text = await transforms.briefToSpine(bookId);
-      await saveSpine(bookId, text);
-      setSpine(text); setDirty(false); onStatusChange(!!text.trim()); onChanged();
-    } catch (e) {
-      toast({ title: "Couldn't draft the spine", description: String((e as Error)?.message ?? e), variant: "destructive" });
-    } finally { setWorking(false); }
-  };
+  // Auto-apply a completed generation: save the spine, reflect it, mark the run applied (so it won't
+  // re-fire). appliedRef guards against a double apply while the 'applied' write is in flight.
+  useEffect(() => {
+    const r = gen.run;
+    if (r?.status === "ready" && r.result?.text && appliedRef.current !== r.id) {
+      appliedRef.current = r.id;
+      void gen.accept(async (res) => {
+        await saveSpine(bookId, res.text);
+        setSpine(res.text); setDirty(false); onStatusChange(!!res.text.trim()); onChanged();
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gen.run?.id, gen.run?.status]);
 
   const save = async () => {
     if (saving) return;
@@ -52,15 +61,20 @@ export function SpineStep({ bookId, onStatusChange, onChanged }: { bookId: numbe
 
   if (!loaded) return null;
 
-  if (working) {
-    return <p className="pv-serif inline-flex items-center gap-2 text-[14px] italic text-[hsl(var(--pv-text-muted))]"><Loader2 className="h-4 w-4 animate-spin" /> Drafting the spine…</p>;
+  if (generating) {
+    return (
+      <div className="flex items-center gap-4">
+        <p className="pv-serif inline-flex items-center gap-2 text-[14px] italic text-[hsl(var(--pv-text-muted))]"><Loader2 className="h-4 w-4 animate-spin" /> Drafting the spine…</p>
+        <button type="button" onClick={() => void gen.cancel()} className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">cancel</button>
+      </div>
+    );
   }
 
   if (!spine.trim()) {
     return (
       <Hero icon={<Sparkles className="h-5 w-5" />} title="Draft the spine from the brief"
         sub="One paragraph that names the throughline — what the book is really about. The outline is built to realize it."
-        onClick={generate} />
+        onClick={() => void gen.start({})} />
     );
   }
 
@@ -74,7 +88,7 @@ export function SpineStep({ bookId, onStatusChange, onChanged }: { bookId: numbe
         className="pv-serif border-none bg-transparent px-0 text-[16px] leading-[1.65] focus-visible:ring-0"
       />
       <div className="mt-3.5 flex items-center gap-5 border-t border-[hsl(var(--pv-border-soft))] pt-3.5 text-[13.5px]">
-        <button type="button" onClick={generate} disabled={working} className="inline-flex items-center gap-1.5 italic text-[hsl(var(--pv-accent))] hover:opacity-75 disabled:opacity-50">
+        <button type="button" onClick={() => void gen.start({})} className="inline-flex items-center gap-1.5 italic text-[hsl(var(--pv-accent))] hover:opacity-75">
           <RefreshCw className="h-3.5 w-3.5" /> re-draft from the brief
         </button>
         <div className="ml-auto flex items-center gap-4">
@@ -83,53 +97,22 @@ export function SpineStep({ bookId, onStatusChange, onChanged }: { bookId: numbe
               {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} save edits
             </button>
           )}
-          {!showRevise && (
-            <>
-              <button type="button" onClick={() => setShowRevise(true)} className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-muted))] hover:text-[hsl(var(--pv-accent))] transition-colors">
-                revise →
-              </button>
-              <NodeOptions
-                busy={working || saving}
-                onGenerate={() => transforms.spineOptions(bookId)}
-                onAccept={async (proposed) => {
-                  await saveSpine(bookId, proposed);
-                  setSpine(proposed);
-                  setDirty(false);
-                  onStatusChange(!!proposed.trim());
-                  onChanged();
-                }}
-              />
-            </>
-          )}
-        </div>
-      </div>
-      {showRevise && (
-        <div className="mt-4 border-t border-[hsl(var(--pv-border-soft))] pt-4">
-          <p className="pv-serif mb-2 text-[13px] italic text-[hsl(var(--pv-text-muted))]">Revise with a prompt.</p>
-          <NodeReviser
-            inline
+          <DurableReviser
+            bookId={bookId}
+            layer="spine"
+            targetKey="revise:spine"
             current={spine.trim()}
-            busy={working}
-            onRevise={async (instr) => {
-              try {
-                return await transforms.reviseNode(bookId, "spine", spine.trim(), instr);
-              } catch (e) {
-                toast({ title: "Couldn't revise the spine", description: String((e as Error)?.message ?? e), variant: "destructive" });
-                throw e;
-              }
-            }}
-            onAccept={async (proposed) => {
-              await saveSpine(bookId, proposed);
-              setSpine(proposed);
-              setDirty(false);
-              setShowRevise(false);
-              onStatusChange(!!proposed.trim());
-              onChanged();
-            }}
-            onCancel={() => setShowRevise(false)}
+            onApply={async (proposed) => { await saveSpine(bookId, proposed); setSpine(proposed); setDirty(false); onStatusChange(!!proposed.trim()); onChanged(); }}
+          />
+          <DurableOptions
+            bookId={bookId}
+            kind="spine_options"
+            targetKey="book"
+            getParams={() => ({})}
+            onApply={async (proposed) => { await saveSpine(bookId, proposed); setSpine(proposed); setDirty(false); onStatusChange(!!proposed.trim()); onChanged(); }}
           />
         </div>
-      )}
+      </div>
     </div>
   );
 }

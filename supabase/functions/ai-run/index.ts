@@ -17,6 +17,9 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { runInBackground, serviceClient } from "../_shared/task.ts";
 import { objectiveOptions } from "../_shared/options-core.ts";
+import { generateSpine, spineOptions } from "../_shared/spine-core.ts";
+import { reviseNode, type ReviseLayer } from "../_shared/revise-core.ts";
+import { beatCandidates } from "../_shared/beat-core.ts";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -37,6 +40,33 @@ async function runWorker(
         pageIndex: params.pageIndex as number | undefined,
         userId: ctx.userId,
       });
+      return { options };
+    }
+    case "spine": {
+      const text = await generateSpine(ctx.client, ctx.apiKey, { bookId: ctx.bookId, userId: ctx.userId });
+      return { text };
+    }
+    case "spine_options": {
+      const options = await spineOptions(ctx.client, ctx.apiKey, { bookId: ctx.bookId, userId: ctx.userId });
+      return { options };
+    }
+    case "node_revise": {
+      const text = await reviseNode(ctx.client, ctx.apiKey, {
+        bookId: ctx.bookId,
+        layer: params.layer as ReviseLayer,
+        current: params.current as string,
+        instruction: params.instruction as string,
+        userId: ctx.userId,
+      });
+      return { text };
+    }
+    case "beat_candidates": {
+      const options = await beatCandidates(ctx.client, ctx.apiKey, {
+        bookId: ctx.bookId,
+        pageId: params.pageId as number,
+        objective: params.objective as string,
+        userId: ctx.userId,
+      }, 3);
       return { options };
     }
     default:
