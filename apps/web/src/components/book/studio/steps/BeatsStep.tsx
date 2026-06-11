@@ -4,20 +4,31 @@
 // The take generation is now a DURABLE run (useAIRun, kind 'beat_candidates', keyed by page): drafting
 // survives navigation/refresh, is cancellable, and the takes reattach. The cursor/pick/edit stay
 // client-side (navigation, not AI state). Picking a take saves the beat and marks the run applied.
+//
+// Bulk mode: "Generate all beats at once" kicks off generate-book with pauseAfterBeats, which plans
+// beats for every gap page server-side (best-of-3, auto-picked). When done, "Write all prose" resumes
+// the same run into the prose stage.
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Check, Loader2, RefreshCw } from "lucide-react";
+import { ArrowLeft, Check, Loader2, RefreshCw, Sparkles } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
+import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAIRun } from "@/hooks/useAIRun";
+import { useLatestTaskRow, type TaskRow } from "@/hooks/useLatestTaskRow";
 import { saveBeat } from "@/lib/ladder";
+import { RunControls } from "../../RunControls";
 import type { MapPage } from "@/lib/planGraph";
 import type { StudioModel } from "../studioModel";
 import { DoneStrip } from "../studioUi";
+
+interface BuildProgress { done: number; total: number; phase?: string }
+interface BuildRow extends TaskRow { progress: BuildProgress | null; error: string | null }
 
 export function BeatsStep({ bookId, model, onChanged }: { bookId: number; model: StudioModel; onChanged: () => void }) {
   const { toast } = useToast();
   const beatPages = model.textPages.filter((p) => p.objectiveText.trim());
   const doneCount = beatPages.filter((p) => p.beat !== "gap").length;
+  const gapCount = beatPages.filter((p) => p.beat === "gap").length;
   const total = beatPages.length;
   const allDone = total > 0 && doneCount === total;
 
@@ -40,22 +51,63 @@ export function BeatsStep({ bookId, model, onChanged }: { bookId: number; model:
 
   const draftTakes = () => { if (page) { kickedFor.current = page.id; void cand.start({ pageId: page.id, objective: page.objectiveText.trim() }); } };
 
+  // ── Bulk beat/prose run ──────────────────────────────────────────────────────
+  const { row: buildRow, refetch: buildRefetch, stale: buildStale } = useLatestTaskRow<BuildRow>({
+    table: "book_generations", bookId, match: { kind: "write_all" },
+    activeStatuses: ["pending", "running"], staleMs: 180_000,
+  });
+  const buildRunning = buildRow?.status === "pending" || buildRow?.status === "running";
+  const buildPaused = buildRow?.status === "ready" && buildRow.progress?.phase === "beats_done";
+  const buildProgress = buildRow?.progress ?? null;
+
+  const watchedBuildRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (buildRunning && buildRow) watchedBuildRef.current = buildRow.id;
+    if (!buildRow || watchedBuildRef.current !== buildRow.id) return;
+    if (buildRow.status === "ready" || buildRow.status === "done") onChanged();
+  }, [buildRow?.id, buildRow?.status]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const runBulkBeats = async () => {
+    if (buildRunning) return;
+    try {
+      const { data, error } = await supabase.functions.invoke("generate-book", { body: { bookId, pauseAfterBeats: true } });
+      if (error) throw error;
+      if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
+      buildRefetch();
+    } catch (e) {
+      toast({ title: "Couldn't start beat generation", description: String((e as Error)?.message ?? e), variant: "destructive" });
+    }
+  };
+
+  const runBulkProse = async () => {
+    if (!buildPaused || !buildRow) return;
+    try {
+      const { data, error } = await supabase.functions.invoke("generate-book", { body: { generationId: buildRow.id, resume: true } });
+      if (error) throw error;
+      if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
+      buildRefetch();
+    } catch (e) {
+      toast({ title: "Couldn't start prose writing", description: String((e as Error)?.message ?? e), variant: "destructive" });
+    }
+  };
+  // ────────────────────────────────────────────────────────────────────────────
+
   // Landing on a committed page: seat its saved beat for review.
   useEffect(() => {
     if (page && committed) { setPick(null); setDraft(page.beatText); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page?.id, committed]);
 
-  // Auto-draft three takes when landing on a gap page with no run — but only once the watcher has
-  // settled for THIS page (loading false), so a stale run from the previous page can't suppress it.
+  // Auto-draft three takes when landing on a gap page with no run. Suppressed while a bulk run is
+  // in progress (avoid double-generating the same beat).
   useEffect(() => {
-    if (!page || committed || cand.loading || cand.starting || cand.run) return;
+    if (!page || committed || cand.loading || cand.starting || cand.run || buildRunning) return;
     if (kickedFor.current === page.id) return;
     kickedFor.current = page.id;
     setPick(null); setDraft("");
     void cand.start({ pageId: page.id, objective: page.objectiveText.trim() });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page?.id, committed, cand.loading, cand.starting, cand.run?.id]);
+  }, [page?.id, committed, cand.loading, cand.starting, cand.run?.id, buildRunning]);
 
   // When a fresh run of takes lands, seat the first as the default pick/edit (once per run).
   useEffect(() => {
@@ -72,7 +124,14 @@ export function BeatsStep({ bookId, model, onChanged }: { bookId: number; model:
   if (allDone) {
     return (
       <DoneStrip icon={<Check className="h-5 w-5" />} title="Every beat chosen">
-        All {total} pages have a beat you picked. <button type="button" onClick={() => setCursor(0)} className="italic text-[hsl(var(--pv-accent))] hover:opacity-75">review them →</button>
+        All {total} pages have a beat you picked.{" "}
+        <button type="button" onClick={() => setCursor(0)} className="italic text-[hsl(var(--pv-accent))] hover:opacity-75">review them →</button>
+        {buildPaused && (
+          <>
+            {" · "}
+            <button type="button" onClick={() => void runBulkProse()} className="italic text-[hsl(var(--pv-accent))] hover:opacity-75">write all prose →</button>
+          </>
+        )}
       </DoneStrip>
     );
   }
@@ -89,7 +148,7 @@ export function BeatsStep({ bookId, model, onChanged }: { bookId: number; model:
     try {
       await saveBeat(bookId, page.id, text);
       if (cand.run?.status === "ready") await cand.accept(async () => {}); // mark the run applied
-      toast({ title: "Beat set", description: `“${page.title || "page"}” — ${doneCount + 1} of ${total}.` });
+      toast({ title: "Beat set", description: `"${page.title || "page"}" — ${doneCount + 1} of ${total}.` });
       onChanged();
       advance();
     } catch (e) {
@@ -184,6 +243,36 @@ export function BeatsStep({ bookId, model, onChanged }: { bookId: number; model:
           </button>
         </div>
       )}
+
+      {/* ── Bulk actions ── */}
+      <div className="mt-8 border-t border-[hsl(var(--pv-border-soft))]/50 pt-5">
+        {buildRunning ? (
+          <div>
+            <p className="pv-serif inline-flex items-center gap-2 text-[13.5px] italic text-[hsl(var(--pv-text-muted))]">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              {buildProgress?.phase ?? "Planning…"}
+            </p>
+            <RunControls table="book_generations" row={buildRow} stale={buildStale} onRestart={runBulkBeats} refetch={buildRefetch} />
+          </div>
+        ) : buildPaused ? (
+          <div>
+            <p className="pv-serif text-[13.5px] text-foreground">All beats planned.</p>
+            <p className="pv-serif mt-0.5 text-[12.5px] italic text-[hsl(var(--pv-text-faint))]">Ready to write — generate all prose from the beats in one shot.</p>
+            <button type="button" onClick={() => void runBulkProse()}
+              className="pv-serif mt-3 inline-flex items-center gap-1.5 text-[14px] italic text-[hsl(var(--pv-accent))] hover:opacity-75">
+              Write all prose →
+            </button>
+          </div>
+        ) : gapCount > 0 ? (
+          <div>
+            <button type="button" onClick={() => void runBulkBeats()} disabled={buildRunning}
+              className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-text-faint))] hover:text-[hsl(var(--pv-accent))] transition-colors">
+              <Sparkles className="h-3.5 w-3.5" /> Generate all {gapCount} beats at once →
+            </button>
+            <p className="pv-serif mt-1 text-[12px] italic text-[hsl(var(--pv-text-faint))]/70">Auto-picks the best take for each page — skip the page-by-page flow.</p>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
