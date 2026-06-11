@@ -1229,6 +1229,19 @@ async function runObjectiveOptions(body) {
   }
 }
 
+// ── /ai-run ───────────────────────────────────────────────────────────────────
+// Mirrors supabase/functions/ai-run: the durable harness for short ops. The bridge has no wall-clock
+// cap, so it inserts the running row, runs the worker, and writes the terminal row synchronously
+// (runGeneration) — the client watches the SAME book_generations row over Realtime either way.
+async function aiRunWorker(kind, params, bookId) {
+  if (kind === "objective_options") {
+    const out = await runObjectiveOptions({ bookId, ...params });
+    if (out.error) throw new Error(out.error);
+    return { options: out.options };
+  }
+  throw new Error(`Unknown ai-run kind: ${kind}`);
+}
+
 // ── /beat-to-objective ────────────────────────────────────────────────────────
 // Mirrors supabase/functions/beat-to-objective: beat → the page objective it serves (reverse, up).
 const BEAT_TO_OBJECTIVE_INSTRUCTIONS = `You are a book architect ABSTRACTING UP: given a page's BEAT (a paragraph planning, in order, what the page does), write the page's OBJECTIVE — a single short statement (1–2 sentences) of what that page must ACHIEVE in the book: its job, not its moves. You are stepping up one level of abstraction, from the concrete plan to the page's purpose.
@@ -1803,6 +1816,33 @@ async function route(req, res) {
     return json(res, 200, out);
   }
 
+  if (url === "/ai-run" || url === "/ai-run/") {
+    if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
+    const body = await readBody(req);
+    if (!(await authorize(req, res, Number(body.bookId)))) return;
+    const { bookId, kind, targetKey, targetPageId, params } = body;
+    console.log(`ai-run ${kind} (book ${bookId}, key ${targetKey ?? targetPageId ?? "-"})…`);
+    // Insert the running row first (client watches it over Realtime), run the worker, then write the
+    // terminal row — re-checking cancel so a cancel during the run sticks (parity with the edge fn).
+    const genRow = await insertGeneration(Number(bookId), {
+      kind, scope: targetPageId ? "page" : "book",
+      target_page_id: targetPageId ?? null, target_key: targetKey ?? null, input: params ?? {},
+    });
+    if (!genRow) return json(res, 500, { error: "could not create generation row" });
+    (async () => {
+      try {
+        const result = await aiRunWorker(kind, params ?? {}, Number(bookId));
+        const cur = await fetch(`${SUPABASE_URL}/rest/v1/book_generations?id=eq.${genRow.id}&select=status`, { headers: sbHeaders });
+        const status = (await cur.json())?.[0]?.status;
+        if (status === "cancelled") return; // abandon the result
+        await updateGeneration(genRow.id, { status: "ready", result });
+      } catch (e) {
+        await updateGeneration(genRow.id, { status: "error", error: String(e?.message ?? e).slice(0, 1000) });
+      }
+    })();
+    return json(res, 200, { runId: genRow.id });
+  }
+
   if (url === "/spine-options" || url === "/spine-options/") {
     if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
     const body = await readBody(req);
@@ -1859,5 +1899,5 @@ async function route(req, res) {
 
 server.listen(PORT, () => {
   console.log(`eval-bridge listening on http://localhost:${PORT}  (repo: ${repoRoot})`);
-  console.log(`  GET/POST /eval/:bookId   POST /spine-to-objectives/:bookId   POST /bible/:bookId   POST /revise-outline/:bookId   POST /beat-to-prose   POST /revise-prose   POST /objective-to-beat   POST /prose-to-beat   POST /brief-to-spine   POST /beat-to-objective   POST /objectives-to-spine   POST /revise-node   POST /revise-scaffold   POST /objective-options   POST /spine-options`);
+  console.log(`  GET/POST /eval/:bookId   POST /spine-to-objectives/:bookId   POST /bible/:bookId   POST /revise-outline/:bookId   POST /beat-to-prose   POST /revise-prose   POST /objective-to-beat   POST /prose-to-beat   POST /brief-to-spine   POST /beat-to-objective   POST /objectives-to-spine   POST /revise-node   POST /revise-scaffold   POST /objective-options   POST /spine-options   POST /ai-run`);
 });

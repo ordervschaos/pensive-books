@@ -9,7 +9,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { readNode, readProse, saveBeat, saveObjective, transforms } from "@/lib/ladder";
 import type { CellState } from "@/lib/planGraph";
-import { NodeOptions, NodeReviser } from "../ladder-ui";
+import { NodeReviser } from "../ladder-ui";
+import { DurableOptions } from "../DurableOptions";
 import { ProseNodePanel } from "../ProseNodePanel";
 import type { StudioModel } from "./studioModel";
 import { Pip } from "./studioUi";
@@ -129,10 +130,13 @@ export function PageReview({ bookId, model, pageId, onChanged, onSelectPage }: P
                   onChanged();
                 }}
               />
-              <NodeOptions
+              <DurableOptions
+                bookId={bookId}
+                kind="objective_options"
+                targetPageId={pageId}
                 busy={busy !== null}
-                onGenerate={() => transforms.objectiveOptions(bookId, pageId)}
-                onAccept={async (proposed) => {
+                getParams={() => ({ pageId })}
+                onApply={async (proposed) => {
                   setObjective(proposed);
                   await saveObjective(bookId, pageId, proposed);
                   onChanged();

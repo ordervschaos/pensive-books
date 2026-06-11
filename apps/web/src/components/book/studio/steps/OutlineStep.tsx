@@ -4,7 +4,8 @@
 import { useEffect, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { ScaffoldGenerator } from "../../ScaffoldGenerator";
-import { NodeOptions, NodeReviser } from "../../ladder-ui";
+import { NodeReviser } from "../../ladder-ui";
+import { DurableOptions } from "../../DurableOptions";
 import { saveObjective, transforms } from "@/lib/ladder";
 import type { MapPage } from "@/lib/planGraph";
 import type { StudioModel } from "../studioModel";
@@ -77,10 +78,12 @@ function PageCard({ bookId, page, onSelectPage, onChanged }: {
           onRevise={(instr) => transforms.reviseNode(bookId, "objective", objectiveText, instr, page.id)}
           onAccept={accept}
         />
-        <NodeOptions
-          busy={false}
-          onGenerate={() => transforms.objectiveOptions(bookId, page.id)}
-          onAccept={accept}
+        <DurableOptions
+          bookId={bookId}
+          kind="objective_options"
+          targetPageId={page.id}
+          getParams={() => ({ pageId: page.id })}
+          onApply={accept}
         />
       </div>
     </div>

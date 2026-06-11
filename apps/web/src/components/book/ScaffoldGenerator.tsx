@@ -11,8 +11,7 @@ import { useLatestTaskRow, type TaskRow } from "@/hooks/useLatestTaskRow";
 import { RunControls } from "./RunControls";
 import { BRIDGE, bridgeFetch } from "@/lib/bridge";
 import { stampEdge } from "@/lib/planProvenance";
-import { transforms } from "@/lib/ladder";
-import { NodeOptions } from "./ladder-ui";
+import { DurableOptions } from "./DurableOptions";
 
 interface ScaffoldPage {
   pageType: "section" | "text";
@@ -330,10 +329,13 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
                     className="rounded-none border-0 text-xs italic resize-none focus-visible:ring-0 focus-visible:ring-offset-0"
                   />
                   <div className="border-t border-border px-3 py-1.5">
-                    <NodeOptions
+                    <DurableOptions
+                      bookId={bookId}
+                      kind="objective_options"
+                      targetKey={`draft:${row?.id ?? 0}:${i}`}
                       busy={creating || revising}
-                      onGenerate={() => transforms.objectiveOptionsDraft(bookId, draft, i)}
-                      onAccept={(text) => applyObjective(i, text)}
+                      getParams={() => ({ scaffold: draft, pageIndex: i })}
+                      onApply={(text) => applyObjective(i, text)}
                     />
                   </div>
                   <Button type="button" variant="ghost" size="icon"
