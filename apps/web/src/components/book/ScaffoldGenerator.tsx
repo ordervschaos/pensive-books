@@ -11,6 +11,8 @@ import { useLatestTaskRow, type TaskRow } from "@/hooks/useLatestTaskRow";
 import { RunControls } from "./RunControls";
 import { BRIDGE, bridgeFetch } from "@/lib/bridge";
 import { stampEdge } from "@/lib/planProvenance";
+import { transforms } from "@/lib/ladder";
+import { NodeOptions } from "./ladder-ui";
 
 interface ScaffoldPage {
   pageType: "section" | "text";
@@ -87,6 +89,18 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
 
   const updatePage = (i: number, patch: Partial<ScaffoldPage>) =>
     setDraft((d) => (d ? { ...d, pages: d.pages.map((p, idx) => (idx === i ? { ...p, ...patch } : p)) } : d));
+
+  // Apply a chosen objective option to a draft page, and persist the draft to the task row so a
+  // refresh keeps it (same as the revise flow). Returns once persisted.
+  const applyObjective = async (i: number, objective: string) => {
+    const base = draft;
+    if (!base) return;
+    const next: Scaffold = { ...base, pages: base.pages.map((p, idx) => (idx === i ? { ...p, objective } : p)) };
+    setDraft(next);
+    if (row) {
+      await supabase.from("book_generations").update({ result: { ...next, critique: row.result?.critique } }).eq("id", row.id);
+    }
+  };
 
   // Drop a page and keep the planned threads' page-index anchors valid: an anchor at the deleted
   // index becomes null, anchors after it shift down by one.
@@ -314,6 +328,13 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
                     rows={2}
                     className="rounded-none border-0 text-xs italic resize-none focus-visible:ring-0 focus-visible:ring-offset-0"
                   />
+                  <div className="border-t border-border px-3 py-1.5">
+                    <NodeOptions
+                      busy={creating || revising}
+                      onGenerate={() => transforms.objectiveOptionsDraft(bookId, draft, i)}
+                      onAccept={(text) => applyObjective(i, text)}
+                    />
+                  </div>
                   <Button type="button" variant="ghost" size="icon"
                     className="absolute top-0.5 right-0.5 h-7 w-7 text-muted-foreground opacity-0 group-hover:opacity-60 hover:!opacity-100"
                     onClick={() => deletePage(i)} aria-label="Remove">

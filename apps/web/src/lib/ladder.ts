@@ -63,6 +63,9 @@ export const transforms = {
   // wide alternatives for one objective slot, grounded on the committed prefix before it.
   objectiveOptions: (bookId: number, pageId: number) =>
     callList("objective-options", { bookId, pageId }, "options"),
+  // same, but for a pre-commit scaffold DRAFT page (no pageId yet) — prefix comes from the draft.
+  objectiveOptionsDraft: (bookId: number, scaffold: unknown, pageIndex: number) =>
+    callList("objective-options", { bookId, scaffold, pageIndex }, "options"),
   // wide alternative spines from the brief — 3 different directions to choose from.
   spineOptions: (bookId: number) =>
     callList("spine-options", { bookId }, "options"),

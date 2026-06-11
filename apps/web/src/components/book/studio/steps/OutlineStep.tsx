@@ -1,8 +1,12 @@
-// OutlineStep — the Outline step's Stage body. Before a scaffold exists, the ScaffoldGenerator (its
-// review-and-create dialog is its own well-worn flow, kept as-is). Once pages exist, the prototype's
-// calm reading view: movements with their pages as objectives, read from the derived model. Editing a
-// single page's objective happens in that page's resolution ladder (open it from the map).
+// OutlineStep — the Outline step's Stage body. Before a scaffold exists, the ScaffoldGenerator.
+// Once pages exist: each page is a card showing its objective with inline revise + options actions,
+// so the author can rework any slot without navigating away. Clicking "open →" goes to PageReview.
+import { useEffect, useState } from "react";
+import { useToast } from "@/hooks/use-toast";
 import { ScaffoldGenerator } from "../../ScaffoldGenerator";
+import { NodeOptions, NodeReviser } from "../../ladder-ui";
+import { saveObjective, transforms } from "@/lib/ladder";
+import type { MapPage } from "@/lib/planGraph";
 import type { StudioModel } from "../studioModel";
 
 export function OutlineStep({ bookId, model, onChanged, onSelectPage }: { bookId: number; model: StudioModel; onChanged: () => void; onSelectPage: (pageId: number) => void }) {
@@ -14,25 +18,71 @@ export function OutlineStep({ bookId, model, onChanged, onSelectPage }: { bookId
       {model.movements.map((m) => (
         <div key={m.key} className="rounded-2xl border border-border bg-[hsl(var(--pv-surface-2))]/40 px-5 py-4">
           <div className="pv-mono mb-2.5 text-[10px] uppercase tracking-[0.14em] text-[hsl(var(--pv-accent))]">{m.num ? `${m.num} · ` : ""}{m.title}</div>
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             {m.pages.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => onSelectPage(p.id)}
-                className="group flex w-full items-start gap-3 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-[hsl(var(--pv-surface-2))]/70"
-              >
-                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: p.objective !== "gap" ? "hsl(var(--pv-accent))" : "hsl(var(--pv-text-faint))" }} />
-                <span className="min-w-0 flex-1">
-                  <span className="pv-serif block text-[15.5px] leading-snug text-foreground">{p.title || "(untitled)"}</span>
-                  {p.objectiveText && <span className="pv-serif block text-[13px] italic leading-snug text-[hsl(var(--pv-text-muted))]">{p.objectiveText}</span>}
-                </span>
-              </button>
+              <PageCard key={p.id} bookId={bookId} page={p} onSelectPage={onSelectPage} onChanged={onChanged} />
             ))}
           </div>
         </div>
       ))}
-      <p className="pv-serif px-1 text-[13px] italic text-[hsl(var(--pv-text-faint))]">Open any page to read or edit its objective · re-plan the structure from the Revise step.</p>
+      <p className="pv-serif px-1 text-[13px] italic text-[hsl(var(--pv-text-faint))]">Revise or generate options inline · open any page for the full ladder.</p>
+    </div>
+  );
+}
+
+function PageCard({ bookId, page, onSelectPage, onChanged }: {
+  bookId: number;
+  page: MapPage;
+  onSelectPage: (id: number) => void;
+  onChanged: () => void;
+}) {
+  const { toast } = useToast();
+  const [objectiveText, setObjectiveText] = useState(page.objectiveText);
+
+  useEffect(() => { setObjectiveText(page.objectiveText); }, [page.objectiveText]);
+
+  const accept = async (proposed: string) => {
+    try {
+      await saveObjective(bookId, page.id, proposed);
+      setObjectiveText(proposed);
+      onChanged();
+    } catch (e) {
+      toast({ title: "Couldn't save objective", description: String((e as Error)?.message ?? e), variant: "destructive" });
+      throw e;
+    }
+  };
+
+  return (
+    <div className="rounded-lg border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/30 px-3.5 py-3">
+      <div className="flex items-start justify-between gap-2">
+        <span className="pv-serif text-[15.5px] leading-snug text-foreground">{page.title || "(untitled)"}</span>
+        <button
+          type="button"
+          onClick={() => onSelectPage(page.id)}
+          className="pv-serif shrink-0 text-[12px] italic text-[hsl(var(--pv-text-faint))] hover:text-[hsl(var(--pv-accent))] transition-colors"
+        >
+          open →
+        </button>
+      </div>
+
+      {objectiveText && (
+        <p className="pv-serif mt-1.5 text-[13px] italic leading-snug text-[hsl(var(--pv-text-muted))]">{objectiveText}</p>
+      )}
+
+      <div className="mt-2.5 flex items-center gap-4 border-t border-[hsl(var(--pv-border-soft))]/60 pt-2.5">
+        <NodeReviser
+          current={objectiveText}
+          busy={false}
+          buttonLabel="revise"
+          onRevise={(instr) => transforms.reviseNode(bookId, "objective", objectiveText, instr, page.id)}
+          onAccept={accept}
+        />
+        <NodeOptions
+          busy={false}
+          onGenerate={() => transforms.objectiveOptions(bookId, page.id)}
+          onAccept={accept}
+        />
+      </div>
     </div>
   );
 }

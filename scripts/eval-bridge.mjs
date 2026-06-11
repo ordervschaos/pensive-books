@@ -1149,22 +1149,22 @@ Generate exactly 3 ALTERNATIVES. Each must:
 Output JSON ONLY (no prose, no fences):
 { "options": ["<option 1>", "<option 2>", "<option 3>"] }`;
 
-function objectivePrefixContext(pages, targetId) {
-  const targetIdx = pages.findIndex((p) => p.id === targetId);
-  const target = pages[targetIdx] ?? null;
+// slots: [{ pageType, title, objective }]; build the prefix from everything before targetIdx.
+function objectivePrefixContext(slots, targetIdx) {
+  const target = slots[targetIdx] ?? null;
   const lines = [];
   for (let i = 0; i < targetIdx; i++) {
-    const p = pages[i];
-    if (p.page_type === "section") {
+    const p = slots[i];
+    if (p.pageType === "section") {
       lines.push(`# ${p.title || "(untitled section)"}`);
     } else {
-      const obj = p.metadata?.objective?.trim();
+      const obj = p.objective?.trim();
       lines.push(`- "${p.title || "(untitled)"}" — ${obj || "(no objective yet)"}`);
     }
   }
   return {
     prefix: lines.join("\n") || "(this is the first page — no preceding objectives)",
-    current: target?.metadata?.objective?.trim() || "",
+    current: target?.objective?.trim() || "",
     title: target?.title?.trim() || "(untitled)",
   };
 }
@@ -1184,20 +1184,33 @@ function parseObjectiveOptions(text) {
 }
 
 async function runObjectiveOptions(body) {
-  const { bookId, pageId } = body;
-  if (!bookId || !pageId) return { error: "bookId and pageId required" };
+  const { bookId, pageId, scaffold, pageIndex } = body;
+  if (!bookId) return { error: "bookId required" };
+  const draftMode = Array.isArray(scaffold?.pages) && typeof pageIndex === "number";
+  if (!draftMode && !pageId) return { error: "pageId, or scaffold+pageIndex, required" };
 
   const book = await fetchBook(bookId);
   if (!book) return { error: "Book not found" };
-  const pages = await fetchPages(bookId);
 
-  const { prefix, current, title } = objectivePrefixContext(pages, pageId);
+  let slots, targetIdx;
+  if (draftMode) {
+    slots = scaffold.pages.map((p) => ({ pageType: p.pageType, title: p.title, objective: p.objective }));
+    targetIdx = pageIndex;
+    if (targetIdx < 0 || targetIdx >= slots.length) return { error: "pageIndex out of range" };
+  } else {
+    const pages = await fetchPages(bookId);
+    targetIdx = pages.findIndex((p) => p.id === pageId);
+    if (targetIdx === -1) return { error: "Page not found" };
+    slots = pages.map((p) => ({ pageType: p.page_type, title: p.title, objective: p.metadata?.objective }));
+  }
+
+  const { prefix, current, title } = objectivePrefixContext(slots, targetIdx);
   const spine = book.spine?.text?.trim() || null;
 
   const userContent =
     `BOOK: ${book.name}\n\nBRIEF:\n${briefContext(book.brief)}` +
     (spine ? `\n\nBOOK SPINE (the throughline — alternatives must serve it):\n${spine}` : "") +
-    `\n\nCOMMITTED OBJECTIVES (story-so-far — use as causal foundation):\n${prefix}` +
+    `\n\nOBJECTIVES SO FAR (story-so-far — use as causal foundation):\n${prefix}` +
     `\n\nTHIS SLOT: "${title}"` +
     (current ? `\n\nCURRENT OBJECTIVE (what's there now — vary away from it):\n${current}` : "\n\n(No objective set yet for this slot.)") +
     `\n\nGenerate 3 wide-varying alternatives for this slot. JSON only.`;
