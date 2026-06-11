@@ -9,7 +9,11 @@
     "./ui/book-card": "./src/ui/book-card.tsx",
     "./ui/book-cover-fallback": "./src/ui/book-cover-fallback.tsx",
     "./ui/nav-tabs": "./src/ui/nav-tabs.tsx",
-    "./ui/top-nav": "./src/ui/top-nav.tsx"
+    "./ui/top-nav": "./src/ui/top-nav.tsx",
+    "./ui/tone-chip": "./src/ui/tone-chip.tsx",
+    "./ui/segmented": "./src/ui/segmented.tsx",
+    "./ui/resolution-node": "./src/ui/resolution-node.tsx",
+    "./ui/eyebrow": "./src/ui/eyebrow.tsx"
   },
   "peerDependencies": {
     "react": "^18.3.1"
