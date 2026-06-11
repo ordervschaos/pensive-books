@@ -46,13 +46,34 @@ export interface EdgeHash {
 // Edge names in the resolution ladder (stored under metadata.sync). Each names a parent→child pair.
 export type EdgeName = "spine_objective" | "objective_beat" | "beat_prose";
 
+// One character's state at a point in the story (the state axis). Mirrors CharacterState in the edge
+// copy, supabase/functions/_shared/page-state.ts. want/wound are stable arc poles; the rest change.
+export interface CharacterState {
+  name: string;
+  want?: string;
+  wound?: string;
+  believes?: string;
+  knows?: string[];
+  feels?: string;
+  has?: string[];
+}
+
+// The full shape of pages.metadata — author-only page-progression state, never shown to readers. This
+// IS the object that dictates how the next page progresses (the next page reads the latest prior
+// character_states). The canonical copy is supabase/functions/_shared/page-state.ts (PageState); keep
+// the two in sync. Note: the page→generating-call link is a real column (pages.last_ai_call_id), NOT
+// part of metadata.
 export interface PageMeta {
   objective?: string;
   beat?: string; // the page's beat (one-paragraph middle resolution between objective and prose)
   summary?: string;
+  character_states?: CharacterState[]; // full character ledger as of this page (the state axis)
   prose_src_hash?: string; // legacy (Phase 1): parent-only hash for the objective→prose edge
   sync?: Partial<Record<EdgeName, EdgeHash>>; // both-endpoint snapshots, one per edge
 }
+
+/** Canonical name for the per-page state object; alias of PageMeta. */
+export type PageState = PageMeta;
 
 /**
  * Generic edge staleness from a recorded reconcile snapshot. The contract is "don't badge what we

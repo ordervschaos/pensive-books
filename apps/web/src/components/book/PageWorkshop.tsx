@@ -4,6 +4,7 @@ import { ChevronDown, ChevronRight, Loader2 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useAdmin } from "@/hooks/use-admin";
 import { useLatestTaskRow, type TaskRow } from "@/hooks/useLatestTaskRow";
 import { BRIDGE, bridgeFetch } from "@/lib/bridge";
 import { isEdgeStale, isProseStale, metaHash, stampEdge, type PageMeta } from "@/lib/planProvenance";
@@ -217,11 +218,15 @@ export function PageWorkshop({
   const [meta, setMeta] = useState<PageMeta | null>(null);
   const [beatDraft, setBeatDraft] = useState("");
   const [beatBusy, setBeatBusy] = useState(false);
+  // Admin-only: the ai_call that last wrote this page's prose, for the "view generating call" link.
+  const { isAdmin } = useAdmin();
+  const [lastAiCallId, setLastAiCallId] = useState<number | null>(null);
   const loadMeta = useCallback(async () => {
-    const { data } = await supabase.from("pages").select("metadata").eq("id", pageId).maybeSingle();
+    const { data } = await supabase.from("pages").select("metadata, last_ai_call_id").eq("id", pageId).maybeSingle();
     const m = (data?.metadata as PageMeta | null) ?? null;
     setMeta(m);
     setBeatDraft(m?.beat ?? "");
+    setLastAiCallId((data?.last_ai_call_id as number | null) ?? null);
   }, [pageId]);
   useEffect(() => { void loadMeta(); }, [loadMeta, row?.status]);
 
@@ -379,6 +384,16 @@ export function PageWorkshop({
           <span className="pv-serif min-w-0 flex-1 truncate text-[12.5px] italic text-[hsl(var(--pv-text-muted))]">— {objectiveText}</span>
         )}
       </button>
+
+      {isAdmin && lastAiCallId && (
+        <a
+          href={`/admin/ai-calls?call=${lastAiCallId}`}
+          className="mt-1 inline-block text-[11px] text-[hsl(var(--pv-text-faint))] underline hover:text-[hsl(var(--pv-text-muted))]"
+          title="Admin: open the AI call that last wrote this page — its full prompt and labeled artifacts"
+        >
+          view generating call #{lastAiCallId}
+        </a>
+      )}
 
       {planOpen && (
        <div className="mt-3 space-y-1">

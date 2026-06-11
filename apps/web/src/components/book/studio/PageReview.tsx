@@ -14,6 +14,7 @@ import { DurableReviser } from "../DurableReviser";
 import { ProseNodePanel } from "../ProseNodePanel";
 import type { StudioModel } from "./studioModel";
 import { Pip } from "./studioUi";
+import { CharacterLedgerGraph } from "./CharacterLedgerGraph";
 
 interface PageReviewProps {
   bookId: number;
@@ -36,6 +37,7 @@ export function PageReview({ bookId, model, pageId, onChanged, onSelectPage }: P
   const [prose, setProse] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<"objective" | "beat" | null>(null);
+  const [showLedger, setShowLedger] = useState(false);
   const reqRef = useRef(0);
 
   useEffect(() => {
@@ -99,9 +101,24 @@ export function PageReview({ bookId, model, pageId, onChanged, onSelectPage }: P
         </button>
       </div>
       <h1 className="pv-serif mt-3 text-[36px] leading-[1.14] tracking-[-0.015em] text-foreground">{page.title || "(untitled)"}</h1>
-      <p className="pv-serif mb-6 mt-2 text-[15px] leading-[1.5] text-[hsl(var(--pv-text-muted))]">
+      <p className="pv-serif mt-2 text-[15px] leading-[1.5] text-[hsl(var(--pv-text-muted))]">
         The page's resolution ladder — read, edit, or regenerate any level without leaving your place.
       </p>
+
+      {/* Muted disclosure: the character ledger (the state axis) and how it moves across the book. */}
+      <button
+        type="button"
+        onClick={() => setShowLedger((v) => !v)}
+        className="mt-1.5 pv-serif text-[12.5px] italic text-[hsl(var(--pv-text-faint))] underline decoration-dotted underline-offset-2 hover:text-[hsl(var(--pv-text-muted))]"
+      >
+        {showLedger ? "hide character ledger" : "character ledger — how it changes across pages"}
+      </button>
+      {showLedger && (
+        <div className="mt-3 rounded-2xl border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/40 px-4 py-3">
+          <CharacterLedgerGraph bookId={bookId} currentPageId={pageId} onSelectPage={onSelectPage} />
+        </div>
+      )}
+      <div className="mb-6" />
 
       {loading ? (
         <p className="pv-serif inline-flex items-center gap-2 text-[14px] italic text-[hsl(var(--pv-text-muted))]">

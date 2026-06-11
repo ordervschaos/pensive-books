@@ -172,6 +172,17 @@ export function ProseNodePanel({
       {running && (
         <p className="pv-serif inline-flex items-center gap-2 text-[13.5px] italic text-[hsl(var(--pv-text-muted))]">
           <Loader2 className="h-3.5 w-3.5 animate-spin" /> The editor is writing…
+          <span className="not-italic text-[hsl(var(--pv-text-faint))]">·</span>
+          <button
+            type="button"
+            onClick={async () => {
+              if (row) await supabase.from("book_generations").update({ status: "error", error: "Stopped by the author." }).eq("id", row.id);
+              refetch();
+            }}
+            className="not-italic text-[hsl(var(--pv-text-faint))] underline-offset-2 hover:text-foreground hover:underline"
+          >
+            cancel
+          </button>
         </p>
       )}
 

@@ -12,6 +12,7 @@
 import { type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { callClaude as callClaudeApi, type CallMeta } from "./claude.ts";
 import { getActiveModels } from "./model-config.ts";
+import { type CharacterState, type PageState } from "./page-state.ts";
 const PRECEDING_PAGES = 2; // how many prior text pages of full prose to include for continuity
 
 export interface Brief {
@@ -32,20 +33,9 @@ export interface ReviseIssue {
   suggestion?: string;
 }
 
-// Character ledger (the state axis, ledger 1): a snapshot of one character's state at a point in the
-// story. want/wound are the stable arc poles; knows/feels/has/believes change page-to-page. A full
-// snapshot of every character is stamped onto each prose page (pages.metadata.character_states) after
-// it's written, and the most recent prior snapshot is fed into the next page's prose context — so
-// characters accrete history instead of resetting each chapter.
-export interface CharacterState {
-  name: string;
-  want?: string;       // external goal (stable across the book)
-  wound?: string;      // internal flaw the arc resolves (stable)
-  believes?: string;   // current conviction (changes)
-  knows?: string[];    // facts currently held (changes)
-  feels?: string;      // emotional state right now (changes)
-  has?: string[];      // objects/resources/relationships (changes)
-}
+// The character ledger (the state axis) and the full page-state shape are the canonical types in
+// _shared/page-state.ts; re-export CharacterState here for existing call sites.
+export type { CharacterState };
 
 interface CommonParams {
   bookId: number;
@@ -89,6 +79,22 @@ const meta = (fn: string, p: CommonParams): CallMeta => ({
   userId: p.userId ?? null,
 });
 
+const wordCount = (s: string | null | undefined): number => {
+  const t = (s ?? "").trim();
+  return t ? t.split(/\s+/).length : 0;
+};
+
+// Link a page to the ai_call whose prose generation last wrote it (admin lineage). Best-effort: a
+// failure here only loses the convenience link, it never fails the write.
+async function stampGeneratingCall(client: SupabaseClient, pageId: number, callId: number | null | undefined) {
+  if (!callId) return;
+  try {
+    await client.from("pages").update({ last_ai_call_id: callId }).eq("id", pageId);
+  } catch (e) {
+    console.error("generate-unit-core: last_ai_call_id stamp failed (non-fatal):", e);
+  }
+}
+
 async function loadBook(client: SupabaseClient, bookId: number): Promise<BookRow> {
   const { data: book, error } = await client
     .from("books").select("id, name, subtitle, author, brief, bible").eq("id", bookId).single();
@@ -114,6 +120,22 @@ export async function beatToProse(client: SupabaseClient, apiKey: string, p: Wri
   }
 
   const m = meta("beat-to-prose", p);
+  // The labeled artifact manifest: the named inputs that compose this prose call's prompt, logged to
+  // ai_calls.artifacts so the admin sees what fed the page (the merged prompt is still in `input`).
+  m.artifacts = {
+    mode: "write",
+    objective: (p.objective ?? "").trim() || null,
+    beat,
+    brief: b.brief,
+    voice_sample_used: !!b.bible?.voice_sample?.trim(),
+    bible_used: !!b.bible?.text?.trim(),
+    character_states: ctx.characterStates,
+    open_loops: ctx.openLoops,
+    story_so_far: ctx.storySoFar,
+    preceding_prose: ctx.precedingProseIds.length
+      ? { page_ids: ctx.precedingProseIds, word_count: wordCount(ctx.precedingProse) }
+      : null,
+  };
   const text = await renderProse(apiKey, models.high, {
     brief: b.brief, bible: b.bible?.text?.trim() || null, voiceSample: b.bible?.voice_sample?.trim() || null, bookName: b.name,
     level: p.level, mode: "write", objective: (p.objective ?? "").trim(), beat, issues: null, currentText: null,
@@ -122,6 +144,7 @@ export async function beatToProse(client: SupabaseClient, apiKey: string, p: Wri
   }, m);
 
   if (p.level === "page" && p.pageId) {
+    await stampGeneratingCall(client, p.pageId, m.loggedCallId); // page → the call that wrote it
     await maybeSummarize(client, apiKey, p.pageId, text, m, models.low);
     await maybeExtractCharacterStates(client, apiKey, p.bookId, p.pageId, text, m, models.low);
   }
@@ -144,6 +167,21 @@ export async function revisePage(client: SupabaseClient, apiKey: string, p: Revi
   if (!currentText) throw new Error("Page has no prose to revise");
 
   const m = meta("revise-prose", p);
+  m.artifacts = {
+    mode: "revise",
+    objective: (p.objective ?? "").trim() || null,
+    issues: p.issues,
+    brief: b.brief,
+    voice_sample_used: !!b.bible?.voice_sample?.trim(),
+    bible_used: !!b.bible?.text?.trim(),
+    character_states: ctx.characterStates,
+    open_loops: ctx.openLoops,
+    story_so_far: ctx.storySoFar,
+    current_prose: { word_count: wordCount(currentText) },
+    preceding_prose: ctx.precedingProseIds.length
+      ? { page_ids: ctx.precedingProseIds, word_count: wordCount(ctx.precedingProse) }
+      : null,
+  };
   const text = await renderProse(apiKey, models.high, {
     brief: b.brief, bible: b.bible?.text?.trim() || null, voiceSample: b.bible?.voice_sample?.trim() || null, bookName: b.name,
     level: "page", mode: "revise", objective: (p.objective ?? "").trim(), beat: null, issues: p.issues, currentText,
@@ -151,6 +189,7 @@ export async function revisePage(client: SupabaseClient, apiKey: string, p: Revi
     objectiveMap: ctx.objectiveMap, storySoFar: ctx.storySoFar, precedingProse: ctx.precedingProse, currentPageLabel: ctx.currentPageLabel, openLoops: ctx.openLoops, characterStates: ctx.characterStates,
   }, m);
 
+  await stampGeneratingCall(client, p.pageId, m.loggedCallId); // page → the call that revised it
   await maybeSummarize(client, apiKey, p.pageId, text, m, models.low);
   await maybeExtractCharacterStates(client, apiKey, p.bookId, p.pageId, text, m, models.low);
   return text;
@@ -172,7 +211,7 @@ interface PageLite {
   page_index: number;
   page_type: string | null;
   title: string | null;
-  metadata: { objective?: string; summary?: string; character_states?: CharacterState[] } | null;
+  metadata: PageState | null;
 }
 
 export async function buildUnitContext(
@@ -180,7 +219,7 @@ export async function buildUnitContext(
   bookId: number,
   pageId: number | null,
   level: "paragraph" | "page"
-): Promise<{ objectiveMap: string; storySoFar: string | null; precedingProse: string | null; currentPageLabel: string | null; openLoops: string | null; characterStates: string | null }> {
+): Promise<{ objectiveMap: string; storySoFar: string | null; precedingProse: string | null; precedingProseIds: number[]; currentPageLabel: string | null; openLoops: string | null; characterStates: string | null }> {
   const { data: pages } = await client
     .from("pages")
     .select("id, page_index, page_type, title, metadata")
@@ -203,6 +242,7 @@ export async function buildUnitContext(
   const currentPageLabel = current ? `"${current.title || "(untitled)"}"` : null;
 
   let precedingProse: string | null = null;
+  let precedingProseIds: number[] = [];
   let storySoFar: string | null = null;
   if (level === "page" && current) {
     const priorText = list.filter((p) => p.page_type === "text" && p.page_index < current.page_index);
@@ -214,6 +254,7 @@ export async function buildUnitContext(
     storySoFar = soFar.length ? soFar.join("\n") : null;
 
     const priorIds = priorText.slice(-PRECEDING_PAGES).map((p) => p.id);
+    precedingProseIds = priorIds;
     if (priorIds.length) {
       const { data: priorPages } = await client
         .from("pages")
@@ -240,7 +281,7 @@ export async function buildUnitContext(
     if (latest?.length) characterStates = formatCharacterStates(latest);
   }
 
-  return { objectiveMap, storySoFar, precedingProse, currentPageLabel, openLoops, characterStates };
+  return { objectiveMap, storySoFar, precedingProse, precedingProseIds, currentPageLabel, openLoops, characterStates };
 }
 
 // The character ledger as a prompt block: stable arc poles in parens, then the changing state.
@@ -495,7 +536,7 @@ async function summarize(apiKey: string, prose: string, meta: CallMeta, summaryM
       cache_control: { type: "ephemeral" },
     }],
     messages: [{ role: "user", content: prose.slice(0, 12000) }],
-  }, { ...meta, fn: "summarize" });
+  }, { ...meta, fn: "summarize", artifacts: null });
   return (data.content ?? [])
     .filter((b: { type: string }) => b.type === "text")
     .map((b: { text: string }) => b.text)
@@ -562,7 +603,7 @@ Output JSON ONLY (no prose, no fences): {"characters":[{"name":"","want":"","wou
       cache_control: { type: "ephemeral" },
     }],
     messages: [{ role: "user", content: `PRIOR CHARACTER STATES:\n${priorBlock}\n\nNEW PAGE PROSE:\n${prose.slice(0, 12000)}\n\nOutput the updated states for every character. JSON only.` }],
-  }, { ...meta, fn: "extract-character-states" });
+  }, { ...meta, fn: "extract-character-states", artifacts: null });
 
   const text = (data.content ?? [])
     .filter((b: { type: string }) => b.type === "text")

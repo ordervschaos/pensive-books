@@ -21,6 +21,13 @@ export interface CallMeta {
   taskId?: number | null;           // …and the row id, for the join
   source?: "edge" | "bridge";       // defaults to 'edge'
   userId?: string | null;           // auth user who triggered this call; null = automated/system
+  // Labeled inputs that composed this call's prompt (brief, objective, beat, character_states,
+  // open_loops, preceding-prose refs…). Logged to ai_calls.artifacts as provenance — the full merged
+  // prompt is still in `input`. Optional; callers that don't assemble unit context leave it null.
+  artifacts?: Record<string, unknown> | null;
+  // Set BY callClaude after the log row is inserted: the ai_calls.id of this call, so a caller can
+  // link the produced artifact back to its call (e.g. pages.last_ai_call_id). Do not set yourself.
+  loggedCallId?: number;
 }
 
 // deno-lint-ignore no-explicit-any
@@ -38,6 +45,7 @@ export async function callClaude(
   // (we need the id to close it out) but best-effort — a null id just means we fall back to a
   // single insert at the end, the pre-existing behavior.
   const logId = await logStart(body, meta);
+  if (logId != null) meta.loggedCallId = logId; // hand the row id back so callers can link to it
   const model = body.model as string ?? "";
   const isDeepSeek = model.startsWith("deepseek");
 
@@ -171,6 +179,7 @@ async function logStart(body: Record<string, unknown>, meta: CallMeta): Promise<
       model: (body.model as string) ?? null,
       system: systemText(body.system),
       input: body.messages ?? null,
+      artifacts: meta.artifacts ?? null,
       status: "running",
     }).select("id").single();
     if (error) { console.error("ai_calls start log failed (non-fatal):", error.message); return null; }
@@ -217,6 +226,7 @@ async function logEnd(
       model: (body.model as string) ?? null,
       system: systemText(body.system),
       input: body.messages ?? null,
+      artifacts: meta.artifacts ?? null,
       ...terminal,
     });
     if (error) console.error("ai_calls log failed (non-fatal):", error.message);

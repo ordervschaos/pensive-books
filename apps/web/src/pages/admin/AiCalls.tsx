@@ -23,7 +23,7 @@ const AI_CALL_EVALS: string = "ai_call_evals";
 // of DB egress, so the list pulls metadata only and the detail panel fetches the heavy fields on demand.
 const AI_CALL_LIST_COLUMNS =
   "id, created_at, book_id, user_id, task_table, task_id, fn, source, status, model, input_tokens, output_tokens, latency_ms, stop_reason, error";
-const AI_CALL_HEAVY_COLUMNS = "system, input, output";
+const AI_CALL_HEAVY_COLUMNS = "system, input, output, artifacts";
 
 interface AiCall {
   id: number;
@@ -39,6 +39,7 @@ interface AiCall {
   system: string | null;
   input: unknown;
   output: string | null;
+  artifacts: unknown;
   input_tokens: number | null;
   output_tokens: number | null;
   latency_ms: number | null;
@@ -167,6 +168,21 @@ export default function AiCalls() {
     onVisibility(); // start now if the tab is visible
     document.addEventListener("visibilitychange", onVisibility);
     return () => { stop(); document.removeEventListener("visibilitychange", onVisibility); };
+  }, []);
+
+  // Deep-link: /admin/ai-calls?call=<id> opens that call's detail directly (e.g. from a page's
+  // "view generating call" link). Fetched in full since it may not be in the recent-200 list.
+  useEffect(() => {
+    const id = Number(new URLSearchParams(window.location.search).get("call"));
+    if (!id) return;
+    void (async () => {
+      const { data } = await supabase
+        .from(AI_CALLS)
+        .select(`${AI_CALL_LIST_COLUMNS}, ${AI_CALL_HEAVY_COLUMNS}`)
+        .eq("id", id)
+        .maybeSingle();
+      if (data) setSelected(data as unknown as AiCall);
+    })();
   }, []);
 
   const fns = useMemo(() => Array.from(new Set(calls.map((c) => c.fn))).sort(), [calls]);
@@ -360,6 +376,7 @@ function CallDialog({ call, evals, onClose, onJudge, judging, profile }: {
 
             {call.error && <Section title="Error"><pre className="whitespace-pre-wrap text-destructive text-xs">{call.error}</pre></Section>}
             {call.system && <Section title="System"><pre className="whitespace-pre-wrap text-xs">{call.system}</pre></Section>}
+            {call.artifacts != null && <Section title="Artifacts (labeled inputs)"><ArtifactsView artifacts={call.artifacts} /></Section>}
             <Section title="Context (assembled prompt)"><pre className="whitespace-pre-wrap text-xs">{contextText(call.input)}</pre></Section>
             <Section title="Output"><pre className="whitespace-pre-wrap text-xs">{call.output ?? "(none)"}</pre></Section>
 
@@ -378,6 +395,29 @@ function CallDialog({ call, evals, onClose, onJudge, judging, profile }: {
         </ScrollArea>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// The labeled artifact manifest logged on each generation call: each key is one named input that
+// composed the prompt (brief, objective, beat, character_states, open_loops, preceding-prose refs).
+// Strings render inline; objects/arrays render as compact JSON. Empty values are skipped.
+function ArtifactsView({ artifacts }: { artifacts: unknown }) {
+  if (!artifacts || typeof artifacts !== "object") return <p className="text-xs text-muted-foreground">(none recorded)</p>;
+  const entries = Object.entries(artifacts as Record<string, unknown>).filter(
+    ([, v]) => v != null && v !== "" && !(Array.isArray(v) && v.length === 0),
+  );
+  if (entries.length === 0) return <p className="text-xs text-muted-foreground">(none recorded)</p>;
+  return (
+    <div className="space-y-1.5">
+      {entries.map(([k, v]) => (
+        <div key={k} className="text-xs">
+          <span className="font-medium text-foreground">{k.replace(/_/g, " ")}: </span>
+          <pre className="whitespace-pre-wrap inline text-muted-foreground">
+            {typeof v === "string" ? v : JSON.stringify(v, null, 2)}
+          </pre>
+        </div>
+      ))}
+    </div>
   );
 }
 
