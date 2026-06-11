@@ -1,0 +1,63 @@
+<!-- @dsCard group="Components" -->
+<!doctype html>
+<html lang="en" class="theme-paper">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pensive · Buttons</title>
+<link rel="stylesheet" href="../tokens/typography.css" />
+<link rel="stylesheet" href="../tokens/colors.css" />
+<link rel="stylesheet" href="../tokens/motion.css" />
+<link rel="stylesheet" href="../styles/components.css" />
+<link rel="stylesheet" href="../cards/_card.css" />
+</head>
+<body>
+<div class="card-head">
+  <div class="card-kicker">Components · Button</div>
+  <h1 class="card-h1">Buttons &amp; icon buttons</h1>
+  <p class="card-lede">shadcn <span class="mono-tag">&lt;Button&gt;</span> variants, Pensive-skinned. <b>Primary</b> (ink/dark) is the one commitment per view — Save, Approve &amp; continue. Everything else is <b>outline</b> or <b>ghost</b>. The accent (maroon) is reserved for the generative “re-create” affordance.</p>
+</div>
+
+<div class="sec-label">Variants</div>
+<div class="row">
+  <button class="btn btn-primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M5 13l4 4L19 7"/></svg>Approve &amp; continue</button>
+  <button class="btn btn-secondary">Save brief</button>
+  <button class="btn btn-outline">Cancel</button>
+  <button class="btn btn-ghost">Skip for now</button>
+  <button class="btn btn-accent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M12 3v6m0 6v6m-9-9h6m6 0h6"/></svg>Re-create</button>
+  <button class="btn btn-destructive">Delete page</button>
+  <button class="btn btn-link">View archived pages</button>
+</div>
+
+<div class="sec-label">Sizes</div>
+<div class="row">
+  <button class="btn btn-primary btn-sm">Small</button>
+  <button class="btn btn-primary">Default</button>
+  <button class="btn btn-primary btn-lg">Large</button>
+</div>
+
+<div class="sec-label">States</div>
+<div class="row">
+  <button class="btn btn-primary">Enabled</button>
+  <button class="btn btn-primary is-disabled">Disabled — gate not met</button>
+  <span class="note">Gate buttons (Approve &amp; continue) stay disabled until the step's requirement is satisfied.</span>
+</div>
+
+<div class="sec-label">Icon buttons — top-nav actions</div>
+<div class="row" style="gap:10px">
+  <button class="icon-btn" title="Search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg></button>
+  <button class="icon-btn" title="Theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="12" cy="12" r="9"/><circle cx="8.5" cy="9.5" r="1"/><circle cx="15.5" cy="9.5" r="1"/><circle cx="9" cy="15" r="1"/></svg></button>
+  <button class="icon-btn" title="More"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></button>
+  <span class="note">40×40 hit target · ghost by default · muted-foreground → foreground on hover.</span>
+</div>
+
+<div class="sec-label">Anatomy</div>
+<dl class="spec">
+  <dt>radius</dt><dd>--radius-md (6px)</dd>
+  <dt>font</dt><dd>var(--font-serif), 15.5px</dd>
+  <dt>icon</dt><dd>16px stroke, gap 8px, leads the label</dd>
+  <dt>primary</dt><dd>bg hsl(var(--primary)) · fg hsl(var(--primary-foreground)) · hover → /0.9</dd>
+  <dt>props</dt><dd>variant: default | secondary | outline | ghost | accent | destructive | link · size: sm | default | lg</dd>
+</dl>
+</body>
+</html>

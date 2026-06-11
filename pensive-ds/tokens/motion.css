@@ -1,0 +1,68 @@
+/* ============================================================
+   PENSIVE · RADIUS · ELEVATION · MOTION
+   ------------------------------------------------------------
+   Geometry and motion primitives. Radius mirrors shadcn's
+   --radius math (lg = R, md = R-2px, sm = R-4px).
+   ============================================================ */
+
+:root {
+  /* radius — derived from --radius: 0.5rem, exactly as shadcn/tailwind config does */
+  --radius-lg: var(--radius);                 /* 8px  — cards, dialogs */
+  --radius-md: calc(var(--radius) - 2px);     /* 6px  — buttons, inputs */
+  --radius-sm: calc(var(--radius) - 4px);     /* 4px  — chips, small controls */
+  --radius-pill: 9999px;                      /* tone chips, badges, segmented pills */
+
+  /* spacing rhythm (the app composes Tailwind's 4px scale) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+
+  /* elevation — soft, warm, low-contrast. Two stops only. */
+  --shadow-sm: 0 1px 2px hsl(40 13% 11% / 0.05);
+  --shadow-card: 0 1px 2px hsl(40 13% 11% / 0.05), 0 10px 30px hsl(40 13% 11% / 0.06);
+  --shadow-pop: 0 12px 40px hsl(40 13% 11% / 0.18), 0 2px 8px hsl(40 13% 11% / 0.10);
+
+  /* motion */
+  --ease-out: cubic-bezier(0.2, 0.7, 0.3, 1);
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-fast: 0.12s;
+  --dur-base: 0.18s;
+  --dur-slow: 0.32s;
+}
+
+/* ---- app keyframes (verbatim from index.css) ---- */
+
+/* determinate-ish progress bar used by long AI tasks */
+@keyframes progress {
+  0%   { width: 5%; }
+  50%  { width: 50%; }
+  75%  { width: 75%; }
+  90%  { width: 90%; }
+  100% { width: 95%; }
+}
+.animate-progress { animation: progress 2s ease-in-out infinite; }
+
+/* indeterminate "something is happening" sweep — soft accent segment
+   sliding across a track. Used by WorkingIndicator. */
+@keyframes pv-sweep {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
+.animate-pv-sweep { animation: pv-sweep 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite; }
+
+/* gentle entrance — transform-only so content is never hidden if a frame
+   is dropped (never gate visible content behind opacity:0 keyframes). */
+@keyframes pv-rise {
+  from { transform: translateY(6px); }
+  to   { transform: none; }
+}
+.animate-pv-rise { animation: pv-rise var(--dur-slow) var(--ease-out); }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-progress, .animate-pv-sweep, .animate-pv-rise { animation: none; }
+}

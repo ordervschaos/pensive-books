@@ -1,0 +1,64 @@
+<!-- @dsCard group="Brand" -->
+<!doctype html>
+<html lang="en" class="theme-paper">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pensive · Brand & Voice</title>
+<link rel="stylesheet" href="../tokens/typography.css" />
+<link rel="stylesheet" href="../tokens/colors.css" />
+<link rel="stylesheet" href="../tokens/motion.css" />
+<link rel="stylesheet" href="../cards/_card.css" />
+<style>
+  .wordmark { font-family: var(--font-display); font-style: italic; font-size: 56px; letter-spacing: 0.005em; }
+  .principle { display:grid; grid-template-columns:170px 1fr; gap:18px; padding:16px 0; border-top:1px solid hsl(var(--border) / .5); }
+  .principle .t { font-size:17px; font-weight:600; }
+  .principle .d { font-size:15px; line-height:1.55; color:hsl(var(--muted-foreground)); }
+  .voice { display:grid; grid-template-columns:1fr 1fr; gap:14px; } @media(max-width:760px){ .voice{grid-template-columns:1fr} }
+  .voice .col { border:1px solid hsl(var(--border)); border-radius:var(--radius-lg); padding:16px 18px; }
+  .voice .lbl { font-family:var(--font-mono); font-size:10px; letter-spacing:.12em; text-transform:uppercase; margin-bottom:10px; }
+  .yes .lbl { color:hsl(var(--accent)); } .no .lbl { color:hsl(var(--muted-foreground)); }
+  .voice p { font-size:15px; line-height:1.55; margin:0 0 8px; }
+  .no p { color:hsl(var(--muted-foreground)); }
+</style>
+</head>
+<body>
+<div class="card-head">
+  <div class="card-kicker">Brand · Voice &amp; Principles</div>
+  <h1 class="card-h1">A quiet studio for writing books</h1>
+  <p class="card-lede">Pensive treats AI book-building as a calm, literary craft — not a content factory. The interface is set in serif, speaks plainly, and makes the next deliberate move the most prominent thing on screen.</p>
+</div>
+
+<div class="sec-label">Wordmark</div>
+<div class="row" style="gap:30px;align-items:baseline">
+  <span class="wordmark">Pensive</span>
+  <span class="note">Instrument Serif, italic. Pairs with a mono breadcrumb: <span class="mono-tag">MY BOOKS / TESTING SOTA 3</span></span>
+</div>
+
+<div class="sec-label">Design principles</div>
+<div class="col" style="gap:0">
+  <div class="principle"><div class="t">The next move is loud</div><div class="d">Each view has one obvious thing to do. Empty states invite generation (“re-create from the brief”), they don't apologize.</div></div>
+  <div class="principle"><div class="t">Everything is reviewable</div><div class="d">Any artifact — brief, spine, a single beat — opens in place to read, edit, or regenerate without losing your seat in the flow.</div></div>
+  <div class="principle"><div class="t">Sequence + depth as one</div><div class="d">The gated build (clarity) and the resolution graph (power) are the same surface, not two products bolted together.</div></div>
+  <div class="principle"><div class="t">Calm, not gamified</div><div class="d">Progress is felt through levels quietly filling in — soft motion, a single accent — never confetti.</div></div>
+</div>
+
+<div class="sec-label">Voice — how the product speaks</div>
+<div class="voice">
+  <div class="col yes">
+    <div class="lbl">We say</div>
+    <p>“Find the book's voice.”</p>
+    <p>“Your intentions are tucked away.”</p>
+    <p>“Restart picks up where it left off.”</p>
+    <p style="color:hsl(var(--foreground))">Warm, plainspoken, a little literary. Second person, present tense, lower-case ease.</p>
+  </div>
+  <div class="col no">
+    <div class="lbl">We don't say</div>
+    <p>“Generate AI content now!”</p>
+    <p>“✨ Success! 🎉 Saved!!”</p>
+    <p>“Error 402: job failed.”</p>
+    <p>No hype, no emoji confetti, no system-jargon. The tool stays out of the writer's light.</p>
+  </div>
+</div>
+</body>
+</html>

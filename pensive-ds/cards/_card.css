@@ -1,0 +1,29 @@
+/* Specimen-card chrome. Only used by the DS review cards, not the app. */
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: var(--font-serif);
+  padding: 40px 44px 48px;
+  -webkit-font-smoothing: antialiased;
+}
+.card-head { margin-bottom: 28px; }
+.card-kicker {
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.18em;
+  text-transform: uppercase; color: hsl(var(--accent));
+}
+.card-h1 { font-size: 30px; font-weight: 600; letter-spacing: -0.015em; margin: 12px 0 0; }
+.card-lede { font-size: 16px; line-height: 1.55; color: hsl(var(--muted-foreground)); max-width: 620px; margin: 10px 0 0; }
+.sec-label {
+  font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: hsl(var(--muted-foreground)); margin: 36px 0 16px; padding-bottom: 8px;
+  border-bottom: 1px solid hsl(var(--border) / 0.6);
+}
+.row { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+.col { display: flex; flex-direction: column; gap: 14px; }
+.note { font-size: 13.5px; color: hsl(var(--muted-foreground)); font-style: italic; }
+.mono-tag { font-family: var(--font-mono); font-size: 11px; color: hsl(var(--muted-foreground)); }
+.spec { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; font-size: 14px; }
+.spec dt { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.04em; color: hsl(var(--muted-foreground)); padding-top: 2px; }
+.spec dd { margin: 0; color: hsl(var(--foreground)); }

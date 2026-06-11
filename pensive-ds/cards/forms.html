@@ -1,0 +1,71 @@
+<!-- @dsCard group="Components" -->
+<!doctype html>
+<html lang="en" class="theme-paper">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pensive · Forms</title>
+<link rel="stylesheet" href="../tokens/typography.css" />
+<link rel="stylesheet" href="../tokens/colors.css" />
+<link rel="stylesheet" href="../tokens/motion.css" />
+<link rel="stylesheet" href="../styles/components.css" />
+<link rel="stylesheet" href="../cards/_card.css" />
+<style>
+  .two { display:grid; grid-template-columns:1fr 1fr; gap:26px; } @media(max-width:780px){ .two{grid-template-columns:1fr} }
+  .stack { display:flex; flex-direction:column; gap:18px; }
+</style>
+</head>
+<body>
+<div class="card-head">
+  <div class="card-kicker">Components · Inputs</div>
+  <h1 class="card-h1">Fields, tone chips &amp; toggles</h1>
+  <p class="card-lede">Form controls are quiet until focused — a 1px border on <span class="mono-tag">--input</span>, a soft ring on focus. Tone chips are the signature input: a multi-select of pill toggles you can extend with your own.</p>
+</div>
+
+<div class="two">
+  <div class="stack">
+    <div class="sec-label" style="margin-top:0">Text input</div>
+    <div>
+      <label class="field-label">Add a custom tone</label>
+      <input class="input" placeholder="Add a custom tone and press Enter" />
+    </div>
+    <div>
+      <label class="field-label">Premise</label>
+      <textarea class="textarea" rows="4">A salaryman learns the deeper meaning behind life in his fifties. He approaches everything differently now, and proof of his change is reflected by how other people begin to see him.</textarea>
+    </div>
+  </div>
+
+  <div class="stack">
+    <div class="sec-label" style="margin-top:0">Tone chips · multi-select toggle</div>
+    <div>
+      <div class="field-hint">Pick a few — or write your own.</div>
+      <div class="row" style="gap:9px">
+        <button class="chip on">warm</button>
+        <button class="chip on">biting</button>
+        <button class="chip">academic</button>
+        <button class="chip">plainspoken</button>
+        <button class="chip">lyrical</button>
+        <button class="chip">playful</button>
+        <button class="chip">melancholy</button>
+        <button class="chip on">urgent</button>
+      </div>
+    </div>
+
+    <div class="sec-label">Switch &amp; segmented</div>
+    <div class="row" style="gap:26px">
+      <span class="row" style="gap:10px"><span class="switch on"><span class="knob"></span></span><span style="font-size:15px">Public</span></span>
+      <span class="row" style="gap:10px"><span class="switch"><span class="knob"></span></span><span style="font-size:15px;color:hsl(var(--muted-foreground))">Private</span></span>
+      <span class="segmented"><button class="on">Fan</button><button>List</button></span>
+    </div>
+  </div>
+</div>
+
+<div class="sec-label">Anatomy</div>
+<dl class="spec">
+  <dt>input</dt><dd>border hsl(var(--input)) · radius md · focus ring hsl(var(--ring) / 0.08)</dd>
+  <dt>textarea</dt><dd>line-height 1.65 (reads like prose) · resize-y</dd>
+  <dt>chip on</dt><dd>bg --primary · fg --primary-foreground · radius pill</dd>
+  <dt>switch on</dt><dd>track --primary · knob --background · 18px travel</dd>
+</dl>
+</body>
+</html>
