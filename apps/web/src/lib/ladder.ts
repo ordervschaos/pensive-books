@@ -31,10 +31,27 @@ async function call<T extends string>(fn: string, body: Record<string, unknown>,
   return String((data as Record<string, unknown>)?.[pick] ?? "").trim();
 }
 
+// Like `call`, but for an endpoint that returns an array of strings (e.g. several beat takes).
+async function callList(fn: string, body: Record<string, unknown>, pick: string): Promise<string[]> {
+  if (BRIDGE) {
+    const r = await bridgeFetch(`/${fn}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    return ((d[pick] as unknown[]) ?? []).map((s) => String(s).trim()).filter(Boolean);
+  }
+  const { data, error } = await supabase.functions.invoke(fn, { body });
+  if (error) throw error;
+  if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
+  return (((data as Record<string, unknown>)?.[pick] as unknown[]) ?? []).map((s) => String(s).trim()).filter(Boolean);
+}
+
 export const transforms = {
   // down (expand)
   briefToSpine: (bookId: number) => call("brief-to-spine", { bookId }, "spine"),
   objectiveToBeat: (bookId: number, pageId: number, objective: string) => call("objective-to-beat", { bookId, pageId, objective }, "beat"),
+  // objective → several un-judged beat takes, for the serial human-pick UI.
+  beatCandidates: (bookId: number, pageId: number, objective: string, n = 3) =>
+    callList("objective-to-beat", { bookId, pageId, objective, candidates: n }, "candidates"),
   beatToProse: (bookId: number, pageId: number, objective: string) => call("beat-to-prose", { bookId, pageId, level: "page", objective }, "text"),
   // up (distill)
   objectivesToSpine: (bookId: number) => call("objectives-to-spine", { bookId }, "spine"),

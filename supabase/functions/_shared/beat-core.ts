@@ -108,8 +108,19 @@ function threadsContext(threads: ThreadOnPage[]): string {
     .join("\n");
 }
 
-// objective → beat. Loads its own book/outline/threads context; returns the beat text only.
-export async function objectiveToBeat(client: SupabaseClient, apiKey: string, p: BeatParams): Promise<string> {
+// Everything one beat call needs, assembled once so objectiveToBeat (judged) and beatCandidates
+// (un-judged, for the serial human-pick UI) share byte-identical context.
+interface PreparedBeat {
+  userContent: string;
+  meta: CallMeta;
+  prevBeat: string | null;
+  objective: string;
+}
+
+// Load the book/outline/threads context and build the prompt for one page's beat. The PREVIOUS BEAT
+// is read fresh here, so in a serial pick (save chosen beat → request next page) each page's
+// candidates are grounded on the antecedent the author actually approved.
+async function prepareBeat(client: SupabaseClient, p: BeatParams): Promise<PreparedBeat> {
   const obj = (p.objective ?? "").trim();
   if (!obj) throw new Error("An objective is required to write a beat");
 
@@ -148,20 +159,39 @@ export async function objectiveToBeat(client: SupabaseClient, apiKey: string, p:
     (onPage.length ? `\n\nTHREADS ON THIS PAGE (promises to manage here):\n${threadsContext(onPage)}` : "") +
     `\n\nTHIS PAGE'S OBJECTIVE:\n${obj}\n\nWrite the beat for THIS PAGE. One paragraph, plan only.`;
 
-  const n = Math.max(1, Math.min(p.candidates ?? 1, 5));
-  if (n === 1) {
-    const beat = await generateBeat(apiKey, userContent, meta);
-    if (!beat) throw new Error("Claude returned no beat.");
-    return beat;
-  }
+  return { userContent, meta, prevBeat: prev?.beat ?? null, objective: obj };
+}
 
-  // Best-of-n: sample candidates in parallel (high temperature for spread), then let a judge pick.
-  const candidates = (await Promise.all(
-    Array.from({ length: n }, () => generateBeat(apiKey, userContent, meta, 1).catch(() => "")),
+// Sample n candidate beats. n>1 runs in parallel at high temperature for spread; n=1 is one plain
+// sample (the attended/sync default). Returns only the non-empty ones.
+async function sampleBeats(apiKey: string, prep: PreparedBeat, n: number): Promise<string[]> {
+  if (n === 1) {
+    const b = await generateBeat(apiKey, prep.userContent, prep.meta);
+    return b ? [b] : [];
+  }
+  return (await Promise.all(
+    Array.from({ length: n }, () => generateBeat(apiKey, prep.userContent, prep.meta, 1).catch(() => "")),
   )).filter((b) => b.length > 0);
+}
+
+// objective → beat. Loads its own book/outline/threads context; returns the beat text only. With
+// candidates>1 it samples n and a judge keeps the best (the unattended/bulk path).
+export async function objectiveToBeat(client: SupabaseClient, apiKey: string, p: BeatParams): Promise<string> {
+  const prep = await prepareBeat(client, p);
+  const n = Math.max(1, Math.min(p.candidates ?? 1, 5));
+  const candidates = await sampleBeats(apiKey, prep, n);
   if (candidates.length === 0) throw new Error("Claude returned no beat.");
   if (candidates.length === 1) return candidates[0];
-  return await pickBestBeat(apiKey, candidates, prev?.beat ?? null, obj, { ...meta, fn: "beat-judge" });
+  return await pickBestBeat(apiKey, candidates, prep.prevBeat, prep.objective, { ...prep.meta, fn: "beat-judge" });
+}
+
+// objective → n candidate beats, UN-judged. Powers the serial human-pick UI: the author sees all the
+// takes and chooses, instead of a judge picking for them. Same context as objectiveToBeat.
+export async function beatCandidates(client: SupabaseClient, apiKey: string, p: BeatParams, n: number): Promise<string[]> {
+  const prep = await prepareBeat(client, p);
+  const candidates = await sampleBeats(apiKey, prep, Math.max(1, Math.min(n, 5)));
+  if (candidates.length === 0) throw new Error("Claude returned no beat.");
+  return candidates;
 }
 
 // One beat sample. `temperature` (for best-of-n spread) is passed through to the Messages API.

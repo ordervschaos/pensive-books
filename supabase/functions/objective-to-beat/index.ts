@@ -15,7 +15,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
-import { objectiveToBeat } from "../_shared/beat-core.ts";
+import { objectiveToBeat, beatCandidates } from "../_shared/beat-core.ts";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -32,8 +32,8 @@ Deno.serve(async (req: Request) => {
     const { data: { user }, error: authError } = await userClient.auth.getUser();
     if (authError || !user) return json({ error: "Unauthorized" }, 401);
 
-    const { bookId, pageId, objective } = (await req.json().catch(() => ({}))) as {
-      bookId?: number; pageId?: number; objective?: string;
+    const { bookId, pageId, objective, candidates } = (await req.json().catch(() => ({}))) as {
+      bookId?: number; pageId?: number; objective?: string; candidates?: number;
     };
     if (!bookId || !pageId) return json({ error: "bookId and pageId are required" }, 400);
     const obj = (objective ?? "").trim();
@@ -51,6 +51,12 @@ Deno.serve(async (req: Request) => {
     if (!apiKey) return json({ error: "ANTHROPIC_API_KEY not configured" }, 500);
 
     // Use the user's client for context reads (RLS-scoped to a book they can edit) — same as before.
+    // candidates>1 → return all the un-judged takes for the serial human-pick UI; else one beat.
+    const n = Math.max(1, Math.min(Number(candidates) || 1, 5));
+    if (n > 1) {
+      const takes = await beatCandidates(userClient, apiKey, { bookId, pageId, objective: obj, userId: user.id }, n);
+      return json({ candidates: takes });
+    }
     const beat = await objectiveToBeat(userClient, apiKey, { bookId, pageId, objective: obj, userId: user.id });
     return json({ beat });
   } catch (e) {

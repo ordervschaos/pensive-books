@@ -3,7 +3,7 @@ import { Lock, Check, Send } from "lucide-react";
 import { ScaffoldGenerator } from "./ScaffoldGenerator";
 import { VoiceGenerator } from "./VoiceGenerator";
 import { SpineGenerator } from "./SpineGenerator";
-import { PlanBeats } from "./PlanBeats";
+import { SerialBeats } from "./SerialBeats";
 import { DraftProse } from "./DraftProse";
 import { AutoRevise } from "./AutoRevise";
 import { AIActionRow } from "./AIActionRow";
@@ -247,7 +247,7 @@ const CAPTIONS: Record<StepKey, string> = {
   spine: "The one-paragraph throughline the whole book realizes.",
   outline: "The chapters and pages as objectives — review, edit, create. No prose yet.",
   voice: "Pick how the book sounds — it anchors every page the AI writes.",
-  beats: "Plan what each page does — causal order, value flips, concrete images — before any prose.",
+  beats: "Walk the book page by page — pick from three takes for each beat — before any prose.",
   draft: "Render the prose from the approved beats, in the book's voice.",
   read: "A structural critique of the draft — then auto-fix the critical & major issues.",
   revise: "Re-plan the outline or rework the draft — describe the change and review before it sticks.",
@@ -308,12 +308,7 @@ function StepPanel(p: PanelProps) {
       )}
       {k === "beats" && (
         <>
-          <PlanBeats bookId={p.bookId} remaining={p.beatsRemaining} onChanged={p.onChanged} />
-          {p.counts.beats > 0 && (
-            <p className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))]">
-              {p.counts.beats} beat{p.counts.beats === 1 ? "" : "s"} planned{p.beatsRemaining > 0 ? `, ${p.beatsRemaining} to go` : ""}. Read them in the graph below.
-            </p>
-          )}
+          <SerialBeats bookId={p.bookId} onChanged={p.onChanged} />
           {approveBtn("Approve the beats & continue")}
         </>
       )}

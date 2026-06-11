@@ -862,6 +862,18 @@ ${obj}
 
 Write the beat for THIS PAGE. One paragraph, plan only.`;
 
+  // candidates>1 → sample N un-judged takes for the serial human-pick UI. The bridge has no
+  // temperature knob, but separate `claude -p` calls vary enough to offer a real choice.
+  const n = Math.max(1, Math.min(Number(body.candidates) || 1, 5));
+  if (n > 1) {
+    const outs = await Promise.all(
+      Array.from({ length: n }, () => runClaude(prompt, true, { fn: "objective-to-beat", bookId }, { noTools: true })),
+    );
+    const takes = outs.map((o) => (o.text ?? "").trim()).filter(Boolean);
+    if (takes.length === 0) return { error: "Claude returned no beat." };
+    return { candidates: takes };
+  }
+
   const out = await runClaude(prompt, true, { fn: "objective-to-beat", bookId }, { noTools: true });
   if (out.error) return out;
   return { beat: (out.text ?? "").trim() };
