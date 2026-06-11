@@ -98,7 +98,8 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
     const next: Scaffold = { ...base, pages: base.pages.map((p, idx) => (idx === i ? { ...p, objective } : p)) };
     setDraft(next);
     if (row) {
-      await supabase.from("book_generations").update({ result: { ...next, critique: row.result?.critique } }).eq("id", row.id);
+      const { error } = await supabase.from("book_generations").update({ result: { ...next, critique: row.result?.critique } }).eq("id", row.id);
+      if (error) throw new Error(error.message);
     }
   };
 

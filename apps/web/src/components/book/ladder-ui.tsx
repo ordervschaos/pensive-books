@@ -175,15 +175,20 @@ export function NodeOptions({
   const [options, setOptions] = useState<string[]>([]);
   const [generating, setGenerating] = useState(false);
   const [accepting, setAccepting] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const generate = async () => {
     if (generating || busy) return;
     setOpen(true);
     setOptions([]);
+    setError(null);
     setGenerating(true);
     try {
       const opts = await onGenerate();
+      if (opts.length === 0) setError("No options came back. Try again.");
       setOptions(opts);
+    } catch (e) {
+      setError(String((e as Error)?.message ?? e));
     } finally {
       setGenerating(false);
     }
@@ -192,10 +197,13 @@ export function NodeOptions({
   const accept = async (text: string, i: number) => {
     if (accepting !== null) return;
     setAccepting(i);
+    setError(null);
     try {
       await onAccept(text);
       setOpen(false);
       setOptions([]);
+    } catch (e) {
+      setError(String((e as Error)?.message ?? e));
     } finally {
       setAccepting(null);
     }
@@ -212,6 +220,9 @@ export function NodeOptions({
 
   return (
     <div className="mt-2 space-y-2">
+      {error && (
+        <p className="pv-serif text-[12.5px] italic text-red-600 dark:text-red-400">{error}</p>
+      )}
       {generating ? (
         <p className="pv-serif inline-flex items-center gap-2 text-[13px] italic text-[hsl(var(--pv-text-muted))]">
           <Loader2 className="h-3.5 w-3.5 animate-spin" /> Generating options…

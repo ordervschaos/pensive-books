@@ -1144,7 +1144,9 @@ Generate exactly 3 ALTERNATIVES. Each must:
 - Connect causally to the committed prefix (follow "therefore" or "but" from what came before)
 - Honor the spine's throughline
 - Be GENUINELY DIFFERENT from each other — different angle, direction, or emotional register
-- Vary in ambition: one quieter interior move, one larger external turn, one unexpected diagonal
+- Vary in ambition across the set: one quieter interior move, one larger external turn, one unexpected diagonal
+
+Each option is a clean OBJECTIVE — 1–2 sentences of what the page must achieve. Do NOT label it with the technique ("Unexpected diagonal:", "Plant the mother:", etc.), do NOT add meta-commentary or stage directions, do NOT mention the reader. Just the objective itself.
 
 Output JSON ONLY (no prose, no fences):
 { "options": ["<option 1>", "<option 2>", "<option 3>"] }`;
