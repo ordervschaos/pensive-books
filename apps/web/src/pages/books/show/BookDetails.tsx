@@ -20,8 +20,7 @@ import { AdminViewBanner } from "@/components/book/AdminViewBanner";
 import { MatureContentGate } from "@/components/book/MatureContentGate";
 import { Brief } from "@/lib/brief";
 import { BookBriefSection } from "@/components/book/BookBriefSection";
-import { ResolutionMap } from "@/components/book/ResolutionMap";
-import { JourneyStudio } from "@/components/book/JourneyStudio";
+import { BuildStudio } from "@/components/book/studio/BuildStudio";
 import { ThreadsSection } from "@/components/book/ThreadsSection";
 import { BookBibleSection } from "@/components/book/BookBibleSection";
 import { getPageStatus } from "./components/pageList/pageUtils";
@@ -708,27 +707,22 @@ const BookDetails = () => {
                   />
                 )}
 
-                {/* AI tools tab — the book's resolution ladder as a connected, actionable graph
-                    (brief → spine → objective → beat → prose), with the book-level build actions
-                    (outline · write · editor's read · revise · publish) beneath it. The old linear
-                    BookJourney is kept in the codebase for reference; its functionality lives here now. */}
+                {/* AI tools tab — the build studio: one two-pane workbench (the 9-step ladder + the
+                    whole-book map beside an in-place Stage for every step and page). Replaces the old
+                    step-rail-over-dense-graph; the resolution ladder now lives inside the Navigator map
+                    and the per-page Stage. */}
                 {activeTab === "ai" && (
-                  <div className="space-y-6">
-                    {/* The build studio: a pinned step rail (brief→…→publish) over the resolution
-                        graph. The rail is always here; the graph below is the granular per-node view. */}
-                    <JourneyStudio
-                      bookId={getNumericId(bookSlug)}
-                      briefSet={briefSet}
-                      brief={book.brief ?? null}
-                      pages={pages}
-                      journey={journey as any}
-                      isPublic={book.is_public}
-                      onBriefChange={(brief) => setBook((b) => (b ? { ...b, brief } : b))}
-                      onChanged={fetchBookDetails}
-                      onPublish={handlePublish}
-                    />
-                    <ResolutionMap bookId={getNumericId(bookSlug)} refreshKey={pages.length} onChanged={fetchBookDetails} />
-                  </div>
+                  <BuildStudio
+                    bookId={getNumericId(bookSlug)}
+                    briefSet={briefSet}
+                    brief={book.brief ?? null}
+                    pages={pages}
+                    journey={journey as any}
+                    isPublic={book.is_public}
+                    onBriefChange={(brief) => setBook((b) => (b ? { ...b, brief } : b))}
+                    onChanged={fetchBookDetails}
+                    onPublish={handlePublish}
+                  />
                 )}
               </div>
             ) : (
