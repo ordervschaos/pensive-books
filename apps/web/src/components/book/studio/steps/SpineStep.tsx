@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { Loader2, RefreshCw, Sparkles } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { NodeReviser } from "../../ladder-ui";
 import { readNode, saveSpine, transforms } from "@/lib/ladder";
 import { Hero } from "../studioUi";
 
@@ -72,7 +73,7 @@ export function SpineStep({ bookId, onStatusChange, onChanged }: { bookId: numbe
         className="pv-serif border-none bg-transparent px-0 text-[16px] leading-[1.65] focus-visible:ring-0"
       />
       <div className="mt-3.5 flex items-center gap-5 border-t border-[hsl(var(--pv-border-soft))] pt-3.5 text-[13.5px]">
-        <button type="button" onClick={generate} className="inline-flex items-center gap-1.5 italic text-[hsl(var(--pv-accent))] hover:opacity-75">
+        <button type="button" onClick={generate} disabled={working} className="inline-flex items-center gap-1.5 italic text-[hsl(var(--pv-accent))] hover:opacity-75 disabled:opacity-50">
           <RefreshCw className="h-3.5 w-3.5" /> re-draft from the brief
         </button>
         {dirty && (
@@ -80,6 +81,29 @@ export function SpineStep({ bookId, onStatusChange, onChanged }: { bookId: numbe
             {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} save edits
           </button>
         )}
+      </div>
+      <div className="mt-4 border-t border-[hsl(var(--pv-border-soft))] pt-4">
+        <p className="pv-serif mb-2 text-[13px] italic text-[hsl(var(--pv-text-muted))]">Revise with a prompt — the brief stays in context, the rest is preserved.</p>
+        <NodeReviser
+          inline
+          current={spine.trim()}
+          busy={working}
+          onRevise={async (instr) => {
+            try {
+              return await transforms.reviseNode(bookId, "spine", spine.trim(), instr);
+            } catch (e) {
+              toast({ title: "Couldn't revise the spine", description: String((e as Error)?.message ?? e), variant: "destructive" });
+              throw e;
+            }
+          }}
+          onAccept={async (proposed) => {
+            await saveSpine(bookId, proposed);
+            setSpine(proposed);
+            setDirty(false);
+            onStatusChange(!!proposed.trim());
+            onChanged();
+          }}
+        />
       </div>
     </div>
   );

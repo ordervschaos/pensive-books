@@ -90,14 +90,17 @@ export function Connector({ down, up }: { down: RecreateAction; up?: RecreateAct
 // instruction, the AI proposes a revision (preserving the rest), and the change lands as a
 // before→after diff to accept or reject. Mirrors the prose revise flow's gate, at node scale.
 export function NodeReviser({
-  current, busy, onRevise, onAccept,
+  current, busy, onRevise, onAccept, inline, buttonLabel,
 }: {
   current: string;
   busy: boolean;
   onRevise: (instruction: string) => Promise<string>; // returns the proposed text
   onAccept: (proposed: string) => Promise<void>;
+  /** Show the prompt immediately (no closed-state button). */
+  inline?: boolean;
+  buttonLabel?: string;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(inline ?? false);
   const [instruction, setInstruction] = useState("");
   const [proposed, setProposed] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
@@ -116,8 +119,8 @@ export function NodeReviser({
   };
   const reset = () => { setOpen(false); setProposed(null); setInstruction(""); };
 
-  if (!open) {
-    return <ReviseButton onClick={() => setOpen(true)} disabled={busy} />;
+  if (!open && !inline) {
+    return <ReviseButton onClick={() => setOpen(true)} disabled={busy} label={buttonLabel} />;
   }
   return (
     <div className="mt-2 space-y-2 rounded-lg border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/40 p-3">
