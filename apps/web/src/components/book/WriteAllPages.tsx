@@ -44,6 +44,9 @@ export function WriteAllPages({ bookId, plannedCount }: WriteAllPagesProps) {
   const [notify, setNotify] = useState(false);
   const [pauseAfterBeats, setPauseAfterBeats] = useState(false);
   const [continuing, setContinuing] = useState(false);
+  // True from click until the kick-off request settles — the row only flips `running` once the
+  // server's row lands over Realtime, and that round trip must not leave the button clickable.
+  const [busy, setBusy] = useState(false);
   const notifyRef = useRef(false);
   const notifiedRef = useRef<number | null>(null);
   // The id of a run we've watched actually working this session. We only announce a terminal
@@ -114,8 +117,9 @@ export function WriteAllPages({ bookId, plannedCount }: WriteAllPagesProps) {
   };
 
   const run = async () => {
-    if (running) return;
+    if (busy || running) return;
     if (!window.confirm("Generate prose for every empty page that has an objective?")) return;
+    setBusy(true);
     try {
       if (BRIDGE) {
         // Dev: no self-chaining server. Run the cascade client-side via the bridge, writing the
@@ -130,6 +134,8 @@ export function WriteAllPages({ bookId, plannedCount }: WriteAllPagesProps) {
       refetch();
     } catch (e) {
       toast({ title: "Couldn't start writing", description: String((e as Error)?.message ?? e), variant: "destructive" });
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -152,8 +158,8 @@ export function WriteAllPages({ bookId, plannedCount }: WriteAllPagesProps) {
   // The phase string already carries counts ("Planning beats 12/40", "Writing 3/40").
   const title = progress
     ? <span>{progress.phase ?? `Writing ${progress.done}/${progress.total}`}<AnimatedEllipsis /></span>
-    : running
-      ? <span>Working<AnimatedEllipsis /></span>
+    : running || busy
+      ? <span>{busy ? "Starting" : "Working"}<AnimatedEllipsis /></span>
       : plannedCount && plannedCount > 0
         ? `Build ${plannedCount} planned page${plannedCount === 1 ? "" : "s"}`
         : "Build the draft from objectives";
@@ -182,7 +188,7 @@ export function WriteAllPages({ bookId, plannedCount }: WriteAllPagesProps) {
         title={title}
         description="Plan a beat for each page, then render prose — pages you've already written are left untouched."
         onClick={run}
-        loading={running}
+        loading={running || busy}
       />
       {running && stale && (
         <div className="px-5 pt-2 flex items-center justify-between gap-3">

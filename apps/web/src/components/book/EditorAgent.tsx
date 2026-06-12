@@ -1,25 +1,28 @@
-import { useEffect, useRef, useState } from "react";
-import { Loader2, X } from "lucide-react";
+import { useState } from "react";
+import { Loader2, MessagesSquare, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { stopRun } from "@/lib/stopRun";
 import { useLatestTaskRow, type TaskRow } from "@/hooks/useLatestTaskRow";
+import { AIActionRow } from "./AIActionRow";
 import { WorkingIndicator } from "./WorkingIndicator";
 import type { EvalResult } from "./BookEvaluationSection";
 
 /**
- * EditorAgent — the durable agent run that addresses the editor's notes (revise-agent fn).
+ * EditorAgent — the collaborative engine for acting on the editor's read (revise-agent fn).
  *
  * The whole run lives in a book_agent_runs row: the agent reads pages, may pause to ask the
  * author a creative question (status 'awaiting_input'), and ends by proposing a revision plan —
  * a book_revisions row in awaiting_review that the existing "Revise with AI" dialog reviews and
- * builds. This panel renders the row over Realtime: the narrated step feed while running, the
- * question card when asked, and the closing report with a "review the plan" handoff.
+ * builds. This panel is self-contained: a launch row when there's no live run, then the narrated
+ * step feed while running, the question card when asked, and the closing report with a "review the
+ * plan" handoff.
  *
- * Started by the host handing in the evaluation (the report's "Address all the editor's notes"
- * button) — the same prefill pattern ReviseWithAI uses.
+ * A run addresses ONE read. Once a newer read exists (`readAt` advances past the run), a finished
+ * run is superseded and we fall back to the launch row — so the agent never pairs the current read
+ * with a conversation about a read it replaced.
  */
 
 interface AgentStep { t: "note" | "read" | "ask" | "answer" | "plan" | "done"; label: string }
@@ -41,14 +44,15 @@ const STEP_MARK: Record<AgentStep["t"], string> = {
 
 export function EditorAgent({
   bookId,
-  start,
-  onStartConsumed,
+  evaluation,
+  readAt,
   onReviewPlan,
 }: {
   bookId: number;
-  /** An evaluation handed in by the host starts a run (consumed via onStartConsumed). */
-  start?: EvalResult | null;
-  onStartConsumed?: () => void;
+  /** The current editor's read's result — the agent addresses these notes when launched. */
+  evaluation: EvalResult | null;
+  /** That read's created_at: a finished run older than this is superseded → fall back to the launch row. */
+  readAt?: string | null;
   /** Navigate to where the proposed plan is reviewed (the Revise step). */
   onReviewPlan?: () => void;
 }) {
@@ -70,14 +74,14 @@ export function EditorAgent({
   const awaiting = row?.status === "awaiting_input";
   const active = running || awaiting;
 
-  const begin = async (evaluation: EvalResult) => {
+  const begin = async (evalResult: EvalResult) => {
     if (busy || active) {
       if (active) toast({ title: "The agent is already working", description: "Let this run finish (or cancel it) before starting another." });
       return;
     }
     setBusy(true);
     try {
-      const { data, error } = await supabase.functions.invoke("revise-agent", { body: { bookId, evaluation } });
+      const { data, error } = await supabase.functions.invoke("revise-agent", { body: { bookId, evaluation: evalResult } });
       if (error) throw error;
       if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
       refetch();
@@ -87,18 +91,6 @@ export function EditorAgent({
       setBusy(false);
     }
   };
-
-  // A handed-in evaluation starts a run — consume it either way so a re-render can't double-start.
-  const startedRef = useRef(false);
-  useEffect(() => {
-    if (!start || startedRef.current) return;
-    startedRef.current = true;
-    void begin(start).finally(() => {
-      startedRef.current = false;
-      onStartConsumed?.();
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [start]);
 
   const sendAnswer = async (text: string) => {
     const trimmed = text.trim();
@@ -125,11 +117,40 @@ export function EditorAgent({
     refetch();
   };
 
-  // Nothing to show: never run, and nothing handed in.
-  if (!row) return null;
+  // A finished run from a read a later re-run replaced — or a 'done' run the author dismissed — isn't
+  // worth showing; nor is "nothing yet". In all those cases the launch row stands in (refresh-safe:
+  // supersession is derived from the live read timestamp, not a stored flag).
+  const terminal = !!row && (row.status === "done" || row.status === "error" || row.status === "cancelled");
+  const superseded = terminal && !!row && !!readAt && new Date(row.created_at).getTime() < new Date(readAt).getTime();
+  const dismissed = !!row && row.status === "done" && dismissedDoneId === row.id;
+
+  if (!row || superseded || dismissed) {
+    return (
+      <AIActionRow
+        icon={<MessagesSquare className="h-4 w-4" />}
+        title={busy ? "Starting the agent…" : "Address the notes with you"}
+        description="The editor's agent reads the draft, asks you about the judgment calls, then proposes a revision plan you approve."
+        onClick={() => evaluation && begin(evaluation)}
+        loading={busy}
+        disabled={!evaluation}
+      />
+    );
+  }
 
   const steps = (row.steps ?? []) as AgentStep[];
   const lastStep = steps.length ? steps[steps.length - 1].label : "Working";
+
+  // error/cancelled are terminal but current — let the author re-run without re-reading first.
+  const relaunch = evaluation ? (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={() => begin(evaluation)}
+      className="pv-mono text-[11px] uppercase tracking-[0.14em] text-[hsl(var(--pv-accent))] underline-offset-4 hover:underline disabled:opacity-50"
+    >
+      {busy ? "Starting…" : "Run the agent again →"}
+    </button>
+  ) : null;
 
   return (
     <section className="rounded-2xl border border-border bg-[hsl(var(--pv-surface-2))]/40 p-5">
@@ -137,7 +158,7 @@ export function EditorAgent({
         <div className="pv-eyebrow">
           The editor's agent ·{" "}
           <span className="pv-serif text-[13px] normal-case not-italic tracking-normal text-[hsl(var(--pv-text-muted))]">
-            addresses the notes with you · author only
+            author only
           </span>
         </div>
         {active && (
@@ -172,7 +193,7 @@ export function EditorAgent({
       {running && !stale && <WorkingIndicator phrases={[lastStep]} hint="reading & planning" />}
       {running && stale && (
         <p className="pv-serif mt-3 text-[14px] leading-relaxed text-amber-600 dark:text-amber-500">
-          The run hasn't advanced in a while — it may have died. You can cancel it and start again from the report above.
+          The run hasn't advanced in a while — it may have died. Cancel it and start again.
         </p>
       )}
 
@@ -210,7 +231,7 @@ export function EditorAgent({
       )}
 
       {/* Done — the report, and the handoff to the plan review when one was proposed. */}
-      {row.status === "done" && dismissedDoneId !== row.id && (
+      {row.status === "done" && (
         <div className="mt-4 flex items-start gap-3 rounded-xl border border-[hsl(var(--pv-accent))]/30 bg-[hsl(var(--pv-accent))]/10 p-4">
           <div className="min-w-0 flex-1 space-y-2">
             <p className="pv-serif text-[14.5px] leading-relaxed text-foreground">
@@ -238,14 +259,20 @@ export function EditorAgent({
       )}
 
       {row.status === "error" && (
-        <p className="pv-serif mt-3 text-[14px] leading-relaxed text-red-600 dark:text-red-400">
-          The agent stopped: {row.error ?? "unknown error"}. Run it again from the report above.
-        </p>
+        <div className="mt-3 space-y-2">
+          <p className="pv-serif text-[14px] leading-relaxed text-red-600 dark:text-red-400">
+            The agent stopped: {row.error ?? "unknown error"}.
+          </p>
+          {relaunch}
+        </div>
       )}
       {row.status === "cancelled" && (
-        <p className="pv-serif mt-3 text-[13px] italic text-[hsl(var(--pv-text-faint))]">
-          Run cancelled — nothing was changed.
-        </p>
+        <div className="mt-3 space-y-2">
+          <p className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))]">
+            Run cancelled — nothing was changed.
+          </p>
+          {relaunch}
+        </div>
       )}
     </section>
   );

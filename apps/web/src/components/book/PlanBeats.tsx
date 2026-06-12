@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Sparkles } from "lucide-react";
 import { AnimatedEllipsis } from "./AnimatedEllipsis";
 import { AIActionRow } from "./AIActionRow";
@@ -23,6 +24,9 @@ interface PlanBeatsProps {
  */
 export function PlanBeats({ bookId, remaining, onChanged }: PlanBeatsProps) {
   const { toast } = useToast();
+  // True from click until the kick-off request settles — the row only flips `running` once the
+  // server's row lands over Realtime, and that round trip must not leave the button clickable.
+  const [busy, setBusy] = useState(false);
   const { row, refetch, stale } = useLatestTaskRow<BuildRow>({
     table: "book_generations",
     bookId,
@@ -35,7 +39,8 @@ export function PlanBeats({ bookId, remaining, onChanged }: PlanBeatsProps) {
   const progress = running ? row?.progress ?? null : null;
 
   const run = async () => {
-    if (running || remaining === 0) return;
+    if (busy || running || remaining === 0) return;
+    setBusy(true);
     try {
       const { data, error } = await supabase.functions.invoke("generate-book", { body: { bookId, pauseAfterBeats: true } });
       if (error) throw error;
@@ -44,6 +49,8 @@ export function PlanBeats({ bookId, remaining, onChanged }: PlanBeatsProps) {
       onChanged?.();
     } catch (e) {
       toast({ title: "Couldn't plan the beats", description: String((e as Error)?.message ?? e), variant: "destructive" });
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -51,10 +58,10 @@ export function PlanBeats({ bookId, remaining, onChanged }: PlanBeatsProps) {
     <div>
       <AIActionRow
         icon={<Sparkles className="h-4 w-4" />}
-        title={running ? <span>{progress?.phase ?? "Planning beats"}<AnimatedEllipsis /></span> : remaining === 0 ? "All beats planned" : `Plan ${remaining} beat${remaining === 1 ? "" : "s"}`}
+        title={running ? <span>{progress?.phase ?? "Planning beats"}<AnimatedEllipsis /></span> : busy ? <span>Starting<AnimatedEllipsis /></span> : remaining === 0 ? "All beats planned" : `Plan ${remaining} beat${remaining === 1 ? "" : "s"}`}
         description="Plan what each page does — in causal order, with a value flip and a concrete image — before any prose is written. Best-of-3 per page."
         onClick={run}
-        loading={running}
+        loading={running || busy}
         disabled={remaining === 0}
       />
       <RunControls table="book_generations" row={row} stale={stale} onRestart={run} refetch={refetch} />

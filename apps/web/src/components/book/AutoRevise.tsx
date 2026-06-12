@@ -38,6 +38,9 @@ interface AutoReviseProps {
  */
 export function AutoRevise({ bookId, onRevised }: AutoReviseProps) {
   const { toast } = useToast();
+  // True from click until the kick-off request settles — the row only flips `running` once the
+  // server's row lands over Realtime, and that round trip must not leave the button clickable.
+  const [busy, setBusy] = useState(false);
   const [notify, setNotify] = useState(false);
   const notifyRef = useRef(false);
   const notifiedRef = useRef<number | null>(null);
@@ -76,8 +79,9 @@ export function AutoRevise({ bookId, onRevised }: AutoReviseProps) {
   }, [row?.id, row?.status]);
 
   const run = async () => {
-    if (running) return;
+    if (busy || running) return;
     if (!window.confirm("Run an editor's read, auto-fix every critical & major page issue, then re-read? This makes one revision pass.")) return;
+    setBusy(true);
     try {
       if (BRIDGE) {
         // Dev: run the whole loop on the local bridge (free local Claude); it writes the same row.
@@ -92,6 +96,8 @@ export function AutoRevise({ bookId, onRevised }: AutoReviseProps) {
       refetch();
     } catch (e) {
       toast({ title: "Couldn't start auto-revise", description: String((e as Error)?.message ?? e), variant: "destructive" });
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -102,10 +108,10 @@ export function AutoRevise({ bookId, onRevised }: AutoReviseProps) {
     <div>
       <AIActionRow
         icon={<Wand2 className="h-4 w-4" />}
-        title={running ? <span>{progress?.label ?? "Working"}<AnimatedEllipsis /></span> : "Auto-fix critical & major issues"}
+        title={running ? <span>{progress?.label ?? "Working"}<AnimatedEllipsis /></span> : busy ? <span>Starting<AnimatedEllipsis /></span> : "Auto-fix critical & major issues"}
         description="Evaluate the draft, rework every page with a critical or major note, then re-read — one automated pass."
         onClick={run}
-        loading={running}
+        loading={running || busy}
       />
       <RunControls table="book_generations" row={row} stale={stale} onRestart={run} refetch={refetch} />
       {lastDone && (

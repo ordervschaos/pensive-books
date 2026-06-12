@@ -26,6 +26,9 @@ interface DraftProseProps {
  */
 export function DraftProse({ bookId, remaining, onChanged }: DraftProseProps) {
   const { toast } = useToast();
+  // True from click until the kick-off request settles — the row only flips `running` once the
+  // server's row lands over Realtime, and that round trip must not leave the button clickable.
+  const [busy, setBusy] = useState(false);
   const [notify, setNotify] = useState(false);
   const notifyRef = useRef(false);
   const notifiedRef = useRef<number | null>(null);
@@ -61,7 +64,8 @@ export function DraftProse({ bookId, remaining, onChanged }: DraftProseProps) {
   }, [row?.id, row?.status]);
 
   const run = async () => {
-    if (running) return;
+    if (busy || running) return;
+    setBusy(true);
     try {
       const body = paused && row ? { generationId: row.id, resume: true } : { bookId, notify };
       const { data, error } = await supabase.functions.invoke("generate-book", { body });
@@ -71,16 +75,20 @@ export function DraftProse({ bookId, remaining, onChanged }: DraftProseProps) {
       onChanged?.();
     } catch (e) {
       toast({ title: "Couldn't start the draft", description: String((e as Error)?.message ?? e), variant: "destructive" });
+    } finally {
+      setBusy(false);
     }
   };
 
   const title = running
     ? <span>{progress?.phase ?? `Writing ${progress?.done ?? 0}/${progress?.total ?? 0}`}<AnimatedEllipsis /></span>
-    : paused
-      ? "Continue — write the prose"
-      : remaining === 0
-        ? "Every planned page has prose"
-        : `Write ${remaining} page${remaining === 1 ? "" : "s"}`;
+    : busy
+      ? <span>Starting<AnimatedEllipsis /></span>
+      : paused
+        ? "Continue — write the prose"
+        : remaining === 0
+          ? "Every planned page has prose"
+          : `Write ${remaining} page${remaining === 1 ? "" : "s"}`;
 
   return (
     <div>
@@ -89,7 +97,7 @@ export function DraftProse({ bookId, remaining, onChanged }: DraftProseProps) {
         title={title}
         description="Render prose from each beat, in the book's voice — carrying character state and open loops forward page to page."
         onClick={run}
-        loading={running}
+        loading={running || busy}
         disabled={!running && !paused && remaining === 0}
       />
       <RunControls table="book_generations" row={row} stale={stale} onRestart={run} refetch={refetch} />

@@ -8,7 +8,7 @@ import { Lock, Send } from "lucide-react";
 import { AutoRevise } from "../AutoRevise";
 import { AIActionRow } from "../AIActionRow";
 import { BookBriefSection } from "../BookBriefSection";
-import { BookEvaluationSection, type EvalResult } from "../BookEvaluationSection";
+import { BookEvaluationSection, type CurrentRead } from "../BookEvaluationSection";
 import { EditorAgent } from "../EditorAgent";
 import { ReviseWithAI, type RevisionPrefill } from "../ReviseWithAI";
 import type { Brief } from "@/lib/brief";
@@ -70,9 +70,10 @@ function StepView(props: StageProps & { stepKey: StepKey }) {
   const { model, stepKey: k, bookId } = props;
   const status = model.statusOf(k);
   const approving = props.approving === k;
-  // "Address all the editor's notes" hands the evaluation to the editor's agent (same prefill
-  // pattern as ReviseWithAI: set → consumed). Lives here so the read step owns it.
-  const [agentStart, setAgentStart] = useState<EvalResult | null>(null);
+  // The current editor's read (result + identity), surfaced by BookEvaluationSection. Gates the
+  // "Address the notes" zone and feeds the agent — which uses the result to launch and the createdAt
+  // to supersede a run built on a read a re-run replaced.
+  const [currentRead, setCurrentRead] = useState<CurrentRead | null>(null);
 
   if (status === "locked") {
     const reason =
@@ -141,22 +142,37 @@ function StepView(props: StageProps & { stepKey: StepKey }) {
         </>
       )}
       {k === "read" && (
-        <div className="space-y-4">
-          {/* Per-note "Revise this" prefills the revise form; the whole-report button starts the
-              editor's agent, which investigates + asks before proposing a plan. */}
+        <div className="space-y-5">
+          {/* Per-note "Revise this" prefills the revise form (one note at a time). Acting on the
+              whole read happens in the zone below. */}
           <BookEvaluationSection
             bookId={bookId}
             onStatusChange={props.onReadStatus}
-            onRevise={(evaluation, instruction) =>
-              instruction ? props.onRevisePrefill({ evaluation, instruction }) : setAgentStart(evaluation)}
+            onCurrentRead={setCurrentRead}
+            onRevise={(evaluation, instruction) => {
+              if (instruction) props.onRevisePrefill({ evaluation, instruction });
+            }}
           />
-          <EditorAgent
-            bookId={bookId}
-            start={agentStart}
-            onStartConsumed={() => setAgentStart(null)}
-            onReviewPlan={() => props.onSelectStep("revise")}
-          />
-          <AutoRevise bookId={bookId} onRevised={props.onChanged} />
+          {/* One "act on this read" zone — the two ways to address the notes, framed together so the
+              collaborative agent and the unattended auto-fix read as one decision, not two stray
+              buttons. Only appears once a read exists. */}
+          {currentRead && (
+            <div className="space-y-3">
+              <div>
+                <div className="pv-eyebrow">Address the notes · two ways</div>
+                <p className="pv-serif mt-1.5 max-w-[640px] text-[13.5px] italic leading-relaxed text-[hsl(var(--pv-text-muted))]">
+                  Work through the notes with the agent — it reads, asks you about the judgment calls, then proposes a plan you approve — or auto-fix the critical &amp; major issues in one unattended pass.
+                </p>
+              </div>
+              <EditorAgent
+                bookId={bookId}
+                evaluation={currentRead.result}
+                readAt={currentRead.createdAt}
+                onReviewPlan={() => props.onSelectStep("revise")}
+              />
+              <AutoRevise bookId={bookId} onRevised={props.onChanged} />
+            </div>
+          )}
         </div>
       )}
       {k === "revise" && (

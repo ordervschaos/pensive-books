@@ -38,6 +38,9 @@ export interface EvalResult {
   verdict: { genre_contract: string; stance: string; letter: string; priorities: string[] };
   sections: Section[];
 }
+/** The current editor's read surfaced to a host: its result plus the identity that supersedes
+ *  anything built on an earlier read (e.g. an editor's-agent run). */
+export interface CurrentRead { createdAt: string; result: EvalResult }
 interface EvalRow {
   id: number;
   status: "pending" | "done" | "error" | "cancelled";
@@ -58,7 +61,8 @@ type State =
   | { status: "checking" }
   | { status: "running" }
   // staleRetry: we're showing an older completed read because a newer attempt errored/stalled.
-  | { status: "done"; result: EvalResult; staleRetry?: boolean }
+  // createdAt: the read's identity — a later run supersedes anything (e.g. an agent run) built on it.
+  | { status: "done"; result: EvalResult; createdAt: string; staleRetry?: boolean }
   | { status: "error"; error: string };
 
 const STANCE_TONE: Record<Stance, string> = {
@@ -73,7 +77,7 @@ const SEV_TONE: Record<Severity, string> = {
   low: "text-[hsl(var(--pv-text-faint))]",
 };
 
-export function BookEvaluationSection({ bookId, onRevise, onStatusChange }: { bookId: number; onRevise?: (result: EvalResult, instruction?: string) => void; onStatusChange?: (hasCompletedRead: boolean) => void }) {
+export function BookEvaluationSection({ bookId, onRevise, onStatusChange, onCurrentRead }: { bookId: number; onRevise?: (result: EvalResult, instruction?: string) => void; onStatusChange?: (hasCompletedRead: boolean) => void; onCurrentRead?: (read: CurrentRead | null) => void }) {
   const [state, setState] = useState<State>({ status: "checking" });
   const mounted = useRef(true);
 
@@ -98,6 +102,17 @@ export function BookEvaluationSection({ bookId, onRevise, onStatusChange }: { bo
   useEffect(() => {
     onStatusChange?.(state.status === "done");
   }, [state.status, onStatusChange]);
+
+  // Surface the current read (its result + identity, or null when there's no completed read) so a host
+  // can both act on it and supersede anything built on an older read — e.g. drop an editor's-agent run
+  // from a read a later re-run replaced. Keyed on createdAt (the read's identity; the result is fixed
+  // for a given createdAt), so a re-run re-emits and a stable read doesn't loop.
+  const readAt = state.status === "done" ? state.createdAt : null;
+  const readResult = state.status === "done" ? state.result : null;
+  useEffect(() => {
+    onCurrentRead?.(readAt && readResult ? { createdAt: readAt, result: readResult } : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [readAt, onCurrentRead]);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -118,7 +133,7 @@ export function BookEvaluationSection({ bookId, onRevise, onStatusChange }: { bo
   const applyRow = (row: EvalRow) => {
     if (!mounted.current) return;
     if (row.status === "done" && row.result) {
-      setState({ status: "done", result: row.result });
+      setState({ status: "done", result: row.result, createdAt: row.created_at });
       cleanupChannel();
       if (notifyRef.current)
         fireNotification("The editor's read is ready", {
@@ -216,7 +231,7 @@ export function BookEvaluationSection({ bookId, onRevise, onStatusChange }: { bo
         // If a newer (failed/stale) attempt sits above it, flag staleRetry so we can offer a retry.
         const done = rows.find((r) => r.status === "done" && r.result);
         if (done) {
-          return setState({ status: "done", result: done.result as EvalResult, staleRetry: rows.indexOf(done) > 0 });
+          return setState({ status: "done", result: done.result as EvalResult, createdAt: done.created_at, staleRetry: rows.indexOf(done) > 0 });
         }
 
         // No completed read to fall back on — surface the newest terminal state.
@@ -238,7 +253,7 @@ export function BookEvaluationSection({ bookId, onRevise, onStatusChange }: { bo
     try {
       const r = await bridgeFetch(`/eval/${bookId}`, { method: "POST" });
       const d = await r.json();
-      if (d.status === "done") setState({ status: "done", result: d.result });
+      if (d.status === "done") setState({ status: "done", result: d.result, createdAt: d.created_at ?? new Date().toISOString() });
       else setState({ status: "error", error: d.error || "evaluation failed" });
     } catch {
       setState({
@@ -415,20 +430,9 @@ function Report({ bookId, result, onRevise }: { bookId: number; result: EvalResu
         ))}
       </div>
 
-      {/* The single "do it all" button, at the end of the report — onRevise with NO instruction
-          means "address everything": the studio hands the evaluation to the editor's agent
-          (EditorAgent), which investigates and asks before proposing a plan. Per-note "Revise
-          this" stays inline above for addressing one thing at a time (prefills the revise form). */}
-      {onRevise && (
-        <button
-          type="button"
-          onClick={() => onRevise(result)}
-          className="pv-mono group inline-flex items-center gap-1.5 rounded-full bg-[hsl(var(--pv-accent))] px-3.5 py-2 text-[10.5px] uppercase tracking-[0.12em] text-background transition-opacity hover:opacity-90"
-        >
-          Address all the editor's notes{" "}
-          <span className="transition-transform group-hover:translate-x-0.5">→</span>
-        </button>
-      )}
+      {/* "Address everything" no longer lives here — it's the editor's-agent launch in the "Address
+          the notes" zone below the read. Per-note "Revise this" stays inline above for addressing one
+          thing at a time (prefills the revise form). */}
     </div>
   );
 }
