@@ -11,6 +11,7 @@
 import { type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { callClaude, type CallMeta } from "./claude.ts";
 import { getActiveModels } from "./model-config.ts";
+import { canonContext, type CanonPacket } from "./canon-core.ts";
 
 export type FoundationsStep = "argument" | "ending" | "cast" | "tentpoles" | "voice";
 
@@ -139,6 +140,12 @@ Output JSON ONLY:
 { "candidates": [{ "label": "<descriptor>", "text": "<~120 words>" }, …] }`,
 };
 
+// Sequel cast rule (§8.4): canon lists the cast as the previous book left them; candidates must be
+// where they are NOW, not a copy of who they were.
+const CAST_SEQUEL_ADDENDUM = `
+
+THIS BOOK IS A SEQUEL. The CANON block lists the cast as the previous book left them. Keep those characters' names and identities exactly; propose where each is NOW — a new want/wound/lie grown out of how the last book resolved (a resolved lie does not reappear intact; a paid-off want leaves a vacuum that implies a new want). You may also add new characters.`;
+
 export interface FoundationsOptionsParams {
   bookId: number;
   step: FoundationsStep;
@@ -149,10 +156,11 @@ export interface FoundationsOptionsParams {
 export async function foundationsOptions(
   client: SupabaseClient, apiKey: string, p: FoundationsOptionsParams,
 ): Promise<{ candidates: FCandidate[] } | { candidates: CastMember[] } | { candidates: Tentpole[] }> {
-  const { data: book, error } = await client.from("books").select("id, name, brief, foundations").eq("id", p.bookId).single();
+  const { data: book, error } = await client.from("books").select("id, name, brief, foundations, canon").eq("id", p.bookId).single();
   if (error || !book) throw new Error("Book not found");
   const brief = book.brief as Brief | null;
   const f = (book.foundations as Foundations | null) ?? {};
+  const canon = (book.canon as CanonPacket | null) ?? null;
 
   let stepInput = "";
   if (p.step === "ending" && !f.argument?.text?.trim()) throw new Error("Select an argument first.");
@@ -169,10 +177,16 @@ export async function foundationsOptions(
     model,
     max_tokens: 2048,
     temperature: 1,
-    system: [{ type: "text", text: STEP_SYSTEM[p.step], cache_control: { type: "ephemeral" } }],
+    system: [{
+      type: "text",
+      text: STEP_SYSTEM[p.step] + (canon && p.step === "cast" ? CAST_SEQUEL_ADDENDUM : ""),
+      cache_control: { type: "ephemeral" },
+    }],
     messages: [{
       role: "user",
-      content: `BOOK: ${book.name}\n\nBRIEF:\n${briefContext(brief)}\n\nSETTLED FOUNDATIONS SO FAR:\n${settledContext(f)}${stepInput}\n\nGenerate the candidates. JSON only.`,
+      content: `BOOK: ${book.name}\n\nBRIEF:\n${briefContext(brief)}` +
+        (canon ? `\n\nCANON (settled facts from the previous book — honor, never contradict, never retell):\n${canonContext(canon)}` : "") +
+        `\n\nSETTLED FOUNDATIONS SO FAR:\n${settledContext(f)}${stepInput}\n\nGenerate the candidates. JSON only.`,
     }],
   }, meta);
 
@@ -234,17 +248,20 @@ export interface SpineRoutesParams {
 // brief+foundations → 3 candidate routes. Validates pin survival (§4 rule 2c): every pinned tentpole
 // in every route's tentpole_order, no killed ones. One retry on violation, then throw.
 export async function spineRoutes(client: SupabaseClient, apiKey: string, p: SpineRoutesParams): Promise<SpineRoute[]> {
-  const { data: book, error } = await client.from("books").select("id, name, brief, foundations").eq("id", p.bookId).single();
+  const { data: book, error } = await client.from("books").select("id, name, brief, foundations, canon").eq("id", p.bookId).single();
   if (error || !book) throw new Error("Book not found");
   const brief = book.brief as Brief | null;
   const f = (book.foundations as Foundations | null) ?? {};
+  const canon = (book.canon as CanonPacket | null) ?? null;
   const pinnedIds = (f.tentpoles ?? []).filter((t) => t.status === "pinned").map((t) => t.id);
   const killedIds = new Set((f.tentpoles ?? []).filter((t) => t.status === "killed").map((t) => t.id));
 
   const { high: model } = await getActiveModels();
   const meta: CallMeta = { fn: "spine-routes", bookId: p.bookId, userId: p.userId ?? null };
   const userContent =
-    `BOOK: ${book.name}\n\nBRIEF:\n${briefContext(brief)}\n\nSETTLED FOUNDATIONS:\n${settledContext(f)}` +
+    `BOOK: ${book.name}\n\nBRIEF:\n${briefContext(brief)}` +
+    (canon ? `\n\nCANON (settled facts from the previous book — honor, never contradict, never retell):\n${canonContext(canon)}` : "") +
+    `\n\nSETTLED FOUNDATIONS:\n${settledContext(f)}` +
     (p.avoid?.length ? `\n\nEXISTING ROUTES (vary away from these — don't paraphrase them):\n${p.avoid.map((s) => `---\n${s}`).join("\n")}` : "") +
     `\n\nGenerate 3 routes. JSON only.`;
 

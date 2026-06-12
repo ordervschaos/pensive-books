@@ -62,10 +62,18 @@ export interface PageState {
 // page: per delta type, subject → latest `to`. Prefers a page's extracted_delta (prose is truth once
 // it exists) over its planned_delta. Pure + cheap (O(pages·deltas)); callers may memo by upstream
 // delta hash if it ever shows up in a profile.
+// `seed` extends the state axis across books: a sequel's page 1 enters with the PARENT book's final
+// fold (books.canon.final_state, docs/pinned_method.md §8.4) as the base accumulator.
 export function foldStateIn(
   pages: Array<Pick<PageState, "planned_delta" | "extracted_delta">>,
+  seed?: Record<DeltaType, Record<string, string>>,
 ): Record<DeltaType, Record<string, string>> {
-  const out: Record<DeltaType, Record<string, string>> = { character: {}, thread: {}, value: {}, world: {} };
+  const out: Record<DeltaType, Record<string, string>> = {
+    character: { ...(seed?.character ?? {}) },
+    thread: { ...(seed?.thread ?? {}) },
+    value: { ...(seed?.value ?? {}) },
+    world: { ...(seed?.world ?? {}) },
+  };
   for (const p of pages) {
     const deltas = (p.extracted_delta?.length ? p.extracted_delta : p.planned_delta) ?? [];
     for (const d of deltas) {

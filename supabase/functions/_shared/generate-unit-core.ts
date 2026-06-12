@@ -13,6 +13,7 @@ import { type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { callClaude as callClaudeApi, type CallMeta } from "./claude.ts";
 import { getActiveModels } from "./model-config.ts";
 import { type CharacterState, type PageState } from "./page-state.ts";
+import { canonContext, type CanonPacket } from "./canon-core.ts";
 const PRECEDING_PAGES = 2; // how many prior text pages of full prose to include for continuity
 
 export interface Brief {
@@ -65,6 +66,7 @@ interface BookRow {
   name: string;
   brief: Brief | null;
   bible: { text?: string; voice_sample?: string } | null;
+  canon: CanonPacket | null;
 }
 
 // ── Transforms ───────────────────────────────────────────────────────────────
@@ -97,7 +99,7 @@ async function stampGeneratingCall(client: SupabaseClient, pageId: number, callI
 
 async function loadBook(client: SupabaseClient, bookId: number): Promise<BookRow> {
   const { data: book, error } = await client
-    .from("books").select("id, name, subtitle, author, brief, bible").eq("id", bookId).single();
+    .from("books").select("id, name, subtitle, author, brief, bible, canon").eq("id", bookId).single();
   if (error || !book) throw new Error("Book not found");
   return book as unknown as BookRow;
 }
@@ -137,7 +139,7 @@ export async function beatToProse(client: SupabaseClient, apiKey: string, p: Wri
       : null,
   };
   const text = await renderProse(apiKey, models.high, {
-    brief: b.brief, bible: b.bible?.text?.trim() || null, voiceSample: b.bible?.voice_sample?.trim() || null, bookName: b.name,
+    brief: b.brief, bible: b.bible?.text?.trim() || null, voiceSample: b.bible?.voice_sample?.trim() || null, canon: b.canon, bookName: b.name,
     level: p.level, mode: "write", objective: (p.objective ?? "").trim(), beat, issues: null, currentText: null,
     pageObjective: p.pageObjective?.trim() || null, precedingText: p.precedingText?.trim() || null,
     objectiveMap: ctx.objectiveMap, storySoFar: ctx.storySoFar, precedingProse: ctx.precedingProse, currentPageLabel: ctx.currentPageLabel, openLoops: ctx.openLoops, characterStates: ctx.characterStates,
@@ -183,7 +185,7 @@ export async function revisePage(client: SupabaseClient, apiKey: string, p: Revi
       : null,
   };
   const text = await renderProse(apiKey, models.high, {
-    brief: b.brief, bible: b.bible?.text?.trim() || null, voiceSample: b.bible?.voice_sample?.trim() || null, bookName: b.name,
+    brief: b.brief, bible: b.bible?.text?.trim() || null, voiceSample: b.bible?.voice_sample?.trim() || null, canon: b.canon, bookName: b.name,
     level: "page", mode: "revise", objective: (p.objective ?? "").trim(), beat: null, issues: p.issues, currentText,
     pageObjective: null, precedingText: null,
     objectiveMap: ctx.objectiveMap, storySoFar: ctx.storySoFar, precedingProse: ctx.precedingProse, currentPageLabel: ctx.currentPageLabel, openLoops: ctx.openLoops, characterStates: ctx.characterStates,
@@ -399,6 +401,7 @@ interface PromptArgs {
   brief: Brief | null;
   bible: string | null;
   voiceSample: string | null;
+  canon: CanonPacket | null;
   bookName: string;
   level: "paragraph" | "page";
   mode: "write" | "revise";
@@ -436,6 +439,7 @@ function stablePrefix(args: PromptArgs): string {
   return [
     `BOOK: ${args.bookName}`,
     `\nBRIEF (the voice contract):\n${briefContext(args.brief)}`,
+    args.canon ? `\nCANON (settled facts from the previous book — honor, never contradict, never retell):\n${canonContext(args.canon)}` : "",
     args.voiceSample
       ? `\nVOICE SAMPLE (write in THIS voice — match its rhythm, sentence shapes, diction and restraint; this exemplar is a stronger style anchor than any instruction):\n"""\n${args.voiceSample}\n"""\nAvoid AI-tell crutches: ${VOICE_TELLS}.`
       : "",

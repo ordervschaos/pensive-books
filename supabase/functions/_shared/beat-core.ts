@@ -10,6 +10,7 @@
 // to the page tell it what to SEED or PAY OFF.
 import { type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { callClaude, type CallMeta } from "./claude.ts";
+import { canonContext, type CanonPacket } from "./canon-core.ts";
 
 // Beats are one paragraph; sonnet is the planning workhorse (faithful to the pre-extraction default).
 const MODEL = "claude-sonnet-4-6";
@@ -125,13 +126,15 @@ async function prepareBeat(client: SupabaseClient, p: BeatParams): Promise<Prepa
   if (!obj) throw new Error("An objective is required to write a beat");
 
   const { data: book, error: bookError } = await client
-    .from("books").select("id, name, brief, spine").eq("id", p.bookId).single();
+    .from("books").select("id, name, brief, spine, canon").eq("id", p.bookId).single();
   if (bookError || !book) throw new Error("Book not found");
 
+  // Threads anchor to pages via book_thread_anchors (promise/resolution rows) since the anchors
+  // migration dropped the flat setup/payoff columns.
   const [{ data: pages }, { data: threadRows }] = await Promise.all([
     client.from("pages").select("id, page_index, page_type, title, metadata")
       .eq("book_id", p.bookId).eq("archived", false).order("page_index", { ascending: true }),
-    client.from("book_threads").select("name, description, setup_page_id, payoff_page_id")
+    client.from("book_threads").select("name, description, book_thread_anchors(page_id, role)")
       .eq("book_id", p.bookId),
   ]);
 
@@ -139,20 +142,23 @@ async function prepareBeat(client: SupabaseClient, p: BeatParams): Promise<Prepa
   const current = list.find((pg) => pg.id === p.pageId) ?? null;
   const prev = current ? precedingBeat(list, current) : null;
 
-  const onPage: ThreadOnPage[] = ((threadRows as Array<{ name: string; description: string | null; setup_page_id: number | null; payoff_page_id: number | null }> | null) ?? [])
+  const onPage: ThreadOnPage[] = ((threadRows as Array<{ name: string; description: string | null; book_thread_anchors: Array<{ page_id: number | null; role: string }> | null }> | null) ?? [])
     .flatMap((t) => {
+      const anchors = t.book_thread_anchors ?? [];
       const out: ThreadOnPage[] = [];
-      if (t.setup_page_id === p.pageId) out.push({ name: t.name, description: t.description, role: "seed" });
-      if (t.payoff_page_id === p.pageId) out.push({ name: t.name, description: t.description, role: "payoff" });
+      if (anchors.some((a) => a.page_id === p.pageId && a.role === "promise")) out.push({ name: t.name, description: t.description, role: "seed" });
+      if (anchors.some((a) => a.page_id === p.pageId && a.role === "resolution")) out.push({ name: t.name, description: t.description, role: "payoff" });
       return out;
     });
 
   const spine = (book.spine as { text?: string } | null)?.text?.trim() || null;
+  const canon = (book.canon as CanonPacket | null) ?? null;
 
   const meta: CallMeta = { fn: "objective-to-beat", bookId: p.bookId, taskTable: p.log?.taskTable ?? null, taskId: p.log?.taskId ?? null, userId: p.userId ?? null };
 
   const userContent =
     `BOOK: ${book.name}\n\nBRIEF (the voice contract):\n${briefContext(book.brief as Brief | null)}` +
+    (canon ? `\n\nCANON (settled facts from the previous book — honor, never contradict, never retell):\n${canonContext(canon)}` : "") +
     (spine ? `\n\nBOOK SPINE (the throughline):\n${spine}` : "") +
     `\n\nOUTLINE (for continuity — the target page is marked):\n${outlineContext(list, p.pageId)}` +
     (prev ? `\n\nPREVIOUS BEAT (the page just before — connect to THIS by "therefore"/"but"; do not repeat it):\n"""\n${prev.beat}\n"""` : "\n\n(This is the first beat — set the story's engine running.)") +

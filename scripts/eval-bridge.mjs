@@ -87,7 +87,7 @@ async function authorize(req, res, bookId) {
 
 async function fetchBook(bookId) {
   const r = await fetch(
-    `${SUPABASE_URL}/rest/v1/books?id=eq.${bookId}&select=name%2Cbrief%2Cbible%2Cspine%2Cfoundations`,
+    `${SUPABASE_URL}/rest/v1/books?id=eq.${bookId}&select=name%2Cbrief%2Cbible%2Cspine%2Cfoundations%2Ccanon`,
     { headers: sbHeaders }
   );
   if (!r.ok) throw new Error(`Supabase ${r.status}: ${await r.text()}`);
@@ -483,7 +483,7 @@ async function runScaffold(bookId) {
 BOOK: ${book.name}${spine ? `\n\nBOOK SPINE (the throughline — the outline must realize this):\n${spine}` : ""}
 
 BRIEF:
-${briefContext(book.brief)}${foundations ? `\n\nSETTLED FOUNDATIONS (pinned items are immutable constraints):\n${foundationsContext(foundations)}` : ""}
+${briefContext(book.brief)}${canonSection(book.canon)}${foundations ? `\n\nSETTLED FOUNDATIONS (pinned items are immutable constraints):\n${foundationsContext(foundations)}` : ""}
 
 Design the outline. JSON only.`;
 
@@ -888,7 +888,7 @@ async function runObjectiveToBeat(body) {
 BOOK: ${book.name}
 
 BRIEF (the voice contract):
-${briefContext(book.brief)}${spine ? `\n\nBOOK SPINE (the throughline):\n${spine}` : ""}
+${briefContext(book.brief)}${canonSection(book.canon)}${spine ? `\n\nBOOK SPINE (the throughline):\n${spine}` : ""}
 
 OUTLINE (for continuity):
 ${outlineContext(pages)}
@@ -1327,6 +1327,62 @@ function foundationsContext(f) {
   return lines.length ? lines.join("\n\n") : "(nothing settled yet)";
 }
 
+// The sequel canon packet rendered as the CANON block (docs/pinned_method.md §8) — mirrors
+// canonContext in supabase/functions/_shared/canon-core.ts. Null-safe: returns "" when not a sequel.
+function canonBlock(canon) {
+  if (!canon) return "";
+  const lines = [
+    `This book is a SEQUEL to "${canon.parent_title}". Everything below is CANON — settled fact from the previous book. Honor it exactly; never contradict it; never retell it. This book's own argument, ending and structure must be NEW, not a restatement of the previous book's.`,
+  ];
+  if (canon.summary?.trim()) lines.push(`PREVIOUS BOOK — WHAT HAPPENED (the throughline):\n${canon.summary.trim()}`);
+  if (canon.ending?.trim()) lines.push(`HOW IT ENDED:\n${canon.ending.trim()}`);
+  if (canon.cast?.length) {
+    const cast = canon.cast.map((c) => {
+      const line = (k) => (c[k] ? `  ${k} (as the last book left it): ${c[k]}` : null);
+      return [`- ${c.name} (${c.role ?? "major"})`, line("want"), line("wound"), line("lie")].filter(Boolean).join("\n");
+    }).join("\n");
+    lines.push(`CAST AS THE PREVIOUS BOOK LEFT THEM (identities are canon; their inner state should have MOVED since — a resolved lie does not reappear intact):\n${cast}`);
+  }
+  if (canon.character_states?.length) {
+    const states = canon.character_states.map((s) => {
+      const bits = [
+        s.believes ? `believes: ${s.believes}` : null,
+        s.knows?.length ? `knows: ${s.knows.join("; ")}` : null,
+        s.feels ? `feels: ${s.feels}` : null,
+        s.has?.length ? `has: ${s.has.join("; ")}` : null,
+      ].filter(Boolean).join(" · ");
+      return `- ${s.name}${bits ? ` — ${bits}` : ""}`;
+    }).join("\n");
+    lines.push(`WHERE EACH CHARACTER STOOD ON THE FINAL PAGE:\n${states}`);
+  }
+  if (canon.final_state) {
+    const sect = (label, rec) => {
+      const entries = Object.entries(rec ?? {});
+      if (entries.length) lines.push(`${label}:\n${entries.map(([k, v]) => `- ${k}: ${v}`).join("\n")}`);
+    };
+    sect("WORLD STATE AT THE END (canon facts)", canon.final_state.world);
+    sect("VALUES WHERE THE LAST BOOK LEFT THEM", canon.final_state.value);
+  }
+  if (canon.resolved_threads?.length) {
+    lines.push(`RESOLVED THREADS (already paid off — do NOT re-open these as if unresolved):\n${canon.resolved_threads.map((t) => `- ${t.name}${t.description ? ` — ${t.description}` : ""}`).join("\n")}`);
+  }
+  if (canon.carried_threads?.length) {
+    lines.push(`THREADS STILL OPEN FROM THE PREVIOUS BOOK (this book's inherited hooks — honor them or consciously abandon them, never forget them):\n${canon.carried_threads.map((t) => `- ${t.name}${t.description ? ` — ${t.description}` : ""}`).join("\n")}`);
+  }
+  return lines.join("\n\n");
+}
+
+// Wraps canonBlock with the section header used everywhere a prompt gains the addendum.
+function canonSection(canon) {
+  const block = canonBlock(canon);
+  return block ? `\n\nCANON (settled facts from the previous book — honor, never contradict, never retell):\n${block}` : "";
+}
+
+// Mirrors CAST_SEQUEL_ADDENDUM in foundations-core.ts (§8.4 cast rule).
+const CAST_SEQUEL_ADDENDUM = `
+
+THIS BOOK IS A SEQUEL. The CANON block lists the cast as the previous book left them. Keep those characters' names and identities exactly; propose where each is NOW — a new want/wound/lie grown out of how the last book resolved (a resolved lie does not reappear intact; a paid-off want leaves a vacuum that implies a new want). You may also add new characters.`;
+
 function parseLooseJson(text) {
   let raw = (text ?? "").trim();
   const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -1355,7 +1411,7 @@ async function runFoundationsOptions(body) {
     stepInput = `\n\nTENTPOLE MOMENT TO RENDER:\n${moment.text}`;
   }
 
-  const prompt = `${FOUNDATIONS_STEP_SYSTEM[step]}\n\nBOOK: ${book.name}\n\nBRIEF:\n${briefContext(book.brief)}\n\nSETTLED FOUNDATIONS SO FAR:\n${foundationsContext(f)}${stepInput}\n\nGenerate the candidates. JSON only.`;
+  const prompt = `${FOUNDATIONS_STEP_SYSTEM[step]}${book.canon && step === "cast" ? CAST_SEQUEL_ADDENDUM : ""}\n\nBOOK: ${book.name}\n\nBRIEF:\n${briefContext(book.brief)}${canonSection(book.canon)}\n\nSETTLED FOUNDATIONS SO FAR:\n${foundationsContext(f)}${stepInput}\n\nGenerate the candidates. JSON only.`;
   const out = await runClaude(prompt, true, { fn: `foundations-${step}`, bookId }, { noTools: true });
   if (out.error) return out;
   try {
@@ -1395,7 +1451,7 @@ async function runSpineRoutes(body) {
   const killedIds = new Set((f.tentpoles ?? []).filter((t) => t.status === "killed").map((t) => t.id));
 
   const userContent =
-    `BOOK: ${book.name}\n\nBRIEF:\n${briefContext(book.brief)}\n\nSETTLED FOUNDATIONS:\n${foundationsContext(f)}` +
+    `BOOK: ${book.name}\n\nBRIEF:\n${briefContext(book.brief)}${canonSection(book.canon)}\n\nSETTLED FOUNDATIONS:\n${foundationsContext(f)}` +
     (avoid?.length ? `\n\nEXISTING ROUTES (vary away from these — don't paraphrase them):\n${avoid.map((s) => `---\n${s}`).join("\n")}` : "") +
     `\n\nGenerate 3 routes. JSON only.`;
 
@@ -1624,6 +1680,7 @@ async function runUnit(body) {
     `BOOK: ${book.name}`,
     `\nBRIEF (the voice contract):\n${briefContext(book.brief)}`,
   ];
+  { const c = canonBlock(book.canon); if (c) parts.push(`\nCANON (settled facts from the previous book — honor, never contradict, never retell):\n${c}`); }
   if (bible) parts.push(`\nBOOK BIBLE (established facts — characters, world, style; stay strictly consistent):\n${bible}`);
   if (objectiveMap) parts.push(`\nOUTLINE (the book's pages and their objectives, in order):\n${objectiveMap}`);
   if (storySoFar) parts.push(`\nSTORY SO FAR (summaries of earlier pages, for continuity):\n${storySoFar}`);

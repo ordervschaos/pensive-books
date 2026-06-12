@@ -93,12 +93,19 @@ export interface PageMeta {
 /**
  * Fold the deltas of the given pages (reading order, 1..n-1) into the state ENTERING the next page:
  * per delta type, subject → latest `to`. Prefers extracted_delta (prose is truth once it exists).
- * Mirrors foldStateIn in the edge copy.
+ * `seed` extends the axis across books: a sequel's page 1 enters with the parent's final fold
+ * (books.canon.final_state). Mirrors foldStateIn in the edge copy.
  */
 export function foldStateIn(
   pages: Array<Pick<PageMeta, "planned_delta" | "extracted_delta">>,
+  seed?: Record<DeltaType, Record<string, string>>,
 ): Record<DeltaType, Record<string, string>> {
-  const out: Record<DeltaType, Record<string, string>> = { character: {}, thread: {}, value: {}, world: {} };
+  const out: Record<DeltaType, Record<string, string>> = {
+    character: { ...(seed?.character ?? {}) },
+    thread: { ...(seed?.thread ?? {}) },
+    value: { ...(seed?.value ?? {}) },
+    world: { ...(seed?.world ?? {}) },
+  };
   for (const p of pages) {
     const deltas = (p.extracted_delta?.length ? p.extracted_delta : p.planned_delta) ?? [];
     for (const d of deltas) {

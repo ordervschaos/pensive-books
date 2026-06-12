@@ -50,6 +50,7 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
   const [hasVoice, setHasVoice] = useState(false);
   const [hasRead, setHasRead] = useState(false);
   const [foundations, setFoundations] = useState<Foundations | null | undefined>(undefined);
+  const [canonParent, setCanonParent] = useState<string | null>(null);
   const [threads, setThreads] = useState<LintThread[]>([]);
   const [infoKey, setInfoKey] = useState(0);
 
@@ -57,7 +58,7 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
     let alive = true;
     void (async () => {
       const [{ data: book }, { data: ev }, { data: th }] = await Promise.all([
-        supabase.from("books").select("spine, bible, foundations").eq("id", bookId).maybeSingle(),
+        supabase.from("books").select("spine, bible, foundations, canon").eq("id", bookId).maybeSingle(),
         supabase.from("book_evaluations").select("id").eq("book_id", bookId).eq("status", "done").limit(1),
         supabase.from("book_threads").select("id, name, status, book_thread_anchors(role)").eq("book_id", bookId),
       ]);
@@ -69,6 +70,7 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
       setHasVoice(!!((book?.bible as { voice_sample?: string } | null)?.voice_sample ?? "").trim());
       setHasRead((ev?.length ?? 0) > 0);
       setFoundations((book?.foundations as Foundations | null) ?? null);
+      setCanonParent(((book?.canon as { parent_title?: string } | null)?.parent_title ?? "").trim() || null);
       setThreads(((th as Array<{ id: number; name: string; status: string; book_thread_anchors: Array<{ role: string }> }> | null) ?? [])
         .map((t) => ({ id: t.id, name: t.name, status: t.status, resolutionCount: (t.book_thread_anchors ?? []).filter((a) => a.role === "resolution").length })));
     })();
@@ -117,6 +119,12 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
   }
 
   return (
+    <>
+      {canonParent && (
+        <p className="pv-serif mb-2 text-[13px] italic text-[hsl(var(--pv-text-muted))]">
+          Sequel — continuing <em>“{canonParent}”</em>. Its canon (final state, cast, open threads) constrains every generation here.
+        </p>
+      )}
     <section className="grid h-[78vh] min-h-[620px] max-h-[940px] grid-rows-[minmax(0,38%)_1fr] overflow-hidden rounded-2xl border border-border bg-background md:grid-cols-[320px_1fr] md:grid-rows-1">
       <StudioNavigator
         model={model}
@@ -146,5 +154,6 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
         onSelectPage={(pageId) => setSelected({ kind: "page", pageId })}
       />
     </section>
+    </>
   );
 }

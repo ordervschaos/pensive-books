@@ -181,3 +181,54 @@ Each phase ships independently; the old flow keeps working until phase 2 lands (
 - Auto-derived Threads/Bible tabs from deltas (keep current tabs; revisit after phase 4 when delta data exists).
 - Revision AI changes.
 - Dynamic vs static Bible split (static Bible stays as-is for now).
+
+---
+
+## 8. Sequels (continue from a finished book)
+
+**Concept — Canon.** Canon is to a sequel what a pin is to a draft: text generation must honor and may never contradict. Where pins are author gestures inside one book, canon is the *settled outcome of the parent book* — computed once at sequel creation, stored on the sequel, read-only afterwards. No new mechanism: canon rides the same conditional-addendum pattern as `FOUNDATIONS_ADDENDUM`.
+
+### 8.1 Entry
+
+"Continue as sequel" in the book Actions menu (editors only). Creates a new book on the new rail, linked to the parent, pre-seeded as below, then navigates to it. The author lands in the normal Brief → Foundations flow — nothing about the rail changes; the stages are just canon-aware.
+
+### 8.2 Data model
+
+```ts
+// books.parent_book_id  bigint FK → books(id), null = not a sequel
+// books.canon           jsonb, written ONCE by createSequel(), never regenerated
+{
+  parent_book_id: number, parent_title: string,
+  summary?: string,            // parent spine text — the throughline as actually built
+  ending?: string,             // parent foundations.ending.text (how book 1 landed)
+  final_state?: Record<DeltaType, Record<string, string>>,
+                               // foldStateIn over ALL parent pages — the world as book 1 left it
+  character_states?: CharacterState[],
+                               // last character_states snapshot from the parent's final prose page
+  cast?: CastMember[],         // parent cast (want/wound/lie as book 1 left them)
+  resolved_threads?: Array<{ name: string; description?: string }>,  // paid promises
+  carried_threads?:  Array<{ name: string; description?: string }>,  // open at parent end — sequel hooks
+}
+```
+
+Every field is optional: old-flow parents lack foundations, delta-less parents lack `final_state` — canon carries whatever the parent actually has (graceful degradation, no migration of parents).
+
+### 8.3 Seeding (`createSequel`, client-side like `seedGenreThreads`)
+
+1. Read parent (book row, pages metadata, threads); compute the canon packet.
+2. Insert the sequel row: `parent_book_id`, `canon`, brief prefilled from the parent (genre / audience / tone — premise left to the author), `foundations` seeded with **only** the parent's `voice_exemplar`, pinned (voice continuity is the default; normal unpin/regenerate is the escape hatch).
+3. Copy the parent's open threads into the sequel's `book_threads` as `source: 'carryover'`, `status: 'planned'` (CHECK widened).
+4. Nothing else is copied. Argument, ending, cast, tentpoles, spine, pages start empty and are generated fresh *under* canon.
+
+### 8.4 Generation rules (canon enforcement)
+
+1. `canonContext(canon)` renders the packet as a CANON block; every generation endpoint appends it when `books.canon` is set: foundations options, spine routes, outline, beats, prose. Shared renderer in `_shared/canon-core.ts`, mirrored in the bridge.
+2. Canon is **constraint, not content**: established facts may not be contradicted; the sequel's argument/ending must be *new*, not a restatement of the parent's.
+3. **Cast step under canon:** keep parent characters' names/identities; propose *evolved* want/wound/lie — "where they are now," grown from how book 1 left them (a resolved lie doesn't reappear intact; a paid want leaves a vacuum that implies a new one). New characters welcome.
+4. `resolved_threads` act as negative signal (don't re-open as if unpaid); `carried_threads` are hooks the structure should honor or consciously abandon.
+5. **State seeding:** within a book, state-in for page n = fold of pages 1..n−1; a sequel extends the axis — its page 1 enters with `canon.final_state`. `foldStateIn` takes an optional seed accumulator (both runtimes).
+
+### 8.5 Lints + scope notes
+
+- Carried threads behave as normal threads; `thread_unclosed` firing on a deliberately series-scoped thread is accepted noise in v1 (a thread-level "series-scoped" marker is future work).
+- Out of scope v1: series dashboards, retcon detection against parent prose, canon editing UI, multi-parent canon (trilogies chain pairwise: book 3's canon derives from book 2 only).

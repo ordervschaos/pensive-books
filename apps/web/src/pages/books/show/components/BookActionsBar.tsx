@@ -7,7 +7,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
-import { Globe, Lock, MoreHorizontal, Settings, Share2 } from "lucide-react";
+import { BookPlus, Globe, Lock, MoreHorizontal, Settings, Share2 } from "lucide-react";
 
 interface BookActionsBarProps {
   isPublic: boolean;
@@ -15,6 +15,8 @@ interface BookActionsBarProps {
   onUnpublish: () => void;
   publishing: boolean;
   onEditClick: () => void;
+  onContinueAsSequel: () => void;
+  creatingSequel: boolean;
   url: string;
 }
 
@@ -24,6 +26,8 @@ export const BookActionsBar = ({
   onUnpublish,
   publishing,
   onEditClick,
+  onContinueAsSequel,
+  creatingSequel,
   url,
 }: BookActionsBarProps) => {
   const { toast } = useToast();
@@ -94,6 +98,15 @@ export const BookActionsBar = ({
         <DropdownMenuItem onClick={onEditClick} className="flex items-center gap-2">
           <Settings className="h-4 w-4" />
           <span>Edit details</span>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          onClick={onContinueAsSequel}
+          disabled={creatingSequel}
+          className="flex items-center gap-2"
+        >
+          <BookPlus className="h-4 w-4" />
+          <span>{creatingSequel ? "Creating sequel…" : "Continue as sequel"}</span>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

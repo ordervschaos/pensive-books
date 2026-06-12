@@ -10,6 +10,7 @@ import { BookChatPanel } from "./components/BookChatPanel";
 import { setPageTitle } from "@/utils/pageTitle";
 import { Helmet } from "react-helmet-async";
 import { executeBookOperation } from "@/lib/book-operations";
+import { createSequel } from "@/lib/sequel";
 import { Button } from "@/components/ui/button";
 import { ArchivedPagesSection } from "./components/pageList/ArchivedPagesSection";
 import { jsonToText, cumulativeWordOffsets } from "@/utils/tiptapHelpers";
@@ -72,6 +73,7 @@ const BookDetails = () => {
   const [pages, setPages] = useState<BookPage[]>([]);
   const [loading, setLoading] = useState(true);
   const [publishing, setPublishing] = useState(false);
+  const [creatingSequel, setCreatingSequel] = useState(false);
   const [isDeleteMode, setIsDeleteMode] = useState(false);
   const [bookmarkedPageIndex, setBookmarkedPageIndex] = useState<number | null>(null);
   const [bookmarkTimestamp, setBookmarkTimestamp] = useState<string | null>(null);
@@ -306,6 +308,29 @@ const BookDetails = () => {
     navigate(`/books/${bookSlug}/edit`);
   };
 
+  // Continue the story in a new book: canon (final state, cast, open threads, voice) carries over
+  // and constrains the sequel's generation. See docs/pinned_method.md §8.
+  const handleContinueAsSequel = async () => {
+    if (creatingSequel) return;
+    try {
+      setCreatingSequel(true);
+      const sequelId = await createSequel(numericBookId);
+      toast({
+        title: "Sequel created",
+        description: "Canon carried over — the world, cast, and open threads of this book now constrain the new one.",
+      });
+      navigate(`/books/${sequelId}`);
+    } catch (error: unknown) {
+      toast({
+        variant: "destructive",
+        title: "Could not create the sequel",
+        description: error instanceof Error ? error.message : "An unknown error occurred",
+      });
+    } finally {
+      setCreatingSequel(false);
+    }
+  };
+
   const handleContinueReading = async () => {
     const numericId = getNumericId(bookSlug);
     if (!pages.length) return;
@@ -534,6 +559,8 @@ const BookDetails = () => {
                     onUnpublish={handleUnpublish}
                     publishing={publishing}
                     onEditClick={handleEditClick}
+                    onContinueAsSequel={handleContinueAsSequel}
+                    creatingSequel={creatingSequel}
                     url={window.location.href}
                   />
                 </div>
