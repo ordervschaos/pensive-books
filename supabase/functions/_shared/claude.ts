@@ -13,6 +13,7 @@ import { serviceClient } from "./task.ts";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions";
+const MULE_ROUTER_URL = "https://api.mulerouter.ai/v1/chat/completions";
 
 export interface CallMeta {
   fn: string;                       // logical step name recorded on the log row
@@ -48,6 +49,7 @@ export async function callClaude(
   if (logId != null) meta.loggedCallId = logId; // hand the row id back so callers can link to it
   const model = body.model as string ?? "";
   const isDeepSeek = model.startsWith("deepseek");
+  const isQwen = model.startsWith("qwen");
 
   let raw = "";
   // deno-lint-ignore no-explicit-any
@@ -66,6 +68,17 @@ export async function callClaude(
         },
         body: JSON.stringify(anthropicToOpenAI(body)),
       });
+    } else if (isQwen) {
+      const muleKey = Deno.env.get("MULE_ROUTER_API_KEY") ?? apiKey;
+      res = await fetch(MULE_ROUTER_URL, {
+        method: "POST",
+        signal: opts?.signal,
+        headers: {
+          "Authorization": `Bearer ${muleKey}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(anthropicToOpenAI(body)),
+      });
     } else {
       res = await fetch(ANTHROPIC_URL, {
         method: "POST",
@@ -79,10 +92,10 @@ export async function callClaude(
       });
     }
     raw = await res.text();
-    if (!res.ok) errMsg = `${isDeepSeek ? "DeepSeek" : "Claude"} API ${res.status}: ${raw.slice(0, 500)}`;
+    if (!res.ok) errMsg = `${isDeepSeek ? "DeepSeek" : isQwen ? "Qwen" : "Claude"} API ${res.status}: ${raw.slice(0, 500)}`;
     else {
       const parsed = JSON.parse(raw);
-      data = isDeepSeek ? openAIToAnthropic(parsed) : parsed;
+      data = (isDeepSeek || isQwen) ? openAIToAnthropic(parsed) : parsed;
     }
   } catch (e) {
     errMsg = String((e as Error)?.message ?? e);

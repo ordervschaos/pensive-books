@@ -9,7 +9,7 @@ import { Shield, Loader2, CheckCircle2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 
-type ModelTier = "opus" | "sonnet" | "deepseek";
+type ModelTier = "opus" | "sonnet" | "deepseek" | "qwen";
 
 const TIERS: { value: ModelTier; label: string; description: string; badge: string; badgeVariant: "default" | "secondary" | "outline" }[] = [
   {
@@ -25,6 +25,13 @@ const TIERS: { value: ModelTier; label: string; description: string; badge: stri
     description: "Strong quality at ~5× lower cost. Good for most generation tasks. Recommended during development.",
     badge: "Recommended",
     badgeVariant: "secondary",
+  },
+  {
+    value: "qwen",
+    label: "Qwen 3",
+    description: "Alibaba's Qwen 3 Max via MuleRouter. Competitive quality at low cost. Requires MULE_ROUTER_API_KEY secret.",
+    badge: "Budget",
+    badgeVariant: "outline",
   },
   {
     value: "deepseek",

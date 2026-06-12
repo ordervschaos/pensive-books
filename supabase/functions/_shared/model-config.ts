@@ -5,13 +5,14 @@
 // All expensive edge functions call getActiveModels() instead of hardcoding MODEL.
 import { serviceClient } from "./task.ts";
 
-export type ModelTier = "opus" | "sonnet" | "deepseek";
+export type ModelTier = "opus" | "sonnet" | "deepseek" | "qwen";
 
-// high = opus/sonnet/deepseek for generation; low = haiku for cheap passes (summaries, scans)
+// high = opus/sonnet/deepseek/qwen for generation; low = haiku for cheap passes (summaries, scans)
 const TIER_MODELS: Record<ModelTier, { high: string; low: string }> = {
   opus:     { high: "claude-opus-4-8",          low: "claude-haiku-4-5-20251001" },
   sonnet:   { high: "claude-sonnet-4-6",         low: "claude-haiku-4-5-20251001" },
   deepseek: { high: "deepseek-chat",             low: "deepseek-chat" },
+  qwen:     { high: "qwen3-max",                 low: "qwen3-flash" },
 };
 
 export async function getActiveModels(): Promise<{ high: string; low: string }> {
