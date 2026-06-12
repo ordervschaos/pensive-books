@@ -22,8 +22,6 @@ import { MatureContentGate } from "@/components/book/MatureContentGate";
 import { Brief } from "@/lib/brief";
 import { BookBriefSection } from "@/components/book/BookBriefSection";
 import { BuildStudio } from "@/components/book/studio/BuildStudio";
-import { ThreadsSection } from "@/components/book/ThreadsSection";
-import { BookBibleSection } from "@/components/book/BookBibleSection";
 import { getPageStatus } from "./components/pageList/pageUtils";
 import { computeCompletion } from "@/lib/brief";
 import { cn } from "@/lib/utils";
@@ -60,7 +58,6 @@ interface BookRecord {
   published_at?: string | null;
   content_tags?: string[] | null;
   brief?: Brief | null;
-  bible?: { text: string } | null;
   /** Guided-build approval ledger: each step key → ISO timestamp the author approved it. */
   journey?: Partial<Record<"brief" | "spine" | "outline" | "voice" | "beats" | "draft", string>> | null;
 }
@@ -108,10 +105,10 @@ const BookDetails = () => {
   // Manuscript leads the work; the brief and all AI tools live behind their own tabs.
   // Persisted to localStorage so the choice survives a refresh.
   const tabKey = `book-tab:${bookSlug}`;
-  type WorkspaceTab = "brief" | "manuscript" | "threads" | "bible" | "ai";
+  type WorkspaceTab = "brief" | "manuscript" | "ai";
   const [activeTab, setActiveTab] = useState<WorkspaceTab>(() => {
     const saved = localStorage.getItem(tabKey);
-    return saved === "brief" || saved === "threads" || saved === "bible" || saved === "ai"
+    return saved === "brief" || saved === "ai"
       ? (saved as WorkspaceTab)
       : "manuscript";
   });
@@ -289,6 +286,29 @@ const BookDetails = () => {
 
     checkAuthAndFetch();
   }, [numericBookId, fetchBookmarkedPage, fetchBookDetails]);
+
+  // Keep book + pages live. Standard: the rendered UI is a projection of server state, so a refresh
+  // is a no-op. A background AI run (a revise build rewriting pages, a generation advancing the
+  // journey) mutates `books`/`pages` server-side; without this the host's one-time snapshot goes
+  // stale and only a full reload corrects it. We refetch (debounced, so a build's burst of page
+  // writes coalesces into one read) rather than patch-in-place, to stay simple and exact.
+  useEffect(() => {
+    if (!numericBookId) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const refetchSoon = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => { void fetchBookDetails(); }, 500);
+    };
+    const channel = supabase
+      .channel(`book_details_${numericBookId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "pages", filter: `book_id=eq.${numericBookId}` }, refetchSoon)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "books", filter: `id=eq.${numericBookId}` }, refetchSoon)
+      .subscribe();
+    return () => {
+      if (timer) clearTimeout(timer);
+      supabase.removeChannel(channel);
+    };
+  }, [numericBookId, fetchBookDetails]);
 
   const handlePublish = () => {
     setIsPublishingDialogOpen(true);
@@ -587,7 +607,7 @@ const BookDetails = () => {
 
             </div>
 
-            {/* Work area — Brief / Manuscript / Threads / Bible / AI, each on its own tab. */}
+            {/* Work area — Brief / Manuscript / AI, each on its own tab. */}
             {canEdit ? (
               <div className="space-y-6">
                 {/* Tabs: Manuscript leads the work; Brief holds the foundation AI tools plan from */}
@@ -633,34 +653,6 @@ const BookDetails = () => {
                         aria-label="Brief not set yet"
                       />
                     )}
-                  </button>
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={activeTab === "threads"}
-                    onClick={() => switchTab("threads")}
-                    className={cn(
-                      "pv-serif -mb-px inline-flex items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-[18px] transition-colors",
-                      activeTab === "threads"
-                        ? "border-foreground text-foreground"
-                        : "border-transparent text-[hsl(var(--pv-text-muted))] hover:text-foreground"
-                    )}
-                  >
-                    Threads
-                  </button>
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={activeTab === "bible"}
-                    onClick={() => switchTab("bible")}
-                    className={cn(
-                      "pv-serif -mb-px inline-flex items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-[18px] transition-colors",
-                      activeTab === "bible"
-                        ? "border-foreground text-foreground"
-                        : "border-transparent text-[hsl(var(--pv-text-muted))] hover:text-foreground"
-                    )}
-                  >
-                    Bible
                   </button>
                   <button
                     type="button"
@@ -711,25 +703,6 @@ const BookDetails = () => {
                         bookSlug={bookSlug}
                         onSaveVersion={() => setIsCommitDialogOpen(true)}
                       />
-                    }
-                  />
-                )}
-
-                {/* Threads tab — open loops & foreshadowing, an artifact parallel to the manuscript */}
-                {activeTab === "threads" && (
-                  <ThreadsSection
-                    bookId={getNumericId(bookSlug)}
-                    manuscriptWordCount={manuscriptWordCount}
-                  />
-                )}
-
-                {/* Bible tab — established canon (characters, world, style) every page must stay true to */}
-                {activeTab === "bible" && (
-                  <BookBibleSection
-                    bookId={getNumericId(bookSlug)}
-                    bible={book.bible?.text ?? null}
-                    onBibleChange={(text) =>
-                      setBook((b) => (b ? { ...b, bible: text ? { text } : null } : b))
                     }
                   />
                 )}

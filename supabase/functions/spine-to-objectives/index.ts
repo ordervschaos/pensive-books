@@ -58,7 +58,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: book, error: bookError } = await userClient
       .from("books")
-      .select("id, name, subtitle, brief, bible, spine, foundations, canon, owner_id")
+      .select("id, name, subtitle, brief, spine, foundations, canon, owner_id")
       .eq("id", bookId)
       .single();
     if (bookError || !book) return json({ error: "Book not found" }, 404);
@@ -77,7 +77,6 @@ Deno.serve(async (req: Request) => {
 
     const bookName = book.name;
     const brief = book.brief as Brief | null;
-    const bible = (book.bible as { text?: string } | null)?.text?.trim() || null;
     const spine = (book.spine as { text?: string } | null)?.text?.trim() || null;
     const foundations = (book.foundations as Foundations | null) ?? null;
     const canon = (book.canon as CanonPacket | null) ?? null;
@@ -98,9 +97,9 @@ Deno.serve(async (req: Request) => {
       // Self-critique loop (Self-Refine): a single forward pass gives the modal, predictable outline.
       // Pressure-test the PLAN against story craft, then revise once — errors here compound into every
       // page, so a dollar of quality at the outline is worth ~10 at the prose.
-      const draft = await draftScaffold(apiKey, model, bookName, brief, bible, spine, foundations, canon, meta);
+      const draft = await draftScaffold(apiKey, model, bookName, brief, spine, foundations, canon, meta);
       const critique = await critiqueScaffold(apiKey, model, bookName, brief, spine, draft, { ...meta, fn: "spine-critique" });
-      const revised = await reviseScaffold(apiKey, model, bookName, brief, bible, spine, foundations, canon, draft, critique, { ...meta, fn: "spine-revise" });
+      const revised = await reviseScaffold(apiKey, model, bookName, brief, spine, foundations, canon, draft, critique, { ...meta, fn: "spine-revise" });
       return { status: "ready", result: { ...revised, critique } };
     });
 
@@ -201,22 +200,21 @@ function textOf(data: { content?: Array<{ type: string; text?: string }> }): str
     .trim();
 }
 
-// The brief/bible/spine context block, shared by the draft and revise prompts.
-function bookContext(bookName: string, brief: Brief | null, bible: string | null, spine: string | null, foundations: Foundations | null, canon: CanonPacket | null): string {
+// The brief/spine context block, shared by the draft and revise prompts.
+function bookContext(bookName: string, brief: Brief | null, spine: string | null, foundations: Foundations | null, canon: CanonPacket | null): string {
   return `BOOK: ${bookName}` +
     (spine ? `\n\nBOOK SPINE (the throughline — the outline must realize this):\n${spine}` : "") +
     `\n\nBRIEF:\n${briefContext(brief)}` +
     (canon ? `\n\nCANON (settled facts from the previous book — honor, never contradict, never retell):\n${canonContext(canon)}` : "") +
-    (foundations ? `\n\nSETTLED FOUNDATIONS (pinned items are immutable constraints):\n${settledContext(foundations)}` : "") +
-    (bible ? `\n\nBOOK BIBLE (established facts — characters, world, style):\n${bible}` : "");
+    (foundations ? `\n\nSETTLED FOUNDATIONS (pinned items are immutable constraints):\n${settledContext(foundations)}` : "");
 }
 
-async function draftScaffold(apiKey: string, model: string, bookName: string, brief: Brief | null, bible: string | null, spine: string | null, foundations: Foundations | null, canon: CanonPacket | null, meta: CallMeta): Promise<Scaffold> {
+async function draftScaffold(apiKey: string, model: string, bookName: string, brief: Brief | null, spine: string | null, foundations: Foundations | null, canon: CanonPacket | null, meta: CallMeta): Promise<Scaffold> {
   const data = await callClaudeApi(apiKey, {
     model,
     max_tokens: 8000,
     system: [{ type: "text", text: SYSTEM + (foundations ? FOUNDATIONS_ADDENDUM : ""), cache_control: { type: "ephemeral" } }],
-    messages: [{ role: "user", content: `${bookContext(bookName, brief, bible, spine, foundations, canon)}\n\nDesign the outline. JSON only.` }],
+    messages: [{ role: "user", content: `${bookContext(bookName, brief, spine, foundations, canon)}\n\nDesign the outline. JSON only.` }],
   }, meta);
   const text = textOf(data);
   if (!text) throw new Error("Claude returned no text content.");
@@ -257,14 +255,14 @@ const REVISE_INSTRUCTION = `
 
 You are REVISING an existing outline to address an editor's critique. Apply EVERY note that improves plot logic, character arc, or genre delivery — change objectives, re-order or add/cut pages, and re-anchor threads as needed. Preserve what already works; this is a revision, not a fresh start. Output the full improved outline as JSON ONLY, in the exact schema above.`;
 
-async function reviseScaffold(apiKey: string, model: string, bookName: string, brief: Brief | null, bible: string | null, spine: string | null, foundations: Foundations | null, canon: CanonPacket | null, draft: Scaffold, critique: string, meta: CallMeta): Promise<Scaffold> {
+async function reviseScaffold(apiKey: string, model: string, bookName: string, brief: Brief | null, spine: string | null, foundations: Foundations | null, canon: CanonPacket | null, draft: Scaffold, critique: string, meta: CallMeta): Promise<Scaffold> {
   const data = await callClaudeApi(apiKey, {
     model,
     max_tokens: 8000,
     system: [{ type: "text", text: SYSTEM + (foundations ? FOUNDATIONS_ADDENDUM : "") + REVISE_INSTRUCTION, cache_control: { type: "ephemeral" } }],
     messages: [{
       role: "user",
-      content: `${bookContext(bookName, brief, bible, spine, foundations, canon)}\n\nDRAFT OUTLINE (JSON):\n${JSON.stringify({ structure: draft.structure, pages: draft.pages, threads: draft.threads, tentpolePlacements: draft.tentpolePlacements ?? [] })}\n\nEDITOR'S CRITIQUE TO ADDRESS:\n${critique}\n\nReturn the revised outline. JSON only.`,
+      content: `${bookContext(bookName, brief, spine, foundations, canon)}\n\nDRAFT OUTLINE (JSON):\n${JSON.stringify({ structure: draft.structure, pages: draft.pages, threads: draft.threads, tentpolePlacements: draft.tentpolePlacements ?? [] })}\n\nEDITOR'S CRITIQUE TO ADDRESS:\n${critique}\n\nReturn the revised outline. JSON only.`,
     }],
   }, meta);
   const text = textOf(data);

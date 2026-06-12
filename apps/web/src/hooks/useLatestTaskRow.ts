@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 
 // useLatestTaskRow — the one client-side watcher behind every AI activity.
 //
-// Every AI task (eval, scan, revise, scaffold, bible, page-gen, write-all) now lives in a DB row
+// Every AI task (eval, scan, revise, scaffold, voice, page-gen, write-all) now lives in a DB row
 // whose `status` marches to a terminal value, written server-side and pushed over Realtime. This
 // hook is the read side: it loads the latest row matching a book (and optional filters), keeps it
 // live as the server advances it, and reports when a row has gone stale — so a refresh or a second

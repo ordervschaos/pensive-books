@@ -104,7 +104,7 @@ export default function AdminSettings() {
         <CardHeader>
           <CardTitle className="text-base">AI Model Tier</CardTitle>
           <CardDescription>
-            Controls which model is used for all AI generation calls (prose, outlines, evaluation, bible).
+            Controls which model is used for all AI generation calls (prose, outlines, evaluation, voice).
             Summaries and thread scans always use the cheap fast model regardless of this setting.
           </CardDescription>
         </CardHeader>

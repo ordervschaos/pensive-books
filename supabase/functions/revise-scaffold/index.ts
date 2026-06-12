@@ -1,8 +1,8 @@
 // revise-scaffold — revise a PROPOSED outline (pre-page-creation) from an author instruction.
 //
 // The preserve path for the scaffold review step: given the current proposal and an instruction,
-// rewrite the outline to honour the ask while keeping what already works. Brief and spine (and
-// bible when set) are always in context — the opposite of spine-to-objectives, which drafts fresh.
+// rewrite the outline to honour the ask while keeping what already works. Brief and spine are
+// always in context — the opposite of spine-to-objectives, which drafts fresh.
 //
 //   client → POST { bookId, scaffold, instruction } → verify edit access → { structure, pages, threads }
 //
@@ -71,11 +71,10 @@ function briefContext(brief: Brief | null): string {
   return lines.length ? lines.join("\n") : "(brief is empty)";
 }
 
-function bookContext(bookName: string, brief: Brief | null, bible: string | null, spine: string | null): string {
+function bookContext(bookName: string, brief: Brief | null, spine: string | null): string {
   return `BOOK: ${bookName}` +
     (spine ? `\n\nBOOK SPINE (the throughline — the outline must realize this):\n${spine}` : "") +
-    `\n\nBRIEF:\n${briefContext(brief)}` +
-    (bible ? `\n\nBOOK BIBLE (established facts):\n${bible}` : "");
+    `\n\nBRIEF:\n${briefContext(brief)}`;
 }
 
 function textOf(data: { content?: Array<{ type: string; text?: string }> }): string {
@@ -151,7 +150,7 @@ Deno.serve(async (req: Request) => {
     if (!scaffold?.pages?.length) return json({ error: "A scaffold with pages is required" }, 400);
 
     const { data: book, error: bookError } = await userClient
-      .from("books").select("id, name, brief, bible, spine, owner_id").eq("id", bookId).single();
+      .from("books").select("id, name, brief, spine, owner_id").eq("id", bookId).single();
     if (bookError || !book) return json({ error: "Book not found" }, 404);
 
     const { data: access } = await userClient
@@ -162,7 +161,6 @@ Deno.serve(async (req: Request) => {
     if (!apiKey) return json({ error: "ANTHROPIC_API_KEY not configured" }, 500);
 
     const brief = book.brief as Brief | null;
-    const bible = (book.bible as { text?: string } | null)?.text?.trim() || null;
     const spine = (book.spine as { text?: string } | null)?.text?.trim() || null;
     const meta: CallMeta = { fn: "revise-scaffold", bookId, userId: user.id };
     const { high: model } = await getActiveModels();
@@ -174,7 +172,7 @@ Deno.serve(async (req: Request) => {
       messages: [{
         role: "user",
         content:
-          `${bookContext(book.name, brief, bible, spine)}\n\nCURRENT OUTLINE (JSON):\n${JSON.stringify({
+          `${bookContext(book.name, brief, spine)}\n\nCURRENT OUTLINE (JSON):\n${JSON.stringify({
             structure: scaffold.structure ?? "",
             pages: scaffold.pages,
             threads: scaffold.threads ?? [],

@@ -33,7 +33,6 @@ interface Book {
   view_invitation_token?: string;
   edit_invitation_token?: string;
   brief?: Brief | null;
-  bible?: { text?: string } | null;
 }
 
 export default function BookEdit() {

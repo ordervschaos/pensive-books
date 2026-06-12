@@ -65,7 +65,7 @@ interface BookRow {
   id: number;
   name: string;
   brief: Brief | null;
-  bible: { text?: string; voice_sample?: string } | null;
+  bible: { voice_sample?: string } | null;
   canon: CanonPacket | null;
 }
 
@@ -130,7 +130,6 @@ export async function beatToProse(client: SupabaseClient, apiKey: string, p: Wri
     beat,
     brief: b.brief,
     voice_sample_used: !!b.bible?.voice_sample?.trim(),
-    bible_used: !!b.bible?.text?.trim(),
     character_states: ctx.characterStates,
     open_loops: ctx.openLoops,
     story_so_far: ctx.storySoFar,
@@ -139,7 +138,7 @@ export async function beatToProse(client: SupabaseClient, apiKey: string, p: Wri
       : null,
   };
   const text = await renderProse(apiKey, models.high, {
-    brief: b.brief, bible: b.bible?.text?.trim() || null, voiceSample: b.bible?.voice_sample?.trim() || null, canon: b.canon, bookName: b.name,
+    brief: b.brief, voiceSample: b.bible?.voice_sample?.trim() || null, canon: b.canon, bookName: b.name,
     level: p.level, mode: "write", objective: (p.objective ?? "").trim(), beat, issues: null, currentText: null,
     pageObjective: p.pageObjective?.trim() || null, precedingText: p.precedingText?.trim() || null,
     objectiveMap: ctx.objectiveMap, storySoFar: ctx.storySoFar, precedingProse: ctx.precedingProse, currentPageLabel: ctx.currentPageLabel, openLoops: ctx.openLoops, characterStates: ctx.characterStates,
@@ -175,7 +174,6 @@ export async function revisePage(client: SupabaseClient, apiKey: string, p: Revi
     issues: p.issues,
     brief: b.brief,
     voice_sample_used: !!b.bible?.voice_sample?.trim(),
-    bible_used: !!b.bible?.text?.trim(),
     character_states: ctx.characterStates,
     open_loops: ctx.openLoops,
     story_so_far: ctx.storySoFar,
@@ -185,7 +183,7 @@ export async function revisePage(client: SupabaseClient, apiKey: string, p: Revi
       : null,
   };
   const text = await renderProse(apiKey, models.high, {
-    brief: b.brief, bible: b.bible?.text?.trim() || null, voiceSample: b.bible?.voice_sample?.trim() || null, canon: b.canon, bookName: b.name,
+    brief: b.brief, voiceSample: b.bible?.voice_sample?.trim() || null, canon: b.canon, bookName: b.name,
     level: "page", mode: "revise", objective: (p.objective ?? "").trim(), beat: null, issues: p.issues, currentText,
     pageObjective: null, precedingText: null,
     objectiveMap: ctx.objectiveMap, storySoFar: ctx.storySoFar, precedingProse: ctx.precedingProse, currentPageLabel: ctx.currentPageLabel, openLoops: ctx.openLoops, characterStates: ctx.characterStates,
@@ -365,7 +363,7 @@ Rules:
 - Write ONLY the prose. No preamble, no titles, no headings (no "#" lines), no markdown
   fences, no meta commentary. The page already has its title — never restate it.
 - Honor the book's brief — genre, audience, tone, premise — as the voice contract.
-- Use the bible, outline, and preceding prose ONLY for consistency — keep names, facts, and
+- Use the outline and preceding prose ONLY for consistency — keep names, facts, and
   tone aligned, and don't repeat what's already been written. Do NOT continue or finish a
   sentence from the preceding prose: begin this unit cleanly with a new sentence.
 - Write a COMPLETE passage that ends at a natural stopping point — a finished sentence.
@@ -381,8 +379,8 @@ Rules:
 - Address EVERY note. Make the concrete change each note calls for — don't merely gesture at it.
 - PRESERVE what works: keep the page's strengths, structure, and the author's voice. Change
   only what the notes require — this is a revision, not a rewrite from scratch.
-- Honor the book's brief (genre, audience, tone, premise) and stay consistent with the bible
-  and the surrounding pages (names, facts, continuity).
+- Honor the book's brief (genre, audience, tone, premise) and stay consistent with the
+  surrounding pages (names, facts, continuity).
 - Return a COMPLETE page that ends on a finished sentence.`;
 
 function briefContext(brief: Brief | null): string {
@@ -399,7 +397,6 @@ function briefContext(brief: Brief | null): string {
 
 interface PromptArgs {
   brief: Brief | null;
-  bible: string | null;
   voiceSample: string | null;
   canon: CanonPacket | null;
   bookName: string;
@@ -443,7 +440,6 @@ function stablePrefix(args: PromptArgs): string {
     args.voiceSample
       ? `\nVOICE SAMPLE (write in THIS voice — match its rhythm, sentence shapes, diction and restraint; this exemplar is a stronger style anchor than any instruction):\n"""\n${args.voiceSample}\n"""\nAvoid AI-tell crutches: ${VOICE_TELLS}.`
       : "",
-    args.bible ? `\nBOOK BIBLE (established facts — characters, world, style; stay strictly consistent):\n${args.bible}` : "",
     args.objectiveMap ? `\nOUTLINE (the book's pages and their objectives, in order):\n${args.objectiveMap}` : "",
   ].filter(Boolean).join("\n");
 }

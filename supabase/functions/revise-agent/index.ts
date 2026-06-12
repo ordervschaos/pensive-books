@@ -143,7 +143,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const { data: book, error: bookError } = await userClient
-      .from("books").select("id, name, brief, bible, owner_id").eq("id", bookId).single();
+      .from("books").select("id, name, brief, owner_id").eq("id", bookId).single();
     if (bookError || !book) return json({ error: "Book not found" }, 404);
     const { data: canEdit } = await userClient.rpc("user_can_edit_book", { _book_id: bookId });
     if (canEdit === false) return json({ error: "Access denied" }, 403);
@@ -164,7 +164,6 @@ Deno.serve(async (req: Request) => {
     const context = buildContext(
       book.name,
       book.brief as Brief | null,
-      (book.bible as { text?: string } | null)?.text?.trim() || null,
       pages as PageRow[],
       (threads as ThreadLite[] | null) ?? [],
       evaluation,
@@ -515,7 +514,7 @@ const TOOLS = [
 // ── System prompt ────────────────────────────────────────────────────────────
 const SYSTEM = `You are the editor's agent for a book-writing studio. A developmental editor has evaluated the author's book; your job is to ADDRESS those notes — like a trusted human collaborator would: investigate first, involve the author in the creative forks, then propose a surgical revision plan.
 
-You are given the brief, the bible, the CURRENT outline (each page with its real [id], type, title, objective, and summary), tracked threads, and the editor's full evaluation.
+You are given the brief, the CURRENT outline (each page with its real [id], type, title, objective, and summary), tracked threads, and the editor's full evaluation.
 
 METHOD — work in this order:
 1. TRIAGE the notes. Group them by root cause: several notes often share one fix (e.g. "the heroine is passive in the climax" + "her core wound is never confronted" may be one new scene). The verdict's priorities ("fix these first") are the highest-leverage changes.
@@ -546,14 +545,12 @@ interface ThreadLite { name: string; status: string; setup_page_id: number | nul
 function buildContext(
   bookName: string,
   brief: Brief | null,
-  bible: string | null,
   pages: PageRow[],
   threads: ThreadLite[],
   evaluation: EvalResult,
 ): string {
   return (
     `BOOK: ${bookName}\n\nBRIEF (the voice contract):\n${briefContext(brief)}` +
-    (bible ? `\n\nBOOK BIBLE (established facts):\n${bible}` : "") +
     `\n\nCURRENT OUTLINE (real ids; read_page for full prose):\n${outlineContext(pages)}` +
     (threads.length ? `\n\nTRACKED THREADS (keep their setups & payoffs intact):\n${threadsContext(threads)}` : "") +
     `\n\nEDITOR'S EVALUATION (the notes to address):\n${evalContext(evaluation)}` +

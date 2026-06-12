@@ -1,6 +1,6 @@
 // task.ts — the single-shot orchestrator helper.
 //
-// Every "fast" AI task (scaffold, bible, one page, a thread scan) follows the evaluate-book shape:
+// Every "fast" AI task (scaffold, voice, one page, a thread scan) follows the evaluate-book shape:
 // insert a row in a running/pending status FIRST, hand the slow work to the background
 // (EdgeRuntime.waitUntil) so the HTTP response returns in ~1s, then write the terminal row when the
 // work finishes — so a closed/refreshed tab loses nothing and learns the result over Realtime.

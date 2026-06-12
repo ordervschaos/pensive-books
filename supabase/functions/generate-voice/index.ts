@@ -2,7 +2,7 @@
 //
 // Style instructions don't produce a voice; an EXEMPLAR does. This drafts three short passages
 // (~300–450 words) that each demonstrate a distinct, committed take on the book's voice — from the
-// brief, spine, and bible. The author picks one; the client saves it to books.bible.voice_sample,
+// brief and spine. The author picks one; the client saves it to books.bible.voice_sample,
 // and every prose render then carries it as a few-shot anchor in the cached stable prefix
 // (generate-unit-core.stablePrefix). Few-shot voice anchoring is the single biggest lever against
 // the "this reads like AI" tell.
@@ -49,7 +49,7 @@ Deno.serve(async (req: Request) => {
     if (!bookId) return json({ error: "bookId is required" }, 400);
 
     const { data: book, error: bookError } = await userClient
-      .from("books").select("id, name, brief, bible, spine, owner_id").eq("id", bookId).single();
+      .from("books").select("id, name, brief, spine, owner_id").eq("id", bookId).single();
     if (bookError || !book) return json({ error: "Book not found" }, 404);
 
     const { data: access } = await userClient
@@ -61,7 +61,6 @@ Deno.serve(async (req: Request) => {
 
     const bookName = book.name as string;
     const brief = book.brief as Brief | null;
-    const bible = (book.bible as { text?: string } | null)?.text?.trim() || null;
     const spine = (book.spine as { text?: string } | null)?.text?.trim() || null;
 
     const service = serviceClient();
@@ -73,7 +72,7 @@ Deno.serve(async (req: Request) => {
     if (insertError || !gen) return json({ error: "Could not start voice samples" }, 500);
 
     runInBackground(service, "book_generations", gen.id, "generate-voice", async () => {
-      const samples = await draftVoiceSamples(apiKey, bookName, brief, bible, spine, { fn: "generate-voice", bookId, taskTable: "book_generations", taskId: gen.id, userId: user.id });
+      const samples = await draftVoiceSamples(apiKey, bookName, brief, spine, { fn: "generate-voice", bookId, taskTable: "book_generations", taskId: gen.id, userId: user.id });
       return { status: "ready", result: { samples } };
     });
 
@@ -85,12 +84,12 @@ Deno.serve(async (req: Request) => {
 });
 
 // ── Prompt ───────────────────────────────────────────────────────────────────
-const SYSTEM = `You are a literary stylist. From a book's brief, spine, and bible, write THREE distinct candidate VOICE SAMPLES — short passages of finished prose that each commit to a different, specific take on how this book could sound. The author will pick one to anchor the whole book's voice.
+const SYSTEM = `You are a literary stylist. From a book's brief and spine, write THREE distinct candidate VOICE SAMPLES — short passages of finished prose that each commit to a different, specific take on how this book could sound. The author will pick one to anchor the whole book's voice.
 
 Each sample:
 - 300–450 words of actual PROSE from somewhere in the book (an opening, a charged moment) — not a description of the voice, the voice itself.
 - A DISTINCT register from the other two (e.g. spare vs. lush; wry vs. earnest; close-third vs. first-person) so the choice is real.
-- True to the genre, audience, and tone in the brief; consistent with any bible facts.
+- True to the genre, audience, and tone in the brief.
 - Voice-forward: rhythm, diction, sentence shapes, restraint. Show range within a committed style.
 - NO clichés or AI tells ("a testament to", "in a world where", "little did they know", "sent shivers down", "couldn't help but", tidy moral endings).
 
@@ -112,7 +111,7 @@ function briefContext(brief: Brief | null): string {
   return lines.length ? lines.join("\n") : "(brief is empty — infer a sensible literary voice)";
 }
 
-async function draftVoiceSamples(apiKey: string, bookName: string, brief: Brief | null, bible: string | null, spine: string | null, meta: CallMeta): Promise<string[]> {
+async function draftVoiceSamples(apiKey: string, bookName: string, brief: Brief | null, spine: string | null, meta: CallMeta): Promise<string[]> {
   const { high: model } = await getActiveModels();
   const data = await callClaudeApi(apiKey, {
     model,
@@ -123,7 +122,6 @@ async function draftVoiceSamples(apiKey: string, bookName: string, brief: Brief 
       content: `BOOK: ${bookName}` +
         (spine ? `\n\nSPINE (the throughline):\n${spine}` : "") +
         `\n\nBRIEF:\n${briefContext(brief)}` +
-        (bible ? `\n\nBIBLE (facts to stay consistent with):\n${bible}` : "") +
         `\n\nWrite the three voice samples. JSON only.`,
     }],
   }, meta);

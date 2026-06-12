@@ -263,7 +263,7 @@ export function ReviseWithAI({
     Promise.all([
       supabase.from("book_revisions").select(ROW_COLS).eq("book_id", bookId)
         .order("created_at", { ascending: false }).limit(1).maybeSingle(),
-      supabase.from("books").select("brief, bible").eq("id", bookId).single(),
+      supabase.from("books").select("brief").eq("id", bookId).single(),
       supabase.from("pages")
         .select("id, title, page_type, page_index")
         .eq("book_id", bookId).eq("archived", false)

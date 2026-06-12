@@ -90,7 +90,7 @@ Deno.serve(async (req: Request) => {
         threadIds?: number[] | null; // null=all, []=none, [ids]=subset
       };
     };
-    // Brief and bible are always included; only page depth and thread selection are variable.
+    // Brief is always included; only page depth and thread selection are variable.
     const threadIdFilter = ctx?.threadIds ?? null;
     const pageCtxArr = ctx?.pageCtx ?? null;
     if (!bookId) return json({ error: "bookId is required" }, 400);
@@ -102,7 +102,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: book, error: bookError } = await userClient
       .from("books")
-      .select("id, name, brief, bible, owner_id")
+      .select("id, name, brief, owner_id")
       .eq("id", bookId)
       .single();
     if (bookError || !book) return json({ error: "Book not found" }, 404);
@@ -162,7 +162,6 @@ Deno.serve(async (req: Request) => {
       apiKey,
       book.name,
       book.brief as Brief | null,
-      (book.bible as { text?: string } | null)?.text?.trim() || null,
       pages as PageRow[],
       filteredThreads,
       hasEval ? evaluation! : null,
@@ -183,7 +182,7 @@ Deno.serve(async (req: Request) => {
 // ── Prompt ───────────────────────────────────────────────────────────────────
 const SYSTEM = `You are a book doctor revising an EXISTING book based on the author's instruction and/or a developmental editor's evaluation. You work in OBJECTIVES (what each page must achieve), not prose.
 
-You are given: the brief, the bible, the CURRENT outline (each page with its real [id], type, title, and objective), and — depending on the request — an author's instruction and/or a full editorial evaluation. The AUTHOR'S INSTRUCTION, when present, is the primary directive: do what it asks. The evaluation is the editor's diagnosis to act on. Diagnose the STRUCTURAL changes needed — fulfilling the author's intent, plus problems the evaluation raises (passive protagonist, missing obligatory/“fix these first” scenes, abandoned setups, a sagging middle, redundancy) — and fix them at the level of objectives and structure.
+You are given: the brief, the CURRENT outline (each page with its real [id], type, title, and objective), and — depending on the request — an author's instruction and/or a full editorial evaluation. The AUTHOR'S INSTRUCTION, when present, is the primary directive: do what it asks. The evaluation is the editor's diagnosis to act on. Diagnose the STRUCTURAL changes needed — fulfilling the author's intent, plus problems the evaluation raises (passive protagonist, missing obligatory/“fix these first” scenes, abandoned setups, a sagging middle, redundancy) — and fix them at the level of objectives and structure.
 
 Produce a REVISION PLAN: the book's NEW page list in final reading order, plus the existing pages to delete. For each page entry use one op:
 - "keep":     unchanged. (ref = its id; carry its title/objective forward)
@@ -221,7 +220,7 @@ Output JSON ONLY (no prose, no fences), exactly:
 // author to re-render (they get flagged "out of sync"). No "revise", no "rebuild".
 const SYSTEM_PLAN_ONLY = `You are a book architect revising an EXISTING book's OUTLINE based on the author's instruction. You work purely in the PLAN: each page's objective (what it must achieve) and the book's structure (which pages exist, and in what order). You do NOT touch prose — pages whose objective changes will be re-rendered later by the author.
 
-You are given: the brief, the bible, the CURRENT outline (each page with its real [id], type, title, and objective), and the author's instruction (the primary directive). Make the structural and objective changes the instruction asks for, and only those.
+You are given: the brief, the CURRENT outline (each page with its real [id], type, title, and objective), and the author's instruction (the primary directive). Make the structural and objective changes the instruction asks for, and only those.
 
 Produce a REVISION PLAN: the book's NEW page list in final reading order, plus the existing pages to delete. For each page entry use one op:
 - "keep":     unchanged. (ref = its id; carry its title/objective forward)
@@ -355,7 +354,6 @@ async function callClaude(
   apiKey: string,
   bookName: string,
   brief: Brief | null,
-  bible: string | null,
   pages: PageRow[],
   threads: ThreadLite[],
   evaluation: EvalResult | null,
@@ -377,7 +375,6 @@ async function callClaude(
         role: "user",
         content:
           `BOOK: ${bookName}\n\nBRIEF (the voice contract):\n${briefContext(brief)}` +
-          (bible ? `\n\nBOOK BIBLE (established facts):\n${bible}` : "") +
           `\n\nCURRENT OUTLINE (edit against these real ids):\n${outlineContext(pages, pageCtxMap, contentMap)}` +
           (threads.length ? `\n\nTRACKED THREADS (keep their setups & payoffs intact):\n${threadsContext(threads)}` : "") +
           (instruction ? `\n\nAUTHOR'S INSTRUCTION (primary directive):\n${instruction}` : "") +
