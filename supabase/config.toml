@@ -343,6 +343,9 @@ verify_jwt = false
 [functions.build-revision]
 verify_jwt = false
 
+[functions.revise-agent]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

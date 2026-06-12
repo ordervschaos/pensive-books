@@ -3,11 +3,13 @@
 // gate chrome so the nine steps read as one game-like progression. The per-step tool bodies wrap the
 // existing, backend-wired leaf tools (the durable runs, the serial beat picker, the evaluator …) — the
 // redesign reshapes the surface around them without re-deriving their logic.
+import { useState } from "react";
 import { Lock, Send } from "lucide-react";
 import { AutoRevise } from "../AutoRevise";
 import { AIActionRow } from "../AIActionRow";
 import { BookBriefSection } from "../BookBriefSection";
-import { BookEvaluationSection } from "../BookEvaluationSection";
+import { BookEvaluationSection, type EvalResult } from "../BookEvaluationSection";
+import { EditorAgent } from "../EditorAgent";
 import { ReviseWithAI, type RevisionPrefill } from "../ReviseWithAI";
 import type { Brief } from "@/lib/brief";
 import type { Foundations } from "@/lib/foundations";
@@ -38,6 +40,7 @@ interface StageProps {
   onVoiceStatus: (v: boolean) => void;
   onReadStatus: (v: boolean) => void;
   onRevisePrefill: (p: RevisionPrefill | null) => void;
+  onSelectStep: (k: StepKey) => void;
   onPublish: () => void;
   onSelectPage: (pageId: number) => void;
 }
@@ -67,6 +70,9 @@ function StepView(props: StageProps & { stepKey: StepKey }) {
   const { model, stepKey: k, bookId } = props;
   const status = model.statusOf(k);
   const approving = props.approving === k;
+  // "Address all the editor's notes" hands the evaluation to the editor's agent (same prefill
+  // pattern as ReviseWithAI: set → consumed). Lives here so the read step owns it.
+  const [agentStart, setAgentStart] = useState<EvalResult | null>(null);
 
   if (status === "locked") {
     const reason =
@@ -136,7 +142,20 @@ function StepView(props: StageProps & { stepKey: StepKey }) {
       )}
       {k === "read" && (
         <div className="space-y-4">
-          <BookEvaluationSection bookId={bookId} onStatusChange={props.onReadStatus} onRevise={(evaluation, instruction) => props.onRevisePrefill({ evaluation, instruction })} />
+          {/* Per-note "Revise this" prefills the revise form; the whole-report button starts the
+              editor's agent, which investigates + asks before proposing a plan. */}
+          <BookEvaluationSection
+            bookId={bookId}
+            onStatusChange={props.onReadStatus}
+            onRevise={(evaluation, instruction) =>
+              instruction ? props.onRevisePrefill({ evaluation, instruction }) : setAgentStart(evaluation)}
+          />
+          <EditorAgent
+            bookId={bookId}
+            start={agentStart}
+            onStartConsumed={() => setAgentStart(null)}
+            onReviewPlan={() => props.onSelectStep("revise")}
+          />
           <AutoRevise bookId={bookId} onRevised={props.onChanged} />
         </div>
       )}

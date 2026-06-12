@@ -395,9 +395,10 @@ function Report({ bookId, result, onRevise }: { bookId: number; result: EvalResu
         ))}
       </div>
 
-      {/* The single "do it all" button, at the end of the report — hand the whole evaluation to
-          the revise architect, which plans a revision across every note. Per-note "Revise this"
-          stays inline above for addressing one thing at a time. */}
+      {/* The single "do it all" button, at the end of the report — onRevise with NO instruction
+          means "address everything": the studio hands the evaluation to the editor's agent
+          (EditorAgent), which investigates and asks before proposing a plan. Per-note "Revise
+          this" stays inline above for addressing one thing at a time (prefills the revise form). */}
       {onRevise && (
         <button
           type="button"

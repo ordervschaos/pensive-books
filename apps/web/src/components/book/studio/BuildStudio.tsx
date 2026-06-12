@@ -152,9 +152,10 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
         onRevisePrefill={(p) => {
           setRevisionPrefill(p);
           // The prefill's only consumer (ReviseWithAI) renders on the revise step — jump there,
-          // or "Address all the editor's notes" on the read step does nothing visible.
+          // or a "Revise this" click on the read step does nothing visible.
           if (p) setSelected({ kind: "step", step: "revise" });
         }}
+        onSelectStep={(k) => setSelected({ kind: "step", step: k })}
         onPublish={onPublish}
         onSelectPage={(pageId) => setSelected({ kind: "page", pageId })}
       />
