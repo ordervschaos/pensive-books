@@ -13,7 +13,7 @@ import { serviceClient } from "./task.ts";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions";
-const MULE_ROUTER_URL = "https://api.mulerouter.ai/v1/chat/completions";
+const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
 export interface CallMeta {
   fn: string;                       // logical step name recorded on the log row
@@ -69,8 +69,8 @@ export async function callClaude(
         body: JSON.stringify(anthropicToOpenAI(body)),
       });
     } else if (isQwen) {
-      const muleKey = Deno.env.get("MULE_ROUTER_API_KEY") ?? apiKey;
-      res = await fetch(MULE_ROUTER_URL, {
+      const muleKey = Deno.env.get("OPENROUTER_API_KEY") ?? apiKey;
+      res = await fetch(OPENROUTER_URL, {
         method: "POST",
         signal: opts?.signal,
         headers: {
@@ -92,7 +92,7 @@ export async function callClaude(
       });
     }
     raw = await res.text();
-    if (!res.ok) errMsg = `${isDeepSeek ? "DeepSeek" : isQwen ? "Qwen" : "Claude"} API ${res.status}: ${raw.slice(0, 500)}`;
+    if (!res.ok) errMsg = `${isDeepSeek ? "DeepSeek" : isQwen ? "Qwen/OpenRouter" : "Claude"} API ${res.status}: ${raw.slice(0, 500)}`;
     else {
       const parsed = JSON.parse(raw);
       data = (isDeepSeek || isQwen) ? openAIToAnthropic(parsed) : parsed;

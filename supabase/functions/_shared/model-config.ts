@@ -12,7 +12,7 @@ const TIER_MODELS: Record<ModelTier, { high: string; low: string }> = {
   opus:     { high: "claude-opus-4-8",          low: "claude-haiku-4-5-20251001" },
   sonnet:   { high: "claude-sonnet-4-6",         low: "claude-haiku-4-5-20251001" },
   deepseek: { high: "deepseek-chat",             low: "deepseek-chat" },
-  qwen:     { high: "qwen3-max",                 low: "qwen3-flash" },
+  qwen:     { high: "qwen/qwen3-235b-a22b",       low: "qwen/qwen3-8b" },
 };
 
 export async function getActiveModels(): Promise<{ high: string; low: string }> {
