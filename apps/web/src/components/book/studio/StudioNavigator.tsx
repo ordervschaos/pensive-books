@@ -11,12 +11,14 @@ interface NavigatorProps {
   model: StudioModel;
   selection: Selection;
   collapsed: Record<string, boolean>;
+  /** The step with a live AI run, marked "● running" so the surface follows server truth (no refresh). */
+  runningStep?: StepKey | null;
   onSelectStep: (k: StepKey) => void;
   onSelectPage: (pageId: number) => void;
   onToggleMovement: (key: string) => void;
 }
 
-export function StudioNavigator({ model, selection, collapsed, onSelectStep, onSelectPage, onToggleMovement }: NavigatorProps) {
+export function StudioNavigator({ model, selection, collapsed, runningStep, onSelectStep, onSelectPage, onToggleMovement }: NavigatorProps) {
   const stepNo = model.buildSteps.findIndex((k) => model.statusOf(k) === "active" || model.statusOf(k) === "awaiting");
   const stepLabel = stepNo === -1 ? model.buildSteps.length : stepNo + 1;
 
@@ -25,11 +27,11 @@ export function StudioNavigator({ model, selection, collapsed, onSelectStep, onS
       <section className="relative">
         <Head left="Build" right={`step ${stepLabel} / 9`} />
         {model.buildSteps.map((k, i) => (
-          <StepItem key={k} k={k} n={i + 1} model={model} selection={selection} onSelect={onSelectStep} />
+          <StepItem key={k} k={k} n={i + 1} model={model} selection={selection} running={runningStep === k} onSelect={onSelectStep} />
         ))}
         <div className="mx-2.5 my-1.5 h-px bg-[hsl(var(--pv-border-soft))]" />
         {POST_STEPS.map((k, i) => (
-          <StepItem key={k} k={k} n={i + 7} model={model} selection={selection} onSelect={onSelectStep} />
+          <StepItem key={k} k={k} n={i + 7} model={model} selection={selection} running={runningStep === k} onSelect={onSelectStep} />
         ))}
       </section>
 
@@ -98,7 +100,7 @@ function Head({ left, right }: { left: string; right: string }) {
   );
 }
 
-function StepItem({ k, n, model, selection, onSelect }: { k: StepKey; n: number; model: StudioModel; selection: Selection; onSelect: (k: StepKey) => void }) {
+function StepItem({ k, n, model, selection, running, onSelect }: { k: StepKey; n: number; model: StudioModel; selection: Selection; running?: boolean; onSelect: (k: StepKey) => void }) {
   const status = model.statusOf(k);
   const dot = model.dotOf(k);
   const locked = status === "locked";
@@ -124,9 +126,18 @@ function StepItem({ k, n, model, selection, onSelect }: { k: StepKey; n: number;
       >
         {STEP_LABEL[k]}
       </span>
-      {status === "active" && <span className="ml-auto pv-mono text-[9px] uppercase tracking-[0.12em] text-[hsl(var(--pv-accent))]">now</span>}
-      {status === "awaiting" && <span className="ml-auto pv-mono text-[9px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-muted))]">ready</span>}
-      {status === "done" && <ChevronRight className="ml-auto h-3.5 w-3.5 text-[hsl(var(--pv-text-faint))]" />}
+      {/* A live run takes the right slot — it's the truest "where the work is" signal. */}
+      {running ? (
+        <span className="ml-auto flex items-center gap-1.5 pv-mono text-[9px] uppercase tracking-[0.12em] text-[hsl(var(--pv-accent))]">
+          <span className="h-1.5 w-1.5 rounded-full bg-[hsl(var(--pv-accent))] animate-pulse" />running
+        </span>
+      ) : (
+        <>
+          {status === "active" && <span className="ml-auto pv-mono text-[9px] uppercase tracking-[0.12em] text-[hsl(var(--pv-accent))]">now</span>}
+          {status === "awaiting" && <span className="ml-auto pv-mono text-[9px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-muted))]">ready</span>}
+          {status === "done" && <ChevronRight className="ml-auto h-3.5 w-3.5 text-[hsl(var(--pv-text-faint))]" />}
+        </>
+      )}
     </button>
   );
 }

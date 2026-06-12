@@ -20,6 +20,7 @@ import {
 } from "./studioModel";
 import { StudioNavigator } from "./StudioNavigator";
 import { StudioStage } from "./StudioStage";
+import { useActiveStep } from "./useActiveStep";
 
 export type Selection = { kind: "step"; step: StepKey } | { kind: "page"; pageId: number };
 
@@ -39,7 +40,16 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
   const { toast } = useToast();
 
   // Explicit selection (null = follow the derived current step). Set on any click; advanced on approve.
-  const [selected, setSelected] = useState<Selection | null>(null);
+  // Persisted per book so a refresh keeps you on the step/page you were viewing (refresh = no-op).
+  const selKey = `studio-sel:${bookId}`;
+  const [selected, setSelected] = useState<Selection | null>(() => {
+    try {
+      const raw = localStorage.getItem(selKey);
+      return raw ? (JSON.parse(raw) as Selection) : null;
+    } catch {
+      return null;
+    }
+  });
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [approving, setApproving] = useState<StepKey | null>(null);
   const [revisionPrefill, setRevisionPrefill] = useState<RevisionPrefill | null>(null);
@@ -88,6 +98,31 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
 
   const selection: Selection = selected ?? { kind: "step", step: model.current };
 
+  // Persist the explicit selection so a reload reopens it; clearing it (back to derived current)
+  // wipes the key.
+  useEffect(() => {
+    try {
+      if (selected) localStorage.setItem(selKey, JSON.stringify(selected));
+      else localStorage.removeItem(selKey);
+    } catch { /* storage unavailable — selection just won't persist */ }
+  }, [selected, selKey]);
+
+  // Drop a stale persisted selection: a page a later build archived, or a step that's now locked.
+  // Without this a reload could reopen something the manuscript no longer has. Guard on readiness —
+  // `foundations === undefined` means the studio's own data hasn't loaded; `pages.length === 0` means
+  // the host hasn't delivered the manuscript yet — so we don't wipe a valid selection mid-load.
+  useEffect(() => {
+    if (!selected || foundations === undefined) return;
+    if (selected.kind === "page") {
+      if (pages.length > 0 && !model.pageById(selected.pageId)) setSelected(null);
+    } else if (model.statusOf(selected.step) === "locked") {
+      setSelected(null);
+    }
+  }, [selected, model, foundations, pages.length]);
+
+  // Which step has a live AI run — the Navigator marks it "● running" (a badge, not auto-navigation).
+  const runningStep = useActiveStep(bookId);
+
   const approve = async (k: StepKey) => {
     if (approving) return;
     setApproving(k);
@@ -130,6 +165,7 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
         model={model}
         selection={selection}
         collapsed={collapsed}
+        runningStep={runningStep}
         onSelectStep={(k) => setSelected({ kind: "step", step: k })}
         onSelectPage={(pageId) => setSelected({ kind: "page", pageId })}
         onToggleMovement={(key) => setCollapsed((c) => ({ ...c, [key]: !c[key] }))}
