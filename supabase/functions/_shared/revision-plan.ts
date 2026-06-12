@@ -48,8 +48,23 @@ export function sanitizePlan(
 
   const seen = new Set<number>();
   const pages: PlanPage[] = [];
+  const deletes: { ref: number; why?: string }[] = [];
+  const deletedIds = new Set<number>();
+  const addDelete = (ref: number, why?: unknown) => {
+    if (deletedIds.has(ref)) return;
+    deletedIds.add(ref);
+    deletes.push({ ref, why: typeof why === "string" ? why.trim() : "" });
+  };
+
   for (const entry of parsed.pages) {
-    const p = entry as Partial<PlanPage>;
+    const p = entry as Partial<Omit<PlanPage, "op">> & { op?: string };
+    // Models sometimes mark a deletion inline (op: "delete") instead of (or as well as) listing it
+    // in deletes[]. Honor it — coercing it to "keep" would silently swallow the deletion.
+    if (p.op === "delete") {
+      const ref = typeof p.ref === "number" ? p.ref : null;
+      if (ref != null && validIds.has(ref) && !seen.has(ref)) addDelete(ref, p.why);
+      continue;
+    }
     let op = ops.has(p.op as string) ? (p.op as PlanPage["op"]) : "keep";
     // Plan-only edits the outline, never prose: a "revise" collapses to a no-op "keep".
     if (planOnly && op === "revise") op = "keep";
@@ -81,14 +96,19 @@ export function sanitizePlan(
     });
   }
 
-  // Deletes: only real ids, not already carried.
-  const deletes: { ref: number; why?: string }[] = [];
-  const deletedIds = new Set<number>();
+  // Deletes: only real ids. An explicit deletes[] entry beats a plain "keep" carry (the model
+  // carried the page out of "never drop silently" caution but clearly wants it gone); an active
+  // op (revise/retarget) wins over the delete — the model did real work on that page.
   for (const d of Array.isArray(parsed.deletes) ? parsed.deletes : []) {
     const ref = typeof (d as { ref?: number }).ref === "number" ? (d as { ref: number }).ref : null;
-    if (ref == null || !validIds.has(ref) || seen.has(ref) || deletedIds.has(ref)) continue;
-    deletedIds.add(ref);
-    deletes.push({ ref, why: typeof (d as { why?: string }).why === "string" ? (d as { why: string }).why.trim() : "" });
+    if (ref == null || !validIds.has(ref) || deletedIds.has(ref)) continue;
+    if (seen.has(ref)) {
+      const i = pages.findIndex((pg) => pg.ref === ref);
+      if (i === -1 || pages[i].op !== "keep") continue;
+      pages.splice(i, 1);
+      seen.delete(ref);
+    }
+    addDelete(ref, (d as { why?: string }).why);
   }
 
   // Guardrail: any existing page neither carried nor deleted is appended as keep.

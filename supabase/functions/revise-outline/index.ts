@@ -15,6 +15,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { callClaude as callClaudeApi } from "../_shared/claude.ts";
 import { getActiveModels } from "../_shared/model-config.ts";
+import { sanitizePlan } from "../_shared/revision-plan.ts";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -393,11 +394,8 @@ async function callClaude(
   return parsePlan(text, pages, planOnly);
 }
 
-// Parse + sanitize the model's plan, enforcing the safety guardrails:
-//  - only real ids; coerce shapes; default unknown ops to "keep".
-//  - every existing page must be carried (in pages[]) or deleted — any the model omitted
-//    are appended as "keep" so a page is NEVER silently dropped.
-//  - de-duplicate refs (first wins).
+// Extract the plan JSON from the model's text, then run it through the shared sanitizer
+// (_shared/revision-plan.ts) — the single source of truth for the plan guardrails.
 function parsePlan(text: string, existing: PageRow[], planOnly = false): RevisionPlan {
   let raw = text.trim();
   const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -414,71 +412,5 @@ function parsePlan(text: string, existing: PageRow[], planOnly = false): Revisio
   } catch (e) {
     throw new Error(`Could not parse revision plan JSON: ${(e as Error).message}`);
   }
-  if (!Array.isArray(parsed.pages)) throw new Error("Revision plan has no pages.");
-
-  const byId = new Map(existing.map((p) => [p.id, p]));
-  const validIds = new Set(existing.map((p) => p.id));
-  const ops = new Set(["keep", "revise", "retarget", "add"]);
-
-  const seen = new Set<number>();
-  const pages: PlanPage[] = [];
-  for (const entry of parsed.pages) {
-    const p = entry as Partial<PlanPage>;
-    let op = ops.has(p.op as string) ? (p.op as PlanPage["op"]) : "keep";
-    // Plan-only edits the outline, never prose: a "revise" (prose-fix, no objective change) has no
-    // place here, so collapse it to a no-op "keep". rebuild hints are dropped below.
-    if (planOnly && op === "revise") op = "keep";
-    if (op === "add") {
-      if (typeof p.title !== "string" || !p.title.trim()) continue;
-      pages.push({
-        ref: null,
-        op: "add",
-        pageType: p.pageType === "section" ? "section" : "text",
-        title: p.title.trim(),
-        objective: (p.objective ?? "").trim(),
-        why: typeof p.why === "string" ? p.why.trim() : "",
-      });
-      continue;
-    }
-    // existing-page op: must reference a real, not-yet-seen id
-    const ref = typeof p.ref === "number" ? p.ref : null;
-    if (ref == null || !validIds.has(ref) || seen.has(ref)) continue;
-    seen.add(ref);
-    const cur = byId.get(ref)!;
-    pages.push({
-      ref,
-      op,
-      pageType: cur.page_type === "section" ? "section" : "text",
-      title: typeof p.title === "string" && p.title.trim() ? p.title.trim() : (cur.title ?? ""),
-      objective: (p.objective ?? cur.metadata?.objective ?? "").trim(),
-      rebuild: planOnly ? undefined : p.rebuild === "rewrite" ? "rewrite" : p.rebuild === "revise" ? "revise" : undefined,
-      why: typeof p.why === "string" ? p.why.trim() : "",
-    });
-  }
-
-  // Deletes: only real ids, not already carried.
-  const deletes: { ref: number; why?: string }[] = [];
-  const deletedIds = new Set<number>();
-  for (const d of Array.isArray(parsed.deletes) ? parsed.deletes : []) {
-    const ref = typeof (d as { ref?: number }).ref === "number" ? (d as { ref: number }).ref : null;
-    if (ref == null || !validIds.has(ref) || seen.has(ref) || deletedIds.has(ref)) continue;
-    deletedIds.add(ref);
-    deletes.push({ ref, why: typeof (d as { why?: string }).why === "string" ? (d as { why: string }).why.trim() : "" });
-  }
-
-  // Guardrail: any existing page neither carried nor deleted is appended as keep.
-  for (const p of existing) {
-    if (!seen.has(p.id) && !deletedIds.has(p.id)) {
-      pages.push({
-        ref: p.id,
-        op: "keep",
-        pageType: p.page_type === "section" ? "section" : "text",
-        title: p.title ?? "",
-        objective: (p.metadata?.objective ?? "").trim(),
-        why: "",
-      });
-    }
-  }
-
-  return { summary: String(parsed.summary ?? "").trim(), pages, deletes, planOnly: planOnly || undefined };
+  return sanitizePlan(parsed, existing, planOnly);
 }

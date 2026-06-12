@@ -8,14 +8,6 @@ import { NotifyWhenDone } from "./NotifyWhenDone";
 import { notify as fireNotification } from "@/lib/notify";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { buildDoc } from "@/lib/inlineMarkdown";
@@ -199,7 +191,6 @@ export function ReviseWithAI({
   // pages are left flagged "out of sync" to re-render later. Set by the "Revise the outline" entry.
   const [planOnly, setPlanOnly] = useState(false);
   const [attachedEval, setAttachedEval] = useState<EvalResult | null>(null);
-  const [reviewOpen, setReviewOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [contextMeta, setContextMeta] = useState<ContextMeta | null>(null);
   // per-page depth: only pages wanting extra context appear here; absent = outline only
@@ -382,7 +373,6 @@ export function ReviseWithAI({
       await patch(current.id, { plan, status: "awaiting_review" });
       const next = { ...current, plan, status: "awaiting_review" as const };
       setRow(next);
-      setReviewOpen(true);
     } catch (e) {
       const msg = String((e as Error)?.message ?? e);
       await patch(current.id, { status: "error", error: msg }).catch(() => {});
@@ -646,7 +636,6 @@ export function ReviseWithAI({
 
   const approve = async () => {
     if (!row) return;
-    setReviewOpen(false);
     await patch(row.id, { status: "building" }).catch(() => {});
     const next = { ...row, status: "building" as const };
     setRow(next);
@@ -679,7 +668,6 @@ export function ReviseWithAI({
   // Discard a parked plan (awaiting_review): no worker is looping, so stopRun cancels it directly.
   const discard = async () => {
     if (!row) return;
-    setReviewOpen(false);
     await stopRun("book_revisions", row.id, row.status).catch(() => {});
     setRow((r) => (r ? { ...r, status: "cancelled" } : r));
   };
@@ -820,17 +808,19 @@ export function ReviseWithAI({
         </>
       )}
 
-      {/* Plan ready -- review inline summary; the dialog holds the detail. */}
-      {!loading && active && row!.status === "awaiting_review" && (
-        <div className="mt-3 flex items-center justify-between gap-3">
-          <p className="pv-serif text-[14.5px] leading-relaxed text-foreground">
-            A revision plan is ready -- {changeCount} change{changeCount === 1 ? "" : "s"} across the book.
-          </p>
-          <div className="flex gap-2">
-            <Button variant="ghost" onClick={discard}>Discard</Button>
-            <Button onClick={() => setReviewOpen(true)}>{reviewPlanOnly ? "Review changes" : "Review & build"}</Button>
-          </div>
-        </div>
+      {/* Plan ready -- the full plan is reviewed inline (no modal). */}
+      {!loading && active && row!.status === "awaiting_review" && row!.plan && counts && (
+        <PlanReview
+          plan={row!.plan}
+          counts={counts}
+          changeCount={changeCount}
+          planOnly={reviewPlanOnly}
+          busy={busy}
+          notify={notify}
+          onToggleNotify={onToggleNotify}
+          onApprove={approve}
+          onDiscard={discard}
+        />
       )}
 
       {/* Building -- live per-page status, survives reload, cancellable + resumable. */}
@@ -846,75 +836,99 @@ export function ReviseWithAI({
           onToggleNotify={onToggleNotify}
         />
       )}
+    </section>
+  );
+}
 
-      {/* Review dialog (also reachable from the inline "Review & build"). */}
-      <Dialog open={reviewOpen} onOpenChange={(v) => !busy && setReviewOpen(v)}>
-        <DialogContent className="max-w-2xl max-h-[82vh] overflow-hidden flex flex-col">
-          <DialogHeader>
-            <DialogTitle>{reviewPlanOnly ? "Review the outline changes" : "Review the revision plan"}</DialogTitle>
-            <DialogDescription>{row?.plan?.summary}</DialogDescription>
-          </DialogHeader>
+// PlanReview — the proposed revision plan, reviewed inline (no modal). The author reads the
+// per-page changelog, then discards or builds. The build can run for minutes, so a "notify me"
+// opt-in rides alongside the actions.
+function PlanReview({
+  plan,
+  counts,
+  changeCount,
+  planOnly,
+  busy,
+  notify,
+  onToggleNotify,
+  onApprove,
+  onDiscard,
+}: {
+  plan: RevisionPlan;
+  counts: Record<PlanPage["op"], number>;
+  changeCount: number;
+  planOnly: boolean;
+  busy: boolean;
+  notify: boolean;
+  onToggleNotify: (enabled: boolean) => void;
+  onApprove: () => void;
+  onDiscard: () => void;
+}) {
+  return (
+    <div className="mt-4 space-y-3 border-t border-[hsl(var(--pv-border-soft))] pt-4">
+      <div>
+        <div className="pv-eyebrow">{planOnly ? "Outline changes proposed" : "Revision plan proposed"}</div>
+        {plan.summary && (
+          <p className="pv-serif mt-1.5 text-[14.5px] leading-relaxed text-foreground">{plan.summary}</p>
+        )}
+      </div>
 
-          {counts && (
-            <div className="pv-mono flex flex-wrap gap-x-4 gap-y-1 text-[11px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-faint))]">
-              <span>{counts.add} new</span>
-              <span>{counts.retarget} retargeted</span>
-              {!reviewPlanOnly && <span>{counts.revise} revised</span>}
-              <span>{row?.plan?.deletes.length ?? 0} deleted</span>
-              <span>{counts.keep} kept</span>
-            </div>
-          )}
+      <div className="pv-mono flex flex-wrap gap-x-4 gap-y-1 text-[11px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-faint))]">
+        <span>{counts.add} new</span>
+        <span>{counts.retarget} retargeted</span>
+        {!planOnly && <span>{counts.revise} revised</span>}
+        <span>{plan.deletes.length} deleted</span>
+        <span>{counts.keep} kept</span>
+      </div>
 
-          <div className="-mx-2 flex-1 space-y-1 overflow-y-auto px-2">
-            {row?.plan?.pages.map((p, i) => (
-              <div key={i} className={p.pageType === "section" ? "pt-2" : "pl-3"}>
-                <div className="flex items-baseline justify-between gap-3">
-                  <span className={`pv-serif text-[14px] ${p.pageType === "section" ? "font-semibold" : ""} text-foreground`}>
-                    {p.pageType === "section" ? "# " : ""}{p.title || "(untitled)"}
-                  </span>
-                  <span className={`pv-mono shrink-0 text-[10px] uppercase tracking-[0.14em] ${OP_TONE[p.op]}`}>
-                    {OP_LABEL[p.op]}{p.op === "retarget" && p.rebuild ? ` · ${p.rebuild}` : ""}
-                  </span>
-                </div>
-                {(p.op === "retarget" || p.op === "add") && p.objective && (
-                  <div className="pv-serif text-[12.5px] italic text-[hsl(var(--pv-text-muted))]">◎ {p.objective}</div>
-                )}
-                {p.why && <div className="pv-serif text-[12.5px] leading-snug text-[hsl(var(--pv-text-faint))]">{p.why}</div>}
-              </div>
-            ))}
-
-            {(row?.plan?.deletes.length ?? 0) > 0 && (
-              <div className="mt-3 border-t border-[hsl(var(--pv-border-soft))] pt-2">
-                <div className="pv-eyebrow mb-1">Deleted (archived -- reversible)</div>
-                {row?.plan?.deletes.map((d) => (
-                  <div key={d.ref} className="pv-serif text-[12.5px] text-[hsl(var(--pv-text-faint))]">
-                    · page {d.ref}{d.why ? ` -- ${d.why}` : ""}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <DialogFooter className="items-center gap-3 sm:justify-between">
-            <div className="flex flex-col gap-1">
-              {/* The build can run for minutes — opt into a heads-up before you walk away. */}
-              {!reviewPlanOnly && <NotifyWhenDone enabled={notify} onChange={onToggleNotify} />}
-              <span className="pv-serif text-[12px] italic text-[hsl(var(--pv-text-faint))]">
-                {changeCount} change{changeCount === 1 ? "" : "s"} · {reviewPlanOnly
-                  ? "changed pages left to re-render (flagged out-of-sync)"
-                  : "rebuilds prose for changed pages"}
+      <div className="space-y-1">
+        {plan.pages.map((p, i) => (
+          <div key={i} className={p.pageType === "section" ? "pt-2" : "pl-3"}>
+            <div className="flex items-baseline justify-between gap-3">
+              <span className={`pv-serif text-[14px] ${p.pageType === "section" ? "font-semibold" : ""} text-foreground`}>
+                {p.pageType === "section" ? "# " : ""}{p.title || "(untitled)"}
+              </span>
+              <span className={`pv-mono shrink-0 text-[10px] uppercase tracking-[0.14em] ${OP_TONE[p.op]}`}>
+                {OP_LABEL[p.op]}{p.op === "retarget" && p.rebuild ? ` · ${p.rebuild}` : ""}
               </span>
             </div>
-            <div className="flex gap-2">
-              <Button variant="ghost" onClick={discard} disabled={busy}>Discard</Button>
-              <Button onClick={approve} disabled={busy || changeCount === 0}>
-                {reviewPlanOnly ? "Apply outline changes" : "Build"}
-              </Button>
-            </div>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </section>
+            {(p.op === "retarget" || p.op === "add") && p.objective && (
+              <div className="pv-serif text-[12.5px] italic text-[hsl(var(--pv-text-muted))]">◎ {p.objective}</div>
+            )}
+            {p.why && <div className="pv-serif text-[12.5px] leading-snug text-[hsl(var(--pv-text-faint))]">{p.why}</div>}
+          </div>
+        ))}
+
+        {plan.deletes.length > 0 && (
+          <div className="mt-3 border-t border-[hsl(var(--pv-border-soft))] pt-2">
+            <div className="pv-eyebrow mb-1">Deleted (archived -- reversible)</div>
+            {plan.deletes.map((d) => (
+              <div key={d.ref} className="pv-serif text-[12.5px] text-[hsl(var(--pv-text-faint))]">
+                · page {d.ref}{d.why ? ` -- ${d.why}` : ""}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[hsl(var(--pv-border-soft))] pt-3">
+        <div className="flex flex-col gap-1">
+          {/* The build can run for minutes — opt into a heads-up before you walk away. */}
+          {!planOnly && <NotifyWhenDone enabled={notify} onChange={onToggleNotify} />}
+          <span className="pv-serif text-[12px] italic text-[hsl(var(--pv-text-faint))]">
+            {changeCount} change{changeCount === 1 ? "" : "s"} · {planOnly
+              ? "changed pages left to re-render (flagged out-of-sync)"
+              : "rebuilds prose for changed pages"}
+          </span>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="ghost" onClick={onDiscard} disabled={busy}>Discard</Button>
+          <Button onClick={onApprove} disabled={busy || changeCount === 0}>
+            {planOnly ? "Apply outline changes" : "Build"}
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }
 
