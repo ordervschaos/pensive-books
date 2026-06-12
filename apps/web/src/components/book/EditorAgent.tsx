@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { stopRun } from "@/lib/stopRun";
 import { useLatestTaskRow, type TaskRow } from "@/hooks/useLatestTaskRow";
 import { WorkingIndicator } from "./WorkingIndicator";
 import type { EvalResult } from "./BookEvaluationSection";
@@ -118,10 +119,9 @@ export function EditorAgent({
 
   const cancel = async () => {
     if (!row) return;
-    // A running chain notices cancel_requested between links; a parked (awaiting_input) run has no
-    // chain to notice it, so flip the status directly.
-    const patch = awaiting ? { cancel_requested: true, status: "cancelled" } : { cancel_requested: true };
-    await supabase.from("book_agent_runs").update(patch).eq("id", row.id);
+    // stopRun routes by status: a running chain notices cancel_requested between links; a parked
+    // (awaiting_input) run has no chain to notice it, so it's cancelled directly.
+    await stopRun("book_agent_runs", row.id, row.status);
     refetch();
   };
 
@@ -147,7 +147,7 @@ export function EditorAgent({
             disabled={row.cancel_requested}
             className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))] transition-colors hover:text-foreground"
           >
-            {row.cancel_requested ? "Stopping…" : "Cancel"}
+            {row.cancel_requested ? "Stopping…" : "Stop"}
           </button>
         )}
       </div>

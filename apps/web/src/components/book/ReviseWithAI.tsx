@@ -20,6 +20,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { buildDoc } from "@/lib/inlineMarkdown";
 import { BRIDGE, bridgeFetch } from "@/lib/bridge";
+import { stopRun } from "@/lib/stopRun";
 import { VersionService } from "@/services/VersionService";
 import type { EvalResult, Severity } from "./BookEvaluationSection";
 
@@ -667,16 +668,19 @@ export function ReviseWithAI({
     }
   };
 
+  // Stop a planning/building run: stopRun sets cancel_requested, which both the client-driven
+  // planning loop (after the architect call) and the self-chaining build honor between units.
   const requestCancel = async () => {
     if (!row) return;
-    await patch(row.id, { cancel_requested: true }).catch(() => {});
+    await stopRun("book_revisions", row.id, row.status).catch(() => {});
     setRow((r) => (r ? { ...r, cancel_requested: true } : r));
   };
 
+  // Discard a parked plan (awaiting_review): no worker is looping, so stopRun cancels it directly.
   const discard = async () => {
     if (!row) return;
     setReviewOpen(false);
-    await patch(row.id, { status: "cancelled" }).catch(() => {});
+    await stopRun("book_revisions", row.id, row.status).catch(() => {});
     setRow((r) => (r ? { ...r, status: "cancelled" } : r));
   };
 
@@ -799,6 +803,14 @@ export function ReviseWithAI({
             phrases={row!.source === "evaluation" ? WORKING_PHRASES.planFromNotes : WORKING_PHRASES.planFromPrompt}
           />
           <div className="mt-2 flex items-center justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => void requestCancel()}
+              disabled={row!.cancel_requested}
+              className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-muted))] underline-offset-2 hover:text-foreground hover:underline disabled:opacity-50"
+            >
+              {row!.cancel_requested ? "Stopping…" : "Stop"}
+            </button>
             {busy ? (
               <NotifyWhenDone enabled={notify} onChange={onToggleNotify} />
             ) : (

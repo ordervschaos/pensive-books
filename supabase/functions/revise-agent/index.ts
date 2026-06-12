@@ -210,12 +210,9 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
   }
 
   try {
-    let { high: model } = await getActiveModels();
-    // The agent loop REQUIRES Anthropic tool use. The DeepSeek path in _shared/claude.ts strips
-    // `tools` from the request and only extracts text from the response, so under the deepseek
-    // tier the model can only NARRATE the reads it wants — it can never call a tool, and the run
-    // dies after one turn. Pin to a Claude model when the tier is deepseek.
-    if (model.startsWith("deepseek")) model = "claude-sonnet-4-6";
+    // Any tier works here: _shared/claude.ts converts tools/tool_use/tool_result both ways for
+    // the OpenAI-compatible paths (DeepSeek, MuleRouter/Qwen), so the loop runs on cheap models too.
+    const { high: model } = await getActiveModels();
     const turns = row.turns + 1;
     // Count the turn BEFORE the call: a hard worker death mid-call still consumes budget, so a
     // crash-looping run hits MAX_TURNS instead of being revived forever by the watchdog.

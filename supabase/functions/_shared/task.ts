@@ -30,6 +30,10 @@ export function runInBackground(
   const p = (async () => {
     try {
       const patch = await work();
+      // If the author stopped this run while the (still-billing) call was in flight, the row is
+      // already 'cancelled' — don't resurrect it by overwriting with the result.
+      const { data: cur } = await service.from(table).select("status").eq("id", id).single();
+      if (cur?.status === "cancelled") return;
       const { error } = await service.from(table).update(patch).eq("id", id);
       if (error) throw new Error(`save result: ${error.message}`);
     } catch (e) {

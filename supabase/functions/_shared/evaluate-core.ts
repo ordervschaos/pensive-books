@@ -76,6 +76,11 @@ export async function runEvaluation(
     const logBase: Omit<CallMeta, "fn"> = { bookId: book.id, taskTable: "book_evaluations", taskId: evalId };
     const result = await evaluateMapReduce(apiKey, evalModel, book, manuscript, logBase);
 
+    // If the author stopped this read while the (still-billing) call ran, the row is already
+    // 'cancelled' — don't resurrect it by writing the result.
+    const { data: cur } = await service.from("book_evaluations").select("status").eq("id", evalId).single();
+    if (cur?.status === "cancelled") return;
+
     const { error: updateError } = await service
       .from("book_evaluations")
       .update({ status: "done", result, word_count: wordCount })

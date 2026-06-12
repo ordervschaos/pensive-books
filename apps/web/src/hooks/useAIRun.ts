@@ -12,6 +12,7 @@
 import { useCallback, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { BRIDGE, bridgeFetch } from "@/lib/bridge";
+import { stopRun } from "@/lib/stopRun";
 import { useLatestTaskRow, type TaskRow } from "./useLatestTaskRow";
 
 export interface AIRunRow<R = unknown> extends TaskRow {
@@ -89,8 +90,13 @@ export function useAIRun<R = unknown>(opts: Options) {
   }, [row, setStatus]);
 
   const reject = useCallback(() => setStatus("dismissed"), [setStatus]);
-  // Cancel = abandon: the worker discards its result when it sees this status.
-  const cancel = useCallback(() => setStatus("cancelled"), [setStatus]);
+  // Cancel = abandon: stopRun marks the row 'cancelled'; the worker discards its result when it sees
+  // that status (the same unified stop every AI surface uses).
+  const cancel = useCallback(async () => {
+    if (!row) return;
+    await stopRun("book_generations", row.id, row.status);
+    refetch();
+  }, [row, refetch]);
 
   // A run worth showing: running (with its spinner) or ready (a proposal awaiting accept/reject).
   const live = row && (row.status === "running" || row.status === "pending" || row.status === "ready" || row.status === "error") ? row : null;

@@ -6,6 +6,7 @@ import { WorkingIndicator, WORKING_PHRASES } from "./WorkingIndicator";
 import { NotifyWhenDone } from "./NotifyWhenDone";
 import { notify as fireNotification } from "@/lib/notify";
 import { BRIDGE, bridgeFetch } from "@/lib/bridge";
+import { stopRun } from "@/lib/stopRun";
 
 // Evaluations always live in the book_evaluations table — that's where we READ them from
 // (initial load, below), in both modes. The two backends differ only in WHERE the AI runs:
@@ -39,7 +40,7 @@ export interface EvalResult {
 }
 interface EvalRow {
   id: number;
-  status: "pending" | "done" | "error";
+  status: "pending" | "done" | "error" | "cancelled";
   result: EvalResult | null;
   error: string | null;
   created_at: string;
@@ -134,8 +135,22 @@ export function BookEvaluationSection({ bookId, onRevise, onStatusChange }: { bo
           url: window.location.href,
           tag: `eval-${row.id}`,
         });
+    } else if (row.status === "cancelled") {
+      // The author stopped this read — drop back to idle so they can start fresh.
+      setState({ status: "idle" });
+      cleanupChannel();
     }
     // pending → keep waiting on the channel
+  };
+
+  // Stop the in-flight read. stopRun marks the row 'cancelled'; the worker's guard then refuses to
+  // overwrite it with a result, and applyRow (above) drops us back to idle.
+  const stop = async () => {
+    const id = evalIdRef.current;
+    if (id == null) return setState({ status: "idle" });
+    setState({ status: "idle" });
+    cleanupChannel();
+    try { await stopRun("book_evaluations", id); } catch { /* best-effort */ }
   };
 
   // Watch an in-flight evaluation row until it finishes (edge backend only). `createdAt` arms a
@@ -299,11 +314,16 @@ export function BookEvaluationSection({ bookId, onRevise, onStatusChange }: { bo
       {state.status === "running" && (
         <>
           <WorkingIndicator phrases={WORKING_PHRASES.editor} hint="~30–90s" />
-          {!USE_BRIDGE && (
-            <div className="mt-2 flex justify-end">
-              <NotifyWhenDone enabled={notify} onChange={onToggleNotify} />
-            </div>
-          )}
+          <div className="mt-2 flex items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => void stop()}
+              className="pv-serif text-[12.5px] italic text-[hsl(var(--pv-text-muted))] underline-offset-2 hover:text-foreground hover:underline"
+            >
+              Stop
+            </button>
+            {!USE_BRIDGE && <NotifyWhenDone enabled={notify} onChange={onToggleNotify} />}
+          </div>
         </>
       )}
 

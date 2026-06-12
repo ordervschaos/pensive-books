@@ -118,51 +118,104 @@ function textFromContent(data: any): string {
     .join("");
 }
 
-// Convert an Anthropic-format request body to OpenAI-compatible format for DeepSeek.
-// Strips cache_control blocks (DeepSeek doesn't support prompt caching).
+// Convert an Anthropic-format request body to OpenAI-compatible format (DeepSeek, MuleRouter/Qwen).
+// Carries TOOLS both ways: Anthropic tool defs → OpenAI function defs, assistant tool_use blocks →
+// tool_calls, and tool_result blocks → role:"tool" messages — so tool-using loops (revise-agent)
+// work on the OpenAI-compatible tiers. Drops what those APIs don't speak: cache_control, thinking
+// blocks, and Anthropic-specific params (`thinking`, `output_config`).
 function anthropicToOpenAI(body: Record<string, unknown>): Record<string, unknown> {
   // deno-lint-ignore no-explicit-any
-  const stripCacheControl = (msg: any): any => {
-    if (Array.isArray(msg.content)) {
-      return { ...msg, content: msg.content.map((b: any) => {
-        const { cache_control: _cc, ...rest } = b;
-        return rest;
-      })};
-    }
-    return msg;
-  };
+  const textOf = (blocks: any[]): string =>
+    blocks.filter((b) => b?.type === "text").map((b) => b.text ?? "").join("\n").trim();
+  // tool_result content may be a plain string or an array of text blocks.
+  // deno-lint-ignore no-explicit-any
+  const resultText = (content: any): string =>
+    typeof content === "string" ? content : Array.isArray(content) ? textOf(content) : String(content ?? "");
 
   const systemStr = systemText(body.system);
   // deno-lint-ignore no-explicit-any
   const messages: any[] = [];
   if (systemStr) messages.push({ role: "system", content: systemStr });
+
   // deno-lint-ignore no-explicit-any
-  const userMsgs = ((body.messages ?? []) as any[]).map(stripCacheControl);
-  messages.push(...userMsgs);
+  for (const msg of (body.messages ?? []) as any[]) {
+    if (!Array.isArray(msg.content)) {
+      messages.push({ role: msg.role, content: msg.content });
+      continue;
+    }
+    if (msg.role === "assistant") {
+      // deno-lint-ignore no-explicit-any
+      const toolCalls = msg.content.filter((b: any) => b?.type === "tool_use").map((b: any) => ({
+        id: b.id,
+        type: "function",
+        function: { name: b.name, arguments: JSON.stringify(b.input ?? {}) },
+      }));
+      const text = textOf(msg.content);
+      // deno-lint-ignore no-explicit-any
+      const m: any = { role: "assistant", content: text || null };
+      if (toolCalls.length) m.tool_calls = toolCalls;
+      messages.push(m);
+    } else {
+      // OpenAI wants each tool result as its own role:"tool" message, directly after the
+      // assistant message that carries the matching tool_calls entry.
+      // deno-lint-ignore no-explicit-any
+      for (const b of msg.content.filter((b: any) => b?.type === "tool_result")) {
+        messages.push({ role: "tool", tool_call_id: b.tool_use_id, content: resultText(b.content) });
+      }
+      const text = textOf(msg.content);
+      if (text) messages.push({ role: msg.role, content: text });
+    }
+  }
 
   const out: Record<string, unknown> = {
     model: body.model,
     messages,
     max_tokens: body.max_tokens ?? 8192,
   };
+  if (Array.isArray(body.tools) && (body.tools as unknown[]).length) {
+    // deno-lint-ignore no-explicit-any
+    out.tools = (body.tools as any[]).map((t) => ({
+      type: "function",
+      function: { name: t.name, description: t.description ?? "", parameters: t.input_schema ?? { type: "object" } },
+    }));
+  }
   if (body.temperature != null) out.temperature = body.temperature;
   if (body.top_p != null) out.top_p = body.top_p;
   if (body.stop_sequences != null) out.stop = body.stop_sequences;
-  // `thinking` and other Anthropic-specific extended params are not supported by DeepSeek — omit them.
   return out;
 }
 
-// Normalize an OpenAI-format response to the Anthropic shape that all callers expect.
+// Normalize an OpenAI-format response to the Anthropic shape that all callers expect —
+// including tool_calls → tool_use blocks, so tool loops see the same content array either way.
 // deno-lint-ignore no-explicit-any
 function openAIToAnthropic(parsed: any): Record<string, unknown> {
-  const text = parsed?.choices?.[0]?.message?.content ?? "";
+  const choice = parsed?.choices?.[0] ?? {};
+  const msg = choice.message ?? {};
+  // deno-lint-ignore no-explicit-any
+  const content: any[] = [];
+  const text = msg.content ?? "";
+  if (text) content.push({ type: "text", text });
+  for (const tc of msg.tool_calls ?? []) {
+    let input: Record<string, unknown> = {};
+    try {
+      input = JSON.parse(tc.function?.arguments || "{}");
+    } catch {
+      // Unparseable arguments: surface an empty input — the tool executor's own validation
+      // returns an is_error result the model can recover from.
+    }
+    content.push({ type: "tool_use", id: tc.id, name: tc.function?.name ?? "", input });
+  }
+  const stopReason =
+    choice.finish_reason === "tool_calls" ? "tool_use"
+      : choice.finish_reason === "length" ? "max_tokens"
+        : "end_turn";
   return {
-    content: [{ type: "text", text }],
+    content,
     usage: {
       input_tokens: parsed?.usage?.prompt_tokens ?? null,
       output_tokens: parsed?.usage?.completion_tokens ?? null,
     },
-    stop_reason: "end_turn",
+    stop_reason: stopReason,
     model: parsed?.model ?? null,
   };
 }
