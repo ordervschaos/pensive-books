@@ -12,18 +12,12 @@
 // Needs the ANTHROPIC_API_KEY secret (shared with evaluate-book / generate-unit / scaffold).
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { corsHeaders } from "../_shared/cors.ts";
+import { corsHeaders, json } from "../_shared/cors.ts";
 import { callClaude as callClaudeApi, textFromClaude } from "../_shared/claude.ts";
 import { getActiveModels } from "../_shared/model-config.ts";
 import { extractJsonBlock } from "../_shared/json.ts";
 import { tiptapToText } from "../_shared/words.ts";
 import { sanitizePlan } from "../_shared/revision-plan.ts";
-
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
 
 interface Brief {
   scope?: { band?: string; word_target?: number };

@@ -18,7 +18,7 @@
 //   self   → POST { runId, chain: true }            → one model call → …          (x-chain secret)
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
-import { corsHeaders } from "../_shared/cors.ts";
+import { corsHeaders, json } from "../_shared/cors.ts";
 import { callClaude } from "../_shared/claude.ts";
 import { getActiveModels } from "../_shared/model-config.ts";
 import { tiptapToText } from "../_shared/words.ts";
@@ -33,9 +33,6 @@ const MAX_TURNS = 20;          // model calls per run — the runaway guard
 // real defense is keeping turns short (effort: medium below), not this timer.
 const CALL_TIMEOUT_MS = 140_000;
 const MAX_PAGE_CHARS = 12_000; // read_page output cap
-
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
 // ── Row shapes ──
 interface AgentStep { t: "note" | "read" | "ask" | "answer" | "plan" | "done"; label: string }

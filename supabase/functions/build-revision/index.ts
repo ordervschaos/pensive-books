@@ -21,7 +21,7 @@
 // pages.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
-import { corsHeaders } from "../_shared/cors.ts";
+import { corsHeaders, json } from "../_shared/cors.ts";
 import { beatToProse, revisePage, type ReviseIssue } from "../_shared/generate-unit-core.ts";
 import { buildDoc } from "../_shared/build-doc.ts";
 import { serviceClient } from "../_shared/task.ts";
@@ -31,9 +31,6 @@ import { captureException, isBillingError } from "../_shared/sentry.ts";
 const MAX_ATTEMPTS = 3;
 const RETRY_BASE_MS = 1000;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
 // ── Types (mirror ReviseWithAI / the migration) ──
 interface FixIssue { section: string; severity: string; note: string; evidence?: string; suggestion?: string }

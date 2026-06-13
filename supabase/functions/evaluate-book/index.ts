@@ -13,15 +13,9 @@
 // Needs the ANTHROPIC_API_KEY secret:  supabase secrets set ANTHROPIC_API_KEY=...
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { corsHeaders } from "../_shared/cors.ts";
+import { corsHeaders, json } from "../_shared/cors.ts";
 import { getActiveModels } from "../_shared/model-config.ts";
 import { runEvaluation, NONFICTION_BANDS, type Brief } from "../_shared/evaluate-core.ts";
-
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });

@@ -15,7 +15,7 @@
 //   self   → POST { generationId, chain:true }         (x-chain secret; advances one unit)
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { corsHeaders } from "../_shared/cors.ts";
+import { corsHeaders, json } from "../_shared/cors.ts";
 import { hasEditAccess } from "../_shared/access.ts";
 import { serviceClient } from "../_shared/task.ts";
 import { reinvoke, isChainCall } from "../_shared/self-chain.ts";
@@ -29,9 +29,6 @@ import { stampProse } from "../_shared/plan-provenance.ts";
 const MAX_HEAD_ATTEMPTS = 3;   // poison-page guard: give up on a page that keeps killing the worker
 const MAX_PAGES = 30;          // cap the round so a savage eval can't trigger a runaway revise job
 const MAX_ISSUES_PER_PAGE = 8; // keep each page's revise prompt focused
-
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
 interface QueueItem { pageId: number; issues: ReviseIssue[] }
 interface Progress {

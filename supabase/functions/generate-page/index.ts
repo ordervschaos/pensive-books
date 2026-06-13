@@ -14,15 +14,9 @@
 // Generation itself is unchanged — same context + prompts as generate-unit (shared core).
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { corsHeaders } from "../_shared/cors.ts";
+import { corsHeaders, json } from "../_shared/cors.ts";
 import { beatToProse, revisePage, type ReviseIssue } from "../_shared/generate-unit-core.ts";
 import { runInBackground, serviceClient } from "../_shared/task.ts";
-
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
 
 interface PageGenRequest {
   bookId: number;

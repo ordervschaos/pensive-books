@@ -14,7 +14,7 @@
 // Needs ANTHROPIC_API_KEY (shared with the other AI steps).
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { corsHeaders } from "../_shared/cors.ts";
+import { corsHeaders, json } from "../_shared/cors.ts";
 import { hasEditAccess } from "../_shared/access.ts";
 import { runInBackground, serviceClient } from "../_shared/task.ts";
 import { objectiveOptions } from "../_shared/options-core.ts";
@@ -22,9 +22,6 @@ import { generateSpine, spineOptions } from "../_shared/spine-core.ts";
 import { reviseNode, type ReviseLayer } from "../_shared/revise-core.ts";
 import { beatCandidates } from "../_shared/beat-core.ts";
 import { foundationsOptions, reviseTentpole, spineRoutes, type FoundationsStep } from "../_shared/foundations-core.ts";
-
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
 // Each kind maps to a worker that produces the row's `result`. Workers throw on failure (the harness
 // turns a throw into a graceful error row). Add a case here to make a new short op durable.

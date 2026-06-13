@@ -10,13 +10,10 @@
 // same judgement via local Claude Code (and can ground 'code' amendments in the real repo).
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { corsHeaders } from "../_shared/cors.ts";
+import { corsHeaders, json } from "../_shared/cors.ts";
 import { runInBackground, serviceClient } from "../_shared/task.ts";
 import { callClaude, textFromClaude } from "../_shared/claude.ts";
 import { JUDGE_MODEL, JUDGE_SYSTEM, buildJudgeUser, parseJudgement } from "../_shared/judge.ts";
-
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });

@@ -20,7 +20,7 @@
 // prose (or lost its objective) is skipped in the prose stage.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { corsHeaders } from "../_shared/cors.ts";
+import { corsHeaders, json } from "../_shared/cors.ts";
 import { hasEditAccess } from "../_shared/access.ts";
 import { beatToProse, tiptapToText } from "../_shared/generate-unit-core.ts";
 import { objectiveToBeat } from "../_shared/beat-core.ts";
@@ -38,12 +38,6 @@ const MAX_HEAD_ATTEMPTS = 3;
 const BEATS_PER_INVOCATION = 5; // beats are one paragraph each — several fit under the worker cap
 const RETRY_BASE_MS = 1000;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
 
 interface Progress {
   done: number;          // prose pages written
