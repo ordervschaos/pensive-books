@@ -11,9 +11,7 @@
 import { type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { callClaude, type CallMeta } from "./claude.ts";
 import { canonContext, type CanonPacket } from "./canon-core.ts";
-
-// Beats are one paragraph; sonnet is the planning workhorse (faithful to the pre-extraction default).
-const MODEL = "claude-sonnet-4-6";
+import { getActiveModels } from "./model-config.ts";
 
 export interface Brief {
   scope?: { band?: string; word_target?: number };
@@ -170,40 +168,40 @@ async function prepareBeat(client: SupabaseClient, p: BeatParams): Promise<Prepa
 
 // Sample n candidate beats. n>1 runs in parallel at high temperature for spread; n=1 is one plain
 // sample (the attended/sync default). Returns only the non-empty ones.
-async function sampleBeats(apiKey: string, prep: PreparedBeat, n: number): Promise<string[]> {
+async function sampleBeats(apiKey: string, model: string, prep: PreparedBeat, n: number): Promise<string[]> {
   if (n === 1) {
-    const b = await generateBeat(apiKey, prep.userContent, prep.meta);
+    const b = await generateBeat(apiKey, model, prep.userContent, prep.meta);
     return b ? [b] : [];
   }
   return (await Promise.all(
-    Array.from({ length: n }, () => generateBeat(apiKey, prep.userContent, prep.meta, 1).catch(() => "")),
+    Array.from({ length: n }, () => generateBeat(apiKey, model, prep.userContent, prep.meta, 1).catch(() => "")),
   )).filter((b) => b.length > 0);
 }
 
 // objective → beat. Loads its own book/outline/threads context; returns the beat text only. With
 // candidates>1 it samples n and a judge keeps the best (the unattended/bulk path).
 export async function objectiveToBeat(client: SupabaseClient, apiKey: string, p: BeatParams): Promise<string> {
-  const prep = await prepareBeat(client, p);
+  const [prep, { high: model }] = await Promise.all([prepareBeat(client, p), getActiveModels()]);
   const n = Math.max(1, Math.min(p.candidates ?? 1, 5));
-  const candidates = await sampleBeats(apiKey, prep, n);
+  const candidates = await sampleBeats(apiKey, model, prep, n);
   if (candidates.length === 0) throw new Error("Claude returned no beat.");
   if (candidates.length === 1) return candidates[0];
-  return await pickBestBeat(apiKey, candidates, prep.prevBeat, prep.objective, { ...prep.meta, fn: "beat-judge" });
+  return await pickBestBeat(apiKey, model, candidates, prep.prevBeat, prep.objective, { ...prep.meta, fn: "beat-judge" });
 }
 
 // objective → n candidate beats, UN-judged. Powers the serial human-pick UI: the author sees all the
 // takes and chooses, instead of a judge picking for them. Same context as objectiveToBeat.
 export async function beatCandidates(client: SupabaseClient, apiKey: string, p: BeatParams, n: number): Promise<string[]> {
-  const prep = await prepareBeat(client, p);
-  const candidates = await sampleBeats(apiKey, prep, Math.max(1, Math.min(n, 5)));
+  const [prep, { high: model }] = await Promise.all([prepareBeat(client, p), getActiveModels()]);
+  const candidates = await sampleBeats(apiKey, model, prep, Math.max(1, Math.min(n, 5)));
   if (candidates.length === 0) throw new Error("Claude returned no beat.");
   return candidates;
 }
 
 // One beat sample. `temperature` (for best-of-n spread) is passed through to the Messages API.
-async function generateBeat(apiKey: string, userContent: string, meta: CallMeta, temperature?: number): Promise<string> {
+async function generateBeat(apiKey: string, model: string, userContent: string, meta: CallMeta, temperature?: number): Promise<string> {
   const body: Record<string, unknown> = {
-    model: MODEL,
+    model,
     max_tokens: 1024,
     system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
     messages: [{ role: "user", content: userContent }],
@@ -216,11 +214,11 @@ async function generateBeat(apiKey: string, userContent: string, meta: CallMeta,
 
 const JUDGE_SYSTEM = `You are a story editor choosing the single strongest BEAT among candidates for one page. The winner is the one that best, in order of weight: (a) connects to the PREVIOUS beat by "therefore" or "but" — caused by or colliding with it, never "and then"; (b) turns a clear VALUE FLIP across the page; (c) carries real SUBTEXT (said ≠ meant); (d) anchors on a CONCRETE image; (e) fulfils the page's objective. Reply with ONLY the number of the best candidate — no words, no punctuation.`;
 
-async function pickBestBeat(apiKey: string, candidates: string[], prevBeat: string | null, objective: string, meta: CallMeta): Promise<string> {
+async function pickBestBeat(apiKey: string, model: string, candidates: string[], prevBeat: string | null, objective: string, meta: CallMeta): Promise<string> {
   const list = candidates.map((c, i) => `[${i + 1}]\n${c}`).join("\n\n");
   try {
     const data = await callClaude(apiKey, {
-      model: MODEL,
+      model,
       max_tokens: 8,
       temperature: 0,
       system: [{ type: "text", text: JUDGE_SYSTEM, cache_control: { type: "ephemeral" } }],

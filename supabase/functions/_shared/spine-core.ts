@@ -5,7 +5,7 @@ import { type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { callClaude, type CallMeta } from "./claude.ts";
 import { getActiveModels } from "./model-config.ts";
 
-const GEN_MODEL = "claude-sonnet-4-6";
+
 
 export interface Brief {
   scope?: { band?: string; word_target?: number };
@@ -85,9 +85,10 @@ export async function generateSpine(client: SupabaseClient, apiKey: string, p: {
     .eq("book_id", p.bookId).eq("archived", false).order("page_index", { ascending: true });
   const outline = (pages as Array<{ page_type: string | null; title: string | null; metadata: { objective?: string } | null }>) ?? [];
 
+  const { high: model } = await getActiveModels();
   const meta: CallMeta = { fn: "brief-to-spine", bookId: p.bookId, userId: p.userId ?? null };
   const data = await callClaude(apiKey, {
-    model: GEN_MODEL,
+    model,
     max_tokens: 1024,
     system: [{ type: "text", text: GEN_SYSTEM, cache_control: { type: "ephemeral" } }],
     messages: [{

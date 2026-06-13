@@ -328,9 +328,10 @@ export async function reviseTentpole(
   if (error || !book) throw new Error("Book not found");
   const f = (book.foundations as Foundations | null) ?? {};
 
+  const { high: model } = await getActiveModels();
   const meta: CallMeta = { fn: "tentpole-revise", bookId: p.bookId, userId: p.userId ?? null };
   const data = await callClaude(apiKey, {
-    model: "claude-sonnet-4-6",
+    model,
     max_tokens: 512,
     system: [{ type: "text", text: TENTPOLE_REVISE_SYSTEM, cache_control: { type: "ephemeral" } }],
     messages: [{

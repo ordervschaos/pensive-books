@@ -12,8 +12,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { callClaude } from "../_shared/claude.ts";
-
-const MODEL = "claude-sonnet-4-6";
+import { getActiveModels } from "../_shared/model-config.ts";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -88,9 +87,10 @@ Deno.serve(async (req: Request) => {
     if (!apiKey) return json({ error: "ANTHROPIC_API_KEY not configured" }, 500);
 
     const spine = (book.spine as { text?: string } | null)?.text?.trim() || null;
+    const { high: model } = await getActiveModels();
 
     const data = await callClaude(apiKey, {
-      model: MODEL,
+      model,
       max_tokens: 1024,
       system: [{ type: "text", text: systemFor(layer), cache_control: { type: "ephemeral" } }],
       messages: [{

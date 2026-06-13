@@ -3,8 +3,7 @@
 // identical logic. No auth, no access check, no row writes — callers own those.
 import { type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { callClaude, type CallMeta } from "./claude.ts";
-
-const MODEL = "claude-sonnet-4-6";
+import { getActiveModels } from "./model-config.ts";
 
 export type ReviseLayer = "spine" | "objective" | "beat";
 
@@ -62,9 +61,10 @@ export async function reviseNode(client: SupabaseClient, apiKey: string, p: Revi
   if (error || !book) throw new Error("Book not found");
   const spine = (book.spine as { text?: string } | null)?.text?.trim() || null;
 
+  const { high: model } = await getActiveModels();
   const meta: CallMeta = { fn: "revise-node", bookId: p.bookId, userId: p.userId ?? null };
   const data = await callClaude(apiKey, {
-    model: MODEL,
+    model,
     max_tokens: 1024,
     system: [{ type: "text", text: systemFor(p.layer), cache_control: { type: "ephemeral" } }],
     messages: [{
