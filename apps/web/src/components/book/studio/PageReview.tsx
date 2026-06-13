@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowDown, ExternalLink, Loader2, Lock, Sparkles } from "lucide-react";
-import { Textarea } from "@/components/ui/textarea";
+import { AutoTextarea } from "@/components/ui/auto-textarea";
 import { useToast } from "@/hooks/use-toast";
 import { readNode, readProse, saveBeat, saveObjective, transforms } from "@/lib/ladder";
 import type { CellState } from "@/lib/planGraph";
@@ -127,11 +127,10 @@ export function PageReview({ bookId, model, pageId, onChanged, onSelectPage }: P
       ) : (
         <>
           <LevelCard label="Objective" sub="the plan's contract" state={objective.trim() ? "synced" : "gap"}>
-            <Textarea
+            <AutoTextarea
               value={objective}
               onChange={(e) => setObjective(e.target.value)}
               onBlur={() => objective.trim() && void saveObjectiveText()}
-              rows={3}
               className="pv-serif border-none bg-transparent px-0 text-[15.5px] leading-[1.55] focus-visible:ring-0"
               placeholder="What this page must achieve…"
             />
@@ -169,11 +168,10 @@ export function PageReview({ bookId, model, pageId, onChanged, onSelectPage }: P
           <LevelCard label="Beat" sub="what happens, in order" state={beat.trim() ? "synced" : "gap"}>
             {beat.trim() ? (
               <>
-                <Textarea
+                <AutoTextarea
                   value={beat}
                   onChange={(e) => setBeat(e.target.value)}
                   onBlur={() => void saveBeatText()}
-                  rows={4}
                   className="pv-serif border-none bg-transparent px-0 text-[15.5px] leading-[1.6] focus-visible:ring-0"
                 />
                 <RegenRow busy={busy === "beat"} onRegen={planBeat} />

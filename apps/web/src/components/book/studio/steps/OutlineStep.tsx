@@ -10,9 +10,9 @@ import { saveObjective } from "@/lib/ladder";
 import type { MapPage } from "@/lib/planGraph";
 import type { StudioModel } from "../studioModel";
 
-export function OutlineStep({ bookId, model, onChanged, onSelectPage }: { bookId: number; model: StudioModel; onChanged: () => void; onSelectPage: (pageId: number) => void }) {
+export function OutlineStep({ bookId, model, beforeGen, onChanged, onSelectPage }: { bookId: number; model: StudioModel; beforeGen: () => Promise<void>; onChanged: () => void; onSelectPage: (pageId: number) => void }) {
   if (!model.hasScaffold) {
-    return <ScaffoldGenerator bookId={bookId} onCreated={onChanged} />;
+    return <ScaffoldGenerator bookId={bookId} beforeGen={beforeGen} onCreated={onChanged} />;
   }
   return (
     <div className="space-y-3">

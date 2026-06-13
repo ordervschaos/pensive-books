@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import ReactMarkdown from "react-markdown";
 import ReactDiffViewer, { DiffMethod } from "react-diff-viewer-continued";
 import { ExternalLink, Loader2 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
@@ -8,7 +9,9 @@ import { useLatestTaskRow, type TaskRow } from "@/hooks/useLatestTaskRow";
 import { BRIDGE, bridgeFetch } from "@/lib/bridge";
 import { buildDoc } from "@/lib/inlineMarkdown";
 import { stampProse } from "@/lib/planProvenance";
+import { useSteer } from "@/lib/steer";
 import { NodeLabel, RecreateButton, ReviseButton, diffStyles } from "./ladder-ui";
+import { SteerField } from "./studio/SteerField";
 
 // ProseNodePanel — the prose layer, edited from the resolution map's node sheet WITHOUT opening the
 // page. Prose is the heavy, durable node: re-create and revise both route through the same
@@ -51,6 +54,7 @@ export function ProseNodePanel({
   onOpenPage: () => void; // navigate to the full page editor
 }) {
   const { toast } = useToast();
+  const steer = useSteer(bookId, "prose");
   const [instruction, setInstruction] = useState("");
   const [revising, setRevising] = useState(false);
 
@@ -83,7 +87,8 @@ export function ProseNodePanel({
 
   // Re-create the prose from its plan (beat when present, else objective). REPLACES the body. Empty
   // page → a plain write; existing prose → a durable revise carrying a strong rewrite note.
-  const recreate = () => {
+  const recreate = async () => {
+    await steer.save(); // persist the prose steer so the write reads it (write mode honors the steer)
     if (!hasProse) { void start("write"); return; }
     const b = beat.trim();
     const note = b
@@ -137,10 +142,13 @@ export function ProseNodePanel({
         </button>
       </div>
 
-      {/* Current prose, read-only — so you can see what you're acting on without leaving the map. */}
-      <div className="max-h-[40vh] overflow-y-auto rounded-lg border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/30 p-3">
+      {/* Current prose, read-only and fully rendered — so you can read the page in place, formatted,
+          without truncation or an inner scroll. */}
+      <div className="rounded-lg border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/30 px-4 py-3">
         {hasProse ? (
-          <p className="pv-serif whitespace-pre-wrap text-[14px] leading-relaxed text-foreground">{prose}</p>
+          <div className="pv-serif prose prose-sm max-w-none text-[15px] leading-[1.7] text-foreground prose-p:my-3 prose-p:text-foreground prose-headings:text-foreground prose-em:italic prose-strong:font-semibold first:prose-p:mt-0 last:prose-p:mb-0">
+            <ReactMarkdown>{prose}</ReactMarkdown>
+          </div>
         ) : (
           <p className="pv-serif text-[13.5px] italic text-[hsl(var(--pv-text-faint))]">This page has no prose yet.</p>
         )}
@@ -153,6 +161,7 @@ export function ProseNodePanel({
             <RecreateButton dir="down" action={{ label: hasProse ? "re-create from plan" : "write prose", onClick: recreate, disabled: !objective }} />
             {hasProse && <ReviseButton onClick={() => setRevising((v) => !v)} label={revising ? "Cancel" : "Revise"} />}
           </div>
+          {!hasProse && <SteerField steer={steer} placeholder="e.g. spare, sensory prose; short paragraphs; no exposition" />}
           {revising && hasProse && (
             <div className="space-y-2 rounded-lg border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/40 p-3">
               <Textarea

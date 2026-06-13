@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from "react";
 import { Check, Loader2, Pin, Plus, RefreshCw, Skull, Sparkles, Undo2, Wand2, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Textarea } from "@/components/ui/textarea";
+import { AutoTextarea } from "@/components/ui/auto-textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useAIRun } from "@/hooks/useAIRun";
 import {
@@ -31,11 +32,13 @@ const SUBS: { key: FoundationsStepKey; label: string; caption: string }[] = [
 interface Props {
   bookId: number;
   foundations: Foundations;
+  /** Persist the step's author steer before any generation kicks (provided by StudioStage). */
+  beforeGen: () => Promise<void>;
   onChanged: () => void;
   onVoiceStatus: (v: boolean) => void;
 }
 
-export function FoundationsStep({ bookId, foundations, onChanged, onVoiceStatus }: Props) {
+export function FoundationsStep({ bookId, foundations, beforeGen, onChanged, onVoiceStatus }: Props) {
   const { toast } = useToast();
   const [f, setF] = useState<Foundations>(foundations);
   // Land on the first incomplete sub-step, then move only on explicit clicks — selecting a candidate
@@ -92,24 +95,24 @@ export function FoundationsStep({ bookId, foundations, onChanged, onVoiceStatus 
       <p className="pv-serif mb-5 text-[15px] italic leading-snug text-[hsl(var(--pv-text-muted))]">{caption}</p>
 
       {active === "argument" && (
-        <NodeSub bookId={bookId} stepKey="argument" node={f.argument}
+        <NodeSub bookId={bookId} stepKey="argument" node={f.argument} beforeGen={beforeGen}
           heroTitle="Propose three arguments" heroSub="Three claims the book could argue, each with the ending it implies. Pick the one you'd defend — or edit it into yours."
           onSave={(n) => save({ ...f, argument: n })} />
       )}
       {active === "ending" && (
-        <NodeSub bookId={bookId} stepKey="ending" node={f.ending}
+        <NodeSub bookId={bookId} stepKey="ending" node={f.ending} beforeGen={beforeGen}
           heroTitle="Propose three endings" heroSub="Three ways the selected argument can land. Picking one settles where every route must arrive."
           blockedReason={!f.argument?.text?.trim() ? "Select an argument first." : undefined}
           onSave={(n) => save({ ...f, ending: n })} />
       )}
       {active === "cast" && (
-        <CastSub bookId={bookId} cast={f.cast ?? []} onSave={(cast) => save({ ...f, cast })} />
+        <CastSub bookId={bookId} cast={f.cast ?? []} beforeGen={beforeGen} onSave={(cast) => save({ ...f, cast })} />
       )}
       {active === "tentpoles" && (
-        <TentpolesSub bookId={bookId} tentpoles={f.tentpoles ?? []} onSave={(tentpoles) => save({ ...f, tentpoles })} />
+        <TentpolesSub bookId={bookId} tentpoles={f.tentpoles ?? []} beforeGen={beforeGen} onSave={(tentpoles) => save({ ...f, tentpoles })} />
       )}
       {active === "voice" && (
-        <NodeSub bookId={bookId} stepKey="voice" node={f.voice_exemplar}
+        <NodeSub bookId={bookId} stepKey="voice" node={f.voice_exemplar} beforeGen={beforeGen}
           heroTitle="Render one moment in three voices" heroSub="The same tentpole moment, ~120 words, three distinct soundscapes. The one you choose IS the voice exemplar."
           blockedReason={(f.tentpoles ?? []).filter((t) => t.status !== "killed").length === 0 ? "Add at least one tentpole moment first." : undefined}
           onSave={async (n) => { await save({ ...f, voice_exemplar: n }); if (n.text?.trim()) await mirrorVoice(n.text); }} />
@@ -119,19 +122,24 @@ export function FoundationsStep({ bookId, foundations, onChanged, onVoiceStatus 
 }
 
 // ── Shared single-select node sub-step (argument / ending / voice) ───────────
-function NodeSub({ bookId, stepKey, node, heroTitle, heroSub, blockedReason, onSave }: {
+function NodeSub({ bookId, stepKey, node, heroTitle, heroSub, blockedReason, beforeGen, onSave }: {
   bookId: number;
   stepKey: FoundationsStepKey;
   node: FNode | undefined;
   heroTitle: string;
   heroSub: string;
   blockedReason?: string;
+  beforeGen: () => Promise<void>;
   onSave: (n: FNode) => Promise<void> | void;
 }) {
   const run = useAIRun<{ candidates: FCandidate[] }>({ bookId, kind: "foundations_options", targetKey: `foundations:${stepKey}` });
   const appliedRef = useRef<number | null>(null);
   const autoPickRef = useRef(false);
   const [draft, setDraft] = useState<string | null>(null); // inline edit buffer for the selected text
+
+  // Persist the foundations steer before kicking, so the worker reads the fresh guidance.
+  const fire = async () => { await beforeGen(); void run.start({ step: stepKey }); };
+  const fireSkip = async () => { autoPickRef.current = true; await beforeGen(); void run.start({ step: stepKey }); };
 
   const generating = run.starting || run.run?.status === "running" || run.run?.status === "pending";
 
@@ -169,8 +177,8 @@ function NodeSub({ bookId, stepKey, node, heroTitle, heroSub, blockedReason, onS
   if (candidates.length === 0 && !selected) {
     return (
       <div>
-        <Hero icon={<Sparkles className="h-5 w-5" />} title={heroTitle} sub={heroSub} onClick={() => void run.start({ step: stepKey })} />
-        <SkipLink onClick={() => { autoPickRef.current = true; void run.start({ step: stepKey }); }} />
+        <Hero icon={<Sparkles className="h-5 w-5" />} title={heroTitle} sub={heroSub} onClick={() => void fire()} />
+        <SkipLink onClick={() => void fireSkip()} />
         {run.run?.status === "error" && <RunError msg={run.run.error} />}
       </div>
     );
@@ -231,10 +239,10 @@ function NodeSub({ bookId, stepKey, node, heroTitle, heroSub, blockedReason, onS
         </div>
       )}
       <div className="flex items-center gap-5">
-        <button type="button" onClick={() => void run.start({ step: stepKey })} className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-accent))] hover:opacity-75">
+        <button type="button" onClick={() => void fire()} className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-accent))] hover:opacity-75">
           <RefreshCw className="h-3.5 w-3.5" /> regenerate{node?.pinned ? " (your approved text is held)" : ""}
         </button>
-        {!selected && <SkipLink onClick={() => { autoPickRef.current = true; void run.start({ step: stepKey }); }} />}
+        {!selected && <SkipLink onClick={() => void fireSkip()} />}
       </div>
       {run.run?.status === "error" && <RunError msg={run.run.error} />}
     </div>
@@ -244,13 +252,15 @@ function NodeSub({ bookId, stepKey, node, heroTitle, heroSub, blockedReason, onS
 // ── Cast sub-step ─────────────────────────────────────────────────────────────
 const CAST_FIELDS = ["want", "wound", "lie"] as const;
 
-function CastSub({ bookId, cast, onSave }: { bookId: number; cast: CastMember[]; onSave: (c: CastMember[]) => Promise<void> | void }) {
+function CastSub({ bookId, cast, beforeGen, onSave }: { bookId: number; cast: CastMember[]; beforeGen: () => Promise<void>; onSave: (c: CastMember[]) => Promise<void> | void }) {
   const run = useAIRun<{ candidates: CastMember[] }>({ bookId, kind: "foundations_options", targetKey: "foundations:cast" });
   const appliedRef = useRef<number | null>(null);
   const generating = run.starting || run.run?.status === "running" || run.run?.status === "pending";
+  const fire = async () => { await beforeGen(); void run.start({ step: "cast" }); };
 
-  // Merge AI candidates: an existing member (by name) only gains fields that are empty and unpinned;
-  // unknown names are appended. Pinned lines are never overwritten (§4 rule 2b).
+  // Merge AI candidates: a redraft REWRITES every unpinned field on an existing member (by name) with
+  // the steered candidate — pinned lines are held verbatim (§4 rule 2b). A blank candidate field keeps
+  // the prior value. Unknown names are appended.
   useEffect(() => {
     const r = run.run;
     if (r?.status === "ready" && r.result?.candidates?.length && appliedRef.current !== r.id) {
@@ -261,7 +271,8 @@ function CastSub({ bookId, cast, onSave }: { bookId: number; cast: CastMember[];
           const existing = next.find((m) => m.name.trim().toLowerCase() === cand.name.trim().toLowerCase());
           if (existing) {
             for (const k of CAST_FIELDS) {
-              if (!existing[k]?.trim() && !(existing.pinned_fields ?? []).includes(k)) existing[k] = cand[k];
+              if ((existing.pinned_fields ?? []).includes(k)) continue;
+              if (cand[k]?.trim()) existing[k] = cand[k];
             }
           } else {
             next.push(cand);
@@ -298,7 +309,7 @@ function CastSub({ bookId, cast, onSave }: { bookId: number; cast: CastMember[];
       {cast.length === 0 && (
         <Hero icon={<Sparkles className="h-5 w-5" />} title="Draft the cast"
           sub="Protagonist plus up to two majors, each with want / wound / lie. Edit any line to make it yours — edited lines are pinned."
-          onClick={() => void run.start({ step: "cast" })} />
+          onClick={() => void fire()} />
       )}
       {cast.map((m) => (
         <div key={m.id} className="rounded-2xl border border-border bg-[hsl(var(--pv-surface-2))]/40 px-6 py-5">
@@ -322,11 +333,11 @@ function CastSub({ bookId, cast, onSave }: { bookId: number; cast: CastMember[];
               return (
                 <div key={k} className="flex items-baseline gap-3">
                   <span className="pv-mono w-14 shrink-0 text-[10px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-muted))]">{k}</span>
-                  <input
+                  <AutoTextarea
                     defaultValue={m[k] ?? ""}
                     placeholder="—"
                     onBlur={(e) => { const v = e.target.value.trim(); if (v !== (m[k] ?? "")) update(m.id, { [k]: v }, k); }}
-                    className="pv-serif w-full border-none bg-transparent text-[14.5px] leading-relaxed text-foreground outline-none placeholder:text-[hsl(var(--pv-text-faint))]"
+                    className="pv-serif border-none bg-transparent px-0 py-0 text-[14.5px] leading-relaxed text-foreground focus-visible:ring-0 placeholder:text-[hsl(var(--pv-text-faint))]"
                   />
                   {isPinned && (
                     <button type="button" title="Pinned — click to unpin" onClick={() => { if (window.confirm(`Unpin ${m.name}'s ${k}? Regeneration may rewrite it.`)) update(m.id, { pinned_fields: (m.pinned_fields ?? []).filter((x) => x !== k) } as Partial<CastMember>); }}>
@@ -348,7 +359,7 @@ function CastSub({ bookId, cast, onSave }: { bookId: number; cast: CastMember[];
           <Plus className="h-3.5 w-3.5" /> add character
         </button>
         {cast.length > 0 && (
-          <button type="button" onClick={() => void run.start({ step: "cast" })} className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-accent))] hover:opacity-75">
+          <button type="button" onClick={() => void fire()} className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-accent))] hover:opacity-75">
             <RefreshCw className="h-3.5 w-3.5" /> redraft with AI{pinnedCount ? ` (${pinnedCount} pinned line${pinnedCount === 1 ? "" : "s"} held)` : ""}
           </button>
         )}
@@ -359,11 +370,12 @@ function CastSub({ bookId, cast, onSave }: { bookId: number; cast: CastMember[];
 }
 
 // ── Tentpoles sub-step ────────────────────────────────────────────────────────
-function TentpolesSub({ bookId, tentpoles, onSave }: { bookId: number; tentpoles: Tentpole[]; onSave: (t: Tentpole[]) => Promise<void> | void }) {
+function TentpolesSub({ bookId, tentpoles, beforeGen, onSave }: { bookId: number; tentpoles: Tentpole[]; beforeGen: () => Promise<void>; onSave: (t: Tentpole[]) => Promise<void> | void }) {
   const run = useAIRun<{ candidates: Tentpole[] }>({ bookId, kind: "foundations_options", targetKey: "foundations:tentpoles" });
   const appliedRef = useRef<number | null>(null);
   const [newMoment, setNewMoment] = useState("");
   const generating = run.starting || run.run?.status === "running" || run.run?.status === "pending";
+  const fire = async () => { await beforeGen(); void run.start({ step: "tentpoles" }); };
 
   useEffect(() => {
     const r = run.run;
@@ -440,7 +452,7 @@ function TentpolesSub({ bookId, tentpoles, onSave }: { bookId: number; tentpoles
                   onKeep={t.status === "fluid" ? () => setStatus(t.id, "pinned") : undefined}
                   onKill={() => setStatus(t.id, "killed")} />
               ))}
-              <button type="button" onClick={() => void run.start({ step: "tentpoles" })}
+              <button type="button" onClick={() => void fire()}
                 className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-accent))] hover:opacity-75">
                 {proposals.length ? <RefreshCw className="h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
                 {proposals.length ? `propose more (${pinnedCount} pinned held)` : "propose six moments"}

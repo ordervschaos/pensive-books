@@ -24,7 +24,7 @@ import { DoneStrip } from "../studioUi";
 interface BuildProgress { done: number; total: number; phase?: string }
 interface BuildRow extends TaskRow { progress: BuildProgress | null; error: string | null }
 
-export function BeatsStep({ bookId, model, onChanged }: { bookId: number; model: StudioModel; onChanged: () => void }) {
+export function BeatsStep({ bookId, model, beforeGen, onChanged }: { bookId: number; model: StudioModel; beforeGen: () => Promise<void>; onChanged: () => void }) {
   const { toast } = useToast();
   const beatPages = model.textPages.filter((p) => p.objectiveText.trim());
   const doneCount = beatPages.filter((p) => p.beat !== "gap").length;
@@ -49,7 +49,7 @@ export function BeatsStep({ bookId, model, onChanged }: { bookId: number; model:
   const generating = cand.run?.status === "running" || cand.run?.status === "pending" || cand.starting;
   const ready = cand.run?.status === "ready";
 
-  const draftTakes = () => { if (page) { kickedFor.current = page.id; void cand.start({ pageId: page.id, objective: page.objectiveText.trim() }); } };
+  const draftTakes = async () => { if (!page) return; await beforeGen(); kickedFor.current = page.id; void cand.start({ pageId: page.id, objective: page.objectiveText.trim() }); };
 
   // ── Bulk beat/prose run ──────────────────────────────────────────────────────
   const { row: buildRow, refetch: buildRefetch, stale: buildStale } = useLatestTaskRow<BuildRow>({
@@ -70,6 +70,7 @@ export function BeatsStep({ bookId, model, onChanged }: { bookId: number; model:
   const runBulkBeats = async () => {
     if (buildRunning) return;
     try {
+      await beforeGen(); // persist the beats steer so generate-book's beat phase reads it
       const { data, error } = await supabase.functions.invoke("generate-book", { body: { bookId, pauseAfterBeats: true } });
       if (error) throw error;
       if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
@@ -174,6 +175,7 @@ export function BeatsStep({ bookId, model, onChanged }: { bookId: number; model:
         <div className="pv-mono text-[10px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-faint))]">Objective · the contract</div>
         <p className="pv-serif mt-2 text-[15.5px] leading-[1.6] text-[hsl(var(--pv-text-muted))]">{page.objectiveText}</p>
       </div>
+
 
       {generating ? (
         <div className="mt-5 flex items-center gap-4">

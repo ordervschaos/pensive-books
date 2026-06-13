@@ -23,7 +23,7 @@ export function StudioNavigator({ model, selection, collapsed, runningStep, onSe
   const stepLabel = stepNo === -1 ? model.buildSteps.length : stepNo + 1;
 
   return (
-    <div className="relative overflow-y-auto border-r border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/40 px-4 pb-12 pt-5">
+    <div className="relative max-h-[42vh] overflow-y-auto rounded-2xl border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/40 px-4 pb-12 pt-5 md:max-h-[calc(100vh-2rem)] md:self-start md:sticky md:top-4">
       <section className="relative">
         <Head left="Build" right={`step ${stepLabel} / 9`} />
         {model.buildSteps.map((k, i) => (

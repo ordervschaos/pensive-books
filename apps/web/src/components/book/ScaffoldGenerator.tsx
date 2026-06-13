@@ -42,6 +42,8 @@ interface Scaffold {
 
 interface ScaffoldGeneratorProps {
   bookId: number;
+  /** Persist the outline steer before generating (provided by the studio's StudioStage). */
+  beforeGen?: () => Promise<void>;
   /** Called after pages are created (so the host can refresh / enable the toggle in UI). */
   onCreated?: () => void;
 }
@@ -61,7 +63,7 @@ interface ScaffoldRow extends TaskRow {
  * is waiting. Creating the pages marks the row 'applied'; cancelling marks it 'dismissed' — so it
  * doesn't keep re-opening.
  */
-export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps) {
+export function ScaffoldGenerator({ bookId, beforeGen, onCreated }: ScaffoldGeneratorProps) {
   const { toast } = useToast();
   const [creating, setCreating] = useState(false);
   const [kicking, setKicking] = useState(false); // true between clicking Generate and the run row appearing
@@ -134,6 +136,7 @@ export function ScaffoldGenerator({ bookId, onCreated }: ScaffoldGeneratorProps)
     if (generating || kicking) return;
     setKicking(true);
     try {
+      await beforeGen?.(); // persist the steer so the background scaffold worker reads it
       if (BRIDGE) {
         // Dev bridge writes the same book_generations row; we just kick it and watch the row.
         await bridgeFetch(`/spine-to-objectives/${bookId}`, { method: "POST" }).catch(() => {});

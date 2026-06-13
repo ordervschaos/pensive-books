@@ -18,7 +18,7 @@ import { DoneStrip, Hero, ProgressMeter, RunningCard } from "../studioUi";
 interface BuildProgress { done: number; total: number; phase?: string }
 interface BuildRow extends TaskRow { progress: BuildProgress | null; error: string | null }
 
-export function DraftStep({ bookId, model, onChanged, onSelectPage }: { bookId: number; model: StudioModel; onChanged: () => void; onSelectPage: (pageId: number) => void }) {
+export function DraftStep({ bookId, model, beforeGen, onChanged, onSelectPage }: { bookId: number; model: StudioModel; beforeGen: () => Promise<void>; onChanged: () => void; onSelectPage: (pageId: number) => void }) {
   const { toast } = useToast();
   const [notify, setNotify] = useState(false);
   const notifyRef = useRef(false);
@@ -52,6 +52,7 @@ export function DraftStep({ bookId, model, onChanged, onSelectPage }: { bookId: 
   const runAll = async () => {
     if (running) return;
     try {
+      await beforeGen(); // persist the prose steer so generate-book's prose phase reads it
       const body = paused && row ? { generationId: row.id, resume: true } : { bookId, notify };
       const { data, error } = await supabase.functions.invoke("generate-book", { body });
       if (error) throw error;

@@ -150,7 +150,7 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
 
   // Hold rendering until the flow flag is known, so the rail doesn't flash old→new.
   if (foundations === undefined) {
-    return <section className="h-[78vh] min-h-[620px] max-h-[940px] rounded-2xl border border-border bg-background" />;
+    return <section className="min-h-[60vh]" />;
   }
 
   return (
@@ -160,7 +160,7 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
           Sequel — continuing <em>“{canonParent}”</em>. Its canon (final state, cast, open threads) constrains every generation here.
         </p>
       )}
-    <section className="grid h-[78vh] min-h-[620px] max-h-[940px] grid-rows-[minmax(0,38%)_1fr] overflow-hidden rounded-2xl border border-border bg-background md:grid-cols-[320px_1fr] md:grid-rows-1">
+    <section className="grid grid-cols-1 md:grid-cols-[320px_1fr]">
       <StudioNavigator
         model={model}
         selection={selection}

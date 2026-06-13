@@ -178,6 +178,31 @@ author's *approvals* (`journey`) and the *flow choice* (`foundations` present?) 
 that aren't computed from the manuscript itself. Every AI action underneath is a durable, resumable
 server task (see `docs` + the durable-tasks memory) — the studio is just the chrome around them.
 
+## Author "steer" per step
+
+Each generation step (Foundations, Spine, Outline, Beats, Prose) has a **steer** — a free-text
+guidance prompt the author types *before* generating, that shapes that step's output. It is **sticky
+per book+step**: saved to `books.steers` (a small jsonb keyed by step), pre-filled on return, reused
+for re-generations until changed.
+
+Design (the cheap part): because the steer is DB-backed and every generation path loads the book row
+through a shared core, **nothing rides in the generation params** — each core just reads
+`books.steers[step]` and appends it to its prompt. One edit per shared core covers serial + bulk +
+workshop paths:
+- `_shared/steer.ts` — `readSteer(steers, step)` + `steerBlock(guidance)` (the appended prompt block).
+- Cores: `spine-core` (spine), `foundations-core` (`foundationsOptions`=foundations, `spineRoutes`=spine),
+  `beat-core` `prepareBeat` (beats — covers serial/bulk/objective-to-beat), `generate-unit-core`
+  (prose, **write mode only**), `spine-to-objectives` (outline).
+- The steer is a strong instruction but **subordinate** to the brief/spine/pins (wording-enforced;
+  pin enforcement stays structural).
+
+Client: `@/lib/steer.ts` (`useSteer` hook + `readSteer`/`saveSteer`) and
+`studio/SteerField.tsx` (the collapsible input). Each step calls `steer.save()` right before kicking a
+run so the background worker reads the fresh value. Wired into `FoundationsStep` (one steer for all
+five sub-steps, via a `beforeGen` prop into the subs), `SpineStep`, `ScaffoldGenerator`, `BeatsStep`,
+`DraftStep` (bulk prose), and `ProseNodePanel` (single prose, write case). Migration:
+`20260613000000_book_steers.sql`.
+
 ## Related docs / memory
 
 - `docs/pinned_method.md` — the new pin-driven flow (foundations, routes, lints, gates)

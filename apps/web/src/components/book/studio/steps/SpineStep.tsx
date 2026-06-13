@@ -29,11 +29,13 @@ interface Props {
   bookId: number;
   newFlow?: boolean;
   foundations?: Foundations | null;
+  /** Persist the step's author steer before any generation kicks (provided by StudioStage). */
+  beforeGen: () => Promise<void>;
   onStatusChange: (v: boolean) => void;
   onChanged: () => void;
 }
 
-export function SpineStep({ bookId, newFlow, foundations, onStatusChange, onChanged }: Props) {
+export function SpineStep({ bookId, newFlow, foundations, beforeGen, onStatusChange, onChanged }: Props) {
   const { toast } = useToast();
   const [spine, setSpine] = useState("");
   const [node, setNode] = useState<SpineNode>({});
@@ -42,6 +44,10 @@ export function SpineStep({ bookId, newFlow, foundations, onStatusChange, onChan
   const [saving, setSaving] = useState(false);
   const appliedRef = useRef<number | null>(null);
   const routesAppliedRef = useRef<number | null>(null);
+
+  // Persist the steer, then kick — so the background worker reads the fresh guidance from books.steers.
+  const startGen = async () => { await beforeGen(); void gen.start({}); };
+  const startRoutes = async (avoid: string[] = []) => { await beforeGen(); void routesRun.start(avoid.length ? { avoid } : {}); };
 
   // Durable spine generation (old flow: single candidate → auto-applies on ready).
   const gen = useAIRun<{ text: string }>({ bookId, kind: "spine", targetKey: "book", enabled: !newFlow });
@@ -125,7 +131,7 @@ export function SpineStep({ bookId, newFlow, foundations, onStatusChange, onChan
   // passed as "vary away from" context.
   const reroute = () => {
     const selected = node.routes?.find((x) => x.id === node.selected_route_id);
-    void routesRun.start({ avoid: selected ? [selected.summary] : [] });
+    void startRoutes(selected ? [selected.summary] : []);
   };
 
   if (!loaded) return null;
@@ -157,7 +163,7 @@ export function SpineStep({ bookId, newFlow, foundations, onStatusChange, onChan
         <div>
           <Hero icon={<MapIcon className="h-5 w-5" />} title="Chart the routes"
             sub={`Three different roads from your beginning to your settled ending${pinnedTentpoles ? ` — every one passing through your ${pinnedTentpoles} pinned moment${pinnedTentpoles === 1 ? "" : "s"}` : ""}. Pick the one you'd ride.`}
-            onClick={() => void routesRun.start({})} />
+            onClick={() => void startRoutes()} />
           {routesRun.run?.status === "error" && <p className="pv-serif mt-3 text-[13px] italic text-red-600 dark:text-red-400">{routesRun.run.error}</p>}
         </div>
       );
@@ -248,7 +254,7 @@ export function SpineStep({ bookId, newFlow, foundations, onStatusChange, onChan
     return (
       <Hero icon={<Sparkles className="h-5 w-5" />} title="Draft the spine from the brief"
         sub="One paragraph that names the throughline — what the book is really about. The outline is built to realize it."
-        onClick={() => void gen.start({})} />
+        onClick={() => void startGen()} />
     );
   }
 
@@ -262,7 +268,7 @@ export function SpineStep({ bookId, newFlow, foundations, onStatusChange, onChan
         className="pv-serif border-none bg-transparent px-0 text-[16px] leading-[1.65] focus-visible:ring-0"
       />
       <div className="mt-3.5 flex items-center gap-5 border-t border-[hsl(var(--pv-border-soft))] pt-3.5 text-[13.5px]">
-        <button type="button" onClick={() => void gen.start({})} className="inline-flex items-center gap-1.5 italic text-[hsl(var(--pv-accent))] hover:opacity-75">
+        <button type="button" onClick={() => void startGen()} className="inline-flex items-center gap-1.5 italic text-[hsl(var(--pv-accent))] hover:opacity-75">
           <RefreshCw className="h-3.5 w-3.5" /> re-draft from the brief
         </button>
         <div className="ml-auto flex items-center gap-4">
