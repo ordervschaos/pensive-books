@@ -64,6 +64,7 @@ interface PageRow {
 
 // Open/planned threads, fed in so restructuring keeps their setup→payoff anchors intact.
 interface ThreadLite {
+  id: number;
   name: string;
   status: string;
   setup_page_id: number | null;
@@ -131,7 +132,7 @@ Deno.serve(async (req: Request) => {
     // Tracked threads — fed in so the plan doesn't orphan a setup or its payoff when restructuring.
     const { data: threads } = await userClient
       .from("book_threads")
-      .select("name, status, setup_page_id, payoff_page_id")
+      .select("id, name, status, setup_page_id, payoff_page_id")
       .eq("book_id", bookId)
       .neq("status", "closed");
 

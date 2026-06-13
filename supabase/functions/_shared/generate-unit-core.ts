@@ -11,7 +11,7 @@
 // the original generate-unit (the dev bridge mirrors it), so the output is unchanged.
 import { type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { callClaude as callClaudeApi, textFromClaude, type CallMeta } from "./claude.ts";
-import { getActiveModels } from "./model-config.ts";
+import { getActiveModels, DEFAULT_LOW_MODEL } from "./model-config.ts";
 import { type CharacterState, type PageState } from "./page-state.ts";
 import { canonContext, type CanonPacket } from "./canon-core.ts";
 import { tiptapToText } from "./words.ts";
@@ -518,7 +518,7 @@ function stripLeadingHeadings(text: string): string {
 // ── Summary (layer D) ────────────────────────────────────────────────────────
 async function summarize(apiKey: string, prose: string, meta: CallMeta, summaryModel?: string): Promise<string> {
   const data = await callClaudeApi(apiKey, {
-    model: summaryModel ?? "claude-haiku-4-5-20251001",
+    model: summaryModel ?? DEFAULT_LOW_MODEL,
     max_tokens: 250,
     system: [{
       type: "text",
@@ -579,7 +579,7 @@ async function priorCharacterStates(client: SupabaseClient, bookId: number, page
 async function extractCharacterStates(apiKey: string, prose: string, prior: CharacterState[], meta: CallMeta, model?: string): Promise<CharacterState[]> {
   const priorBlock = prior.length ? JSON.stringify(prior) : "(none yet — this is the first page with characters)";
   const data = await callClaudeApi(apiKey, {
-    model: model ?? "claude-haiku-4-5-20251001",
+    model: model ?? DEFAULT_LOW_MODEL,
     max_tokens: 1500,
     system: [{
       type: "text",
