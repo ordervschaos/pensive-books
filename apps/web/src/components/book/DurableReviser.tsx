@@ -93,12 +93,12 @@ export function DurableReviser({ bookId, layer, targetKey, targetPageId, current
         <>
           <Textarea
             value={instruction} onChange={(e) => setInstruction(e.target.value)} autoFocus
-            placeholder='What should change? e.g. “make it colder, less wistful”'
-            className=”min-h-[72px] text-[13.5px]”
+            placeholder='What should change? e.g. "make it colder, less wistful"'
+            className="min-h-[72px] text-[13.5px]"
           />
-          <div className=”flex items-center gap-3”>
-            <button type=”button” onClick={run_} disabled={!instruction.trim()}
-              className=”pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-accent))] transition-colors hover:text-foreground disabled:opacity-50”>
+          <div className="flex items-center gap-3">
+            <button type="button" onClick={run_} disabled={!instruction.trim()}
+              className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-accent))] transition-colors hover:text-foreground disabled:opacity-50">
               Apply →
             </button>
             <button type="button" onClick={close} className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">Cancel</button>
