@@ -3,8 +3,8 @@ import { Sparkles } from "lucide-react";
 import { AnimatedEllipsis } from "./AnimatedEllipsis";
 import { AIActionRow } from "./AIActionRow";
 import { NotifyWhenDone } from "./NotifyWhenDone";
-import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { invokeGenerateBook } from "@/lib/generateBook";
 import { useLatestTaskRow, type TaskRow } from "@/hooks/useLatestTaskRow";
 import { RunControls } from "./RunControls";
 import { notify as fireNotification } from "@/lib/notify";
@@ -68,7 +68,7 @@ export function DraftProse({ bookId, remaining, onChanged }: DraftProseProps) {
     setBusy(true);
     try {
       const body = paused && row ? { generationId: row.id, resume: true } : { bookId, notify };
-      const { data, error } = await supabase.functions.invoke("generate-book", { body });
+      const { data, error } = await invokeGenerateBook(body);
       if (error) throw error;
       if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
       refetch();

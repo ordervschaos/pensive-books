@@ -1,11 +1,11 @@
-// discardLadder — wipe one rung of the resolution ladder (objective → beat → prose) across a book's
-// text pages, so the matching Build Studio step can re-generate from scratch. The two discards are
-// independent and each lives on its own step:
-//   • discardBeats — the BEAT rung (BeatsStep). Drops the beat + its planned deltas; objective survives.
-//   • discardProse — the PROSE rung (DraftStep). Resets the page body to a title-only doc + drops the
-//                    prose-derived metadata; the beat survives so the re-draft renders from it again.
-// Each only touches its own rung — discarding beats leaves any written prose in place (it simply reads
-// as stale against the missing beat, the same drift the studio already surfaces).
+// discardLadder — wipe the lower rungs of the resolution ladder (objective → beat → prose) across a
+// book's text pages, so the matching Build Studio step can re-generate from scratch. Two discards,
+// each on its own step, cutting the ladder at a different depth (you can't keep prose whose beat is
+// gone, so there is no "beats only" — discarding beats cascades down to the prose):
+//   • discardBeatsAndProse — BEATS step. Resets all the way to objectives-only: drops beat + prose +
+//                            everything they produced. The objective (the Outline's contract) survives.
+//   • discardProse — DRAFT step. Resets only the PROSE rung: title-only body + prose-derived metadata
+//                    gone; the beat survives so the re-draft renders from it again.
 import { supabase } from "@/integrations/supabase/client";
 import { buildDoc } from "@/lib/inlineMarkdown";
 import type { PageMeta } from "@/lib/planProvenance";
@@ -52,25 +52,27 @@ async function revertJourney(bookId: number, ...steps: string[]): Promise<void> 
 }
 
 /**
- * Discard the BEAT rung. Clears the beat and its planned deltas (plus the now-meaningless
- * objective_beat / beat_prose sync snapshots and delta_sync), keeping the objective. Reverts the
- * "beats" approval so the Beats step is active again. `pageIds` = the pages that carry a beat.
+ * Discard BEATS + PROSE — reset every given page all the way back to objectives-only. Resets the body
+ * to a title-only doc and strips every metadata field below the objective (beat, both deltas,
+ * delta_sync, the running summary, the character ledger, all sync snapshots, the legacy prose hash,
+ * lint flags) — keeping only the objective. Reverts both the "beats" and "draft" approvals so the
+ * Beats step is active again. `pageIds` = the pages that carry a beat and/or prose.
  */
-export async function discardBeats(bookId: number, pageIds: number[]): Promise<void> {
-  await patchPages(bookId, pageIds, ({ metadata }) => {
+export async function discardBeatsAndProse(bookId: number, pageIds: number[]): Promise<void> {
+  await patchPages(bookId, pageIds, ({ title, metadata }) => {
     const meta: PageMeta = { ...(metadata ?? {}) };
     delete meta.beat;
     delete meta.planned_delta;
+    delete meta.extracted_delta;
     delete meta.delta_sync;
-    if (meta.sync) {
-      const sync = { ...meta.sync };
-      delete sync.objective_beat;
-      delete sync.beat_prose;
-      meta.sync = sync;
-    }
-    return { metadata: meta };
+    delete meta.summary;
+    delete meta.character_states;
+    delete meta.prose_src_hash;
+    delete meta.lint_flags;
+    delete meta.sync; // drops objective_beat + beat_prose together
+    return { content: buildDoc(title, ""), metadata: meta };
   });
-  await revertJourney(bookId, "beats");
+  await revertJourney(bookId, "beats", "draft");
 }
 
 /**

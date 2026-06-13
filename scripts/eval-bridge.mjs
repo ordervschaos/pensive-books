@@ -236,6 +236,68 @@ async function writePageContent(pageId, title, text) {
   });
 }
 
+// Body text excluding the leading title heading — decides if a page is still "empty".
+function bgBodyText(content) {
+  if (!content || typeof content !== "object") return typeof content === "string" ? content.trim() : "";
+  if (!Array.isArray(content.content)) return "";
+  const nodes = content.content[0]?.type === "heading" ? content.content.slice(1) : content.content;
+  return nodes.map((n) => tiptapToText(n)).join("").trim();
+}
+
+// ── Plan-provenance stamping (port of _shared/plan-provenance.ts) ─────────────
+// The single-page bridge routes return text and let the CLIENT stamp the dirty-graph edges; the bulk
+// generate-book route has no client in the loop, so it stamps them itself. metaHash MUST stay
+// byte-for-byte identical to apps/web/src/lib/planProvenance.ts (the same texts are hashed in both).
+function cyrb53(str, seed = 0) {
+  let h1 = 0xdeadbeef ^ seed, h2 = 0x41c6ce57 ^ seed;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507);
+  h1 ^= Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507);
+  h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return 4294967296 * (2097151 & h2) + (h1 >>> 0);
+}
+function metaHash(text) {
+  return cyrb53(String(text ?? "").trim().replace(/\s+/g, " ")).toString(16);
+}
+
+async function readMeta(pageId) {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/pages?id=eq.${pageId}&select=metadata`, { headers: sbHeaders });
+  return (await r.json())?.[0]?.metadata ?? {};
+}
+async function patchMeta(pageId, metadata) {
+  await fetch(`${SUPABASE_URL}/rest/v1/pages?id=eq.${pageId}`, {
+    method: "PATCH",
+    headers: { ...sbHeaders, "content-type": "application/json", Prefer: "return=minimal" },
+    body: JSON.stringify({ metadata }),
+  });
+}
+// Persist a fresh beat + stamp the objective→beat edge (mirrors stampBeat).
+async function stampBeatMeta(pageId, objective, beat) {
+  const metadata = await readMeta(pageId);
+  metadata.beat = beat;
+  metadata.sync = { ...(metadata.sync ?? {}), objective_beat: { p: metaHash(objective), c: metaHash(beat) } };
+  await patchMeta(pageId, metadata);
+}
+// Stamp prose provenance after prose is written (mirrors stampProse). Reads metadata fresh so it
+// preserves the summary runUnit just persisted.
+async function stampProseMeta(pageId, objective, prose) {
+  const metadata = await readMeta(pageId);
+  const beat = typeof metadata.beat === "string" ? metadata.beat.trim() : "";
+  if (beat) {
+    metadata.sync = { ...(metadata.sync ?? {}), beat_prose: { p: metaHash(beat), c: metaHash(prose ?? "") } };
+    delete metadata.prose_src_hash;
+  } else {
+    metadata.prose_src_hash = metaHash(objective);
+    if (metadata.sync) delete metadata.sync.beat_prose;
+  }
+  await patchMeta(pageId, metadata);
+}
+
 function readBody(req) {
   return new Promise((resolve) => {
     let data = "";
@@ -1727,6 +1789,115 @@ async function runUnit(body) {
   return { text };
 }
 
+// ── /generate-book — bulk "build the draft" (beats → optional pause → prose) ──
+// Local parity for supabase/functions/generate-book: plan a beat for every objective-bearing page
+// that lacks one, then write prose for every empty one — writing the SAME book_generations row
+// (kind 'write_all'/'rerender_stale') the edge fn writes, so the studio watches it identically. The
+// edge fn self-chains ONE unit per invocation (the worker's wall-clock cap); the bridge has no cap,
+// so it runs the whole cascade in one async pass, patching progress between units. Two cheap edge
+// niceties are dropped here (not load-bearing for dev): best-of-3 beat judging (single sample) and
+// character-ledger extraction (the bridge's runUnit doesn't read the ledger anyway). Provenance
+// stamps and per-page summaries — which the dirty graph and continuity DO depend on — are mirrored.
+async function runGenerateBook(body) {
+  const bookId = Number(body.bookId);
+  const rerenderIds = Array.isArray(body.pageIds) ? body.pageIds.filter((n) => typeof n === "number") : [];
+  const rerender = rerenderIds.length > 0;
+  const pauseAfterBeats = body.pauseAfterBeats === true && !rerender;
+
+  const book = await fetchBook(bookId);
+  if (!book) return { error: "Book not found" };
+  const allPages = (await fetchPages(bookId)).filter((p) => p.page_type === "text");
+
+  const proseRemaining = rerender
+    ? allPages.filter((p) => rerenderIds.includes(p.id) && p.metadata?.objective?.trim()).map((p) => p.id)
+    : allPages.filter((p) => p.metadata?.objective?.trim() && !bgBodyText(p.content)).map((p) => p.id);
+  if (proseRemaining.length === 0) {
+    return { error: rerender ? "None of those pages can be re-rendered (no objective)." : "No empty pages with an objective were found." };
+  }
+
+  const beatsRemaining = rerender
+    ? []
+    : allPages.filter((p) => p.metadata?.objective?.trim() && !(p.metadata?.beat ?? "").trim()).map((p) => p.id);
+  const stage = beatsRemaining.length > 0 ? "beats" : "prose";
+
+  const progress = {
+    done: 0, total: proseRemaining.length, remaining: proseRemaining, failures: 0,
+    stage, beatsRemaining, beatsTotal: beatsRemaining.length, beatsDone: 0, pauseAfterBeats, rerender,
+    phase: stage === "beats" ? `Planning beats 0/${beatsRemaining.length}` : `Writing 0/${proseRemaining.length}`,
+  };
+  const row = await insertGeneration(bookId, { kind: rerender ? "rerender_stale" : "write_all", scope: "book", input: { rerender, pauseAfterBeats }, progress });
+  if (!row) return { error: "could not create generation row" };
+
+  // Fire-and-forget: the client watches the row over Realtime (parity with the edge's 202 + background).
+  driveGenerateBook(row.id, bookId, pauseAfterBeats, progress).catch(async (e) => {
+    await updateGeneration(row.id, { status: "error", error: String(e?.message ?? e).slice(0, 1000) });
+  });
+  return { generation: row };
+}
+
+// Beats stage (if any) → optional pause → prose stage. Runs to completion; patches progress as it goes.
+async function driveGenerateBook(genId, bookId, pauseAfterBeats, progress) {
+  let failures = progress.failures ?? 0;
+  const beats = progress.beatsRemaining ?? [];
+  if (beats.length > 0) {
+    let beatsDone = 0;
+    for (const pageId of beats) {
+      const meta = await readMeta(pageId);
+      const objective = meta?.objective?.trim();
+      if (!objective) continue; // no longer eligible — drop silently
+      if ((meta.beat ?? "").trim()) { beatsDone++; continue; } // already has a beat
+      try {
+        const out = await runObjectiveToBeat({ bookId, pageId, objective });
+        if (out.error || !out.beat) throw new Error(out.error ?? "no beat");
+        await stampBeatMeta(pageId, objective, out.beat);
+        beatsDone++;
+      } catch (e) {
+        failures++;
+        console.error(`generate-book: beat for page ${pageId} failed:`, e.message);
+      }
+      await updateGeneration(genId, { progress: { ...progress, beatsDone, failures, phase: `Planning beats ${beatsDone}/${progress.beatsTotal}` } });
+    }
+    progress = { ...progress, beatsRemaining: [], beatsDone, failures, stage: "prose" };
+    if (pauseAfterBeats) {
+      await updateGeneration(genId, { status: "ready", progress: { ...progress, phase: "beats_done" } });
+      return;
+    }
+    await updateGeneration(genId, { progress: { ...progress, phase: `Writing 0/${progress.total}` } });
+  }
+  await driveProse(genId, bookId, progress);
+}
+
+// Prose stage: write each remaining page (clobber-safe), patch progress, finish 'done'.
+async function driveProse(genId, bookId, progress) {
+  const remaining = [...(progress.remaining ?? [])];
+  const rerender = progress.rerender === true;
+  let done = progress.done ?? 0;
+  let failures = progress.failures ?? 0;
+  for (let i = 0; i < remaining.length; i++) {
+    const pageId = remaining[i];
+    // Re-read the page fresh (clobber-safe + fresh objective/title).
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/pages?id=eq.${pageId}&select=id,title,content,metadata`, { headers: sbHeaders });
+    const page = (await r.json())?.[0];
+    const objective = page?.metadata?.objective?.trim();
+    const alreadyWritten = page ? bgBodyText(page.content) : true;
+    // Fill mode skips a page that already has prose; re-render is an explicit overwrite.
+    if (page && objective && (rerender || !alreadyWritten)) {
+      try {
+        const unit = await runUnit({ bookId, pageId, level: "page", objective, mode: "write" });
+        if (unit.error || !unit.text) throw new Error(unit.error ?? "no prose");
+        await writePageContent(pageId, page.title, unit.text);
+        await stampProseMeta(pageId, objective, unit.text);
+      } catch (e) {
+        failures++;
+        console.error(`generate-book: page ${pageId} failed:`, e.message);
+      }
+    }
+    done++;
+    await updateGeneration(genId, { progress: { ...progress, remaining: remaining.slice(i + 1), done, failures, phase: `Writing ${done}/${progress.total}` } });
+  }
+  await updateGeneration(genId, { status: "done", progress: { ...progress, remaining: [], done, failures, phase: "Done" } });
+}
+
 // ── /eval-call — on-demand judge of one logged ai_call (phase 2) ───────────────
 // Mirrors supabase/functions/evaluate-ai-call, but runs via local Claude Code — which has the repo,
 // so the judge can ground "code" amendments in the real prompt-assembly files. Writes the same
@@ -1999,6 +2170,36 @@ async function route(req, res) {
     return json(res, 200, out);
   }
 
+  // generate-book — the durable bulk "build the draft" job (beats → optional pause → prose).
+  if (url === "/generate-book" || url === "/generate-book/") {
+    if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
+    const body = await readBody(req);
+    // Resume after a beats-review pause: verify access, flip 'ready' → 'running', run the prose stage.
+    if (body.resume) {
+      const genId = Number(body.generationId);
+      if (!genId) return json(res, 400, { error: "generationId required" });
+      const g = await fetch(`${SUPABASE_URL}/rest/v1/book_generations?id=eq.${genId}&select=id,book_id,status,progress`, { headers: sbHeaders });
+      const row = (await g.json())?.[0];
+      if (!row) return json(res, 404, { error: "Run not found" });
+      if (!(await authorize(req, res, row.book_id))) return;
+      if (row.status !== "ready") return json(res, 409, { error: "This run is not waiting to continue" });
+      const progress = { ...(row.progress ?? {}), stage: "prose", phase: `Writing 0/${row.progress?.total ?? 0}` };
+      await updateGeneration(genId, { status: "running", progress });
+      console.log(`generate-book resume (book ${row.book_id}, gen ${genId})…`);
+      driveProse(genId, row.book_id, progress).catch(async (e) => {
+        await updateGeneration(genId, { status: "error", error: String(e?.message ?? e).slice(0, 1000) });
+      });
+      return json(res, 200, { status: "running", generationId: genId });
+    }
+    const bookId = Number(body.bookId);
+    if (!bookId) return json(res, 400, { error: "bookId is required" });
+    if (!(await authorize(req, res, bookId))) return;
+    console.log(`generate-book (book ${bookId}${body.pauseAfterBeats ? ", pause after beats" : ""}${Array.isArray(body.pageIds) ? `, rerender ${body.pageIds.length}` : ""})…`);
+    const out = await runGenerateBook(body);
+    if (out.error) return json(res, 500, { error: out.error });
+    return json(res, 200, { status: "running", generation: out.generation });
+  }
+
   // beat-to-prose (write) + revise-prose (revise) — two endpoints over the shared runUnit.
   if (url === "/beat-to-prose" || url === "/beat-to-prose/") {
     if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
@@ -2163,5 +2364,5 @@ async function route(req, res) {
 
 server.listen(PORT, () => {
   console.log(`eval-bridge listening on http://localhost:${PORT}  (repo: ${repoRoot})`);
-  console.log(`  GET/POST /eval/:bookId   POST /spine-to-objectives/:bookId   POST /bible/:bookId   POST /revise-outline/:bookId   POST /beat-to-prose   POST /revise-prose   POST /objective-to-beat   POST /prose-to-beat   POST /brief-to-spine   POST /beat-to-objective   POST /objectives-to-spine   POST /revise-node   POST /revise-scaffold   POST /objective-options   POST /spine-options   POST /ai-run`);
+  console.log(`  GET/POST /eval/:bookId   POST /spine-to-objectives/:bookId   POST /bible/:bookId   POST /revise-outline/:bookId   POST /beat-to-prose   POST /revise-prose   POST /objective-to-beat   POST /prose-to-beat   POST /brief-to-spine   POST /beat-to-objective   POST /objectives-to-spine   POST /revise-node   POST /revise-scaffold   POST /objective-options   POST /spine-options   POST /ai-run   POST /generate-book`);
 });

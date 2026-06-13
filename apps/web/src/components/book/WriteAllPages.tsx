@@ -7,7 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useLatestTaskRow, type TaskRow } from "@/hooks/useLatestTaskRow";
 import { notify as fireNotification } from "@/lib/notify";
-import { BRIDGE, bridgeFetch } from "@/lib/bridge";
+import { invokeGenerateBook } from "@/lib/generateBook";
 import { useEffect, useRef, useState } from "react";
 
 interface WriteAllPagesProps {
@@ -121,16 +121,9 @@ export function WriteAllPages({ bookId, plannedCount }: WriteAllPagesProps) {
     if (!window.confirm("Generate prose for every empty page that has an objective?")) return;
     setBusy(true);
     try {
-      if (BRIDGE) {
-        // Dev: no self-chaining server. Run the cascade client-side via the bridge, writing the
-        // same book_generations row so the UI shows progress. (Kept minimal — dev convenience; the
-        // beat phase and pause checkpoint are prod-only.)
-        await runViaBridge(bookId, notify, refetch);
-      } else {
-        const { data, error } = await supabase.functions.invoke("generate-book", { body: { bookId, notify, pauseAfterBeats } });
-        if (error) throw error;
-        if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
-      }
+      const { data, error } = await invokeGenerateBook({ bookId, notify, pauseAfterBeats });
+      if (error) throw error;
+      if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
       refetch();
     } catch (e) {
       toast({ title: "Couldn't start writing", description: String((e as Error)?.message ?? e), variant: "destructive" });
@@ -144,7 +137,7 @@ export function WriteAllPages({ bookId, plannedCount }: WriteAllPagesProps) {
     if (!row || continuing) return;
     setContinuing(true);
     try {
-      const { data, error } = await supabase.functions.invoke("generate-book", { body: { generationId: row.id, resume: true } });
+      const { data, error } = await invokeGenerateBook({ generationId: row.id, resume: true });
       if (error) throw error;
       if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
       refetch();
@@ -214,60 +207,4 @@ export function WriteAllPages({ bookId, plannedCount }: WriteAllPagesProps) {
       )}
     </div>
   );
-}
-
-// Dev-only client cascade via the bridge (no self-chaining server locally). Writes a write_all
-// book_generations row and advances its progress so the UI behaves like prod.
-async function runViaBridge(bookId: number, notify: boolean, refetch: () => void) {
-  const { buildDoc } = await import("@/lib/inlineMarkdown");
-  const { data: pages } = await supabase
-    .from("pages")
-    .select("id, title, content, metadata")
-    .eq("book_id", bookId)
-    .eq("page_type", "text")
-    .eq("archived", false)
-    .order("page_index", { ascending: true });
-
-  const bodyOf = (content: unknown): string => {
-    if (!content || typeof content !== "object") return "";
-    const doc = content as { content?: Array<Record<string, unknown>> };
-    if (!Array.isArray(doc.content)) return "";
-    const nodes = doc.content[0]?.type === "heading" ? doc.content.slice(1) : doc.content;
-    const walk = (n: Record<string, unknown>): string =>
-      n.type === "text" ? String(n.text ?? "") : ((n.content as Array<Record<string, unknown>>) ?? []).map(walk).join("");
-    return nodes.map(walk).join("").trim();
-  };
-
-  const targets = ((pages as Array<{ id: number; title: string | null; content: unknown; metadata: { objective?: string } | null }>) ?? [])
-    .filter((p) => p.metadata?.objective && !bodyOf(p.content));
-  if (targets.length === 0) throw new Error("No empty pages with an objective were found.");
-
-  const progress = { done: 0, total: targets.length, failures: 0, phase: `Writing 0/${targets.length}` };
-  const { data: gen } = await supabase
-    .from("book_generations")
-    .insert({ book_id: bookId, kind: "write_all", scope: "book", status: "running", input: {}, progress, notify_email: notify })
-    .select("id")
-    .single();
-  const genId = (gen as { id: number }).id;
-  refetch();
-
-  let failures = 0;
-  for (let i = 0; i < targets.length; i++) {
-    const page = targets[i];
-    try {
-      const r = await bridgeFetch(`/unit`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ bookId, pageId: page.id, level: "page", objective: page.metadata!.objective }),
-      });
-      const d = await r.json();
-      if (d.error) throw new Error(d.error);
-      const text = String(d.text ?? "").trim();
-      if (text) await supabase.from("pages").update({ content: buildDoc(page.title, text) }).eq("id", page.id);
-    } catch {
-      failures++;
-    }
-    await supabase.from("book_generations").update({ progress: { done: i + 1, total: targets.length, failures, phase: `Writing ${i + 1}/${targets.length}` } }).eq("id", genId);
-  }
-  await supabase.from("book_generations").update({ status: "done" }).eq("id", genId);
 }

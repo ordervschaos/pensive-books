@@ -6,8 +6,8 @@
 // The Stage owns the head + approve gate; this renders the body.
 import { useEffect, useRef, useState } from "react";
 import { ArrowRight, Check, Sparkles } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { invokeGenerateBook } from "@/lib/generateBook";
 import { useLatestTaskRow, type TaskRow } from "@/hooks/useLatestTaskRow";
 import { notify as fireNotification } from "@/lib/notify";
 import { discardProse } from "@/lib/discardLadder";
@@ -56,7 +56,7 @@ export function DraftStep({ bookId, model, beforeGen, onChanged, onSelectPage }:
     try {
       await beforeGen(); // persist the prose steer so generate-book's prose phase reads it
       const body = paused && row ? { generationId: row.id, resume: true } : { bookId, notify };
-      const { data, error } = await supabase.functions.invoke("generate-book", { body });
+      const { data, error } = await invokeGenerateBook(body);
       if (error) throw error;
       if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
       refetch(); onChanged();

@@ -9,12 +9,12 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Check, Loader2, RefreshCw, Sparkles } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
-import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAIRun } from "@/hooks/useAIRun";
 import { useLatestTaskRow, type TaskRow } from "@/hooks/useLatestTaskRow";
 import { saveBeat } from "@/lib/ladder";
-import { discardBeats } from "@/lib/discardLadder";
+import { invokeGenerateBook } from "@/lib/generateBook";
+import { discardBeatsAndProse } from "@/lib/discardLadder";
 import { RunControls } from "../../RunControls";
 import type { MapPage } from "@/lib/planGraph";
 import type { StudioModel } from "../studioModel";
@@ -69,7 +69,7 @@ export function BeatsStep({ bookId, model, beforeGen, onChanged }: { bookId: num
     if (buildRunning) return;
     try {
       await beforeGen(); // persist the beats steer so generate-book's beat phase reads it
-      const { data, error } = await supabase.functions.invoke("generate-book", { body: { bookId, pauseAfterBeats: true } });
+      const { data, error } = await invokeGenerateBook({ bookId, pauseAfterBeats: true });
       if (error) throw error;
       if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
       buildRefetch();
@@ -81,7 +81,7 @@ export function BeatsStep({ bookId, model, beforeGen, onChanged }: { bookId: num
   const runBulkProse = async () => {
     if (!buildPaused || !buildRow) return;
     try {
-      const { data, error } = await supabase.functions.invoke("generate-book", { body: { generationId: buildRow.id, resume: true } });
+      const { data, error } = await invokeGenerateBook({ generationId: buildRow.id, resume: true });
       if (error) throw error;
       if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
       buildRefetch();
@@ -91,22 +91,22 @@ export function BeatsStep({ bookId, model, beforeGen, onChanged }: { bookId: num
   };
   // ────────────────────────────────────────────────────────────────────────────
 
-  // Discard every planned beat back to objectives-only, so the bulk/by-hand flow can re-plan them.
-  // Beats only — any written prose is left in place (it reads as stale against the missing beat).
-  const beatIds = beatPages.filter((p) => p.beat !== "gap").map((p) => p.id);
+  // Discard beats AND prose back to objectives-only, so the bulk/by-hand flow can re-plan from scratch.
+  // Cascades to prose: a beat can't be discarded while prose written from it survives.
+  const discardIds = beatPages.filter((p) => p.beat !== "gap" || p.prose !== "gap").map((p) => p.id);
   const discardAllBeats = async () => {
-    if (buildRunning || discarding || beatIds.length === 0) return;
+    if (buildRunning || discarding || discardIds.length === 0) return;
     if (!window.confirm(
-      `Discard the beats on ${beatIds.length} page${beatIds.length === 1 ? "" : "s"}? ` +
-      `The objectives stay — you'll re-plan the beats. This can't be undone.`,
+      `Discard the beats and prose on ${discardIds.length} page${discardIds.length === 1 ? "" : "s"}? ` +
+      `The objectives stay — you'll re-plan beats and re-draft from them. This can't be undone.`,
     )) return;
     setDiscarding(true);
     try {
-      await discardBeats(bookId, beatIds);
-      toast({ title: "Beats discarded", description: "Every page is back to its objective. Generate all beats to re-plan." });
+      await discardBeatsAndProse(bookId, discardIds);
+      toast({ title: "Beats and prose discarded", description: "Every page is back to its objective. Generate all beats to re-plan." });
       onChanged();
     } catch (e) {
-      toast({ title: "Couldn't discard the beats", description: String((e as Error)?.message ?? e), variant: "destructive" });
+      toast({ title: "Couldn't discard", description: String((e as Error)?.message ?? e), variant: "destructive" });
     } finally {
       setDiscarding(false);
     }
@@ -146,7 +146,7 @@ export function BeatsStep({ bookId, model, beforeGen, onChanged }: { bookId: num
         </DoneStrip>
         <div className="mt-4">
           <ActionLink tone="faint" busy={discarding} onClick={() => void discardAllBeats()}>
-            discard the beats & re-plan →
+            discard the beats & prose, re-plan →
           </ActionLink>
         </div>
       </div>
@@ -273,10 +273,10 @@ export function BeatsStep({ bookId, model, beforeGen, onChanged }: { bookId: num
             </div>
           )}
 
-          {beatIds.length > 0 && (
+          {discardIds.length > 0 && (
             <div className="mt-6 border-t border-[hsl(var(--pv-border-soft))]/40 pt-4">
               <ActionLink tone="faint" busy={discarding} onClick={() => void discardAllBeats()}>
-                discard all beats & re-plan →
+                discard all beats & prose, re-plan →
               </ActionLink>
             </div>
           )}
