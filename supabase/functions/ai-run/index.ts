@@ -65,7 +65,7 @@ async function runWorker(
         pageId: params.pageId as number,
         objective: params.objective as string,
         userId: ctx.userId,
-      }, 3);
+      }, 1);
       return { options };
     }
     case "foundations_options": {

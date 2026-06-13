@@ -1,13 +1,11 @@
-// BeatsStep — the serial, human-pick beat flow. Walk the objective-bearing pages in order; for the
-// current page, three un-judged takes are drafted, the author picks/edits one, saves, and advances.
+// BeatsStep — beats for every objective-bearing page. The prominent path is BULK: "Generate all beats
+// at once" plans a beat for every gap page server-side (generate-book, best-of-3, auto-picked), then
+// resumes into the prose stage. Below it, an optional page-by-page flow lets the author shape any single
+// beat by hand.
 //
-// The take generation is now a DURABLE run (useAIRun, kind 'beat_candidates', keyed by page): drafting
-// survives navigation/refresh, is cancellable, and the takes reattach. The cursor/pick/edit stay
-// client-side (navigation, not AI state). Picking a take saves the beat and marks the run applied.
-//
-// Bulk mode: "Generate all beats at once" kicks off generate-book with pauseAfterBeats, which plans
-// beats for every gap page server-side (best-of-3, auto-picked). When done, "Write all prose" resumes
-// the same run into the prose stage.
+// The page-by-page flow generates ONE beat (a durable run, kind 'beat_candidates' keyed by page) which
+// the author edits in place and saves — no take-picker. The run survives navigation/refresh, is
+// cancellable, and reattaches; the cursor/edit stay client-side. Saving a beat marks the run applied.
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Check, Loader2, RefreshCw, Sparkles } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
@@ -19,7 +17,7 @@ import { saveBeat } from "@/lib/ladder";
 import { RunControls } from "../../RunControls";
 import type { MapPage } from "@/lib/planGraph";
 import type { StudioModel } from "../studioModel";
-import { DoneStrip } from "../studioUi";
+import { DoneStrip, Hero, RunningCard } from "../studioUi";
 
 interface BuildProgress { done: number; total: number; phase?: string }
 interface BuildRow extends TaskRow { progress: BuildProgress | null; error: string | null }
@@ -35,21 +33,19 @@ export function BeatsStep({ bookId, model, beforeGen, onChanged }: { bookId: num
   const firstGap = beatPages.findIndex((p) => p.beat === "gap");
   const [cursor, setCursor] = useState(firstGap === -1 ? 0 : firstGap);
   const [draft, setDraft] = useState("");
-  const [pick, setPick] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const seatedRun = useRef<number | null>(null);
-  const kickedFor = useRef<number | null>(null);
 
   const page: MapPage | undefined = beatPages[cursor];
   const committed = !!page && page.beat !== "gap";
 
-  // Durable take generation for the current (gap) page.
+  // Durable single-beat generation for the current (gap) page.
   const cand = useAIRun<{ options: string[] }>({ bookId, kind: "beat_candidates", targetPageId: page?.id, enabled: !!page && !committed });
-  const takes = cand.run?.result?.options ?? [];
+  const beat = cand.run?.result?.options?.[0] ?? "";
   const generating = cand.run?.status === "running" || cand.run?.status === "pending" || cand.starting;
-  const ready = cand.run?.status === "ready";
+  const ready = cand.run?.status === "ready" && !!beat;
 
-  const draftTakes = async () => { if (!page) return; await beforeGen(); kickedFor.current = page.id; void cand.start({ pageId: page.id, objective: page.objectiveText.trim() }); };
+  const draftBeat = async () => { if (!page) return; await beforeGen(); void cand.start({ pageId: page.id, objective: page.objectiveText.trim() }); };
 
   // ── Bulk beat/prose run ──────────────────────────────────────────────────────
   const { row: buildRow, refetch: buildRefetch, stale: buildStale } = useLatestTaskRow<BuildRow>({
@@ -93,28 +89,18 @@ export function BeatsStep({ bookId, model, beforeGen, onChanged }: { bookId: num
   };
   // ────────────────────────────────────────────────────────────────────────────
 
-  // Landing on a committed page: seat its saved beat for review.
+  // Seat the editable draft: a committed page shows its saved beat; a gap page starts empty until a run lands.
   useEffect(() => {
-    if (page && committed) { setPick(null); setDraft(page.beatText); }
+    if (!page) return;
+    setDraft(committed ? page.beatText : "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page?.id, committed]);
 
-  // Auto-draft three takes when landing on a gap page with no run. Suppressed while a bulk run is
-  // in progress (avoid double-generating the same beat).
+  // When a fresh single-beat run lands, seat it as the editable draft (once per run).
   useEffect(() => {
-    if (!page || committed || cand.loading || cand.starting || cand.run || buildRunning) return;
-    if (kickedFor.current === page.id) return;
-    kickedFor.current = page.id;
-    setPick(null); setDraft("");
-    void cand.start({ pageId: page.id, objective: page.objectiveText.trim() });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page?.id, committed, cand.loading, cand.starting, cand.run?.id, buildRunning]);
-
-  // When a fresh run of takes lands, seat the first as the default pick/edit (once per run).
-  useEffect(() => {
-    if (ready && cand.run && seatedRun.current !== cand.run.id && takes.length) {
+    if (ready && cand.run && seatedRun.current !== cand.run.id) {
       seatedRun.current = cand.run.id;
-      setPick(0); setDraft(takes[0]);
+      setDraft(beat);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cand.run?.id, cand.run?.status]);
@@ -124,8 +110,8 @@ export function BeatsStep({ bookId, model, beforeGen, onChanged }: { bookId: num
   }
   if (allDone) {
     return (
-      <DoneStrip icon={<Check className="h-5 w-5" />} title="Every beat chosen">
-        All {total} pages have a beat you picked.{" "}
+      <DoneStrip icon={<Check className="h-5 w-5" />} title="Every beat planned">
+        All {total} pages have a beat.{" "}
         <button type="button" onClick={() => setCursor(0)} className="italic text-[hsl(var(--pv-accent))] hover:opacity-75">review them →</button>
         {buildPaused && (
           <>
@@ -144,7 +130,7 @@ export function BeatsStep({ bookId, model, beforeGen, onChanged }: { bookId: num
   };
   const commit = async () => {
     const text = draft.trim();
-    if (!text || saving) { if (!text) toast({ title: "Pick or write a beat first", variant: "destructive" }); return; }
+    if (!text || saving) { if (!text) toast({ title: "Generate or write a beat first", variant: "destructive" }); return; }
     setSaving(true);
     try {
       await saveBeat(bookId, page.id, text);
@@ -160,121 +146,109 @@ export function BeatsStep({ bookId, model, beforeGen, onChanged }: { bookId: num
 
   return (
     <div>
-      <div className="mb-5 flex items-center justify-between gap-3">
-        <BeatRail pages={beatPages} cursor={cursor} onJump={setCursor} />
-        <span className="shrink-0 pv-serif text-[13px] italic text-[hsl(var(--pv-text-muted))]">beat {cursor + 1} of {total} · {doneCount} done</span>
-      </div>
-
-      <div className="flex items-baseline gap-3">
-        <span className="pv-mono text-[9.5px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-faint))]">{movement?.num ? `${movement.num} · ` : ""}{movement?.title ?? "Pages"}</span>
-        <span className="ml-auto pv-serif text-[12.5px] italic text-[hsl(var(--pv-text-faint))]">page {cursor + 1}</span>
-      </div>
-      <h2 className="pv-serif mb-4 mt-1 text-[28px] leading-[1.15] tracking-[-0.01em] text-foreground">{page.title || "(untitled page)"}</h2>
-
-      <div className="rounded-2xl border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/40 px-5 py-4">
-        <div className="pv-mono text-[10px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-faint))]">Objective · the contract</div>
-        <p className="pv-serif mt-2 text-[15.5px] leading-[1.6] text-[hsl(var(--pv-text-muted))]">{page.objectiveText}</p>
-      </div>
-
-
-      {generating ? (
-        <div className="mt-5 flex items-center gap-4">
-          <p className="pv-serif inline-flex items-center gap-2 text-[14px] italic text-[hsl(var(--pv-text-muted))]">
-            <Loader2 className="h-4 w-4 animate-spin" /> Drafting three takes…
-          </p>
-          <button type="button" onClick={() => void cand.cancel()} className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">cancel</button>
-        </div>
-      ) : committed ? (
-        <div className="mt-5">
-          <div className="pv-mono mb-3 text-[10px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-faint))]">Chosen beat</div>
-          <div className="rounded-2xl border border-[hsl(var(--pv-accent))]/45 bg-[hsl(var(--pv-surface-2))]/60 px-5 py-4">
-            <Textarea value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={() => draft.trim() && void saveBeat(bookId, page.id, draft.trim()).then(onChanged)} rows={6}
-              className="pv-serif border-none bg-transparent px-0 text-[15.5px] leading-[1.6] focus-visible:ring-0" />
-          </div>
-          <div className="mt-4 flex flex-wrap items-center gap-5">
-            <button type="button" onClick={draftTakes} className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-accent))] hover:opacity-75">
-              <RefreshCw className="h-3.5 w-3.5" /> re-pick this beat
-            </button>
-            <div className="ml-auto flex gap-5">
-              {cursor > 0 && <button type="button" onClick={() => setCursor(cursor - 1)} className="pv-serif text-[13.5px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground">← prev</button>}
-              {cursor < total - 1 && <button type="button" onClick={() => setCursor(cursor + 1)} className="pv-serif text-[13.5px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground">next →</button>}
-            </div>
-          </div>
-        </div>
-      ) : ready && takes.length > 0 ? (
-        <div className="mt-5">
-          <div className="pv-mono mb-3 text-[10px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-faint))]">Three takes — pick one to keep &amp; edit</div>
-          <div className="space-y-3">
-            {takes.map((t, i) => {
-              const selected = pick === i;
-              return (
-                <div key={i} onClick={selected ? undefined : () => { setPick(i); setDraft(t); }}
-                  className={`rounded-2xl border px-5 py-4 transition-colors ${selected ? "border-[hsl(var(--pv-accent))]/45 bg-[hsl(var(--pv-surface-2))]/60" : "cursor-pointer border-border hover:border-foreground/30"}`}>
-                  <div className="mb-2 flex items-center gap-3">
-                    <span className="pv-mono text-[10px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-faint))]">Take {i + 1}</span>
-                    {selected ? <span className="pv-mono ml-auto text-[9px] uppercase tracking-[0.12em] text-[hsl(var(--pv-accent))]">chosen · editing</span>
-                      : <span className="ml-auto pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))]">pick this</span>}
-                  </div>
-                  {selected
-                    ? <Textarea value={draft} onClick={(e) => e.stopPropagation()} onChange={(e) => setDraft(e.target.value)} rows={6} className="pv-serif border-none bg-transparent px-0 text-[15.5px] leading-[1.6] focus-visible:ring-0" />
-                    : <p className="pv-serif line-clamp-3 text-[15px] leading-[1.6] text-[hsl(var(--pv-text-muted))]">{t}</p>}
-                </div>
-              );
-            })}
-          </div>
-          <div className="mt-5 flex flex-wrap items-center gap-4">
-            <button type="button" onClick={() => void commit()} disabled={saving || pick === null}
-              className="pv-serif inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-[14.5px] text-primary-foreground disabled:opacity-40">
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Use this beat &amp; continue
-            </button>
-            <button type="button" onClick={draftTakes} className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] text-[hsl(var(--pv-text-muted))] hover:text-foreground">
-              <RefreshCw className="h-3.5 w-3.5" /> Redraft three takes
-            </button>
-            {cursor > 0 && <button type="button" onClick={() => setCursor(cursor - 1)} className="pv-serif text-[13.5px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground"><ArrowLeft className="mr-1 inline h-3.5 w-3.5" />back</button>}
-          </div>
-        </div>
-      ) : cand.run?.status === "error" ? (
-        <div className="mt-5 flex items-center gap-4">
-          <p className="pv-serif text-[13.5px] italic text-red-600 dark:text-red-400">{cand.run.error ?? "Couldn't draft the takes."}</p>
-          <button type="button" onClick={draftTakes} className="pv-serif text-[13.5px] italic text-[hsl(var(--pv-accent))] hover:opacity-75">try again →</button>
-        </div>
+      {/* ── Bulk: the prominent path ── */}
+      {buildRunning ? (
+        <RunningCard
+          label={buildProgress?.phase ?? "Planning beats"} done={buildProgress?.done} total={buildProgress?.total} unit="page"
+          controls={<RunControls table="book_generations" row={buildRow} stale={buildStale} onRestart={runBulkBeats} refetch={buildRefetch} />}
+        />
+      ) : buildPaused ? (
+        <DoneStrip icon={<Check className="h-5 w-5" />} title="All beats planned">
+          Ready to write — generate all the prose from the beats in one shot.{" "}
+          <button type="button" onClick={() => void runBulkProse()} className="italic text-[hsl(var(--pv-accent))] hover:opacity-75">write all prose →</button>
+        </DoneStrip>
       ) : (
-        <div className="mt-5">
-          <button type="button" onClick={draftTakes} className="pv-serif inline-flex items-center gap-1.5 text-[14px] italic text-[hsl(var(--pv-accent))] hover:opacity-75">
-            <RefreshCw className="h-3.5 w-3.5" /> draft three takes
-          </button>
-        </div>
+        <Hero
+          icon={<Sparkles className="h-5 w-5" />}
+          title={`Generate all ${gapCount} beat${gapCount === 1 ? "" : "s"} at once`}
+          sub="Plans the strongest beat for each page from its objective — then continues straight into the prose. You can refine any beat by hand below."
+          onClick={() => void runBulkBeats()}
+        />
       )}
 
-      {/* ── Bulk actions ── */}
-      <div className="mt-8 border-t border-[hsl(var(--pv-border-soft))]/50 pt-5">
-        {buildRunning ? (
-          <div>
-            <p className="pv-serif inline-flex items-center gap-2 text-[13.5px] italic text-[hsl(var(--pv-text-muted))]">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              {buildProgress?.phase ?? "Planning…"}
-            </p>
-            <RunControls table="book_generations" row={buildRow} stale={buildStale} onRestart={runBulkBeats} refetch={buildRefetch} />
+      {/* ── Page-by-page: optional hand-shaping ── */}
+      {!buildRunning && (
+        <div className="mt-8 border-t border-[hsl(var(--pv-border-soft))]/60 pt-6">
+          <div className="mb-5 flex items-center justify-between gap-3">
+            <div>
+              <div className="pv-mono text-[10px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-faint))]">Shape a beat by hand</div>
+              <p className="pv-serif mt-0.5 text-[12.5px] italic text-[hsl(var(--pv-text-faint))]">Walk the pages, generate one beat, edit it, and keep it.</p>
+            </div>
+            <span className="shrink-0 pv-serif text-[13px] italic text-[hsl(var(--pv-text-muted))]">beat {cursor + 1} of {total} · {doneCount} done</span>
           </div>
-        ) : buildPaused ? (
-          <div>
-            <p className="pv-serif text-[13.5px] text-foreground">All beats planned.</p>
-            <p className="pv-serif mt-0.5 text-[12.5px] italic text-[hsl(var(--pv-text-faint))]">Ready to write — generate all prose from the beats in one shot.</p>
-            <button type="button" onClick={() => void runBulkProse()}
-              className="pv-serif mt-3 inline-flex items-center gap-1.5 text-[14px] italic text-[hsl(var(--pv-accent))] hover:opacity-75">
-              Write all prose →
-            </button>
+          <BeatRail pages={beatPages} cursor={cursor} onJump={setCursor} />
+
+          <div className="mt-5 flex items-baseline gap-3">
+            <span className="pv-mono text-[9.5px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-faint))]">{movement?.num ? `${movement.num} · ` : ""}{movement?.title ?? "Pages"}</span>
+            <span className="ml-auto pv-serif text-[12.5px] italic text-[hsl(var(--pv-text-faint))]">page {cursor + 1}</span>
           </div>
-        ) : gapCount > 0 ? (
-          <div>
-            <button type="button" onClick={() => void runBulkBeats()} disabled={buildRunning}
-              className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-text-faint))] hover:text-[hsl(var(--pv-accent))] transition-colors">
-              <Sparkles className="h-3.5 w-3.5" /> Generate all {gapCount} beats at once →
-            </button>
-            <p className="pv-serif mt-1 text-[12px] italic text-[hsl(var(--pv-text-faint))]/70">Auto-picks the best take for each page — skip the page-by-page flow.</p>
+          <h2 className="pv-serif mb-4 mt-1 text-[28px] leading-[1.15] tracking-[-0.01em] text-foreground">{page.title || "(untitled page)"}</h2>
+
+          <div className="rounded-2xl border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/40 px-5 py-4">
+            <div className="pv-mono text-[10px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-faint))]">Objective · the contract</div>
+            <p className="pv-serif mt-2 text-[15.5px] leading-[1.6] text-[hsl(var(--pv-text-muted))]">{page.objectiveText}</p>
           </div>
-        ) : null}
-      </div>
+
+          {generating ? (
+            <div className="mt-5 flex items-center gap-4">
+              <p className="pv-serif inline-flex items-center gap-2 text-[14px] italic text-[hsl(var(--pv-text-muted))]">
+                <Loader2 className="h-4 w-4 animate-spin" /> Drafting the beat…
+              </p>
+              <button type="button" onClick={() => void cand.cancel()} className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">cancel</button>
+            </div>
+          ) : committed ? (
+            <div className="mt-5">
+              <div className="pv-mono mb-3 text-[10px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-faint))]">Chosen beat</div>
+              <div className="rounded-2xl border border-[hsl(var(--pv-accent))]/45 bg-[hsl(var(--pv-surface-2))]/60 px-5 py-4">
+                <Textarea value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={() => draft.trim() && void saveBeat(bookId, page.id, draft.trim()).then(onChanged)} rows={6}
+                  className="pv-serif border-none bg-transparent px-0 text-[15.5px] leading-[1.6] focus-visible:ring-0" />
+              </div>
+              <div className="mt-4 flex flex-wrap items-center gap-5">
+                <button type="button" onClick={draftBeat} className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-accent))] hover:opacity-75">
+                  <RefreshCw className="h-3.5 w-3.5" /> regenerate this beat
+                </button>
+                <div className="ml-auto flex gap-5">
+                  {cursor > 0 && <button type="button" onClick={() => setCursor(cursor - 1)} className="pv-serif text-[13.5px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground">← prev</button>}
+                  {cursor < total - 1 && <button type="button" onClick={() => setCursor(cursor + 1)} className="pv-serif text-[13.5px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground">next →</button>}
+                </div>
+              </div>
+            </div>
+          ) : ready ? (
+            <div className="mt-5">
+              <div className="pv-mono mb-3 text-[10px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-faint))]">Beat — edit it, then keep it</div>
+              <div className="rounded-2xl border border-[hsl(var(--pv-accent))]/45 bg-[hsl(var(--pv-surface-2))]/60 px-5 py-4">
+                <Textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={6}
+                  className="pv-serif border-none bg-transparent px-0 text-[15.5px] leading-[1.6] focus-visible:ring-0" />
+              </div>
+              <div className="mt-5 flex flex-wrap items-center gap-4">
+                <button type="button" onClick={() => void commit()} disabled={saving || !draft.trim()}
+                  className="pv-serif inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-[14.5px] text-primary-foreground disabled:opacity-40">
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Use this beat &amp; continue
+                </button>
+                <button type="button" onClick={draftBeat} className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] text-[hsl(var(--pv-text-muted))] hover:text-foreground">
+                  <RefreshCw className="h-3.5 w-3.5" /> regenerate
+                </button>
+                {cursor > 0 && <button type="button" onClick={() => setCursor(cursor - 1)} className="pv-serif text-[13.5px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground"><ArrowLeft className="mr-1 inline h-3.5 w-3.5" />back</button>}
+              </div>
+            </div>
+          ) : cand.run?.status === "error" ? (
+            <div className="mt-5 flex items-center gap-4">
+              <p className="pv-serif text-[13.5px] italic text-red-600 dark:text-red-400">{cand.run.error ?? "Couldn't draft the beat."}</p>
+              <button type="button" onClick={draftBeat} className="pv-serif text-[13.5px] italic text-[hsl(var(--pv-accent))] hover:opacity-75">try again →</button>
+            </div>
+          ) : (
+            <div className="mt-5 flex flex-wrap items-center gap-5">
+              <button type="button" onClick={draftBeat} className="pv-serif inline-flex items-center gap-1.5 text-[14px] italic text-[hsl(var(--pv-accent))] hover:opacity-75">
+                <Sparkles className="h-3.5 w-3.5" /> draft this beat
+              </button>
+              <div className="ml-auto flex gap-5">
+                {cursor > 0 && <button type="button" onClick={() => setCursor(cursor - 1)} className="pv-serif text-[13.5px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground">← prev</button>}
+                {cursor < total - 1 && <button type="button" onClick={() => setCursor(cursor + 1)} className="pv-serif text-[13.5px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground">next →</button>}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
