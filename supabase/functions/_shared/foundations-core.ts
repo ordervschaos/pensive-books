@@ -13,6 +13,7 @@ import { callClaude, textFromClaude, type CallMeta } from "./claude.ts";
 import { extractJsonBlock } from "./json.ts";
 import { getActiveModels } from "./model-config.ts";
 import { canonContext, type CanonPacket } from "./canon-core.ts";
+import { readSteer, steerBlock } from "./steer.ts";
 
 export type FoundationsStep = "argument" | "ending" | "cast" | "tentpoles" | "voice";
 
@@ -148,7 +149,7 @@ export interface FoundationsOptionsParams {
 export async function foundationsOptions(
   client: SupabaseClient, apiKey: string, p: FoundationsOptionsParams,
 ): Promise<{ candidates: FCandidate[] } | { candidates: CastMember[] } | { candidates: Tentpole[] }> {
-  const { data: book, error } = await client.from("books").select("id, name, brief, foundations, canon").eq("id", p.bookId).single();
+  const { data: book, error } = await client.from("books").select("id, name, brief, foundations, canon, steers").eq("id", p.bookId).single();
   if (error || !book) throw new Error("Book not found");
   const brief = book.brief as Brief | null;
   const f = (book.foundations as Foundations | null) ?? {};
@@ -178,7 +179,9 @@ export async function foundationsOptions(
       role: "user",
       content: `BOOK: ${book.name}\n\nBRIEF:\n${briefContext(brief)}` +
         (canon ? `\n\nCANON (settled facts from the previous book — honor, never contradict, never retell):\n${canonContext(canon)}` : "") +
-        `\n\nSETTLED FOUNDATIONS SO FAR:\n${settledContext(f)}${stepInput}\n\nGenerate the candidates. JSON only.`,
+        `\n\nSETTLED FOUNDATIONS SO FAR:\n${settledContext(f)}${stepInput}` +
+        steerBlock(readSteer(book.steers, "foundations")) +
+        `\n\nGenerate the candidates. JSON only.`,
     }],
   }, meta);
 
@@ -240,7 +243,7 @@ export interface SpineRoutesParams {
 // brief+foundations → 3 candidate routes. Validates pin survival (§4 rule 2c): every pinned tentpole
 // in every route's tentpole_order, no killed ones. One retry on violation, then throw.
 export async function spineRoutes(client: SupabaseClient, apiKey: string, p: SpineRoutesParams): Promise<SpineRoute[]> {
-  const { data: book, error } = await client.from("books").select("id, name, brief, foundations, canon").eq("id", p.bookId).single();
+  const { data: book, error } = await client.from("books").select("id, name, brief, foundations, canon, steers").eq("id", p.bookId).single();
   if (error || !book) throw new Error("Book not found");
   const brief = book.brief as Brief | null;
   const f = (book.foundations as Foundations | null) ?? {};
@@ -255,6 +258,7 @@ export async function spineRoutes(client: SupabaseClient, apiKey: string, p: Spi
     (canon ? `\n\nCANON (settled facts from the previous book — honor, never contradict, never retell):\n${canonContext(canon)}` : "") +
     `\n\nSETTLED FOUNDATIONS:\n${settledContext(f)}` +
     (p.avoid?.length ? `\n\nEXISTING ROUTES (vary away from these — don't paraphrase them):\n${p.avoid.map((s) => `---\n${s}`).join("\n")}` : "") +
+    steerBlock(readSteer(book.steers, "spine")) +
     `\n\nGenerate 3 routes. JSON only.`;
 
   const attempt = async (extra?: string): Promise<SpineRoute[]> => {

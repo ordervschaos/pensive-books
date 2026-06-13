@@ -16,6 +16,7 @@ import { type CharacterState, type PageState } from "./page-state.ts";
 import { canonContext, type CanonPacket } from "./canon-core.ts";
 import { tiptapToText } from "./words.ts";
 import { extractJsonBlock } from "./json.ts";
+import { readSteer, steerBlock } from "./steer.ts";
 const PRECEDING_PAGES = 2; // how many prior text pages of full prose to include for continuity
 
 export interface Brief {
@@ -69,6 +70,7 @@ interface BookRow {
   brief: Brief | null;
   bible: { voice_sample?: string } | null;
   canon: CanonPacket | null;
+  steers: unknown;
 }
 
 // ── Transforms ───────────────────────────────────────────────────────────────
@@ -101,7 +103,7 @@ async function stampGeneratingCall(client: SupabaseClient, pageId: number, callI
 
 async function loadBook(client: SupabaseClient, bookId: number): Promise<BookRow> {
   const { data: book, error } = await client
-    .from("books").select("id, name, subtitle, author, brief, bible, canon").eq("id", bookId).single();
+    .from("books").select("id, name, subtitle, author, brief, bible, canon, steers").eq("id", bookId).single();
   if (error || !book) throw new Error("Book not found");
   return book as unknown as BookRow;
 }
@@ -141,7 +143,7 @@ export async function beatToProse(client: SupabaseClient, apiKey: string, p: Wri
   };
   const text = await renderProse(apiKey, models.high, {
     brief: b.brief, voiceSample: b.bible?.voice_sample?.trim() || null, canon: b.canon, bookName: b.name,
-    level: p.level, mode: "write", objective: (p.objective ?? "").trim(), beat, issues: null, currentText: null,
+    level: p.level, mode: "write", steer: readSteer(b.steers, "prose"), objective: (p.objective ?? "").trim(), beat, issues: null, currentText: null,
     pageObjective: p.pageObjective?.trim() || null, precedingText: p.precedingText?.trim() || null,
     objectiveMap: ctx.objectiveMap, storySoFar: ctx.storySoFar, precedingProse: ctx.precedingProse, currentPageLabel: ctx.currentPageLabel, openLoops: ctx.openLoops, characterStates: ctx.characterStates,
   }, m);
@@ -186,7 +188,7 @@ export async function revisePage(client: SupabaseClient, apiKey: string, p: Revi
   };
   const text = await renderProse(apiKey, models.high, {
     brief: b.brief, voiceSample: b.bible?.voice_sample?.trim() || null, canon: b.canon, bookName: b.name,
-    level: "page", mode: "revise", objective: (p.objective ?? "").trim(), beat: null, issues: p.issues, currentText,
+    level: "page", mode: "revise", steer: "", objective: (p.objective ?? "").trim(), beat: null, issues: p.issues, currentText,
     pageObjective: null, precedingText: null,
     objectiveMap: ctx.objectiveMap, storySoFar: ctx.storySoFar, precedingProse: ctx.precedingProse, currentPageLabel: ctx.currentPageLabel, openLoops: ctx.openLoops, characterStates: ctx.characterStates,
   }, m);
@@ -396,6 +398,8 @@ interface PromptArgs {
   bookName: string;
   level: "paragraph" | "page";
   mode: "write" | "revise";
+  /** The author's sticky "prose" steer (write mode only); "" when none. */
+  steer: string;
   objective: string;
   beat: string | null;
   issues: ReviseIssue[] | null;
@@ -483,6 +487,7 @@ function variablePart(args: PromptArgs): string {
       parts.push(`\nWrite the prose${where} that achieves this objective (multiple paragraphs as needed):\n${args.objective}`);
     }
   }
+  if (args.steer) parts.push(steerBlock(args.steer).trimStart());
   return parts.join("\n\n");
 }
 

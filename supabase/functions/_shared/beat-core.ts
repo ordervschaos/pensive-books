@@ -12,6 +12,7 @@ import { type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { callClaude, textFromClaude, type CallMeta } from "./claude.ts";
 import { canonContext, type CanonPacket } from "./canon-core.ts";
 import { getActiveModels } from "./model-config.ts";
+import { readSteer, steerBlock } from "./steer.ts";
 
 export interface Brief {
   scope?: { band?: string; word_target?: number };
@@ -124,7 +125,7 @@ async function prepareBeat(client: SupabaseClient, p: BeatParams): Promise<Prepa
   if (!obj) throw new Error("An objective is required to write a beat");
 
   const { data: book, error: bookError } = await client
-    .from("books").select("id, name, brief, spine, canon").eq("id", p.bookId).single();
+    .from("books").select("id, name, brief, spine, canon, steers").eq("id", p.bookId).single();
   if (bookError || !book) throw new Error("Book not found");
 
   // Threads anchor to pages via book_thread_anchors (promise/resolution rows) since the anchors
@@ -161,6 +162,7 @@ async function prepareBeat(client: SupabaseClient, p: BeatParams): Promise<Prepa
     `\n\nOUTLINE (for continuity — the target page is marked):\n${outlineContext(list, p.pageId)}` +
     (prev ? `\n\nPREVIOUS BEAT (the page just before — connect to THIS by "therefore"/"but"; do not repeat it):\n"""\n${prev.beat}\n"""` : "\n\n(This is the first beat — set the story's engine running.)") +
     (onPage.length ? `\n\nTHREADS ON THIS PAGE (promises to manage here):\n${threadsContext(onPage)}` : "") +
+    steerBlock(readSteer(book.steers, "beats")) +
     `\n\nTHIS PAGE'S OBJECTIVE:\n${obj}\n\nWrite the beat for THIS PAGE. One paragraph, plan only.`;
 
   return { userContent, meta, prevBeat: prev?.beat ?? null, objective: obj };

@@ -5,6 +5,7 @@ import { type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { callClaude, textFromClaude, type CallMeta } from "./claude.ts";
 import { getActiveModels } from "./model-config.ts";
 import { parseJsonOptions } from "./json.ts";
+import { readSteer, steerBlock } from "./steer.ts";
 
 
 
@@ -65,7 +66,7 @@ const textOf = (data: any): string => textFromClaude(data).trim();
 
 // brief → the book spine (single throughline). Throws on no output.
 export async function generateSpine(client: SupabaseClient, apiKey: string, p: { bookId: number; userId?: string | null }): Promise<string> {
-  const { data: book, error } = await client.from("books").select("id, name, brief").eq("id", p.bookId).single();
+  const { data: book, error } = await client.from("books").select("id, name, brief, steers").eq("id", p.bookId).single();
   if (error || !book) throw new Error("Book not found");
   const { data: pages } = await client.from("pages").select("page_type, title, metadata")
     .eq("book_id", p.bookId).eq("archived", false).order("page_index", { ascending: true });
@@ -81,6 +82,7 @@ export async function generateSpine(client: SupabaseClient, apiKey: string, p: {
       role: "user",
       content: `BOOK: ${book.name}\n\nBRIEF (the voice/intent contract):\n${briefContext(book.brief as Brief | null)}` +
         (outline.length ? `\n\nCURRENT OUTLINE (for consistency — write the spine ABOVE these):\n${outlineContext(outline)}` : "") +
+        steerBlock(readSteer(book.steers, "spine")) +
         `\n\nWrite the book spine. 1–2 short paragraphs, the throughline only.`,
     }],
   }, meta);
@@ -91,7 +93,7 @@ export async function generateSpine(client: SupabaseClient, apiKey: string, p: {
 
 // brief → 3 wide alternative spines. Throws on no output.
 export async function spineOptions(client: SupabaseClient, apiKey: string, p: { bookId: number; userId?: string | null }): Promise<string[]> {
-  const { data: book, error } = await client.from("books").select("id, name, brief, spine").eq("id", p.bookId).single();
+  const { data: book, error } = await client.from("books").select("id, name, brief, spine, steers").eq("id", p.bookId).single();
   if (error || !book) throw new Error("Book not found");
   const current = (book.spine as { text?: string } | null)?.text?.trim() || null;
 
@@ -106,6 +108,7 @@ export async function spineOptions(client: SupabaseClient, apiKey: string, p: { 
       role: "user",
       content: `BOOK: ${book.name}\n\nBRIEF:\n${briefContext(book.brief as Brief | null)}` +
         (current ? `\n\nCURRENT SPINE (what's there now — vary away from it):\n${current}` : "\n\n(No spine set yet.)") +
+        steerBlock(readSteer(book.steers, "spine")) +
         `\n\nGenerate 3 wide-varying alternative spines. JSON only.`,
     }],
   }, meta);
