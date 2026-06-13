@@ -20,7 +20,7 @@ import { objectiveOptions } from "../_shared/options-core.ts";
 import { generateSpine, spineOptions } from "../_shared/spine-core.ts";
 import { reviseNode, type ReviseLayer } from "../_shared/revise-core.ts";
 import { beatCandidates } from "../_shared/beat-core.ts";
-import { foundationsOptions, spineRoutes, type FoundationsStep } from "../_shared/foundations-core.ts";
+import { foundationsOptions, reviseTentpole, spineRoutes, type FoundationsStep } from "../_shared/foundations-core.ts";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -76,6 +76,15 @@ async function runWorker(
         step: params.step as FoundationsStep,
         userId: ctx.userId,
       });
+    }
+    case "tentpole_revise": {
+      const text = await reviseTentpole(ctx.client, ctx.apiKey, {
+        bookId: ctx.bookId,
+        current: params.current as string,
+        instruction: params.instruction as string,
+        userId: ctx.userId,
+      });
+      return { text };
     }
     case "spine_routes": {
       const routes = await spineRoutes(ctx.client, ctx.apiKey, {

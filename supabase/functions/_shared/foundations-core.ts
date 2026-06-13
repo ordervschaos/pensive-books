@@ -300,3 +300,46 @@ export async function spineRoutes(client: SupabaseClient, apiKey: string, p: Spi
   }
   return routes;
 }
+
+// ── Tentpole revise ──────────────────────────────────────────────────────────
+const TENTPOLE_REVISE_SYSTEM = `You are revising a TENTPOLE MOMENT — a vivid, concrete scene (1–3 sentences) the author has pinned into the book's structure. Apply the author's INSTRUCTION while preserving what already works. This is a targeted revision, not a rewrite from scratch.
+
+Rules:
+- Output only the revised moment. No title, no heading, no preamble, no markdown, no meta commentary.
+- Keep the same form: a vivid, concrete scene in 1–3 sentences — a moment, not a summary.
+- Stay consistent with the book's settled argument, ending, and cast.`;
+
+export interface ReviseTentpoleParams {
+  bookId: number;
+  current: string;
+  instruction: string;
+  userId?: string | null;
+}
+
+export async function reviseTentpole(
+  client: SupabaseClient, apiKey: string, p: ReviseTentpoleParams,
+): Promise<string> {
+  const cur = (p.current ?? "").trim();
+  const instr = (p.instruction ?? "").trim();
+  if (!cur) throw new Error("There's nothing to revise yet.");
+  if (!instr) throw new Error("An instruction is required.");
+
+  const { data: book, error } = await client.from("books").select("id, name, brief, foundations").eq("id", p.bookId).single();
+  if (error || !book) throw new Error("Book not found");
+  const f = (book.foundations as Foundations | null) ?? {};
+
+  const meta: CallMeta = { fn: "tentpole-revise", bookId: p.bookId, userId: p.userId ?? null };
+  const data = await callClaude(apiKey, {
+    model: "claude-sonnet-4-6",
+    max_tokens: 512,
+    system: [{ type: "text", text: TENTPOLE_REVISE_SYSTEM, cache_control: { type: "ephemeral" } }],
+    messages: [{
+      role: "user",
+      content: `BOOK: ${book.name}\n\nSETTLED FOUNDATIONS:\n${settledContext(f)}\n\nCURRENT MOMENT:\n${cur}\n\nAUTHOR'S INSTRUCTION:\n${instr}\n\nReturn the revised moment only.`,
+    }],
+  }, meta);
+  const text = ((data.content ?? []) as Array<{ type: string; text?: string }>)
+    .filter((b) => b.type === "text").map((b) => b.text ?? "").join("").trim();
+  if (!text) throw new Error("Claude returned nothing.");
+  return text;
+}

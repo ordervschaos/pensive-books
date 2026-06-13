@@ -7,7 +7,7 @@
 // Voice is absorbed here (old stage 4): the chosen exemplar is ALSO mirrored to
 // books.bible.voice_sample so the existing prose renderers keep reading their anchor unchanged.
 import { useEffect, useRef, useState } from "react";
-import { Check, Loader2, Pin, Plus, RefreshCw, Skull, Sparkles, Undo2, X } from "lucide-react";
+import { Check, Loader2, Pin, Plus, RefreshCw, Skull, Sparkles, Undo2, Wand2, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
@@ -407,7 +407,7 @@ function TentpolesSub({ bookId, tentpoles, onSave }: { bookId: number; tentpoles
           <h3 className="pv-mono mb-2.5 text-[10px] uppercase tracking-[0.16em] text-[hsl(var(--pv-text-muted))]">Moments you already see</h3>
           <div className="space-y-2.5">
             {authorCards.map((t) => (
-              <TentpoleCard key={t.id} t={t} onText={(v) => setText(t.id, v)} onKill={() => setStatus(t.id, "killed")} />
+              <TentpoleCard key={t.id} t={t} bookId={bookId} onText={(v) => setText(t.id, v)} onKill={() => setStatus(t.id, "killed")} />
             ))}
             <div className="rounded-2xl border border-dashed border-border px-4 py-3">
               <Textarea
@@ -435,7 +435,7 @@ function TentpolesSub({ bookId, tentpoles, onSave }: { bookId: number; tentpoles
           ) : (
             <div className="space-y-2.5">
               {proposals.map((t) => (
-                <TentpoleCard key={t.id} t={t}
+                <TentpoleCard key={t.id} t={t} bookId={bookId}
                   onText={(v) => setText(t.id, v)}
                   onKeep={t.status === "fluid" ? () => setStatus(t.id, "pinned") : undefined}
                   onKill={() => setStatus(t.id, "killed")} />
@@ -470,8 +470,9 @@ function TentpolesSub({ bookId, tentpoles, onSave }: { bookId: number; tentpoles
   );
 }
 
-function TentpoleCard({ t, onText, onKeep, onKill }: { t: Tentpole; onText: (v: string) => void; onKeep?: () => void; onKill: () => void }) {
+function TentpoleCard({ t, onText, onKeep, onKill, bookId }: { t: Tentpole; onText: (v: string) => void; onKeep?: () => void; onKill: () => void; bookId?: number }) {
   const [draft, setDraft] = useState<string | null>(null);
+  const [revising, setRevising] = useState(false);
   const pinned = t.status === "pinned";
   return (
     <div className={`rounded-2xl border px-4 py-3 transition-colors ${pinned ? "border-[hsl(var(--pv-accent))]/45 bg-[hsl(var(--pv-surface-2))]/60" : "border-border bg-[hsl(var(--pv-surface-2))]/40"}`}>
@@ -489,10 +490,84 @@ function TentpoleCard({ t, onText, onKeep, onKill }: { t: Tentpole; onText: (v: 
             <Check className="h-3 w-3" /> keep
           </button>
         )}
+        {bookId != null && !revising && (
+          <button type="button" onClick={() => setRevising(true)} className="pv-serif inline-flex items-center gap-1 text-[12.5px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">
+            <Wand2 className="h-3 w-3" /> revise
+          </button>
+        )}
         <button type="button" onClick={onKill} className="pv-serif inline-flex items-center gap-1 text-[12.5px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">
           <Skull className="h-3 w-3" /> kill
         </button>
       </div>
+      {revising && bookId != null && (
+        <TentpoleRevisePanel
+          bookId={bookId}
+          tentpoleId={t.id}
+          current={t.text}
+          onDone={(text) => { onText(text); setRevising(false); }}
+          onCancel={() => setRevising(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function TentpoleRevisePanel({ bookId, tentpoleId, current, onDone, onCancel }: {
+  bookId: number;
+  tentpoleId: string;
+  current: string;
+  onDone: (text: string) => void;
+  onCancel: () => void;
+}) {
+  const [instruction, setInstruction] = useState("");
+  const run = useAIRun<{ text: string }>({ bookId, kind: "tentpole_revise", targetKey: `foundations:tentpole-revise:${tentpoleId}` });
+  const appliedRef = useRef<number | null>(null);
+  const busy = run.starting || run.run?.status === "running" || run.run?.status === "pending";
+
+  useEffect(() => {
+    const r = run.run;
+    if (r?.status === "ready" && r.result?.text && appliedRef.current !== r.id) {
+      appliedRef.current = r.id;
+      void run.accept(async (res) => { onDone(res.text); });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [run.run?.id, run.run?.status]);
+
+  const submit = () => {
+    if (!instruction.trim() || busy) return;
+    void run.start({ current, instruction: instruction.trim() });
+  };
+
+  return (
+    <div className="mt-3 border-t border-[hsl(var(--pv-border-soft))] pt-3">
+      <Textarea
+        value={instruction}
+        onChange={(e) => setInstruction(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit(); }}
+        placeholder={`How should I revise this? e.g. "set it later in the story" or "raise the stakes"`}
+        rows={2}
+        disabled={busy}
+        className="pv-serif border-[hsl(var(--pv-border-soft))] bg-transparent text-[13px] leading-relaxed focus-visible:ring-0"
+      />
+      <div className="mt-2 flex items-center gap-3">
+        {busy ? (
+          <p className="pv-serif inline-flex items-center gap-1.5 text-[12.5px] italic text-[hsl(var(--pv-text-muted))]">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" /> Revising…
+          </p>
+        ) : (
+          <button type="button" onClick={submit} disabled={!instruction.trim()}
+            className="pv-serif inline-flex items-center gap-1 text-[12.5px] italic text-[hsl(var(--pv-accent))] hover:opacity-75 disabled:opacity-40">
+            <Wand2 className="h-3 w-3" /> apply revision
+          </button>
+        )}
+        <button type="button" onClick={() => { void run.cancel(); onCancel(); }}
+          className="pv-serif text-[12.5px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">
+          cancel
+        </button>
+      </div>
+      {run.run?.status === "error" && (
+        <p className="pv-serif mt-1.5 text-[12px] italic text-red-600 dark:text-red-400">{run.run.error ?? "Something went wrong."}</p>
+      )}
     </div>
   );
 }
