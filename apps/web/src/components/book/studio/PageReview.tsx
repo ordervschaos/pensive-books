@@ -131,7 +131,7 @@ export function PageReview({ bookId, model, pageId, onChanged, onSelectPage }: P
               value={objective}
               onChange={(e) => setObjective(e.target.value)}
               onBlur={() => objective.trim() && void saveObjectiveText()}
-              className="pv-serif border-none bg-transparent px-0 text-[15.5px] leading-[1.55] focus-visible:ring-0"
+              className="pv-serif border-none bg-transparent px-0 text-[16px] leading-[1.7] text-foreground focus-visible:ring-0"
               placeholder="What this page must achieve…"
             />
             <div className="mt-3 flex items-center gap-4 border-t border-[hsl(var(--pv-border-soft))] pt-3">
@@ -172,7 +172,7 @@ export function PageReview({ bookId, model, pageId, onChanged, onSelectPage }: P
                   value={beat}
                   onChange={(e) => setBeat(e.target.value)}
                   onBlur={() => void saveBeatText()}
-                  className="pv-serif border-none bg-transparent px-0 text-[15.5px] leading-[1.6] focus-visible:ring-0"
+                  className="pv-serif border-none bg-transparent px-0 text-[17px] leading-[1.8] text-foreground focus-visible:ring-0"
                 />
                 <RegenRow busy={busy === "beat"} onRegen={planBeat} />
               </>
@@ -197,6 +197,7 @@ export function PageReview({ bookId, model, pageId, onChanged, onSelectPage }: P
                 objective={objective}
                 beat={beat}
                 prose={prose}
+                hideHeader
                 onSaved={() => { void readProse(pageId).then(setProse); onChanged(); }}
                 onOpenPage={() => navigate(`/books/${bookId}/pages/${pageId}`)}
               />
@@ -228,8 +229,8 @@ export function PageReview({ bookId, model, pageId, onChanged, onSelectPage }: P
 function LevelCard({ label, sub, state, children }: { label: string; sub: string; state: CellState | "locked"; children: ReactNode }) {
   const dim = state === "gap" || state === "locked";
   return (
-    <Panel variant={dim ? "dashed" : "solid"} className={`px-5 py-4 ${state === "locked" ? "opacity-65" : ""}`}>
-      <div className={`flex items-center gap-2.5 ${dim ? "" : "mb-3"}`}>
+    <Panel variant={dim ? "dashed" : "soft"} className={`px-7 py-6 ${state === "locked" ? "opacity-65" : ""}`}>
+      <div className={`flex items-center gap-2.5 ${dim ? "" : "mb-5 border-b border-[hsl(var(--pv-border-soft))]/70 pb-3"}`}>
         <Pip state={state === "locked" ? "gap" : state} />
         <Eyebrow>{label}</Eyebrow>
         <span className="pv-serif text-[12.5px] italic text-[hsl(var(--pv-text-faint))]">· {sub}</span>

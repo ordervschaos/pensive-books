@@ -74,9 +74,13 @@ export function StudioStage(props: StageProps) {
 
   const key = selection.kind === "page" ? `p${selection.pageId}` : `s${selection.step}`;
 
+  // A page's ladder is something you READ — give it a booky reading column. The build/post steps carry
+  // wider controls, so they keep the roomier measure.
+  const width = selection.kind === "page" ? "max-w-[600px]" : "max-w-[700px]";
+
   return (
     <div className="px-10 pb-20 pt-10">
-      <div key={key} className="mx-auto max-w-[700px] animate-in fade-in slide-in-from-bottom-1 duration-300">{body}</div>
+      <div key={key} className={`mx-auto ${width} animate-in fade-in slide-in-from-bottom-1 duration-300`}>{body}</div>
     </div>
   );
 }

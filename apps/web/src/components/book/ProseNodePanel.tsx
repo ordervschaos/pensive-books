@@ -42,7 +42,7 @@ async function startPageGen(body: Record<string, unknown>): Promise<void> {
 }
 
 export function ProseNodePanel({
-  bookId, pageId, pageTitle, objective, beat, prose, onSaved, onOpenPage,
+  bookId, pageId, pageTitle, objective, beat, prose, onSaved, onOpenPage, hideHeader = false,
 }: {
   bookId: number;
   pageId: number;
@@ -52,6 +52,7 @@ export function ProseNodePanel({
   prose: string;          // current prose as plain text ("" = empty page)
   onSaved: () => void;    // refresh the map after the body changes
   onOpenPage: () => void; // navigate to the full page editor
+  hideHeader?: boolean;   // PageReview already labels this level + offers "Open in Manuscript"
 }) {
   const { toast } = useToast();
   const steer = useSteer(bookId, "prose");
@@ -131,22 +132,24 @@ export function ProseNodePanel({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <NodeLabel>Prose</NodeLabel>
-        <button
-          type="button" onClick={onOpenPage}
-          className="pv-serif inline-flex items-center gap-1 text-[12.5px] italic text-[hsl(var(--pv-text-muted))] transition-colors hover:text-foreground"
-          title="Open the full page editor"
-        >
-          Open page <ExternalLink className="h-3 w-3" />
-        </button>
-      </div>
+      {!hideHeader && (
+        <div className="flex items-center justify-between gap-3">
+          <NodeLabel>Prose</NodeLabel>
+          <button
+            type="button" onClick={onOpenPage}
+            className="pv-serif inline-flex items-center gap-1 text-[12.5px] italic text-[hsl(var(--pv-text-muted))] transition-colors hover:text-foreground"
+            title="Open the full page editor"
+          >
+            Open page <ExternalLink className="h-3 w-3" />
+          </button>
+        </div>
+      )}
 
-      {/* Current prose, read-only and fully rendered — so you can read the page in place, formatted,
-          without truncation or an inner scroll. */}
-      <div className="rounded-lg border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/30 px-4 py-3">
+      {/* Current prose, read-only and fully rendered — set like a manuscript page so you can read it in
+          place: comfortable measure, paragraph spacing, no card chrome competing with the text. */}
+      <div className="px-0 py-0">
         {hasProse ? (
-          <div className="pv-serif prose prose-sm max-w-none text-[15px] leading-[1.7] text-foreground prose-p:my-3 prose-p:text-foreground prose-headings:text-foreground prose-em:italic prose-strong:font-semibold first:prose-p:mt-0 last:prose-p:mb-0">
+          <div className="pv-serif prose max-w-none text-[17px] leading-[1.8] text-foreground prose-p:my-[0.95em] prose-p:text-foreground prose-headings:text-foreground prose-em:italic prose-strong:font-semibold first:prose-p:mt-0 last:prose-p:mb-0">
             <ReactMarkdown>{prose}</ReactMarkdown>
           </div>
         ) : (
