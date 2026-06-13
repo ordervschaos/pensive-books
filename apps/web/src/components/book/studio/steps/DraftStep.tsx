@@ -13,7 +13,7 @@ import { notify as fireNotification } from "@/lib/notify";
 import { NotifyWhenDone } from "../../NotifyWhenDone";
 import { RunControls } from "../../RunControls";
 import type { StudioModel } from "../studioModel";
-import { DoneStrip, Hero, ProgressMeter, RunningCard } from "../studioUi";
+import { ActionLink, DoneStrip, Hero, ProgressMeter, RunningCard } from "../studioUi";
 
 interface BuildProgress { done: number; total: number; phase?: string }
 interface BuildRow extends TaskRow { progress: BuildProgress | null; error: string | null }
@@ -99,9 +99,9 @@ export function DraftStep({ bookId, model, beforeGen, onChanged, onSelectPage }:
         />
       )}
       <div className="mt-4 flex flex-wrap items-center gap-5 text-[13.5px]">
-        <button type="button" onClick={() => void runAll()} className="pv-serif inline-flex items-center gap-1 italic text-[hsl(var(--pv-accent))] hover:opacity-75">
+        <ActionLink onClick={() => void runAll()}>
           {paused ? "continue — write all the prose" : `write the ${remaining} remaining at once`} →
-        </button>
+        </ActionLink>
         {lastWritten && <button type="button" onClick={() => onSelectPage(lastWritten.id)} className="pv-serif italic text-[hsl(var(--pv-text-muted))] hover:text-foreground">review the last page →</button>}
       </div>
       <div className="mt-4"><NotifyWhenDone enabled={notify} onChange={setNotify} /></div>

@@ -23,7 +23,7 @@ import {
   readSpineNode, writeSpinePatch,
   type Foundations, type SpineNode, type SpineRoute,
 } from "@/lib/foundations";
-import { Hero } from "../studioUi";
+import { ActionLink, Eyebrow, Hero, Panel, RunError, RunningInline } from "../studioUi";
 
 interface Props {
   bookId: number;
@@ -148,14 +148,7 @@ export function SpineStep({ bookId, newFlow, foundations, beforeGen, onStatusCha
     const pinnedTentpoles = (foundations?.tentpoles ?? []).filter((t) => t.status === "pinned").length;
 
     if (routing) {
-      return (
-        <div className="flex items-center gap-4">
-          <p className="pv-serif inline-flex items-center gap-2 text-[14px] italic text-[hsl(var(--pv-text-muted))]">
-            <Loader2 className="h-4 w-4 animate-spin" /> Charting routes through your tentpoles…
-          </p>
-          <button type="button" onClick={() => void routesRun.cancel()} className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">cancel</button>
-        </div>
-      );
+      return <RunningInline label="Charting routes through your tentpoles…" onCancel={() => void routesRun.cancel()} />;
     }
 
     if (!spine && routes.length === 0) {
@@ -164,7 +157,7 @@ export function SpineStep({ bookId, newFlow, foundations, beforeGen, onStatusCha
           <Hero icon={<MapIcon className="h-5 w-5" />} title="Chart the routes"
             sub={`Three different roads from your beginning to your settled ending${pinnedTentpoles ? ` — every one passing through your ${pinnedTentpoles} pinned moment${pinnedTentpoles === 1 ? "" : "s"}` : ""}. Pick the one you'd ride.`}
             onClick={() => void startRoutes()} />
-          {routesRun.run?.status === "error" && <p className="pv-serif mt-3 text-[13px] italic text-red-600 dark:text-red-400">{routesRun.run.error}</p>}
+          {routesRun.run?.status === "error" && <RunError msg={routesRun.run.error} />}
         </div>
       );
     }
@@ -174,11 +167,11 @@ export function SpineStep({ bookId, newFlow, foundations, beforeGen, onStatusCha
       <div className="space-y-3.5">
         {/* The approved, editable spine card once a route is picked. */}
         {spine && (
-          <div className="rounded-2xl border border-[hsl(var(--pv-accent))]/45 bg-[hsl(var(--pv-surface-2))]/60 px-6 py-5">
+          <Panel className="border-[hsl(var(--pv-accent))]/45 bg-[hsl(var(--pv-surface-2))]/60">
             <div className="mb-1 flex items-center justify-between">
-              <span className="pv-mono text-[10px] uppercase tracking-[0.14em] text-[hsl(var(--pv-accent))]">
+              <Eyebrow tone="accent">
                 <Check className="mr-1 inline h-3 w-3" strokeWidth={3} />Approved route{node.pinned ? " · pinned" : ""}
-              </span>
+              </Eyebrow>
             </div>
             <Textarea
               value={spine}
@@ -188,14 +181,12 @@ export function SpineStep({ bookId, newFlow, foundations, beforeGen, onStatusCha
               className="pv-serif border-none bg-transparent px-0 text-[16px] leading-[1.65] focus-visible:ring-0"
             />
             <div className="mt-3.5 flex items-center gap-5 border-t border-[hsl(var(--pv-border-soft))] pt-3.5 text-[13.5px]">
-              <button type="button" onClick={reroute} className="inline-flex items-center gap-1.5 italic text-[hsl(var(--pv-accent))] hover:opacity-75">
-                <RefreshCw className="h-3.5 w-3.5" /> re-route (this one is held)
-              </button>
+              <ActionLink icon={<RefreshCw className="h-3.5 w-3.5" />} onClick={reroute}>
+                re-route (this one is held)
+              </ActionLink>
               <div className="ml-auto flex items-center gap-4">
                 {dirty && (
-                  <button type="button" onClick={() => void save()} disabled={saving} className="inline-flex items-center gap-1.5 italic text-[hsl(var(--pv-text-muted))] hover:text-foreground">
-                    {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} save edits
-                  </button>
+                  <ActionLink tone="muted" busy={saving} onClick={() => void save()}>save edits</ActionLink>
                 )}
                 <DurableReviser
                   bookId={bookId}
@@ -206,13 +197,13 @@ export function SpineStep({ bookId, newFlow, foundations, beforeGen, onStatusCha
                 />
               </div>
             </div>
-          </div>
+          </Panel>
         )}
         {/* The other routes — pick to switch. */}
         {unselected.map((r, i) => (
-          <div key={r.id} className="rounded-2xl border border-border bg-[hsl(var(--pv-surface-2))]/40 px-6 py-5">
+          <Panel key={r.id} className="bg-[hsl(var(--pv-surface-2))]/40">
             <div className="mb-2.5 flex items-center justify-between gap-3">
-              <span className="pv-mono text-[10px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-faint))]">Route {i + 1}</span>
+              <Eyebrow>Route {i + 1}</Eyebrow>
               <button type="button" onClick={() => void pickRoute(r)}
                 className="pv-serif inline-flex items-center gap-1.5 rounded-full border border-border px-4 py-1.5 text-[13.5px] text-foreground transition-colors hover:border-foreground/40">
                 Take this route
@@ -228,26 +219,21 @@ export function SpineStep({ bookId, newFlow, foundations, beforeGen, onStatusCha
                 ))}
               </div>
             )}
-          </div>
+          </Panel>
         ))}
         {!spine && routes.length > 0 && (
-          <button type="button" onClick={reroute} className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-accent))] hover:opacity-75">
-            <RefreshCw className="h-3.5 w-3.5" /> chart three fresh routes
-          </button>
+          <ActionLink icon={<RefreshCw className="h-3.5 w-3.5" />} onClick={reroute}>
+            chart three fresh routes
+          </ActionLink>
         )}
-        {routesRun.run?.status === "error" && <p className="pv-serif text-[13px] italic text-red-600 dark:text-red-400">{routesRun.run.error}</p>}
+        {routesRun.run?.status === "error" && <RunError msg={routesRun.run.error} />}
       </div>
     );
   }
 
   // ── Old flow: the single drafted paragraph ──────────────────────────────────
   if (generating) {
-    return (
-      <div className="flex items-center gap-4">
-        <p className="pv-serif inline-flex items-center gap-2 text-[14px] italic text-[hsl(var(--pv-text-muted))]"><Loader2 className="h-4 w-4 animate-spin" /> Drafting the spine…</p>
-        <button type="button" onClick={() => void gen.cancel()} className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">cancel</button>
-      </div>
-    );
+    return <RunningInline label="Drafting the spine…" onCancel={() => void gen.cancel()} />;
   }
 
   if (!spine.trim()) {
@@ -268,9 +254,9 @@ export function SpineStep({ bookId, newFlow, foundations, beforeGen, onStatusCha
         className="pv-serif border-none bg-transparent px-0 text-[16px] leading-[1.65] focus-visible:ring-0"
       />
       <div className="mt-3.5 flex items-center gap-5 border-t border-[hsl(var(--pv-border-soft))] pt-3.5 text-[13.5px]">
-        <button type="button" onClick={() => void startGen()} className="inline-flex items-center gap-1.5 italic text-[hsl(var(--pv-accent))] hover:opacity-75">
-          <RefreshCw className="h-3.5 w-3.5" /> re-draft from the brief
-        </button>
+        <ActionLink icon={<RefreshCw className="h-3.5 w-3.5" />} onClick={() => void startGen()}>
+          re-draft from the brief
+        </ActionLink>
         <div className="ml-auto flex items-center gap-4">
           {dirty && (
             <button type="button" onClick={() => void save()} disabled={saving} className="inline-flex items-center gap-1.5 italic text-[hsl(var(--pv-text-muted))] hover:text-foreground">

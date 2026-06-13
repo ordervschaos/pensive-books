@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { UnsplashPicker } from "@/components/book/UnsplashPicker";
 import { BriefIntakeSheet } from "@/components/book/BriefIntakeSheet";
+import { WriteModeDialog, type WriteMode } from "@/components/book/WriteModeDialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { setPageTitle } from "@/utils/pageTitle";
@@ -39,6 +40,7 @@ const NewBook = () => {
   const [authorDefault, setAuthorDefault] = useState("");
   const [intakeBookId, setIntakeBookId] = useState<number | null>(null);
   const [intakeOpen, setIntakeOpen] = useState(false);
+  const [choiceOpen, setChoiceOpen] = useState(false);
 
   const [book, setBook] = useState<BookDraft>({
     name: "",
@@ -147,11 +149,25 @@ const NewBook = () => {
   const previewTitle = book.name.trim() || "Untitled";
   const previewAuthor = (book.author || authorDefault).trim();
 
+  // Intake finished or dismissed → present the fork: write manually or build with the Studio.
   const closeIntake = (open: boolean) => {
     setIntakeOpen(open);
-    if (!open && intakeBookId) {
-      navigate(`/books/${intakeBookId}`);
-    }
+    // Defer so the intake dialog finishes closing before the choice dialog opens — swapping two Radix
+    // dialogs in the same tick can leave the body with pointer-events:none.
+    if (!open) setTimeout(() => setChoiceOpen(true), 150);
+  };
+
+  const chooseMode = (mode: WriteMode) => {
+    setChoiceOpen(false);
+    if (!intakeBookId) return;
+    // Studio mode asks BookDetails to open the Studio tab on land (preserved across the slug redirect).
+    navigate(`/books/${intakeBookId}${mode === "studio" ? "?tab=studio" : ""}`);
+  };
+
+  // Dismissing the choice (Esc / overlay) still lands the author on the book — as if they chose manual.
+  const onChoiceOpenChange = (open: boolean) => {
+    if (open) setChoiceOpen(true);
+    else chooseMode("manual");
   };
 
   return (
@@ -404,14 +420,21 @@ const NewBook = () => {
       </form>
 
       {intakeBookId && (
-        <BriefIntakeSheet
-          bookId={intakeBookId}
-          open={intakeOpen}
-          onOpenChange={closeIntake}
-          onFinish={() => {
-            /* navigation handled by closeIntake via onOpenChange */
-          }}
-        />
+        <>
+          <BriefIntakeSheet
+            bookId={intakeBookId}
+            open={intakeOpen}
+            onOpenChange={closeIntake}
+            onFinish={() => {
+              /* choice modal is opened by closeIntake via onOpenChange */
+            }}
+          />
+          <WriteModeDialog
+            open={choiceOpen}
+            onOpenChange={onChoiceOpenChange}
+            onChoose={chooseMode}
+          />
+        </>
       )}
     </div>
   );

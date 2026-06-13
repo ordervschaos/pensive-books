@@ -132,7 +132,7 @@ voice=hasVoice, beats=all beats present, draft=all prose present`.
 | Foundations | `FoundationsStep.tsx` | the pin editor (argument/ending/cast/tentpoles/voice) |
 | Spine | `SpineStep.tsx` | old: single durable gen; new: 2–3 route cards (`spine_routes`) |
 | Outline | `OutlineStep.tsx` | objective scaffolding |
-| Beats | `BeatsStep.tsx` | serial take-picker + beat rail |
+| Beats | `BeatsStep.tsx` | prominent bulk "generate all beats" + a single-beat, revise-in-place page-by-page flow |
 | Draft | `DraftStep.tsx` | pilot → continue → all (`write_all`) |
 | Voice | `VoiceStep.tsx` | voice sample picker (old flow only — absorbed into Foundations in new) |
 

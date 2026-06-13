@@ -37,6 +37,8 @@ interface BookInfoProps {
   /** Manuscript word count + target — when both are present, the hero shows a target meter. */
   wordCount?: number;
   wordTarget?: number;
+  /** Brief summary + edit CTA, slotted under the title and above the word-target meter (author view). */
+  briefSlot?: React.ReactNode;
 }
 
 export const BookInfo = ({
@@ -55,7 +57,8 @@ export const BookInfo = ({
   lastUpdatedPageIndex,
   showWritingButton = false,
   wordCount,
-  wordTarget
+  wordTarget,
+  briefSlot
 }: BookInfoProps) => {
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -424,6 +427,9 @@ export const BookInfo = ({
                 )}
               </div>
             </header>
+
+            {/* Brief summary + edit CTA (author view) — sits under the title, above the word target */}
+            {briefSlot}
 
             {/* Word target — glanceable progress toward the brief's goal (author view) */}
             {canEdit && (wordTarget ?? 0) > 0 && (

@@ -20,7 +20,7 @@ import { VersionControlButton } from "./components/VersionControlButton";
 import { AdminViewBanner } from "@/components/book/AdminViewBanner";
 import { MatureContentGate } from "@/components/book/MatureContentGate";
 import { Brief } from "@/lib/brief";
-import { BookBriefSection } from "@/components/book/BookBriefSection";
+import { BriefSummary } from "@/components/book/BriefSummary";
 import { BuildStudio } from "@/components/book/studio/BuildStudio";
 import { getPageStatus } from "./components/pageList/pageUtils";
 import { computeCompletion } from "@/lib/brief";
@@ -102,15 +102,15 @@ const BookDetails = () => {
   const [isCommitDialogOpen, setIsCommitDialogOpen] = useState(false);
   const [isPublishingDialogOpen, setIsPublishingDialogOpen] = useState(false);
   const [showArchivedPages, setShowArchivedPages] = useState(false);
-  // Manuscript leads the work; the brief and all AI tools live behind their own tabs.
-  // Persisted to localStorage so the choice survives a refresh.
+  // Manuscript leads the work; the Studio (AI build surface) lives behind its own tab. The brief no
+  // longer has a tab — it's summarized in the header and edited in a dialog.
+  // Persisted to localStorage so the choice survives a refresh; `?tab=studio` (from the post-create
+  // "how do you want to write" modal) opens the Studio on first land and wins over the saved tab.
   const tabKey = `book-tab:${bookSlug}`;
-  type WorkspaceTab = "brief" | "manuscript" | "ai";
+  type WorkspaceTab = "manuscript" | "ai";
   const [activeTab, setActiveTab] = useState<WorkspaceTab>(() => {
-    const saved = localStorage.getItem(tabKey);
-    return saved === "brief" || saved === "ai"
-      ? (saved as WorkspaceTab)
-      : "manuscript";
+    if (new URLSearchParams(window.location.search).get("tab") === "studio") return "ai";
+    return localStorage.getItem(tabKey) === "ai" ? "ai" : "manuscript";
   });
   const switchTab = (tab: WorkspaceTab) => {
     setActiveTab(tab);
@@ -244,7 +244,8 @@ const BookDetails = () => {
 
       if (bookData && !bookSlug?.includes('-') && bookData.name) {
         const slug = `${numericId}-${bookData.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
-        navigate(`/books/${slug}`, { replace: true });
+        // Keep the query (e.g. ?tab=studio from the post-create modal) across the canonical-slug redirect.
+        navigate(`/books/${slug}${window.location.search}`, { replace: true });
       }
 
       console.log('Book data fetched:', bookData);
@@ -603,6 +604,15 @@ const BookDetails = () => {
                 showWritingButton={shouldShowWritingButton()}
                 wordCount={manuscriptWordCount}
                 wordTarget={book.brief?.scope?.word_target ?? 0}
+                briefSlot={
+                  canEdit ? (
+                    <BriefSummary
+                      bookId={getNumericId(bookSlug)}
+                      brief={book.brief ?? null}
+                      onBriefChange={(brief) => setBook((b) => (b ? { ...b, brief } : b))}
+                    />
+                  ) : undefined
+                }
               />
 
             </div>
@@ -610,7 +620,7 @@ const BookDetails = () => {
             {/* Work area — Brief / Manuscript / AI, each on its own tab. */}
             {canEdit ? (
               <div className="space-y-6">
-                {/* Tabs: Manuscript leads the work; Brief holds the foundation AI tools plan from */}
+                {/* Tabs: Manuscript leads the work; the Studio is the AI build surface */}
                 <div
                   role="tablist"
                   aria-label="Book workspace"
@@ -638,27 +648,6 @@ const BookDetails = () => {
                   <button
                     type="button"
                     role="tab"
-                    aria-selected={activeTab === "brief"}
-                    onClick={() => switchTab("brief")}
-                    className={cn(
-                      "pv-serif -mb-px inline-flex items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-[18px] transition-colors",
-                      activeTab === "brief"
-                        ? "border-foreground text-foreground"
-                        : "border-transparent text-[hsl(var(--pv-text-muted))] hover:text-foreground"
-                    )}
-                  >
-                    Brief
-                    {!briefSet && (
-                      <span
-                        className="h-[7px] w-[7px] rounded-full bg-[#5b6db8]"
-                        title="Brief not set yet"
-                        aria-label="Brief not set yet"
-                      />
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    role="tab"
                     aria-selected={activeTab === "ai"}
                     onClick={() => switchTab("ai")}
                     className={cn(
@@ -668,7 +657,7 @@ const BookDetails = () => {
                         : "border-transparent text-[hsl(var(--pv-text-muted))] hover:text-foreground"
                     )}
                   >
-                    AI tools
+                    Studio
                     {plannedCount > 0 && (
                       <span
                         className="h-[7px] w-[7px] rounded-full bg-[#5b6db8]"
@@ -678,15 +667,6 @@ const BookDetails = () => {
                     )}
                   </button>
                 </div>
-
-                {/* Brief tab — edit the shared context every AI tool plans from, in place */}
-                {activeTab === "brief" && (
-                  <BookBriefSection
-                    bookId={getNumericId(bookSlug)}
-                    brief={book.brief ?? null}
-                    onBriefChange={(brief) => setBook((b) => (b ? { ...b, brief } : b))}
-                  />
-                )}
 
                 {/* Manuscript tab — writing & page management, full width */}
                 {activeTab === "manuscript" && (

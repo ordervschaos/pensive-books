@@ -10,7 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useLatestTaskRow, type TaskRow } from "@/hooks/useLatestTaskRow";
 import { BRIDGE, bridgeFetch } from "@/lib/bridge";
 import { RunControls } from "../../RunControls";
-import { Hero, RunningCard } from "../studioUi";
+import { ActionLink, Eyebrow, Hero, RunError, RunningCard } from "../studioUi";
 
 interface VoiceResult { samples: string[] }
 interface VoiceRow extends TaskRow { result: VoiceResult | null; error: string | null }
@@ -96,7 +96,7 @@ export function VoiceStep({ bookId, onStatusChange, onChanged }: { bookId: numbe
         return (
           <div key={i} className={`rounded-2xl border px-6 py-5 transition-colors ${chosen ? "border-[hsl(var(--pv-accent))]/45 bg-[hsl(var(--pv-surface-2))]/60 shadow-[0_10px_30px_rgba(0,0,0,0.05)]" : "border-border bg-[hsl(var(--pv-surface-2))]/40"}`}>
             <div className="mb-3 flex items-center justify-between gap-3">
-              <span className="pv-mono text-[10px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-faint))]">Voice {i + 1}</span>
+              <Eyebrow>Voice {i + 1}</Eyebrow>
               <button
                 type="button"
                 onClick={() => void choose(i, text)}
@@ -111,10 +111,10 @@ export function VoiceStep({ bookId, onStatusChange, onChanged }: { bookId: numbe
           </div>
         );
       })}
-      <button type="button" onClick={generate} disabled={kicking} className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-accent))] hover:opacity-75 disabled:opacity-50">
-        <RefreshCw className="h-3.5 w-3.5" /> regenerate three fresh takes
-      </button>
-      {row?.status === "error" && <p className="pv-serif text-[13px] italic text-red-600 dark:text-red-400">{row.error}</p>}
+      <ActionLink icon={<RefreshCw className="h-3.5 w-3.5" />} busy={kicking} onClick={generate}>
+        regenerate three fresh takes
+      </ActionLink>
+      {row?.status === "error" && <RunError msg={row.error} />}
     </div>
   );
 }
