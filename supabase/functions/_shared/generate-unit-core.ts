@@ -10,10 +10,12 @@
 // calls Claude. The callers own auth and the task row. Prompt assembly is byte-for-byte the same as
 // the original generate-unit (the dev bridge mirrors it), so the output is unchanged.
 import { type SupabaseClient } from "jsr:@supabase/supabase-js@2";
-import { callClaude as callClaudeApi, type CallMeta } from "./claude.ts";
+import { callClaude as callClaudeApi, textFromClaude, type CallMeta } from "./claude.ts";
 import { getActiveModels } from "./model-config.ts";
 import { type CharacterState, type PageState } from "./page-state.ts";
 import { canonContext, type CanonPacket } from "./canon-core.ts";
+import { tiptapToText } from "./words.ts";
+import { extractJsonBlock } from "./json.ts";
 const PRECEDING_PAGES = 2; // how many prior text pages of full prose to include for continuity
 
 export interface Brief {
@@ -342,16 +344,8 @@ async function buildOpenLoops(
   return lines.length ? `OPEN LOOPS (promises in play on this page — manage them deliberately):\n${lines.join("\n")}` : null;
 }
 
-export function tiptapToText(node: unknown): string {
-  if (!node || typeof node !== "object") return "";
-  const n = node as { type?: string; text?: string; content?: unknown[] };
-  if (n.type === "text") return n.text ?? "";
-  if (n.type === "hardBreak") return "\n";
-  let out = "";
-  for (const child of n.content ?? []) out += tiptapToText(child);
-  if (["paragraph", "heading", "blockquote", "listItem", "codeBlock"].includes(n.type ?? "")) out += "\n\n";
-  return out;
-}
+// tiptapToText lives in _shared/words.ts now; re-export so existing importers (generate-book) keep working.
+export { tiptapToText };
 
 // ── Prompt assembly ──────────────────────────────────────────────────────────
 const SYSTEM = `You are a skilled prose writer helping an author render their book.
@@ -509,11 +503,7 @@ async function renderProse(apiKey: string, model: string, args: PromptArgs, meta
     ],
   }, meta);
 
-  const text = (data.content ?? [])
-    .filter((b: { type: string }) => b.type === "text")
-    .map((b: { text: string }) => b.text)
-    .join("")
-    .trim();
+  const text = textFromClaude(data).trim();
   if (!text) throw new Error("Claude returned no text content.");
   return stripLeadingHeadings(text);
 }
@@ -537,11 +527,7 @@ async function summarize(apiKey: string, prose: string, meta: CallMeta, summaryM
     }],
     messages: [{ role: "user", content: prose.slice(0, 12000) }],
   }, { ...meta, fn: "summarize", artifacts: null });
-  return (data.content ?? [])
-    .filter((b: { type: string }) => b.type === "text")
-    .map((b: { text: string }) => b.text)
-    .join("")
-    .trim();
+  return textFromClaude(data).trim();
 }
 
 async function persistSummary(client: SupabaseClient, pageId: number, summary: string) {
@@ -605,26 +591,14 @@ Output JSON ONLY (no prose, no fences): {"characters":[{"name":"","want":"","wou
     messages: [{ role: "user", content: `PRIOR CHARACTER STATES:\n${priorBlock}\n\nNEW PAGE PROSE:\n${prose.slice(0, 12000)}\n\nOutput the updated states for every character. JSON only.` }],
   }, { ...meta, fn: "extract-character-states", artifacts: null });
 
-  const text = (data.content ?? [])
-    .filter((b: { type: string }) => b.type === "text")
-    .map((b: { text: string }) => b.text)
-    .join("")
-    .trim();
+  const text = textFromClaude(data).trim();
   return parseCharacterStates(text);
 }
 
 function parseCharacterStates(text: string): CharacterState[] {
-  let raw = text.trim();
-  const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fence) raw = fence[1].trim();
-  else {
-    const first = raw.indexOf("{");
-    const last = raw.lastIndexOf("}");
-    if (first !== -1 && last > first) raw = raw.slice(first, last + 1);
-  }
   let parsed: { characters?: unknown };
   try {
-    parsed = JSON.parse(raw);
+    parsed = JSON.parse(extractJsonBlock(text));
   } catch {
     return []; // best-effort: a parse miss just skips this page's ledger update
   }

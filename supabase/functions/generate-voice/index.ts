@@ -18,8 +18,9 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { runInBackground, serviceClient } from "../_shared/task.ts";
-import { callClaude as callClaudeApi, type CallMeta } from "../_shared/claude.ts";
+import { callClaude as callClaudeApi, textFromClaude, type CallMeta } from "../_shared/claude.ts";
 import { getActiveModels } from "../_shared/model-config.ts";
+import { extractJsonBlock } from "../_shared/json.ts";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -126,11 +127,7 @@ async function draftVoiceSamples(apiKey: string, bookName: string, brief: Brief 
     }],
   }, meta);
 
-  const text = (data.content ?? [])
-    .filter((b: { type: string }) => b.type === "text")
-    .map((b: { text: string }) => b.text)
-    .join("")
-    .trim();
+  const text = textFromClaude(data).trim();
   if (!text) throw new Error("Claude returned no voice samples.");
   return parseSamples(text);
 }
@@ -144,16 +141,8 @@ function parseSamples(text: string): string[] {
   }
 
   // Fallback: JSON (handles responses from before the prompt change)
-  let raw = text.trim();
-  const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fence) raw = fence[1].trim();
-  else {
-    const first = raw.indexOf("{");
-    const last = raw.lastIndexOf("}");
-    if (first !== -1 && last > first) raw = raw.slice(first, last + 1);
-  }
   try {
-    const parsed = JSON.parse(raw) as { samples?: unknown };
+    const parsed = JSON.parse(extractJsonBlock(text)) as { samples?: unknown };
     const samples = Array.isArray(parsed.samples)
       ? parsed.samples.map((s) => String(s ?? "").trim()).filter((s) => s.length > 0)
       : [];

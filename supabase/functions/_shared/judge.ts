@@ -5,6 +5,8 @@
 // and what it produced (output) — and scores how well the output served that context, with concrete
 // findings and suggested amendments.
 
+import { extractJsonBlock } from "./json.ts";
+
 export const JUDGE_MODEL = "claude-sonnet-4-6";
 
 // Keep the judge prompt bounded — some calls (a full-book eval) carry a whole manuscript.
@@ -79,17 +81,9 @@ export function parseJudgement(text: string): {
   findings: unknown[];
   amendments: unknown[];
 } {
-  let raw = text.trim();
-  const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fence) raw = fence[1].trim();
-  else {
-    const first = raw.indexOf("{");
-    const last = raw.lastIndexOf("}");
-    if (first !== -1 && last > first) raw = raw.slice(first, last + 1);
-  }
   let parsed: Record<string, unknown>;
   try {
-    parsed = JSON.parse(raw);
+    parsed = JSON.parse(extractJsonBlock(text));
   } catch (e) {
     throw new Error(`Could not parse judgement JSON: ${(e as Error).message}`);
   }

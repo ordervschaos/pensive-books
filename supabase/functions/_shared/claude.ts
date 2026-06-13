@@ -110,11 +110,13 @@ export async function callClaude(
   return data;
 }
 
+// Join all text blocks from a Claude (or OpenAI-normalized) response's content array. Untrimmed —
+// callers add .trim() where they need it. The single place response text is pulled from `content`.
 // deno-lint-ignore no-explicit-any
-function textFromContent(data: any): string {
-  return (data?.content ?? [])
-    .filter((b: { type: string }) => b.type === "text")
-    .map((b: { text: string }) => b.text)
+export function textFromClaude(data: any): string {
+  return ((data?.content ?? []) as Array<{ type?: string; text?: string }>)
+    .filter((b) => b.type === "text")
+    .map((b) => b.text ?? "")
     .join("");
 }
 
@@ -267,7 +269,7 @@ async function logEnd(
   errMsg: string | null,
 ): Promise<void> {
   const terminal = {
-    output: data ? textFromContent(data) : null,
+    output: data ? textFromClaude(data) : null,
     input_tokens: data?.usage?.input_tokens ?? null,
     output_tokens: data?.usage?.output_tokens ?? null,
     latency_ms: latencyMs,

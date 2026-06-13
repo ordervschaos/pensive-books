@@ -6,8 +6,9 @@
 //   COMMITTED — { pageId } → prefix built from the real pages table.
 //   DRAFT     — { scaffold, pageIndex } → prefix built from an in-memory scaffold draft (pre-commit).
 import { type SupabaseClient } from "jsr:@supabase/supabase-js@2";
-import { callClaude, type CallMeta } from "./claude.ts";
+import { callClaude, textFromClaude, type CallMeta } from "./claude.ts";
 import { getActiveModels } from "./model-config.ts";
+import { parseJsonOptions } from "./json.ts";
 
 export interface Brief {
   scope?: { band?: string; word_target?: number };
@@ -74,20 +75,6 @@ function prefixContext(slots: SlotLite[], targetIdx: number): { prefix: string; 
   };
 }
 
-function parseOptions(text: string): string[] {
-  let raw = text.trim();
-  const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fence) raw = fence[1].trim();
-  else {
-    const first = raw.indexOf("{");
-    const last = raw.lastIndexOf("}");
-    if (first !== -1 && last > first) raw = raw.slice(first, last + 1);
-  }
-  const parsed = JSON.parse(raw);
-  const arr: unknown[] = Array.isArray(parsed) ? parsed : (Array.isArray(parsed.options) ? parsed.options : []);
-  return arr.map((s) => String(s).trim()).filter(Boolean);
-}
-
 // Generate the 3 alternatives. Throws on bad input / no output (callers map to a row error or HTTP).
 export async function objectiveOptions(client: SupabaseClient, apiKey: string, p: ObjectiveOptionsParams): Promise<string[]> {
   const draftMode = Array.isArray(p.scaffold?.pages) && typeof p.pageIndex === "number";
@@ -134,11 +121,10 @@ export async function objectiveOptions(client: SupabaseClient, apiKey: string, p
     messages: [{ role: "user", content: userContent }],
   }, meta);
 
-  const text = ((data.content ?? []) as Array<{ type: string; text?: string }>)
-    .filter((b) => b.type === "text").map((b) => b.text ?? "").join("").trim();
+  const text = textFromClaude(data).trim();
   if (!text) throw new Error("Claude returned no options.");
 
-  const options = parseOptions(text);
+  const options = parseJsonOptions(text);
   if (options.length === 0) throw new Error("Claude returned an empty options list.");
   return options;
 }

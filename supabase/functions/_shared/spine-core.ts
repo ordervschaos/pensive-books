@@ -2,8 +2,9 @@
 // sync endpoints (brief-to-spine, spine-options) AND the durable dispatcher (ai-run) share identical
 // logic. No auth, no access check, no row writes — callers own those (mirrors options-core.ts).
 import { type SupabaseClient } from "jsr:@supabase/supabase-js@2";
-import { callClaude, type CallMeta } from "./claude.ts";
+import { callClaude, textFromClaude, type CallMeta } from "./claude.ts";
 import { getActiveModels } from "./model-config.ts";
+import { parseJsonOptions } from "./json.ts";
 
 
 
@@ -59,23 +60,8 @@ function outlineContext(pages: Array<{ page_type: string | null; title: string |
     .join("\n");
 }
 
-function textOf(data: { content?: Array<{ type: string; text?: string }> }): string {
-  return (data.content ?? []).filter((b) => b.type === "text").map((b) => b.text ?? "").join("").trim();
-}
-
-function parseOptions(text: string): string[] {
-  let raw = text.trim();
-  const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fence) raw = fence[1].trim();
-  else {
-    const first = raw.indexOf("{");
-    const last = raw.lastIndexOf("}");
-    if (first !== -1 && last > first) raw = raw.slice(first, last + 1);
-  }
-  const parsed = JSON.parse(raw);
-  const arr: unknown[] = Array.isArray(parsed) ? parsed : (Array.isArray(parsed.options) ? parsed.options : []);
-  return arr.map((s) => String(s).trim()).filter(Boolean);
-}
+// deno-lint-ignore no-explicit-any
+const textOf = (data: any): string => textFromClaude(data).trim();
 
 // brief → the book spine (single throughline). Throws on no output.
 export async function generateSpine(client: SupabaseClient, apiKey: string, p: { bookId: number; userId?: string | null }): Promise<string> {
@@ -125,7 +111,7 @@ export async function spineOptions(client: SupabaseClient, apiKey: string, p: { 
   }, meta);
   const text = textOf(data);
   if (!text) throw new Error("Claude returned no options.");
-  const options = parseOptions(text);
+  const options = parseJsonOptions(text);
   if (options.length === 0) throw new Error("Claude returned an empty options list.");
   return options;
 }

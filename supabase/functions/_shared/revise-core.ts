@@ -2,7 +2,7 @@
 // worker, extracted so the sync endpoint (revise-node) AND the durable dispatcher (ai-run) share
 // identical logic. No auth, no access check, no row writes — callers own those.
 import { type SupabaseClient } from "jsr:@supabase/supabase-js@2";
-import { callClaude, type CallMeta } from "./claude.ts";
+import { callClaude, textFromClaude, type CallMeta } from "./claude.ts";
 import { getActiveModels } from "./model-config.ts";
 
 export type ReviseLayer = "spine" | "objective" | "beat";
@@ -76,8 +76,7 @@ export async function reviseNode(client: SupabaseClient, apiKey: string, p: Revi
         `\n\nReturn the revised ${p.layer} only.`,
     }],
   }, meta);
-  const text = ((data.content ?? []) as Array<{ type: string; text?: string }>)
-    .filter((b) => b.type === "text").map((b) => b.text ?? "").join("").trim();
+  const text = textFromClaude(data).trim();
   if (!text) throw new Error("Claude returned nothing.");
   return text;
 }

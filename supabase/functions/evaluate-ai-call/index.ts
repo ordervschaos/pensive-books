@@ -12,7 +12,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { runInBackground, serviceClient } from "../_shared/task.ts";
-import { callClaude } from "../_shared/claude.ts";
+import { callClaude, textFromClaude } from "../_shared/claude.ts";
 import { JUDGE_MODEL, JUDGE_SYSTEM, buildJudgeUser, parseJudgement } from "../_shared/judge.ts";
 
 const json = (body: unknown, status = 200) =>
@@ -62,11 +62,7 @@ Deno.serve(async (req: Request) => {
         messages: [{ role: "user", content: buildJudgeUser(call) }],
       }, { fn: "judge-ai-call", bookId: call.book_id, taskTable: "ai_call_evals", taskId: row.id });
 
-      const text = (data.content ?? [])
-        .filter((b: { type: string }) => b.type === "text")
-        .map((b: { text: string }) => b.text)
-        .join("")
-        .trim();
+      const text = textFromClaude(data).trim();
       const j = parseJudgement(text);
       return { status: "done", scores: j.scores, verdict: j.verdict, findings: j.findings, amendments: j.amendments };
     });

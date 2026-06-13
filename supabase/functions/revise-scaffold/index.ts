@@ -10,8 +10,9 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
-import { callClaude, type CallMeta } from "../_shared/claude.ts";
+import { callClaude, textFromClaude, type CallMeta } from "../_shared/claude.ts";
 import { getActiveModels } from "../_shared/model-config.ts";
+import { extractJsonBlock } from "../_shared/json.ts";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -77,26 +78,13 @@ function bookContext(bookName: string, brief: Brief | null, spine: string | null
     `\n\nBRIEF:\n${briefContext(brief)}`;
 }
 
-function textOf(data: { content?: Array<{ type: string; text?: string }> }): string {
-  return (data.content ?? [])
-    .filter((b) => b.type === "text")
-    .map((b) => b.text ?? "")
-    .join("")
-    .trim();
-}
+// deno-lint-ignore no-explicit-any
+const textOf = (data: any): string => textFromClaude(data).trim();
 
 function parseScaffold(text: string): Scaffold {
-  let raw = text.trim();
-  const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fence) raw = fence[1].trim();
-  else {
-    const first = raw.indexOf("{");
-    const last = raw.lastIndexOf("}");
-    if (first !== -1 && last > first) raw = raw.slice(first, last + 1);
-  }
   let parsed: Scaffold;
   try {
-    parsed = JSON.parse(raw);
+    parsed = JSON.parse(extractJsonBlock(text));
   } catch (e) {
     throw new Error(`Could not parse scaffold JSON: ${(e as Error).message}`);
   }

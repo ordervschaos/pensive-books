@@ -11,7 +11,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
-import { callClaude } from "../_shared/claude.ts";
+import { callClaude, textFromClaude } from "../_shared/claude.ts";
 import { getActiveModels } from "../_shared/model-config.ts";
 
 const json = (body: unknown, status = 200) =>
@@ -104,8 +104,7 @@ Deno.serve(async (req: Request) => {
       }],
     }, { fn: "revise-node", bookId, userId: user.id });
 
-    const text = ((data.content ?? []) as Array<{ type: string; text?: string }>)
-      .filter((b) => b.type === "text").map((b) => b.text ?? "").join("").trim();
+    const text = textFromClaude(data).trim();
     if (!text) return json({ error: "Claude returned nothing." }, 502);
 
     return json({ text });

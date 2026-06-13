@@ -21,6 +21,7 @@ import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { callClaude } from "../_shared/claude.ts";
 import { getActiveModels } from "../_shared/model-config.ts";
+import { tiptapToText } from "../_shared/words.ts";
 import { serviceClient } from "../_shared/task.ts";
 import { reinvoke, isChainCall } from "../_shared/self-chain.ts";
 import { captureException, isBillingError } from "../_shared/sentry.ts";
@@ -621,14 +622,3 @@ function evalContext(ev: EvalResult): string {
   return `${head}\n\n${sections}`.trim();
 }
 
-// Minimal Tiptap JSON → plain text (mirrors evaluate-book).
-function tiptapToText(node: unknown): string {
-  if (!node || typeof node !== "object") return "";
-  const n = node as { type?: string; text?: string; content?: unknown[] };
-  if (n.type === "text") return n.text ?? "";
-  if (n.type === "hardBreak") return "\n";
-  let out = "";
-  for (const child of n.content ?? []) out += tiptapToText(child);
-  if (["paragraph", "heading", "blockquote", "listItem", "codeBlock"].includes(n.type ?? "")) out += "\n\n";
-  return out;
-}

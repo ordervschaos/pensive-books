@@ -19,8 +19,9 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { runInBackground, serviceClient } from "../_shared/task.ts";
-import { callClaude as callClaudeApi, type CallMeta } from "../_shared/claude.ts";
+import { callClaude as callClaudeApi, textFromClaude, type CallMeta } from "../_shared/claude.ts";
 import { getActiveModels } from "../_shared/model-config.ts";
+import { extractJsonBlock } from "../_shared/json.ts";
 import { type Foundations, settledContext } from "../_shared/foundations-core.ts";
 import { canonContext, type CanonPacket } from "../_shared/canon-core.ts";
 import { type Delta } from "../_shared/page-state.ts";
@@ -192,13 +193,8 @@ interface ScaffoldThread {
 interface TentpolePlacement { tentpoleId: string; pageIndex: number }
 interface Scaffold { structure: string; pages: ScaffoldPage[]; threads: ScaffoldThread[]; tentpolePlacements?: TentpolePlacement[] }
 
-function textOf(data: { content?: Array<{ type: string; text?: string }> }): string {
-  return (data.content ?? [])
-    .filter((b) => b.type === "text")
-    .map((b) => b.text ?? "")
-    .join("")
-    .trim();
-}
+// deno-lint-ignore no-explicit-any
+const textOf = (data: any): string => textFromClaude(data).trim();
 
 // The brief/spine context block, shared by the draft and revise prompts.
 function bookContext(bookName: string, brief: Brief | null, spine: string | null, foundations: Foundations | null, canon: CanonPacket | null): string {
@@ -271,17 +267,9 @@ async function reviseScaffold(apiKey: string, model: string, bookName: string, b
 }
 
 function parseScaffold(text: string): Scaffold {
-  let raw = text.trim();
-  const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fence) raw = fence[1].trim();
-  else {
-    const first = raw.indexOf("{");
-    const last = raw.lastIndexOf("}");
-    if (first !== -1 && last > first) raw = raw.slice(first, last + 1);
-  }
   let parsed: Scaffold;
   try {
-    parsed = JSON.parse(raw);
+    parsed = JSON.parse(extractJsonBlock(text));
   } catch (e) {
     throw new Error(`Could not parse scaffold JSON: ${(e as Error).message}`);
   }

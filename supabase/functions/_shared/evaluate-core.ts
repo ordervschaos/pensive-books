@@ -10,7 +10,9 @@
 import { type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { EDITOR_STANCE, FICTION_RUBRIC } from "../evaluate-book/rubric.ts";
 import { captureException, isBillingError } from "./sentry.ts";
-import { callClaude as callClaudeApi, type CallMeta } from "./claude.ts";
+import { callClaude as callClaudeApi, textFromClaude, type CallMeta } from "./claude.ts";
+import { extractJsonBlock } from "./json.ts";
+import { tiptapToText } from "./words.ts";
 
 export interface Brief {
   scope?: { band?: string; word_target?: number };
@@ -152,19 +154,6 @@ function pageText(p: PageRow): string {
   if (fromJson) return fromJson;
   if (p.html_content) return p.html_content.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
   return "";
-}
-
-function tiptapToText(node: unknown): string {
-  if (!node || typeof node !== "object") return "";
-  const n = node as { type?: string; text?: string; content?: unknown[] };
-  if (n.type === "text") return n.text ?? "";
-  if (n.type === "hardBreak") return "\n";
-  let out = "";
-  for (const child of n.content ?? []) out += tiptapToText(child);
-  if (["paragraph", "heading", "blockquote", "listItem", "codeBlock"].includes(n.type ?? "")) {
-    out += "\n\n";
-  }
-  return out;
 }
 
 function countWords(text: string): number {
@@ -344,26 +333,14 @@ async function anthropicCall(
     messages: [{ role: "user", content: opts.user }],
   }, meta, { signal: AbortSignal.timeout(opts.timeoutMs) });
 
-  const text = (data.content ?? [])
-    .filter((b: { type: string }) => b.type === "text")
-    .map((b: { text: string }) => b.text)
-    .join("")
-    .trim();
+  const text = textFromClaude(data).trim();
   if (!text) throw new Error("Claude returned no text content.");
   return text;
 }
 
 function extractJSON(text: string): unknown {
-  let raw = text.trim();
-  const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fence) raw = fence[1].trim();
-  else {
-    const first = raw.indexOf("{");
-    const last = raw.lastIndexOf("}");
-    if (first !== -1 && last > first) raw = raw.slice(first, last + 1);
-  }
   try {
-    return JSON.parse(raw);
+    return JSON.parse(extractJsonBlock(text));
   } catch (e) {
     throw new Error(`Could not parse model output as JSON: ${(e as Error).message}`);
   }

@@ -9,7 +9,7 @@
 // where what's said ≠ what's meant (subtext), and name one concrete sensory image. Threads anchored
 // to the page tell it what to SEED or PAY OFF.
 import { type SupabaseClient } from "jsr:@supabase/supabase-js@2";
-import { callClaude, type CallMeta } from "./claude.ts";
+import { callClaude, textFromClaude, type CallMeta } from "./claude.ts";
 import { canonContext, type CanonPacket } from "./canon-core.ts";
 import { getActiveModels } from "./model-config.ts";
 
@@ -208,8 +208,7 @@ async function generateBeat(apiKey: string, model: string, userContent: string, 
   };
   if (temperature != null) body.temperature = temperature;
   const data = await callClaude(apiKey, body, meta);
-  return ((data.content ?? []) as Array<{ type: string; text?: string }>)
-    .filter((b) => b.type === "text").map((b) => b.text ?? "").join("").trim();
+  return textFromClaude(data).trim();
 }
 
 const JUDGE_SYSTEM = `You are a story editor choosing the single strongest BEAT among candidates for one page. The winner is the one that best, in order of weight: (a) connects to the PREVIOUS beat by "therefore" or "but" — caused by or colliding with it, never "and then"; (b) turns a clear VALUE FLIP across the page; (c) carries real SUBTEXT (said ≠ meant); (d) anchors on a CONCRETE image; (e) fulfils the page's objective. Reply with ONLY the number of the best candidate — no words, no punctuation.`;
@@ -230,8 +229,7 @@ async function pickBestBeat(apiKey: string, model: string, candidates: string[],
           `\n\nCANDIDATE BEATS:\n${list}\n\nWhich single beat is best? Reply with ONLY its number.`,
       }],
     }, meta);
-    const text = ((data.content ?? []) as Array<{ type: string; text?: string }>)
-      .filter((b) => b.type === "text").map((b) => b.text ?? "").join("");
+    const text = textFromClaude(data);
     const idx = parseInt(text.match(/\d+/)?.[0] ?? "1", 10) - 1;
     return candidates[idx] ?? candidates[0];
   } catch {

@@ -9,7 +9,8 @@
 //   (c) spineRoutes validates post-hoc that every pinned tentpole appears (and no killed one does)
 //       in every route, and retries once on violation.
 import { type SupabaseClient } from "jsr:@supabase/supabase-js@2";
-import { callClaude, type CallMeta } from "./claude.ts";
+import { callClaude, textFromClaude, type CallMeta } from "./claude.ts";
+import { extractJsonBlock } from "./json.ts";
 import { getActiveModels } from "./model-config.ts";
 import { canonContext, type CanonPacket } from "./canon-core.ts";
 
@@ -94,20 +95,11 @@ export function settledContext(f: Foundations): string {
   return lines.length ? lines.join("\n\n") : "(nothing settled yet)";
 }
 
-function textOf(data: { content?: Array<{ type: string; text?: string }> }): string {
-  return (data.content ?? []).filter((b) => b.type === "text").map((b) => b.text ?? "").join("").trim();
-}
+// deno-lint-ignore no-explicit-any
+const textOf = (data: any): string => textFromClaude(data).trim();
 
 function parseJson<T>(text: string): T {
-  let raw = text.trim();
-  const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fence) raw = fence[1].trim();
-  else {
-    const first = raw.search(/[{[]/);
-    const last = Math.max(raw.lastIndexOf("}"), raw.lastIndexOf("]"));
-    if (first !== -1 && last > first) raw = raw.slice(first, last + 1);
-  }
-  return JSON.parse(raw) as T;
+  return JSON.parse(extractJsonBlock(text)) as T;
 }
 
 const uid = () => crypto.randomUUID().slice(0, 8);
@@ -339,8 +331,7 @@ export async function reviseTentpole(
       content: `BOOK: ${book.name}\n\nSETTLED FOUNDATIONS:\n${settledContext(f)}\n\nCURRENT MOMENT:\n${cur}\n\nAUTHOR'S INSTRUCTION:\n${instr}\n\nReturn the revised moment only.`,
     }],
   }, meta);
-  const text = ((data.content ?? []) as Array<{ type: string; text?: string }>)
-    .filter((b) => b.type === "text").map((b) => b.text ?? "").join("").trim();
+  const text = textFromClaude(data).trim();
   if (!text) throw new Error("Claude returned nothing.");
   return text;
 }

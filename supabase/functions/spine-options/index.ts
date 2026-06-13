@@ -14,8 +14,9 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
-import { callClaude, type CallMeta } from "../_shared/claude.ts";
+import { callClaude, textFromClaude, type CallMeta } from "../_shared/claude.ts";
 import { getActiveModels } from "../_shared/model-config.ts";
+import { parseJsonOptions } from "../_shared/json.ts";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -52,20 +53,6 @@ function briefContext(brief: Brief | null): string {
   if (brief.tone?.length) lines.push(`- Tone: ${brief.tone.join(", ")}`);
   if (brief.success_criteria) lines.push(`- Success looks like: ${brief.success_criteria}`);
   return lines.length ? lines.join("\n") : "(brief is empty)";
-}
-
-function parseOptions(text: string): string[] {
-  let raw = text.trim();
-  const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fence) raw = fence[1].trim();
-  else {
-    const first = raw.indexOf("{");
-    const last = raw.lastIndexOf("}");
-    if (first !== -1 && last > first) raw = raw.slice(first, last + 1);
-  }
-  const parsed = JSON.parse(raw);
-  const arr: unknown[] = Array.isArray(parsed) ? parsed : (Array.isArray(parsed.options) ? parsed.options : []);
-  return arr.map((s) => String(s).trim()).filter(Boolean);
 }
 
 Deno.serve(async (req: Request) => {
@@ -112,13 +99,12 @@ Deno.serve(async (req: Request) => {
       messages: [{ role: "user", content: userContent }],
     }, meta);
 
-    const text = ((data.content ?? []) as Array<{ type: string; text?: string }>)
-      .filter((b) => b.type === "text").map((b) => b.text ?? "").join("").trim();
+    const text = textFromClaude(data).trim();
 
     if (!text) return json({ error: "Claude returned no options." }, 502);
 
     let options: string[];
-    try { options = parseOptions(text); }
+    try { options = parseJsonOptions(text); }
     catch (e) { return json({ error: `Could not parse options JSON: ${(e as Error).message}` }, 502); }
 
     if (options.length === 0) return json({ error: "Claude returned an empty options list." }, 502);
