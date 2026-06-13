@@ -81,10 +81,10 @@ export function StudioNavigator({ model, selection, collapsed, runningStep, onSe
             </div>
           );
         })}
-        <div className="mt-3.5 flex items-center gap-3.5 px-2.5 pv-serif text-[12px] text-[hsl(var(--pv-text-muted))]">
-          <span className="flex items-center gap-1.5"><span className="h-[7px] w-[7px] rounded-full bg-[hsl(var(--pv-accent))]" /> set</span>
-          <span className="flex items-center gap-1.5"><span className="h-[7px] w-[7px] rounded-full border-[1.5px] border-[hsl(var(--pv-text-faint))]/60" /> empty</span>
-          <span className="italic text-[hsl(var(--pv-text-faint))]">obj · beat · prose</span>
+        <div className="mt-3.5 flex flex-wrap items-center gap-x-3.5 gap-y-1 px-2.5 pv-serif text-[12px] text-[hsl(var(--pv-text-muted))]">
+          <span className="flex items-center gap-1.5"><span className="h-[7px] w-[7px] rounded-full bg-[hsl(var(--pv-accent))]" /> written</span>
+          <span className="flex items-center gap-1.5"><span className="h-[7px] w-[7px] rounded-full border-[1.5px] border-[hsl(var(--pv-text-faint))]/60" /> planned</span>
+          <span className="italic text-[hsl(var(--pv-text-faint))]">objective · beat · prose</span>
         </div>
       </section>
     </div>

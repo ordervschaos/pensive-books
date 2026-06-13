@@ -124,7 +124,7 @@ function StepView(props: StageProps & { stepKey: StepKey }) {
       {k === "brief" && (
         <>
           <BookBriefSection bookId={bookId} brief={props.brief} onBriefChange={props.onBriefChange} />
-          {gate("Approve & continue", "a deliberate sign-off — one of six gates")}
+          {gate("Approve the brief & continue", "a deliberate sign-off — one of six gates")}
         </>
       )}
       {k === "foundations" && (

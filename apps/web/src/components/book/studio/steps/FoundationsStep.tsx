@@ -160,19 +160,29 @@ function NodeSub({ bookId, stepKey, node, heroTitle, heroSub, blockedReason, bef
 
   if (blockedReason) return <p className="pv-serif text-[14px] italic text-[hsl(var(--pv-text-faint))]">{blockedReason}</p>;
 
+  const candidates = node?.candidates ?? [];
+  const selected = (node?.text ?? "").trim();
+  const pinnedAndNotInCandidates = selected !== "" && !candidates.some((c) => c.text.trim() === selected);
+
   if (generating) {
     return (
-      <div className="flex items-center gap-4">
-        <p className="pv-serif inline-flex items-center gap-2 text-[14px] italic text-[hsl(var(--pv-text-muted))]">
-          <Loader2 className="h-4 w-4 animate-spin" /> Proposing candidates…
-        </p>
-        <button type="button" onClick={() => void run.cancel()} className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">cancel</button>
+      <div>
+        {/* Keep the pinned card visible during loading so the author knows it's held safe. */}
+        {node?.pinned && selected && (
+          <div className="mb-4 rounded-2xl border border-[hsl(var(--pv-accent))]/30 bg-[hsl(var(--pv-surface-2))]/40 px-6 py-5 opacity-60">
+            <span className="pv-mono text-[10px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-faint))]">Pinned · held through generation</span>
+            <p className="pv-serif mt-2 whitespace-pre-wrap text-[15px] leading-[1.65] text-foreground/70">{selected}</p>
+          </div>
+        )}
+        <div className="flex items-center gap-4">
+          <p className="pv-serif inline-flex items-center gap-2 text-[14px] italic text-[hsl(var(--pv-text-muted))]">
+            <Loader2 className="h-4 w-4 animate-spin" /> Proposing candidates…
+          </p>
+          <button type="button" onClick={() => void run.cancel()} className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">cancel</button>
+        </div>
       </div>
     );
   }
-
-  const candidates = node?.candidates ?? [];
-  const selected = (node?.text ?? "").trim();
 
   if (candidates.length === 0 && !selected) {
     return (
@@ -186,13 +196,43 @@ function NodeSub({ bookId, stepKey, node, heroTitle, heroSub, blockedReason, bef
 
   return (
     <div className="space-y-3.5">
-      {candidates.map((c) => {
+      {/* Approved text that's no longer in the candidate list — show at TOP as the anchor. */}
+      {pinnedAndNotInCandidates && (
+        <div className="rounded-2xl border border-[hsl(var(--pv-accent))]/45 bg-[hsl(var(--pv-surface-2))]/60 px-6 py-5">
+          <div className="mb-2.5 flex items-center justify-between gap-3">
+            <span className="pv-mono text-[10px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-faint))]">Approved · yours</span>
+            {node?.pinned && <PinBadge onUnpin={() => void onSave({ ...node, pinned: false })} />}
+          </div>
+          <Textarea
+            value={draft ?? selected}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={() => { if (draft != null && draft.trim() !== selected) void onSave(pinNode(node, draft.trim())); setDraft(null); }}
+            rows={Math.max(3, Math.ceil((draft ?? selected).length / 80))}
+            className="pv-serif border-none bg-transparent px-0 text-[15.5px] leading-[1.65] focus-visible:ring-0"
+          />
+        </div>
+      )}
+      {candidates.map((c, idx) => {
         const isSelected = selected !== "" && c.text.trim() === selected;
+        const candidateLabel = c.label || `Candidate ${String.fromCharCode(65 + idx)}`;
+        // Collapse non-selected candidates to a compact row once a selection has been made.
+        if (!isSelected && selected) {
+          return (
+            <div key={c.id} className="flex items-center gap-3 rounded-xl border border-[hsl(var(--pv-border-soft))]/80 bg-[hsl(var(--pv-surface-2))]/30 px-5 py-2.5">
+              <span className="pv-mono shrink-0 text-[9.5px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-faint))]">{candidateLabel}</span>
+              <p className="pv-serif flex-1 truncate text-[13.5px] italic leading-snug text-[hsl(var(--pv-text-faint))]">{c.text}</p>
+              <button type="button" onClick={() => void onSave(pinNode(node, c.text))}
+                className="pv-serif shrink-0 text-[12.5px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground transition-colors">
+                switch
+              </button>
+            </div>
+          );
+        }
         return (
           <div key={c.id} className={`rounded-2xl border px-6 py-5 transition-colors ${isSelected ? "border-[hsl(var(--pv-accent))]/45 bg-[hsl(var(--pv-surface-2))]/60 shadow-[0_10px_30px_rgba(0,0,0,0.05)]" : "border-border bg-[hsl(var(--pv-surface-2))]/40"}`}>
             <div className="mb-2.5 flex items-center justify-between gap-3">
               <span className="pv-mono text-[10px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-faint))]">
-                {c.label || (isSelected ? "Approved" : "Candidate")}
+                {candidateLabel}
               </span>
               <div className="flex items-center gap-2.5">
                 {isSelected && node?.pinned && <PinBadge onUnpin={() => void onSave({ ...node, pinned: false })} />}
@@ -222,22 +262,6 @@ function NodeSub({ bookId, stepKey, node, heroTitle, heroSub, blockedReason, bef
           </div>
         );
       })}
-      {/* A selected text that's no longer among the candidates (edited away, or candidates refreshed). */}
-      {selected !== "" && !candidates.some((c) => c.text.trim() === selected) && (
-        <div className="rounded-2xl border border-[hsl(var(--pv-accent))]/45 bg-[hsl(var(--pv-surface-2))]/60 px-6 py-5">
-          <div className="mb-2.5 flex items-center justify-between gap-3">
-            <span className="pv-mono text-[10px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-faint))]">Approved · yours</span>
-            {node?.pinned && <PinBadge onUnpin={() => void onSave({ ...node, pinned: false })} />}
-          </div>
-          <Textarea
-            value={draft ?? selected}
-            onChange={(e) => setDraft(e.target.value)}
-            onBlur={() => { if (draft != null && draft.trim() !== selected) void onSave(pinNode(node, draft.trim())); setDraft(null); }}
-            rows={Math.max(3, Math.ceil((draft ?? selected).length / 80))}
-            className="pv-serif border-none bg-transparent px-0 text-[15.5px] leading-[1.65] focus-visible:ring-0"
-          />
-        </div>
-      )}
       <div className="flex items-center gap-5">
         <button type="button" onClick={() => void fire()} className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-accent))] hover:opacity-75">
           <RefreshCw className="h-3.5 w-3.5" /> regenerate{node?.pinned ? " (your approved text is held)" : ""}
@@ -337,7 +361,7 @@ function CastSub({ bookId, cast, beforeGen, onSave }: { bookId: number; cast: Ca
                     defaultValue={m[k] ?? ""}
                     placeholder="—"
                     onBlur={(e) => { const v = e.target.value.trim(); if (v !== (m[k] ?? "")) update(m.id, { [k]: v }, k); }}
-                    className="pv-serif border-none bg-transparent px-0 py-0 text-[14.5px] leading-relaxed text-foreground focus-visible:ring-0 placeholder:text-[hsl(var(--pv-text-faint))]"
+                    className="pv-serif border-b border-transparent bg-transparent px-0 py-0 text-[14.5px] leading-relaxed text-foreground focus-visible:ring-0 placeholder:text-[hsl(var(--pv-text-faint))] hover:border-[hsl(var(--pv-border-soft))] transition-colors"
                   />
                   {isPinned && (
                     <button type="button" title="Pinned — click to unpin" onClick={() => { if (window.confirm(`Unpin ${m.name}'s ${k}? Regeneration may rewrite it.`)) update(m.id, { pinned_fields: (m.pinned_fields ?? []).filter((x) => x !== k) } as Partial<CastMember>); }}>
@@ -354,13 +378,13 @@ function CastSub({ bookId, cast, beforeGen, onSave }: { bookId: number; cast: Ca
         <button
           type="button"
           onClick={() => void onSave([...cast, { id: uid(), name: "New character", role: cast.length ? "major" : "protagonist", pinned_fields: [...CAST_FIELDS] }])}
-          className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground"
+          className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-accent))] hover:opacity-75"
         >
           <Plus className="h-3.5 w-3.5" /> add character
         </button>
         {cast.length > 0 && (
-          <button type="button" onClick={() => void fire()} className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-accent))] hover:opacity-75">
-            <RefreshCw className="h-3.5 w-3.5" /> redraft with AI{pinnedCount ? ` (${pinnedCount} pinned line${pinnedCount === 1 ? "" : "s"} held)` : ""}
+          <button type="button" onClick={() => void fire()} className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground">
+            <RefreshCw className="h-3.5 w-3.5" /> regenerate{pinnedCount ? ` (${pinnedCount} pinned line${pinnedCount === 1 ? "" : "s"} held)` : ""}
           </button>
         )}
       </div>

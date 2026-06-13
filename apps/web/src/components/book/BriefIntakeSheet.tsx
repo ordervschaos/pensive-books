@@ -156,7 +156,7 @@ export function BriefIntakeSheet({ bookId, open, onOpenChange, onFinish }: Brief
                 })}
               </div>
               <Input
-                value={brief.genre ?? ""}
+                value={GENRE_SUGGESTIONS.includes(brief.genre ?? "") ? "" : (brief.genre ?? "")}
                 onChange={(e) => setBrief((prev) => ({ ...prev, genre: e.target.value }))}
                 placeholder="Or type your own…"
               />
@@ -245,7 +245,8 @@ export function BriefIntakeSheet({ bookId, open, onOpenChange, onFinish }: Brief
         </div>
 
         <div className="flex items-center justify-between pt-2 border-t">
-          <Button variant="ghost" onClick={skip} disabled={persisting}>
+          <Button variant="ghost" onClick={skip} disabled={persisting}
+            onMouseUp={(e) => (e.currentTarget as HTMLButtonElement).blur()}>
             Skip this
           </Button>
           <Button onClick={() => advance(brief)} disabled={persisting}>

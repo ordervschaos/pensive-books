@@ -629,9 +629,11 @@ const BookDetails = () => {
                     )}
                   >
                     Manuscript
-                    <span className="pv-mono rounded-full bg-[hsl(var(--pv-surface-2))] px-2 py-0.5 text-[11px] tabular-nums text-[hsl(var(--pv-text-muted))]">
-                      {pages.length}
-                    </span>
+                    {pages.length > 0 && (
+                      <span className="pv-mono rounded-full bg-[hsl(var(--pv-surface-2))] px-2 py-0.5 text-[11px] tabular-nums text-[hsl(var(--pv-text-muted))]">
+                        {pages.length}
+                      </span>
+                    )}
                   </button>
                   <button
                     type="button"
@@ -688,23 +690,58 @@ const BookDetails = () => {
 
                 {/* Manuscript tab — writing & page management, full width */}
                 {activeTab === "manuscript" && (
-                  <PagesList
-                    pages={pages as any}
-                    bookId={getNumericId(bookSlug)}
-                    isDeleteMode={isDeleteMode}
-                    canEdit={canEdit}
-                    onDeleteModeChange={(isDelete) => setIsDeleteMode(isDelete)}
-                    onChatToggle={() => setIsChatOpen(!isChatOpen)}
-                    hasActiveChat={isChatOpen}
-                    wordCount={manuscriptWordCount}
-                    versionControl={
-                      <VersionControlButton
-                        bookId={getNumericId(bookSlug)}
-                        bookSlug={bookSlug}
-                        onSaveVersion={() => setIsCommitDialogOpen(true)}
-                      />
-                    }
-                  />
+                  <>
+                    <PagesList
+                      pages={pages as any}
+                      bookId={getNumericId(bookSlug)}
+                      isDeleteMode={isDeleteMode}
+                      canEdit={canEdit}
+                      onDeleteModeChange={(isDelete) => setIsDeleteMode(isDelete)}
+                      onChatToggle={() => setIsChatOpen(!isChatOpen)}
+                      hasActiveChat={isChatOpen}
+                      wordCount={manuscriptWordCount}
+                      versionControl={
+                        <VersionControlButton
+                          bookId={getNumericId(bookSlug)}
+                          bookSlug={bookSlug}
+                          onSaveVersion={() => setIsCommitDialogOpen(true)}
+                        />
+                      }
+                    />
+                    {/* Archived pages — only relevant in the manuscript context */}
+                    {canEdit && (
+                      <div className="mt-8 pb-2">
+                        {!showArchivedPages ? (
+                          <button
+                            type="button"
+                            onClick={() => setShowArchivedPages(true)}
+                            className="pv-serif text-[12px] italic text-[hsl(var(--pv-text-faint))] underline-offset-2 hover:text-[hsl(var(--pv-text-muted))] hover:underline transition-colors"
+                          >
+                            View archived pages
+                          </button>
+                        ) : (
+                          <div className="overflow-hidden rounded-2xl border border-border bg-[hsl(var(--pv-surface-2))]/40">
+                            <div className="flex items-center justify-between border-b border-[hsl(var(--pv-border-soft))] px-5 py-2.5">
+                              <span className="pv-mono text-[10.5px] uppercase tracking-[0.18em] text-[hsl(var(--pv-text-muted))]">
+                                Archived pages
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setShowArchivedPages(false)}
+                                className="pv-serif text-[12px] italic text-[hsl(var(--pv-text-faint))] hover:text-[hsl(var(--pv-text-muted))] transition-colors"
+                              >
+                                Hide
+                              </button>
+                            </div>
+                            <ArchivedPagesSection
+                              bookId={getNumericId(bookSlug)}
+                              onRestore={fetchBookDetails}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
                 )}
 
                 {/* AI tools tab — the build studio: one two-pane workbench (the 9-step ladder + the
@@ -741,39 +778,6 @@ const BookDetails = () => {
               </div>
             )}
 
-            {/* Archived pages — subtle link at the bottom, only for editors */}
-            {canEdit && (
-              <div className="mt-8 pb-2">
-                {!showArchivedPages ? (
-                  <button
-                    type="button"
-                    onClick={() => setShowArchivedPages(true)}
-                    className="pv-serif text-[12px] italic text-[hsl(var(--pv-text-faint))] underline-offset-2 hover:text-[hsl(var(--pv-text-muted))] hover:underline transition-colors"
-                  >
-                    View archived pages
-                  </button>
-                ) : (
-                  <div className="overflow-hidden rounded-2xl border border-border bg-[hsl(var(--pv-surface-2))]/40">
-                    <div className="flex items-center justify-between border-b border-[hsl(var(--pv-border-soft))] px-5 py-2.5">
-                      <span className="pv-mono text-[10.5px] uppercase tracking-[0.18em] text-[hsl(var(--pv-text-muted))]">
-                        Archived pages
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setShowArchivedPages(false)}
-                        className="pv-serif text-[12px] italic text-[hsl(var(--pv-text-faint))] hover:text-[hsl(var(--pv-text-muted))] transition-colors"
-                      >
-                        Hide
-                      </button>
-                    </div>
-                    <ArchivedPagesSection
-                      bookId={getNumericId(bookSlug)}
-                      onRestore={fetchBookDetails}
-                    />
-                  </div>
-                )}
-              </div>
-            )}
           </div>
 
           {/* Chat Sidebar - Rendered as a portal */}

@@ -465,7 +465,7 @@ export const BookInfo = ({
                   <span>Continue writing</span>
                   <span className="pv-mono text-[10px] not-italic uppercase tracking-[0.14em] opacity-70">page {lastUpdatedPageIndex + 1}</span>
                 </Button>
-              ) : onContinueReading ? (
+              ) : onContinueReading && totalPages > 0 ? (
                 <Button
                   type="button"
                   onClick={onContinueReading}

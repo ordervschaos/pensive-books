@@ -106,7 +106,7 @@ export function BookBriefSection({ bookId, brief, onBriefChange }: BookBriefSect
               })}
             </div>
             <Input
-              value={draft.genre ?? ""}
+              value={GENRE_SUGGESTIONS.includes(draft.genre ?? "") ? "" : (draft.genre ?? "")}
               onChange={(e) => updateDraft({ genre: e.target.value })}
               placeholder="Or type your own…"
             />

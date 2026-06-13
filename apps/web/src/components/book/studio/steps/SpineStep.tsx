@@ -215,7 +215,7 @@ export function SpineStep({ bookId, newFlow, foundations, beforeGen, onStatusCha
               <span className="pv-mono text-[10px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-faint))]">Route {i + 1}</span>
               <button type="button" onClick={() => void pickRoute(r)}
                 className="pv-serif inline-flex items-center gap-1.5 rounded-full border border-border px-4 py-1.5 text-[13.5px] text-foreground transition-colors hover:border-foreground/40">
-                {spine ? "Switch to this route" : "Take this route"}
+                Take this route
               </button>
             </div>
             <p className="pv-serif whitespace-pre-wrap text-[14.5px] leading-[1.65] text-foreground">{r.summary}</p>

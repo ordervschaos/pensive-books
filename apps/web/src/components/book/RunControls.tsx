@@ -43,14 +43,14 @@ export function RunControls({ table, row, stale, onRestart, refetch }: RunContro
   return (
     <div className="px-5 pt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
       {stale && (
-        <span className="pv-serif text-[12.5px] italic text-[hsl(var(--pv-text-faint))]">This run looks stuck.</span>
+        <span className="pv-serif text-[12.5px] italic text-[hsl(var(--pv-text-faint))]">Still working — taking longer than expected.</span>
       )}
       <button type="button" onClick={() => void stop()} disabled={stopping} className={link}>
-        {stopping ? "Stopping…" : "Stop"}
+        {stopping ? "stopping…" : "cancel"}
       </button>
       {onRestart && (
         <button type="button" onClick={() => void restart()} disabled={stopping} className={link}>
-          Restart
+          restart
         </button>
       )}
     </div>
