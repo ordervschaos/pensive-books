@@ -10,6 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useLatestTaskRow, type TaskRow } from "@/hooks/useLatestTaskRow";
 import { notify as fireNotification } from "@/lib/notify";
+import { discardProse } from "@/lib/discardLadder";
 import { NotifyWhenDone } from "../../NotifyWhenDone";
 import { RunControls } from "../../RunControls";
 import type { StudioModel } from "../studioModel";
@@ -21,6 +22,7 @@ interface BuildRow extends TaskRow { progress: BuildProgress | null; error: stri
 export function DraftStep({ bookId, model, beforeGen, onChanged, onSelectPage }: { bookId: number; model: StudioModel; beforeGen: () => Promise<void>; onChanged: () => void; onSelectPage: (pageId: number) => void }) {
   const { toast } = useToast();
   const [notify, setNotify] = useState(false);
+  const [discarding, setDiscarding] = useState(false);
   const notifyRef = useRef(false);
   const notifiedRef = useRef<number | null>(null);
   const watchedRef = useRef<number | null>(null);
@@ -63,6 +65,27 @@ export function DraftStep({ bookId, model, beforeGen, onChanged, onSelectPage }:
     }
   };
 
+  // Pages carrying prose — what a prose discard wipes (the beats are kept, to re-draft from).
+  const discardIds = model.textPages.filter((p) => p.prose !== "gap").map((p) => p.id);
+
+  const discardAll = async () => {
+    if (running || discarding || discardIds.length === 0) return;
+    if (!window.confirm(
+      `Discard the prose on ${discardIds.length} page${discardIds.length === 1 ? "" : "s"}? ` +
+      `The beats stay — you'll re-draft the prose from them. This can't be undone.`,
+    )) return;
+    setDiscarding(true);
+    try {
+      await discardProse(bookId, discardIds);
+      toast({ title: "Prose discarded", description: "Every page is back to its beat. Write all to re-draft the prose." });
+      onChanged();
+    } catch (e) {
+      toast({ title: "Couldn't discard the prose", description: String((e as Error)?.message ?? e), variant: "destructive" });
+    } finally {
+      setDiscarding(false);
+    }
+  };
+
   const total = model.counts.objective + model.counts.written;
   const filled = model.counts.written;
   const remaining = model.proseRemaining;
@@ -81,9 +104,16 @@ export function DraftStep({ bookId, model, beforeGen, onChanged, onSelectPage }:
 
   if (allDone) {
     return (
-      <DoneStrip icon={<Check className="h-5 w-5" />} title="Every page written">
-        All {total} pages have prose. {lastWritten && <button type="button" onClick={() => onSelectPage(lastWritten.id)} className="italic text-[hsl(var(--pv-accent))] hover:opacity-75">open a page →</button>}
-      </DoneStrip>
+      <div>
+        <DoneStrip icon={<Check className="h-5 w-5" />} title="Every page written">
+          All {total} pages have prose. {lastWritten && <button type="button" onClick={() => onSelectPage(lastWritten.id)} className="italic text-[hsl(var(--pv-accent))] hover:opacity-75">open a page →</button>}
+        </DoneStrip>
+        <div className="mt-4">
+          <ActionLink tone="faint" busy={discarding} onClick={() => void discardAll()}>
+            discard the prose & re-draft →
+          </ActionLink>
+        </div>
+      </div>
     );
   }
 
@@ -103,6 +133,11 @@ export function DraftStep({ bookId, model, beforeGen, onChanged, onSelectPage }:
           {paused ? "continue — write all the prose" : `write the ${remaining} remaining at once`} →
         </ActionLink>
         {lastWritten && <button type="button" onClick={() => onSelectPage(lastWritten.id)} className="pv-serif italic text-[hsl(var(--pv-text-muted))] hover:text-foreground">review the last page →</button>}
+        {discardIds.length > 0 && (
+          <ActionLink tone="faint" busy={discarding} onClick={() => void discardAll()}>
+            discard the prose & re-draft →
+          </ActionLink>
+        )}
       </div>
       <div className="mt-4"><NotifyWhenDone enabled={notify} onChange={setNotify} /></div>
     </div>

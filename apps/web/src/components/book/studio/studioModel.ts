@@ -47,7 +47,7 @@ export const STEP_CAPTION: Record<StepKey, string> = {
   spine: "The one-paragraph throughline the whole book realizes.",
   outline: "The chapters and pages as objectives — review, edit, create. No prose yet.",
   voice: "Pick how the book sounds — it anchors every page the AI writes.",
-  beats: "Walk the book page by page — pick from three takes for each beat — before any prose.",
+  beats: "Walk the book page by page — plan the beat for each, one at a time or in bulk — before any prose.",
   draft: "Render the prose from the approved beats, in the book's voice.",
   read: "A structural critique of the draft — then auto-fix the critical & major issues.",
   revise: "Re-plan the outline or rework the draft — describe the change and review before it sticks.",

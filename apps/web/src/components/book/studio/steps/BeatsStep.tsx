@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAIRun } from "@/hooks/useAIRun";
 import { useLatestTaskRow, type TaskRow } from "@/hooks/useLatestTaskRow";
 import { saveBeat } from "@/lib/ladder";
+import { discardBeats } from "@/lib/discardLadder";
 import { RunControls } from "../../RunControls";
 import type { MapPage } from "@/lib/planGraph";
 import type { StudioModel } from "../studioModel";
@@ -34,6 +35,7 @@ export function BeatsStep({ bookId, model, beforeGen, onChanged }: { bookId: num
   const [cursor, setCursor] = useState(firstGap === -1 ? 0 : firstGap);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
+  const [discarding, setDiscarding] = useState(false);
   const seatedRun = useRef<number | null>(null);
 
   const page: MapPage | undefined = beatPages[cursor];
@@ -89,6 +91,27 @@ export function BeatsStep({ bookId, model, beforeGen, onChanged }: { bookId: num
   };
   // ────────────────────────────────────────────────────────────────────────────
 
+  // Discard every planned beat back to objectives-only, so the bulk/by-hand flow can re-plan them.
+  // Beats only — any written prose is left in place (it reads as stale against the missing beat).
+  const beatIds = beatPages.filter((p) => p.beat !== "gap").map((p) => p.id);
+  const discardAllBeats = async () => {
+    if (buildRunning || discarding || beatIds.length === 0) return;
+    if (!window.confirm(
+      `Discard the beats on ${beatIds.length} page${beatIds.length === 1 ? "" : "s"}? ` +
+      `The objectives stay — you'll re-plan the beats. This can't be undone.`,
+    )) return;
+    setDiscarding(true);
+    try {
+      await discardBeats(bookId, beatIds);
+      toast({ title: "Beats discarded", description: "Every page is back to its objective. Generate all beats to re-plan." });
+      onChanged();
+    } catch (e) {
+      toast({ title: "Couldn't discard the beats", description: String((e as Error)?.message ?? e), variant: "destructive" });
+    } finally {
+      setDiscarding(false);
+    }
+  };
+
   // Seat the editable draft: a committed page shows its saved beat; a gap page starts empty until a run lands.
   useEffect(() => {
     if (!page) return;
@@ -110,16 +133,23 @@ export function BeatsStep({ bookId, model, beforeGen, onChanged }: { bookId: num
   }
   if (allDone) {
     return (
-      <DoneStrip icon={<Check className="h-5 w-5" />} title="Every beat planned">
-        All {total} pages have a beat.{" "}
-        <button type="button" onClick={() => setCursor(0)} className="italic text-[hsl(var(--pv-accent))] hover:opacity-75">review them →</button>
-        {buildPaused && (
-          <>
-            {" · "}
-            <button type="button" onClick={() => void runBulkProse()} className="italic text-[hsl(var(--pv-accent))] hover:opacity-75">write all prose →</button>
-          </>
-        )}
-      </DoneStrip>
+      <div>
+        <DoneStrip icon={<Check className="h-5 w-5" />} title="Every beat planned">
+          All {total} pages have a beat.{" "}
+          <button type="button" onClick={() => setCursor(0)} className="italic text-[hsl(var(--pv-accent))] hover:opacity-75">review them →</button>
+          {buildPaused && (
+            <>
+              {" · "}
+              <button type="button" onClick={() => void runBulkProse()} className="italic text-[hsl(var(--pv-accent))] hover:opacity-75">write all prose →</button>
+            </>
+          )}
+        </DoneStrip>
+        <div className="mt-4">
+          <ActionLink tone="faint" busy={discarding} onClick={() => void discardAllBeats()}>
+            discard the beats & re-plan →
+          </ActionLink>
+        </div>
+      </div>
     );
   }
   if (!page) return null;
@@ -240,6 +270,14 @@ export function BeatsStep({ bookId, model, beforeGen, onChanged }: { bookId: num
                 {cursor > 0 && <button type="button" onClick={() => setCursor(cursor - 1)} className="pv-serif text-[13.5px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground">← prev</button>}
                 {cursor < total - 1 && <button type="button" onClick={() => setCursor(cursor + 1)} className="pv-serif text-[13.5px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground">next →</button>}
               </div>
+            </div>
+          )}
+
+          {beatIds.length > 0 && (
+            <div className="mt-6 border-t border-[hsl(var(--pv-border-soft))]/40 pt-4">
+              <ActionLink tone="faint" busy={discarding} onClick={() => void discardAllBeats()}>
+                discard all beats & re-plan →
+              </ActionLink>
             </div>
           )}
         </div>
