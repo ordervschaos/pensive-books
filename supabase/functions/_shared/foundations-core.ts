@@ -9,6 +9,7 @@
 //   (c) spineRoutes validates post-hoc that every pinned tentpole appears (and no killed one does)
 //       in every route, and retries once on violation.
 import { type SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { type Brief, briefContext } from "./brief.ts";
 import { callClaude, textFromClaude, type CallMeta } from "./claude.ts";
 import { extractJsonBlock } from "./json.ts";
 import { getActiveModels } from "./model-config.ts";
@@ -42,26 +43,7 @@ export interface Foundations {
 
 export interface SpineRoute { id: string; summary: string; tentpole_order: string[] }
 
-interface Brief {
-  scope?: { band?: string; word_target?: number };
-  genre?: string;
-  audience?: string;
-  premise?: string;
-  tone?: string[];
-  success_criteria?: string;
-}
 
-function briefContext(brief: Brief | null): string {
-  if (!brief) return "(no brief set)";
-  const lines: string[] = [];
-  if (brief.scope?.band) lines.push(`- Scope: ${brief.scope.band}${brief.scope.word_target ? ` (≈${brief.scope.word_target} words)` : ""}`);
-  if (brief.genre) lines.push(`- Genre: ${brief.genre}`);
-  if (brief.audience) lines.push(`- Audience: ${brief.audience}`);
-  if (brief.premise) lines.push(`- Premise: ${brief.premise}`);
-  if (brief.tone?.length) lines.push(`- Tone: ${brief.tone.join(", ")}`);
-  if (brief.success_criteria) lines.push(`- Success looks like: ${brief.success_criteria}`);
-  return lines.length ? lines.join("\n") : "(brief is empty)";
-}
 
 // The already-settled foundations, rendered as hard constraints for downstream steps. Pinned items
 // are called out as immovable; selected-but-fluid items are context to stay consistent with.
@@ -117,7 +99,7 @@ Output JSON ONLY:
 Output JSON ONLY:
 { "candidates": [{ "text": "<the ending>" }, …] }`,
 
-  cast: `You are a book architect drafting the core CAST: the protagonist and up to 2 major characters. For each: a name, then three labeled lines — want (external goal), wound (the unhealed injury driving them), lie (the false belief the arc will break). Honor any PINNED cast lines verbatim and never contradict them; if existing characters are given, keep their names/ids and only fill their empty fields, plus add missing majors.
+  cast: `You are a book architect drafting the core CAST: the protagonist and the major characters. For each: a name, then three labeled lines — want (external goal), wound (the unhealed injury driving them), lie (the false belief the arc will break). If existing characters are given, RETURN EVERY ONE OF THEM by their exact name: honor any line marked [PINNED] verbatim and never contradict it, but freely rewrite every non-pinned line to better serve the brief, the settled foundations, and the author's steer (this is a redraft, not a fill-in-the-blanks). You may also add a missing major.
 
 Output JSON ONLY:
 { "candidates": [{ "name": "…", "role": "protagonist" | "major", "want": "…", "wound": "…", "lie": "…" }, …] }`,

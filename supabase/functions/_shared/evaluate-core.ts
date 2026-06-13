@@ -13,15 +13,10 @@ import { captureException, isBillingError } from "./sentry.ts";
 import { callClaude as callClaudeApi, textFromClaude, type CallMeta } from "./claude.ts";
 import { extractJsonBlock } from "./json.ts";
 import { tiptapToText } from "./words.ts";
-
-export interface Brief {
-  scope?: { band?: string; word_target?: number };
-  genre?: string;
-  audience?: string;
-  premise?: string;
-  tone?: string[];
-  success_criteria?: string;
-}
+// evaluate-core renders the brief its own way (a titled block, returns null) so it keeps its local
+// briefContext below — but shares the Brief TYPE, and re-exports it for evaluate-book's import.
+import { type Brief } from "./brief.ts";
+export type { Brief };
 export interface BookRow {
   id: number;
   name: string;

@@ -9,20 +9,13 @@
 // Synchronous, like objective-to-beat. The client sets the page objective (host-owned) and
 // reconciles the objective_beat edge. Needs ANTHROPIC_API_KEY.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { type Brief, briefContext } from "../_shared/brief.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { hasEditAccess } from "../_shared/access.ts";
 import { callClaude, textFromClaude } from "../_shared/claude.ts";
 import { getActiveModels } from "../_shared/model-config.ts";
 
-interface Brief {
-  scope?: { band?: string; word_target?: number };
-  genre?: string;
-  audience?: string;
-  premise?: string;
-  tone?: string[];
-  success_criteria?: string;
-}
 
 const SYSTEM = `You are a book architect ABSTRACTING UP: given a page's BEAT (a paragraph planning, in order, what the page does), write the page's OBJECTIVE — a single short statement (1–2 sentences) of what that page must ACHIEVE in the book: its job, not its moves. You are stepping up one level of abstraction, from the concrete plan to the page's purpose.
 
@@ -32,15 +25,6 @@ Rules:
 - Be faithful to what the beat actually does (this is reverse-outlining); the spine only frames the level of abstraction.
 - Stay in the register the brief and book spine imply.`;
 
-function briefContext(brief: Brief | null): string {
-  if (!brief) return "(no brief set)";
-  const lines: string[] = [];
-  if (brief.genre) lines.push(`- Genre: ${brief.genre}`);
-  if (brief.audience) lines.push(`- Audience: ${brief.audience}`);
-  if (brief.premise) lines.push(`- Premise: ${brief.premise}`);
-  if (brief.tone?.length) lines.push(`- Tone: ${brief.tone.join(", ")}`);
-  return lines.length ? lines.join("\n") : "(brief is empty)";
-}
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -83,7 +67,7 @@ Deno.serve(async (req: Request) => {
       messages: [{
         role: "user",
         content:
-          `BOOK: ${book.name}\n\nBRIEF:\n${briefContext(book.brief as Brief | null)}` +
+          `BOOK: ${book.name}\n\nBRIEF:\n${briefContext(book.brief as Brief | null, { scope: "none", success: false, none: "(no brief set)", empty: "(brief is empty)" })}` +
           (spine ? `\n\nBOOK SPINE (for framing the abstraction level):\n${spine}` : "") +
           `\n\nTHE PAGE'S BEAT${title ? ` ("${title}")` : ""} — abstract this up into the page's objective:\n${beatText}` +
           `\n\nWrite the objective this beat serves. 1–2 sentences, the page's job only.`,

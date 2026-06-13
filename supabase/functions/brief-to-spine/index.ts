@@ -10,20 +10,13 @@
 // Synchronous, like objective-to-beat. The client writes books.spine = { text, brief_hash }.
 // Needs ANTHROPIC_API_KEY.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { type Brief, briefContext } from "../_shared/brief.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { hasEditAccess } from "../_shared/access.ts";
 import { callClaude, textFromClaude } from "../_shared/claude.ts";
 import { getActiveModels } from "../_shared/model-config.ts";
 
-interface Brief {
-  scope?: { band?: string; word_target?: number };
-  genre?: string;
-  audience?: string;
-  premise?: string;
-  tone?: string[];
-  success_criteria?: string;
-}
 
 const SYSTEM = `You are a book architect writing the BOOK SPINE — the throughline of the whole book. In 1–2 short paragraphs, state what this book is fundamentally DOING: its central objective/promise and the arc from beginning to end. This is the book-level objective every page will serve.
 
@@ -33,17 +26,6 @@ Rules:
 - Derive it from the brief (genre, audience, premise, tone). Honour them as the voice/intent contract.
 - If an outline is given, stay consistent with it, but write the spine at the BOOK level — above any single page.`;
 
-function briefContext(brief: Brief | null): string {
-  if (!brief) return "(no brief set — infer a sensible neutral aim)";
-  const lines: string[] = [];
-  if (brief.scope?.band) lines.push(`- Scope: ${brief.scope.band}${brief.scope.word_target ? ` (≈${brief.scope.word_target} words)` : ""}`);
-  if (brief.genre) lines.push(`- Genre: ${brief.genre}`);
-  if (brief.audience) lines.push(`- Audience: ${brief.audience}`);
-  if (brief.premise) lines.push(`- Premise: ${brief.premise}`);
-  if (brief.tone?.length) lines.push(`- Tone: ${brief.tone.join(", ")}`);
-  if (brief.success_criteria) lines.push(`- Success looks like: ${brief.success_criteria}`);
-  return lines.length ? lines.join("\n") : "(brief is empty — infer a sensible neutral aim)";
-}
 
 function outlineContext(pages: Array<{ page_type: string | null; title: string | null; metadata: { objective?: string } | null }>): string {
   return pages
@@ -93,7 +75,7 @@ Deno.serve(async (req: Request) => {
       messages: [{
         role: "user",
         content:
-          `BOOK: ${book.name}\n\nBRIEF (the voice/intent contract):\n${briefContext(book.brief as Brief | null)}` +
+          `BOOK: ${book.name}\n\nBRIEF (the voice/intent contract):\n${briefContext(book.brief as Brief | null, { scope: "full", success: true, none: "(no brief set — infer a sensible neutral aim)", empty: "(brief is empty — infer a sensible neutral aim)" })}` +
           (outline.length ? `\n\nCURRENT OUTLINE (for consistency — write the spine ABOVE these):\n${outlineContext(outline)}` : "") +
           `\n\nWrite the book spine. 1–2 short paragraphs, the throughline only.`,
       }],

@@ -15,6 +15,7 @@
 //
 // Needs the ANTHROPIC_API_KEY secret (shared with the other AI steps).
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { type Brief, briefContext } from "../_shared/brief.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { hasEditAccess } from "../_shared/access.ts";
@@ -23,14 +24,6 @@ import { callClaude as callClaudeApi, textFromClaude, type CallMeta } from "../_
 import { getActiveModels } from "../_shared/model-config.ts";
 import { extractJsonBlock } from "../_shared/json.ts";
 
-interface Brief {
-  scope?: { band?: string; word_target?: number };
-  genre?: string;
-  audience?: string;
-  premise?: string;
-  tone?: string[];
-  success_criteria?: string;
-}
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -98,16 +91,6 @@ Output using XML tags ONLY (no other text), exactly:
 <sample>PASSAGE 3</sample>
 </samples>`;
 
-function briefContext(brief: Brief | null): string {
-  if (!brief) return "(no brief set — infer a sensible literary voice from a neutral premise)";
-  const lines: string[] = [];
-  if (brief.scope?.band) lines.push(`- Scope: ${brief.scope.band}`);
-  if (brief.genre) lines.push(`- Genre: ${brief.genre}`);
-  if (brief.audience) lines.push(`- Audience: ${brief.audience}`);
-  if (brief.premise) lines.push(`- Premise: ${brief.premise}`);
-  if (brief.tone?.length) lines.push(`- Tone: ${brief.tone.join(", ")}`);
-  return lines.length ? lines.join("\n") : "(brief is empty — infer a sensible literary voice)";
-}
 
 async function draftVoiceSamples(apiKey: string, bookName: string, brief: Brief | null, spine: string | null, meta: CallMeta): Promise<string[]> {
   const { high: model } = await getActiveModels();
@@ -119,7 +102,7 @@ async function draftVoiceSamples(apiKey: string, bookName: string, brief: Brief 
       role: "user",
       content: `BOOK: ${bookName}` +
         (spine ? `\n\nSPINE (the throughline):\n${spine}` : "") +
-        `\n\nBRIEF:\n${briefContext(brief)}` +
+        `\n\nBRIEF:\n${briefContext(brief, { scope: "band", success: false, none: "(no brief set — infer a sensible literary voice from a neutral premise)", empty: "(brief is empty — infer a sensible literary voice)" })}` +
         `\n\nWrite the three voice samples. JSON only.`,
     }],
   }, meta);

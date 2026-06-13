@@ -8,20 +8,13 @@
 //
 // Synchronous. The client writes books.spine = { text, brief_hash }. Needs ANTHROPIC_API_KEY.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { type Brief, briefContext } from "../_shared/brief.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { hasEditAccess } from "../_shared/access.ts";
 import { callClaude, textFromClaude } from "../_shared/claude.ts";
 import { getActiveModels } from "../_shared/model-config.ts";
 
-interface Brief {
-  scope?: { band?: string; word_target?: number };
-  genre?: string;
-  audience?: string;
-  premise?: string;
-  tone?: string[];
-  success_criteria?: string;
-}
 
 const SYSTEM = `You are a book architect ABSTRACTING UP: given the book's full outline (its chapters and pages, each with its objective), write the BOOK SPINE — the throughline. In 1–2 short paragraphs, state what this book is fundamentally DOING across all these pages: its central objective/promise and the arc from beginning to end.
 
@@ -30,15 +23,6 @@ Rules:
 - It is the structural throughline that the pages collectively realize — NOT a blurb, NOT a chapter list, NOT a summary of each page. Name the central aim, the through-arc, and what changes by the end.
 - Be faithful to what the outline actually does (this is reverse-outlining); the brief only frames the register.`;
 
-function briefContext(brief: Brief | null): string {
-  if (!brief) return "(no brief set)";
-  const lines: string[] = [];
-  if (brief.genre) lines.push(`- Genre: ${brief.genre}`);
-  if (brief.audience) lines.push(`- Audience: ${brief.audience}`);
-  if (brief.premise) lines.push(`- Premise: ${brief.premise}`);
-  if (brief.tone?.length) lines.push(`- Tone: ${brief.tone.join(", ")}`);
-  return lines.length ? lines.join("\n") : "(brief is empty)";
-}
 
 function outlineContext(pages: Array<{ page_type: string | null; title: string | null; metadata: { objective?: string } | null }>): string {
   return pages
@@ -91,7 +75,7 @@ Deno.serve(async (req: Request) => {
       messages: [{
         role: "user",
         content:
-          `BOOK: ${book.name}\n\nBRIEF (for register only):\n${briefContext(book.brief as Brief | null)}` +
+          `BOOK: ${book.name}\n\nBRIEF (for register only):\n${briefContext(book.brief as Brief | null, { scope: "none", success: false, none: "(no brief set)", empty: "(brief is empty)" })}` +
           `\n\nTHE BOOK'S OUTLINE (chapters & pages with objectives) — abstract this up into the spine:\n${outlineContext(outline)}` +
           `\n\nWrite the book spine the outline realizes. 1–2 short paragraphs, the throughline only.`,
       }],

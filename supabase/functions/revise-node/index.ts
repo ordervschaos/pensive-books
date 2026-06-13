@@ -9,20 +9,13 @@
 //
 // Synchronous. The client shows a diff and, on accept, writes the node back. Needs ANTHROPIC_API_KEY.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { type Brief, briefContext } from "../_shared/brief.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { hasEditAccess } from "../_shared/access.ts";
 import { callClaude, textFromClaude } from "../_shared/claude.ts";
 import { getActiveModels } from "../_shared/model-config.ts";
 
-interface Brief {
-  scope?: { band?: string; word_target?: number };
-  genre?: string;
-  audience?: string;
-  premise?: string;
-  tone?: string[];
-  success_criteria?: string;
-}
 
 type Layer = "spine" | "objective" | "beat";
 
@@ -41,15 +34,6 @@ Rules:
 - Honour the book's brief (genre, audience, tone) and stay consistent with the book spine if given.`;
 }
 
-function briefContext(brief: Brief | null): string {
-  if (!brief) return "(no brief set)";
-  const lines: string[] = [];
-  if (brief.genre) lines.push(`- Genre: ${brief.genre}`);
-  if (brief.audience) lines.push(`- Audience: ${brief.audience}`);
-  if (brief.premise) lines.push(`- Premise: ${brief.premise}`);
-  if (brief.tone?.length) lines.push(`- Tone: ${brief.tone.join(", ")}`);
-  return lines.length ? lines.join("\n") : "(brief is empty)";
-}
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -93,7 +77,7 @@ Deno.serve(async (req: Request) => {
       messages: [{
         role: "user",
         content:
-          `BOOK: ${book.name}\n\nBRIEF:\n${briefContext(book.brief as Brief | null)}` +
+          `BOOK: ${book.name}\n\nBRIEF:\n${briefContext(book.brief as Brief | null, { scope: "none", success: false, none: "(no brief set)", empty: "(brief is empty)" })}` +
           (spine && layer !== "spine" ? `\n\nBOOK SPINE:\n${spine}` : "") +
           `\n\nCURRENT ${layer.toUpperCase()}:\n${cur}` +
           `\n\nAUTHOR'S INSTRUCTION:\n${instr}` +

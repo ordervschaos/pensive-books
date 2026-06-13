@@ -2,19 +2,12 @@
 // worker, extracted so the sync endpoint (revise-node) AND the durable dispatcher (ai-run) share
 // identical logic. No auth, no access check, no row writes — callers own those.
 import { type SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { type Brief, briefContext } from "./brief.ts";
 import { callClaude, textFromClaude, type CallMeta } from "./claude.ts";
 import { getActiveModels } from "./model-config.ts";
 
 export type ReviseLayer = "spine" | "objective" | "beat";
 
-interface Brief {
-  scope?: { band?: string; word_target?: number };
-  genre?: string;
-  audience?: string;
-  premise?: string;
-  tone?: string[];
-  success_criteria?: string;
-}
 
 const SHAPE: Record<ReviseLayer, string> = {
   spine: "the BOOK SPINE — the throughline of the whole book, 1–2 short paragraphs naming its central aim and arc",
@@ -31,15 +24,6 @@ Rules:
 - Honour the book's brief (genre, audience, tone) and stay consistent with the book spine if given.`;
 }
 
-function briefContext(brief: Brief | null): string {
-  if (!brief) return "(no brief set)";
-  const lines: string[] = [];
-  if (brief.genre) lines.push(`- Genre: ${brief.genre}`);
-  if (brief.audience) lines.push(`- Audience: ${brief.audience}`);
-  if (brief.premise) lines.push(`- Premise: ${brief.premise}`);
-  if (brief.tone?.length) lines.push(`- Tone: ${brief.tone.join(", ")}`);
-  return lines.length ? lines.join("\n") : "(brief is empty)";
-}
 
 export interface ReviseParams {
   bookId: number;
@@ -69,7 +53,7 @@ export async function reviseNode(client: SupabaseClient, apiKey: string, p: Revi
     system: [{ type: "text", text: systemFor(p.layer), cache_control: { type: "ephemeral" } }],
     messages: [{
       role: "user",
-      content: `BOOK: ${book.name}\n\nBRIEF:\n${briefContext(book.brief as Brief | null)}` +
+      content: `BOOK: ${book.name}\n\nBRIEF:\n${briefContext(book.brief as Brief | null, { scope: "none", success: false, none: "(no brief set)", empty: "(brief is empty)" })}` +
         (spine && p.layer !== "spine" ? `\n\nBOOK SPINE:\n${spine}` : "") +
         `\n\nCURRENT ${p.layer.toUpperCase()}:\n${cur}` +
         `\n\nAUTHOR'S INSTRUCTION:\n${instr}` +

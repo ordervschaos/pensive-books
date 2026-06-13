@@ -16,6 +16,7 @@
 //
 // Needs the ANTHROPIC_API_KEY secret (shared with the other AI steps).
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { type Brief, briefContext } from "../_shared/brief.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { runInBackground, serviceClient } from "../_shared/task.ts";
@@ -27,14 +28,6 @@ import { canonContext, type CanonPacket } from "../_shared/canon-core.ts";
 import { type Delta } from "../_shared/page-state.ts";
 import { readSteer, steerBlock } from "../_shared/steer.ts";
 
-interface Brief {
-  scope?: { band?: string; word_target?: number };
-  genre?: string;
-  audience?: string;
-  premise?: string;
-  tone?: string[];
-  success_criteria?: string;
-}
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -163,17 +156,6 @@ Two additions to your output:
    (the page whose objective realizes that moment). Pinned tentpoles MUST all be placed.
    [{ "tentpoleId": "<the tentpole's [id] from the input>", "pageIndex": <index into pages[]> }]`;
 
-function briefContext(brief: Brief | null): string {
-  if (!brief) return "(no brief set — infer a sensible book from a neutral premise)";
-  const lines: string[] = [];
-  if (brief.scope?.band) lines.push(`- Scope: ${brief.scope.band}${brief.scope.word_target ? ` (≈${brief.scope.word_target} words)` : ""}`);
-  if (brief.genre) lines.push(`- Genre: ${brief.genre}`);
-  if (brief.audience) lines.push(`- Audience: ${brief.audience}`);
-  if (brief.premise) lines.push(`- Premise: ${brief.premise}`);
-  if (brief.tone?.length) lines.push(`- Tone: ${brief.tone.join(", ")}`);
-  if (brief.success_criteria) lines.push(`- Success looks like: ${brief.success_criteria}`);
-  return lines.length ? lines.join("\n") : "(brief is empty — infer a sensible book)";
-}
 
 interface ScaffoldPage { pageType: "section" | "text"; title: string; objective?: string; delta?: Delta[] }
 // A planned thread anchored to pages by their index in pages[] (no page ids exist yet — the
@@ -196,7 +178,7 @@ const textOf = (data: any): string => textFromClaude(data).trim();
 function bookContext(bookName: string, brief: Brief | null, spine: string | null, foundations: Foundations | null, canon: CanonPacket | null, steer: string): string {
   return `BOOK: ${bookName}` +
     (spine ? `\n\nBOOK SPINE (the throughline — the outline must realize this):\n${spine}` : "") +
-    `\n\nBRIEF:\n${briefContext(brief)}` +
+    `\n\nBRIEF:\n${briefContext(brief, { scope: "full", success: true, none: "(no brief set — infer a sensible book from a neutral premise)", empty: "(brief is empty — infer a sensible book)" })}` +
     (canon ? `\n\nCANON (settled facts from the previous book — honor, never contradict, never retell):\n${canonContext(canon)}` : "") +
     (foundations ? `\n\nSETTLED FOUNDATIONS (pinned items are immutable constraints):\n${settledContext(foundations)}` : "") +
     steerBlock(steer);
@@ -236,7 +218,7 @@ async function critiqueScaffold(apiKey: string, model: string, bookName: string,
     system: [{ type: "text", text: CRITIQUE_SYSTEM, cache_control: { type: "ephemeral" } }],
     messages: [{
       role: "user",
-      content: `BOOK: ${bookName}\n\nBRIEF:\n${briefContext(brief)}` +
+      content: `BOOK: ${bookName}\n\nBRIEF:\n${briefContext(brief, { scope: "full", success: true, none: "(no brief set — infer a sensible book from a neutral premise)", empty: "(brief is empty — infer a sensible book)" })}` +
         (spine ? `\n\nSPINE:\n${spine}` : "") +
         `\n\nOUTLINE (structure: ${draft.structure}):${outline}${threads}\n\nCritique this outline.`,
     }],

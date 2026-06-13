@@ -6,18 +6,11 @@
 //   COMMITTED — { pageId } → prefix built from the real pages table.
 //   DRAFT     — { scaffold, pageIndex } → prefix built from an in-memory scaffold draft (pre-commit).
 import { type SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { type Brief, briefContext } from "./brief.ts";
 import { callClaude, textFromClaude, type CallMeta } from "./claude.ts";
 import { getActiveModels } from "./model-config.ts";
 import { parseJsonOptions } from "./json.ts";
 
-export interface Brief {
-  scope?: { band?: string; word_target?: number };
-  genre?: string;
-  audience?: string;
-  premise?: string;
-  tone?: string[];
-  success_criteria?: string;
-}
 
 interface PageLite { id: number; page_type: string | null; title: string | null; metadata: { objective?: string } | null }
 export interface DraftPage { pageType: "section" | "text"; title?: string; objective?: string }
@@ -48,17 +41,6 @@ Each option is a clean OBJECTIVE — 1–2 sentences of what the page must achie
 Output JSON ONLY (no prose, no fences):
 { "options": ["<option 1>", "<option 2>", "<option 3>"] }`;
 
-function briefContext(brief: Brief | null): string {
-  if (!brief) return "(no brief set)";
-  const lines: string[] = [];
-  if (brief.scope?.band) lines.push(`- Scope: ${brief.scope.band}${brief.scope.word_target ? ` (≈${brief.scope.word_target} words)` : ""}`);
-  if (brief.genre) lines.push(`- Genre: ${brief.genre}`);
-  if (brief.audience) lines.push(`- Audience: ${brief.audience}`);
-  if (brief.premise) lines.push(`- Premise: ${brief.premise}`);
-  if (brief.tone?.length) lines.push(`- Tone: ${brief.tone.join(", ")}`);
-  if (brief.success_criteria) lines.push(`- Success looks like: ${brief.success_criteria}`);
-  return lines.length ? lines.join("\n") : "(brief is empty)";
-}
 
 function prefixContext(slots: SlotLite[], targetIdx: number): { prefix: string; current: string; title: string } {
   const target = slots[targetIdx];

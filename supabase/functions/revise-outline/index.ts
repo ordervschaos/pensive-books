@@ -11,6 +11,7 @@
 //
 // Needs the ANTHROPIC_API_KEY secret (shared with evaluate-book / generate-unit / scaffold).
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { type Brief, briefContext } from "../_shared/brief.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { callClaude as callClaudeApi, textFromClaude } from "../_shared/claude.ts";
@@ -19,14 +20,6 @@ import { extractJsonBlock } from "../_shared/json.ts";
 import { tiptapToText } from "../_shared/words.ts";
 import { sanitizePlan } from "../_shared/revision-plan.ts";
 
-interface Brief {
-  scope?: { band?: string; word_target?: number };
-  genre?: string;
-  audience?: string;
-  premise?: string;
-  tone?: string[];
-  success_criteria?: string;
-}
 
 // The evaluation shape (book_evaluations.result), as produced by evaluate-book.
 interface EvalIssue {
@@ -243,17 +236,6 @@ Output JSON ONLY (no prose, no fences), exactly:
   "deletes": [ { "ref": <id>, "why": "..." } ]
 }`;
 
-function briefContext(brief: Brief | null): string {
-  if (!brief) return "(no brief set — infer a sensible neutral voice)";
-  const lines: string[] = [];
-  if (brief.scope?.band) lines.push(`- Scope: ${brief.scope.band}${brief.scope.word_target ? ` (≈${brief.scope.word_target} words)` : ""}`);
-  if (brief.genre) lines.push(`- Genre: ${brief.genre}`);
-  if (brief.audience) lines.push(`- Audience: ${brief.audience}`);
-  if (brief.premise) lines.push(`- Premise: ${brief.premise}`);
-  if (brief.tone?.length) lines.push(`- Tone: ${brief.tone.join(", ")}`);
-  if (brief.success_criteria) lines.push(`- Success looks like: ${brief.success_criteria}`);
-  return lines.length ? lines.join("\n") : "(brief is empty — infer a sensible neutral voice)";
-}
 
 // Current book as an id-tagged outline the model edits against.
 // pageCtxMap: per-page extras { summary, full }. contentMap: prose for full pages.
@@ -360,7 +342,7 @@ async function callClaude(
       {
         role: "user",
         content:
-          `BOOK: ${bookName}\n\nBRIEF (the voice contract):\n${briefContext(brief)}` +
+          `BOOK: ${bookName}\n\nBRIEF (the voice contract):\n${briefContext(brief, { scope: "full", success: true, none: "(no brief set — infer a sensible neutral voice)", empty: "(brief is empty — infer a sensible neutral voice)" })}` +
           `\n\nCURRENT OUTLINE (edit against these real ids):\n${outlineContext(pages, pageCtxMap, contentMap)}` +
           (threads.length ? `\n\nTRACKED THREADS (keep their setups & payoffs intact):\n${threadsContext(threads)}` : "") +
           (instruction ? `\n\nAUTHOR'S INSTRUCTION (primary directive):\n${instruction}` : "") +

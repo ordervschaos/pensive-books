@@ -2,6 +2,7 @@
 // sync endpoints (brief-to-spine, spine-options) AND the durable dispatcher (ai-run) share identical
 // logic. No auth, no access check, no row writes — callers own those (mirrors options-core.ts).
 import { type SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { type Brief, briefContext } from "./brief.ts";
 import { callClaude, textFromClaude, type CallMeta } from "./claude.ts";
 import { getActiveModels } from "./model-config.ts";
 import { parseJsonOptions } from "./json.ts";
@@ -9,14 +10,6 @@ import { readSteer, steerBlock } from "./steer.ts";
 
 
 
-export interface Brief {
-  scope?: { band?: string; word_target?: number };
-  genre?: string;
-  audience?: string;
-  premise?: string;
-  tone?: string[];
-  success_criteria?: string;
-}
 
 const GEN_SYSTEM = `You are a book architect writing the BOOK SPINE — the throughline of the whole book. In 1–2 short paragraphs, state what this book is fundamentally DOING: its central objective/promise and the arc from beginning to end. This is the book-level objective every page will serve.
 
@@ -39,17 +32,6 @@ Generate exactly 3 ALTERNATIVES. Each must:
 Output JSON ONLY (no prose, no fences):
 { "options": ["<1–2 paragraphs>", "<1–2 paragraphs>", "<1–2 paragraphs>"] }`;
 
-function briefContext(brief: Brief | null): string {
-  if (!brief) return "(no brief set — infer a sensible neutral aim)";
-  const lines: string[] = [];
-  if (brief.scope?.band) lines.push(`- Scope: ${brief.scope.band}${brief.scope.word_target ? ` (≈${brief.scope.word_target} words)` : ""}`);
-  if (brief.genre) lines.push(`- Genre: ${brief.genre}`);
-  if (brief.audience) lines.push(`- Audience: ${brief.audience}`);
-  if (brief.premise) lines.push(`- Premise: ${brief.premise}`);
-  if (brief.tone?.length) lines.push(`- Tone: ${brief.tone.join(", ")}`);
-  if (brief.success_criteria) lines.push(`- Success looks like: ${brief.success_criteria}`);
-  return lines.length ? lines.join("\n") : "(brief is empty — infer a sensible neutral aim)";
-}
 
 function outlineContext(pages: Array<{ page_type: string | null; title: string | null; metadata: { objective?: string } | null }>): string {
   return pages
@@ -80,7 +62,7 @@ export async function generateSpine(client: SupabaseClient, apiKey: string, p: {
     system: [{ type: "text", text: GEN_SYSTEM, cache_control: { type: "ephemeral" } }],
     messages: [{
       role: "user",
-      content: `BOOK: ${book.name}\n\nBRIEF (the voice/intent contract):\n${briefContext(book.brief as Brief | null)}` +
+      content: `BOOK: ${book.name}\n\nBRIEF (the voice/intent contract):\n${briefContext(book.brief as Brief | null, { scope: "full", success: true, none: "(no brief set — infer a sensible neutral aim)", empty: "(brief is empty — infer a sensible neutral aim)" })}` +
         (outline.length ? `\n\nCURRENT OUTLINE (for consistency — write the spine ABOVE these):\n${outlineContext(outline)}` : "") +
         steerBlock(readSteer(book.steers, "spine")) +
         `\n\nWrite the book spine. 1–2 short paragraphs, the throughline only.`,
@@ -106,7 +88,7 @@ export async function spineOptions(client: SupabaseClient, apiKey: string, p: { 
     system: [{ type: "text", text: OPTIONS_SYSTEM, cache_control: { type: "ephemeral" } }],
     messages: [{
       role: "user",
-      content: `BOOK: ${book.name}\n\nBRIEF:\n${briefContext(book.brief as Brief | null)}` +
+      content: `BOOK: ${book.name}\n\nBRIEF:\n${briefContext(book.brief as Brief | null, { scope: "full", success: true, none: "(no brief set — infer a sensible neutral aim)", empty: "(brief is empty — infer a sensible neutral aim)" })}` +
         (current ? `\n\nCURRENT SPINE (what's there now — vary away from it):\n${current}` : "\n\n(No spine set yet.)") +
         steerBlock(readSteer(book.steers, "spine")) +
         `\n\nGenerate 3 wide-varying alternative spines. JSON only.`,

@@ -17,6 +17,7 @@
 //   client → POST { runId, answer }                 → append tool_result → chain  (authenticated)
 //   self   → POST { runId, chain: true }            → one model call → …          (x-chain secret)
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { type Brief, briefContext } from "../_shared/brief.ts";
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { callClaude } from "../_shared/claude.ts";
@@ -530,14 +531,6 @@ PLAN RULES (the plan is rejected if violated):
 STYLE: before each tool call, narrate what you're doing and why in one or two plain sentences — the author sees this as a live progress feed. Be concrete ("Reading the tavern scene the passivity notes point at"), never generic ("Analyzing…").`;
 
 // ── Context builders (mirror revise-outline) ─────────────────────────────────
-interface Brief {
-  scope?: { band?: string; word_target?: number };
-  genre?: string;
-  audience?: string;
-  premise?: string;
-  tone?: string[];
-  success_criteria?: string;
-}
 interface ThreadLite { name: string; status: string; setup_page_id: number | null; payoff_page_id: number | null }
 
 function buildContext(
@@ -548,7 +541,7 @@ function buildContext(
   evaluation: EvalResult,
 ): string {
   return (
-    `BOOK: ${bookName}\n\nBRIEF (the voice contract):\n${briefContext(brief)}` +
+    `BOOK: ${bookName}\n\nBRIEF (the voice contract):\n${briefContext(brief, { scope: "full", success: true, none: "(no brief set — infer a sensible neutral voice)", empty: "(brief is empty — infer a sensible neutral voice)" })}` +
     `\n\nCURRENT OUTLINE (real ids; read_page for full prose):\n${outlineContext(pages)}` +
     (threads.length ? `\n\nTRACKED THREADS (keep their setups & payoffs intact):\n${threadsContext(threads)}` : "") +
     `\n\nEDITOR'S EVALUATION (the notes to address):\n${evalContext(evaluation)}` +
@@ -556,17 +549,6 @@ function buildContext(
   );
 }
 
-function briefContext(brief: Brief | null): string {
-  if (!brief) return "(no brief set — infer a sensible neutral voice)";
-  const lines: string[] = [];
-  if (brief.scope?.band) lines.push(`- Scope: ${brief.scope.band}${brief.scope.word_target ? ` (≈${brief.scope.word_target} words)` : ""}`);
-  if (brief.genre) lines.push(`- Genre: ${brief.genre}`);
-  if (brief.audience) lines.push(`- Audience: ${brief.audience}`);
-  if (brief.premise) lines.push(`- Premise: ${brief.premise}`);
-  if (brief.tone?.length) lines.push(`- Tone: ${brief.tone.join(", ")}`);
-  if (brief.success_criteria) lines.push(`- Success looks like: ${brief.success_criteria}`);
-  return lines.length ? lines.join("\n") : "(brief is empty — infer a sensible neutral voice)";
-}
 
 // Outline with objectives + summaries for every text page (the agent reads full prose by tool).
 function outlineContext(pages: PageRow[]): string {

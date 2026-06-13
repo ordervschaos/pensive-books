@@ -12,6 +12,7 @@
 // Synchronous (short output). Client saves via saveObjective (committed) or patches the draft
 // page in place (draft); a committed save marks the beat stale.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { type Brief, briefContext } from "../_shared/brief.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { hasEditAccess } from "../_shared/access.ts";
@@ -19,14 +20,6 @@ import { callClaude, textFromClaude, type CallMeta } from "../_shared/claude.ts"
 import { getActiveModels } from "../_shared/model-config.ts";
 import { parseJsonOptions } from "../_shared/json.ts";
 
-interface Brief {
-  scope?: { band?: string; word_target?: number };
-  genre?: string;
-  audience?: string;
-  premise?: string;
-  tone?: string[];
-  success_criteria?: string;
-}
 
 interface PageLite {
   id: number;
@@ -56,17 +49,6 @@ Each option is a clean OBJECTIVE — 1–2 sentences of what the page must achie
 Output JSON ONLY (no prose, no fences):
 { "options": ["<option 1>", "<option 2>", "<option 3>"] }`;
 
-function briefContext(brief: Brief | null): string {
-  if (!brief) return "(no brief set)";
-  const lines: string[] = [];
-  if (brief.scope?.band) lines.push(`- Scope: ${brief.scope.band}${brief.scope.word_target ? ` (≈${brief.scope.word_target} words)` : ""}`);
-  if (brief.genre) lines.push(`- Genre: ${brief.genre}`);
-  if (brief.audience) lines.push(`- Audience: ${brief.audience}`);
-  if (brief.premise) lines.push(`- Premise: ${brief.premise}`);
-  if (brief.tone?.length) lines.push(`- Tone: ${brief.tone.join(", ")}`);
-  if (brief.success_criteria) lines.push(`- Success looks like: ${brief.success_criteria}`);
-  return lines.length ? lines.join("\n") : "(brief is empty)";
-}
 
 // Generic shape both sources normalize to, so the prefix prompt is built once.
 interface SlotLite { pageType: string | null; title?: string | null; objective?: string }

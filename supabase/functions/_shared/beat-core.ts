@@ -9,19 +9,12 @@
 // where what's said ≠ what's meant (subtext), and name one concrete sensory image. Threads anchored
 // to the page tell it what to SEED or PAY OFF.
 import { type SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { type Brief, briefContext } from "./brief.ts";
 import { callClaude, textFromClaude, type CallMeta } from "./claude.ts";
 import { canonContext, type CanonPacket } from "./canon-core.ts";
 import { getActiveModels } from "./model-config.ts";
 import { readSteer, steerBlock } from "./steer.ts";
 
-export interface Brief {
-  scope?: { band?: string; word_target?: number };
-  genre?: string;
-  audience?: string;
-  premise?: string;
-  tone?: string[];
-  success_criteria?: string;
-}
 
 export interface BeatParams {
   bookId: number;
@@ -63,17 +56,6 @@ Rules:
 - It is a PLAN, not prose: say what happens and in what order; do NOT write the page's actual sentences or dialogue.
 - Fulfil the page's objective exactly. Honour the brief (genre, audience, tone, premise) and the spine as the voice/throughline contract.`;
 
-function briefContext(brief: Brief | null): string {
-  if (!brief) return "(no brief set — infer a sensible neutral voice)";
-  const lines: string[] = [];
-  if (brief.scope?.band) lines.push(`- Scope: ${brief.scope.band}${brief.scope.word_target ? ` (≈${brief.scope.word_target} words)` : ""}`);
-  if (brief.genre) lines.push(`- Genre: ${brief.genre}`);
-  if (brief.audience) lines.push(`- Audience: ${brief.audience}`);
-  if (brief.premise) lines.push(`- Premise: ${brief.premise}`);
-  if (brief.tone?.length) lines.push(`- Tone: ${brief.tone.join(", ")}`);
-  if (brief.success_criteria) lines.push(`- Success looks like: ${brief.success_criteria}`);
-  return lines.length ? lines.join("\n") : "(brief is empty — infer a sensible neutral voice)";
-}
 
 // A compact id-tagged outline so the beat reads in context; the target page is marked.
 function outlineContext(pages: PageLite[], targetId: number): string {
@@ -156,7 +138,7 @@ async function prepareBeat(client: SupabaseClient, p: BeatParams): Promise<Prepa
   const meta: CallMeta = { fn: "objective-to-beat", bookId: p.bookId, taskTable: p.log?.taskTable ?? null, taskId: p.log?.taskId ?? null, userId: p.userId ?? null };
 
   const userContent =
-    `BOOK: ${book.name}\n\nBRIEF (the voice contract):\n${briefContext(book.brief as Brief | null)}` +
+    `BOOK: ${book.name}\n\nBRIEF (the voice contract):\n${briefContext(book.brief as Brief | null, { scope: "full", success: true, none: "(no brief set — infer a sensible neutral voice)", empty: "(brief is empty — infer a sensible neutral voice)" })}` +
     (canon ? `\n\nCANON (settled facts from the previous book — honor, never contradict, never retell):\n${canonContext(canon)}` : "") +
     (spine ? `\n\nBOOK SPINE (the throughline):\n${spine}` : "") +
     `\n\nOUTLINE (for continuity — the target page is marked):\n${outlineContext(list, p.pageId)}` +

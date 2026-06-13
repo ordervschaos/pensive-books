@@ -11,20 +11,13 @@
 // edges (objective_beat + beat_prose), since distilling-and-accepting declares the beat sits
 // correctly between this objective and this prose. Needs ANTHROPIC_API_KEY.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { type Brief, briefContext } from "../_shared/brief.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { hasEditAccess } from "../_shared/access.ts";
 import { callClaude, textFromClaude } from "../_shared/claude.ts";
 import { getActiveModels } from "../_shared/model-config.ts";
 
-interface Brief {
-  scope?: { band?: string; word_target?: number };
-  genre?: string;
-  audience?: string;
-  premise?: string;
-  tone?: string[];
-  success_criteria?: string;
-}
 
 const SYSTEM = `You are a book architect REVERSE-OUTLINING a page: given the page's finished PROSE, write the BEAT it implements — a single paragraph that states, in concrete order, what the page actually does (its moves, turns, and images). You are abstracting the prose UP into its plan, not editing or judging it.
 
@@ -34,16 +27,6 @@ Rules:
 - Be faithful to the prose as written (this is reverse-outlining); use the objective only to frame the level of abstraction, not to "correct" the prose.
 - Stay in the register the brief and book spine imply.`;
 
-function briefContext(brief: Brief | null): string {
-  if (!brief) return "(no brief set)";
-  const lines: string[] = [];
-  if (brief.scope?.band) lines.push(`- Scope: ${brief.scope.band}`);
-  if (brief.genre) lines.push(`- Genre: ${brief.genre}`);
-  if (brief.audience) lines.push(`- Audience: ${brief.audience}`);
-  if (brief.premise) lines.push(`- Premise: ${brief.premise}`);
-  if (brief.tone?.length) lines.push(`- Tone: ${brief.tone.join(", ")}`);
-  return lines.length ? lines.join("\n") : "(brief is empty)";
-}
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -88,7 +71,7 @@ Deno.serve(async (req: Request) => {
       messages: [{
         role: "user",
         content:
-          `BOOK: ${book.name}\n\nBRIEF:\n${briefContext(book.brief as Brief | null)}` +
+          `BOOK: ${book.name}\n\nBRIEF:\n${briefContext(book.brief as Brief | null, { scope: "band", success: false, none: "(no brief set)", empty: "(brief is empty)" })}` +
           (spine ? `\n\nBOOK SPINE:\n${spine}` : "") +
           (objective ? `\n\nTHIS PAGE'S OBJECTIVE (for framing the abstraction level only):\n${objective}` : "") +
           `\n\nTHE PAGE'S PROSE${title ? ` ("${title}")` : ""} — reverse-outline this into its beat:\n"""\n${prose.slice(0, 12000)}\n"""\n\nWrite the beat this prose implements. One paragraph, plan only.`,
