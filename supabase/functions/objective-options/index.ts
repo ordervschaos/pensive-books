@@ -14,6 +14,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
+import { hasEditAccess } from "../_shared/access.ts";
 import { callClaude, textFromClaude, type CallMeta } from "../_shared/claude.ts";
 import { getActiveModels } from "../_shared/model-config.ts";
 import { parseJsonOptions } from "../_shared/json.ts";
@@ -117,9 +118,8 @@ Deno.serve(async (req: Request) => {
       .from("books").select("id, name, brief, spine, owner_id").eq("id", bookId).single();
     if (bookError || !book) return json({ error: "Book not found" }, 404);
 
-    const { data: access } = await userClient
-      .from("book_access").select("id").eq("book_id", bookId).eq("user_id", user.id).eq("status", "accepted").maybeSingle();
-    if (book.owner_id !== user.id && !access) return json({ error: "Access denied" }, 403);
+    if (!(await hasEditAccess(userClient, bookId, user.id, book.owner_id)))
+      return json({ error: "Access denied" }, 403);
 
     // Normalize both sources to SlotLite + a target index, then build the prefix the same way.
     let slots: SlotLite[];

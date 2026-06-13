@@ -16,6 +16,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
+import { hasEditAccess } from "../_shared/access.ts";
 import { serviceClient } from "../_shared/task.ts";
 import { reinvoke, isChainCall } from "../_shared/self-chain.ts";
 import { captureException, isBillingError } from "../_shared/sentry.ts";
@@ -80,9 +81,8 @@ Deno.serve(async (req: Request) => {
 
     const { data: book, error: bookError } = await userClient.from("books").select("id, owner_id").eq("id", bookId).single();
     if (bookError || !book) return json({ error: "Book not found" }, 404);
-    const { data: access } = await userClient
-      .from("book_access").select("id").eq("book_id", bookId).eq("user_id", user.id).eq("status", "accepted").maybeSingle();
-    if (book.owner_id !== user.id && !access) return json({ error: "Access denied" }, 403);
+    if (!(await hasEditAccess(userClient, bookId, user.id, book.owner_id)))
+      return json({ error: "Access denied" }, 403);
 
     const progress: Progress = { phase: "eval", label: "Evaluating the draft", revised: 0, failures: 0 };
     const { data: gen, error: insertError } = await service

@@ -21,6 +21,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
+import { hasEditAccess } from "../_shared/access.ts";
 import { beatToProse, tiptapToText } from "../_shared/generate-unit-core.ts";
 import { objectiveToBeat } from "../_shared/beat-core.ts";
 import { buildDoc } from "../_shared/build-doc.ts";
@@ -109,7 +110,7 @@ Deno.serve(async (req: Request) => {
       const { data: gen } = await service
         .from("book_generations").select("id, book_id, status, progress").eq("id", body.generationId).maybeSingle();
       if (!gen) return json({ error: "Run not found" }, 404);
-      if (!(await canEdit(userClient, gen.book_id, user.id))) return json({ error: "Access denied" }, 403);
+      if (!(await hasEditAccess(userClient, gen.book_id, user.id))) return json({ error: "Access denied" }, 403);
       if (gen.status !== "ready") return json({ error: "This run is not waiting to continue" }, 409);
       const progress = { ...((gen.progress as Progress) ?? {}), stage: "prose" as const, phase: `Writing 0/${(gen.progress as Progress)?.total ?? 0}` };
       await service.from("book_generations").update({ status: "running", progress }).eq("id", gen.id);
@@ -127,7 +128,7 @@ Deno.serve(async (req: Request) => {
     const { data: book, error: bookError } = await userClient
       .from("books").select("id, owner_id").eq("id", bookId).single();
     if (bookError || !book) return json({ error: "Book not found" }, 404);
-    if (!(await canEdit(userClient, bookId, user.id, book.owner_id))) return json({ error: "Access denied" }, 403);
+    if (!(await hasEditAccess(userClient, bookId, user.id, book.owner_id))) return json({ error: "Access denied" }, 403);
 
     // Targets: text pages (with an objective), in reading order.
     const { data: pages, error: pagesError } = await userClient
@@ -180,17 +181,6 @@ Deno.serve(async (req: Request) => {
     return json({ error: String((e as Error)?.message ?? e).slice(0, 500) }, 500);
   }
 });
-
-async function canEdit(client: ReturnType<typeof createClient>, bookId: number, userId: string, ownerId?: string): Promise<boolean> {
-  if (ownerId && ownerId === userId) return true;
-  if (!ownerId) {
-    const { data: book } = await client.from("books").select("owner_id").eq("id", bookId).maybeSingle();
-    if (book && (book as { owner_id: string }).owner_id === userId) return true;
-  }
-  const { data: access } = await client
-    .from("book_access").select("id").eq("book_id", bookId).eq("user_id", userId).eq("status", "accepted").maybeSingle();
-  return !!access;
-}
 
 // Advance one unit (a batch of beats, or one prose page), persist progress, then chain (or finish).
 async function advance(service: ReturnType<typeof serviceClient>, apiKey: string, genId: number) {
