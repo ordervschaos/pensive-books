@@ -109,7 +109,7 @@ serve(async (req) => {
     });
   } catch (error) {
     console.error('Error in send-kindle-verification function:', error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: (error as Error)?.message ?? String(error) }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500,
     });
