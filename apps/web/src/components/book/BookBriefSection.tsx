@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -21,31 +21,32 @@ interface BookBriefSectionProps {
   bookId: number;
   brief: Brief | null;
   onBriefChange: (brief: Brief) => void;
+  /** Render bare (no Card chrome / heading) for use inside a dialog that supplies its own title. */
+  embedded?: boolean;
+  /** Called when the user explicitly finishes (e.g. closes an embedded dialog). */
+  onSaved?: () => void;
 }
 
-export function BookBriefSection({ bookId, brief, onBriefChange }: BookBriefSectionProps) {
+export function BookBriefSection({ bookId, brief, onBriefChange, embedded = false, onSaved }: BookBriefSectionProps) {
   const { toast } = useToast();
   const [draft, setDraft] = useState<Brief>(brief ?? {});
   const [saving, setSaving] = useState(false);
+  const [showSaved, setShowSaved] = useState(false);
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const completion = computeCompletion(draft);
   const total = BRIEF_FIELDS.length;
 
-  const updateDraft = (patch: Partial<Brief>) => {
-    setDraft((prev) => ({ ...prev, ...patch }));
-  };
-
-  const handleSave = async () => {
+  const doSave = async (d: Brief) => {
+    setSaving(true);
     try {
-      setSaving(true);
-      const next = mergeBrief(brief, draft);
-      const { error } = await supabase
-        .from("books")
-        .update({ brief: next })
-        .eq("id", bookId);
+      const next = mergeBrief(brief, d);
+      const { error } = await supabase.from("books").update({ brief: next }).eq("id", bookId);
       if (error) throw error;
       onBriefChange(next);
       setDraft(next);
-      toast({ title: "Brief saved", description: "Your intentions are tucked away." });
+      setShowSaved(true);
+      if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+      savedTimerRef.current = setTimeout(() => setShowSaved(false), 2000);
     } catch (error: unknown) {
       toast({
         variant: "destructive",
@@ -57,23 +58,34 @@ export function BookBriefSection({ bookId, brief, onBriefChange }: BookBriefSect
     }
   };
 
+  // For pill clicks: compute new draft inline and save immediately (setState is async).
+  const updateAndSave = (patch: Partial<Brief>) => {
+    const next = { ...draft, ...patch };
+    setDraft(next);
+    void doSave(next);
+  };
+
   const toggleTone = (t: string) => {
     const current = draft.tone ?? [];
     const next = current.includes(t) ? current.filter((x) => x !== t) : [...current, t];
-    updateDraft({ tone: next });
+    updateAndSave({ tone: next });
   };
 
-  return (
-    <Card className="p-6 space-y-6">
-      <div className="flex items-center gap-2">
-        <h2 className="text-xl font-semibold">Creative brief</h2>
-        <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
-          <Lock className="h-3 w-3" /> author-only
-        </span>
-      </div>
-      <p className="text-sm text-muted-foreground">
-        Optional scaffolding for yourself and any co-authors. Never shown to readers.
-      </p>
+  const content = (
+    <>
+      {!embedded && (
+        <>
+          <div className="flex items-center gap-2">
+            <h2 className="text-xl font-semibold">Creative brief</h2>
+            <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+              <Lock className="h-3 w-3" /> author-only
+            </span>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Optional scaffolding for yourself and any co-authors. Never shown to readers.
+          </p>
+        </>
+      )}
 
       <FieldRow
             label="Scope"
@@ -81,7 +93,7 @@ export function BookBriefSection({ bookId, brief, onBriefChange }: BookBriefSect
           >
             <ScopeBandPicker
               scope={draft.scope}
-              onChange={(scope) => updateDraft({ scope })}
+              onChange={(scope) => updateAndSave({ scope })}
             />
           </FieldRow>
 
@@ -93,7 +105,7 @@ export function BookBriefSection({ bookId, brief, onBriefChange }: BookBriefSect
                   <button
                     key={g}
                     type="button"
-                    onClick={() => updateDraft({ genre: active ? "" : g })}
+                    onClick={() => updateAndSave({ genre: active ? "" : g })}
                     className={`rounded-full border px-3 py-1 text-sm transition ${
                       active
                         ? "border-foreground bg-foreground text-background"
@@ -107,7 +119,8 @@ export function BookBriefSection({ bookId, brief, onBriefChange }: BookBriefSect
             </div>
             <Input
               value={GENRE_SUGGESTIONS.includes(draft.genre ?? "") ? "" : (draft.genre ?? "")}
-              onChange={(e) => updateDraft({ genre: e.target.value })}
+              onChange={(e) => setDraft((prev) => ({ ...prev, genre: e.target.value }))}
+              onBlur={() => void doSave(draft)}
               placeholder="Or type your own…"
             />
           </FieldRow>
@@ -115,7 +128,8 @@ export function BookBriefSection({ bookId, brief, onBriefChange }: BookBriefSect
           <FieldRow label="Audience" hint="Who is this book for?">
             <Input
               value={draft.audience ?? ""}
-              onChange={(e) => updateDraft({ audience: e.target.value })}
+              onChange={(e) => setDraft((prev) => ({ ...prev, audience: e.target.value }))}
+              onBlur={() => void doSave(draft)}
               placeholder="e.g. anyone who's moved cities in their 30s"
             />
           </FieldRow>
@@ -123,7 +137,8 @@ export function BookBriefSection({ bookId, brief, onBriefChange }: BookBriefSect
           <FieldRow label="Premise" hint="What is the book about, in 1–2 sentences?">
             <Textarea
               value={draft.premise ?? ""}
-              onChange={(e) => updateDraft({ premise: e.target.value })}
+              onChange={(e) => setDraft((prev) => ({ ...prev, premise: e.target.value }))}
+              onBlur={() => void doSave(draft)}
               placeholder="A translator returns home for a funeral and gets stuck…"
               rows={3}
             />
@@ -158,7 +173,7 @@ export function BookBriefSection({ bookId, brief, onBriefChange }: BookBriefSect
                   const value = e.currentTarget.value.trim();
                   if (!value) return;
                   const current = draft.tone ?? [];
-                  if (!current.includes(value)) updateDraft({ tone: [...current, value] });
+                  if (!current.includes(value)) updateAndSave({ tone: [...current, value] });
                   e.currentTarget.value = "";
                 }
               }}
@@ -171,7 +186,8 @@ export function BookBriefSection({ bookId, brief, onBriefChange }: BookBriefSect
           >
             <Textarea
               value={draft.success_criteria ?? ""}
-              onChange={(e) => updateDraft({ success_criteria: e.target.value })}
+              onChange={(e) => setDraft((prev) => ({ ...prev, success_criteria: e.target.value }))}
+              onBlur={() => void doSave(draft)}
               placeholder="I publish it on Substack. I'm proud of every chapter."
               rows={2}
             />
@@ -181,11 +197,21 @@ export function BookBriefSection({ bookId, brief, onBriefChange }: BookBriefSect
             <span className="text-xs text-muted-foreground">
               {completion} of {total} filled
             </span>
-            <Button onClick={handleSave} disabled={saving}>
-              {saving ? "Saving…" : "Save brief"}
-            </Button>
+            <div className="flex items-center gap-3">
+              {saving && <span className="text-xs text-muted-foreground">saving…</span>}
+              {!saving && showSaved && <span className="text-xs text-muted-foreground">saved</span>}
+              {embedded && onSaved && (
+                <Button variant="outline" size="sm" onClick={onSaved}>Done</Button>
+              )}
+            </div>
           </div>
-    </Card>
+    </>
+  );
+
+  return embedded ? (
+    <div className="space-y-6">{content}</div>
+  ) : (
+    <Card className="p-6 space-y-6">{content}</Card>
   );
 }
 

@@ -331,9 +331,12 @@ function CastSub({ bookId, cast, beforeGen, onSave }: { bookId: number; cast: Ca
   return (
     <div className="space-y-3.5">
       {cast.length === 0 && (
-        <Hero icon={<Sparkles className="h-5 w-5" />} title="Draft the cast"
-          sub="Protagonist plus up to two majors, each with want / wound / lie. Edit any line to make it yours — edited lines are pinned."
-          onClick={() => void fire()} />
+        <div>
+          <Hero icon={<Sparkles className="h-5 w-5" />} title="Draft the cast"
+            sub="Protagonist plus up to two majors, each with want / wound / lie. Edit any line to make it yours — edited lines are pinned."
+            onClick={() => void fire()} />
+          <SkipLink onClick={() => void fire()} />
+        </div>
       )}
       {cast.map((m) => (
         <div key={m.id} className="rounded-2xl border border-border bg-[hsl(var(--pv-surface-2))]/40 px-6 py-5">
