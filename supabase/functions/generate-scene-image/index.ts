@@ -19,7 +19,7 @@ import { hasEditAccess } from "../_shared/access.ts";
 import { serviceClient } from "../_shared/task.ts";
 import { generateImage, uploadDataUrl } from "../_shared/image.ts";
 import { callClaude, textFromClaude, type CallMeta } from "../_shared/claude.ts";
-import { getActiveModels } from "../_shared/model-config.ts";
+import { IMAGE_PROMPT_MODEL } from "../_shared/model-config.ts";
 
 interface CastMember { id: string; name: string; appearance?: string; portraits?: string[] }
 interface PageRow { id: number; page_index: number; metadata: { beat?: string } | null }
@@ -88,7 +88,7 @@ Deno.serve(async (req: Request) => {
         .join("\n");
 
       const apiKey = Deno.env.get("ANTHROPIC_API_KEY") ?? "";
-      const { low: model } = await getActiveModels();
+      const model = IMAGE_PROMPT_MODEL;
       const userContent = [
         priorBeats.length ? `RECENT BEATS (for continuity — do NOT depict):\n${priorBeats.map((b, i) => `${i + 1}. ${b}`).join("\n\n")}` : null,
         `BEAT TO DEPICT:\n${beat}`,

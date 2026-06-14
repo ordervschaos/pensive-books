@@ -312,7 +312,7 @@ function SceneLevel({ bookId, pageId, beatExists }: { bookId: number; pageId: nu
             </div>
           )}
           <ImageGenStudio
-            compose={(instr) => composeScenePrompt(pageId, instr)}
+            compose={(instr) => composeScenePrompt(bookId, pageId, instr)}
             render={async (prompt, refUrls) => { const row = await renderSceneImage(pageId, prompt, refUrls); upsert(row); return [row.image_url]; }}
             uploadRef={uploadReferenceImage}
             onAdd={() => {}}

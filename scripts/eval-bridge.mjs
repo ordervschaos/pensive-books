@@ -923,6 +923,140 @@ Produce the revision plan. JSON only.`;
   return parsePlan(out.text, pages, planOnly);
 }
 
+// ── /revise-beats ─────────────────────────────────────────────────────────────
+// Mirrors supabase/functions/revise-beats: instruction and/or a knowledge-base LENS -> a reviewable
+// beat-sheet revision plan (each page carries objective AND beat). Always plan-only. NO mutation.
+const REVISE_BEATS_INSTRUCTIONS = `You are a book doctor revising a book's BEAT SHEET — the ordered spine of beats that decides whether the story actually works. Beats are the load-bearing layer: they determine whether the outline (and even the premise) holds. Prose is replaceable and is NOT your concern here.
+
+You work in two coupled layers per page:
+- OBJECTIVE — what the page must achieve (its contract).
+- BEAT — the concrete dramatic unit that fulfills it (what happens, to whom, the turn/change).
+
+You are given: the brief, the spine, the settled FOUNDATIONS (argument, ending, cast with want/wound/lie, tentpoles), the CURRENT BEAT SHEET (each page with its real [id], type, title, objective, beat), any tracked threads, the author's INSTRUCTION, and — optionally — a STRUCTURAL LENS to diagnose against.
+
+Diagnose what the beat sheet needs and produce a REVISION PLAN: the book's NEW page list in final reading order, plus existing pages to delete. You may: rewrite a beat (keep the page; supply a stronger "beat"); retarget an objective (op "retarget"; supply the new "objective" AND a "beat"); ADD a page (op "add") — including a CHARACTER-INTRODUCTION beat where a character appears with no proper introduction, or a missing structural beat (a real midpoint, an escalation, a payoff); DELETE a page (list it in "deletes") — cut redundant/inert/pace-killing beats; REORDER by placing entries in the desired final order; mark a section "add"/"delete" to add/remove a CHAPTER.
+
+Rules:
+- Use ONLY the real [id]s given. Every existing page MUST appear in "pages" (with its ref) or in "deletes" — never drop a page silently.
+- "section" pages are dividers; "text" pages carry a beat. Give every text page an objective AND a beat.
+- Be SURGICAL. Mark "keep" (carry title/objective/beat forward) for beats that already work; change only what the instruction/lens demands.
+- The BRIEF, SPINE, and pinned FOUNDATIONS win over any lens. A lens is a diagnostic frame to find what's MISSING or SAGGING — never a template to force the book into. Respect pinned cast lines and the settled ending.
+- TRACKED THREADS are promises: do NOT delete or move a page that sets up or pays off an open thread without relocating that beat.
+- PLAN-ONLY: never write prose, never use a "revise" op, never set "rebuild". Note PACE in each changed entry's "why".
+
+Output JSON ONLY (no prose, no fences), exactly:
+{ "summary": "...", "pages": [ { "ref": <id|null>, "op": "keep|retarget|add", "pageType": "section|text", "title": "...", "objective": "...", "beat": "...", "why": "..." } ], "deletes": [ { "ref": <id>, "why": "..." } ] }`;
+
+// The condensed beat skeletons — mirrors supabase/functions/_shared/lens.ts (keep faithful).
+const LENS_BLOCKS = {
+  "save-the-cat": `STRUCTURAL LENS — Save the Cat! Beat Sheet (commercial fiction; tight, measurable pacing).\nUse as a DIAGNOSTIC FRAME, not a template; the brief/spine/foundations win.\n1 Opening Image (0–1%) · 2 Theme Stated (~5%) · 3 Setup (1–10%) · 4 Catalyst (~10%) · 5 Debate (10–20%) · 6 Break Into 2 (~20%) · 7 B Story (~22%) · 8 Fun and Games (20–50%) · 9 Midpoint (~50%, false victory/defeat) · 10 Bad Guys Close In (50–75%) · 11 All Is Lost (~75%) · 12 Dark Night of the Soul (75–80%) · 13 Break Into 3 (~80%) · 14 Finale (80–99%) · 15 Final Image (99–100%, inverse of opening).\nBest at catching: a mechanical/missing Midpoint, a Theme-Stated↔Final-Image pair that don't answer each other, Fun-and-Games that doesn't deliver the genre's appeal.`,
+  "story-circle": `STRUCTURAL LENS — Dan Harmon's Story Circle (character-driven, episodic; a lighter monomyth).\nUse as a DIAGNOSTIC FRAME, not a template.\n1 You (comfort) · 2 Need · 3 Go (cross threshold) · 4 Search (adapt to chaos) · 5 Find · 6 Take (the load-bearing beat — pay a heavy price) · 7 Return · 8 Change.\nBest at catching: a step-6 Take that costs nothing (the circle doesn't turn), a step-8 that returns the character unchanged.`,
+  "heros-journey": `STRUCTURAL LENS — The Hero's Journey (fantasy/sci-fi/epic; one transformative protagonist).\nUse as a DIAGNOSTIC FRAME, not a template.\n1 Ordinary World · 2 Call to Adventure · 3 Refusal · 4 Meeting the Mentor · 5 Crossing the First Threshold · 6 Tests, Allies, Enemies · 7 Approach to the Inmost Cave · 8 The Ordeal (~midpoint) · 9 Reward · 10 The Road Back · 11 The Resurrection (climax) · 12 Return with the Elixir.\nBest at catching: an underwritten Mentor (4) and Resurrection (11); a passive hero who doesn't CHOOSE the threshold or EARN the resurrection.`,
+  "fichtean-curve": `STRUCTURAL LENS — The Fichtean Curve (thrillers/mystery/suspense; relentless momentum).\nUse as a DIAGNOSTIC FRAME, not a template.\n1 Open in medias res (crisis on page one; no first-act world-building) · 2 Weave backstory into conflict (exposition inside tension) · 3 Build through 3+ escalating crises with brief mini-resolutions (tension floor rises each time) · 4 Spike to the climax · 5 Compress the denouement.\nBest at catching: an opening that establishes normalcy; flat escalation (crisis #3 no bigger than #1); a bloated tidy ending.`,
+  "romancing-the-beat": `STRUCTURAL LENS — Romancing the Beat (romance / any relationship-centered story).\nUse as a DIAGNOSTIC FRAME, not a template.\n1 Meet Cute/Ugly · 2 The "No Way" (each lead's wound says it's impossible) · 3 Adhesion (a device that stops them walking away) · 4 The Dark Night / Black Moment (relationship shatters) · 5 The Grand Gesture & Wake-Up · 6 HEA/HFN (mandatory positive payoff).\nBest at catching: a breakup (4) with no real cost; plot that doesn't pressure the RELATIONSHIP; a weak Adhesion (3) that stalls the middle.`,
+};
+
+// Parse + sanitize, carrying the beat per page (mirrors _shared/revision-plan.ts with beat).
+function parseBeatPlan(text, existing) {
+  let raw = text.trim();
+  const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fence) raw = fence[1].trim();
+  else {
+    const first = raw.indexOf("{");
+    const last = raw.lastIndexOf("}");
+    if (first !== -1 && last > first) raw = raw.slice(first, last + 1);
+  }
+  let parsed;
+  try { parsed = JSON.parse(raw); }
+  catch (e) { return { error: `Could not parse revision plan JSON: ${e.message}` }; }
+  if (!Array.isArray(parsed.pages)) return { error: "Revision plan has no pages." };
+
+  const byId = new Map(existing.map((p) => [p.id, p]));
+  const validIds = new Set(existing.map((p) => p.id));
+  const ops = new Set(["keep", "retarget", "add"]);
+  const seen = new Set();
+  const pages = [];
+  for (const p of parsed.pages) {
+    let op = ops.has(p?.op) ? p.op : "keep"; // plan-only: collapse any other op to keep
+    if (op === "add") {
+      if (typeof p.title !== "string" || !p.title.trim()) continue;
+      pages.push({ ref: null, op: "add", pageType: p.pageType === "section" ? "section" : "text", title: p.title.trim(), objective: (p.objective ?? "").trim(), beat: (p.beat ?? "").trim() || undefined, why: typeof p.why === "string" ? p.why.trim() : "" });
+      continue;
+    }
+    const ref = typeof p.ref === "number" ? p.ref : null;
+    if (ref == null || !validIds.has(ref) || seen.has(ref)) continue;
+    seen.add(ref);
+    const cur = byId.get(ref);
+    pages.push({
+      ref, op,
+      pageType: cur.page_type === "section" ? "section" : "text",
+      title: typeof p.title === "string" && p.title.trim() ? p.title.trim() : (cur.title ?? ""),
+      objective: (p.objective ?? cur.metadata?.objective ?? "").trim(),
+      beat: ((p.beat ?? cur.metadata?.beat ?? "").trim()) || undefined,
+      why: typeof p.why === "string" ? p.why.trim() : "",
+    });
+  }
+  const deletes = [];
+  const deletedIds = new Set();
+  for (const d of Array.isArray(parsed.deletes) ? parsed.deletes : []) {
+    const ref = typeof d?.ref === "number" ? d.ref : null;
+    if (ref == null || !validIds.has(ref) || seen.has(ref) || deletedIds.has(ref)) continue;
+    deletedIds.add(ref);
+    deletes.push({ ref, why: typeof d.why === "string" ? d.why.trim() : "" });
+  }
+  for (const p of existing) {
+    if (!seen.has(p.id) && !deletedIds.has(p.id)) {
+      pages.push({ ref: p.id, op: "keep", pageType: p.page_type === "section" ? "section" : "text", title: p.title ?? "", objective: (p.metadata?.objective ?? "").trim(), beat: ((p.metadata?.beat ?? "").trim()) || undefined, why: "" });
+    }
+  }
+  return { summary: String(parsed.summary ?? "").trim(), pages, deletes, planOnly: true };
+}
+
+function beatSheetContext(pages) {
+  return pages
+    .map((p) => {
+      if (p.page_type === "section") return `[id=${p.id}] # ${p.title || "(untitled section)"}`;
+      const obj = p.metadata?.objective?.trim();
+      const beat = p.metadata?.beat?.trim();
+      let line = `[id=${p.id}] - "${p.title || "(untitled)"}"`;
+      if (obj) line += `\n  objective: ${obj}`;
+      line += beat ? `\n  beat: ${beat}` : `\n  beat: (none yet)`;
+      return line;
+    })
+    .join("\n");
+}
+
+async function runReviseBeats(bookId, instruction, lens) {
+  const book = await fetchBook(bookId);
+  if (!book) return { error: "Book not found" };
+  const instr = (instruction ?? "").trim();
+  const lensId = (lens ?? "").trim() || null;
+  if (!instr && !lensId) return { error: "An instruction or a structural lens is required" };
+
+  const pages = await fetchPages(bookId);
+  if (!pages.length) return { error: "Book has no pages to revise" };
+
+  const f = book.foundations ?? null;
+  const spineText = book.spine?.text?.trim() || null;
+  const lensBlock = lensId ? LENS_BLOCKS[lensId] : null;
+
+  const prompt = `${REVISE_BEATS_INSTRUCTIONS}
+
+BOOK: ${book.name}
+
+BRIEF (the voice contract):
+${briefContext(book.brief)}${spineText ? `\n\nSPINE (the book in one arc):\n${spineText}` : ""}${f ? `\n\nFOUNDATIONS (settled — pinned lines are immutable):\n${foundationsContext(f)}` : ""}
+
+CURRENT BEAT SHEET (edit against these real ids):
+${beatSheetContext(pages)}${instr ? `\n\nAUTHOR'S INSTRUCTION (primary directive):\n${instr}` : ""}${lensBlock ? `\n\n${lensBlock}` : ""}
+
+Produce the beat revision plan. JSON only.`;
+
+  const out = await runClaude(prompt, true, { fn: "revise-beats", bookId }, { noTools: true });
+  if (out.error) return out;
+  return parseBeatPlan(out.text, pages);
+}
+
 // ── /objective-to-beat ─────────────────────────────────────────────────────────
 // Mirrors supabase/functions/objective-to-beat: objective → a one-paragraph beat (the plan of what the
 // page does), in book context. No mutation — the client writes metadata.beat + stamps the edge.
@@ -975,6 +1109,83 @@ Write the beat for THIS PAGE. One paragraph, plan only.`;
   const out = await runClaude(prompt, true, { fn: "objective-to-beat", bookId }, { noTools: true });
   if (out.error) return out;
   return { beat: (out.text ?? "").trim() };
+}
+
+// ── /scene-image-prompt + /character-portrait-prompt ──────────────────────────
+// Mirrors the COMPOSE (mode:"prompt") path of supabase/functions/generate-scene-image and
+// generate-character-portrait, but runs on local Claude Code (claude-local) instead of the Anthropic
+// API. Only the text prompt-compose runs here; the actual image render stays on the edge fn (OpenRouter),
+// which the client calls directly. Returns { prompt }.
+const SCENE_IMAGE_PROMPT_SYSTEM = `You write ONE image-generation prompt for a single scene of a novel.
+
+You are given recent story beats for continuity and the BEAT TO DEPICT. Describe only the beat-to-depict as a still image: the setting, the characters present and their actions/expressions, the mood, the lighting, and the composition. Use the provided character appearances so each person is rendered faithfully. Let the preceding beats inform mood and continuity, but do NOT depict them.
+
+Output ONLY the prompt text — no preamble, no quotes, no labels. 2–4 sentences. Do not mention cameras, file formats, or "no text/watermark" instructions (those are added separately).`;
+
+const PORTRAIT_PROMPT_SYSTEM = `You write ONE image-generation prompt for a character REFERENCE PORTRAIT for a novel.
+
+Given a character's name, role, appearance, and inner life, describe a head-and-shoulders portrait: their face, apparent age, build, hair, distinguishing features, and typical dress, with an expression that reflects who they are. Keep it a believable, specific person.
+
+Output ONLY the prompt text — no preamble, no quotes, no labels. 2–4 sentences. Do not mention cameras, file formats, or "no text/watermark" instructions (those are added separately).`;
+
+function castNamedIn(text, name) {
+  const n = (name ?? "").trim();
+  if (!n) return false;
+  return new RegExp(`\\b${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(text);
+}
+
+async function runSceneImagePrompt(body) {
+  const { bookId, pageId, instruction } = body;
+  if (!bookId || !pageId) return { error: "bookId and pageId required" };
+  const book = await fetchBook(bookId);
+  if (!book) return { error: "Book not found" };
+  const pages = await fetchPages(bookId);
+  const here = pages.findIndex((p) => p.id === pageId);
+  if (here === -1) return { error: "Page not found in this book" };
+  const beat = (pages[here].metadata?.beat ?? "").trim();
+  if (!beat) return { error: "Plan the beat first — the scene is drawn from it." };
+
+  const priorBeats = pages.slice(0, here).map((p) => (p.metadata?.beat ?? "").trim()).filter(Boolean).slice(-2);
+  const cast = book.foundations?.cast ?? [];
+  const present = cast.filter((m) => castNamedIn(beat, m.name));
+  const castNotes = present.map((m) => `- ${m.name}${m.appearance?.trim() ? `: ${m.appearance.trim()}` : ""}`).join("\n");
+
+  const userContent = [
+    priorBeats.length ? `RECENT BEATS (for continuity — do NOT depict):\n${priorBeats.map((b, i) => `${i + 1}. ${b}`).join("\n\n")}` : null,
+    `BEAT TO DEPICT:\n${beat}`,
+    castNotes ? `CHARACTERS PRESENT (render faithfully):\n${castNotes}` : null,
+    instruction?.trim() ? `ART DIRECTION (author — honor this):\n${instruction.trim()}` : null,
+    "Write the image prompt.",
+  ].filter(Boolean).join("\n\n");
+
+  const out = await runClaude(`${SCENE_IMAGE_PROMPT_SYSTEM}\n\n${userContent}`, true, { fn: "scene-image-prompt", bookId }, { noTools: true });
+  if (out.error) return out;
+  const prompt = (out.text ?? "").trim();
+  return prompt ? { prompt } : { error: "Could not compose a scene prompt." };
+}
+
+async function runCharacterPortraitPrompt(body) {
+  const { bookId, castId, instruction } = body;
+  if (!bookId || !castId) return { error: "bookId and castId required" };
+  const book = await fetchBook(bookId);
+  if (!book) return { error: "Book not found" };
+  const member = (book.foundations?.cast ?? []).find((m) => m.id === castId);
+  if (!member) return { error: "Character not found in this book's cast" };
+
+  const userContent = [
+    `NAME: ${member.name}`,
+    member.role ? `ROLE: ${member.role}` : null,
+    member.appearance?.trim() ? `APPEARANCE: ${member.appearance.trim()}` : null,
+    member.want?.trim() ? `WANTS: ${member.want.trim()}` : null,
+    member.wound?.trim() ? `WOUND (informs expression): ${member.wound.trim()}` : null,
+    instruction?.trim() ? `ART DIRECTION (author — honor this): ${instruction.trim()}` : null,
+    "Write the portrait prompt.",
+  ].filter(Boolean).join("\n");
+
+  const out = await runClaude(`${PORTRAIT_PROMPT_SYSTEM}\n\n${userContent}`, true, { fn: "character-portrait-prompt", bookId }, { noTools: true });
+  if (out.error) return out;
+  const prompt = (out.text ?? "").trim();
+  return prompt ? { prompt } : { error: "Could not compose a portrait prompt." };
 }
 
 // ── /prose-to-beat ────────────────────────────────────────────────────────────
@@ -2170,6 +2381,19 @@ async function route(req, res) {
     return json(res, 200, out);
   }
 
+  // revise-beats — instruction/lens -> a beat-sheet revision plan (plan-only, carries beats).
+  if (url === "/revise-beats" || url === "/revise-beats/") {
+    if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
+    const body = await readBody(req);
+    const bookId = Number(body.bookId);
+    if (!bookId) return json(res, 400, { error: "bookId is required" });
+    if (!(await authorize(req, res, bookId))) return;
+    console.log(`Revising beats for book ${bookId}${body.lens ? ` (lens: ${body.lens})` : ""}…`);
+    const out = await runReviseBeats(bookId, body.instruction, body.lens);
+    if (out.error) return json(res, 500, { error: out.error });
+    return json(res, 200, out);
+  }
+
   // generate-book — the durable bulk "build the draft" job (beats → optional pause → prose).
   if (url === "/generate-book" || url === "/generate-book/") {
     if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
@@ -2237,6 +2461,26 @@ async function route(req, res) {
     if (!(await authorize(req, res, Number(body.bookId)))) return;
     console.log(`Distilling beat from prose (book ${body.bookId}, page ${body.pageId})…`);
     const out = await runProseToBeat(body);
+    if (out.error) return json(res, 500, { error: out.error });
+    return json(res, 200, out);
+  }
+
+  if (url === "/scene-image-prompt" || url === "/scene-image-prompt/") {
+    if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
+    const body = await readBody(req);
+    if (!(await authorize(req, res, Number(body.bookId)))) return;
+    console.log(`Composing scene image prompt (book ${body.bookId}, page ${body.pageId})…`);
+    const out = await runSceneImagePrompt(body);
+    if (out.error) return json(res, 500, { error: out.error });
+    return json(res, 200, out);
+  }
+
+  if (url === "/character-portrait-prompt" || url === "/character-portrait-prompt/") {
+    if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
+    const body = await readBody(req);
+    if (!(await authorize(req, res, Number(body.bookId)))) return;
+    console.log(`Composing portrait prompt (book ${body.bookId}, character ${body.castId})…`);
+    const out = await runCharacterPortraitPrompt(body);
     if (out.error) return json(res, 500, { error: out.error });
     return json(res, 200, out);
   }

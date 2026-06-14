@@ -5,6 +5,7 @@
 // portraits are stored in the scene-images bucket and pinned onto books.foundations.cast[].ref_image_url
 // by the caller. Generation runs in the generate-scene-image / generate-character-portrait edge fns.
 import { supabase } from "@/integrations/supabase/client";
+import { BRIDGE, bridgeFetch } from "@/lib/bridge";
 
 export interface SceneImage {
   id: string;
@@ -22,6 +23,20 @@ async function invoke<T>(fn: string, body: Record<string, unknown>): Promise<T> 
   return data as T;
 }
 
+// Prompt COMPOSE (text) runs on local Claude Code via the dev bridge when present (free, and dodges a
+// bad ANTHROPIC_API_KEY); else the edge fn's mode:"prompt". Image RENDER always goes to the edge
+// (OpenRouter image model) — the bridge can't generate images.
+async function composeViaBridgeOrEdge(bridgePath: string, edgeFn: string, body: Record<string, unknown>): Promise<string> {
+  if (BRIDGE) {
+    const r = await bridgeFetch(bridgePath, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    return String(d.prompt ?? "").trim();
+  }
+  const { prompt } = await invoke<{ prompt: string }>(edgeFn, { ...body, mode: "prompt" });
+  return prompt;
+}
+
 export async function readSceneImages(pageId: number): Promise<SceneImage[]> {
   const { data, error } = await supabase
     .from("page_scene_images")
@@ -34,9 +49,8 @@ export async function readSceneImages(pageId: number): Promise<SceneImage[]> {
 
 // ── Scenes ─────────────────────────────────────────────────────────────────────
 /** Compose an editable scene prompt from the beats context + cast + author art direction. */
-export async function composeScenePrompt(pageId: number, instruction?: string): Promise<string> {
-  const { prompt } = await invoke<{ prompt: string }>("generate-scene-image", { pageId, mode: "prompt", instruction });
-  return prompt;
+export async function composeScenePrompt(bookId: number, pageId: number, instruction?: string): Promise<string> {
+  return composeViaBridgeOrEdge("/scene-image-prompt", "generate-scene-image", { bookId, pageId, instruction });
 }
 
 /** Render one scene image from a (possibly edited) prompt + author references. Inserts a gallery row. */
@@ -63,8 +77,7 @@ export async function uploadSceneImage(pageId: number, bookId: number, file: Fil
 
 // ── Portraits ("design the look") ────────────────────────────────────────────────
 export async function composePortraitPrompt(bookId: number, castId: string, instruction?: string): Promise<string> {
-  const { prompt } = await invoke<{ prompt: string }>("generate-character-portrait", { bookId, castId, mode: "prompt", instruction });
-  return prompt;
+  return composeViaBridgeOrEdge("/character-portrait-prompt", "generate-character-portrait", { bookId, castId, instruction });
 }
 
 /** Render `count` portrait variants from a (possibly edited) prompt + author references. The returned

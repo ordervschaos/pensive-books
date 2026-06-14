@@ -16,7 +16,7 @@ import { hasEditAccess } from "../_shared/access.ts";
 import { serviceClient } from "../_shared/task.ts";
 import { generateImages, uploadDataUrl } from "../_shared/image.ts";
 import { callClaude, textFromClaude, type CallMeta } from "../_shared/claude.ts";
-import { getActiveModels } from "../_shared/model-config.ts";
+import { IMAGE_PROMPT_MODEL } from "../_shared/model-config.ts";
 
 interface CastMember {
   id: string; name: string;
@@ -64,7 +64,7 @@ Deno.serve(async (req: Request) => {
     // ── mode "prompt": compose an editable portrait prompt ──
     if (mode === "prompt") {
       const apiKey = Deno.env.get("ANTHROPIC_API_KEY") ?? "";
-      const { low: model } = await getActiveModels();
+      const model = IMAGE_PROMPT_MODEL;
       const userContent = [
         `NAME: ${member.name}`,
         member.role ? `ROLE: ${member.role}` : null,

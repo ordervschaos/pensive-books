@@ -11,6 +11,12 @@ export type ModelTier = "opus" | "sonnet" | "deepseek" | "qwen";
 // callers that default a `low` model don't re-hardcode the string and drift from this file.
 export const DEFAULT_LOW_MODEL = "claude-haiku-4-5-20251001";
 
+// Image-PROMPT composition (scene/portrait) is a tiny text task we deliberately keep OFF the Anthropic
+// path so prod doesn't depend on ANTHROPIC_API_KEY for it — it always runs on a cheap OpenRouter
+// (Qwen) model, regardless of the admin tier. (In dev this never runs: the bridge composes on
+// claude-local.) `qwen/…` routes through OPENROUTER_API_KEY in claude.ts.
+export const IMAGE_PROMPT_MODEL = "qwen/qwen3-235b-a22b";
+
 // high = opus/sonnet/deepseek/qwen for generation; low = haiku for cheap passes (summaries, scans)
 const TIER_MODELS: Record<ModelTier, { high: string; low: string }> = {
   opus:     { high: "claude-opus-4-8",          low: DEFAULT_LOW_MODEL },
