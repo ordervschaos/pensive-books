@@ -7,17 +7,19 @@
 // Voice is absorbed here (old stage 4): the chosen exemplar is ALSO mirrored to
 // books.bible.voice_sample so the existing prose renderers keep reading their anchor unchanged.
 import { useEffect, useRef, useState } from "react";
-import { Check, Loader2, Pin, Plus, RefreshCw, Skull, Sparkles, Undo2, Wand2, X } from "lucide-react";
+import { Check, ImageIcon, Loader2, Pin, Plus, RefreshCw, Skull, Sparkles, Undo2, Wand2, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Textarea } from "@/components/ui/textarea";
 import { AutoTextarea } from "@/components/ui/auto-textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useAIRun } from "@/hooks/useAIRun";
+import { composePortraitPrompt, renderPortraitVariants, uploadReferenceImage } from "@/lib/sceneImages";
+import { ImageGenStudio } from "../ImageGenStudio";
 import {
   foundationsProgress, pinNode, writeFoundations,
   type CastMember, type FCandidate, type FNode, type Foundations, type FoundationsStepKey, type Tentpole,
 } from "@/lib/foundations";
-import { ActionLink, Eyebrow, Hero, Panel, RunError, RunningInline } from "../studioUi";
+import { ActionLink, Eyebrow, Hero, ImageLightbox, Panel, RunError, RunningInline } from "../studioUi";
 
 const uid = () => crypto.randomUUID().slice(0, 8);
 
@@ -363,6 +365,7 @@ function CastSub({ bookId, cast, beforeGen, onSave }: { bookId: number; cast: Ca
               );
             })}
           </div>
+          <CastLook bookId={bookId} member={m} onUpdate={(patch) => update(m.id, patch)} />
         </Panel>
       ))}
       <div className="flex items-center gap-5">
@@ -379,6 +382,62 @@ function CastSub({ bookId, cast, beforeGen, onSave }: { bookId: number; cast: Ca
         )}
       </div>
       {run.run?.status === "error" && <RunError msg={run.run.error} />}
+    </div>
+  );
+}
+
+// "Design the look" — per-character appearance + a SET of reference portraits (different angles/views,
+// AI-generated or uploaded) that scene generation reuses for coherence. Portraits are kept in local
+// state so rapid "add"s append correctly, persisted to foundations (single writer) on each change.
+function CastLook({ bookId, member, onUpdate }: { bookId: number; member: CastMember; onUpdate: (patch: Partial<CastMember>) => void }) {
+  const [portraits, setPortraits] = useState<string[]>(member.portraits ?? []);
+  const [lightbox, setLightbox] = useState<string | null>(null);
+  useEffect(() => { setPortraits(member.portraits ?? []); }, [member.portraits]);
+
+  const addPortrait = (url: string) => setPortraits((prev) => { const next = [...prev, url]; onUpdate({ portraits: next }); return next; });
+  const removePortrait = (url: string) => setPortraits((prev) => { const next = prev.filter((x) => x !== url); onUpdate({ portraits: next }); return next; });
+
+  return (
+    <div className="mt-3 border-t border-[hsl(var(--pv-border-soft))] pt-3">
+      <Eyebrow tone="muted">appearance</Eyebrow>
+      <AutoTextarea
+        defaultValue={member.appearance ?? ""}
+        placeholder="What they look like — age, build, hair, distinguishing features, typical dress…"
+        onBlur={(e) => { const v = e.target.value.trim(); if (v !== (member.appearance ?? "")) onUpdate({ appearance: v }); }}
+        className="pv-serif border-b border-transparent bg-transparent px-0 py-0 text-[14px] leading-relaxed text-foreground focus-visible:ring-0 placeholder:text-[hsl(var(--pv-text-faint))] hover:border-[hsl(var(--pv-border-soft))] transition-colors"
+      />
+
+      {portraits.length > 0 ? (
+        <div className="mt-3 flex flex-wrap gap-2.5">
+          {portraits.map((u) => (
+            <div key={u} className="relative">
+              <img src={u} alt={member.name} className="h-20 w-20 cursor-zoom-in rounded-lg border border-[hsl(var(--pv-border-soft))] object-cover" onClick={() => setLightbox(u)} />
+              <button type="button" onClick={() => removePortrait(u)} className="absolute -right-1.5 -top-1.5 rounded-full bg-black/60 p-0.5 text-white hover:bg-black/80" aria-label="Remove portrait">
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-3 flex items-center gap-2 text-[hsl(var(--pv-text-faint))]">
+          <ImageIcon className="h-4 w-4" />
+          <span className="pv-serif text-[12.5px] italic">No portraits yet — design or upload a few (front, profile, full body) for stronger coherence.</span>
+        </div>
+      )}
+
+      <div className="mt-3">
+        <ImageGenStudio
+          compose={(instr) => composePortraitPrompt(bookId, member.id, instr)}
+          render={(prompt, refUrls) => renderPortraitVariants(bookId, member.id, prompt, refUrls, 3)}
+          uploadRef={uploadReferenceImage}
+          onAdd={addPortrait}
+          uploadDirect={async (file) => addPortrait(await uploadReferenceImage(file))}
+          onFullscreen={setLightbox}
+          multiSelect
+          startLabel={portraits.length ? "Add another look" : "Design the look"}
+        />
+      </div>
+      <ImageLightbox src={lightbox} onClose={() => setLightbox(null)} />
     </div>
   );
 }

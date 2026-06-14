@@ -1,0 +1,85 @@
+// sceneImages — the client for a page's AI-illustrated scenes (the studio "Scene" ladder level) and
+// for character "design the look" portraits. Both are PROMPT-FIRST: compose an editable prompt, then
+// render. Portraits render several variants to pick from; scenes render one (the gallery grows). Both
+// accept author-supplied reference images. Scene rows live in page_scene_images (many per page);
+// portraits are stored in the scene-images bucket and pinned onto books.foundations.cast[].ref_image_url
+// by the caller. Generation runs in the generate-scene-image / generate-character-portrait edge fns.
+import { supabase } from "@/integrations/supabase/client";
+
+export interface SceneImage {
+  id: string;
+  page_id: number;
+  book_id: number;
+  image_url: string;
+  prompt: string | null;
+  created_at: string;
+}
+
+async function invoke<T>(fn: string, body: Record<string, unknown>): Promise<T> {
+  const { data, error } = await supabase.functions.invoke(fn, { body });
+  if (error) throw error;
+  if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
+  return data as T;
+}
+
+export async function readSceneImages(pageId: number): Promise<SceneImage[]> {
+  const { data, error } = await supabase
+    .from("page_scene_images")
+    .select("id, page_id, book_id, image_url, prompt, created_at")
+    .eq("page_id", pageId)
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return (data as SceneImage[]) ?? [];
+}
+
+// ── Scenes ─────────────────────────────────────────────────────────────────────
+/** Compose an editable scene prompt from the beats context + cast + author art direction. */
+export async function composeScenePrompt(pageId: number, instruction?: string): Promise<string> {
+  const { prompt } = await invoke<{ prompt: string }>("generate-scene-image", { pageId, mode: "prompt", instruction });
+  return prompt;
+}
+
+/** Render one scene image from a (possibly edited) prompt + author references. Inserts a gallery row. */
+export async function renderSceneImage(pageId: number, prompt: string, refUrls: string[] = []): Promise<SceneImage> {
+  return invoke<SceneImage>("generate-scene-image", { pageId, mode: "image", prompt, refUrls });
+}
+
+export async function deleteSceneImage(id: string): Promise<void> {
+  const { error } = await supabase.from("page_scene_images").delete().eq("id", id);
+  if (error) throw error;
+}
+
+/** Add a scene image the author uploaded directly (no AI) — upload to storage, insert a gallery row. */
+export async function uploadSceneImage(pageId: number, bookId: number, file: File): Promise<SceneImage> {
+  const url = await uploadReferenceImage(file);
+  const { data, error } = await supabase
+    .from("page_scene_images")
+    .insert({ page_id: pageId, book_id: bookId, image_url: url, prompt: null })
+    .select("id, page_id, book_id, image_url, prompt, created_at")
+    .single();
+  if (error) throw error;
+  return data as SceneImage;
+}
+
+// ── Portraits ("design the look") ────────────────────────────────────────────────
+export async function composePortraitPrompt(bookId: number, castId: string, instruction?: string): Promise<string> {
+  const { prompt } = await invoke<{ prompt: string }>("generate-character-portrait", { bookId, castId, mode: "prompt", instruction });
+  return prompt;
+}
+
+/** Render `count` portrait variants from a (possibly edited) prompt + author references. The returned
+ *  URLs are stored but NOT pinned — the caller pins the chosen one onto the cast member. */
+export async function renderPortraitVariants(bookId: number, castId: string, prompt: string, refUrls: string[] = [], count = 3): Promise<string[]> {
+  const { urls } = await invoke<{ urls: string[] }>("generate-character-portrait", { bookId, castId, mode: "image", prompt, refUrls, count });
+  return urls;
+}
+
+// ── Author reference uploads ─────────────────────────────────────────────────────
+/** Upload an author-supplied reference image to the scene-images bucket; returns its public URL. */
+export async function uploadReferenceImage(file: File): Promise<string> {
+  const ext = file.name.split(".").pop()?.toLowerCase() || "png";
+  const path = `uploads/${crypto.randomUUID()}.${ext}`;
+  const { error } = await supabase.storage.from("scene-images").upload(path, file, { contentType: file.type || undefined, upsert: false });
+  if (error) throw error;
+  return supabase.storage.from("scene-images").getPublicUrl(path).data.publicUrl;
+}

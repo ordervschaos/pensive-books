@@ -1,10 +1,30 @@
 // studioUi — the small shared primitives the Navigator and Stage both compose: resolution pips, the
 // step dot, and the Stage's head / hero / gate chrome. Pure presentation, Paper-DS tokens only.
-import { type ComponentProps, type ReactNode } from "react";
-import { AlertTriangle, ArrowRight, Check, Loader2, Lock } from "lucide-react";
+import { useEffect, type ComponentProps, type ReactNode } from "react";
+import { AlertTriangle, ArrowRight, Check, Loader2, Lock, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { CellState } from "@/lib/planGraph";
 import type { DotState } from "./studioModel";
+
+// Full-screen image viewer. Shared by every studio surface that shows generated art. Click-outside or
+// Esc closes; the image itself swallows clicks so it stays open.
+export function ImageLightbox({ src, onClose }: { src: string | null; onClose: () => void }) {
+  useEffect(() => {
+    if (!src) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [src, onClose]);
+  if (!src) return null;
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/85 p-6 backdrop-blur-sm" onClick={onClose} role="dialog" aria-modal="true">
+      <img src={src} alt="" className="max-h-full max-w-full rounded-lg object-contain shadow-2xl" onClick={(e) => e.stopPropagation()} />
+      <button type="button" onClick={onClose} className="absolute right-5 top-5 rounded-full bg-white/10 p-2 text-white transition-colors hover:bg-white/20" aria-label="Close">
+        <X className="h-5 w-5" />
+      </button>
+    </div>
+  );
+}
 
 // ── House primitives ─────────────────────────────────────────────────────────
 // The three text/box/action atoms every step composes. Centralising them keeps the studio's eyebrow

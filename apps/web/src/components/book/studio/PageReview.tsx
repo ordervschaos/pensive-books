@@ -4,16 +4,19 @@
 // page reviewed here writes through the exact same persistence the map's node sheet used.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowDown, ExternalLink, Loader2, Lock, Sparkles } from "lucide-react";
+import { ArrowDown, ExternalLink, Loader2, Lock, Sparkles, Trash2 } from "lucide-react";
 import { AutoTextarea } from "@/components/ui/auto-textarea";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 import { readNode, readProse, saveBeat, saveObjective, transforms } from "@/lib/ladder";
+import { composeScenePrompt, deleteSceneImage, readSceneImages, renderSceneImage, uploadReferenceImage, uploadSceneImage, type SceneImage } from "@/lib/sceneImages";
 import type { CellState } from "@/lib/planGraph";
+import { ImageGenStudio } from "./ImageGenStudio";
 import { DurableOptions } from "../DurableOptions";
 import { DurableReviser } from "../DurableReviser";
 import { ProseNodePanel } from "../ProseNodePanel";
 import type { StudioModel } from "./studioModel";
-import { ActionLink, Eyebrow, Panel, Pip } from "./studioUi";
+import { ActionLink, Eyebrow, ImageLightbox, Panel, Pip } from "./studioUi";
 import { CharacterLedgerGraph } from "./CharacterLedgerGraph";
 
 interface PageReviewProps {
@@ -188,6 +191,10 @@ export function PageReview({ bookId, model, pageId, onChanged, onSelectPage }: P
 
           <DownArrow />
 
+          <SceneLevel bookId={bookId} pageId={pageId} beatExists={!!beat.trim()} />
+
+          <DownArrow />
+
           <LevelCard label="Prose" sub="the written page" state={prose.trim() ? "synced" : beat.trim() ? "gap" : "locked"}>
             {beat.trim() ? (
               <ProseNodePanel
@@ -244,6 +251,83 @@ function LevelCard({ label, sub, state, children }: { label: string; sub: string
 
 function DownArrow() {
   return <div className="flex justify-center py-0.5 text-[hsl(var(--pv-text-faint))]"><ArrowDown className="h-4 w-4" /></div>;
+}
+
+// Scene level — illustrations of the page's scene, with coherent characters (the beat's named cast
+// rendered from their pinned reference portraits). A gallery: many images per page. Live-projected
+// over Realtime so a generation from anywhere lands here without a refresh.
+function SceneLevel({ bookId, pageId, beatExists }: { bookId: number; pageId: number; beatExists: boolean }) {
+  const { toast } = useToast();
+  const [scenes, setScenes] = useState<SceneImage[]>([]);
+  const [lightbox, setLightbox] = useState<string | null>(null);
+
+  const upsert = (row: SceneImage) => setScenes((s) => (s.some((x) => x.id === row.id) ? s : [...s, row]));
+
+  useEffect(() => {
+    let live = true;
+    void readSceneImages(pageId).then((rows) => { if (live) setScenes(rows); });
+    const channel = supabase
+      .channel(`scene_images_${pageId}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "page_scene_images", filter: `page_id=eq.${pageId}` },
+        (p) => upsert((p as unknown as { new: SceneImage }).new))
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "page_scene_images", filter: `page_id=eq.${pageId}` },
+        (p) => { const id = (p as unknown as { old: { id: string } }).old.id; setScenes((s) => s.filter((x) => x.id !== id)); })
+      .subscribe();
+    return () => { live = false; void supabase.removeChannel(channel); };
+  }, [pageId]);
+
+  const remove = async (id: string) => {
+    setScenes((s) => s.filter((x) => x.id !== id)); // optimistic; realtime confirms
+    try { await deleteSceneImage(id); }
+    catch (e) { toast({ variant: "destructive", title: "Couldn't remove the image", description: String((e as Error)?.message ?? e) }); void readSceneImages(pageId).then(setScenes); }
+  };
+
+  const state: CellState | "locked" = scenes.length ? "synced" : beatExists ? "gap" : "locked";
+
+  return (
+    <LevelCard label="Scene" sub="illustrated, with your cast" state={state}>
+      {!beatExists ? (
+        <p className="pv-serif flex items-center gap-2 text-[14.5px] italic text-[hsl(var(--pv-text-faint))]">
+          <Lock className="h-3.5 w-3.5" /> Plan the beat first — scenes are drawn from it.
+        </p>
+      ) : (
+        <>
+          {scenes.length > 0 && (
+            <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {scenes.map((s) => (
+                <div key={s.id} className="group relative overflow-hidden rounded-xl border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/40">
+                  <button type="button" onClick={() => setLightbox(s.image_url)} className="block w-full cursor-zoom-in" aria-label="Open full screen">
+                    <img src={s.image_url} alt={s.prompt ?? "Scene"} className="aspect-[4/3] w-full object-cover" loading="lazy" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void remove(s.id)}
+                    className="absolute right-1.5 top-1.5 rounded-full bg-black/55 p-1.5 text-white opacity-0 transition-opacity hover:bg-black/75 group-hover:opacity-100"
+                    aria-label="Remove image"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <ImageGenStudio
+            compose={(instr) => composeScenePrompt(pageId, instr)}
+            render={async (prompt, refUrls) => { const row = await renderSceneImage(pageId, prompt, refUrls); upsert(row); return [row.image_url]; }}
+            uploadRef={uploadReferenceImage}
+            onAdd={() => {}}
+            uploadDirect={async (file) => { upsert(await uploadSceneImage(pageId, bookId, file)); }}
+            onFullscreen={setLightbox}
+            startLabel={scenes.length ? "Generate another scene" : "Generate scene image"}
+          />
+          <p className="pv-serif mt-2.5 text-[12.5px] italic text-[hsl(var(--pv-text-faint))]">
+            Cast named in the beat are drawn from their portraits — design each character's look in Foundations for coherence.
+          </p>
+        </>
+      )}
+      <ImageLightbox src={lightbox} onClose={() => setLightbox(null)} />
+    </LevelCard>
+  );
 }
 
 function RegenRow({ busy, onRegen }: { busy: boolean; onRegen: () => void }) {

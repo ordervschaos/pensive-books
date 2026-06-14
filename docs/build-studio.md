@@ -129,7 +129,7 @@ voice=hasVoice, beats=all beats present, draft=all prose present`.
 
 | step | file | what it wraps |
 |---|---|---|
-| Foundations | `FoundationsStep.tsx` | the pin editor (argument/ending/cast/tentpoles/voice) |
+| Foundations | `FoundationsStep.tsx` | the pin editor (argument/ending/cast/tentpoles/voice). Cast members also get "design the look" (`CastLook`): an appearance line + a **set of portraits** (different angles, via the shared `ImageGenStudio`) reused for scene-image coherence |
 | Spine | `SpineStep.tsx` | old: single durable gen; new: 2–3 route cards (`spine_routes`) |
 | Outline | `OutlineStep.tsx` | objective scaffolding |
 | Beats | `BeatsStep.tsx` | prominent bulk "generate all beats" + a single-beat, revise-in-place page-by-page flow |
@@ -150,11 +150,53 @@ Locked steps show a reason. `awaiting` steps render a `Gate` ("Approve & continu
 
 ## The Stage in page mode: `PageReview.tsx`
 
-When a page is selected, the Stage shows that page's **resolution ladder**: Objective → Beat → Prose,
-each level readable, editable (autosave on blur), and regenerable in place. Reuses the same
-persistence as the map's node sheet (`@/lib/ladder` — `readNode/readProse/saveObjective/saveBeat`,
+When a page is selected, the Stage shows that page's **resolution ladder**: Objective → Beat →
+**Scene** → Prose, each level readable, editable (autosave on blur), and regenerable in place. Reuses
+the same persistence as the map's node sheet (`@/lib/ladder` — `readNode/readProse/saveObjective/saveBeat`,
 `ProseNodePanel`, `DurableOptions`, `DurableReviser`). Prose is locked until a beat exists. Has a
 muted disclosure for the `CharacterLedgerGraph` (the state axis across pages) and prev/next page nav.
+
+### Scene images (the Scene level — between Beat and Prose)
+
+`SceneLevel` (in `PageReview.tsx`) illustrates the page's scene **with coherent characters**: a
+gallery (many images per page). Locked until a beat exists. Click any image for a **full-screen
+lightbox** (`ImageLightbox` in `studioUi.tsx` — Esc / click-outside closes). Live-projected over
+Realtime (`page_scene_images`, channel per page) so a generation from anywhere lands without a refresh.
+
+**Everything image-shaped is prompt-first and goes through `ImageGenStudio.tsx`** — one shared
+component both the Scene level and the portrait step compose:
+
+1. (optional) type **art direction** → it steers the compose,
+2. a TEXT model **composes an editable prompt** (`claude.ts` chokepoint, active tier `low`),
+3. (optional) attach your own **reference images** (`uploadReferenceImage` → `scene-images/uploads/…`),
+4. **generate**, then commit — or skip AI entirely and **upload an image directly**.
+
+`multiSelect` is the only axis of difference: portraits keep a **set** (generate variants / different
+angles, add the ones you like, panel stays open); a scene commits **one** image and closes. Hosts pass
+the surface-specific `compose` / `render` / `onAdd` / `uploadDirect` and own persistence.
+
+**Scene composition** uses the present cast's descriptions + the recent beats — the **two preceding
+beats** (continuity, not depicted) and the **current beat** (the moment to depict). At render,
+`generate-scene-image` finds the cast members **named in the beat** and feeds their portraits (up to 2
+angles each) + any author references as input images, holding faces consistent.
+
+**Coherence is the manual-portrait model.** Each cast member holds a **set of portraits**
+(`books.foundations.cast[].portraits: string[]` — different angles/views, AI-generated or uploaded),
+designed in Foundations (`CastSub` → `CastLook`). The **client owns `foundations`** (single writer);
+portrait edge calls only produce+store images and return URLs.
+
+**Wiring** (mirrors the `generate-page-audio` media pattern, *not* the durable-task machinery —
+synchronous):
+
+| piece | where | does |
+|---|---|---|
+| `page_scene_images` | migration `20260614120000` | many rows/page; public read, auth write; in `supabase_realtime` |
+| `scene-images` bucket | same migration | public; `scenes/<pageId>/…`, `portraits/<bookId>/…`, `uploads/…` |
+| `_shared/image.ts` | edge | image chokepoint — `generateImage` / `generateImages` (Gemini 2.5 Flash Image / "nano-banana", accepts ref images) + `uploadDataUrl`. **Provider is OpenRouter today; MuleRouter switch pending** |
+| `generate-scene-image` | edge fn | `mode:"prompt"` → composed prompt; `mode:"image"` → render (cast portraits + author refs) + insert row |
+| `generate-character-portrait` | edge fn | `mode:"prompt"` → composed portrait prompt; `mode:"image"` → N variant URLs (not pinned) |
+| `ImageGenStudio.tsx` | client | the shared prompt-first generator (compose · refs · variants · direct upload) |
+| `@/lib/sceneImages.ts` | client | `composeScenePrompt` / `renderSceneImage` / `uploadSceneImage` / `deleteSceneImage` / `composePortraitPrompt` / `renderPortraitVariants` / `uploadReferenceImage` |
 
 ## Live run badge: `useActiveStep.ts`
 

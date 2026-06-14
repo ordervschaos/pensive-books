@@ -19,6 +19,11 @@ export interface CastMember {
   want?: string; wound?: string; lie?: string;
   pinned_fields?: string[];
   role?: "protagonist" | "major" | "minor";
+  // "Design the look" (manual portrait step): the author-written visual description and a SET of
+  // approved reference portraits (different angles/views — uploaded or AI-generated). Scene generation
+  // feeds these back in so the character renders coherently across pages.
+  appearance?: string;
+  portraits?: string[];
 }
 export interface Tentpole {
   id: string; text: string;
