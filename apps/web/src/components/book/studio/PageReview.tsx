@@ -13,7 +13,7 @@ import { DurableOptions } from "../DurableOptions";
 import { DurableReviser } from "../DurableReviser";
 import { ProseNodePanel } from "../ProseNodePanel";
 import type { StudioModel } from "./studioModel";
-import { Pip } from "./studioUi";
+import { ActionLink, Eyebrow, Panel, Pip } from "./studioUi";
 import { CharacterLedgerGraph } from "./CharacterLedgerGraph";
 
 interface PageReviewProps {
@@ -92,13 +92,13 @@ export function PageReview({ bookId, model, pageId, onChanged, onSelectPage }: P
         </span>
         <span className="text-[hsl(var(--pv-text-faint))]">▸</span>
         <span className="italic">page {idx + 1}</span>
-        <button
-          type="button"
+        <ActionLink
+          icon={<ExternalLink className="h-3.5 w-3.5" />}
           onClick={() => navigate(`/books/${bookId}/pages/${pageId}`)}
-          className="ml-auto inline-flex items-center gap-1.5 italic text-[hsl(var(--pv-accent))] hover:opacity-75"
+          className="ml-auto"
         >
-          <ExternalLink className="h-3.5 w-3.5" /> Open in Manuscript
-        </button>
+          Open in Manuscript
+        </ActionLink>
       </div>
       <h1 className="pv-serif mt-3 text-[36px] leading-[1.14] tracking-[-0.015em] text-foreground">{page.title || "(untitled)"}</h1>
       <p className="pv-serif mt-2 text-[15px] leading-[1.5] text-[hsl(var(--pv-text-muted))]">
@@ -131,7 +131,7 @@ export function PageReview({ bookId, model, pageId, onChanged, onSelectPage }: P
               value={objective}
               onChange={(e) => setObjective(e.target.value)}
               onBlur={() => objective.trim() && void saveObjectiveText()}
-              className="pv-serif border-none bg-transparent px-0 text-[15.5px] leading-[1.55] focus-visible:ring-0"
+              className="pv-serif border-none bg-transparent px-0 text-[16px] leading-[1.7] text-foreground focus-visible:ring-0"
               placeholder="What this page must achieve…"
             />
             <div className="mt-3 flex items-center gap-4 border-t border-[hsl(var(--pv-border-soft))] pt-3">
@@ -172,7 +172,7 @@ export function PageReview({ bookId, model, pageId, onChanged, onSelectPage }: P
                   value={beat}
                   onChange={(e) => setBeat(e.target.value)}
                   onBlur={() => void saveBeatText()}
-                  className="pv-serif border-none bg-transparent px-0 text-[15.5px] leading-[1.6] focus-visible:ring-0"
+                  className="pv-serif border-none bg-transparent px-0 text-[17px] leading-[1.8] text-foreground focus-visible:ring-0"
                 />
                 <RegenRow busy={busy === "beat"} onRegen={planBeat} />
               </>
@@ -197,6 +197,7 @@ export function PageReview({ bookId, model, pageId, onChanged, onSelectPage }: P
                 objective={objective}
                 beat={beat}
                 prose={prose}
+                hideHeader
                 onSaved={() => { void readProse(pageId).then(setProse); onChanged(); }}
                 onOpenPage={() => navigate(`/books/${bookId}/pages/${pageId}`)}
               />
@@ -228,16 +229,16 @@ export function PageReview({ bookId, model, pageId, onChanged, onSelectPage }: P
 function LevelCard({ label, sub, state, children }: { label: string; sub: string; state: CellState | "locked"; children: ReactNode }) {
   const dim = state === "gap" || state === "locked";
   return (
-    <div className={`rounded-2xl border px-5 py-4 ${dim ? "border-dashed border-[hsl(var(--pv-border-soft))] bg-transparent" : "border-border bg-[hsl(var(--pv-surface-2))]/50"} ${state === "locked" ? "opacity-65" : ""}`}>
-      <div className={`flex items-center gap-2.5 ${dim ? "" : "mb-3"}`}>
+    <Panel variant={dim ? "dashed" : "soft"} className={`px-7 py-6 ${state === "locked" ? "opacity-65" : ""}`}>
+      <div className={`flex items-center gap-2.5 ${dim ? "" : "mb-5 border-b border-[hsl(var(--pv-border-soft))]/70 pb-3"}`}>
         <Pip state={state === "locked" ? "gap" : state} />
-        <span className="pv-mono text-[10px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-faint))]">{label}</span>
+        <Eyebrow>{label}</Eyebrow>
         <span className="pv-serif text-[12.5px] italic text-[hsl(var(--pv-text-faint))]">· {sub}</span>
         {state === "synced" && <span className="ml-auto pv-mono text-[9px] uppercase tracking-[0.12em] text-[hsl(var(--pv-accent))]">in sync</span>}
         {state === "locked" && <Lock className="ml-auto h-3.5 w-3.5 text-[hsl(var(--pv-text-faint))]" />}
       </div>
       {children}
-    </div>
+    </Panel>
   );
 }
 
@@ -248,9 +249,9 @@ function DownArrow() {
 function RegenRow({ busy, onRegen }: { busy: boolean; onRegen: () => void }) {
   return (
     <div className="mt-3 flex gap-5 text-[13.5px]">
-      <button type="button" onClick={onRegen} disabled={busy} className="inline-flex items-center gap-1.5 italic text-[hsl(var(--pv-accent))] hover:opacity-75 disabled:opacity-50">
-        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />} regenerate from the objective
-      </button>
+      <ActionLink icon={<Sparkles className="h-3.5 w-3.5" />} busy={busy} onClick={onRegen}>
+        regenerate from the objective
+      </ActionLink>
     </div>
   );
 }

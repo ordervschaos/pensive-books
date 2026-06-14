@@ -17,7 +17,7 @@ import {
   foundationsProgress, pinNode, writeFoundations,
   type CastMember, type FCandidate, type FNode, type Foundations, type FoundationsStepKey, type Tentpole,
 } from "@/lib/foundations";
-import { Hero } from "../studioUi";
+import { ActionLink, Eyebrow, Hero, Panel, RunError, RunningInline } from "../studioUi";
 
 const uid = () => crypto.randomUUID().slice(0, 8);
 
@@ -169,17 +169,12 @@ function NodeSub({ bookId, stepKey, node, heroTitle, heroSub, blockedReason, bef
       <div>
         {/* Keep the pinned card visible during loading so the author knows it's held safe. */}
         {node?.pinned && selected && (
-          <div className="mb-4 rounded-2xl border border-[hsl(var(--pv-accent))]/30 bg-[hsl(var(--pv-surface-2))]/40 px-6 py-5 opacity-60">
-            <span className="pv-mono text-[10px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-faint))]">Pinned · held through generation</span>
+          <Panel className="mb-4 border-[hsl(var(--pv-accent))]/30 bg-[hsl(var(--pv-surface-2))]/40 opacity-60">
+            <Eyebrow>Pinned · held through generation</Eyebrow>
             <p className="pv-serif mt-2 whitespace-pre-wrap text-[15px] leading-[1.65] text-foreground/70">{selected}</p>
-          </div>
+          </Panel>
         )}
-        <div className="flex items-center gap-4">
-          <p className="pv-serif inline-flex items-center gap-2 text-[14px] italic text-[hsl(var(--pv-text-muted))]">
-            <Loader2 className="h-4 w-4 animate-spin" /> Proposing candidates…
-          </p>
-          <button type="button" onClick={() => void run.cancel()} className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">cancel</button>
-        </div>
+        <RunningInline label="Proposing candidates…" onCancel={() => void run.cancel()} />
       </div>
     );
   }
@@ -198,9 +193,9 @@ function NodeSub({ bookId, stepKey, node, heroTitle, heroSub, blockedReason, bef
     <div className="space-y-3.5">
       {/* Approved text that's no longer in the candidate list — show at TOP as the anchor. */}
       {pinnedAndNotInCandidates && (
-        <div className="rounded-2xl border border-[hsl(var(--pv-accent))]/45 bg-[hsl(var(--pv-surface-2))]/60 px-6 py-5">
+        <Panel className="border-[hsl(var(--pv-accent))]/45 bg-[hsl(var(--pv-surface-2))]/60">
           <div className="mb-2.5 flex items-center justify-between gap-3">
-            <span className="pv-mono text-[10px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-faint))]">Approved · yours</span>
+            <Eyebrow>Approved · yours</Eyebrow>
             {node?.pinned && <PinBadge onUnpin={() => void onSave({ ...node, pinned: false })} />}
           </div>
           <Textarea
@@ -210,7 +205,7 @@ function NodeSub({ bookId, stepKey, node, heroTitle, heroSub, blockedReason, bef
             rows={Math.max(3, Math.ceil((draft ?? selected).length / 80))}
             className="pv-serif border-none bg-transparent px-0 text-[15.5px] leading-[1.65] focus-visible:ring-0"
           />
-        </div>
+        </Panel>
       )}
       {candidates.map((c, idx) => {
         const isSelected = selected !== "" && c.text.trim() === selected;
@@ -231,9 +226,7 @@ function NodeSub({ bookId, stepKey, node, heroTitle, heroSub, blockedReason, bef
         return (
           <div key={c.id} className={`rounded-2xl border px-6 py-5 transition-colors ${isSelected ? "border-[hsl(var(--pv-accent))]/45 bg-[hsl(var(--pv-surface-2))]/60 shadow-[0_10px_30px_rgba(0,0,0,0.05)]" : "border-border bg-[hsl(var(--pv-surface-2))]/40"}`}>
             <div className="mb-2.5 flex items-center justify-between gap-3">
-              <span className="pv-mono text-[10px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-faint))]">
-                {candidateLabel}
-              </span>
+              <Eyebrow>{candidateLabel}</Eyebrow>
               <div className="flex items-center gap-2.5">
                 {isSelected && node?.pinned && <PinBadge onUnpin={() => void onSave({ ...node, pinned: false })} />}
                 <button
@@ -263,9 +256,9 @@ function NodeSub({ bookId, stepKey, node, heroTitle, heroSub, blockedReason, bef
         );
       })}
       <div className="flex items-center gap-5">
-        <button type="button" onClick={() => void fire()} className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-accent))] hover:opacity-75">
-          <RefreshCw className="h-3.5 w-3.5" /> regenerate{node?.pinned ? " (your approved text is held)" : ""}
-        </button>
+        <ActionLink icon={<RefreshCw className="h-3.5 w-3.5" />} onClick={() => void fire()}>
+          regenerate{node?.pinned ? " (your approved text is held)" : ""}
+        </ActionLink>
         {!selected && <SkipLink onClick={() => void fireSkip()} />}
       </div>
       {run.run?.status === "error" && <RunError msg={run.run.error} />}
@@ -320,12 +313,7 @@ function CastSub({ bookId, cast, beforeGen, onSave }: { bookId: number; cast: Ca
   };
 
   if (generating) {
-    return (
-      <div className="flex items-center gap-4">
-        <p className="pv-serif inline-flex items-center gap-2 text-[14px] italic text-[hsl(var(--pv-text-muted))]"><Loader2 className="h-4 w-4 animate-spin" /> Drafting the cast…</p>
-        <button type="button" onClick={() => void run.cancel()} className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">cancel</button>
-      </div>
-    );
+    return <RunningInline label="Drafting the cast…" onCancel={() => void run.cancel()} />;
   }
 
   return (
@@ -339,7 +327,7 @@ function CastSub({ bookId, cast, beforeGen, onSave }: { bookId: number; cast: Ca
         </div>
       )}
       {cast.map((m) => (
-        <div key={m.id} className="rounded-2xl border border-border bg-[hsl(var(--pv-surface-2))]/40 px-6 py-5">
+        <Panel key={m.id} className="bg-[hsl(var(--pv-surface-2))]/40">
           <div className="mb-3 flex items-center justify-between gap-3">
             <input
               defaultValue={m.name}
@@ -347,7 +335,7 @@ function CastSub({ bookId, cast, beforeGen, onSave }: { bookId: number; cast: Ca
               className="pv-serif w-full max-w-[280px] border-none bg-transparent text-[18px] font-semibold text-foreground outline-none"
             />
             <div className="flex items-center gap-3">
-              <span className="pv-mono text-[10px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-faint))]">{m.role ?? "major"}</span>
+              <Eyebrow>{m.role ?? "major"}</Eyebrow>
               <button type="button" onClick={() => { if (window.confirm(`Remove ${m.name}?`)) void onSave(cast.filter((x) => x.id !== m.id)); }}
                 className="text-[hsl(var(--pv-text-faint))] hover:text-foreground" aria-label="Remove character">
                 <X className="h-3.5 w-3.5" />
@@ -359,7 +347,7 @@ function CastSub({ bookId, cast, beforeGen, onSave }: { bookId: number; cast: Ca
               const isPinned = (m.pinned_fields ?? []).includes(k);
               return (
                 <div key={k} className="flex items-baseline gap-3">
-                  <span className="pv-mono w-14 shrink-0 text-[10px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-muted))]">{k}</span>
+                  <Eyebrow tone="muted" className="w-14 shrink-0">{k}</Eyebrow>
                   <AutoTextarea
                     defaultValue={m[k] ?? ""}
                     placeholder="—"
@@ -375,20 +363,19 @@ function CastSub({ bookId, cast, beforeGen, onSave }: { bookId: number; cast: Ca
               );
             })}
           </div>
-        </div>
+        </Panel>
       ))}
       <div className="flex items-center gap-5">
-        <button
-          type="button"
+        <ActionLink
+          icon={<Plus className="h-3.5 w-3.5" />}
           onClick={() => void onSave([...cast, { id: uid(), name: "New character", role: cast.length ? "major" : "protagonist", pinned_fields: [...CAST_FIELDS] }])}
-          className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-accent))] hover:opacity-75"
         >
-          <Plus className="h-3.5 w-3.5" /> add character
-        </button>
+          add character
+        </ActionLink>
         {cast.length > 0 && (
-          <button type="button" onClick={() => void fire()} className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground">
-            <RefreshCw className="h-3.5 w-3.5" /> regenerate{pinnedCount ? ` (${pinnedCount} pinned line${pinnedCount === 1 ? "" : "s"} held)` : ""}
-          </button>
+          <ActionLink icon={<RefreshCw className="h-3.5 w-3.5" />} tone="muted" onClick={() => void fire()}>
+            regenerate{pinnedCount ? ` (${pinnedCount} pinned line${pinnedCount === 1 ? "" : "s"} held)` : ""}
+          </ActionLink>
         )}
       </div>
       {run.run?.status === "error" && <RunError msg={run.run.error} />}
@@ -456,10 +443,9 @@ function TentpolesSub({ bookId, tentpoles, beforeGen, onSave }: { bookId: number
                 rows={2}
                 className="pv-serif border-none bg-transparent px-0 text-[14px] leading-relaxed focus-visible:ring-0"
               />
-              <button type="button" onClick={addAuthor} disabled={!newMoment.trim()}
-                className="pv-serif mt-1 inline-flex items-center gap-1.5 text-[13px] italic text-[hsl(var(--pv-accent))] hover:opacity-75 disabled:opacity-40">
-                <Plus className="h-3.5 w-3.5" /> add — it's pinned
-              </button>
+              <ActionLink icon={<Plus className="h-3.5 w-3.5" />} onClick={addAuthor} disabled={!newMoment.trim()} className="mt-1">
+                add — it's pinned
+              </ActionLink>
             </div>
           </div>
         </div>
@@ -467,10 +453,7 @@ function TentpolesSub({ bookId, tentpoles, beforeGen, onSave }: { bookId: number
         <div>
           <h3 className="pv-mono mb-2.5 text-[10px] uppercase tracking-[0.16em] text-[hsl(var(--pv-text-muted))]">Proposals</h3>
           {generating ? (
-            <div className="flex items-center gap-4 py-2">
-              <p className="pv-serif inline-flex items-center gap-2 text-[14px] italic text-[hsl(var(--pv-text-muted))]"><Loader2 className="h-4 w-4 animate-spin" /> Proposing moments…</p>
-              <button type="button" onClick={() => void run.cancel()} className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">cancel</button>
-            </div>
+            <RunningInline className="py-2" label="Proposing moments…" onCancel={() => void run.cancel()} />
           ) : (
             <div className="space-y-2.5">
               {proposals.map((t) => (
@@ -479,11 +462,9 @@ function TentpolesSub({ bookId, tentpoles, beforeGen, onSave }: { bookId: number
                   onKeep={t.status === "fluid" ? () => setStatus(t.id, "pinned") : undefined}
                   onKill={() => setStatus(t.id, "killed")} />
               ))}
-              <button type="button" onClick={() => void fire()}
-                className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic text-[hsl(var(--pv-accent))] hover:opacity-75">
-                {proposals.length ? <RefreshCw className="h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
+              <ActionLink icon={proposals.length ? <RefreshCw className="h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />} onClick={() => void fire()}>
                 {proposals.length ? `propose more (${pinnedCount} pinned held)` : "propose six moments"}
-              </button>
+              </ActionLink>
             </div>
           )}
         </div>
@@ -631,8 +612,4 @@ function PinBadge({ onUnpin }: { onUnpin: () => void }) {
       <Pin className="h-3 w-3" /> pinned
     </button>
   );
-}
-
-function RunError({ msg }: { msg: string | null }) {
-  return <p className="pv-serif mt-2 text-[13px] italic text-red-600 dark:text-red-400">{msg || "Generation failed."}</p>;
 }

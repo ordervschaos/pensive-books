@@ -1,9 +1,75 @@
 // studioUi — the small shared primitives the Navigator and Stage both compose: resolution pips, the
 // step dot, and the Stage's head / hero / gate chrome. Pure presentation, Paper-DS tokens only.
-import { type ReactNode } from "react";
+import { type ComponentProps, type ReactNode } from "react";
 import { AlertTriangle, ArrowRight, Check, Loader2, Lock } from "lucide-react";
+import { cn } from "@/lib/utils";
 import type { CellState } from "@/lib/planGraph";
 import type { DotState } from "./studioModel";
+
+// ── House primitives ─────────────────────────────────────────────────────────
+// The three text/box/action atoms every step composes. Centralising them keeps the studio's eyebrow
+// sizing, card shell, and accent-action affordances identical everywhere (and busy/disabled states
+// impossible to get wrong per-call-site).
+
+// A mono uppercase eyebrow/label. One canonical size & tracking; `tone` picks the colour. Pass
+// `className` only for the rare deliberate outlier (a smaller meta tag, say).
+export function Eyebrow({ tone = "faint", className, children }: { tone?: "faint" | "muted" | "accent"; className?: string; children: ReactNode }) {
+  const color = tone === "accent" ? "text-[hsl(var(--pv-accent))]" : tone === "muted" ? "text-[hsl(var(--pv-text-muted))]" : "text-[hsl(var(--pv-text-faint))]";
+  return <span className={cn("pv-mono text-[10px] uppercase tracking-[0.14em]", color, className)}>{children}</span>;
+}
+
+// The studio's card shell. `solid` (the default surface card), `soft` (quieter border), `dashed`
+// (empty/placeholder). Padding defaults to the common px-6 py-5 — override via className (twMerge wins).
+export function Panel({ variant = "solid", className, children, ...rest }: ComponentProps<"div"> & { variant?: "solid" | "soft" | "dashed" }) {
+  const v = variant === "dashed" ? "border-dashed border-[hsl(var(--pv-border-soft))] bg-transparent"
+    : variant === "soft" ? "border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/40"
+      : "border-border bg-[hsl(var(--pv-surface-2))]/50";
+  return <div className={cn("rounded-2xl border px-6 py-5", v, className)} {...rest}>{children}</div>;
+}
+
+// A text "action link": the studio's house affordance for AI moves (regenerate, redraft, propose,
+// revise →). A leading `icon` becomes a spinner while `busy`; `tone` picks accent / muted / faint.
+export function ActionLink({ icon, busy, disabled, onClick, tone = "accent", className, children, title }: {
+  icon?: ReactNode; busy?: boolean; disabled?: boolean; onClick?: () => void;
+  tone?: "accent" | "muted" | "faint"; className?: string; children: ReactNode; title?: string;
+}) {
+  const color = tone === "muted" ? "text-[hsl(var(--pv-text-muted))] hover:text-foreground"
+    : tone === "faint" ? "text-[hsl(var(--pv-text-faint))] hover:text-foreground"
+      : "text-[hsl(var(--pv-accent))] hover:opacity-75";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled || busy}
+      title={title}
+      className={cn("pv-serif inline-flex items-center gap-1.5 text-[13.5px] italic transition-opacity disabled:opacity-50", color, className)}
+    >
+      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : icon}
+      {children}
+    </button>
+  );
+}
+
+// The standard failed-run line. One place to phrase and colour generation errors.
+export function RunError({ msg }: { msg: string | null }) {
+  return <p className="pv-serif mt-2 text-[13px] italic text-red-600 dark:text-red-400">{msg || "Generation failed."}</p>;
+}
+
+// The small "machine working" inline row: a spinning label with an optional cancel. The lightweight
+// sibling of RunningCard — for the short synchronous-feeling waits each sub-step shows while a draft
+// is in flight. Caller positions it (mt-_, py-_) via className.
+export function RunningInline({ label, onCancel, className }: { label: string; onCancel?: () => void; className?: string }) {
+  return (
+    <div className={cn("flex items-center gap-4", className)}>
+      <p className="pv-serif inline-flex items-center gap-2 text-[14px] italic text-[hsl(var(--pv-text-muted))]">
+        <Loader2 className="h-4 w-4 animate-spin" /> {label}
+      </p>
+      {onCancel && (
+        <button type="button" onClick={onCancel} className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">cancel</button>
+      )}
+    </div>
+  );
+}
 
 // A single resolution pip. The amber out-of-sync literal is the one DS-sanctioned hard colour.
 export function Pip({ state, size = 8 }: { state: CellState; size?: number }) {

@@ -17,6 +17,8 @@ interface DownloadOptions {
   subtitle?: string | null;
   showTextOnCover?: boolean;
   returnBlob?: boolean;
+  // Admin-only: render each page's objective + beat above its prose (manuscript w/ plan)
+  includePlan?: boolean;
 }
 
 interface GenerateResult {
@@ -843,7 +845,7 @@ export const generateAndDownloadEPUB = async (
       identifier: options.bookId.toString()
     };
     // Generate the EPUB file
-    const epubBlob = await generateEPUB(epubOptions, typedProcessedPages, images, options.showTextOnCover);
+    const epubBlob = await generateEPUB(epubOptions, typedProcessedPages, images, options.showTextOnCover, options.includePlan);
 
     if (options.returnBlob) {
       return { success: true, blob: epubBlob };

@@ -2,8 +2,8 @@ import { useState } from "react";
 import { Sparkles } from "lucide-react";
 import { AnimatedEllipsis } from "./AnimatedEllipsis";
 import { AIActionRow } from "./AIActionRow";
-import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { invokeGenerateBook } from "@/lib/generateBook";
 import { useLatestTaskRow, type TaskRow } from "@/hooks/useLatestTaskRow";
 import { RunControls } from "./RunControls";
 
@@ -42,7 +42,7 @@ export function PlanBeats({ bookId, remaining, onChanged }: PlanBeatsProps) {
     if (busy || running || remaining === 0) return;
     setBusy(true);
     try {
-      const { data, error } = await supabase.functions.invoke("generate-book", { body: { bookId, pauseAfterBeats: true } });
+      const { data, error } = await invokeGenerateBook({ bookId, pauseAfterBeats: true });
       if (error) throw error;
       if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
       refetch();

@@ -241,12 +241,34 @@ export const generateTocNcx = (metadata: EPUBMetadata, pages: Page[]): string =>
   </navMap>
 </ncx>`;
 
+// Pull the page's planning notes (objective + beat) out of its jsonb metadata.
+// Admin "send with plan" exports render these above the prose; normal exports skip them.
+const readPagePlan = (page: Page): { objective: string; beat: string } => {
+  const meta = (page.metadata ?? {}) as { objective?: string; beat?: string };
+  return {
+    objective: (meta.objective ?? '').trim(),
+    beat: (meta.beat ?? '').trim(),
+  };
+};
+
+// Render the objective/beat block that precedes the prose in a "with plan" export.
+const renderPagePlan = (page: Page): string => {
+  const { objective, beat } = readPagePlan(page);
+  if (!objective && !beat) return '';
+  return `
+            <aside class="page-plan">
+              ${objective ? `<p class="plan-label">Objective</p><p class="plan-objective">${escapeXml(objective)}</p>` : ''}
+              ${beat ? `<p class="plan-label">Beat</p><p class="plan-beat">${escapeXml(beat)}</p>` : ''}
+            </aside>`;
+};
+
 // Generate content.xhtml content
 export const generateContentXhtml = (
   metadata: EPUBMetadata,
   pages: Page[],
   show_text_on_cover: boolean = true,
-  imageMap?: Map<string, string>
+  imageMap?: Map<string, string>,
+  includePlan: boolean = false
 ): string => `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en" xml:lang="en">
@@ -291,6 +313,7 @@ export const generateContentXhtml = (
         ? `<h2 class="section-title">${escapeXml(page.title || 'Untitled Section')}</h2>`
         : `
           <article>
+            ${includePlan ? renderPagePlan(page) : ''}
             <!-- STEP 3: Sanitize HTML to make it XHTML-compliant for EPUB -->
             <div class="page-content">${htmlContent ? sanitizeContent(htmlContent) : ''}</div>
           </article>
@@ -400,6 +423,31 @@ body {
 .page-content {
   font-size: 1em;
   line-height: 1.6;
+}
+
+/* Admin "send with plan" export: objective + beat shown above each page's prose */
+.page-plan {
+  margin: 0 0 1.5em 0;
+  padding: 0.75em 1em;
+  border-left: 3px solid #888;
+  background: #f0f0f0;
+  font-size: 0.85em;
+}
+
+.plan-label {
+  margin: 0.4em 0 0.1em 0;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.75em;
+  color: #555;
+}
+
+.plan-objective,
+.plan-beat {
+  margin: 0 0 0.4em 0;
+  font-style: italic;
+  color: #444;
 }
 
 img {
@@ -679,7 +727,8 @@ export const generateEPUB = async (
   metadata: EPUBMetadata,
   pages: Page[],
   images: EPUBImage[] = [],
-  show_text_on_cover: boolean = true
+  show_text_on_cover: boolean = true,
+  includePlan: boolean = false
 ): Promise<Blob> => {
   const zip = new JSZip();
 
@@ -718,7 +767,7 @@ export const generateEPUB = async (
   zip.file('OEBPS/content.opf', generateContentOpf(metadata, images));
   zip.file('OEBPS/nav.xhtml', generateNavXhtml(pages));
   zip.file('OEBPS/toc.ncx', generateTocNcx(metadata, pages));
-  zip.file('OEBPS/content.xhtml', generateContentXhtml(metadata, pages, show_text_on_cover, imageMap));
+  zip.file('OEBPS/content.xhtml', generateContentXhtml(metadata, pages, show_text_on_cover, imageMap, includePlan));
   zip.file('OEBPS/styles.css', generateStyles());
 
   // Add content images

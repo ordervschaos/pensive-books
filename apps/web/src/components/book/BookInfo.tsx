@@ -18,6 +18,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { BookCoverFallback } from "./BookCoverFallback";
+import { useAdmin } from "@/hooks/use-admin";
 
 interface BookInfoProps {
   name: string;
@@ -37,6 +38,8 @@ interface BookInfoProps {
   /** Manuscript word count + target — when both are present, the hero shows a target meter. */
   wordCount?: number;
   wordTarget?: number;
+  /** Brief summary + edit CTA, slotted under the title and above the word-target meter (author view). */
+  briefSlot?: React.ReactNode;
 }
 
 export const BookInfo = ({
@@ -55,10 +58,12 @@ export const BookInfo = ({
   lastUpdatedPageIndex,
   showWritingButton = false,
   wordCount,
-  wordTarget
+  wordTarget,
+  briefSlot
 }: BookInfoProps) => {
   const { toast } = useToast();
   const navigate = useNavigate();
+  const { isAdmin } = useAdmin();
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [isEditCoverOpen, setIsEditCoverOpen] = useState(false);
@@ -141,7 +146,7 @@ export const BookInfo = ({
     }
   };
 
-  const handleSendToKindle = async () => {
+  const handleSendToKindle = async (includePlan = false) => {
     try {
       setSending(true);
       
@@ -176,7 +181,8 @@ export const BookInfo = ({
         author,
         coverUrl: currentCoverUrl,
         showTextOnCover,
-        returnBlob: true
+        returnBlob: true,
+        includePlan
       });
 
       if (!result.success || !result.blob) {
@@ -211,18 +217,21 @@ export const BookInfo = ({
       if (error) throw new Error(`Failed to get token: ${error.message}`);
       
       const { token, mailgunEndpoint, mailgunApiKey } = data;
-      
+
+      // Annotated exports get a distinct title so they don't overwrite the clean copy on the Kindle.
+      const docTitle = includePlan ? `${name} (with plan)` : name;
+
       // Create form data for the email with the correct from address
       const formData = new FormData();
       formData.append('from', `Pensive <hello@pensive.me>`);
       formData.append('to', userData.kindle_email);
-      formData.append('subject', name);
-      formData.append('text', `Your book "${name}" is attached.`);
-      
+      formData.append('subject', docTitle);
+      formData.append('text', `Your book "${docTitle}" is attached.`);
+
       // Convert base64 to Blob for the attachment
       const binaryData = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
       const blob = new Blob([binaryData], { type: 'application/epub+zip' });
-      formData.append('attachment', blob, `${name}.epub`);
+      formData.append('attachment', blob, `${docTitle}.epub`);
       
       // Send to Mailgun directly from the client
       const response = await fetch(mailgunEndpoint, {
@@ -425,6 +434,9 @@ export const BookInfo = ({
               </div>
             </header>
 
+            {/* Brief summary + edit CTA (author view) — sits under the title, above the word target */}
+            {briefSlot}
+
             {/* Word target — glanceable progress toward the brief's goal (author view) */}
             {canEdit && (wordTarget ?? 0) > 0 && (
               <div className="mb-6 max-w-[600px]">
@@ -502,9 +514,14 @@ export const BookInfo = ({
                     Download Markdown
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={handleSendToKindle} disabled={sending}>
+                  <DropdownMenuItem onClick={() => handleSendToKindle(false)} disabled={sending}>
                     {sending ? "Sending to Kindle..." : "Send to Kindle"}
                   </DropdownMenuItem>
+                  {isAdmin && (
+                    <DropdownMenuItem onClick={() => handleSendToKindle(true)} disabled={sending}>
+                      {sending ? "Sending to Kindle..." : "Send to Kindle (with plan)"}
+                    </DropdownMenuItem>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>

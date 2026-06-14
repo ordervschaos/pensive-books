@@ -5,8 +5,8 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useLatestTaskRow, type TaskRow } from "@/hooks/useLatestTaskRow";
-import { isProseStale, stampProse, type PageMeta } from "@/lib/planProvenance";
-import { BRIDGE, bridgeFetch } from "@/lib/bridge";
+import { isProseStale, type PageMeta } from "@/lib/planProvenance";
+import { invokeGenerateBook } from "@/lib/generateBook";
 
 interface StalePanelProps {
   bookId: number;
@@ -69,13 +69,9 @@ export function StalePanel({ bookId, onRerendered }: StalePanelProps) {
     const ids = stalePages.map((p) => p.id);
     if (!window.confirm(`Re-render ${ids.length} out-of-sync page${ids.length === 1 ? "" : "s"} from the updated objective${ids.length === 1 ? "" : "s"}? This overwrites their current prose (a version is kept).`)) return;
     try {
-      if (BRIDGE) {
-        await rerenderViaBridge(bookId, stalePages, refetch);
-      } else {
-        const { data, error } = await supabase.functions.invoke("generate-book", { body: { bookId, pageIds: ids } });
-        if (error) throw error;
-        if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
-      }
+      const { data, error } = await invokeGenerateBook({ bookId, pageIds: ids });
+      if (error) throw error;
+      if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
       refetch();
     } catch (e) {
       toast({ title: "Couldn't start the re-render", description: String((e as Error)?.message ?? e), variant: "destructive" });
@@ -135,45 +131,4 @@ function bodyText(content: unknown): string {
   const walk = (n: Record<string, unknown>): string =>
     n.type === "text" ? String(n.text ?? "") : ((n.content as Array<Record<string, unknown>>) ?? []).map(walk).join("");
   return nodes.map(walk).join("").trim();
-}
-
-// Dev-only client cascade via the bridge (no self-chaining server locally). Mirrors WriteAllPages'
-// runViaBridge but OVERWRITES the named stale pages and re-stamps their provenance, writing a
-// rerender_stale book_generations row so the panel shows progress.
-async function rerenderViaBridge(bookId: number, pages: StalePage[], refetch: () => void) {
-  const { buildDoc } = await import("@/lib/inlineMarkdown");
-  const progress = { done: 0, total: pages.length, failures: 0, phase: `Writing 0/${pages.length}` };
-  const { data: gen } = await supabase
-    .from("book_generations")
-    .insert({ book_id: bookId, kind: "rerender_stale", scope: "book", status: "running", input: { rerender: true }, progress })
-    .select("id")
-    .single();
-  const genId = (gen as { id: number }).id;
-  refetch();
-
-  let failures = 0;
-  for (let i = 0; i < pages.length; i++) {
-    const page = pages[i];
-    try {
-      const { data: fresh } = await supabase.from("pages").select("metadata").eq("id", page.id).maybeSingle();
-      const objective = (fresh?.metadata as PageMeta | null)?.objective;
-      if (!objective) throw new Error("no objective");
-      const r = await bridgeFetch(`/unit`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ bookId, pageId: page.id, level: "page", objective }),
-      });
-      const d = await r.json();
-      if (d.error) throw new Error(d.error);
-      const text = String(d.text ?? "").trim();
-      if (text) {
-        await supabase.from("pages").update({ content: buildDoc(page.title, text) }).eq("id", page.id);
-        await stampProse(page.id, objective);
-      }
-    } catch {
-      failures++;
-    }
-    await supabase.from("book_generations").update({ progress: { done: i + 1, total: pages.length, failures, phase: `Writing ${i + 1}/${pages.length}` } }).eq("id", genId);
-  }
-  await supabase.from("book_generations").update({ status: "done" }).eq("id", genId);
 }

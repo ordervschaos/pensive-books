@@ -147,6 +147,10 @@ function bodyText(content: unknown): string {
   if (!Array.isArray(doc.content)) return "";
   const nodes = doc.content[0]?.type === "heading" ? doc.content.slice(1) : doc.content;
   const walk = (n: Record<string, unknown>): string =>
-    n.type === "text" ? String(n.text ?? "") : ((n.content as Array<Record<string, unknown>>) ?? []).map(walk).join("");
-  return nodes.map(walk).join("").trim();
+    n.type === "text" ? String(n.text ?? "")
+      : n.type === "hardBreak" ? "\n"
+        : ((n.content as Array<Record<string, unknown>>) ?? []).map(walk).join("");
+  // Separate top-level blocks (paragraphs) with a blank line so they render as distinct paragraphs and
+  // never run together (e.g. a line ending in `."` butting straight into the next paragraph's text).
+  return nodes.map(walk).join("\n\n").trim();
 }

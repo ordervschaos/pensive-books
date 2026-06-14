@@ -56,7 +56,7 @@ Ladder gains a rung: `brief → spine → SHAPE/ARC → outline(serial) → beat
 ### 3b. Then build the content serially — one engine with two moves per slot
 Walk the outline slot by slot. At every slot the author has two moves:
 
-- **Pick & continue** — choose one storyline (from 3 position-aware takes, or write their own), advance
+- **Draft & continue** — one position-aware proposal (edited in place, or write their own), advance
   one slot.
 - **Fill the rest** — batch every remaining slot in one shot, position-aware, grounded on everything
   committed so far.
@@ -64,9 +64,9 @@ Walk the outline slot by slot. At every slot the author has two moves:
 The two "modes" we'd been treating as rivals are just the **ends of one continuum**:
 
 ```
-Fill the rest @ slot 0  ───────────────────────────────►  Pick & continue ×N
+Fill the rest @ slot 0  ───────────────────────────────►  Draft & continue ×N
   (= today's one-shot)        the author lives here            (fully hand-authored)
-                         pick ch.1–3 to aim the story,
+                         draft ch.1–3 to aim the story,
                          Fill the rest, revise ch.12 later
 ```
 
@@ -74,13 +74,13 @@ Implications:
 - **One system, not two.** "Batch" = "fill from here to the end." One-shot stops being special — it's
   the lever pulled at slot 0. This is the existing `SerialBeats` pattern lifted one rung up, with the
   existing one-shot scaffold (`spine-to-objectives`) becoming the **Fill-the-rest** button.
-- Every per-slot take is **position-aware**: generated knowing arc phase + runway ("you're at 28% of
-  ~40 pp, rising, ~6 pp to the midpoint — propose the next scene serving this phase"). The three takes
-  are therefore all **rhythm-valid**; the author directs among options the shape has vetted for pacing.
+- Every per-slot proposal is **position-aware**: generated knowing arc phase + runway ("you're at 28% of
+  ~40 pp, rising, ~6 pp to the midpoint — propose the next scene serving this phase"). The proposal is
+  therefore **rhythm-valid**; the author edits it in place — the shape has already vetted it for pacing.
 
 ```
-ch.1 ✓  ch.2 ✓  ch.3 → [ ① ]  [ ② ]  [ ③ ]   ·· or ··  [ Fill the rest ▸ ]
-                         each take is position-aware       batches 4..N, grounded on 1–3
+ch.1 ✓  ch.2 ✓  ch.3 → [ proposal — edit in place ]   ·· or ··  [ Fill the rest ▸ ]
+                         position-aware, one at a time        batches 4..N, grounded on 1–3
 ```
 
 ### 3c. Granularity — author's choice, fatigue-proofed
@@ -114,8 +114,8 @@ What exists to lean on:
 - `supabase/functions/_shared/beat-core.ts` — the **serial pattern to mirror one rung up**: `prepareBeat`
   / `sampleBeats` / `beatCandidates` (un-judged takes), reads `precedingBeat` for causal grounding. The
   outline engine is the same shape: candidates grounded on the committed prefix + the shape/position.
-- `apps/web/src/components/book/SerialBeats.tsx` — the **client serial-pick UI to mirror**: walk
-  ordered slots, draft 3 takes, pick/edit, save, advance; `reqRef` stale-guard; resume at first gap.
+- `apps/web/src/components/book/SerialBeats.tsx` — the **page-by-page UI to mirror**: walk ordered
+  slots, draft one proposal, edit in place, save, advance; durable run + stale-guard; resume at first gap.
   The outline version adds the **Fill-the-rest** button and a **"you are here on the arc"** indicator.
 - `supabase/functions/spine-to-objectives/index.ts` — today's one-shot scaffold (draft→critique→revise).
   Becomes the **Fill-the-rest / re-fill-from-here batch**; must learn to take a committed prefix +
@@ -151,9 +151,9 @@ renders `SerialBeats`). Derived `ready.outline` stays computed from real pages.
 ## 7. One-paragraph summary for whoever picks this up
 Make the outline author-directed without losing rhythm. Add a one-shot **shape** rung (acts +
 turning-point positions + target length) that supplies convergence pressure. Then build the outline
-with **one serial engine**: per slot the author can **Pick & continue** (choose 1 of 3 position-aware
-takes, or write their own) or **Fill the rest** (batch the remainder, grounded on the committed prefix).
-One-shot is just Fill-the-rest at slot 0; fully-hand-authored is Pick ×N; real authors mix and revise.
+with **one serial engine**: per slot the author can **Draft & continue** (one position-aware proposal,
+edited in place, or write their own) or **Fill the rest** (batch the remainder, grounded on the committed
+prefix). One-shot is just Fill-the-rest at slot 0; fully-hand-authored is Draft ×N; real authors mix and revise.
 Reuse the `SerialBeats` + `beat-core` serial pattern and `spine-to-objectives` as the batch. Revising an
 early slot should flag later slots stale and offer "re-fill from here" (needs a new forward-dependency
 signal). Slots are a flexible target from the shape, so pacing can bend but the climax mark still pulls.

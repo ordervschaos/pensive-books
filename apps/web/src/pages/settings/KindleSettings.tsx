@@ -36,8 +36,8 @@ export default function KindleSettings() {
 
     try {
       setLoading(true);
-      const { error } = await supabase.functions.invoke("send-verification-email", {
-        body: { email },
+      const { error } = await supabase.functions.invoke("send-kindle-verification", {
+        body: { kindleEmail: email },
       });
 
       if (error) {
@@ -85,8 +85,8 @@ export default function KindleSettings() {
 
     try {
       setLoading(true);
-      const { data, error } = await supabase.functions.invoke("verify-email", {
-        body: { email: storedEmail, code: verificationCode },
+      const { data, error } = await supabase.functions.invoke("verify-kindle-otp", {
+        body: { kindleEmail: storedEmail, code: verificationCode },
       });
 
       if (error) {
