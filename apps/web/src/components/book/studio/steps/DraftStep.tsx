@@ -5,7 +5,7 @@
 //     live, resumable, cancel/restart on stall.
 // The Stage owns the head + approve gate; this renders the body.
 import { useEffect, useRef, useState } from "react";
-import { ArrowRight, Check, Sparkles } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, Sparkles } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { invokeGenerateBook } from "@/lib/generateBook";
 import { useLatestTaskRow, type TaskRow } from "@/hooks/useLatestTaskRow";
@@ -67,6 +67,11 @@ export function DraftStep({ bookId, model, beforeGen, onChanged, onSelectPage }:
 
   // Pages carrying prose — what a prose discard wipes (the beats are kept, to re-draft from).
   const discardIds = model.textPages.filter((p) => p.prose !== "gap").map((p) => p.id);
+  // Pages needing re-draft: prose directly stale (beat changed after prose), or prose transitively
+  // stale because the beat drifted from the objective (same signal BeatSheet labels "PROSE STALE").
+  const staleIds = model.textPages
+    .filter((p) => p.prose === "drift" || (p.beat === "drift" && p.prose !== "gap"))
+    .map((p) => p.id);
 
   const discardAll = async () => {
     if (running || discarding || discardIds.length === 0) return;
@@ -84,6 +89,25 @@ export function DraftStep({ bookId, model, beforeGen, onChanged, onSelectPage }:
     } finally {
       setDiscarding(false);
     }
+  };
+
+  const redraftStale = async () => {
+    if (running || discarding || staleIds.length === 0) return;
+    if (!window.confirm(
+      `Re-draft ${staleIds.length} stale page${staleIds.length === 1 ? "" : "s"}? ` +
+      `The old prose is discarded and re-written from the current beat.`,
+    )) return;
+    setDiscarding(true);
+    try {
+      await discardProse(bookId, staleIds);
+      onChanged();
+    } catch (e) {
+      toast({ title: "Couldn't reset stale pages", description: String((e as Error)?.message ?? e), variant: "destructive" });
+      setDiscarding(false);
+      return;
+    }
+    setDiscarding(false);
+    await runAll();
   };
 
   const total = model.counts.objective + model.counts.written;
@@ -108,6 +132,23 @@ export function DraftStep({ bookId, model, beforeGen, onChanged, onSelectPage }:
         <DoneStrip icon={<Check className="h-5 w-5" />} title="Every page written">
           All {total} pages have prose. {lastWritten && <button type="button" onClick={() => onSelectPage(lastWritten.id)} className="italic text-[hsl(var(--pv-accent))] hover:opacity-75">open a page →</button>}
         </DoneStrip>
+        {staleIds.length > 0 && (
+          <div className="mt-4 rounded-2xl border border-amber-500/30 bg-amber-500/[0.06] px-6 py-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+              <div>
+                <p className="pv-serif text-[14px] text-foreground">
+                  {staleIds.length} {staleIds.length === 1 ? "page has" : "pages have"} stale prose — {staleIds.length === 1 ? "its beat changed" : "their beats changed"} after the prose was written.
+                </p>
+                <div className="mt-2">
+                  <ActionLink busy={discarding} onClick={() => void redraftStale()}>
+                    re-draft {staleIds.length} stale {staleIds.length === 1 ? "page" : "pages"} →
+                  </ActionLink>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="mt-4">
           <ActionLink tone="faint" busy={discarding} onClick={() => void discardAll()}>
             discard the prose & re-draft →
