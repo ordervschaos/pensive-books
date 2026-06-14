@@ -16,7 +16,7 @@ import { RunControls } from "../../RunControls";
 import type { StudioModel } from "../studioModel";
 import { ActionLink, DoneStrip, Hero, ProgressMeter, RunningCard } from "../studioUi";
 
-interface BuildProgress { done: number; total: number; phase?: string }
+interface BuildProgress { done: number; total: number; phase?: string; stage?: string }
 interface BuildRow extends TaskRow { progress: BuildProgress | null; error: string | null }
 
 export function DraftStep({ bookId, model, beforeGen, onChanged, onSelectPage }: { bookId: number; model: StudioModel; beforeGen: () => Promise<void>; onChanged: () => void; onSelectPage: (pageId: number) => void }) {
@@ -31,12 +31,13 @@ export function DraftStep({ bookId, model, beforeGen, onChanged, onSelectPage }:
   const { row, refetch, stale } = useLatestTaskRow<BuildRow>({
     table: "book_generations", bookId, match: { kind: "write_all" }, activeStatuses: ["pending", "running"], staleMs: 180_000,
   });
-  const running = row?.status === "pending" || row?.status === "running";
-  const progress = running ? row?.progress ?? null : null;
+  const active = row?.status === "pending" || row?.status === "running";
+  const progress = active ? row?.progress ?? null : null;
+  const running = active && progress?.stage === "prose"; // only prose stage blocks the Draft UI
   const paused = row?.status === "ready" && row?.progress?.phase === "beats_done";
 
   useEffect(() => {
-    if (running && row) watchedRef.current = row.id;
+    if (active && row) watchedRef.current = row.id;
     if (!row || watchedRef.current !== row.id) return;
     if (row.status === "done") {
       if (notifyRef.current && notifiedRef.current !== row.id) {
@@ -52,7 +53,7 @@ export function DraftStep({ bookId, model, beforeGen, onChanged, onSelectPage }:
   }, [row?.id, row?.status]);
 
   const runAll = async () => {
-    if (running) return;
+    if (active) return;
     try {
       await beforeGen(); // persist the prose steer so generate-book's prose phase reads it
       const body = paused && row ? { generationId: row.id, resume: true } : { bookId, notify };
@@ -67,14 +68,14 @@ export function DraftStep({ bookId, model, beforeGen, onChanged, onSelectPage }:
 
   // Pages carrying prose — what a prose discard wipes (the beats are kept, to re-draft from).
   const discardIds = model.textPages.filter((p) => p.prose !== "gap").map((p) => p.id);
-  // Pages needing re-draft: prose directly stale (beat changed after prose), or prose transitively
-  // stale because the beat drifted from the objective (same signal BeatSheet labels "PROSE STALE").
-  const staleIds = model.textPages
-    .filter((p) => p.prose === "drift" || (p.beat === "drift" && p.prose !== "gap"))
-    .map((p) => p.id);
+  // Prose directly stale: the beat was changed after prose was written. Re-drafting fixes this.
+  const staleIds = model.textPages.filter((p) => p.prose === "drift").map((p) => p.id);
+  // Beat stale: the objective changed after the beat was written. Prose can't fix this — the beat
+  // itself must be regenerated first (in the Beats step). Counted separately for the warning.
+  const beatStaleCount = model.textPages.filter((p) => p.beat === "drift" && p.prose !== "gap").length;
 
   const discardAll = async () => {
-    if (running || discarding || discardIds.length === 0) return;
+    if (active || discarding || discardIds.length === 0) return;
     if (!window.confirm(
       `Discard the prose on ${discardIds.length} page${discardIds.length === 1 ? "" : "s"}? ` +
       `The beats stay — you'll re-draft the prose from them. This can't be undone.`,
@@ -92,7 +93,7 @@ export function DraftStep({ bookId, model, beforeGen, onChanged, onSelectPage }:
   };
 
   const redraftStale = async () => {
-    if (running || discarding || staleIds.length === 0) return;
+    if (active || discarding || staleIds.length === 0) return;
     if (!window.confirm(
       `Re-draft ${staleIds.length} stale page${staleIds.length === 1 ? "" : "s"}? ` +
       `The old prose is discarded and re-written from the current beat.`,
@@ -145,6 +146,18 @@ export function DraftStep({ bookId, model, beforeGen, onChanged, onSelectPage }:
                     re-draft {staleIds.length} stale {staleIds.length === 1 ? "page" : "pages"} →
                   </ActionLink>
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+        {beatStaleCount > 0 && (
+          <div className="mt-4 rounded-2xl border border-amber-500/30 bg-amber-500/[0.06] px-6 py-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+              <div>
+                <p className="pv-serif text-[14px] text-foreground">
+                  {beatStaleCount} {beatStaleCount === 1 ? "page has a beat" : "pages have beats"} out of sync with {beatStaleCount === 1 ? "its" : "their"} objective — regenerate {beatStaleCount === 1 ? "it" : "them"} in the Beats step, then re-draft here.
+                </p>
               </div>
             </div>
           </div>

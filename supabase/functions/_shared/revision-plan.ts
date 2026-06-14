@@ -15,6 +15,9 @@ export interface PlanPage {
   pageType: "section" | "text";
   title: string;
   objective: string;
+  // The beat-sheet reviser carries a beat per page (the desired final beat). Apply (build-revision)
+  // writes it when it differs from the page's current beat; omitted by the objective-only revisers.
+  beat?: string;
   rebuild?: "rewrite" | "revise";
   why?: string;
 }
@@ -30,7 +33,7 @@ export interface ExistingPage {
   id: number;
   page_type: string | null;
   title: string | null;
-  metadata: { objective?: string } | null;
+  metadata: { objective?: string; beat?: string } | null;
 }
 
 export function sanitizePlan(
@@ -76,6 +79,7 @@ export function sanitizePlan(
         pageType: p.pageType === "section" ? "section" : "text",
         title: p.title.trim(),
         objective: (p.objective ?? "").trim(),
+        beat: (p.beat ?? "").trim() || undefined,
         why: typeof p.why === "string" ? p.why.trim() : "",
       });
       continue;
@@ -91,6 +95,7 @@ export function sanitizePlan(
       pageType: cur.page_type === "section" ? "section" : "text",
       title: typeof p.title === "string" && p.title.trim() ? p.title.trim() : (cur.title ?? ""),
       objective: (p.objective ?? cur.metadata?.objective ?? "").trim(),
+      beat: ((p.beat ?? cur.metadata?.beat ?? "").trim()) || undefined,
       rebuild: planOnly ? undefined : p.rebuild === "rewrite" ? "rewrite" : p.rebuild === "revise" ? "revise" : undefined,
       why: typeof p.why === "string" ? p.why.trim() : "",
     });
@@ -120,6 +125,7 @@ export function sanitizePlan(
         pageType: p.page_type === "section" ? "section" : "text",
         title: p.title ?? "",
         objective: (p.metadata?.objective ?? "").trim(),
+        beat: ((p.metadata?.beat ?? "").trim()) || undefined,
         why: "",
       });
     }

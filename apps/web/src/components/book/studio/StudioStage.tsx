@@ -157,7 +157,7 @@ function StepView(props: StageProps & { stepKey: StepKey }) {
       )}
       {k === "beats" && (
         <>
-          <BeatsStep bookId={bookId} model={model} beforeGen={steer.save} onChanged={props.onChanged} />
+          <BeatsStep bookId={bookId} model={model} beforeGen={steer.save} onChanged={props.onChanged} onSelectPage={props.onSelectPage} />
           {gate("Approve the beats & continue", "the author approves the plan, not each unit")}
         </>
       )}

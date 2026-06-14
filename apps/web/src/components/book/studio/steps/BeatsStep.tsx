@@ -16,20 +16,20 @@ import { saveBeat } from "@/lib/ladder";
 import { invokeGenerateBook } from "@/lib/generateBook";
 import { discardBeatsAndProse } from "@/lib/discardLadder";
 import { RunControls } from "../../RunControls";
+import { BeatSheet } from "../BeatSheet";
 import type { MapPage } from "@/lib/planGraph";
 import type { StudioModel } from "../studioModel";
 import { ActionLink, DoneStrip, Eyebrow, Hero, Panel, RunError, RunningCard, RunningInline } from "../studioUi";
 
-interface BuildProgress { done: number; total: number; phase?: string }
+interface BuildProgress { done: number; total: number; phase?: string; stage?: string }
 interface BuildRow extends TaskRow { progress: BuildProgress | null; error: string | null }
 
-export function BeatsStep({ bookId, model, beforeGen, onChanged }: { bookId: number; model: StudioModel; beforeGen: () => Promise<void>; onChanged: () => void }) {
+export function BeatsStep({ bookId, model, beforeGen, onChanged, onSelectPage }: { bookId: number; model: StudioModel; beforeGen: () => Promise<void>; onChanged: () => void; onSelectPage?: (pageId: number) => void }) {
   const { toast } = useToast();
   const beatPages = model.textPages.filter((p) => p.objectiveText.trim());
   const doneCount = beatPages.filter((p) => p.beat !== "gap").length;
   const gapCount = beatPages.filter((p) => p.beat === "gap").length;
   const total = beatPages.length;
-  const allDone = total > 0 && doneCount === total;
 
   const firstGap = beatPages.findIndex((p) => p.beat === "gap");
   const [cursor, setCursor] = useState(firstGap === -1 ? 0 : firstGap);
@@ -54,19 +54,22 @@ export function BeatsStep({ bookId, model, beforeGen, onChanged }: { bookId: num
     table: "book_generations", bookId, match: { kind: "write_all" },
     activeStatuses: ["pending", "running"], staleMs: 180_000,
   });
-  const buildRunning = buildRow?.status === "pending" || buildRow?.status === "running";
-  const buildPaused = buildRow?.status === "ready" && buildRow.progress?.phase === "beats_done";
   const buildProgress = buildRow?.progress ?? null;
+  const buildActive = buildRow?.status === "pending" || buildRow?.status === "running";
+  const beatsRunning = buildActive && buildProgress?.stage !== "prose";
+  const proseRunning = buildActive && buildProgress?.stage === "prose";
+  const buildRunning = beatsRunning; // kept for downstream guards (cancel/restart, discard block)
+  const buildPaused = buildRow?.status === "ready" && buildRow.progress?.phase === "beats_done";
 
   const watchedBuildRef = useRef<number | null>(null);
   useEffect(() => {
-    if (buildRunning && buildRow) watchedBuildRef.current = buildRow.id;
+    if (buildActive && buildRow) watchedBuildRef.current = buildRow.id;
     if (!buildRow || watchedBuildRef.current !== buildRow.id) return;
     if (buildRow.status === "ready" || buildRow.status === "done") onChanged();
   }, [buildRow?.id, buildRow?.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const runBulkBeats = async () => {
-    if (buildRunning) return;
+    if (buildActive) return;
     try {
       await beforeGen(); // persist the beats steer so generate-book's beat phase reads it
       const { data, error } = await invokeGenerateBook({ bookId, pauseAfterBeats: true });
@@ -95,7 +98,7 @@ export function BeatsStep({ bookId, model, beforeGen, onChanged }: { bookId: num
   // Cascades to prose: a beat can't be discarded while prose written from it survives.
   const discardIds = beatPages.filter((p) => p.beat !== "gap" || p.prose !== "gap").map((p) => p.id);
   const discardAllBeats = async () => {
-    if (buildRunning || discarding || discardIds.length === 0) return;
+    if (buildActive || discarding || discardIds.length === 0) return;
     if (!window.confirm(
       `Discard the beats and prose on ${discardIds.length} page${discardIds.length === 1 ? "" : "s"}? ` +
       `The objectives stay — you'll re-plan beats and re-draft from them. This can't be undone.`,
@@ -131,28 +134,8 @@ export function BeatsStep({ bookId, model, beforeGen, onChanged }: { bookId: num
   if (total === 0) {
     return <p className="pv-serif text-[14px] italic text-[hsl(var(--pv-text-faint))]">No pages with an objective yet — generate the outline first.</p>;
   }
-  if (allDone) {
-    return (
-      <div>
-        <DoneStrip icon={<Check className="h-5 w-5" />} title="Every beat planned">
-          All {total} pages have a beat.{" "}
-          <button type="button" onClick={() => setCursor(0)} className="italic text-[hsl(var(--pv-accent))] hover:opacity-75">review them →</button>
-          {buildPaused && (
-            <>
-              {" · "}
-              <button type="button" onClick={() => void runBulkProse()} className="italic text-[hsl(var(--pv-accent))] hover:opacity-75">write all prose →</button>
-            </>
-          )}
-        </DoneStrip>
-        <div className="mt-4">
-          <ActionLink tone="faint" busy={discarding} onClick={() => void discardAllBeats()}>
-            discard the beats & prose, re-plan →
-          </ActionLink>
-        </div>
-      </div>
-    );
-  }
   if (!page) return null;
+  const hasBeats = doneCount > 0; // once any beat exists, the whole-sheet view + AI doctor take over
 
   const advance = () => {
     const rest = beatPages.slice(cursor + 1).findIndex((p) => p.beat === "gap");
@@ -177,7 +160,7 @@ export function BeatsStep({ bookId, model, beforeGen, onChanged }: { bookId: num
   return (
     <div>
       {/* ── Bulk: the prominent path ── */}
-      {buildRunning ? (
+      {beatsRunning ? (
         <RunningCard
           label={buildProgress?.phase ?? "Planning beats"} done={buildProgress?.done} total={buildProgress?.total} unit="page"
           controls={<RunControls table="book_generations" row={buildRow} stale={buildStale} onRestart={runBulkBeats} refetch={buildRefetch} />}
@@ -187,17 +170,34 @@ export function BeatsStep({ bookId, model, beforeGen, onChanged }: { bookId: num
           Ready to write — generate all the prose from the beats in one shot.{" "}
           <button type="button" onClick={() => void runBulkProse()} className="italic text-[hsl(var(--pv-accent))] hover:opacity-75">write all prose →</button>
         </DoneStrip>
-      ) : (
+      ) : proseRunning ? (
+        <RunningInline className="mb-6" label={buildProgress?.phase ?? "Writing prose…"} />
+      ) : gapCount > 0 ? (
         <Hero
           icon={<Sparkles className="h-5 w-5" />}
-          title={`Generate all ${gapCount} beat${gapCount === 1 ? "" : "s"} at once`}
+          title={`Generate ${hasBeats ? "the remaining " : "all "}${gapCount} beat${gapCount === 1 ? "" : "s"} at once`}
           sub="Plans the strongest beat for each page from its objective — then continues straight into the prose. You can refine any beat by hand below."
           onClick={() => void runBulkBeats()}
         />
+      ) : null}
+
+      {/* ── Once any beat exists: the whole-sheet view + the AI beat-sheet doctor take over ── */}
+      {/* proseRunning: beats are done even though the bulk run is still active — show the sheet ── */}
+      {hasBeats && (!buildActive || proseRunning) && (
+        <div className={gapCount > 0 || buildPaused || proseRunning ? "mt-8 border-t border-[hsl(var(--pv-border-soft))]/60 pt-6" : ""}>
+          <BeatSheet bookId={bookId} model={model} onChanged={onChanged} onSelectPage={onSelectPage} beforeGen={beforeGen} />
+          {discardIds.length > 0 && (
+            <div className="mt-6 border-t border-[hsl(var(--pv-border-soft))]/40 pt-4">
+              <ActionLink tone="faint" busy={discarding} onClick={() => void discardAllBeats()}>
+                discard all beats &amp; prose, re-plan →
+              </ActionLink>
+            </div>
+          )}
+        </div>
       )}
 
-      {/* ── Page-by-page: optional hand-shaping ── */}
-      {!buildRunning && (
+      {/* ── Cold start (no beats yet): page-by-page hand-shaping ── */}
+      {!hasBeats && !buildActive && (
         <div className="mt-8 border-t border-[hsl(var(--pv-border-soft))]/60 pt-6">
           <div className="mb-5 flex items-center justify-between gap-3">
             <div>

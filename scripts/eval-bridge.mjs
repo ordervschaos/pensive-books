@@ -1057,6 +1057,95 @@ Produce the beat revision plan. JSON only.`;
   return parseBeatPlan(out.text, pages);
 }
 
+// ── /beats-agent ──────────────────────────────────────────────────────────────
+// Mirrors supabase/functions/beats-agent: the conversational BEAT EDITOR. One model call per author
+// message; returns a JSON envelope { reply, plan }. Single writer of the beat_chats thread.
+const BEAT_CRITERIA = `FICTION CRITERIA — the beat-relevant slice (judge the PLAN, not prose). Identify the genre contract first.
+1. CHARACTER — protagonist proactivity (clear want + need, drives beats; red flag: passive); character arc (measurable before/after tied to plot); cast differentiation & function; character–plot integration (consequences flow from decisions).
+2. PLOT — opening hook (a question, fast tone/genre); plot logic (reveals inevitable in hindsight, setups pay off, no deus ex machina); obligatory scenes (the premise/genre's promised scenes are present + weighted); stakes (concrete, escalating); beat necessity (every beat advances plot/character/theme; red flag: detachable/redundant beats).
+3. PACING — ebb and flow (speed matches the moment; red flag: uniform pacing, stalled middle, rushed ending); each beat earns its space.
+4. GENRE CONTRACT — the beat sheet honors the declared genre's core promise beat for beat.
+5. THEME — the argument is dramatized through choice/cost/consequence, not asserted.`;
+
+const BEATS_AGENT_INSTRUCTIONS = `You are the BEAT EDITOR — a sharp, warm developmental editor in conversation with an author about their book's BEAT SHEET (objectives + beats per page). Beats are the load-bearing layer; prose is downstream and replaceable — never your concern.
+
+You choose per message: TALK (answer, summarize, talk through — be specific, cite real pages by title, never generic); EVALUATE against the FICTION CRITERIA when asked or when it's the honest answer (name the criterion, point at exact pages, say what's strong and what sags, end with the highest-leverage fix); or PROPOSE A CHANGE — a beat REVISION PLAN (rewrite beats, retarget objectives, add pages incl. a missing midpoint/escalation/character-introduction, delete inert pages, reorder). The author reviews and applies it — you never mutate anything.
+
+OUTPUT — reply to the author in plain MARKDOWN prose (use **bold**, lists, and line breaks freely). If — and ONLY if — this message proposes a change to the beat sheet, append at the very END a single fenced \`\`\`json code block holding the plan, with nothing after it:
+\`\`\`json
+{ "summary": "...", "pages": [ { "ref": <id|null>, "op": "keep|retarget|add", "pageType": "section|text", "title": "...", "objective": "...", "beat": "...", "why": "..." } ], "deletes": [ { "ref": <id>, "why": "..." } ] }
+\`\`\`
+When you are talking, evaluating, or answering — append NO code block. When you do propose, the prose above briefly says what changed.
+- PLAN RULES: use ONLY real [id]s; every existing page MUST appear in "pages" or "deletes" — never drop one silently. "section" = divider; "text" pages carry an objective AND a beat. Reorder by final order. Be surgical ("keep" what works). Honor pinned foundations and tracked-thread anchors. Never write prose; never use a "revise" op.`;
+
+async function getBeatChat(bookId) {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/beat_chats?book_id=eq.${bookId}&select=id,messages,pending_plan`, { headers: sbHeaders });
+  if (!r.ok) throw new Error(`Supabase ${r.status}: ${await r.text()}`);
+  return (await r.json())?.[0] ?? null;
+}
+async function upsertBeatChat(bookId, existingId, patch) {
+  if (existingId) {
+    await fetch(`${SUPABASE_URL}/rest/v1/beat_chats?id=eq.${existingId}`, {
+      method: "PATCH", headers: { ...sbHeaders, "content-type": "application/json", Prefer: "return=minimal" }, body: JSON.stringify(patch),
+    });
+    return existingId;
+  }
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/beat_chats`, {
+    method: "POST", headers: { ...sbHeaders, "content-type": "application/json", Prefer: "return=representation" }, body: JSON.stringify({ book_id: bookId, ...patch }),
+  });
+  if (!r.ok) throw new Error(`Supabase ${r.status}: ${await r.text()}`);
+  return (await r.json())?.[0]?.id ?? null;
+}
+
+async function runBeatsAgent(bookId, message) {
+  const msg = (message ?? "").trim();
+  if (!msg) return { error: "message is required" };
+  const book = await fetchBook(bookId);
+  if (!book) return { error: "Book not found" };
+  const pages = await fetchPages(bookId);
+
+  const existing = await getBeatChat(bookId);
+  const history = Array.isArray(existing?.messages) ? existing.messages : [];
+  const withUser = [...history, { role: "user", text: msg, ts: new Date().toISOString() }];
+  const chatId = await upsertBeatChat(bookId, existing?.id, { messages: withUser, status: "thinking", error: null });
+
+  try {
+    const f = book.foundations ?? null;
+    const spineText = book.spine?.text?.trim() || null;
+    const context =
+      `BOOK: ${book.name}\n\nBRIEF (the voice contract):\n${briefContext(book.brief)}` +
+      (spineText ? `\n\nSPINE:\n${spineText}` : "") +
+      (f ? `\n\nFOUNDATIONS (settled — pinned lines are immutable):\n${foundationsContext(f)}` : "") +
+      `\n\nCURRENT BEAT SHEET (real page ids):\n${beatSheetContext(pages)}` +
+      `\n\nFICTION CRITERIA (use when evaluating):\n${BEAT_CRITERIA}`;
+    const transcript = withUser.slice(-24).map((m) => `${m.role === "user" ? "AUTHOR" : "EDITOR"}: ${m.text}`).join("\n\n");
+    const prompt = `${BEATS_AGENT_INSTRUCTIONS}\n\n${context}\n\n— — — CONVERSATION SO FAR — — —\n${transcript}\n\nRespond to the latest AUTHOR message.`;
+
+    const out = await runClaude(prompt, true, { fn: "beats-agent", bookId }, { noTools: true });
+    if (out.error) throw new Error(out.error);
+
+    // Prose is markdown; a proposed change rides in a TRAILING ```json block (mirrors beats-agent edge fn).
+    let reply = out.text.trim(), plan = null;
+    const m = out.text.match(/```(?:json)?\s*([\s\S]*?)```\s*$/);
+    if (m && m.index != null) {
+      const before = out.text.slice(0, m.index).trim();
+      const parsed = parseBeatPlan(m[1], pages);
+      if (parsed && !parsed.error) { plan = parsed; reply = before || "Here's a proposed revision — review it below."; }
+    }
+
+    const assistant = { role: "assistant", text: reply, ts: new Date().toISOString(), plan: plan?.summary };
+    await upsertBeatChat(bookId, chatId, {
+      messages: [...withUser, assistant],
+      pending_plan: plan ?? existing?.pending_plan ?? null,
+      status: "idle",
+    });
+    return { reply, plan };
+  } catch (e) {
+    await upsertBeatChat(bookId, chatId, { status: "error", error: String(e?.message ?? e).slice(0, 500), messages: withUser });
+    return { error: String(e?.message ?? e) };
+  }
+}
+
 // ── /objective-to-beat ─────────────────────────────────────────────────────────
 // Mirrors supabase/functions/objective-to-beat: objective → a one-paragraph beat (the plan of what the
 // page does), in book context. No mutation — the client writes metadata.beat + stamps the edge.
@@ -1859,7 +1948,9 @@ Write the book spine the outline realizes. 1–2 short paragraphs, the throughli
 // ── /unit ─────────────────────────────────────────────────────────────────────
 // Kept at parity with _shared/generate-unit-core (beatToProse/revisePage) so local testing exercises
 // the same context (bible + objective map + story so far + preceding prose) and summary.
-const UNIT_SYSTEM = `You are a skilled prose writer helping an author render their book.
+const UNIT_SYSTEM = `Ignore software engineering concerns(important).
+You are a literary fiction writer (important).
+You are a skilled prose writer helping an author render their book.
 The author works in OBJECTIVES: a short statement of what a unit of the book must achieve.
 Your job is to write the prose that achieves the given objective, in the book's voice and
 consistent with the rest of the book.
@@ -2390,6 +2481,19 @@ async function route(req, res) {
     if (!(await authorize(req, res, bookId))) return;
     console.log(`Revising beats for book ${bookId}${body.lens ? ` (lens: ${body.lens})` : ""}…`);
     const out = await runReviseBeats(bookId, body.instruction, body.lens);
+    if (out.error) return json(res, 500, { error: out.error });
+    return json(res, 200, out);
+  }
+
+  // beats-agent — the conversational beat editor (one model call per author message).
+  if (url === "/beats-agent" || url === "/beats-agent/") {
+    if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
+    const body = await readBody(req);
+    const bookId = Number(body.bookId);
+    if (!bookId) return json(res, 400, { error: "bookId is required" });
+    if (!(await authorize(req, res, bookId))) return;
+    console.log(`Beat editor · book ${bookId}: "${String(body.message ?? "").slice(0, 60)}"…`);
+    const out = await runBeatsAgent(bookId, body.message);
     if (out.error) return json(res, 500, { error: out.error });
     return json(res, 200, out);
   }

@@ -27,6 +27,7 @@ import { buildDoc } from "../_shared/build-doc.ts";
 import { serviceClient } from "../_shared/task.ts";
 import { reinvoke, isChainCall } from "../_shared/self-chain.ts";
 import { captureException, isBillingError } from "../_shared/sentry.ts";
+import { stampBeat } from "../_shared/plan-provenance.ts";
 
 const MAX_ATTEMPTS = 3;
 const RETRY_BASE_MS = 1000;
@@ -40,6 +41,7 @@ interface PlanPage {
   pageType: "section" | "text";
   title: string;
   objective: string;
+  beat?: string; // beat-sheet revisions carry the desired final beat; written when it changed
   rebuild?: "rewrite" | "revise";
   why?: string;
 }
@@ -230,6 +232,24 @@ async function runStructure(service: SupabaseClient, row: RevisionRow, progressI
     if (!planOnly) delete (meta as { summary?: unknown }).summary;
     const { error } = await service.from("pages").update({ metadata: meta }).eq("id", p.ref);
     if (error) throw new Error(error.message);
+  }
+
+  // 4.5 Write beats (beat-sheet revisions). For each resolved page carrying a beat that DIFFERS from
+  // what's stored, persist it and stamp the objective→beat edge in-sync (stampBeat) — declaring the
+  // beat the plan for that objective. We deliberately do NOT touch beat→prose, so any prose written
+  // from the old beat now reads "out of sync" — the author re-drafts it from the Draft step. `keep`
+  // pages carry their existing beat unchanged, so the diff-guard skips them (no write).
+  for (let i = 0; i < plan.pages.length; i++) {
+    const p = plan.pages[i];
+    if (p.pageType === "section") continue;
+    const beat = (p.beat ?? "").trim();
+    if (!beat) continue;
+    const id = p.op === "add" ? addedIds[i] : p.ref;
+    if (id == null) continue;
+    const { data: cur } = await service.from("pages").select("metadata").eq("id", id).maybeSingle();
+    const curBeat = ((cur?.metadata as { beat?: string } | null)?.beat ?? "").trim();
+    if (curBeat === beat) continue;
+    await stampBeat(service, id, p.objective || ((cur?.metadata as { objective?: string } | null)?.objective ?? ""), beat);
   }
 
   // 5. Reorder (two-phase to dodge the unique page_index constraint).
