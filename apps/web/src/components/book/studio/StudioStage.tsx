@@ -5,7 +5,6 @@
 // redesign reshapes the surface around them without re-deriving their logic.
 import { useState } from "react";
 import { Lock, Send } from "lucide-react";
-import { AutoRevise } from "../AutoRevise";
 import { AIActionRow } from "../AIActionRow";
 import { BookBriefSection } from "../BookBriefSection";
 import { BookEvaluationSection, type CurrentRead } from "../BookEvaluationSection";
@@ -188,7 +187,6 @@ function StepView(props: StageProps & { stepKey: StepKey }) {
                 readAt={currentRead.createdAt}
                 onReviewPlan={() => props.onSelectStep("revise")}
               />
-              <AutoRevise bookId={bookId} onRevised={props.onChanged} />
             </div>
           )}
         </div>

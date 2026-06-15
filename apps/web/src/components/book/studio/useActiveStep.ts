@@ -22,7 +22,6 @@ const GEN_STEP: Record<string, StepKey> = {
   objective_options: "outline",
   beat_candidates: "beats",
   write_all: "draft",
-  auto_revise: "read",
 };
 
 interface GenRow extends TaskRow { kind?: string }

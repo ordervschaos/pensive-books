@@ -1,39 +1,17 @@
-// revise-node — the signal-driven revise of a SHORT plan node (spine / objective / beat).
+// revise-node — synchronous revise for any named node (spine / objective / beat / foundation element / prose).
 //
-// The preserve path for the small layers: given the node's current text and an author instruction,
-// rewrite it to honour the instruction while keeping what already works — the opposite of the
-// re-create (expand/distill) transforms, which replace from a neighbour. Prose has its own heavier
-// reviser (revise-prose); this handles the one-or-two-sentence / one-paragraph nodes.
+// Given the node's current text and an author instruction, rewrites it to honour the instruction while
+// preserving what already works. Context assembled per layer (brief, spine, foundations, page metadata).
 //
 //   client → POST { bookId, pageId?, layer, current, instruction } → verify edit access → { text }
 //
 // Synchronous. The client shows a diff and, on accept, writes the node back. Needs ANTHROPIC_API_KEY.
+// The durable path (ai-run kind "node_revise") shares revise-core for identical logic.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { type Brief, briefContext } from "../_shared/brief.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { hasEditAccess } from "../_shared/access.ts";
-import { callClaude, textFromClaude } from "../_shared/claude.ts";
-import { getActiveModels } from "../_shared/model-config.ts";
-
-
-type Layer = "spine" | "objective" | "beat";
-
-const SHAPE: Record<Layer, string> = {
-  spine: "the BOOK SPINE — the throughline of the whole book, 1–2 short paragraphs naming its central aim and arc",
-  objective: "a page OBJECTIVE — 1–2 sentences stating what that page must achieve (its job in the book)",
-  beat: "a page BEAT — one paragraph planning, in order, what the page does to fulfil its objective",
-};
-
-function systemFor(layer: Layer): string {
-  return `You are revising ${SHAPE[layer]}. Apply the author's INSTRUCTION while PRESERVING what already works — change only what the instruction asks for, keep the rest. This is a revision, not a rewrite from scratch.
-
-Rules:
-- Output only the revised ${layer}. No title, no heading, no preamble, no markdown, no meta commentary, no list of changes.
-- Keep the same kind of statement and length as the original (it is ${SHAPE[layer]}).
-- Honour the book's brief (genre, audience, tone) and stay consistent with the book spine if given.`;
-}
-
+import { reviseNode, type ReviseLayer } from "../_shared/revise-core.ts";
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -47,18 +25,13 @@ Deno.serve(async (req: Request) => {
     const { data: { user }, error: authError } = await userClient.auth.getUser();
     if (authError || !user) return json({ error: "Unauthorized" }, 401);
 
-    const { bookId, layer, current, instruction } = (await req.json().catch(() => ({}))) as {
-      bookId?: number; pageId?: number; layer?: Layer; current?: string; instruction?: string;
+    const { bookId, pageId, layer, current, instruction } = (await req.json().catch(() => ({}))) as {
+      bookId?: number; pageId?: number; layer?: ReviseLayer; current?: string; instruction?: string;
     };
     if (!bookId) return json({ error: "bookId is required" }, 400);
-    if (layer !== "spine" && layer !== "objective" && layer !== "beat") return json({ error: "layer must be spine|objective|beat" }, 400);
-    const cur = (current ?? "").trim();
-    const instr = (instruction ?? "").trim();
-    if (!cur) return json({ error: "There's nothing to revise yet" }, 400);
-    if (!instr) return json({ error: "An instruction is required" }, 400);
 
     const { data: book, error: bookError } = await userClient
-      .from("books").select("id, name, owner_id, brief, spine").eq("id", bookId).single();
+      .from("books").select("id, owner_id").eq("id", bookId).single();
     if (bookError || !book) return json({ error: "Book not found" }, 404);
 
     if (!(await hasEditAccess(userClient, bookId, user.id, book.owner_id)))
@@ -67,26 +40,14 @@ Deno.serve(async (req: Request) => {
     const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!apiKey) return json({ error: "ANTHROPIC_API_KEY not configured" }, 500);
 
-    const spine = (book.spine as { text?: string } | null)?.text?.trim() || null;
-    const { high: model } = await getActiveModels();
-
-    const data = await callClaude(apiKey, {
-      model,
-      max_tokens: 1024,
-      system: [{ type: "text", text: systemFor(layer), cache_control: { type: "ephemeral" } }],
-      messages: [{
-        role: "user",
-        content:
-          `BOOK: ${book.name}\n\nBRIEF:\n${briefContext(book.brief as Brief | null, { scope: "none", success: false, none: "(no brief set)", empty: "(brief is empty)" })}` +
-          (spine && layer !== "spine" ? `\n\nBOOK SPINE:\n${spine}` : "") +
-          `\n\nCURRENT ${layer.toUpperCase()}:\n${cur}` +
-          `\n\nAUTHOR'S INSTRUCTION:\n${instr}` +
-          `\n\nReturn the revised ${layer} only.`,
-      }],
-    }, { fn: "revise-node", bookId, userId: user.id });
-
-    const text = textFromClaude(data).trim();
-    if (!text) return json({ error: "Claude returned nothing." }, 502);
+    const text = await reviseNode(userClient, apiKey, {
+      bookId,
+      layer: layer!,
+      current: current ?? "",
+      instruction: instruction ?? "",
+      pageId,
+      userId: user.id,
+    });
 
     return json({ text });
   } catch (e) {

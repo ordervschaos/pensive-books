@@ -14,11 +14,10 @@ import { Loader2 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { useAIRun } from "@/hooks/useAIRun";
 import { diffStyles } from "./ladder-ui";
-import type { NodeLayer } from "@/lib/ladder";
 
 interface DurableReviserProps {
   bookId: number;
-  layer: NodeLayer;
+  layer: string;
   /** Stable key so the run reattaches (e.g. "revise:spine", "revise:beat:123"). */
   targetKey: string;
   targetPageId?: number;
