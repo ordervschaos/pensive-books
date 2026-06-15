@@ -198,7 +198,7 @@ function BeatModal({ bookId, beatPages, initialIdx, model, onChanged, onSelectPa
       aria-modal="true"
     >
       <div
-        className="relative flex max-h-[90vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-1))] shadow-2xl"
+        className="relative flex max-h-[90vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal header */}
