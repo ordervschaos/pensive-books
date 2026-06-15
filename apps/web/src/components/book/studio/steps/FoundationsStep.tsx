@@ -214,7 +214,6 @@ function NodeSub({ bookId, stepKey, node, heroTitle, heroSub, blockedReason, bef
         <Panel className="border-[hsl(var(--pv-accent))]/45 bg-[hsl(var(--pv-surface-2))]/60">
           <div className="mb-2.5 flex items-center justify-between gap-3">
             <Eyebrow>Chosen · yours</Eyebrow>
-            {node?.pinned && <PinBadge onUnpin={() => void onSave({ ...node, pinned: false })} />}
           </div>
           <Textarea
             value={draft ?? selected}
@@ -255,7 +254,6 @@ function NodeSub({ bookId, stepKey, node, heroTitle, heroSub, blockedReason, bef
             <div className="mb-2.5 flex items-center justify-between gap-3">
               <Eyebrow>{candidateLabel}</Eyebrow>
               <div className="flex items-center gap-2.5">
-                {isSelected && node?.pinned && <PinBadge onUnpin={() => void onSave({ ...node, pinned: false })} />}
                 <button
                   type="button"
                   onClick={() => void onSave(pinNode(node, c.text))}
@@ -731,15 +729,3 @@ function SkipLink({ onClick }: { onClick: () => void }) {
   );
 }
 
-function PinBadge({ onUnpin }: { onUnpin: () => void }) {
-  return (
-    <button
-      type="button"
-      title="Pinned — regeneration must keep this. Click to unpin."
-      onClick={() => { if (window.confirm("Unpin? Regeneration may then rewrite it.")) onUnpin(); }}
-      className="pv-mono inline-flex items-center gap-1 text-[9.5px] uppercase tracking-[0.12em] text-[hsl(var(--pv-accent))]"
-    >
-      <Pin className="h-3 w-3" /> pinned
-    </button>
-  );
-}
