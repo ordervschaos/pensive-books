@@ -215,6 +215,45 @@ export function RunningCard({ label, sub, done, total, unit, stuck, controls }: 
   );
 }
 
+// Generic skeleton card — animate-pulse placeholder while AI proposes options. Renders a short
+// title bar + three text lines.
+export function SkeletonCard() {
+  return (
+    <div className="animate-pulse rounded-2xl border border-[hsl(var(--pv-border-soft))]/60 bg-[hsl(var(--pv-surface-2))]/30 px-6 py-5">
+      <div className="mb-3 h-2 w-24 rounded-full bg-[hsl(var(--pv-border-soft))]" />
+      <div className="space-y-2.5">
+        <div className="h-3.5 w-full rounded-full bg-[hsl(var(--pv-border-soft))]" />
+        <div className="h-3.5 rounded-full bg-[hsl(var(--pv-border-soft))]" style={{ width: "83%" }} />
+        <div className="h-3.5 rounded-full bg-[hsl(var(--pv-border-soft))]" style={{ width: "67%" }} />
+      </div>
+    </div>
+  );
+}
+
+// Skeleton for a multi-member proposal card (cast). Two character blocks with name + bio lines.
+export function SkeletonProposalCard() {
+  return (
+    <div className="animate-pulse rounded-2xl border border-[hsl(var(--pv-border-soft))]/60 bg-[hsl(var(--pv-surface-2))]/30 px-6 py-5">
+      <div className="mb-4 flex items-center justify-between">
+        <div className="h-2 w-16 rounded-full bg-[hsl(var(--pv-border-soft))]" />
+        <div className="h-7 w-36 rounded-full bg-[hsl(var(--pv-border-soft))]" />
+      </div>
+      <div className="mb-4 space-y-1.5">
+        <div className="mb-2 h-3.5 w-28 rounded-full bg-[hsl(var(--pv-border-soft))]" />
+        <div className="h-3 w-full rounded-full bg-[hsl(var(--pv-border-soft))]/70" />
+        <div className="h-3 rounded-full bg-[hsl(var(--pv-border-soft))]/70" style={{ width: "88%" }} />
+        <div className="h-3 rounded-full bg-[hsl(var(--pv-border-soft))]/70" style={{ width: "75%" }} />
+      </div>
+      <div className="space-y-1.5">
+        <div className="mb-2 h-3.5 w-24 rounded-full bg-[hsl(var(--pv-border-soft))]" />
+        <div className="h-3 w-full rounded-full bg-[hsl(var(--pv-border-soft))]/70" />
+        <div className="h-3 rounded-full bg-[hsl(var(--pv-border-soft))]/70" style={{ width: "80%" }} />
+        <div className="h-3 rounded-full bg-[hsl(var(--pv-border-soft))]/70" style={{ width: "65%" }} />
+      </div>
+    </div>
+  );
+}
+
 // A thin labelled progress meter (e.g. "written so far · 7 / 19 pages").
 export function ProgressMeter({ verb, filled, total, noun }: { verb: string; filled: number; total: number; noun: string }) {
   const pct = total ? Math.round((filled / total) * 100) : 0;

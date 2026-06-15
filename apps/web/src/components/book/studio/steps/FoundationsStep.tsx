@@ -7,7 +7,7 @@
 // Voice is absorbed here (old stage 4): the chosen exemplar is ALSO mirrored to
 // books.bible.voice_sample so the existing prose renderers keep reading their anchor unchanged.
 import { useEffect, useRef, useState } from "react";
-import { Check, ImageIcon, Pin, Plus, RefreshCw, Skull, Sparkles, Undo2, X } from "lucide-react";
+import { Check, ImageIcon, Pin, Plus, RefreshCw, Sparkles, X } from "lucide-react";
 import { SteerField } from "../SteerField";
 import type { UseSteer } from "@/lib/steer";
 import { supabase } from "@/integrations/supabase/client";
@@ -21,7 +21,7 @@ import {
   foundationsProgress, pinNode, writeFoundations,
   type CastMember, type CastProposal, type FCandidate, type FNode, type Foundations, type FoundationsStepKey, type Tentpole,
 } from "@/lib/foundations";
-import { ActionLink, Eyebrow, Hero, ImageLightbox, Panel, RunError, RunningInline } from "../studioUi";
+import { ActionLink, Eyebrow, Hero, ImageLightbox, Panel, RunError, SkeletonCard, SkeletonProposalCard } from "../studioUi";
 import { DurableReviser } from "../../DurableReviser";
 
 const uid = () => crypto.randomUUID().slice(0, 8);
@@ -591,20 +591,18 @@ function TentpolesSub({ bookId, tentpoles, beforeGen, onSave }: { bookId: number
   }, [run.run?.id, run.run?.status]);
 
   // Pinned = author's own + AI cards the author explicitly kept.
-  const pinnedCards = tentpoles.filter((t) => t.status !== "killed" && (t.source === "author" || t.status === "pinned"));
+  const pinnedCards = tentpoles.filter((t) => t.source === "author" || t.status === "pinned");
   // Proposals = AI cards still awaiting the author's verdict.
   const proposalCards = tentpoles.filter((t) => t.source === "ai" && t.status === "fluid");
-  // Avoid = anything killed (signals "not this" to future AI passes).
-  const avoidCards = tentpoles.filter((t) => t.status === "killed");
 
   const liveCount = pinnedCards.length + proposalCards.length;
   const pinnedCount = tentpoles.filter((t) => t.status === "pinned").length;
 
-  const setStatus = (id: string, status: Tentpole["status"]) =>
-    void onSave(tentpoles.map((t) => (t.id === id ? { ...t, status } : t)));
   const setText = (id: string, text: string) =>
     void onSave(tentpoles.map((t) => (t.id === id ? { ...t, text, status: "pinned" } : t)));
-  const deletePermanently = (id: string) =>
+  const pinCard = (id: string) =>
+    void onSave(tentpoles.map((t) => (t.id === id ? { ...t, status: "pinned" } : t)));
+  const deleteCard = (id: string) =>
     void onSave(tentpoles.filter((t) => t.id !== id));
 
   const addAuthor = () => {
@@ -624,7 +622,7 @@ function TentpolesSub({ bookId, tentpoles, beforeGen, onSave }: { bookId: number
         {liveCount} moment{liveCount === 1 ? "" : "s"} on the board — at least 3 to proceed.
         {pinnedCount > 0 && ` ${pinnedCount} pinned: every spine route must pass through them.`}
       </p>
-      <div className="grid gap-5 grid-cols-1 lg:grid-cols-3">
+      <div className="grid gap-5 grid-cols-1 lg:grid-cols-2">
 
         {/* ── Pinned ── */}
         <div>
@@ -633,7 +631,7 @@ function TentpolesSub({ bookId, tentpoles, beforeGen, onSave }: { bookId: number
             {pinnedCards.map((t) => (
               <TentpoleCard key={t.id} t={t} bookId={bookId}
                 onText={(v) => setText(t.id, v)}
-                onKill={() => setStatus(t.id, "killed")} />
+                onDelete={() => deleteCard(t.id)} />
             ))}
             <div className="rounded-2xl border border-dashed border-border px-4 py-3">
               <Textarea
@@ -654,20 +652,26 @@ function TentpolesSub({ bookId, tentpoles, beforeGen, onSave }: { bookId: number
         {/* ── Proposals ── */}
         <div>
           {colHeader("Proposals")}
-          {generating ? (
-            <RunningInline className="py-2" label="Proposing moments…" onCancel={() => void run.cancel()} />
-          ) : (
-            <div className="space-y-2.5">
-              {proposalCards.map((t) => (
-                <TentpoleCard key={t.id} t={t} bookId={bookId}
-                  onText={(v) => setText(t.id, v)}
-                  onKeep={() => setStatus(t.id, "pinned")}
-                  onKill={() => setStatus(t.id, "killed")} />
-              ))}
+          <div className="space-y-2.5">
+            {proposalCards.map((t) => (
+              <TentpoleCard key={t.id} t={t} bookId={bookId}
+                onText={(v) => setText(t.id, v)}
+                onKeep={() => pinCard(t.id)}
+                onDelete={() => deleteCard(t.id)} />
+            ))}
+            {generating && (
+              <>
+                <p className="px-1 text-[12px] text-muted-foreground/60">Proposing moments…</p>
+                <SkeletonCard />
+                <SkeletonCard />
+                <SkeletonCard />
+              </>
+            )}
+            {!generating && (
               <div className="rounded-2xl border border-dashed border-border px-4 py-3">
                 <SteerField steer={steer} label="Steer these proposals" className="mb-3" />
                 <ActionLink
-                  icon={proposalCards.length ? <RefreshCw className="h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
+                  icon={proposalCards.length ? <Plus className="h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
                   onClick={() => void fire()}
                 >
                   {proposalCards.length
@@ -675,38 +679,8 @@ function TentpolesSub({ bookId, tentpoles, beforeGen, onSave }: { bookId: number
                     : "propose moments"}
                 </ActionLink>
               </div>
-              {run.run?.status === "error" && <RunError msg={run.run.error} />}
-            </div>
-          )}
-        </div>
-
-        {/* ── Avoid ── */}
-        <div>
-          {colHeader("Avoid")}
-          <div className="space-y-2.5">
-            {avoidCards.length === 0 ? (
-              <p className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))]">
-                Cards you discard land here — they tell AI "not this direction."
-              </p>
-            ) : (
-              avoidCards.map((t) => (
-                <div key={t.id} className="rounded-2xl border border-[hsl(var(--pv-border-soft))]/60 bg-[hsl(var(--pv-surface-2))]/20 px-4 py-3">
-                  <p className="pv-serif text-[13px] italic leading-snug text-[hsl(var(--pv-text-faint))] line-through">{t.text}</p>
-                  <div className="mt-2 flex items-center gap-3.5">
-                    <button type="button"
-                      onClick={() => setStatus(t.id, t.source === "author" ? "pinned" : "fluid")}
-                      className="pv-serif inline-flex items-center gap-1 text-[12.5px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground transition-colors">
-                      <Undo2 className="h-3 w-3" /> restore
-                    </button>
-                    <button type="button"
-                      onClick={() => deletePermanently(t.id)}
-                      className="pv-serif inline-flex items-center gap-1 text-[12.5px] italic text-[hsl(var(--pv-text-faint))] hover:text-red-500 transition-colors">
-                      <X className="h-3 w-3" /> delete
-                    </button>
-                  </div>
-                </div>
-              ))
             )}
+            {run.run?.status === "error" && <RunError msg={run.run.error} />}
           </div>
         </div>
 
@@ -715,7 +689,7 @@ function TentpolesSub({ bookId, tentpoles, beforeGen, onSave }: { bookId: number
   );
 }
 
-function TentpoleCard({ t, onText, onKeep, onKill, bookId }: { t: Tentpole; onText: (v: string) => void; onKeep?: () => void; onKill: () => void; bookId?: number }) {
+function TentpoleCard({ t, onText, onKeep, onDelete, bookId }: { t: Tentpole; onText: (v: string) => void; onKeep?: () => void; onDelete: () => void; bookId?: number }) {
   const [draft, setDraft] = useState<string | null>(null);
   const pinned = t.status === "pinned";
   return (
@@ -744,8 +718,8 @@ function TentpoleCard({ t, onText, onKeep, onKill, bookId }: { t: Tentpole; onTe
             label="revise"
           />
         )}
-        <button type="button" onClick={onKill} className="pv-serif inline-flex items-center gap-1 text-[12.5px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">
-          <Skull className="h-3 w-3" /> kill
+        <button type="button" onClick={onDelete} className="pv-serif inline-flex items-center gap-1 text-[12.5px] italic text-[hsl(var(--pv-text-faint))] hover:text-destructive/70 transition-colors">
+          <X className="h-3 w-3" /> discard
         </button>
       </div>
     </div>
@@ -753,42 +727,6 @@ function TentpoleCard({ t, onText, onKeep, onKill, bookId }: { t: Tentpole; onTe
 }
 
 // ── Small shared bits ─────────────────────────────────────────────────────────
-function SkeletonCard() {
-  return (
-    <div className="animate-pulse rounded-2xl border border-[hsl(var(--pv-border-soft))]/60 bg-[hsl(var(--pv-surface-2))]/30 px-6 py-5">
-      <div className="mb-3 h-2 w-24 rounded-full bg-[hsl(var(--pv-border-soft))]" />
-      <div className="space-y-2.5">
-        <div className="h-3.5 w-full rounded-full bg-[hsl(var(--pv-border-soft))]" />
-        <div className="h-3.5 rounded-full bg-[hsl(var(--pv-border-soft))]" style={{ width: "83%" }} />
-        <div className="h-3.5 rounded-full bg-[hsl(var(--pv-border-soft))]" style={{ width: "67%" }} />
-      </div>
-    </div>
-  );
-}
-
-function SkeletonProposalCard() {
-  return (
-    <div className="animate-pulse rounded-2xl border border-[hsl(var(--pv-border-soft))]/60 bg-[hsl(var(--pv-surface-2))]/30 px-6 py-5">
-      <div className="mb-4 flex items-center justify-between">
-        <div className="h-2 w-16 rounded-full bg-[hsl(var(--pv-border-soft))]" />
-        <div className="h-7 w-36 rounded-full bg-[hsl(var(--pv-border-soft))]" />
-      </div>
-      <div className="mb-4 space-y-1.5">
-        <div className="mb-2 h-3.5 w-28 rounded-full bg-[hsl(var(--pv-border-soft))]" />
-        <div className="h-3 w-full rounded-full bg-[hsl(var(--pv-border-soft))]/70" />
-        <div className="h-3 rounded-full bg-[hsl(var(--pv-border-soft))]/70" style={{ width: "88%" }} />
-        <div className="h-3 rounded-full bg-[hsl(var(--pv-border-soft))]/70" style={{ width: "75%" }} />
-      </div>
-      <div className="space-y-1.5">
-        <div className="mb-2 h-3.5 w-24 rounded-full bg-[hsl(var(--pv-border-soft))]" />
-        <div className="h-3 w-full rounded-full bg-[hsl(var(--pv-border-soft))]/70" />
-        <div className="h-3 rounded-full bg-[hsl(var(--pv-border-soft))]/70" style={{ width: "80%" }} />
-        <div className="h-3 rounded-full bg-[hsl(var(--pv-border-soft))]/70" style={{ width: "65%" }} />
-      </div>
-    </div>
-  );
-}
-
 function SkipLink({ onClick }: { onClick: () => void }) {
   return (
     <button type="button" onClick={onClick} className="pv-serif mt-3 text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">
