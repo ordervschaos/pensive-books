@@ -16,6 +16,7 @@ export interface BeatChatRow {
   error: string | null;
   created_at: string;
   updated_at?: string | null;
+  [key: string]: unknown;
 }
 
 /** Send one author message. The reply + any plan land in beat_chats (watch it over Realtime). */
