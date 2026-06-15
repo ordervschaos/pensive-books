@@ -152,13 +152,14 @@ function NodeSub({ bookId, stepKey, node, heroTitle, heroSub, blockedReason, bef
 
   const generating = run.starting || run.run?.status === "running" || run.run?.status === "pending";
 
-  // Candidates land → persist them into the node (and auto-select the first, unpinned, on "skip").
+  // Candidates land → APPEND to the existing pool (not replace). Auto-select the first new one on "skip".
   useEffect(() => {
     const r = run.run;
     if (r?.status === "ready" && r.result?.candidates?.length && appliedRef.current !== r.id) {
       appliedRef.current = r.id;
       void run.accept(async (res) => {
-        const next: FNode = { ...(node ?? {}), candidates: res.candidates };
+        const existing = node?.candidates ?? [];
+        const next: FNode = { ...(node ?? {}), candidates: [...existing, ...res.candidates] };
         if (autoPickRef.current && !node?.pinned) { next.text = res.candidates[0]?.text; next.pinned = false; }
         autoPickRef.current = false;
         await onSave(next);
@@ -173,22 +174,21 @@ function NodeSub({ bookId, stepKey, node, heroTitle, heroSub, blockedReason, bef
   const selected = (node?.text ?? "").trim();
   const pinnedAndNotInCandidates = selected !== "" && !candidates.some((c) => c.text.trim() === selected);
 
-  if (generating) {
+  // Initial state with no existing cards — show skeletons directly (nothing to keep behind them).
+  if (generating && candidates.length === 0 && !selected) {
     return (
-      <div>
-        {/* Keep the pinned card visible during loading so the author knows it's held safe. */}
-        {node?.pinned && selected && (
-          <Panel className="mb-4 border-[hsl(var(--pv-accent))]/30 bg-[hsl(var(--pv-surface-2))]/40 opacity-60">
-            <Eyebrow>Pinned · held through generation</Eyebrow>
-            <p className="pv-serif mt-2 whitespace-pre-wrap text-[15px] leading-[1.65] text-foreground/70">{selected}</p>
-          </Panel>
-        )}
-        <RunningInline label="Proposing candidates…" onCancel={() => void run.cancel()} />
+      <div className="space-y-3">
+        <p className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))]">
+          Creating candidates…{" "}
+          <button type="button" onClick={() => void run.cancel()}
+            className="underline-offset-2 hover:text-foreground hover:underline transition-colors">cancel</button>
+        </p>
+        {[0, 1, 2].map((i) => <SkeletonCard key={i} />)}
       </div>
     );
   }
 
-  if (candidates.length === 0 && !selected) {
+  if (!generating && candidates.length === 0 && !selected) {
     return (
       <div>
         {steerOpen && <div className="mb-4"><SteerField steer={steer} /></div>}
@@ -286,21 +286,32 @@ function NodeSub({ bookId, stepKey, node, heroTitle, heroSub, blockedReason, bef
           </div>
         );
       })}
-      <div className="mt-1">
-        {steerOpen && <SteerField steer={steer} className="mb-3" />}
-        <div className="flex items-center gap-5">
-          <ActionLink icon={<RefreshCw className="h-3.5 w-3.5" />} onClick={() => void fire()}>
-            regenerate{node?.pinned ? " (chosen text held)" : ""}
-          </ActionLink>
-          {!steerOpen && (
-            <button type="button" onClick={() => setSteerOpen(true)}
-              className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">
-              steer →
-            </button>
-          )}
-          {!selected && <SkipLink onClick={() => void fireSkip()} />}
+      {generating ? (
+        <div className="space-y-3">
+          <p className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))]">
+            Adding more options…{" "}
+            <button type="button" onClick={() => void run.cancel()}
+              className="underline-offset-2 hover:text-foreground hover:underline transition-colors">cancel</button>
+          </p>
+          {[0, 1, 2].map((i) => <SkeletonCard key={i} />)}
         </div>
-      </div>
+      ) : (
+        <div className="mt-1">
+          {steerOpen && <SteerField steer={steer} className="mb-3" />}
+          <div className="flex items-center gap-5">
+            <ActionLink icon={<RefreshCw className="h-3.5 w-3.5" />} onClick={() => void fire()}>
+              propose more
+            </ActionLink>
+            {!steerOpen && (
+              <button type="button" onClick={() => setSteerOpen(true)}
+                className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">
+                steer →
+              </button>
+            )}
+            {!selected && <SkipLink onClick={() => void fireSkip()} />}
+          </div>
+        </div>
+      )}
       {run.run?.status === "error" && <RunError msg={run.run.error} />}
     </div>
   );
@@ -334,10 +345,6 @@ function CastSub({ bookId, cast, beforeGen, onSave }: { bookId: number; cast: Ca
       return { ...m, ...patch, pinned_fields };
     }));
   };
-
-  if (generating) {
-    return <RunningInline label="Proposing cast options…" onCancel={() => void run.cancel()} />;
-  }
 
   // Proposals ready — show the pick-one UI (overlays the editing ui if cast already exists).
   if (proposals.length > 0) {
@@ -391,8 +398,20 @@ function CastSub({ bookId, cast, beforeGen, onSave }: { bookId: number; cast: Ca
     );
   }
 
-  // No cast yet — hero state.
+  // No cast yet — hero state (with skeletons if generating).
   if (cast.length === 0) {
+    if (generating) {
+      return (
+        <div className="space-y-3">
+          <p className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))]">
+            Creating cast options…{" "}
+            <button type="button" onClick={() => void run.cancel()}
+              className="underline-offset-2 hover:text-foreground hover:underline transition-colors">cancel</button>
+          </p>
+          {[0, 1, 2].map((i) => <SkeletonProposalCard key={i} />)}
+        </div>
+      );
+    }
     return (
       <div>
         {steerOpen && <div className="mb-4"><SteerField steer={steer} /></div>}
@@ -412,7 +431,7 @@ function CastSub({ bookId, cast, beforeGen, onSave }: { bookId: number; cast: Ca
     );
   }
 
-  // Cast exists — editing mode.
+  // Cast exists — editing mode. Skeletons appear below while new proposals are being created.
   return (
     <div className="space-y-3.5">
       {cast.map((m) => (
@@ -455,23 +474,36 @@ function CastSub({ bookId, cast, beforeGen, onSave }: { bookId: number; cast: Ca
           <CastLook bookId={bookId} member={m} onUpdate={(patch) => update(m.id, patch)} />
         </Panel>
       ))}
-      <div className="flex items-center gap-5">
-        <ActionLink
-          icon={<Plus className="h-3.5 w-3.5" />}
-          onClick={() => void onSave([...cast, { id: uid(), name: "New character", role: cast.length ? "major" : "protagonist", pinned_fields: [...CAST_FIELDS] }])}
-        >
-          add character
-        </ActionLink>
-        <ActionLink icon={<Sparkles className="h-3.5 w-3.5" />} tone="muted" onClick={() => void fire()}>
-          propose new cast options
-        </ActionLink>
-      </div>
-      {steerOpen && <SteerField steer={steer} className="mt-1" />}
-      {!steerOpen && (
-        <button type="button" onClick={() => setSteerOpen(true)}
-          className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">
-          steer →
-        </button>
+      {generating ? (
+        <div className="space-y-3">
+          <p className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))]">
+            Proposing cast options…{" "}
+            <button type="button" onClick={() => void run.cancel()}
+              className="underline-offset-2 hover:text-foreground hover:underline transition-colors">cancel</button>
+          </p>
+          {[0, 1, 2].map((i) => <SkeletonProposalCard key={i} />)}
+        </div>
+      ) : (
+        <>
+          <div className="flex items-center gap-5">
+            <ActionLink
+              icon={<Plus className="h-3.5 w-3.5" />}
+              onClick={() => void onSave([...cast, { id: uid(), name: "New character", role: cast.length ? "major" : "protagonist", pinned_fields: [...CAST_FIELDS] }])}
+            >
+              add character
+            </ActionLink>
+            <ActionLink icon={<Sparkles className="h-3.5 w-3.5" />} tone="muted" onClick={() => void fire()}>
+              propose new cast options
+            </ActionLink>
+          </div>
+          {steerOpen && <SteerField steer={steer} className="mt-1" />}
+          {!steerOpen && (
+            <button type="button" onClick={() => setSteerOpen(true)}
+              className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">
+              steer →
+            </button>
+          )}
+        </>
       )}
       {run.run?.status === "error" && <RunError msg={run.run.error} />}
     </div>
@@ -721,6 +753,42 @@ function TentpoleCard({ t, onText, onKeep, onKill, bookId }: { t: Tentpole; onTe
 }
 
 // ── Small shared bits ─────────────────────────────────────────────────────────
+function SkeletonCard() {
+  return (
+    <div className="animate-pulse rounded-2xl border border-[hsl(var(--pv-border-soft))]/60 bg-[hsl(var(--pv-surface-2))]/30 px-6 py-5">
+      <div className="mb-3 h-2 w-24 rounded-full bg-[hsl(var(--pv-border-soft))]" />
+      <div className="space-y-2.5">
+        <div className="h-3.5 w-full rounded-full bg-[hsl(var(--pv-border-soft))]" />
+        <div className="h-3.5 rounded-full bg-[hsl(var(--pv-border-soft))]" style={{ width: "83%" }} />
+        <div className="h-3.5 rounded-full bg-[hsl(var(--pv-border-soft))]" style={{ width: "67%" }} />
+      </div>
+    </div>
+  );
+}
+
+function SkeletonProposalCard() {
+  return (
+    <div className="animate-pulse rounded-2xl border border-[hsl(var(--pv-border-soft))]/60 bg-[hsl(var(--pv-surface-2))]/30 px-6 py-5">
+      <div className="mb-4 flex items-center justify-between">
+        <div className="h-2 w-16 rounded-full bg-[hsl(var(--pv-border-soft))]" />
+        <div className="h-7 w-36 rounded-full bg-[hsl(var(--pv-border-soft))]" />
+      </div>
+      <div className="mb-4 space-y-1.5">
+        <div className="mb-2 h-3.5 w-28 rounded-full bg-[hsl(var(--pv-border-soft))]" />
+        <div className="h-3 w-full rounded-full bg-[hsl(var(--pv-border-soft))]/70" />
+        <div className="h-3 rounded-full bg-[hsl(var(--pv-border-soft))]/70" style={{ width: "88%" }} />
+        <div className="h-3 rounded-full bg-[hsl(var(--pv-border-soft))]/70" style={{ width: "75%" }} />
+      </div>
+      <div className="space-y-1.5">
+        <div className="mb-2 h-3.5 w-24 rounded-full bg-[hsl(var(--pv-border-soft))]" />
+        <div className="h-3 w-full rounded-full bg-[hsl(var(--pv-border-soft))]/70" />
+        <div className="h-3 rounded-full bg-[hsl(var(--pv-border-soft))]/70" style={{ width: "80%" }} />
+        <div className="h-3 rounded-full bg-[hsl(var(--pv-border-soft))]/70" style={{ width: "65%" }} />
+      </div>
+    </div>
+  );
+}
+
 function SkipLink({ onClick }: { onClick: () => void }) {
   return (
     <button type="button" onClick={onClick} className="pv-serif mt-3 text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">
