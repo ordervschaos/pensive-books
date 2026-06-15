@@ -214,6 +214,10 @@ function NodeSub({ bookId, stepKey, node, heroTitle, heroSub, blockedReason, bef
             rows={Math.max(3, Math.ceil((draft ?? selected).length / 80))}
             className="pv-serif border-none bg-transparent px-0 text-[15.5px] leading-[1.65] focus-visible:ring-0"
           />
+          <DurableReviser
+            bookId={bookId} layer={stepKey} targetKey={`foundations:${stepKey}:revise`}
+            current={selected} onApply={async (text) => { await onSave(pinNode(node, text)); }} label="revise →"
+          />
         </Panel>
       )}
       {candidates.map((c, idx) => {
@@ -250,13 +254,19 @@ function NodeSub({ bookId, stepKey, node, heroTitle, heroSub, blockedReason, bef
               </div>
             </div>
             {isSelected ? (
-              <Textarea
-                value={draft ?? selected}
-                onChange={(e) => setDraft(e.target.value)}
-                onBlur={() => { if (draft != null && draft.trim() !== selected) void onSave(pinNode(node, draft.trim())); setDraft(null); }}
-                rows={Math.max(3, Math.ceil((draft ?? selected).length / 80))}
-                className="pv-serif border-none bg-transparent px-0 text-[15.5px] leading-[1.65] focus-visible:ring-0"
-              />
+              <>
+                <Textarea
+                  value={draft ?? selected}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onBlur={() => { if (draft != null && draft.trim() !== selected) void onSave(pinNode(node, draft.trim())); setDraft(null); }}
+                  rows={Math.max(3, Math.ceil((draft ?? selected).length / 80))}
+                  className="pv-serif border-none bg-transparent px-0 text-[15.5px] leading-[1.65] focus-visible:ring-0"
+                />
+                <DurableReviser
+                  bookId={bookId} layer={stepKey} targetKey={`foundations:${stepKey}:revise`}
+                  current={selected} onApply={async (text) => { await onSave(pinNode(node, text)); }} label="revise →"
+                />
+              </>
             ) : (
               <p className="pv-serif whitespace-pre-wrap text-[15.5px] leading-[1.65] text-foreground">{c.text}</p>
             )}
@@ -264,16 +274,6 @@ function NodeSub({ bookId, stepKey, node, heroTitle, heroSub, blockedReason, bef
           </div>
         );
       })}
-      {selected && (
-        <DurableReviser
-          bookId={bookId}
-          layer={stepKey}
-          targetKey={`foundations:${stepKey}:revise`}
-          current={selected}
-          onApply={async (text) => { await onSave(pinNode(node, text)); }}
-          label="revise →"
-        />
-      )}
       <div className="mt-1">
         <SteerField steer={steer} className="mb-3" />
         <div className="flex items-center gap-5">
