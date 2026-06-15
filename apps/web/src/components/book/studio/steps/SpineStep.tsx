@@ -6,7 +6,7 @@
 // Picking one makes it spine.text (editable in the chosen-card UI). Pinned tentpoles are validated
 // server-side into every route. Every AI op is a durable run (useAIRun → ai-run).
 import { useEffect, useRef, useState } from "react";
-import { Check, Map as MapIcon, Plus, X } from "lucide-react";
+import { Check, Map as MapIcon, X } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useAIRun } from "@/hooks/useAIRun";
@@ -16,11 +16,13 @@ import {
   readSpineNode, writeSpinePatch,
   type Foundations, type SpineNode, type SpineRoute,
 } from "@/lib/foundations";
-import { ActionLink, Eyebrow, Hero, Panel, RunError } from "../studioUi";
+import type { UseSteer } from "@/lib/steer";
+import { Eyebrow, GenRow, Hero, Panel, RunError } from "../studioUi";
 
 interface Props {
   bookId: number;
   foundations?: Foundations | null;
+  steer: UseSteer;
   beforeGen: () => Promise<void>;
   onStatusChange: (v: boolean) => void;
   onChanged: () => void;
@@ -46,7 +48,7 @@ function SkeletonRoute() {
   );
 }
 
-export function SpineStep({ bookId, foundations, beforeGen, onStatusChange, onChanged }: Props) {
+export function SpineStep({ bookId, foundations, steer, beforeGen, onStatusChange, onChanged }: Props) {
   const { toast } = useToast();
   const [spine, setSpine] = useState("");
   const [node, setNode] = useState<SpineNode>({});
@@ -143,6 +145,16 @@ export function SpineStep({ bookId, foundations, beforeGen, onStatusChange, onCh
         <Hero icon={<MapIcon className="h-5 w-5" />} title="Chart the routes"
           sub={`Three different roads from your beginning to your settled ending${pinnedTentpoles ? ` — every one passing through your ${pinnedTentpoles} pinned moment${pinnedTentpoles === 1 ? "" : "s"}` : ""}. Pick the one you'd ride.`}
           onClick={proposeMore} />
+        <div className="mt-4">
+          <textarea
+            value={steer.value}
+            onChange={(e) => steer.setValue(e.target.value)}
+            onBlur={() => void steer.save()}
+            placeholder="steer (optional)"
+            rows={1}
+            className="pv-serif w-full resize-none rounded-xl border border-[hsl(var(--pv-border-soft))]/70 bg-transparent px-3.5 py-2 text-[13.5px] leading-relaxed placeholder:italic placeholder:text-[hsl(var(--pv-text-faint))] focus:border-[hsl(var(--pv-accent))]/50 focus:outline-none focus:ring-0"
+          />
+        </div>
         {routesRun.run?.status === "error" && <RunError msg={routesRun.run.error} />}
       </div>
     );
@@ -219,11 +231,9 @@ export function SpineStep({ bookId, foundations, beforeGen, onStatusChange, onCh
         </>
       )}
 
-      {/* Propose more — always below the cards when not generating. */}
+      {/* Steer + propose — always below the cards when not generating. */}
       {!generating && (routes.length > 0 || spine) && (
-        <ActionLink icon={<Plus className="h-3.5 w-3.5" />} onClick={proposeMore}>
-          propose more routes
-        </ActionLink>
+        <GenRow steer={steer} label="propose more routes" onFire={proposeMore} />
       )}
 
       {routesRun.run?.status === "error" && <RunError msg={routesRun.run.error} />}

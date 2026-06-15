@@ -6,6 +6,35 @@ import { cn } from "@/lib/utils";
 import type { CellState } from "@/lib/planGraph";
 import type { DotState } from "./studioModel";
 
+// Steer input + generate button, always rendered together as one unit. Removes the need for a
+// separate "steer →" toggle: the input is always visible, the button is right below it.
+// Works with both persistent (useSteer) and ephemeral (useLocalSteer) steer objects.
+export function GenRow({ steer, label, icon, onFire, busy, placeholder, className }: {
+  steer: { value: string; setValue: (v: string) => void; save: () => Promise<void>; loaded: boolean };
+  label: string;
+  icon?: ReactNode;
+  onFire: () => void;
+  busy?: boolean;
+  placeholder?: string;
+  className?: string;
+}) {
+  return (
+    <div className={cn("space-y-2.5", className)}>
+      {steer.loaded && (
+        <textarea
+          value={steer.value}
+          onChange={(e) => steer.setValue(e.target.value)}
+          onBlur={() => void steer.save()}
+          placeholder={placeholder ?? "steer (optional)"}
+          rows={1}
+          className="pv-serif w-full resize-none rounded-xl border border-[hsl(var(--pv-border-soft))]/70 bg-transparent px-3.5 py-2 text-[13.5px] leading-relaxed placeholder:italic placeholder:text-[hsl(var(--pv-text-faint))] focus:border-[hsl(var(--pv-accent))]/50 focus:outline-none focus:ring-0"
+        />
+      )}
+      <ActionLink icon={icon} onClick={onFire} busy={busy}>{label}</ActionLink>
+    </div>
+  );
+}
+
 // Full-screen image viewer. Shared by every studio surface that shows generated art. Click-outside or
 // Esc closes; the image itself swallows clicks so it stays open.
 export function ImageLightbox({ src, onClose }: { src: string | null; onClose: () => void }) {

@@ -6,15 +6,15 @@
 //   • Bottom: BeatChat conversational editor.
 //
 // See docs/beat-sheet-revision.md.
-import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Loader2, RefreshCw, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Check, ChevronLeft, ChevronRight, Loader2, RefreshCw, Sparkles, X } from "lucide-react";
 import { AutoTextarea } from "@/components/ui/auto-textarea";
 import { saveBeat, saveObjective, transforms } from "@/lib/ladder";
 import { useAIRun } from "@/hooks/useAIRun";
 import { BeatChat } from "./BeatChat";
 import type { StudioModel } from "./studioModel";
 import type { MapPage } from "@/lib/planGraph";
-import { ActionLink, Eyebrow, Pip } from "./studioUi";
+import { ActionLink, Eyebrow, GenRow, Panel, Pip, SkeletonCard } from "./studioUi";
 
 const VISIBLE = 3;
 
@@ -264,34 +264,26 @@ function PageRow({ bookId, page, onChanged, onSelectPage, beforeGen }: {
   const [obj, setObj] = useState(page.objectiveText);
   const [beat, setBeat] = useState(page.beatText);
   const [saving, setSaving] = useState(false);
-  const [regen, setRegen] = useState(false);
+  const [steerVal, setSteerVal] = useState("");
+  const localSteer = { value: steerVal, setValue: setSteerVal, save: async () => {}, loaded: true };
 
   useEffect(() => { setObj(page.objectiveText); setBeat(page.beatText); }, [page.objectiveText, page.beatText]);
 
-  const cand = useAIRun<{ options: string[] }>({ bookId, kind: "beat_candidates", targetPageId: page.id, enabled: regen });
-  const newBeat = cand.run?.result?.options?.[0] ?? "";
-  const status = cand.run?.status;
-  const generating = regen && (status === "running" || status === "pending" || cand.starting);
-  const sawRunning = useRef(false);
-  const seatedRun = useRef<number | null>(null);
+  const cand = useAIRun<{ options: string[] }>({ bookId, kind: "beat_candidates", targetPageId: page.id });
+  const proposal = cand.run?.status === "ready" ? (cand.run.result?.options?.[0] ?? "") : "";
+  const generating = cand.run?.status === "running" || cand.run?.status === "pending" || cand.starting;
 
-  useEffect(() => {
-    if (!regen) return;
-    if (status === "running" || status === "pending") sawRunning.current = true;
-    if (status === "ready" && newBeat && sawRunning.current && cand.run && seatedRun.current !== cand.run.id) {
-      seatedRun.current = cand.run.id;
-      setBeat(newBeat);
-      setRegen(false);
-      sawRunning.current = false;
-      void cand.accept(async () => {});
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, newBeat]);
+  const proposeBeat = async () => {
+    if (!obj.trim()) return;
+    await beforeGen();
+    void cand.start({ pageId: page.id, objective: obj.trim(), ...(steerVal.trim() ? { prompt: steerVal.trim() } : {}) });
+  };
 
-  const doRegen = async () => {
-    if (generating || !obj.trim()) return;
-    try { await beforeGen(); sawRunning.current = false; setRegen(true); void cand.start({ pageId: page.id, objective: obj.trim() }); }
-    catch { setRegen(false); }
+  const acceptProposal = async () => {
+    if (!proposal) return;
+    const text = proposal;
+    setBeat(text);
+    void cand.accept(async () => { await saveBeat(bookId, page.id, text); onChanged(); });
   };
 
   const saveObj = async () => {
@@ -340,27 +332,52 @@ function PageRow({ bookId, page, onChanged, onSelectPage, beforeGen }: {
       <div className="my-5 border-t border-[hsl(var(--pv-border-soft))]/50" />
 
       {/* Beat */}
-      <div>
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <Eyebrow>Beat</Eyebrow>
-          {generating ? (
-            <span className="inline-flex items-center gap-1.5 pv-serif text-[11.5px] italic text-[hsl(var(--pv-text-faint))]">
-              <Loader2 className="h-3 w-3 animate-spin" /> regenerating…
-            </span>
-          ) : (
-            <ActionLink tone="faint" icon={<RefreshCw className="h-3 w-3" />} onClick={() => void doRegen()}>
-              regenerate
-            </ActionLink>
-          )}
-        </div>
-        <AutoTextarea
-          value={beat}
-          onChange={(e) => setBeat(e.target.value)}
-          onBlur={() => void saveB()}
-          placeholder="(no beat yet)"
-          disabled={generating}
-          className="pv-serif w-full border-none bg-transparent px-0 text-[15px] leading-[1.65] focus-visible:ring-0 disabled:opacity-50"
-        />
+      <div className="space-y-3">
+        <Eyebrow className="block">Beat</Eyebrow>
+
+        {/* Chosen beat */}
+        {beat.trim() && (
+          <Panel className="border-[hsl(var(--pv-accent))]/45 bg-[hsl(var(--pv-surface-2))]/60 px-5 py-4">
+            <AutoTextarea
+              value={beat}
+              onChange={(e) => setBeat(e.target.value)}
+              onBlur={() => void saveB()}
+              disabled={generating}
+              className="pv-serif w-full border-none bg-transparent px-0 text-[15px] leading-[1.65] focus-visible:ring-0 disabled:opacity-50"
+            />
+          </Panel>
+        )}
+
+        {/* Skeleton while generating */}
+        {generating && <SkeletonCard />}
+
+        {/* Proposal ready — pick or dismiss */}
+        {!generating && proposal && (
+          <div className="rounded-2xl border border-border bg-[hsl(var(--pv-surface-2))]/40 px-5 py-4">
+            <Eyebrow className="block mb-2">Proposed</Eyebrow>
+            <p className="pv-serif text-[15px] leading-[1.65] text-foreground">{proposal}</p>
+            <div className="mt-3 flex items-center gap-4">
+              <button type="button" onClick={() => void acceptProposal()}
+                className="pv-serif inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-[13.5px] text-primary-foreground">
+                <Check className="h-3.5 w-3.5" /> Use this beat
+              </button>
+              <button type="button" onClick={() => void cand.reject()}
+                className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">
+                dismiss
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* GenRow: steer + propose more (hidden while generating or showing proposal) */}
+        {!generating && !proposal && (
+          <GenRow
+            steer={localSteer}
+            label={beat.trim() ? "propose more" : "draft this beat"}
+            icon={<Sparkles className="h-3.5 w-3.5" />}
+            onFire={() => void proposeBeat()}
+          />
+        )}
       </div>
 
       {/* Open page link */}

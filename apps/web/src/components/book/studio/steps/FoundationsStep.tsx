@@ -7,9 +7,7 @@
 // Voice is absorbed here (old stage 4): the chosen exemplar is ALSO mirrored to
 // books.bible.voice_sample so the existing prose renderers keep reading their anchor unchanged.
 import { useEffect, useRef, useState } from "react";
-import { Check, ImageIcon, Pin, Plus, RefreshCw, Sparkles, X } from "lucide-react";
-import { SteerField } from "../SteerField";
-import type { UseSteer } from "@/lib/steer";
+import { Check, ImageIcon, Pin, Plus, Sparkles, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Textarea } from "@/components/ui/textarea";
 import { AutoTextarea } from "@/components/ui/auto-textarea";
@@ -21,7 +19,7 @@ import {
   foundationsProgress, pinNode, writeFoundations,
   type CastMember, type CastProposal, type FCandidate, type FNode, type Foundations, type FoundationsStepKey, type Tentpole,
 } from "@/lib/foundations";
-import { ActionLink, Eyebrow, Hero, ImageLightbox, Panel, RunError, SkeletonCard, SkeletonProposalCard } from "../studioUi";
+import { ActionLink, Eyebrow, GenRow, Hero, ImageLightbox, Panel, RunError, SkeletonCard, SkeletonProposalCard } from "../studioUi";
 import { DurableReviser } from "../../DurableReviser";
 
 const uid = () => crypto.randomUUID().slice(0, 8);
@@ -144,11 +142,10 @@ function NodeSub({ bookId, stepKey, node, heroTitle, heroSub, blockedReason, bef
   const appliedRef = useRef<number | null>(null);
   const autoPickRef = useRef(false);
   const [draft, setDraft] = useState<string | null>(null); // inline edit buffer for the selected text
-  const [steerOpen, setSteerOpen] = useState(false);
   const steer = useLocalSteer();
 
-  const fire = async () => { setSteerOpen(false); await beforeGen(); void run.start({ step: stepKey, ...(steer.value.trim() ? { prompt: steer.value.trim() } : {}) }); };
-  const fireSkip = async () => { setSteerOpen(false); autoPickRef.current = true; await beforeGen(); void run.start({ step: stepKey, ...(steer.value.trim() ? { prompt: steer.value.trim() } : {}) }); };
+  const fire = async () => { await beforeGen(); void run.start({ step: stepKey, ...(steer.value.trim() ? { prompt: steer.value.trim() } : {}) }); };
+  const fireSkip = async () => { autoPickRef.current = true; await beforeGen(); void run.start({ step: stepKey, ...(steer.value.trim() ? { prompt: steer.value.trim() } : {}) }); };
 
   const generating = run.starting || run.run?.status === "running" || run.run?.status === "pending";
 
@@ -191,15 +188,15 @@ function NodeSub({ bookId, stepKey, node, heroTitle, heroSub, blockedReason, bef
   if (!generating && candidates.length === 0 && !selected) {
     return (
       <div>
-        {steerOpen && <div className="mb-4"><SteerField steer={steer} /></div>}
         <Hero icon={<Sparkles className="h-5 w-5" />} title={heroTitle} sub={heroSub} onClick={() => void fire()} />
-        <div className="mt-3 flex items-center gap-5">
-          {!steerOpen && (
-            <button type="button" onClick={() => setSteerOpen(true)}
-              className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">
-              steer →
-            </button>
-          )}
+        <div className="mt-4 space-y-2.5">
+          <textarea
+            value={steer.value}
+            onChange={(e) => steer.setValue(e.target.value)}
+            placeholder="steer (optional)"
+            rows={1}
+            className="pv-serif w-full resize-none rounded-xl border border-[hsl(var(--pv-border-soft))]/70 bg-transparent px-3.5 py-2 text-[13.5px] leading-relaxed placeholder:italic placeholder:text-[hsl(var(--pv-text-faint))] focus:border-[hsl(var(--pv-accent))]/50 focus:outline-none focus:ring-0"
+          />
           <SkipLink onClick={() => void fireSkip()} />
         </div>
         {run.run?.status === "error" && <RunError msg={run.run.error} />}
@@ -296,20 +293,9 @@ function NodeSub({ bookId, stepKey, node, heroTitle, heroSub, blockedReason, bef
           {[0, 1, 2].map((i) => <SkeletonCard key={i} />)}
         </div>
       ) : (
-        <div className="mt-1">
-          {steerOpen && <SteerField steer={steer} className="mb-3" />}
-          <div className="flex items-center gap-5">
-            <ActionLink icon={<RefreshCw className="h-3.5 w-3.5" />} onClick={() => void fire()}>
-              propose more
-            </ActionLink>
-            {!steerOpen && (
-              <button type="button" onClick={() => setSteerOpen(true)}
-                className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">
-                steer →
-              </button>
-            )}
-            {!selected && <SkipLink onClick={() => void fireSkip()} />}
-          </div>
+        <div className="mt-1 space-y-2.5">
+          <GenRow steer={steer} label="propose more" icon={<Plus className="h-3.5 w-3.5" />} onFire={() => void fire()} />
+          {!selected && <SkipLink onClick={() => void fireSkip()} />}
         </div>
       )}
       {run.run?.status === "error" && <RunError msg={run.run.error} />}
@@ -322,13 +308,11 @@ const CAST_FIELDS = ["want", "wound", "lie"] as const;
 
 function CastSub({ bookId, cast, beforeGen, onSave }: { bookId: number; cast: CastMember[]; beforeGen: () => Promise<void>; onSave: (c: CastMember[]) => Promise<void> | void }) {
   const run = useAIRun<{ proposals: CastProposal[] }>({ bookId, kind: "foundations_options", targetKey: "foundations:cast" });
-  const [steerOpen, setSteerOpen] = useState(false);
   const steer = useLocalSteer();
   const generating = run.starting || run.run?.status === "running" || run.run?.status === "pending";
   const proposals = run.run?.status === "ready" ? (run.run.result?.proposals ?? []) : [];
 
   const fire = async () => {
-    setSteerOpen(false);
     await beforeGen();
     void run.start({ step: "cast", ...(steer.value.trim() ? { prompt: steer.value.trim() } : {}) });
   };
@@ -382,10 +366,8 @@ function CastSub({ bookId, cast, beforeGen, onSave }: { bookId: number; cast: Ca
             </div>
           </div>
         ))}
-        <div className="flex items-center gap-5">
-          <ActionLink icon={<RefreshCw className="h-3.5 w-3.5" />} onClick={() => void fire()}>
-            propose different options
-          </ActionLink>
+        <div className="space-y-2.5">
+          <GenRow steer={steer} label="propose different options" icon={<Plus className="h-3.5 w-3.5" />} onFire={() => void fire()} />
           {cast.length > 0 && (
             <button type="button" onClick={() => void run.reject()}
               className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">
@@ -414,17 +396,17 @@ function CastSub({ bookId, cast, beforeGen, onSave }: { bookId: number; cast: Ca
     }
     return (
       <div>
-        {steerOpen && <div className="mb-4"><SteerField steer={steer} /></div>}
         <Hero icon={<Sparkles className="h-5 w-5" />} title="Propose three cast options"
           sub="Three complete configurations — protagonist plus majors, each with want / wound / lie. Pick the one you'd defend, then edit freely."
           onClick={() => void fire()} />
-        <div className="mt-3 flex items-center gap-5">
-          {!steerOpen && (
-            <button type="button" onClick={() => setSteerOpen(true)}
-              className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">
-              steer →
-            </button>
-          )}
+        <div className="mt-4">
+          <textarea
+            value={steer.value}
+            onChange={(e) => steer.setValue(e.target.value)}
+            placeholder="steer (optional)"
+            rows={1}
+            className="pv-serif w-full resize-none rounded-xl border border-[hsl(var(--pv-border-soft))]/70 bg-transparent px-3.5 py-2 text-[13.5px] leading-relaxed placeholder:italic placeholder:text-[hsl(var(--pv-text-faint))] focus:border-[hsl(var(--pv-accent))]/50 focus:outline-none focus:ring-0"
+          />
         </div>
         {run.run?.status === "error" && <RunError msg={run.run.error} />}
       </div>
@@ -484,26 +466,15 @@ function CastSub({ bookId, cast, beforeGen, onSave }: { bookId: number; cast: Ca
           {[0, 1, 2].map((i) => <SkeletonProposalCard key={i} />)}
         </div>
       ) : (
-        <>
-          <div className="flex items-center gap-5">
-            <ActionLink
-              icon={<Plus className="h-3.5 w-3.5" />}
-              onClick={() => void onSave([...cast, { id: uid(), name: "New character", role: cast.length ? "major" : "protagonist", pinned_fields: [...CAST_FIELDS] }])}
-            >
-              add character
-            </ActionLink>
-            <ActionLink icon={<Sparkles className="h-3.5 w-3.5" />} tone="muted" onClick={() => void fire()}>
-              propose new cast options
-            </ActionLink>
-          </div>
-          {steerOpen && <SteerField steer={steer} className="mt-1" />}
-          {!steerOpen && (
-            <button type="button" onClick={() => setSteerOpen(true)}
-              className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">
-              steer →
-            </button>
-          )}
-        </>
+        <div className="space-y-3">
+          <ActionLink
+            icon={<Plus className="h-3.5 w-3.5" />}
+            onClick={() => void onSave([...cast, { id: uid(), name: "New character", role: cast.length ? "major" : "protagonist", pinned_fields: [...CAST_FIELDS] }])}
+          >
+            add character
+          </ActionLink>
+          <GenRow steer={steer} label="propose new cast options" icon={<Sparkles className="h-3.5 w-3.5" />} onFire={() => void fire()} />
+        </div>
       )}
       {run.run?.status === "error" && <RunError msg={run.run.error} />}
     </div>
@@ -668,17 +639,12 @@ function TentpolesSub({ bookId, tentpoles, beforeGen, onSave }: { bookId: number
               </>
             )}
             {!generating && (
-              <div className="rounded-2xl border border-dashed border-border px-4 py-3">
-                <SteerField steer={steer} label="Steer these proposals" className="mb-3" />
-                <ActionLink
-                  icon={proposalCards.length ? <Plus className="h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
-                  onClick={() => void fire()}
-                >
-                  {proposalCards.length
-                    ? `propose more${pinnedCount ? ` (${pinnedCount} pinned held)` : ""}`
-                    : "propose moments"}
-                </ActionLink>
-              </div>
+              <GenRow
+                steer={steer}
+                icon={proposalCards.length ? <Plus className="h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
+                label={proposalCards.length ? `propose more${pinnedCount ? ` (${pinnedCount} pinned held)` : ""}` : "propose moments"}
+                onFire={() => void fire()}
+              />
             )}
             {run.run?.status === "error" && <RunError msg={run.run.error} />}
           </div>

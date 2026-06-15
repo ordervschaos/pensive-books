@@ -7,7 +7,7 @@
 // the author edits in place and saves — no take-picker. The run survives navigation/refresh, is
 // cancellable, and reattaches; the cursor/edit stay client-side. Saving a beat marks the run applied.
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Check, Loader2, RefreshCw, Sparkles } from "lucide-react";
+import { ArrowLeft, Check, Loader2, Sparkles } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useAIRun } from "@/hooks/useAIRun";
@@ -19,12 +19,13 @@ import { RunControls } from "../../RunControls";
 import { BeatSheet } from "../BeatSheet";
 import type { MapPage } from "@/lib/planGraph";
 import type { StudioModel } from "../studioModel";
-import { ActionLink, DoneStrip, Eyebrow, Hero, Panel, RunError, RunningCard, RunningInline } from "../studioUi";
+import type { UseSteer } from "@/lib/steer";
+import { ActionLink, DoneStrip, Eyebrow, GenRow, Hero, Panel, RunError, RunningCard, RunningInline } from "../studioUi";
 
 interface BuildProgress { done: number; total: number; phase?: string; stage?: string }
 interface BuildRow extends TaskRow { progress: BuildProgress | null; error: string | null }
 
-export function BeatsStep({ bookId, model, beforeGen, onChanged, onSelectPage }: { bookId: number; model: StudioModel; beforeGen: () => Promise<void>; onChanged: () => void; onSelectPage?: (pageId: number) => void }) {
+export function BeatsStep({ bookId, model, steer, beforeGen, onChanged, onSelectPage }: { bookId: number; model: StudioModel; steer: UseSteer; beforeGen: () => Promise<void>; onChanged: () => void; onSelectPage?: (pageId: number) => void }) {
   const { toast } = useToast();
   const beatPages = model.textPages.filter((p) => p.objectiveText.trim());
   const doneCount = beatPages.filter((p) => p.beat !== "gap").length;
@@ -173,12 +174,24 @@ export function BeatsStep({ bookId, model, beforeGen, onChanged, onSelectPage }:
       ) : proseRunning ? (
         <RunningInline className="mb-6" label={buildProgress?.phase ?? "Writing prose…"} />
       ) : gapCount > 0 ? (
-        <Hero
-          icon={<Sparkles className="h-5 w-5" />}
-          title={`Generate ${hasBeats ? "the remaining " : "all "}${gapCount} beat${gapCount === 1 ? "" : "s"} at once`}
-          sub="Plans the strongest beat for each page from its objective — then continues straight into the prose. You can refine any beat by hand below."
-          onClick={() => void runBulkBeats()}
-        />
+        <>
+          <Hero
+            icon={<Sparkles className="h-5 w-5" />}
+            title={`Generate ${hasBeats ? "the remaining " : "all "}${gapCount} beat${gapCount === 1 ? "" : "s"} at once`}
+            sub="Plans the strongest beat for each page from its objective — then continues straight into the prose. You can refine any beat by hand below."
+            onClick={() => void runBulkBeats()}
+          />
+          <div className="mt-3">
+            <textarea
+              value={steer.value}
+              onChange={(e) => steer.setValue(e.target.value)}
+              onBlur={() => void steer.save()}
+              placeholder="steer (optional)"
+              rows={1}
+              className="pv-serif w-full resize-none rounded-xl border border-[hsl(var(--pv-border-soft))]/70 bg-transparent px-3.5 py-2 text-[13.5px] leading-relaxed placeholder:italic placeholder:text-[hsl(var(--pv-text-faint))] focus:border-[hsl(var(--pv-accent))]/50 focus:outline-none focus:ring-0"
+            />
+          </div>
+        </>
       ) : null}
 
       {/* ── Once any beat exists: the whole-sheet view + the AI beat-sheet doctor take over ── */}
@@ -222,37 +235,33 @@ export function BeatsStep({ bookId, model, beforeGen, onChanged, onSelectPage }:
           {generating ? (
             <RunningInline className="mt-5" label="Drafting the beat…" onCancel={() => void cand.cancel()} />
           ) : committed ? (
-            <div className="mt-5">
-              <Eyebrow className="mb-3 block">Chosen beat</Eyebrow>
+            <div className="mt-5 space-y-3.5">
+              <Eyebrow className="block">Chosen beat</Eyebrow>
               <Panel className="border-[hsl(var(--pv-accent))]/45 bg-[hsl(var(--pv-surface-2))]/60 px-5 py-4">
                 <Textarea value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={() => draft.trim() && void saveBeat(bookId, page.id, draft.trim()).then(onChanged)} rows={6}
                   className="pv-serif border-none bg-transparent px-0 text-[15.5px] leading-[1.6] focus-visible:ring-0" />
               </Panel>
-              <div className="mt-4 flex flex-wrap items-center gap-5">
-                <ActionLink icon={<RefreshCw className="h-3.5 w-3.5" />} onClick={draftBeat}>
-                  regenerate this beat
-                </ActionLink>
-                <div className="ml-auto flex gap-5">
+              <div className="flex items-center justify-between gap-5">
+                <GenRow steer={steer} label="propose more" icon={<Sparkles className="h-3.5 w-3.5" />} onFire={draftBeat} />
+                <div className="flex shrink-0 gap-5">
                   {cursor > 0 && <button type="button" onClick={() => setCursor(cursor - 1)} className="pv-serif text-[13.5px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground">← prev</button>}
                   {cursor < total - 1 && <button type="button" onClick={() => setCursor(cursor + 1)} className="pv-serif text-[13.5px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground">next →</button>}
                 </div>
               </div>
             </div>
           ) : ready ? (
-            <div className="mt-5">
-              <Eyebrow className="mb-3 block">Beat — edit it, then keep it</Eyebrow>
+            <div className="mt-5 space-y-3.5">
+              <Eyebrow className="block">Beat — edit it, then keep it</Eyebrow>
               <Panel className="border-[hsl(var(--pv-accent))]/45 bg-[hsl(var(--pv-surface-2))]/60 px-5 py-4">
                 <Textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={6}
                   className="pv-serif border-none bg-transparent px-0 text-[15.5px] leading-[1.6] focus-visible:ring-0" />
               </Panel>
-              <div className="mt-5 flex flex-wrap items-center gap-4">
+              <div className="flex flex-wrap items-center gap-4">
                 <button type="button" onClick={() => void commit()} disabled={saving || !draft.trim()}
                   className="pv-serif inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-[14.5px] text-primary-foreground disabled:opacity-40">
                   {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Use this beat &amp; continue
                 </button>
-                <button type="button" onClick={draftBeat} className="pv-serif inline-flex items-center gap-1.5 text-[13.5px] text-[hsl(var(--pv-text-muted))] hover:text-foreground">
-                  <RefreshCw className="h-3.5 w-3.5" /> regenerate
-                </button>
+                <GenRow steer={steer} label="propose more" icon={<Sparkles className="h-3.5 w-3.5" />} onFire={draftBeat} />
                 {cursor > 0 && <button type="button" onClick={() => setCursor(cursor - 1)} className="pv-serif text-[13.5px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground"><ArrowLeft className="mr-1 inline h-3.5 w-3.5" />back</button>}
               </div>
             </div>
@@ -262,11 +271,9 @@ export function BeatsStep({ bookId, model, beforeGen, onChanged, onSelectPage }:
               <ActionLink onClick={draftBeat}>try again →</ActionLink>
             </div>
           ) : (
-            <div className="mt-5 flex flex-wrap items-center gap-5">
-              <ActionLink icon={<Sparkles className="h-3.5 w-3.5" />} onClick={draftBeat}>
-                draft this beat
-              </ActionLink>
-              <div className="ml-auto flex gap-5">
+            <div className="mt-5 space-y-2.5">
+              <GenRow steer={steer} label="draft this beat" icon={<Sparkles className="h-3.5 w-3.5" />} onFire={draftBeat} />
+              <div className="flex gap-5">
                 {cursor > 0 && <button type="button" onClick={() => setCursor(cursor - 1)} className="pv-serif text-[13.5px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground">← prev</button>}
                 {cursor < total - 1 && <button type="button" onClick={() => setCursor(cursor + 1)} className="pv-serif text-[13.5px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground">next →</button>}
               </div>

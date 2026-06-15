@@ -120,7 +120,10 @@ function StepView(props: StageProps & { stepKey: StepKey }) {
     <div>
       <StageHead eyebrow={EYEBROW[status] ?? "Focus · the next move"} title={STEP_LABEL[k]} caption={STEP_CAPTION[k]} />
 
-      {steerStep && k !== "foundations" && <div className="mb-5"><SteerField steer={steer} placeholder={STEER_PLACEHOLDER[k]} /></div>}
+      {/* Outline and draft keep the persistent steer at the top (no inline bundle yet). */}
+      {steerStep && k !== "foundations" && k !== "spine" && k !== "beats" && (
+        <div className="mb-5"><SteerField steer={steer} placeholder={STEER_PLACEHOLDER[k]} /></div>
+      )}
 
       {k === "brief" && (
         <>
@@ -136,7 +139,7 @@ function StepView(props: StageProps & { stepKey: StepKey }) {
       )}
       {k === "spine" && (
         <>
-          <SpineStep bookId={bookId} foundations={props.foundations} beforeGen={steer.save} onStatusChange={props.onSpineStatus} onChanged={props.onChanged} />
+          <SpineStep bookId={bookId} foundations={props.foundations} steer={steer} beforeGen={steer.save} onStatusChange={props.onSpineStatus} onChanged={props.onChanged} />
           {gate("Approve the spine & continue", "the outline is built to realize it")}
         </>
       )}
@@ -148,7 +151,7 @@ function StepView(props: StageProps & { stepKey: StepKey }) {
       )}
       {k === "beats" && (
         <>
-          <BeatsStep bookId={bookId} model={model} beforeGen={steer.save} onChanged={props.onChanged} onSelectPage={props.onSelectPage} />
+          <BeatsStep bookId={bookId} model={model} steer={steer} beforeGen={steer.save} onChanged={props.onChanged} onSelectPage={props.onSelectPage} />
           {gate("Approve the beats & continue", "the author approves the plan, not each unit")}
         </>
       )}
