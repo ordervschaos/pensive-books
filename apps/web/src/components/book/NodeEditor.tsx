@@ -28,8 +28,9 @@ const PLACEHOLDER: Record<NodeLayer, string> = {
 };
 // Per layer: the parent it RE-CREATES from (down) and the child it re-creates from (up). Objective has
 // no per-page down — its parent edge (spine→objectives) is the whole-book scaffold, not a single node.
-const PARENT: Partial<Record<NodeLayer, string>> = { spine: "brief", beat: "objective" };
-const CHILD: Partial<Record<NodeLayer, string>> = { spine: "outline", objective: "beat", beat: "prose" };
+// Spine re-create is handled by SpineStep (route charting), not NodeEditor.
+const PARENT: Partial<Record<NodeLayer, string>> = { beat: "objective" };
+const CHILD: Partial<Record<NodeLayer, string>> = { objective: "beat", beat: "prose" };
 
 const STATE_LABEL: Record<CellState, string> = { gap: "empty", drift: "out of sync", synced: "in sync" };
 const STATE_TONE: Record<CellState, string> = {
@@ -108,8 +109,7 @@ export function NodeEditor({
     setBusy("expand");
     try {
       let text = "";
-      if (layer === "spine") text = await transforms.briefToSpine(bookId);
-      else if (layer === "beat") {
+      if (layer === "beat") {
         const objective = await readNode(bookId, "objective", pageId);
         if (!objective) throw new Error("Set an objective first.");
         text = await transforms.objectiveToBeat(bookId, pageId!, objective);
@@ -124,8 +124,7 @@ export function NodeEditor({
     setBusy("distill");
     try {
       let text = "";
-      if (layer === "spine") { text = await transforms.objectivesToSpine(bookId); if (text) { setDraft(text); await persist(text); } }
-      else if (layer === "objective") {
+      if (layer === "objective") {
         const beat = await readNode(bookId, "beat", pageId);
         if (!beat) throw new Error("No beat to re-create from.");
         text = await transforms.beatToObjective(bookId, pageId!, beat);
