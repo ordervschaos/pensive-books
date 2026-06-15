@@ -47,14 +47,12 @@ async function callList(fn: string, body: Record<string, unknown>, pick: string)
 
 export const transforms = {
   // down (expand)
-  briefToSpine: (bookId: number) => call("brief-to-spine", { bookId }, "spine"),
   objectiveToBeat: (bookId: number, pageId: number, objective: string) => call("objective-to-beat", { bookId, pageId, objective }, "beat"),
   // objective → several un-judged beat takes, for the serial human-pick UI.
   beatCandidates: (bookId: number, pageId: number, objective: string, n = 3) =>
     callList("objective-to-beat", { bookId, pageId, objective, candidates: n }, "candidates"),
   beatToProse: (bookId: number, pageId: number, objective: string) => call("beat-to-prose", { bookId, pageId, level: "page", objective }, "text"),
   // up (distill)
-  objectivesToSpine: (bookId: number) => call("objectives-to-spine", { bookId }, "spine"),
   beatToObjective: (bookId: number, pageId: number, beat: string) => call("beat-to-objective", { bookId, pageId, beat }, "objective"),
   proseToBeat: (bookId: number, pageId: number, proseText: string) => call("prose-to-beat", { bookId, pageId, proseText }, "beat"),
   // revise (signal-driven, preserves) — the short plan nodes; prose has its own heavier reviser.
@@ -66,9 +64,6 @@ export const transforms = {
   // same, but for a pre-commit scaffold DRAFT page (no pageId yet) — prefix comes from the draft.
   objectiveOptionsDraft: (bookId: number, scaffold: unknown, pageIndex: number) =>
     callList("objective-options", { bookId, scaffold, pageIndex }, "options"),
-  // wide alternative spines from the brief — 3 different directions to choose from.
-  spineOptions: (bookId: number) =>
-    callList("spine-options", { bookId }, "options"),
 };
 
 // ── Node reads ───────────────────────────────────────────────────────────────

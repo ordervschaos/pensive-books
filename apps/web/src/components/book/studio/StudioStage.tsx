@@ -19,7 +19,6 @@ import { Gate, StageHead } from "./studioUi";
 import { SteerField } from "./SteerField";
 import { PageReview } from "./PageReview";
 import { FoundationsStep } from "./steps/FoundationsStep";
-import { VoiceStep } from "./steps/VoiceStep";
 import { BeatsStep } from "./steps/BeatsStep";
 import { SpineStep } from "./steps/SpineStep";
 import { OutlineStep } from "./steps/OutlineStep";
@@ -39,7 +38,6 @@ interface StageProps {
   onChanged: () => void;
   onBriefChange: (brief: Brief) => void;
   onSpineStatus: (v: boolean) => void;
-  onVoiceStatus: (v: boolean) => void;
   onReadStatus: (v: boolean) => void;
   onRevisePrefill: (p: RevisionPrefill | null) => void;
   onSelectStep: (k: StepKey) => void;
@@ -133,13 +131,13 @@ function StepView(props: StageProps & { stepKey: StepKey }) {
       )}
       {k === "foundations" && (
         <>
-          <FoundationsStep bookId={bookId} foundations={props.foundations ?? {}} beforeGen={steer.save} onChanged={props.onChanged} onVoiceStatus={props.onVoiceStatus} />
+          <FoundationsStep bookId={bookId} foundations={props.foundations ?? {}} beforeGen={steer.save} onChanged={props.onChanged} />
           {gate("Approve the foundations & continue", "what you pinned, every step below must keep")}
         </>
       )}
       {k === "spine" && (
         <>
-          <SpineStep bookId={bookId} newFlow={model.newFlow} foundations={props.foundations} beforeGen={steer.save} onStatusChange={props.onSpineStatus} onChanged={props.onChanged} />
+          <SpineStep bookId={bookId} foundations={props.foundations} beforeGen={steer.save} onStatusChange={props.onSpineStatus} onChanged={props.onChanged} />
           {gate("Approve the spine & continue", "the outline is built to realize it")}
         </>
       )}
@@ -147,12 +145,6 @@ function StepView(props: StageProps & { stepKey: StepKey }) {
         <>
           <OutlineStep bookId={bookId} model={model} beforeGen={steer.save} onChanged={props.onChanged} onSelectPage={props.onSelectPage} />
           {gate("Approve the outline & continue", "re-plan from the Revise step anytime")}
-        </>
-      )}
-      {k === "voice" && (
-        <>
-          <VoiceStep bookId={bookId} onStatusChange={props.onVoiceStatus} onChanged={props.onChanged} />
-          {gate("Approve the voice & continue", "anchors every page the AI writes")}
         </>
       )}
       {k === "beats" && (

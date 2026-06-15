@@ -15,18 +15,16 @@ import { type PageMeta } from "@/lib/planProvenance";
 import type { EditorJSON } from "@/types/editor";
 
 export type StepKey =
-  | "brief" | "foundations" | "spine" | "outline" | "voice" | "beats" | "draft"
+  | "brief" | "foundations" | "spine" | "outline" | "beats" | "draft"
   | "read" | "revise" | "publish";
 
-/** The OLD gated build ladder — books with no foundations column value (pre pin-driven flow). */
-export const BUILD_STEPS: StepKey[] = ["brief", "spine", "outline", "voice", "beats", "draft"];
-/** The NEW rail (docs/pinned_method.md §1): Voice is absorbed into Foundations sub-step 5. */
-export const NEW_BUILD_STEPS: StepKey[] = ["brief", "foundations", "spine", "outline", "beats", "draft"];
+/** The build ladder (pin-driven flow): Voice is absorbed into Foundations sub-step 5. */
+export const BUILD_STEPS: StepKey[] = ["brief", "foundations", "spine", "outline", "beats", "draft"];
 /** Post-draft actions — unlocked once prose exists; not strictly ordered. */
 export const POST_STEPS: StepKey[] = ["read", "revise", "publish"];
 export const ALL_STEPS: StepKey[] = [...BUILD_STEPS, ...POST_STEPS];
 
-export type Journey = Partial<Record<"brief" | "foundations" | "spine" | "outline" | "voice" | "beats" | "draft", string>>;
+export type Journey = Partial<Record<"brief" | "foundations" | "spine" | "outline" | "beats" | "draft", string>>;
 
 // A build step's lifecycle. `awaiting` = its artifact exists and it's ready for the deliberate
 // "Approve & continue" sign-off; `active` = it's the current step but its artifact isn't there yet.
@@ -36,17 +34,15 @@ export type StepStatus = "locked" | "active" | "awaiting" | "done" | "available"
 export type DotState = "done" | "active" | "ready" | "locked";
 
 export const STEP_LABEL: Record<StepKey, string> = {
-  brief: "Brief", foundations: "Foundations", spine: "Spine", outline: "Outline", voice: "Voice", beats: "Beats",
+  brief: "Brief", foundations: "Foundations", spine: "Spine", outline: "Outline", beats: "Beats",
   draft: "Draft", read: "Read", revise: "Revise", publish: "Publish",
 };
 
-// The literary captions from the content inventory (brief §10). Voice for each step's Stage head.
 export const STEP_CAPTION: Record<StepKey, string> = {
   brief: "Tell the AI what the book is — every step below is drawn from it.",
   foundations: "The bedrock decisions — argument, ending, cast, tentpole moments, voice. What you pin here, the AI must keep.",
   spine: "The one-paragraph throughline the whole book realizes.",
   outline: "The chapters and pages as objectives — review, edit, create. No prose yet.",
-  voice: "Pick how the book sounds — it anchors every page the AI writes.",
   beats: "Walk the book page by page — plan the beat for each, one at a time or in bulk — before any prose.",
   draft: "Render the prose from the approved beats, in the book's voice.",
   read: "A structural critique of the draft — then auto-fix the critical & major issues.",
@@ -128,12 +124,9 @@ export interface BuildStudioModelInput {
   spineStale?: boolean;
   pages: StudioPageRow[];
   journey: Journey;
-  hasVoice: boolean;
   hasRead: boolean;
   isPublic: boolean;
-  /** books.foundations — null/undefined = old flow, any value (even {}) = the new pin-driven rail. */
   foundations?: Foundations | null;
-  /** The book's threads with their resolution-anchor counts (for the lint pass; new flow only). */
   threads?: LintThread[];
 }
 
@@ -187,14 +180,14 @@ export function buildStudioModel(input: BuildStudioModelInput): StudioModel {
   const beatsRemaining = Math.max(0, counts.objective + counts.written - counts.beats);
   const proseRemaining = counts.objective;
 
-  const newFlow = input.foundations != null;
-  const buildSteps = newFlow ? NEW_BUILD_STEPS : BUILD_STEPS;
+  const newFlow = true;
+  const buildSteps = BUILD_STEPS;
 
   const approved = (k: StepKey) => k in input.journey && !!input.journey[k as keyof Journey];
   const ready: Record<StepKey, boolean> = {
     brief: input.briefSet,
     foundations: foundationsComplete(input.foundations),
-    spine: !!(input.spineText && input.spineText.trim()), outline: hasScaffold, voice: input.hasVoice,
+    spine: !!(input.spineText && input.spineText.trim()), outline: hasScaffold,
     beats: hasScaffold && beatsRemaining === 0 && counts.beats > 0,
     draft: hasWritten && proseRemaining === 0,
     read: false, revise: false, publish: false,
@@ -230,21 +223,18 @@ export function buildStudioModel(input: BuildStudioModelInput): StudioModel {
     return "draft";
   })();
 
-  // New-flow lints (§5) + the redefined gaps counter: gaps = error-severity flags, not empty cells.
-  const lints = newFlow
-    ? lintBook({
-        pages: input.pages.filter((p) => p.page_type !== "section").map((p) => ({ id: p.id, title: p.title ?? null, metadata: p.metadata ?? null })),
-        threads: input.threads ?? [],
-        foundations: input.foundations ?? null,
-      })
-    : [];
+  const lints = lintBook({
+    pages: input.pages.filter((p) => p.page_type !== "section").map((p) => ({ id: p.id, title: p.title ?? null, metadata: p.metadata ?? null })),
+    threads: input.threads ?? [],
+    foundations: input.foundations ?? null,
+  });
   const tentpolePageIds = new Set<number>(
     (input.foundations?.tentpoles ?? []).map((t) => t.placed_page_id).filter((id): id is number => id != null),
   );
 
   const { totals } = map;
   const pct = totals.cells ? Math.round((totals.filled / totals.cells) * 100) : 0;
-  const gaps = newFlow ? lints.filter((l) => l.severity === "error").length : totals.gaps;
+  const gaps = lints.filter((l) => l.severity === "error").length;
 
   const byId = new Map(map.pages.map((p) => [p.id, p] as const));
   const textIds = textPages.map((p) => p.id);

@@ -55,9 +55,7 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
   const [revisionPrefill, setRevisionPrefill] = useState<RevisionPrefill | null>(null);
 
   // The non-page-derived flags. Seeded from a fetch, then kept live by the leaf tools' callbacks.
-  // `foundations` doubles as the flow flag (null = old rail); undefined = still loading.
   const [spine, setSpine] = useState<{ text: string; stale: boolean }>({ text: "", stale: false });
-  const [hasVoice, setHasVoice] = useState(false);
   const [hasRead, setHasRead] = useState(false);
   const [foundations, setFoundations] = useState<Foundations | null | undefined>(undefined);
   const [canonParent, setCanonParent] = useState<string | null>(null);
@@ -68,7 +66,7 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
     let alive = true;
     void (async () => {
       const [{ data: book }, { data: ev }, { data: th }] = await Promise.all([
-        supabase.from("books").select("spine, bible, foundations, canon").eq("id", bookId).maybeSingle(),
+        supabase.from("books").select("spine, foundations, canon").eq("id", bookId).maybeSingle(),
         supabase.from("book_evaluations").select("id").eq("book_id", bookId).eq("status", "done").limit(1),
         supabase.from("book_threads").select("id, name, status, book_thread_anchors(role)").eq("book_id", bookId),
       ]);
@@ -77,7 +75,6 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
       const text = (sp?.text ?? "").trim();
       const stale = !!sp?.brief_hash && sp.brief_hash !== metaHash(briefToPromptContext(brief) ?? "");
       setSpine({ text, stale });
-      setHasVoice(!!((book?.bible as { voice_sample?: string } | null)?.voice_sample ?? "").trim());
       setHasRead((ev?.length ?? 0) > 0);
       setFoundations((book?.foundations as Foundations | null) ?? null);
       setCanonParent(((book?.canon as { parent_title?: string } | null)?.parent_title ?? "").trim() || null);
@@ -92,8 +89,8 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
   const refresh = useCallback(() => { onChanged(); setInfoKey((k) => k + 1); }, [onChanged]);
 
   const model = useMemo(
-    () => buildStudioModel({ briefSet, spineText: spine.text, spineStale: spine.stale, pages, journey, hasVoice, hasRead, isPublic, foundations: foundations ?? null, threads }),
-    [briefSet, spine.text, spine.stale, pages, journey, hasVoice, hasRead, isPublic, foundations, threads]
+    () => buildStudioModel({ briefSet, spineText: spine.text, spineStale: spine.stale, pages, journey, hasRead, isPublic, foundations: foundations ?? null, threads }),
+    [briefSet, spine.text, spine.stale, pages, journey, hasRead, isPublic, foundations, threads]
   );
 
   const selection: Selection = selected ?? { kind: "step", step: model.current };
@@ -183,7 +180,6 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
         onChanged={refresh}
         onBriefChange={handleBriefChange}
         onSpineStatus={() => setInfoKey((k) => k + 1)}
-        onVoiceStatus={setHasVoice}
         onReadStatus={setHasRead}
         onRevisePrefill={(p) => {
           setRevisionPrefill(p);

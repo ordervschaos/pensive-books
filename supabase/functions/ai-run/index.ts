@@ -18,7 +18,6 @@ import { corsHeaders, json } from "../_shared/cors.ts";
 import { hasEditAccess } from "../_shared/access.ts";
 import { runInBackground, serviceClient } from "../_shared/task.ts";
 import { objectiveOptions } from "../_shared/options-core.ts";
-import { generateSpine, spineOptions } from "../_shared/spine-core.ts";
 import { reviseNode, type ReviseLayer } from "../_shared/revise-core.ts";
 import { beatCandidates } from "../_shared/beat-core.ts";
 import { foundationsOptions, reviseTentpole, spineRoutes, type FoundationsStep } from "../_shared/foundations-core.ts";
@@ -39,14 +38,6 @@ async function runWorker(
         pageIndex: params.pageIndex as number | undefined,
         userId: ctx.userId,
       });
-      return { options };
-    }
-    case "spine": {
-      const text = await generateSpine(ctx.client, ctx.apiKey, { bookId: ctx.bookId, userId: ctx.userId });
-      return { text };
-    }
-    case "spine_options": {
-      const options = await spineOptions(ctx.client, ctx.apiKey, { bookId: ctx.bookId, userId: ctx.userId });
       return { options };
     }
     case "node_revise": {

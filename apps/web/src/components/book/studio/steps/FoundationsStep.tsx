@@ -45,10 +45,9 @@ interface Props {
   /** Persist the step's author steer before any generation kicks (provided by StudioStage). */
   beforeGen: () => Promise<void>;
   onChanged: () => void;
-  onVoiceStatus: (v: boolean) => void;
 }
 
-export function FoundationsStep({ bookId, foundations, beforeGen, onChanged, onVoiceStatus }: Props) {
+export function FoundationsStep({ bookId, foundations, beforeGen, onChanged }: Props) {
   const { toast } = useToast();
   const [f, setF] = useState<Foundations>(foundations);
   // Land on the first incomplete sub-step, then move only on explicit clicks — selecting a candidate
@@ -66,12 +65,10 @@ export function FoundationsStep({ bookId, foundations, beforeGen, onChanged, onV
     catch (e) { toast({ title: "Couldn't save", description: String((e as Error)?.message ?? e), variant: "destructive" }); }
   };
 
-  // Legacy voice mapping: the exemplar is also the few-shot anchor the prose renderers read.
   const mirrorVoice = async (text: string) => {
     const { data } = await supabase.from("books").select("bible").eq("id", bookId).maybeSingle();
     const bible = { ...((data?.bible as Record<string, unknown> | null) ?? {}), voice_sample: text };
     await supabase.from("books").update({ bible }).eq("id", bookId);
-    onVoiceStatus(!!text.trim());
   };
 
   const caption = SUBS.find((s) => s.key === active)!.caption;

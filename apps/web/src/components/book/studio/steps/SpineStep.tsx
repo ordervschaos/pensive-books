@@ -1,24 +1,20 @@
-// SpineStep — the Spine step's Stage body. Two modes:
+// SpineStep — the Spine step's Stage body.
 //
-// OLD FLOW (no foundations): the book's one-paragraph throughline drafted from the brief — a loud
-// hero when there's no spine yet; the editable paragraph (autosaved on blur) once there is one.
-//
-// NEW FLOW (pin-driven, docs/pinned_method.md §3.3): the AI charts 2–3 ROUTES from the foundations
-// (argument → ending through the tentpoles); each card is a ~250-word summary plus a tentpole-order
-// chip strip. Picking one makes it spine.text (editable in the same approved card UI); "re-route"
-// regenerates the unselected candidates only. Pinned tentpoles are validated server-side into every
-// route. Every AI op is a DURABLE run (useAIRun → ai-run) and survives navigation/refresh.
+// The AI charts 2–3 ROUTES from the foundations (argument → ending through the tentpoles); each card
+// is a ~250-word summary plus a tentpole-order chip strip. Picking one makes it spine.text (editable
+// in the same approved card UI); "re-route" regenerates the unselected candidates only. Pinned
+// tentpoles are validated server-side into every route. Every AI op is a DURABLE run (useAIRun →
+// ai-run) and survives navigation/refresh.
 //
 // Pinning: an explicit author gesture (editing the paragraph, picking a route/option) stamps
 // spine.pinned; the plain AI auto-apply leaves it fluid.
 import { useEffect, useRef, useState } from "react";
-import { Check, Loader2, Map as MapIcon, RefreshCw, Sparkles } from "lucide-react";
+import { Check, Map as MapIcon, RefreshCw } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useAIRun } from "@/hooks/useAIRun";
-import { DurableOptions } from "../../DurableOptions";
 import { DurableReviser } from "../../DurableReviser";
-import { readNode, saveSpine } from "@/lib/ladder";
+import { saveSpine } from "@/lib/ladder";
 import {
   readSpineNode, writeSpinePatch,
   type Foundations, type SpineNode, type SpineRoute,
@@ -27,7 +23,6 @@ import { ActionLink, Eyebrow, Hero, Panel, RunError, RunningInline } from "../st
 
 interface Props {
   bookId: number;
-  newFlow?: boolean;
   foundations?: Foundations | null;
   /** Persist the step's author steer before any generation kicks (provided by StudioStage). */
   beforeGen: () => Promise<void>;
@@ -35,27 +30,18 @@ interface Props {
   onChanged: () => void;
 }
 
-export function SpineStep({ bookId, newFlow, foundations, beforeGen, onStatusChange, onChanged }: Props) {
+export function SpineStep({ bookId, foundations, beforeGen, onStatusChange, onChanged }: Props) {
   const { toast } = useToast();
   const [spine, setSpine] = useState("");
   const [node, setNode] = useState<SpineNode>({});
   const [loaded, setLoaded] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
-  const appliedRef = useRef<number | null>(null);
   const routesAppliedRef = useRef<number | null>(null);
 
-  // Persist the steer, then kick — so the background worker reads the fresh guidance from books.steers.
-  const startGen = async () => { await beforeGen(); void gen.start({}); };
   const startRoutes = async (avoid: string[] = []) => { await beforeGen(); void routesRun.start(avoid.length ? { avoid } : {}); };
 
-  // Durable spine generation (old flow: single candidate → auto-applies on ready).
-  const gen = useAIRun<{ text: string }>({ bookId, kind: "spine", targetKey: "book", enabled: !newFlow });
-  const generating = gen.run?.status === "running" || gen.run?.status === "pending" || gen.starting
-    || (gen.run?.status === "ready" && !!gen.run.result?.text);
-
-  // Durable route charting (new flow: 3 candidates → persisted into books.spine.routes on ready).
-  const routesRun = useAIRun<{ routes: SpineRoute[] }>({ bookId, kind: "spine_routes", targetKey: "book", enabled: !!newFlow });
+  const routesRun = useAIRun<{ routes: SpineRoute[] }>({ bookId, kind: "spine_routes", targetKey: "book", enabled: true });
   const routing = routesRun.run?.status === "running" || routesRun.run?.status === "pending" || routesRun.starting;
 
   const reload = async () => {
@@ -68,31 +54,14 @@ export function SpineStep({ bookId, newFlow, foundations, beforeGen, onStatusCha
   useEffect(() => {
     let alive = true;
     void (async () => {
-      if (newFlow) { await reload(); } else {
-        const text = await readNode(bookId, "spine");
-        if (!alive) return;
-        setSpine(text); onStatusChange(!!text.trim());
-      }
+      await reload();
       if (alive) setLoaded(true);
     })();
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookId, newFlow]);
+  }, [bookId]);
 
-  // Old flow: auto-apply a completed generation.
-  useEffect(() => {
-    const r = gen.run;
-    if (r?.status === "ready" && r.result?.text && appliedRef.current !== r.id) {
-      appliedRef.current = r.id;
-      void gen.accept(async (res) => {
-        await saveSpine(bookId, res.text);
-        setSpine(res.text); setDirty(false); onStatusChange(!!res.text.trim()); onChanged();
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gen.run?.id, gen.run?.status]);
-
-  // New flow: routes land → persist them (keep the selected route + text if any survive re-route).
+  // Routes land → persist them (keep the selected route + text if any survive re-route).
   useEffect(() => {
     const r = routesRun.run;
     if (r?.status === "ready" && r.result?.routes?.length && routesAppliedRef.current !== r.id) {
@@ -136,9 +105,7 @@ export function SpineStep({ bookId, newFlow, foundations, beforeGen, onStatusCha
 
   if (!loaded) return null;
 
-  // ── New flow: routes ────────────────────────────────────────────────────────
-  if (newFlow) {
-    const routes = node.routes ?? [];
+  const routes = node.routes ?? [];
     const tentpoleName = (id: string) => {
       const t = foundations?.tentpoles?.find((x) => x.id === id);
       if (!t) return id;
@@ -229,56 +196,4 @@ export function SpineStep({ bookId, newFlow, foundations, beforeGen, onStatusCha
         {routesRun.run?.status === "error" && <RunError msg={routesRun.run.error} />}
       </div>
     );
-  }
-
-  // ── Old flow: the single drafted paragraph ──────────────────────────────────
-  if (generating) {
-    return <RunningInline label="Drafting the spine…" onCancel={() => void gen.cancel()} />;
-  }
-
-  if (!spine.trim()) {
-    return (
-      <Hero icon={<Sparkles className="h-5 w-5" />} title="Draft the spine from the brief"
-        sub="One paragraph that names the throughline — what the book is really about. The outline is built to realize it."
-        onClick={() => void startGen()} />
-    );
-  }
-
-  return (
-    <div className="rounded-2xl border border-border bg-[hsl(var(--pv-surface-2))]/50 px-6 py-5">
-      <Textarea
-        value={spine}
-        onChange={(e) => { setSpine(e.target.value); setDirty(true); }}
-        onBlur={() => dirty && void save()}
-        rows={8}
-        className="pv-serif border-none bg-transparent px-0 text-[16px] leading-[1.65] focus-visible:ring-0"
-      />
-      <div className="mt-3.5 flex items-center gap-5 border-t border-[hsl(var(--pv-border-soft))] pt-3.5 text-[13.5px]">
-        <ActionLink icon={<RefreshCw className="h-3.5 w-3.5" />} onClick={() => void startGen()}>
-          re-draft from the brief
-        </ActionLink>
-        <div className="ml-auto flex items-center gap-4">
-          {dirty && (
-            <button type="button" onClick={() => void save()} disabled={saving} className="inline-flex items-center gap-1.5 italic text-[hsl(var(--pv-text-muted))] hover:text-foreground">
-              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} save edits
-            </button>
-          )}
-          <DurableReviser
-            bookId={bookId}
-            layer="spine"
-            targetKey="revise:spine"
-            current={spine.trim()}
-            onApply={async (proposed) => { await saveSpine(bookId, proposed, { pinned: true }); setSpine(proposed); setDirty(false); onStatusChange(!!proposed.trim()); onChanged(); }}
-          />
-          <DurableOptions
-            bookId={bookId}
-            kind="spine_options"
-            targetKey="book"
-            getParams={() => ({})}
-            onApply={async (proposed) => { await saveSpine(bookId, proposed, { pinned: true }); setSpine(proposed); setDirty(false); onStatusChange(!!proposed.trim()); onChanged(); }}
-          />
-        </div>
-      </div>
-    </div>
-  );
 }
