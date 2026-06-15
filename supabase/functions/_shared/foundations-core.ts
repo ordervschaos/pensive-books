@@ -124,6 +124,8 @@ THIS BOOK IS A SEQUEL. The CANON block lists the cast as the previous book left 
 export interface FoundationsOptionsParams {
   bookId: number;
   step: FoundationsStep;
+  /** Optional author-directed prompt, used for tentpoles to steer what kinds of moments to propose. */
+  prompt?: string;
   userId?: string | null;
 }
 
@@ -144,6 +146,9 @@ export async function foundationsOptions(
     const moment = t.find((x) => x.status === "pinned") ?? t[0];
     if (!moment) throw new Error("Add at least one tentpole moment first.");
     stepInput = `\n\nTENTPOLE MOMENT TO RENDER:\n${moment.text}`;
+  }
+  if (p.step === "tentpoles" && p.prompt?.trim()) {
+    stepInput += `\n\nAUTHOR'S DIRECTION FOR THESE PROPOSALS:\n${p.prompt.trim()}`;
   }
 
   const { high: model } = await getActiveModels();

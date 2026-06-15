@@ -447,8 +447,12 @@ function TentpolesSub({ bookId, tentpoles, beforeGen, onSave }: { bookId: number
   const run = useAIRun<{ candidates: Tentpole[] }>({ bookId, kind: "foundations_options", targetKey: "foundations:tentpoles" });
   const appliedRef = useRef<number | null>(null);
   const [newMoment, setNewMoment] = useState("");
+  const [aiPrompt, setAiPrompt] = useState("");
   const generating = run.starting || run.run?.status === "running" || run.run?.status === "pending";
-  const fire = async () => { await beforeGen(); void run.start({ step: "tentpoles" }); };
+  const fire = async () => {
+    await beforeGen();
+    void run.start({ step: "tentpoles", ...(aiPrompt.trim() ? { prompt: aiPrompt.trim() } : {}) });
+  };
 
   useEffect(() => {
     const r = run.run;
@@ -462,16 +466,22 @@ function TentpolesSub({ bookId, tentpoles, beforeGen, onSave }: { bookId: number
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [run.run?.id, run.run?.status]);
 
-  const authorCards = tentpoles.filter((t) => t.source === "author");
-  const proposals = tentpoles.filter((t) => t.source === "ai" && t.status !== "killed");
-  const killed = tentpoles.filter((t) => t.status === "killed");
-  const liveCount = tentpoles.filter((t) => t.status !== "killed").length;
+  // Pinned = author's own + AI cards the author explicitly kept.
+  const pinnedCards = tentpoles.filter((t) => t.status !== "killed" && (t.source === "author" || t.status === "pinned"));
+  // Proposals = AI cards still awaiting the author's verdict.
+  const proposalCards = tentpoles.filter((t) => t.source === "ai" && t.status === "fluid");
+  // Avoid = anything killed (signals "not this" to future AI passes).
+  const avoidCards = tentpoles.filter((t) => t.status === "killed");
+
+  const liveCount = pinnedCards.length + proposalCards.length;
   const pinnedCount = tentpoles.filter((t) => t.status === "pinned").length;
 
   const setStatus = (id: string, status: Tentpole["status"]) =>
     void onSave(tentpoles.map((t) => (t.id === id ? { ...t, status } : t)));
   const setText = (id: string, text: string) =>
     void onSave(tentpoles.map((t) => (t.id === id ? { ...t, text, status: "pinned" } : t)));
+  const deletePermanently = (id: string) =>
+    void onSave(tentpoles.filter((t) => t.id !== id));
 
   const addAuthor = () => {
     const text = newMoment.trim();
@@ -480,24 +490,32 @@ function TentpolesSub({ bookId, tentpoles, beforeGen, onSave }: { bookId: number
     void onSave([...tentpoles, { id: uid(), text, source: "author", status: "pinned" }]);
   };
 
+  const colHeader = (label: string) => (
+    <h3 className="pv-mono mb-2.5 text-[10px] uppercase tracking-[0.16em] text-[hsl(var(--pv-text-muted))]">{label}</h3>
+  );
+
   return (
     <div>
       <p className="pv-serif mb-4 text-[13px] italic text-[hsl(var(--pv-text-muted))]">
         {liveCount} moment{liveCount === 1 ? "" : "s"} on the board — at least 3 to proceed.
         {pinnedCount > 0 && ` ${pinnedCount} pinned: every spine route must pass through them.`}
       </p>
-      <div className="grid gap-5 md:grid-cols-2">
-        {/* Left: moments the author already sees (always pinned). */}
+      <div className="grid gap-5 grid-cols-1 lg:grid-cols-3">
+
+        {/* ── Pinned ── */}
         <div>
-          <h3 className="pv-mono mb-2.5 text-[10px] uppercase tracking-[0.16em] text-[hsl(var(--pv-text-muted))]">Moments you already see</h3>
+          {colHeader("Pinned")}
           <div className="space-y-2.5">
-            {authorCards.map((t) => (
-              <TentpoleCard key={t.id} t={t} bookId={bookId} onText={(v) => setText(t.id, v)} onKill={() => setStatus(t.id, "killed")} />
+            {pinnedCards.map((t) => (
+              <TentpoleCard key={t.id} t={t} bookId={bookId}
+                onText={(v) => setText(t.id, v)}
+                onKill={() => setStatus(t.id, "killed")} />
             ))}
             <div className="rounded-2xl border border-dashed border-border px-4 py-3">
               <Textarea
                 value={newMoment}
                 onChange={(e) => setNewMoment(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) addAuthor(); }}
                 placeholder="A scene you can already see — 1–3 sentences…"
                 rows={2}
                 className="pv-serif border-none bg-transparent px-0 text-[14px] leading-relaxed focus-visible:ring-0"
@@ -508,43 +526,75 @@ function TentpolesSub({ bookId, tentpoles, beforeGen, onSave }: { bookId: number
             </div>
           </div>
         </div>
-        {/* Right: AI proposals with keep / kill / edit. */}
+
+        {/* ── Proposals ── */}
         <div>
-          <h3 className="pv-mono mb-2.5 text-[10px] uppercase tracking-[0.16em] text-[hsl(var(--pv-text-muted))]">Proposals</h3>
+          {colHeader("Proposals")}
           {generating ? (
             <RunningInline className="py-2" label="Proposing moments…" onCancel={() => void run.cancel()} />
           ) : (
             <div className="space-y-2.5">
-              {proposals.map((t) => (
+              {proposalCards.map((t) => (
                 <TentpoleCard key={t.id} t={t} bookId={bookId}
                   onText={(v) => setText(t.id, v)}
-                  onKeep={t.status === "fluid" ? () => setStatus(t.id, "pinned") : undefined}
+                  onKeep={() => setStatus(t.id, "pinned")}
                   onKill={() => setStatus(t.id, "killed")} />
               ))}
-              <ActionLink icon={proposals.length ? <RefreshCw className="h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />} onClick={() => void fire()}>
-                {proposals.length ? `propose more (${pinnedCount} pinned held)` : "propose six moments"}
-              </ActionLink>
+              <div className="rounded-2xl border border-dashed border-border px-4 py-3">
+                <Textarea
+                  value={aiPrompt}
+                  onChange={(e) => setAiPrompt(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void fire(); }}
+                  placeholder="Optional: steer what kinds of moments AI proposes…"
+                  rows={2}
+                  className="pv-serif border-none bg-transparent px-0 text-[14px] leading-relaxed focus-visible:ring-0 placeholder:text-[hsl(var(--pv-text-faint))]"
+                />
+                <ActionLink
+                  icon={proposalCards.length ? <RefreshCw className="h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
+                  onClick={() => void fire()}
+                  className="mt-1"
+                >
+                  {proposalCards.length
+                    ? `propose more${pinnedCount ? ` (${pinnedCount} pinned held)` : ""}`
+                    : "propose moments"}
+                </ActionLink>
+              </div>
+              {run.run?.status === "error" && <RunError msg={run.run.error} />}
             </div>
           )}
         </div>
-      </div>
-      {killed.length > 0 && (
-        <div className="mt-5 border-t border-[hsl(var(--pv-border-soft))] pt-3.5">
-          <h3 className="pv-mono mb-2 text-[10px] uppercase tracking-[0.16em] text-[hsl(var(--pv-text-faint))]">Killed — held as "not this" signal for regeneration</h3>
-          <div className="space-y-1.5">
-            {killed.map((t) => (
-              <div key={t.id} className="flex items-baseline gap-2.5">
-                <p className="pv-serif flex-1 text-[13px] italic leading-snug text-[hsl(var(--pv-text-faint))] line-through">{t.text}</p>
-                <button type="button" onClick={() => setStatus(t.id, t.source === "author" ? "pinned" : "fluid")}
-                  className="pv-serif inline-flex shrink-0 items-center gap-1 text-[12px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground">
-                  <Undo2 className="h-3 w-3" /> restore
-                </button>
-              </div>
-            ))}
+
+        {/* ── Avoid ── */}
+        <div>
+          {colHeader("Avoid")}
+          <div className="space-y-2.5">
+            {avoidCards.length === 0 ? (
+              <p className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))]">
+                Cards you discard land here — they tell AI "not this direction."
+              </p>
+            ) : (
+              avoidCards.map((t) => (
+                <div key={t.id} className="rounded-2xl border border-[hsl(var(--pv-border-soft))]/60 bg-[hsl(var(--pv-surface-2))]/20 px-4 py-3">
+                  <p className="pv-serif text-[13px] italic leading-snug text-[hsl(var(--pv-text-faint))] line-through">{t.text}</p>
+                  <div className="mt-2 flex items-center gap-3.5">
+                    <button type="button"
+                      onClick={() => setStatus(t.id, t.source === "author" ? "pinned" : "fluid")}
+                      className="pv-serif inline-flex items-center gap-1 text-[12.5px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground transition-colors">
+                      <Undo2 className="h-3 w-3" /> restore
+                    </button>
+                    <button type="button"
+                      onClick={() => deletePermanently(t.id)}
+                      className="pv-serif inline-flex items-center gap-1 text-[12.5px] italic text-[hsl(var(--pv-text-faint))] hover:text-red-500 transition-colors">
+                      <X className="h-3 w-3" /> delete
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
-      )}
-      {run.run?.status === "error" && <RunError msg={run.run.error} />}
+
+      </div>
     </div>
   );
 }

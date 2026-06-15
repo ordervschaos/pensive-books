@@ -72,6 +72,7 @@ async function runWorker(
       return await foundationsOptions(ctx.client, ctx.apiKey, {
         bookId: ctx.bookId,
         step: params.step as FoundationsStep,
+        prompt: params.prompt as string | undefined,
         userId: ctx.userId,
       });
     }
