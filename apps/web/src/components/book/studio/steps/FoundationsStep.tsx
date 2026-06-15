@@ -19,7 +19,7 @@ import { composePortraitPrompt, renderPortraitVariants, uploadReferenceImage } f
 import { ImageGenStudio } from "../ImageGenStudio";
 import {
   foundationsProgress, pinNode, writeFoundations,
-  type CastMember, type FCandidate, type FNode, type Foundations, type FoundationsStepKey, type Tentpole,
+  type CastMember, type CastProposal, type FCandidate, type FNode, type Foundations, type FoundationsStepKey, type Tentpole,
 } from "@/lib/foundations";
 import { ActionLink, Eyebrow, Hero, ImageLightbox, Panel, RunError, RunningInline } from "../studioUi";
 import { DurableReviser } from "../../DurableReviser";
@@ -144,10 +144,11 @@ function NodeSub({ bookId, stepKey, node, heroTitle, heroSub, blockedReason, bef
   const appliedRef = useRef<number | null>(null);
   const autoPickRef = useRef(false);
   const [draft, setDraft] = useState<string | null>(null); // inline edit buffer for the selected text
+  const [steerOpen, setSteerOpen] = useState(false);
   const steer = useLocalSteer();
 
-  const fire = async () => { await beforeGen(); void run.start({ step: stepKey, ...(steer.value.trim() ? { prompt: steer.value.trim() } : {}) }); };
-  const fireSkip = async () => { autoPickRef.current = true; await beforeGen(); void run.start({ step: stepKey, ...(steer.value.trim() ? { prompt: steer.value.trim() } : {}) }); };
+  const fire = async () => { setSteerOpen(false); await beforeGen(); void run.start({ step: stepKey, ...(steer.value.trim() ? { prompt: steer.value.trim() } : {}) }); };
+  const fireSkip = async () => { setSteerOpen(false); autoPickRef.current = true; await beforeGen(); void run.start({ step: stepKey, ...(steer.value.trim() ? { prompt: steer.value.trim() } : {}) }); };
 
   const generating = run.starting || run.run?.status === "running" || run.run?.status === "pending";
 
@@ -190,9 +191,17 @@ function NodeSub({ bookId, stepKey, node, heroTitle, heroSub, blockedReason, bef
   if (candidates.length === 0 && !selected) {
     return (
       <div>
-        <div className="mb-4"><SteerField steer={steer} /></div>
+        {steerOpen && <div className="mb-4"><SteerField steer={steer} /></div>}
         <Hero icon={<Sparkles className="h-5 w-5" />} title={heroTitle} sub={heroSub} onClick={() => void fire()} />
-        <SkipLink onClick={() => void fireSkip()} />
+        <div className="mt-3 flex items-center gap-5">
+          {!steerOpen && (
+            <button type="button" onClick={() => setSteerOpen(true)}
+              className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">
+              steer →
+            </button>
+          )}
+          <SkipLink onClick={() => void fireSkip()} />
+        </div>
         {run.run?.status === "error" && <RunError msg={run.run.error} />}
       </div>
     );
@@ -204,7 +213,7 @@ function NodeSub({ bookId, stepKey, node, heroTitle, heroSub, blockedReason, bef
       {pinnedAndNotInCandidates && (
         <Panel className="border-[hsl(var(--pv-accent))]/45 bg-[hsl(var(--pv-surface-2))]/60">
           <div className="mb-2.5 flex items-center justify-between gap-3">
-            <Eyebrow>Approved · yours</Eyebrow>
+            <Eyebrow>Chosen · yours</Eyebrow>
             {node?.pinned && <PinBadge onUnpin={() => void onSave({ ...node, pinned: false })} />}
           </div>
           <Textarea
@@ -233,6 +242,11 @@ function NodeSub({ bookId, stepKey, node, heroTitle, heroSub, blockedReason, bef
                 className="pv-serif shrink-0 text-[12.5px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground transition-colors">
                 switch
               </button>
+              <button type="button"
+                onClick={() => void onSave({ ...(node ?? {}), candidates: candidates.filter((x) => x.id !== c.id) })}
+                className="shrink-0 text-[hsl(var(--pv-text-faint))] hover:text-foreground transition-colors" aria-label="Remove candidate">
+                <X className="h-3.5 w-3.5" />
+              </button>
             </div>
           );
         }
@@ -249,7 +263,7 @@ function NodeSub({ bookId, stepKey, node, heroTitle, heroSub, blockedReason, bef
                   className={`pv-serif inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[13.5px] transition-colors disabled:opacity-100 ${isSelected ? "bg-primary text-primary-foreground" : "border border-border text-foreground hover:border-foreground/40"}`}
                 >
                   {isSelected ? <Check className="h-3.5 w-3.5" /> : null}
-                  {isSelected ? "Approved" : "Select"}
+                  {isSelected ? "Chosen" : "Select"}
                 </button>
               </div>
             </div>
@@ -275,11 +289,17 @@ function NodeSub({ bookId, stepKey, node, heroTitle, heroSub, blockedReason, bef
         );
       })}
       <div className="mt-1">
-        <SteerField steer={steer} className="mb-3" />
+        {steerOpen && <SteerField steer={steer} className="mb-3" />}
         <div className="flex items-center gap-5">
           <ActionLink icon={<RefreshCw className="h-3.5 w-3.5" />} onClick={() => void fire()}>
-            regenerate{node?.pinned ? " (your approved text is held)" : ""}
+            regenerate{node?.pinned ? " (chosen text held)" : ""}
           </ActionLink>
+          {!steerOpen && (
+            <button type="button" onClick={() => setSteerOpen(true)}
+              className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">
+              steer →
+            </button>
+          )}
           {!selected && <SkipLink onClick={() => void fireSkip()} />}
         </div>
       </div>
@@ -292,39 +312,21 @@ function NodeSub({ bookId, stepKey, node, heroTitle, heroSub, blockedReason, bef
 const CAST_FIELDS = ["want", "wound", "lie"] as const;
 
 function CastSub({ bookId, cast, beforeGen, onSave }: { bookId: number; cast: CastMember[]; beforeGen: () => Promise<void>; onSave: (c: CastMember[]) => Promise<void> | void }) {
-  const run = useAIRun<{ candidates: CastMember[] }>({ bookId, kind: "foundations_options", targetKey: "foundations:cast" });
-  const appliedRef = useRef<number | null>(null);
-  const generating = run.starting || run.run?.status === "running" || run.run?.status === "pending";
+  const run = useAIRun<{ proposals: CastProposal[] }>({ bookId, kind: "foundations_options", targetKey: "foundations:cast" });
+  const [steerOpen, setSteerOpen] = useState(false);
   const steer = useLocalSteer();
-  const fire = async () => { await beforeGen(); void run.start({ step: "cast", ...(steer.value.trim() ? { prompt: steer.value.trim() } : {}) }); };
+  const generating = run.starting || run.run?.status === "running" || run.run?.status === "pending";
+  const proposals = run.run?.status === "ready" ? (run.run.result?.proposals ?? []) : [];
 
-  // Merge AI candidates: a redraft REWRITES every unpinned field on an existing member (by name) with
-  // the steered candidate — pinned lines are held verbatim (§4 rule 2b). A blank candidate field keeps
-  // the prior value. Unknown names are appended.
-  useEffect(() => {
-    const r = run.run;
-    if (r?.status === "ready" && r.result?.candidates?.length && appliedRef.current !== r.id) {
-      appliedRef.current = r.id;
-      void run.accept(async (res) => {
-        const next = [...cast];
-        for (const cand of res.candidates) {
-          const existing = next.find((m) => m.name.trim().toLowerCase() === cand.name.trim().toLowerCase());
-          if (existing) {
-            for (const k of CAST_FIELDS) {
-              if ((existing.pinned_fields ?? []).includes(k)) continue;
-              if (cand[k]?.trim()) existing[k] = cand[k];
-            }
-          } else {
-            next.push(cand);
-          }
-        }
-        await onSave(next);
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [run.run?.id, run.run?.status]);
+  const fire = async () => {
+    setSteerOpen(false);
+    await beforeGen();
+    void run.start({ step: "cast", ...(steer.value.trim() ? { prompt: steer.value.trim() } : {}) });
+  };
 
-  const pinnedCount = cast.reduce((n, m) => n + (m.pinned_fields?.length ?? 0), 0);
+  const pickProposal = (p: CastProposal) => {
+    void run.accept(async () => { await onSave(p.members); });
+  };
 
   const update = (id: string, patch: Partial<CastMember>, pinField?: string) => {
     void onSave(cast.map((m) => {
@@ -336,20 +338,85 @@ function CastSub({ bookId, cast, beforeGen, onSave }: { bookId: number; cast: Ca
   };
 
   if (generating) {
-    return <RunningInline label="Drafting the cast…" onCancel={() => void run.cancel()} />;
+    return <RunningInline label="Proposing cast options…" onCancel={() => void run.cancel()} />;
   }
 
+  // Proposals ready — show the pick-one UI (overlays the editing ui if cast already exists).
+  if (proposals.length > 0) {
+    return (
+      <div className="space-y-4">
+        <p className="pv-serif text-[14px] italic text-[hsl(var(--pv-text-muted))]">
+          Three different takes on who this story is about — pick the one you'd defend.
+        </p>
+        {proposals.map((prop) => (
+          <div key={prop.label} className="rounded-2xl border border-border bg-[hsl(var(--pv-surface-2))]/40 px-6 py-5">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <Eyebrow>{prop.label}</Eyebrow>
+              <button type="button" onClick={() => pickProposal(prop)}
+                className="pv-serif inline-flex items-center gap-1.5 rounded-full border border-border px-4 py-1.5 text-[13.5px] transition-colors hover:border-foreground/40">
+                {cast.length ? "Switch to this →" : "Choose this cast →"}
+              </button>
+            </div>
+            <div className="space-y-4">
+              {prop.members.map((m) => (
+                <div key={m.id}>
+                  <p className="pv-serif mb-1.5 text-[16px] font-semibold text-foreground">
+                    {m.name}
+                    <span className="pv-mono ml-2 text-[9.5px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-faint))] font-normal">{m.role ?? "major"}</span>
+                  </p>
+                  <div className="space-y-1.5">
+                    {CAST_FIELDS.map((k) => m[k] && (
+                      <div key={k} className="flex gap-3">
+                        <Eyebrow tone="muted" className="w-14 shrink-0">{k}</Eyebrow>
+                        <p className="pv-serif text-[14px] leading-snug text-foreground">{m[k]}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+        <div className="flex items-center gap-5">
+          <ActionLink icon={<RefreshCw className="h-3.5 w-3.5" />} onClick={() => void fire()}>
+            propose different options
+          </ActionLink>
+          {cast.length > 0 && (
+            <button type="button" onClick={() => void run.reject()}
+              className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">
+              dismiss — keep current cast
+            </button>
+          )}
+        </div>
+        {run.run?.status === "error" && <RunError msg={run.run.error} />}
+      </div>
+    );
+  }
+
+  // No cast yet — hero state.
+  if (cast.length === 0) {
+    return (
+      <div>
+        {steerOpen && <div className="mb-4"><SteerField steer={steer} /></div>}
+        <Hero icon={<Sparkles className="h-5 w-5" />} title="Propose three cast options"
+          sub="Three complete configurations — protagonist plus majors, each with want / wound / lie. Pick the one you'd defend, then edit freely."
+          onClick={() => void fire()} />
+        <div className="mt-3 flex items-center gap-5">
+          {!steerOpen && (
+            <button type="button" onClick={() => setSteerOpen(true)}
+              className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">
+              steer →
+            </button>
+          )}
+        </div>
+        {run.run?.status === "error" && <RunError msg={run.run.error} />}
+      </div>
+    );
+  }
+
+  // Cast exists — editing mode.
   return (
     <div className="space-y-3.5">
-      {cast.length === 0 && (
-        <div>
-          <div className="mb-4"><SteerField steer={steer} /></div>
-          <Hero icon={<Sparkles className="h-5 w-5" />} title="Draft the cast"
-            sub="Protagonist plus up to two majors, each with want / wound / lie. Edit any line to make it yours — edited lines are pinned."
-            onClick={() => void fire()} />
-          <SkipLink onClick={() => void fire()} />
-        </div>
-      )}
       {cast.map((m) => (
         <Panel key={m.id} className="bg-[hsl(var(--pv-surface-2))]/40">
           <div className="mb-3 flex items-center justify-between gap-3">
@@ -390,7 +457,6 @@ function CastSub({ bookId, cast, beforeGen, onSave }: { bookId: number; cast: Ca
           <CastLook bookId={bookId} member={m} onUpdate={(patch) => update(m.id, patch)} />
         </Panel>
       ))}
-      {cast.length > 0 && <SteerField steer={steer} className="mt-1 mb-3" />}
       <div className="flex items-center gap-5">
         <ActionLink
           icon={<Plus className="h-3.5 w-3.5" />}
@@ -398,12 +464,17 @@ function CastSub({ bookId, cast, beforeGen, onSave }: { bookId: number; cast: Ca
         >
           add character
         </ActionLink>
-        {cast.length > 0 && (
-          <ActionLink icon={<RefreshCw className="h-3.5 w-3.5" />} tone="muted" onClick={() => void fire()}>
-            regenerate{pinnedCount ? ` (${pinnedCount} pinned line${pinnedCount === 1 ? "" : "s"} held)` : ""}
-          </ActionLink>
-        )}
+        <ActionLink icon={<Sparkles className="h-3.5 w-3.5" />} tone="muted" onClick={() => void fire()}>
+          propose new cast options
+        </ActionLink>
       </div>
+      {steerOpen && <SteerField steer={steer} className="mt-1" />}
+      {!steerOpen && (
+        <button type="button" onClick={() => setSteerOpen(true)}
+          className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">
+          steer →
+        </button>
+      )}
       {run.run?.status === "error" && <RunError msg={run.run.error} />}
     </div>
   );

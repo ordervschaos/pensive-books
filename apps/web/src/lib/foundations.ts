@@ -25,6 +25,7 @@ export interface CastMember {
   appearance?: string;
   portraits?: string[];
 }
+export interface CastProposal { label: string; members: CastMember[] }
 export interface Tentpole {
   id: string; text: string;
   source: "author" | "ai";

@@ -27,6 +27,7 @@ export interface CastMember {
   pinned_fields?: string[];
   role?: "protagonist" | "major" | "minor";
 }
+export interface CastProposal { label: string; members: CastMember[] }
 export interface Tentpole {
   id: string; text: string;
   source: "author" | "ai";
@@ -99,10 +100,10 @@ Output JSON ONLY:
 Output JSON ONLY:
 { "candidates": [{ "text": "<the ending>" }, …] }`,
 
-  cast: `You are a book architect drafting the core CAST: the protagonist and the major characters. For each: a name, then three labeled lines — want (external goal), wound (the unhealed injury driving them), lie (the false belief the arc will break). If existing characters are given, RETURN EVERY ONE OF THEM by their exact name: honor any line marked [PINNED] verbatim and never contradict it, but freely rewrite every non-pinned line to better serve the brief, the settled foundations, and the author's steer (this is a redraft, not a fill-in-the-blanks). You may also add a missing major.
+  cast: `You are a book architect proposing three complete CAST CONFIGURATIONS for this story. Each configuration stands alone: one protagonist and one or two major characters, each with want (external goal), wound (the unhealed injury driving them), and lie (the false belief the arc will break). Across the three options vary the protagonist's core wound and lie — each should represent a genuinely different human story pulled from different tensions in the brief. The major characters in each option should serve that specific protagonist's arc.
 
 Output JSON ONLY:
-{ "candidates": [{ "name": "…", "role": "protagonist" | "major", "want": "…", "wound": "…", "lie": "…" }, …] }`,
+{ "proposals": [{ "label": "Option A", "members": [{ "name": "…", "role": "protagonist" | "major", "want": "…", "wound": "…", "lie": "…" }, …] }, { "label": "Option B", "members": […] }, { "label": "Option C", "members": […] }] }`,
 
   tentpoles: `You are a book architect proposing TENTPOLE MOMENTS — vivid, concrete scenes the author can already see (1–3 sentences each, a moment not a summary). Generate exactly 6 proposals, spread across the book's whole arc, consistent with the settled argument/ending/cast. Never duplicate an existing tentpole; never resemble a killed direction.
 
@@ -115,11 +116,11 @@ Output JSON ONLY:
 { "candidates": [{ "label": "<descriptor>", "text": "<~120 words>" }, …] }`,
 };
 
-// Sequel cast rule (§8.4): canon lists the cast as the previous book left them; candidates must be
+// Sequel cast rule (§8.4): canon lists the cast as the previous book left them; each proposal shows
 // where they are NOW, not a copy of who they were.
 const CAST_SEQUEL_ADDENDUM = `
 
-THIS BOOK IS A SEQUEL. The CANON block lists the cast as the previous book left them. Keep those characters' names and identities exactly; propose where each is NOW — a new want/wound/lie grown out of how the last book resolved (a resolved lie does not reappear intact; a paid-off want leaves a vacuum that implies a new want). You may also add new characters.`;
+THIS BOOK IS A SEQUEL. The CANON block lists the cast as the previous book left them. Each proposal MUST include every canon character by their exact name. Vary across proposals how each character has evolved (different wounds, different lies cracked open by the last book's resolution) — not their identity. You may also add new characters to each option.`;
 
 export interface FoundationsOptionsParams {
   bookId: number;
@@ -130,9 +131,10 @@ export interface FoundationsOptionsParams {
 }
 
 // Generate candidates for one Foundations sub-step. Returns step-shaped candidates with server ids.
+// Cast is the exception: returns { proposals } (3 complete cast configs) instead of { candidates }.
 export async function foundationsOptions(
   client: SupabaseClient, apiKey: string, p: FoundationsOptionsParams,
-): Promise<{ candidates: FCandidate[] } | { candidates: CastMember[] } | { candidates: Tentpole[] }> {
+): Promise<{ candidates: FCandidate[] } | { proposals: CastProposal[] } | { candidates: Tentpole[] }> {
   const { data: book, error } = await client.from("books").select("id, name, brief, foundations, canon, steers").eq("id", p.bookId).single();
   if (error || !book) throw new Error("Book not found");
   const brief = book.brief as Brief | null;
@@ -174,22 +176,30 @@ export async function foundationsOptions(
 
   const text = textOf(data);
   if (!text) throw new Error("Claude returned no candidates.");
+
+  // Cast returns { proposals } — 3 complete cast configs to pick from, not a flat candidates list.
+  if (p.step === "cast") {
+    const parsed = parseJson<{ proposals?: Array<{ label?: unknown; members?: Array<Record<string, unknown>> }> }>(text);
+    const proposals: CastProposal[] = (parsed.proposals ?? []).map((prop) => ({
+      label: String(prop.label ?? "").trim() || "Option",
+      members: (Array.isArray(prop.members) ? prop.members : []).map((c) => ({
+        id: uid(),
+        name: String(c.name ?? "").trim(),
+        role: (c.role === "protagonist" ? "protagonist" : "major") as CastMember["role"],
+        want: String(c.want ?? "").trim(),
+        wound: String(c.wound ?? "").trim(),
+        lie: String(c.lie ?? "").trim(),
+        pinned_fields: [] as string[],
+      })).filter((c) => c.name),
+    })).filter((p) => p.members.length > 0);
+    if (proposals.length === 0) throw new Error("Claude returned no cast proposals.");
+    return { proposals };
+  }
+
   const parsed = parseJson<{ candidates?: Array<Record<string, unknown>> }>(text);
   const raw = Array.isArray(parsed.candidates) ? parsed.candidates : [];
   if (raw.length === 0) throw new Error("Claude returned an empty candidate list.");
 
-  if (p.step === "cast") {
-    const candidates = raw.map((c) => ({
-      id: uid(),
-      name: String(c.name ?? "").trim(),
-      role: (c.role === "protagonist" ? "protagonist" : "major") as CastMember["role"],
-      want: String(c.want ?? "").trim(),
-      wound: String(c.wound ?? "").trim(),
-      lie: String(c.lie ?? "").trim(),
-      pinned_fields: [],
-    })).filter((c) => c.name);
-    return { candidates };
-  }
   if (p.step === "tentpoles") {
     const candidates = raw.map((c) => ({
       id: uid(),
