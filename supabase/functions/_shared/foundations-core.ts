@@ -147,8 +147,8 @@ export async function foundationsOptions(
     if (!moment) throw new Error("Add at least one tentpole moment first.");
     stepInput = `\n\nTENTPOLE MOMENT TO RENDER:\n${moment.text}`;
   }
-  if (p.step === "tentpoles" && p.prompt?.trim()) {
-    stepInput += `\n\nAUTHOR'S DIRECTION FOR THESE PROPOSALS:\n${p.prompt.trim()}`;
+  if (p.prompt?.trim()) {
+    stepInput += `\n\nAUTHOR'S DIRECTION:\n${p.prompt.trim()}`;
   }
 
   const { high: model } = await getActiveModels();

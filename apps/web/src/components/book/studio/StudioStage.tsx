@@ -123,7 +123,7 @@ function StepView(props: StageProps & { stepKey: StepKey }) {
     <div>
       <StageHead eyebrow={EYEBROW[status] ?? "Focus · the next move"} title={STEP_LABEL[k]} caption={STEP_CAPTION[k]} />
 
-      {steerStep && <div className="mb-5"><SteerField steer={steer} placeholder={STEER_PLACEHOLDER[k]} /></div>}
+      {steerStep && k !== "foundations" && <div className="mb-5"><SteerField steer={steer} placeholder={STEER_PLACEHOLDER[k]} /></div>}
 
       {k === "brief" && (
         <>

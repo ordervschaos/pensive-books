@@ -8,7 +8,6 @@ import {
   Trash2,
   Plus,
   MoreHorizontal,
-  MessageSquare,
   X,
 } from "lucide-react";
 import {
@@ -68,8 +67,6 @@ export const PagesList = ({
   isDeleteMode = false,
   canEdit = false,
   onDeleteModeChange,
-  onChatToggle,
-  hasActiveChat,
   wordCount,
   versionControl,
 }: PagesListProps) => {
@@ -83,7 +80,6 @@ export const PagesList = ({
   const [previousViewMode, setPreviousViewMode] = useState<ViewMode>(readStoredView);
   const [bookmarkedPageIndex, setBookmarkedPageIndex] = useState<number | null>(null);
   const bookmarkedPageRef = useRef<HTMLDivElement>(null);
-  const isBetaEnabled = localStorage.getItem('is_beta') === 'true';
   const activeModeLabel = isReordering ? "Reorder" : isDeleteMode ? "Delete" : null;
 
   // Save view mode to localStorage
@@ -360,12 +356,6 @@ export const PagesList = ({
                   <Trash2 className="h-4 w-4" />
                   <span>{isDeleteMode ? "Exit delete" : "Delete pages"}</span>
                 </DropdownMenuItem>
-                {onChatToggle && isBetaEnabled && (
-                  <DropdownMenuItem onClick={onChatToggle} className="flex items-center gap-2">
-                    <MessageSquare className="h-4 w-4" />
-                    <span>{hasActiveChat ? "Close chat" : "Chat with book"}</span>
-                  </DropdownMenuItem>
-                )}
               </DropdownMenuContent>
             </DropdownMenu>
           )}

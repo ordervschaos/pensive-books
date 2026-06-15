@@ -18,8 +18,6 @@ export interface PagesListProps {
   isDeleteMode?: boolean;
   canEdit?: boolean;
   onDeleteModeChange?: (isDelete: boolean) => void;
-  onChatToggle?: () => void;
-  hasActiveChat?: boolean;
   /** Manuscript word count shown in the section header (text pages only). */
   wordCount?: number;
   /** Save-version control rendered in the manuscript header (editors only). */

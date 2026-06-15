@@ -8,6 +8,8 @@
 // books.bible.voice_sample so the existing prose renderers keep reading their anchor unchanged.
 import { useEffect, useRef, useState } from "react";
 import { Check, ImageIcon, Loader2, Pin, Plus, RefreshCw, Skull, Sparkles, Undo2, Wand2, X } from "lucide-react";
+import { SteerField } from "../SteerField";
+import type { UseSteer } from "@/lib/steer";
 import { supabase } from "@/integrations/supabase/client";
 import { Textarea } from "@/components/ui/textarea";
 import { AutoTextarea } from "@/components/ui/auto-textarea";
@@ -22,6 +24,12 @@ import {
 import { ActionLink, Eyebrow, Hero, ImageLightbox, Panel, RunError, RunningInline } from "../studioUi";
 
 const uid = () => crypto.randomUUID().slice(0, 8);
+
+// Ephemeral per-call steer: local state only, passed as `prompt` in run.start(), never persisted.
+function useLocalSteer(): UseSteer {
+  const [value, setValue] = useState("");
+  return { value, setValue, save: async () => {}, loaded: true };
+}
 
 const SUBS: { key: FoundationsStepKey; label: string; caption: string }[] = [
   { key: "argument", label: "Argument", caption: "The claim the whole story argues — pick the one you'd defend." },
@@ -138,10 +146,10 @@ function NodeSub({ bookId, stepKey, node, heroTitle, heroSub, blockedReason, bef
   const appliedRef = useRef<number | null>(null);
   const autoPickRef = useRef(false);
   const [draft, setDraft] = useState<string | null>(null); // inline edit buffer for the selected text
+  const steer = useLocalSteer();
 
-  // Persist the foundations steer before kicking, so the worker reads the fresh guidance.
-  const fire = async () => { await beforeGen(); void run.start({ step: stepKey }); };
-  const fireSkip = async () => { autoPickRef.current = true; await beforeGen(); void run.start({ step: stepKey }); };
+  const fire = async () => { await beforeGen(); void run.start({ step: stepKey, ...(steer.value.trim() ? { prompt: steer.value.trim() } : {}) }); };
+  const fireSkip = async () => { autoPickRef.current = true; await beforeGen(); void run.start({ step: stepKey, ...(steer.value.trim() ? { prompt: steer.value.trim() } : {}) }); };
 
   const generating = run.starting || run.run?.status === "running" || run.run?.status === "pending";
 
@@ -184,6 +192,7 @@ function NodeSub({ bookId, stepKey, node, heroTitle, heroSub, blockedReason, bef
   if (candidates.length === 0 && !selected) {
     return (
       <div>
+        <div className="mb-4"><SteerField steer={steer} /></div>
         <Hero icon={<Sparkles className="h-5 w-5" />} title={heroTitle} sub={heroSub} onClick={() => void fire()} />
         <SkipLink onClick={() => void fireSkip()} />
         {run.run?.status === "error" && <RunError msg={run.run.error} />}
@@ -257,11 +266,14 @@ function NodeSub({ bookId, stepKey, node, heroTitle, heroSub, blockedReason, bef
           </div>
         );
       })}
-      <div className="flex items-center gap-5">
-        <ActionLink icon={<RefreshCw className="h-3.5 w-3.5" />} onClick={() => void fire()}>
-          regenerate{node?.pinned ? " (your approved text is held)" : ""}
-        </ActionLink>
-        {!selected && <SkipLink onClick={() => void fireSkip()} />}
+      <div className="mt-1">
+        <SteerField steer={steer} className="mb-3" />
+        <div className="flex items-center gap-5">
+          <ActionLink icon={<RefreshCw className="h-3.5 w-3.5" />} onClick={() => void fire()}>
+            regenerate{node?.pinned ? " (your approved text is held)" : ""}
+          </ActionLink>
+          {!selected && <SkipLink onClick={() => void fireSkip()} />}
+        </div>
       </div>
       {run.run?.status === "error" && <RunError msg={run.run.error} />}
     </div>
@@ -275,7 +287,8 @@ function CastSub({ bookId, cast, beforeGen, onSave }: { bookId: number; cast: Ca
   const run = useAIRun<{ candidates: CastMember[] }>({ bookId, kind: "foundations_options", targetKey: "foundations:cast" });
   const appliedRef = useRef<number | null>(null);
   const generating = run.starting || run.run?.status === "running" || run.run?.status === "pending";
-  const fire = async () => { await beforeGen(); void run.start({ step: "cast" }); };
+  const steer = useLocalSteer();
+  const fire = async () => { await beforeGen(); void run.start({ step: "cast", ...(steer.value.trim() ? { prompt: steer.value.trim() } : {}) }); };
 
   // Merge AI candidates: a redraft REWRITES every unpinned field on an existing member (by name) with
   // the steered candidate — pinned lines are held verbatim (§4 rule 2b). A blank candidate field keeps
@@ -322,6 +335,7 @@ function CastSub({ bookId, cast, beforeGen, onSave }: { bookId: number; cast: Ca
     <div className="space-y-3.5">
       {cast.length === 0 && (
         <div>
+          <div className="mb-4"><SteerField steer={steer} /></div>
           <Hero icon={<Sparkles className="h-5 w-5" />} title="Draft the cast"
             sub="Protagonist plus up to two majors, each with want / wound / lie. Edit any line to make it yours — edited lines are pinned."
             onClick={() => void fire()} />
@@ -368,6 +382,7 @@ function CastSub({ bookId, cast, beforeGen, onSave }: { bookId: number; cast: Ca
           <CastLook bookId={bookId} member={m} onUpdate={(patch) => update(m.id, patch)} />
         </Panel>
       ))}
+      {cast.length > 0 && <SteerField steer={steer} className="mt-1 mb-3" />}
       <div className="flex items-center gap-5">
         <ActionLink
           icon={<Plus className="h-3.5 w-3.5" />}
@@ -447,11 +462,11 @@ function TentpolesSub({ bookId, tentpoles, beforeGen, onSave }: { bookId: number
   const run = useAIRun<{ candidates: Tentpole[] }>({ bookId, kind: "foundations_options", targetKey: "foundations:tentpoles" });
   const appliedRef = useRef<number | null>(null);
   const [newMoment, setNewMoment] = useState("");
-  const [aiPrompt, setAiPrompt] = useState("");
+  const steer = useLocalSteer();
   const generating = run.starting || run.run?.status === "running" || run.run?.status === "pending";
   const fire = async () => {
     await beforeGen();
-    void run.start({ step: "tentpoles", ...(aiPrompt.trim() ? { prompt: aiPrompt.trim() } : {}) });
+    void run.start({ step: "tentpoles", ...(steer.value.trim() ? { prompt: steer.value.trim() } : {}) });
   };
 
   useEffect(() => {
@@ -541,18 +556,10 @@ function TentpolesSub({ bookId, tentpoles, beforeGen, onSave }: { bookId: number
                   onKill={() => setStatus(t.id, "killed")} />
               ))}
               <div className="rounded-2xl border border-dashed border-border px-4 py-3">
-                <Textarea
-                  value={aiPrompt}
-                  onChange={(e) => setAiPrompt(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void fire(); }}
-                  placeholder="Optional: steer what kinds of moments AI proposes…"
-                  rows={2}
-                  className="pv-serif border-none bg-transparent px-0 text-[14px] leading-relaxed focus-visible:ring-0 placeholder:text-[hsl(var(--pv-text-faint))]"
-                />
+                <SteerField steer={steer} label="Steer these proposals" className="mb-3" />
                 <ActionLink
                   icon={proposalCards.length ? <RefreshCw className="h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
                   onClick={() => void fire()}
-                  className="mt-1"
                 >
                   {proposalCards.length
                     ? `propose more${pinnedCount ? ` (${pinnedCount} pinned held)` : ""}`

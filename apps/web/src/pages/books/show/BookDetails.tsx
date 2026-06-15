@@ -6,10 +6,8 @@ import { BookInfo } from "@/components/book/BookInfo";
 import { PagesList } from "./components/PagesList";
 import { useBookPermissions } from "@/hooks/use-book-permissions";
 import { BookActionsBar } from "./components/BookActionsBar";
-import { BookChatPanel } from "./components/BookChatPanel";
 import { setPageTitle } from "@/utils/pageTitle";
 import { Helmet } from "react-helmet-async";
-import { executeBookOperation } from "@/lib/book-operations";
 import { createSequel } from "@/lib/sequel";
 import { Button } from "@/components/ui/button";
 import { ArchivedPagesSection } from "./components/pageList/ArchivedPagesSection";
@@ -26,7 +24,6 @@ import { getPageStatus } from "./components/pageList/pageUtils";
 import { computeCompletion } from "@/lib/brief";
 import { cn } from "@/lib/utils";
 import { useMatureContent } from "@/hooks/use-mature-content";
-import { MessageSquare } from "lucide-react";
 import type { Session } from "@supabase/supabase-js";
 import type { EditorJSON } from "@/types/editor";
 
@@ -74,7 +71,6 @@ const BookDetails = () => {
   const [isDeleteMode, setIsDeleteMode] = useState(false);
   const [bookmarkedPageIndex, setBookmarkedPageIndex] = useState<number | null>(null);
   const [bookmarkTimestamp, setBookmarkTimestamp] = useState<string | null>(null);
-  const [isChatOpen, setIsChatOpen] = useState(false);
   const { canEdit, isOwner, hasAccess, viaAdmin, ownerLabel, loading: permissionsLoading } = useBookPermissions(bookSlug);
 
   // Owner/collaborators only in the app; everyone else reading a public book goes to the
@@ -86,8 +82,6 @@ const BookDetails = () => {
   const { enabled: matureEnabled, loading: matureLoading } = useMatureContent();
   const [matureUnlocked, setMatureUnlocked] = useState(false);
 
-  // Check beta flag
-  const isBetaEnabled = localStorage.getItem('is_beta') === 'true';
 
   const getNumericId = (param: string | undefined) => {
     if (!param) return 0;
@@ -413,80 +407,6 @@ const BookDetails = () => {
     return !lastReadTime || mostRecentPageUpdate > lastReadTime;
   };
 
-  // Prepare book metadata for chat
-  const getBookMetadata = () => {
-    if (!book || !pages) return null;
-
-    const metadata = {
-      name: book.name,
-      author: book.author || 'Unknown',
-      subtitle: book.subtitle || '',
-      pageCount: pages.length,
-      pages: pages.map(page => ({
-        id: page.id,
-        title: page.title || 'Untitled',
-        pageIndex: page.page_index,
-        summary: (() => {
-          if (!page.content) return 'No content';
-          const text = jsonToText(page.content);
-          return text ? text.substring(0, 200) + (text.length > 200 ? '...' : '') : 'No content';
-        })()
-      }))
-    };
-    
-    console.log('Book metadata being sent to AI:', JSON.stringify(metadata, null, 2));
-    return metadata;
-  };
-
-  // Handle book operations from chat
-  const handleApplyOperation = async (operation: {
-    type: 'add' | 'archive' | 'move' | 'edit';
-    pageId?: number;
-    newIndex?: number;
-    title?: string;
-    content?: string;
-    oldContent?: string;
-    newContent?: string;
-  }) => {
-    if (!canEdit) {
-      toast({
-        variant: "destructive",
-        title: "Permission denied",
-        description: "You don't have permission to edit this book"
-      });
-      return;
-    }
-
-    const numericId = getNumericId(bookSlug);
-    if (!numericId) return;
-
-    try {
-      const result = await executeBookOperation(operation, numericId, pages as any);
-      
-      if (result.success) {
-        toast({
-          title: "Operation completed",
-          description: `Successfully ${operation.type}ed page`
-        });
-        
-        // Refresh book data to reflect changes
-        await fetchBookDetails();
-      } else {
-        toast({
-          variant: "destructive",
-          title: "Operation failed",
-          description: result.error || "Failed to complete operation"
-        });
-      }
-    } catch (error) {
-      console.error('Error applying operation:', error);
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to apply operation"
-      });
-    }
-  };
 
   // Also covers the brief moment before a non-collaborator is redirected to the reader.
   if (loading || permissionsLoading || !hasAccess || !book) {
@@ -561,19 +481,6 @@ const BookDetails = () => {
               {/* Header Actions - Top Right */}
               {canEdit && (
                 <div className="absolute top-2 right-2 sm:top-3 sm:right-3 z-10 flex items-center gap-2">
-                  {isBetaEnabled && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => navigate(`/books/${bookSlug}/chat`)}
-                      aria-label="Chat with Book"
-                      className="pv-serif h-9 w-9 gap-0 rounded-full border-0 bg-transparent p-0 text-[13px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground sm:w-auto sm:gap-1.5 sm:border sm:border-border sm:px-3.5"
-                    >
-                      <MessageSquare className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
-                      <span className="hidden sm:inline">Chat with Book</span>
-                    </Button>
-                  )}
-
                   <BookActionsBar
                     isPublic={book.is_public}
                     onPublish={handlePublish}
@@ -677,8 +584,6 @@ const BookDetails = () => {
                       isDeleteMode={isDeleteMode}
                       canEdit={canEdit}
                       onDeleteModeChange={(isDelete) => setIsDeleteMode(isDelete)}
-                      onChatToggle={() => setIsChatOpen(!isChatOpen)}
-                      hasActiveChat={isChatOpen}
                       wordCount={manuscriptWordCount}
                       versionControl={
                         <VersionControlButton
@@ -751,24 +656,12 @@ const BookDetails = () => {
                   isDeleteMode={isDeleteMode}
                   canEdit={canEdit}
                   onDeleteModeChange={(isDelete) => setIsDeleteMode(isDelete)}
-                  onChatToggle={() => setIsChatOpen(!isChatOpen)}
-                  hasActiveChat={isChatOpen}
                   wordCount={manuscriptWordCount}
                 />
               </div>
             )}
 
           </div>
-
-          {/* Chat Sidebar - Rendered as a portal */}
-          <BookChatPanel
-            bookId={bookSlug || ""}
-            bookMetadata={getBookMetadata()!}
-            canEdit={canEdit}
-            isOpen={isChatOpen}
-            onClose={() => setIsChatOpen(false)}
-            onApplyOperation={handleApplyOperation}
-          />
 
           {/* Version Control Dialog */}
           <CommitDialog
