@@ -237,7 +237,7 @@ export function BeatsStep({ bookId, model, steer, beforeGen, onChanged, onSelect
           ) : committed ? (
             <div className="mt-5 space-y-3.5">
               <Eyebrow className="block">Chosen beat</Eyebrow>
-              <Panel className="border-[hsl(var(--pv-accent))]/45 bg-[hsl(var(--pv-surface-2))]/60 px-5 py-4">
+              <Panel variant="chosen" className="px-5 py-4">
                 <Textarea value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={() => draft.trim() && void saveBeat(bookId, page.id, draft.trim()).then(onChanged)} rows={6}
                   className="pv-serif border-none bg-transparent px-0 text-[15.5px] leading-[1.6] focus-visible:ring-0" />
               </Panel>
@@ -252,7 +252,7 @@ export function BeatsStep({ bookId, model, steer, beforeGen, onChanged, onSelect
           ) : ready ? (
             <div className="mt-5 space-y-3.5">
               <Eyebrow className="block">Beat — edit it, then keep it</Eyebrow>
-              <Panel className="border-[hsl(var(--pv-accent))]/45 bg-[hsl(var(--pv-surface-2))]/60 px-5 py-4">
+              <Panel variant="chosen" className="px-5 py-4">
                 <Textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={6}
                   className="pv-serif border-none bg-transparent px-0 text-[15.5px] leading-[1.6] focus-visible:ring-0" />
               </Panel>

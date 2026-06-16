@@ -337,7 +337,7 @@ function PageRow({ bookId, page, onChanged, onSelectPage, beforeGen }: {
 
         {/* Chosen beat */}
         {beat.trim() && (
-          <Panel className="border-[hsl(var(--pv-accent))]/45 bg-[hsl(var(--pv-surface-2))]/60 px-5 py-4">
+          <Panel variant="chosen" className="px-5 py-4">
             <AutoTextarea
               value={beat}
               onChange={(e) => setBeat(e.target.value)}

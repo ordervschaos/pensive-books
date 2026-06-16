@@ -9,7 +9,7 @@
 //
 // `run` is the latest non-terminal row (running | ready) or null. Terminal rows (applied | dismissed
 // | cancelled | error) are surfaced too so the UI can show an error; the consumer decides.
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { BRIDGE, bridgeFetch } from "@/lib/bridge";
 import { stopRun } from "@/lib/stopRun";
@@ -39,6 +39,10 @@ const ACTIVE = ["pending", "running"] as const;
 export function useAIRun<R = unknown>(opts: Options) {
   const { bookId, kind, targetKey, targetPageId, enabled = true, staleMs = 180_000 } = opts;
   const [starting, setStarting] = useState(false);
+  // pendingBridge: true from when the HTTP call returns until the new row is observed via Realtime.
+  // Bridges the gap that causes the flicker: starting→false before row→pending.
+  const [pendingBridge, setPendingBridge] = useState(false);
+  const preStartRowId = useRef<number | null | undefined>(undefined);
 
   const match: Record<string, string | number> = { kind };
   if (targetKey != null) match.target_key = targetKey;
@@ -53,11 +57,26 @@ export function useAIRun<R = unknown>(opts: Options) {
     enabled,
   });
 
-  // Kick a new run. The server inserts the 'running' row (which Realtime delivers immediately), so
-  // we just refetch to catch it without waiting for the slow response.
+  // Clear pendingBridge the moment a NEW row (different id) lands from Realtime.
+  useEffect(() => {
+    if (!pendingBridge) return;
+    if (row && row.id !== preStartRowId.current) setPendingBridge(false);
+  }, [pendingBridge, row?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fallback: don't let pendingBridge hang forever if the row never arrives.
+  useEffect(() => {
+    if (!pendingBridge) return;
+    const t = setTimeout(() => setPendingBridge(false), 15_000);
+    return () => clearTimeout(t);
+  }, [pendingBridge]);
+
+  // Kick a new run. pendingBridge keeps `starting` true until Realtime delivers the row, eliminating
+  // the flicker window between setStarting(false) and row?.status becoming "pending".
   const start = useCallback(async (params: Record<string, unknown>) => {
-    if (starting) return;
+    if (starting || pendingBridge) return;
+    preStartRowId.current = row?.id ?? null;
     setStarting(true);
+    setPendingBridge(true);
     try {
       const body = { bookId, kind, targetKey, targetPageId, params };
       if (BRIDGE) {
@@ -70,10 +89,13 @@ export function useAIRun<R = unknown>(opts: Options) {
         if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
       }
       refetch();
+    } catch (e) {
+      setPendingBridge(false);
+      throw e;
     } finally {
       setStarting(false);
     }
-  }, [bookId, kind, targetKey, targetPageId, starting, refetch]);
+  }, [bookId, kind, targetKey, targetPageId, starting, pendingBridge, row?.id, refetch]);
 
   const setStatus = useCallback(async (status: string) => {
     if (!row) return;
@@ -101,5 +123,5 @@ export function useAIRun<R = unknown>(opts: Options) {
   // A run worth showing: running (with its spinner) or ready (a proposal awaiting accept/reject).
   const live = row && (row.status === "running" || row.status === "pending" || row.status === "ready" || row.status === "error") ? row : null;
 
-  return { run: live, starting, stale, loading, start, accept, reject, cancel };
+  return { run: live, starting: starting || pendingBridge, stale, loading, start, accept, reject, cancel };
 }

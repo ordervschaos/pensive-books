@@ -14,6 +14,12 @@ Every AI call in the system, organized by purpose. Three sections:
 
 Every text call flows through `callClaude()`. It logs a `running` row to `ai_calls` before the call, routes to the right provider (Anthropic / DeepSeek / Qwen via OpenRouter), converts Anthropic-format bodies to OpenAI format for non-Anthropic tiers, and closes the log with output + tokens + latency. The author never sees this layer.
 
+### GenRow: Steer + Generate as One Unit
+
+Across Foundations, Spine, and Beats, the steer textarea and the generate/propose button are always rendered together as a `GenRow` primitive (from `studioUi.tsx`). This removes any separate "steer →" toggle: the steer input is always visible directly above the action link. Works with both persistent (`UseSteer`, saved to DB) and ephemeral (`useLocalSteer`, React-state-only) steer objects.
+
+---
+
 ### Shared Context Blocks
 
 These building blocks are assembled differently per call, but the source is always the same.
@@ -70,7 +76,7 @@ Fields: scope band, genre, audience, premise, tone, success criteria.
 
 ---
 
-### Step 2 — Foundations (new flow)
+### Step 2 — Foundations (card-game flow)
 
 **`foundationsOptions`** — called once per sub-step. Each sub-step receives the settled results of all previous sub-steps, so context grows as the author moves through them.
 
@@ -89,12 +95,30 @@ User:   BOOK name
         BRIEF (full)
         CANON (if sequel)
         SETTLED FOUNDATIONS SO FAR
-        STEER (books.steers["foundations"])
+        STEER (books.steers["foundations"], if set — persistent)
+        AUTHOR'S DIRECTION (ephemeral per-call steer, if provided)
 ```
 
-Returns 3 JSON candidates for the author to pick from. Sequel cast gets an addendum: "propose where each character is NOW, not a copy of who they were."
+**Non-destructive generation**: every "propose more" call _appends_ new candidates to the existing pool — existing cards stay on screen, new ones appear below. The author accumulates options rather than replacing them.
 
-**Author's lever**: One **Steer field** covers all five sub-steps. Pinning a field (argument, ending, cast line, tentpole) marks it as immutable in `settledContext` — every downstream call sees it as a hard constraint.
+**Navigation**: a horizontal progress strip (Argument · Ending · Cast · Tentpoles · Voice) lets the author jump freely between sub-steps at any time. The active sub-step is highlighted; completed ones show a check.
+
+**Steer is ephemeral** for Foundations sub-steps: the steer field is local React state (`useLocalSteer`), passed as `prompt` in `run.start()`, and included as `AUTHOR'S DIRECTION` in the prompt. It is _not_ persisted to `books.steers`. (Contrast with Spine and Beats, where the steer is a persistent `UseSteer` saved to `books.steers`.)
+
+**Argument / Ending / Voice** — single-select sub-steps. Returns `{ candidates: FCandidate[] }`. After a candidate is chosen, unselected ones collapse to compact `CollapsedRow` components (truncated label, switch/remove). The selected card is editable inline; a `DurableReviser` link lets the author revise it with a new instruction.
+
+**Cast** — returns `{ proposals: CastProposal[] }`: 3 complete cast _configurations_ (not a flat candidate list), each with a `label` and a `members` array (protagonist + major characters, each with `want`, `wound`, `lie`). The author picks one entire configuration, then edits individual members' fields inline. Editing any field auto-pins it (`pinned_fields[]`), marking it as immutable for downstream generation. Cast portraits (`foundations.cast[].portraits`) and `appearance` field are also editable in a "Design the look" sub-panel per character. Sequel cast gets an addendum: "propose where each character is NOW, not a copy of who they were."
+
+**Tentpoles** — 2-column board (Pinned | Proposals):
+- **Pinned column**: author-written moments go here directly (source: `"author"`, status: `"pinned"`); AI proposals the author "keeps" also move here (status: `"pinned"`). Pinned tentpoles are hard constraints for every spine route.
+- **Proposals column**: AI-generated candidates land here (source: `"ai"`, status: `"fluid"`). Author can "keep" (moves to Pinned) or "discard" (removes from array entirely). Each proposal card has a `DurableReviser` link for surgical revision before pinning.
+- "Propose more" appends 6 new candidates without touching existing ones.
+- An author can also type a new moment directly into the Pinned column's dashed input, which adds it with `source: "author"`, `status: "pinned"`.
+- The `settledContext()` still renders `killed` tentpoles as `KILLED DIRECTIONS` constraints (data model retains `status: "killed"`; the UI deletes by removing from array, leaving no killed record in new interactions).
+
+Returns 3 JSON candidates for the author to pick from (argument/ending/voice) or 6 tentpole proposals.
+
+**Author's lever**: Per-call ephemeral steer (typed fresh each generation; not saved). Pinning a field (argument, ending, cast field, tentpole) marks it as immutable in `settledContext` — every downstream call sees it as a hard constraint.
 
 ---
 
@@ -108,13 +132,17 @@ User:   BOOK name
         BRIEF (full)
         CANON (if sequel)
         SETTLED FOUNDATIONS (full: argument + ending + cast + tentpoles + voice)
-        EXISTING ROUTES to vary away from (on re-generate)
-        STEER (books.steers["spine"])
+        EXISTING ROUTES to vary away from (summaries of all current routes, on propose-more)
+        STEER (books.steers["spine"], persistent)
 ```
+
+**Non-destructive generation**: "propose more routes" passes `avoid: [<summaries of existing routes>]` to the server so the model varies away from them, and appends the new routes to the existing pool — existing cards stay, new ones appear below.
 
 **Hard constraint**: Every pinned tentpole must appear in every route's `tentpole_order`. Killed tentpoles must not appear. If violated, one retry with an explicit constraint reminder appended. Throws if still violated after the retry.
 
-**Author's lever**: Spine steer + pinning/killing tentpoles. Pin = must survive into every route. Kill = never proposed again.
+**GenRow**: Steer field and "propose more routes" button are rendered as a bundled `GenRow` unit (shared primitive: textarea above, action link below). Steer is persistent (`UseSteer`, saved to `books.steers["spine"]`).
+
+**Author's lever**: Spine steer (persistent) + pinning/killing tentpoles. Pin = must survive into every route. Kill = never proposed again.
 
 ---
 
@@ -500,7 +528,8 @@ The manuscript dominates evaluation calls. For prose calls, the preceding prose 
 | **Foundations (settled)** | Foundations step | Spine routes, beats-agent, revise-agent, beat, prose |
 | **Tentpole pins/kills** | Foundations → Tentpoles | Spine routes (hard constraint, validated post-generation) |
 | **Voice sample** | Foundations → Voice or Voice step | Every prose write (strongest single style anchor) |
-| **Per-step steer** | Steer field on each step | Foundations, spine, beats, prose (matched by step key) |
+| **Per-call steer (Foundations)** | Ephemeral steer textarea on each Foundations sub-step | That sub-step's generation only (local state, not saved; sent as `prompt` in run.start) |
+| **Per-step steer (Spine/Beats/Prose)** | Persistent steer field on each step | Spine routes, beats, prose (saved to `books.steers[step]`, re-read on every call) |
 | **Beats (approved)** | Beats step | Prose write (the beat is the plan the prose follows) |
 | **Art direction** | ImageGenStudio component | Image prompt composition only |
 | **Cast portraits** | Foundations → Cast → Look | Scene image rendering (face coherence) |

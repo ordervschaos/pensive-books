@@ -19,13 +19,13 @@ import {
   foundationsProgress, pinNode, writeFoundations,
   type CastMember, type CastProposal, type FCandidate, type FNode, type Foundations, type FoundationsStepKey, type Tentpole,
 } from "@/lib/foundations";
-import { ActionLink, Eyebrow, GenRow, Hero, ImageLightbox, Panel, RunError, SkeletonCard, SkeletonProposalCard } from "../studioUi";
+import { ActionLink, CollapsedRow, Eyebrow, GenRow, Hero, ImageLightbox, OptionCard, Panel, PickButton, RunError, SkeletonCard, SkeletonProposalCard } from "../studioUi";
 import { DurableReviser } from "../../DurableReviser";
 
 const uid = () => crypto.randomUUID().slice(0, 8);
 
 // Ephemeral per-call steer: local state only, passed as `prompt` in run.start(), never persisted.
-function useLocalSteer(): UseSteer {
+function useLocalSteer() {
   const [value, setValue] = useState("");
   return { value, setValue, save: async () => {}, loaded: true };
 }
@@ -208,7 +208,7 @@ function NodeSub({ bookId, stepKey, node, heroTitle, heroSub, blockedReason, bef
     <div className="space-y-3.5">
       {/* Approved text that's no longer in the candidate list — show at TOP as the anchor. */}
       {pinnedAndNotInCandidates && (
-        <Panel className="border-[hsl(var(--pv-accent))]/45 bg-[hsl(var(--pv-surface-2))]/60">
+        <Panel variant="chosen">
           <div className="mb-2.5 flex items-center justify-between gap-3">
             <Eyebrow>Chosen · yours</Eyebrow>
           </div>
@@ -231,56 +231,37 @@ function NodeSub({ bookId, stepKey, node, heroTitle, heroSub, blockedReason, bef
         // Collapse non-selected candidates to a compact row once a selection has been made.
         if (!isSelected && selected) {
           return (
-            <div key={c.id} className="flex items-center gap-3 rounded-xl border border-[hsl(var(--pv-border-soft))]/80 bg-[hsl(var(--pv-surface-2))]/30 px-5 py-2.5">
-              <span className="pv-mono shrink-0 text-[9.5px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-faint))]">{candidateLabel}</span>
-              <p className="pv-serif flex-1 truncate text-[13.5px] italic leading-snug text-[hsl(var(--pv-text-faint))]">{c.text}</p>
-              <button type="button" onClick={() => void onSave(pinNode(node, c.text))}
-                className="pv-serif shrink-0 text-[12.5px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground transition-colors">
-                switch
-              </button>
-              <button type="button"
-                onClick={() => void onSave({ ...(node ?? {}), candidates: candidates.filter((x) => x.id !== c.id) })}
-                className="shrink-0 text-[hsl(var(--pv-text-faint))] hover:text-foreground transition-colors" aria-label="Remove candidate">
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
+            <CollapsedRow key={c.id} label={candidateLabel} text={c.text}
+              onPick={() => void onSave(pinNode(node, c.text))}
+              onRemove={() => void onSave({ ...(node ?? {}), candidates: candidates.filter((x) => x.id !== c.id) })} />
+          );
+        }
+        if (isSelected) {
+          return (
+            <Panel key={c.id} variant="chosen">
+              <div className="mb-2.5 flex items-center justify-between gap-3">
+                <Eyebrow>{candidateLabel}</Eyebrow>
+                <PickButton selected>Chosen</PickButton>
+              </div>
+              <Textarea
+                value={draft ?? selected}
+                onChange={(e) => setDraft(e.target.value)}
+                onBlur={() => { if (draft != null && draft.trim() !== selected) void onSave(pinNode(node, draft.trim())); setDraft(null); }}
+                rows={Math.max(3, Math.ceil((draft ?? selected).length / 80))}
+                className="pv-serif border-none bg-transparent px-0 text-[15.5px] leading-[1.65] focus-visible:ring-0"
+              />
+              <DurableReviser
+                bookId={bookId} layer={stepKey} targetKey={`foundations:${stepKey}:revise`}
+                current={selected} onApply={async (text) => { await onSave(pinNode(node, text)); }} label="revise →"
+              />
+            </Panel>
           );
         }
         return (
-          <div key={c.id} className={`rounded-2xl border px-6 py-5 transition-colors ${isSelected ? "border-[hsl(var(--pv-accent))]/45 bg-[hsl(var(--pv-surface-2))]/60 shadow-[0_10px_30px_rgba(0,0,0,0.05)]" : "border-border bg-[hsl(var(--pv-surface-2))]/40"}`}>
-            <div className="mb-2.5 flex items-center justify-between gap-3">
-              <Eyebrow>{candidateLabel}</Eyebrow>
-              <div className="flex items-center gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => void onSave(pinNode(node, c.text))}
-                  disabled={isSelected}
-                  className={`pv-serif inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[13.5px] transition-colors disabled:opacity-100 ${isSelected ? "bg-primary text-primary-foreground" : "border border-border text-foreground hover:border-foreground/40"}`}
-                >
-                  {isSelected ? <Check className="h-3.5 w-3.5" /> : null}
-                  {isSelected ? "Chosen" : "Select"}
-                </button>
-              </div>
-            </div>
-            {isSelected ? (
-              <>
-                <Textarea
-                  value={draft ?? selected}
-                  onChange={(e) => setDraft(e.target.value)}
-                  onBlur={() => { if (draft != null && draft.trim() !== selected) void onSave(pinNode(node, draft.trim())); setDraft(null); }}
-                  rows={Math.max(3, Math.ceil((draft ?? selected).length / 80))}
-                  className="pv-serif border-none bg-transparent px-0 text-[15.5px] leading-[1.65] focus-visible:ring-0"
-                />
-                <DurableReviser
-                  bookId={bookId} layer={stepKey} targetKey={`foundations:${stepKey}:revise`}
-                  current={selected} onApply={async (text) => { await onSave(pinNode(node, text)); }} label="revise →"
-                />
-              </>
-            ) : (
-              <p className="pv-serif whitespace-pre-wrap text-[15.5px] leading-[1.65] text-foreground">{c.text}</p>
-            )}
+          <OptionCard key={c.id} label={candidateLabel} onPick={() => void onSave(pinNode(node, c.text))} pickLabel="Select">
+            <p className="pv-serif whitespace-pre-wrap text-[15.5px] leading-[1.65] text-foreground">{c.text}</p>
             {c.implied_ending && <p className="pv-serif mt-2.5 text-[13.5px] italic text-[hsl(var(--pv-text-muted))]">implied ending: {c.implied_ending}</p>}
-          </div>
+          </OptionCard>
         );
       })}
       {generating ? (
@@ -338,14 +319,7 @@ function CastSub({ bookId, cast, beforeGen, onSave }: { bookId: number; cast: Ca
           Three different takes on who this story is about — pick the one you'd defend.
         </p>
         {proposals.map((prop) => (
-          <div key={prop.label} className="rounded-2xl border border-border bg-[hsl(var(--pv-surface-2))]/40 px-6 py-5">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <Eyebrow>{prop.label}</Eyebrow>
-              <button type="button" onClick={() => pickProposal(prop)}
-                className="pv-serif inline-flex items-center gap-1.5 rounded-full border border-border px-4 py-1.5 text-[13.5px] transition-colors hover:border-foreground/40">
-                {cast.length ? "Switch to this →" : "Choose this cast →"}
-              </button>
-            </div>
+          <OptionCard key={prop.label} label={prop.label} onPick={() => pickProposal(prop)} pickLabel={cast.length ? "Switch to this" : "Choose this cast"}>
             <div className="space-y-4">
               {prop.members.map((m) => (
                 <div key={m.id}>
@@ -364,7 +338,7 @@ function CastSub({ bookId, cast, beforeGen, onSave }: { bookId: number; cast: Ca
                 </div>
               ))}
             </div>
-          </div>
+          </OptionCard>
         ))}
         <div className="space-y-2.5">
           <GenRow steer={steer} label="propose different options" icon={<Plus className="h-3.5 w-3.5" />} onFire={() => void fire()} />
@@ -659,7 +633,7 @@ function TentpoleCard({ t, onText, onKeep, onDelete, bookId }: { t: Tentpole; on
   const [draft, setDraft] = useState<string | null>(null);
   const pinned = t.status === "pinned";
   return (
-    <div className={`rounded-2xl border px-4 py-3 transition-colors ${pinned ? "border-[hsl(var(--pv-accent))]/45 bg-[hsl(var(--pv-surface-2))]/60" : "border-border bg-[hsl(var(--pv-surface-2))]/40"}`}>
+    <Panel variant={pinned ? "chosen" : undefined} className="px-4 py-3 transition-colors">
       <Textarea
         value={draft ?? t.text}
         onChange={(e) => setDraft(e.target.value)}
@@ -688,7 +662,7 @@ function TentpoleCard({ t, onText, onKeep, onDelete, bookId }: { t: Tentpole; on
           <X className="h-3 w-3" /> discard
         </button>
       </div>
-    </div>
+    </Panel>
   );
 }
 

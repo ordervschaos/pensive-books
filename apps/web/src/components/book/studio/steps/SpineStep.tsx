@@ -6,7 +6,7 @@
 // Picking one makes it spine.text (editable in the chosen-card UI). Pinned tentpoles are validated
 // server-side into every route. Every AI op is a durable run (useAIRun → ai-run).
 import { useEffect, useRef, useState } from "react";
-import { Check, Map as MapIcon, X } from "lucide-react";
+import { Check, Map as MapIcon } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useAIRun } from "@/hooks/useAIRun";
@@ -17,7 +17,7 @@ import {
   type Foundations, type SpineNode, type SpineRoute,
 } from "@/lib/foundations";
 import type { UseSteer } from "@/lib/steer";
-import { Eyebrow, GenRow, Hero, Panel, RunError } from "../studioUi";
+import { ActionLink, Eyebrow, GenRow, Hero, OptionCard, Panel, RunError } from "../studioUi";
 
 interface Props {
   bookId: number;
@@ -164,7 +164,7 @@ export function SpineStep({ bookId, foundations, steer, beforeGen, onStatusChang
     <div className="space-y-3.5">
       {/* Chosen, editable spine card. */}
       {spine && (
-        <Panel className="border-[hsl(var(--pv-accent))]/45 bg-[hsl(var(--pv-surface-2))]/60">
+        <Panel variant="chosen">
           <div className="mb-1 flex items-center justify-between">
             <Eyebrow tone="accent">
               <Check className="mr-1 inline h-3 w-3" strokeWidth={3} />Chosen route{node.pinned ? " · pinned" : ""}
@@ -194,20 +194,9 @@ export function SpineStep({ bookId, foundations, steer, beforeGen, onStatusChang
 
       {/* Unselected route proposals — pick or discard. */}
       {unselected.map((r, i) => (
-        <Panel key={r.id} className="bg-[hsl(var(--pv-surface-2))]/40">
-          <div className="mb-2.5 flex items-center justify-between gap-3">
-            <Eyebrow>Route {i + 1}</Eyebrow>
-            <div className="flex items-center gap-2">
-              <button type="button" onClick={() => void pickRoute(r)}
-                className="pv-serif inline-flex items-center gap-1.5 rounded-full border border-border px-4 py-1.5 text-[13.5px] text-foreground transition-colors hover:border-foreground/40">
-                {spine ? "Switch to this" : "Choose this route"}
-              </button>
-              <button type="button" onClick={() => void deleteRoute(r.id)}
-                className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground/50 transition-colors hover:bg-destructive/10 hover:text-destructive/70">
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          </div>
+        <OptionCard key={r.id} label={`Route ${i + 1}`}
+          onPick={() => void pickRoute(r)} pickLabel={spine ? "Switch to this" : "Choose this route"}
+          onDelete={() => void deleteRoute(r.id)}>
           <p className="pv-serif whitespace-pre-wrap text-[14.5px] leading-[1.65] text-foreground">{r.summary}</p>
           {r.tentpole_order.length > 0 && (
             <div className="mt-3 flex flex-wrap items-center gap-1.5">
@@ -218,7 +207,7 @@ export function SpineStep({ bookId, foundations, steer, beforeGen, onStatusChang
               ))}
             </div>
           )}
-        </Panel>
+        </OptionCard>
       ))}
 
       {/* Skeleton cards while generating. */}

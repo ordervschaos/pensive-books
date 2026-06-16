@@ -67,13 +67,79 @@ export function Eyebrow({ tone = "faint", className, children }: { tone?: "faint
   return <span className={cn("pv-mono text-[10px] uppercase tracking-[0.14em]", color, className)}>{children}</span>;
 }
 
-// The studio's card shell. `solid` (the default surface card), `soft` (quieter border), `dashed`
-// (empty/placeholder). Padding defaults to the common px-6 py-5 — override via className (twMerge wins).
-export function Panel({ variant = "solid", className, children, ...rest }: ComponentProps<"div"> & { variant?: "solid" | "soft" | "dashed" }) {
+// The studio's card shell. Variants:
+//   solid   — default bordered surface card
+//   soft    — quieter border, lighter bg (secondary content)
+//   dashed  — empty/placeholder slot
+//   chosen  — accent border + accent-tinted bg (the selected/committed item)
+// Padding defaults to px-6 py-5 — override via className (twMerge wins).
+export function Panel({ variant = "solid", className, children, ...rest }: ComponentProps<"div"> & { variant?: "solid" | "soft" | "dashed" | "chosen" }) {
   const v = variant === "dashed" ? "border-dashed border-[hsl(var(--pv-border-soft))] bg-transparent"
     : variant === "soft" ? "border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/40"
-      : "border-border bg-[hsl(var(--pv-surface-2))]/50";
+      : variant === "chosen" ? "border-[hsl(var(--pv-accent))]/45 bg-[hsl(var(--pv-surface-2))]/60"
+        : "border-border bg-[hsl(var(--pv-surface-2))]/50";
   return <div className={cn("rounded-2xl border px-6 py-5", v, className)} {...rest}>{children}</div>;
+}
+
+// The "pick one" button used on option/proposal cards. When selected, it fills with primary colour
+// and shows a check; when not selected, it's an outlined border button.
+export function PickButton({ onClick, selected, children, className }: { onClick?: () => void; selected?: boolean; children: ReactNode; className?: string }) {
+  return (
+    <button type="button" onClick={onClick} disabled={selected}
+      className={cn(
+        "pv-serif inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[13.5px] transition-colors disabled:opacity-100",
+        selected ? "bg-primary text-primary-foreground" : "border border-border text-foreground hover:border-foreground/40",
+        className,
+      )}>
+      {selected && <Check className="h-3.5 w-3.5" />}
+      {children}
+    </button>
+  );
+}
+
+// A proposal/option card: standard shell with a header row (label eyebrow + pick button + optional
+// delete X). Used for route proposals, cast options, and any "pick one from many" pattern.
+export function OptionCard({ label, onPick, pickLabel = "Choose this", onDelete, className, children }: {
+  label?: string; onPick?: () => void; pickLabel?: string; onDelete?: () => void;
+  className?: string; children: ReactNode;
+}) {
+  return (
+    <Panel className={cn("bg-[hsl(var(--pv-surface-2))]/40", className)}>
+      {(label || onPick || onDelete) && (
+        <div className="mb-2.5 flex items-center justify-between gap-3">
+          <Eyebrow>{label ?? ""}</Eyebrow>
+          <div className="flex items-center gap-2">
+            {onPick && <PickButton onClick={onPick}>{pickLabel}</PickButton>}
+            {onDelete && (
+              <button type="button" onClick={onDelete}
+                className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground/50 transition-colors hover:bg-destructive/10 hover:text-destructive/70"
+                aria-label="Remove">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+      {children}
+    </Panel>
+  );
+}
+
+// A compact collapsed row for non-selected candidates (after a choice has been made). Shows a
+// truncated label + text + switch link + remove X. Used when the full card is too heavy.
+export function CollapsedRow({ label, text, onPick, onRemove }: { label: string; text: string; onPick: () => void; onRemove: () => void }) {
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-[hsl(var(--pv-border-soft))]/80 bg-[hsl(var(--pv-surface-2))]/30 px-5 py-2.5">
+      <span className="pv-mono shrink-0 text-[9.5px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-faint))]">{label}</span>
+      <p className="pv-serif flex-1 truncate text-[13.5px] italic leading-snug text-[hsl(var(--pv-text-faint))]">{text}</p>
+      <button type="button" onClick={onPick}
+        className="pv-serif shrink-0 text-[12.5px] italic text-[hsl(var(--pv-text-muted))] transition-colors hover:text-foreground">switch</button>
+      <button type="button" onClick={onRemove}
+        className="shrink-0 text-[hsl(var(--pv-text-faint))] transition-colors hover:text-foreground" aria-label="Remove">
+        <X className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
 }
 
 // A text "action link": the studio's house affordance for AI moves (regenerate, redraft, propose,
