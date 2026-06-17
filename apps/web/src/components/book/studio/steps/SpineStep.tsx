@@ -3,7 +3,7 @@
 // Chat-first redesign: the center is a plain, editable spine textarea (autosave on blur).
 // Generation and options live in the right-rail ReviseChat (layer="spine"). When empty,
 // a calm pointer directs the author to the chat rail.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AutoTextarea } from "@/components/ui/auto-textarea";
 import { useToast } from "@/hooks/use-toast";
 import { saveSpine } from "@/lib/ladder";
@@ -24,11 +24,17 @@ export function SpineStep({ bookId, reloadKey, onStatusChange, onChanged }: Prop
   const [loaded, setLoaded] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Ref so in-flight reload()s can check dirty without capturing a stale closure value.
+  const dirtyRef = useRef(false);
 
   const reload = async () => {
     const n = await readSpineNode(bookId);
+    // Discard if the user started editing while we were fetching.
+    if (dirtyRef.current) return;
     setSpine((n.text ?? "").trim());
-    onStatusChange(!!(n.text ?? "").trim());
+    // Do NOT call onStatusChange here — BuildStudio reads spine.text from its own fetch,
+    // and calling onStatusChange from reload() creates a feedback loop:
+    // reload → onStatusChange → infoKey++ → reloadKey changes → reload → ...
   };
 
   useEffect(() => {
@@ -55,6 +61,7 @@ export function SpineStep({ bookId, reloadKey, onStatusChange, onChanged }: Prop
     try {
       await saveSpine(bookId, spine.trim(), { pinned: true });
       setDirty(false);
+      dirtyRef.current = false;
       onStatusChange(!!spine.trim());
       onChanged();
     } catch (e) {
@@ -78,7 +85,7 @@ export function SpineStep({ bookId, reloadKey, onStatusChange, onChanged }: Prop
         </p>
         <AutoTextarea
           value={spine}
-          onChange={(e) => { setSpine(e.target.value); setDirty(true); }}
+          onChange={(e) => { setSpine(e.target.value); setDirty(true); dirtyRef.current = true; }}
           onBlur={() => { if (dirty && spine.trim()) void save(); }}
           placeholder="The spine in one paragraph — how the story moves from argument to ending through the tentpoles…"
           className="pv-serif w-full border-none bg-transparent px-0 text-[16px] leading-[1.65] focus-visible:ring-0"
@@ -90,7 +97,7 @@ export function SpineStep({ bookId, reloadKey, onStatusChange, onChanged }: Prop
   return (
     <AutoTextarea
       value={spine}
-      onChange={(e) => { setSpine(e.target.value); setDirty(true); }}
+      onChange={(e) => { setSpine(e.target.value); setDirty(true); dirtyRef.current = true; }}
       onBlur={() => { if (dirty) void save(); }}
       className="pv-serif w-full border-none bg-transparent px-0 text-[18px] leading-[1.7] focus-visible:ring-0"
     />
