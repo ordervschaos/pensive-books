@@ -11,10 +11,11 @@
 // This generalizes the old `EditorAgent` (which only acted on a read, lived on the Read step, and
 // handed its plan to the retired Revise step) into one place: the Draft rail.
 import { useState } from "react";
-import { ArrowUp, Loader2, MessagesSquare, Wand2, X } from "lucide-react";
+import { ArrowUp, Loader2, MessagesSquare, PenLine, Wand2, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { stopRun } from "@/lib/stopRun";
+import { invokeGenerateBook } from "@/lib/generateBook";
 import { useLatestTaskRow, type TaskRow } from "@/hooks/useLatestTaskRow";
 import { Textarea } from "@/components/ui/textarea";
 import { WorkingIndicator } from "../WorkingIndicator";
@@ -33,12 +34,13 @@ interface AgentRow extends TaskRow {
 const SELECT = "id, book_id, status, created_at, updated_at, steps, pending, report, revision_id, cancel_requested, error";
 const STEP_MARK: Record<AgentStep["t"], string> = { note: "·", read: "↳", ask: "?", answer: "↩", plan: "◆", done: "✓" };
 
-export function ProseEditor({ bookId, onChanged }: { bookId: number; onChanged: () => void }) {
+export function ProseEditor({ bookId, proseRemaining = 0, onChanged }: { bookId: number; proseRemaining?: number; onChanged: () => void }) {
   const { toast } = useToast();
   const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState("");
   const [answer, setAnswer] = useState("");
   const [applying, setApplying] = useState(false);
+  const [writingAll, setWritingAll] = useState(false);
   const [dismissedDoneId, setDismissedDoneId] = useState<number | null>(null);
 
   const { row, refetch, stale } = useLatestTaskRow<AgentRow>({
@@ -91,6 +93,25 @@ export function ProseEditor({ bookId, onChanged }: { bookId: number; onChanged: 
   };
 
   const stop = async () => { if (!row) return; await stopRun("book_agent_runs", row.id, row.status); refetch(); };
+
+  // Write all the remaining prose straight from the beats — the durable generate-book "write_all" job.
+  // Clobber-safe (it skips pages that already have prose; beats already exist, so it goes straight to
+  // the prose stage). Progress shows in the Draft center's page-map; this is just the trigger.
+  const writeAll = async () => {
+    if (writingAll || proseRemaining === 0) return;
+    setWritingAll(true);
+    try {
+      const { data, error } = await invokeGenerateBook({ bookId });
+      if (error) throw error;
+      if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
+      toast({ title: "Writing the prose from your beats", description: "Watch the pages fill in the map — it runs in the background and survives a refresh." });
+      onChanged();
+    } catch (e) {
+      toast({ title: "Couldn't start writing", description: String((e as Error)?.message ?? e), variant: "destructive" });
+    } finally {
+      setWritingAll(false);
+    }
+  };
 
   // Apply the proposed plan: build-revision snapshots a version, then rebuilds the prose into drafts.
   // The row must be 'building' before the executor will drive it (matches ReviseWithAI's apply).
@@ -209,7 +230,12 @@ export function ProseEditor({ bookId, onChanged }: { bookId: number; onChanged: 
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
             </button>
           </div>
-          <div className="mt-3">
+          <div className="mt-3 flex flex-col items-start gap-2">
+            {proseRemaining > 0 && (
+              <ActionLink icon={<PenLine className="h-3.5 w-3.5" />} busy={writingAll} onClick={() => void writeAll()}>
+                Write the {proseRemaining} remaining {proseRemaining === 1 ? "page" : "pages"} from the beats
+              </ActionLink>
+            )}
             <ActionLink tone="faint" icon={<MessagesSquare className="h-3.5 w-3.5" />} onClick={() => void addressLatestRead()}>
               Address the latest editor's read
             </ActionLink>

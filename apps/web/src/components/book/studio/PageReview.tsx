@@ -267,7 +267,7 @@ function SceneLevel({ bookId, pageId, beatExists }: { bookId: number; pageId: nu
     let live = true;
     void readSceneImages(pageId).then((rows) => { if (live) setScenes(rows); });
     const channel = supabase
-      .channel(`scene_images_${pageId}`)
+      .channel(`scene_images_${pageId}_${Math.random().toString(36).slice(2)}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "page_scene_images", filter: `page_id=eq.${pageId}` },
         (p) => upsert((p as unknown as { new: SceneImage }).new))
       .on("postgres_changes", { event: "DELETE", schema: "public", table: "page_scene_images", filter: `page_id=eq.${pageId}` },

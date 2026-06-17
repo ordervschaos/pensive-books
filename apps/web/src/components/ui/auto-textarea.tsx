@@ -10,8 +10,19 @@ export function AutoTextarea({ className, onInput, ...props }: ComponentProps<ty
 
   const fit = (el: HTMLTextAreaElement | null) => {
     if (!el) return;
+    // Find nearest scrolling ancestor so we can restore its position after height="auto"
+    // temporarily collapses the element (which would otherwise jump the scroll to top).
+    let scrollParent: Element | null = el.parentElement;
+    while (scrollParent && scrollParent !== document.documentElement) {
+      const { overflow, overflowY } = getComputedStyle(scrollParent);
+      if (/auto|scroll/.test(overflow + overflowY)) break;
+      scrollParent = scrollParent.parentElement;
+    }
+    const savedTop = scrollParent ? scrollParent.scrollTop : window.scrollY;
     el.style.height = "auto";
     el.style.height = `${el.scrollHeight}px`;
+    if (scrollParent) scrollParent.scrollTop = savedTop;
+    else window.scrollTo(0, savedTop);
   };
 
   useLayoutEffect(() => { fit(ref.current); });
