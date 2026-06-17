@@ -69,6 +69,11 @@ const LAYER_UI: Record<RevisionLayer, LayerUi> = {
       { label: "Summarize", prompt: "Summarize the foundations — argument, ending, cast, tentpoles, voice — in a few lines." },
       { label: "Pressure-test", prompt: "Pressure-test the foundations: is the argument a real claim? Does the ending pay its cost? Does each cast member's want/wound/lie cohere into an arc? Do the tentpoles dramatize the argument? Name the weak link and the highest-leverage fix." },
     ],
+    emptyBlurb: "No foundations yet — draft them here, or talk through the argument first. Ask for a few directions, pick one, and it's proposed for you to apply.",
+    emptyChips: [
+      { label: "Draft the foundations", prompt: "Draft the foundations from the brief — the argument (the claim the book argues), the ending it implies, a small cast (each with want/wound/lie), a few tentpole moments, and a voice exemplar." },
+      { label: "Offer directions", prompt: "Before drafting, offer me 2–3 distinct directions the foundations could take — each a different argument and the ending, cast, and signature moments it implies. Don't write the full foundations yet; just sketch the directions so I can pick." },
+    ],
   },
 };
 
@@ -83,8 +88,11 @@ export function ReviseChat({ bookId, layer, onChanged, model, currentSpine, curr
   const { toast } = useToast();
   const ui = LAYER_UI[layer];
   // When the layer has no content yet, the chat's job is to GENERATE it — show generation-oriented
-  // chips/blurb instead of the revision ones. (Scoped to spine for now; other layers add theirs.)
-  const layerEmpty = layer === "spine" && !currentSpine?.trim();
+  // chips/blurb instead of the revision ones.
+  const layerEmpty =
+    layer === "spine" ? !currentSpine?.trim()
+      : layer === "foundations" ? !currentFoundations?.argument?.text?.trim()
+        : false;
   const chips = (layerEmpty && ui.emptyChips) ? ui.emptyChips : ui.chips;
   const blurb = (layerEmpty && ui.emptyBlurb) ? ui.emptyBlurb : ui.blurb;
   const { row, refetch } = useLatestTaskRow<RevisionChatRow>({
