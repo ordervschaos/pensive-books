@@ -21,7 +21,7 @@ export interface TaskRow {
   [key: string]: unknown;
 }
 
-type MatchValue = string | number | Array<string | number>;
+type MatchValue = string | number | null | Array<string | number>;
 
 interface Options {
   /** Task table to watch, e.g. "book_generations". */
@@ -103,7 +103,7 @@ export function useLatestTaskRow<T extends TaskRow = TaskRow>(opts: Options): {
     let q = supabase.from(table).select(select).eq("book_id", bookId);
     if (match) {
       for (const [col, want] of Object.entries(match)) {
-        q = Array.isArray(want) ? q.in(col, want) : q.eq(col, want);
+        q = want === null ? q.is(col, null) : Array.isArray(want) ? q.in(col, want) : q.eq(col, want);
       }
     }
     void q

@@ -128,7 +128,9 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
   const railStep: StepKey | null =
     selection.kind === "step" && (selection.step === "foundations" || selection.step === "spine" || selection.step === "outline" || selection.step === "beats" || selection.step === "draft")
       ? selection.step : null;
-  const showRail = !!railStep;
+  // A selected page gets its own prose chat in the rail (page-scoped revise-agent).
+  const railPageId: number | null = selection.kind === "page" ? selection.pageId : null;
+  const showRail = !!railStep || railPageId != null;
 
   const approve = async (k: StepKey) => {
     if (approving) return;
@@ -194,10 +196,11 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
       onSelectPage={(pageId) => setSelected({ kind: "page", pageId })}
     />
   );
-  const rail = showRail && railStep ? (
+  const rail = showRail ? (
     <StudioEditorRail
       bookId={bookId}
-      step={railStep}
+      step={railStep ?? undefined}
+      pageId={railPageId ?? undefined}
       model={model}
       foundations={foundations ?? null}
       spineText={spine.text}

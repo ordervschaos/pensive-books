@@ -31,10 +31,13 @@ interface AgentRow extends TaskRow {
   cancel_requested: boolean;
   error: string | null;
 }
-const SELECT = "id, book_id, status, created_at, updated_at, steps, pending, report, revision_id, cancel_requested, error";
+const SELECT = "id, book_id, status, created_at, updated_at, steps, pending, report, revision_id, cancel_requested, error, target_page_id";
 const STEP_MARK: Record<AgentStep["t"], string> = { note: "·", read: "↳", ask: "?", answer: "↩", plan: "◆", done: "✓" };
 
-export function ProseEditor({ bookId, proseRemaining = 0, onChanged }: { bookId: number; proseRemaining?: number; onChanged: () => void }) {
+// `pageId` set → a single-page prose chat (the PageReview rail): runs are scoped to that page
+// (target_page_id), and the whole-book affordances (write-all, address-the-read) are hidden. Unset →
+// the Draft step's whole-book prose editor (target_page_id IS NULL).
+export function ProseEditor({ bookId, pageId, proseRemaining = 0, onChanged }: { bookId: number; pageId?: number; proseRemaining?: number; onChanged: () => void }) {
   const { toast } = useToast();
   const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState("");
@@ -45,6 +48,7 @@ export function ProseEditor({ bookId, proseRemaining = 0, onChanged }: { bookId:
 
   const { row, refetch, stale } = useLatestTaskRow<AgentRow>({
     table: "book_agent_runs", bookId, select: SELECT,
+    match: { target_page_id: pageId ?? null },
     activeStatuses: ["running"], staleMs: 6 * 60 * 1000,
   });
 
@@ -58,7 +62,7 @@ export function ProseEditor({ bookId, proseRemaining = 0, onChanged }: { bookId:
     if (active) { toast({ title: "The prose editor is already working", description: "Let this run finish (or stop it) first." }); return; }
     setBusy(true);
     try {
-      const { data, error } = await supabase.functions.invoke("revise-agent", { body: { bookId, ...body } });
+      const { data, error } = await supabase.functions.invoke("revise-agent", { body: { bookId, ...(pageId != null ? { targetPageId: pageId } : {}), ...body } });
       if (error) throw error;
       if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
       setDraft("");
@@ -140,10 +144,12 @@ export function ProseEditor({ bookId, proseRemaining = 0, onChanged }: { bookId:
     <Panel variant="soft" className="px-5 py-4">
       <div className="flex items-center gap-2">
         <Wand2 className="h-4 w-4 text-[hsl(var(--pv-accent))]" />
-        <Eyebrow tone="accent">Prose editor</Eyebrow>
+        <Eyebrow tone="accent">{pageId != null ? "Prose editor · this page" : "Prose editor"}</Eyebrow>
       </div>
       <p className="pv-serif mt-1 text-[12.5px] italic text-[hsl(var(--pv-text-faint))]">
-        Describe a change to the prose — it reads the pages, asks about the judgment calls, then proposes a revision it builds into your drafts.
+        {pageId != null
+          ? "Describe a change to this page — it reads the page and its context, asks about the judgment calls, then proposes a revision it builds into your draft."
+          : "Describe a change to the prose — it reads the pages, asks about the judgment calls, then proposes a revision it builds into your drafts."}
       </p>
 
       {/* The narrated step feed — the agent's honest activity log. */}
@@ -223,23 +229,25 @@ export function ProseEditor({ bookId, proseRemaining = 0, onChanged }: { bookId:
           <div className="mt-4 flex items-end gap-2">
             <Textarea value={draft} onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void start({ instruction: draft.trim() }); } }}
-              rows={1} placeholder={'e.g. "Make chapter 3 darker and cut the map subplot."'} disabled={busy}
+              rows={1} placeholder={pageId != null ? 'e.g. "Make this page colder; cut the weather."' : 'e.g. "Make chapter 3 darker and cut the map subplot."'} disabled={busy}
               className="pv-serif min-h-[42px] resize-none text-[14px] leading-[1.55]" />
             <button type="button" onClick={() => draft.trim() && void start({ instruction: draft.trim() })} disabled={busy || !draft.trim()}
               title="Send" className="inline-flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-40">
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
             </button>
           </div>
-          <div className="mt-3 flex flex-col items-start gap-2">
-            {proseRemaining > 0 && (
-              <ActionLink icon={<PenLine className="h-3.5 w-3.5" />} busy={writingAll} onClick={() => void writeAll()}>
-                Write the {proseRemaining} remaining {proseRemaining === 1 ? "page" : "pages"} from the beats
+          {pageId == null && (
+            <div className="mt-3 flex flex-col items-start gap-2">
+              {proseRemaining > 0 && (
+                <ActionLink icon={<PenLine className="h-3.5 w-3.5" />} busy={writingAll} onClick={() => void writeAll()}>
+                  Write the {proseRemaining} remaining {proseRemaining === 1 ? "page" : "pages"} from the beats
+                </ActionLink>
+              )}
+              <ActionLink tone="faint" icon={<MessagesSquare className="h-3.5 w-3.5" />} onClick={() => void addressLatestRead()}>
+                Address the latest editor's read
               </ActionLink>
-            )}
-            <ActionLink tone="faint" icon={<MessagesSquare className="h-3.5 w-3.5" />} onClick={() => void addressLatestRead()}>
-              Address the latest editor's read
-            </ActionLink>
-          </div>
+            </div>
+          )}
         </>
       )}
     </Panel>

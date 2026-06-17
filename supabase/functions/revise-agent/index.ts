@@ -87,7 +87,7 @@ Deno.serve(async (req: Request) => {
 
   try {
     const body = (await req.json().catch(() => ({}))) as {
-      bookId?: number; evaluation?: EvalResult; instruction?: string; runId?: number; answer?: string; chain?: boolean;
+      bookId?: number; evaluation?: EvalResult; instruction?: string; targetPageId?: number; runId?: number; answer?: string; chain?: boolean;
     };
 
     // ── Continue call (self/watchdog): advance one model turn ──
@@ -136,7 +136,7 @@ Deno.serve(async (req: Request) => {
 
     // Start a run: snapshot the book context + EITHER the editor's read OR the author's free-text
     // instruction (the prose editor in the Draft rail uses the instruction path).
-    const { bookId, evaluation, instruction } = body;
+    const { bookId, evaluation, instruction, targetPageId } = body;
     if (!bookId) return json({ error: "bookId is required" }, 400);
     const hasEval = !!evaluation?.verdict && Array.isArray(evaluation.sections);
     const instr = (instruction ?? "").trim();
@@ -163,6 +163,9 @@ Deno.serve(async (req: Request) => {
       .select("name, status, setup_page_id, payoff_page_id")
       .eq("book_id", bookId).neq("status", "closed");
 
+    // Page-scoped run (the PageReview prose chat): focus the agent on one page only.
+    const focusPage = targetPageId != null ? (pages as PageRow[]).find((p) => p.id === targetPageId) ?? null : null;
+
     const context = buildContext(
       book.name,
       book.brief as Brief | null,
@@ -170,6 +173,7 @@ Deno.serve(async (req: Request) => {
       (threads as ThreadLite[] | null) ?? [],
       hasEval ? evaluation! : null,
       instr || null,
+      focusPage,
     );
 
     const { data: run, error: insErr } = await service
@@ -178,9 +182,10 @@ Deno.serve(async (req: Request) => {
         book_id: bookId,
         created_by: user.id,
         status: "running",
+        target_page_id: focusPage ? targetPageId : null,
         evaluation: hasEval ? evaluation : null,
         transcript: [{ role: "user", content: [{ type: "text", text: context }] }],
-        steps: [{ t: "note", label: hasEval ? "Reading the editor's notes and the outline." : "Reading the author's request and the outline." }],
+        steps: [{ t: "note", label: focusPage ? `Reading "${focusPage.title || "this page"}" and its context.` : hasEval ? "Reading the editor's notes and the outline." : "Reading the author's request and the outline." }],
       })
       .select("id, created_at")
       .single();
@@ -544,12 +549,15 @@ function buildContext(
   threads: ThreadLite[],
   evaluation: EvalResult | null,
   instruction: string | null,
+  focusPage: PageRow | null = null,
 ): string {
   const directive = evaluation
     ? `\n\nEDITOR'S EVALUATION (the notes to address):\n${evalContext(evaluation)}` +
       `\n\nAddress the editor's notes. Investigate first, consult the author on real creative forks, then propose the revision plan.`
     : `\n\nTHE AUTHOR'S REQUESTED CHANGE:\n${instruction}` +
-      `\n\nMake this change to the book. Investigate the affected pages first, consult the author on real creative forks, then propose the revision plan.`;
+      (focusPage
+        ? `\n\nFOCUS — this is a SINGLE-PAGE prose chat about page [id=${focusPage.id}] "${focusPage.title || "(untitled)"}". Read THAT page first; keep the change to this one page (op "revise"/"rewrite" on it) unless the author explicitly asks otherwise. Use the surrounding pages only as context. Consult the author on real creative forks, then propose the revision plan.`
+        : `\n\nMake this change to the book. Investigate the affected pages first, consult the author on real creative forks, then propose the revision plan.`);
   return (
     `BOOK: ${bookName}\n\nBRIEF (the voice contract):\n${briefContext(brief, { scope: "full", success: true, none: "(no brief set — infer a sensible neutral voice)", empty: "(brief is empty — infer a sensible neutral voice)" })}` +
     `\n\nCURRENT OUTLINE (real ids; read_page for full prose):\n${outlineContext(pages)}` +

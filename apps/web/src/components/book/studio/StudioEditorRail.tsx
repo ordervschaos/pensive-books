@@ -14,9 +14,12 @@ import { ProseEditor } from "./ProseEditor";
 import type { Foundations } from "@/lib/foundations";
 import type { StepKey, StudioModel } from "./studioModel";
 
-export function StudioEditorRail({ bookId, step, model, foundations, spineText, onChanged }: {
+export function StudioEditorRail({ bookId, step, pageId, model, foundations, spineText, onChanged }: {
   bookId: number;
-  step: StepKey;
+  /** The selected editor step (step mode). Omitted in page mode. */
+  step?: StepKey;
+  /** A selected page (page mode) → the per-page prose chat. Takes precedence over `step`. */
+  pageId?: number;
   model: StudioModel;
   foundations: Foundations | null;
   spineText: string;
@@ -24,7 +27,9 @@ export function StudioEditorRail({ bookId, step, model, foundations, spineText, 
 }) {
   return (
     <aside className="h-full min-h-0 overflow-y-auto border-l border-[hsl(var(--pv-border-soft))]/60 px-3 py-3">
-      {step === "draft" ? (
+      {pageId != null ? (
+        <ProseEditor bookId={bookId} pageId={pageId} onChanged={onChanged} />
+      ) : step === "draft" ? (
         <ProseEditor bookId={bookId} proseRemaining={model.proseRemaining} onChanged={onChanged} />
       ) : (step === "foundations" || step === "spine" || step === "beats" || step === "outline") ? (
         <ReviseChat
