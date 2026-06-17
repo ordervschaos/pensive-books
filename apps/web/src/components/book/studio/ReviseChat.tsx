@@ -283,8 +283,8 @@ function FoundationsDiff({ patch, before }: { patch: { argument?: string; ending
           <p className="pv-serif mt-0.5 text-[14px] leading-[1.6] text-foreground">{r.after.trim()}</p>
         </div>
       ))}
-      {Array.isArray(patch.cast) && <CastDiff after={patch.cast} before={before?.cast ?? []} />}
-      {Array.isArray(patch.tentpoles) && <TentpoleDiff after={patch.tentpoles} before={before?.tentpoles ?? []} />}
+      {Array.isArray(patch.cast) && <CastDiff after={patch.cast as CastMember[]} before={before?.cast ?? []} />}
+      {Array.isArray(patch.tentpoles) && <TentpoleDiff after={patch.tentpoles as Tentpole[]} before={before?.tentpoles ?? []} />}
       {rows.length === 0 && !patch.cast && !patch.tentpoles && (
         <p className="pv-serif text-[13.5px] italic text-[hsl(var(--pv-text-faint))]">No changes proposed.</p>
       )}

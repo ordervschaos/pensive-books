@@ -262,7 +262,7 @@ export function BeatsStep({ bookId, model, steer, beforeGen, onChanged, onSelect
           ) : cand.run?.status === "error" ? (
             <div className="mt-5 flex items-center gap-4">
               <RunError msg={cand.run.error ?? "Couldn't draft the beat."} />
-              <ActionLink onClick={draftBeat}>try again →</ActionLink>
+              <ActionLink onClick={() => void draftBeat("")}>try again →</ActionLink>
             </div>
           ) : (
             <div className="mt-5 space-y-2.5">

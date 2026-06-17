@@ -5,7 +5,7 @@
 //
 // The conversational beat editor (ReviseChat layer="beats") lives in the studio's right rail.
 import { useEffect, useState } from "react";
-import { Check, ChevronDown, Loader2, RefreshCw, Sparkles } from "lucide-react";
+import { Check, ChevronDown, Loader2, RefreshCw } from "lucide-react";
 import { AutoTextarea } from "@/components/ui/auto-textarea";
 import { saveBeat, saveObjective, transforms } from "@/lib/ladder";
 import { useAIRun } from "@/hooks/useAIRun";
@@ -153,19 +153,16 @@ function PageRow({ bookId, page, onChanged, onSelectPage, beforeGen }: {
   const [obj, setObj] = useState(page.objectiveText);
   const [beat, setBeat] = useState(page.beatText);
   const [saving, setSaving] = useState(false);
-  const [steerVal, setSteerVal] = useState("");
-  const localSteer = { value: steerVal, setValue: setSteerVal, save: async () => {}, loaded: true };
-
   useEffect(() => { setObj(page.objectiveText); setBeat(page.beatText); }, [page.objectiveText, page.beatText]);
 
   const cand = useAIRun<{ options: string[] }>({ bookId, kind: "beat_candidates", targetPageId: page.id });
   const proposal = cand.run?.status === "ready" ? (cand.run.result?.options?.[0] ?? "") : "";
   const generating = cand.run?.status === "running" || cand.run?.status === "pending" || cand.starting;
 
-  const proposeBeat = async () => {
+  const proposeBeat = async (note = "") => {
     if (!obj.trim()) return;
     await beforeGen();
-    void cand.start({ pageId: page.id, objective: obj.trim(), ...(steerVal.trim() ? { prompt: steerVal.trim() } : {}) });
+    void cand.start({ pageId: page.id, objective: obj.trim(), ...(note.trim() ? { prompt: note.trim() } : {}) });
   };
 
   const acceptProposal = async () => {
@@ -257,10 +254,8 @@ function PageRow({ bookId, page, onChanged, onSelectPage, beforeGen }: {
 
         {!generating && !proposal && (
           <GenRow
-            steer={localSteer}
             label={beat.trim() ? "propose more" : "draft this beat"}
-            icon={<Sparkles className="h-3.5 w-3.5" />}
-            onFire={() => void proposeBeat()}
+            onFire={(note) => void proposeBeat(note)}
           />
         )}
       </div>
