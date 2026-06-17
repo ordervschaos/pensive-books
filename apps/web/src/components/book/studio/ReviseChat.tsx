@@ -29,6 +29,9 @@ interface LayerUi {
   /** Apply confirmation note shown under the buttons. */
   applyNote: string;
   chips: { label: string; prompt: string }[];
+  /** Shown when the layer has no content yet — generation-oriented, replaces blurb/chips. */
+  emptyBlurb?: string;
+  emptyChips?: { label: string; prompt: string }[];
 }
 
 const LAYER_UI: Record<RevisionLayer, LayerUi> = {
@@ -50,6 +53,11 @@ const LAYER_UI: Record<RevisionLayer, LayerUi> = {
     chips: [
       { label: "Summarize", prompt: "Summarize the spine — the book as one arc, in a few lines." },
       { label: "Pressure-test", prompt: "Pressure-test the spine: does it realize the argument and land the settled ending? Is the causal chain unbroken? Is the midpoint a real turn? Name the weak link and the highest-leverage fix." },
+    ],
+    emptyBlurb: "No spine yet — draft it here, or talk through the throughline first. Ask for a few directions, pick one, and it's proposed for you to apply.",
+    emptyChips: [
+      { label: "Draft the spine", prompt: "Draft the spine from the foundations — the whole book as one ~250-word causal arc, from the beginning, through the pinned tentpoles, to the settled ending." },
+      { label: "Offer 3 directions", prompt: "Before drafting, offer me 2–3 distinct directions the spine could take — each a different structural angle on the same argument and settled ending. Don't write the full spine yet; just sketch the directions so I can pick." },
     ],
   },
   foundations: {
@@ -74,6 +82,11 @@ export function ReviseChat({ bookId, layer, onChanged, model, currentSpine, curr
 }) {
   const { toast } = useToast();
   const ui = LAYER_UI[layer];
+  // When the layer has no content yet, the chat's job is to GENERATE it — show generation-oriented
+  // chips/blurb instead of the revision ones. (Scoped to spine for now; other layers add theirs.)
+  const layerEmpty = layer === "spine" && !currentSpine?.trim();
+  const chips = (layerEmpty && ui.emptyChips) ? ui.emptyChips : ui.chips;
+  const blurb = (layerEmpty && ui.emptyBlurb) ? ui.emptyBlurb : ui.blurb;
   const { row, refetch } = useLatestTaskRow<RevisionChatRow>({
     table: "revision_chats", bookId, match: { layer }, activeStatuses: ["thinking"], staleMs: 120_000,
   });
@@ -127,7 +140,7 @@ export function ReviseChat({ bookId, layer, onChanged, model, currentSpine, curr
       {/* Conversation — fills the rail; the blurb only stands in for an empty thread. */}
       <div ref={scrollRef} className="mt-3 min-h-0 flex-1 space-y-3.5 overflow-y-auto pr-1">
         {messages.length === 0 && !pending && (
-          <p className="pv-serif text-[12.5px] italic leading-[1.5] text-[hsl(var(--pv-text-faint))]">{ui.blurb}</p>
+          <p className="pv-serif text-[12.5px] italic leading-[1.5] text-[hsl(var(--pv-text-faint))]">{blurb}</p>
         )}
         {messages.map((m, i) => (
           <div key={i} className={m.role === "user" ? "flex justify-end" : ""}>
@@ -162,7 +175,7 @@ export function ReviseChat({ bookId, layer, onChanged, model, currentSpine, curr
       {/* Quick actions + composer — pinned to the bottom of the rail. */}
       <div className="mt-3 shrink-0">
         <div className="flex flex-wrap items-center gap-1.5">
-          {ui.chips.map((c) => (
+          {chips.map((c) => (
             <Chip key={c.label} onClick={() => void send(c.prompt)} disabled={busy}>{c.label}</Chip>
           ))}
           {layer === "beats" && (
