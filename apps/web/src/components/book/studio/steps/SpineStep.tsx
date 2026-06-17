@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { saveSpine } from "@/lib/ladder";
 import { readSpineNode } from "@/lib/foundations";
-import { ActionLink, Panel, Eyebrow } from "../studioUi";
+import { ActionLink, GenerateInChat, Panel, Eyebrow } from "../studioUi";
 import { Check } from "lucide-react";
 
 interface Props {
@@ -73,11 +73,9 @@ export function SpineStep({ bookId, reloadKey, onStatusChange, onChanged }: Prop
         <p className="pv-serif text-[15px] italic leading-relaxed text-[hsl(var(--pv-text-faint))]">
           No spine yet.
         </p>
-        <p className="pv-serif text-[14px] text-[hsl(var(--pv-text-muted))]">
-          Draft it in the editor on the right →
-        </p>
+        <GenerateInChat bookId={bookId} layer="spine" label="Draft the spine" />
         <p className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))]">
-          Or type directly below — the spine is one paragraph describing the journey from your argument to your ending.
+          Or type it directly below — one paragraph describing the journey from your argument to your ending.
         </p>
         <Panel variant="soft" className="px-5 py-4">
           <Textarea

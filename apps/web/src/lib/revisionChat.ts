@@ -15,7 +15,7 @@ import {
 } from "@/lib/foundations";
 import { saveSpine } from "@/lib/ladder";
 
-export type RevisionLayer = "foundations" | "spine" | "beats";
+export type RevisionLayer = "foundations" | "spine" | "beats" | "outline";
 
 export interface ChatMessage { role: "user" | "assistant"; text: string; ts: string; plan?: string }
 
@@ -31,9 +31,25 @@ export interface SpinePatch { text: string }
 export type RevisionPatch =
   | { layer: "foundations"; data: FoundationsPatch }
   | { layer: "spine"; data: SpinePatch }
-  | { layer: "beats"; data: RevisionPlan };
+  | { layer: "beats"; data: RevisionPlan }
+  | { layer: "outline"; data: RevisionPlan };
 
 export interface RevisionProposal { summary: string; patch: RevisionPatch }
+
+// The canonical "generate this layer from scratch" message — the SINGLE source shared by the chat's
+// empty-state chip and the center's empty-state button (which both just send it to the rail thread).
+export const GENERATE_PROMPTS: Record<RevisionLayer, string> = {
+  foundations: "Draft the foundations from the brief — the argument (the claim the book argues), the ending it implies, a small cast (each with want/wound/lie), a few tentpole moments, and a voice exemplar.",
+  spine: "Draft the spine from the foundations — the whole book as one ~250-word causal arc, from the beginning, through the pinned tentpoles, to the settled ending.",
+  outline: "Draft the outline from the spine — the chapter/page structure and a clear objective for each page (no beats or prose yet). Propose it as a plan I can review.",
+  beats: "Plan a beat for every page that has an objective but no beat yet — the strongest beat for each, serving the spine and consistent with the pages around it. Propose them as a plan I can review.",
+};
+
+/** Trigger the rail chat to generate a layer from the center (empty-state button). The always-on
+ *  ReviseChat watches revision_chats over Realtime, so the message + result appear there live. */
+export async function triggerGenerate(bookId: number, layer: RevisionLayer): Promise<void> {
+  await sendRevisionMessage(bookId, layer, GENERATE_PROMPTS[layer]);
+}
 
 export interface RevisionChatRow {
   id: number;
@@ -78,7 +94,9 @@ export async function clearPendingProposal(bookId: number, layer: RevisionLayer)
  */
 export async function applyProposal(bookId: number, proposal: RevisionProposal): Promise<void> {
   const { patch } = proposal;
-  if (patch.layer === "beats") {
+  // beats & outline both ride the plan-only build-revision path (structure + objectives [+ beats];
+  // never prose). An outline plan simply carries no beat field.
+  if (patch.layer === "beats" || patch.layer === "outline") {
     await applyBeatPlan(bookId, patch.data);
     return;
   }

@@ -23,7 +23,7 @@ import {
 import { BEAT_CRITERIA } from "./beat-criteria.ts";
 
 // ── The conversation + envelope contract (mirrored in apps/web/src/lib/revisionChat.ts) ─────────
-export type RevisionLayer = "foundations" | "spine" | "beats";
+export type RevisionLayer = "foundations" | "spine" | "beats" | "outline";
 
 export interface ChatMessage { role: "user" | "assistant"; text: string; ts: string; plan?: string }
 
@@ -39,7 +39,8 @@ export interface SpinePatch { text: string }
 export type RevisionPatch =
   | { layer: "foundations"; data: FoundationsPatch }
   | { layer: "spine"; data: SpinePatch }
-  | { layer: "beats"; data: RevisionPlan };
+  | { layer: "beats"; data: RevisionPlan }
+  | { layer: "outline"; data: RevisionPlan };
 
 export interface RevisionProposal { summary: string; patch: RevisionPatch }
 
@@ -74,6 +75,16 @@ function beatSheetContext(pages: PageRow[]): string {
     const obj = p.metadata?.objective?.trim();
     const beat = p.metadata?.beat?.trim();
     return `[id=${p.id}] - "${p.title || "(untitled)"}"` + (obj ? `\n  objective: ${obj}` : "") + (beat ? `\n  beat: ${beat}` : `\n  beat: (none yet)`);
+  }).join("\n");
+}
+
+// Outline = the structure + each page's objective (no beats). Leaner than the beat sheet context.
+function outlineContext(pages: PageRow[]): string {
+  if (!pages.length) return "(no pages yet — the outline is empty)";
+  return pages.map((p) => {
+    if (p.page_type === "section") return `[id=${p.id}] # ${p.title || "(untitled section)"}`;
+    const obj = p.metadata?.objective?.trim();
+    return `[id=${p.id}] - "${p.title || "(untitled)"}"` + (obj ? `\n  objective: ${obj}` : `\n  objective: (none yet)`);
   }).join("\n");
 }
 
@@ -207,6 +218,35 @@ When you are talking, evaluating, or answering — append NO code block at all. 
     sanitize(parsed, ctx) {
       const plan = sanitizePlan(parsed as Partial<RevisionPlan>, ctx.pages, true);
       return { layer: "beats", data: plan };
+    },
+  },
+
+  outline: {
+    system: `You are the OUTLINE EDITOR — a developmental editor in conversation with an author about their book's OUTLINE: the ordered structure of CHAPTERS (sections) and PAGES, and a clear OBJECTIVE for each page (what that page must accomplish for the story). The outline turns the spine into a page-by-page plan. BEATS and PROSE are downstream — NOT your concern: never write a beat or prose.
+
+You can do these things, and you choose per message:
+1. TALK — answer, talk through structure, weigh a trade-off. Be specific; cite real pages by title.
+2. PRESSURE-TEST — when asked (or when honest): does the sequence realize the spine? does every page earn its place with a real objective? are the chapters shaped well? is anything missing (a setup, an escalation) or redundant? Name the weak link and the highest-leverage fix.
+3. GENERATE — when there is NO outline yet (or the author asks to draft / create one): UNLESS they've settled on a shape, FIRST offer 2–3 distinct structural shapes the outline could take (different chapter breaks / pacing on the SAME spine) as short prose sketches, NO json, and invite a pick. Once chosen (or asked outright), deliver the full outline plan.
+4. PROPOSE A CHANGE — when the author wants the outline drafted or changed (or you've agreed on a fix): produce an outline REVISION PLAN. You may add pages and chapters (sections), retarget objectives, delete redundant pages, and reorder. The author reviews and applies it — you mutate nothing.
+
+OUTPUT — reply to the author in plain MARKDOWN prose. If — and ONLY if — this message DELIVERS an outline plan to apply, append at the very END a single fenced \`\`\`json code block holding the plan, with nothing after it:
+\`\`\`json
+{ "summary": "...", "pages": [ { "ref": <id|null>, "op": "keep|retarget|add", "pageType": "section|text", "title": "...", "objective": "...", "why": "..." } ], "deletes": [ { "ref": <id>, "why": "..." } ] }
+\`\`\`
+When talking, pressure-testing, or merely OFFERING SHAPES to choose from, append NO code block.
+- PLAN RULES: use ONLY the real [id]s given; every existing page MUST appear in "pages" (with its ref) or in "deletes" — never drop one silently. "section" = chapter/part divider (no objective); "text" pages each need an OBJECTIVE. Reorder by placing entries in final order. Be surgical — "keep" what works. NEVER write a "beat" field, never write prose, never use a "revise" op. Honor pinned foundations and the spine.`,
+    context(ctx) {
+      const settled = ctx.foundations ? settledContext(ctx.foundations).trim() : "";
+      return `BOOK: ${ctx.bookName}\n\nBRIEF (the voice contract):\n${briefBlock(ctx.brief)}` +
+        (ctx.spineText?.trim() ? `\n\nSPINE (the book in one arc — the outline must realize this):\n${ctx.spineText.trim()}` : "") +
+        (settled ? `\n\nFOUNDATIONS (settled — pinned lines are immutable):\n${settled}` : "") +
+        `\n\nCURRENT OUTLINE (these are the real page ids):\n${outlineContext(ctx.pages)}` +
+        (ctx.threads.length ? `\n\nTRACKED THREADS (keep their setups & payoffs intact):\n${threadsContext(ctx.threads)}` : "");
+    },
+    sanitize(parsed, ctx) {
+      const plan = sanitizePlan(parsed as Partial<RevisionPlan>, ctx.pages, true);
+      return { layer: "outline", data: plan };
     },
   },
 

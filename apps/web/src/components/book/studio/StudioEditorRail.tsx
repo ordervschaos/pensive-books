@@ -26,7 +26,7 @@ export function StudioEditorRail({ bookId, step, model, foundations, spineText, 
     <aside className="h-full min-h-0 overflow-y-auto border-l border-[hsl(var(--pv-border-soft))]/60 px-3 py-3">
       {step === "draft" ? (
         <ProseEditor bookId={bookId} onChanged={onChanged} />
-      ) : (step === "foundations" || step === "spine" || step === "beats") ? (
+      ) : (step === "foundations" || step === "spine" || step === "beats" || step === "outline") ? (
         <ReviseChat
           bookId={bookId}
           layer={step}

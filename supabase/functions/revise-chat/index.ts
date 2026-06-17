@@ -25,7 +25,7 @@ import {
 } from "../_shared/revision-chat.ts";
 
 const MAX_HISTORY = 24; // model-context turns (the layer's knowledge base already dominates the prompt)
-const LAYERS: RevisionLayer[] = ["foundations", "spine", "beats"];
+const LAYERS: RevisionLayer[] = ["foundations", "spine", "beats", "outline"];
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });

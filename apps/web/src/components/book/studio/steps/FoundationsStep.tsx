@@ -14,7 +14,7 @@ import {
   foundationsProgress, pinNode, writeFoundations,
   type CastMember, type FNode, type Foundations, type FoundationsStepKey, type Tentpole,
 } from "@/lib/foundations";
-import { ActionLink, Eyebrow, ImageLightbox, Panel } from "../studioUi";
+import { ActionLink, Eyebrow, GenerateInChat, ImageLightbox, Panel } from "../studioUi";
 
 const uid = () => crypto.randomUUID().slice(0, 8);
 
@@ -86,6 +86,7 @@ export function FoundationsStep({ bookId, foundations, onChanged }: Props) {
 
       {active === "argument" && (
         <NodeSub
+          bookId={bookId}
           node={f.argument}
           placeholder="The claim the book argues — one or two sentences, the truth it wants the reader to leave with…"
           onSave={(n) => save({ ...f, argument: n })}
@@ -93,6 +94,7 @@ export function FoundationsStep({ bookId, foundations, onChanged }: Props) {
       )}
       {active === "ending" && (
         <NodeSub
+          bookId={bookId}
           node={f.ending}
           placeholder="Where the story lands — how the argument resolves, what the reader feels in the last pages…"
           blocked={!f.argument?.text?.trim() ? "Add an argument first." : undefined}
@@ -103,10 +105,11 @@ export function FoundationsStep({ bookId, foundations, onChanged }: Props) {
         <CastSub bookId={bookId} cast={f.cast ?? []} onSave={(cast) => save({ ...f, cast })} />
       )}
       {active === "tentpoles" && (
-        <TentpolesSub tentpoles={f.tentpoles ?? []} onSave={(tentpoles) => save({ ...f, tentpoles })} />
+        <TentpolesSub bookId={bookId} tentpoles={f.tentpoles ?? []} onSave={(tentpoles) => save({ ...f, tentpoles })} />
       )}
       {active === "voice" && (
         <NodeSub
+          bookId={bookId}
           node={f.voice_exemplar}
           placeholder="The voice exemplar — ~120 words of a tentpole moment in the story's chosen soundscape…"
           blocked={(f.tentpoles ?? []).filter((t) => t.status !== "killed").length === 0 ? "Add at least one tentpole moment first." : undefined}
@@ -118,7 +121,8 @@ export function FoundationsStep({ bookId, foundations, onChanged }: Props) {
 }
 
 // ── Single-field node editor (argument / ending / voice) ─────────────────────
-function NodeSub({ node, placeholder, blocked, onSave }: {
+function NodeSub({ bookId, node, placeholder, blocked, onSave }: {
+  bookId: number;
   node: FNode | undefined;
   placeholder: string;
   blocked?: string;
@@ -147,8 +151,9 @@ function NodeSub({ node, placeholder, blocked, onSave }: {
         <p className="pv-serif text-[15px] italic leading-relaxed text-[hsl(var(--pv-text-faint))]">
           Nothing here yet.
         </p>
-        <p className="pv-serif text-[14px] text-[hsl(var(--pv-text-muted))]">
-          Draft it in the editor on the right →
+        <GenerateInChat bookId={bookId} layer="foundations" label="Draft the foundations" />
+        <p className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))]">
+          Or type it directly below.
         </p>
         <Panel variant="soft" className="px-5 py-4">
           <Textarea
@@ -206,14 +211,12 @@ function CastSub({ bookId, cast, onSave }: {
         <p className="pv-serif text-[15px] italic leading-relaxed text-[hsl(var(--pv-text-faint))]">
           No cast yet.
         </p>
-        <p className="pv-serif text-[14px] text-[hsl(var(--pv-text-muted))]">
-          Draft it in the editor on the right →
-        </p>
+        <GenerateInChat bookId={bookId} layer="foundations" label="Draft the foundations" />
         <ActionLink
           icon={<Plus className="h-3.5 w-3.5" />}
           onClick={() => void onSave([{ id: uid(), name: "Protagonist", role: "protagonist", pinned_fields: [...CAST_FIELDS] }])}
         >
-          add character
+          or add a character by hand
         </ActionLink>
       </div>
     );
@@ -347,7 +350,8 @@ function CastLook({ bookId, member, onUpdate }: { bookId: number; member: CastMe
 
 // ── Tentpoles sub-step ────────────────────────────────────────────────────────
 // Unified list: all tentpoles in one column. Pinned = locked from AI. Add/edit/delete manually.
-function TentpolesSub({ tentpoles, onSave }: {
+function TentpolesSub({ bookId, tentpoles, onSave }: {
+  bookId: number;
   tentpoles: Tentpole[];
   onSave: (t: Tentpole[]) => Promise<void> | void;
 }) {
@@ -378,9 +382,8 @@ function TentpolesSub({ tentpoles, onSave }: {
         <p className="pv-serif text-[15px] italic leading-relaxed text-[hsl(var(--pv-text-faint))]">
           No tentpoles yet.
         </p>
-        <p className="pv-serif text-[14px] text-[hsl(var(--pv-text-muted))]">
-          Draft them in the editor on the right →
-        </p>
+        <GenerateInChat bookId={bookId} layer="foundations" label="Draft the foundations" />
+        <p className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))]">Or add a moment by hand:</p>
         <Panel variant="dashed" className="px-4 py-3">
           <Textarea
             value={newMoment}

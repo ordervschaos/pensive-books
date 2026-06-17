@@ -16,7 +16,7 @@ import { useLatestTaskRow } from "@/hooks/useLatestTaskRow";
 import { LENSES as BEAT_LENSES, type RevisionPlan } from "@/lib/beatSheet";
 import type { CastMember, Foundations, Tentpole } from "@/lib/foundations";
 import {
-  applyProposal, clearPendingProposal, sendRevisionMessage,
+  applyProposal, clearPendingProposal, GENERATE_PROMPTS, sendRevisionMessage,
   type RevisionChatRow, type RevisionLayer, type RevisionProposal,
 } from "@/lib/revisionChat";
 import type { StudioModel } from "./studioModel";
@@ -46,7 +46,7 @@ const LAYER_UI: Record<RevisionLayer, LayerUi> = {
     ],
     emptyBlurb: "No beats yet — plan them here from your objectives, or talk through the structure first. You review the plan before anything's applied.",
     emptyChips: [
-      { label: "Plan all the beats", prompt: "Plan a beat for every page that has an objective but no beat yet — the strongest beat for each, serving the spine and consistent with the pages around it. Propose them as a plan I can review." },
+      { label: "Plan all the beats", prompt: GENERATE_PROMPTS.beats },
     ],
   },
   spine: {
@@ -60,8 +60,23 @@ const LAYER_UI: Record<RevisionLayer, LayerUi> = {
     ],
     emptyBlurb: "No spine yet — draft it here, or talk through the throughline first. Ask for a few directions, pick one, and it's proposed for you to apply.",
     emptyChips: [
-      { label: "Draft the spine", prompt: "Draft the spine from the foundations — the whole book as one ~250-word causal arc, from the beginning, through the pinned tentpoles, to the settled ending." },
+      { label: "Draft the spine", prompt: GENERATE_PROMPTS.spine },
       { label: "Offer 3 directions", prompt: "Before drafting, offer me 2–3 distinct directions the spine could take — each a different structural angle on the same argument and settled ending. Don't write the full spine yet; just sketch the directions so I can pick." },
+    ],
+  },
+  outline: {
+    title: "Outline editor",
+    blurb: "Talk through the structure, pressure-test the sequence, or ask for a change — it proposes an outline plan (chapters, pages, objectives) you review before it's applied.",
+    placeholder: "Ask or change the outline…",
+    applyNote: "Applied to the outline · beats & prose below go stale",
+    chips: [
+      { label: "Summarize", prompt: "Summarize the outline — the chapters and the through-line of objectives, in a few lines." },
+      { label: "Pressure-test", prompt: "Pressure-test the outline: does the page sequence realize the spine? Does every page earn its place with a real objective? Is anything missing or redundant? Name the weak link and the highest-leverage fix." },
+    ],
+    emptyBlurb: "No outline yet — draft it here from your spine, or talk through the structure first. You review the plan before anything's applied.",
+    emptyChips: [
+      { label: "Draft the outline", prompt: GENERATE_PROMPTS.outline },
+      { label: "Offer shapes", prompt: "Before drafting, offer me 2–3 distinct structural shapes the outline could take — different chapter breaks and pacing on the same spine. Don't write the full outline yet; just sketch the shapes so I can pick." },
     ],
   },
   foundations: {
@@ -75,7 +90,7 @@ const LAYER_UI: Record<RevisionLayer, LayerUi> = {
     ],
     emptyBlurb: "No foundations yet — draft them here, or talk through the argument first. Ask for a few directions, pick one, and it's proposed for you to apply.",
     emptyChips: [
-      { label: "Draft the foundations", prompt: "Draft the foundations from the brief — the argument (the claim the book argues), the ending it implies, a small cast (each with want/wound/lie), a few tentpole moments, and a voice exemplar." },
+      { label: "Draft the foundations", prompt: GENERATE_PROMPTS.foundations },
       { label: "Offer directions", prompt: "Before drafting, offer me 2–3 distinct directions the foundations could take — each a different argument and the ending, cast, and signature moments it implies. Don't write the full foundations yet; just sketch the directions so I can pick." },
     ],
   },
@@ -97,7 +112,8 @@ export function ReviseChat({ bookId, layer, onChanged, model, currentSpine, curr
     layer === "spine" ? !currentSpine?.trim()
       : layer === "foundations" ? !currentFoundations?.argument?.text?.trim()
         : layer === "beats" ? !model?.counts?.beats
-          : false;
+          : layer === "outline" ? !model?.hasScaffold
+            : false;
   const chips = (layerEmpty && ui.emptyChips) ? ui.emptyChips : ui.chips;
   const blurb = (layerEmpty && ui.emptyBlurb) ? ui.emptyBlurb : ui.blurb;
   const { row, refetch } = useLatestTaskRow<RevisionChatRow>({
@@ -252,7 +268,7 @@ function ProposalReview({ proposal, layer, model, currentSpine, currentFoundatio
       {proposal.summary && <p className="pv-serif mt-1.5 text-[14px] leading-[1.6] text-[hsl(var(--pv-text-muted))]">{proposal.summary}</p>}
 
       <div className="mt-3.5">
-        {proposal.patch.layer === "beats" && model
+        {(proposal.patch.layer === "beats" || proposal.patch.layer === "outline") && model
           ? <BeatDiff plan={proposal.patch.data} model={model} />
           : proposal.patch.layer === "spine"
             ? <SpineDiff before={currentSpine ?? ""} after={proposal.patch.data.text} />

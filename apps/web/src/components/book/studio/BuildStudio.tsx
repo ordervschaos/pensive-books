@@ -126,7 +126,7 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
   // conversational ReviseChat; the Draft step gets the durable ProseEditor. The rail shows whenever
   // one of the editor steps is selected — the empty-center + live-chat is the intended first-run state.
   const railStep: StepKey | null =
-    selection.kind === "step" && (selection.step === "foundations" || selection.step === "spine" || selection.step === "beats" || selection.step === "draft")
+    selection.kind === "step" && (selection.step === "foundations" || selection.step === "spine" || selection.step === "outline" || selection.step === "beats" || selection.step === "draft")
       ? selection.step : null;
   const showRail = !!railStep;
 
