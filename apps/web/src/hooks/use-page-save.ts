@@ -5,6 +5,31 @@ import { EditorJSON } from '@/types/editor';
 import { useQueryClient } from '@tanstack/react-query';
 
 /**
+ * Replace the first occurrence of `oldText` with `newText` inside the text nodes
+ * of a TipTap document, walking the tree in reading order. Returns true once a
+ * replacement is made so the caller can stop at the first match.
+ *
+ * This operates on the parsed JSON tree — NOT on a serialized string — so the
+ * replacement text can safely contain quotes, backslashes, or any other
+ * character. Stringify→string-replace→re-parse corrupts the JSON whenever
+ * `newText` contains such characters (e.g. an apostrophe or `"`), which threw an
+ * unhandled SyntaxError.
+ */
+const replaceTextInNode = (node: EditorJSON, oldText: string, newText: string): boolean => {
+  if (typeof node.text === 'string' && node.text.includes(oldText)) {
+    // Function replacer avoids `$`-pattern interpretation in newText.
+    node.text = node.text.replace(oldText, () => newText);
+    return true;
+  }
+  if (Array.isArray(node.content)) {
+    for (const child of node.content) {
+      if (replaceTextInNode(child, oldText, newText)) return true;
+    }
+  }
+  return false;
+};
+
+/**
  * Extract title from JSON content (first heading node)
  */
 const getTitleFromJson = (json: EditorJSON | null): string => {
@@ -131,11 +156,11 @@ export const usePageSave = (
   ) => {
     if (!currentJson) return;
 
-    // Convert JSON to string, replace text, then convert back
-    const jsonString = JSON.stringify(currentJson);
-    const updatedJsonString = jsonString.replace(oldText, newText);
-    const updatedJson = JSON.parse(updatedJsonString);
-    
+    // Deep-clone so we never mutate the caller's object, then replace the text
+    // in-place on the parsed tree (no stringify/JSON.parse round-trip).
+    const updatedJson = structuredClone(currentJson);
+    replaceTextInNode(updatedJson, oldText, newText);
+
     await handleSave(updatedJson);
   }, [handleSave]);
 
