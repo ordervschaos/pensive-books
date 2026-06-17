@@ -160,8 +160,8 @@ const NewBook = () => {
   const chooseMode = (mode: WriteMode) => {
     setChoiceOpen(false);
     if (!intakeBookId) return;
-    // Studio mode asks BookDetails to open the Studio tab on land (preserved across the slug redirect).
-    navigate(`/books/${intakeBookId}${mode === "studio" ? "?tab=studio" : ""}`);
+    // Studio mode lands on the full-screen Studio route; manual mode lands on the book page.
+    navigate(`/books/${intakeBookId}${mode === "studio" ? "/studio" : ""}`);
   };
 
   // Dismissing the choice (Esc / overlay) still lands the author on the book — as if they chose manual.

@@ -35,7 +35,7 @@ const LAYER_UI: Record<RevisionLayer, LayerUi> = {
   beats: {
     title: "Beat editor",
     blurb: "Talk through the beats, ask for a summary or an evaluation, or ask for a change — it proposes a revision you review before anything is touched.",
-    placeholder: "Ask anything, or say what should change…",
+    placeholder: "Ask or change the beats…",
     applyNote: "Saves a version first · prose stays (re-draft after)",
     chips: [
       { label: "Summarize", prompt: "Summarize the beat sheet in a few lines — the shape of the story as it stands." },
@@ -45,7 +45,7 @@ const LAYER_UI: Record<RevisionLayer, LayerUi> = {
   spine: {
     title: "Spine editor",
     blurb: "Talk through the throughline, pressure-test the arc, or ask for a change — it proposes a revised spine you review before it's saved.",
-    placeholder: "Ask about the arc, or say what should change…",
+    placeholder: "Ask or change the spine…",
     applyNote: "Saved as the spine · beats & prose below go stale",
     chips: [
       { label: "Summarize", prompt: "Summarize the spine — the book as one arc, in a few lines." },
@@ -55,7 +55,7 @@ const LAYER_UI: Record<RevisionLayer, LayerUi> = {
   foundations: {
     title: "Foundations editor",
     blurb: "Talk through the bedrock decisions, pressure-test them, or ask for a change — it proposes a revision you review before it's saved. Pinned lines stay locked.",
-    placeholder: "Ask about the argument, cast, tentpoles…",
+    placeholder: "Ask or change the foundations…",
     applyNote: "Saved to foundations · spine & beats below go stale",
     chips: [
       { label: "Summarize", prompt: "Summarize the foundations — argument, ending, cast, tentpoles, voice — in a few lines." },
@@ -118,78 +118,80 @@ export function ReviseChat({ bookId, layer, onChanged, model, currentSpine, curr
   const busy = sending || thinking;
 
   return (
-    <Panel variant="soft" className="px-5 py-4">
-      <div className="flex items-center gap-2">
+    <Panel variant="soft" className="flex h-full flex-col px-4 py-3.5">
+      <div className="flex shrink-0 items-center gap-2">
         <Wand2 className="h-4 w-4 text-[hsl(var(--pv-accent))]" />
         <Eyebrow tone="accent">{ui.title}</Eyebrow>
       </div>
-      <p className="pv-serif mt-1 text-[12.5px] italic text-[hsl(var(--pv-text-faint))]">{ui.blurb}</p>
 
-      {messages.length > 0 && (
-        <div ref={scrollRef} className="mt-4 max-h-[420px] space-y-3.5 overflow-y-auto pr-1">
-          {messages.map((m, i) => (
-            <div key={i} className={m.role === "user" ? "flex justify-end" : ""}>
-              {m.role === "user" ? (
-                <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-[hsl(var(--pv-surface-2))] px-3.5 py-2 pv-serif text-[14px] leading-[1.55] text-foreground whitespace-pre-wrap">
-                  {m.text}
-                </div>
-              ) : (
-                <div className="max-w-[92%] pv-serif text-[14.5px] leading-[1.62] text-[hsl(var(--pv-text-muted))] prose prose-sm max-w-none dark:prose-invert prose-p:my-2 prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0 prose-headings:text-foreground prose-strong:text-foreground prose-strong:font-semibold">
-                  <ReactMarkdown>{m.text}</ReactMarkdown>
-                </div>
-              )}
-            </div>
-          ))}
-          {thinking && (
-            <div className="flex items-center gap-2 pv-serif text-[13.5px] italic text-[hsl(var(--pv-text-faint))]">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" /> reading the {layer}…
-            </div>
-          )}
-        </div>
-      )}
-
-      {row?.status === "error" && row.error && <RunError msg={row.error} />}
-
-      {pending && !thinking && (
-        <ProposalReview
-          proposal={pending} layer={layer} model={model}
-          currentSpine={currentSpine} currentFoundations={currentFoundations}
-          applyNote={ui.applyNote} onApply={apply} onDiscard={discard}
-        />
-      )}
-
-      {/* Quick actions */}
-      <div className="mt-4 flex flex-wrap items-center gap-1.5">
-        {ui.chips.map((c) => (
-          <Chip key={c.label} onClick={() => void send(c.prompt)} disabled={busy}>{c.label}</Chip>
+      {/* Conversation — fills the rail; the blurb only stands in for an empty thread. */}
+      <div ref={scrollRef} className="mt-3 min-h-0 flex-1 space-y-3.5 overflow-y-auto pr-1">
+        {messages.length === 0 && !pending && (
+          <p className="pv-serif text-[12.5px] italic leading-[1.5] text-[hsl(var(--pv-text-faint))]">{ui.blurb}</p>
+        )}
+        {messages.map((m, i) => (
+          <div key={i} className={m.role === "user" ? "flex justify-end" : ""}>
+            {m.role === "user" ? (
+              <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-[hsl(var(--pv-surface-2))] px-3.5 py-2 pv-serif text-[14px] leading-[1.55] text-foreground whitespace-pre-wrap">
+                {m.text}
+              </div>
+            ) : (
+              <div className="max-w-[92%] pv-serif text-[14.5px] leading-[1.62] text-[hsl(var(--pv-text-muted))] prose prose-sm max-w-none dark:prose-invert prose-p:my-2 prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0 prose-headings:text-foreground prose-strong:text-foreground prose-strong:font-semibold">
+                <ReactMarkdown>{m.text}</ReactMarkdown>
+              </div>
+            )}
+          </div>
         ))}
-        {layer === "beats" && (
-          <>
-            <span className="pv-mono mx-1 text-[9.5px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-faint))]">check vs</span>
-            {BEAT_LENSES.map((l) => (
-              <Chip key={l.id} title={l.bestFor} disabled={busy}
-                onClick={() => void send(`Check the beat sheet against the ${l.name} structure — what's missing, sagging, or paid off weakly. If it needs changes, propose them.`)}>
-                {l.name}
-              </Chip>
-            ))}
-          </>
+        {thinking && (
+          <div className="flex items-center gap-2 pv-serif text-[13.5px] italic text-[hsl(var(--pv-text-faint))]">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" /> reading the {layer}…
+          </div>
+        )}
+
+        {row?.status === "error" && row.error && <RunError msg={row.error} />}
+
+        {pending && !thinking && (
+          <ProposalReview
+            proposal={pending} layer={layer} model={model}
+            currentSpine={currentSpine} currentFoundations={currentFoundations}
+            applyNote={ui.applyNote} onApply={apply} onDiscard={discard}
+          />
         )}
       </div>
 
-      {/* Composer */}
-      <div className="mt-3 flex items-end gap-2">
-        <Textarea
-          value={draft} onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(draft); } }}
-          rows={1} placeholder={ui.placeholder}
-          disabled={busy}
-          className="pv-serif min-h-[42px] resize-none text-[14px] leading-[1.55]"
-        />
-        <button type="button" onClick={() => void send(draft)} disabled={busy || !draft.trim()}
-          title="Send"
-          className="inline-flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-40">
-          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
-        </button>
+      {/* Quick actions + composer — pinned to the bottom of the rail. */}
+      <div className="mt-3 shrink-0">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {ui.chips.map((c) => (
+            <Chip key={c.label} onClick={() => void send(c.prompt)} disabled={busy}>{c.label}</Chip>
+          ))}
+          {layer === "beats" && (
+            <>
+              <span className="pv-mono mx-1 text-[9.5px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-faint))]">check vs</span>
+              {BEAT_LENSES.map((l) => (
+                <Chip key={l.id} title={l.bestFor} disabled={busy}
+                  onClick={() => void send(`Check the beat sheet against the ${l.name} structure — what's missing, sagging, or paid off weakly. If it needs changes, propose them.`)}>
+                  {l.name}
+                </Chip>
+              ))}
+            </>
+          )}
+        </div>
+
+        <div className="mt-2.5 flex items-end gap-2">
+          <Textarea
+            value={draft} onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(draft); } }}
+            rows={1} placeholder={ui.placeholder}
+            disabled={busy}
+            className="pv-serif min-h-[42px] resize-none text-[14px] leading-[1.55]"
+          />
+          <button type="button" onClick={() => void send(draft)} disabled={busy || !draft.trim()}
+            title="Send"
+            className="inline-flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-40">
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
+          </button>
+        </div>
       </div>
     </Panel>
   );

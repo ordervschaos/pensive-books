@@ -21,7 +21,6 @@ import {
 } from "@/lib/foundations";
 import { ActionLink, CollapsedRow, Eyebrow, GenRow, Hero, ImageLightbox, OptionCard, Panel, PickButton, RunError, SkeletonCard, SkeletonProposalCard } from "../studioUi";
 import { DurableReviser } from "../../DurableReviser";
-import { ReviseChat } from "../ReviseChat";
 
 const uid = () => crypto.randomUUID().slice(0, 8);
 
@@ -128,13 +127,6 @@ export function FoundationsStep({ bookId, foundations, beforeGen, onChanged }: P
           onSave={async (n) => { await save({ ...f, voice_exemplar: n }); if (n.text?.trim()) await mirrorVoice(n.text); }} />
       )}
 
-      {/* Conversational foundations reviser — talk across argument/ending/cast/tentpoles/voice and
-          propose a change. Appears once there's something settled to revise. Pinned lines stay locked. */}
-      {prog.argument && (
-        <div className="mt-10 border-t border-[hsl(var(--pv-border-soft))]/60 pt-6">
-          <ReviseChat bookId={bookId} layer="foundations" currentFoundations={f} onChanged={onChanged} />
-        </div>
-      )}
     </div>
   );
 }

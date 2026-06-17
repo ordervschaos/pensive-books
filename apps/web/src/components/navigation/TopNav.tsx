@@ -278,6 +278,18 @@ function buildCrumb(pathname: string, bookName: string, pageName: string, interc
       </>
     );
   }
+  if (pathname.endsWith("/studio")) {
+    const name = bookName || deslug(bookSlug);
+    return (
+      <>
+        <CrumbLink href="/books" intercept={intercept}>My Books</CrumbLink>
+        {SEP}
+        <CrumbLink href={bookPath} intercept={intercept}>{name}</CrumbLink>
+        {SEP}
+        <CrumbLink href={pathname} intercept={intercept}>Studio</CrumbLink>
+      </>
+    );
+  }
   if (pageName) {
     return (
       <>

@@ -18,13 +18,14 @@ import {
 } from "@/lib/foundations";
 import type { UseSteer } from "@/lib/steer";
 import { ActionLink, Eyebrow, GenRow, Hero, OptionCard, Panel, RunError } from "../studioUi";
-import { ReviseChat } from "../ReviseChat";
 
 interface Props {
   bookId: number;
   foundations?: Foundations | null;
   steer: UseSteer;
   beforeGen: () => Promise<void>;
+  /** Bumped on every studio refresh — re-reads the spine after the editor rail applies a revision. */
+  reloadKey?: number;
   onStatusChange: (v: boolean) => void;
   onChanged: () => void;
 }
@@ -49,7 +50,7 @@ function SkeletonRoute() {
   );
 }
 
-export function SpineStep({ bookId, foundations, steer, beforeGen, onStatusChange, onChanged }: Props) {
+export function SpineStep({ bookId, foundations, steer, beforeGen, reloadKey, onStatusChange, onChanged }: Props) {
   const { toast } = useToast();
   const [spine, setSpine] = useState("");
   const [node, setNode] = useState<SpineNode>({});
@@ -77,6 +78,14 @@ export function SpineStep({ bookId, foundations, steer, beforeGen, onStatusChang
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookId]);
+
+  // The editor rail now lives outside this column; when it applies a spine revision the studio refresh
+  // bumps reloadKey, so re-read the chosen spine here. Skip while the author is mid-edit (don't clobber).
+  useEffect(() => {
+    if (!loaded || dirty) return;
+    void reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reloadKey]);
 
   // New routes land → append to existing pool (never replace).
   useEffect(() => {
@@ -231,13 +240,6 @@ export function SpineStep({ bookId, foundations, steer, beforeGen, onStatusChang
       )}
 
       {routesRun.run?.status === "error" && <RunError msg={routesRun.run.error} />}
-
-      {/* Conversational spine reviser — talk through the arc, propose a revised spine. */}
-      {spine && (
-        <div className="mt-8 border-t border-[hsl(var(--pv-border-soft))]/60 pt-6">
-          <ReviseChat bookId={bookId} layer="spine" currentSpine={spine} onChanged={() => { void reload(); onChanged(); }} />
-        </div>
-      )}
     </div>
   );
 }

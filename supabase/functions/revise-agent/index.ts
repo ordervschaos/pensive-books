@@ -87,7 +87,7 @@ Deno.serve(async (req: Request) => {
 
   try {
     const body = (await req.json().catch(() => ({}))) as {
-      bookId?: number; evaluation?: EvalResult; runId?: number; answer?: string; chain?: boolean;
+      bookId?: number; evaluation?: EvalResult; instruction?: string; runId?: number; answer?: string; chain?: boolean;
     };
 
     // ── Continue call (self/watchdog): advance one model turn ──
@@ -134,11 +134,14 @@ Deno.serve(async (req: Request) => {
       return json({ status: "running", runId: row.id }, 202);
     }
 
-    // Start a run: snapshot the eval + the book context into the first user message.
-    const { bookId, evaluation } = body;
+    // Start a run: snapshot the book context + EITHER the editor's read OR the author's free-text
+    // instruction (the prose editor in the Draft rail uses the instruction path).
+    const { bookId, evaluation, instruction } = body;
     if (!bookId) return json({ error: "bookId is required" }, 400);
-    if (!evaluation?.verdict || !Array.isArray(evaluation.sections)) {
-      return json({ error: "A valid evaluation is required" }, 400);
+    const hasEval = !!evaluation?.verdict && Array.isArray(evaluation.sections);
+    const instr = (instruction ?? "").trim();
+    if (!hasEval && !instr) {
+      return json({ error: "Either a valid evaluation or an instruction is required" }, 400);
     }
 
     const { data: book, error: bookError } = await userClient
@@ -165,7 +168,8 @@ Deno.serve(async (req: Request) => {
       book.brief as Brief | null,
       pages as PageRow[],
       (threads as ThreadLite[] | null) ?? [],
-      evaluation,
+      hasEval ? evaluation! : null,
+      instr || null,
     );
 
     const { data: run, error: insErr } = await service
@@ -174,9 +178,9 @@ Deno.serve(async (req: Request) => {
         book_id: bookId,
         created_by: user.id,
         status: "running",
-        evaluation,
+        evaluation: hasEval ? evaluation : null,
         transcript: [{ role: "user", content: [{ type: "text", text: context }] }],
-        steps: [{ t: "note", label: "Reading the editor's notes and the outline." }],
+        steps: [{ t: "note", label: hasEval ? "Reading the editor's notes and the outline." : "Reading the author's request and the outline." }],
       })
       .select("id, created_at")
       .single();
@@ -409,7 +413,7 @@ async function proposePlan(
       book_id: row.book_id,
       created_by: row.created_by,
       status: "awaiting_review",
-      source: "evaluation",
+      source: row.evaluation ? "evaluation" : "instruction",
       instruction: null,
       evaluation: row.evaluation,
       plan,
@@ -511,12 +515,12 @@ const TOOLS = [
 ];
 
 // ── System prompt ────────────────────────────────────────────────────────────
-const SYSTEM = `You are the editor's agent for a book-writing studio. A developmental editor has evaluated the author's book; your job is to ADDRESS those notes — like a trusted human collaborator would: investigate first, involve the author in the creative forks, then propose a surgical revision plan.
+const SYSTEM = `You are the prose editor's agent for a book-writing studio. Your job is to ADDRESS the author's request — which is EITHER a developmental editor's evaluation OR a specific change the author described — like a trusted human collaborator would: investigate first, involve the author in the creative forks, then propose a surgical revision plan.
 
-You are given the brief, the CURRENT outline (each page with its real [id], type, title, objective, and summary), tracked threads, and the editor's full evaluation.
+You are given the brief, the CURRENT outline (each page with its real [id], type, title, objective, and summary), tracked threads, and EITHER the editor's full evaluation OR the author's requested change.
 
 METHOD — work in this order:
-1. TRIAGE the notes. Group them by root cause: several notes often share one fix (e.g. "the heroine is passive in the climax" + "her core wound is never confronted" may be one new scene). The verdict's priorities ("fix these first") are the highest-leverage changes.
+1. TRIAGE the request. Group the work by root cause: several notes (or one broad ask like "make chapter 3 darker") often share one fix (e.g. "the heroine is passive in the climax" + "her core wound is never confronted" may be one new scene). When an evaluation is given, the verdict's priorities ("fix these first") are the highest-leverage changes.
 2. INVESTIGATE. read_page the pages the high-leverage notes anchor to — never plan changes to prose you have not read. Read what you need, not the whole book.
 3. CONSULT. If a genuinely creative fork decides the plan's shape (where a new scene goes, which of two approaches fits the author's intent, whether to cut a subplot), ask_author — with concrete options and your recommendation. Do not ask about trivia, mechanics, or permission. Many runs need zero questions.
 4. PROPOSE. Call propose_revision_plan with a surgical plan. The author reviews it before anything is built, and prose generation happens downstream — you plan in OBJECTIVES (what each page must achieve), never in prose.
@@ -538,14 +542,19 @@ function buildContext(
   brief: Brief | null,
   pages: PageRow[],
   threads: ThreadLite[],
-  evaluation: EvalResult,
+  evaluation: EvalResult | null,
+  instruction: string | null,
 ): string {
+  const directive = evaluation
+    ? `\n\nEDITOR'S EVALUATION (the notes to address):\n${evalContext(evaluation)}` +
+      `\n\nAddress the editor's notes. Investigate first, consult the author on real creative forks, then propose the revision plan.`
+    : `\n\nTHE AUTHOR'S REQUESTED CHANGE:\n${instruction}` +
+      `\n\nMake this change to the book. Investigate the affected pages first, consult the author on real creative forks, then propose the revision plan.`;
   return (
     `BOOK: ${bookName}\n\nBRIEF (the voice contract):\n${briefContext(brief, { scope: "full", success: true, none: "(no brief set — infer a sensible neutral voice)", empty: "(brief is empty — infer a sensible neutral voice)" })}` +
     `\n\nCURRENT OUTLINE (real ids; read_page for full prose):\n${outlineContext(pages)}` +
     (threads.length ? `\n\nTRACKED THREADS (keep their setups & payoffs intact):\n${threadsContext(threads)}` : "") +
-    `\n\nEDITOR'S EVALUATION (the notes to address):\n${evalContext(evaluation)}` +
-    `\n\nAddress the editor's notes. Investigate first, consult the author on real creative forks, then propose the revision plan.`
+    directive
   );
 }
 

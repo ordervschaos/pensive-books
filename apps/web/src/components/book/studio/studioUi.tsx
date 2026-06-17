@@ -297,12 +297,12 @@ export function Pip3({ objective, beat, prose, size = 7 }: { objective: CellStat
   );
 }
 
-// The Navigator's step glyph. done = filled accent check; active = accent ring + inner dot; ready =
-// quiet ring; locked = padlock.
-export function StepDot({ state }: { state: DotState }) {
+// The Navigator's step glyph. done = filled accent check (amber when stale — approved, but drifted out
+// of sync with an upstream change); active = accent ring + inner dot; ready = quiet ring; locked = padlock.
+export function StepDot({ state, stale }: { state: DotState; stale?: boolean }) {
   if (state === "done")
     return (
-      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[hsl(var(--pv-accent))] text-background">
+      <span className={cn("flex h-5 w-5 items-center justify-center rounded-full text-background", stale ? "bg-amber-500" : "bg-[hsl(var(--pv-accent))]")}>
         <Check className="h-3 w-3" strokeWidth={3.2} />
       </span>
     );
@@ -455,7 +455,7 @@ export function ProgressMeter({ verb, filled, total, noun }: { verb: string; fil
 }
 
 // A calm "level cleared" summary strip (every beat planned / every page written / published).
-export function DoneStrip({ icon, title, children }: { icon: ReactNode; title: string; children?: ReactNode }) {
+export function DoneStrip({ icon, title, children, onDismiss }: { icon: ReactNode; title: string; children?: ReactNode; onDismiss?: () => void }) {
   return (
     <div className="flex items-center gap-4 rounded-2xl border border-border bg-[hsl(var(--pv-surface-2))]/60 px-6 py-5">
       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[hsl(var(--pv-accent))]/[0.08] text-[hsl(var(--pv-accent))]">{icon}</span>
@@ -463,6 +463,11 @@ export function DoneStrip({ icon, title, children }: { icon: ReactNode; title: s
         <div className="pv-serif text-[18px] font-semibold text-foreground">{title}</div>
         {children && <div className="pv-serif mt-0.5 text-[14px] text-[hsl(var(--pv-text-muted))]">{children}</div>}
       </div>
+      {onDismiss && (
+        <button type="button" onClick={onDismiss} className="ml-2 shrink-0 text-[hsl(var(--pv-text-faint))] hover:text-foreground transition-colors" aria-label="Dismiss">
+          <X className="h-4 w-4" />
+        </button>
+      )}
     </div>
   );
 }

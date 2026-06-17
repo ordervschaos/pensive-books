@@ -9,22 +9,49 @@
 // input is `journey` (the author's approval ledger) plus the three existence flags that can't be cheaply
 // read from `pages` (spine / voice / a completed editor's read), which the host supplies.
 import { buildMap, type CellState, type MapModel, type MapPage } from "@/lib/planGraph";
-import { foundationsComplete, type Foundations } from "@/lib/foundations";
+import { foundationsComplete, foundationsFingerprint, type Foundations } from "@/lib/foundations";
 import { lintBook, type BookLint, type LintThread } from "@/lib/lints";
-import { type PageMeta } from "@/lib/planProvenance";
+import { metaHash, type PageMeta } from "@/lib/planProvenance";
 import type { EditorJSON } from "@/types/editor";
 
 export type StepKey =
   | "brief" | "foundations" | "spine" | "outline" | "beats" | "draft"
-  | "read" | "revise" | "publish";
+  | "read" | "publish";
 
 /** The build ladder (pin-driven flow): Voice is absorbed into Foundations sub-step 5. */
 export const BUILD_STEPS: StepKey[] = ["brief", "foundations", "spine", "outline", "beats", "draft"];
-/** Post-draft actions — unlocked once prose exists; not strictly ordered. */
-export const POST_STEPS: StepKey[] = ["read", "revise", "publish"];
+/** Post-draft actions — unlocked once prose exists; not strictly ordered. The standalone "Revise" step
+ *  was retired: post-draft changes now happen in each layer's editor rail (prose lives in the Draft
+ *  step's prose editor). */
+export const POST_STEPS: StepKey[] = ["read", "publish"];
 export const ALL_STEPS: StepKey[] = [...BUILD_STEPS, ...POST_STEPS];
 
-export type Journey = Partial<Record<"brief" | "foundations" | "spine" | "outline" | "beats" | "draft", string>>;
+// A step's approval ledger entry. Legacy entries are a bare ISO string; new entries are a
+// fingerprinted sign-off — the upstream-root hashes at the moment of approval, so we can later tell
+// when a layer above this step has moved since (staleOf). Old string entries simply carry no
+// fingerprint and so never flag stale until the step is approved again.
+export interface JourneyStamp { at: string; bHash?: string; fHash?: string; sHash?: string }
+export type JourneyEntry = string | JourneyStamp;
+export type Journey = Partial<Record<"brief" | "foundations" | "spine" | "outline" | "beats" | "draft", JourneyEntry>>;
+
+/**
+ * The three book-level roots whose change can invalidate a downstream approval: the brief, the
+ * foundations, and the spine. Computed IDENTICALLY at approval time (BuildStudio.approve stamps these
+ * into the journey entry) and at read time (staleOf compares the stamped values against these). Page-
+ * level drift (objective→beat→prose) is already tracked per-page via edge hashes — this is only the
+ * book-level roots.
+ */
+export function rootFingerprints(
+  briefContext: string | null | undefined,
+  foundations: Foundations | null | undefined,
+  spineText: string | null | undefined,
+): { bHash: string; fHash: string; sHash: string } {
+  return {
+    bHash: metaHash(briefContext ?? ""),
+    fHash: metaHash(foundationsFingerprint(foundations)),
+    sHash: metaHash((spineText ?? "").trim()),
+  };
+}
 
 // A build step's lifecycle. `awaiting` = its artifact exists and it's ready for the deliberate
 // "Approve & continue" sign-off; `active` = it's the current step but its artifact isn't there yet.
@@ -35,7 +62,7 @@ export type DotState = "done" | "active" | "ready" | "locked";
 
 export const STEP_LABEL: Record<StepKey, string> = {
   brief: "Brief", foundations: "Foundations", spine: "Spine", outline: "Outline", beats: "Beats",
-  draft: "Draft", read: "Read", revise: "Revise", publish: "Publish",
+  draft: "Draft", read: "Read", publish: "Publish",
 };
 
 export const STEP_CAPTION: Record<StepKey, string> = {
@@ -44,9 +71,8 @@ export const STEP_CAPTION: Record<StepKey, string> = {
   spine: "The one-paragraph throughline the whole book realizes.",
   outline: "The chapters and pages as objectives — review, edit, create. No prose yet.",
   beats: "Walk the book page by page — plan the beat for each, one at a time or in bulk — before any prose.",
-  draft: "Render the prose from the approved beats, in the book's voice.",
-  read: "A structural critique of the draft — then auto-fix the critical & major issues.",
-  revise: "Re-plan the outline or rework the draft — describe the change and review before it sticks.",
+  draft: "Render the prose from the approved beats, in the book's voice — then rework it with the prose editor.",
+  read: "A structural critique of the draft — then take the notes to the prose editor.",
   publish: "Make the book public on pensive.me.",
 };
 
@@ -90,9 +116,15 @@ export interface StudioModel {
   ready: Record<StepKey, boolean>;
   statusOf: (k: StepKey) => StepStatus;
   dotOf: (k: StepKey) => DotState;
-  /** First build step that's active/awaiting, else the first useful post-draft action. */
+  /** A done step whose upstream root (brief/foundations/spine) has changed since it was approved.
+   *  A flag for "your attention is needed here", never a hard block. */
+  staleOf: (k: StepKey) => boolean;
+  /** The topmost stale step, if any — what the Navigator points at when everything's "done" but drifted. */
+  firstStale: StepKey | null;
+  /** First build step that's active/awaiting, else the topmost stale step, else a post-draft action. */
   current: StepKey;
   sync: { pct: number; gaps: number };
+  journey: Journey;
   pageById: (id: number) => MapPage | undefined;
   /** Index of a text page within textPages (for prev/next), or -1. */
   textIndexOf: (id: number) => number;
@@ -120,6 +152,8 @@ function bodyText(content: unknown): string {
 
 export interface BuildStudioModelInput {
   briefSet: boolean;
+  /** The brief's prompt-context string — hashed as the `brief` root for downstream staleness. */
+  briefContext?: string | null;
   spineText: string | null | undefined;
   spineStale?: boolean;
   pages: StudioPageRow[];
@@ -190,7 +224,7 @@ export function buildStudioModel(input: BuildStudioModelInput): StudioModel {
     spine: !!(input.spineText && input.spineText.trim()), outline: hasScaffold,
     beats: hasScaffold && beatsRemaining === 0 && counts.beats > 0,
     draft: hasWritten && proseRemaining === 0,
-    read: false, revise: false, publish: false,
+    read: false, publish: false,
   };
 
   const statusOf = (k: StepKey): StepStatus => {
@@ -202,7 +236,6 @@ export function buildStudioModel(input: BuildStudioModelInput): StudioModel {
       return ready[k] ? "awaiting" : "active";
     }
     if (k === "read") return !hasWritten ? "locked" : input.hasRead ? "done" : "available";
-    if (k === "revise") return hasScaffold ? "available" : "locked";
     if (k === "publish") return !hasWritten ? "locked" : input.isPublic ? "done" : "available";
     return "locked";
   };
@@ -216,8 +249,29 @@ export function buildStudioModel(input: BuildStudioModelInput): StudioModel {
     return "active"; // active
   };
 
+  // Staleness: a done step is stale when an upstream ROOT it was approved against has moved since.
+  // Which roots a step depends on (all-at-once semantics — a foundations edit flags spine + outline +
+  // beats + draft together, since they each carry an fHash). Re-approving a step re-stamps the live
+  // roots and clears its flag, so the author walks the chain top-down.
+  const roots = rootFingerprints(input.briefContext, input.foundations, input.spineText);
+  const ROOT_DEPS: Partial<Record<StepKey, Array<keyof typeof roots>>> = {
+    foundations: ["bHash"],
+    spine: ["bHash", "fHash"],
+    outline: ["bHash", "fHash", "sHash"],
+    beats: ["bHash", "fHash", "sHash"],
+    draft: ["bHash", "fHash", "sHash"],
+  };
+  const staleOf = (k: StepKey): boolean => {
+    if (statusOf(k) !== "done") return false;
+    const entry = input.journey[k as keyof Journey];
+    if (!entry || typeof entry === "string") return false; // legacy bare-string approval → no fingerprint
+    return (ROOT_DEPS[k] ?? []).some((key) => entry[key] != null && entry[key] !== roots[key]);
+  };
+  const firstStale = buildSteps.find((k) => staleOf(k)) ?? null;
+
   const current: StepKey = (() => {
     for (const k of buildSteps) { const s = statusOf(k); if (s === "active" || s === "awaiting") return k; }
+    if (firstStale) return firstStale;
     if (hasWritten && !input.hasRead) return "read";
     if (!input.isPublic && hasWritten) return "publish";
     return "draft";
@@ -242,8 +296,9 @@ export function buildStudioModel(input: BuildStudioModelInput): StudioModel {
   return {
     buildSteps, newFlow, lints, tentpolePageIds,
     map, textPages, movements, counts, hasScaffold, hasWritten, beatsRemaining, proseRemaining,
-    ready, statusOf, dotOf, current,
+    ready, statusOf, dotOf, staleOf, firstStale, current,
     sync: { pct, gaps },
+    journey: input.journey,
     pageById: (id) => byId.get(id),
     textIndexOf: (id) => textIds.indexOf(id),
   };

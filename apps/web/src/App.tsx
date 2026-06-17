@@ -32,6 +32,7 @@ const ProfileEdit = lazy(() => import("@/pages/user/profile/ProfileEdit"));
 const MyBooks = lazy(() => import("@/pages/books/index/MyBooks"));
 const NewBook = lazy(() => import("@/pages/books/new/NewBook"));
 const BookDetails = lazy(() => import("@/pages/books/show/BookDetails"));
+const StudioPage = lazy(() => import("@/pages/books/studio/StudioPage"));
 const DraftChanges = lazy(() => import("@/pages/books/show/DraftChanges"));
 const VersionHistoryPage = lazy(() => import("@/pages/books/show/VersionHistoryPage"));
 const BookEdit = lazy(() => import("@/pages/books/edit/BookEdit"));
@@ -169,6 +170,7 @@ export default function App() {
                         <Route path="/books/:bookSlug/versions" element={<VersionHistoryPage />} />
                         <Route path="/books/:bookSlug/draft" element={<DraftChanges />} />
                         <Route path="/books/:bookSlug" element={<BookDetails />} />
+                        <Route path="/books/:bookSlug/studio" element={<StudioPage />} />
                         <Route path="/books/:bookSlug/edit" element={<BookEdit />} />
                         <Route path="/books/:bookSlug/pages/:pageSlug" element={<PageView />} />
                       </Route>

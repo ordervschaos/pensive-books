@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { ImageIcon, Play, Pencil, Download, ChevronDown } from "lucide-react";
+import { ImageIcon, Play, Pencil, Download, ChevronDown, Sparkles } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { generateAndDownloadEPUB, generatePDFWithPrintDialog, generateAndDownloadMarkdown } from "@/lib/download";
 import { useNavigate } from "react-router-dom";
@@ -40,6 +40,8 @@ interface BookInfoProps {
   wordTarget?: number;
   /** Brief summary + edit CTA, slotted under the title and above the word-target meter (author view). */
   briefSlot?: React.ReactNode;
+  /** Open the AI build Studio (author view) — shown as a button beside Continue writing. */
+  onOpenStudio?: () => void;
 }
 
 export const BookInfo = ({
@@ -59,7 +61,8 @@ export const BookInfo = ({
   showWritingButton = false,
   wordCount,
   wordTarget,
-  briefSlot
+  briefSlot,
+  onOpenStudio
 }: BookInfoProps) => {
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -490,6 +493,18 @@ export const BookInfo = ({
                   <span className="pv-mono text-[10px] not-italic uppercase tracking-[0.14em] opacity-70">page {currentPage + 1}</span>
                 </Button>
               ) : null}
+              {canEdit && onOpenStudio && (
+                <Button
+                  type="button"
+                  onClick={onOpenStudio}
+                  variant="outline"
+                  size="default"
+                  className="pv-serif h-11 gap-2 rounded-full border-border bg-transparent px-5 text-[14px] tracking-[0.01em] text-foreground"
+                >
+                  <Sparkles className="h-4 w-4" />
+                  Studio
+                </Button>
+              )}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button

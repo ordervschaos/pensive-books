@@ -41,8 +41,10 @@ export function useActiveStep(bookId: number, enabled = true): StepKey | null {
   if (isActive(gen.row, GEN_ACTIVE) && gen.row?.kind && GEN_STEP[gen.row.kind]) {
     candidates.push({ step: GEN_STEP[gen.row.kind], t: rowTime(gen.row) });
   }
-  if (isActive(rev.row, REV_ACTIVE)) candidates.push({ step: "revise", t: rowTime(rev.row) });
-  if (isActive(agent.row, AGENT_ACTIVE)) candidates.push({ step: "read", t: rowTime(agent.row) });
+  // Prose work — the durable revise-agent run (the Draft prose editor) and its build-revision apply —
+  // badges the Draft step now (the standalone Revise step was retired). An evaluation badges Read.
+  if (isActive(rev.row, REV_ACTIVE)) candidates.push({ step: "draft", t: rowTime(rev.row) });
+  if (isActive(agent.row, AGENT_ACTIVE)) candidates.push({ step: "draft", t: rowTime(agent.row) });
   if (isActive(evalRow.row, EVAL_ACTIVE)) candidates.push({ step: "read", t: rowTime(evalRow.row) });
 
   if (candidates.length === 0) return null;

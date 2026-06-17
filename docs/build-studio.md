@@ -9,40 +9,61 @@ the fast on-ramp — what it is, how the pieces fit, and where to touch things.
 > `-handoff.md`. Prototype palette lived in `apps/web/new_design/`; the shipped version re-themes onto
 > the Paper design-system tokens.
 
-## The shape: two panes
+## The shape: three panes
 
-One `<section>` split into two columns (stacks vertically on mobile):
+One `<section>` split into columns (stacks vertically on mobile). The third column — the **editor
+rail** — appears on the four editor steps (foundations / spine / beats / **draft**), and only once that
+step has something settled to revise. Every other step keeps the two-column full-width center:
 
 ```
-┌─────────────────────┬───────────────────────────────────────┐
-│  StudioNavigator    │  StudioStage                          │
-│  (left, 320px)      │  (right, fills)                       │
-│                     │                                       │
-│  Build · step N/9   │   ┌ StageHead (eyebrow/title/caption)│
-│   1 Brief      ✓    │   │                                   │
-│   2 Foundations now │   │  <the selected step's tool>       │
-│   3 Spine    locked │   │    or                             │
-│   …                 │   │  <a page's resolution ladder>     │
-│   ─────────         │   │                                   │
-│   7 Read            │   └ Gate ("Approve & continue")       │
-│   8 Revise          │                                       │
-│   9 Publish         │                                       │
-│                     │                                       │
-│  The book · map     │                                       │
-│   I · Movement      │                                       │
-│     • page  ◷◷◷     │                                       │
-│     • page  ●●●     │                                       │
-└─────────────────────┴───────────────────────────────────────┘
+┌─────────────────────┬─────────────────────────────┬──────────────────────┐
+│  StudioNavigator    │  StudioStage                │  StudioEditorRail    │
+│  (left, 320px)      │  (center, fills)            │  (right, ~380px)     │
+│                     │                             │  — editor steps only │
+│  Build · step N/8   │   ┌ StageHead              │                      │
+│   1 Brief      ✓    │   │                         │  ✦ Foundations /     │
+│   2 Foundations now │   │  <the step's CONTENT>   │    Spine / Beat       │
+│   3 Spine    locked │   │   foundations fields /  │    editor (ReviseChat)│
+│   …                 │   │   spine text / beats    │   — OR —             │
+│   6 Draft           │   │   carousel / the        │  ✦ Draft → Prose     │
+│   ─────────         │   │   manuscript pages      │    editor            │
+│   7 Read            │   │                         │   (ProseEditor =     │
+│   8 Publish         │   │  ← Phase 2: pending     │    revise-agent)     │
+│  The book · map     │   │    diff lands HERE,     │                      │
+│   I · Movement      │   │    accept/reject here   │  conversation +      │
+│     • page  ◷◷◷     │   └ Gate ("Approve…")      │  (Phase 1) diff/plan │
+└─────────────────────┴─────────────────────────────┴──────────────────────┘
 ```
+
+(The standalone **Revise** step was retired — see below. The ladder is 8 steps: Brief → Draft, Read, Publish.)
 
 - **Navigator** (`StudioNavigator.tsx`) = the **sequence** (the step ladder) + the **whole-book map**
   (movements → pages, with obj·beat·prose pips). Click a step → Stage shows that step's tool. Click a
   page → Stage shows that page's resolution ladder.
-- **Stage** (`StudioStage.tsx`) = the **depth**. Routes on the current selection. Each step is dressed
-  in the same editorial chrome (StageHead + Gate) so the nine steps read as one progression.
+- **Stage** (`StudioStage.tsx`) = the **depth** / the **content**. Routes on the current selection. Each
+  step is dressed in the same editorial chrome (StageHead + Gate) so the eight steps read as one
+  progression.
+- **Editor rail** (`StudioEditorRail.tsx`) = the **agent**, docked on the right so it works from the
+  side while the content holds the center. Two kinds:
+  - **planning layers** (foundations / spine / beats) → the unified `ReviseChat` (one model call; the
+    whole layer fits in context). The inline editors were pulled out of those step bodies.
+  - **Draft** → `ProseEditor` — prose is too large for one shot, so it's the durable **revise-agent**
+    (a `book_agent_runs` tool-loop that reads pages on demand): a free-text instruction (or the latest
+    editor's read) → reads → may ask the author → proposes a `book_revisions` plan → **Apply** runs
+    `build-revision` into the drafts. This subsumes the old standalone Revise step (`ReviseWithAI`) and
+    the Read step's inline `EditorAgent` into one place.
 
-Both panes read from **one derived model** (`studioModel.ts`). The sequence and the depth are one
-truth, not two products.
+  `BuildStudio` gates visibility (an editor step with settled content; draft needs `model.hasWritten`)
+  and feeds it `foundations` / `spine.text` / `model`. **Why the side:** it clears the center so a
+  pending diff can later land there for accept/reject (Phase 2); for now it renders inside the rail.
+
+All three panes read from **one derived model** (`studioModel.ts`). The sequence, the depth, and the
+agent are one truth, not three products.
+
+> **Spine reload note.** The Spine step holds its chosen-spine in local state, so when the rail applies
+> a spine revision, `BuildStudio` bumps `editorEpoch` (= `infoKey`) → `StudioStage` → `SpineStep`
+> re-reads (skipping while the author is mid-edit). Foundations syncs from its prop automatically; beats
+> re-projects through the model.
 
 ## The orchestrator: `BuildStudio.tsx`
 
@@ -91,7 +112,9 @@ gating.
 - **OLD** (`BUILD_STEPS`): `brief → spine → outline → voice → beats → draft`
 - **NEW** (`NEW_BUILD_STEPS`, `docs/pinned_method.md §1`): `brief → foundations → spine → outline → beats → draft`
   — **Voice is absorbed into Foundations** (sub-step 5).
-- **POST_STEPS** (both, unlocked once prose exists, not strictly ordered): `read → revise → publish`
+- **POST_STEPS** (both, unlocked once prose exists, not strictly ordered): `read → publish`
+  (the standalone `revise` step was retired — post-draft prose revision lives in the Draft step's
+  prose-editor rail; see "three panes").
 
 ### Step lifecycle (`StepStatus`)
 
@@ -106,8 +129,33 @@ gating.
 `brief=briefSet, foundations=foundationsComplete(), spine=text exists, outline=hasScaffold,
 voice=hasVoice, beats=all beats present, draft=all prose present`.
 
+### Step staleness (upstream drift)
+
+`done` is not forever. A book-level root above a step can change *after* you signed off — and the
+step's content no longer reflects it. `staleOf(step)` flags this (a flag, **never a block**): the
+Navigator shows an amber dot + "review", the Stage shows a banner + a "Re-approve" gate, and `current`
+/ "step N" point at the topmost stale step (`firstStale`) so attention lands where it's needed.
+
+The mechanism generalizes the old `spine.brief_hash` trick to the whole ladder, reusing `metaHash`:
+
+- **Approval stamps a fingerprint, not just a timestamp.** A `journey[step]` entry is now
+  `{ at, bHash, fHash, sHash }` (`JourneyStamp`) — the hashes of the three roots (Brief context,
+  `foundationsFingerprint`, spine text) at approval time. `rootFingerprints()` computes them
+  identically in `BuildStudio.approve` (stamp) and `buildStudioModel` (compare). Legacy bare-string
+  entries carry no fingerprint → never stale until re-approved.
+- **All-at-once.** Each downstream step depends on a set of roots (`ROOT_DEPS`): foundations←brief;
+  spine←brief+foundations; outline/beats/draft←brief+foundations+spine. So a **foundations edit flags
+  spine + outline + beats + draft together** (they all carry an `fHash`).
+- **Clearing walks top-down.** Re-approving a stale step re-stamps the live roots and clears *its* flag;
+  approve advances the selection to the next step, which is the next thing still stale.
+- **Foundations itself never flags on its own edits** (its only root is the brief) — matching "the
+  foundations changed, but I'm fine with them; it's the stages below that need a look."
+
+Page-level drift (objective→beat→prose) is *not* this — that stays per-page via the edge hashes in
+`planProvenance` (the map pips). Staleness here is only the three book-level roots.
+
 `current` = first build step that's active/awaiting; else `read` (if written & unread); else
-`publish`; else `draft`. The Navigator's "step N/9" and the default selection come from this.
+`publish`; else `draft`. The Navigator's "step N/8" and the default selection come from this.
 
 `dotOf` collapses status into 4 glyphs for the Navigator dot: `done / active / ready / locked`.
 
@@ -139,11 +187,12 @@ voice=hasVoice, beats=all beats present, draft=all prose present`.
 **Embedded** (existing components dropped into the new chrome, already DS-consistent):
 
 - Brief → `BookBriefSection`
-- Read → `BookEvaluationSection` + the "Address the notes · two ways" zone:
-  `EditorAgent` (collaborative — asks the author, proposes a reviewable plan) **and** `AutoRevise`
-  (unattended one-pass fix of critical/major issues). The agent's plan lands on the Revise step.
-- Revise → `ReviseWithAI` (consumes the `revisionPrefill` set by per-note "Revise this" clicks on Read)
+- Read → `BookEvaluationSection` + a single handoff (`AIActionRow`) that opens the **Draft prose
+  editor** with this read. (The old inline `EditorAgent` zone and the standalone Revise step are
+  retired — `EditorAgent.tsx` is orphaned; `ReviseWithAI.tsx` survives only because `PageWorkshop`
+  still uses it.)
 - Publish → `AIActionRow` (publish / unpublish, defers to host `onPublish`)
+- Draft's editor rail → `ProseEditor` (the generalized `revise-agent`; see "three panes").
 
 Locked steps show a reason. `awaiting` steps render a `Gate` ("Approve & continue") that calls
 `onApprove`.

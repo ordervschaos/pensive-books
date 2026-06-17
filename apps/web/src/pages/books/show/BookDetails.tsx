@@ -19,10 +19,6 @@ import { AdminViewBanner } from "@/components/book/AdminViewBanner";
 import { MatureContentGate } from "@/components/book/MatureContentGate";
 import { Brief } from "@/lib/brief";
 import { BriefSummary } from "@/components/book/BriefSummary";
-import { BuildStudio } from "@/components/book/studio/BuildStudio";
-import { getPageStatus } from "./components/pageList/pageUtils";
-import { computeCompletion } from "@/lib/brief";
-import { cn } from "@/lib/utils";
 import { useMatureContent } from "@/hooks/use-mature-content";
 import type { Session } from "@supabase/supabase-js";
 import type { EditorJSON } from "@/types/editor";
@@ -96,21 +92,9 @@ const BookDetails = () => {
   const [isCommitDialogOpen, setIsCommitDialogOpen] = useState(false);
   const [isPublishingDialogOpen, setIsPublishingDialogOpen] = useState(false);
   const [showArchivedPages, setShowArchivedPages] = useState(false);
-  // Manuscript leads the work; the Studio (AI build surface) lives behind its own tab. The brief no
-  // longer has a tab — it's summarized in the header and edited in a dialog.
-  // Persisted to localStorage so the choice survives a refresh; `?tab=studio` (from the post-create
-  // "how do you want to write" modal) opens the Studio on first land and wins over the saved tab.
-  const tabKey = `book-tab:${bookSlug}`;
-  type WorkspaceTab = "manuscript" | "ai";
-  const [activeTab, setActiveTab] = useState<WorkspaceTab>(() => {
-    if (new URLSearchParams(window.location.search).get("tab") === "studio") return "ai";
-    return localStorage.getItem(tabKey) === "ai" ? "ai" : "manuscript";
-  });
-  const switchTab = (tab: WorkspaceTab) => {
-    setActiveTab(tab);
-    localStorage.setItem(tabKey, tab);
-  };
-
+  // Manuscript leads the work; the Studio (AI build surface) is its own full-screen route
+  // (/books/:slug/studio), reached via the "Studio" button. The brief is summarized in the header and
+  // edited in a dialog — it no longer has a tab here.
 
   const fetchBookmarkedPage = useCallback(async (session: Session | null) => {
     try {
@@ -238,7 +222,7 @@ const BookDetails = () => {
 
       if (bookData && !bookSlug?.includes('-') && bookData.name) {
         const slug = `${numericId}-${bookData.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
-        // Keep the query (e.g. ?tab=studio from the post-create modal) across the canonical-slug redirect.
+        // Preserve any query string across the canonical-slug redirect.
         navigate(`/books/${slug}${window.location.search}`, { replace: true });
       }
 
@@ -435,15 +419,6 @@ const BookDetails = () => {
 
   const manuscriptWordCount = cumulativeWordOffsets(pages).total;
 
-  // The brief gates AI planning (objectives are drawn from it). Empty brief → 0 fields filled.
-  const briefSet = computeCompletion(book.brief ?? null) > 0;
-
-  // Pages with an objective but no prose yet are "ready to write" — surfaced as a dot on the AI tab.
-  const plannedCount = pages.filter((p) => getPageStatus(p as any) === "objective").length;
-
-  // Approval ledger for the build studio's step gates (brief→…→draft).
-  const journey = (book.journey as Partial<Record<string, string>> | null) ?? {};
-
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Helmet>
@@ -520,146 +495,65 @@ const BookDetails = () => {
                     />
                   ) : undefined
                 }
+                onOpenStudio={canEdit ? () => navigate(`/books/${bookSlug}/studio`) : undefined}
               />
 
             </div>
 
-            {/* Work area — Brief / Manuscript / AI, each on its own tab. */}
-            {canEdit ? (
-              <div className="space-y-6">
-                {/* Tabs: Manuscript leads the work; the Studio is the AI build surface */}
-                <div
-                  role="tablist"
-                  aria-label="Book workspace"
-                  className="flex flex-wrap gap-1 border-b border-[hsl(var(--pv-border-soft))]"
-                >
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={activeTab === "manuscript"}
-                    onClick={() => switchTab("manuscript")}
-                    className={cn(
-                      "pv-serif -mb-px inline-flex items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-[18px] transition-colors",
-                      activeTab === "manuscript"
-                        ? "border-foreground text-foreground"
-                        : "border-transparent text-[hsl(var(--pv-text-muted))] hover:text-foreground"
-                    )}
-                  >
-                    Manuscript
-                    {pages.length > 0 && (
-                      <span className="pv-mono rounded-full bg-[hsl(var(--pv-surface-2))] px-2 py-0.5 text-[11px] tabular-nums text-[hsl(var(--pv-text-muted))]">
-                        {pages.length}
-                      </span>
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={activeTab === "ai"}
-                    onClick={() => switchTab("ai")}
-                    className={cn(
-                      "pv-serif -mb-px inline-flex items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-[18px] transition-colors",
-                      activeTab === "ai"
-                        ? "border-foreground text-foreground"
-                        : "border-transparent text-[hsl(var(--pv-text-muted))] hover:text-foreground"
-                    )}
-                  >
-                    Studio
-                    {plannedCount > 0 && (
-                      <span
-                        className="h-[7px] w-[7px] rounded-full bg-[#5b6db8]"
-                        title={`${plannedCount} ${plannedCount === 1 ? "page" : "pages"} ready to write`}
-                        aria-label={`${plannedCount} pages ready to write`}
-                      />
-                    )}
-                  </button>
-                </div>
-
-                {/* Manuscript tab — writing & page management, full width */}
-                {activeTab === "manuscript" && (
-                  <>
-                    <PagesList
-                      pages={pages as any}
+            {/* Manuscript — the page list leads the book page; the AI build Studio is its own
+                full-screen route, reached via the "Studio" button in the header. */}
+            <div className={canEdit ? "space-y-6" : "border-t border-border pt-6"}>
+              <PagesList
+                pages={pages as any}
+                bookId={getNumericId(bookSlug)}
+                isDeleteMode={isDeleteMode}
+                canEdit={canEdit}
+                onDeleteModeChange={(isDelete) => setIsDeleteMode(isDelete)}
+                wordCount={manuscriptWordCount}
+                versionControl={
+                  canEdit ? (
+                    <VersionControlButton
                       bookId={getNumericId(bookSlug)}
-                      isDeleteMode={isDeleteMode}
-                      canEdit={canEdit}
-                      onDeleteModeChange={(isDelete) => setIsDeleteMode(isDelete)}
-                      wordCount={manuscriptWordCount}
-                      versionControl={
-                        <VersionControlButton
-                          bookId={getNumericId(bookSlug)}
-                          bookSlug={bookSlug}
-                          onSaveVersion={() => setIsCommitDialogOpen(true)}
-                        />
-                      }
+                      bookSlug={bookSlug}
+                      onSaveVersion={() => setIsCommitDialogOpen(true)}
                     />
-                    {/* Archived pages — only relevant in the manuscript context */}
-                    {canEdit && (
-                      <div className="mt-8 pb-2">
-                        {!showArchivedPages ? (
-                          <button
-                            type="button"
-                            onClick={() => setShowArchivedPages(true)}
-                            className="pv-serif text-[12px] italic text-[hsl(var(--pv-text-faint))] underline-offset-2 hover:text-[hsl(var(--pv-text-muted))] hover:underline transition-colors"
-                          >
-                            View archived pages
-                          </button>
-                        ) : (
-                          <div className="overflow-hidden rounded-2xl border border-border bg-[hsl(var(--pv-surface-2))]/40">
-                            <div className="flex items-center justify-between border-b border-[hsl(var(--pv-border-soft))] px-5 py-2.5">
-                              <span className="pv-mono text-[10.5px] uppercase tracking-[0.18em] text-[hsl(var(--pv-text-muted))]">
-                                Archived pages
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => setShowArchivedPages(false)}
-                                className="pv-serif text-[12px] italic text-[hsl(var(--pv-text-faint))] hover:text-[hsl(var(--pv-text-muted))] transition-colors"
-                              >
-                                Hide
-                              </button>
-                            </div>
-                            <ArchivedPagesSection
-                              bookId={getNumericId(bookSlug)}
-                              onRestore={fetchBookDetails}
-                            />
-                          </div>
-                        )}
+                  ) : undefined
+                }
+              />
+              {/* Archived pages — only relevant in the manuscript context */}
+              {canEdit && (
+                <div className="mt-8 pb-2">
+                  {!showArchivedPages ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowArchivedPages(true)}
+                      className="pv-serif text-[12px] italic text-[hsl(var(--pv-text-faint))] underline-offset-2 hover:text-[hsl(var(--pv-text-muted))] hover:underline transition-colors"
+                    >
+                      View archived pages
+                    </button>
+                  ) : (
+                    <div className="overflow-hidden rounded-2xl border border-border bg-[hsl(var(--pv-surface-2))]/40">
+                      <div className="flex items-center justify-between border-b border-[hsl(var(--pv-border-soft))] px-5 py-2.5">
+                        <span className="pv-mono text-[10.5px] uppercase tracking-[0.18em] text-[hsl(var(--pv-text-muted))]">
+                          Archived pages
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setShowArchivedPages(false)}
+                          className="pv-serif text-[12px] italic text-[hsl(var(--pv-text-faint))] hover:text-[hsl(var(--pv-text-muted))] transition-colors"
+                        >
+                          Hide
+                        </button>
                       </div>
-                    )}
-                  </>
-                )}
-
-                {/* AI tools tab — the build studio: one two-pane workbench (the 9-step ladder + the
-                    whole-book map beside an in-place Stage for every step and page). Replaces the old
-                    step-rail-over-dense-graph; the resolution ladder now lives inside the Navigator map
-                    and the per-page Stage. */}
-                {activeTab === "ai" && (
-                  <BuildStudio
-                    bookId={getNumericId(bookSlug)}
-                    briefSet={briefSet}
-                    brief={book.brief ?? null}
-                    pages={pages}
-                    journey={journey as any}
-                    isPublic={book.is_public}
-                    onBriefChange={(brief) => setBook((b) => (b ? { ...b, brief } : b))}
-                    onChanged={fetchBookDetails}
-                    onPublish={handlePublish}
-                  />
-                )}
-              </div>
-            ) : (
-              /* Read-only owner view — manuscript only (collaborators are redirected to the reader). */
-              <div className="border-t border-border pt-6">
-                <PagesList
-                  pages={pages as any}
-                  bookId={getNumericId(bookSlug)}
-                  isDeleteMode={isDeleteMode}
-                  canEdit={canEdit}
-                  onDeleteModeChange={(isDelete) => setIsDeleteMode(isDelete)}
-                  wordCount={manuscriptWordCount}
-                />
-              </div>
-            )}
+                      <ArchivedPagesSection
+                        bookId={getNumericId(bookSlug)}
+                        onRestore={fetchBookDetails}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
 
           </div>
 

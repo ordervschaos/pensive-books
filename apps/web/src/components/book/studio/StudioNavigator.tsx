@@ -1,4 +1,4 @@
-// StudioNavigator — the studio's left column. The 9-step build ladder (top) and the whole-book map
+// StudioNavigator — the studio's left column. The 8-step build ladder (top) and the whole-book map
 // (below), joined by one continuous thread so the sequence and the depth read as one surface. Click a
 // step → the Stage becomes that step's tool; click a page → the Stage becomes that page's resolution
 // ladder. Status comes entirely from the derived model.
@@ -19,13 +19,17 @@ interface NavigatorProps {
 }
 
 export function StudioNavigator({ model, selection, collapsed, runningStep, onSelectStep, onSelectPage, onToggleMovement }: NavigatorProps) {
-  const stepNo = model.buildSteps.findIndex((k) => model.statusOf(k) === "active" || model.statusOf(k) === "awaiting");
+  // "step N" points at the live focus: the active/awaiting step, else (everything done) the topmost
+  // step that's drifted out of sync with an upstream change.
+  const activeIdx = model.buildSteps.findIndex((k) => model.statusOf(k) === "active" || model.statusOf(k) === "awaiting");
+  const staleIdx = model.firstStale ? model.buildSteps.indexOf(model.firstStale) : -1;
+  const stepNo = activeIdx !== -1 ? activeIdx : staleIdx;
   const stepLabel = stepNo === -1 ? model.buildSteps.length : stepNo + 1;
 
   return (
-    <div className="relative max-h-[42vh] overflow-y-auto rounded-2xl border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/40 px-4 pb-12 pt-5 md:max-h-[calc(100vh-2rem)] md:self-start md:sticky md:top-4">
+    <div className="relative h-full min-h-0 overflow-y-auto border-b border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/40 px-4 pb-12 pt-5 md:border-b-0 md:border-r">
       <section className="relative">
-        <Head left="Build" right={`step ${stepLabel} / 9`} />
+        <Head left="Build" right={`step ${stepLabel} / ${model.buildSteps.length + POST_STEPS.length}`} />
         {model.buildSteps.map((k, i) => (
           <StepItem key={k} k={k} n={i + 1} model={model} selection={selection} running={runningStep === k} onSelect={onSelectStep} />
         ))}
@@ -103,6 +107,7 @@ function Head({ left, right }: { left: string; right: string }) {
 function StepItem({ k, n, model, selection, running, onSelect }: { k: StepKey; n: number; model: StudioModel; selection: Selection; running?: boolean; onSelect: (k: StepKey) => void }) {
   const status = model.statusOf(k);
   const dot = model.dotOf(k);
+  const stale = model.staleOf(k);
   const locked = status === "locked";
   const selected = selection.kind === "step" && selection.step === k;
   return (
@@ -115,7 +120,7 @@ function StepItem({ k, n, model, selection, running, onSelect }: { k: StepKey; n
       }`}
     >
       {selected && <span aria-hidden className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-[hsl(var(--pv-accent))]" />}
-      <StepDot state={dot} />
+      <StepDot state={dot} stale={stale} />
       <span className="pv-mono w-3 text-[9.5px] text-[hsl(var(--pv-text-faint))]">{n}</span>
       <span
         className={`pv-serif text-[15.5px] ${
@@ -131,6 +136,9 @@ function StepItem({ k, n, model, selection, running, onSelect }: { k: StepKey; n
         <span className="ml-auto flex items-center gap-1.5 pv-mono text-[9px] uppercase tracking-[0.12em] text-[hsl(var(--pv-accent))]">
           <span className="h-1.5 w-1.5 rounded-full bg-[hsl(var(--pv-accent))] animate-pulse" />running
         </span>
+      ) : stale ? (
+        // Done, but an upstream change has drifted it — flag where attention's needed next.
+        <span className="ml-auto pv-mono text-[9px] uppercase tracking-[0.12em] text-amber-600 dark:text-amber-500">review</span>
       ) : (
         <>
           {status === "active" && <span className="ml-auto pv-mono text-[9px] uppercase tracking-[0.12em] text-[hsl(var(--pv-accent))]">now</span>}

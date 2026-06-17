@@ -100,6 +100,24 @@ export function foundationsComplete(f: Foundations | null | undefined): boolean 
   return p.argument && p.ending && p.cast && p.tentpoles && p.voice;
 }
 
+/**
+ * A stable, content-only fingerprint of the pinned bedrock — hashed (studioModel.rootFingerprints)
+ * into each downstream step's approval so we can detect when foundations have MOVED since that step
+ * was signed off. Order-stable; ignores transient fields (candidates, pin metadata, killed tentpoles)
+ * so only changes that should re-open downstream work flag it.
+ */
+export function foundationsFingerprint(f: Foundations | null | undefined): string {
+  if (!f) return "";
+  const parts: string[] = [
+    f.argument?.text ?? "",
+    f.ending?.text ?? "",
+    f.voice_exemplar?.text ?? "",
+    ...(f.cast ?? []).map((c) => `${c.name}|${c.want ?? ""}|${c.wound ?? ""}|${c.lie ?? ""}|${c.role ?? ""}`),
+    ...(f.tentpoles ?? []).filter((t) => t.status !== "killed").map((t) => `${t.text}|${t.placed_page_id ?? ""}`),
+  ];
+  return parts.join("␟");
+}
+
 // ── Genre thread seeding (§3.1) ──────────────────────────────────────────────
 // On Brief save with a genre set, seed the promise ledger from a template. Seeded threads are
 // source 'genre_template', status 'planned', unpinned (author_locked false), freely deletable.

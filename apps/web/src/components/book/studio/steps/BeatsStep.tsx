@@ -195,14 +195,11 @@ export function BeatsStep({ bookId, model, steer, beforeGen, onChanged, onSelect
       {/* proseRunning: beats are done even though the bulk run is still active — show the sheet ── */}
       {hasBeats && (!buildActive || proseRunning) && (
         <div className={gapCount > 0 || buildPaused || proseRunning ? "mt-8 border-t border-[hsl(var(--pv-border-soft))]/60 pt-6" : ""}>
-          <BeatSheet bookId={bookId} model={model} onChanged={onChanged} onSelectPage={onSelectPage} beforeGen={beforeGen} />
-          {discardIds.length > 0 && (
-            <div className="mt-6 border-t border-[hsl(var(--pv-border-soft))]/40 pt-4">
-              <ActionLink tone="faint" busy={discarding} onClick={() => void discardAllBeats()}>
-                discard all beats &amp; prose, re-plan →
-              </ActionLink>
-            </div>
-          )}
+          <BeatSheet
+            bookId={bookId} model={model} onChanged={onChanged} onSelectPage={onSelectPage} beforeGen={beforeGen}
+            onDiscardAll={discardIds.length > 0 ? () => void discardAllBeats() : undefined}
+            discarding={discarding}
+          />
         </div>
       )}
 

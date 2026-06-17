@@ -4,12 +4,10 @@
 // existing, backend-wired leaf tools (the durable runs, the serial beat picker, the evaluator …) — the
 // redesign reshapes the surface around them without re-deriving their logic.
 import { useState } from "react";
-import { Lock, Send } from "lucide-react";
+import { AlertTriangle, Lock, MessagesSquare, Send } from "lucide-react";
 import { AIActionRow } from "../AIActionRow";
 import { BookBriefSection } from "../BookBriefSection";
 import { BookEvaluationSection, type CurrentRead } from "../BookEvaluationSection";
-import { EditorAgent } from "../EditorAgent";
-import { ReviseWithAI, type RevisionPrefill } from "../ReviseWithAI";
 import type { Brief } from "@/lib/brief";
 import type { Foundations } from "@/lib/foundations";
 import { useSteer, type SteerStep } from "@/lib/steer";
@@ -31,14 +29,14 @@ interface StageProps {
   brief: Brief | null;
   foundations: Foundations | null;
   isPublic: boolean;
-  revisionPrefill: RevisionPrefill | null;
   approving: StepKey | null;
+  /** Bumped on every studio refresh — lets a Stage body re-read state an editor-rail apply changed. */
+  editorEpoch: number;
   onApprove: (k: StepKey) => void;
   onChanged: () => void;
   onBriefChange: (brief: Brief) => void;
   onSpineStatus: (v: boolean) => void;
   onReadStatus: (v: boolean) => void;
-  onRevisePrefill: (p: RevisionPrefill | null) => void;
   onSelectStep: (k: StepKey) => void;
   onPublish: () => void;
   onSelectPage: (pageId: number) => void;
@@ -76,7 +74,7 @@ export function StudioStage(props: StageProps) {
   const width = selection.kind === "page" ? "max-w-[600px]" : "max-w-[700px]";
 
   return (
-    <div className="px-10 pb-20 pt-10">
+    <div className="h-full min-h-0 overflow-y-auto px-6 pb-16 pt-8">
       <div key={key} className={`mx-auto ${width} animate-in fade-in slide-in-from-bottom-1 duration-300`}>{body}</div>
     </div>
   );
@@ -98,9 +96,8 @@ function StepView(props: StageProps & { stepKey: StepKey }) {
 
   if (status === "locked") {
     const reason =
-      k === "revise" ? "Generate an outline first."
-        : k === "read" || k === "publish" ? "Write some pages first."
-          : "Clear the previous step to unlock.";
+      k === "read" || k === "publish" ? "Write some pages first."
+        : "Clear the previous step to unlock.";
     return (
       <div className="opacity-70">
         <StageHead eyebrow={EYEBROW.locked} title={STEP_LABEL[k]} caption={STEP_CAPTION[k]} />
@@ -111,14 +108,39 @@ function StepView(props: StageProps & { stepKey: StepKey }) {
     );
   }
 
-  const gate = (label: string, hint: string) =>
-    status === "awaiting" ? (
-      <Gate label={label} enabled hint={hint} busy={approving} onClick={() => props.onApprove(k)} />
-    ) : null;
+  // Done, but an upstream root (brief / foundations / spine) has changed since this step was approved.
+  // Not a block — a flag: revise the content here to match, then re-approve (which re-stamps & clears).
+  const stale = model.staleOf(k);
+
+  const gate = (label: string, hint: string) => {
+    if (status === "awaiting")
+      return <Gate label={label} enabled hint={hint} busy={approving} onClick={() => props.onApprove(k)} />;
+    if (stale)
+      return (
+        <Gate
+          label={label.replace(/^Approve/, "Re-approve")}
+          enabled
+          hint="re-confirm now that you've worked in the change from above"
+          busy={approving}
+          onClick={() => props.onApprove(k)}
+        />
+      );
+    return null;
+  };
 
   return (
     <div>
-      <StageHead eyebrow={EYEBROW[status] ?? "Focus · the next move"} title={STEP_LABEL[k]} caption={STEP_CAPTION[k]} />
+      <StageHead eyebrow={stale ? "Out of sync · review" : EYEBROW[status] ?? "Focus · the next move"} title={STEP_LABEL[k]} caption={STEP_CAPTION[k]} />
+
+      {stale && (
+        <div className="mb-5 flex items-start gap-3 rounded-2xl border border-amber-500/40 bg-amber-500/[0.06] px-5 py-4">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-500" />
+          <p className="pv-serif text-[14px] leading-relaxed text-[hsl(var(--pv-text-muted))]">
+            <b className="font-medium not-italic text-foreground">Something upstream changed since you approved this.</b>{" "}
+            Revise the content below to match, then re-approve. Nothing's blocked — this is just where your attention is needed next.
+          </p>
+        </div>
+      )}
 
       {/* Outline and draft keep the persistent steer at the top (no inline bundle yet). */}
       {steerStep && k !== "foundations" && k !== "spine" && k !== "beats" && (
@@ -139,14 +161,14 @@ function StepView(props: StageProps & { stepKey: StepKey }) {
       )}
       {k === "spine" && (
         <>
-          <SpineStep bookId={bookId} foundations={props.foundations} steer={steer} beforeGen={steer.save} onStatusChange={props.onSpineStatus} onChanged={props.onChanged} />
+          <SpineStep bookId={bookId} foundations={props.foundations} steer={steer} beforeGen={steer.save} reloadKey={props.editorEpoch} onStatusChange={props.onSpineStatus} onChanged={props.onChanged} />
           {gate("Approve the spine & continue", "the outline is built to realize it")}
         </>
       )}
       {k === "outline" && (
         <>
           <OutlineStep bookId={bookId} model={model} beforeGen={steer.save} onChanged={props.onChanged} onSelectPage={props.onSelectPage} />
-          {gate("Approve the outline & continue", "re-plan from the Revise step anytime")}
+          {gate("Approve the outline & continue", "re-plan from the outline tools anytime")}
         </>
       )}
       {k === "beats" && (
@@ -157,45 +179,29 @@ function StepView(props: StageProps & { stepKey: StepKey }) {
       )}
       {k === "draft" && (
         <>
-          <DraftStep bookId={bookId} model={model} beforeGen={steer.save} onChanged={props.onChanged} onSelectPage={props.onSelectPage} />
+          <DraftStep bookId={bookId} model={model} beforeGen={steer.save} onChanged={props.onChanged} onSelectPage={props.onSelectPage} onSelectStep={props.onSelectStep} />
           {gate("Approve — the draft is built", "read it through, then refine")}
         </>
       )}
       {k === "read" && (
         <div className="space-y-5">
-          {/* Per-note "Revise this" prefills the revise form (one note at a time). Acting on the
-              whole read happens in the zone below. */}
           <BookEvaluationSection
             bookId={bookId}
             onStatusChange={props.onReadStatus}
             onCurrentRead={setCurrentRead}
-            onRevise={(evaluation, instruction) => {
-              if (instruction) props.onRevisePrefill({ evaluation, instruction });
-            }}
           />
-          {/* One "act on this read" zone — the two ways to address the notes, framed together so the
-              collaborative agent and the unattended auto-fix read as one decision, not two stray
-              buttons. Only appears once a read exists. */}
+          {/* Acting on the read now happens in ONE place — the Draft step's prose editor (the rail).
+              Hand it the whole read; it reads the pages, asks about the judgment calls, and proposes a
+              revision it builds into your drafts. (Replaces the retired standalone Revise step.) */}
           {currentRead && (
-            <div className="space-y-3">
-              <div>
-                <div className="pv-eyebrow">Address the notes · two ways</div>
-                <p className="pv-serif mt-1.5 max-w-[640px] text-[13.5px] italic leading-relaxed text-[hsl(var(--pv-text-muted))]">
-                  Work through the notes with the agent — it reads, asks you about the judgment calls, then proposes a plan you approve — or auto-fix the critical &amp; major issues in one unattended pass.
-                </p>
-              </div>
-              <EditorAgent
-                bookId={bookId}
-                evaluation={currentRead.result}
-                readAt={currentRead.createdAt}
-                onReviewPlan={() => props.onSelectStep("revise")}
-              />
-            </div>
+            <AIActionRow
+              icon={<MessagesSquare className="h-4 w-4" />}
+              title="Work these notes in the prose editor"
+              description="Opens the Draft step's prose editor and hands it this read — it reads the pages, asks you about the judgment calls, then proposes a revision."
+              onClick={() => props.onSelectStep("draft")}
+            />
           )}
         </div>
-      )}
-      {k === "revise" && (
-        <ReviseWithAI bookId={bookId} prefill={props.revisionPrefill} onPrefillConsumed={() => props.onRevisePrefill(null)} onApplied={props.onChanged} />
       )}
       {k === "publish" && (
         props.isPublic ? (

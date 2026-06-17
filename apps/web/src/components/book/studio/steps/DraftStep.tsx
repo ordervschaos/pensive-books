@@ -5,7 +5,7 @@
 //     live, resumable, cancel/restart on stall.
 // The Stage owns the head + approve gate; this renders the body.
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, ArrowRight, Check, Sparkles } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, ChevronDown, Sparkles } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { invokeGenerateBook } from "@/lib/generateBook";
 import { useLatestTaskRow, type TaskRow } from "@/hooks/useLatestTaskRow";
@@ -14,15 +14,36 @@ import { discardProse } from "@/lib/discardLadder";
 import { NotifyWhenDone } from "../../NotifyWhenDone";
 import { RunControls } from "../../RunControls";
 import type { StudioModel } from "../studioModel";
-import { ActionLink, DoneStrip, Hero, ProgressMeter, RunningCard } from "../studioUi";
+import { ActionLink, DoneStrip, Hero, Pip3, ProgressMeter, RunningCard } from "../studioUi";
 
 interface BuildProgress { done: number; total: number; phase?: string; stage?: string }
 interface BuildRow extends TaskRow { progress: BuildProgress | null; error: string | null }
 
-export function DraftStep({ bookId, model, beforeGen, onChanged, onSelectPage }: { bookId: number; model: StudioModel; beforeGen: () => Promise<void>; onChanged: () => void; onSelectPage: (pageId: number) => void }) {
+function draftAt(model: StudioModel): string | null {
+  const entry = model.journey.draft;
+  if (!entry) return null;
+  const iso = typeof entry === "string" ? entry : entry.at;
+  if (!iso) return null;
+  try {
+    return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(iso));
+  } catch {
+    return null;
+  }
+}
+
+export function DraftStep({ bookId, model, beforeGen, onChanged, onSelectPage, onSelectStep }: { bookId: number; model: StudioModel; beforeGen: () => Promise<void>; onChanged: () => void; onSelectPage: (pageId: number) => void; onSelectStep: (k: "beats") => void }) {
   const { toast } = useToast();
   const [notify, setNotify] = useState(false);
   const [discarding, setDiscarding] = useState(false);
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const doneKey = `draft-done-dismissed:${bookId}`;
+  const [doneDismissed, setDoneDismissed] = useState(() => {
+    try { return !!localStorage.getItem(doneKey); } catch { return false; }
+  });
+  const dismissDone = () => {
+    try { localStorage.setItem(doneKey, "1"); } catch { /* ignore */ }
+    setDoneDismissed(true);
+  };
   const notifyRef = useRef(false);
   const notifiedRef = useRef<number | null>(null);
   const watchedRef = useRef<number | null>(null);
@@ -118,21 +139,31 @@ export function DraftStep({ bookId, model, beforeGen, onChanged, onSelectPage }:
   const firstEmpty = model.textPages.find((p) => p.objective !== "gap" && p.prose === "gap");
   const lastWritten = [...model.textPages].reverse().find((p) => p.prose !== "gap");
 
+  const pageMap = (
+    <PageMap model={model} collapsed={collapsed} onSelectPage={onSelectPage} onToggle={(key) => setCollapsed((c) => ({ ...c, [key]: !c[key] }))} />
+  );
+
   if (running) {
     return (
-      <RunningCard
-        label={progress?.phase ?? "Writing pages"} done={progress?.done} total={progress?.total} unit="page"
-        controls={<RunControls table="book_generations" row={row} stale={stale} onRestart={runAll} refetch={refetch} />}
-      />
+      <div>
+        <RunningCard
+          label={progress?.phase ?? "Writing pages"} done={progress?.done} total={progress?.total} unit="page"
+          controls={<RunControls table="book_generations" row={row} stale={stale} onRestart={runAll} refetch={refetch} />}
+        />
+        <div className="mt-8">{pageMap}</div>
+      </div>
     );
   }
 
   if (allDone) {
+    const completedAt = draftAt(model);
     return (
       <div>
-        <DoneStrip icon={<Check className="h-5 w-5" />} title="Every page written">
-          All {total} pages have prose. {lastWritten && <button type="button" onClick={() => onSelectPage(lastWritten.id)} className="italic text-[hsl(var(--pv-accent))] hover:opacity-75">open a page →</button>}
-        </DoneStrip>
+        {!doneDismissed && (
+          <DoneStrip icon={<Check className="h-5 w-5" />} title="Every page written" onDismiss={dismissDone}>
+            All {total} pages have prose.{completedAt && <span className="ml-1 text-[hsl(var(--pv-text-faint))]">Approved {completedAt}.</span>}
+          </DoneStrip>
+        )}
         {staleIds.length > 0 && (
           <div className="mt-4 rounded-2xl border border-amber-500/30 bg-amber-500/[0.06] px-6 py-4">
             <div className="flex items-start gap-3">
@@ -156,8 +187,13 @@ export function DraftStep({ bookId, model, beforeGen, onChanged, onSelectPage }:
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
               <div>
                 <p className="pv-serif text-[14px] text-foreground">
-                  {beatStaleCount} {beatStaleCount === 1 ? "page has a beat" : "pages have beats"} out of sync with {beatStaleCount === 1 ? "its" : "their"} objective — regenerate {beatStaleCount === 1 ? "it" : "them"} in the Beats step, then re-draft here.
+                  {beatStaleCount} {beatStaleCount === 1 ? "page has a beat" : "pages have beats"} out of sync with {beatStaleCount === 1 ? "its" : "their"} objective.
                 </p>
+                <div className="mt-2">
+                  <ActionLink onClick={() => onSelectStep("beats")}>
+                    go to Beats to regenerate →
+                  </ActionLink>
+                </div>
               </div>
             </div>
           </div>
@@ -167,6 +203,7 @@ export function DraftStep({ bookId, model, beforeGen, onChanged, onSelectPage }:
             discard the prose & re-draft →
           </ActionLink>
         </div>
+        <div className="mt-8">{pageMap}</div>
       </div>
     );
   }
@@ -194,6 +231,70 @@ export function DraftStep({ bookId, model, beforeGen, onChanged, onSelectPage }:
         )}
       </div>
       <div className="mt-4"><NotifyWhenDone enabled={notify} onChange={setNotify} /></div>
+      <div className="mt-8">{pageMap}</div>
+    </div>
+  );
+}
+
+function PageMap({ model, collapsed, onSelectPage, onToggle }: {
+  model: StudioModel;
+  collapsed: Record<string, boolean>;
+  onSelectPage: (pageId: number) => void;
+  onToggle: (key: string) => void;
+}) {
+  if (model.movements.length === 0) return null;
+  return (
+    <div>
+      <div className="mb-3 flex items-center justify-between px-0.5">
+        <span className="pv-mono text-[10px] uppercase tracking-[0.18em] text-[hsl(var(--pv-text-muted))]">The book · map</span>
+        <span className="pv-serif text-[11px] italic text-[hsl(var(--pv-text-faint))]">{model.sync.pct}% · {model.sync.gaps} gaps</span>
+      </div>
+      {model.movements.map((m) => {
+        const isCollapsed = !!collapsed[m.key];
+        return (
+          <div key={m.key} className="mb-0.5">
+            <button
+              type="button"
+              onClick={() => onToggle(m.key)}
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-[hsl(var(--pv-surface-2))]"
+            >
+              <ChevronDown className={`h-3.5 w-3.5 text-[hsl(var(--pv-text-faint))] transition-transform ${isCollapsed ? "-rotate-90" : ""}`} />
+              <span className="pv-mono text-[9.5px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-muted))]">
+                {m.num ? `${m.num} · ` : ""}{m.title}
+              </span>
+              <span className="ml-auto pv-mono text-[11px] text-[hsl(var(--pv-text-faint))]">{m.pages.length}</span>
+            </button>
+            {!isCollapsed && m.pages.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => onSelectPage(p.id)}
+                className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 pl-[18px] text-left transition-colors hover:bg-[hsl(var(--pv-surface-2))]"
+              >
+                <span
+                  className="h-2 w-2 shrink-0 rounded-full border-[1.4px] transition-colors"
+                  style={{
+                    background: p.beat !== "gap" && p.prose !== "gap" ? "hsl(var(--pv-accent))" : "transparent",
+                    borderColor: p.objective !== "gap" ? "hsl(var(--pv-accent))" : "hsl(var(--pv-text-faint))",
+                  }}
+                />
+                <span className="flex-1 truncate pv-serif text-[13.5px] text-[hsl(var(--pv-text-muted))]">
+                  {model.tentpolePageIds.has(p.id) && (
+                    <span className="mr-1 text-[hsl(var(--pv-accent))]" aria-hidden>◆</span>
+                  )}
+                  {p.title || "(untitled)"}
+                </span>
+                <Pip3 objective={p.objective} beat={p.beat} prose={p.prose} />
+              </button>
+            ))}
+          </div>
+        );
+      })}
+      <div className="mt-3 flex flex-wrap items-center gap-x-3.5 gap-y-1 px-2 pv-serif text-[12px] text-[hsl(var(--pv-text-muted))]">
+        <span className="flex items-center gap-1.5"><span className="h-[7px] w-[7px] rounded-full bg-[hsl(var(--pv-accent))]" /> written</span>
+        <span className="flex items-center gap-1.5"><span className="h-[7px] w-[7px] rounded-full border-[1.5px] border-[hsl(var(--pv-text-faint))]/60" /> planned</span>
+        <span className="italic text-[hsl(var(--pv-text-faint))]">objective · beat · prose</span>
+      </div>
     </div>
   );
 }
