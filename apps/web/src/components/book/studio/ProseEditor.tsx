@@ -141,92 +141,98 @@ export function ProseEditor({ bookId, pageId, proseRemaining = 0, onChanged }: {
   const showComposer = !active && !(done && !dismissed);
 
   return (
-    <Panel variant="soft" className="px-5 py-4">
-      <div className="flex items-center gap-2">
-        <Wand2 className="h-4 w-4 text-[hsl(var(--pv-accent))]" />
-        <Eyebrow tone="accent">{pageId != null ? "Prose editor · this page" : "Prose editor"}</Eyebrow>
+    <Panel variant="soft" className="flex h-full flex-col px-4 py-3.5">
+      {/* ── Header — shrink-0, always visible ── */}
+      <div className="shrink-0">
+        <div className="flex items-center gap-2">
+          <Wand2 className="h-4 w-4 text-[hsl(var(--pv-accent))]" />
+          <Eyebrow tone="accent">{pageId != null ? "Prose editor · this page" : "Prose editor"}</Eyebrow>
+        </div>
+        <p className="pv-serif mt-1 text-[12.5px] italic text-[hsl(var(--pv-text-faint))]">
+          {pageId != null
+            ? "Describe a change to this page — it reads the page and its context, asks about the judgment calls, then proposes a revision it builds into your draft."
+            : "Describe a change to the prose — it reads the pages, asks about the judgment calls, then proposes a revision it builds into your drafts."}
+        </p>
       </div>
-      <p className="pv-serif mt-1 text-[12.5px] italic text-[hsl(var(--pv-text-faint))]">
-        {pageId != null
-          ? "Describe a change to this page — it reads the page and its context, asks about the judgment calls, then proposes a revision it builds into your draft."
-          : "Describe a change to the prose — it reads the pages, asks about the judgment calls, then proposes a revision it builds into your drafts."}
-      </p>
 
-      {/* The narrated step feed — the agent's honest activity log. */}
-      {active && steps.length > 0 && (
-        <div className="mt-4 space-y-1">
-          {steps.map((s, i) => (
-            <p key={i} className={`pv-serif text-[13px] leading-relaxed ${s.t === "ask" || s.t === "plan" ? "text-foreground" : "text-[hsl(var(--pv-text-muted))]"}`}>
-              <span className="pv-mono mr-1.5 text-[11px] text-[hsl(var(--pv-text-faint))]">{STEP_MARK[s.t]}</span>{s.label}
-            </p>
-          ))}
-        </div>
-      )}
-
-      {running && !stale && <WorkingIndicator phrases={[lastStep]} hint="reading & planning" />}
-      {running && stale && (
-        <p className="pv-serif mt-3 text-[13.5px] leading-relaxed text-amber-600">The run hasn't advanced in a while — it may have died. Stop it and start again.</p>
-      )}
-      {active && (
-        <button type="button" onClick={() => void stop()} disabled={row?.cancel_requested}
-          className="pv-serif mt-2 text-[12.5px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">
-          {row?.cancel_requested ? "Stopping…" : "Stop"}
-        </button>
-      )}
-
-      {/* The question card — the agent paused on a creative fork. */}
-      {awaiting && row?.pending && (
-        <div className="mt-4 space-y-3 rounded-xl border border-[hsl(var(--pv-accent))]/30 bg-[hsl(var(--pv-accent))]/[0.07] p-4">
-          <p className="pv-serif text-[14.5px] leading-relaxed text-foreground">{row.pending.question}</p>
-          {(row.pending.options ?? []).length > 0 && (
-            <div className="flex flex-col items-start gap-1.5">
-              {row.pending.options!.map((opt, i) => (
-                <button key={i} type="button" disabled={busy} onClick={() => void sendAnswer(opt)}
-                  className="pv-serif rounded-lg border border-[hsl(var(--pv-border-soft))] bg-background px-3 py-1.5 text-left text-[13.5px] leading-snug text-foreground hover:border-[hsl(var(--pv-accent))]/50">
-                  {opt}
-                </button>
-              ))}
-            </div>
-          )}
-          <div className="flex items-end gap-2">
-            <Textarea value={answer} onChange={(e) => setAnswer(e.target.value)} rows={1} placeholder="…or answer in your own words"
-              className="pv-serif min-h-[40px] flex-1 text-[13.5px] leading-relaxed" />
-            <button type="button" onClick={() => void sendAnswer(answer)} disabled={busy || !answer.trim()}
-              className="inline-flex h-[40px] w-[40px] shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-40">
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
-            </button>
+      {/* ── Scroll region — fills the rail between header and composer ── */}
+      <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
+        {/* The narrated step feed — the agent's honest activity log. */}
+        {active && steps.length > 0 && (
+          <div className="space-y-1">
+            {steps.map((s, i) => (
+              <p key={i} className={`pv-serif text-[13px] leading-relaxed ${s.t === "ask" || s.t === "plan" ? "text-foreground" : "text-[hsl(var(--pv-text-muted))]"}`}>
+                <span className="pv-mono mr-1.5 text-[11px] text-[hsl(var(--pv-text-faint))]">{STEP_MARK[s.t]}</span>{s.label}
+              </p>
+            ))}
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Done — the report + the Apply handoff (or just the report when it only answered). */}
-      {done && !dismissed && (
-        <div className="mt-4 rounded-xl border border-[hsl(var(--pv-accent))]/30 bg-[hsl(var(--pv-accent))]/10 p-4">
-          <div className="flex items-start justify-between gap-3">
-            <p className="pv-serif text-[14px] leading-relaxed text-foreground">{row?.report || "The prose editor finished."}</p>
-            <button type="button" onClick={() => setDismissedDoneId(row?.id ?? null)} aria-label="Dismiss" className="shrink-0 text-[hsl(var(--pv-text-faint))] hover:text-foreground"><X className="h-4 w-4" /></button>
-          </div>
-          {row?.revision_id != null && (
-            <div className="mt-3 flex items-center gap-4">
-              <button type="button" onClick={() => row.revision_id != null && void apply(row.revision_id)} disabled={applying}
-                className="pv-serif inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-[13.5px] text-primary-foreground disabled:opacity-50">
-                {applying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />} Apply — rework the drafts
+        {running && !stale && <WorkingIndicator phrases={[lastStep]} hint="reading & planning" />}
+        {running && stale && (
+          <p className="pv-serif mt-3 text-[13.5px] leading-relaxed text-amber-600">The run hasn't advanced in a while — it may have died. Stop it and start again.</p>
+        )}
+        {active && (
+          <button type="button" onClick={() => void stop()} disabled={row?.cancel_requested}
+            className="pv-serif mt-2 text-[12.5px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">
+            {row?.cancel_requested ? "Stopping…" : "Stop"}
+          </button>
+        )}
+
+        {/* The question card — the agent paused on a creative fork. */}
+        {awaiting && row?.pending && (
+          <div className="mt-4 space-y-3 rounded-xl border border-[hsl(var(--pv-accent))]/30 bg-[hsl(var(--pv-accent))]/[0.07] p-4">
+            <p className="pv-serif text-[14.5px] leading-relaxed text-foreground">{row.pending.question}</p>
+            {(row.pending.options ?? []).length > 0 && (
+              <div className="flex flex-col items-start gap-1.5">
+                {row.pending.options!.map((opt, i) => (
+                  <button key={i} type="button" disabled={busy} onClick={() => void sendAnswer(opt)}
+                    className="pv-serif rounded-lg border border-[hsl(var(--pv-border-soft))] bg-background px-3 py-1.5 text-left text-[13.5px] leading-snug text-foreground hover:border-[hsl(var(--pv-accent))]/50">
+                    {opt}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="flex items-end gap-2">
+              <Textarea value={answer} onChange={(e) => setAnswer(e.target.value)} rows={1} placeholder="…or answer in your own words"
+                className="pv-serif min-h-[40px] flex-1 text-[13.5px] leading-relaxed" />
+              <button type="button" onClick={() => void sendAnswer(answer)} disabled={busy || !answer.trim()}
+                className="inline-flex h-[40px] w-[40px] shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-40">
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
               </button>
-              <ActionLink tone="faint" onClick={() => setDismissedDoneId(row?.id ?? null)}>dismiss</ActionLink>
             </div>
-          )}
-        </div>
-      )}
+          </div>
+        )}
 
-      {row?.status === "error" && <RunError msg={row.error ?? "The prose editor stopped."} />}
-      {row?.status === "cancelled" && (
-        <p className="pv-serif mt-3 text-[12.5px] italic text-[hsl(var(--pv-text-faint))]">Run cancelled — nothing was changed.</p>
-      )}
+        {/* Done — the report + the Apply handoff (or just the report when it only answered). */}
+        {done && !dismissed && (
+          <div className="mt-4 rounded-xl border border-[hsl(var(--pv-accent))]/30 bg-[hsl(var(--pv-accent))]/10 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <p className="pv-serif text-[14px] leading-relaxed text-foreground">{row?.report || "The prose editor finished."}</p>
+              <button type="button" onClick={() => setDismissedDoneId(row?.id ?? null)} aria-label="Dismiss" className="shrink-0 text-[hsl(var(--pv-text-faint))] hover:text-foreground"><X className="h-4 w-4" /></button>
+            </div>
+            {row?.revision_id != null && (
+              <div className="mt-3 flex items-center gap-4">
+                <button type="button" onClick={() => row.revision_id != null && void apply(row.revision_id)} disabled={applying}
+                  className="pv-serif inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-[13.5px] text-primary-foreground disabled:opacity-50">
+                  {applying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />} Apply — rework the drafts
+                </button>
+                <ActionLink tone="faint" onClick={() => setDismissedDoneId(row?.id ?? null)}>dismiss</ActionLink>
+              </div>
+            )}
+          </div>
+        )}
 
-      {/* Composer — start a fresh instruction (hidden while a run is active or its report is up). */}
+        {row?.status === "error" && <RunError msg={row.error ?? "The prose editor stopped."} />}
+        {row?.status === "cancelled" && (
+          <p className="pv-serif mt-3 text-[12.5px] italic text-[hsl(var(--pv-text-faint))]">Run cancelled — nothing was changed.</p>
+        )}
+      </div>
+
+      {/* ── Composer — pinned to the bottom (hidden while a run is active or its report is up). ── */}
       {showComposer && (
-        <>
-          <div className="mt-4 flex items-end gap-2">
+        <div className="mt-3 shrink-0">
+          <div className="flex items-end gap-2">
             <Textarea value={draft} onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void start({ instruction: draft.trim() }); } }}
               rows={1} placeholder={pageId != null ? 'e.g. "Make this page colder; cut the weather."' : 'e.g. "Make chapter 3 darker and cut the map subplot."'} disabled={busy}
@@ -248,7 +254,7 @@ export function ProseEditor({ bookId, pageId, proseRemaining = 0, onChanged }: {
               </ActionLink>
             </div>
           )}
-        </>
+        </div>
       )}
     </Panel>
   );
