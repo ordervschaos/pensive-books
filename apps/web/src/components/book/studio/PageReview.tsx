@@ -1,11 +1,11 @@
 // PageReview — the Stage in "open a page" mode: that page's full resolution ladder
-// (objective · beat · prose), each level readable and hand-editable. Chat-first redesign:
+// (objective · beat · prose · scene), each level readable and hand-editable. Chat-first redesign:
 // generation/revision lives in the right-rail (ProseEditor/ReviseChat). The center is a near-manual
 // editor — objective + beat are editable here, prose is read-only (AI in the rail).
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
-import { ArrowDown, ExternalLink, Loader2, Lock, Trash2 } from "lucide-react";
+import { ArrowDown, ChevronDown, ExternalLink, Loader2, Lock, Trash2 } from "lucide-react";
 import { AutoTextarea } from "@/components/ui/auto-textarea";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -39,6 +39,10 @@ export function PageReview({ bookId, model, pageId, onChanged, onSelectPage }: P
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<"objective" | null>(null);
   const [showLedger, setShowLedger] = useState(false);
+  // Collapsible state for Objective and Beat: collapsed when content exists, expanded when empty.
+  // Initialised after load (see useEffect below).
+  const [objectiveOpen, setObjectiveOpen] = useState(true);
+  const [beatOpen, setBeatOpen] = useState(true);
   const reqRef = useRef(0);
 
   useEffect(() => {
@@ -51,6 +55,9 @@ export function PageReview({ bookId, model, pageId, onChanged, onSelectPage }: P
     ]).then(([o, b, p]) => {
       if (req !== reqRef.current) return;
       setObjective(o); setBeat(b); setProse(p);
+      // Collapse when content exists (glanceable), expand when empty (author needs to fill).
+      setObjectiveOpen(!o.trim());
+      setBeatOpen(!b.trim());
     }).finally(() => { if (req === reqRef.current) setLoading(false); });
   }, [bookId, pageId]);
 
@@ -78,13 +85,6 @@ export function PageReview({ bookId, model, pageId, onChanged, onSelectPage }: P
         </span>
         <span className="text-[hsl(var(--pv-text-faint))]">▸</span>
         <span className="italic">page {idx + 1}</span>
-        <ActionLink
-          icon={<ExternalLink className="h-3.5 w-3.5" />}
-          onClick={() => navigate(`/books/${bookId}/pages/${pageId}`)}
-          className="ml-auto"
-        >
-          Open in Manuscript
-        </ActionLink>
       </div>
       <h1 className="pv-serif mt-3 text-[36px] leading-[1.14] tracking-[-0.015em] text-foreground">{page.title || "(untitled)"}</h1>
       <p className="pv-serif mt-2 text-[15px] leading-[1.5] text-[hsl(var(--pv-text-muted))]">
@@ -112,7 +112,15 @@ export function PageReview({ bookId, model, pageId, onChanged, onSelectPage }: P
         </p>
       ) : (
         <>
-          <LevelCard label="Objective" sub="the plan's contract" state={objective.trim() ? "synced" : "gap"}>
+          <LevelCard
+            label="Objective"
+            sub="the plan's contract"
+            state={objective.trim() ? "synced" : "gap"}
+            collapsible
+            open={objectiveOpen}
+            onToggle={() => setObjectiveOpen((v) => !v)}
+            preview={objective.trim()}
+          >
             <AutoTextarea
               value={objective}
               onChange={(e) => setObjective(e.target.value)}
@@ -124,7 +132,15 @@ export function PageReview({ bookId, model, pageId, onChanged, onSelectPage }: P
 
           <DownArrow />
 
-          <LevelCard label="Beat" sub="what happens, in order" state={beat.trim() ? "synced" : "gap"}>
+          <LevelCard
+            label="Beat"
+            sub="what happens, in order"
+            state={beat.trim() ? "synced" : "gap"}
+            collapsible
+            open={beatOpen}
+            onToggle={() => setBeatOpen((v) => !v)}
+            preview={beat.trim()}
+          >
             {!beat.trim() && (
               <p className="pv-serif mb-3 text-[13.5px] italic text-[hsl(var(--pv-text-faint))]">
                 No beat yet — write it here, or plan it in the editor on the right →
@@ -138,10 +154,6 @@ export function PageReview({ bookId, model, pageId, onChanged, onSelectPage }: P
               placeholder="What happens in this beat…"
             />
           </LevelCard>
-
-          <DownArrow />
-
-          <SceneLevel bookId={bookId} pageId={pageId} beatExists={!!beat.trim()} />
 
           <DownArrow />
 
@@ -161,7 +173,19 @@ export function PageReview({ bookId, model, pageId, onChanged, onSelectPage }: P
                 <Lock className="h-3.5 w-3.5" /> Plan the beat first — prose is written from it.
               </p>
             )}
+            <div className="mt-4 border-t border-[hsl(var(--pv-border-soft))]/50 pt-3">
+              <ActionLink
+                icon={<ExternalLink className="h-3.5 w-3.5" />}
+                onClick={() => navigate(`/books/${bookId}/pages/${pageId}`)}
+              >
+                Open in Manuscript ↗
+              </ActionLink>
+            </div>
           </LevelCard>
+
+          <DownArrow />
+
+          <SceneLevel bookId={bookId} pageId={pageId} beatExists={!!beat.trim()} />
         </>
       )}
 
@@ -181,18 +205,54 @@ export function PageReview({ bookId, model, pageId, onChanged, onSelectPage }: P
   );
 }
 
-function LevelCard({ label, sub, state, children }: { label: string; sub: string; state: CellState | "locked"; children: ReactNode }) {
+interface LevelCardProps {
+  label: string;
+  sub: string;
+  state: CellState | "locked";
+  children: ReactNode;
+  /** When true the header becomes a toggle button that shows/hides the body. */
+  collapsible?: boolean;
+  /** Controlled open state (only used when collapsible=true). */
+  open?: boolean;
+  /** Called when the header is clicked (only used when collapsible=true). */
+  onToggle?: () => void;
+  /** One-line glanceable text shown in the header while collapsed. */
+  preview?: string;
+}
+
+function LevelCard({ label, sub, state, children, collapsible, open = true, onToggle, preview }: LevelCardProps) {
   const dim = state === "gap" || state === "locked";
+  const isOpen = !collapsible || open;
+
+  const header = (
+    <div className={`flex items-center gap-2.5 ${isOpen && !dim ? "mb-5 border-b border-[hsl(var(--pv-border-soft))]/70 pb-3" : ""}`}>
+      <Pip state={state === "locked" ? "gap" : state} />
+      <Eyebrow>{label}</Eyebrow>
+      <span className="pv-serif text-[12.5px] italic text-[hsl(var(--pv-text-faint))]">· {sub}</span>
+      {/* Collapsed preview — truncated one-liner */}
+      {collapsible && !open && preview && (
+        <span className="ml-2 flex-1 truncate pv-serif text-[12.5px] text-[hsl(var(--pv-text-muted))]">{preview}</span>
+      )}
+      {state === "synced" && isOpen && <span className="ml-auto pv-mono text-[9px] uppercase tracking-[0.12em] text-[hsl(var(--pv-accent))]">in sync</span>}
+      {state === "locked" && <Lock className="ml-auto h-3.5 w-3.5 text-[hsl(var(--pv-text-faint))]" />}
+      {collapsible && (
+        <ChevronDown
+          className={`ml-auto h-3.5 w-3.5 shrink-0 text-[hsl(var(--pv-text-faint))] transition-transform ${open ? "rotate-0" : "-rotate-90"}`}
+        />
+      )}
+    </div>
+  );
+
   return (
     <Panel variant={dim ? "dashed" : "soft"} className={`px-7 py-6 ${state === "locked" ? "opacity-65" : ""}`}>
-      <div className={`flex items-center gap-2.5 ${dim ? "" : "mb-5 border-b border-[hsl(var(--pv-border-soft))]/70 pb-3"}`}>
-        <Pip state={state === "locked" ? "gap" : state} />
-        <Eyebrow>{label}</Eyebrow>
-        <span className="pv-serif text-[12.5px] italic text-[hsl(var(--pv-text-faint))]">· {sub}</span>
-        {state === "synced" && <span className="ml-auto pv-mono text-[9px] uppercase tracking-[0.12em] text-[hsl(var(--pv-accent))]">in sync</span>}
-        {state === "locked" && <Lock className="ml-auto h-3.5 w-3.5 text-[hsl(var(--pv-text-faint))]" />}
-      </div>
-      {children}
+      {collapsible ? (
+        <button type="button" onClick={onToggle} className="w-full text-left">
+          {header}
+        </button>
+      ) : (
+        header
+      )}
+      {isOpen && children}
     </Panel>
   );
 }
