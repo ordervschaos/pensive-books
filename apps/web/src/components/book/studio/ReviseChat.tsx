@@ -44,6 +44,10 @@ const LAYER_UI: Record<RevisionLayer, LayerUi> = {
       { label: "Summarize", prompt: "Summarize the beat sheet in a few lines — the shape of the story as it stands." },
       { label: "Evaluate", prompt: "Evaluate the beat sheet against the fiction criteria. Where is it strong, where does it sag, and what's the single highest-leverage fix?" },
     ],
+    emptyBlurb: "No beats yet — plan them here from your objectives, or talk through the structure first. You review the plan before anything's applied.",
+    emptyChips: [
+      { label: "Plan all the beats", prompt: "Plan a beat for every page that has an objective but no beat yet — the strongest beat for each, serving the spine and consistent with the pages around it. Propose them as a plan I can review." },
+    ],
   },
   spine: {
     title: "Spine editor",
@@ -92,7 +96,8 @@ export function ReviseChat({ bookId, layer, onChanged, model, currentSpine, curr
   const layerEmpty =
     layer === "spine" ? !currentSpine?.trim()
       : layer === "foundations" ? !currentFoundations?.argument?.text?.trim()
-        : false;
+        : layer === "beats" ? !model?.counts?.beats
+          : false;
   const chips = (layerEmpty && ui.emptyChips) ? ui.emptyChips : ui.chips;
   const blurb = (layerEmpty && ui.emptyBlurb) ? ui.emptyBlurb : ui.blurb;
   const { row, refetch } = useLatestTaskRow<RevisionChatRow>({
