@@ -1,7 +1,7 @@
 // studioUi — the small shared primitives the Navigator and Stage both compose: resolution pips, the
 // step dot, and the Stage's head / hero / gate chrome. Pure presentation, Paper-DS tokens only.
 import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from "react";
-import { AlertTriangle, ArrowRight, Check, Loader2, Lock, Plus, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, ChevronDown, ChevronUp, Loader2, Lock, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { CellState } from "@/lib/planGraph";
 import type { DotState } from "./studioModel";
@@ -29,7 +29,7 @@ export function GenRow({ label, descLabel, chips = [], onFire, busy, className }
   const btnLabel = noteCount > 0 ? `${label} · ${noteCount} note${noteCount > 1 ? "s" : ""}` : label;
 
   const toggle = (chip: string) =>
-    setSelected((prev) => { const n = new Set(prev); n.has(chip) ? n.delete(chip) : n.add(chip); return n; });
+    setSelected((prev) => { const n = new Set(prev); if (n.has(chip)) { n.delete(chip); } else { n.add(chip); } return n; });
 
   const fire = () => {
     const parts = [...selected, ...(noteOpen && noteText.trim() ? [noteText.trim()] : [])];
