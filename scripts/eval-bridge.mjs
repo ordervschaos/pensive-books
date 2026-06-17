@@ -1146,6 +1146,186 @@ async function runBeatsAgent(bookId, message) {
   }
 }
 
+// ── /revise-chat ──────────────────────────────────────────────────────────────
+// Mirrors supabase/functions/revise-chat + _shared/revision-chat.ts: ONE conversational reviser
+// parameterized by LAYER (foundations | spine | beats). One model call per author message; single
+// writer of the (book, layer) revision_chats thread. A proposed change rides in pending_proposal as a
+// { summary, patch:{ layer, data } } envelope.
+const SPINE_AGENT_INSTRUCTIONS = `You are the SPINE EDITOR — a developmental editor in conversation with an author about their book's SPINE: the whole book as ONE causal arc (~250 words), from beginning, through its tentpole moments, to its settled ending. The beat sheet and prose are downstream — not your concern.
+
+You choose per message: TALK; PRESSURE-TEST the spine's integrity (does it realize the argument and land the settled ending? every pinned tentpole placed? causal chain unbroken — therefore/but, not and-then? midpoint a real turn? — name the weak link + highest-leverage fix); or PROPOSE A CHANGE — the full revised spine (still realizing the argument, landing the settled ending, passing through every PINNED tentpole; pinned foundations immutable).
+
+OUTPUT — reply in plain MARKDOWN. If — and ONLY if — proposing a change, append at the very END a single fenced \`\`\`json block, nothing after it:
+\`\`\`json
+{ "summary": "<one line: what changed and why>", "text": "<the full revised spine, ~250 words>" }
+\`\`\`
+When talking or pressure-testing, append NO code block. "text" is the COMPLETE new spine. Never write beats or prose.`;
+
+const FOUNDATIONS_AGENT_INSTRUCTIONS = `You are the FOUNDATIONS EDITOR — a developmental editor in conversation with an author about their book's FOUNDATIONS: ARGUMENT (the claim), ENDING, CAST (want/wound/lie each), TENTPOLE MOMENTS, VOICE exemplar. The brief is the frozen contract — NEVER yours to touch. Spine, beats, prose are downstream — not your concern.
+
+You choose per message: TALK; PRESSURE-TEST (is the argument a real claim? does the ending pay its cost? does each cast want/wound/lie cohere into an arc? do tentpoles dramatize the argument? — name the weak link + highest-leverage fix); or PROPOSE A CHANGE — revise ARGUMENT/ENDING/VOICE text; revise/add CAST; revise/add/reorder TENTPOLES. PINNED lines and pinned cast fields are IMMUTABLE — never change or drop them.
+
+OUTPUT — reply in plain MARKDOWN. If — and ONLY if — proposing a change, append at the very END a single fenced \`\`\`json block (include ONLY changed keys), nothing after it:
+\`\`\`json
+{ "summary": "<one line>", "argument": "...", "ending": "...", "voice": "...",
+  "cast": [ { "id": "<existing id, or omit for new>", "name": "...", "role": "protagonist|major|minor", "want": "...", "wound": "...", "lie": "..." } ],
+  "tentpoles": [ { "id": "<existing id, or omit for new>", "text": "...", "status": "pinned|fluid" } ] }
+\`\`\`
+When talking or pressure-testing, append NO code block. If you send "cast" or "tentpoles", send the COMPLETE list — anything omitted is dropped, except pinned/killed items which always survive. Use existing [id]s to revise; omit id to add. Never touch the brief; never write spine, beats, or prose.`;
+
+// Port of _shared/revision-chat.ts sanitizeFoundations — pin-honoring merge of a proposed patch.
+function sanitizeFoundationsPatch(parsed, f) {
+  const patch = {};
+  const trim = (v) => (typeof v === "string" ? v.trim() : "");
+  if (typeof parsed.argument === "string" && !f.argument?.pinned) { const t = trim(parsed.argument); if (t) patch.argument = t; }
+  if (typeof parsed.ending === "string" && !f.ending?.pinned) { const t = trim(parsed.ending); if (t) patch.ending = t; }
+  if (typeof parsed.voice === "string" && !f.voice_exemplar?.pinned) { const t = trim(parsed.voice); if (t) patch.voice = t; }
+
+  if (Array.isArray(parsed.cast)) {
+    const existing = new Map((f.cast ?? []).map((c) => [c.id, c]));
+    const out = []; const used = new Set();
+    for (const raw of parsed.cast) {
+      const name = trim(raw.name); if (!name) continue;
+      const prior = typeof raw.id === "string" ? existing.get(raw.id) : undefined;
+      const pf = prior?.pinned_fields ?? [];
+      const pick = (k) => (pf.includes(k) ? (prior[k] ?? "") : trim(raw[k]) || (prior?.[k] ?? ""));
+      out.push({
+        id: prior?.id ?? bridgeUid(),
+        name: pf.length ? (prior?.name ?? name) : name,
+        role: raw.role === "protagonist" ? "protagonist" : raw.role === "minor" ? "minor" : (prior?.role ?? "major"),
+        want: pick("want"), wound: pick("wound"), lie: pick("lie"),
+        pinned_fields: pf,
+        ...(prior?.appearance ? { appearance: prior.appearance } : {}),
+        ...(prior?.portraits ? { portraits: prior.portraits } : {}),
+      });
+      if (prior) used.add(prior.id);
+    }
+    for (const c of f.cast ?? []) if (!used.has(c.id) && (c.pinned_fields?.length ?? 0) > 0) out.push(c);
+    if (out.length) patch.cast = out;
+  }
+
+  if (Array.isArray(parsed.tentpoles)) {
+    const existing = new Map((f.tentpoles ?? []).map((t) => [t.id, t]));
+    const out = []; const used = new Set();
+    for (const raw of parsed.tentpoles) {
+      const prior = typeof raw.id === "string" ? existing.get(raw.id) : undefined;
+      if (prior && (prior.status === "pinned" || prior.status === "killed")) { out.push(prior); used.add(prior.id); continue; }
+      const text = trim(raw.text); if (!text) continue;
+      out.push({
+        id: prior?.id ?? bridgeUid(), text,
+        source: prior?.source ?? "ai",
+        status: raw.status === "pinned" ? "pinned" : raw.status === "killed" ? "killed" : (prior?.status ?? "fluid"),
+        ...(prior?.placed_page_id != null ? { placed_page_id: prior.placed_page_id } : {}),
+      });
+      if (prior) used.add(prior.id);
+    }
+    for (const t of f.tentpoles ?? []) if (!used.has(t.id) && (t.status === "pinned" || t.status === "killed")) out.push(t);
+    if (out.length) patch.tentpoles = out;
+  }
+  return Object.keys(patch).length ? patch : null;
+}
+
+async function getRevisionChat(bookId, layer) {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/revision_chats?book_id=eq.${bookId}&layer=eq.${layer}&select=id,messages,pending_proposal`, { headers: sbHeaders });
+  if (!r.ok) throw new Error(`Supabase ${r.status}: ${await r.text()}`);
+  return (await r.json())?.[0] ?? null;
+}
+async function upsertRevisionChat(bookId, layer, existingId, patch) {
+  if (existingId) {
+    await fetch(`${SUPABASE_URL}/rest/v1/revision_chats?id=eq.${existingId}`, {
+      method: "PATCH", headers: { ...sbHeaders, "content-type": "application/json", Prefer: "return=minimal" }, body: JSON.stringify(patch),
+    });
+    return existingId;
+  }
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/revision_chats`, {
+    method: "POST", headers: { ...sbHeaders, "content-type": "application/json", Prefer: "return=representation" }, body: JSON.stringify({ book_id: bookId, layer, ...patch }),
+  });
+  if (!r.ok) throw new Error(`Supabase ${r.status}: ${await r.text()}`);
+  return (await r.json())?.[0]?.id ?? null;
+}
+
+async function runReviseChat(bookId, layer, message) {
+  const msg = (message ?? "").trim();
+  if (!msg) return { error: "message is required" };
+  if (!["foundations", "spine", "beats"].includes(layer)) return { error: "a valid layer is required" };
+  const book = await fetchBook(bookId);
+  if (!book) return { error: "Book not found" };
+
+  const existing = await getRevisionChat(bookId, layer);
+  const history = Array.isArray(existing?.messages) ? existing.messages : [];
+  const withUser = [...history, { role: "user", text: msg, ts: new Date().toISOString() }];
+  const chatId = await upsertRevisionChat(bookId, layer, existing?.id, { messages: withUser, status: "thinking", error: null });
+
+  try {
+    const f = book.foundations ?? null;
+    const spineText = book.spine?.text?.trim() || null;
+    let system, context, sanitize;
+    if (layer === "beats") {
+      const pages = await fetchPages(bookId);
+      system = BEATS_AGENT_INSTRUCTIONS;
+      context =
+        `BOOK: ${book.name}\n\nBRIEF (the voice contract):\n${briefContext(book.brief)}` +
+        (spineText ? `\n\nSPINE:\n${spineText}` : "") +
+        (f ? `\n\nFOUNDATIONS (settled — pinned lines are immutable):\n${foundationsContext(f)}` : "") +
+        `\n\nCURRENT BEAT SHEET (real page ids):\n${beatSheetContext(pages)}` +
+        `\n\nFICTION CRITERIA (use when evaluating):\n${BEAT_CRITERIA}`;
+      sanitize = (parsed) => { const plan = parseBeatPlan(JSON.stringify(parsed), pages); return plan && !plan.error ? { layer: "beats", data: plan } : null; };
+    } else if (layer === "spine") {
+      system = SPINE_AGENT_INSTRUCTIONS;
+      context =
+        `BOOK: ${book.name}\n\nBRIEF (the contract):\n${briefContext(book.brief)}` +
+        (f ? `\n\nFOUNDATIONS (settled — pinned lines immutable; every pinned tentpole MUST survive in the spine):\n${foundationsContext(f)}` : "") +
+        `\n\nCURRENT SPINE:\n${spineText || "(no spine yet)"}`;
+      sanitize = (parsed) => { const t = (typeof parsed.text === "string" ? parsed.text.trim() : ""); return t ? { layer: "spine", data: { text: t } } : null; };
+    } else {
+      const ff = f ?? {};
+      const castIds = ff.cast?.length
+        ? ff.cast.map((c) => { const pf = c.pinned_fields ?? []; const fld = (k) => (c[k] ? `\n    ${k}: ${c[k]}${pf.includes(k) ? " [PINNED — immutable]" : ""}` : ""); return `[id=${c.id}] ${c.name} (${c.role ?? "major"})${fld("want")}${fld("wound")}${fld("lie")}`; }).join("\n")
+        : "(no cast yet)";
+      system = FOUNDATIONS_AGENT_INSTRUCTIONS;
+      context =
+        `BOOK: ${book.name}\n\nBRIEF (the frozen contract — never propose changing it):\n${briefContext(book.brief)}` +
+        `\n\nCURRENT FOUNDATIONS (settled — PINNED lines are immutable):\n${foundationsContext(ff)}` +
+        `\n\nCAST (with ids — reference an [id] to revise a member):\n${castIds}`;
+      sanitize = (parsed) => { const data = sanitizeFoundationsPatch(parsed, ff); return data ? { layer: "foundations", data } : null; };
+    }
+
+    const transcript = withUser.slice(-24).map((m) => `${m.role === "user" ? "AUTHOR" : "EDITOR"}: ${m.text}`).join("\n\n");
+    const prompt = `${system}\n\n${context}\n\n— — — CONVERSATION SO FAR — — —\n${transcript}\n\nRespond to the latest AUTHOR message.`;
+
+    const out = await runClaude(prompt, true, { fn: "revise-chat", bookId }, { noTools: true });
+    if (out.error) throw new Error(out.error);
+
+    // A proposed change rides in a TRAILING ```json block (mirrors the edge fn).
+    let reply = out.text.trim(), proposal = null;
+    const m = out.text.match(/```(?:json)?\s*([\s\S]*?)```\s*$/);
+    if (m && m.index != null) {
+      try {
+        const parsed = JSON.parse(m[1].trim());
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          const patch = sanitize(parsed);
+          if (patch) {
+            const summary = (typeof parsed.summary === "string" && parsed.summary.trim()) ? parsed.summary.trim() : (patch.layer === "beats" ? patch.data.summary : "Proposed revision");
+            proposal = { summary, patch };
+            reply = out.text.slice(0, m.index).trim() || "Here's a proposed revision — review it below.";
+          }
+        }
+      } catch { /* malformed trailing block → keep whole text as prose */ }
+    }
+
+    const assistant = { role: "assistant", text: reply, ts: new Date().toISOString(), plan: proposal?.summary };
+    await upsertRevisionChat(bookId, layer, chatId, {
+      messages: [...withUser, assistant],
+      pending_proposal: proposal ?? existing?.pending_proposal ?? null,
+      status: "idle",
+    });
+    return { reply, proposal };
+  } catch (e) {
+    await upsertRevisionChat(bookId, layer, chatId, { status: "error", error: String(e?.message ?? e).slice(0, 500), messages: withUser });
+    return { error: String(e?.message ?? e) };
+  }
+}
+
 // ── /objective-to-beat ─────────────────────────────────────────────────────────
 // Mirrors supabase/functions/objective-to-beat: objective → a one-paragraph beat (the plan of what the
 // page does), in book context. No mutation — the client writes metadata.beat + stamps the edge.
@@ -2494,6 +2674,19 @@ async function route(req, res) {
     if (!(await authorize(req, res, bookId))) return;
     console.log(`Beat editor · book ${bookId}: "${String(body.message ?? "").slice(0, 60)}"…`);
     const out = await runBeatsAgent(bookId, body.message);
+    if (out.error) return json(res, 500, { error: out.error });
+    return json(res, 200, out);
+  }
+
+  // revise-chat — the unified conversational reviser (foundations | spine | beats).
+  if (url === "/revise-chat" || url === "/revise-chat/") {
+    if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
+    const body = await readBody(req);
+    const bookId = Number(body.bookId);
+    if (!bookId) return json(res, 400, { error: "bookId is required" });
+    if (!(await authorize(req, res, bookId))) return;
+    console.log(`Reviser · ${body.layer} · book ${bookId}: "${String(body.message ?? "").slice(0, 60)}"…`);
+    const out = await runReviseChat(bookId, body.layer, body.message);
     if (out.error) return json(res, 500, { error: out.error });
     return json(res, 200, out);
   }

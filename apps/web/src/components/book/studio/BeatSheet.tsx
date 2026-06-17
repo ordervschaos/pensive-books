@@ -3,7 +3,7 @@
 //   • Top: "fix N out-of-sync beats" banner when drift pages exist.
 //   • Middle: fixed-size beat cards, 3 visible at a time, navigated by arrows.
 //   • Click a card: opens a modal with the full objective + beat editor and prev/next navigation.
-//   • Bottom: BeatChat conversational editor.
+//   • Bottom: ReviseChat conversational editor (layer="beats").
 //
 // See docs/beat-sheet-revision.md.
 import { useEffect, useState } from "react";
@@ -11,7 +11,7 @@ import { Check, ChevronLeft, ChevronRight, Loader2, RefreshCw, Sparkles, X } fro
 import { AutoTextarea } from "@/components/ui/auto-textarea";
 import { saveBeat, saveObjective, transforms } from "@/lib/ladder";
 import { useAIRun } from "@/hooks/useAIRun";
-import { BeatChat } from "./BeatChat";
+import { ReviseChat } from "./ReviseChat";
 import type { StudioModel } from "./studioModel";
 import type { MapPage } from "@/lib/planGraph";
 import { ActionLink, Eyebrow, GenRow, Panel, Pip, SkeletonCard } from "./studioUi";
@@ -58,7 +58,7 @@ export function BeatSheet({ bookId, model, onChanged, onSelectPage, beforeGen }:
       />
 
       <div className="mt-10 border-t border-[hsl(var(--pv-border-soft))]/60 pt-6">
-        <BeatChat bookId={bookId} model={model} onChanged={onChanged} />
+        <ReviseChat bookId={bookId} layer="beats" model={model} onChanged={onChanged} />
       </div>
     </div>
   );

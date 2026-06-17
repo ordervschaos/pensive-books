@@ -23,6 +23,8 @@ export interface BeatParams {
   // Best-of-n: sample this many candidate beats in parallel and keep the one a judge picks. Beats are
   // one paragraph, so n=3 is cents per page. Default 1 (a single sample — the attended/sync path).
   candidates?: number;
+  // Optional per-call author direction (ephemeral chip selection + free note).
+  prompt?: string;
   // Optional link to the durable task row this call serves, recorded on the ai_calls log.
   log?: { taskTable?: string; taskId?: number };
   userId?: string | null;
@@ -145,6 +147,7 @@ async function prepareBeat(client: SupabaseClient, p: BeatParams): Promise<Prepa
     (prev ? `\n\nPREVIOUS BEAT (the page just before — connect to THIS by "therefore"/"but"; do not repeat it):\n"""\n${prev.beat}\n"""` : "\n\n(This is the first beat — set the story's engine running.)") +
     (onPage.length ? `\n\nTHREADS ON THIS PAGE (promises to manage here):\n${threadsContext(onPage)}` : "") +
     steerBlock(readSteer(book.steers, "beats")) +
+    (p.prompt?.trim() ? `\n\nAUTHOR'S DIRECTION:\n${p.prompt.trim()}` : "") +
     `\n\nTHIS PAGE'S OBJECTIVE:\n${obj}\n\nWrite the beat for THIS PAGE. One paragraph, plan only.`;
 
   return { userContent, meta, prevBeat: prev?.beat ?? null, objective: obj };

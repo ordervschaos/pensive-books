@@ -21,14 +21,18 @@ import {
 } from "@/lib/foundations";
 import { ActionLink, CollapsedRow, Eyebrow, GenRow, Hero, ImageLightbox, OptionCard, Panel, PickButton, RunError, SkeletonCard, SkeletonProposalCard } from "../studioUi";
 import { DurableReviser } from "../../DurableReviser";
+import { ReviseChat } from "../ReviseChat";
 
 const uid = () => crypto.randomUUID().slice(0, 8);
 
-// Ephemeral per-call steer: local state only, passed as `prompt` in run.start(), never persisted.
-function useLocalSteer() {
-  const [value, setValue] = useState("");
-  return { value, setValue, save: async () => {}, loaded: true };
-}
+// Per-sub-step nudge chips for the C-Directions GenRow.
+const STEP_CHIPS: Record<FoundationsStepKey, string[]> = {
+  argument: ["Darker claim", "More hopeful", "Higher stakes", "Sharper irony", "Push the subtext", "More ambiguous"],
+  ending:   ["Bleaker", "More hopeful", "Higher cost", "More ambiguous", "Quieter landing", "Sharper reversal"],
+  cast:     ["Different wound", "Invert the dynamic", "Darker lie", "More vulnerability", "Add conflict", "Younger protagonist"],
+  tentpoles:["Earlier in arc", "More visceral", "Quieter turn", "More confrontation", "Shift the cost", "Change who's present"],
+  voice:    ["Colder", "Warmer", "Tighter", "More interior", "Slower burn", "More sensory"],
+};
 
 const SUBS: { key: FoundationsStepKey; label: string; caption: string }[] = [
   { key: "argument", label: "Argument", caption: "The claim the whole story argues — pick the one you'd defend." },
@@ -123,6 +127,14 @@ export function FoundationsStep({ bookId, foundations, beforeGen, onChanged }: P
           blockedReason={(f.tentpoles ?? []).filter((t) => t.status !== "killed").length === 0 ? "Add at least one tentpole moment first." : undefined}
           onSave={async (n) => { await save({ ...f, voice_exemplar: n }); if (n.text?.trim()) await mirrorVoice(n.text); }} />
       )}
+
+      {/* Conversational foundations reviser — talk across argument/ending/cast/tentpoles/voice and
+          propose a change. Appears once there's something settled to revise. Pinned lines stay locked. */}
+      {prog.argument && (
+        <div className="mt-10 border-t border-[hsl(var(--pv-border-soft))]/60 pt-6">
+          <ReviseChat bookId={bookId} layer="foundations" currentFoundations={f} onChanged={onChanged} />
+        </div>
+      )}
     </div>
   );
 }
@@ -142,10 +154,9 @@ function NodeSub({ bookId, stepKey, node, heroTitle, heroSub, blockedReason, bef
   const appliedRef = useRef<number | null>(null);
   const autoPickRef = useRef(false);
   const [draft, setDraft] = useState<string | null>(null); // inline edit buffer for the selected text
-  const steer = useLocalSteer();
 
-  const fire = async () => { await beforeGen(); void run.start({ step: stepKey, ...(steer.value.trim() ? { prompt: steer.value.trim() } : {}) }); };
-  const fireSkip = async () => { autoPickRef.current = true; await beforeGen(); void run.start({ step: stepKey, ...(steer.value.trim() ? { prompt: steer.value.trim() } : {}) }); };
+  const fire = async (note: string) => { await beforeGen(); void run.start({ step: stepKey, ...(note.trim() ? { prompt: note.trim() } : {}) }); };
+  const fireSkip = async () => { autoPickRef.current = true; await beforeGen(); void run.start({ step: stepKey }); };
 
   const generating = run.starting || run.run?.status === "running" || run.run?.status === "pending";
 
@@ -188,15 +199,9 @@ function NodeSub({ bookId, stepKey, node, heroTitle, heroSub, blockedReason, bef
   if (!generating && candidates.length === 0 && !selected) {
     return (
       <div>
-        <Hero icon={<Sparkles className="h-5 w-5" />} title={heroTitle} sub={heroSub} onClick={() => void fire()} />
+        <Hero icon={<Sparkles className="h-5 w-5" />} title={heroTitle} sub={heroSub} onClick={() => void fire("")} />
         <div className="mt-4 space-y-2.5">
-          <textarea
-            value={steer.value}
-            onChange={(e) => steer.setValue(e.target.value)}
-            placeholder="steer (optional)"
-            rows={1}
-            className="pv-serif w-full resize-none rounded-xl border border-[hsl(var(--pv-border-soft))]/70 bg-transparent px-3.5 py-2 text-[13.5px] leading-relaxed placeholder:italic placeholder:text-[hsl(var(--pv-text-faint))] focus:border-[hsl(var(--pv-accent))]/50 focus:outline-none focus:ring-0"
-          />
+          <GenRow chips={STEP_CHIPS[stepKey]} label="Propose options" onFire={(note) => void fire(note)} />
           <SkipLink onClick={() => void fireSkip()} />
         </div>
         {run.run?.status === "error" && <RunError msg={run.run.error} />}
@@ -275,7 +280,12 @@ function NodeSub({ bookId, stepKey, node, heroTitle, heroSub, blockedReason, bef
         </div>
       ) : (
         <div className="mt-1 space-y-2.5">
-          <GenRow steer={steer} label="propose more" icon={<Plus className="h-3.5 w-3.5" />} onFire={() => void fire()} />
+          <GenRow
+            chips={STEP_CHIPS[stepKey]}
+            label="Propose more"
+            descLabel="Adds fresh takes below — your chosen one stays selected."
+            onFire={(note) => void fire(note)}
+          />
           {!selected && <SkipLink onClick={() => void fireSkip()} />}
         </div>
       )}
@@ -289,13 +299,12 @@ const CAST_FIELDS = ["want", "wound", "lie"] as const;
 
 function CastSub({ bookId, cast, beforeGen, onSave }: { bookId: number; cast: CastMember[]; beforeGen: () => Promise<void>; onSave: (c: CastMember[]) => Promise<void> | void }) {
   const run = useAIRun<{ proposals: CastProposal[] }>({ bookId, kind: "foundations_options", targetKey: "foundations:cast" });
-  const steer = useLocalSteer();
   const generating = run.starting || run.run?.status === "running" || run.run?.status === "pending";
   const proposals = run.run?.status === "ready" ? (run.run.result?.proposals ?? []) : [];
 
-  const fire = async () => {
+  const fire = async (note: string) => {
     await beforeGen();
-    void run.start({ step: "cast", ...(steer.value.trim() ? { prompt: steer.value.trim() } : {}) });
+    void run.start({ step: "cast", ...(note.trim() ? { prompt: note.trim() } : {}) });
   };
 
   const pickProposal = (p: CastProposal) => {
@@ -341,7 +350,7 @@ function CastSub({ bookId, cast, beforeGen, onSave }: { bookId: number; cast: Ca
           </OptionCard>
         ))}
         <div className="space-y-2.5">
-          <GenRow steer={steer} label="propose different options" icon={<Plus className="h-3.5 w-3.5" />} onFire={() => void fire()} />
+          <GenRow chips={STEP_CHIPS.cast} label="Propose different options" descLabel="Adds new configurations below." onFire={(note) => void fire(note)} />
           {cast.length > 0 && (
             <button type="button" onClick={() => void run.reject()}
               className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">
@@ -372,15 +381,9 @@ function CastSub({ bookId, cast, beforeGen, onSave }: { bookId: number; cast: Ca
       <div>
         <Hero icon={<Sparkles className="h-5 w-5" />} title="Propose three cast options"
           sub="Three complete configurations — protagonist plus majors, each with want / wound / lie. Pick the one you'd defend, then edit freely."
-          onClick={() => void fire()} />
+          onClick={() => void fire("")} />
         <div className="mt-4">
-          <textarea
-            value={steer.value}
-            onChange={(e) => steer.setValue(e.target.value)}
-            placeholder="steer (optional)"
-            rows={1}
-            className="pv-serif w-full resize-none rounded-xl border border-[hsl(var(--pv-border-soft))]/70 bg-transparent px-3.5 py-2 text-[13.5px] leading-relaxed placeholder:italic placeholder:text-[hsl(var(--pv-text-faint))] focus:border-[hsl(var(--pv-accent))]/50 focus:outline-none focus:ring-0"
-          />
+          <GenRow chips={STEP_CHIPS.cast} label="Propose options" onFire={(note) => void fire(note)} />
         </div>
         {run.run?.status === "error" && <RunError msg={run.run.error} />}
       </div>
@@ -447,7 +450,7 @@ function CastSub({ bookId, cast, beforeGen, onSave }: { bookId: number; cast: Ca
           >
             add character
           </ActionLink>
-          <GenRow steer={steer} label="propose new cast options" icon={<Sparkles className="h-3.5 w-3.5" />} onFire={() => void fire()} />
+          <GenRow chips={STEP_CHIPS.cast} label="Propose new cast options" descLabel="Adds fresh configurations below." onFire={(note) => void fire(note)} />
         </div>
       )}
       {run.run?.status === "error" && <RunError msg={run.run.error} />}
@@ -516,11 +519,10 @@ function TentpolesSub({ bookId, tentpoles, beforeGen, onSave }: { bookId: number
   const run = useAIRun<{ candidates: Tentpole[] }>({ bookId, kind: "foundations_options", targetKey: "foundations:tentpoles" });
   const appliedRef = useRef<number | null>(null);
   const [newMoment, setNewMoment] = useState("");
-  const steer = useLocalSteer();
   const generating = run.starting || run.run?.status === "running" || run.run?.status === "pending";
-  const fire = async () => {
+  const fire = async (note: string) => {
     await beforeGen();
-    void run.start({ step: "tentpoles", ...(steer.value.trim() ? { prompt: steer.value.trim() } : {}) });
+    void run.start({ step: "tentpoles", ...(note.trim() ? { prompt: note.trim() } : {}) });
   };
 
   useEffect(() => {
@@ -614,10 +616,10 @@ function TentpolesSub({ bookId, tentpoles, beforeGen, onSave }: { bookId: number
             )}
             {!generating && (
               <GenRow
-                steer={steer}
-                icon={proposalCards.length ? <Plus className="h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
-                label={proposalCards.length ? `propose more${pinnedCount ? ` (${pinnedCount} pinned held)` : ""}` : "propose moments"}
-                onFire={() => void fire()}
+                chips={STEP_CHIPS.tentpoles}
+                label={proposalCards.length ? `Propose more${pinnedCount ? ` (${pinnedCount} pinned held)` : ""}` : "Propose moments"}
+                descLabel={proposalCards.length ? "Adds fresh moments below — pinned ones stay." : undefined}
+                onFire={(note) => void fire(note)}
               />
             )}
             {run.run?.status === "error" && <RunError msg={run.run.error} />}

@@ -56,6 +56,7 @@ async function runWorker(
         bookId: ctx.bookId,
         pageId: params.pageId as number,
         objective: params.objective as string,
+        prompt: params.prompt as string | undefined,
         userId: ctx.userId,
       }, 1);
       return { options };
@@ -72,6 +73,7 @@ async function runWorker(
       const routes = await spineRoutes(ctx.client, ctx.apiKey, {
         bookId: ctx.bookId,
         avoid: params.avoid as string[] | undefined,
+        prompt: params.prompt as string | undefined,
         userId: ctx.userId,
       });
       return { routes };

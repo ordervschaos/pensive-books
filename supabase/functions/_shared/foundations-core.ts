@@ -26,6 +26,10 @@ export interface CastMember {
   want?: string; wound?: string; lie?: string;
   pinned_fields?: string[];
   role?: "protagonist" | "major" | "minor";
+  // Mirror of the web copy (apps/web/src/lib/foundations.ts): the manual-portrait fields. Carried
+  // here so a foundations cast patch preserves them instead of dropping them on a full-list replace.
+  appearance?: string;
+  portraits?: string[];
 }
 export interface CastProposal { label: string; members: CastMember[] }
 export interface Tentpole {
@@ -234,6 +238,8 @@ export interface SpineRoutesParams {
   bookId: number;
   /** Summaries to vary away from (re-route keeps the selected one client-side). */
   avoid?: string[];
+  /** Optional per-call author direction (ephemeral chip selection + free note). */
+  prompt?: string;
   userId?: string | null;
 }
 
@@ -256,6 +262,7 @@ export async function spineRoutes(client: SupabaseClient, apiKey: string, p: Spi
     `\n\nSETTLED FOUNDATIONS:\n${settledContext(f)}` +
     (p.avoid?.length ? `\n\nEXISTING ROUTES (vary away from these — don't paraphrase them):\n${p.avoid.map((s) => `---\n${s}`).join("\n")}` : "") +
     steerBlock(readSteer(book.steers, "spine")) +
+    (p.prompt?.trim() ? `\n\nAUTHOR'S DIRECTION:\n${p.prompt.trim()}` : "") +
     `\n\nGenerate 3 routes. JSON only.`;
 
   const attempt = async (extra?: string): Promise<SpineRoute[]> => {

@@ -1,36 +1,127 @@
 // studioUi — the small shared primitives the Navigator and Stage both compose: resolution pips, the
 // step dot, and the Stage's head / hero / gate chrome. Pure presentation, Paper-DS tokens only.
-import { useEffect, type ComponentProps, type ReactNode } from "react";
-import { AlertTriangle, ArrowRight, Check, Loader2, Lock, X } from "lucide-react";
+import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from "react";
+import { AlertTriangle, ArrowRight, Check, Loader2, Lock, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { CellState } from "@/lib/planGraph";
 import type { DotState } from "./studioModel";
 
-// Steer input + generate button, always rendered together as one unit. Removes the need for a
-// separate "steer →" toggle: the input is always visible, the button is right below it.
-// Works with both persistent (useSteer) and ephemeral (useLocalSteer) steer objects.
-export function GenRow({ steer, label, icon, onFire, busy, placeholder, className }: {
-  steer: { value: string; setValue: (v: string) => void; save: () => Promise<void>; loaded: boolean };
+// Propose button + optional nudge chips + freetext note, all coupled as one widget (C-Directions
+// pattern). Chips accumulate on the button label ("Propose more · 2 notes"); the "+ note" chip
+// reveals a textarea. onFire receives the assembled nudge string (chips joined with note).
+export function GenRow({ label, descLabel, chips = [], onFire, busy, className }: {
   label: string;
-  icon?: ReactNode;
-  onFire: () => void;
+  /** Short reassurance shown beside the button, e.g. "Adds fresh takes below — your chosen one stays selected." */
+  descLabel?: string;
+  /** Tappable preset chips for quick direction. Chip labels become the nudge text. */
+  chips?: string[];
+  /** Receives the assembled nudge note (empty string if none selected). */
+  onFire: (note: string) => void;
   busy?: boolean;
-  placeholder?: string;
   className?: string;
 }) {
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [noteText, setNoteText] = useState("");
+  const noteRef = useRef<HTMLTextAreaElement>(null);
+
+  const noteCount = selected.size + (noteOpen && noteText.trim() ? 1 : 0);
+  const btnLabel = noteCount > 0 ? `${label} · ${noteCount} note${noteCount > 1 ? "s" : ""}` : label;
+
+  const toggle = (chip: string) =>
+    setSelected((prev) => { const n = new Set(prev); n.has(chip) ? n.delete(chip) : n.add(chip); return n; });
+
+  const fire = () => {
+    const parts = [...selected, ...(noteOpen && noteText.trim() ? [noteText.trim()] : [])];
+    onFire(parts.join(", "));
+    setSelected(new Set());
+    setNoteText("");
+    setNoteOpen(false);
+  };
+
+  const hasChips = chips.length > 0;
+
   return (
-    <div className={cn("space-y-2.5", className)}>
-      {steer.loaded && (
-        <textarea
-          value={steer.value}
-          onChange={(e) => steer.setValue(e.target.value)}
-          onBlur={() => void steer.save()}
-          placeholder={placeholder ?? "steer (optional)"}
-          rows={1}
-          className="pv-serif w-full resize-none rounded-xl border border-[hsl(var(--pv-border-soft))]/70 bg-transparent px-3.5 py-2 text-[13.5px] leading-relaxed placeholder:italic placeholder:text-[hsl(var(--pv-text-faint))] focus:border-[hsl(var(--pv-accent))]/50 focus:outline-none focus:ring-0"
-        />
-      )}
-      <ActionLink icon={icon} onClick={onFire} busy={busy}>{label}</ActionLink>
+    <div className={cn(className)}>
+      <div className={cn(
+        "rounded-[18px] border border-border bg-[hsl(var(--pv-surface-2))]/50",
+        hasChips ? "px-5 py-4" : "px-4 py-3",
+      )}>
+        {/* Button row */}
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={fire}
+            disabled={busy}
+            className="pv-serif inline-flex items-center gap-2 rounded-full bg-foreground px-5 py-2.5 text-[15px] text-background transition-colors hover:bg-foreground/85 disabled:opacity-60"
+          >
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+            {btnLabel}
+          </button>
+          {descLabel && (
+            <span className="pv-serif text-[13.5px] leading-snug text-[hsl(var(--pv-text-muted))]">
+              <b className="font-medium not-italic">{descLabel.split(" — ")[0]}</b>
+              {descLabel.includes(" — ") && (
+                <span className="italic"> — {descLabel.split(" — ")[1]}</span>
+              )}
+            </span>
+          )}
+        </div>
+
+        {/* Chips section */}
+        {hasChips && (
+          <div className="mt-3.5 border-t border-[hsl(var(--pv-border-soft))]/60 pt-3.5">
+            <div className="pv-mono mb-2.5 text-[10px] uppercase tracking-[0.13em] text-[hsl(var(--pv-text-muted))]">
+              Nudge them — tap any (optional)
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {chips.map((chip) => {
+                const on = selected.has(chip);
+                return (
+                  <button
+                    key={chip}
+                    type="button"
+                    onClick={() => toggle(chip)}
+                    className={cn(
+                      "pv-serif rounded-full border px-3.5 py-1.5 text-[14px] leading-none transition-colors",
+                      on
+                        ? "border-[hsl(var(--pv-accent))] bg-[hsl(var(--pv-accent))] text-background"
+                        : "border-border bg-[hsl(var(--pv-surface-2))]/80 text-[hsl(var(--pv-ink-soft,var(--pv-text-muted)))] hover:border-foreground/30",
+                    )}
+                  >
+                    {chip}
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                onClick={() => {
+                  setNoteOpen((v) => !v);
+                  if (!noteOpen) setTimeout(() => noteRef.current?.focus(), 60);
+                }}
+                className={cn(
+                  "pv-serif rounded-full border px-3.5 py-1.5 text-[14px] italic leading-none transition-colors",
+                  noteOpen
+                    ? "border-[hsl(var(--pv-accent))] bg-[hsl(var(--pv-accent))] text-background"
+                    : "border-dashed border-[hsl(var(--pv-accent))]/40 text-[hsl(var(--pv-accent))] hover:border-[hsl(var(--pv-accent))]/70",
+                )}
+              >
+                + note
+              </button>
+            </div>
+            {noteOpen && (
+              <textarea
+                ref={noteRef}
+                value={noteText}
+                onChange={(e) => setNoteText(e.target.value)}
+                placeholder="anything else the new takes should honor…"
+                rows={2}
+                className="pv-serif mt-3 w-full resize-none rounded-xl border border-border bg-[hsl(var(--pv-surface-2))] px-3.5 py-2.5 text-[14px] leading-relaxed placeholder:italic placeholder:text-[hsl(var(--pv-text-faint))] focus:border-[hsl(var(--pv-accent))]/40 focus:outline-none focus:ring-0"
+              />
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

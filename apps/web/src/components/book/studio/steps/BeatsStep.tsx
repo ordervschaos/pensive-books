@@ -48,7 +48,7 @@ export function BeatsStep({ bookId, model, steer, beforeGen, onChanged, onSelect
   const generating = cand.run?.status === "running" || cand.run?.status === "pending" || cand.starting;
   const ready = cand.run?.status === "ready" && !!beat;
 
-  const draftBeat = async () => { if (!page) return; await beforeGen(); void cand.start({ pageId: page.id, objective: page.objectiveText.trim() }); };
+  const draftBeat = async (note: string) => { if (!page) return; await beforeGen(); void cand.start({ pageId: page.id, objective: page.objectiveText.trim(), ...(note.trim() ? { prompt: note.trim() } : {}) }); };
 
   // ── Bulk beat/prose run ──────────────────────────────────────────────────────
   const { row: buildRow, refetch: buildRefetch, stale: buildStale } = useLatestTaskRow<BuildRow>({
@@ -182,13 +182,10 @@ export function BeatsStep({ bookId, model, steer, beforeGen, onChanged, onSelect
             onClick={() => void runBulkBeats()}
           />
           <div className="mt-3">
-            <textarea
-              value={steer.value}
-              onChange={(e) => steer.setValue(e.target.value)}
-              onBlur={() => void steer.save()}
-              placeholder="steer (optional)"
-              rows={1}
-              className="pv-serif w-full resize-none rounded-xl border border-[hsl(var(--pv-border-soft))]/70 bg-transparent px-3.5 py-2 text-[13.5px] leading-relaxed placeholder:italic placeholder:text-[hsl(var(--pv-text-faint))] focus:border-[hsl(var(--pv-accent))]/50 focus:outline-none focus:ring-0"
+            <GenRow
+              chips={["Tighter causality", "Raise the stakes", "More subtext", "Stronger turn", "Add tension", "Shift the dynamic"]}
+              label="Steer the generation"
+              onFire={async (note) => { if (note.trim()) { steer.setValue(note.trim()); await steer.save(); } void runBulkBeats(); }}
             />
           </div>
         </>
@@ -242,7 +239,7 @@ export function BeatsStep({ bookId, model, steer, beforeGen, onChanged, onSelect
                   className="pv-serif border-none bg-transparent px-0 text-[15.5px] leading-[1.6] focus-visible:ring-0" />
               </Panel>
               <div className="flex items-center justify-between gap-5">
-                <GenRow steer={steer} label="propose more" icon={<Sparkles className="h-3.5 w-3.5" />} onFire={draftBeat} />
+                <GenRow chips={["Stronger turn", "More subtext", "Higher stakes", "Tighter causality", "Add tension", "Shift the dynamic"]} label="Propose more" descLabel="Proposes a fresh beat for this page." onFire={(note) => void draftBeat(note)} />
                 <div className="flex shrink-0 gap-5">
                   {cursor > 0 && <button type="button" onClick={() => setCursor(cursor - 1)} className="pv-serif text-[13.5px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground">← prev</button>}
                   {cursor < total - 1 && <button type="button" onClick={() => setCursor(cursor + 1)} className="pv-serif text-[13.5px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground">next →</button>}
@@ -261,7 +258,7 @@ export function BeatsStep({ bookId, model, steer, beforeGen, onChanged, onSelect
                   className="pv-serif inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-[14.5px] text-primary-foreground disabled:opacity-40">
                   {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Use this beat &amp; continue
                 </button>
-                <GenRow steer={steer} label="propose more" icon={<Sparkles className="h-3.5 w-3.5" />} onFire={draftBeat} />
+                <GenRow chips={["Stronger turn", "More subtext", "Higher stakes", "Tighter causality", "Add tension", "Shift the dynamic"]} label="Propose more" descLabel="Proposes a fresh beat for this page." onFire={(note) => void draftBeat(note)} />
                 {cursor > 0 && <button type="button" onClick={() => setCursor(cursor - 1)} className="pv-serif text-[13.5px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground"><ArrowLeft className="mr-1 inline h-3.5 w-3.5" />back</button>}
               </div>
             </div>
@@ -272,7 +269,7 @@ export function BeatsStep({ bookId, model, steer, beforeGen, onChanged, onSelect
             </div>
           ) : (
             <div className="mt-5 space-y-2.5">
-              <GenRow steer={steer} label="draft this beat" icon={<Sparkles className="h-3.5 w-3.5" />} onFire={draftBeat} />
+              <GenRow chips={["Stronger turn", "More subtext", "Higher stakes", "Tighter causality", "Add tension", "Shift the dynamic"]} label="Draft this beat" onFire={(note) => void draftBeat(note)} />
               <div className="flex gap-5">
                 {cursor > 0 && <button type="button" onClick={() => setCursor(cursor - 1)} className="pv-serif text-[13.5px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground">← prev</button>}
                 {cursor < total - 1 && <button type="button" onClick={() => setCursor(cursor + 1)} className="pv-serif text-[13.5px] italic text-[hsl(var(--pv-text-muted))] hover:text-foreground">next →</button>}

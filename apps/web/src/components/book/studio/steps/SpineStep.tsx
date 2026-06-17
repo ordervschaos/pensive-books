@@ -18,6 +18,7 @@ import {
 } from "@/lib/foundations";
 import type { UseSteer } from "@/lib/steer";
 import { ActionLink, Eyebrow, GenRow, Hero, OptionCard, Panel, RunError } from "../studioUi";
+import { ReviseChat } from "../ReviseChat";
 
 interface Props {
   bookId: number;
@@ -120,8 +121,10 @@ export function SpineStep({ bookId, foundations, steer, beforeGen, onStatusChang
     await reload(); onChanged();
   };
 
-  const proposeMore = async () => {
-    await beforeGen();
+  const proposeMore = async (note: string) => {
+    // Persist any note to the spine steer so the server reads it on this run.
+    if (note.trim()) { steer.setValue(note.trim()); await steer.save(); }
+    else { await beforeGen(); }
     const existing = (node.routes ?? []).map((r) => r.summary);
     void routesRun.start(existing.length ? { avoid: existing } : {});
   };
@@ -144,15 +147,12 @@ export function SpineStep({ bookId, foundations, steer, beforeGen, onStatusChang
       <div>
         <Hero icon={<MapIcon className="h-5 w-5" />} title="Chart the routes"
           sub={`Three different roads from your beginning to your settled ending${pinnedTentpoles ? ` — every one passing through your ${pinnedTentpoles} pinned moment${pinnedTentpoles === 1 ? "" : "s"}` : ""}. Pick the one you'd ride.`}
-          onClick={proposeMore} />
+          onClick={() => void proposeMore("")} />
         <div className="mt-4">
-          <textarea
-            value={steer.value}
-            onChange={(e) => steer.setValue(e.target.value)}
-            onBlur={() => void steer.save()}
-            placeholder="steer (optional)"
-            rows={1}
-            className="pv-serif w-full resize-none rounded-xl border border-[hsl(var(--pv-border-soft))]/70 bg-transparent px-3.5 py-2 text-[13.5px] leading-relaxed placeholder:italic placeholder:text-[hsl(var(--pv-text-faint))] focus:border-[hsl(var(--pv-accent))]/50 focus:outline-none focus:ring-0"
+          <GenRow
+            chips={["More conflict-driven", "Darker midpoint", "Slower burn", "Tighter causality", "Vary the midpoints", "Different throughline"]}
+            label="Chart routes"
+            onFire={(note) => void proposeMore(note)}
           />
         </div>
         {routesRun.run?.status === "error" && <RunError msg={routesRun.run.error} />}
@@ -220,12 +220,24 @@ export function SpineStep({ bookId, foundations, steer, beforeGen, onStatusChang
         </>
       )}
 
-      {/* Steer + propose — always below the cards when not generating. */}
+      {/* Propose more — always below the cards when not generating. */}
       {!generating && (routes.length > 0 || spine) && (
-        <GenRow steer={steer} label="propose more routes" onFire={proposeMore} />
+        <GenRow
+          chips={["More conflict-driven", "Darker midpoint", "Slower burn", "Tighter causality", "Vary the midpoints", "Different throughline"]}
+          label="Propose more routes"
+          descLabel="Adds fresh routes below — your chosen one stays selected."
+          onFire={(note) => void proposeMore(note)}
+        />
       )}
 
       {routesRun.run?.status === "error" && <RunError msg={routesRun.run.error} />}
+
+      {/* Conversational spine reviser — talk through the arc, propose a revised spine. */}
+      {spine && (
+        <div className="mt-8 border-t border-[hsl(var(--pv-border-soft))]/60 pt-6">
+          <ReviseChat bookId={bookId} layer="spine" currentSpine={spine} onChanged={() => { void reload(); onChanged(); }} />
+        </div>
+      )}
     </div>
   );
 }
