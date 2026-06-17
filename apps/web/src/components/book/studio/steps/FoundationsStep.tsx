@@ -541,6 +541,8 @@ function TentpolesSub({ bookId, tentpoles, beforeGen, onSave }: { bookId: number
     void onSave(tentpoles.map((t) => (t.id === id ? { ...t, text, status: "pinned" } : t)));
   const pinCard = (id: string) =>
     void onSave(tentpoles.map((t) => (t.id === id ? { ...t, status: "pinned" } : t)));
+  const unpinCard = (id: string) =>
+    void onSave(tentpoles.map((t) => (t.id === id ? { ...t, status: "fluid" } : t)));
   const deleteCard = (id: string) =>
     void onSave(tentpoles.filter((t) => t.id !== id));
 
@@ -570,6 +572,7 @@ function TentpolesSub({ bookId, tentpoles, beforeGen, onSave }: { bookId: number
             {pinnedCards.map((t) => (
               <TentpoleCard key={t.id} t={t} bookId={bookId}
                 onText={(v) => setText(t.id, v)}
+                onUnpin={t.source === "ai" ? () => unpinCard(t.id) : undefined}
                 onDelete={() => deleteCard(t.id)} />
             ))}
             <div className="rounded-2xl border border-dashed border-border px-4 py-3">
@@ -595,7 +598,7 @@ function TentpolesSub({ bookId, tentpoles, beforeGen, onSave }: { bookId: number
             {proposalCards.map((t) => (
               <TentpoleCard key={t.id} t={t} bookId={bookId}
                 onText={(v) => setText(t.id, v)}
-                onKeep={() => pinCard(t.id)}
+                onPin={() => pinCard(t.id)}
                 onDelete={() => deleteCard(t.id)} />
             ))}
             {generating && (
@@ -623,7 +626,7 @@ function TentpolesSub({ bookId, tentpoles, beforeGen, onSave }: { bookId: number
   );
 }
 
-function TentpoleCard({ t, onText, onKeep, onDelete, bookId }: { t: Tentpole; onText: (v: string) => void; onKeep?: () => void; onDelete: () => void; bookId?: number }) {
+function TentpoleCard({ t, onText, onPin, onUnpin, onDelete, bookId }: { t: Tentpole; onText: (v: string) => void; onPin?: () => void; onUnpin?: () => void; onDelete: () => void; bookId?: number }) {
   const [draft, setDraft] = useState<string | null>(null);
   const pinned = t.status === "pinned";
   return (
@@ -637,9 +640,14 @@ function TentpoleCard({ t, onText, onKeep, onDelete, bookId }: { t: Tentpole; on
       />
       <div className="mt-1.5 flex items-center gap-3.5">
         {pinned && <span className="pv-mono inline-flex items-center gap-1 text-[9.5px] uppercase tracking-[0.12em] text-[hsl(var(--pv-accent))]"><Pin className="h-3 w-3" /> pinned</span>}
-        {onKeep && (
-          <button type="button" onClick={onKeep} className="pv-serif inline-flex items-center gap-1 text-[12.5px] italic text-[hsl(var(--pv-accent))] hover:opacity-75">
-            <Check className="h-3 w-3" /> keep
+        {onUnpin && (
+          <button type="button" onClick={onUnpin} className="pv-serif inline-flex items-center gap-1 text-[12.5px] italic text-[hsl(var(--pv-text-faint))] hover:opacity-75">
+            <Pin className="h-3 w-3" /> unpin
+          </button>
+        )}
+        {onPin && (
+          <button type="button" onClick={onPin} className="pv-serif inline-flex items-center gap-1 text-[12.5px] italic text-[hsl(var(--pv-accent))] hover:opacity-75">
+            <Check className="h-3 w-3" /> pin
           </button>
         )}
         {bookId != null && (
