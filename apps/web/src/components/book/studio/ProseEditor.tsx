@@ -11,7 +11,8 @@
 // This generalizes the old `EditorAgent` (which only acted on a read, lived on the Read step, and
 // handed its plan to the retired Revise step) into one place: the Draft rail.
 import { useState } from "react";
-import { ArrowUp, Loader2, MessagesSquare, PenLine, Wand2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Loader2, MessagesSquare, PenLine, Wand2, X } from "lucide-react";
+import { useChatScroll } from "./useChatScroll";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { stopRun } from "@/lib/stopRun";
@@ -140,6 +141,8 @@ export function ProseEditor({ bookId, pageId, proseRemaining = 0, onChanged }: {
   const dismissed = done && dismissedDoneId === row?.id;
   const showComposer = !active && !(done && !dismissed);
 
+  const { scrollRef, atBottom, scrollToBottom } = useChatScroll([steps.length, row?.status, !!row?.pending] as const);
+
   return (
     <Panel variant="soft" className="flex h-full flex-col px-4 py-3.5">
       {/* ── Header — shrink-0, always visible ── */}
@@ -156,9 +159,10 @@ export function ProseEditor({ bookId, pageId, proseRemaining = 0, onChanged }: {
       </div>
 
       {/* ── Scroll region — fills the rail between header and composer ── */}
-      <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
-        {/* The narrated step feed — the agent's honest activity log. */}
-        {active && steps.length > 0 && (
+      <div className="relative mt-3 min-h-0 flex-1">
+      <div ref={scrollRef} className="h-full overflow-y-auto pr-1">
+        {/* The narrated step feed — persists after the run ends so history isn't lost. */}
+        {steps.length > 0 && (
           <div className="space-y-1">
             {steps.map((s, i) => (
               <p key={i} className={`pv-serif text-[13px] leading-relaxed ${s.t === "ask" || s.t === "plan" ? "text-foreground" : "text-[hsl(var(--pv-text-muted))]"}`}>
@@ -227,6 +231,17 @@ export function ProseEditor({ bookId, pageId, proseRemaining = 0, onChanged }: {
         {row?.status === "cancelled" && (
           <p className="pv-serif mt-3 text-[12.5px] italic text-[hsl(var(--pv-text-faint))]">Run cancelled — nothing was changed.</p>
         )}
+      </div>
+      {/* Jump-to-latest pill — shown only when the user has scrolled up. */}
+      {!atBottom && (
+        <button
+          type="button"
+          onClick={() => scrollToBottom(true)}
+          className="absolute bottom-2 left-1/2 -translate-x-1/2 inline-flex items-center gap-1.5 rounded-full border border-[hsl(var(--pv-border-soft))] bg-background/90 px-3 py-1 pv-serif text-[12px] text-[hsl(var(--pv-text-muted))] shadow-sm backdrop-blur-sm hover:text-foreground transition-colors"
+        >
+          <ArrowDown className="h-3 w-3" /> latest
+        </button>
+      )}
       </div>
 
       {/* ── Composer — pinned to the bottom (hidden while a run is active or its report is up). ── */}

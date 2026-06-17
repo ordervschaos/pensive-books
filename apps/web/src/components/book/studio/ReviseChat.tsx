@@ -7,8 +7,9 @@
 // The revise-chat edge fn is the single writer of the revision_chats thread (one row per book+layer);
 // this panel sends a message and projects the row live (refresh = no-op). Generalizes BeatChat —
 // see docs/beat-sheet-revision.md and the unified-revision plan.
-import { useEffect, useRef, useState } from "react";
-import { ArrowUp, Check, Loader2, Plus, Sparkles, Trash2, Wand2, X } from "lucide-react";
+import { useState } from "react";
+import { ArrowDown, ArrowUp, Check, Loader2, Plus, Sparkles, Trash2, Wand2, X } from "lucide-react";
+import { useChatScroll } from "./useChatScroll";
 import ReactMarkdown from "react-markdown";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
@@ -125,11 +126,7 @@ export function ReviseChat({ bookId, layer, onChanged, model, currentSpine, curr
 
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages.length, thinking]);
+  const { scrollRef, atBottom, scrollToBottom } = useChatScroll([messages.length, thinking, !!pending] as const);
 
   const send = async (text: string) => {
     const t = text.trim();
@@ -167,7 +164,8 @@ export function ReviseChat({ bookId, layer, onChanged, model, currentSpine, curr
       </div>
 
       {/* Conversation — fills the rail; the blurb only stands in for an empty thread. */}
-      <div ref={scrollRef} className="mt-3 min-h-0 flex-1 space-y-3.5 overflow-y-auto pr-1">
+      <div className="relative mt-3 min-h-0 flex-1">
+      <div ref={scrollRef} className="h-full space-y-3.5 overflow-y-auto pr-1">
         {messages.length === 0 && !pending && (
           <p className="pv-serif text-[12.5px] italic leading-[1.5] text-[hsl(var(--pv-text-faint))]">{blurb}</p>
         )}
@@ -199,6 +197,17 @@ export function ReviseChat({ bookId, layer, onChanged, model, currentSpine, curr
             applyNote={ui.applyNote} onApply={apply} onDiscard={discard}
           />
         )}
+      </div>
+      {/* Jump-to-latest pill — shown only when the user has scrolled up. */}
+      {!atBottom && (
+        <button
+          type="button"
+          onClick={() => scrollToBottom(true)}
+          className="absolute bottom-2 left-1/2 -translate-x-1/2 inline-flex items-center gap-1.5 rounded-full border border-[hsl(var(--pv-border-soft))] bg-background/90 px-3 py-1 pv-serif text-[12px] text-[hsl(var(--pv-text-muted))] shadow-sm backdrop-blur-sm hover:text-foreground transition-colors"
+        >
+          <ArrowDown className="h-3 w-3" /> latest
+        </button>
+      )}
       </div>
 
       {/* Quick actions + composer — pinned to the bottom of the rail. */}
