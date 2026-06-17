@@ -4,12 +4,11 @@
 // Generation and options live in the right-rail ReviseChat (layer="spine"). When empty,
 // a calm pointer directs the author to the chat rail.
 import { useEffect, useState } from "react";
-import { Textarea } from "@/components/ui/textarea";
+import { AutoTextarea } from "@/components/ui/auto-textarea";
 import { useToast } from "@/hooks/use-toast";
 import { saveSpine } from "@/lib/ladder";
 import { readSpineNode } from "@/lib/foundations";
-import { ActionLink, GenerateInChat, Panel, Eyebrow } from "../studioUi";
-import { Check } from "lucide-react";
+import { GenerateInChat } from "../studioUi";
 
 interface Props {
   bookId: number;
@@ -77,41 +76,23 @@ export function SpineStep({ bookId, reloadKey, onStatusChange, onChanged }: Prop
         <p className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))]">
           Or type it directly below — one paragraph describing the journey from your argument to your ending.
         </p>
-        <Panel variant="soft" className="px-5 py-4">
-          <Textarea
-            value={spine}
-            onChange={(e) => { setSpine(e.target.value); setDirty(true); }}
-            onBlur={() => { if (dirty && spine.trim()) void save(); }}
-            placeholder="The spine in one paragraph — how the story moves from argument to ending through the tentpoles…"
-            rows={6}
-            className="pv-serif border-none bg-transparent px-0 text-[16px] leading-[1.65] focus-visible:ring-0"
-          />
-        </Panel>
+        <AutoTextarea
+          value={spine}
+          onChange={(e) => { setSpine(e.target.value); setDirty(true); }}
+          onBlur={() => { if (dirty && spine.trim()) void save(); }}
+          placeholder="The spine in one paragraph — how the story moves from argument to ending through the tentpoles…"
+          className="pv-serif w-full border-none bg-transparent px-0 text-[16px] leading-[1.65] focus-visible:ring-0"
+        />
       </div>
     );
   }
 
   return (
-    <div className="space-y-3.5">
-      <Panel variant="chosen">
-        <div className="mb-1 flex items-center justify-between">
-          <Eyebrow tone="accent">
-            <Check className="mr-1 inline h-3 w-3" strokeWidth={3} />Spine
-          </Eyebrow>
-        </div>
-        <Textarea
-          value={spine}
-          onChange={(e) => { setSpine(e.target.value); setDirty(true); }}
-          onBlur={() => { if (dirty) void save(); }}
-          rows={8}
-          className="pv-serif border-none bg-transparent px-0 text-[16px] leading-[1.65] focus-visible:ring-0"
-        />
-        {dirty && (
-          <div className="mt-3.5 flex items-center justify-end gap-4 border-t border-[hsl(var(--pv-border-soft))] pt-3.5 text-[13.5px]">
-            <ActionLink tone="muted" busy={saving} onClick={() => void save()}>save edits</ActionLink>
-          </div>
-        )}
-      </Panel>
-    </div>
+    <AutoTextarea
+      value={spine}
+      onChange={(e) => { setSpine(e.target.value); setDirty(true); }}
+      onBlur={() => { if (dirty) void save(); }}
+      className="pv-serif w-full border-none bg-transparent px-0 text-[18px] leading-[1.7] focus-visible:ring-0"
+    />
   );
 }

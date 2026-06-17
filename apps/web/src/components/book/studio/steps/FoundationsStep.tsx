@@ -155,36 +155,24 @@ function NodeSub({ bookId, node, placeholder, blocked, onSave }: {
         <p className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))]">
           Or type it directly below.
         </p>
-        <Panel variant="soft" className="px-5 py-4">
-          <Textarea
-            value={value}
-            onChange={(e) => setDraft(e.target.value)}
-            onBlur={handleBlur}
-            placeholder={placeholder}
-            rows={5}
-            className="pv-serif border-none bg-transparent px-0 text-[16px] leading-[1.65] focus-visible:ring-0"
-          />
-        </Panel>
+        <AutoTextarea
+          value={value}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={handleBlur}
+          placeholder={placeholder}
+          className="pv-serif w-full border-none bg-transparent px-0 text-[16px] leading-[1.65] focus-visible:ring-0"
+        />
       </div>
     );
   }
 
   return (
-    <Panel variant="chosen">
-      <div className="mb-2 flex items-center gap-2">
-        <Eyebrow tone="accent">
-          <Check className="mr-1 inline h-3 w-3" strokeWidth={3} />
-          {node?.pinned ? "Pinned" : "Draft"}
-        </Eyebrow>
-      </div>
-      <Textarea
-        value={value}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={handleBlur}
-        rows={Math.max(4, Math.ceil(value.length / 80))}
-        className="pv-serif border-none bg-transparent px-0 text-[16px] leading-[1.65] focus-visible:ring-0"
-      />
-    </Panel>
+    <AutoTextarea
+      value={value}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={handleBlur}
+      className="pv-serif w-full border-none bg-transparent px-0 text-[18px] leading-[1.7] focus-visible:ring-0"
+    />
   );
 }
 
