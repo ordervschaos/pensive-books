@@ -123,18 +123,12 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
   const runningStep = useActiveStep(bookId);
 
   // The editor RAIL: the current step's editor, docked on the right. Foundations/spine/beats get the
-  // conversational ReviseChat; the Draft step gets the durable ProseEditor. It only shows once that
-  // step has something settled to revise — otherwise the center keeps its full width.
+  // conversational ReviseChat; the Draft step gets the durable ProseEditor. The rail shows whenever
+  // one of the editor steps is selected — the empty-center + live-chat is the intended first-run state.
   const railStep: StepKey | null =
     selection.kind === "step" && (selection.step === "foundations" || selection.step === "spine" || selection.step === "beats" || selection.step === "draft")
       ? selection.step : null;
-  const railReady =
-    railStep === "foundations" ? !!foundations?.argument?.text?.trim()
-      : railStep === "spine" ? !!spine.text.trim()
-        : railStep === "beats" ? model.map.pages.some((p) => (p.beatText ?? "").trim())
-          : railStep === "draft" ? model.hasWritten
-            : false;
-  const showRail = !!railStep && railReady;
+  const showRail = !!railStep;
 
   const approve = async (k: StepKey) => {
     if (approving) return;

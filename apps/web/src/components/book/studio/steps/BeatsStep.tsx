@@ -19,13 +19,12 @@ import { RunControls } from "../../RunControls";
 import { BeatSheet } from "../BeatSheet";
 import type { MapPage } from "@/lib/planGraph";
 import type { StudioModel } from "../studioModel";
-import type { UseSteer } from "@/lib/steer";
 import { ActionLink, DoneStrip, Eyebrow, GenRow, Hero, Panel, RunError, RunningCard, RunningInline } from "../studioUi";
 
 interface BuildProgress { done: number; total: number; phase?: string; stage?: string }
 interface BuildRow extends TaskRow { progress: BuildProgress | null; error: string | null }
 
-export function BeatsStep({ bookId, model, steer, beforeGen, onChanged, onSelectPage }: { bookId: number; model: StudioModel; steer: UseSteer; beforeGen: () => Promise<void>; onChanged: () => void; onSelectPage?: (pageId: number) => void }) {
+export function BeatsStep({ bookId, model, onChanged, onSelectPage }: { bookId: number; model: StudioModel; onChanged: () => void; onSelectPage?: (pageId: number) => void }) {
   const { toast } = useToast();
   const beatPages = model.textPages.filter((p) => p.objectiveText.trim());
   const doneCount = beatPages.filter((p) => p.beat !== "gap").length;
@@ -48,7 +47,7 @@ export function BeatsStep({ bookId, model, steer, beforeGen, onChanged, onSelect
   const generating = cand.run?.status === "running" || cand.run?.status === "pending" || cand.starting;
   const ready = cand.run?.status === "ready" && !!beat;
 
-  const draftBeat = async (note: string) => { if (!page) return; await beforeGen(); void cand.start({ pageId: page.id, objective: page.objectiveText.trim(), ...(note.trim() ? { prompt: note.trim() } : {}) }); };
+  const draftBeat = async (note: string) => { if (!page) return; void cand.start({ pageId: page.id, objective: page.objectiveText.trim(), ...(note.trim() ? { prompt: note.trim() } : {}) }); };
 
   // ── Bulk beat/prose run ──────────────────────────────────────────────────────
   const { row: buildRow, refetch: buildRefetch, stale: buildStale } = useLatestTaskRow<BuildRow>({
@@ -72,7 +71,6 @@ export function BeatsStep({ bookId, model, steer, beforeGen, onChanged, onSelect
   const runBulkBeats = async () => {
     if (buildActive) return;
     try {
-      await beforeGen(); // persist the beats steer so generate-book's beat phase reads it
       const { data, error } = await invokeGenerateBook({ bookId, pauseAfterBeats: true });
       if (error) throw error;
       if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
@@ -185,7 +183,7 @@ export function BeatsStep({ bookId, model, steer, beforeGen, onChanged, onSelect
             <GenRow
               chips={["Tighter causality", "Raise the stakes", "More subtext", "Stronger turn", "Add tension", "Shift the dynamic"]}
               label="Steer the generation"
-              onFire={async (note) => { if (note.trim()) { steer.setValue(note.trim()); await steer.save(); } void runBulkBeats(); }}
+              onFire={async (note) => { void note; void runBulkBeats(); }}
             />
           </div>
         </>
@@ -196,7 +194,7 @@ export function BeatsStep({ bookId, model, steer, beforeGen, onChanged, onSelect
       {hasBeats && (!buildActive || proseRunning) && (
         <div className={gapCount > 0 || buildPaused || proseRunning ? "mt-8 border-t border-[hsl(var(--pv-border-soft))]/60 pt-6" : ""}>
           <BeatSheet
-            bookId={bookId} model={model} onChanged={onChanged} onSelectPage={onSelectPage} beforeGen={beforeGen}
+            bookId={bookId} model={model} onChanged={onChanged} onSelectPage={onSelectPage}
             onDiscardAll={discardIds.length > 0 ? () => void discardAllBeats() : undefined}
             discarding={discarding}
           />

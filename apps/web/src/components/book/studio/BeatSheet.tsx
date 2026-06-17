@@ -13,9 +13,9 @@ import type { StudioModel } from "./studioModel";
 import type { MapPage } from "@/lib/planGraph";
 import { ActionLink, Eyebrow, GenRow, Panel, Pip, SkeletonCard } from "./studioUi";
 
-export function BeatSheet({ bookId, model, onChanged, onSelectPage, beforeGen, onDiscardAll, discarding }: {
+export function BeatSheet({ bookId, model, onChanged, onSelectPage, onDiscardAll, discarding }: {
   bookId: number; model: StudioModel; onChanged: () => void;
-  onSelectPage?: (pageId: number) => void; beforeGen: () => Promise<void>;
+  onSelectPage?: (pageId: number) => void;
   onDiscardAll?: () => void; discarding?: boolean;
 }) {
   const beatPages = model.textPages.filter((p) => p.objectiveText.trim());
@@ -62,7 +62,7 @@ export function BeatSheet({ bookId, model, onChanged, onSelectPage, beforeGen, o
       {beatPages.length > 0 && (
         <BeatList
           bookId={bookId} beatPages={beatPages}
-          onChanged={onChanged} onSelectPage={onSelectPage} beforeGen={beforeGen}
+          onChanged={onChanged} onSelectPage={onSelectPage}
         />
       )}
     </div>
@@ -70,9 +70,9 @@ export function BeatSheet({ bookId, model, onChanged, onSelectPage, beforeGen, o
 }
 
 // ── Accordion list ────────────────────────────────────────────────────────────
-function BeatList({ bookId, beatPages, onChanged, onSelectPage, beforeGen }: {
+function BeatList({ bookId, beatPages, onChanged, onSelectPage }: {
   bookId: number; beatPages: MapPage[];
-  onChanged: () => void; onSelectPage?: (pageId: number) => void; beforeGen: () => Promise<void>;
+  onChanged: () => void; onSelectPage?: (pageId: number) => void;
 }) {
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
@@ -88,16 +88,15 @@ function BeatList({ bookId, beatPages, onChanged, onSelectPage, beforeGen }: {
           onToggle={() => setExpandedId(expandedId === page.id ? null : page.id)}
           onChanged={onChanged}
           onSelectPage={onSelectPage}
-          beforeGen={beforeGen}
         />
       ))}
     </div>
   );
 }
 
-function BeatRow({ bookId, page, pageNum, expanded, onToggle, onChanged, onSelectPage, beforeGen }: {
+function BeatRow({ bookId, page, pageNum, expanded, onToggle, onChanged, onSelectPage }: {
   bookId: number; page: MapPage; pageNum: number; expanded: boolean; onToggle: () => void;
-  onChanged: () => void; onSelectPage?: (pageId: number) => void; beforeGen: () => Promise<void>;
+  onChanged: () => void; onSelectPage?: (pageId: number) => void;
 }) {
   const outOfSync = page.beat === "drift";
   return (
@@ -137,7 +136,6 @@ function BeatRow({ bookId, page, pageNum, expanded, onToggle, onChanged, onSelec
             page={page}
             onChanged={onChanged}
             onSelectPage={onSelectPage}
-            beforeGen={beforeGen}
           />
         </div>
       )}
@@ -146,9 +144,9 @@ function BeatRow({ bookId, page, pageNum, expanded, onToggle, onChanged, onSelec
 }
 
 // ── Full page editor (used inside an expanded row) ────────────────────────────
-function PageRow({ bookId, page, onChanged, onSelectPage, beforeGen }: {
+function PageRow({ bookId, page, onChanged, onSelectPage }: {
   bookId: number; page: MapPage; onChanged: () => void;
-  onSelectPage?: (pageId: number) => void; beforeGen: () => Promise<void>;
+  onSelectPage?: (pageId: number) => void;
 }) {
   const [obj, setObj] = useState(page.objectiveText);
   const [beat, setBeat] = useState(page.beatText);
@@ -161,7 +159,6 @@ function PageRow({ bookId, page, onChanged, onSelectPage, beforeGen }: {
 
   const proposeBeat = async (note = "") => {
     if (!obj.trim()) return;
-    await beforeGen();
     void cand.start({ pageId: page.id, objective: obj.trim(), ...(note.trim() ? { prompt: note.trim() } : {}) });
   };
 

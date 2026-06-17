@@ -44,12 +44,11 @@ const SUBS: { key: FoundationsStepKey; label: string; caption: string }[] = [
 interface Props {
   bookId: number;
   foundations: Foundations;
-  /** Persist the step's author steer before any generation kicks (provided by StudioStage). */
-  beforeGen: () => Promise<void>;
   onChanged: () => void;
 }
 
-export function FoundationsStep({ bookId, foundations, beforeGen, onChanged }: Props) {
+export function FoundationsStep({ bookId, foundations, onChanged }: Props) {
+  const beforeGen = async () => {};  // steer removed — no-op
   const { toast } = useToast();
   const [f, setF] = useState<Foundations>(foundations);
   // Land on the first incomplete sub-step, then move only on explicit clicks — selecting a candidate

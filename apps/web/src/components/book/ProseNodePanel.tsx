@@ -9,9 +9,7 @@ import { useLatestTaskRow, type TaskRow } from "@/hooks/useLatestTaskRow";
 import { BRIDGE, bridgeFetch } from "@/lib/bridge";
 import { buildDoc } from "@/lib/inlineMarkdown";
 import { stampProse } from "@/lib/planProvenance";
-import { useSteer } from "@/lib/steer";
 import { NodeLabel, RecreateButton, diffStyles } from "./ladder-ui";
-import { SteerField } from "./studio/SteerField";
 import { DurableReviser } from "./DurableReviser";
 
 // ProseNodePanel — the prose layer, edited from the resolution map's node sheet WITHOUT opening the
@@ -56,7 +54,6 @@ export function ProseNodePanel({
   hideHeader?: boolean;   // PageReview already labels this level + offers "Open in Manuscript"
 }) {
   const { toast } = useToast();
-  const steer = useSteer(bookId, "prose");
 
   const hasProse = prose.trim().length > 0;
 
@@ -88,7 +85,6 @@ export function ProseNodePanel({
   // Re-create the prose from its plan (beat when present, else objective). REPLACES the body. Empty
   // page → a plain write; existing prose → a durable revise carrying a strong rewrite note.
   const recreate = async () => {
-    await steer.save(); // persist the prose steer so the write reads it (write mode honors the steer)
     if (!hasProse) { void start("write"); return; }
     const b = beat.trim();
     const note = b
@@ -153,7 +149,6 @@ export function ProseNodePanel({
           <div className="flex items-center gap-4">
             <RecreateButton dir="down" action={{ label: hasProse ? "re-create from plan" : "write prose", onClick: recreate, disabled: !objective }} />
           </div>
-          {!hasProse && <SteerField steer={steer} placeholder="e.g. spare, sensory prose; short paragraphs; no exposition" />}
           {hasProse && (
             <DurableReviser
               bookId={bookId}

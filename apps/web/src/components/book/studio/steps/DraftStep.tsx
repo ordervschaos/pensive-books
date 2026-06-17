@@ -31,7 +31,7 @@ function draftAt(model: StudioModel): string | null {
   }
 }
 
-export function DraftStep({ bookId, model, beforeGen, onChanged, onSelectPage, onSelectStep }: { bookId: number; model: StudioModel; beforeGen: () => Promise<void>; onChanged: () => void; onSelectPage: (pageId: number) => void; onSelectStep: (k: "beats") => void }) {
+export function DraftStep({ bookId, model, onChanged, onSelectPage, onSelectStep }: { bookId: number; model: StudioModel; onChanged: () => void; onSelectPage: (pageId: number) => void; onSelectStep: (k: "beats") => void }) {
   const { toast } = useToast();
   const [notify, setNotify] = useState(false);
   const [discarding, setDiscarding] = useState(false);
@@ -76,7 +76,6 @@ export function DraftStep({ bookId, model, beforeGen, onChanged, onSelectPage, o
   const runAll = async () => {
     if (active) return;
     try {
-      await beforeGen(); // persist the prose steer so generate-book's prose phase reads it
       const body = paused && row ? { generationId: row.id, resume: true } : { bookId, notify };
       const { data, error } = await invokeGenerateBook(body);
       if (error) throw error;

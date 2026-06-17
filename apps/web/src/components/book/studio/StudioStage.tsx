@@ -10,10 +10,8 @@ import { BookBriefSection } from "../BookBriefSection";
 import { BookEvaluationSection, type CurrentRead } from "../BookEvaluationSection";
 import type { Brief } from "@/lib/brief";
 import type { Foundations } from "@/lib/foundations";
-import { useSteer, type SteerStep } from "@/lib/steer";
 import { STEP_CAPTION, STEP_LABEL, type StepKey, type StudioModel } from "./studioModel";
 import { Gate, StageHead } from "./studioUi";
-import { SteerField } from "./SteerField";
 import { PageReview } from "./PageReview";
 import { FoundationsStep } from "./steps/FoundationsStep";
 import { BeatsStep } from "./steps/BeatsStep";
@@ -47,19 +45,6 @@ const EYEBROW: Record<string, string> = {
   available: "Post-draft · unlocked", locked: "Locked",
 };
 
-// Which steps carry an author "steer" (the guidance prompt shown on top, before generating), and the
-// books.steers key each writes. Draft writes prose, so it shares the "prose" steer with PageReview.
-const STEER_OF: Partial<Record<StepKey, SteerStep>> = {
-  foundations: "foundations", spine: "spine", outline: "outline", beats: "beats", draft: "prose",
-};
-const STEER_PLACEHOLDER: Partial<Record<StepKey, string>> = {
-  foundations: "e.g. literary, 1920s Cairo; morally grey protagonist; avoid chosen-one tropes",
-  spine: "e.g. foreground the father–son rift; keep the midpoint a betrayal",
-  outline: "e.g. tighter act two; open in media res; chapter-length sections",
-  beats: "e.g. more subtext, less action; end every beat on an image",
-  draft: "e.g. spare, sensory prose; short paragraphs; no exposition dumps",
-};
-
 export function StudioStage(props: StageProps) {
   const { model, selection } = props;
 
@@ -88,11 +73,6 @@ function StepView(props: StageProps & { stepKey: StepKey }) {
   // "Address the notes" zone and feeds the agent — which uses the result to launch and the createdAt
   // to supersede a run built on a read a re-run replaced.
   const [currentRead, setCurrentRead] = useState<CurrentRead | null>(null);
-
-  // The step's author steer, rendered on top (below the head). Disabled (no fetch) for steps that
-  // don't generate; `steer.save` is handed to the step as `beforeGen`, called right before each run.
-  const steerStep = STEER_OF[k];
-  const steer = useSteer(bookId, steerStep ?? "spine", !!steerStep);
 
   if (status === "locked") {
     const reason =
@@ -142,11 +122,6 @@ function StepView(props: StageProps & { stepKey: StepKey }) {
         </div>
       )}
 
-      {/* Outline and draft keep the persistent steer at the top (no inline bundle yet). */}
-      {steerStep && k !== "foundations" && k !== "spine" && k !== "beats" && (
-        <div className="mb-5"><SteerField steer={steer} placeholder={STEER_PLACEHOLDER[k]} /></div>
-      )}
-
       {k === "brief" && (
         <>
           <BookBriefSection bookId={bookId} brief={props.brief} onBriefChange={props.onBriefChange} />
@@ -155,31 +130,31 @@ function StepView(props: StageProps & { stepKey: StepKey }) {
       )}
       {k === "foundations" && (
         <>
-          <FoundationsStep bookId={bookId} foundations={props.foundations ?? {}} beforeGen={steer.save} onChanged={props.onChanged} />
+          <FoundationsStep bookId={bookId} foundations={props.foundations ?? {}} onChanged={props.onChanged} />
           {gate("Approve the foundations & continue", "what you pinned, every step below must keep")}
         </>
       )}
       {k === "spine" && (
         <>
-          <SpineStep bookId={bookId} foundations={props.foundations} steer={steer} beforeGen={steer.save} reloadKey={props.editorEpoch} onStatusChange={props.onSpineStatus} onChanged={props.onChanged} />
+          <SpineStep bookId={bookId} reloadKey={props.editorEpoch} onStatusChange={props.onSpineStatus} onChanged={props.onChanged} />
           {gate("Approve the spine & continue", "the outline is built to realize it")}
         </>
       )}
       {k === "outline" && (
         <>
-          <OutlineStep bookId={bookId} model={model} beforeGen={steer.save} onChanged={props.onChanged} onSelectPage={props.onSelectPage} />
+          <OutlineStep bookId={bookId} model={model} onChanged={props.onChanged} onSelectPage={props.onSelectPage} />
           {gate("Approve the outline & continue", "re-plan from the outline tools anytime")}
         </>
       )}
       {k === "beats" && (
         <>
-          <BeatsStep bookId={bookId} model={model} steer={steer} beforeGen={steer.save} onChanged={props.onChanged} onSelectPage={props.onSelectPage} />
+          <BeatsStep bookId={bookId} model={model} onChanged={props.onChanged} onSelectPage={props.onSelectPage} />
           {gate("Approve the beats & continue", "the author approves the plan, not each unit")}
         </>
       )}
       {k === "draft" && (
         <>
-          <DraftStep bookId={bookId} model={model} beforeGen={steer.save} onChanged={props.onChanged} onSelectPage={props.onSelectPage} onSelectStep={props.onSelectStep} />
+          <DraftStep bookId={bookId} model={model} onChanged={props.onChanged} onSelectPage={props.onSelectPage} onSelectStep={props.onSelectStep} />
           {gate("Approve — the draft is built", "read it through, then refine")}
         </>
       )}
