@@ -217,18 +217,27 @@ export function OptionCard({ label, onPick, pickLabel = "Choose this", onDelete,
 }
 
 // A compact collapsed row for non-selected candidates (after a choice has been made). Shows a
-// truncated label + text + switch link + remove X. Used when the full card is too heavy.
+// truncated label + text + switch link + remove X. Clicking the row previews the full text.
 export function CollapsedRow({ label, text, onPick, onRemove }: { label: string; text: string; onPick: () => void; onRemove: () => void }) {
+  const [expanded, setExpanded] = useState(false);
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-[hsl(var(--pv-border-soft))]/80 bg-[hsl(var(--pv-surface-2))]/30 px-5 py-2.5">
-      <span className="pv-mono shrink-0 text-[9.5px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-faint))]">{label}</span>
-      <p className="pv-serif flex-1 truncate text-[13.5px] italic leading-snug text-[hsl(var(--pv-text-faint))]">{text}</p>
-      <button type="button" onClick={onPick}
-        className="pv-serif shrink-0 text-[12.5px] italic text-[hsl(var(--pv-text-muted))] transition-colors hover:text-foreground">switch</button>
-      <button type="button" onClick={onRemove}
-        className="shrink-0 text-[hsl(var(--pv-text-faint))] transition-colors hover:text-foreground" aria-label="Remove">
-        <X className="h-3.5 w-3.5" />
-      </button>
+    <div className="rounded-xl border border-[hsl(var(--pv-border-soft))]/80 bg-[hsl(var(--pv-surface-2))]/30 px-5 py-2.5">
+      <div className="flex items-center gap-3">
+        <span className="pv-mono shrink-0 text-[9.5px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-faint))]">{label}</span>
+        <button type="button" onClick={() => setExpanded((v) => !v)}
+          className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
+          <p className={`pv-serif flex-1 text-[13.5px] italic leading-snug text-[hsl(var(--pv-text-faint))] ${expanded ? "" : "truncate"}`}>{text}</p>
+          {expanded
+            ? <ChevronUp className="h-3.5 w-3.5 shrink-0 text-[hsl(var(--pv-text-faint))]" />
+            : <ChevronDown className="h-3.5 w-3.5 shrink-0 text-[hsl(var(--pv-text-faint))]" />}
+        </button>
+        <button type="button" onClick={onPick}
+          className="pv-serif shrink-0 text-[12.5px] italic text-[hsl(var(--pv-text-muted))] transition-colors hover:text-foreground">switch</button>
+        <button type="button" onClick={onRemove}
+          className="shrink-0 text-[hsl(var(--pv-text-faint))] transition-colors hover:text-foreground" aria-label="Remove">
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
     </div>
   );
 }
