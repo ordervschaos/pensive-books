@@ -22,6 +22,7 @@ import {
   type Tentpole,
 } from "./foundations-core.ts";
 import { BEAT_CRITERIA } from "./beat-criteria.ts";
+import { STORY_SHAPES } from "./story-shapes.ts";
 
 // ── The conversation + envelope contract (mirrored in apps/web/src/lib/revisionChat.ts) ─────────
 export type RevisionLayer = "foundations" | "spine" | "beats" | "outline";
@@ -268,7 +269,7 @@ When talking, pressure-testing, or merely OFFERING SHAPES to choose from, append
 
 You can do these things, and you choose per message:
 1. TALK — answer, talk through a structural idea, weigh a trade-off. Be specific and concrete.
-2. PRESSURE-TEST — when asked (or when it's the honest answer), test the spine's integrity: does it realize the argument and land on the settled ending? does every pinned tentpole have a place? is the causal chain unbroken (no "and then", only "therefore / but")? is the midpoint a real turn? Name the weak link and the highest-leverage fix.
+2. PRESSURE-TEST — when asked (or when it's the honest answer), test the spine's integrity: does it realize the argument and land on the settled ending? does every pinned tentpole have a place? is the causal chain unbroken (no "and then", only "therefore / but")? is the midpoint a real turn? Use the STORY SHAPES below as a diagnostic frame — name which shape the spine is reaching for and where its emotional line breaks (a hole with no bottom, a loss that doesn't cost, a soar with no preceding drop, a flat middle). Name the weak link and the highest-leverage fix.
 3. GENERATE — when there is NO spine yet (or the author asks to draft / create / explore one): UNLESS the author has already settled on a direction, FIRST offer 2–3 DISTINCT directions the spine could take — each a different structural angle on the SAME argument and settled ending — as short prose sketches (2–4 sentences each, numbered), with NO json block, and invite the author to pick or blend them. Only once the author has chosen a direction (or asked outright for the full draft) do you deliver the complete spine (as in PROPOSE).
 4. PROPOSE A CHANGE — when the author wants the spine drafted or changed (or you've agreed on a fix / they've picked a direction), deliver the full spine. It must realize the argument, land the settled ending, and pass through every PINNED tentpole. Pinned foundations are immutable.
 5. PROPOSE AN UPSTREAM CHANGE — sometimes the real problem is upstream: the spine can't cohere because the argument (foundations) is muddy. When the root cause genuinely belongs in foundations and the author agrees (or asks), you may propose a change to foundations INSTEAD of the spine. Do it sparingly — only when the fix truly belongs there, not to dodge work at this layer. Allowed upstream target: foundations. To target foundations, set \`"target": "foundations"\` in the json block and use the foundations block shape (argument/ending/voice/cast/tentpoles). Omit \`target\` (or set it to "spine") to propose a spine change as usual.
@@ -282,7 +283,8 @@ When talking, pressure-testing, or merely OFFERING DIRECTIONS to choose from, ap
       const settled = ctx.foundations ? settledContext(ctx.foundations).trim() : "";
       return `BOOK: ${ctx.bookName}\n\nBRIEF (the contract):\n${briefBlock(ctx.brief)}` +
         (settled ? `\n\nFOUNDATIONS (settled — pinned lines are immutable; every pinned tentpole MUST survive in the spine):\n${settled}` : "") +
-        `\n\nCURRENT SPINE:\n${ctx.spineText?.trim() || "(no spine yet)"}`;
+        `\n\nCURRENT SPINE:\n${ctx.spineText?.trim() || "(no spine yet)"}` +
+        `\n\n${STORY_SHAPES}`;
     },
     sanitize(parsed) {
       const text = stripEntityIds(str(parsed.text));
