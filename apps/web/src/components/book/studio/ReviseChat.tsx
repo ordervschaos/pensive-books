@@ -8,7 +8,7 @@
 // this panel sends a message and projects the row live (refresh = no-op). Generalizes BeatChat —
 // see docs/beat-sheet-revision.md and the unified-revision plan.
 import { useEffect, useMemo, useRef, useState, Fragment } from "react";
-import { ArrowDown, ArrowUp, Check, ChevronDown, Clock, Loader2, Plus, Sparkles, SquarePen, Trash2, Wand2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, ChevronDown, Clock, Loader2, Plus, Sparkles, Square, SquarePen, Trash2, Wand2, X } from "lucide-react";
 import { useChatScroll } from "./useChatScroll";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
@@ -23,6 +23,7 @@ import {
 } from "@/lib/revisionChat";
 import type { StudioModel } from "./studioModel";
 import { ActionLink, Eyebrow, Panel, RunError } from "./studioUi";
+import { stopRun } from "@/lib/stopRun";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -194,6 +195,12 @@ export function ReviseChat({ bookId, layer, onChanged, model, currentSpine, curr
   };
   const discard = async () => { try { await clearPendingProposal(bookId, layer); } catch { /* ignore */ } };
 
+  const stop = async () => {
+    if (!thinking || !row?.id) return;
+    try { await stopRun("revision_chats", row.id); }
+    catch (e) { toast({ title: "Couldn't stop", description: String((e as Error)?.message ?? e), variant: "destructive" }); }
+  };
+
   const busy = sending || thinking;
 
   return (
@@ -257,6 +264,10 @@ export function ReviseChat({ bookId, layer, onChanged, model, currentSpine, curr
         {thinking && (
           <div className="flex items-center gap-2 pv-serif text-[13.5px] italic text-[hsl(var(--pv-text-faint))]">
             <Loader2 className="h-3.5 w-3.5 animate-spin" /> reading the {layer}…
+            <button type="button" onClick={() => void stop()} title="Stop"
+              className="ml-1 inline-flex items-center gap-1 rounded-full border border-[hsl(var(--pv-border-soft))] px-2 py-0.5 text-[11px] not-italic text-[hsl(var(--pv-text-faint))] transition-colors hover:border-destructive/50 hover:text-destructive">
+              <Square className="h-2.5 w-2.5" /> stop
+            </button>
           </div>
         )}
 

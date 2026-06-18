@@ -113,6 +113,8 @@ Deno.serve(async (req: Request) => {
         let done = 0, failed = 0;
         const total = toBeat.length;
         for (const page of toBeat) {
+          const { data: cur } = await userClient.from("revision_chats").select("status").eq("id", chatId).single();
+          if ((cur as { status: string } | null)?.status === "cancelled") return json({ reply: "", proposal: null });
           try {
             const objective = (page.metadata as { objective?: string } | null)?.objective ?? "";
             const beat = await objectiveToBeat(service, apiKey, { bookId, pageId: page.id, objective, userId: user.id });
@@ -136,6 +138,9 @@ Deno.serve(async (req: Request) => {
 
     try {
       const { reply, proposal } = await runTurn(apiKey, layer, lens, ctx, withUser, bookId, user.id);
+      // Don't overwrite a user-cancelled row — free the UI immediately, let the status stand.
+      const { data: cur } = await userClient.from("revision_chats").select("status").eq("id", chatId).single();
+      if ((cur as { status: string } | null)?.status === "cancelled") return json({ reply: "", proposal: null });
       const assistantMsg: ChatMessage = { role: "assistant", text: reply, ts: new Date().toISOString(), plan: proposal?.summary };
       await userClient.from("revision_chats").update({
         messages: [...withUser, assistantMsg],

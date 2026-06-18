@@ -33,9 +33,10 @@ const ACTIVE_STATUSES: Record<string, readonly string[]> = {
   book_evaluations: ["pending", "running"],
   book_revisions: ["planning", "building", "awaiting_review"],
   book_agent_runs: ["running", "awaiting_input"],
+  revision_chats: ["thinking"],
 };
 
-export type StoppableTable = "book_generations" | "book_evaluations" | "book_revisions" | "book_agent_runs";
+export type StoppableTable = "book_generations" | "book_evaluations" | "book_revisions" | "book_agent_runs" | "revision_chats";
 
 /** True while a row is in a state a Stop button should appear for. */
 export function isStoppable(table: string, status: string | null | undefined): boolean {
