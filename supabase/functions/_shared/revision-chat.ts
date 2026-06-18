@@ -16,6 +16,7 @@ import { extractJsonBlock } from "./json.ts";
 import { sanitizePlan, type RevisionPlan } from "./revision-plan.ts";
 import {
   settledContext,
+  stripEntityIds,
   type CastMember,
   type Foundations,
   type Tentpole,
@@ -284,7 +285,7 @@ When talking, pressure-testing, or merely OFFERING DIRECTIONS to choose from, ap
         `\n\nCURRENT SPINE:\n${ctx.spineText?.trim() || "(no spine yet)"}`;
     },
     sanitize(parsed) {
-      const text = str(parsed.text);
+      const text = stripEntityIds(str(parsed.text));
       if (!text) return null;
       return { layer: "spine", data: { text } };
     },

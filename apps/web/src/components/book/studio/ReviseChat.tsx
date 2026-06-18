@@ -7,7 +7,7 @@
 // The revise-chat edge fn is the single writer of the revision_chats thread (one row per book+layer);
 // this panel sends a message and projects the row live (refresh = no-op). Generalizes BeatChat —
 // see docs/beat-sheet-revision.md and the unified-revision plan.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, Fragment } from "react";
 import { ArrowDown, ArrowUp, Check, ChevronDown, Clock, Loader2, Plus, Sparkles, SquarePen, Trash2, Wand2, X } from "lucide-react";
 import { useChatScroll } from "./useChatScroll";
 import ReactMarkdown from "react-markdown";
@@ -231,7 +231,7 @@ export function ReviseChat({ bookId, layer, onChanged, model, currentSpine, curr
               </div>
             ) : (
               <div className="max-w-[92%] pv-serif text-[14.5px] leading-[1.62] text-[hsl(var(--pv-text-muted))] prose prose-sm max-w-none dark:prose-invert prose-p:my-2 prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0 prose-headings:text-foreground prose-strong:text-foreground prose-strong:font-semibold">
-                <ReactMarkdown components={makeMarkdownComponents(currentFoundations, model)}>{m.text}</ReactMarkdown>
+                <ReactMarkdown components={makeMarkdownComponents(currentFoundations, model)}>{preprocessEntityRefs(m.text)}</ReactMarkdown>
               </div>
             )}
           </div>
@@ -365,7 +365,7 @@ function EntityChip({ id, foundations, model }: { id: string; foundations?: Foun
     return (
       <span
         title="Deleted or not found"
-        className="inline-flex items-center rounded-full border border-[hsl(var(--pv-border-soft))] bg-transparent px-2 py-0.5 pv-mono text-[10px] text-[hsl(var(--pv-text-faint))] opacity-60 line-through align-baseline not-prose"
+        className="inline-flex items-center rounded border border-[hsl(var(--pv-border-soft))]/40 bg-transparent px-1.5 py-0 text-[11px] leading-[1.3] text-[hsl(var(--pv-text-faint))] opacity-50 line-through align-baseline not-prose"
       >
         {id.slice(0, 6)}…
       </span>
@@ -379,7 +379,7 @@ function EntityChip({ id, foundations, model }: { id: string; foundations?: Foun
 
   if (entity.kind === "tentpole") {
     const t = entity.item;
-    label = t.text.length > 36 ? t.text.slice(0, 36) + "…" : t.text;
+    label = t.text.length > 18 ? t.text.slice(0, 18) + "…" : t.text;
     tipText = t.text;
     modalTitle = "Tentpole moment";
     modalBody = (
@@ -424,7 +424,7 @@ function EntityChip({ id, foundations, model }: { id: string; foundations?: Foun
             <button
               type="button"
               onClick={() => setOpen(true)}
-              className="inline-flex items-center rounded-full border border-[hsl(var(--pv-accent))]/40 bg-[hsl(var(--pv-accent))]/[0.07] px-2 py-0.5 pv-mono text-[10px] text-[hsl(var(--pv-accent))] transition-colors hover:border-[hsl(var(--pv-accent))]/70 hover:bg-[hsl(var(--pv-accent))]/[0.14] align-baseline not-prose"
+              className="inline-flex max-w-[9rem] items-center truncate rounded border border-[hsl(var(--pv-border-soft))]/50 bg-[hsl(var(--pv-surface-2))]/30 px-1.5 py-0 text-[11px] leading-[1.3] text-[hsl(var(--pv-text-faint))] transition-colors hover:text-[hsl(var(--pv-text-muted))] align-baseline not-prose"
             >
               {label}
             </button>
@@ -444,6 +444,25 @@ function EntityChip({ id, foundations, model }: { id: string; foundations?: Foun
           <div className="mt-1">{modalBody}</div>
         </DialogContent>
       </Dialog>
+    </>
+  );
+}
+
+// Converts bare entity refs `[8hex]` / `[digits]` to inline-code so the `code` renderer picks them up.
+function preprocessEntityRefs(text: string): string {
+  return text.replace(/\[([0-9a-f]{8}|\d+)\](?!\(|\[)/g, '`[$1]`');
+}
+
+// Renders a string that may contain `[8hex]` / `[digits]` entity refs as mixed text + chips.
+function TextWithChips({ text, foundations, model }: { text: string; foundations?: Foundations | null; model?: StudioModel }) {
+  const parts = text.split(/(\[[0-9a-f]{8}\]|\[\d+\])/);
+  return (
+    <>
+      {parts.map((part, i) => {
+        const m = part.match(/^\[([0-9a-f]{8}|\d+)\]$/);
+        if (m) return <EntityChip key={i} id={m[1]} foundations={foundations} model={model} />;
+        return part ? <Fragment key={i}>{part}</Fragment> : null;
+      })}
     </>
   );
 }
@@ -479,7 +498,7 @@ function SessionHistory({ sessions, foundations, model }: { sessions: RevisionSe
                   {m.role === "user" ? (
                     <div className="max-w-[85%] rounded-xl rounded-br-sm bg-[hsl(var(--pv-surface-2))] px-3 py-1.5 pv-serif text-[12.5px] leading-[1.5] text-foreground whitespace-pre-wrap">{m.text}</div>
                   ) : (
-                    <div className="max-w-[92%] pv-serif text-[13px] leading-[1.55] text-[hsl(var(--pv-text-muted))] prose prose-sm max-w-none dark:prose-invert"><ReactMarkdown components={makeMarkdownComponents(foundations, model)}>{m.text}</ReactMarkdown></div>
+                    <div className="max-w-[92%] pv-serif text-[13px] leading-[1.55] text-[hsl(var(--pv-text-muted))] prose prose-sm max-w-none dark:prose-invert"><ReactMarkdown components={makeMarkdownComponents(foundations, model)}>{preprocessEntityRefs(m.text)}</ReactMarkdown></div>
                   )}
                 </div>
               ))}
@@ -520,9 +539,9 @@ function ProposalReview({ proposal, layer, model, currentSpine, currentFoundatio
         {(proposal.patch.layer === "beats" || proposal.patch.layer === "outline") && model
           ? <BeatDiff plan={proposal.patch.data} model={model} />
           : proposal.patch.layer === "spine"
-            ? <SpineDiff before={currentSpine ?? ""} after={proposal.patch.data.text} />
+            ? <SpineDiff before={currentSpine ?? ""} after={proposal.patch.data.text} foundations={currentFoundations} model={model} />
             : proposal.patch.layer === "foundations"
-              ? <FoundationsDiff patch={proposal.patch.data} before={currentFoundations ?? null} />
+              ? <FoundationsDiff patch={proposal.patch.data} before={currentFoundations ?? null} model={model} />
               : <p className="pv-serif text-[13.5px] italic text-[hsl(var(--pv-text-faint))]">Proposed change ready to apply.</p>}
       </div>
 
@@ -539,25 +558,25 @@ function ProposalReview({ proposal, layer, model, currentSpine, currentFoundatio
 }
 
 // ── Spine diff: before → after text ──────────────────────────────────────────
-function SpineDiff({ before, after }: { before: string; after: string }) {
+function SpineDiff({ before, after, foundations, model }: { before: string; after: string; foundations?: Foundations | null; model?: StudioModel }) {
   return (
     <div className="space-y-3">
       {before.trim() && (
         <div>
           <span className="pv-mono text-[10px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-faint))]">Now</span>
-          <p className="pv-serif mt-1 whitespace-pre-wrap text-[13px] leading-[1.6] text-[hsl(var(--pv-text-faint))] line-through decoration-[hsl(var(--pv-text-faint))]/40">{before.trim()}</p>
+          <p className="pv-serif mt-1 whitespace-pre-wrap text-[13px] leading-[1.6] text-[hsl(var(--pv-text-faint))] line-through decoration-[hsl(var(--pv-text-faint))]/40"><TextWithChips text={before.trim()} foundations={foundations} model={model} /></p>
         </div>
       )}
       <div>
         <span className="pv-mono text-[10px] uppercase tracking-[0.12em] text-[hsl(var(--pv-accent))]">Proposed</span>
-        <p className="pv-serif mt-1 whitespace-pre-wrap text-[14px] leading-[1.65] text-foreground">{after.trim()}</p>
+        <p className="pv-serif mt-1 whitespace-pre-wrap text-[14px] leading-[1.65] text-foreground"><TextWithChips text={after.trim()} foundations={foundations} model={model} /></p>
       </div>
     </div>
   );
 }
 
 // ── Foundations diff: per changed field, before → after; cast/tentpoles coarse ────
-function FoundationsDiff({ patch, before }: { patch: { argument?: string; ending?: string; voice?: string; cast?: unknown[]; tentpoles?: unknown[] }; before: Foundations | null }) {
+function FoundationsDiff({ patch, before, model }: { patch: { argument?: string; ending?: string; voice?: string; cast?: unknown[]; tentpoles?: unknown[] }; before: Foundations | null; model?: StudioModel }) {
   const rows: { label: string; before?: string; after: string }[] = [];
   if (typeof patch.argument === "string") rows.push({ label: "Argument", before: before?.argument?.text, after: patch.argument });
   if (typeof patch.ending === "string") rows.push({ label: "Ending", before: before?.ending?.text, after: patch.ending });
@@ -569,9 +588,9 @@ function FoundationsDiff({ patch, before }: { patch: { argument?: string; ending
         <div key={r.label}>
           <span className="pv-mono text-[10px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-faint))]">{r.label}</span>
           {r.before?.trim() && (
-            <p className="pv-serif mt-1 text-[12.5px] leading-[1.55] text-[hsl(var(--pv-text-faint))] line-through decoration-[hsl(var(--pv-text-faint))]/40">{r.before.trim()}</p>
+            <p className="pv-serif mt-1 text-[12.5px] leading-[1.55] text-[hsl(var(--pv-text-faint))] line-through decoration-[hsl(var(--pv-text-faint))]/40"><TextWithChips text={r.before.trim()} foundations={before} model={model} /></p>
           )}
-          <p className="pv-serif mt-0.5 text-[14px] leading-[1.6] text-foreground">{r.after.trim()}</p>
+          <p className="pv-serif mt-0.5 text-[14px] leading-[1.6] text-foreground"><TextWithChips text={r.after.trim()} foundations={before} model={model} /></p>
         </div>
       ))}
       {Array.isArray(patch.cast) && <CastDiff after={patch.cast as CastMember[]} before={before?.cast ?? []} />}
