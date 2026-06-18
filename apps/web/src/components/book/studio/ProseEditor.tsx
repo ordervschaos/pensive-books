@@ -10,8 +10,8 @@
 //
 // This generalizes the old `EditorAgent` (which only acted on a read, lived on the Read step, and
 // handed its plan to the retired Revise step) into one place: the Draft rail.
-import { useState } from "react";
-import { ArrowDown, ArrowUp, Loader2, MessagesSquare, PenLine, Wand2, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ArrowDown, ArrowUp, ChevronDown, Clock, Loader2, MessagesSquare, PenLine, SquarePen, Wand2, X } from "lucide-react";
 import { useChatScroll } from "./useChatScroll";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -53,8 +53,17 @@ export function ProseEditor({ bookId, pageId, proseRemaining = 0, onChanged }: {
     activeStatuses: ["running"], staleMs: 6 * 60 * 1000,
   });
 
-  const running = row?.status === "running";
-  const awaiting = row?.status === "awaiting_input";
+  // "+ New chat" clears the visible thread without deleting runs: a per-scope localStorage marker
+  // hides any run created at/before it (the runs stay in the DB → "Past chats"). New runs show again.
+  const clearedKey = `prose-chat-cleared:${bookId}:${pageId ?? "book"}`;
+  const [clearedAt, setClearedAt] = useState<string | null>(() => { try { return localStorage.getItem(clearedKey); } catch { return null; } });
+  useEffect(() => { try { setClearedAt(localStorage.getItem(clearedKey)); } catch { setClearedAt(null); } }, [clearedKey]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+
+  const cleared = !!(clearedAt && row && new Date(row.created_at).getTime() <= new Date(clearedAt).getTime());
+
+  const running = !cleared && row?.status === "running";
+  const awaiting = !cleared && row?.status === "awaiting_input";
   const active = running || awaiting;
 
   // Start a run from a free-text instruction, or by handing the agent the latest editor's read.
@@ -99,6 +108,22 @@ export function ProseEditor({ bookId, pageId, proseRemaining = 0, onChanged }: {
 
   const stop = async () => { if (!row) return; await stopRun("book_agent_runs", row.id, row.status); refetch(); };
 
+  // Start a fresh chat: stop any active run, then mark everything up to now as cleared (hidden but
+  // kept in the DB → "Past chats"). The composer reappears for a clean instruction.
+  const newChat = async () => {
+    try {
+      if (active && row) await stopRun("book_agent_runs", row.id, row.status);
+      const now = new Date().toISOString();
+      try { localStorage.setItem(clearedKey, now); } catch { /* storage unavailable */ }
+      setClearedAt(now);
+      setDismissedDoneId(null);
+      setHistoryOpen(false);
+      refetch();
+    } catch (e) {
+      toast({ title: "Couldn't start a new chat", description: String((e as Error)?.message ?? e), variant: "destructive" });
+    }
+  };
+
   // Write all the remaining prose straight from the beats — the durable generate-book "write_all" job.
   // Clobber-safe (it skips pages that already have prose; beats already exist, so it goes straight to
   // the prose stage). Progress shows in the Draft center's page-map; this is just the trigger.
@@ -135,9 +160,9 @@ export function ProseEditor({ bookId, pageId, proseRemaining = 0, onChanged }: {
     } finally { setApplying(false); }
   };
 
-  const steps = (row?.steps ?? []) as AgentStep[];
+  const steps = cleared ? [] : ((row?.steps ?? []) as AgentStep[]);
   const lastStep = steps.length ? steps[steps.length - 1].label : "Working";
-  const done = row?.status === "done";
+  const done = !cleared && row?.status === "done";
   const dismissed = done && dismissedDoneId === row?.id;
   const showComposer = !active && !(done && !dismissed);
 
@@ -150,6 +175,17 @@ export function ProseEditor({ bookId, pageId, proseRemaining = 0, onChanged }: {
         <div className="flex items-center gap-2">
           <Wand2 className="h-4 w-4 text-[hsl(var(--pv-accent))]" />
           <Eyebrow tone="accent">{pageId != null ? "Prose editor · this page" : "Prose editor"}</Eyebrow>
+          <div className="ml-auto flex items-center gap-1">
+            <button type="button" onClick={() => setHistoryOpen((v) => !v)} title="Past chats"
+              className={`inline-flex items-center gap-1 rounded-full px-2 py-1 pv-mono text-[10px] uppercase tracking-[0.1em] transition-colors ${historyOpen ? "text-[hsl(var(--pv-accent))]" : "text-[hsl(var(--pv-text-faint))] hover:text-foreground"}`}>
+              <Clock className="h-3 w-3" />
+              <ChevronDown className={`h-3 w-3 transition-transform ${historyOpen ? "rotate-180" : ""}`} />
+            </button>
+            <button type="button" onClick={() => void newChat()} disabled={busy || (steps.length === 0 && !active)} title="New chat — keeps the current one in Past chats"
+              className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[hsl(var(--pv-text-faint))] transition-colors hover:text-[hsl(var(--pv-accent))] disabled:opacity-40">
+              <SquarePen className="h-3.5 w-3.5" />
+            </button>
+          </div>
         </div>
         <p className="pv-serif mt-1 text-[12.5px] italic text-[hsl(var(--pv-text-faint))]">
           {pageId != null
@@ -157,6 +193,12 @@ export function ProseEditor({ bookId, pageId, proseRemaining = 0, onChanged }: {
             : "Describe a change to the prose — it reads the pages, asks about the judgment calls, then proposes a revision it builds into your drafts."}
         </p>
       </div>
+
+      {historyOpen && (
+        <div className="mt-2 shrink-0 max-h-[40%] overflow-y-auto rounded-xl border border-[hsl(var(--pv-border-soft))]/60 bg-[hsl(var(--pv-surface-2))]/30 px-3 py-2">
+          <ProseSessionHistory bookId={bookId} pageId={pageId} activeRunId={cleared ? null : row?.id ?? null} />
+        </div>
+      )}
 
       {/* ── Scroll region — fills the rail between header and composer ── */}
       <div className="relative mt-3 min-h-0 flex-1">
@@ -272,5 +314,51 @@ export function ProseEditor({ bookId, pageId, proseRemaining = 0, onChanged }: {
         </div>
       )}
     </Panel>
+  );
+}
+
+// Past chats — prior agent runs for this scope (book, or one page), newest first, read-only. Each
+// run is its own book_agent_runs row, so "saved sessions history" is just the table; we list them.
+interface PastRun { id: number; status: string; created_at: string; report: string | null; steps: { t: string; label: string }[] | null }
+function ProseSessionHistory({ bookId, pageId, activeRunId }: { bookId: number; pageId?: number; activeRunId: number | null }) {
+  const [runs, setRuns] = useState<PastRun[] | null>(null);
+  const [openId, setOpenId] = useState<number | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    let q = supabase
+      .from("book_agent_runs").select("id, status, created_at, report, steps")
+      .eq("book_id", bookId).order("created_at", { ascending: false }).limit(15);
+    q = pageId != null ? q.eq("target_page_id", pageId) : q.is("target_page_id", null);
+    void q.then(({ data }) => { if (live) setRuns((data as PastRun[] | null) ?? []); });
+    return () => { live = false; };
+  }, [bookId, pageId]);
+
+  const when = (iso: string) => { try { return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }); } catch { return iso; } };
+  const past = (runs ?? []).filter((r) => r.id !== activeRunId);
+
+  if (runs == null) return <p className="pv-serif text-[12px] italic text-[hsl(var(--pv-text-faint))]">Loading…</p>;
+  if (past.length === 0) return <p className="pv-serif text-[12px] italic text-[hsl(var(--pv-text-faint))]">No past chats yet.</p>;
+
+  return (
+    <div className="space-y-1">
+      {past.map((r) => (
+        <div key={r.id}>
+          <button type="button" onClick={() => setOpenId(openId === r.id ? null : r.id)}
+            className="flex w-full items-center gap-2 py-1 text-left pv-serif text-[12px] text-[hsl(var(--pv-text-muted))] hover:text-foreground">
+            <ChevronDown className={`h-3 w-3 shrink-0 transition-transform ${openId === r.id ? "rotate-180" : ""}`} />
+            <span className="flex-1 truncate italic">{when(r.created_at)} · {r.report ? r.report.slice(0, 60) : r.status}</span>
+          </button>
+          {openId === r.id && (
+            <div className="space-y-0.5 border-l border-[hsl(var(--pv-border-soft))]/60 pl-3 pb-2">
+              {(r.steps ?? []).map((s, i) => (
+                <p key={i} className="pv-serif text-[12px] leading-relaxed text-[hsl(var(--pv-text-muted))]">{s.label}</p>
+              ))}
+              {r.report && <p className="pv-serif mt-1 text-[12.5px] leading-relaxed text-foreground">{r.report}</p>}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
   );
 }

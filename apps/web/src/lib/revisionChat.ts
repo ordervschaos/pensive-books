@@ -51,6 +51,9 @@ export async function triggerGenerate(bookId: number, layer: RevisionLayer): Pro
   await sendRevisionMessage(bookId, layer, GENERATE_PROMPTS[layer]);
 }
 
+/** An archived conversation (the "+ New chat" snapshot), kept on the row for the Past-chats viewer. */
+export interface RevisionSession { messages: ChatMessage[]; pending_proposal: RevisionProposal | null; ended_at: string }
+
 export interface RevisionChatRow {
   id: number;
   book_id: number;
@@ -58,10 +61,30 @@ export interface RevisionChatRow {
   status: "idle" | "thinking" | "error";
   messages: ChatMessage[];
   pending_proposal: RevisionProposal | null;
+  sessions?: RevisionSession[];
   error: string | null;
   created_at: string;
   updated_at?: string | null;
   [key: string]: unknown;
+}
+
+/**
+ * Start a fresh conversation: archive the current thread into `sessions` (recoverable in the rail's
+ * Past-chats viewer) and reset the active messages/pending_proposal to empty. The edge fn keeps
+ * writing the active `messages`, so the next send begins a clean thread. No-op if already empty.
+ */
+export async function startNewRevisionSession(bookId: number, layer: RevisionLayer): Promise<void> {
+  const { data } = await supabase
+    .from("revision_chats").select("messages, pending_proposal, sessions").eq("book_id", bookId).eq("layer", layer).maybeSingle();
+  const messages = Array.isArray(data?.messages) ? (data!.messages as ChatMessage[]) : [];
+  if (messages.length === 0) return; // nothing to archive
+  const sessions = Array.isArray(data?.sessions) ? (data!.sessions as RevisionSession[]) : [];
+  const archived: RevisionSession = { messages, pending_proposal: (data?.pending_proposal as RevisionProposal | null) ?? null, ended_at: new Date().toISOString() };
+  const { error } = await supabase
+    .from("revision_chats")
+    .update({ messages: [], pending_proposal: null, sessions: [archived, ...sessions], status: "idle" })
+    .eq("book_id", bookId).eq("layer", layer);
+  if (error) throw error;
 }
 
 /** Send one author message to a layer's reviser. The reply + any proposal land in revision_chats

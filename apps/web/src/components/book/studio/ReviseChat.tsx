@@ -8,20 +8,23 @@
 // this panel sends a message and projects the row live (refresh = no-op). Generalizes BeatChat —
 // see docs/beat-sheet-revision.md and the unified-revision plan.
 import { useState } from "react";
-import { ArrowDown, ArrowUp, Check, Loader2, Plus, Sparkles, Trash2, Wand2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, ChevronDown, Clock, Loader2, Plus, Sparkles, SquarePen, Trash2, Wand2, X } from "lucide-react";
 import { useChatScroll } from "./useChatScroll";
 import ReactMarkdown from "react-markdown";
+import type { Components } from "react-markdown";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useLatestTaskRow } from "@/hooks/useLatestTaskRow";
 import { LENSES as BEAT_LENSES, type RevisionPlan } from "@/lib/beatSheet";
 import type { CastMember, Foundations, Tentpole } from "@/lib/foundations";
 import {
-  applyProposal, clearPendingProposal, GENERATE_PROMPTS, sendRevisionMessage,
-  type RevisionChatRow, type RevisionLayer, type RevisionProposal,
+  applyProposal, clearPendingProposal, GENERATE_PROMPTS, sendRevisionMessage, startNewRevisionSession,
+  type RevisionChatRow, type RevisionLayer, type RevisionProposal, type RevisionSession,
 } from "@/lib/revisionChat";
 import type { StudioModel } from "./studioModel";
 import { ActionLink, Eyebrow, Panel, RunError } from "./studioUi";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface LayerUi {
   title: string;
@@ -123,10 +126,18 @@ export function ReviseChat({ bookId, layer, onChanged, model, currentSpine, curr
   const messages = Array.isArray(row?.messages) ? row!.messages : [];
   const thinking = row?.status === "thinking";
   const pending = row?.pending_proposal ?? null;
+  const sessions: RevisionSession[] = Array.isArray(row?.sessions) ? row!.sessions! : [];
 
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const { scrollRef, atBottom, scrollToBottom } = useChatScroll([messages.length, thinking, !!pending] as const);
+
+  const newChat = async () => {
+    if (thinking || sending) return;
+    try { await startNewRevisionSession(bookId, layer); setHistoryOpen(false); refetch(); }
+    catch (e) { toast({ title: "Couldn't start a new chat", description: String((e as Error)?.message ?? e), variant: "destructive" }); }
+  };
 
   const send = async (text: string) => {
     const t = text.trim();
@@ -161,7 +172,27 @@ export function ReviseChat({ bookId, layer, onChanged, model, currentSpine, curr
       <div className="flex shrink-0 items-center gap-2">
         <Wand2 className="h-4 w-4 text-[hsl(var(--pv-accent))]" />
         <Eyebrow tone="accent">{ui.title}</Eyebrow>
+        <div className="ml-auto flex items-center gap-1">
+          {sessions.length > 0 && (
+            <button type="button" onClick={() => setHistoryOpen((v) => !v)} title="Past chats"
+              className={`inline-flex items-center gap-1 rounded-full px-2 py-1 pv-mono text-[10px] uppercase tracking-[0.1em] transition-colors ${historyOpen ? "text-[hsl(var(--pv-accent))]" : "text-[hsl(var(--pv-text-faint))] hover:text-foreground"}`}>
+              <Clock className="h-3 w-3" /> {sessions.length}
+              <ChevronDown className={`h-3 w-3 transition-transform ${historyOpen ? "rotate-180" : ""}`} />
+            </button>
+          )}
+          <button type="button" onClick={() => void newChat()} disabled={busy || messages.length === 0} title="New chat — archives the current one"
+            className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[hsl(var(--pv-text-faint))] transition-colors hover:text-[hsl(var(--pv-accent))] disabled:opacity-40">
+            <SquarePen className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
+
+      {/* Past chats — archived sessions, read-only. */}
+      {historyOpen && sessions.length > 0 && (
+        <div className="mt-2 shrink-0 max-h-[40%] overflow-y-auto rounded-xl border border-[hsl(var(--pv-border-soft))]/60 bg-[hsl(var(--pv-surface-2))]/30 px-3 py-2">
+          <SessionHistory sessions={sessions} foundations={currentFoundations} model={model} />
+        </div>
+      )}
 
       {/* Conversation — fills the rail; the blurb only stands in for an empty thread. */}
       <div className="relative mt-3 min-h-0 flex-1">
@@ -177,7 +208,7 @@ export function ReviseChat({ bookId, layer, onChanged, model, currentSpine, curr
               </div>
             ) : (
               <div className="max-w-[92%] pv-serif text-[14.5px] leading-[1.62] text-[hsl(var(--pv-text-muted))] prose prose-sm max-w-none dark:prose-invert prose-p:my-2 prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0 prose-headings:text-foreground prose-strong:text-foreground prose-strong:font-semibold">
-                <ReactMarkdown>{m.text}</ReactMarkdown>
+                <ReactMarkdown components={makeMarkdownComponents(currentFoundations, model)}>{m.text}</ReactMarkdown>
               </div>
             )}
           </div>
@@ -254,6 +285,156 @@ function Chip({ onClick, disabled, title, children }: { onClick: () => void; dis
       className="rounded-full border border-[hsl(var(--pv-border-soft))] px-2.5 py-1 text-[12px] text-[hsl(var(--pv-text-muted))] transition-colors hover:border-[hsl(var(--pv-accent))]/50 hover:text-[hsl(var(--pv-accent))] disabled:opacity-40">
       {children}
     </button>
+  );
+}
+
+// ── Entity chips — inline references the AI outputs as `[xxxxxxxx]` ──────────
+// The AI is trained to reference tentpoles, cast members, and pages by their IDs
+// (8-char hex for tentpoles/cast; integers for pages). These render as clickable
+// chips with a hover tooltip and a click modal showing full entity details.
+
+type EntityRef =
+  | { kind: "tentpole"; item: Tentpole }
+  | { kind: "cast"; item: CastMember }
+  | { kind: "page"; title: string | null; objectiveText: string; beatText: string };
+
+function lookupEntity(id: string, foundations?: Foundations | null, model?: StudioModel): EntityRef | null {
+  const tentpole = foundations?.tentpoles?.find((t) => t.id === id);
+  if (tentpole) return { kind: "tentpole", item: tentpole };
+  const cast = foundations?.cast?.find((c) => c.id === id);
+  if (cast) return { kind: "cast", item: cast };
+  const numId = /^\d+$/.test(id) ? parseInt(id, 10) : NaN;
+  if (!isNaN(numId) && model) {
+    const p = model.pageById(numId);
+    if (p) return { kind: "page", title: p.title, objectiveText: p.objectiveText, beatText: p.beatText };
+  }
+  return null;
+}
+
+function EntityChip({ id, foundations, model }: { id: string; foundations?: Foundations | null; model?: StudioModel }) {
+  const [open, setOpen] = useState(false);
+  const entity = lookupEntity(id, foundations, model);
+
+  if (!entity) {
+    return <code className="rounded bg-[hsl(var(--pv-surface-2))] px-1 text-[0.83em]">[{id}]</code>;
+  }
+
+  let label = "";
+  let tipText = "";
+  let modalTitle = "";
+  let modalBody: React.ReactNode = null;
+
+  if (entity.kind === "tentpole") {
+    const t = entity.item;
+    label = t.text.length > 36 ? t.text.slice(0, 36) + "…" : t.text;
+    tipText = t.text;
+    modalTitle = "Tentpole moment";
+    modalBody = (
+      <div className="space-y-3">
+        <p className="pv-serif text-[14px] leading-[1.65]">{t.text}</p>
+        <div className="flex gap-2">
+          <span className="pv-mono rounded-full border border-[hsl(var(--pv-border-soft))] px-2 py-0.5 text-[10px] uppercase tracking-wide text-[hsl(var(--pv-text-faint))]">{t.status}</span>
+          <span className="pv-mono rounded-full border border-[hsl(var(--pv-border-soft))] px-2 py-0.5 text-[10px] uppercase tracking-wide text-[hsl(var(--pv-text-faint))]">{t.source}</span>
+        </div>
+      </div>
+    );
+  } else if (entity.kind === "cast") {
+    const c = entity.item;
+    label = c.name;
+    tipText = [c.want, c.wound, c.lie].filter(Boolean).join(" · ");
+    modalTitle = c.name;
+    modalBody = (
+      <div className="space-y-2 pv-serif text-[14px] leading-[1.6]">
+        {c.role && <p className="pv-mono text-[10px] uppercase tracking-wide text-[hsl(var(--pv-text-faint))]">{c.role}</p>}
+        {c.want && <p><span className="font-semibold">Want:</span> {c.want}</p>}
+        {c.wound && <p><span className="font-semibold">Wound:</span> {c.wound}</p>}
+        {c.lie && <p><span className="font-semibold">Lie:</span> {c.lie}</p>}
+      </div>
+    );
+  } else {
+    label = entity.title || `Page ${id}`;
+    tipText = entity.objectiveText;
+    modalTitle = entity.title || `Page ${id}`;
+    modalBody = (
+      <div className="space-y-2 pv-serif text-[14px] leading-[1.6]">
+        {entity.objectiveText && <p>{entity.objectiveText}</p>}
+        {entity.beatText && <p className="italic text-[hsl(var(--pv-text-muted))]">{entity.beatText}</p>}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <TooltipProvider delayDuration={250}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={() => setOpen(true)}
+              className="inline-flex items-center rounded-full border border-[hsl(var(--pv-accent))]/40 bg-[hsl(var(--pv-accent))]/[0.07] px-2 py-0.5 pv-mono text-[10px] text-[hsl(var(--pv-accent))] transition-colors hover:border-[hsl(var(--pv-accent))]/70 hover:bg-[hsl(var(--pv-accent))]/[0.14] align-baseline not-prose"
+            >
+              {label}
+            </button>
+          </TooltipTrigger>
+          {tipText && (
+            <TooltipContent className="max-w-[260px] pv-serif text-[12.5px] leading-[1.5]">
+              {tipText}
+            </TooltipContent>
+          )}
+        </Tooltip>
+      </TooltipProvider>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="pv-serif font-semibold">{modalTitle}</DialogTitle>
+          </DialogHeader>
+          <div className="mt-1">{modalBody}</div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function makeMarkdownComponents(foundations?: Foundations | null, model?: StudioModel): Components {
+  return {
+    code: ({ children }) => {
+      const text = String(children ?? "");
+      const m = text.match(/^\[([0-9a-f]{8}|\d+)\]$/);
+      if (m) return <EntityChip id={m[1]} foundations={foundations} model={model} />;
+      return <code className="rounded bg-[hsl(var(--pv-surface-2))] px-1 text-[0.83em]">{children}</code>;
+    },
+  };
+}
+
+// Past archived conversations (revision_chats.sessions), newest first — each expands read-only.
+function SessionHistory({ sessions, foundations, model }: { sessions: RevisionSession[]; foundations?: Foundations | null; model?: StudioModel }) {
+  const [openIdx, setOpenIdx] = useState<number | null>(null);
+  const when = (iso: string) => { try { return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }); } catch { return iso; } };
+  return (
+    <div className="space-y-1">
+      {sessions.map((s, i) => (
+        <div key={i}>
+          <button type="button" onClick={() => setOpenIdx(openIdx === i ? null : i)}
+            className="flex w-full items-center gap-2 py-1 text-left pv-serif text-[12px] text-[hsl(var(--pv-text-muted))] hover:text-foreground">
+            <ChevronDown className={`h-3 w-3 shrink-0 transition-transform ${openIdx === i ? "rotate-180" : ""}`} />
+            <span className="flex-1 truncate italic">{when(s.ended_at)} · {s.messages.length} message{s.messages.length === 1 ? "" : "s"}</span>
+          </button>
+          {openIdx === i && (
+            <div className="space-y-2 border-l border-[hsl(var(--pv-border-soft))]/60 pl-3 pb-2">
+              {s.messages.map((m, j) => (
+                <div key={j} className={m.role === "user" ? "flex justify-end" : ""}>
+                  {m.role === "user" ? (
+                    <div className="max-w-[85%] rounded-xl rounded-br-sm bg-[hsl(var(--pv-surface-2))] px-3 py-1.5 pv-serif text-[12.5px] leading-[1.5] text-foreground whitespace-pre-wrap">{m.text}</div>
+                  ) : (
+                    <div className="max-w-[92%] pv-serif text-[13px] leading-[1.55] text-[hsl(var(--pv-text-muted))] prose prose-sm max-w-none dark:prose-invert"><ReactMarkdown components={makeMarkdownComponents(foundations, model)}>{m.text}</ReactMarkdown></div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
   );
 }
 
