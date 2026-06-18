@@ -95,7 +95,12 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
     [briefSet, briefContext, spine.text, spine.stale, pages, journey, hasRead, isPublic, foundations, threads]
   );
 
-  const selection: Selection = selected ?? { kind: "step", step: model.current };
+  const selection: Selection = useMemo(() => selected ?? { kind: "step", step: model.current }, [selected, model]);
+
+  // When a change comes FROM the editor rail (e.g. applying a revision), pin the current selection
+  // before refreshing — otherwise the recomputed derived `current` (which jumps to the first stale
+  // step after, say, a spine edit) would swap the rail to another layer's chat under the author.
+  const railOnChanged = useCallback(() => { setSelected(selection); refresh(); }, [selection, refresh]);
 
   // Persist the explicit selection so a reload reopens it; clearing it (back to derived current)
   // wipes the key.
@@ -204,7 +209,7 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
       model={model}
       foundations={foundations ?? null}
       spineText={spine.text}
-      onChanged={refresh}
+      onChanged={railOnChanged}
     />
   ) : null;
 

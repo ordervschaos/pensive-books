@@ -108,6 +108,21 @@ export async function clearPendingProposal(bookId: number, layer: RevisionLayer)
 }
 
 /**
+ * Record an applied revision IN the thread (an assistant note) and clear the pending proposal in the
+ * SAME write — so the conversation reflects the change (and never blanks) right after Apply. Keeps
+ * the existing messages; the edge fn keeps appending to this same array on the next turn.
+ */
+export async function recordApplied(bookId: number, layer: RevisionLayer, note: string): Promise<void> {
+  const { data } = await supabase.from("revision_chats").select("messages").eq("book_id", bookId).eq("layer", layer).maybeSingle();
+  const messages = Array.isArray(data?.messages) ? (data!.messages as ChatMessage[]) : [];
+  const applied: ChatMessage = { role: "assistant", text: note, ts: new Date().toISOString() };
+  const { error } = await supabase
+    .from("revision_chats").update({ messages: [...messages, applied], pending_proposal: null })
+    .eq("book_id", bookId).eq("layer", layer);
+  if (error) throw error;
+}
+
+/**
  * Apply an approved proposal through that layer's EXISTING write path, so provenance stamping (and
  * therefore downstream staleness) is unchanged:
  *   foundations → merge the patch into books.foundations (pins the touched lines — Apply is an

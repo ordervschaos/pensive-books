@@ -18,7 +18,7 @@ import { useLatestTaskRow } from "@/hooks/useLatestTaskRow";
 import { LENSES as BEAT_LENSES, type RevisionPlan } from "@/lib/beatSheet";
 import type { CastMember, Foundations, Tentpole } from "@/lib/foundations";
 import {
-  applyProposal, clearPendingProposal, GENERATE_PROMPTS, sendRevisionMessage, startNewRevisionSession,
+  applyProposal, clearPendingProposal, GENERATE_PROMPTS, recordApplied, sendRevisionMessage, startNewRevisionSession,
   type RevisionChatRow, type RevisionLayer, type RevisionProposal, type RevisionSession,
 } from "@/lib/revisionChat";
 import type { StudioModel } from "./studioModel";
@@ -155,8 +155,12 @@ export function ReviseChat({ bookId, layer, onChanged, model, currentSpine, curr
   const apply = async () => {
     if (!pending) return;
     try {
+      const summary = pending.summary?.trim() || "Revision applied.";
       await applyProposal(bookId, pending);
-      await clearPendingProposal(bookId, layer);
+      // Reflect the apply in the thread (and clear pending in the same write) so the chat keeps its
+      // history and visibly shows what was applied, instead of blanking.
+      await recordApplied(bookId, layer, `✓ Applied — ${summary}\n_${ui.applyNote}_`);
+      refetch();
       onChanged();
       toast({ title: "Applied the revision", description: ui.applyNote });
     } catch (e) {
@@ -316,7 +320,14 @@ function EntityChip({ id, foundations, model }: { id: string; foundations?: Foun
   const entity = lookupEntity(id, foundations, model);
 
   if (!entity) {
-    return <code className="rounded bg-[hsl(var(--pv-surface-2))] px-1 text-[0.83em]">[{id}]</code>;
+    return (
+      <span
+        title="Deleted or not found"
+        className="inline-flex items-center rounded-full border border-[hsl(var(--pv-border-soft))] bg-transparent px-2 py-0.5 pv-mono text-[10px] text-[hsl(var(--pv-text-faint))] opacity-60 line-through align-baseline not-prose"
+      >
+        {id.slice(0, 6)}…
+      </span>
+    );
   }
 
   let label = "";
