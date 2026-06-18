@@ -1111,17 +1111,18 @@ async function runBeatsAgent(bookId, message) {
 
   try {
     // "Plan all beats" is a bulk generation op that times out when sent as a single claude -p call.
+    // Writes each beat directly to the DB so the author sees them arrive in real-time.
     if (msg.startsWith("Plan a beat for every page that has an objective but no beat")) {
       console.log(`planAllBeatsLocal (beats-agent) for book ${bookId} (${pages.length} pages)…`);
-      const { reply, proposal } = await planAllBeatsLocal(bookId, pages);
-      const plan = proposal ? proposal.patch.data : null;
-      const assistant = { role: "assistant", text: reply, ts: new Date().toISOString(), plan: plan?.summary };
-      await upsertBeatChat(bookId, chatId, {
-        messages: [...withUser, assistant],
-        pending_plan: plan ?? existing?.pending_plan ?? null,
-        status: "idle",
+      const { reply } = await planAllBeatsLocal(bookId, pages, {
+        onProgress: async (done, total) => {
+          const prog = { role: "assistant", text: `Planning beats… ${done}/${total}`, ts: new Date().toISOString() };
+          await upsertBeatChat(bookId, chatId, { messages: [...withUser, prog], status: "thinking" });
+        },
       });
-      return { reply, plan };
+      const assistant = { role: "assistant", text: reply, ts: new Date().toISOString() };
+      await upsertBeatChat(bookId, chatId, { messages: [...withUser, assistant], status: "idle" });
+      return { reply, plan: null };
     }
 
     const f = book.foundations ?? null;
@@ -1280,14 +1281,19 @@ async function runReviseChat(bookId, layer, message) {
       // Detect the known generate-chip prompt and route through the per-page specialist instead.
       if (msg.startsWith("Plan a beat for every page that has an objective but no beat")) {
         console.log(`planAllBeatsLocal for book ${bookId} (${pages.length} pages)…`);
-        const { reply, proposal } = await planAllBeatsLocal(bookId, pages);
-        const assistant = { role: "assistant", text: reply, ts: new Date().toISOString(), plan: proposal?.summary };
+        const { reply } = await planAllBeatsLocal(bookId, pages, {
+          onProgress: async (done, total) => {
+            const prog = { role: "assistant", text: `Planning beats… ${done}/${total}`, ts: new Date().toISOString() };
+            await upsertRevisionChat(bookId, layer, chatId, { messages: [...withUser, prog], status: "thinking" });
+          },
+        });
+        const assistant = { role: "assistant", text: reply, ts: new Date().toISOString() };
         await upsertRevisionChat(bookId, layer, chatId, {
           messages: [...withUser, assistant],
-          pending_proposal: proposal ?? existing?.pending_proposal ?? null,
+          pending_proposal: existing?.pending_proposal ?? null,
           status: "idle",
         });
-        return { reply, proposal };
+        return { reply, proposal: null };
       }
       system = BEATS_AGENT_INSTRUCTIONS;
       context =
@@ -1408,9 +1414,10 @@ Write the beat for THIS PAGE. One paragraph, plan only.`;
 }
 
 // Plan beats for all un-beaten pages using runObjectiveToBeat (per-page specialist) rather than a
-// single chat-model call, which times out on large books. Returns { reply, proposal } in the same
-// shape that runReviseChat produces, so the caller can write it to the chat row and return directly.
-async function planAllBeatsLocal(bookId, pages) {
+// single chat-model call, which times out on large books. Writes each beat to the DB immediately so
+// the author sees beats appear in the beat sheet in real-time (no "review then apply" step needed).
+// `onProgress(done, total)` is called after each successful write so callers can push chat updates.
+async function planAllBeatsLocal(bookId, pages, { onProgress } = {}) {
   const toBeat = pages.filter(
     (p) => (p.page_type === "text" || !p.page_type) &&
            (p.metadata?.objective ?? "").trim() &&
@@ -1419,32 +1426,26 @@ async function planAllBeatsLocal(bookId, pages) {
   if (toBeat.length === 0) {
     return { reply: "All pages already have beats — nothing to plan.", proposal: null };
   }
-  // Sequential front-to-back: each call reads the outline for continuity so order matters.
-  const planned = [];
-  let failed = 0;
+  const total = toBeat.length;
+  let done = 0, failed = 0;
+  // Sequential front-to-back: each call reads the full outline for continuity so order matters.
   for (const page of toBeat) {
-    console.log(`  planning beat for page ${page.id} (${page.title ?? "untitled"})…`);
+    console.log(`  beat ${done + 1}/${total}: page ${page.id} (${page.title ?? "untitled"})…`);
     const out = await runObjectiveToBeat({ bookId, pageId: page.id, objective: page.metadata.objective });
-    if (out.error || !out.beat) { failed++; console.warn(`  ✗ page ${page.id}: ${out.error ?? "no beat"}`); }
-    else planned.push({ id: page.id, beat: out.beat });
+    if (out.error || !out.beat) {
+      failed++;
+      console.warn(`  ✗ page ${page.id}: ${out.error ?? "no beat"}`);
+    } else {
+      await stampBeatMeta(page.id, page.metadata.objective, out.beat);
+      done++;
+      if (onProgress) await onProgress(done, total);
+    }
   }
-  if (planned.length === 0) {
+  if (done === 0) {
     return { reply: `Couldn't plan any beats — ${failed} page${failed === 1 ? "" : "s"} failed. Try again.`, proposal: null };
   }
-  const beatMap = new Map(planned.map((r) => [r.id, r.beat]));
-  const planPages = pages.map((p) => ({
-    ref: p.id,
-    op: "keep",
-    pageType: p.page_type === "section" ? "section" : "text",
-    title: p.title ?? "",
-    objective: (p.metadata?.objective ?? "").trim(),
-    beat: beatMap.get(p.id) ?? ((p.metadata?.beat ?? "").trim() || undefined),
-    why: beatMap.has(p.id) ? "Planned from objective." : "",
-  }));
-  const n = planned.length;
-  const summary = `${n} beat${n === 1 ? "" : "s"} planned${failed ? `, ${failed} skipped` : ""}.`;
-  const reply = `Planned ${n} beat${n === 1 ? "" : "s"}${failed ? ` (${failed} couldn't be planned and were skipped)` : ""}. Review below and apply when ready.`;
-  return { reply, proposal: { summary, patch: { layer: "beats", data: { summary, pages: planPages, deletes: [], planOnly: true } } } };
+  const reply = `Planned ${done} beat${done === 1 ? "" : "s"}${failed ? ` (${failed} skipped)` : ""}. They're live in your beat sheet now — ask me to evaluate or revise any of them.`;
+  return { reply, proposal: null };
 }
 
 // ── /scene-image-prompt + /character-portrait-prompt ──────────────────────────
