@@ -47,7 +47,7 @@ Deno.serve(async (req: Request) => {
     const lens = LENSES[layer];
 
     const { data: book, error: bookError } = await userClient
-      .from("books").select("id, name, brief, spine, foundations, owner_id").eq("id", bookId).single();
+      .from("books").select("id, name, brief, spine, foundations, craft_notes, owner_id").eq("id", bookId).single();
     if (bookError || !book) return json({ error: "Book not found" }, 404);
 
     const { data: access } = await userClient
@@ -60,15 +60,14 @@ Deno.serve(async (req: Request) => {
     const history: ChatMessage[] = Array.isArray(existing?.messages) ? (existing!.messages as ChatMessage[]) : [];
     const userMsg: ChatMessage = { role: "user", text: msg, ts: new Date().toISOString() };
     const withUser = [...history, userMsg];
-    let chatId = existing?.id as number | undefined;
-    if (chatId) {
-      await userClient.from("revision_chats").update({ messages: withUser, status: "thinking", error: null }).eq("id", chatId);
-    } else {
-      const { data: ins, error: insErr } = await userClient
-        .from("revision_chats").insert({ book_id: bookId, layer, messages: withUser, status: "thinking" }).select("id").single();
-      if (insErr) throw insErr;
-      chatId = (ins as { id: number }).id;
-    }
+    // Upsert: if a row already exists (e.g. left from a prior crashed attempt) update it in place
+    // rather than inserting — avoids 409 on the (book_id, layer) unique key.
+    const { data: ins, error: insErr } = await userClient
+      .from("revision_chats")
+      .upsert({ book_id: bookId, layer, messages: withUser, status: "thinking", error: null }, { onConflict: "book_id,layer" })
+      .select("id").single();
+    if (insErr) throw insErr;
+    const chatId = (ins as { id: number }).id;
 
     const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!apiKey) { await fail(userClient, chatId, withUser); return json({ error: "ANTHROPIC_API_KEY not configured" }, 500); }
@@ -87,6 +86,7 @@ Deno.serve(async (req: Request) => {
       foundations: (book.foundations as Foundations | null) ?? null,
       pages: (pages as PageRow[] | null) ?? [],
       threads: (threads as ThreadLite[] | null) ?? [],
+      craftNote: (book.craft_notes as Record<string, string> | null)?.[layer] ?? null,
     };
 
     try {

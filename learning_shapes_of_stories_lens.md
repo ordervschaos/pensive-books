@@ -31,5 +31,24 @@ reviser reasons against. Implemented as the **template** for wiring any KB doc i
 Next candidates: `character-engine.md → foundations` lens (zero craft today),
 `outlining.md → outline` lens.
 
-## Remaining
-- `supabase functions deploy revise-chat` to ship to prod (dev already live via bridge).
+## Tier 2 — per-book editable craft (added after the template landed)
+
+The full vision: each step has craft knowledge so generation isn't "random and noob" —
+a **two-tier** layer, mirroring the foundations pin model (system baseline + author edits).
+
+- **Two-tier craft** — TIER 1 = immutable *system craft* (distilled KB const, e.g. `STORY_SHAPES`); TIER 2 = editable *book craft* (`books.craft_notes[layer]`). The lens stacks them: system = floor, author's note = taste that wins on style. Generalized in `revision-chat.ts` via a `SYSTEM_CRAFT` map + `craftContext(layer, note)` helper that every lens appends — so the editable tier works for all four layers even before they have a system default.
+- **jsonb-on-row (vs. new table)** — chose `books.craft_notes jsonb` keyed by layer over a `craft_notes` table. Mirrors `books.foundations` / `books.canon`; no joins; rides the existing books Realtime stream (refresh = no-op). Per-book scope was the user's call.
+- **Scope decision** — global-per-user vs per-book vs both. Picked **per-book**: a thriller and a memoir carry different house style. Empty by default → falls back to system tier only.
+- **Merge-don't-clobber write** — `saveCraftNote` reads the jsonb, spreads, sets/deletes one layer's key, writes back — never drops the other layers (same shape as `writeSpinePatch`).
+- **Loose-typed supabase client** — `books.foundations`/`spine`/`craft_notes` aren't in the generated `types.ts`, yet select/update compile via `as` casts. Mirrored that instead of regenerating types.
+- **Disclosure (progressive disclosure)** — the `CraftNote` editor is a collapsed `▸` toggle under the step content; absent until opened, a `·` marks it has content. Keeps the calm chat-first surface uncluttered.
+
+### Data flow (tier 2)
+`CraftNote` (per step) → `saveCraftNote` → `books.craft_notes[layer]` → edge `revise-chat`
+selects `craft_notes` → `ctx.craftNote = craft_notes[layer]` → `craftContext()` appends it
+under the system craft in that layer's lens prompt.
+
+## Status
+- Tier 1 spine template: shipped (`story-shapes.ts` wired into spine lens).
+- Tier 2 editable craft: shipped end-to-end (migration pushed, `revise-chat` deployed, spine UI mounted).
+- Replicate next: distill tier-1 system craft for foundations (`character-engine.md`), outline (`outlining.md`), beats (already has `lens.ts`); mount `<CraftNote>` in those three steps (one line each).

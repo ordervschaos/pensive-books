@@ -70,6 +70,30 @@ export interface LensContext {
   foundations: Foundations | null;
   pages: PageRow[];
   threads: ThreadLite[];
+  /** TIER 2: this book's author-editable craft note for the active layer (books.craft_notes[layer]). */
+  craftNote?: string | null;
+}
+
+// ── Craft knowledge — a two-tier frame the reviser reasons AGAINST (never a template) ────────────
+// TIER 1 (system, immutable): distilled KB knowledge shipped with the app — the floor each layer's
+//   reviser is held to. Add a layer's default here as it gets distilled (spine = Vonnegut shapes).
+// TIER 2 (book, editable): books.craft_notes[layer] — the author's house style for THIS book.
+// craftContext stacks them: the system craft is a floor, the author's note wins on taste. Every lens
+// appends it, so the editable tier works for all layers even before they have a system default.
+const SYSTEM_CRAFT: Partial<Record<RevisionLayer, string>> = {
+  spine: STORY_SHAPES,
+};
+
+function craftContext(layer: RevisionLayer, note: string | null | undefined): string {
+  let out = "";
+  const sys = SYSTEM_CRAFT[layer];
+  if (sys) out += `\n\n${sys}`;
+  const n = note?.trim();
+  if (n) {
+    out += `\n\nYOUR CRAFT NOTES (this book — the author's house style for this layer; honor the ` +
+      `system craft above as a floor, treat these as taste that wins on style):\n${n}`;
+  }
+  return out;
 }
 
 interface Lens {
@@ -226,7 +250,8 @@ When you are talking, evaluating, or answering — append NO code block at all. 
         (settled ? `\n\nFOUNDATIONS (settled — pinned lines are immutable):\n${settled}` : "") +
         `\n\nCURRENT BEAT SHEET (these are the real page ids):\n${beatSheetContext(ctx.pages)}` +
         (ctx.threads.length ? `\n\nTRACKED THREADS (keep their setups & payoffs intact):\n${threadsContext(ctx.threads)}` : "") +
-        `\n\nFICTION CRITERIA (use when evaluating):\n${BEAT_CRITERIA}`;
+        `\n\nFICTION CRITERIA (use when evaluating):\n${BEAT_CRITERIA}` +
+        craftContext("beats", ctx.craftNote);
     },
     sanitize(parsed, ctx) {
       const plan = sanitizePlan(parsed as Partial<RevisionPlan>, ctx.pages, true);
@@ -256,7 +281,8 @@ When talking, pressure-testing, or merely OFFERING SHAPES to choose from, append
         (ctx.spineText?.trim() ? `\n\nSPINE (the book in one arc — the outline must realize this):\n${ctx.spineText.trim()}` : "") +
         (settled ? `\n\nFOUNDATIONS (settled — pinned lines are immutable):\n${settled}` : "") +
         `\n\nCURRENT OUTLINE (these are the real page ids):\n${outlineContext(ctx.pages)}` +
-        (ctx.threads.length ? `\n\nTRACKED THREADS (keep their setups & payoffs intact):\n${threadsContext(ctx.threads)}` : "");
+        (ctx.threads.length ? `\n\nTRACKED THREADS (keep their setups & payoffs intact):\n${threadsContext(ctx.threads)}` : "") +
+        craftContext("outline", ctx.craftNote);
     },
     sanitize(parsed, ctx) {
       const plan = sanitizePlan(parsed as Partial<RevisionPlan>, ctx.pages, true);
@@ -284,7 +310,7 @@ When talking, pressure-testing, or merely OFFERING DIRECTIONS to choose from, ap
       return `BOOK: ${ctx.bookName}\n\nBRIEF (the contract):\n${briefBlock(ctx.brief)}` +
         (settled ? `\n\nFOUNDATIONS (settled — pinned lines are immutable; every pinned tentpole MUST survive in the spine):\n${settled}` : "") +
         `\n\nCURRENT SPINE:\n${ctx.spineText?.trim() || "(no spine yet)"}` +
-        `\n\n${STORY_SHAPES}`;
+        craftContext("spine", ctx.craftNote);
     },
     sanitize(parsed) {
       const text = stripEntityIds(str(parsed.text));
@@ -317,7 +343,8 @@ When talking or pressure-testing, append NO code block. If you send "cast" or "t
       const settled = settledContext(f).trim();
       return `BOOK: ${ctx.bookName}\n\nBRIEF (the frozen contract — never propose changing it):\n${briefBlock(ctx.brief)}` +
         `\n\nCURRENT FOUNDATIONS (settled — PINNED lines are immutable):\n${settled}` +
-        `\n\nCAST (with ids — reference an [id] to revise a member):\n${castWithIds(f)}`;
+        `\n\nCAST (with ids — reference an [id] to revise a member):\n${castWithIds(f)}` +
+        craftContext("foundations", ctx.craftNote);
     },
     sanitize(parsed, ctx) {
       const data = sanitizeFoundations(parsed, ctx.foundations ?? {});
