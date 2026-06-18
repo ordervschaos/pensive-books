@@ -7,7 +7,7 @@
 // The revise-chat edge fn is the single writer of the revision_chats thread (one row per book+layer);
 // this panel sends a message and projects the row live (refresh = no-op). Generalizes BeatChat —
 // see docs/beat-sheet-revision.md and the unified-revision plan.
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, Check, ChevronDown, Clock, Loader2, Plus, Sparkles, SquarePen, Trash2, Wand2, X } from "lucide-react";
 import { useChatScroll } from "./useChatScroll";
 import ReactMarkdown from "react-markdown";
@@ -123,15 +123,22 @@ export function ReviseChat({ bookId, layer, onChanged, model, currentSpine, curr
   const { row, refetch } = useLatestTaskRow<RevisionChatRow>({
     table: "revision_chats", bookId, match: { layer }, activeStatuses: ["thinking"], staleMs: 120_000,
   });
-  const messages = Array.isArray(row?.messages) ? row!.messages : [];
+  const messages = useMemo(() => (Array.isArray(row?.messages) ? row!.messages : []), [row]);
   const thinking = row?.status === "thinking";
   const pending = row?.pending_proposal ?? null;
   const sessions: RevisionSession[] = Array.isArray(row?.sessions) ? row!.sessions! : [];
 
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  // Optimistic echo: the just-sent message, shown instantly as a user bubble + "sending…" until the
+  // edge fn writes it to the thread and Realtime projects it back (cleared by the effect below).
+  const [optimistic, setOptimistic] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const { scrollRef, atBottom, scrollToBottom } = useChatScroll([messages.length, thinking, !!pending] as const);
+  const { scrollRef, atBottom, scrollToBottom } = useChatScroll([messages.length, thinking, !!pending, !!optimistic] as const);
+
+  useEffect(() => {
+    if (optimistic != null && messages.some((m) => m.role === "user" && m.text === optimistic)) setOptimistic(null);
+  }, [messages, optimistic]);
 
   const newChat = async () => {
     if (thinking || sending) return;
@@ -144,10 +151,13 @@ export function ReviseChat({ bookId, layer, onChanged, model, currentSpine, curr
     if (!t || sending || thinking) return;
     setSending(true);
     setDraft("");
+    setOptimistic(t);
     try {
       await sendRevisionMessage(bookId, layer, t);
       refetch();
     } catch (e) {
+      setOptimistic(null);
+      setDraft(t); // restore so the author can retry
       toast({ title: "The editor couldn't respond", description: String((e as Error)?.message ?? e), variant: "destructive" });
     } finally { setSending(false); }
   };
@@ -217,6 +227,18 @@ export function ReviseChat({ bookId, layer, onChanged, model, currentSpine, curr
             )}
           </div>
         ))}
+        {optimistic && (
+          <>
+            <div className="flex justify-end">
+              <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-[hsl(var(--pv-surface-2))] px-3.5 py-2 pv-serif text-[14px] leading-[1.55] text-foreground whitespace-pre-wrap opacity-60">
+                {optimistic}
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))]">
+              sending <SendingDots />
+            </div>
+          </>
+        )}
         {thinking && (
           <div className="flex items-center gap-2 pv-serif text-[13.5px] italic text-[hsl(var(--pv-text-faint))]">
             <Loader2 className="h-3.5 w-3.5 animate-spin" /> reading the {layer}…
@@ -280,6 +302,17 @@ export function ReviseChat({ bookId, layer, onChanged, model, currentSpine, curr
         </div>
       </div>
     </Panel>
+  );
+}
+
+// Three pulsing dots — the classic "typing" affordance for the optimistic sending state.
+function SendingDots() {
+  return (
+    <span className="inline-flex items-center gap-0.5">
+      <span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:-0.3s]" />
+      <span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:-0.15s]" />
+      <span className="h-1 w-1 animate-bounce rounded-full bg-current" />
+    </span>
   );
 }
 
