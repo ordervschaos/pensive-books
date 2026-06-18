@@ -92,6 +92,11 @@ function parseJson<T>(text: string): T {
 
 const uid = () => crypto.randomUUID().slice(0, 8);
 
+// The model is told never to embed tentpole ids in generated prose, but it sometimes still slips a
+// `[c3ac881d]` marker into a spine / route summary. Strip any `[8-hex-char]` token (and the space
+// that usually precedes it) so saved narrative text is always clean, regardless of model obedience.
+export const stripEntityIds = (s: string) => s.replace(/\s?\[[0-9a-f]{8}\]/g, "").replace(/[ \t]{2,}/g, " ");
+
 // ── Per-step prompts ─────────────────────────────────────────────────────────
 const STEP_SYSTEM: Record<FoundationsStep, string> = {
   argument: `You are a book architect proposing the book's ARGUMENT — the claim the whole story argues (e.g. "loyalty to a dead man can cost you every living one"). Generate exactly 3 candidates, genuinely different claims pulled from different tensions in the brief. Each: ~2 sentences, plus the ending it implies in one line.
@@ -227,12 +232,12 @@ const ROUTES_SYSTEM = `You are a book architect proposing ROUTES — alternative
 
 Generate exactly 3 routes. Each must:
 - Realize the settled argument and land on the settled ending
-- Include EVERY pinned tentpole (reference them by their [id]) — order may differ between routes
+- Weave EVERY pinned tentpole moment into the narrative prose — do NOT embed any ids or brackets in the text
 - Never include a killed direction
 - Differ genuinely from the other routes: different orderings, different connective tissue, different midpoints
 
 Output JSON ONLY:
-{ "routes": [{ "summary": "<~250 words>", "tentpole_order": ["<tentpole id>", …] }, …] }`;
+{ "routes": [{ "summary": "<~250 words pure narrative prose, no ids>", "tentpole_order": ["<tentpole id>", …] }, …] }`;
 
 export interface SpineRoutesParams {
   bookId: number;
@@ -279,7 +284,7 @@ export async function spineRoutes(client: SupabaseClient, apiKey: string, p: Spi
     return (parsed.routes ?? [])
       .map((r) => ({
         id: uid(),
-        summary: String(r.summary ?? "").trim(),
+        summary: stripEntityIds(String(r.summary ?? "")).trim(),
         tentpole_order: (Array.isArray(r.tentpole_order) ? r.tentpole_order : []).map(String),
       }))
       .filter((r) => r.summary);

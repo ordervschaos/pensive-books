@@ -1,43 +1,29 @@
-// BeatSheet — whole-book beat sheet as an expandable accordion.
+// BeatSheet — whole-book beat sheet as an expandable accordion (manual editor).
 //
-//   • Top: "discard all beats & prose, re-plan" (when passed), then drift-fix banner naming the pages.
+//   • Top: "discard all beats & prose, re-plan" (when passed), then drift indicator if any pages
+//     have beats out of sync with their objectives (visual only — author asks the chat to re-plan).
 //   • Body: full list of all beat pages, each expanding inline to the full objective + beat editor.
 //
 // The conversational beat editor (ReviseChat layer="beats") lives in the studio's right rail.
+// AI generation is NOT here — no per-page propose, no drift auto-fix. Ask the chat on the right.
 import { useEffect, useState } from "react";
-import { Check, ChevronDown, Loader2, RefreshCw } from "lucide-react";
+import { ChevronDown, Loader2 } from "lucide-react";
 import { AutoTextarea } from "@/components/ui/auto-textarea";
-import { saveBeat, saveObjective, transforms } from "@/lib/ladder";
-import { useAIRun } from "@/hooks/useAIRun";
+import { saveBeat, saveObjective } from "@/lib/ladder";
 import type { StudioModel } from "./studioModel";
 import type { MapPage } from "@/lib/planGraph";
-import { ActionLink, Eyebrow, GenRow, Panel, Pip, SkeletonCard } from "./studioUi";
+import { ActionLink, Eyebrow, Panel, Pip } from "./studioUi";
 
-export function BeatSheet({ bookId, model, onChanged, onSelectPage, beforeGen, onDiscardAll, discarding }: {
+export function BeatSheet({ bookId, model, onChanged, onSelectPage, onDiscardAll, discarding }: {
   bookId: number; model: StudioModel; onChanged: () => void;
-  onSelectPage?: (pageId: number) => void; beforeGen: () => Promise<void>;
+  onSelectPage?: (pageId: number) => void;
   onDiscardAll?: () => void; discarding?: boolean;
 }) {
   const beatPages = model.textPages.filter((p) => p.objectiveText.trim());
   const driftPages = beatPages.filter((p) => p.beat === "drift");
-  const [fixing, setFixing] = useState(false);
 
-  const fixAllDrift = async () => {
-    if (fixing || driftPages.length === 0) return;
-    setFixing(true);
-    try {
-      for (const p of driftPages) {
-        try {
-          const newBeat = await transforms.objectiveToBeat(bookId, p.id, p.objectiveText);
-          if (newBeat) await saveBeat(bookId, p.id, newBeat);
-        } catch { /* skip failed page, continue */ }
-      }
-      onChanged();
-    } finally {
-      setFixing(false);
-    }
-  };
-
+  // Drift is surfaced as a visual indicator only — the author asks the chat on the right to re-plan
+  // any out-of-sync beats. No AI auto-fix here.
   const driftNames = driftPages.slice(0, 3).map((p) => `"${p.title || "untitled"}"`).join(", ");
   const driftSuffix = driftPages.length > 3 ? ` and ${driftPages.length - 3} more` : "";
 
@@ -53,16 +39,17 @@ export function BeatSheet({ bookId, model, onChanged, onSelectPage, beforeGen, o
 
       {driftPages.length > 0 && (
         <div className="mb-5">
-          <ActionLink busy={fixing} icon={<RefreshCw className="h-3.5 w-3.5" />} onClick={() => void fixAllDrift()}>
-            regenerate {driftPages.length} out-of-sync beat{driftPages.length === 1 ? "" : "s"} — {driftNames}{driftSuffix} from updated objectives →
-          </ActionLink>
+          <p className="pv-serif text-[13px] italic text-amber-600">
+            {driftPages.length} beat{driftPages.length === 1 ? "" : "s"} out of sync — {driftNames}{driftSuffix}.{" "}
+            Ask the editor on the right to re-plan them →
+          </p>
         </div>
       )}
 
       {beatPages.length > 0 && (
         <BeatList
           bookId={bookId} beatPages={beatPages}
-          onChanged={onChanged} onSelectPage={onSelectPage} beforeGen={beforeGen}
+          onChanged={onChanged} onSelectPage={onSelectPage}
         />
       )}
     </div>
@@ -70,9 +57,9 @@ export function BeatSheet({ bookId, model, onChanged, onSelectPage, beforeGen, o
 }
 
 // ── Accordion list ────────────────────────────────────────────────────────────
-function BeatList({ bookId, beatPages, onChanged, onSelectPage, beforeGen }: {
+function BeatList({ bookId, beatPages, onChanged, onSelectPage }: {
   bookId: number; beatPages: MapPage[];
-  onChanged: () => void; onSelectPage?: (pageId: number) => void; beforeGen: () => Promise<void>;
+  onChanged: () => void; onSelectPage?: (pageId: number) => void;
 }) {
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
@@ -88,16 +75,15 @@ function BeatList({ bookId, beatPages, onChanged, onSelectPage, beforeGen }: {
           onToggle={() => setExpandedId(expandedId === page.id ? null : page.id)}
           onChanged={onChanged}
           onSelectPage={onSelectPage}
-          beforeGen={beforeGen}
         />
       ))}
     </div>
   );
 }
 
-function BeatRow({ bookId, page, pageNum, expanded, onToggle, onChanged, onSelectPage, beforeGen }: {
+function BeatRow({ bookId, page, pageNum, expanded, onToggle, onChanged, onSelectPage }: {
   bookId: number; page: MapPage; pageNum: number; expanded: boolean; onToggle: () => void;
-  onChanged: () => void; onSelectPage?: (pageId: number) => void; beforeGen: () => Promise<void>;
+  onChanged: () => void; onSelectPage?: (pageId: number) => void;
 }) {
   const outOfSync = page.beat === "drift";
   return (
@@ -137,7 +123,6 @@ function BeatRow({ bookId, page, pageNum, expanded, onToggle, onChanged, onSelec
             page={page}
             onChanged={onChanged}
             onSelectPage={onSelectPage}
-            beforeGen={beforeGen}
           />
         </div>
       )}
@@ -146,31 +131,16 @@ function BeatRow({ bookId, page, pageNum, expanded, onToggle, onChanged, onSelec
 }
 
 // ── Full page editor (used inside an expanded row) ────────────────────────────
-function PageRow({ bookId, page, onChanged, onSelectPage, beforeGen }: {
+// Manual editing only — no AI generation. Autosaves on blur. Drift pip is visible indicator only.
+// To re-plan beats, use the editor chat on the right rail.
+function PageRow({ bookId, page, onChanged, onSelectPage }: {
   bookId: number; page: MapPage; onChanged: () => void;
-  onSelectPage?: (pageId: number) => void; beforeGen: () => Promise<void>;
+  onSelectPage?: (pageId: number) => void;
 }) {
   const [obj, setObj] = useState(page.objectiveText);
   const [beat, setBeat] = useState(page.beatText);
   const [saving, setSaving] = useState(false);
   useEffect(() => { setObj(page.objectiveText); setBeat(page.beatText); }, [page.objectiveText, page.beatText]);
-
-  const cand = useAIRun<{ options: string[] }>({ bookId, kind: "beat_candidates", targetPageId: page.id });
-  const proposal = cand.run?.status === "ready" ? (cand.run.result?.options?.[0] ?? "") : "";
-  const generating = cand.run?.status === "running" || cand.run?.status === "pending" || cand.starting;
-
-  const proposeBeat = async (note = "") => {
-    if (!obj.trim()) return;
-    await beforeGen();
-    void cand.start({ pageId: page.id, objective: obj.trim(), ...(note.trim() ? { prompt: note.trim() } : {}) });
-  };
-
-  const acceptProposal = async () => {
-    if (!proposal) return;
-    const text = proposal;
-    setBeat(text);
-    void cand.accept(async () => { await saveBeat(bookId, page.id, text); onChanged(); });
-  };
 
   const saveObj = async () => {
     const t = obj.trim();
@@ -217,47 +187,19 @@ function PageRow({ bookId, page, onChanged, onSelectPage, beforeGen }: {
 
       <div className="my-5 border-t border-[hsl(var(--pv-border-soft))]/50" />
 
-      {/* Beat */}
+      {/* Beat — type and edit directly; ask the chat on the right to generate or re-plan */}
       <div className="space-y-3">
         <Eyebrow className="block">Beat</Eyebrow>
 
-        {beat.trim() && (
-          <Panel variant="chosen" className="px-5 py-4">
-            <AutoTextarea
-              value={beat}
-              onChange={(e) => setBeat(e.target.value)}
-              onBlur={() => void saveB()}
-              disabled={generating}
-              className="pv-serif w-full border-none bg-transparent px-0 text-[15px] leading-[1.65] focus-visible:ring-0 disabled:opacity-50"
-            />
-          </Panel>
-        )}
-
-        {generating && <SkeletonCard />}
-
-        {!generating && proposal && (
-          <div className="rounded-2xl border border-border bg-[hsl(var(--pv-surface-2))]/40 px-5 py-4">
-            <Eyebrow className="block mb-2">Proposed</Eyebrow>
-            <p className="pv-serif text-[15px] leading-[1.65] text-foreground">{proposal}</p>
-            <div className="mt-3 flex items-center gap-4">
-              <button type="button" onClick={() => void acceptProposal()}
-                className="pv-serif inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-[13.5px] text-primary-foreground">
-                <Check className="h-3.5 w-3.5" /> Use this beat
-              </button>
-              <button type="button" onClick={() => void cand.reject()}
-                className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">
-                dismiss
-              </button>
-            </div>
-          </div>
-        )}
-
-        {!generating && !proposal && (
-          <GenRow
-            label={beat.trim() ? "propose more" : "draft this beat"}
-            onFire={(note) => void proposeBeat(note)}
+        <Panel variant={beat.trim() ? "chosen" : "soft"} className="px-5 py-4">
+          <AutoTextarea
+            value={beat}
+            onChange={(e) => setBeat(e.target.value)}
+            onBlur={() => void saveB()}
+            placeholder="What happens in this beat — or ask the editor on the right to plan it →"
+            className="pv-serif w-full border-none bg-transparent px-0 text-[15px] leading-[1.65] focus-visible:ring-0 placeholder:text-[hsl(var(--pv-text-faint))]"
           />
-        )}
+        </Panel>
       </div>
 
       {onSelectPage && (

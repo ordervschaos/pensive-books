@@ -1,20 +1,18 @@
 // PageReview — the Stage in "open a page" mode: that page's full resolution ladder
-// (objective · beat · prose), each level readable, editable, and regenerable in place without leaving
-// the studio. Reuses the ladder client for the short nodes and ProseNodePanel for the prose body, so a
-// page reviewed here writes through the exact same persistence the map's node sheet used.
+// (objective · beat · prose · scene), each level readable and hand-editable. Chat-first redesign:
+// generation/revision lives in the right-rail (ProseEditor/ReviseChat). The center is a near-manual
+// editor — objective + beat are editable here, prose is read-only (AI in the rail).
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowDown, ExternalLink, Loader2, Lock, Sparkles, Trash2 } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import { ArrowDown, ChevronDown, ExternalLink, Loader2, Lock, Trash2 } from "lucide-react";
 import { AutoTextarea } from "@/components/ui/auto-textarea";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { readNode, readProse, saveBeat, saveObjective, transforms } from "@/lib/ladder";
+import { readNode, readProse, saveBeat, saveObjective } from "@/lib/ladder";
 import { composeScenePrompt, deleteSceneImage, readSceneImages, renderSceneImage, uploadReferenceImage, uploadSceneImage, type SceneImage } from "@/lib/sceneImages";
 import type { CellState } from "@/lib/planGraph";
 import { ImageGenStudio } from "./ImageGenStudio";
-import { DurableOptions } from "../DurableOptions";
-import { DurableReviser } from "../DurableReviser";
-import { ProseNodePanel } from "../ProseNodePanel";
 import type { StudioModel } from "./studioModel";
 import { ActionLink, Eyebrow, ImageLightbox, Panel, Pip } from "./studioUi";
 import { CharacterLedgerGraph } from "./CharacterLedgerGraph";
@@ -39,8 +37,12 @@ export function PageReview({ bookId, model, pageId, onChanged, onSelectPage }: P
   const [beat, setBeat] = useState("");
   const [prose, setProse] = useState("");
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState<"objective" | "beat" | null>(null);
+  const [busy, setBusy] = useState<"objective" | null>(null);
   const [showLedger, setShowLedger] = useState(false);
+  // Collapsible state for Objective and Beat: collapsed when content exists, expanded when empty.
+  // Initialised after load (see useEffect below).
+  const [objectiveOpen, setObjectiveOpen] = useState(true);
+  const [beatOpen, setBeatOpen] = useState(true);
   const reqRef = useRef(0);
 
   useEffect(() => {
@@ -53,6 +55,9 @@ export function PageReview({ bookId, model, pageId, onChanged, onSelectPage }: P
     ]).then(([o, b, p]) => {
       if (req !== reqRef.current) return;
       setObjective(o); setBeat(b); setProse(p);
+      // Collapse when content exists (glanceable), expand when empty (author needs to fill).
+      setObjectiveOpen(!o.trim());
+      setBeatOpen(!b.trim());
     }).finally(() => { if (req === reqRef.current) setLoading(false); });
   }, [bookId, pageId]);
 
@@ -67,24 +72,9 @@ export function PageReview({ bookId, model, pageId, onChanged, onSelectPage }: P
     finally { setBusy(null); }
   };
 
-  const planBeat = async () => {
-    setBusy("beat");
-    try {
-      const obj = objective.trim() || (await readNode(bookId, "objective", pageId));
-      if (!obj) throw new Error("Set an objective first.");
-      const text = await transforms.objectiveToBeat(bookId, pageId, obj);
-      setBeat(text);
-      await saveBeat(bookId, pageId, text);
-      onChanged();
-    } catch (e) { fail("Couldn't plan the beat", e); }
-    finally { setBusy(null); }
-  };
-
   const saveBeatText = async () => {
-    setBusy("beat");
     try { await saveBeat(bookId, pageId, beat.trim()); onChanged(); }
     catch (e) { fail("Couldn't save the beat", e); }
-    finally { setBusy(null); }
   };
 
   return (
@@ -95,13 +85,6 @@ export function PageReview({ bookId, model, pageId, onChanged, onSelectPage }: P
         </span>
         <span className="text-[hsl(var(--pv-text-faint))]">▸</span>
         <span className="italic">page {idx + 1}</span>
-        <ActionLink
-          icon={<ExternalLink className="h-3.5 w-3.5" />}
-          onClick={() => navigate(`/books/${bookId}/pages/${pageId}`)}
-          className="ml-auto"
-        >
-          Open in Manuscript
-        </ActionLink>
       </div>
       <h1 className="pv-serif mt-3 text-[36px] leading-[1.14] tracking-[-0.015em] text-foreground">{page.title || "(untitled)"}</h1>
       <p className="pv-serif mt-2 text-[15px] leading-[1.5] text-[hsl(var(--pv-text-muted))]">
@@ -129,7 +112,15 @@ export function PageReview({ bookId, model, pageId, onChanged, onSelectPage }: P
         </p>
       ) : (
         <>
-          <LevelCard label="Objective" sub="the plan's contract" state={objective.trim() ? "synced" : "gap"}>
+          <LevelCard
+            label="Objective"
+            sub="the plan's contract"
+            state={objective.trim() ? "synced" : "gap"}
+            collapsible
+            open={objectiveOpen}
+            onToggle={() => setObjectiveOpen((v) => !v)}
+            preview={objective.trim()}
+          >
             <AutoTextarea
               value={objective}
               onChange={(e) => setObjective(e.target.value)}
@@ -137,83 +128,64 @@ export function PageReview({ bookId, model, pageId, onChanged, onSelectPage }: P
               className="pv-serif border-none bg-transparent px-0 text-[16px] leading-[1.7] text-foreground focus-visible:ring-0"
               placeholder="What this page must achieve…"
             />
-            <div className="mt-3 flex items-center gap-4 border-t border-[hsl(var(--pv-border-soft))] pt-3">
-              <DurableReviser
-                bookId={bookId}
-                layer="objective"
-                targetKey={`revise:objective:${pageId}`}
-                targetPageId={pageId}
-                current={objective.trim()}
-                busy={busy !== null}
-                onApply={async (proposed) => {
-                  setObjective(proposed);
-                  await saveObjective(bookId, pageId, proposed);
-                  onChanged();
-                }}
-              />
-              <DurableOptions
-                bookId={bookId}
-                kind="objective_options"
-                targetPageId={pageId}
-                busy={busy !== null}
-                getParams={() => ({ pageId })}
-                onApply={async (proposed) => {
-                  setObjective(proposed);
-                  await saveObjective(bookId, pageId, proposed);
-                  onChanged();
-                }}
-              />
-            </div>
           </LevelCard>
 
           <DownArrow />
 
-          <LevelCard label="Beat" sub="what happens, in order" state={beat.trim() ? "synced" : "gap"}>
-            {beat.trim() ? (
-              <>
-                <AutoTextarea
-                  value={beat}
-                  onChange={(e) => setBeat(e.target.value)}
-                  onBlur={() => void saveBeatText()}
-                  className="pv-serif border-none bg-transparent px-0 text-[17px] leading-[1.8] text-foreground focus-visible:ring-0"
-                />
-                <RegenRow busy={busy === "beat"} onRegen={planBeat} />
-              </>
-            ) : (
-              <EmptyRow
-                label="No beat yet — plan it before the prose."
-                cta="Plan this beat"
-                busy={busy === "beat"}
-                onClick={planBeat}
-              />
+          <LevelCard
+            label="Beat"
+            sub="what happens, in order"
+            state={beat.trim() ? "synced" : "gap"}
+            collapsible
+            open={beatOpen}
+            onToggle={() => setBeatOpen((v) => !v)}
+            preview={beat.trim()}
+          >
+            {!beat.trim() && (
+              <p className="pv-serif mb-3 text-[13.5px] italic text-[hsl(var(--pv-text-faint))]">
+                No beat yet — write it here, or plan it in the editor on the right →
+              </p>
             )}
+            <AutoTextarea
+              value={beat}
+              onChange={(e) => setBeat(e.target.value)}
+              onBlur={() => void saveBeatText()}
+              className="pv-serif border-none bg-transparent px-0 text-[17px] leading-[1.8] text-foreground focus-visible:ring-0"
+              placeholder="What happens in this beat…"
+            />
           </LevelCard>
-
-          <DownArrow />
-
-          <SceneLevel bookId={bookId} pageId={pageId} beatExists={!!beat.trim()} />
 
           <DownArrow />
 
           <LevelCard label="Prose" sub="the written page" state={prose.trim() ? "synced" : beat.trim() ? "gap" : "locked"}>
             {beat.trim() ? (
-              <ProseNodePanel
-                bookId={bookId}
-                pageId={pageId}
-                pageTitle={page.title}
-                objective={objective}
-                beat={beat}
-                prose={prose}
-                hideHeader
-                onSaved={() => { void readProse(pageId).then(setProse); onChanged(); }}
-                onOpenPage={() => navigate(`/books/${bookId}/pages/${pageId}`)}
-              />
+              prose.trim() ? (
+                <div className="pv-serif prose max-w-none text-[17px] leading-[1.8] text-foreground prose-p:my-[0.95em] prose-p:text-foreground prose-headings:text-foreground prose-em:italic prose-strong:font-semibold first:prose-p:mt-0 last:prose-p:mb-0">
+                  <ReactMarkdown>{prose}</ReactMarkdown>
+                </div>
+              ) : (
+                <p className="pv-serif text-[13.5px] italic text-[hsl(var(--pv-text-faint))]">
+                  No prose yet — write it in the editor on the right →
+                </p>
+              )
             ) : (
               <p className="pv-serif flex items-center gap-2 text-[14.5px] italic text-[hsl(var(--pv-text-faint))]">
                 <Lock className="h-3.5 w-3.5" /> Plan the beat first — prose is written from it.
               </p>
             )}
+            <div className="mt-4 border-t border-[hsl(var(--pv-border-soft))]/50 pt-3">
+              <ActionLink
+                icon={<ExternalLink className="h-3.5 w-3.5" />}
+                onClick={() => navigate(`/books/${bookId}/pages/${pageId}`)}
+              >
+                Open in Manuscript ↗
+              </ActionLink>
+            </div>
           </LevelCard>
+
+          <DownArrow />
+
+          <SceneLevel bookId={bookId} pageId={pageId} beatExists={!!beat.trim()} />
         </>
       )}
 
@@ -233,18 +205,54 @@ export function PageReview({ bookId, model, pageId, onChanged, onSelectPage }: P
   );
 }
 
-function LevelCard({ label, sub, state, children }: { label: string; sub: string; state: CellState | "locked"; children: ReactNode }) {
+interface LevelCardProps {
+  label: string;
+  sub: string;
+  state: CellState | "locked";
+  children: ReactNode;
+  /** When true the header becomes a toggle button that shows/hides the body. */
+  collapsible?: boolean;
+  /** Controlled open state (only used when collapsible=true). */
+  open?: boolean;
+  /** Called when the header is clicked (only used when collapsible=true). */
+  onToggle?: () => void;
+  /** One-line glanceable text shown in the header while collapsed. */
+  preview?: string;
+}
+
+function LevelCard({ label, sub, state, children, collapsible, open = true, onToggle, preview }: LevelCardProps) {
   const dim = state === "gap" || state === "locked";
+  const isOpen = !collapsible || open;
+
+  const header = (
+    <div className={`flex items-center gap-2.5 ${isOpen && !dim ? "mb-5 border-b border-[hsl(var(--pv-border-soft))]/70 pb-3" : ""}`}>
+      <Pip state={state === "locked" ? "gap" : state} />
+      <Eyebrow>{label}</Eyebrow>
+      <span className="pv-serif text-[12.5px] italic text-[hsl(var(--pv-text-faint))]">· {sub}</span>
+      {/* Collapsed preview — truncated one-liner */}
+      {collapsible && !open && preview && (
+        <span className="ml-2 flex-1 truncate pv-serif text-[12.5px] text-[hsl(var(--pv-text-muted))]">{preview}</span>
+      )}
+      {state === "synced" && isOpen && <span className="ml-auto pv-mono text-[9px] uppercase tracking-[0.12em] text-[hsl(var(--pv-accent))]">in sync</span>}
+      {state === "locked" && <Lock className="ml-auto h-3.5 w-3.5 text-[hsl(var(--pv-text-faint))]" />}
+      {collapsible && (
+        <ChevronDown
+          className={`ml-auto h-3.5 w-3.5 shrink-0 text-[hsl(var(--pv-text-faint))] transition-transform ${open ? "rotate-0" : "-rotate-90"}`}
+        />
+      )}
+    </div>
+  );
+
   return (
     <Panel variant={dim ? "dashed" : "soft"} className={`px-7 py-6 ${state === "locked" ? "opacity-65" : ""}`}>
-      <div className={`flex items-center gap-2.5 ${dim ? "" : "mb-5 border-b border-[hsl(var(--pv-border-soft))]/70 pb-3"}`}>
-        <Pip state={state === "locked" ? "gap" : state} />
-        <Eyebrow>{label}</Eyebrow>
-        <span className="pv-serif text-[12.5px] italic text-[hsl(var(--pv-text-faint))]">· {sub}</span>
-        {state === "synced" && <span className="ml-auto pv-mono text-[9px] uppercase tracking-[0.12em] text-[hsl(var(--pv-accent))]">in sync</span>}
-        {state === "locked" && <Lock className="ml-auto h-3.5 w-3.5 text-[hsl(var(--pv-text-faint))]" />}
-      </div>
-      {children}
+      {collapsible ? (
+        <button type="button" onClick={onToggle} className="w-full text-left">
+          {header}
+        </button>
+      ) : (
+        header
+      )}
+      {isOpen && children}
     </Panel>
   );
 }
@@ -267,7 +275,7 @@ function SceneLevel({ bookId, pageId, beatExists }: { bookId: number; pageId: nu
     let live = true;
     void readSceneImages(pageId).then((rows) => { if (live) setScenes(rows); });
     const channel = supabase
-      .channel(`scene_images_${pageId}`)
+      .channel(`scene_images_${pageId}_${Math.random().toString(36).slice(2)}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "page_scene_images", filter: `page_id=eq.${pageId}` },
         (p) => upsert((p as unknown as { new: SceneImage }).new))
       .on("postgres_changes", { event: "DELETE", schema: "public", table: "page_scene_images", filter: `page_id=eq.${pageId}` },
@@ -330,28 +338,3 @@ function SceneLevel({ bookId, pageId, beatExists }: { bookId: number; pageId: nu
   );
 }
 
-function RegenRow({ busy, onRegen }: { busy: boolean; onRegen: () => void }) {
-  return (
-    <div className="mt-3 flex gap-5 text-[13.5px]">
-      <ActionLink icon={<Sparkles className="h-3.5 w-3.5" />} busy={busy} onClick={onRegen}>
-        regenerate from the objective
-      </ActionLink>
-    </div>
-  );
-}
-
-function EmptyRow({ label, cta, busy, onClick }: { label: string; cta: string; busy: boolean; onClick: () => void }) {
-  return (
-    <div className="flex items-center justify-between gap-3 pt-1">
-      <span className="pv-serif text-[14.5px] italic text-[hsl(var(--pv-text-muted))]">{label}</span>
-      <button
-        type="button"
-        onClick={onClick}
-        disabled={busy}
-        className="pv-serif inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[hsl(var(--pv-accent))]/[0.08] px-4 py-2 text-[14px] text-[hsl(var(--pv-accent))] transition-colors hover:bg-[hsl(var(--pv-accent))]/[0.14] disabled:opacity-50"
-      >
-        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />} {cta}
-      </button>
-    </div>
-  );
-}

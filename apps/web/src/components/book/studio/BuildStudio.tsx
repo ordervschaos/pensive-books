@@ -95,7 +95,12 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
     [briefSet, briefContext, spine.text, spine.stale, pages, journey, hasRead, isPublic, foundations, threads]
   );
 
-  const selection: Selection = selected ?? { kind: "step", step: model.current };
+  const selection: Selection = useMemo(() => selected ?? { kind: "step", step: model.current }, [selected, model]);
+
+  // When a change comes FROM the editor rail (e.g. applying a revision), pin the current selection
+  // before refreshing — otherwise the recomputed derived `current` (which jumps to the first stale
+  // step after, say, a spine edit) would swap the rail to another layer's chat under the author.
+  const railOnChanged = useCallback(() => { setSelected(selection); refresh(); }, [selection, refresh]);
 
   // Persist the explicit selection so a reload reopens it; clearing it (back to derived current)
   // wipes the key.
@@ -123,18 +128,14 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
   const runningStep = useActiveStep(bookId);
 
   // The editor RAIL: the current step's editor, docked on the right. Foundations/spine/beats get the
-  // conversational ReviseChat; the Draft step gets the durable ProseEditor. It only shows once that
-  // step has something settled to revise — otherwise the center keeps its full width.
+  // conversational ReviseChat; the Draft step gets the durable ProseEditor. The rail shows whenever
+  // one of the editor steps is selected — the empty-center + live-chat is the intended first-run state.
   const railStep: StepKey | null =
-    selection.kind === "step" && (selection.step === "foundations" || selection.step === "spine" || selection.step === "beats" || selection.step === "draft")
+    selection.kind === "step" && (selection.step === "foundations" || selection.step === "spine" || selection.step === "outline" || selection.step === "beats" || selection.step === "draft")
       ? selection.step : null;
-  const railReady =
-    railStep === "foundations" ? !!foundations?.argument?.text?.trim()
-      : railStep === "spine" ? !!spine.text.trim()
-        : railStep === "beats" ? model.map.pages.some((p) => (p.beatText ?? "").trim())
-          : railStep === "draft" ? model.hasWritten
-            : false;
-  const showRail = !!railStep && railReady;
+  // A selected page gets its own prose chat in the rail (page-scoped revise-agent).
+  const railPageId: number | null = selection.kind === "page" ? selection.pageId : null;
+  const showRail = !!railStep || railPageId != null;
 
   const approve = async (k: StepKey) => {
     if (approving) return;
@@ -200,14 +201,15 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
       onSelectPage={(pageId) => setSelected({ kind: "page", pageId })}
     />
   );
-  const rail = showRail && railStep ? (
+  const rail = showRail ? (
     <StudioEditorRail
       bookId={bookId}
-      step={railStep}
+      step={railStep ?? undefined}
+      pageId={railPageId ?? undefined}
       model={model}
       foundations={foundations ?? null}
       spineText={spine.text}
-      onChanged={refresh}
+      onChanged={railOnChanged}
     />
   ) : null;
 
