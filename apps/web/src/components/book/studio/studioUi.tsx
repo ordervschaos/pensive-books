@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from
 import { AlertTriangle, ArrowRight, Check, ChevronDown, ChevronUp, Loader2, Lock, Plus, Sparkles, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { CellState } from "@/lib/planGraph";
-import { triggerGenerate, type RevisionLayer } from "@/lib/revisionChat";
+import { emitGenerate, type RevisionLayer } from "@/lib/revisionChat";
 import type { DotState } from "./studioModel";
 
 // The center's empty-state CTA: a button that asks the always-on rail chat to GENERATE this layer.
@@ -15,11 +15,13 @@ export function GenerateInChat({ bookId, layer, label, hint }: {
   bookId: number; layer: RevisionLayer; label: string; hint?: string;
 }) {
   const [sending, setSending] = useState(false);
-  const fire = async () => {
+  // Ring the rail (the mounted ReviseChat runs its own send → optimistic echo + errors there). The
+  // brief local flag just confirms the click registered before the rail visibly takes over.
+  const fire = () => {
     if (sending) return;
     setSending(true);
-    try { await triggerGenerate(bookId, layer); }
-    finally { setSending(false); }
+    emitGenerate(bookId, layer);
+    setTimeout(() => setSending(false), 1200);
   };
   return (
     <div className="space-y-2.5">

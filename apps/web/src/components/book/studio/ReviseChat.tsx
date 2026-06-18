@@ -7,7 +7,7 @@
 // The revise-chat edge fn is the single writer of the revision_chats thread (one row per book+layer);
 // this panel sends a message and projects the row live (refresh = no-op). Generalizes BeatChat —
 // see docs/beat-sheet-revision.md and the unified-revision plan.
-import { useEffect, useMemo, useState, Fragment } from "react";
+import { useEffect, useMemo, useRef, useState, Fragment } from "react";
 import { ArrowDown, ArrowUp, Check, ChevronDown, Clock, Loader2, Plus, Sparkles, SquarePen, Trash2, Wand2, X } from "lucide-react";
 import { useChatScroll } from "./useChatScroll";
 import ReactMarkdown from "react-markdown";
@@ -18,7 +18,7 @@ import { useLatestTaskRow } from "@/hooks/useLatestTaskRow";
 import { LENSES as BEAT_LENSES, type RevisionPlan } from "@/lib/beatSheet";
 import type { CastMember, Foundations, Tentpole } from "@/lib/foundations";
 import {
-  applyProposal, clearPendingProposal, GENERATE_PROMPTS, recordApplied, sendRevisionMessage, startNewRevisionSession,
+  applyProposal, clearPendingProposal, GENERATE_PROMPTS, onGenerate, recordApplied, sendRevisionMessage, startNewRevisionSession,
   type RevisionChatRow, type RevisionLayer, type RevisionProposal, type RevisionSession,
 } from "@/lib/revisionChat";
 import type { StudioModel } from "./studioModel";
@@ -166,6 +166,12 @@ export function ReviseChat({ bookId, layer, onChanged, model, currentSpine, curr
       toast({ title: "The editor couldn't respond", description: String((e as Error)?.message ?? e), variant: "destructive" });
     } finally { setSending(false); }
   };
+
+  // The center's "Draft …" button rings the generate bus; run OUR send() so the generate prompt shows
+  // in the chat live (optimistic echo + "sending…") and any error surfaces here, not in a dead button.
+  const sendRef = useRef(send);
+  sendRef.current = send;
+  useEffect(() => onGenerate(bookId, (l) => { if (l === layer) void sendRef.current(GENERATE_PROMPTS[l]); }), [bookId, layer]);
 
   // When the proposal targets an upstream layer, use that layer's apply-note for the thread + toast.
   const applyNoteFor = (l: RevisionLayer) => LAYER_UI[l].applyNote;

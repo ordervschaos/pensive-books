@@ -45,10 +45,26 @@ export const GENERATE_PROMPTS: Record<RevisionLayer, string> = {
   beats: "Plan a beat for every page that has an objective but no beat yet — the strongest beat for each, serving the spine and consistent with the pages around it. Propose them as a plan I can review.",
 };
 
-/** Trigger the rail chat to generate a layer from the center (empty-state button). The always-on
- *  ReviseChat watches revision_chats over Realtime, so the message + result appear there live. */
-export async function triggerGenerate(bookId: number, layer: RevisionLayer): Promise<void> {
-  await sendRevisionMessage(bookId, layer, GENERATE_PROMPTS[layer]);
+// ── Center → rail generate bus ───────────────────────────────────────────────
+// The center's empty-state "Draft …" button is a thin REMOTE CONTROL for the rail: instead of
+// calling the edge itself (which left the rail with no optimistic echo and swallowed errors), it
+// rings this in-memory bell and the mounted ReviseChat for that layer runs its OWN send() — so the
+// message + "sending…" appear in the chat instantly and errors surface there. Pure UI coordination
+// (the server state still flows through the rail's send/refetch + Realtime projection).
+type GenerateListener = (layer: RevisionLayer) => void;
+const generateListeners = new Map<number, Set<GenerateListener>>();
+
+/** Ask the rail for `layer` (book-scoped) to generate. No-op if no rail is mounted for it. */
+export function emitGenerate(bookId: number, layer: RevisionLayer): void {
+  generateListeners.get(bookId)?.forEach((fn) => fn(layer));
+}
+
+/** Subscribe a mounted rail to center-triggered generates for its book. Returns an unsubscribe fn. */
+export function onGenerate(bookId: number, fn: GenerateListener): () => void {
+  let set = generateListeners.get(bookId);
+  if (!set) { set = new Set(); generateListeners.set(bookId, set); }
+  set.add(fn);
+  return () => { set!.delete(fn); if (set!.size === 0) generateListeners.delete(bookId); };
 }
 
 /** An archived conversation (the "+ New chat" snapshot), kept on the row for the Past-chats viewer. */
