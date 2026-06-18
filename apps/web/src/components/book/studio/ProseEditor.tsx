@@ -292,13 +292,20 @@ export function ProseEditor({ bookId, pageId, proseRemaining = 0, onChanged }: {
           <div className="flex items-end gap-2">
             <Textarea value={draft} onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void start({ instruction: draft.trim() }); } }}
-              rows={1} placeholder={pageId != null ? 'e.g. "Make this page colder; cut the weather."' : 'e.g. "Make chapter 3 darker and cut the map subplot."'} disabled={busy}
+              rows={1} placeholder={pageId != null ? 'e.g. "Write this from the beat" or "Make it colder; cut the weather."' : 'e.g. "Make chapter 3 darker and cut the map subplot."'} disabled={busy}
               className="pv-serif min-h-[42px] resize-none text-[14px] leading-[1.55]" />
             <button type="button" onClick={() => draft.trim() && void start({ instruction: draft.trim() })} disabled={busy || !draft.trim()}
               title="Send" className="inline-flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-40">
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
             </button>
           </div>
+          {pageId != null && (
+            <div className="mt-3 flex flex-col items-start gap-2">
+              <ActionLink icon={<PenLine className="h-3.5 w-3.5" />} busy={busy} onClick={() => void start({ instruction: "Write this page from its beat." })}>
+                Write this page from its beat
+              </ActionLink>
+            </div>
+          )}
           {pageId == null && (
             <div className="mt-3 flex flex-col items-start gap-2">
               {proseRemaining > 0 && (
