@@ -261,9 +261,9 @@ You can do these things, and you choose per message:
 
 OUTPUT — reply to the author in plain MARKDOWN prose. If — and ONLY if — this message DELIVERS a full spine to apply (a fresh draft or a revision), append at the very END a single fenced \`\`\`json code block, with nothing after it:
 \`\`\`json
-{ "summary": "<one line: what this spine does / what changed>", "text": "<the full spine, ~250 words>" }
+{ "summary": "<one line: what this spine does / what changed>", "text": "<the full spine, ~250 words, pure narrative prose — no ids, no brackets>" }
 \`\`\`
-When talking, pressure-testing, or merely OFFERING DIRECTIONS to choose from, append NO code block. "text" is the COMPLETE spine (not a diff). Never write beats or prose.`,
+When talking, pressure-testing, or merely OFFERING DIRECTIONS to choose from, append NO code block. "text" is the COMPLETE spine (not a diff). Never write beats or prose. Never embed tentpole ids or any bracket markers in the spine text.`,
     context(ctx) {
       const settled = ctx.foundations ? settledContext(ctx.foundations).trim() : "";
       return `BOOK: ${ctx.bookName}\n\nBRIEF (the contract):\n${briefBlock(ctx.brief)}` +

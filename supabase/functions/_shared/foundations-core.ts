@@ -227,12 +227,12 @@ const ROUTES_SYSTEM = `You are a book architect proposing ROUTES — alternative
 
 Generate exactly 3 routes. Each must:
 - Realize the settled argument and land on the settled ending
-- Include EVERY pinned tentpole (reference them by their [id]) — order may differ between routes
+- Weave EVERY pinned tentpole moment into the narrative prose — do NOT embed any ids or brackets in the text
 - Never include a killed direction
 - Differ genuinely from the other routes: different orderings, different connective tissue, different midpoints
 
 Output JSON ONLY:
-{ "routes": [{ "summary": "<~250 words>", "tentpole_order": ["<tentpole id>", …] }, …] }`;
+{ "routes": [{ "summary": "<~250 words pure narrative prose, no ids>", "tentpole_order": ["<tentpole id>", …] }, …] }`;
 
 export interface SpineRoutesParams {
   bookId: number;
