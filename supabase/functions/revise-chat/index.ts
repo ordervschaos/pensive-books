@@ -19,6 +19,9 @@ import { corsHeaders, json } from "../_shared/cors.ts";
 import { callClaude as callClaudeApi, textFromClaude } from "../_shared/claude.ts";
 import { getActiveModels } from "../_shared/model-config.ts";
 import { type Foundations } from "../_shared/foundations-core.ts";
+import { objectiveToBeat } from "../_shared/beat-core.ts";
+import { stampBeat } from "../_shared/plan-provenance.ts";
+import { serviceClient } from "../_shared/task.ts";
 import {
   LENSES, splitReplyAndBlock, targetAllowed,
   type ChatMessage, type LensContext, type PageRow, type RevisionLayer, type RevisionProposal, type ThreadLite,
@@ -88,6 +91,48 @@ Deno.serve(async (req: Request) => {
       threads: (threads as ThreadLite[] | null) ?? [],
       craftNote: (book.craft_notes as Record<string, string> | null)?.[layer] ?? null,
     };
+
+    // "Plan all beats" is a bulk generation op — one model call for a whole book times out on the
+    // Supabase worker wall clock. Intercept and run per-page via beat-core (same as generate-book),
+    // writing each beat to the DB immediately so the author sees them arrive via Realtime.
+    if (layer === "beats" && msg.startsWith("Plan a beat for every page that has an objective but no beat")) {
+      try {
+        const service = serviceClient();
+        const allPages = (pages as PageRow[] | null) ?? [];
+        const toBeat = allPages.filter(
+          (p) => (p.page_type === "text" || !p.page_type) &&
+                 (p.metadata as { objective?: string } | null)?.objective?.trim() &&
+                 !((p.metadata as { beat?: string } | null)?.beat ?? "").trim()
+        );
+        if (toBeat.length === 0) {
+          const reply = "All pages already have beats — nothing to plan.";
+          const assistantMsg: ChatMessage = { role: "assistant", text: reply, ts: new Date().toISOString() };
+          await userClient.from("revision_chats").update({ messages: [...withUser, assistantMsg], status: "idle" }).eq("id", chatId);
+          return json({ reply, proposal: null });
+        }
+        let done = 0, failed = 0;
+        const total = toBeat.length;
+        for (const page of toBeat) {
+          try {
+            const objective = (page.metadata as { objective?: string } | null)?.objective ?? "";
+            const beat = await objectiveToBeat(service, apiKey, { bookId, pageId: page.id, objective, userId: user.id });
+            await stampBeat(service, page.id, objective, beat);
+            done++;
+            const prog: ChatMessage = { role: "assistant", text: `Planning beats… ${done}/${total}`, ts: new Date().toISOString() };
+            await userClient.from("revision_chats").update({ messages: [...withUser, prog], status: "thinking" }).eq("id", chatId);
+          } catch {
+            failed++;
+          }
+        }
+        const reply = `Planned ${done} beat${done === 1 ? "" : "s"}${failed ? ` (${failed} skipped)` : ""}. They're live in your beat sheet now — ask me to evaluate or revise any of them.`;
+        const assistantMsg: ChatMessage = { role: "assistant", text: reply, ts: new Date().toISOString() };
+        await userClient.from("revision_chats").update({ messages: [...withUser, assistantMsg], status: "idle" }).eq("id", chatId);
+        return json({ reply, proposal: null });
+      } catch (e) {
+        await fail(userClient, chatId, withUser, String((e as Error)?.message ?? e));
+        throw e;
+      }
+    }
 
     try {
       const { reply, proposal } = await runTurn(apiKey, layer, lens, ctx, withUser, bookId, user.id);
