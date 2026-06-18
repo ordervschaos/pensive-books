@@ -140,6 +140,11 @@ export function ReviseChat({ bookId, layer, onChanged, model, currentSpine, curr
     if (optimistic != null && messages.some((m) => m.role === "user" && m.text === optimistic)) setOptimistic(null);
   }, [messages, optimistic]);
 
+  // Always scroll to bottom when the user sends a message, regardless of current position.
+  useEffect(() => {
+    if (optimistic != null) scrollToBottom(false);
+  }, [optimistic, scrollToBottom]);
+
   const newChat = async () => {
     if (thinking || sending) return;
     try { await startNewRevisionSession(bookId, layer); setHistoryOpen(false); refetch(); }
