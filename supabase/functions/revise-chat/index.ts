@@ -20,7 +20,7 @@ import { callClaude as callClaudeApi, textFromClaude } from "../_shared/claude.t
 import { getActiveModels } from "../_shared/model-config.ts";
 import { type Foundations } from "../_shared/foundations-core.ts";
 import {
-  LENSES, splitReplyAndBlock,
+  LENSES, splitReplyAndBlock, targetAllowed,
   type ChatMessage, type LensContext, type PageRow, type RevisionLayer, type RevisionProposal, type ThreadLite,
 } from "../_shared/revision-chat.ts";
 
@@ -90,7 +90,7 @@ Deno.serve(async (req: Request) => {
     };
 
     try {
-      const { reply, proposal } = await runTurn(apiKey, lens, ctx, withUser, bookId, user.id);
+      const { reply, proposal } = await runTurn(apiKey, layer, lens, ctx, withUser, bookId, user.id);
       const assistantMsg: ChatMessage = { role: "assistant", text: reply, ts: new Date().toISOString(), plan: proposal?.summary };
       await userClient.from("revision_chats").update({
         messages: [...withUser, assistantMsg],
@@ -115,7 +115,7 @@ async function fail(client: any, chatId: number | undefined, messages: ChatMessa
 }
 
 async function runTurn(
-  apiKey: string, lens: typeof LENSES[RevisionLayer], ctx: LensContext,
+  apiKey: string, layer: RevisionLayer, lens: typeof LENSES[RevisionLayer], ctx: LensContext,
   messages: ChatMessage[], bookId: number, userId: string,
 ): Promise<{ reply: string; proposal: RevisionProposal | null }> {
   const { high: model } = await getActiveModels();
@@ -143,7 +143,11 @@ async function runTurn(
 
   const { reply, parsed } = splitReplyAndBlock(text);
   if (!parsed) return { reply, proposal: null };
-  const patch = lens.sanitize(parsed, ctx);
+  // Upward editing: the model may name an upstream target layer in the json block.
+  // Validate it; fall back to the chat's own layer if absent, disallowed, or downstream.
+  const rawTarget = typeof parsed.target === "string" ? parsed.target as RevisionLayer : layer;
+  const target = LAYERS.includes(rawTarget) && targetAllowed(layer, rawTarget) ? rawTarget : layer;
+  const patch = LENSES[target].sanitize(parsed, ctx);
   if (!patch) return { reply, proposal: null };
   const summary = typeof parsed.summary === "string" && parsed.summary.trim()
     ? parsed.summary.trim()

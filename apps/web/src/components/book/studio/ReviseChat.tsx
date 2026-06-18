@@ -162,17 +162,21 @@ export function ReviseChat({ bookId, layer, onChanged, model, currentSpine, curr
     } finally { setSending(false); }
   };
 
+  // When the proposal targets an upstream layer, use that layer's apply-note for the thread + toast.
+  const applyNoteFor = (l: RevisionLayer) => LAYER_UI[l].applyNote;
+
   const apply = async () => {
     if (!pending) return;
     try {
       const summary = pending.summary?.trim() || "Revision applied.";
+      const note = applyNoteFor(pending.patch.layer);
       await applyProposal(bookId, pending);
       // Reflect the apply in the thread (and clear pending in the same write) so the chat keeps its
       // history and visibly shows what was applied, instead of blanking.
-      await recordApplied(bookId, layer, `✓ Applied — ${summary}\n_${ui.applyNote}_`);
+      await recordApplied(bookId, layer, `✓ Applied — ${summary}\n_${note}_`);
       refetch();
       onChanged();
-      toast({ title: "Applied the revision", description: ui.applyNote });
+      toast({ title: "Applied the revision", description: note });
     } catch (e) {
       toast({ title: "Couldn't apply", description: String((e as Error)?.message ?? e), variant: "destructive" });
     }
@@ -251,7 +255,7 @@ export function ReviseChat({ bookId, layer, onChanged, model, currentSpine, curr
           <ProposalReview
             proposal={pending} layer={layer} model={model}
             currentSpine={currentSpine} currentFoundations={currentFoundations}
-            applyNote={ui.applyNote} onApply={apply} onDiscard={discard}
+            applyNote={applyNoteFor(pending.patch.layer)} onApply={apply} onDiscard={discard}
           />
         )}
       </div>
@@ -493,6 +497,7 @@ function ProposalReview({ proposal, layer, model, currentSpine, currentFoundatio
   onApply: () => void;
   onDiscard: () => void;
 }) {
+  const isUpstream = proposal.patch.layer !== layer;
   return (
     <Panel className="mt-4 border-[hsl(var(--pv-accent))]/45 px-5 py-4">
       <div className="flex items-start justify-between gap-4">
@@ -502,6 +507,11 @@ function ProposalReview({ proposal, layer, model, currentSpine, currentFoundatio
       {proposal.summary && <p className="pv-serif mt-1.5 text-[14px] leading-[1.6] text-[hsl(var(--pv-text-muted))]">{proposal.summary}</p>}
 
       <div className="mt-3.5">
+        {isUpstream && (
+          <p className="pv-mono mb-2.5 text-[10px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-faint))]">
+            ▲ changes {proposal.patch.layer.toUpperCase()} (upstream)
+          </p>
+        )}
         {(proposal.patch.layer === "beats" || proposal.patch.layer === "outline") && model
           ? <BeatDiff plan={proposal.patch.data} model={model} />
           : proposal.patch.layer === "spine"

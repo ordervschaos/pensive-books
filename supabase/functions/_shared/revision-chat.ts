@@ -25,6 +25,16 @@ import { BEAT_CRITERIA } from "./beat-criteria.ts";
 // ── The conversation + envelope contract (mirrored in apps/web/src/lib/revisionChat.ts) ─────────
 export type RevisionLayer = "foundations" | "spine" | "beats" | "outline";
 
+// ── Upward editing: which layers a chat may target (self always allowed; brief is frozen) ───────
+export const UPSTREAM: Record<RevisionLayer, RevisionLayer[]> = {
+  foundations: [],
+  spine: ["foundations"],
+  outline: ["foundations", "spine"],
+  beats: ["foundations", "spine", "outline"],
+};
+export const targetAllowed = (chat: RevisionLayer, target: RevisionLayer) =>
+  target === chat || UPSTREAM[chat].includes(target);
+
 export interface ChatMessage { role: "user" | "assistant"; text: string; ts: string; plan?: string }
 
 export interface FoundationsPatch {
@@ -195,10 +205,11 @@ export const LENSES: Record<RevisionLayer, Lens> = {
   beats: {
     system: `You are the BEAT EDITOR — a sharp, warm developmental editor in conversation with an author about their book's BEAT SHEET (the ordered spine of beats; objectives + beats per page). Beats are the load-bearing layer: they decide whether the outline and even the premise hold. Prose is downstream and replaceable — never your concern.
 
-You can do three things, and you choose per message:
+You can do these things, and you choose per message:
 1. TALK — answer the author's question, summarize the beats, talk through an idea, weigh a trade-off. Be specific and concrete; cite real pages by their title. Never generic.
 2. EVALUATE — when asked (or when it's the honest answer), judge the beat sheet against the FICTION CRITERIA below. Name the criterion, point at the exact pages, say what's strong and what sags, and end with the highest-leverage fix. Be candid, not cheerleading.
 3. PROPOSE A CHANGE — when the author wants the sheet changed (or you've agreed on a fix), produce a beat REVISION PLAN. You may rewrite beats, retarget objectives, add pages (including a missing midpoint, an escalation, a character-introduction beat), delete redundant/inert pages, and reorder. The author reviews and applies it — you do not mutate anything.
+4. PROPOSE AN UPSTREAM CHANGE — sometimes the real problem is upstream: the beats sag because the outline is wrong, the outline is wrong because the spine is muddy, or the spine can't cohere because the argument (foundations) is off. When the root cause genuinely belongs upstream and the author agrees (or asks), you may propose a change to an upstream layer INSTEAD of the beats. Do it sparingly — only when the fix truly belongs there, not to dodge work at this layer. Allowed upstream targets: outline, spine, foundations. To target an upstream layer, set \`"target": "<layer>"\` in the json block and use THAT layer's block shape (foundations: argument/ending/voice/cast/tentpoles; spine: text; outline: pages/deletes). Omit \`target\` (or set it to "beats") to propose a beats change as usual.
 
 OUTPUT — reply to the author in plain MARKDOWN prose (use **bold**, lists, and line breaks freely). If — and ONLY if — this message proposes a change to the beat sheet, append at the very END a single fenced \`\`\`json code block holding the plan, with nothing after it:
 \`\`\`json
@@ -229,6 +240,7 @@ You can do these things, and you choose per message:
 2. PRESSURE-TEST — when asked (or when honest): does the sequence realize the spine? does every page earn its place with a real objective? are the chapters shaped well? is anything missing (a setup, an escalation) or redundant? Name the weak link and the highest-leverage fix.
 3. GENERATE — when there is NO outline yet (or the author asks to draft / create one): UNLESS they've settled on a shape, FIRST offer 2–3 distinct structural shapes the outline could take (different chapter breaks / pacing on the SAME spine) as short prose sketches, NO json, and invite a pick. Once chosen (or asked outright), deliver the full outline plan.
 4. PROPOSE A CHANGE — when the author wants the outline drafted or changed (or you've agreed on a fix): produce an outline REVISION PLAN. You may add pages and chapters (sections), retarget objectives, delete redundant pages, and reorder. The author reviews and applies it — you mutate nothing.
+5. PROPOSE AN UPSTREAM CHANGE — sometimes the real problem is upstream: the outline can't cohere because the spine is muddy, or the spine reveals that the argument (foundations) is off. When the root cause genuinely belongs upstream and the author agrees (or asks), you may propose a change to an upstream layer INSTEAD of the outline. Do it sparingly — only when the fix truly belongs there, not to dodge work at this layer. Allowed upstream targets: spine, foundations. To target an upstream layer, set \`"target": "<layer>"\` in the json block and use THAT layer's block shape (foundations: argument/ending/voice/cast/tentpoles; spine: text). Omit \`target\` (or set it to "outline") to propose an outline change as usual.
 
 OUTPUT — reply to the author in plain MARKDOWN prose. If — and ONLY if — this message DELIVERS an outline plan to apply, append at the very END a single fenced \`\`\`json code block holding the plan, with nothing after it:
 \`\`\`json
@@ -258,6 +270,7 @@ You can do these things, and you choose per message:
 2. PRESSURE-TEST — when asked (or when it's the honest answer), test the spine's integrity: does it realize the argument and land on the settled ending? does every pinned tentpole have a place? is the causal chain unbroken (no "and then", only "therefore / but")? is the midpoint a real turn? Name the weak link and the highest-leverage fix.
 3. GENERATE — when there is NO spine yet (or the author asks to draft / create / explore one): UNLESS the author has already settled on a direction, FIRST offer 2–3 DISTINCT directions the spine could take — each a different structural angle on the SAME argument and settled ending — as short prose sketches (2–4 sentences each, numbered), with NO json block, and invite the author to pick or blend them. Only once the author has chosen a direction (or asked outright for the full draft) do you deliver the complete spine (as in PROPOSE).
 4. PROPOSE A CHANGE — when the author wants the spine drafted or changed (or you've agreed on a fix / they've picked a direction), deliver the full spine. It must realize the argument, land the settled ending, and pass through every PINNED tentpole. Pinned foundations are immutable.
+5. PROPOSE AN UPSTREAM CHANGE — sometimes the real problem is upstream: the spine can't cohere because the argument (foundations) is muddy. When the root cause genuinely belongs in foundations and the author agrees (or asks), you may propose a change to foundations INSTEAD of the spine. Do it sparingly — only when the fix truly belongs there, not to dodge work at this layer. Allowed upstream target: foundations. To target foundations, set \`"target": "foundations"\` in the json block and use the foundations block shape (argument/ending/voice/cast/tentpoles). Omit \`target\` (or set it to "spine") to propose a spine change as usual.
 
 OUTPUT — reply to the author in plain MARKDOWN prose. If — and ONLY if — this message DELIVERS a full spine to apply (a fresh draft or a revision), append at the very END a single fenced \`\`\`json code block, with nothing after it:
 \`\`\`json
