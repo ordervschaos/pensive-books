@@ -63,9 +63,21 @@ export async function composeScenePrompt(bookId: number, pageId: number, instruc
 
 /** Kick off a scene render from a given prompt. Returns the 'generating' placeholder row immediately; the
  *  render runs in the background and flips to 'ready'/'error' over Realtime. `spec` (when given) is
- *  snapshotted onto the row so the author can later "revise this image" from its exact inputs. */
-export async function renderSceneImage(pageId: number, prompt: string, refUrls: string[] = [], spec?: SceneSpec): Promise<SceneImage> {
-  return invoke<SceneImage>("generate-scene-image", { pageId, mode: "image", prompt, refUrls, spec });
+ *  snapshotted onto the row so the author can later "revise this image" from its exact inputs.
+ *  `castRefUrls` (when provided, even empty) is the author-controlled set of CHARACTER portraits to feed
+ *  for likeness — it replaces the edge's automatic pick; omit it to let the edge auto-select. */
+export async function renderSceneImage(pageId: number, prompt: string, refUrls: string[] = [], spec?: SceneSpec, castRefUrls?: string[]): Promise<SceneImage> {
+  return invoke<SceneImage>("generate-scene-image", { pageId, mode: "image", prompt, refUrls, spec, castRefUrls });
+}
+
+/** The book's full cast (id, name, visual appearance, and pinned "design the look" portraits) — for the
+ *  Scene editor's subject cards: pick subjects from Foundations, and choose which of each character's
+ *  portraits condition the render for likeness. */
+export interface BookCastMember { id: string; name: string; appearance?: string; portraits: string[] }
+export async function getBookCast(bookId: number): Promise<BookCastMember[]> {
+  const { data } = await supabase.from("books").select("foundations").eq("id", bookId).maybeSingle();
+  const cast = ((data?.foundations as { cast?: (BookCastMember & { portraits?: string[] })[] } | null)?.cast ?? []);
+  return cast.filter((m) => m.name?.trim()).map((m) => ({ id: m.id, name: m.name, appearance: m.appearance, portraits: m.portraits ?? [] }));
 }
 
 /** Read one scene image row by id (for "revise this image" — load its spec snapshot back into the editor). */

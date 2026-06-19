@@ -11,7 +11,7 @@ import { ArrowUp, ImagePlus, Loader2, Paperclip, Plus, RefreshCw, Trash2, Wand2,
 import { AutoTextarea } from "@/components/ui/auto-textarea";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { composeSceneSpec, getSceneImage, readSceneSpec, renderSceneImage, reviseSceneSpec, saveSceneSpec, uploadReferenceImage } from "@/lib/sceneImages";
+import { composeSceneSpec, getBookCast, getSceneImage, readSceneSpec, renderSceneImage, reviseSceneSpec, saveSceneSpec, uploadReferenceImage, type BookCastMember } from "@/lib/sceneImages";
 import { asSpec, EMPTY_SPEC, isSpecEmpty, specToPrompt, type SceneSpec, type SceneSubject } from "@/lib/sceneSpec";
 import { writeFoundationsPatch, type Foundations } from "@/lib/foundations";
 import { BookLookControls } from "./BookLookControls";
@@ -35,6 +35,10 @@ export function SceneTab({ bookId, pageId }: { bookId: number; pageId: number })
   // image model can match a pose / face / look. They ride along with every Generate until removed.
   const [refs, setRefs] = useState<string[]>([]);
   const [uploadingRef, setUploadingRef] = useState(false);
+  // The book's cast (Foundations) — drives the "add a subject from the cast" picker AND each subject's
+  // character-reference portraits (matched by name). Author picks which portraits condition the render.
+  const [cast, setCast] = useState<BookCastMember[]>([]);
+  const [castPickerOpen, setCastPickerOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [params, setParams] = useSearchParams();
@@ -103,6 +107,13 @@ export function SceneTab({ bookId, pageId }: { bookId: number; pageId: number })
     return () => { live = false; };
   }, [reviseId, pageId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Load the book's cast (Foundations) for the subject picker + per-subject character references.
+  useEffect(() => {
+    let live = true;
+    void getBookCast(bookId).then((c) => { if (live) setCast(c); }).catch(() => { if (live) setCast([]); });
+    return () => { live = false; };
+  }, [bookId]);
+
   // Autosave the spec (debounced) whenever the author edits a field.
   const update = (next: SceneSpec) => {
     setSpec(next);
@@ -114,6 +125,11 @@ export function SceneTab({ bookId, pageId }: { bookId: number; pageId: number })
   const setSubject = (i: number, patch: Partial<SceneSubject>) =>
     update({ ...spec, subjects: spec.subjects.map((s, j) => (j === i ? { ...s, ...patch } : s)) });
   const addSubject = () => update({ ...spec, subjects: [...spec.subjects, { name: "" }] });
+  // Add a subject chosen from the book's cast — seeds the build from their Foundations appearance.
+  const addSubjectFromCast = (m: BookCastMember) => {
+    update({ ...spec, subjects: [...spec.subjects, { name: m.name, build: m.appearance?.trim() || undefined }] });
+    setCastPickerOpen(false);
+  };
   const removeSubject = (i: number) => update({ ...spec, subjects: spec.subjects.filter((_, j) => j !== i) });
   const makeFocal = (i: number) => {
     if (i === 0) return;
@@ -123,6 +139,24 @@ export function SceneTab({ bookId, pageId }: { bookId: number; pageId: number })
     update({ ...spec, subjects: next });
   };
   const setField = (k: keyof Omit<SceneSpec, "subjects">, v: string) => update({ ...spec, [k]: v });
+
+  // A subject's available Foundations portraits — matched to the cast by name.
+  const portraitsFor = (name: string): string[] =>
+    cast.find((c) => c.name.trim().toLowerCase() === name.trim().toLowerCase())?.portraits ?? [];
+  // Which of a subject's portraits feed the render. `refImages` undefined = untouched → default to the
+  // first portrait (the edge's old auto-pick); an explicit array (incl. []) = the author's choice. Always
+  // filtered to portraits that still exist on the cast member.
+  const effectiveRefs = (s: SceneSubject, portraits: string[]): string[] =>
+    s.refImages !== undefined ? s.refImages.filter((u) => portraits.includes(u)) : portraits.slice(0, 1);
+  // Toggle one portrait for a subject — pins the selection (turns the default into an explicit set).
+  const toggleRef = (i: number, url: string) => {
+    const s = spec.subjects[i];
+    const current = effectiveRefs(s, portraitsFor(s.name));
+    setSubject(i, { refImages: current.includes(url) ? current.filter((u) => u !== url) : [...current, url] });
+  };
+  // The character portraits (deduped) the render should condition on, gathered across all subjects.
+  const gatherCastRefs = (): string[] =>
+    [...new Set(spec.subjects.flatMap((s) => effectiveRefs(s, portraitsFor(s.name))))];
 
   // Recompose: re-seed every field fresh from the beat + cast (discards the current spec).
   const recompose = async () => {
@@ -156,18 +190,14 @@ export function SceneTab({ bookId, pageId }: { bookId: number; pageId: number })
     } finally { setChatBusy(false); }
   };
 
-  // Attach a reference image in the chat. If the author has typed a comment, that comment is direction
-  // about the reference — send it straight away (the reviser folds it into the prompt, ref-aware). Else
-  // prompt them to say what to take from it; the image alone conditions the render at Generate.
+  // Attach a reference image in the chat. The author then chooses what to do with it + their note: ✦
+  // generate straight from it (render-time, no spec change), or ↑ fold it into the scene definition.
   const attachRef = async (file: File) => {
     setUploadingRef(true);
     try {
       const url = await uploadReferenceImage(file);
-      const count = refs.length + 1;
       setRefs((r) => [...r, url]);
-      const comment = chatInput.trim();
-      if (comment) void sendChat(comment, count);
-      else setMessages((m) => [...m, { role: "assistant", text: "Reference attached — tell me what to take from it (a pose, the light, a face, the outfit) and I'll work it into the prompt." }]);
+      setMessages((m) => [...m, { role: "assistant", text: "Reference attached. Add a note, then ✦ generate straight from it — or ↑ fold it into the scene definition." }]);
     } catch (e) {
       toast({ variant: "destructive", title: "Couldn't attach the reference", description: String((e as Error)?.message ?? e) });
     } finally { setUploadingRef(false); if (fileRef.current) fileRef.current.value = ""; }
@@ -180,7 +210,7 @@ export function SceneTab({ bookId, pageId }: { bookId: number; pageId: number })
     setRendering(true);
     try {
       const prompt = specToPrompt(spec, look.art_direction);
-      await renderSceneImage(pageId, prompt, refs, spec);
+      await renderSceneImage(pageId, prompt, refs, spec, gatherCastRefs());
       const refNote = refs.length ? ` with ${refs.length} reference image${refs.length > 1 ? "s" : ""}` : "";
       setMessages((m) => [...m, { role: "assistant", text: `Generating this scene${refNote} — it'll appear in the gallery shortly (it survives a refresh).` }]);
     } catch (e) {
@@ -188,8 +218,32 @@ export function SceneTab({ bookId, pageId }: { bookId: number; pageId: number })
     } finally { setRendering(false); }
   };
 
+  // Generate straight from the current scene + this note + references, WITHOUT rewriting the scene
+  // definition — the note is appended to the prompt for the renderer (which reads it and sees the refs).
+  // For ad-hoc reference tweaks ("use the face from reference 2") that needn't become part of the spec.
+  const generateWithNote = async (note: string) => {
+    if (rendering || phase !== "ready") return;
+    const n = note.trim();
+    setRendering(true);
+    setChatInput("");
+    if (n) setMessages((m) => [...m, { role: "user", text: n }]);
+    try {
+      const base = specToPrompt(spec, look.art_direction);
+      const prompt = n ? `${base}\nNOTE: ${n}` : base;
+      await renderSceneImage(pageId, prompt, refs, spec, gatherCastRefs());
+      const refNote = refs.length ? ` with ${refs.length} reference image${refs.length > 1 ? "s" : ""}` : "";
+      setMessages((m) => [...m, { role: "assistant", text: `Generating from your note${refNote} — the scene definition is unchanged.` }]);
+    } catch (e) {
+      toast({ variant: "destructive", title: "Couldn't start the render", description: String((e as Error)?.message ?? e) });
+    } finally { setRendering(false); }
+  };
+
   const composing = phase === "composing";
   const canGenerate = phase === "ready" && !isSpecEmpty(spec) && !rendering;
+
+  // Cast members not already a subject — offered in the "add a subject from the cast" picker.
+  const subjectNames = new Set(spec.subjects.map((s) => s.name.trim().toLowerCase()).filter(Boolean));
+  const availableCast = cast.filter((m) => !subjectNames.has(m.name.trim().toLowerCase()));
 
   return (
     <Panel variant="soft" className="flex h-full flex-col px-4 py-3.5">
@@ -246,12 +300,55 @@ export function SceneTab({ bookId, pageId }: { bookId: number; pageId: number })
                     <SubField label="expression" value={s.expression} onChange={(v) => setSubject(i, { expression: v })} placeholder="their face in this moment" />
                     <SubField label="action" value={s.action} onChange={(v) => setSubject(i, { action: v })} placeholder="what they're doing" />
                   </div>
+                  {/* Character references — this character's Foundations portraits. Tap to pick which ones
+                      condition the render for likeness (the first is on by default; more locks likeness). */}
+                  {(() => {
+                    const portraits = portraitsFor(s.name);
+                    if (!portraits.length) return null;
+                    const on = new Set(effectiveRefs(s, portraits));
+                    return (
+                      <div className="mt-2.5 border-t border-[hsl(var(--pv-border-soft))]/50 pt-2">
+                        <span className="pv-mono text-[9.5px] uppercase tracking-[0.1em] text-[hsl(var(--pv-text-faint))]">reference · tap to pick</span>
+                        <div className="mt-1.5 flex flex-wrap gap-2">
+                          {portraits.map((url) => {
+                            const sel = on.has(url);
+                            return (
+                              <button key={url} type="button" onClick={() => toggleRef(i, url)}
+                                title={sel ? "Included as a reference (tap to drop)" : "Dropped (tap to include)"}
+                                className={`relative h-14 w-14 overflow-hidden rounded-lg border-2 transition-all ${sel ? "border-[hsl(var(--pv-accent))]" : "border-transparent opacity-45 grayscale hover:opacity-70"}`}>
+                                <img src={url} alt={`${s.name || "character"} reference`} className="h-full w-full object-cover" />
+                                {!sel && <span className="absolute inset-0 flex items-center justify-center"><X className="h-4 w-4 text-white/90" /></span>}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               ))}
-              <button type="button" onClick={addSubject}
-                className="inline-flex items-center gap-1.5 pv-serif text-[12.5px] text-[hsl(var(--pv-text-muted))] hover:text-[hsl(var(--pv-accent))]">
-                <Plus className="h-3.5 w-3.5" /> add subject
-              </button>
+              <div>
+                <button type="button" onClick={() => (cast.length ? setCastPickerOpen((v) => !v) : addSubject())}
+                  className="inline-flex items-center gap-1.5 pv-serif text-[12.5px] text-[hsl(var(--pv-text-muted))] hover:text-[hsl(var(--pv-accent))]">
+                  <Plus className="h-3.5 w-3.5" /> add subject{cast.length ? " from the cast" : ""}
+                </button>
+                {castPickerOpen && cast.length > 0 && (
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5 rounded-xl border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/40 px-2.5 py-2">
+                    {availableCast.length > 0 ? availableCast.map((m) => (
+                      <button key={m.id} type="button" onClick={() => addSubjectFromCast(m)} title={m.appearance || m.name}
+                        className="pv-serif rounded-full border border-[hsl(var(--pv-border-soft))] px-2.5 py-1 text-[12.5px] text-foreground transition-colors hover:border-[hsl(var(--pv-accent))]/50 hover:text-[hsl(var(--pv-accent))]">
+                        {m.name}
+                      </button>
+                    )) : (
+                      <span className="pv-serif text-[12px] italic text-[hsl(var(--pv-text-faint))]">all cast already in the scene</span>
+                    )}
+                    <button type="button" onClick={() => { addSubject(); setCastPickerOpen(false); }}
+                      className="pv-serif rounded-full px-2.5 py-1 text-[12.5px] italic text-[hsl(var(--pv-text-faint))] hover:text-[hsl(var(--pv-accent))]">
+                      + blank
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* ── Scene fields ── */}
@@ -308,18 +405,23 @@ export function SceneTab({ bookId, pageId }: { bookId: number; pageId: number })
           </div>
         )}
 
-        {/* Attached reference images — thumbnails fed to the render alongside the cast portraits. */}
+        {/* Attached reference images — numbered so the author can address them ("the face from #2"). Fed
+            to the render in this order alongside the cast portraits. */}
         {refs.length > 0 && (
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {refs.map((url, i) => (
               <div key={url} className="group relative h-12 w-12 overflow-hidden rounded-lg border border-[hsl(var(--pv-border-soft))]">
                 <img src={url} alt={`Reference ${i + 1}`} className="h-full w-full object-cover" />
+                <span className="absolute left-0.5 top-0.5 rounded-full bg-black/65 px-1.5 py-0.5 pv-mono text-[9px] leading-none text-white">{i + 1}</span>
                 <button type="button" onClick={() => setRefs((r) => r.filter((_, j) => j !== i))} aria-label="Remove reference"
                   className="absolute right-0.5 top-0.5 rounded-full bg-black/60 p-0.5 text-white opacity-0 transition-opacity group-hover:opacity-100">
                   <X className="h-3 w-3" />
                 </button>
               </div>
             ))}
+            {refs.length > 1 && (
+              <span className="pv-serif text-[11.5px] italic text-[hsl(var(--pv-text-faint))]">refer to them by number — “angle from 1, face from 2”</span>
+            )}
           </div>
         )}
 
@@ -336,15 +438,25 @@ export function SceneTab({ bookId, pageId }: { bookId: number; pageId: number })
             value={chatInput}
             onChange={(e) => setChatInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void sendChat(chatInput); } }}
-            placeholder="Tell the editor a change, or attach a reference — e.g. “match this pose”"
+            placeholder="Note or change — then ✦ generate from it, or ↑ fold it into the scene"
             disabled={phase !== "ready" || chatBusy}
             className="pv-serif min-h-[42px] flex-1 rounded-xl border border-[hsl(var(--pv-border-soft))] bg-background px-3 py-2 text-[13.5px] leading-[1.5] focus-visible:ring-0"
           />
+          <button type="button" onClick={() => void generateWithNote(chatInput)} disabled={phase !== "ready" || rendering || (!chatInput.trim() && refs.length === 0)}
+            title="Generate now with this note + references — leaves the scene definition unchanged"
+            className="inline-flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full border border-[hsl(var(--pv-accent))]/45 bg-[hsl(var(--pv-accent))]/[0.08] text-[hsl(var(--pv-accent))] transition-colors hover:bg-[hsl(var(--pv-accent))]/[0.16] disabled:opacity-40">
+            {rendering ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+          </button>
           <button type="button" onClick={() => void sendChat(chatInput)} disabled={phase !== "ready" || chatBusy || !chatInput.trim()}
-            title="Send" className="inline-flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-40">
+            title="Fold this into the scene definition (revise the spec)" className="inline-flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-40">
             {chatBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
           </button>
         </div>
+        {(chatInput.trim() || refs.length > 0) && (
+          <p className="pv-serif px-1 text-[11.5px] italic text-[hsl(var(--pv-text-faint))]">
+            <span className="text-[hsl(var(--pv-accent))]">✦</span> generate now with the note + references · <span className="text-foreground">↑</span> fold it into the scene definition
+          </p>
+        )}
       </div>
     </Panel>
   );

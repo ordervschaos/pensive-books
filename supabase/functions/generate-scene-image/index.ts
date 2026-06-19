@@ -135,10 +135,10 @@ Deno.serve(async (req: Request) => {
     const { data: { user }, error: authError } = await userClient.auth.getUser();
     if (authError || !user) return json({ error: "Unauthorized" }, 401);
 
-    const { pageId, mode = "image", prompt, instruction, style, refUrls = [], currentSpec, spec, refCount = 0 } =
+    const { pageId, mode = "image", prompt, instruction, style, refUrls = [], currentSpec, spec, refCount = 0, castRefUrls } =
       (await req.json().catch(() => ({}))) as {
         pageId?: number; mode?: "prompt" | "image" | "oneshot" | "spec" | "revise-spec";
-        prompt?: string; instruction?: string; style?: string; refUrls?: string[]; currentSpec?: unknown; spec?: unknown; refCount?: number;
+        prompt?: string; instruction?: string; style?: string; refUrls?: string[]; currentSpec?: unknown; spec?: unknown; refCount?: number; castRefUrls?: string[];
       };
     if (!pageId) return json({ error: "pageId is required" }, 400);
 
@@ -227,12 +227,14 @@ Deno.serve(async (req: Request) => {
     // ── mode "revise-spec": CHAT — apply a free-text change to the current spec, keeping the rest ──
     if (mode === "revise-spec") {
       if (!instruction?.trim()) return json({ error: "Say what to change." }, 400);
-      // When the author attached reference image(s), their message is direction about that reference. The
-      // reviser can't SEE the image, but it must fold the author's words into the spec fields (e.g. note
-      // "as in the reference image") so the labelled prompt carries the intent to the renderer, which can.
-      const refBlock = refCount > 0
-        ? `\n\nREFERENCE IMAGE: the author attached ${refCount} reference image${refCount > 1 ? "s" : ""} you cannot see. Their change below says what to take from it — weave that into the relevant field(s) concretely, and where it points at the reference add a short cue like "(matching the attached reference)" so the renderer (which CAN see it) applies it.`
-        : "";
+      // When the author attached reference image(s), their message is direction about those references.
+      // The reviser can't SEE them, but it must fold the author's words into the spec fields so the
+      // labelled prompt carries the intent to the renderer, which CAN see them (in the same order).
+      const refBlock = refCount > 1
+        ? `\n\nREFERENCE IMAGES: the author attached ${refCount} reference images you cannot see, in order — reference 1, 2, … through ${refCount}. Their change may take a DIFFERENT element from each (e.g. the camera angle from one, a character's face or outfit from another). Apply each to the relevant field(s) and add a short cue naming the source, like "(the camera angle of reference 1)" or "(her face from reference 2)", so the renderer applies the right element from the right image.`
+        : refCount === 1
+          ? `\n\nREFERENCE IMAGE: the author attached 1 reference image you cannot see. Their change says what to take from it — weave that into the relevant field(s) and add a short cue like "(matching the attached reference)" so the renderer (which CAN see it) applies it.`
+          : "";
       const userContent = await buildUserContent(
         `Apply the change and output the FULL updated spec as JSON, with an extra "note" field: one short sentence (first person, past tense) describing what you changed.`,
         { withInstruction: false, extra: `CURRENT SPEC (revise THIS — keep everything the change does not mention):\n${JSON.stringify(currentSpec ?? {}, null, 2)}${refBlock}\n\nAUTHOR'S CHANGE:\n${instruction.trim()}` },
@@ -289,7 +291,12 @@ Deno.serve(async (req: Request) => {
     if (!prompt?.trim()) return json({ error: "A prompt is required to render the scene." }, 400);
     const svc = serviceClient();
     const promptText = prompt.trim();
-    const refs = [...refImages, ...refUrls];
+    // Author-attached references go FIRST, in attachment order, so "reference 1/2/…" in the prompt lines
+    // up with what the author numbered in the chat; the character portraits follow as likeness anchors.
+    // When the client sends `castRefUrls` (even []), it is the author-controlled portrait set and REPLACES
+    // the edge's automatic beat-name pick; omit it to fall back to the auto selection.
+    const castRefs = Array.isArray(castRefUrls) ? castRefUrls : refImages;
+    const refs = [...refUrls, ...castRefs];
 
     const { data: row, error: insErr } = await svc
       .from("page_scene_images")

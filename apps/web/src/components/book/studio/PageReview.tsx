@@ -5,12 +5,12 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
-import { ArrowDown, ChevronDown, ExternalLink, ImagePlus, Loader2, Lock, Trash2 } from "lucide-react";
+import { ArrowDown, ChevronDown, ExternalLink, ImagePlus, Loader2, Lock, Trash2, Upload } from "lucide-react";
 import { AutoTextarea } from "@/components/ui/auto-textarea";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { readNode, readProse, saveBeat, saveObjective } from "@/lib/ladder";
-import { deleteSceneImage, readSceneImages, type SceneImage } from "@/lib/sceneImages";
+import { deleteSceneImage, readSceneImages, uploadSceneImage, type SceneImage } from "@/lib/sceneImages";
 import type { CellState } from "@/lib/planGraph";
 import type { StudioModel } from "./studioModel";
 import { ActionLink, Eyebrow, ImageLightbox, Panel, Pip } from "./studioUi";
@@ -263,11 +263,20 @@ function DownArrow() {
 // Scene level — illustrations of the page's scene, with coherent characters (the beat's named cast
 // rendered from their pinned reference portraits). A gallery: many images per page. Live-projected
 // over Realtime so a generation from anywhere lands here without a refresh.
-function SceneLevel({ bookId: _bookId, pageId, beatExists }: { bookId: number; pageId: number; beatExists: boolean }) {
+function SceneLevel({ bookId, pageId, beatExists }: { bookId: number; pageId: number; beatExists: boolean }) {
   const { toast } = useToast();
   const [, setParams] = useSearchParams();
   const [scenes, setScenes] = useState<SceneImage[]>([]);
   const [lightbox, setLightbox] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const uploadRef = useRef<HTMLInputElement>(null);
+
+  const handleUpload = async (file: File) => {
+    setUploading(true);
+    try { await uploadSceneImage(pageId, bookId, file); }
+    catch (e) { toast({ variant: "destructive", title: "Couldn't upload the image", description: String((e as Error)?.message ?? e) }); }
+    finally { setUploading(false); if (uploadRef.current) uploadRef.current.value = ""; }
+  };
 
   // Upsert-or-replace: a new row is appended; an existing one (the 'generating' placeholder advancing to
   // 'ready'/'error') is replaced in place. Driven by the Realtime INSERT/UPDATE from the rail's render.
@@ -358,14 +367,28 @@ function SceneLevel({ bookId: _bookId, pageId, beatExists }: { bookId: number; p
               ))}
             </div>
           )}
-          <button
-            type="button"
-            onClick={() => openSceneEditor()}
-            className="inline-flex items-center gap-2 rounded-full border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/40 px-4 py-2 pv-serif text-[13.5px] text-foreground transition-colors hover:border-[hsl(var(--pv-accent))]/50 hover:text-[hsl(var(--pv-accent))]"
-          >
-            <ImagePlus className="h-4 w-4" />
-            {scenes.length ? "Edit scene & generate another →" : "Compose this scene →"}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => openSceneEditor()}
+              className="inline-flex items-center gap-2 rounded-full border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/40 px-4 py-2 pv-serif text-[13.5px] text-foreground transition-colors hover:border-[hsl(var(--pv-accent))]/50 hover:text-[hsl(var(--pv-accent))]"
+            >
+              <ImagePlus className="h-4 w-4" />
+              {scenes.length ? "Edit scene & generate another →" : "Compose this scene →"}
+            </button>
+            <input ref={uploadRef} type="file" accept="image/*" className="hidden"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleUpload(f); }} />
+            <button
+              type="button"
+              onClick={() => uploadRef.current?.click()}
+              disabled={uploading}
+              title="Upload your own image to the scene gallery"
+              className="inline-flex items-center gap-2 rounded-full border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/40 px-4 py-2 pv-serif text-[13.5px] text-foreground transition-colors hover:border-[hsl(var(--pv-accent))]/50 hover:text-[hsl(var(--pv-accent))] disabled:opacity-40"
+            >
+              {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+              Upload image
+            </button>
+          </div>
           <p className="pv-serif mt-2.5 text-[12.5px] italic text-[hsl(var(--pv-text-faint))]">
             Build the scene part-by-part in the Scene editor on the right — subjects, setting, light. Cast named in the beat are drawn from their portraits; design each character's look in Foundations for coherence.
           </p>

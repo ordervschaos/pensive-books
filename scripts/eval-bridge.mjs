@@ -1648,9 +1648,11 @@ async function runSceneImageReviseSpec(body) {
   const present = cast.filter((m) => castNamedIn(beat, m.name));
   const castNotes = present.map((m) => `- ${m.name}${m.appearance?.trim() ? `: ${m.appearance.trim()}` : ""}`).join("\n");
 
-  const refBlock = refCount > 0
-    ? `REFERENCE IMAGE: the author attached ${refCount} reference image${refCount > 1 ? "s" : ""} you cannot see. Their change says what to take from it — weave that into the relevant field(s) concretely, and where it points at the reference add a short cue like "(matching the attached reference)" so the renderer (which CAN see it) applies it.`
-    : null;
+  const refBlock = refCount > 1
+    ? `REFERENCE IMAGES: the author attached ${refCount} reference images you cannot see, in order — reference 1, 2, … through ${refCount}. Their change may take a DIFFERENT element from each (e.g. the camera angle from one, a character's face or outfit from another). Apply each to the relevant field(s) and add a short cue naming the source, like "(the camera angle of reference 1)" or "(her face from reference 2)", so the renderer applies the right element from the right image.`
+    : refCount === 1
+      ? `REFERENCE IMAGE: the author attached 1 reference image you cannot see. Their change says what to take from it — weave that into the relevant field(s) and add a short cue like "(matching the attached reference)" so the renderer (which CAN see it) applies it.`
+      : null;
   const userContent = [
     priorBeats.length ? `RECENT BEATS (for continuity — do NOT depict):\n${priorBeats.map((b, i) => `${i + 1}. ${b}`).join("\n\n")}` : null,
     `BEAT TO DEPICT:\n${beat}`,

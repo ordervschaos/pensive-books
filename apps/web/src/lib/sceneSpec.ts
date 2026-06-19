@@ -16,6 +16,9 @@ export interface SceneSubject {
   expression?: string;
   /** What they are doing in this moment. */
   action?: string;
+  /** The character's Foundations portraits chosen to condition this render for likeness. `undefined` =
+   *  untouched (the editor defaults to the first portrait); an explicit array (incl. []) = author's pick. */
+  refImages?: string[];
 }
 
 export interface SceneSpec {
@@ -46,6 +49,9 @@ export function asSpec(value: unknown): SceneSpec {
           clothing: str((s as SceneSubject)?.clothing),
           expression: str((s as SceneSubject)?.expression),
           action: str((s as SceneSubject)?.action),
+          refImages: Array.isArray((s as SceneSubject)?.refImages)
+            ? (s as SceneSubject).refImages!.filter((u): u is string => typeof u === "string" && !!u.trim())
+            : undefined,
         }))
         .filter((s) => s.name || s.build || s.clothing || s.expression || s.action)
     : [];
