@@ -7,13 +7,13 @@ import { JourneySection } from "@/components/landing/JourneySection";
 import { LANDING_FEATURES, LANDING_EXTRAS } from "@/lib/landing-content";
 
 export const metadata: Metadata = {
-  title: "Pensive — write, evaluate, and publish your books",
+  title: "Pensive — an AI studio for writing whole books",
   description:
-    "A calm, quiet place to draft, structure, and publish books. Start from a blank page or a one-line idea, let an expert AI editor read it, then publish to the public library in a click.",
+    "A calm studio for writing whole books with AI. Lay the foundations, spine, and beats, draft the prose, then revise by conversation and publish to the public library in a click.",
   openGraph: {
-    title: "Pensive — write, evaluate, and publish your books",
+    title: "Pensive — an AI studio for writing whole books",
     description:
-      "Draft, structure, and publish books. Generate from an idea, get an expert editor's read, then publish to the public library in a click.",
+      "Build a book the way a novelist would — foundations, spine, beats, then prose — with an always-on AI editor. Revise by conversation and publish in a click.",
     images: ["/og-image.png"],
   },
 };
@@ -31,14 +31,15 @@ export default async function HomePage() {
     <main className="mx-auto max-w-[1140px] overflow-x-hidden px-6 pb-28 md:px-12">
       {/* Hero */}
       <section className="pt-16 md:pt-24">
-        <div className="pv-eyebrow">Write · Generate · Publish</div>
+        <div className="pv-eyebrow">Foundations · Beats · Prose</div>
         <h1 className="pv-display mt-5 max-w-[15ch] text-[clamp(40px,9vw,84px)] font-normal leading-[0.98] tracking-tight text-foreground">
           Write a whole book, <em>start to shelf.</em>
         </h1>
         <p className="pv-serif mt-6 max-w-[54ch] text-[19px] leading-relaxed text-[hsl(var(--pv-text-muted))]">
-          Pensive is a calm, quiet place to draft, structure, and publish books.
-          Start from a blank page or a one-line idea — write it, let an expert AI
-          editor read it, then publish to the public library in a click.
+          Pensive is a calm studio for writing whole books with AI. Build it the
+          way a novelist would — foundations, spine, beats, then prose — with an
+          always-on editor you talk to. Revise by conversation, then publish to
+          the public library in a click.
         </p>
         <div className="mt-9 flex flex-wrap items-center gap-x-7 gap-y-4">
           <a href={`${appOrigin}/auth`} className={primaryCta}>
@@ -120,8 +121,9 @@ export default async function HomePage() {
           Your next book starts with a sentence.
         </h2>
         <p className="pv-serif mx-auto mt-5 max-w-[52ch] text-[17px] leading-relaxed text-[hsl(var(--pv-text-muted))]">
-          Write it, generate it, or both — then let an expert editor read it and
-          publish when you&apos;re ready. No setup, no gatekeepers.
+          Lay the foundations, plan the beats, draft the prose — with an AI editor
+          in the rail the whole way. Then publish when you&apos;re ready. No setup,
+          no gatekeepers.
         </p>
         <div className="mt-9 flex flex-wrap items-center justify-center gap-x-7 gap-y-4">
           <a href={`${appOrigin}/auth`} className={primaryCta}>

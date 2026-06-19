@@ -9,11 +9,12 @@ export function JourneySection() {
     <section id="how-it-works" className="scroll-mt-24 border-t border-border pt-14">
       <div className="pv-eyebrow">How it works</div>
       <h2 className="pv-display mt-4 max-w-[20ch] text-[32px] font-normal leading-[1.08] tracking-tight text-foreground md:text-[38px]">
-        From an idea to a published book, in seven steps.
+        From an idea to a published book — the way a novelist works.
       </h2>
       <p className="pv-serif mt-4 max-w-[52ch] text-[17px] leading-relaxed text-[hsl(var(--pv-text-muted))]">
-        Pensive walks you through the whole arc — and the AI only unlocks each
-        step once you&apos;re ready for it. You stay the author the entire way.
+        The Studio walks you down a build ladder — foundations, spine, beats,
+        then prose — and each step only unlocks once the one above it holds. You
+        stay the author the entire way.
       </p>
 
       <ol className="mt-12 max-w-[44rem]">

@@ -8,7 +8,7 @@
 // this panel sends a message and projects the row live (refresh = no-op). Generalizes BeatChat —
 // see docs/beat-sheet-revision.md and the unified-revision plan.
 import { useEffect, useMemo, useRef, useState, Fragment } from "react";
-import { ArrowDown, ArrowUp, Check, ChevronDown, Clock, Loader2, Plus, Sparkles, Square, SquarePen, Trash2, Wand2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, ChevronDown, Clock, CornerDownLeft, Loader2, Plus, Sparkles, Square, SquarePen, Trash2, Wand2, X } from "lucide-react";
 import { useChatScroll } from "./useChatScroll";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
@@ -18,7 +18,7 @@ import { useLatestTaskRow } from "@/hooks/useLatestTaskRow";
 import { LENSES as BEAT_LENSES, type RevisionPlan } from "@/lib/beatSheet";
 import type { CastMember, Foundations, Tentpole } from "@/lib/foundations";
 import {
-  applyProposal, clearPendingProposal, GENERATE_PROMPTS, onGenerate, recordApplied, sendRevisionMessage, startNewRevisionSession,
+  applyProposal, clearPendingProposal, GENERATE_PROMPTS, onGenerate, recordApplied, resumeRevisionSession, sendRevisionMessage, startNewRevisionSession,
   type RevisionChatRow, type RevisionLayer, type RevisionProposal, type RevisionSession,
 } from "@/lib/revisionChat";
 import type { StudioModel } from "./studioModel";
@@ -146,10 +146,18 @@ export function ReviseChat({ bookId, layer, onChanged, model, currentSpine, curr
     if (optimistic != null) scrollToBottom(false);
   }, [optimistic, scrollToBottom]);
 
+  const busy = sending || thinking;
+
   const newChat = async () => {
-    if (thinking || sending) return;
+    if (busy) return;
     try { await startNewRevisionSession(bookId, layer); setHistoryOpen(false); refetch(); }
     catch (e) { toast({ title: "Couldn't start a new chat", description: String((e as Error)?.message ?? e), variant: "destructive" }); }
+  };
+
+  const resume = async (index: number) => {
+    if (busy) return;
+    try { await resumeRevisionSession(bookId, layer, index); setHistoryOpen(false); refetch(); }
+    catch (e) { toast({ title: "Couldn't continue that chat", description: String((e as Error)?.message ?? e), variant: "destructive" }); }
   };
 
   const send = async (text: string) => {
@@ -201,8 +209,6 @@ export function ReviseChat({ bookId, layer, onChanged, model, currentSpine, curr
     catch (e) { toast({ title: "Couldn't stop", description: String((e as Error)?.message ?? e), variant: "destructive" }); }
   };
 
-  const busy = sending || thinking;
-
   return (
     <Panel variant="soft" className="flex h-full flex-col px-4 py-3.5">
       <div className="flex shrink-0 items-center gap-2">
@@ -226,7 +232,7 @@ export function ReviseChat({ bookId, layer, onChanged, model, currentSpine, curr
       {/* Past chats — archived sessions, read-only. */}
       {historyOpen && sessions.length > 0 && (
         <div className="mt-2 shrink-0 max-h-[40%] overflow-y-auto rounded-xl border border-[hsl(var(--pv-border-soft))]/60 bg-[hsl(var(--pv-surface-2))]/30 px-3 py-2">
-          <SessionHistory sessions={sessions} foundations={currentFoundations} model={model} />
+          <SessionHistory sessions={sessions} foundations={currentFoundations} model={model} onResume={resume} busy={busy} />
         </div>
       )}
 
@@ -495,8 +501,9 @@ function makeMarkdownComponents(foundations?: Foundations | null, model?: Studio
   };
 }
 
-// Past archived conversations (revision_chats.sessions), newest first — each expands read-only.
-function SessionHistory({ sessions, foundations, model }: { sessions: RevisionSession[]; foundations?: Foundations | null; model?: StudioModel }) {
+// Past archived conversations (revision_chats.sessions), newest first — each expands to review; the
+// "Continue this chat" button restores that session as the live thread (symmetric with new chat).
+function SessionHistory({ sessions, foundations, model, onResume, busy }: { sessions: RevisionSession[]; foundations?: Foundations | null; model?: StudioModel; onResume: (index: number) => void; busy: boolean }) {
   const [openIdx, setOpenIdx] = useState<number | null>(null);
   const when = (iso: string) => { try { return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }); } catch { return iso; } };
   return (
@@ -519,6 +526,12 @@ function SessionHistory({ sessions, foundations, model }: { sessions: RevisionSe
                   )}
                 </div>
               ))}
+              <div className="flex justify-end pt-1">
+                <button type="button" onClick={() => onResume(i)} disabled={busy}
+                  className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 pv-serif text-[11.5px] text-[hsl(var(--pv-text-faint))] transition-colors hover:text-[hsl(var(--pv-accent))] disabled:opacity-40">
+                  <CornerDownLeft className="h-3 w-3" /> Continue this chat
+                </button>
+              </div>
             </div>
           )}
         </div>
