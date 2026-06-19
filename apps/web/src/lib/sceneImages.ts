@@ -16,10 +16,11 @@ export interface SceneImage {
   prompt: string | null;
   status: "composing" | "generating" | "ready" | "error";
   error?: string | null;
+  scene_spec?: SceneSpec | null; // the spec snapshot that produced this image (null for uploads/legacy)
   created_at: string;
 }
 
-const SCENE_COLS = "id, page_id, book_id, image_url, prompt, status, error, created_at";
+const SCENE_COLS = "id, page_id, book_id, image_url, prompt, status, error, scene_spec, created_at";
 
 async function invoke<T>(fn: string, body: Record<string, unknown>): Promise<T> {
   const { data, error } = await supabase.functions.invoke(fn, { body });
@@ -60,11 +61,18 @@ export async function composeScenePrompt(bookId: number, pageId: number, instruc
   return composeViaBridgeOrEdge("/scene-image-prompt", "generate-scene-image", { bookId, pageId, instruction, style });
 }
 
-/** Kick off a scene render from a given prompt (the "compose & edit first" / revise path). Returns the
- *  'generating' placeholder row immediately; the render runs in the background and flips to
- *  'ready'/'error' over Realtime. */
-export async function renderSceneImage(pageId: number, prompt: string, refUrls: string[] = []): Promise<SceneImage> {
-  return invoke<SceneImage>("generate-scene-image", { pageId, mode: "image", prompt, refUrls });
+/** Kick off a scene render from a given prompt. Returns the 'generating' placeholder row immediately; the
+ *  render runs in the background and flips to 'ready'/'error' over Realtime. `spec` (when given) is
+ *  snapshotted onto the row so the author can later "revise this image" from its exact inputs. */
+export async function renderSceneImage(pageId: number, prompt: string, refUrls: string[] = [], spec?: SceneSpec): Promise<SceneImage> {
+  return invoke<SceneImage>("generate-scene-image", { pageId, mode: "image", prompt, refUrls, spec });
+}
+
+/** Read one scene image row by id (for "revise this image" — load its spec snapshot back into the editor). */
+export async function getSceneImage(id: string): Promise<SceneImage | null> {
+  const { data, error } = await supabase.from("page_scene_images").select(SCENE_COLS).eq("id", id).maybeSingle();
+  if (error) throw error;
+  return (data as SceneImage | null) ?? null;
 }
 
 /** The default DURABLE one-shot: compose AND render in a single background job. Returns the 'composing'
@@ -91,14 +99,14 @@ export async function composeSceneSpec(bookId: number, pageId: number, instructi
 
 /** Chat: apply a free-text change to the current spec, keeping the rest. Returns the updated spec plus a
  *  short first-person note of what changed (for the chat transcript). Single call — the spec is small. */
-export async function reviseSceneSpec(bookId: number, pageId: number, currentSpec: SceneSpec, instruction: string): Promise<{ spec: SceneSpec; note: string }> {
+export async function reviseSceneSpec(bookId: number, pageId: number, currentSpec: SceneSpec, instruction: string, refCount = 0): Promise<{ spec: SceneSpec; note: string }> {
   if (BRIDGE) {
-    const r = await bridgeFetch("/scene-image-revise-spec", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ bookId, pageId, currentSpec, instruction }) });
+    const r = await bridgeFetch("/scene-image-revise-spec", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ bookId, pageId, currentSpec, instruction, refCount }) });
     const d = await r.json();
     if (d.error) throw new Error(d.error);
     return { spec: asSpec(d.spec), note: String(d.note ?? "").trim() };
   }
-  const d = await invoke<{ spec: unknown; note?: string }>("generate-scene-image", { bookId, pageId, mode: "revise-spec", currentSpec, instruction });
+  const d = await invoke<{ spec: unknown; note?: string }>("generate-scene-image", { bookId, pageId, mode: "revise-spec", currentSpec, instruction, refCount });
   return { spec: asSpec(d.spec), note: String(d.note ?? "").trim() };
 }
 

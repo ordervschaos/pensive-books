@@ -275,8 +275,14 @@ function SceneLevel({ bookId: _bookId, pageId, beatExists }: { bookId: number; p
     setScenes((s) => (s.some((x) => x.id === row.id) ? s.map((x) => (x.id === row.id ? row : x)) : [...s, row]));
 
   // Open the rail's Scene editor (the structured spec lives there now; the center is just the gallery).
-  const openSceneEditor = () =>
-    setParams((p) => { const n = new URLSearchParams(p); n.set("tab", "scene"); return n; });
+  // With an image id, it loads that image's spec snapshot to revise; without, the page's working scene.
+  const openSceneEditor = (reviseImageId?: string) =>
+    setParams((p) => {
+      const n = new URLSearchParams(p);
+      n.set("tab", "scene");
+      if (reviseImageId) n.set("reviseScene", reviseImageId); else n.delete("reviseScene");
+      return n;
+    });
 
   useEffect(() => {
     let live = true;
@@ -328,21 +334,33 @@ function SceneLevel({ bookId: _bookId, pageId, beatExists }: { bookId: number; p
                       <span className="pv-serif text-[11px] italic text-[hsl(var(--pv-text-faint))]">{s.status === "composing" ? "composing…" : "generating…"}</span>
                     </div>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => void remove(s.id)}
-                    className="absolute right-1.5 top-1.5 rounded-full bg-black/55 p-1.5 text-white opacity-0 transition-opacity hover:bg-black/75 group-hover:opacity-100"
-                    aria-label={s.status === "ready" ? "Remove image" : "Dismiss"}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                  <div className="absolute right-1.5 top-1.5 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                    {s.status === "ready" && s.scene_spec && (
+                      <button
+                        type="button"
+                        onClick={() => openSceneEditor(s.id)}
+                        className="rounded-full bg-black/55 px-2 py-1 pv-serif text-[11px] text-white hover:bg-black/75"
+                        title="Load this image's inputs into the Scene editor to tweak and regenerate"
+                      >
+                        revise
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => void remove(s.id)}
+                      className="rounded-full bg-black/55 p-1.5 text-white hover:bg-black/75"
+                      aria-label={s.status === "ready" ? "Remove image" : "Dismiss"}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
           )}
           <button
             type="button"
-            onClick={openSceneEditor}
+            onClick={() => openSceneEditor()}
             className="inline-flex items-center gap-2 rounded-full border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/40 px-4 py-2 pv-serif text-[13.5px] text-foreground transition-colors hover:border-[hsl(var(--pv-accent))]/50 hover:text-[hsl(var(--pv-accent))]"
           >
             <ImagePlus className="h-4 w-4" />

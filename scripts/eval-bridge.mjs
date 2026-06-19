@@ -1632,7 +1632,7 @@ Rules:
 - If the change adds or removes a character, update "subjects" accordingly (and re-pick the focal subject only if the change asks for it).`;
 
 async function runSceneImageReviseSpec(body) {
-  const { bookId, pageId, instruction, currentSpec } = body;
+  const { bookId, pageId, instruction, currentSpec, refCount = 0 } = body;
   if (!bookId || !pageId) return { error: "bookId and pageId required" };
   if (!instruction?.trim()) return { error: "Say what to change." };
   const book = await fetchBook(bookId);
@@ -1648,11 +1648,15 @@ async function runSceneImageReviseSpec(body) {
   const present = cast.filter((m) => castNamedIn(beat, m.name));
   const castNotes = present.map((m) => `- ${m.name}${m.appearance?.trim() ? `: ${m.appearance.trim()}` : ""}`).join("\n");
 
+  const refBlock = refCount > 0
+    ? `REFERENCE IMAGE: the author attached ${refCount} reference image${refCount > 1 ? "s" : ""} you cannot see. Their change says what to take from it — weave that into the relevant field(s) concretely, and where it points at the reference add a short cue like "(matching the attached reference)" so the renderer (which CAN see it) applies it.`
+    : null;
   const userContent = [
     priorBeats.length ? `RECENT BEATS (for continuity — do NOT depict):\n${priorBeats.map((b, i) => `${i + 1}. ${b}`).join("\n\n")}` : null,
     `BEAT TO DEPICT:\n${beat}`,
     castNotes ? `CHARACTERS PRESENT (render faithfully):\n${castNotes}` : null,
     `CURRENT SPEC (revise THIS — keep everything the change does not mention):\n${JSON.stringify(currentSpec ?? {}, null, 2)}`,
+    refBlock,
     `AUTHOR'S CHANGE:\n${instruction.trim()}`,
     `Apply the change and output the FULL updated spec as JSON, with an extra "note" field summarising what you changed.`,
   ].filter(Boolean).join("\n\n");

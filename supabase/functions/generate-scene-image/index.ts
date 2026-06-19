@@ -24,7 +24,7 @@ import { IMAGE_PROMPT_MODEL } from "../_shared/model-config.ts";
 interface CastMember { id: string; name: string; appearance?: string; portraits?: string[] }
 interface PageRow { id: number; page_index: number; metadata: { beat?: string } | null }
 
-const SCENE_SELECT = "id, page_id, book_id, image_url, prompt, status, error, created_at";
+const SCENE_SELECT = "id, page_id, book_id, image_url, prompt, status, error, scene_spec, created_at";
 
 // Tolerant JSON extraction for the spec composer — strips any markdown fence / prose around the object
 // and pulls the first {...} block. Returns null when nothing parseable is found.
@@ -135,10 +135,10 @@ Deno.serve(async (req: Request) => {
     const { data: { user }, error: authError } = await userClient.auth.getUser();
     if (authError || !user) return json({ error: "Unauthorized" }, 401);
 
-    const { pageId, mode = "image", prompt, instruction, style, refUrls = [], currentSpec } =
+    const { pageId, mode = "image", prompt, instruction, style, refUrls = [], currentSpec, spec, refCount = 0 } =
       (await req.json().catch(() => ({}))) as {
         pageId?: number; mode?: "prompt" | "image" | "oneshot" | "spec" | "revise-spec";
-        prompt?: string; instruction?: string; style?: string; refUrls?: string[]; currentSpec?: unknown;
+        prompt?: string; instruction?: string; style?: string; refUrls?: string[]; currentSpec?: unknown; spec?: unknown; refCount?: number;
       };
     if (!pageId) return json({ error: "pageId is required" }, 400);
 
@@ -219,17 +219,23 @@ Deno.serve(async (req: Request) => {
         system: [{ type: "text", text: SPEC_SYSTEM, cache_control: { type: "ephemeral" } }],
         messages: [{ role: "user", content: userContent }],
       }, meta);
-      const spec = parseSpec(textFromClaude(data));
-      if (!spec) return json({ error: "Could not compose a scene spec." }, 502);
-      return json({ spec });
+      const composed = parseSpec(textFromClaude(data));
+      if (!composed) return json({ error: "Could not compose a scene spec." }, 502);
+      return json({ spec: composed });
     }
 
     // ── mode "revise-spec": CHAT — apply a free-text change to the current spec, keeping the rest ──
     if (mode === "revise-spec") {
       if (!instruction?.trim()) return json({ error: "Say what to change." }, 400);
+      // When the author attached reference image(s), their message is direction about that reference. The
+      // reviser can't SEE the image, but it must fold the author's words into the spec fields (e.g. note
+      // "as in the reference image") so the labelled prompt carries the intent to the renderer, which can.
+      const refBlock = refCount > 0
+        ? `\n\nREFERENCE IMAGE: the author attached ${refCount} reference image${refCount > 1 ? "s" : ""} you cannot see. Their change below says what to take from it — weave that into the relevant field(s) concretely, and where it points at the reference add a short cue like "(matching the attached reference)" so the renderer (which CAN see it) applies it.`
+        : "";
       const userContent = await buildUserContent(
         `Apply the change and output the FULL updated spec as JSON, with an extra "note" field: one short sentence (first person, past tense) describing what you changed.`,
-        { withInstruction: false, extra: `CURRENT SPEC (revise THIS — keep everything the change does not mention):\n${JSON.stringify(currentSpec ?? {}, null, 2)}\n\nAUTHOR'S CHANGE:\n${instruction.trim()}` },
+        { withInstruction: false, extra: `CURRENT SPEC (revise THIS — keep everything the change does not mention):\n${JSON.stringify(currentSpec ?? {}, null, 2)}${refBlock}\n\nAUTHOR'S CHANGE:\n${instruction.trim()}` },
       );
       const apiKey = Deno.env.get("ANTHROPIC_API_KEY") ?? "";
       const meta: CallMeta = { fn: "generate-scene-image", bookId, userId: user.id };
@@ -287,7 +293,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: row, error: insErr } = await svc
       .from("page_scene_images")
-      .insert({ page_id: pageId, book_id: bookId, image_url: null, prompt: promptText, status: "generating", created_by: user.id })
+      .insert({ page_id: pageId, book_id: bookId, image_url: null, prompt: promptText, status: "generating", scene_spec: spec ?? null, created_by: user.id })
       .select(SCENE_SELECT)
       .single();
     if (insErr) throw insErr;

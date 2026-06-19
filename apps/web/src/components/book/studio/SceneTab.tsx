@@ -6,12 +6,13 @@
 // prompt the image pipeline already renders durably — the new image lands in the center gallery over
 // Realtime. The spec autosaves to pages.scene_spec, so it restores exactly on reopen.
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, ImagePlus, Loader2, Plus, RefreshCw, Trash2, Wand2, X } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
+import { ArrowUp, ImagePlus, Loader2, Paperclip, Plus, RefreshCw, Trash2, Wand2, X } from "lucide-react";
 import { AutoTextarea } from "@/components/ui/auto-textarea";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { composeSceneSpec, readSceneSpec, renderSceneImage, reviseSceneSpec, saveSceneSpec } from "@/lib/sceneImages";
-import { EMPTY_SPEC, isSpecEmpty, specToPrompt, type SceneSpec, type SceneSubject } from "@/lib/sceneSpec";
+import { composeSceneSpec, getSceneImage, readSceneSpec, renderSceneImage, reviseSceneSpec, saveSceneSpec, uploadReferenceImage } from "@/lib/sceneImages";
+import { asSpec, EMPTY_SPEC, isSpecEmpty, specToPrompt, type SceneSpec, type SceneSubject } from "@/lib/sceneSpec";
 import { writeFoundationsPatch, type Foundations } from "@/lib/foundations";
 import { BookLookControls } from "./BookLookControls";
 import { Eyebrow, Panel, RunError } from "./studioUi";
@@ -30,12 +31,22 @@ export function SceneTab({ bookId, pageId }: { bookId: number; pageId: number })
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [chatBusy, setChatBusy] = useState(false);
+  // Author reference images attached in the chat — fed to the render alongside the cast portraits so the
+  // image model can match a pose / face / look. They ride along with every Generate until removed.
+  const [refs, setRefs] = useState<string[]>([]);
+  const [uploadingRef, setUploadingRef] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [params, setParams] = useSearchParams();
+  const reviseId = params.get("reviseScene");
+  const consumedRevise = useRef<string | null>(null);
 
-  // Load the saved spec; if the page has none yet, auto-compose a seed from the beat + cast.
+  // Load the page's working spec; if it has none yet, auto-compose a seed from the beat + cast. Skipped
+  // when a specific image is being revised (`?reviseScene`) — that effect loads its snapshot instead.
   useEffect(() => {
+    if (reviseId) return;
     let live = true;
-    setPhase("loading"); setError(null); setMessages([]); setChatInput("");
+    setPhase("loading"); setError(null); setMessages([]); setChatInput(""); setRefs([]);
     void (async () => {
       try {
         const saved = await readSceneSpec(pageId);
@@ -57,7 +68,40 @@ export function SceneTab({ bookId, pageId }: { bookId: number; pageId: number })
       }
     })();
     return () => { live = false; };
-  }, [bookId, pageId]);
+  }, [bookId, pageId]); // eslint-disable-line react-hooks/exhaustive-deps -- reviseId read at run-time on purpose
+
+  // "Revise this image": load the chosen image's spec snapshot back into the editor and attach the image
+  // as a reference, so a tweak + Generate produces a variation. Consumed once, then the param is cleared.
+  useEffect(() => {
+    if (!reviseId || consumedRevise.current === reviseId) return;
+    consumedRevise.current = reviseId;
+    let live = true;
+    setPhase("loading"); setError(null); setMessages([]); setChatInput(""); setRefs([]);
+    void (async () => {
+      try {
+        const img = await getSceneImage(reviseId);
+        if (!live) return;
+        // Drop the param so navigation/refresh doesn't reload it (the spec now lives on the working draft).
+        setParams((p) => { const n = new URLSearchParams(p); n.delete("reviseScene"); return n; }, { replace: true });
+        const snap = img?.scene_spec ? asSpec(img.scene_spec) : null;
+        if (!snap || isSpecEmpty(snap)) {
+          const saved = await readSceneSpec(pageId);
+          if (!live) return;
+          setSpec(saved && !isSpecEmpty(saved) ? saved : EMPTY_SPEC); setPhase("ready");
+          setMessages([{ role: "assistant", text: "That image had no saved inputs — loaded the page's current scene instead." }]);
+          return;
+        }
+        setSpec(snap); setPhase("ready");
+        if (img?.image_url) setRefs([img.image_url]);
+        void saveSceneSpec(pageId, snap).catch(() => {});
+        setMessages([{ role: "assistant", text: "Loaded that image's inputs and attached it as a reference — tell me what to change, or generate a variation." }]);
+      } catch (e) {
+        if (!live) return;
+        setError(String((e as Error)?.message ?? e)); setPhase("error");
+      }
+    })();
+    return () => { live = false; };
+  }, [reviseId, pageId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Autosave the spec (debounced) whenever the author edits a field.
   const update = (next: SceneSpec) => {
@@ -94,14 +138,16 @@ export function SceneTab({ bookId, pageId }: { bookId: number; pageId: number })
   };
 
   // Chat: send a free-text change; the reviser edits the spec (keeping the rest) and replies with a note.
-  const sendChat = async (text: string) => {
+  // `refCount` tells the reviser how many reference images are attached, so a comment like "match this
+  // dress" is woven into the prompt as direction about the reference (defaults to the current count).
+  const sendChat = async (text: string, refCount = refs.length) => {
     const t = text.trim();
     if (!t || chatBusy || phase !== "ready") return;
     setChatBusy(true);
     setChatInput("");
     setMessages((m) => [...m, { role: "user", text: t }]);
     try {
-      const { spec: next, note } = await reviseSceneSpec(bookId, pageId, spec, t);
+      const { spec: next, note } = await reviseSceneSpec(bookId, pageId, spec, t, refCount);
       setSpec(next);
       void saveSceneSpec(pageId, next).catch(() => {});
       setMessages((m) => [...m, { role: "assistant", text: note || "Updated the scene." }]);
@@ -110,15 +156,33 @@ export function SceneTab({ bookId, pageId }: { bookId: number; pageId: number })
     } finally { setChatBusy(false); }
   };
 
-  // Generate: flatten spec (+ house-look STYLE) → the labelled prompt → the durable render. The new image
-  // appears in the center gallery over Realtime; we just kick it off.
+  // Attach a reference image in the chat. If the author has typed a comment, that comment is direction
+  // about the reference — send it straight away (the reviser folds it into the prompt, ref-aware). Else
+  // prompt them to say what to take from it; the image alone conditions the render at Generate.
+  const attachRef = async (file: File) => {
+    setUploadingRef(true);
+    try {
+      const url = await uploadReferenceImage(file);
+      const count = refs.length + 1;
+      setRefs((r) => [...r, url]);
+      const comment = chatInput.trim();
+      if (comment) void sendChat(comment, count);
+      else setMessages((m) => [...m, { role: "assistant", text: "Reference attached — tell me what to take from it (a pose, the light, a face, the outfit) and I'll work it into the prompt." }]);
+    } catch (e) {
+      toast({ variant: "destructive", title: "Couldn't attach the reference", description: String((e as Error)?.message ?? e) });
+    } finally { setUploadingRef(false); if (fileRef.current) fileRef.current.value = ""; }
+  };
+
+  // Generate: flatten spec (+ house-look STYLE) → the labelled prompt → the durable render, with any
+  // attached reference images. The new image appears in the center gallery over Realtime.
   const generate = async () => {
     if (rendering) return;
     setRendering(true);
     try {
       const prompt = specToPrompt(spec, look.art_direction);
-      await renderSceneImage(pageId, prompt);
-      setMessages((m) => [...m, { role: "assistant", text: "Generating this scene — it'll appear in the gallery shortly (it survives a refresh)." }]);
+      await renderSceneImage(pageId, prompt, refs, spec);
+      const refNote = refs.length ? ` with ${refs.length} reference image${refs.length > 1 ? "s" : ""}` : "";
+      setMessages((m) => [...m, { role: "assistant", text: `Generating this scene${refNote} — it'll appear in the gallery shortly (it survives a refresh).` }]);
     } catch (e) {
       toast({ variant: "destructive", title: "Couldn't start the render", description: String((e as Error)?.message ?? e) });
     } finally { setRendering(false); }
@@ -244,12 +308,35 @@ export function SceneTab({ bookId, pageId }: { bookId: number; pageId: number })
           </div>
         )}
 
+        {/* Attached reference images — thumbnails fed to the render alongside the cast portraits. */}
+        {refs.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {refs.map((url, i) => (
+              <div key={url} className="group relative h-12 w-12 overflow-hidden rounded-lg border border-[hsl(var(--pv-border-soft))]">
+                <img src={url} alt={`Reference ${i + 1}`} className="h-full w-full object-cover" />
+                <button type="button" onClick={() => setRefs((r) => r.filter((_, j) => j !== i))} aria-label="Remove reference"
+                  className="absolute right-0.5 top-0.5 rounded-full bg-black/60 p-0.5 text-white opacity-0 transition-opacity group-hover:opacity-100">
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <input ref={fileRef} type="file" accept="image/*" className="hidden"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) void attachRef(f); }} />
+
         <div className="flex items-end gap-2">
+          <button type="button" onClick={() => fileRef.current?.click()} disabled={uploadingRef}
+            title="Attach a reference image (pose, face, look) for the render"
+            className="inline-flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full border border-[hsl(var(--pv-border-soft))] text-[hsl(var(--pv-text-muted))] transition-colors hover:border-[hsl(var(--pv-accent))]/50 hover:text-[hsl(var(--pv-accent))] disabled:opacity-40">
+            {uploadingRef ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
+          </button>
           <AutoTextarea
             value={chatInput}
             onChange={(e) => setChatInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void sendChat(chatInput); } }}
-            placeholder="Tell the editor a change — e.g. “make it night, bring Mara forward, cut the crowd”"
+            placeholder="Tell the editor a change, or attach a reference — e.g. “match this pose”"
             disabled={phase !== "ready" || chatBusy}
             className="pv-serif min-h-[42px] flex-1 rounded-xl border border-[hsl(var(--pv-border-soft))] bg-background px-3 py-2 text-[13.5px] leading-[1.5] focus-visible:ring-0"
           />
