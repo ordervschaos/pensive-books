@@ -10,6 +10,13 @@ export function LegacyRedirects() {
   const location = useLocation();
   const { pathname, search, hash } = location;
 
+  // The Studio defines its own CRUD-compliant URL space (/books/:slug/studio/:step,
+  // /books/:slug/studio/page/:pageId). It is not a legacy surface — bail before the singular→plural
+  // rewrites below would mangle /studio/page/:id into a non-existent /studio/pages/:id (blank screen).
+  if (pathname.includes('/studio')) {
+    return null;
+  }
+
   // Redirect /book/ to /books/
   if (pathname.includes('/book/')) {
     const newPath = pathname.replace('/book/', '/books/');
