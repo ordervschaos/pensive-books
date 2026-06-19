@@ -1,7 +1,8 @@
 // BuildStudio — the AI-tools build surface, as one studio. Replaces the old "step rail bolted above a
 // dense graph" (JourneyStudio + ResolutionMap) with a single two-pane workbench: a Navigator (the
 // 9-step ladder + the whole-book map) beside a Stage (the open step's tool, or a page's resolution
-// ladder). It owns the selection, the derived model, and the one non-derivable write — approve().
+// ladder). The host owns the selection (URL is the source of truth); this component owns the derived
+// model and the one non-derivable write — approve().
 //
 // State is still derived from real artifacts (see studioModel): the host passes brief/pages/journey;
 // this component additionally reads the three flags that can't be cheaply derived from `pages`
@@ -32,25 +33,17 @@ interface BuildStudioProps {
   pages: StudioPageRow[];
   journey: Journey;
   isPublic: boolean;
+  /** URL-driven selection (null = follow derived current step). */
+  selection: Selection | null;
+  onSelect: (sel: Selection | null) => void;
   onBriefChange: (brief: Brief) => void;
   onChanged: () => void;
   onPublish: () => void;
 }
 
-export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic, onBriefChange, onChanged, onPublish }: BuildStudioProps) {
+export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic, selection: selectionProp, onSelect, onBriefChange, onChanged, onPublish }: BuildStudioProps) {
   const { toast } = useToast();
 
-  // Explicit selection (null = follow the derived current step). Set on any click; advanced on approve.
-  // Persisted per book so a refresh keeps you on the step/page you were viewing (refresh = no-op).
-  const selKey = `studio-sel:${bookId}`;
-  const [selected, setSelected] = useState<Selection | null>(() => {
-    try {
-      const raw = localStorage.getItem(selKey);
-      return raw ? (JSON.parse(raw) as Selection) : null;
-    } catch {
-      return null;
-    }
-  });
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [approving, setApproving] = useState<StepKey | null>(null);
 
@@ -95,34 +88,27 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
     [briefSet, briefContext, spine.text, spine.stale, pages, journey, hasRead, isPublic, foundations, threads]
   );
 
-  const selection: Selection = useMemo(() => selected ?? { kind: "step", step: model.current }, [selected, model]);
+  // Resolve the prop to a concrete (non-null) selection: null means "follow the derived current step".
+  const selection: Selection = useMemo(() => selectionProp ?? { kind: "step", step: model.current }, [selectionProp, model]);
 
   // When a change comes FROM the editor rail (e.g. applying a revision), pin the current selection
   // before refreshing — otherwise the recomputed derived `current` (which jumps to the first stale
   // step after, say, a spine edit) would swap the rail to another layer's chat under the author.
-  const railOnChanged = useCallback(() => { setSelected(selection); refresh(); }, [selection, refresh]);
+  const railOnChanged = useCallback(() => { onSelect(selection); refresh(); }, [selection, refresh, onSelect]);
 
-  // Persist the explicit selection so a reload reopens it; clearing it (back to derived current)
-  // wipes the key.
-  useEffect(() => {
-    try {
-      if (selected) localStorage.setItem(selKey, JSON.stringify(selected));
-      else localStorage.removeItem(selKey);
-    } catch { /* storage unavailable — selection just won't persist */ }
-  }, [selected, selKey]);
-
-  // Drop a stale persisted selection: a page a later build archived, or a step that's now locked.
+  // Drop a stale URL-driven selection: a page a later build archived, or a step that's now locked.
   // Without this a reload could reopen something the manuscript no longer has. Guard on readiness —
   // `foundations === undefined` means the studio's own data hasn't loaded; `pages.length === 0` means
   // the host hasn't delivered the manuscript yet — so we don't wipe a valid selection mid-load.
+  // Only clears an EXPLICIT selection (selectionProp != null), not the derived fallback.
   useEffect(() => {
-    if (!selected || foundations === undefined) return;
-    if (selected.kind === "page") {
-      if (pages.length > 0 && !model.pageById(selected.pageId)) setSelected(null);
-    } else if (model.statusOf(selected.step) === "locked") {
-      setSelected(null);
+    if (!selectionProp || foundations === undefined) return;
+    if (selectionProp.kind === "page") {
+      if (pages.length > 0 && !model.pageById(selectionProp.pageId)) onSelect(null);
+    } else if (model.statusOf(selectionProp.step) === "locked") {
+      onSelect(null);
     }
-  }, [selected, model, foundations, pages.length]);
+  }, [selectionProp, model, foundations, pages.length, onSelect]);
 
   // Which step has a live AI run — the Navigator marks it "● running" (a badge, not auto-navigation).
   const runningStep = useActiveStep(bookId);
@@ -150,7 +136,7 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
       if (error) throw error;
       const idx = model.buildSteps.indexOf(k);
       const nextStep: StepKey = idx >= 0 && idx < model.buildSteps.length - 1 ? model.buildSteps[idx + 1] : "read";
-      setSelected({ kind: "step", step: nextStep });
+      onSelect({ kind: "step", step: nextStep });
       refresh();
     } catch (e) {
       toast({ title: "Couldn't save your approval", description: String((e as Error)?.message ?? e), variant: "destructive" });
@@ -176,8 +162,8 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
       selection={selection}
       collapsed={collapsed}
       runningStep={runningStep}
-      onSelectStep={(k) => setSelected({ kind: "step", step: k })}
-      onSelectPage={(pageId) => setSelected({ kind: "page", pageId })}
+      onSelectStep={(k) => onSelect({ kind: "step", step: k })}
+      onSelectPage={(pageId) => onSelect({ kind: "page", pageId })}
       onToggleMovement={(key) => setCollapsed((c) => ({ ...c, [key]: !c[key] }))}
     />
   );
@@ -196,9 +182,9 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
       onBriefChange={handleBriefChange}
       onSpineStatus={() => setInfoKey((k) => k + 1)}
       onReadStatus={setHasRead}
-      onSelectStep={(k) => setSelected({ kind: "step", step: k })}
+      onSelectStep={(k) => onSelect({ kind: "step", step: k })}
       onPublish={onPublish}
-      onSelectPage={(pageId) => setSelected({ kind: "page", pageId })}
+      onSelectPage={(pageId) => onSelect({ kind: "page", pageId })}
     />
   );
   const rail = showRail ? (

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Helmet } from "react-helmet-async";
 import { supabase } from "@/integrations/supabase/client";
@@ -6,8 +6,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useBookPermissions } from "@/hooks/use-book-permissions";
 import { setPageTitle } from "@/utils/pageTitle";
 import { computeCompletion, type Brief } from "@/lib/brief";
-import { BuildStudio } from "@/components/book/studio/BuildStudio";
-import type { Journey } from "@/components/book/studio/studioModel";
+import { BuildStudio, type Selection } from "@/components/book/studio/BuildStudio";
+import { ALL_STEPS, type Journey, type StepKey } from "@/components/book/studio/studioModel";
 import { PublishingDialog } from "@/components/book/PublishingDialog";
 import { AdminViewBanner } from "@/components/book/AdminViewBanner";
 import type { EditorJSON } from "@/types/editor";
@@ -35,13 +35,28 @@ const getNumericId = (param: string | undefined) => {
   return match ? parseInt(match[1]) : 0;
 };
 
+// Turn a Selection | null into the URL suffix that follows /studio.
+const selectionSuffix = (sel: Selection | null): string => {
+  if (!sel) return "";
+  if (sel.kind === "page") return `/page/${sel.pageId}`;
+  return `/${sel.step}`;
+};
+
 // The Studio is the AI build surface, given the whole screen — fixed Navigator (left) and editor rail
 // (right) around a scrolling Stage. It lives at /books/:slug/studio (author-only); the book page hosts
 // the manuscript and links here via the "Studio" button. Data is a live projection of server state
 // (refresh = no-op): a background AI run mutating books/pages re-reads via the realtime subscription.
 const StudioPage = () => {
-  const { bookSlug } = useParams();
+  const { bookSlug, step, pageId } = useParams();
   const navigate = useNavigate();
+
+  // Derive the selection from URL params (null = follow derived current step).
+  const urlSelection: Selection | null = useMemo(() => {
+    const pid = pageId ? Number(pageId) : NaN;
+    if (pageId && pid > 0) return { kind: "page", pageId: pid };
+    if (step && ALL_STEPS.includes(step as StepKey)) return { kind: "step", step: step as StepKey };
+    return null;
+  }, [step, pageId]);
   const { toast } = useToast();
   const [book, setBook] = useState<StudioBookRecord | null>(null);
   const [pages, setPages] = useState<StudioBookPage[]>([]);
@@ -69,9 +84,10 @@ const StudioPage = () => {
       if (bookError) throw bookError;
 
       // Canonicalize the slug (mirrors BookDetails) so the crumb + URL show the book name.
+      // Preserve the current view suffix so a redirect doesn't drop the open step/page.
       if (bookData && !bookSlug?.includes("-") && bookData.name) {
         const slug = `${numericId}-${bookData.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
-        navigate(`/books/${slug}/studio`, { replace: true });
+        navigate(`/books/${slug}/studio${selectionSuffix(urlSelection)}`, { replace: true });
       }
 
       setBook(bookData as StudioBookRecord);
@@ -95,7 +111,7 @@ const StudioPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [bookSlug, navigate, toast]);
+  }, [bookSlug, navigate, toast, urlSelection]);
 
   useEffect(() => {
     void fetchBook();
@@ -148,6 +164,8 @@ const StudioPage = () => {
           pages={pages}
           journey={journey as never}
           isPublic={book.is_public}
+          selection={urlSelection}
+          onSelect={(sel) => navigate(`/books/${bookSlug}/studio${selectionSuffix(sel)}`)}
           onBriefChange={(brief) => setBook((b) => (b ? { ...b, brief } : b))}
           onChanged={fetchBook}
           onPublish={() => setIsPublishingDialogOpen(true)}

@@ -171,6 +171,8 @@ export default function App() {
                         <Route path="/books/:bookSlug/draft" element={<DraftChanges />} />
                         <Route path="/books/:bookSlug" element={<BookDetails />} />
                         <Route path="/books/:bookSlug/studio" element={<StudioPage />} />
+                        <Route path="/books/:bookSlug/studio/page/:pageId" element={<StudioPage />} />
+                        <Route path="/books/:bookSlug/studio/:step" element={<StudioPage />} />
                         <Route path="/books/:bookSlug/edit" element={<BookEdit />} />
                         <Route path="/books/:bookSlug/pages/:pageSlug" element={<PageView />} />
                       </Route>
