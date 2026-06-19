@@ -19,6 +19,7 @@ import {
   buildStudioModel, rootFingerprints, type Journey, type StepKey, type StudioPageRow,
 } from "./studioModel";
 import { StudioNavigator } from "./StudioNavigator";
+import { useGeneratingScenePages } from "./useGeneratingScenePages";
 import { StudioStage } from "./StudioStage";
 import { StudioEditorRail } from "./StudioEditorRail";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
@@ -112,6 +113,9 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
 
   // Which step has a live AI run — the Navigator marks it "● running" (a badge, not auto-navigation).
   const runningStep = useActiveStep(bookId);
+  // Pages with an in-flight scene-image render — the map badges them so you can fire off several pages
+  // and see which are still generating without opening each.
+  const generatingPages = useGeneratingScenePages(bookId);
 
   // The editor RAIL: the current step's editor, docked on the right. Foundations/spine/beats get the
   // conversational ReviseChat; the Draft step gets the durable ProseEditor. The rail shows whenever
@@ -162,6 +166,7 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
       selection={selection}
       collapsed={collapsed}
       runningStep={runningStep}
+      generatingPages={generatingPages}
       onSelectStep={(k) => onSelect({ kind: "step", step: k })}
       onSelectPage={(pageId) => onSelect({ kind: "page", pageId })}
       onToggleMovement={(key) => setCollapsed((c) => ({ ...c, [key]: !c[key] }))}

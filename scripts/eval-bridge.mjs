@@ -16,7 +16,7 @@
 //   EVAL_CLAUDE_FLAGS  default "--dangerously-skip-permissions"
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
-import { readdirSync, readFileSync, existsSync } from "node:fs";
+import { readdirSync, readFileSync, existsSync, appendFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -28,6 +28,12 @@ const CLAUDE_FLAGS = (process.env.EVAL_CLAUDE_FLAGS || "--dangerously-skip-permi
 // occasionally a dropped socket). Past this many ms we kill the child and fail fast so the caller
 // can retry/re-roll instead of stranding (and never leave a zombie 'running' ai_calls row). 0 = off.
 const CLAUDE_TIMEOUT_MS = Number(process.env.EVAL_CLAUDE_TIMEOUT_MS ?? 6 * 60 * 1000);
+
+// Model routing — override via env to switch tiers without code changes.
+// E.g. EVAL_PROSE_MODEL=sonnet to cut cost on bulk rewrites.
+const MODEL_PLANNING = process.env.EVAL_PLANNING_MODEL || "opus"; // structural decisions, beat/outline work
+const MODEL_PROSE    = process.env.EVAL_PROSE_MODEL    || "opus"; // prose writing (default opus, can be overridden to sonnet)
+const MODEL_SUMMARY  = process.env.EVAL_SUMMARY_MODEL  || "haiku"; // short summaries, image-prompt composition
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -87,7 +93,7 @@ async function authorize(req, res, bookId) {
 
 async function fetchBook(bookId) {
   const r = await fetch(
-    `${SUPABASE_URL}/rest/v1/books?id=eq.${bookId}&select=name%2Cbrief%2Cbible%2Cspine%2Cfoundations%2Ccanon`,
+    `${SUPABASE_URL}/rest/v1/books?id=eq.${bookId}&select=name%2Cbrief%2Cbible%2Cspine%2Cfoundations%2Ccanon%2Csteers`,
     { headers: sbHeaders }
   );
   if (!r.ok) throw new Error(`Supabase ${r.status}: ${await r.text()}`);
@@ -401,14 +407,22 @@ async function logAiEnd(id, { output = null, error = null, latencyMs = null }) {
 // tools on, claude treats them as agentic tasks and can run for many minutes or hang (the cause of
 // the 7–30 min replan runs + `exit 1`). The judge and the `/evaluate-book` slash command DO want
 // tools (they read the repo), so they leave noTools off.
-function runClaude(prompt, captureStdout = false, meta = null, { noTools = false } = {}) {
+function runClaude(prompt, captureStdout = false, meta = null, { noTools = false, model = null } = {}) {
   return new Promise((resolve) => {
     const started = Date.now();
     // Insert the 'running' row up front so the call shows in /admin while in flight (the close
     // handler below updates it to done/error). logId is a promise; close() awaits it.
     const logIdP = meta ? logAiStart({ ...meta, prompt }) : Promise.resolve(null);
-    const args = ["-p", prompt, ...CLAUDE_FLAGS, ...(noTools ? ["--tools", ""] : [])];
+    const args = ["-p", prompt, ...CLAUDE_FLAGS, ...(model ? ["--model", model] : []), ...(noTools ? ["--tools", ""] : [])];
     console.log(`→ claude -p "${prompt.slice(0, 80).replace(/\n/g, " ")}…"`);
+    try {
+      const ts = new Date().toISOString();
+      const fn = meta?.fn ?? "unknown";
+      const bookId = meta?.bookId ?? "—";
+      const mdl = model ?? "default";
+      const header = `\n${"═".repeat(80)}\n[${ts}]  fn=${fn}  book=${bookId}  model=${mdl}  noTools=${noTools}\n${"─".repeat(80)}\n`;
+      appendFileSync(join(repoRoot, "bridge-calls.log"), header + prompt + "\n");
+    } catch { /* non-fatal */ }
     // stdin = /dev/null so `claude -p` gets immediate EOF instead of waiting on an empty pipe
     // ("no stdin data received in 3s…"); the prompt is passed via the -p arg, not stdin.
     const child = spawn("claude", args, { cwd: repoRoot, stdio: ["ignore", "pipe", "pipe"] });
@@ -549,7 +563,7 @@ ${briefContext(book.brief)}${canonSection(book.canon)}${foundations ? `\n\nSETTL
 
 Design the outline. JSON only.`;
 
-  const out = await runClaude(prompt, true, { fn: "spine-to-objectives", bookId }, { noTools: true });
+  const out = await runClaude(prompt, true, { fn: "spine-to-objectives", bookId }, { noTools: true, model: MODEL_PLANNING });
   if (out.error) return out;
 
   let raw = out.text.trim();
@@ -612,7 +626,7 @@ ${briefContext(book.brief)}
 
 Draft the bible. Markdown only.`;
 
-  const out = await runClaude(prompt, true, { fn: "generate-bible", bookId }, { noTools: true });
+  const out = await runClaude(prompt, true, { fn: "generate-bible", bookId }, { noTools: true, model: MODEL_PLANNING });
   if (out.error) return out;
   const text = out.text.trim();
   if (!text) return { error: "Claude returned no text content" };
@@ -652,7 +666,7 @@ ${briefContext(book.brief)}${bible ? `\n\nBIBLE (facts to stay consistent with):
 
 Write the three voice samples. XML tags only.`;
 
-  const out = await runClaude(prompt, true, { fn: "generate-voice", bookId }, { noTools: true });
+  const out = await runClaude(prompt, true, { fn: "generate-voice", bookId }, { noTools: true, model: MODEL_PROSE });
   if (out.error) return out;
 
   // Primary: XML tags (prose can contain quotes without escaping issues). JSON fallback for safety.
@@ -918,7 +932,7 @@ ${outlineContext(pages)}${instr ? `\n\nAUTHOR'S INSTRUCTION (primary directive):
 
 Produce the revision plan. JSON only.`;
 
-  const out = await runClaude(prompt, true, { fn: "revise-outline", bookId }, { noTools: true });
+  const out = await runClaude(prompt, true, { fn: "revise-outline", bookId }, { noTools: true, model: MODEL_PLANNING });
   if (out.error) return out;
   return parsePlan(out.text, pages, planOnly);
 }
@@ -1052,7 +1066,7 @@ ${beatSheetContext(pages)}${instr ? `\n\nAUTHOR'S INSTRUCTION (primary directive
 
 Produce the beat revision plan. JSON only.`;
 
-  const out = await runClaude(prompt, true, { fn: "revise-beats", bookId }, { noTools: true });
+  const out = await runClaude(prompt, true, { fn: "revise-beats", bookId }, { noTools: true, model: MODEL_PLANNING });
   if (out.error) return out;
   return parseBeatPlan(out.text, pages);
 }
@@ -1136,7 +1150,7 @@ async function runBeatsAgent(bookId, message) {
     const transcript = withUser.slice(-24).map((m) => `${m.role === "user" ? "AUTHOR" : "EDITOR"}: ${m.text}`).join("\n\n");
     const prompt = `${BEATS_AGENT_INSTRUCTIONS}\n\n${context}\n\n— — — CONVERSATION SO FAR — — —\n${transcript}\n\nRespond to the latest AUTHOR message.`;
 
-    const out = await runClaude(prompt, true, { fn: "beats-agent", bookId }, { noTools: true });
+    const out = await runClaude(prompt, true, { fn: "beats-agent", bookId }, { noTools: true, model: MODEL_PLANNING });
     if (out.error) throw new Error(out.error);
 
     // Prose is markdown; a proposed change rides in a TRAILING ```json block (mirrors beats-agent edge fn).
@@ -1326,7 +1340,7 @@ async function runReviseChat(bookId, layer, message) {
     const transcript = withUser.slice(-24).map((m) => `${m.role === "user" ? "AUTHOR" : "EDITOR"}: ${m.text}`).join("\n\n");
     const prompt = `${system}\n\n${context}\n\n— — — CONVERSATION SO FAR — — —\n${transcript}\n\nRespond to the latest AUTHOR message.`;
 
-    const out = await runClaude(prompt, true, { fn: "revise-chat", bookId }, { noTools: true });
+    const out = await runClaude(prompt, true, { fn: "revise-chat", bookId }, { noTools: true, model: MODEL_PLANNING });
     if (out.error) throw new Error(out.error);
 
     // A proposed change rides in a TRAILING ```json block (mirrors the edge fn).
@@ -1401,14 +1415,14 @@ Write the beat for THIS PAGE. One paragraph, plan only.`;
   const n = Math.max(1, Math.min(Number(body.candidates) || 1, 5));
   if (n > 1) {
     const outs = await Promise.all(
-      Array.from({ length: n }, () => runClaude(prompt, true, { fn: "objective-to-beat", bookId }, { noTools: true })),
+      Array.from({ length: n }, () => runClaude(prompt, true, { fn: "objective-to-beat", bookId }, { noTools: true, model: MODEL_PLANNING })),
     );
     const takes = outs.map((o) => (o.text ?? "").trim()).filter(Boolean);
     if (takes.length === 0) return { error: "Claude returned no beat." };
     return { candidates: takes };
   }
 
-  const out = await runClaude(prompt, true, { fn: "objective-to-beat", bookId }, { noTools: true });
+  const out = await runClaude(prompt, true, { fn: "objective-to-beat", bookId }, { noTools: true, model: MODEL_PLANNING });
   if (out.error) return out;
   return { beat: (out.text ?? "").trim() };
 }
@@ -1453,17 +1467,50 @@ async function planAllBeatsLocal(bookId, pages, { onProgress } = {}) {
 // generate-character-portrait, but runs on local Claude Code (claude-local) instead of the Anthropic
 // API. Only the text prompt-compose runs here; the actual image render stays on the edge fn (OpenRouter),
 // which the client calls directly. Returns { prompt }.
-const SCENE_IMAGE_PROMPT_SYSTEM = `You write ONE image-generation prompt for a single scene of a novel.
+const SCENE_IMAGE_PROMPT_SYSTEM = `You compose ONE structured image prompt for a single scene of a novel. The author will edit it, then it is sent VERBATIM to an image model — so it must be complete and self-contained.
 
-You are given recent story beats for continuity and the BEAT TO DEPICT. Describe only the beat-to-depict as a still image: the setting, the characters present and their actions/expressions, the mood, the lighting, and the composition. Use the provided character appearances so each person is rendered faithfully. Let the preceding beats inform mood and continuity, but do NOT depict them.
+You are given recent story beats for continuity and the BEAT TO DEPICT. Depict ONLY the beat-to-depict; let the preceding beats inform mood and continuity but never render them.
 
-Output ONLY the prompt text — no preamble, no quotes, no labels. 2–4 sentences. Do not mention cameras, file formats, or "no text/watermark" instructions (those are added separately).`;
+The image's job is IMMERSION, not exposition. The PROSE tells the story; the picture only has to pull the reader close to a character in a real, lived-in moment. So:
+- Choose ONE focal character — whoever the beat centres on — and build the whole frame around them: their face, their expression, what they are doing right now.
+- Other named characters may be present, but stage them naturally inside the action — interacting, turned away, partly in frame, or soft in the background. NEVER line the cast up shoulder-to-shoulder, give them equal weight, or have anyone pose for or look at the camera (unless the beat is literally a portrait or photograph).
+- Favour an intimate, cinematic shot — a close-up, medium close-up, or over-the-shoulder on the focal character — over a wide group shot. Vary the angle from scene to scene. Catch the instant candidly, as if the camera happened to catch it mid-action.
 
-const PORTRAIT_PROMPT_SYSTEM = `You write ONE image-generation prompt for a character REFERENCE PORTRAIT for a novel.
+Output EXACTLY these labelled lines, in this order, each on its own line, nothing before or after:
 
-Given a character's name, role, appearance, and inner life, describe a head-and-shoulders portrait: their face, apparent age, build, hair, distinguishing features, and typical dress, with an expression that reflects who they are. Keep it a believable, specific person.
+SUBJECT: the FOCAL character — name them, the key appearance details given, and their exact expression and action in this moment. If others are present, add them briefly and SUBORDINATELY (where they are, what they're doing) — not as co-equal portraits.
+SETTING: where it happens, the time of day, and the telling environmental details.
+ACTION: the single moment being depicted, drawn from the beat.
+COMPOSITION: an intimate, candid camera — shot type (favour close / medium / over-the-shoulder), the focal point held on the focal character, plus angle and depth of field. Explicitly avoid a flat line-up or a posed group.
+LIGHTING: the quality, direction, and colour of the light.
+MOOD: the emotional atmosphere.
+STYLE: the rendering look. If a HOUSE LOOK is given, this line MUST honour it; otherwise default to cinematic, painterly digital illustration with a rich, atmospheric, naturalistic palette. Keep this line concrete and consistent from scene to scene.
+EXCLUDE: no text, captions, watermarks, or signatures; no posing for the camera; no symmetrical, evenly-spaced cast line-up.
 
-Output ONLY the prompt text — no preamble, no quotes, no labels. 2–4 sentences. Do not mention cameras, file formats, or "no text/watermark" instructions (those are added separately).`;
+Render every named character faithfully to the appearance given. Be concrete and visual — avoid plot abstractions a camera cannot see. Weave any author art direction into the relevant lines.
+
+Here is one worked example of the calibre, density, and focal staging to match. It is ILLUSTRATIVE ONLY — the names, setting, mood and STYLE in YOUR output must come from the beat, cast, and HOUSE LOOK you are given, never copied from this example:
+
+SUBJECT: Mara positioned at the room's edge, brown-haired and lithe, her bright dark reflective eyes locked on Cassian's in the instant of mutual recognition, soft lips slightly parted, her defiant composure visibly faltering—caught before she can rebuild her mask. Cassian mid-performance gesture, eyes flicked to find a believer and landing on her instead. Wenna nearby with practiced composure, the flustered merchant beginning to retreat.
+SETTING: An intimate interior of the estate, lived-in and warmed, afternoon light filtering through, the space where Cassian conducts his persuasions—quiet, lined with the textures of someone who belongs.
+ACTION: The moment Cassian's eyes flick across the room mid-deadpan to find a believer, landing instead on Mara, the unconvinced witness—their gazes locking in mutual recognition, her cataloguing mask slipping visibly.
+COMPOSITION: Medium close-up focused primarily on Mara at the room's edge, her face the clear focal point, her bright eyes and soft lips candidly in the moment of being truly seen, shot at a slight angle that brings Cassian's face into the frame at her side but secondary and softer. Wenna and the merchant staged naturally in the background, no posed arrangement or symmetrical spacing.
+LIGHTING: Warm directional light falling across Mara's face in the manner of classical chiaroscuro, catching the brightness in her eyes, casting pools of rich amber and deep shadow through the room, modeling form with old-master subtlety.
+MOOD: Electrified mutual recognition; the shock of being truly seen when unguarded; the moment when performance falters and something genuine breaks through.
+STYLE: Rich oil painting with visible brushwork and impasto texture throughout, classical old-master lighting, deep saturated old-master palette of warm siennas, ochres, and umbers with cool shadow-tones, rendered in the manner of golden-age portraiture.
+EXCLUDE: No text, captions, watermarks, or signatures; no posed group line-up or symmetrically spaced cast; no one posing for or looking at the camera; Mara and Cassian caught in a candid moment of genuine connection.`;
+
+const PORTRAIT_PROMPT_SYSTEM = `You compose ONE structured image prompt for a character REFERENCE PORTRAIT for a novel. The author will edit it, then it is sent VERBATIM to an image model — so it must be complete and self-contained.
+
+Given the character's name, role, appearance, and inner life, output EXACTLY these labelled lines, in this order, each on its own line, nothing before or after:
+
+SUBJECT: the character's face, apparent age, build, hair, and distinguishing features, their typical dress, and an expression that reflects who they are — a believable, specific person.
+FRAMING: head-and-shoulders character reference portrait.
+BACKGROUND: neutral, with even soft lighting.
+STYLE: the rendering look. If a HOUSE LOOK is given, this line MUST honour it; otherwise default to photorealistic. Keep features consistent and suitable as a reusable reference.
+EXCLUDE: no text, captions, watermarks, or signatures.
+
+Weave any author art direction into the relevant lines.`;
 
 function castNamedIn(text, name) {
   const n = (name ?? "").trim();
@@ -1472,8 +1519,122 @@ function castNamedIn(text, name) {
 }
 
 async function runSceneImagePrompt(body) {
-  const { bookId, pageId, instruction } = body;
+  const { bookId, pageId, instruction, style } = body;
   if (!bookId || !pageId) return { error: "bookId and pageId required" };
+  const book = await fetchBook(bookId);
+  if (!book) return { error: "Book not found" };
+  const pages = await fetchPages(bookId);
+  const here = pages.findIndex((p) => p.id === pageId);
+  if (here === -1) return { error: "Page not found in this book" };
+  const beat = (pages[here].metadata?.beat ?? "").trim();
+  if (!beat) return { error: "Plan the beat first — the scene is drawn from it." };
+
+  const priorBeats = pages.slice(0, here).map((p) => (p.metadata?.beat ?? "").trim()).filter(Boolean).slice(-2);
+  const cast = book.foundations?.cast ?? [];
+  // Explicit per-compose `style` overrides the book house look (mirror of the edge fn).
+  const houseLook = (style?.trim() || book.foundations?.art_direction || "").trim();
+  const present = cast.filter((m) => castNamedIn(beat, m.name));
+  const castNotes = present.map((m) => `- ${m.name}${m.appearance?.trim() ? `: ${m.appearance.trim()}` : ""}`).join("\n");
+
+  const userContent = [
+    priorBeats.length ? `RECENT BEATS (for continuity — do NOT depict):\n${priorBeats.map((b, i) => `${i + 1}. ${b}`).join("\n\n")}` : null,
+    `BEAT TO DEPICT:\n${beat}`,
+    castNotes ? `CHARACTERS PRESENT (render faithfully):\n${castNotes}` : null,
+    houseLook ? `HOUSE LOOK (the book's settled visual style — the STYLE line MUST honour this so every scene looks like one book):\n${houseLook}` : null,
+    instruction?.trim() ? `ART DIRECTION (author — honor this):\n${instruction.trim()}` : null,
+    "Write the image prompt.",
+  ].filter(Boolean).join("\n\n");
+
+  const out = await runClaude(`${SCENE_IMAGE_PROMPT_SYSTEM}\n\n${userContent}`, true, { fn: "scene-image-prompt", bookId }, { noTools: true, model: MODEL_SUMMARY });
+  if (out.error) return out;
+  const prompt = (out.text ?? "").trim();
+  return prompt ? { prompt } : { error: "Could not compose a scene prompt." };
+}
+
+// Structured-spec composer (mirror of the edge fn's SPEC_SYSTEM) — emits JSON the studio rail edits
+// field-by-field; the client flattens it back to the labelled prompt at render time.
+const SCENE_SPEC_SYSTEM = `You compose a STRUCTURED scene spec for a single scene of a novel. The author edits it field-by-field, then it is rendered as an image — so each field must be concrete and visual.
+
+You are given recent story beats for continuity and the BEAT TO DEPICT. Depict ONLY the beat-to-depict.
+
+The image's job is IMMERSION, not exposition. Choose ONE focal character — whoever the beat centres on — as the FIRST subject, and build the frame around them. Other named characters may be present, staged naturally and SUBORDINATELY (in the action, turned away, partly in frame, soft in the background) — never a posed, evenly-spaced cast line-up, never anyone facing the camera unless the beat is literally a portrait. Favour an intimate, candid shot (close / medium / over-the-shoulder), varying the angle.
+
+Output ONLY a JSON object (no prose, no markdown fence) with exactly this shape:
+{
+  "subjects": [
+    { "name": "the character's name", "build": "physique / age read / height", "clothing": "what they are wearing", "expression": "their exact expression in this moment", "action": "what they are doing right now" }
+  ],
+  "setting": "where it happens, time of day, telling environmental details",
+  "action": "the single moment being depicted, drawn from the beat",
+  "composition": "intimate candid camera — shot type (favour close/medium/over-the-shoulder), the focal point held on the first subject, plus angle and depth of field; explicitly avoid a flat line-up",
+  "lighting": "quality, direction, and colour of the light",
+  "mood": "the emotional atmosphere",
+  "exclude": "things to keep out (text, watermarks, posed line-ups, facing camera)"
+}
+
+Rules:
+- The FIRST subject is the focal character. List only characters actually in the frame.
+- Fill build/clothing faithfully from each character's given appearance; infer sensibly when the appearance is thin, but never invent contradicting details.
+- Be concrete and visual everywhere — avoid plot abstractions a camera cannot see.
+- Do NOT include a "style" field — the rendering look is applied separately by the author's house look.
+- Weave any author art direction into the relevant fields.`;
+
+function parseSpecJson(text) {
+  const t = (text ?? "").trim();
+  const start = t.indexOf("{");
+  const end = t.lastIndexOf("}");
+  if (start === -1 || end <= start) return null;
+  try { const o = JSON.parse(t.slice(start, end + 1)); return o && typeof o === "object" ? o : null; }
+  catch { return null; }
+}
+
+async function runSceneImageSpec(body) {
+  const { bookId, pageId, instruction, style } = body;
+  if (!bookId || !pageId) return { error: "bookId and pageId required" };
+  const book = await fetchBook(bookId);
+  if (!book) return { error: "Book not found" };
+  const pages = await fetchPages(bookId);
+  const here = pages.findIndex((p) => p.id === pageId);
+  if (here === -1) return { error: "Page not found in this book" };
+  const beat = (pages[here].metadata?.beat ?? "").trim();
+  if (!beat) return { error: "Plan the beat first — the scene is drawn from it." };
+
+  const priorBeats = pages.slice(0, here).map((p) => (p.metadata?.beat ?? "").trim()).filter(Boolean).slice(-2);
+  const cast = book.foundations?.cast ?? [];
+  const houseLook = (style?.trim() || book.foundations?.art_direction || "").trim();
+  const present = cast.filter((m) => castNamedIn(beat, m.name));
+  const castNotes = present.map((m) => `- ${m.name}${m.appearance?.trim() ? `: ${m.appearance.trim()}` : ""}`).join("\n");
+
+  const userContent = [
+    priorBeats.length ? `RECENT BEATS (for continuity — do NOT depict):\n${priorBeats.map((b, i) => `${i + 1}. ${b}`).join("\n\n")}` : null,
+    `BEAT TO DEPICT:\n${beat}`,
+    castNotes ? `CHARACTERS PRESENT (render faithfully):\n${castNotes}` : null,
+    houseLook ? `HOUSE LOOK (the book's settled visual style — honour this so every scene looks like one book):\n${houseLook}` : null,
+    instruction?.trim() ? `ART DIRECTION (author — honor this):\n${instruction.trim()}` : null,
+    "Output the scene spec as JSON.",
+  ].filter(Boolean).join("\n\n");
+
+  const out = await runClaude(`${SCENE_SPEC_SYSTEM}\n\n${userContent}`, true, { fn: "scene-image-spec", bookId }, { noTools: true, model: MODEL_SUMMARY });
+  if (out.error) return out;
+  const spec = parseSpecJson(out.text ?? "");
+  return spec ? { spec } : { error: "Could not compose a scene spec." };
+}
+
+// Spec REVISE (the Scene editor's chat) — mirror of the edge fn's REVISE_SPEC_SYSTEM.
+const SCENE_SPEC_REVISE_SYSTEM = `You revise a STRUCTURED scene spec for a single scene of a novel, in a chat with the author. You are given the CURRENT SPEC and the author's requested CHANGE. Apply the change and return the FULL updated spec — but ONLY alter what the change implies; keep every other field exactly as it was.
+
+The spec shape (same as composing): "subjects" is an array of { "name", "build", "clothing", "expression", "action" } with the FIRST subject being the focal character; plus "setting", "action", "composition", "lighting", "mood", "exclude". Keep the same focal-staging discipline (one focal subject, others subordinate, no posed line-ups, candid intimate framing).
+
+Output ONLY a JSON object (no prose, no markdown fence) of that exact shape, PLUS one extra field "note": a single short sentence, first person and past tense, saying what you changed.
+
+Rules:
+- Be concrete and visual. Do NOT include a "style" field. Never invent details that contradict the cast appearances or the beat.
+- If the change adds or removes a character, update "subjects" accordingly (and re-pick the focal subject only if the change asks for it).`;
+
+async function runSceneImageReviseSpec(body) {
+  const { bookId, pageId, instruction, currentSpec } = body;
+  if (!bookId || !pageId) return { error: "bookId and pageId required" };
+  if (!instruction?.trim()) return { error: "Say what to change." };
   const book = await fetchBook(bookId);
   if (!book) return { error: "Book not found" };
   const pages = await fetchPages(bookId);
@@ -1491,14 +1652,18 @@ async function runSceneImagePrompt(body) {
     priorBeats.length ? `RECENT BEATS (for continuity — do NOT depict):\n${priorBeats.map((b, i) => `${i + 1}. ${b}`).join("\n\n")}` : null,
     `BEAT TO DEPICT:\n${beat}`,
     castNotes ? `CHARACTERS PRESENT (render faithfully):\n${castNotes}` : null,
-    instruction?.trim() ? `ART DIRECTION (author — honor this):\n${instruction.trim()}` : null,
-    "Write the image prompt.",
+    `CURRENT SPEC (revise THIS — keep everything the change does not mention):\n${JSON.stringify(currentSpec ?? {}, null, 2)}`,
+    `AUTHOR'S CHANGE:\n${instruction.trim()}`,
+    `Apply the change and output the FULL updated spec as JSON, with an extra "note" field summarising what you changed.`,
   ].filter(Boolean).join("\n\n");
 
-  const out = await runClaude(`${SCENE_IMAGE_PROMPT_SYSTEM}\n\n${userContent}`, true, { fn: "scene-image-prompt", bookId }, { noTools: true });
+  const out = await runClaude(`${SCENE_SPEC_REVISE_SYSTEM}\n\n${userContent}`, true, { fn: "scene-image-revise-spec", bookId }, { noTools: true, model: MODEL_SUMMARY });
   if (out.error) return out;
-  const prompt = (out.text ?? "").trim();
-  return prompt ? { prompt } : { error: "Could not compose a scene prompt." };
+  const obj = parseSpecJson(out.text ?? "");
+  if (!obj) return { error: "Could not revise the scene spec." };
+  const note = typeof obj.note === "string" ? obj.note.trim() : "";
+  delete obj.note;
+  return { spec: obj, note };
 }
 
 async function runCharacterPortraitPrompt(body) {
@@ -1508,6 +1673,7 @@ async function runCharacterPortraitPrompt(body) {
   if (!book) return { error: "Book not found" };
   const member = (book.foundations?.cast ?? []).find((m) => m.id === castId);
   if (!member) return { error: "Character not found in this book's cast" };
+  const houseLook = (book.foundations?.art_direction ?? "").trim();
 
   const userContent = [
     `NAME: ${member.name}`,
@@ -1515,11 +1681,12 @@ async function runCharacterPortraitPrompt(body) {
     member.appearance?.trim() ? `APPEARANCE: ${member.appearance.trim()}` : null,
     member.want?.trim() ? `WANTS: ${member.want.trim()}` : null,
     member.wound?.trim() ? `WOUND (informs expression): ${member.wound.trim()}` : null,
+    houseLook ? `HOUSE LOOK (the book's settled visual style — the STYLE line MUST honour this so the cast looks like one book): ${houseLook}` : null,
     instruction?.trim() ? `ART DIRECTION (author — honor this): ${instruction.trim()}` : null,
     "Write the portrait prompt.",
   ].filter(Boolean).join("\n");
 
-  const out = await runClaude(`${PORTRAIT_PROMPT_SYSTEM}\n\n${userContent}`, true, { fn: "character-portrait-prompt", bookId }, { noTools: true });
+  const out = await runClaude(`${PORTRAIT_PROMPT_SYSTEM}\n\n${userContent}`, true, { fn: "character-portrait-prompt", bookId }, { noTools: true, model: MODEL_SUMMARY });
   if (out.error) return out;
   const prompt = (out.text ?? "").trim();
   return prompt ? { prompt } : { error: "Could not compose a portrait prompt." };
@@ -1563,7 +1730,7 @@ ${prose.slice(0, 12000)}
 
 Write the beat this prose implements. One paragraph, plan only.`;
 
-  const out = await runClaude(prompt, true, { fn: "prose-to-beat", bookId }, { noTools: true });
+  const out = await runClaude(prompt, true, { fn: "prose-to-beat", bookId }, { noTools: true, model: MODEL_PLANNING });
   if (out.error) return out;
   return { beat: (out.text ?? "").trim() };
 }
@@ -1602,7 +1769,7 @@ ${briefContext(book.brief)}${outline ? `\n\nCURRENT OUTLINE (for consistency —
 
 Write the book spine. 1–2 short paragraphs, the throughline only.`;
 
-  const out = await runClaude(prompt, true, { fn: "brief-to-spine", bookId }, { noTools: true });
+  const out = await runClaude(prompt, true, { fn: "brief-to-spine", bookId }, { noTools: true, model: MODEL_PLANNING });
   if (out.error) return out;
   return { spine: (out.text ?? "").trim() };
 }
@@ -1635,7 +1802,7 @@ async function runSpineOptions(body) {
     `\n\nGenerate 3 wide-varying alternative spines. JSON only.`;
 
   const prompt = `${SPINE_OPTIONS_SYSTEM}\n\n${userContent}`;
-  const out = await runClaude(prompt, true, { fn: "spine-options", bookId }, { noTools: true });
+  const out = await runClaude(prompt, true, { fn: "spine-options", bookId }, { noTools: true, model: MODEL_PLANNING });
   if (out.error) return out;
   try {
     const raw = (out.text ?? "").trim();
@@ -1720,7 +1887,7 @@ ${instr}
 
 Return the revised outline. JSON only.`;
 
-  const out = await runClaude(prompt, true, { fn: "revise-scaffold", bookId }, { noTools: true });
+  const out = await runClaude(prompt, true, { fn: "revise-scaffold", bookId }, { noTools: true, model: MODEL_PLANNING });
   if (out.error) return out;
   try {
     return parseScaffoldJson(out.text);
@@ -1773,7 +1940,7 @@ ${instr}
 
 Return the revised ${layer} only.`;
 
-  const out = await runClaude(prompt, true, { fn: "revise-node", bookId }, { noTools: true });
+  const out = await runClaude(prompt, true, { fn: "revise-node", bookId }, { noTools: true, model: MODEL_PLANNING });
   if (out.error) return out;
   return { text: (out.text ?? "").trim() };
 }
@@ -1864,7 +2031,7 @@ async function runObjectiveOptions(body) {
     `\n\nGenerate 3 wide-varying alternatives for this slot. JSON only.`;
 
   const prompt = `${OBJECTIVE_OPTIONS_SYSTEM}\n\n${userContent}`;
-  const out = await runClaude(prompt, true, { fn: "objective-options", bookId }, { noTools: true });
+  const out = await runClaude(prompt, true, { fn: "objective-options", bookId }, { noTools: true, model: MODEL_PLANNING });
   if (out.error) return out;
   try {
     const options = parseObjectiveOptions(out.text ?? "");
@@ -2022,7 +2189,7 @@ async function runFoundationsOptions(body) {
   }
 
   const prompt = `${FOUNDATIONS_STEP_SYSTEM[step]}${book.canon && step === "cast" ? CAST_SEQUEL_ADDENDUM : ""}\n\nBOOK: ${book.name}\n\nBRIEF:\n${briefContext(book.brief)}${canonSection(book.canon)}\n\nSETTLED FOUNDATIONS SO FAR:\n${foundationsContext(f)}${stepInput}\n\nGenerate the candidates. JSON only.`;
-  const out = await runClaude(prompt, true, { fn: `foundations-${step}`, bookId }, { noTools: true });
+  const out = await runClaude(prompt, true, { fn: `foundations-${step}`, bookId }, { noTools: true, model: MODEL_PLANNING });
   if (out.error) return out;
   try {
     const raw = parseLooseJson(out.text);
@@ -2066,7 +2233,7 @@ async function runSpineRoutes(body) {
     `\n\nGenerate 3 routes. JSON only.`;
 
   const attempt = async (extra) => {
-    const out = await runClaude(`${SPINE_ROUTES_SYSTEM}\n\n${userContent}${extra ?? ""}`, true, { fn: "spine-routes", bookId }, { noTools: true });
+    const out = await runClaude(`${SPINE_ROUTES_SYSTEM}\n\n${userContent}${extra ?? ""}`, true, { fn: "spine-routes", bookId }, { noTools: true, model: MODEL_PLANNING });
     if (out.error) throw new Error(out.error);
     const parsed = parseLooseJson(out.text);
     return (parsed.routes ?? [])
@@ -2147,7 +2314,7 @@ ${beatText}
 
 Write the objective this beat serves. 1–2 sentences, the page's job only.`;
 
-  const out = await runClaude(prompt, true, { fn: "beat-to-objective", bookId }, { noTools: true });
+  const out = await runClaude(prompt, true, { fn: "beat-to-objective", bookId }, { noTools: true, model: MODEL_PLANNING });
   if (out.error) return out;
   return { objective: (out.text ?? "").trim() };
 }
@@ -2188,7 +2355,7 @@ ${outline}
 
 Write the book spine the outline realizes. 1–2 short paragraphs, the throughline only.`;
 
-  const out = await runClaude(prompt, true, { fn: "objectives-to-spine", bookId }, { noTools: true });
+  const out = await runClaude(prompt, true, { fn: "objectives-to-spine", bookId }, { noTools: true, model: MODEL_PLANNING });
   if (out.error) return out;
   return { spine: (out.text ?? "").trim() };
 }
@@ -2196,9 +2363,7 @@ Write the book spine the outline realizes. 1–2 short paragraphs, the throughli
 // ── /unit ─────────────────────────────────────────────────────────────────────
 // Kept at parity with _shared/generate-unit-core (beatToProse/revisePage) so local testing exercises
 // the same context (bible + objective map + story so far + preceding prose) and summary.
-const UNIT_SYSTEM = `Ignore software engineering concerns(important).
-You are a literary fiction writer (important).
-You are a skilled prose writer helping an author render their book.
+const UNIT_SYSTEM = `You are a skilled prose writer helping an author render their book.
 The author works in OBJECTIVES: a short statement of what a unit of the book must achieve.
 Your job is to write the prose that achieves the given objective, in the book's voice and
 consistent with the rest of the book.
@@ -2206,10 +2371,16 @@ consistent with the rest of the book.
 Rules:
 - Write ONLY the prose. No preamble, no titles, no headings (no "#" lines), no markdown
   fences, no meta commentary. The page already has its title — never restate it.
-- Honor the book's brief — genre, audience, tone, premise — as the voice contract.
-- Use the bible, outline, and preceding prose ONLY for consistency — keep names, facts, and
-  tone aligned, and don't repeat what's already been written. Do NOT continue or finish a
-  sentence from the preceding prose: begin this unit cleanly with a new sentence.
+- Honor the book's brief — genre, audience, tone, premise — as the non-negotiable voice contract.
+  When a voice sample is provided it is the strongest style anchor: match its register, rhythm,
+  and diction above all else, including above the register of any beat or objective text.
+- The beat is a STORY PLAN — follow what it says must happen and in what order, but ignore
+  its prose style entirely. The beat tells you WHAT; the brief and voice sample tell you HOW.
+- Use the outline and preceding prose for consistency, facts, AND dramatic irony. The reader
+  has seen every preceding page; you may write for that shared awareness even when the POV
+  character hasn't — let the reader know more than the narrator does when the story calls for it.
+  Do NOT repeat what's already been written; do NOT continue or finish a sentence from the
+  preceding prose — begin this unit cleanly with a new sentence.
 - Write a COMPLETE passage that ends at a natural stopping point — a finished sentence.
   Never stop mid-sentence.
 - Serve the objective precisely; do not wander beyond what it asks.
@@ -2226,6 +2397,8 @@ Rules:
 - Honor the book's brief (genre, audience, tone, premise) and stay consistent with the bible
   and the surrounding pages (names, facts, continuity).
 - Return a COMPLETE page that ends on a finished sentence.`;
+
+const VOICE_TELLS = `"a testament to", "in a world where", "little did they know", "sent shivers down", "couldn't help but", "a mix of … and …", "navigating the complexities of", and neat moral-of-the-story endings`;
 
 // Editor notes → a compact bulleted list for the revise prompt.
 function formatIssues(issues) {
@@ -2253,6 +2426,8 @@ async function runUnit(body) {
   const book = await fetchBook(bookId);
   if (!book) return { error: "Book not found" };
   const bible = book.bible?.text?.trim() || null;
+  const voiceSample = book.bible?.voice_sample?.trim() || null;
+  const steerText = typeof book.steers?.prose === "string" ? book.steers.prose.trim() : "";
 
   // Context (mirrors buildUnitContext in the edge function).
   const pages = await fetchPages(bookId);
@@ -2293,29 +2468,31 @@ async function runUnit(body) {
     `\nBRIEF (the voice contract):\n${briefContext(book.brief)}`,
   ];
   { const c = canonBlock(book.canon); if (c) parts.push(`\nCANON (settled facts from the previous book — honor, never contradict, never retell):\n${c}`); }
+  if (voiceSample) parts.push(`\nVOICE SAMPLE (write in THIS voice — match its rhythm, sentence shapes, diction and restraint; this exemplar is a stronger style anchor than any instruction):\n"""\n${voiceSample}\n"""\nAvoid AI-tell crutches: ${VOICE_TELLS}.`);
   if (bible) parts.push(`\nBOOK BIBLE (established facts — characters, world, style; stay strictly consistent):\n${bible}`);
   if (objectiveMap) parts.push(`\nOUTLINE (the book's pages and their objectives, in order):\n${objectiveMap}`);
   if (storySoFar) parts.push(`\nSTORY SO FAR (summaries of earlier pages, for continuity):\n${storySoFar}`);
   if (mode === "revise") {
-    if (precedingProse) parts.push(`\nPRECEDING PROSE (the page(s) just before this one — for continuity of voice and facts ONLY):\n"""\n${precedingProse}\n"""`);
+    if (precedingProse) parts.push(`\nPRECEDING PROSE (the page(s) just before this one — for continuity of voice, facts, and dramatic irony; the reader has seen everything here):\n"""\n${precedingProse}\n"""`);
     if (objective?.trim()) parts.push(`\nThis page is meant to achieve: ${objective.trim()}`);
     parts.push(`\nCURRENT PAGE PROSE (revise this in place):\n"""\n${currentText}\n"""`);
     parts.push(`\nTHE EDITOR'S NOTES TO ADDRESS ON THIS PAGE:\n${formatIssues(issues)}`);
     parts.push(`\nRevise the page to address every note above while preserving its strengths, the book's voice, and continuity with the rest of the book. Return the full revised page prose only.`);
   } else {
-    if (precedingProse) parts.push(`\nPRECEDING PROSE (the pages just before this one — for continuity of voice and facts ONLY; do not continue or finish its last sentence, and don't repeat it):\n"""\n${precedingProse}\n"""`);
+    if (precedingProse) parts.push(`\nPRECEDING PROSE (the pages just before this one — for continuity of voice, facts, and dramatic irony; the reader has seen everything here, so you may write for that shared awareness even when the POV character hasn't; do not continue or finish its last sentence, and do not repeat what's already been said):\n"""\n${precedingProse}\n"""`);
     if (pageObjective?.trim()) parts.push(`\nThis paragraph sits on a page whose objective is: ${pageObjective.trim()}`);
     if (precedingText?.trim()) parts.push(`\nThe prose immediately before this paragraph (continue naturally):\n"""\n${precedingText.trim()}\n"""`);
     parts.push(
       level === "paragraph"
         ? `\nWrite ONE paragraph that achieves this objective:\n${objective.trim()}`
         : beat
-          ? `\nWrite the prose for a page (multiple paragraphs as needed) that realizes this BEAT — the page's plan for what happens, in order — while fulfilling its objective.\nOBJECTIVE (the aim): ${objective.trim()}\nBEAT (follow this plan): ${beat}`
+          ? `\nWrite the prose for a page (multiple paragraphs as needed) that realizes this BEAT. The beat is the STORY PLAN — follow what it says must happen and in what order; do not imitate its prose style. All voice, tone, and register come from the brief and voice sample above.\nOBJECTIVE (the aim): ${objective.trim()}\nBEAT (the story plan — what must happen, not how to sound): ${beat}`
           : `\nWrite the prose for a page that achieves this objective (multiple paragraphs as needed):\n${objective.trim()}`
     );
+    if (steerText) parts.push(`\n\nAUTHOR'S STEER FOR THIS STEP (honor it as a strong instruction shaping THIS output; it never overrides the brief or the voice sample):\n${steerText}`);
   }
 
-  const out = await runClaude(parts.join("\n"), true, { fn: mode === "revise" ? "revise-prose" : "beat-to-prose", bookId }, { noTools: true });
+  const out = await runClaude(parts.join("\n"), true, { fn: mode === "revise" ? "revise-prose" : "beat-to-prose", bookId }, { noTools: true, model: MODEL_PROSE });
   if (out.error) return out;
 
   let text = out.text.trim();
@@ -2328,7 +2505,7 @@ async function runUnit(body) {
   // Persist a "story so far" summary for this page (best-effort), like the edge function.
   if (level === "page" && pageId) {
     try {
-      const s = await runClaude(`Summarize this page of a book in 1-2 sentences: what happens and any new facts (characters, places, changes in state) a later page would need to stay consistent. Plain text only, no preamble.\n\n${text.slice(0, 12000)}`, true, { fn: "summarize", bookId }, { noTools: true });
+      const s = await runClaude(`Summarize this page of a book in 1-2 sentences: what happens and any new facts (characters, places, changes in state) a later page would need to stay consistent. Plain text only, no preamble.\n\n${text.slice(0, 12000)}`, true, { fn: "summarize", bookId }, { noTools: true, model: MODEL_SUMMARY });
       const summary = s.text?.trim();
       if (summary) await persistSummary(pageId, summary);
     } catch (e) {
@@ -2564,7 +2741,7 @@ async function runCallEval(call) {
     `CALL TYPE (fn): ${call.fn}\n\nINSTRUCTIONS (system):\n${call.system ?? "(none — baked into the context)"}\n\n` +
     `CONTEXT:\n"""\n${ctx.slice(0, 24000)}\n"""\n\nOUTPUT:\n"""\n${(call.output ?? "(no output)").slice(0, 16000)}\n"""\n\nJSON only.`;
 
-  const out = await runClaude(prompt, true, { fn: "judge-ai-call", bookId: call.book_id });
+  const out = await runClaude(prompt, true, { fn: "judge-ai-call", bookId: call.book_id }, { model: MODEL_PLANNING });
   if (out.error) throw new Error(out.error);
   return parseJudgement(out.text);
 }
@@ -2836,6 +3013,26 @@ async function route(req, res) {
     if (!(await authorize(req, res, Number(body.bookId)))) return;
     console.log(`Composing scene image prompt (book ${body.bookId}, page ${body.pageId})…`);
     const out = await runSceneImagePrompt(body);
+    if (out.error) return json(res, 500, { error: out.error });
+    return json(res, 200, out);
+  }
+
+  if (url === "/scene-image-spec" || url === "/scene-image-spec/") {
+    if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
+    const body = await readBody(req);
+    if (!(await authorize(req, res, Number(body.bookId)))) return;
+    console.log(`Composing scene spec (book ${body.bookId}, page ${body.pageId})…`);
+    const out = await runSceneImageSpec(body);
+    if (out.error) return json(res, 500, { error: out.error });
+    return json(res, 200, out);
+  }
+
+  if (url === "/scene-image-revise-spec" || url === "/scene-image-revise-spec/") {
+    if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
+    const body = await readBody(req);
+    if (!(await authorize(req, res, Number(body.bookId)))) return;
+    console.log(`Revising scene spec (book ${body.bookId}, page ${body.pageId})…`);
+    const out = await runSceneImageReviseSpec(body);
     if (out.error) return json(res, 500, { error: out.error });
     return json(res, 200, out);
   }

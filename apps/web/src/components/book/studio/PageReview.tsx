@@ -3,16 +3,15 @@
 // generation/revision lives in the right-rail (ProseEditor/ReviseChat). The center is a near-manual
 // editor — objective + beat are editable here, prose is read-only (AI in the rail).
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
-import { ArrowDown, ChevronDown, ExternalLink, Loader2, Lock, Trash2 } from "lucide-react";
+import { ArrowDown, ChevronDown, ExternalLink, ImagePlus, Loader2, Lock, Trash2 } from "lucide-react";
 import { AutoTextarea } from "@/components/ui/auto-textarea";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { readNode, readProse, saveBeat, saveObjective } from "@/lib/ladder";
-import { composeScenePrompt, deleteSceneImage, readSceneImages, renderSceneImage, uploadReferenceImage, uploadSceneImage, type SceneImage } from "@/lib/sceneImages";
+import { deleteSceneImage, readSceneImages, type SceneImage } from "@/lib/sceneImages";
 import type { CellState } from "@/lib/planGraph";
-import { ImageGenStudio } from "./ImageGenStudio";
 import type { StudioModel } from "./studioModel";
 import { ActionLink, Eyebrow, ImageLightbox, Panel, Pip } from "./studioUi";
 import { CharacterLedgerGraph } from "./CharacterLedgerGraph";
@@ -264,12 +263,20 @@ function DownArrow() {
 // Scene level — illustrations of the page's scene, with coherent characters (the beat's named cast
 // rendered from their pinned reference portraits). A gallery: many images per page. Live-projected
 // over Realtime so a generation from anywhere lands here without a refresh.
-function SceneLevel({ bookId, pageId, beatExists }: { bookId: number; pageId: number; beatExists: boolean }) {
+function SceneLevel({ bookId: _bookId, pageId, beatExists }: { bookId: number; pageId: number; beatExists: boolean }) {
   const { toast } = useToast();
+  const [, setParams] = useSearchParams();
   const [scenes, setScenes] = useState<SceneImage[]>([]);
   const [lightbox, setLightbox] = useState<string | null>(null);
 
-  const upsert = (row: SceneImage) => setScenes((s) => (s.some((x) => x.id === row.id) ? s : [...s, row]));
+  // Upsert-or-replace: a new row is appended; an existing one (the 'generating' placeholder advancing to
+  // 'ready'/'error') is replaced in place. Driven by the Realtime INSERT/UPDATE from the rail's render.
+  const upsert = (row: SceneImage) =>
+    setScenes((s) => (s.some((x) => x.id === row.id) ? s.map((x) => (x.id === row.id ? row : x)) : [...s, row]));
+
+  // Open the rail's Scene editor (the structured spec lives there now; the center is just the gallery).
+  const openSceneEditor = () =>
+    setParams((p) => { const n = new URLSearchParams(p); n.set("tab", "scene"); return n; });
 
   useEffect(() => {
     let live = true;
@@ -277,6 +284,8 @@ function SceneLevel({ bookId, pageId, beatExists }: { bookId: number; pageId: nu
     const channel = supabase
       .channel(`scene_images_${pageId}_${Math.random().toString(36).slice(2)}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "page_scene_images", filter: `page_id=eq.${pageId}` },
+        (p) => upsert((p as unknown as { new: SceneImage }).new))
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "page_scene_images", filter: `page_id=eq.${pageId}` },
         (p) => upsert((p as unknown as { new: SceneImage }).new))
       .on("postgres_changes", { event: "DELETE", schema: "public", table: "page_scene_images", filter: `page_id=eq.${pageId}` },
         (p) => { const id = (p as unknown as { old: { id: string } }).old.id; setScenes((s) => s.filter((x) => x.id !== id)); })
@@ -304,14 +313,26 @@ function SceneLevel({ bookId, pageId, beatExists }: { bookId: number; pageId: nu
             <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
               {scenes.map((s) => (
                 <div key={s.id} className="group relative overflow-hidden rounded-xl border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/40">
-                  <button type="button" onClick={() => setLightbox(s.image_url)} className="block w-full cursor-zoom-in" aria-label="Open full screen">
-                    <img src={s.image_url} alt={s.prompt ?? "Scene"} className="aspect-[4/3] w-full object-cover" loading="lazy" />
-                  </button>
+                  {s.status === "ready" && s.image_url ? (
+                    <button type="button" onClick={() => s.image_url && setLightbox(s.image_url)} className="block w-full cursor-zoom-in" aria-label="Open full screen">
+                      <img src={s.image_url} alt={s.prompt ?? "Scene"} className="aspect-[4/3] w-full object-cover" loading="lazy" />
+                    </button>
+                  ) : s.status === "error" ? (
+                    <div className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-1 px-3 text-center">
+                      <span className="pv-serif text-[12px] italic text-destructive/80">generation failed</span>
+                      {s.error && <span className="pv-serif line-clamp-2 text-[10.5px] text-[hsl(var(--pv-text-faint))]">{s.error}</span>}
+                    </div>
+                  ) : (
+                    <div className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-2">
+                      <Loader2 className="h-5 w-5 animate-spin text-[hsl(var(--pv-text-faint))]" />
+                      <span className="pv-serif text-[11px] italic text-[hsl(var(--pv-text-faint))]">{s.status === "composing" ? "composing…" : "generating…"}</span>
+                    </div>
+                  )}
                   <button
                     type="button"
                     onClick={() => void remove(s.id)}
                     className="absolute right-1.5 top-1.5 rounded-full bg-black/55 p-1.5 text-white opacity-0 transition-opacity hover:bg-black/75 group-hover:opacity-100"
-                    aria-label="Remove image"
+                    aria-label={s.status === "ready" ? "Remove image" : "Dismiss"}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
@@ -319,17 +340,16 @@ function SceneLevel({ bookId, pageId, beatExists }: { bookId: number; pageId: nu
               ))}
             </div>
           )}
-          <ImageGenStudio
-            compose={(instr) => composeScenePrompt(bookId, pageId, instr)}
-            render={async (prompt, refUrls) => { const row = await renderSceneImage(pageId, prompt, refUrls); upsert(row); return [row.image_url]; }}
-            uploadRef={uploadReferenceImage}
-            onAdd={() => {}}
-            uploadDirect={async (file) => { upsert(await uploadSceneImage(pageId, bookId, file)); }}
-            onFullscreen={setLightbox}
-            startLabel={scenes.length ? "Generate another scene" : "Generate scene image"}
-          />
+          <button
+            type="button"
+            onClick={openSceneEditor}
+            className="inline-flex items-center gap-2 rounded-full border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/40 px-4 py-2 pv-serif text-[13.5px] text-foreground transition-colors hover:border-[hsl(var(--pv-accent))]/50 hover:text-[hsl(var(--pv-accent))]"
+          >
+            <ImagePlus className="h-4 w-4" />
+            {scenes.length ? "Edit scene & generate another →" : "Compose this scene →"}
+          </button>
           <p className="pv-serif mt-2.5 text-[12.5px] italic text-[hsl(var(--pv-text-faint))]">
-            Cast named in the beat are drawn from their portraits — design each character's look in Foundations for coherence.
+            Build the scene part-by-part in the Scene editor on the right — subjects, setting, light. Cast named in the beat are drawn from their portraits; design each character's look in Foundations for coherence.
           </p>
         </>
       )}
@@ -338,3 +358,5 @@ function SceneLevel({ bookId, pageId, beatExists }: { bookId: number; pageId: nu
   );
 }
 
+// (The book look-picker, per-page prompt editor and revise affordances moved to the rail's SceneTab —
+// the center is now just the gallery + a button that opens that editor.)

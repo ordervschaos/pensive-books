@@ -23,14 +23,28 @@ interface CastMember {
   role?: string; appearance?: string; want?: string; wound?: string;
 }
 
-const PORTRAIT_SYSTEM = `You write ONE image-generation prompt for a character REFERENCE PORTRAIT for a novel.
+const PORTRAIT_SYSTEM = `You compose ONE structured image prompt for a character REFERENCE PORTRAIT for a novel. The author will edit it, then it is sent VERBATIM to an image model — so it must be complete and self-contained.
 
-Given a character's name, role, appearance, and inner life, describe a head-and-shoulders portrait: their face, apparent age, build, hair, distinguishing features, and typical dress, with an expression that reflects who they are. Keep it a believable, specific person.
+Given the character's name, role, appearance, and inner life, output EXACTLY these labelled lines, in this order, each on its own line, nothing before or after:
 
-Output ONLY the prompt text — no preamble, no quotes, no labels. 2–4 sentences. Do not mention cameras, file formats, or "no text/watermark" instructions (those are added separately).`;
+SUBJECT: the character's face, apparent age, build, hair, and distinguishing features, their typical dress, and an expression that reflects who they are — a believable, specific person.
+FRAMING: head-and-shoulders character reference portrait.
+BACKGROUND: neutral, with even soft lighting.
+STYLE: the rendering look. If a HOUSE LOOK is given, this line MUST honour it; otherwise default to photorealistic. Keep features consistent and suitable as a reusable reference.
+EXCLUDE: no text, captions, watermarks, or signatures.
 
-const IMAGE_TAIL =
-  "Head-and-shoulders character reference portrait. Neutral background, even soft lighting, photorealistic, consistent features suitable as a reusable reference. No text, captions, or watermarks.";
+Weave any author art direction into the relevant lines.`;
+
+// Fallback when the author renders WITHOUT composing a prompt — mirrors the structured format so a
+// no-AI portrait still carries the framing/background/exclude guidance the composer would have written.
+const fallbackPortrait = (m: CastMember, houseLook: string) =>
+  [
+    `SUBJECT: ${m.name}${m.appearance?.trim() ? ` — ${m.appearance.trim()}` : ""}, an expression true to who they are.`,
+    "FRAMING: head-and-shoulders character reference portrait.",
+    "BACKGROUND: neutral, with even soft lighting.",
+    `STYLE: ${houseLook || "photorealistic"}, consistent features suitable as a reusable reference.`,
+    "EXCLUDE: no text, captions, watermarks, or signatures.",
+  ].join("\n");
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -57,7 +71,10 @@ Deno.serve(async (req: Request) => {
     if (!(await hasEditAccess(userClient, bookId, user.id, book.owner_id)))
       return json({ error: "Access denied" }, 403);
 
-    const cast = ((book.foundations as { cast?: CastMember[] } | null)?.cast) ?? [];
+    const foundations = (book.foundations as { cast?: CastMember[]; art_direction?: string; image_model?: string } | null) ?? {};
+    const cast = foundations.cast ?? [];
+    const houseLook = (foundations.art_direction ?? "").trim();
+    const imageModel = foundations.image_model;
     const member = cast.find((m) => m.id === castId);
     if (!member) return json({ error: "Character not found in this book's cast" }, 404);
 
@@ -71,6 +88,7 @@ Deno.serve(async (req: Request) => {
         member.appearance?.trim() ? `APPEARANCE: ${member.appearance.trim()}` : null,
         member.want?.trim() ? `WANTS: ${member.want.trim()}` : null,
         member.wound?.trim() ? `WOUND (informs expression): ${member.wound.trim()}` : null,
+        houseLook ? `HOUSE LOOK (the book's settled visual style — the STYLE line MUST honour this so the cast looks like one book): ${houseLook}` : null,
         instruction?.trim() ? `ART DIRECTION (author — honor this): ${instruction.trim()}` : null,
         "Write the portrait prompt.",
       ].filter(Boolean).join("\n");
@@ -85,11 +103,11 @@ Deno.serve(async (req: Request) => {
       return json({ prompt: composed });
     }
 
-    // ── mode "image": render variants from the prompt + author references ──
-    const promptText = (prompt?.trim()) ||
-      [member.appearance?.trim() ? `Appearance: ${member.appearance.trim()}.` : `A portrait of ${member.name}.`].join(" ");
-    const imagePrompt = `${promptText}\n\n${IMAGE_TAIL}`;
-    const dataUrls = await generateImages({ prompt: imagePrompt, refImages: refUrls }, count);
+    // ── mode "image": render variants from the prompt VERBATIM + author references ──
+    // The (author-edited) structured prompt is the source of truth; nothing is appended. When the author
+    // skips composing, fall back to a structured prompt built from the cast record.
+    const promptText = prompt?.trim() || fallbackPortrait(member, houseLook);
+    const dataUrls = await generateImages({ prompt: promptText, refImages: refUrls, model: imageModel }, count);
 
     const svc = serviceClient();
     const urls = await Promise.all(

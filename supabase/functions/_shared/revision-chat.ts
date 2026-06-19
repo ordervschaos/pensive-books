@@ -242,7 +242,7 @@ OUTPUT — reply to the author in plain MARKDOWN prose (use **bold**, lists, and
 { "summary": "...", "pages": [ { "ref": <id|null>, "op": "keep|retarget|add", "pageType": "section|text", "title": "...", "objective": "...", "beat": "...", "why": "..." } ], "deletes": [ { "ref": <id>, "why": "..." } ] }
 \`\`\`
 When you are talking, evaluating, or answering — append NO code block at all. When you do propose, the prose above the block briefly says what you changed and why (the author sees the full diff separately).
-- PLAN RULES: use ONLY the real [id]s given; every existing page MUST appear in "pages" (with its ref) or in "deletes" — never drop one silently. "section" = chapter/part divider; "text" pages carry a beat. Give every text page an objective AND a beat. Reorder by placing entries in final order. Be surgical — "keep" what works. Honor pinned foundations and tracked-thread setups/payoffs. Never write prose; never use a "revise" op.`,
+- PLAN RULES: use ONLY the real [id]s given; every existing page MUST appear in "pages" (with its ref) or in "deletes" — never drop one silently. "section" = chapter/part divider; "text" pages carry a beat. Give every text page an objective AND a beat — always write the full beat text, never write "[unchanged]" or any placeholder. Reorder by placing entries in final order. Be surgical — "keep" what works. Honor pinned foundations and tracked-thread setups/payoffs. Never write prose; never use a "revise" op.`,
     context(ctx) {
       const settled = ctx.foundations ? settledContext(ctx.foundations).trim() : "";
       return `BOOK: ${ctx.bookName}\n\nBRIEF (the voice contract):\n${briefBlock(ctx.brief)}` +

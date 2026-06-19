@@ -44,6 +44,13 @@ export interface Foundations {
   cast?: CastMember[];
   tentpoles?: Tentpole[];
   voice_exemplar?: FNode;
+  // The book's "house look" — a single visual-style direction every scene/portrait STYLE line inherits,
+  // so illustrations stay coherent across the whole book. `art_theme` is the picked preset KEY (or
+  // "custom") for UI highlight only — the edge composers read `art_direction` text. `image_model` is the
+  // picked render-model KEY (IMAGE_MODELS in _shared/image.ts). Mirror of apps/web/src/lib/foundations.ts.
+  art_direction?: string;
+  art_theme?: string;
+  image_model?: string;
 }
 
 export interface SpineRoute { id: string; summary: string; tentpole_order: string[] }

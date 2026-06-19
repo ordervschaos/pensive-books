@@ -14,6 +14,7 @@ import {
   foundationsProgress, pinNode, writeFoundations,
   type CastMember, type FNode, type Foundations, type FoundationsStepKey, type Tentpole,
 } from "@/lib/foundations";
+import { BookLookControls } from "../BookLookControls";
 import { ActionLink, Eyebrow, GenerateInChat, ImageLightbox, Panel } from "../studioUi";
 
 const uid = () => crypto.randomUUID().slice(0, 8);
@@ -102,7 +103,10 @@ export function FoundationsStep({ bookId, foundations, onChanged }: Props) {
         />
       )}
       {active === "cast" && (
-        <CastSub bookId={bookId} cast={f.cast ?? []} onSave={(cast) => save({ ...f, cast })} />
+        <div className="space-y-5">
+          <HouseLook f={f} onPatch={(patch) => save({ ...f, ...patch })} />
+          <CastSub bookId={bookId} cast={f.cast ?? []} onSave={(cast) => save({ ...f, cast })} />
+        </div>
       )}
       {active === "tentpoles" && (
         <TentpolesSub bookId={bookId} tentpoles={f.tentpoles ?? []} onSave={(tentpoles) => save({ ...f, tentpoles })} />
@@ -279,6 +283,24 @@ function CastSub({ bookId, cast, onSave }: {
         add character
       </ActionLink>
     </div>
+  );
+}
+
+// "House look" — the book-level visual style every scene/portrait STYLE line inherits, so the whole
+// book's illustrations look like one book. A theme preset fills art_direction; the author can fine-tune
+// the text (→ "custom"). The render-model toggle (image_model) applies to every illustration in the book.
+// The same controls (sans the help line) also appear on the Scene level (BookLookControls).
+function HouseLook({ f, onPatch }: { f: Foundations; onPatch: (patch: Partial<Foundations>) => void }) {
+  return (
+    <Panel className="bg-[hsl(var(--pv-surface-2))]/40">
+      <Eyebrow tone="muted">house look — one visual style for the whole book</Eyebrow>
+      <div className="mt-2.5">
+        <BookLookControls artTheme={f.art_theme} artDirection={f.art_direction} imageModel={f.image_model} onPatch={onPatch} />
+      </div>
+      <p className="pv-serif mt-2 text-[12.5px] italic text-[hsl(var(--pv-text-faint))]">
+        Leave blank for the default cinematic illustration look.
+      </p>
+    </Panel>
   );
 }
 

@@ -2,7 +2,7 @@
 // (below), joined by one continuous thread so the sequence and the depth read as one surface. Click a
 // step → the Stage becomes that step's tool; click a page → the Stage becomes that page's resolution
 // ladder. Status comes entirely from the derived model.
-import { ChevronRight, ChevronDown } from "lucide-react";
+import { ChevronRight, ChevronDown, Loader2 } from "lucide-react";
 import { POST_STEPS, STEP_LABEL, type StepKey, type StudioModel } from "./studioModel";
 import { Pip3, StepDot } from "./studioUi";
 import type { Selection } from "./BuildStudio";
@@ -13,12 +13,14 @@ interface NavigatorProps {
   collapsed: Record<string, boolean>;
   /** The step with a live AI run, marked "● running" so the surface follows server truth (no refresh). */
   runningStep?: StepKey | null;
+  /** Page ids with an in-flight scene-image render — badged in the map. */
+  generatingPages?: Set<number>;
   onSelectStep: (k: StepKey) => void;
   onSelectPage: (pageId: number) => void;
   onToggleMovement: (key: string) => void;
 }
 
-export function StudioNavigator({ model, selection, collapsed, runningStep, onSelectStep, onSelectPage, onToggleMovement }: NavigatorProps) {
+export function StudioNavigator({ model, selection, collapsed, runningStep, generatingPages, onSelectStep, onSelectPage, onToggleMovement }: NavigatorProps) {
   // "step N" points at the live focus: the active/awaiting step, else (everything done) the topmost
   // step that's drifted out of sync with an upstream change.
   const activeIdx = model.buildSteps.findIndex((k) => model.statusOf(k) === "active" || model.statusOf(k) === "awaiting");
@@ -78,6 +80,11 @@ export function StudioNavigator({ model, selection, collapsed, runningStep, onSe
                       )}
                       {p.title || "(untitled)"}
                     </span>
+                    {generatingPages?.has(p.id) && (
+                      <span className="flex shrink-0 items-center gap-1 pv-mono text-[8.5px] uppercase tracking-[0.1em] text-[hsl(var(--pv-accent))]" title="A scene image is generating on this page">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      </span>
+                    )}
                     <Pip3 objective={p.objective} beat={p.beat} prose={p.prose} />
                   </button>
                 );

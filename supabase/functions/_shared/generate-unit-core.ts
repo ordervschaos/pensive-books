@@ -351,10 +351,16 @@ consistent with the rest of the book.
 Rules:
 - Write ONLY the prose. No preamble, no titles, no headings (no "#" lines), no markdown
   fences, no meta commentary. The page already has its title — never restate it.
-- Honor the book's brief — genre, audience, tone, premise — as the voice contract.
-- Use the outline and preceding prose ONLY for consistency — keep names, facts, and
-  tone aligned, and don't repeat what's already been written. Do NOT continue or finish a
-  sentence from the preceding prose: begin this unit cleanly with a new sentence.
+- Honor the book's brief — genre, audience, tone, premise — as the non-negotiable voice contract.
+  When a voice sample is provided it is the strongest style anchor: match its register, rhythm,
+  and diction above all else, including above the register of any beat or objective text.
+- The beat is a STORY PLAN — follow what it says must happen and in what order, but ignore
+  its prose style entirely. The beat tells you WHAT; the brief and voice sample tell you HOW.
+- Use the outline and preceding prose for consistency, facts, AND dramatic irony. The reader
+  has seen every preceding page; you may write for that shared awareness even when the POV
+  character hasn't — let the reader know more than the narrator does when the story calls for it.
+  Do NOT repeat what's already been written; do NOT continue or finish a sentence from the
+  preceding prose — begin this unit cleanly with a new sentence.
 - Write a COMPLETE passage that ends at a natural stopping point — a finished sentence.
   Never stop mid-sentence.
 - Serve the objective precisely; do not wander beyond what it asks.
@@ -431,7 +437,7 @@ function variablePart(args: PromptArgs): string {
       parts.push(`STORY SO FAR (summaries of earlier pages, for continuity):\n${args.storySoFar}`);
     }
     if (args.precedingProse) {
-      parts.push(`PRECEDING PROSE (the page(s) just before this one — for continuity of voice and facts ONLY):\n"""\n${args.precedingProse}\n"""`);
+      parts.push(`PRECEDING PROSE (the page(s) just before this one — for continuity of voice, facts, and dramatic irony; the reader has seen everything here):\n"""\n${args.precedingProse}\n"""`);
     }
     const where = args.currentPageLabel ? ` ${args.currentPageLabel}` : "";
     if (args.objective) parts.push(`This page${where} is meant to achieve: ${args.objective}`);
@@ -448,7 +454,7 @@ function variablePart(args: PromptArgs): string {
     parts.push(`STORY SO FAR (summaries of earlier pages, for continuity):\n${args.storySoFar}`);
   }
   if (args.precedingProse) {
-    parts.push(`PRECEDING PROSE (the pages just before this one — for continuity of voice and facts ONLY; do not continue or finish its last sentence, and don't repeat it):\n"""\n${args.precedingProse}\n"""`);
+    parts.push(`PRECEDING PROSE (the pages just before this one — for continuity of voice, facts, and dramatic irony; the reader has seen everything here, so you may write for that shared awareness even when the POV character hasn't; do not continue or finish its last sentence, and do not repeat what's already been said):\n"""\n${args.precedingProse}\n"""`);
   }
   if (args.characterStates && args.level === "page") {
     parts.push(args.characterStates);
@@ -464,7 +470,9 @@ function variablePart(args: PromptArgs): string {
     const where = args.currentPageLabel ? ` for the page ${args.currentPageLabel}` : "";
     if (args.beat) {
       // Beat present: write to the beat (the page's concrete plan), in service of the objective.
-      parts.push(`\nWrite the prose${where} (multiple paragraphs as needed) that realizes this BEAT — the page's plan for what happens, in order — while fulfilling its objective.\nOBJECTIVE (the aim): ${args.objective}\nBEAT (follow this plan): ${args.beat}`);
+      // Explicitly separate WHAT (beat) from HOW (voice sample / brief) so the model doesn't
+      // absorb the beat's prose register as a style signal.
+      parts.push(`\nWrite the prose${where} (multiple paragraphs as needed) that realizes this BEAT. The beat is the STORY PLAN — follow what it says must happen and in what order; do not imitate its prose style. All voice, tone, and register come from the brief and voice sample above.\nOBJECTIVE (the aim): ${args.objective}\nBEAT (the story plan — what must happen, not how to sound): ${args.beat}`);
     } else {
       parts.push(`\nWrite the prose${where} that achieves this objective (multiple paragraphs as needed):\n${args.objective}`);
     }

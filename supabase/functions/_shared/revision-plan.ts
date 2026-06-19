@@ -95,7 +95,7 @@ export function sanitizePlan(
       pageType: cur.page_type === "section" ? "section" : "text",
       title: typeof p.title === "string" && p.title.trim() ? p.title.trim() : (cur.title ?? ""),
       objective: (p.objective ?? cur.metadata?.objective ?? "").trim(),
-      beat: ((p.beat ?? cur.metadata?.beat ?? "").trim()) || undefined,
+      beat: (((p.beat?.trim() === "[unchanged]" ? "" : p.beat) ?? cur.metadata?.beat ?? "").trim()) || undefined,
       rebuild: planOnly ? undefined : p.rebuild === "rewrite" ? "rewrite" : p.rebuild === "revise" ? "revise" : undefined,
       why: typeof p.why === "string" ? p.why.trim() : "",
     });

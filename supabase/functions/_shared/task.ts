@@ -23,7 +23,7 @@ export function serviceClient(): SupabaseClient {
 export function runInBackground(
   service: SupabaseClient,
   table: string,
-  id: number,
+  id: number | string,
   fnName: string,
   work: () => Promise<Record<string, unknown>>
 ): void {

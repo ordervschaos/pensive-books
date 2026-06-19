@@ -6,15 +6,20 @@
 // by the caller. Generation runs in the generate-scene-image / generate-character-portrait edge fns.
 import { supabase } from "@/integrations/supabase/client";
 import { BRIDGE, bridgeFetch } from "@/lib/bridge";
+import { asSpec, type SceneSpec } from "@/lib/sceneSpec";
 
 export interface SceneImage {
   id: string;
   page_id: number;
   book_id: number;
-  image_url: string;
+  image_url: string | null; // null while composing/generating
   prompt: string | null;
+  status: "composing" | "generating" | "ready" | "error";
+  error?: string | null;
   created_at: string;
 }
+
+const SCENE_COLS = "id, page_id, book_id, image_url, prompt, status, error, created_at";
 
 async function invoke<T>(fn: string, body: Record<string, unknown>): Promise<T> {
   const { data, error } = await supabase.functions.invoke(fn, { body });
@@ -40,7 +45,7 @@ async function composeViaBridgeOrEdge(bridgePath: string, edgeFn: string, body: 
 export async function readSceneImages(pageId: number): Promise<SceneImage[]> {
   const { data, error } = await supabase
     .from("page_scene_images")
-    .select("id, page_id, book_id, image_url, prompt, created_at")
+    .select(SCENE_COLS)
     .eq("page_id", pageId)
     .order("created_at", { ascending: true });
   if (error) throw error;
@@ -48,14 +53,67 @@ export async function readSceneImages(pageId: number): Promise<SceneImage[]> {
 }
 
 // ── Scenes ─────────────────────────────────────────────────────────────────────
-/** Compose an editable scene prompt from the beats context + cast + author art direction. */
-export async function composeScenePrompt(bookId: number, pageId: number, instruction?: string): Promise<string> {
-  return composeViaBridgeOrEdge("/scene-image-prompt", "generate-scene-image", { bookId, pageId, instruction });
+/** Compose an editable scene prompt from the beats context + cast + author art direction. `style` (when
+ *  given) is the art-direction text the composer must honour for the STYLE line — it overrides the book
+ *  house look for this compose, so the author can sweep styles without changing the book default. */
+export async function composeScenePrompt(bookId: number, pageId: number, instruction?: string, style?: string): Promise<string> {
+  return composeViaBridgeOrEdge("/scene-image-prompt", "generate-scene-image", { bookId, pageId, instruction, style });
 }
 
-/** Render one scene image from a (possibly edited) prompt + author references. Inserts a gallery row. */
+/** Kick off a scene render from a given prompt (the "compose & edit first" / revise path). Returns the
+ *  'generating' placeholder row immediately; the render runs in the background and flips to
+ *  'ready'/'error' over Realtime. */
 export async function renderSceneImage(pageId: number, prompt: string, refUrls: string[] = []): Promise<SceneImage> {
   return invoke<SceneImage>("generate-scene-image", { pageId, mode: "image", prompt, refUrls });
+}
+
+/** The default DURABLE one-shot: compose AND render in a single background job. Returns the 'composing'
+ *  placeholder immediately; the whole thing survives navigation/refresh, and the prompt is saved on the
+ *  row (visible/revisable once ready). */
+export async function startSceneGeneration(pageId: number, instruction?: string, style?: string): Promise<SceneImage> {
+  return invoke<SceneImage>("generate-scene-image", { pageId, mode: "oneshot", instruction, style });
+}
+
+// ── Scene SPEC (the structured rail editor) ──────────────────────────────────────
+/** Compose a structured SceneSpec (per-subject + scene fields) from the beat + cast + house look. The
+ *  composer SEEDS each present character's build/clothing/expression/action; the author then edits it.
+ *  Runs on the dev bridge (free Claude) when present, else the edge fn's mode:"spec". */
+export async function composeSceneSpec(bookId: number, pageId: number, instruction?: string, style?: string): Promise<SceneSpec> {
+  if (BRIDGE) {
+    const r = await bridgeFetch("/scene-image-spec", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ bookId, pageId, instruction, style }) });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    return asSpec(d.spec);
+  }
+  const { spec } = await invoke<{ spec: unknown }>("generate-scene-image", { bookId, pageId, mode: "spec", instruction, style });
+  return asSpec(spec);
+}
+
+/** Chat: apply a free-text change to the current spec, keeping the rest. Returns the updated spec plus a
+ *  short first-person note of what changed (for the chat transcript). Single call — the spec is small. */
+export async function reviseSceneSpec(bookId: number, pageId: number, currentSpec: SceneSpec, instruction: string): Promise<{ spec: SceneSpec; note: string }> {
+  if (BRIDGE) {
+    const r = await bridgeFetch("/scene-image-revise-spec", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ bookId, pageId, currentSpec, instruction }) });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    return { spec: asSpec(d.spec), note: String(d.note ?? "").trim() };
+  }
+  const d = await invoke<{ spec: unknown; note?: string }>("generate-scene-image", { bookId, pageId, mode: "revise-spec", currentSpec, instruction });
+  return { spec: asSpec(d.spec), note: String(d.note ?? "").trim() };
+}
+
+/** Read the saved scene spec for a page (null when never authored). */
+export async function readSceneSpec(pageId: number): Promise<SceneSpec | null> {
+  const { data, error } = await supabase.from("pages").select("scene_spec").eq("id", pageId).maybeSingle();
+  if (error) throw error;
+  const raw = (data as { scene_spec?: unknown } | null)?.scene_spec;
+  return raw ? asSpec(raw) : null;
+}
+
+/** Persist the page's scene spec (the structured editor's autosave). */
+export async function saveSceneSpec(pageId: number, spec: SceneSpec): Promise<void> {
+  const { error } = await supabase.from("pages").update({ scene_spec: spec }).eq("id", pageId);
+  if (error) throw error;
 }
 
 export async function deleteSceneImage(id: string): Promise<void> {
@@ -68,8 +126,8 @@ export async function uploadSceneImage(pageId: number, bookId: number, file: Fil
   const url = await uploadReferenceImage(file);
   const { data, error } = await supabase
     .from("page_scene_images")
-    .insert({ page_id: pageId, book_id: bookId, image_url: url, prompt: null })
-    .select("id, page_id, book_id, image_url, prompt, created_at")
+    .insert({ page_id: pageId, book_id: bookId, image_url: url, prompt: null, status: "ready" })
+    .select(SCENE_COLS)
     .single();
   if (error) throw error;
   return data as SceneImage;

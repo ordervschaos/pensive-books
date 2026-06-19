@@ -1,19 +1,32 @@
 // image.ts — the single chokepoint for IMAGE generation in edge functions. Text generation goes
 // through claude.ts; images are a different modality (and provider response shape), so they live here.
 //
-// We use Gemini 2.5 Flash Image ("nano-banana") via OpenRouter — the model in our stack that holds
+// We use Gemini 3 Pro Image ("nano-banana-pro") via OpenRouter — the model in our stack that holds
 // CHARACTER CONSISTENCY: pass a character's reference portrait(s) as input images and it renders the
-// same person across different scenes. That's how "coherent characters" works (manual portrait step
-// first → scenes reuse those portraits). Reuses the existing OPENROUTER_API_KEY.
+// same person across different scenes (identity preserved across up to 5 subjects). That's how
+// "coherent characters" works (manual portrait step first → scenes reuse those portraits). Reuses the
+// existing OPENROUTER_API_KEY.
 import { type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-const IMAGE_MODEL = "google/gemini-2.5-flash-image";
+
+// Safelisted render models the UI can pick between (books.foundations.image_model holds the KEY, not the
+// slug — the client never injects an arbitrary model). Gemini 3 Pro ("nano-banana-pro") is the default:
+// it holds CHARACTER CONSISTENCY across reference portraits (identity preserved across up to 5 subjects),
+// which the "coherent cast" feature depends on. 2.5 Flash is faster/cheaper but looser on likeness.
+export const IMAGE_MODELS: Record<string, string> = {
+  "gemini-3": "google/gemini-3-pro-image-preview",
+  "gemini-2.5-flash": "google/gemini-2.5-flash-image",
+};
+export const DEFAULT_IMAGE_MODEL = "gemini-3";
+const resolveModel = (key?: string): string => IMAGE_MODELS[key ?? ""] ?? IMAGE_MODELS[DEFAULT_IMAGE_MODEL];
 
 export interface GenImageInput {
   prompt: string;
   /** Reference images (URLs or data URLs) — character portraits, fed in for visual coherence. */
   refImages?: string[];
+  /** Render-model KEY from IMAGE_MODELS (book-level choice). Defaults to gemini-3. */
+  model?: string;
 }
 
 // deno-lint-ignore no-explicit-any
@@ -33,7 +46,7 @@ export async function generateImages(input: GenImageInput, count: number): Promi
 }
 
 /** Generate one image. Returns a data URL (data:image/...;base64,...). Throws on failure. */
-export async function generateImage({ prompt, refImages = [] }: GenImageInput): Promise<string> {
+export async function generateImage({ prompt, refImages = [], model }: GenImageInput): Promise<string> {
   const apiKey = Deno.env.get("OPENROUTER_API_KEY");
   if (!apiKey) throw new Error("OPENROUTER_API_KEY not configured");
 
@@ -43,7 +56,7 @@ export async function generateImage({ prompt, refImages = [] }: GenImageInput): 
   const res = await fetch(OPENROUTER_URL, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
-    body: JSON.stringify({ model: IMAGE_MODEL, modalities: ["image", "text"], messages: [{ role: "user", content }] }),
+    body: JSON.stringify({ model: resolveModel(model), modalities: ["image", "text"], messages: [{ role: "user", content }] }),
   });
   const raw = await res.text();
   if (!res.ok) throw new Error(`Image API ${res.status}: ${raw.slice(0, 500)}`);
