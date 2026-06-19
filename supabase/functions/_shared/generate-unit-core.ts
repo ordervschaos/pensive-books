@@ -13,8 +13,9 @@ import { type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { type Brief, briefContext } from "./brief.ts";
 import { callClaude as callClaudeApi, textFromClaude, type CallMeta } from "./claude.ts";
 import { getActiveModels, DEFAULT_LOW_MODEL } from "./model-config.ts";
-import { type CharacterState, type PageState } from "./page-state.ts";
+import { type CharacterState, type PageState, type RelationshipState } from "./page-state.ts";
 import { canonContext, type CanonPacket } from "./canon-core.ts";
+import { type Foundations, type CastMember, type WorldNode, type Narration } from "./foundations-core.ts";
 import { tiptapToText } from "./words.ts";
 import { extractJsonBlock } from "./json.ts";
 import { readSteer, steerBlock } from "./steer.ts";
@@ -57,13 +58,41 @@ export interface ReviseParams extends CommonParams {
   issues: ReviseIssue[];
 }
 
+// F3b/F4a: bible shape — book-level cross-cutting defaults (voice, facts, narration).
+// Consumers already read `bible.voice_sample` loosely; these interfaces close the type gap so later
+// stages (F3b fact ledger, F4a narration) can read/write typed fields without inventing the shape.
+// Do NOT rewire existing `b.bible?.voice_sample` accesses — they keep working (BibleFact/BibleNarration
+// are additive). Mirror exported to apps/web/src/lib/bible.ts.
+export interface BibleFact { fact: string; page_index: number }
+export interface BibleNarration {
+  person?: "first" | "close-third" | "omniscient";
+  tense?: "past" | "present";
+  distance?: string;
+}
+export interface Bible {
+  voice_sample?: string;
+  facts?: BibleFact[];
+  narration?: BibleNarration;
+}
+
 interface BookRow {
   id: number;
   name: string;
   brief: Brief | null;
-  bible: { voice_sample?: string } | null;
+  bible: Bible | null;
   canon: CanonPacket | null;
   steers: unknown;
+  // F1/F2/F3a: stable creative decisions — cast voices, relationships, world node
+  foundations: Foundations | null;
+  // F4a: per-layer craft guidance authored in the studio; keyed by layer name
+  craft_notes: Record<string, string> | null;
+}
+
+// Voice source for prose generation. foundations.voice_exemplar is the canonical authoring record;
+// bible.voice_sample is a legacy mirror, no longer written — kept ONLY as a read-fallback for books
+// authored before the mirror was collapsed. New voice edits flow through foundations.
+function resolveVoice(b: BookRow): string | null {
+  return b.foundations?.voice_exemplar?.text?.trim() || b.bible?.voice_sample?.trim() || null;
 }
 
 // ── Transforms ───────────────────────────────────────────────────────────────
@@ -96,7 +125,7 @@ async function stampGeneratingCall(client: SupabaseClient, pageId: number, callI
 
 async function loadBook(client: SupabaseClient, bookId: number): Promise<BookRow> {
   const { data: book, error } = await client
-    .from("books").select("id, name, subtitle, author, brief, bible, canon, steers").eq("id", bookId).single();
+    .from("books").select("id, name, subtitle, author, brief, bible, canon, steers, foundations, craft_notes").eq("id", bookId).single();
   if (error || !book) throw new Error("Book not found");
   return book as unknown as BookRow;
 }
@@ -126,7 +155,7 @@ export async function beatToProse(client: SupabaseClient, apiKey: string, p: Wri
     objective: (p.objective ?? "").trim() || null,
     beat,
     brief: b.brief,
-    voice_sample_used: !!b.bible?.voice_sample?.trim(),
+    voice_sample_used: !!resolveVoice(b),
     character_states: ctx.characterStates,
     open_loops: ctx.openLoops,
     story_so_far: ctx.storySoFar,
@@ -134,11 +163,23 @@ export async function beatToProse(client: SupabaseClient, apiKey: string, p: Wri
       ? { page_ids: ctx.precedingProseIds, word_count: wordCount(ctx.precedingProse) }
       : null,
   };
+  // F3b: established facts from bible.facts with page_index < current (write mode)
+  const currentPageIndex = await getPageIndex(client, p.pageId ?? null);
+  const establishedFacts = renderEstablishedFacts(b.bible?.facts, currentPageIndex);
+  // F4a: prose-layer craft note
+  const craftNoteProse = b.craft_notes?.["prose"] ?? b.craft_notes?.["foundations"] ?? null;
+
   const text = await renderProse(apiKey, models.high, {
-    brief: b.brief, voiceSample: b.bible?.voice_sample?.trim() || null, canon: b.canon, bookName: b.name,
+    brief: b.brief, voiceSample: resolveVoice(b), canon: b.canon, bookName: b.name,
     level: p.level, mode: "write", steer: readSteer(b.steers, "prose"), objective: (p.objective ?? "").trim(), beat, issues: null, currentText: null,
     pageObjective: p.pageObjective?.trim() || null, precedingText: p.precedingText?.trim() || null,
     objectiveMap: ctx.objectiveMap, storySoFar: ctx.storySoFar, precedingProse: ctx.precedingProse, currentPageLabel: ctx.currentPageLabel, openLoops: ctx.openLoops, characterStates: ctx.characterStates,
+    foundations: b.foundations, craftNoteProse,
+    relationshipStates: ctx.relationshipStates,
+    establishedFacts,
+    storyTime: ctx.storyTime,
+    pov: ctx.pov,
+    narration: b.foundations?.narration ?? null,
   }, m);
 
   if (p.level === "page" && p.pageId) {
@@ -170,7 +211,7 @@ export async function revisePage(client: SupabaseClient, apiKey: string, p: Revi
     objective: (p.objective ?? "").trim() || null,
     issues: p.issues,
     brief: b.brief,
-    voice_sample_used: !!b.bible?.voice_sample?.trim(),
+    voice_sample_used: !!resolveVoice(b),
     character_states: ctx.characterStates,
     open_loops: ctx.openLoops,
     story_so_far: ctx.storySoFar,
@@ -179,11 +220,23 @@ export async function revisePage(client: SupabaseClient, apiKey: string, p: Revi
       ? { page_ids: ctx.precedingProseIds, word_count: wordCount(ctx.precedingProse) }
       : null,
   };
+  // F3b: established facts from bible.facts with page_index < current (revise mode)
+  const revisePageIndex = await getPageIndex(client, p.pageId);
+  const reviseEstablishedFacts = renderEstablishedFacts(b.bible?.facts, revisePageIndex);
+  // F4a: prose-layer craft note
+  const reviseCraftNoteProse = b.craft_notes?.["prose"] ?? b.craft_notes?.["foundations"] ?? null;
+
   const text = await renderProse(apiKey, models.high, {
-    brief: b.brief, voiceSample: b.bible?.voice_sample?.trim() || null, canon: b.canon, bookName: b.name,
+    brief: b.brief, voiceSample: resolveVoice(b), canon: b.canon, bookName: b.name,
     level: "page", mode: "revise", steer: "", objective: (p.objective ?? "").trim(), beat: null, issues: p.issues, currentText,
     pageObjective: null, precedingText: null,
     objectiveMap: ctx.objectiveMap, storySoFar: ctx.storySoFar, precedingProse: ctx.precedingProse, currentPageLabel: ctx.currentPageLabel, openLoops: ctx.openLoops, characterStates: ctx.characterStates,
+    foundations: b.foundations, craftNoteProse: reviseCraftNoteProse,
+    relationshipStates: ctx.relationshipStates,
+    establishedFacts: reviseEstablishedFacts,
+    storyTime: ctx.storyTime,
+    pov: ctx.pov,
+    narration: b.foundations?.narration ?? null,
   }, m);
 
   await stampGeneratingCall(client, p.pageId, m.loggedCallId); // page → the call that revised it
@@ -192,11 +245,30 @@ export async function revisePage(client: SupabaseClient, apiKey: string, p: Revi
   return text;
 }
 
+// F3b: look up a page's index from the DB so we can filter bible.facts by page_index < current.
+// Returns null when pageId is null (paragraph-level or unknown) — caller skips the facts block.
+async function getPageIndex(client: SupabaseClient, pageId: number | null): Promise<number | null> {
+  if (pageId == null) return null;
+  const { data } = await client.from("pages").select("page_index").eq("id", pageId).maybeSingle();
+  return (data as { page_index: number } | null)?.page_index ?? null;
+}
+
+// F3b: render an ESTABLISHED FACTS block from bible.facts for facts with page_index < currentIndex.
+// Returns null when there are no qualifying facts (block is skipped).
+function renderEstablishedFacts(facts: BibleFact[] | null | undefined, currentIndex: number | null): string | null {
+  if (!facts?.length || currentIndex == null) return null;
+  const prior = facts.filter((f) => f.page_index < currentIndex);
+  if (!prior.length) return null;
+  const lines = prior.map((f) => `- ${f.fact}`).join("\n");
+  return `ESTABLISHED FACTS (do not contradict — these were set in earlier pages):\n${lines}`;
+}
+
 // Cheap one-paragraph "story so far" summary for later pages' continuity. Best-effort.
+// F3c: also extracts a story-time stamp ({when,elapsed}) from the summarizer and persists it.
 async function maybeSummarize(client: SupabaseClient, apiKey: string, pageId: number, text: string, m: CallMeta, summaryModel?: string) {
   try {
-    const summary = await summarize(apiKey, text, m, summaryModel);
-    if (summary) await persistSummary(client, pageId, summary);
+    const result = await summarize(apiKey, text, m, summaryModel);
+    if (result.summary) await persistSummary(client, pageId, result.summary, result.time ?? null);
   } catch (e) {
     console.error("generate-unit-core: summary step failed (non-fatal):", e);
   }
@@ -216,7 +288,21 @@ export async function buildUnitContext(
   bookId: number,
   pageId: number | null,
   level: "paragraph" | "page"
-): Promise<{ objectiveMap: string; storySoFar: string | null; precedingProse: string | null; precedingProseIds: number[]; currentPageLabel: string | null; openLoops: string | null; characterStates: string | null }> {
+): Promise<{
+  objectiveMap: string;
+  storySoFar: string | null;
+  precedingProse: string | null;
+  precedingProseIds: number[];
+  currentPageLabel: string | null;
+  openLoops: string | null;
+  characterStates: string | null;
+  // F2: formatted relationship states from most recent prior page
+  relationshipStates: string | null;
+  // F3c: story time from the current page's planned metadata
+  storyTime: string | null;
+  // F4a: POV character from current page metadata
+  pov: string | null;
+}> {
   const { data: pages } = await client
     .from("pages")
     .select("id, page_index, page_type, title, metadata")
@@ -278,7 +364,27 @@ export async function buildUnitContext(
     if (latest?.length) characterStates = formatCharacterStates(latest);
   }
 
-  return { objectiveMap, storySoFar, precedingProse, precedingProseIds, currentPageLabel, openLoops, characterStates };
+  // F2: Relationship ledger — latest snapshot from the most recent prior page that carries one.
+  let relationshipStates: string | null = null;
+  if (level === "page" && current) {
+    const priorRel = list.filter((p) => p.page_index < current.page_index && (p.metadata?.relationship_states?.length ?? 0) > 0);
+    const latestRel = priorRel.at(-1)?.metadata?.relationship_states;
+    if (latestRel?.length) relationshipStates = formatRelationshipStates(latestRel);
+  }
+
+  // F3c: story-time — from the current page's planned metadata.time (may be absent for new pages)
+  const storyTime = (() => {
+    if (level !== "page" || !current) return null;
+    const t = current.metadata?.time;
+    if (!t) return null;
+    const parts = [t.when && `when: ${t.when}`, t.elapsed && `elapsed: ${t.elapsed}`].filter(Boolean);
+    return parts.length ? parts.join("; ") : null;
+  })();
+
+  // F4a: POV character from current page metadata
+  const pov = (level === "page" && current?.metadata?.pov) ? current.metadata.pov : null;
+
+  return { objectiveMap, storySoFar, precedingProse, precedingProseIds, currentPageLabel, openLoops, characterStates, relationshipStates, storyTime, pov };
 }
 
 // The character ledger as a prompt block: stable arc poles in parens, then the changing state.
@@ -296,9 +402,16 @@ export function formatCharacterStates(states: CharacterState[]): string {
   return `CHARACTER STATES (as of the previous page — keep each character consistent with what they currently know, feel, have and believe; do not reset them, and let what happens here move them):\n${lines.join("\n")}`;
 }
 
+// F2: Relationship ledger as a prompt block — current charges of each dyad.
+export function formatRelationshipStates(states: RelationshipState[]): string {
+  const lines = states.map((r) => `- ${r.pair}: ${r.charge}${r.note ? ` (${r.note})` : ""}`);
+  return `RELATIONSHIP STATES (as of the previous page — let these charges drive the scene; flips here should feel earned):\n${lines.join("\n")}`;
+}
+
 // Promise/payoff ledger as page-level instruction: which threads to SEED, PAY OFF, or WITHHOLD on
-// this page. Derived from book_threads' page anchors + reading position (robust while a build is in
-// flight and statuses are still flipping) — the prose renderer needs to know what to plant vs. hold.
+// this page. Reads book_thread_anchors (role='promise'→SEED, role='resolution'→PAY OFF) — the flat
+// setup_page_id/payoff_page_id columns were dropped in the anchors migration (beat-core.ts:117-135
+// is the reference implementation). Robust while a build is in flight and statuses are still flipping.
 async function buildOpenLoops(
   client: SupabaseClient,
   bookId: number,
@@ -307,13 +420,16 @@ async function buildOpenLoops(
 ): Promise<string | null> {
   const { data: rows } = await client
     .from("book_threads")
-    .select("name, description, setup_page_id, payoff_page_id, status")
-    .eq("book_id", bookId)
-    .neq("status", "closed");
-  const threads = (rows as Array<{ name: string; description: string | null; setup_page_id: number | null; payoff_page_id: number | null; status: string }> | null) ?? [];
+    .select("name, description, book_thread_anchors(page_id, role)")
+    .eq("book_id", bookId);
+  const threads = (rows as Array<{
+    name: string;
+    description: string | null;
+    book_thread_anchors: Array<{ page_id: number | null; role: string }> | null;
+  }> | null) ?? [];
   if (threads.length === 0) return null;
 
-  const indexOf = (pid: number | null): number | null => {
+  const pageIndexOf = (pid: number | null): number | null => {
     if (pid == null) return null;
     const p = list.find((x) => x.id === pid);
     return p ? p.page_index : null;
@@ -322,18 +438,26 @@ async function buildOpenLoops(
 
   const lines: string[] = [];
   for (const t of threads) {
+    const anchors = t.book_thread_anchors ?? [];
     const desc = t.description ? ` — ${t.description}` : "";
-    if (t.setup_page_id === current.id) {
+
+    // Is this page a promise (SEED) anchor?
+    if (anchors.some((a) => a.page_id === current.id && a.role === "promise")) {
       lines.push(`- SEED "${t.name}"${desc}: plant this naturally; it pays off LATER, so do NOT resolve it here.`);
-    } else if (t.payoff_page_id === current.id) {
+      continue;
+    }
+    // Is this page a resolution (PAY OFF) anchor?
+    if (anchors.some((a) => a.page_id === current.id && a.role === "resolution")) {
       lines.push(`- PAY OFF "${t.name}"${desc}: deliver this promise here; make it feel earned.`);
-    } else {
-      const si = indexOf(t.setup_page_id);
-      const pi = indexOf(t.payoff_page_id);
-      // In the air: seeded at/before this page and not yet due to pay off after it.
-      if (si != null && si < ci && (pi == null || pi > ci)) {
-        lines.push(`- WITHHOLD "${t.name}"${desc}: already in play; keep it alive but do NOT resolve it here.`);
-      }
+      continue;
+    }
+    // Otherwise: WITHHOLD if the thread was seeded before this page and its resolution is after it (or unset).
+    const promisePageId = anchors.find((a) => a.role === "promise")?.page_id ?? null;
+    const resolutionPageId = anchors.find((a) => a.role === "resolution")?.page_id ?? null;
+    const si = pageIndexOf(promisePageId);
+    const pi = pageIndexOf(resolutionPageId);
+    if (si != null && si < ci && (pi == null || pi > ci)) {
+      lines.push(`- WITHHOLD "${t.name}"${desc}: already in play; keep it alive but do NOT resolve it here.`);
     }
   }
   return lines.length ? `OPEN LOOPS (promises in play on this page — manage them deliberately):\n${lines.join("\n")}` : null;
@@ -364,7 +488,14 @@ Rules:
 - Write a COMPLETE passage that ends at a natural stopping point — a finished sentence.
   Never stop mid-sentence.
 - Serve the objective precisely; do not wander beyond what it asks.
-- Match the requested length: a single paragraph means ONE paragraph.`;
+- Match the requested length: a single paragraph means ONE paragraph.
+- CAST VOICES & POV: If CAST VOICES are provided, render each character's dialogue in their
+  distinct idiolect (diction, tics, register). Let the POV character's history color what they
+  notice and how they phrase things — interiority should feel earned by their background.
+- NARRATION: Honor the POV and NARRATION block exactly — person, tense, and distance are the
+  author's structural choice, not suggestions.
+- ESTABLISHED FACTS & WORLD: Never contradict any fact in the ESTABLISHED FACTS block or any
+  rule in the WORLD block. These are hard continuity constraints.`;
 
 const SYSTEM_REVISE = `You are a developmental line editor revising a page of an author's book to address specific editorial notes.
 
@@ -400,6 +531,19 @@ interface PromptArgs {
   currentPageLabel: string | null;
   openLoops: string | null;
   characterStates: string | null;
+  // F1/F2/F3a/F4a stable context
+  foundations: Foundations | null;
+  craftNoteProse: string | null;   // the prose-layer craft note from books.craft_notes
+  // F2: per-page relationship states (from the most recent prior page with relationship_states)
+  relationshipStates: string | null;
+  // F3b: established facts from bible.facts with page_index < current
+  establishedFacts: string | null;
+  // F3c: story-time for this page (from metadata.time)
+  storyTime: string | null;
+  // F4a: POV character for this page
+  pov: string | null;
+  // F4a: book-level narration defaults (from foundations.narration)
+  narration: Narration | null;
 }
 
 function formatIssues(issues: ReviseIssue[]): string {
@@ -418,7 +562,48 @@ function formatIssues(issues: ReviseIssue[]): string {
 // renderer has both a target to imitate and tells to avoid (the biggest single "this is AI" signal).
 const VOICE_TELLS = `"a testament to", "in a world where", "little did they know", "sent shivers down", "couldn't help but", "a mix of … and …", "navigating the complexities of", and neat moral-of-the-story endings`;
 
+// Render a CAST VOICES block from foundations.cast: only for members that have at least one of
+// idiolect/history/tag. Returns null when no member qualifies (block is skipped entirely).
+function renderCastVoices(cast: CastMember[] | undefined): string | null {
+  if (!cast?.length) return null;
+  const lines = cast
+    .filter((m) => m.idiolect?.trim() || m.history?.trim() || m.tag?.trim())
+    .map((m) => {
+      const label = [m.name, m.tag?.trim() && `— ${m.tag.trim()}`].filter(Boolean).join(" ");
+      const body = [`speaks ${m.idiolect?.trim() || "—"}`, m.history?.trim()].filter(Boolean).join(". ");
+      return `- ${label}: ${body}`;
+    });
+  if (!lines.length) return null;
+  return `CAST VOICES (render each character's dialogue in their idiolect; let a character's history color what they notice and how they phrase things):\n${lines.join("\n")}`;
+}
+
+// Render the WORLD block from foundations.world. Returns null when empty.
+function renderWorld(world: WorldNode | undefined): string | null {
+  if (!world) return null;
+  const parts: string[] = [];
+  if (world.setting?.trim()) parts.push(world.setting.trim());
+  if (world.period?.trim()) parts.push(`period: ${world.period.trim()}`);
+  if (world.rules?.length) parts.push(`rules:\n${world.rules.map((r) => `- ${r}`).join("\n")}`);
+  if (!parts.length) return null;
+  return `WORLD (setting, period, and rules — never contradict these):\n${parts.join("\n")}`;
+}
+
+// Render NARRATION from foundations.narration. Returns null when unset.
+function renderNarration(narration: Narration | null | undefined): string | null {
+  if (!narration) return null;
+  const parts = [
+    narration.person && `in ${narration.person}`,
+    narration.tense && `${narration.tense} tense`,
+    narration.distance?.trim(),
+  ].filter(Boolean);
+  if (!parts.length) return null;
+  return `NARRATION (the book's default narrative mode — honor it):\nNarrate ${parts.join(", ")}.`;
+}
+
 function stablePrefix(args: PromptArgs): string {
+  const castVoices = renderCastVoices(args.foundations?.cast ?? undefined);
+  const world = renderWorld(args.foundations?.world ?? undefined);
+  const narration = renderNarration(args.narration);
   return [
     `BOOK: ${args.bookName}`,
     `\nBRIEF (the voice contract):\n${briefContext(args.brief, { scope: "band", success: true, none: "(no brief set — infer a sensible neutral voice)", empty: "(brief is empty — infer a sensible neutral voice)" })}`,
@@ -426,6 +611,14 @@ function stablePrefix(args: PromptArgs): string {
     args.voiceSample
       ? `\nVOICE SAMPLE (write in THIS voice — match its rhythm, sentence shapes, diction and restraint; this exemplar is a stronger style anchor than any instruction):\n"""\n${args.voiceSample}\n"""\nAvoid AI-tell crutches: ${VOICE_TELLS}.`
       : "",
+    // F1: per-character voice differentiation (after voice sample, before outline)
+    castVoices ? `\n${castVoices}` : "",
+    // F3a: pinned world/setting node
+    world ? `\n${world}` : "",
+    // F4a: book-level narration defaults
+    narration ? `\n${narration}` : "",
+    // F4a: prose-layer craft note authored in the studio (currently never reached draft — close the gap)
+    args.craftNoteProse?.trim() ? `\nCRAFT NOTE (author's guidance for this book's prose — apply it):\n${args.craftNoteProse.trim()}` : "",
     args.objectiveMap ? `\nOUTLINE (the book's pages and their objectives, in order):\n${args.objectiveMap}` : "",
   ].filter(Boolean).join("\n");
 }
@@ -442,7 +635,11 @@ function variablePart(args: PromptArgs): string {
     const where = args.currentPageLabel ? ` ${args.currentPageLabel}` : "";
     if (args.objective) parts.push(`This page${where} is meant to achieve: ${args.objective}`);
     if (args.characterStates) parts.push(args.characterStates);
+    if (args.relationshipStates) parts.push(args.relationshipStates);
     if (args.openLoops) parts.push(args.openLoops);
+    if (args.establishedFacts) parts.push(args.establishedFacts);
+    if (args.storyTime) parts.push(`STORY TIME: ${args.storyTime}`);
+    if (args.pov) parts.push(`POV: ${args.pov}`);
     parts.push(`CURRENT PAGE PROSE (revise this in place):\n"""\n${args.currentText ?? ""}\n"""`);
     parts.push(`THE EDITOR'S NOTES TO ADDRESS ON THIS PAGE:\n${formatIssues(args.issues ?? [])}`);
     parts.push(`Revise the page to address every note above while preserving its strengths, the book's voice, and continuity with the rest of the book. Return the full revised page prose only.`);
@@ -459,8 +656,26 @@ function variablePart(args: PromptArgs): string {
   if (args.characterStates && args.level === "page") {
     parts.push(args.characterStates);
   }
+  // F2: relationship states alongside character states (page-level only)
+  if (args.relationshipStates && args.level === "page") {
+    parts.push(args.relationshipStates);
+  }
   if (args.openLoops && args.level === "page") {
     parts.push(args.openLoops);
+  }
+  // F3b: established facts the model must not contradict (page-level only)
+  if (args.establishedFacts && args.level === "page") {
+    parts.push(args.establishedFacts);
+  }
+  // F3c: story-time orientation
+  if (args.storyTime && args.level === "page") {
+    parts.push(`STORY TIME: ${args.storyTime}`);
+  }
+  // F4a: POV — page-level pov when set. Narrative mode (person/tense) comes from the NARRATION block
+  // above (foundations.narration); here we just render a POV line so the model holds the viewpoint.
+  if (args.level === "page") {
+    const povName = args.pov ?? null;
+    if (povName) parts.push(`POV: ${povName}`);
   }
   if (args.level === "paragraph") {
     if (args.pageObjective) parts.push(`This paragraph sits on a page whose objective is: ${args.pageObjective}`);
@@ -511,32 +726,58 @@ function stripLeadingHeadings(text: string): string {
 }
 
 // ── Summary (layer D) ────────────────────────────────────────────────────────
-async function summarize(apiKey: string, prose: string, meta: CallMeta, summaryModel?: string): Promise<string> {
+// F3c: the summarizer now returns a tiny JSON envelope `{summary, time}` so we can also extract
+// a story-time stamp in the same call. Shape:
+//   { "summary": "1-2 sentence summary", "time": { "when": "...", "elapsed": "..." } }
+// `time` is optional — the model omits it when time cannot be inferred.
+// The summary string behavior is preserved; `time` is additive and stored in metadata.time.
+interface SummarizeResult { summary: string; time?: { when?: string; elapsed?: string } }
+
+async function summarize(apiKey: string, prose: string, meta: CallMeta, summaryModel?: string): Promise<SummarizeResult> {
   const data = await callClaudeApi(apiKey, {
     model: summaryModel ?? DEFAULT_LOW_MODEL,
-    max_tokens: 250,
+    max_tokens: 300,
     system: [{
       type: "text",
-      text: "Summarize this page of a book in 1-2 sentences: what happens and any new facts (characters, places, changes in state) a later page would need to stay consistent. Plain text only, no preamble.",
+      text: `Summarize this page of a book and extract any story-time cue.
+Output JSON ONLY (no prose, no fences):
+{"summary":"1-2 sentences: what happens and any new facts a later page needs","time":{"when":"time of day/story moment if clear","elapsed":"duration since story start if clear"}}
+Omit "time" or its sub-keys if they cannot be inferred from the prose. "summary" is required.`,
       cache_control: { type: "ephemeral" },
     }],
     messages: [{ role: "user", content: prose.slice(0, 12000) }],
   }, { ...meta, fn: "summarize", artifacts: null });
-  return textFromClaude(data).trim();
+  const raw = textFromClaude(data).trim();
+  // Parse the JSON envelope; fall back to treating the whole response as a plain summary if it fails
+  // (backward compat — old callers may not have had JSON output, and we never want to lose the summary).
+  try {
+    const parsed = JSON.parse(extractJsonBlock(raw)) as { summary?: unknown; time?: unknown };
+    const summary = typeof parsed.summary === "string" && parsed.summary.trim() ? parsed.summary.trim() : raw;
+    const timeRaw = parsed.time && typeof parsed.time === "object" ? parsed.time as Record<string, unknown> : null;
+    const when = typeof timeRaw?.when === "string" && timeRaw.when.trim() ? timeRaw.when.trim() : undefined;
+    const elapsed = typeof timeRaw?.elapsed === "string" && timeRaw.elapsed.trim() ? timeRaw.elapsed.trim() : undefined;
+    const time = (when || elapsed) ? { when, elapsed } : undefined;
+    return { summary, time };
+  } catch {
+    // JSON parse miss — treat entire response as the summary string (graceful degradation)
+    return { summary: raw };
+  }
 }
 
-async function persistSummary(client: SupabaseClient, pageId: number, summary: string) {
+async function persistSummary(client: SupabaseClient, pageId: number, summary: string, time: { when?: string; elapsed?: string } | null) {
   const { data } = await client.from("pages").select("metadata").eq("id", pageId).maybeSingle();
-  const metadata = { ...((data?.metadata as Record<string, unknown> | null) ?? {}), summary };
+  const existing = (data?.metadata as Record<string, unknown> | null) ?? {};
+  const metadata: Record<string, unknown> = { ...existing, summary };
+  if (time) metadata.time = time; // F3c: store story-time alongside summary
   await client.from("pages").update({ metadata }).eq("id", pageId);
 }
 
-// ── Character ledger (the state axis) ─────────────────────────────────────────
-// After a page's prose is written, stamp a FULL snapshot of every character's state onto the page
-// (pages.metadata.character_states), carrying the most recent prior snapshot forward and updating
-// whoever the new prose affected. The next page's prose context reads this (buildUnitContext) — so
-// characters accrete what they know/feel/have/believe instead of resetting. Best-effort: a failure
-// here only weakens continuity, it never fails the write.
+// ── Character + Relationship ledger (the state axis) ─────────────────────────────────────────
+// After a page's prose is written, stamp a FULL snapshot of every character's state AND every
+// relationship's current charge onto the page (pages.metadata.*). The next page's prose context
+// reads this (buildUnitContext) — so characters and dyads accrete state instead of resetting.
+// F2: relationship_states are now extracted in the SAME JSON envelope as characters (one LLM call).
+// Best-effort: a failure here only weakens continuity, it never fails the write.
 async function maybeExtractCharacterStates(
   client: SupabaseClient,
   apiKey: string,
@@ -547,13 +788,21 @@ async function maybeExtractCharacterStates(
   model?: string,
 ) {
   try {
-    const prior = await priorCharacterStates(client, bookId, pageId);
-    const states = await extractCharacterStates(apiKey, prose, prior, m, model);
-    if (states.length) {
+    const [priorChars, priorRel] = await Promise.all([
+      priorCharacterStates(client, bookId, pageId),
+      priorRelStates(client, bookId, pageId),
+    ]);
+    const extracted = await extractStates(apiKey, prose, priorChars, priorRel, m, model);
+    if (extracted.characters.length || extracted.relationship_states.length) {
       const { data } = await client.from("pages").select("metadata").eq("id", pageId).maybeSingle();
-      const metadata = { ...((data?.metadata as Record<string, unknown> | null) ?? {}), character_states: states };
+      const existing = (data?.metadata as Record<string, unknown> | null) ?? {};
+      const metadata: Record<string, unknown> = { ...existing };
+      if (extracted.characters.length) metadata.character_states = extracted.characters;
+      if (extracted.relationship_states.length) metadata.relationship_states = extracted.relationship_states;
       await client.from("pages").update({ metadata }).eq("id", pageId);
     }
+    // F3b: fold world deltas from this page into books.bible.facts (best-effort, errors swallowed)
+    await maybeFoldWorldFacts(client, bookId, pageId, m);
   } catch (e) {
     console.error("generate-unit-core: character-state extraction failed (non-fatal):", e);
   }
@@ -571,45 +820,123 @@ async function priorCharacterStates(client: SupabaseClient, bookId: number, page
   return prior?.metadata?.character_states ?? [];
 }
 
-async function extractCharacterStates(apiKey: string, prose: string, prior: CharacterState[], meta: CallMeta, model?: string): Promise<CharacterState[]> {
-  const priorBlock = prior.length ? JSON.stringify(prior) : "(none yet — this is the first page with characters)";
+// F2: latest relationship snapshot from a page strictly before this one.
+async function priorRelStates(client: SupabaseClient, bookId: number, pageId: number): Promise<RelationshipState[]> {
+  const { data: rows } = await client
+    .from("pages").select("id, page_index, metadata")
+    .eq("book_id", bookId).eq("archived", false).order("page_index", { ascending: true });
+  const list = (rows as PageLite[] | null) ?? [];
+  const cur = list.find((p) => p.id === pageId);
+  if (!cur) return [];
+  const prior = list.filter((p) => p.page_index < cur.page_index && (p.metadata?.relationship_states?.length ?? 0) > 0).at(-1);
+  return prior?.metadata?.relationship_states ?? [];
+}
+
+// F2: combined extractor — one LLM call returns {characters, relationship_states}.
+// relationship_states shape: [{pair, charge, note}] — carry forward unchanged dyads,
+// update when the page shifts a charge.
+async function extractStates(
+  apiKey: string,
+  prose: string,
+  priorChars: CharacterState[],
+  priorRel: RelationshipState[],
+  meta: CallMeta,
+  model?: string,
+): Promise<{ characters: CharacterState[]; relationship_states: RelationshipState[] }> {
+  const priorCharsBlock = priorChars.length ? JSON.stringify(priorChars) : "(none yet — first page with characters)";
+  const priorRelBlock = priorRel.length ? JSON.stringify(priorRel) : "(none yet)";
   const data = await callClaudeApi(apiKey, {
     model: model ?? DEFAULT_LOW_MODEL,
-    max_tokens: 1500,
+    max_tokens: 2000,
     system: [{
       type: "text",
-      text: `You track character state across a story for continuity. Given the PRIOR character states and a NEW page of prose, output the UPDATED state of EVERY character.
-Rules: carry forward unchanged characters exactly; update knows/feels/has/believes for any the page affected; keep want and wound stable once set; add a character only if they clearly matter going forward. Be terse; omit empty fields.
-Output JSON ONLY (no prose, no fences): {"characters":[{"name":"","want":"","wound":"","believes":"","knows":[""],"feels":"","has":[""]}]}`,
+      text: `You track character and relationship state across a story for continuity. Given the PRIOR states and a NEW page of prose, output the UPDATED state of EVERY character AND EVERY relationship.
+Rules for characters: carry forward unchanged characters exactly; update knows/feels/has/believes for any the page affected; keep want and wound stable once set; add a character only if they clearly matter going forward. Be terse; omit empty fields.
+Rules for relationships: carry forward unchanged dyads exactly; update charge/note when the page clearly shifts a dyad; add a dyad only if the page establishes a significant bond. Use the pair format "Name A / Name B" consistently. Be terse.
+Output JSON ONLY (no prose, no fences):
+{"characters":[{"name":"","want":"","wound":"","believes":"","knows":[""],"feels":"","has":[""]}],"relationship_states":[{"pair":"Name A / Name B","charge":"","note":""}]}`,
       cache_control: { type: "ephemeral" },
     }],
-    messages: [{ role: "user", content: `PRIOR CHARACTER STATES:\n${priorBlock}\n\nNEW PAGE PROSE:\n${prose.slice(0, 12000)}\n\nOutput the updated states for every character. JSON only.` }],
+    messages: [{
+      role: "user",
+      content: `PRIOR CHARACTER STATES:\n${priorCharsBlock}\n\nPRIOR RELATIONSHIP STATES:\n${priorRelBlock}\n\nNEW PAGE PROSE:\n${prose.slice(0, 12000)}\n\nOutput the updated states for every character and every relationship. JSON only.`,
+    }],
   }, { ...meta, fn: "extract-character-states", artifacts: null });
 
   const text = textFromClaude(data).trim();
-  return parseCharacterStates(text);
+  return parseExtractedStates(text);
 }
 
-function parseCharacterStates(text: string): CharacterState[] {
-  let parsed: { characters?: unknown };
+function parseExtractedStates(text: string): { characters: CharacterState[]; relationship_states: RelationshipState[] } {
+  let parsed: { characters?: unknown; relationship_states?: unknown };
   try {
     parsed = JSON.parse(extractJsonBlock(text));
   } catch {
-    return []; // best-effort: a parse miss just skips this page's ledger update
+    return { characters: [], relationship_states: [] };
   }
-  if (!Array.isArray(parsed.characters)) return [];
   const str = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v.trim() : undefined);
   const arr = (v: unknown): string[] | undefined => {
     if (!Array.isArray(v)) return undefined;
     const out = v.map((x) => String(x ?? "").trim()).filter(Boolean);
     return out.length ? out : undefined;
   };
-  return (parsed.characters as Array<Record<string, unknown>>)
-    .map((c) => ({
-      name: str(c.name) ?? "",
-      want: str(c.want), wound: str(c.wound), believes: str(c.believes),
-      knows: arr(c.knows), feels: str(c.feels), has: arr(c.has),
-    }))
-    .filter((c) => c.name)
-    .slice(0, 24); // guard against a runaway roster
+  const characters = Array.isArray(parsed.characters)
+    ? (parsed.characters as Array<Record<string, unknown>>)
+        .map((c) => ({
+          name: str(c.name) ?? "",
+          want: str(c.want), wound: str(c.wound), believes: str(c.believes),
+          knows: arr(c.knows), feels: str(c.feels), has: arr(c.has),
+        }))
+        .filter((c) => c.name)
+        .slice(0, 24)
+    : [];
+  const relationship_states = Array.isArray(parsed.relationship_states)
+    ? (parsed.relationship_states as Array<Record<string, unknown>>)
+        .map((r) => ({
+          pair: str(r.pair) ?? "",
+          charge: str(r.charge) ?? "",
+          note: str(r.note),
+        }))
+        .filter((r) => r.pair && r.charge)
+        .slice(0, 32)
+    : [];
+  return { characters, relationship_states };
+}
+
+// F3b: fold this page's extracted_delta entries of type "world" into books.bible.facts.
+// Appends, deduplicates by fact text (case-insensitive), and writes back. Best-effort.
+async function maybeFoldWorldFacts(
+  client: SupabaseClient,
+  bookId: number,
+  pageId: number,
+  _m: CallMeta,
+) {
+  try {
+    const { data: pg } = await client.from("pages").select("page_index, metadata").eq("id", pageId).maybeSingle();
+    if (!pg) return;
+    const metadata = pg.metadata as PageState | null;
+    const worldDeltas = (metadata?.extracted_delta ?? []).filter((d) => d.type === "world");
+    if (!worldDeltas.length) return;
+
+    const { data: bookRow } = await client.from("books").select("bible").eq("id", bookId).maybeSingle();
+    const existingBible = (bookRow?.bible ?? {}) as Record<string, unknown>;
+    const existingFacts = Array.isArray(existingBible.facts)
+      ? (existingBible.facts as BibleFact[])
+      : [];
+    // Dedup by fact text (case-insensitive trim).
+    const existingTexts = new Set(existingFacts.map((f) => f.fact.trim().toLowerCase()));
+    const newFacts: BibleFact[] = [];
+    for (const d of worldDeltas) {
+      // Use d.to as the canonical fact text; fall back to rendering subject + to if to is short.
+      const factText = d.to?.trim() || `${d.subject}: ${d.to}`.trim();
+      if (!factText || existingTexts.has(factText.toLowerCase())) continue;
+      existingTexts.add(factText.toLowerCase());
+      newFacts.push({ fact: factText, page_index: pg.page_index });
+    }
+    if (!newFacts.length) return;
+    const updatedBible = { ...existingBible, facts: [...existingFacts, ...newFacts] };
+    await client.from("books").update({ bible: updatedBible }).eq("id", bookId);
+  } catch (e) {
+    console.error("generate-unit-core: world-facts fold failed (non-fatal):", e);
+  }
 }

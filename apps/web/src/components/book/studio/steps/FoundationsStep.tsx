@@ -1,10 +1,10 @@
 // FoundationsStep — chat-first redesign: the center is a near-manual editor.
-// Five sub-steps (Argument → Ending → Cast → Tentpoles → Voice) behind a progress strip.
-// ALL generation and option-picking live in the right-rail ReviseChat (layer="foundations").
-// The center only creates / edits / deletes — no AI generation UI here.
+// Sub-steps: Argument → Ending → Cast → World → Tentpoles → Voice.
+// ALL generation and option-picking live in the right-rail ReviseChat (layer="foundations"),
+// EXCEPT World which has a direct AI-generate path here (returns a single WorldNode, not proposals).
+// The center only creates / edits / deletes — no AI generation UI except World generate.
 import { useEffect, useState } from "react";
 import { Check, ImageIcon, Pin, Plus, X } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
 import { Textarea } from "@/components/ui/textarea";
 import { AutoTextarea } from "@/components/ui/auto-textarea";
 import { useToast } from "@/hooks/use-toast";
@@ -12,10 +12,11 @@ import { composePortraitPrompt, renderPortraitVariants, uploadReferenceImage } f
 import { ImageGenStudio } from "../ImageGenStudio";
 import {
   foundationsProgress, pinNode, writeFoundations,
-  type CastMember, type FNode, type Foundations, type FoundationsStepKey, type Tentpole,
+  type CastMember, type FNode, type Foundations, type FoundationsStepKey, type Narration, type Relationship, type Tentpole, type WorldNode,
 } from "@/lib/foundations";
 import { BookLookControls } from "../BookLookControls";
-import { ActionLink, Eyebrow, GenerateInChat, ImageLightbox, Panel } from "../studioUi";
+import { ActionLink, Eyebrow, GenerateInChat, ImageLightbox, Panel, RunError, RunningInline } from "../studioUi";
+import { useAIRun } from "@/hooks/useAIRun";
 
 const uid = () => crypto.randomUUID().slice(0, 8);
 
@@ -23,6 +24,7 @@ const SUBS: { key: FoundationsStepKey; label: string; caption: string }[] = [
   { key: "argument", label: "Argument", caption: "The claim the whole story argues — pick the one you'd defend." },
   { key: "ending", label: "Ending", caption: "Where it lands. Settled now, every route must reach it." },
   { key: "cast", label: "Cast", caption: "Protagonist and majors — want, wound, and the lie the arc breaks." },
+  { key: "world", label: "World", caption: "The pinned setting, period, and constraints — prose must never contradict these." },
   { key: "tentpoles", label: "Tentpoles", caption: "Moments you already see — at least three to proceed." },
   { key: "voice", label: "Voice", caption: "One pinned moment: the chosen voice exemplar anchors every page." },
 ];
@@ -47,12 +49,6 @@ export function FoundationsStep({ bookId, foundations, onChanged }: Props) {
     setF(next);
     try { await writeFoundations(bookId, next); onChanged(); }
     catch (e) { toast({ title: "Couldn't save", description: String((e as Error)?.message ?? e), variant: "destructive" }); }
-  };
-
-  const mirrorVoice = async (text: string) => {
-    const { data } = await supabase.from("books").select("bible").eq("id", bookId).maybeSingle();
-    const bible = { ...((data?.bible as Record<string, unknown> | null) ?? {}), voice_sample: text };
-    await supabase.from("books").update({ bible }).eq("id", bookId);
   };
 
   const caption = SUBS.find((s) => s.key === active)!.caption;
@@ -105,20 +101,38 @@ export function FoundationsStep({ bookId, foundations, onChanged }: Props) {
       {active === "cast" && (
         <div className="space-y-5">
           <HouseLook f={f} onPatch={(patch) => save({ ...f, ...patch })} />
-          <CastSub bookId={bookId} cast={f.cast ?? []} onSave={(cast) => save({ ...f, cast })} />
+          <CastSub
+            bookId={bookId}
+            cast={f.cast ?? []}
+            relationships={f.relationships ?? []}
+            onSave={(cast, relationships) => save({ ...f, cast, relationships: relationships ?? f.relationships })}
+          />
         </div>
+      )}
+      {active === "world" && (
+        <WorldSub
+          bookId={bookId}
+          world={f.world}
+          onSave={(world) => save({ ...f, world })}
+        />
       )}
       {active === "tentpoles" && (
         <TentpolesSub bookId={bookId} tentpoles={f.tentpoles ?? []} onSave={(tentpoles) => save({ ...f, tentpoles })} />
       )}
       {active === "voice" && (
-        <NodeSub
-          bookId={bookId}
-          node={f.voice_exemplar}
-          placeholder="The voice exemplar — ~120 words of a tentpole moment in the story's chosen soundscape…"
-          blocked={(f.tentpoles ?? []).filter((t) => t.status !== "killed").length === 0 ? "Add at least one tentpole moment first." : undefined}
-          onSave={async (n) => { await save({ ...f, voice_exemplar: n }); if (n.text?.trim()) await mirrorVoice(n.text); }}
-        />
+        <div className="space-y-6">
+          <NodeSub
+            bookId={bookId}
+            node={f.voice_exemplar}
+            placeholder="The voice exemplar — ~120 words of a tentpole moment in the story's chosen soundscape…"
+            blocked={(f.tentpoles ?? []).filter((t) => t.status !== "killed").length === 0 ? "Add at least one tentpole moment first." : undefined}
+            onSave={(n) => save({ ...f, voice_exemplar: n })}
+          />
+          <NarrationSub
+            narration={f.narration ?? {}}
+            onSave={(narration) => save({ ...f, narration })}
+          />
+        </div>
       )}
     </div>
   );
@@ -182,11 +196,19 @@ function NodeSub({ bookId, node, placeholder, blocked, onSave }: {
 
 // ── Cast sub-step ─────────────────────────────────────────────────────────────
 const CAST_FIELDS = ["want", "wound", "lie"] as const;
+// F1: per-character voice + history fields (not in the pinned_fields system — AI generates them
+// but the author can overwrite freely; no lock/unlock toggle needed).
+const CAST_VOICE_FIELDS: Array<{ key: "history" | "idiolect" | "tag"; placeholder: string }> = [
+  { key: "history", placeholder: "Formative backstory — 1–2 sentences explaining the wound/lie origin…" },
+  { key: "idiolect", placeholder: "How they speak — diction, verbal tics, register (e.g. short declaratives, never asks questions)…" },
+  { key: "tag", placeholder: "One trackable physical/gesture marker (e.g. always straightens objects near her)…" },
+];
 
-function CastSub({ bookId, cast, onSave }: {
+function CastSub({ bookId, cast, relationships, onSave }: {
   bookId: number;
   cast: CastMember[];
-  onSave: (c: CastMember[]) => Promise<void> | void;
+  relationships: Relationship[];
+  onSave: (c: CastMember[], r?: Relationship[]) => Promise<void> | void;
 }) {
   const update = (id: string, patch: Partial<CastMember>, pinField?: string) => {
     void onSave(cast.map((m) => {
@@ -236,6 +258,7 @@ function CastSub({ bookId, cast, onSave }: {
               </button>
             </div>
           </div>
+          {/* Core arc fields (pinnable) */}
           <div className="space-y-2">
             {CAST_FIELDS.map((k) => {
               const isPinned = (m.pinned_fields ?? []).includes(k);
@@ -273,6 +296,21 @@ function CastSub({ bookId, cast, onSave }: {
               );
             })}
           </div>
+          {/* F1: per-character voice + history fields */}
+          <div className="mt-3 border-t border-[hsl(var(--pv-border-soft))] pt-3 space-y-2">
+            <Eyebrow tone="muted">voice & history</Eyebrow>
+            {CAST_VOICE_FIELDS.map(({ key, placeholder }) => (
+              <div key={key} className="flex items-baseline gap-3">
+                <Eyebrow tone="faint" className="w-14 shrink-0">{key}</Eyebrow>
+                <AutoTextarea
+                  defaultValue={m[key] ?? ""}
+                  placeholder={placeholder}
+                  onBlur={(e) => { const v = e.target.value.trim(); if (v !== (m[key] ?? "")) update(m.id, { [key]: v }); }}
+                  className="pv-serif border-b border-transparent bg-transparent px-0 py-0 text-[14px] leading-relaxed text-foreground focus-visible:ring-0 placeholder:text-[hsl(var(--pv-text-faint))] hover:border-[hsl(var(--pv-border-soft))] transition-colors"
+                />
+              </div>
+            ))}
+          </div>
           <CastLook bookId={bookId} member={m} onUpdate={(patch) => update(m.id, patch)} />
         </Panel>
       ))}
@@ -282,7 +320,86 @@ function CastSub({ bookId, cast, onSave }: {
       >
         add character
       </ActionLink>
+
+      {/* F2: relationships panel */}
+      <RelationshipsSub cast={cast} relationships={relationships} onSave={(r) => void onSave(cast, r)} />
     </div>
+  );
+}
+
+// ── F2: Relationships panel ───────────────────────────────────────────────────
+function RelationshipsSub({ cast, relationships, onSave }: {
+  cast: CastMember[];
+  relationships: Relationship[];
+  onSave: (r: Relationship[]) => void;
+}) {
+  const addRow = () =>
+    onSave([...relationships, { id: uid(), a: cast[0]?.id ?? "", b: cast[1]?.id ?? cast[0]?.id ?? "", bond: "" }]);
+
+  const updateRow = (id: string, patch: Partial<Relationship>) =>
+    onSave(relationships.map((r) => r.id === id ? { ...r, ...patch } : r));
+
+  const removeRow = (id: string) =>
+    onSave(relationships.filter((r) => r.id !== id));
+
+  return (
+    <Panel className="bg-[hsl(var(--pv-surface-2))]/30">
+      <Eyebrow tone="muted">relationships</Eyebrow>
+      <p className="pv-serif mt-1 mb-3 text-[12.5px] italic text-[hsl(var(--pv-text-faint))]">
+        Key dyads — who A is to B and the charge between them.
+      </p>
+      {relationships.length > 0 && (
+        <div className="space-y-2 mb-3">
+          {relationships.map((r) => (
+            <div key={r.id} className="flex items-center gap-2">
+              {/* A */}
+              <select
+                value={r.a}
+                onChange={(e) => updateRow(r.id, { a: e.target.value })}
+                className="pv-serif rounded border border-[hsl(var(--pv-border-soft))] bg-transparent px-2 py-1 text-[13px] text-foreground focus:outline-none"
+              >
+                {cast.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+              <span className="pv-serif text-[12px] text-[hsl(var(--pv-text-faint))]">↔</span>
+              {/* B */}
+              <select
+                value={r.b}
+                onChange={(e) => updateRow(r.id, { b: e.target.value })}
+                className="pv-serif rounded border border-[hsl(var(--pv-border-soft))] bg-transparent px-2 py-1 text-[13px] text-foreground focus:outline-none"
+              >
+                {cast.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+              {/* bond */}
+              <input
+                defaultValue={r.bond}
+                placeholder="bond — one line on the charge between them…"
+                onBlur={(e) => { const v = e.target.value.trim(); if (v !== r.bond) updateRow(r.id, { bond: v }); }}
+                className="pv-serif min-w-0 flex-1 border-b border-transparent bg-transparent py-1 text-[13px] text-foreground outline-none placeholder:text-[hsl(var(--pv-text-faint))] hover:border-[hsl(var(--pv-border-soft))] transition-colors"
+              />
+              {/* pin */}
+              <button
+                type="button"
+                title={r.pinned ? "Locked from AI — click to unlock" : "Lock this bond"}
+                onClick={() => updateRow(r.id, { pinned: !r.pinned })}
+                className="shrink-0"
+              >
+                <Pin className={`h-3 w-3 ${r.pinned ? "text-[hsl(var(--pv-accent))]" : "text-[hsl(var(--pv-text-faint))] opacity-40 hover:opacity-70"}`} />
+              </button>
+              <button type="button" onClick={() => removeRow(r.id)} className="shrink-0 text-[hsl(var(--pv-text-faint))] hover:text-foreground">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {cast.length >= 2 ? (
+        <ActionLink icon={<Plus className="h-3.5 w-3.5" />} onClick={addRow}>
+          add relationship
+        </ActionLink>
+      ) : (
+        <p className="pv-serif text-[12.5px] italic text-[hsl(var(--pv-text-faint))]">Add at least two characters to define relationships.</p>
+      )}
+    </Panel>
   );
 }
 
@@ -355,6 +472,237 @@ function CastLook({ bookId, member, onUpdate }: { bookId: number; member: CastMe
       </div>
       <ImageLightbox src={lightbox} onClose={() => setLightbox(null)} />
     </div>
+  );
+}
+
+// ── F3a: World sub-step ───────────────────────────────────────────────────────
+// Edits foundations.world (setting, period, rules[]) with AI generation via ai-run foundations_options step="world".
+// The edge returns { world: WorldNode } — a single pre-built node (not a candidates list).
+function WorldSub({ bookId, world, onSave }: {
+  bookId: number;
+  world: WorldNode | undefined;
+  onSave: (w: WorldNode) => Promise<void> | void;
+}) {
+  const { toast } = useToast();
+  const [newRule, setNewRule] = useState("");
+
+  const { run, starting, start, accept, cancel } = useAIRun<{ world: WorldNode }>({
+    bookId,
+    kind: "foundations_options",
+    targetKey: "world",
+  });
+
+  const generate = () => void start({ step: "world" }).catch((e: unknown) => {
+    toast({ title: "Generation failed", description: String((e as Error)?.message ?? e), variant: "destructive" });
+  });
+
+  const applyWorld = async (result: { world: WorldNode }) => {
+    await onSave(result.world);
+  };
+
+  const update = (patch: Partial<WorldNode>) => void onSave({ ...(world ?? {}), ...patch });
+
+  const addRule = () => {
+    const r = newRule.trim();
+    if (!r) return;
+    setNewRule("");
+    update({ rules: [...(world?.rules ?? []), r] });
+  };
+
+  const removeRule = (i: number) =>
+    update({ rules: (world?.rules ?? []).filter((_, idx) => idx !== i) });
+
+  const updateRule = (i: number, v: string) =>
+    update({ rules: (world?.rules ?? []).map((r, idx) => (idx === i ? v : r)) });
+
+  const isEmpty = !world?.setting && !world?.period && !(world?.rules?.length);
+
+  return (
+    <div className="space-y-4">
+      {isEmpty && (
+        <p className="pv-serif text-[15px] italic leading-relaxed text-[hsl(var(--pv-text-faint))]">
+          No world defined yet.
+        </p>
+      )}
+
+      {/* AI generate button */}
+      {run?.status === "running" || run?.status === "pending" ? (
+        <RunningInline label="Generating world…" onCancel={() => void cancel()} className="py-1" />
+      ) : run?.status === "ready" ? (
+        <div className="space-y-2">
+          <p className="pv-serif text-[14px] italic text-[hsl(var(--pv-text-muted))]">World proposal ready — apply it or dismiss.</p>
+          <div className="flex items-center gap-3">
+            <ActionLink onClick={() => void accept(applyWorld)}>Apply world</ActionLink>
+            <ActionLink tone="faint" onClick={() => void cancel()}>Dismiss</ActionLink>
+          </div>
+        </div>
+      ) : run?.status === "error" ? (
+        <div>
+          <RunError msg={run.error} />
+          <ActionLink onClick={generate} className="mt-2">Retry</ActionLink>
+        </div>
+      ) : (
+        <ActionLink
+          icon={<Plus className="h-3.5 w-3.5" />}
+          busy={starting}
+          onClick={generate}
+        >
+          {isEmpty ? "Generate the world" : "Regenerate world"}
+        </ActionLink>
+      )}
+
+      {/* Manual editor */}
+      <Panel className="bg-[hsl(var(--pv-surface-2))]/40 space-y-3">
+        {/* Pin toggle */}
+        <div className="flex items-center justify-between gap-3">
+          <Eyebrow tone="muted">world / setting</Eyebrow>
+          <button
+            type="button"
+            title={world?.pinned ? "Pinned — click to unpin (AI may rewrite)" : "Pin this world — AI won't overwrite it"}
+            onClick={() => update({ pinned: !world?.pinned })}
+            className="flex items-center gap-1.5"
+          >
+            <Pin className={`h-3 w-3 ${world?.pinned ? "text-[hsl(var(--pv-accent))]" : "text-[hsl(var(--pv-text-faint))] opacity-40 hover:opacity-70"}`} />
+            {world?.pinned && <Eyebrow tone="accent">pinned</Eyebrow>}
+          </button>
+        </div>
+
+        {/* Setting */}
+        <div className="flex items-baseline gap-3">
+          <Eyebrow tone="faint" className="w-14 shrink-0">setting</Eyebrow>
+          <AutoTextarea
+            defaultValue={world?.setting ?? ""}
+            placeholder="Where (and what kind of place) the story lives — specific enough to paint a picture…"
+            onBlur={(e) => { const v = e.target.value.trim(); if (v !== (world?.setting ?? "")) update({ setting: v }); }}
+            className="pv-serif border-b border-transparent bg-transparent px-0 py-0 text-[14.5px] leading-relaxed text-foreground focus-visible:ring-0 placeholder:text-[hsl(var(--pv-text-faint))] hover:border-[hsl(var(--pv-border-soft))] transition-colors"
+          />
+        </div>
+
+        {/* Period */}
+        <div className="flex items-baseline gap-3">
+          <Eyebrow tone="faint" className="w-14 shrink-0">period</Eyebrow>
+          <AutoTextarea
+            defaultValue={world?.period ?? ""}
+            placeholder="When — era, season, moment in history, or 'contemporary'…"
+            onBlur={(e) => { const v = e.target.value.trim(); if (v !== (world?.period ?? "")) update({ period: v }); }}
+            className="pv-serif border-b border-transparent bg-transparent px-0 py-0 text-[14.5px] leading-relaxed text-foreground focus-visible:ring-0 placeholder:text-[hsl(var(--pv-text-faint))] hover:border-[hsl(var(--pv-border-soft))] transition-colors"
+          />
+        </div>
+
+        {/* Rules */}
+        <div>
+          <Eyebrow tone="faint" className="mb-2 block">rules — load-bearing constraints prose must never contradict</Eyebrow>
+          <div className="space-y-1.5">
+            {(world?.rules ?? []).map((rule, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <span className="pv-mono shrink-0 text-[10px] text-[hsl(var(--pv-text-faint))]">{i + 1}.</span>
+                <input
+                  defaultValue={rule}
+                  onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== rule) updateRule(i, v); }}
+                  className="pv-serif min-w-0 flex-1 border-b border-transparent bg-transparent py-0.5 text-[13.5px] text-foreground outline-none placeholder:text-[hsl(var(--pv-text-faint))] hover:border-[hsl(var(--pv-border-soft))] transition-colors"
+                />
+                <button type="button" onClick={() => removeRule(i)} className="shrink-0 text-[hsl(var(--pv-text-faint))] hover:text-foreground">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+          {/* Add rule inline */}
+          <div className="mt-2 flex items-center gap-2">
+            <input
+              value={newRule}
+              onChange={(e) => setNewRule(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addRule(); } }}
+              placeholder="Add a constraint — Enter to save…"
+              className="pv-serif min-w-0 flex-1 border-b border-[hsl(var(--pv-border-soft))] bg-transparent py-0.5 text-[13.5px] text-foreground outline-none placeholder:text-[hsl(var(--pv-text-faint))] focus:border-foreground/30 transition-colors"
+            />
+            <ActionLink icon={<Plus className="h-3.5 w-3.5" />} onClick={addRule} disabled={!newRule.trim()}>
+              add
+            </ActionLink>
+          </div>
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
+// ── F4a: Narration settings ───────────────────────────────────────────────────
+// Placed at the bottom of the Voice sub-step: narration defaults are a voice-level concern (same
+// step where the prose exemplar is set). Reads/writes foundations.narration via the parent's save().
+const PERSON_OPTIONS: Array<{ value: Narration["person"]; label: string; hint: string }> = [
+  { value: "first", label: "First person", hint: "I/me — intimate, limited" },
+  { value: "close-third", label: "Close third", hint: "She/he — deep single POV" },
+  { value: "omniscient", label: "Omniscient", hint: "God-view — multiple heads" },
+];
+const TENSE_OPTIONS: Array<{ value: Narration["tense"]; label: string }> = [
+  { value: "past", label: "Past" },
+  { value: "present", label: "Present" },
+];
+
+function NarrationSub({ narration, onSave }: { narration: Narration; onSave: (n: Narration) => Promise<void> | void }) {
+  const patch = (p: Partial<Narration>) => void onSave({ ...narration, ...p });
+
+  return (
+    <Panel className="bg-[hsl(var(--pv-surface-2))]/40">
+      <Eyebrow tone="muted">narration defaults</Eyebrow>
+      <p className="pv-serif mt-1 mb-3 text-[12.5px] italic text-[hsl(var(--pv-text-faint))]">
+        Book-level POV and tense — every page honors these unless overridden.
+      </p>
+
+      {/* Person */}
+      <div className="mb-3">
+        <Eyebrow tone="faint" className="mb-2 block">person</Eyebrow>
+        <div className="flex flex-wrap gap-2">
+          {PERSON_OPTIONS.map(({ value, label, hint }) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => patch({ person: narration.person === value ? undefined : value })}
+              className={`pv-serif rounded-full border px-3.5 py-1.5 text-[13.5px] transition-colors ${
+                narration.person === value
+                  ? "border-[hsl(var(--pv-accent))] bg-[hsl(var(--pv-accent))]/[0.08] text-[hsl(var(--pv-accent))]"
+                  : "border-border text-[hsl(var(--pv-text-muted))] hover:border-foreground/30"
+              }`}
+              title={hint}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Tense */}
+      <div className="mb-3">
+        <Eyebrow tone="faint" className="mb-2 block">tense</Eyebrow>
+        <div className="flex flex-wrap gap-2">
+          {TENSE_OPTIONS.map(({ value, label }) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => patch({ tense: narration.tense === value ? undefined : value })}
+              className={`pv-serif rounded-full border px-3.5 py-1.5 text-[13.5px] transition-colors ${
+                narration.tense === value
+                  ? "border-[hsl(var(--pv-accent))] bg-[hsl(var(--pv-accent))]/[0.08] text-[hsl(var(--pv-accent))]"
+                  : "border-border text-[hsl(var(--pv-text-muted))] hover:border-foreground/30"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Distance — optional free text */}
+      <div>
+        <Eyebrow tone="faint" className="mb-1.5 block">distance (optional)</Eyebrow>
+        <AutoTextarea
+          defaultValue={narration.distance ?? ""}
+          placeholder="e.g. 'deep interiority — thoughts bleed into prose' or 'detached observer, sparse interiority'…"
+          onBlur={(e) => { const v = e.target.value.trim(); if (v !== (narration.distance ?? "")) patch({ distance: v || undefined }); }}
+          className="pv-serif border-b border-transparent bg-transparent px-0 py-0 text-[14px] leading-relaxed text-foreground focus-visible:ring-0 placeholder:text-[hsl(var(--pv-text-faint))] hover:border-[hsl(var(--pv-border-soft))] transition-colors"
+        />
+      </div>
+    </Panel>
   );
 }
 

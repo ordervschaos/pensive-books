@@ -14,6 +14,7 @@ import { callClaude, textFromClaude, type CallMeta } from "./claude.ts";
 import { canonContext, type CanonPacket } from "./canon-core.ts";
 import { getActiveModels } from "./model-config.ts";
 import { readSteer, steerBlock } from "./steer.ts";
+import { type Foundations } from "./foundations-core.ts";
 
 
 export interface BeatParams {
@@ -30,12 +31,14 @@ export interface BeatParams {
   userId?: string | null;
 }
 
+// F2-c: include relationship_states so the beat prompt can surface current dyad charges.
+interface RelationshipStateLite { pair: string; charge: string; note?: string }
 interface PageLite {
   id: number;
   page_index: number;
   page_type: string | null;
   title: string | null;
-  metadata: { objective?: string; beat?: string } | null;
+  metadata: { objective?: string; beat?: string; relationship_states?: RelationshipStateLite[] } | null;
 }
 
 interface ThreadOnPage {
@@ -92,6 +95,34 @@ function threadsContext(threads: ThreadOnPage[]): string {
     .join("\n");
 }
 
+// F2-c: render a compact relationship-charges block for the beat prompt.
+// Source: the most recent prior page's relationship_states; falls back to foundations.relationships
+// baseline (stable bond descriptions with no runtime charge yet) if no page state exists.
+// The beat model uses this to target value-flips at specific bonds.
+function relationshipContext(
+  list: PageLite[],
+  current: PageLite,
+  foundations: Foundations | null,
+): string | null {
+  // Walk back to find the most recent prior page with relationship_states
+  const idx = list.findIndex((p) => p.id === current.id);
+  for (let i = idx - 1; i >= 0; i--) {
+    const rel = list[i].metadata?.relationship_states;
+    if (rel?.length) {
+      const lines = rel.map((r) => `- ${r.pair}: ${r.charge}${r.note ? ` (${r.note})` : ""}`);
+      return `RELATIONSHIP CHARGES (as of the previous page — a value-flip here can target one of these bonds):\n${lines.join("\n")}`;
+    }
+  }
+  // Fallback: foundations.relationships as baseline descriptors (no charge yet)
+  const base = foundations?.relationships ?? [];
+  if (!base.length) return null;
+  const lines = base.map((r) => {
+    const aName = r.a; const bName = r.b;
+    return `- ${aName} / ${bName}: ${r.bond}`;
+  });
+  return `RELATIONSHIP BASELINE (no runtime charges yet — these are the stable dyads; a value-flip here can target one):\n${lines.join("\n")}`;
+}
+
 // Everything one beat call needs, assembled once so objectiveToBeat (judged) and beatCandidates
 // (un-judged, for the serial human-pick UI) share byte-identical context.
 interface PreparedBeat {
@@ -109,7 +140,7 @@ async function prepareBeat(client: SupabaseClient, p: BeatParams): Promise<Prepa
   if (!obj) throw new Error("An objective is required to write a beat");
 
   const { data: book, error: bookError } = await client
-    .from("books").select("id, name, brief, spine, canon, steers").eq("id", p.bookId).single();
+    .from("books").select("id, name, brief, spine, canon, steers, foundations").eq("id", p.bookId).single();
   if (bookError || !book) throw new Error("Book not found");
 
   // Threads anchor to pages via book_thread_anchors (promise/resolution rows) since the anchors
@@ -136,8 +167,13 @@ async function prepareBeat(client: SupabaseClient, p: BeatParams): Promise<Prepa
 
   const spine = (book.spine as { text?: string } | null)?.text?.trim() || null;
   const canon = (book.canon as CanonPacket | null) ?? null;
+  // F2-c: foundations for relationship baseline fallback
+  const foundations = (book.foundations as Foundations | null) ?? null;
 
   const meta: CallMeta = { fn: "objective-to-beat", bookId: p.bookId, taskTable: p.log?.taskTable ?? null, taskId: p.log?.taskId ?? null, userId: p.userId ?? null };
+
+  // F2-c: surface current relationship charges so value-flips can target a specific bond.
+  const relCtx = current ? relationshipContext(list, current, foundations) : null;
 
   const userContent =
     `BOOK: ${book.name}\n\nBRIEF (the voice contract):\n${briefContext(book.brief as Brief | null, { scope: "full", success: true, none: "(no brief set — infer a sensible neutral voice)", empty: "(brief is empty — infer a sensible neutral voice)" })}` +
@@ -145,6 +181,7 @@ async function prepareBeat(client: SupabaseClient, p: BeatParams): Promise<Prepa
     (spine ? `\n\nBOOK SPINE (the throughline):\n${spine}` : "") +
     `\n\nOUTLINE (for continuity — the target page is marked):\n${outlineContext(list, p.pageId)}` +
     (prev ? `\n\nPREVIOUS BEAT (the page just before — connect to THIS by "therefore"/"but"; do not repeat it):\n"""\n${prev.beat}\n"""` : "\n\n(This is the first beat — set the story's engine running.)") +
+    (relCtx ? `\n\n${relCtx}` : "") +
     (onPage.length ? `\n\nTHREADS ON THIS PAGE (promises to manage here):\n${threadsContext(onPage)}` : "") +
     steerBlock(readSteer(book.steers, "beats")) +
     (p.prompt?.trim() ? `\n\nAUTHOR'S DIRECTION:\n${p.prompt.trim()}` : "") +

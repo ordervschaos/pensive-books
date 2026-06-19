@@ -71,6 +71,9 @@ export interface Delta {
 export type DeltaSync = "planned_only" | "in_sync" | "drifted" | "stale";
 export interface LintFlag { rule: string; severity: "warn" | "error"; message: string }
 
+// F2: mutable per-page relationship charge (stable dyad definitions live in Foundations.relationships)
+export interface RelationshipState { pair: string; charge: string; note?: string }
+
 // The full shape of pages.metadata — author-only page-progression state, never shown to readers. This
 // IS the object that dictates how the next page progresses (the next page reads the latest prior
 // character_states). The canonical copy is supabase/functions/_shared/page-state.ts (PageState); keep
@@ -88,6 +91,12 @@ export interface PageMeta {
   delta_sync?: DeltaSync;
   lint_flags?: LintFlag[];
   pinned?: boolean; // author touched objective+beat → regeneration must hold it
+  // F2: mutable relationship charges as of this page (extracted post-prose, like character_states)
+  relationship_states?: RelationshipState[];
+  // F3c: story-time stamp (when in the story's chronology this page falls)
+  time?: { when?: string; elapsed?: string };
+  // F4a: POV character name for this page (overrides book default from foundations.narration)
+  pov?: string;
 }
 
 /**

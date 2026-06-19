@@ -93,7 +93,7 @@ async function authorize(req, res, bookId) {
 
 async function fetchBook(bookId) {
   const r = await fetch(
-    `${SUPABASE_URL}/rest/v1/books?id=eq.${bookId}&select=name%2Cbrief%2Cbible%2Cspine%2Cfoundations%2Ccanon%2Csteers`,
+    `${SUPABASE_URL}/rest/v1/books?id=eq.${bookId}&select=name%2Cbrief%2Cbible%2Cspine%2Cfoundations%2Ccanon%2Csteers%2Ccraft_notes`,
     { headers: sbHeaders }
   );
   if (!r.ok) throw new Error(`Supabase ${r.status}: ${await r.text()}`);
@@ -191,6 +191,7 @@ async function runGeneration(bookId, fields, work) {
 }
 
 // Merge a summary into a page's metadata (preserving objective), via REST PATCH.
+// (legacy callers without time; new path uses bridgePersistSummary)
 async function persistSummary(pageId, summary) {
   const g = await fetch(`${SUPABASE_URL}/rest/v1/pages?id=eq.${pageId}&select=metadata`, { headers: sbHeaders });
   const cur = (await g.json())?.[0]?.metadata ?? {};
@@ -199,6 +200,177 @@ async function persistSummary(pageId, summary) {
     headers: { ...sbHeaders, "content-type": "application/json", Prefer: "return=minimal" },
     body: JSON.stringify({ metadata: { ...cur, summary } }),
   });
+}
+
+// F3c: persist summary AND story-time stamp (mirrors persistSummary in generate-unit-core.ts).
+async function bridgePersistSummary(pageId, summary, time) {
+  const g = await fetch(`${SUPABASE_URL}/rest/v1/pages?id=eq.${pageId}&select=metadata`, { headers: sbHeaders });
+  const cur = (await g.json())?.[0]?.metadata ?? {};
+  const metadata = { ...cur, summary };
+  if (time) metadata.time = time;
+  await fetch(`${SUPABASE_URL}/rest/v1/pages?id=eq.${pageId}`, {
+    method: "PATCH",
+    headers: { ...sbHeaders, "content-type": "application/json", Prefer: "return=minimal" },
+    body: JSON.stringify({ metadata }),
+  });
+}
+
+// F3c: summarize prose and extract story-time stamp — mirrors the generate-unit-core summarizer
+// which now returns { summary, time? } JSON envelope instead of a plain string.
+async function bridgeSummarize(prose, bookId) {
+  const systemPrompt = `Summarize this page of a book and extract any story-time cue.
+Output JSON ONLY (no prose, no fences):
+{"summary":"1-2 sentences: what happens and any new facts a later page needs","time":{"when":"time of day/story moment if clear","elapsed":"duration since story start if clear"}}
+Omit "time" or its sub-keys if they cannot be inferred from the prose. "summary" is required.`;
+  const s = await runClaude(`${systemPrompt}\n\n${prose.slice(0, 12000)}`, true, { fn: "summarize", bookId }, { noTools: true, model: MODEL_SUMMARY });
+  const raw = (s.text ?? "").trim();
+  if (!raw) return { summary: "" };
+  // Try JSON envelope first; fall back to treating the whole response as a plain summary.
+  try {
+    let json = raw;
+    const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (fence) json = fence[1].trim();
+    else { const f = raw.indexOf("{"), l = raw.lastIndexOf("}"); if (f !== -1 && l > f) json = raw.slice(f, l + 1); }
+    const parsed = JSON.parse(json);
+    const summary = typeof parsed.summary === "string" && parsed.summary.trim() ? parsed.summary.trim() : raw;
+    const timeRaw = parsed.time && typeof parsed.time === "object" ? parsed.time : null;
+    const when = typeof timeRaw?.when === "string" && timeRaw.when.trim() ? timeRaw.when.trim() : undefined;
+    const elapsed = typeof timeRaw?.elapsed === "string" && timeRaw.elapsed.trim() ? timeRaw.elapsed.trim() : undefined;
+    const time = (when || elapsed) ? { when, elapsed } : undefined;
+    return { summary, time };
+  } catch {
+    return { summary: raw };
+  }
+}
+
+// F2: extract character + relationship states from prose (one call, returns both).
+// Mirrors extractStates + parseExtractedStates in generate-unit-core.ts.
+async function bridgeMaybeExtractStates(bookId, pageId, prose) {
+  // Fetch the page list to find the prior snapshots.
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/pages?book_id=eq.${bookId}&archived=eq.false&select=id,page_index,metadata&order=page_index.asc`, { headers: sbHeaders });
+  const list = (await r.json()) ?? [];
+  const cur = list.find((p) => p.id === pageId);
+  if (!cur) return;
+
+  const priorCs = list.filter((p) => p.page_index < cur.page_index && (p.metadata?.character_states?.length ?? 0) > 0);
+  const priorRel = list.filter((p) => p.page_index < cur.page_index && (p.metadata?.relationship_states?.length ?? 0) > 0);
+  const priorChars = priorCs.at(-1)?.metadata?.character_states ?? [];
+  const priorRelStates = priorRel.at(-1)?.metadata?.relationship_states ?? [];
+
+  const priorCharsBlock = priorChars.length ? JSON.stringify(priorChars) : "(none yet — first page with characters)";
+  const priorRelBlock = priorRelStates.length ? JSON.stringify(priorRelStates) : "(none yet)";
+
+  const systemPrompt = `You track character and relationship state across a story for continuity. Given the PRIOR states and a NEW page of prose, output the UPDATED state of EVERY character AND EVERY relationship.
+Rules for characters: carry forward unchanged characters exactly; update knows/feels/has/believes for any the page affected; keep want and wound stable once set; add a character only if they clearly matter going forward. Be terse; omit empty fields.
+Rules for relationships: carry forward unchanged dyads exactly; update charge/note when the page clearly shifts a dyad; add a dyad only if the page establishes a significant bond. Use the pair format "Name A / Name B" consistently. Be terse.
+Output JSON ONLY (no prose, no fences):
+{"characters":[{"name":"","want":"","wound":"","believes":"","knows":[""],"feels":"","has":[""]}],"relationship_states":[{"pair":"Name A / Name B","charge":"","note":""}]}`;
+
+  const userContent = `PRIOR CHARACTER STATES:\n${priorCharsBlock}\n\nPRIOR RELATIONSHIP STATES:\n${priorRelBlock}\n\nNEW PAGE PROSE:\n${prose.slice(0, 12000)}\n\nOutput the updated states for every character and every relationship. JSON only.`;
+  const out = await runClaude(`${systemPrompt}\n\n${userContent}`, true, { fn: "extract-character-states", bookId }, { noTools: true, model: MODEL_SUMMARY });
+  const text = (out.text ?? "").trim();
+  if (!text) return;
+
+  // Parse the JSON envelope.
+  let parsed;
+  try {
+    let json = text;
+    const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (fence) json = fence[1].trim();
+    else { const f = text.indexOf("{"), l = text.lastIndexOf("}"); if (f !== -1 && l > f) json = text.slice(f, l + 1); }
+    parsed = JSON.parse(json);
+  } catch { return; }
+
+  const str = (v) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
+  const arr = (v) => { if (!Array.isArray(v)) return undefined; const o = v.map((x) => String(x ?? "").trim()).filter(Boolean); return o.length ? o : undefined; };
+  const characters = Array.isArray(parsed.characters)
+    ? parsed.characters.map((c) => ({ name: str(c.name) ?? "", want: str(c.want), wound: str(c.wound), believes: str(c.believes), knows: arr(c.knows), feels: str(c.feels), has: arr(c.has) })).filter((c) => c.name).slice(0, 24)
+    : [];
+  const relationship_states = Array.isArray(parsed.relationship_states)
+    ? parsed.relationship_states.map((r) => ({ pair: str(r.pair) ?? "", charge: str(r.charge) ?? "", note: str(r.note) })).filter((r) => r.pair && r.charge).slice(0, 32)
+    : [];
+
+  if (characters.length || relationship_states.length) {
+    const gp = await fetch(`${SUPABASE_URL}/rest/v1/pages?id=eq.${pageId}&select=metadata`, { headers: sbHeaders });
+    const existing = (await gp.json())?.[0]?.metadata ?? {};
+    const metadata = { ...existing };
+    if (characters.length) metadata.character_states = characters;
+    if (relationship_states.length) metadata.relationship_states = relationship_states;
+    await fetch(`${SUPABASE_URL}/rest/v1/pages?id=eq.${pageId}`, {
+      method: "PATCH",
+      headers: { ...sbHeaders, "content-type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify({ metadata }),
+    });
+  }
+
+  // F3b: fold world deltas from this page into books.bible.facts (best-effort).
+  await bridgeMaybeFoldWorldFacts(bookId, pageId).catch((e) => console.error("bridge: world-facts fold failed (non-fatal):", e.message));
+}
+
+// F3b: fold extracted_delta entries of type "world" from this page into books.bible.facts.
+// Mirrors maybeFoldWorldFacts in generate-unit-core.ts.
+async function bridgeMaybeFoldWorldFacts(bookId, pageId) {
+  const gp = await fetch(`${SUPABASE_URL}/rest/v1/pages?id=eq.${pageId}&select=page_index,metadata`, { headers: sbHeaders });
+  const pg = (await gp.json())?.[0];
+  if (!pg) return;
+  const worldDeltas = (pg.metadata?.extracted_delta ?? []).filter((d) => d.type === "world");
+  if (!worldDeltas.length) return;
+
+  const gb = await fetch(`${SUPABASE_URL}/rest/v1/books?id=eq.${bookId}&select=bible`, { headers: sbHeaders });
+  const bookRow = (await gb.json())?.[0];
+  const existingBible = (bookRow?.bible ?? {});
+  const existingFacts = Array.isArray(existingBible.facts) ? existingBible.facts : [];
+  const existingTexts = new Set(existingFacts.map((f) => f.fact.trim().toLowerCase()));
+  const newFacts = [];
+  for (const d of worldDeltas) {
+    const factText = d.to?.trim() || `${d.subject}: ${d.to}`.trim();
+    if (!factText || existingTexts.has(factText.toLowerCase())) continue;
+    existingTexts.add(factText.toLowerCase());
+    newFacts.push({ fact: factText, page_index: pg.page_index });
+  }
+  if (!newFacts.length) return;
+  await fetch(`${SUPABASE_URL}/rest/v1/books?id=eq.${bookId}`, {
+    method: "PATCH",
+    headers: { ...sbHeaders, "content-type": "application/json", Prefer: "return=minimal" },
+    body: JSON.stringify({ bible: { ...existingBible, facts: [...existingFacts, ...newFacts] } }),
+  });
+}
+
+// F3b: build open-loops block from book_thread_anchors (fixes the dropped flat-column bug).
+// Mirrors buildOpenLoops in generate-unit-core.ts.
+async function bridgeBuildOpenLoops(bookId, pages, current) {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/book_threads?book_id=eq.${bookId}&select=name,description,book_thread_anchors(page_id,role)`, { headers: sbHeaders });
+  if (!r.ok) return null;
+  const threads = (await r.json()) ?? [];
+  if (!threads.length) return null;
+
+  const pageIndexOf = (pid) => {
+    if (pid == null) return null;
+    const p = pages.find((x) => x.id === pid);
+    return p ? p.page_index : null;
+  };
+  const ci = current.page_index;
+  const lines = [];
+  for (const t of threads) {
+    const anchors = t.book_thread_anchors ?? [];
+    const desc = t.description ? ` — ${t.description}` : "";
+    if (anchors.some((a) => a.page_id === current.id && a.role === "promise")) {
+      lines.push(`- SEED "${t.name}"${desc}: plant this naturally; it pays off LATER, so do NOT resolve it here.`);
+      continue;
+    }
+    if (anchors.some((a) => a.page_id === current.id && a.role === "resolution")) {
+      lines.push(`- PAY OFF "${t.name}"${desc}: deliver this promise here; make it feel earned.`);
+      continue;
+    }
+    const promisePageId = anchors.find((a) => a.role === "promise")?.page_id ?? null;
+    const resolutionPageId = anchors.find((a) => a.role === "resolution")?.page_id ?? null;
+    const si = pageIndexOf(promisePageId);
+    const pi = pageIndexOf(resolutionPageId);
+    if (si != null && si < ci && (pi == null || pi > ci)) {
+      lines.push(`- WITHHOLD "${t.name}"${desc}: already in play; keep it alive but do NOT resolve it here.`);
+    }
+  }
+  return lines.length ? `OPEN LOOPS (promises in play on this page — manage them deliberately):\n${lines.join("\n")}` : null;
 }
 
 function tiptapToText(node) {
@@ -1190,17 +1362,42 @@ OUTPUT — reply in plain MARKDOWN. If — and ONLY if — proposing a change, a
 \`\`\`
 When talking or pressure-testing, append NO code block. "text" is the COMPLETE new spine. Never write beats or prose.`;
 
-const FOUNDATIONS_AGENT_INSTRUCTIONS = `You are the FOUNDATIONS EDITOR — a developmental editor in conversation with an author about their book's FOUNDATIONS: ARGUMENT (the claim), ENDING, CAST (want/wound/lie each), TENTPOLE MOMENTS, VOICE exemplar. The brief is the frozen contract — NEVER yours to touch. Spine, beats, prose are downstream — not your concern.
+const OUTLINE_AGENT_INSTRUCTIONS = `You are the OUTLINE EDITOR — a developmental editor in conversation with an author about their book's OUTLINE: the ordered structure of CHAPTERS (sections) and PAGES, and a clear OBJECTIVE for each page (what that page must accomplish for the story). The outline turns the spine into a page-by-page plan. BEATS and PROSE are downstream — NOT your concern: never write a beat or prose.
 
-You choose per message: TALK; PRESSURE-TEST (is the argument a real claim? does the ending pay its cost? does each cast want/wound/lie cohere into an arc? do tentpoles dramatize the argument? — name the weak link + highest-leverage fix); or PROPOSE A CHANGE — revise ARGUMENT/ENDING/VOICE text; revise/add CAST; revise/add/reorder TENTPOLES. PINNED lines and pinned cast fields are IMMUTABLE — never change or drop them.
+You can do these things, and you choose per message:
+1. TALK — answer, talk through structure, weigh a trade-off. Be specific; cite real pages by title.
+2. PRESSURE-TEST — when asked (or when honest): does the sequence realize the spine? does every page earn its place with a real objective? are the chapters shaped well? is anything missing (a setup, an escalation) or redundant? Name the weak link and the highest-leverage fix.
+3. GENERATE — when there is NO outline yet (or the author asks to draft / create one): UNLESS they've settled on a shape, FIRST offer 2–3 distinct structural shapes the outline could take (different chapter breaks / pacing on the SAME spine) as short prose sketches, NO json, and invite a pick. Once chosen (or asked outright), deliver the full outline plan.
+4. PROPOSE A CHANGE — when the author wants the outline drafted or changed (or you've agreed on a fix): produce an outline REVISION PLAN. You may add pages and chapters (sections), retarget objectives, delete redundant pages, and reorder. The author reviews and applies it — you mutate nothing.
 
-OUTPUT — reply in plain MARKDOWN. If — and ONLY if — proposing a change, append at the very END a single fenced \`\`\`json block (include ONLY changed keys), nothing after it:
+OUTPUT — reply to the author in plain MARKDOWN prose. If — and ONLY if — this message DELIVERS an outline plan to apply, append at the very END a single fenced \`\`\`json code block holding the plan, with nothing after it:
 \`\`\`json
-{ "summary": "<one line>", "argument": "...", "ending": "...", "voice": "...",
-  "cast": [ { "id": "<existing id, or omit for new>", "name": "...", "role": "protagonist|major|minor", "want": "...", "wound": "...", "lie": "..." } ],
-  "tentpoles": [ { "id": "<existing id, or omit for new>", "text": "...", "status": "pinned|fluid" } ] }
+{ "summary": "...", "pages": [ { "ref": <id|null>, "op": "keep|retarget|add", "pageType": "section|text", "title": "...", "objective": "...", "why": "..." } ], "deletes": [ { "ref": <id>, "why": "..." } ] }
 \`\`\`
-When talking or pressure-testing, append NO code block. If you send "cast" or "tentpoles", send the COMPLETE list — anything omitted is dropped, except pinned/killed items which always survive. Use existing [id]s to revise; omit id to add. Never touch the brief; never write spine, beats, or prose.`;
+When talking, pressure-testing, or merely OFFERING SHAPES to choose from, append NO code block.
+- PLAN RULES: use ONLY the real [id]s given; every existing page MUST appear in "pages" (with its ref) or in "deletes" — never drop one silently. "section" = chapter/part divider (no objective); "text" pages each need an OBJECTIVE. Reorder by placing entries in final order. Be surgical — "keep" what works. NEVER write a "beat" field, never write prose, never use a "revise" op. Honor pinned foundations and the spine.`;
+
+const FOUNDATIONS_AGENT_INSTRUCTIONS = `You are the FOUNDATIONS EDITOR — a developmental editor in conversation with an author about their book's FOUNDATIONS: the ARGUMENT (the claim the whole story argues), the ENDING, the CAST (each with want / wound / lie, plus an optional history, idiolect, and physical tag), the RELATIONSHIPS between cast members, the WORLD (setting / period / rules), the NARRATION mode (person / tense / distance), the TENTPOLE MOMENTS, and the VOICE exemplar. Foundations sit just under the brief — the brief is the frozen contract and is NEVER yours to touch. The spine, beats, and prose are downstream — not your concern.
+
+You can do these things, and you choose per message:
+1. TALK — answer, talk through an idea, weigh a trade-off. Be specific.
+2. PRESSURE-TEST — test the foundations' integrity: is the argument a real claim (not a topic)? does the ending pay the argument's cost? does each cast member's want/wound/lie cohere and drive an arc? do the tentpoles dramatize the argument? Name the weak link and the highest-leverage fix.
+3. GENERATE — when the foundations are largely EMPTY (or the author asks to draft / create / explore them): UNLESS the author has already settled on a direction, FIRST offer 2–3 DISTINCT directions the foundations could take — each a different ARGUMENT and the ending, cast shape, and signature moments it implies — as short prose sketches (numbered), with NO json block, and invite the author to pick or blend. Only once the author has chosen (or asked outright for the full draft) do you deliver the complete foundations (as in PROPOSE).
+4. PROPOSE A CHANGE — when the author wants foundations drafted or changed (or you've agreed on a fix / they've picked a direction). You may set/revise the ARGUMENT, ENDING, and VOICE text; add/revise CAST members (including each one's history, idiolect, and physical tag); add/revise the RELATIONSHIPS between them; set/revise the WORLD (setting, period, rules); set/revise the NARRATION mode (person: first/close-third/omniscient, tense: past/present, and an optional distance note); and add/revise/reorder TENTPOLE moments. PINNED lines, pinned cast fields, pinned relationships, a pinned world, and a pinned narration are IMMUTABLE — never change or drop them. Honor the brief.
+
+OUTPUT — reply to the author in plain MARKDOWN. If — and ONLY if — this message DELIVERS foundations to apply (a fresh draft or a revision), append at the very END a single fenced \`\`\`json code block, with nothing after it. Include ONLY the keys you are setting (a fresh draft sets all of them):
+\`\`\`json
+{ "summary": "<one line: what changed and why>",
+  "argument": "<~2 sentence claim>",
+  "ending": "<the ending, concrete>",
+  "voice": "<the voice exemplar prose>",
+  "cast": [ { "id": "<existing id, or omit for a new member>", "name": "...", "role": "protagonist|major|minor", "want": "...", "wound": "...", "lie": "...", "history": "<formative backstory that colors how they speak & what they notice>", "idiolect": "<how they speak — diction, tics, register>", "tag": "<a trackable physical or gesture marker>" } ],
+  "relationships": [ { "id": "<existing id, or omit for new>", "a": "<cast id or exact name>", "b": "<cast id or exact name>", "bond": "<the charge between them, one line>" } ],
+  "world": { "setting": "...", "period": "...", "rules": ["<a load-bearing constraint prose must respect>", "..."] },
+  "narration": { "person": "first|close-third|omniscient", "tense": "past|present", "distance": "<optional one-line note on psychic distance>" },
+  "tentpoles": [ { "id": "<existing id, or omit for new>", "text": "<the moment>", "status": "pinned|fluid" } ] }
+\`\`\`
+When talking or pressure-testing, append NO code block. If you send "cast", "tentpoles", or "relationships", send the COMPLETE list (every item that should remain) — anything omitted is dropped, except pinned/killed items which always survive. Use existing [id]s to revise an item; omit id to add. history/idiolect/tag are optional and not pinnable — set them freely. For a relationship to a brand-new member, reference that member by their exact name in "a"/"b". Never touch the brief; never write spine, beats, or prose.`;
 
 // Port of _shared/revision-chat.ts sanitizeFoundations — pin-honoring merge of a proposed patch.
 function sanitizeFoundationsPatch(parsed, f) {
@@ -1226,6 +1423,11 @@ function sanitizeFoundationsPatch(parsed, f) {
         pinned_fields: pf,
         ...(prior?.appearance ? { appearance: prior.appearance } : {}),
         ...(prior?.portraits ? { portraits: prior.portraits } : {}),
+        // F1: per-character voice/history — take the PROPOSED value, else keep the stored one. These
+        // aren't pinnable, so the chat may freely revise them; a missing key preserves the prior value.
+        ...(trim(raw.history) || prior?.history ? { history: trim(raw.history) || prior?.history } : {}),
+        ...(trim(raw.idiolect) || prior?.idiolect ? { idiolect: trim(raw.idiolect) || prior?.idiolect } : {}),
+        ...(trim(raw.tag) || prior?.tag ? { tag: trim(raw.tag) || prior?.tag } : {}),
       });
       if (prior) used.add(prior.id);
     }
@@ -1251,6 +1453,73 @@ function sanitizeFoundationsPatch(parsed, f) {
     for (const t of f.tentpoles ?? []) if (!used.has(t.id) && (t.status === "pinned" || t.status === "killed")) out.push(t);
     if (out.length) patch.tentpoles = out;
   }
+
+  // F2: relationships — carry the stored list through; a patch that doesn't touch relationships
+  // must not drop them. Pinned relationships survive unchanged (model can add/update non-pinned).
+  if (Array.isArray(parsed.relationships)) {
+    // a/b may be a cast id OR a member name (the model often references a brand-new member by name
+    // before it has an id). Resolve against the POST-PATCH cast so new members are reachable.
+    const finalCast = patch.cast ?? f.cast ?? [];
+    const castIds = new Set(finalCast.map((c) => c.id));
+    const nameToId = new Map(finalCast.map((c) => [c.name.toLowerCase(), c.id]));
+    const resolveRef = (v) => (castIds.has(v) ? v : nameToId.get(v.toLowerCase()) ?? "");
+    const existingRel = new Map((f.relationships ?? []).map((r) => [r.id, r]));
+    const outRel = []; const usedRel = new Set();
+    for (const raw of parsed.relationships) {
+      const id = typeof raw.id === "string" ? raw.id : "";
+      const prior = id ? existingRel.get(id) : undefined;
+      // Pinned relationships are immutable — restore verbatim.
+      if (prior?.pinned) { outRel.push(prior); usedRel.add(prior.id); continue; }
+      const bond = trim(raw.bond);
+      const a = resolveRef(trim(raw.a)); const b = resolveRef(trim(raw.b));
+      if (!bond || !a || !b) continue;
+      outRel.push({ id: prior?.id ?? bridgeUid(), a, b, bond, ...(raw.pinned === true ? { pinned: true } : {}) });
+      if (prior) usedRel.add(prior.id);
+    }
+    // Pinned relationships the model omitted survive untouched.
+    for (const r of f.relationships ?? []) if (!usedRel.has(r.id) && r.pinned) outRel.push(r);
+    if (outRel.length) patch.relationships = outRel;
+  } else if (f.relationships?.length) {
+    // Model didn't touch relationships — carry the whole stored list through unchanged.
+    patch.relationships = f.relationships;
+  }
+
+  // F3a: world — carry the stored node through; honor its pinned flag (immutable when pinned).
+  if (parsed.world && typeof parsed.world === "object" && !Array.isArray(parsed.world)) {
+    const raw = parsed.world;
+    if (f.world?.pinned) {
+      // World is pinned — ignore any proposed change, keep the stored node.
+      patch.world = f.world;
+    } else {
+      const setting = trim(raw.setting) || f.world?.setting;
+      const period = trim(raw.period) || f.world?.period;
+      const rules = Array.isArray(raw.rules)
+        ? raw.rules.map(String).filter(Boolean)
+        : f.world?.rules;
+      const pinned = raw.pinned === true ? true : f.world?.pinned;
+      patch.world = { ...(setting ? { setting } : {}), ...(period ? { period } : {}), ...(rules?.length ? { rules } : {}), ...(pinned ? { pinned } : {}) };
+    }
+  } else if (f.world) {
+    // Model didn't touch world — carry the stored node through unchanged.
+    patch.world = f.world;
+  }
+
+  // F4a: narration — accept a proposed mode unless pinned; otherwise carry the stored node through.
+  if (parsed.narration && typeof parsed.narration === "object" && !Array.isArray(parsed.narration)) {
+    const raw = parsed.narration;
+    if (f.narration?.pinned) {
+      patch.narration = f.narration;
+    } else {
+      const person = raw.person === "first" || raw.person === "close-third" || raw.person === "omniscient" ? raw.person : f.narration?.person;
+      const tense = raw.tense === "past" || raw.tense === "present" ? raw.tense : f.narration?.tense;
+      const distance = trim(raw.distance) || f.narration?.distance;
+      const pinned = raw.pinned === true ? true : f.narration?.pinned;
+      patch.narration = { ...(person ? { person } : {}), ...(tense ? { tense } : {}), ...(distance ? { distance } : {}), ...(pinned ? { pinned } : {}) };
+    }
+  } else if (f.narration) {
+    patch.narration = f.narration;
+  }
+
   return Object.keys(patch).length ? patch : null;
 }
 
@@ -1276,7 +1545,7 @@ async function upsertRevisionChat(bookId, layer, existingId, patch) {
 async function runReviseChat(bookId, layer, message) {
   const msg = (message ?? "").trim();
   if (!msg) return { error: "message is required" };
-  if (!["foundations", "spine", "beats"].includes(layer)) return { error: "a valid layer is required" };
+  if (!["foundations", "spine", "beats", "outline"].includes(layer)) return { error: "a valid layer is required" };
   const book = await fetchBook(bookId);
   if (!book) return { error: "Book not found" };
 
@@ -1324,10 +1593,19 @@ async function runReviseChat(bookId, layer, message) {
         (f ? `\n\nFOUNDATIONS (settled — pinned lines immutable; every pinned tentpole MUST survive in the spine):\n${foundationsContext(f)}` : "") +
         `\n\nCURRENT SPINE:\n${spineText || "(no spine yet)"}`;
       sanitize = (parsed) => { const t = (typeof parsed.text === "string" ? parsed.text.trim() : ""); return t ? { layer: "spine", data: { text: t } } : null; };
+    } else if (layer === "outline") {
+      const pages = await fetchPages(bookId);
+      system = OUTLINE_AGENT_INSTRUCTIONS;
+      context =
+        `BOOK: ${book.name}\n\nBRIEF (the voice contract):\n${briefContext(book.brief)}` +
+        (spineText ? `\n\nSPINE (the book in one arc — the outline must realize this):\n${spineText}` : "") +
+        (f ? `\n\nFOUNDATIONS (settled — pinned lines are immutable):\n${foundationsContext(f)}` : "") +
+        `\n\nCURRENT OUTLINE (real page ids):\n${outlineContext(pages)}`;
+      sanitize = (parsed) => { const plan = parseBeatPlan(JSON.stringify(parsed), pages); return plan && !plan.error ? { layer: "outline", data: plan } : null; };
     } else {
       const ff = f ?? {};
       const castIds = ff.cast?.length
-        ? ff.cast.map((c) => { const pf = c.pinned_fields ?? []; const fld = (k) => (c[k] ? `\n    ${k}: ${c[k]}${pf.includes(k) ? " [PINNED — immutable]" : ""}` : ""); return `[id=${c.id}] ${c.name} (${c.role ?? "major"})${fld("want")}${fld("wound")}${fld("lie")}`; }).join("\n")
+        ? ff.cast.map((c) => { const pf = c.pinned_fields ?? []; const fld = (k) => (c[k] ? `\n    ${k}: ${c[k]}${pf.includes(k) ? " [PINNED — immutable]" : ""}` : ""); const extra = (k) => (c[k] ? `\n    ${k}: ${c[k]}` : ""); return `[id=${c.id}] ${c.name} (${c.role ?? "major"})${fld("want")}${fld("wound")}${fld("lie")}${extra("history")}${extra("idiolect")}${extra("tag")}`; }).join("\n")
         : "(no cast yet)";
       system = FOUNDATIONS_AGENT_INSTRUCTIONS;
       context =
@@ -1352,7 +1630,7 @@ async function runReviseChat(bookId, layer, message) {
         if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
           const patch = sanitize(parsed);
           if (patch) {
-            const summary = (typeof parsed.summary === "string" && parsed.summary.trim()) ? parsed.summary.trim() : (patch.layer === "beats" ? patch.data.summary : "Proposed revision");
+            const summary = (typeof parsed.summary === "string" && parsed.summary.trim()) ? parsed.summary.trim() : ((patch.layer === "beats" || patch.layer === "outline") ? patch.data.summary : "Proposed revision");
             proposal = { summary, patch };
             reply = out.text.slice(0, m.index).trim() || "Here's a proposed revision — review it below.";
           }
@@ -1378,11 +1656,17 @@ async function runReviseChat(bookId, layer, message) {
 // page does), in book context. No mutation — the client writes metadata.beat + stamps the edge.
 const BEAT_INSTRUCTIONS = `You are a book architect writing a BEAT — a single paragraph that plans, in concrete order, what ONE page of the book does to fulfil its objective. A beat sits between the OBJECTIVE (what the page must achieve) and the PROSE (the actual words): it commits to the specific moves, turns, and images — the "how" — without writing the page itself.
 
+A beat is where the story's ENGINE lives. Weave these into the paragraph (as flowing plan-prose, never a bullet list):
+- CAUSALITY: connect to the PREVIOUS beat with "therefore" or "but" — this page happens BECAUSE of, or pushes AGAINST, what just happened. Never "and then" (events that merely follow in time). If there is no previous beat, set the engine running: open a want and an obstacle.
+- A VALUE FLIP: one thing that matters here (safety, trust, hope, control, intimacy, power…) shifts from + to − or − to + across the page. Make clear what flips and which way.
+- SUBTEXT: at least one moment where what a character SAYS is not what they MEAN — a said-vs-meant gap the reader feels.
+- A CONCRETE IMAGE: one specific sensory anchor — an object, a gesture, a detail of place — that the page turns on, not an abstraction.
+- THREADS: if told to SEED a thread, plant it so it reads as natural now but lands later; if told to PAY OFF a thread, deliver the promise so it feels earned.
+
 Rules:
-- Output ONE paragraph (3–6 sentences). No title, no heading, no preamble, no markdown, no meta commentary — just the beat.
+- Output ONE paragraph (3–6 sentences). No title, no heading, no preamble, no markdown, no bullet list, no meta commentary — just the beat.
 - It is a PLAN, not prose: say what happens and in what order; do NOT write the page's actual sentences or dialogue.
-- Fulfil the page's objective exactly. Honour the book's brief (genre, audience, tone, premise) and the book spine as the voice/throughline contract.
-- Keep continuity: lead from what the preceding pages set up, don't repeat a neighbouring page's beat, and set up what follows.`;
+- Fulfil the page's objective exactly. Honour the brief (genre, audience, tone, premise) and the spine as the voice/throughline contract.`;
 
 async function runObjectiveToBeat(body) {
   const { bookId, pageId, objective } = body;
@@ -1394,6 +1678,32 @@ async function runObjectiveToBeat(body) {
   if (!book) return { error: "Book not found" };
   const pages = await fetchPages(bookId);
   const spine = book.spine?.text?.trim() || null;
+  const foundations = book.foundations ?? null;
+
+  // F2-c: build relationship context for the beat prompt.
+  // Walk back to find the most recent prior page with relationship_states; fall back to
+  // foundations.relationships as baseline descriptors if no page state exists yet.
+  const current = pages.find((p) => p.id === pageId) ?? null;
+  let relCtxBlock = null;
+  if (current) {
+    const priorRel = pages.filter((p) => p.page_index < current.page_index && (p.metadata?.relationship_states?.length ?? 0) > 0);
+    const latestRel = priorRel.at(-1)?.metadata?.relationship_states;
+    if (latestRel?.length) {
+      const lines = latestRel.map((r) => `- ${r.pair}: ${r.charge}${r.note ? ` (${r.note})` : ""}`);
+      relCtxBlock = `RELATIONSHIP CHARGES (as of the previous page — a value-flip here can target one of these bonds):\n${lines.join("\n")}`;
+    } else {
+      const base = foundations?.relationships ?? [];
+      if (base.length) {
+        const castMap = new Map((foundations?.cast ?? []).map((c) => [c.id, c.name]));
+        const lines = base.map((r) => {
+          const aName = castMap.get(r.a) ?? r.a;
+          const bName = castMap.get(r.b) ?? r.b;
+          return `- ${aName} / ${bName}: ${r.bond}`;
+        });
+        relCtxBlock = `RELATIONSHIP BASELINE (no runtime charges yet — these are the stable dyads; a value-flip here can target one):\n${lines.join("\n")}`;
+      }
+    }
+  }
 
   const prompt = `${BEAT_INSTRUCTIONS}
 
@@ -1403,7 +1713,7 @@ BRIEF (the voice contract):
 ${briefContext(book.brief)}${canonSection(book.canon)}${spine ? `\n\nBOOK SPINE (the throughline):\n${spine}` : ""}
 
 OUTLINE (for continuity):
-${outlineContext(pages)}
+${outlineContext(pages)}${relCtxBlock ? `\n\n${relCtxBlock}` : ""}
 
 THIS PAGE'S OBJECTIVE:
 ${obj}
@@ -2059,10 +2369,28 @@ Output JSON ONLY:
 
 Output JSON ONLY:
 { "candidates": [{ "text": "<the ending>" }, …] }`,
-  cast: `You are a book architect drafting the core CAST: the protagonist and up to 2 major characters. For each: a name, then three labeled lines — want (external goal), wound (the unhealed injury driving them), lie (the false belief the arc will break). Honor any PINNED cast lines verbatim and never contradict them; if existing characters are given, keep their names/ids and only fill their empty fields, plus add missing majors.
+  cast: `You are a book architect proposing three complete CAST CONFIGURATIONS for this story. Each configuration stands alone: one protagonist and one or two major characters, each with want (external goal), wound (the unhealed injury driving them), and lie (the false belief the arc will break). Across the three options vary the protagonist's core wound and lie — each should represent a genuinely different human story pulled from different tensions in the brief. The major characters in each option should serve that specific protagonist's arc.
+
+For each character also include:
+- history: 1–2 sentence formative backstory that explains how they got their wound/lie
+- idiolect: one line describing how they speak — diction, verbal tics, register (e.g. "speaks in short declaratives, never asks questions, drops g's")
+- tag: one trackable physical or gesture marker (e.g. "always straightens objects on any surface near her")
+
+For each proposal also include a "relationships" array capturing the key dyads among that proposal's members: { "a": "<member name>", "b": "<member name>", "bond": "<one line describing the relationship charge>" }.
 
 Output JSON ONLY:
-{ "candidates": [{ "name": "…", "role": "protagonist" | "major", "want": "…", "wound": "…", "lie": "…" }, …] }`,
+{ "proposals": [{ "label": "Option A", "members": [{ "name": "…", "role": "protagonist" | "major", "want": "…", "wound": "…", "lie": "…", "history": "…", "idiolect": "…", "tag": "…" }, …], "relationships": [{ "a": "…", "b": "…", "bond": "…" }, …] }, { "label": "Option B", "members": […], "relationships": […] }, { "label": "Option C", "members": […], "relationships": […] }] }`,
+
+  world: `You are a book architect proposing the WORLD/SETTING for this story — a pinned, concrete artifact that all subsequent prose must stay consistent with. Ground every detail in the brief and the settled foundations; do not invent genre or setting that contradicts them. For non-genre stories, rules can be social, economic, or institutional constraints rather than magic or physics.
+
+Propose exactly one world definition with:
+- setting: where (and what kind of place) the story lives — specific enough to paint a picture
+- period: when (era, season, moment in history, or "contemporary")
+- rules: 3–5 load-bearing constraints of this story-world — the things prose must never contradict (physical laws if genre, social hierarchies, economic realities, institutional rules, etc.)
+
+Output JSON ONLY:
+{ "world": { "setting": "…", "period": "…", "rules": ["…", "…", "…"] } }`,
+
   tentpoles: `You are a book architect proposing TENTPOLE MOMENTS — vivid, concrete scenes the author can already see (1–3 sentences each, a moment not a summary). Generate exactly 6 proposals, spread across the book's whole arc, consistent with the settled argument/ending/cast. Never duplicate an existing tentpole; never resemble a killed direction.
 
 Output JSON ONLY:
@@ -2098,15 +2426,46 @@ function foundationsContext(f) {
     const cast = f.cast.map((c) => {
       const pf = c.pinned_fields ?? [];
       const line = (k) => (c[k] ? `  ${k}: ${c[k]}${pf.includes(k) ? " [PINNED]" : ""}` : null);
-      return [`- ${c.name} (${c.role ?? "major"})`, line("want"), line("wound"), line("lie")].filter(Boolean).join("\n");
+      const parts = [`- ${c.name} (${c.role ?? "major"})`, line("want"), line("wound"), line("lie")];
+      if (c.history) parts.push(`  history: ${c.history}`);
+      if (c.idiolect) parts.push(`  idiolect: ${c.idiolect}`);
+      if (c.tag) parts.push(`  tag: ${c.tag}`);
+      return parts.filter(Boolean).join("\n");
     }).join("\n");
     lines.push(`CAST (pinned lines are immutable):\n${cast}`);
+  }
+  // F2: render RELATIONSHIPS block (resolve a/b ids→names via cast map)
+  if (f.relationships?.length) {
+    const castMap = new Map((f.cast ?? []).map((c) => [c.id, c.name]));
+    const rels = f.relationships.map((r) => {
+      const nameA = castMap.get(r.a) ?? r.a;
+      const nameB = castMap.get(r.b) ?? r.b;
+      return `- ${nameA} ↔ ${nameB}: ${r.bond}${r.pinned ? " [PINNED]" : ""}`;
+    }).join("\n");
+    lines.push(`RELATIONSHIPS (pinned lines are immutable):\n${rels}`);
+  }
+  // F3a: render WORLD block
+  if (f.world && (f.world.setting || f.world.period || (f.world.rules?.length))) {
+    const pinSuffix = f.world.pinned ? " [PINNED]" : "";
+    const worldLines = [];
+    if (f.world.setting) worldLines.push(`setting: ${f.world.setting}${pinSuffix}`);
+    if (f.world.period) worldLines.push(`period: ${f.world.period}${pinSuffix}`);
+    if (f.world.rules?.length) {
+      f.world.rules.forEach((rule) => worldLines.push(`rule: ${rule}${pinSuffix}`));
+    }
+    lines.push(`WORLD (pinned lines are immutable):\n${worldLines.join("\n")}`);
   }
   const live = (f.tentpoles ?? []).filter((t) => t.status !== "killed");
   const killed = (f.tentpoles ?? []).filter((t) => t.status === "killed");
   if (live.length) lines.push(`TENTPOLE MOMENTS (id · status · text — pinned ones MUST survive into any structure):\n${live.map((t) => `- [${t.id}] (${t.status}) ${t.text}`).join("\n")}`);
   if (killed.length) lines.push(`KILLED DIRECTIONS (the author rejected these — do NOT propose anything like them):\n${killed.map((t) => `- ${t.text}`).join("\n")}`);
   node("VOICE EXEMPLAR", f.voice_exemplar);
+  // F4a: NARRATION block — mirrors settledContext in foundations-core.ts
+  if (f.narration && (f.narration.person || f.narration.tense || f.narration.distance)) {
+    const n = f.narration;
+    const bits = [n.person, n.tense ? `${n.tense} tense` : null, n.distance].filter(Boolean);
+    if (bits.length) lines.push(`NARRATION (the book's default narrative mode)${n.pinned ? " [PINNED]" : ""}:\n${bits.join(", ")}`);
+  }
   return lines.length ? lines.join("\n\n") : "(nothing settled yet)";
 }
 
@@ -2193,23 +2552,71 @@ async function runFoundationsOptions(body) {
     if (!moment) return { error: "Add at least one tentpole moment first." };
     stepInput = `\n\nTENTPOLE MOMENT TO RENDER:\n${moment.text}`;
   }
+  if (body.prompt?.trim()) {
+    stepInput += `\n\nAUTHOR'S DIRECTION:\n${body.prompt.trim()}`;
+  }
 
   const prompt = `${FOUNDATIONS_STEP_SYSTEM[step]}${book.canon && step === "cast" ? CAST_SEQUEL_ADDENDUM : ""}\n\nBOOK: ${book.name}\n\nBRIEF:\n${briefContext(book.brief)}${canonSection(book.canon)}\n\nSETTLED FOUNDATIONS SO FAR:\n${foundationsContext(f)}${stepInput}\n\nGenerate the candidates. JSON only.`;
   const out = await runClaude(prompt, true, { fn: `foundations-${step}`, bookId }, { noTools: true, model: MODEL_PLANNING });
   if (out.error) return out;
   try {
     const raw = parseLooseJson(out.text);
+
+    // F3a: world step returns a single { world } node directly (not a candidates list).
+    if (step === "world") {
+      const w = raw.world ?? {};
+      const world = {
+        ...(w.setting ? { setting: String(w.setting).trim() } : {}),
+        ...(w.period ? { period: String(w.period).trim() } : {}),
+        ...(Array.isArray(w.rules) && w.rules.length ? { rules: w.rules.map((r) => String(r).trim()).filter(Boolean) } : {}),
+      };
+      if (!world.setting && !world.period && !world.rules?.length) return { error: "Claude returned an empty world node." };
+      return { world };
+    }
+
+    // F1+F2: cast step returns { proposals } — 3 complete cast configs, not a flat candidates list.
+    if (step === "cast") {
+      const rawProposals = Array.isArray(raw.proposals) ? raw.proposals : [];
+      if (rawProposals.length === 0) return { error: "No cast proposals returned" };
+      const proposals = rawProposals.map((prop) => {
+        const members = (Array.isArray(prop.members) ? prop.members : []).map((c) => ({
+          id: bridgeUid(),
+          name: String(c.name ?? "").trim(),
+          role: c.role === "protagonist" ? "protagonist" : "major",
+          want: String(c.want ?? "").trim(),
+          wound: String(c.wound ?? "").trim(),
+          lie: String(c.lie ?? "").trim(),
+          pinned_fields: [],
+          ...(c.history ? { history: String(c.history).trim() } : {}),
+          ...(c.idiolect ? { idiolect: String(c.idiolect).trim() } : {}),
+          ...(c.tag ? { tag: String(c.tag).trim() } : {}),
+        })).filter((c) => c.name);
+        // Resolve relationship name references → freshly-assigned member ids; drop unresolvable.
+        const nameToId = new Map(members.map((m) => [m.name.toLowerCase(), m.id]));
+        const relationships = (Array.isArray(prop.relationships) ? prop.relationships : [])
+          .map((r) => {
+            const aId = nameToId.get(String(r.a ?? "").trim().toLowerCase());
+            const bId = nameToId.get(String(r.b ?? "").trim().toLowerCase());
+            if (!aId || !bId) return null;
+            const bond = String(r.bond ?? "").trim();
+            if (!bond) return null;
+            return { id: bridgeUid(), a: aId, b: bId, bond };
+          })
+          .filter(Boolean);
+        return {
+          label: String(prop.label ?? "").trim() || "Option",
+          members,
+          ...(relationships.length ? { relationships } : {}),
+        };
+      }).filter((p) => p.members.length > 0);
+      if (proposals.length === 0) return { error: "Claude returned no cast proposals." };
+      return { proposals };
+    }
+
     const arr = Array.isArray(raw.candidates) ? raw.candidates : [];
     if (arr.length === 0) return { error: "No candidates returned" };
     let candidates;
-    if (step === "cast") {
-      candidates = arr.map((c) => ({
-        id: bridgeUid(), name: String(c.name ?? "").trim(),
-        role: c.role === "protagonist" ? "protagonist" : "major",
-        want: String(c.want ?? "").trim(), wound: String(c.wound ?? "").trim(), lie: String(c.lie ?? "").trim(),
-        pinned_fields: [],
-      })).filter((c) => c.name);
-    } else if (step === "tentpoles") {
+    if (step === "tentpoles") {
       candidates = arr.map((c) => ({ id: bridgeUid(), text: String(c.text ?? "").trim(), source: "ai", status: "fluid" })).filter((c) => c.text);
     } else {
       candidates = arr.map((c) => ({
@@ -2279,8 +2686,13 @@ async function aiRunWorker(kind, params, bookId) {
       return { text: fail(await runReviseNode({ bookId, ...params })).text };
     case "beat_candidates":
       return { options: fail(await runObjectiveToBeat({ bookId, pageId: params.pageId, objective: params.objective, candidates: 3 })).candidates };
-    case "foundations_options":
-      return { candidates: fail(await runFoundationsOptions({ bookId, step: params.step })).candidates };
+    case "foundations_options": {
+      const fo = fail(await runFoundationsOptions({ bookId, step: params.step, prompt: params.prompt }));
+      // cast returns { proposals }, world returns { world }, others return { candidates }
+      if (fo.proposals) return { proposals: fo.proposals };
+      if (fo.world) return { world: fo.world };
+      return { candidates: fo.candidates };
+    }
     case "spine_routes":
       return { routes: fail(await runSpineRoutes({ bookId, avoid: params.avoid })).routes };
     default:
@@ -2431,9 +2843,14 @@ async function runUnit(body) {
 
   const book = await fetchBook(bookId);
   if (!book) return { error: "Book not found" };
-  const bible = book.bible?.text?.trim() || null;
-  const voiceSample = book.bible?.voice_sample?.trim() || null;
+  // Voice: foundations.voice_exemplar is canonical; bible.voice_sample is a legacy read-fallback only.
+  const voiceSample = book.foundations?.voice_exemplar?.text?.trim() || book.bible?.voice_sample?.trim() || null;
   const steerText = typeof book.steers?.prose === "string" ? book.steers.prose.trim() : "";
+  const foundations = book.foundations ?? null;
+  // F4a: prose-layer craft note from books.craft_notes
+  const craftNoteProse = book.craft_notes?.["prose"] ?? book.craft_notes?.["foundations"] ?? null;
+  // F4a: book-level narration defaults — now from books.foundations.narration (bible.narration is legacy).
+  const narration = book.foundations?.narration ?? null;
 
   // Context (mirrors buildUnitContext in the edge function).
   const pages = await fetchPages(bookId);
@@ -2467,6 +2884,90 @@ async function runUnit(body) {
     precedingProse = chunks.length ? chunks.join("\n\n") : null;
   }
 
+  // F2: character and relationship states from the most-recent prior page that carries them.
+  let characterStates = null, relationshipStates = null;
+  if (level === "page" && current) {
+    const priorCs = pages.filter((p) => p.page_index < current.page_index && (p.metadata?.character_states?.length ?? 0) > 0);
+    const latestCs = priorCs.at(-1)?.metadata?.character_states;
+    if (latestCs?.length) {
+      const lines = latestCs.map((c) => {
+        const arc = [c.want && `wants ${c.want}`, c.wound && `wound: ${c.wound}`].filter(Boolean).join("; ");
+        const now = [c.knows?.length ? `knows ${c.knows.join("; ")}` : "", c.feels ? `feels ${c.feels}` : "", c.has?.length ? `has ${c.has.join("; ")}` : "", c.believes ? `believes ${c.believes}` : ""].filter(Boolean).join(", ");
+        return `- ${c.name}${arc ? ` (${arc})` : ""}: ${now || "—"}`;
+      });
+      characterStates = `CHARACTER STATES (as of the previous page — keep each character consistent with what they currently know, feel, have and believe; do not reset them, and let what happens here move them):\n${lines.join("\n")}`;
+    }
+    const priorRel = pages.filter((p) => p.page_index < current.page_index && (p.metadata?.relationship_states?.length ?? 0) > 0);
+    const latestRel = priorRel.at(-1)?.metadata?.relationship_states;
+    if (latestRel?.length) {
+      const lines = latestRel.map((r) => `- ${r.pair}: ${r.charge}${r.note ? ` (${r.note})` : ""}`);
+      relationshipStates = `RELATIONSHIP STATES (as of the previous page — let these charges drive the scene; flips here should feel earned):\n${lines.join("\n")}`;
+    }
+  }
+
+  // F3b: open loops via book_thread_anchors (fixed — no longer reads dropped flat columns).
+  let openLoops = null;
+  if (level === "page" && current) {
+    openLoops = await bridgeBuildOpenLoops(bookId, pages, current);
+  }
+
+  // F3b: established facts from bible.facts with page_index < current.
+  let establishedFacts = null;
+  if (level === "page" && current) {
+    const facts = book.bible?.facts ?? [];
+    const prior = facts.filter((f) => typeof f.page_index === "number" && f.page_index < current.page_index);
+    if (prior.length) {
+      establishedFacts = `ESTABLISHED FACTS (do not contradict — these were set in earlier pages):\n${prior.map((f) => `- ${f.fact}`).join("\n")}`;
+    }
+  }
+
+  // F3c: story-time from the current page's planned metadata.time.
+  let storyTime = null;
+  if (level === "page" && current) {
+    const t = current.metadata?.time;
+    if (t) {
+      const parts2 = [t.when && `when: ${t.when}`, t.elapsed && `elapsed: ${t.elapsed}`].filter(Boolean);
+      if (parts2.length) storyTime = parts2.join("; ");
+    }
+  }
+
+  // F4a: POV character from current page metadata.
+  const pov = (level === "page" && current?.metadata?.pov) ? current.metadata.pov : null;
+
+  // F1: CAST VOICES block — mirrors renderCastVoices in generate-unit-core.
+  const castVoicesBlock = (() => {
+    const cast = foundations?.cast ?? [];
+    const lines = cast
+      .filter((m) => m.idiolect?.trim() || m.history?.trim() || m.tag?.trim())
+      .map((m) => {
+        const label = [m.name, m.tag?.trim() && `— ${m.tag.trim()}`].filter(Boolean).join(" ");
+        const body2 = [`speaks ${m.idiolect?.trim() || "—"}`, m.history?.trim()].filter(Boolean).join(". ");
+        return `- ${label}: ${body2}`;
+      });
+    if (!lines.length) return null;
+    return `CAST VOICES (render each character's dialogue in their idiolect; let a character's history color what they notice and how they phrase things):\n${lines.join("\n")}`;
+  })();
+
+  // F3a: WORLD block — mirrors renderWorld in generate-unit-core.
+  const worldBlock = (() => {
+    const world = foundations?.world;
+    if (!world) return null;
+    const wParts = [];
+    if (world.setting?.trim()) wParts.push(world.setting.trim());
+    if (world.period?.trim()) wParts.push(`period: ${world.period.trim()}`);
+    if (world.rules?.length) wParts.push(`rules:\n${world.rules.map((r) => `- ${r}`).join("\n")}`);
+    if (!wParts.length) return null;
+    return `WORLD (setting, period, and rules — never contradict these):\n${wParts.join("\n")}`;
+  })();
+
+  // F4a: NARRATION block — mirrors renderNarration in generate-unit-core.
+  const narrationBlock = (() => {
+    if (!narration) return null;
+    const nParts = [narration.person && `in ${narration.person}`, narration.tense && `${narration.tense} tense`, narration.distance?.trim()].filter(Boolean);
+    if (!nParts.length) return null;
+    return `NARRATION (the book's default narrative mode — honor it):\nNarrate ${nParts.join(", ")}.`;
+  })();
+
   const parts = [
     mode === "revise" ? UNIT_SYSTEM_REVISE : UNIT_SYSTEM,
     "",
@@ -2475,17 +2976,40 @@ async function runUnit(body) {
   ];
   { const c = canonBlock(book.canon); if (c) parts.push(`\nCANON (settled facts from the previous book — honor, never contradict, never retell):\n${c}`); }
   if (voiceSample) parts.push(`\nVOICE SAMPLE (write in THIS voice — match its rhythm, sentence shapes, diction and restraint; this exemplar is a stronger style anchor than any instruction):\n"""\n${voiceSample}\n"""\nAvoid AI-tell crutches: ${VOICE_TELLS}.`);
-  if (bible) parts.push(`\nBOOK BIBLE (established facts — characters, world, style; stay strictly consistent):\n${bible}`);
+  // F1: per-character voice differentiation (after voice sample)
+  if (castVoicesBlock) parts.push(`\n${castVoicesBlock}`);
+  // F3a: pinned world/setting node
+  if (worldBlock) parts.push(`\n${worldBlock}`);
+  // F4a: book-level narration defaults
+  if (narrationBlock) parts.push(`\n${narrationBlock}`);
+  // F4a: prose-layer craft note authored in the studio
+  if (craftNoteProse?.trim()) parts.push(`\nCRAFT NOTE (author's guidance for this book's prose — apply it):\n${craftNoteProse.trim()}`);
   if (objectiveMap) parts.push(`\nOUTLINE (the book's pages and their objectives, in order):\n${objectiveMap}`);
   if (storySoFar) parts.push(`\nSTORY SO FAR (summaries of earlier pages, for continuity):\n${storySoFar}`);
   if (mode === "revise") {
     if (precedingProse) parts.push(`\nPRECEDING PROSE (the page(s) just before this one — for continuity of voice, facts, and dramatic irony; the reader has seen everything here):\n"""\n${precedingProse}\n"""`);
     if (objective?.trim()) parts.push(`\nThis page is meant to achieve: ${objective.trim()}`);
+    if (characterStates) parts.push(`\n${characterStates}`);
+    if (relationshipStates) parts.push(`\n${relationshipStates}`);
+    if (openLoops) parts.push(`\n${openLoops}`);
+    if (establishedFacts) parts.push(`\n${establishedFacts}`);
+    if (storyTime) parts.push(`\nSTORY TIME: ${storyTime}`);
+    if (pov) parts.push(`\nPOV: ${pov}`);
     parts.push(`\nCURRENT PAGE PROSE (revise this in place):\n"""\n${currentText}\n"""`);
     parts.push(`\nTHE EDITOR'S NOTES TO ADDRESS ON THIS PAGE:\n${formatIssues(issues)}`);
     parts.push(`\nRevise the page to address every note above while preserving its strengths, the book's voice, and continuity with the rest of the book. Return the full revised page prose only.`);
   } else {
     if (precedingProse) parts.push(`\nPRECEDING PROSE (the pages just before this one — for continuity of voice, facts, and dramatic irony; the reader has seen everything here, so you may write for that shared awareness even when the POV character hasn't; do not continue or finish its last sentence, and do not repeat what's already been said):\n"""\n${precedingProse}\n"""`);
+    if (level === "page" && characterStates) parts.push(`\n${characterStates}`);
+    // F2: relationship states alongside character states (page-level only)
+    if (level === "page" && relationshipStates) parts.push(`\n${relationshipStates}`);
+    if (level === "page" && openLoops) parts.push(`\n${openLoops}`);
+    // F3b: established facts the model must not contradict (page-level only)
+    if (level === "page" && establishedFacts) parts.push(`\n${establishedFacts}`);
+    // F3c: story-time orientation
+    if (level === "page" && storyTime) parts.push(`\nSTORY TIME: ${storyTime}`);
+    // F4a: POV character
+    if (level === "page" && pov) parts.push(`\nPOV: ${pov}`);
     if (pageObjective?.trim()) parts.push(`\nThis paragraph sits on a page whose objective is: ${pageObjective.trim()}`);
     if (precedingText?.trim()) parts.push(`\nThe prose immediately before this paragraph (continue naturally):\n"""\n${precedingText.trim()}\n"""`);
     parts.push(
@@ -2508,14 +3032,19 @@ async function runUnit(body) {
   { const lines = text.split("\n"); let i = 0; while (i < lines.length && (lines[i].trim() === "" || /^#{1,6}\s+/.test(lines[i].trim()))) i++; const s = lines.slice(i).join("\n").trim(); if (s) text = s; }
   if (!text) return { error: "Claude returned no text content" };
 
-  // Persist a "story so far" summary for this page (best-effort), like the edge function.
+    // Persist a "story so far" summary (+ F3c: story-time) for this page (best-effort).
   if (level === "page" && pageId) {
     try {
-      const s = await runClaude(`Summarize this page of a book in 1-2 sentences: what happens and any new facts (characters, places, changes in state) a later page would need to stay consistent. Plain text only, no preamble.\n\n${text.slice(0, 12000)}`, true, { fn: "summarize", bookId }, { noTools: true, model: MODEL_SUMMARY });
-      const summary = s.text?.trim();
-      if (summary) await persistSummary(pageId, summary);
+      const sumResult = await bridgeSummarize(text, bookId);
+      if (sumResult.summary) await bridgePersistSummary(pageId, sumResult.summary, sumResult.time ?? null);
     } catch (e) {
       console.error("bridge unit: summary step failed (non-fatal):", e.message);
+    }
+    // F2: extract character + relationship states and persist them (best-effort).
+    try {
+      await bridgeMaybeExtractStates(bookId, pageId, text);
+    } catch (e) {
+      console.error("bridge unit: state extraction failed (non-fatal):", e.message);
     }
   }
 

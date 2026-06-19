@@ -16,7 +16,7 @@ import { getActiveModels } from "./model-config.ts";
 import { canonContext, type CanonPacket } from "./canon-core.ts";
 import { readSteer, steerBlock } from "./steer.ts";
 
-export type FoundationsStep = "argument" | "ending" | "cast" | "tentpoles" | "voice";
+export type FoundationsStep = "argument" | "ending" | "cast" | "tentpoles" | "voice" | "world";
 
 // ── books.foundations shape (the client owns writes; this is the read contract) ─────────────────
 export interface FCandidate { id: string; text: string; implied_ending?: string; label?: string }
@@ -30,8 +30,20 @@ export interface CastMember {
   // here so a foundations cast patch preserves them instead of dropping them on a full-list replace.
   appearance?: string;
   portraits?: string[];
+  // F1: per-character voice + history (story-architecture-extensions.md §F1)
+  history?: string;    // formative backstory that colors word choice and interiority
+  idiolect?: string;   // how this character speaks — diction, tics, register
+  tag?: string;        // trackable physical/gesture marker (cosmetic; excluded from fingerprint)
 }
-export interface CastProposal { label: string; members: CastMember[] }
+export interface CastProposal { label: string; members: CastMember[]; relationships?: Relationship[] }
+
+// F2: relationship layer — stable dyad definitions (mutable charges live in PageState)
+export interface Relationship { id: string; a: string; b: string; bond: string; pinned?: boolean }
+// F3a: world/setting foundation node
+export interface WorldNode { setting?: string; period?: string; rules?: string[]; pinned?: boolean }
+// F4a: narration mode — a stable voice decision (drift-tracked like the voice exemplar). Moved here
+// from books.bible so the whole foundations machinery (chat, settledContext, fingerprint) owns it.
+export interface Narration { person?: "first" | "close-third" | "omniscient"; tense?: "past" | "present"; distance?: string; pinned?: boolean }
 export interface Tentpole {
   id: string; text: string;
   source: "author" | "ai";
@@ -51,6 +63,12 @@ export interface Foundations {
   art_direction?: string;
   art_theme?: string;
   image_model?: string;
+  // F2: stable relationship definitions (mutable per-page charges live in PageState.relationship_states)
+  relationships?: Relationship[];
+  // F3a: pinned world/setting node (changes prose → included in fingerprint)
+  world?: WorldNode;
+  // F4a: narration mode (person/tense/distance) — book-level default for prose generation
+  narration?: Narration;
 }
 
 export interface SpineRoute { id: string; summary: string; tentpole_order: string[] }
@@ -72,9 +90,32 @@ export function settledContext(f: Foundations): string {
       const pf = c.pinned_fields ?? [];
       const line = (k: "want" | "wound" | "lie") =>
         c[k] ? `  ${k}: ${c[k]}${pf.includes(k) ? " [PINNED]" : ""}` : null;
-      return [`- ${c.name} (${c.role ?? "major"})`, line("want"), line("wound"), line("lie")].filter(Boolean).join("\n");
+      const parts = [`- ${c.name} (${c.role ?? "major"})`, line("want"), line("wound"), line("lie")];
+      if (c.history) parts.push(`  history: ${c.history}`);
+      if (c.idiolect) parts.push(`  idiolect: ${c.idiolect}`);
+      if (c.tag) parts.push(`  tag: ${c.tag}`);
+      return parts.filter(Boolean).join("\n");
     }).join("\n");
     lines.push(`CAST (pinned lines are immutable):\n${cast}`);
+  }
+  if (f.relationships?.length) {
+    const castMap = new Map((f.cast ?? []).map((c) => [c.id, c.name]));
+    const rels = f.relationships.map((r) => {
+      const nameA = castMap.get(r.a) ?? r.a;
+      const nameB = castMap.get(r.b) ?? r.b;
+      return `- ${nameA} ↔ ${nameB}: ${r.bond}${r.pinned ? " [PINNED]" : ""}`;
+    }).join("\n");
+    lines.push(`RELATIONSHIPS (pinned lines are immutable):\n${rels}`);
+  }
+  if (f.world && (f.world.setting || f.world.period || (f.world.rules?.length))) {
+    const pinSuffix = f.world.pinned ? " [PINNED]" : "";
+    const worldLines: string[] = [];
+    if (f.world.setting) worldLines.push(`setting: ${f.world.setting}${pinSuffix}`);
+    if (f.world.period) worldLines.push(`period: ${f.world.period}${pinSuffix}`);
+    if (f.world.rules?.length) {
+      f.world.rules.forEach((rule) => worldLines.push(`rule: ${rule}${pinSuffix}`));
+    }
+    lines.push(`WORLD (pinned lines are immutable):\n${worldLines.join("\n")}`);
   }
   const live = (f.tentpoles ?? []).filter((t) => t.status !== "killed");
   const killed = (f.tentpoles ?? []).filter((t) => t.status === "killed");
@@ -87,6 +128,11 @@ export function settledContext(f: Foundations): string {
       killed.map((t) => `- ${t.text}`).join("\n")}`);
   }
   node("VOICE EXEMPLAR", f.voice_exemplar);
+  if (f.narration && (f.narration.person || f.narration.tense || f.narration.distance)) {
+    const n = f.narration;
+    const bits = [n.person, n.tense ? `${n.tense} tense` : null, n.distance].filter(Boolean);
+    if (bits.length) lines.push(`NARRATION (the book's default narrative mode)${n.pinned ? " [PINNED]" : ""}:\n${bits.join(", ")}`);
+  }
   return lines.length ? lines.join("\n\n") : "(nothing settled yet)";
 }
 
@@ -118,8 +164,25 @@ Output JSON ONLY:
 
   cast: `You are a book architect proposing three complete CAST CONFIGURATIONS for this story. Each configuration stands alone: one protagonist and one or two major characters, each with want (external goal), wound (the unhealed injury driving them), and lie (the false belief the arc will break). Across the three options vary the protagonist's core wound and lie — each should represent a genuinely different human story pulled from different tensions in the brief. The major characters in each option should serve that specific protagonist's arc.
 
+For each character also include:
+- history: 1–2 sentence formative backstory that explains how they got their wound/lie
+- idiolect: one line describing how they speak — diction, verbal tics, register (e.g. "speaks in short declaratives, never asks questions, drops g's")
+- tag: one trackable physical or gesture marker (e.g. "always straightens objects on any surface near her")
+
+For each proposal also include a "relationships" array capturing the key dyads among that proposal's members: { "a": "<member name>", "b": "<member name>", "bond": "<one line describing the relationship charge>" }.
+
 Output JSON ONLY:
-{ "proposals": [{ "label": "Option A", "members": [{ "name": "…", "role": "protagonist" | "major", "want": "…", "wound": "…", "lie": "…" }, …] }, { "label": "Option B", "members": […] }, { "label": "Option C", "members": […] }] }`,
+{ "proposals": [{ "label": "Option A", "members": [{ "name": "…", "role": "protagonist" | "major", "want": "…", "wound": "…", "lie": "…", "history": "…", "idiolect": "…", "tag": "…" }, …], "relationships": [{ "a": "…", "b": "…", "bond": "…" }, …] }, { "label": "Option B", "members": […], "relationships": […] }, { "label": "Option C", "members": […], "relationships": […] }] }`,
+
+  world: `You are a book architect proposing the WORLD/SETTING for this story — a pinned, concrete artifact that all subsequent prose must stay consistent with. Ground every detail in the brief and the settled foundations; do not invent genre or setting that contradicts them. For non-genre stories, rules can be social, economic, or institutional constraints rather than magic or physics.
+
+Propose exactly one world definition with:
+- setting: where (and what kind of place) the story lives — specific enough to paint a picture
+- period: when (era, season, moment in history, or "contemporary")
+- rules: 3–5 load-bearing constraints of this story-world — the things prose must never contradict (physical laws if genre, social hierarchies, economic realities, institutional rules, etc.)
+
+Output JSON ONLY:
+{ "world": { "setting": "…", "period": "…", "rules": ["…", "…", "…"] } }`,
 
   tentpoles: `You are a book architect proposing TENTPOLE MOMENTS — vivid, concrete scenes the author can already see (1–3 sentences each, a moment not a summary). Generate exactly 6 proposals, spread across the book's whole arc, consistent with the settled argument/ending/cast. Never duplicate an existing tentpole; never resemble a killed direction.
 
@@ -148,9 +211,10 @@ export interface FoundationsOptionsParams {
 
 // Generate candidates for one Foundations sub-step. Returns step-shaped candidates with server ids.
 // Cast is the exception: returns { proposals } (3 complete cast configs) instead of { candidates }.
+// World is the exception: returns { world: WorldNode } (single picked node, not a candidates list).
 export async function foundationsOptions(
   client: SupabaseClient, apiKey: string, p: FoundationsOptionsParams,
-): Promise<{ candidates: FCandidate[] } | { proposals: CastProposal[] } | { candidates: Tentpole[] }> {
+): Promise<{ candidates: FCandidate[] } | { proposals: CastProposal[] } | { candidates: Tentpole[] } | { world: WorldNode }> {
   const { data: book, error } = await client.from("books").select("id, name, brief, foundations, canon, steers").eq("id", p.bookId).single();
   if (error || !book) throw new Error("Book not found");
   const brief = book.brief as Brief | null;
@@ -195,10 +259,9 @@ export async function foundationsOptions(
 
   // Cast returns { proposals } — 3 complete cast configs to pick from, not a flat candidates list.
   if (p.step === "cast") {
-    const parsed = parseJson<{ proposals?: Array<{ label?: unknown; members?: Array<Record<string, unknown>> }> }>(text);
-    const proposals: CastProposal[] = (parsed.proposals ?? []).map((prop) => ({
-      label: String(prop.label ?? "").trim() || "Option",
-      members: (Array.isArray(prop.members) ? prop.members : []).map((c) => ({
+    const parsed = parseJson<{ proposals?: Array<{ label?: unknown; members?: Array<Record<string, unknown>>; relationships?: Array<Record<string, unknown>> }> }>(text);
+    const proposals: CastProposal[] = (parsed.proposals ?? []).map((prop) => {
+      const members: CastMember[] = (Array.isArray(prop.members) ? prop.members : []).map((c) => ({
         id: uid(),
         name: String(c.name ?? "").trim(),
         role: (c.role === "protagonist" ? "protagonist" : "major") as CastMember["role"],
@@ -206,10 +269,37 @@ export async function foundationsOptions(
         wound: String(c.wound ?? "").trim(),
         lie: String(c.lie ?? "").trim(),
         pinned_fields: [] as string[],
-      })).filter((c) => c.name),
-    })).filter((p) => p.members.length > 0);
+        ...(c.history ? { history: String(c.history).trim() } : {}),
+        ...(c.idiolect ? { idiolect: String(c.idiolect).trim() } : {}),
+        ...(c.tag ? { tag: String(c.tag).trim() } : {}),
+      })).filter((c) => c.name);
+      // Map relationship name references → freshly-assigned member ids; drop any that don't resolve.
+      const nameToId = new Map(members.map((m) => [m.name.toLowerCase(), m.id]));
+      const relationships: Relationship[] = (Array.isArray(prop.relationships) ? prop.relationships : [])
+        .map((r) => {
+          const aId = nameToId.get(String(r.a ?? "").trim().toLowerCase());
+          const bId = nameToId.get(String(r.b ?? "").trim().toLowerCase());
+          if (!aId || !bId) return null;
+          return { id: uid(), a: aId, b: bId, bond: String(r.bond ?? "").trim() } as Relationship;
+        })
+        .filter((r): r is Relationship => r !== null && r.bond.length > 0);
+      return { label: String(prop.label ?? "").trim() || "Option", members, ...(relationships.length ? { relationships } : {}) };
+    }).filter((p) => p.members.length > 0);
     if (proposals.length === 0) throw new Error("Claude returned no cast proposals.");
     return { proposals };
+  }
+
+  // World returns a single { world: WorldNode } — the client applies it directly.
+  if (p.step === "world") {
+    const parsed = parseJson<{ world?: Record<string, unknown> }>(text);
+    const w = parsed.world ?? {};
+    const world: WorldNode = {
+      ...(w.setting ? { setting: String(w.setting).trim() } : {}),
+      ...(w.period ? { period: String(w.period).trim() } : {}),
+      ...(Array.isArray(w.rules) && w.rules.length ? { rules: w.rules.map((r) => String(r).trim()).filter(Boolean) } : {}),
+    };
+    if (!world.setting && !world.period && !world.rules?.length) throw new Error("Claude returned an empty world node.");
+    return { world };
   }
 
   const parsed = parseJson<{ candidates?: Array<Record<string, unknown>> }>(text);

@@ -11,7 +11,7 @@ import { BRIDGE, bridgeFetch } from "@/lib/bridge";
 import { applyBeatPlan, type RevisionPlan } from "@/lib/beatSheet";
 import {
   pinNode, readFoundations, writeFoundations,
-  type CastMember, type Foundations, type Tentpole,
+  type CastMember, type Foundations, type Narration, type Relationship, type Tentpole, type WorldNode,
 } from "@/lib/foundations";
 import { saveSpine } from "@/lib/ladder";
 
@@ -25,6 +25,12 @@ export interface FoundationsPatch {
   voice?: string;
   cast?: CastMember[];
   tentpoles?: Tentpole[];
+  // F2: relationships carried alongside cast proposals (edge normalizer attaches them).
+  relationships?: Relationship[];
+  // F3a: world node applied from revision-chat proposals.
+  world?: WorldNode;
+  // F4a: narration mode applied from revision-chat proposals.
+  narration?: Narration;
 }
 export interface SpinePatch { text: string }
 
@@ -103,6 +109,33 @@ export async function startNewRevisionSession(bookId: number, layer: RevisionLay
   if (error) throw error;
 }
 
+/**
+ * Resume an archived past session as the live conversation: swaps the chosen session's messages
+ * back into the active slot, archiving the current active thread first so nothing is lost. Symmetric
+ * with startNewRevisionSession — the inverse direction. The edge fn replays the swapped-in messages
+ * as conversation history on the next turn, so the author picks up exactly where that chat left off.
+ * No-op if `index` does not exist in sessions.
+ */
+export async function resumeRevisionSession(bookId: number, layer: RevisionLayer, index: number): Promise<void> {
+  const { data } = await supabase
+    .from("revision_chats").select("messages, pending_proposal, sessions").eq("book_id", bookId).eq("layer", layer).maybeSingle();
+  const sessions = Array.isArray(data?.sessions) ? (data!.sessions as RevisionSession[]) : [];
+  const target = sessions[index];
+  if (!target) return; // no-op — index out of bounds
+  const messages = Array.isArray(data?.messages) ? (data!.messages as ChatMessage[]) : [];
+  const remaining = sessions.filter((_, i) => i !== index);
+  // Archive the current active thread only if it has content — nothing to preserve if already empty.
+  const nextSessions: RevisionSession[] =
+    messages.length > 0
+      ? [{ messages, pending_proposal: (data?.pending_proposal as RevisionProposal | null) ?? null, ended_at: new Date().toISOString() }, ...remaining]
+      : remaining;
+  const { error } = await supabase
+    .from("revision_chats")
+    .update({ messages: target.messages, pending_proposal: target.pending_proposal ?? null, sessions: nextSessions, status: "idle" })
+    .eq("book_id", bookId).eq("layer", layer);
+  if (error) throw error;
+}
+
 /** Send one author message to a layer's reviser. The reply + any proposal land in revision_chats
  *  (watch it over Realtime). */
 export async function sendRevisionMessage(bookId: number, layer: RevisionLayer, message: string): Promise<void> {
@@ -167,5 +200,11 @@ export async function applyProposal(bookId: number, proposal: RevisionProposal):
   if (typeof d.voice === "string" && d.voice.trim()) next.voice_exemplar = pinNode(cur.voice_exemplar, d.voice.trim());
   if (Array.isArray(d.cast)) next.cast = d.cast;
   if (Array.isArray(d.tentpoles)) next.tentpoles = d.tentpoles;
+  // F2: apply relationships alongside a cast proposal (edge normalizer resolves name→id references).
+  if (Array.isArray(d.relationships)) next.relationships = d.relationships;
+  // F3a: apply world node if the chat proposes one.
+  if (d.world && typeof d.world === "object" && !Array.isArray(d.world)) next.world = d.world as WorldNode;
+  // F4a: apply narration mode if the chat proposes one.
+  if (d.narration && typeof d.narration === "object" && !Array.isArray(d.narration)) next.narration = d.narration as Narration;
   await writeFoundations(bookId, next);
 }

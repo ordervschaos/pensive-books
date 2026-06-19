@@ -19,7 +19,10 @@ import {
   stripEntityIds,
   type CastMember,
   type Foundations,
+  type Narration,
+  type Relationship,
   type Tentpole,
+  type WorldNode,
 } from "./foundations-core.ts";
 import { BEAT_CRITERIA } from "./beat-criteria.ts";
 import { STORY_SHAPES } from "./story-shapes.ts";
@@ -45,6 +48,9 @@ export interface FoundationsPatch {
   voice?: string;
   cast?: CastMember[];
   tentpoles?: Tentpole[];
+  relationships?: Relationship[];
+  world?: WorldNode;
+  narration?: Narration;
 }
 export interface SpinePatch { text: string }
 
@@ -141,7 +147,8 @@ function castWithIds(f: Foundations): string {
   return f.cast.map((c) => {
     const pf = c.pinned_fields ?? [];
     const fld = (k: "want" | "wound" | "lie") => c[k] ? `\n    ${k}: ${c[k]}${pf.includes(k) ? " [PINNED — immutable]" : ""}` : "";
-    return `[id=${c.id}] ${c.name} (${c.role ?? "major"})${fld("want")}${fld("wound")}${fld("lie")}`;
+    const extra = (k: "history" | "idiolect" | "tag") => c[k] ? `\n    ${k}: ${c[k]}` : "";
+    return `[id=${c.id}] ${c.name} (${c.role ?? "major"})${fld("want")}${fld("wound")}${fld("lie")}${extra("history")}${extra("idiolect")}${extra("tag")}`;
   }).join("\n");
 }
 
@@ -184,6 +191,11 @@ function sanitizeFoundations(parsed: Record<string, unknown>, f: Foundations): F
         pinned_fields: pf,
         ...(prior?.appearance ? { appearance: prior.appearance } : {}),
         ...(prior?.portraits ? { portraits: prior.portraits } : {}),
+        // F1: per-character voice/history — take the PROPOSED value, else keep the stored one. These
+        // aren't pinnable, so the chat may freely revise them; a missing key preserves the prior value.
+        ...(str(raw.history) || prior?.history ? { history: str(raw.history) || prior?.history } : {}),
+        ...(str(raw.idiolect) || prior?.idiolect ? { idiolect: str(raw.idiolect) || prior?.idiolect } : {}),
+        ...(str(raw.tag) || prior?.tag ? { tag: str(raw.tag) || prior?.tag } : {}),
       });
       if (prior) used.add(prior.id);
     }
@@ -221,6 +233,75 @@ function sanitizeFoundations(parsed: Record<string, unknown>, f: Foundations): F
       if (!used.has(t.id) && (t.status === "pinned" || t.status === "killed")) out.push(t);
     }
     if (out.length) patch.tentpoles = out;
+  }
+
+  // F2: relationships — carry the stored list through; a chat patch that doesn't touch relationships
+  // must not drop them. Pinned relationships survive unchanged (model can add/update non-pinned).
+  if (Array.isArray(parsed.relationships)) {
+    // a/b may be a cast id OR a member name (the model often references a brand-new member by name
+    // before it has an id). Resolve against the POST-PATCH cast so new members are reachable.
+    const finalCast = patch.cast ?? f.cast ?? [];
+    const castIds = new Set(finalCast.map((c) => c.id));
+    const nameToId = new Map(finalCast.map((c) => [c.name.toLowerCase(), c.id]));
+    const resolveRef = (v: string) => (castIds.has(v) ? v : nameToId.get(v.toLowerCase()) ?? "");
+    const existingRel = new Map((f.relationships ?? []).map((r) => [r.id, r]));
+    const outRel: Relationship[] = [];
+    const usedRel = new Set<string>();
+    for (const raw of parsed.relationships as Record<string, unknown>[]) {
+      const id = typeof raw.id === "string" ? raw.id : "";
+      const prior = id ? existingRel.get(id) : undefined;
+      // Pinned relationships are immutable — restore verbatim.
+      if (prior?.pinned) { outRel.push(prior); usedRel.add(prior.id); continue; }
+      const bond = str(raw.bond);
+      const a = resolveRef(str(raw.a)); const b = resolveRef(str(raw.b));
+      if (!bond || !a || !b) continue;
+      outRel.push({ id: prior?.id ?? uid(), a, b, bond, ...(raw.pinned === true ? { pinned: true } : {}) });
+      if (prior) usedRel.add(prior.id);
+    }
+    // Pinned relationships the model omitted survive untouched.
+    for (const r of f.relationships ?? []) {
+      if (!usedRel.has(r.id) && r.pinned) outRel.push(r);
+    }
+    if (outRel.length) patch.relationships = outRel;
+  } else if (f.relationships?.length) {
+    // Model didn't touch relationships — carry the whole stored list through unchanged.
+    patch.relationships = f.relationships;
+  }
+
+  // F3a: world — carry the stored node through; honor its pinned flag (immutable when pinned).
+  if (parsed.world && typeof parsed.world === "object" && !Array.isArray(parsed.world)) {
+    const raw = parsed.world as Record<string, unknown>;
+    if (f.world?.pinned) {
+      // World is pinned — ignore any proposed change, keep the stored node.
+      patch.world = f.world;
+    } else {
+      const setting = str(raw.setting) || f.world?.setting;
+      const period = str(raw.period) || f.world?.period;
+      const rules = Array.isArray(raw.rules)
+        ? (raw.rules as unknown[]).map(String).filter(Boolean)
+        : f.world?.rules;
+      const pinned = raw.pinned === true ? true : f.world?.pinned;
+      patch.world = { ...(setting ? { setting } : {}), ...(period ? { period } : {}), ...(rules?.length ? { rules } : {}), ...(pinned ? { pinned } : {}) };
+    }
+  } else if (f.world) {
+    // Model didn't touch world — carry the stored node through unchanged.
+    patch.world = f.world;
+  }
+
+  // F4a: narration — accept a proposed mode unless pinned; otherwise carry the stored node through.
+  if (parsed.narration && typeof parsed.narration === "object" && !Array.isArray(parsed.narration)) {
+    const raw = parsed.narration as Record<string, unknown>;
+    if (f.narration?.pinned) {
+      patch.narration = f.narration;
+    } else {
+      const person = raw.person === "first" || raw.person === "close-third" || raw.person === "omniscient" ? raw.person : f.narration?.person;
+      const tense = raw.tense === "past" || raw.tense === "present" ? raw.tense : f.narration?.tense;
+      const distance = str(raw.distance) || f.narration?.distance;
+      const pinned = raw.pinned === true ? true : f.narration?.pinned;
+      patch.narration = { ...(person ? { person } : {}), ...(tense ? { tense } : {}), ...(distance ? { distance } : {}), ...(pinned ? { pinned } : {}) };
+    }
+  } else if (f.narration) {
+    patch.narration = f.narration;
   }
 
   return Object.keys(patch).length ? patch : null;
@@ -320,13 +401,13 @@ When talking, pressure-testing, or merely OFFERING DIRECTIONS to choose from, ap
   },
 
   foundations: {
-    system: `You are the FOUNDATIONS EDITOR — a developmental editor in conversation with an author about their book's FOUNDATIONS: the ARGUMENT (the claim the whole story argues), the ENDING, the CAST (each with want / wound / lie), the TENTPOLE MOMENTS, and the VOICE exemplar. Foundations sit just under the brief — the brief is the frozen contract and is NEVER yours to touch. The spine, beats, and prose are downstream — not your concern.
+    system: `You are the FOUNDATIONS EDITOR — a developmental editor in conversation with an author about their book's FOUNDATIONS: the ARGUMENT (the claim the whole story argues), the ENDING, the CAST (each with want / wound / lie, plus an optional history, idiolect, and physical tag), the RELATIONSHIPS between cast members, the WORLD (setting / period / rules), the NARRATION mode (person / tense / distance), the TENTPOLE MOMENTS, and the VOICE exemplar. Foundations sit just under the brief — the brief is the frozen contract and is NEVER yours to touch. The spine, beats, and prose are downstream — not your concern.
 
 You can do these things, and you choose per message:
 1. TALK — answer, talk through an idea, weigh a trade-off. Be specific.
 2. PRESSURE-TEST — test the foundations' integrity: is the argument a real claim (not a topic)? does the ending pay the argument's cost? does each cast member's want/wound/lie cohere and drive an arc? do the tentpoles dramatize the argument? Name the weak link and the highest-leverage fix.
 3. GENERATE — when the foundations are largely EMPTY (or the author asks to draft / create / explore them): UNLESS the author has already settled on a direction, FIRST offer 2–3 DISTINCT directions the foundations could take — each a different ARGUMENT and the ending, cast shape, and signature moments it implies — as short prose sketches (numbered), with NO json block, and invite the author to pick or blend. Only once the author has chosen (or asked outright for the full draft) do you deliver the complete foundations (as in PROPOSE).
-4. PROPOSE A CHANGE — when the author wants foundations drafted or changed (or you've agreed on a fix / they've picked a direction). You may set/revise the ARGUMENT, ENDING, and VOICE text; add/revise CAST members; and add/revise/reorder TENTPOLE moments. PINNED lines and pinned cast fields are IMMUTABLE — never change or drop them. Honor the brief.
+4. PROPOSE A CHANGE — when the author wants foundations drafted or changed (or you've agreed on a fix / they've picked a direction). You may set/revise the ARGUMENT, ENDING, and VOICE text; add/revise CAST members (including each one's history, idiolect, and physical tag); add/revise the RELATIONSHIPS between them; set/revise the WORLD (setting, period, rules); set/revise the NARRATION mode (person: first/close-third/omniscient, tense: past/present, and an optional distance note); and add/revise/reorder TENTPOLE moments. PINNED lines, pinned cast fields, pinned relationships, a pinned world, and a pinned narration are IMMUTABLE — never change or drop them. Honor the brief.
 
 OUTPUT — reply to the author in plain MARKDOWN prose. If — and ONLY if — this message DELIVERS foundations to apply (a fresh draft or a revision), append at the very END a single fenced \`\`\`json code block, with nothing after it. Include ONLY the keys you are setting (a fresh draft sets all of them):
 \`\`\`json
@@ -334,10 +415,13 @@ OUTPUT — reply to the author in plain MARKDOWN prose. If — and ONLY if — t
   "argument": "<~2 sentence claim>",
   "ending": "<the ending, concrete>",
   "voice": "<the voice exemplar prose>",
-  "cast": [ { "id": "<existing id, or omit for a new member>", "name": "...", "role": "protagonist|major|minor", "want": "...", "wound": "...", "lie": "..." } ],
+  "cast": [ { "id": "<existing id, or omit for a new member>", "name": "...", "role": "protagonist|major|minor", "want": "...", "wound": "...", "lie": "...", "history": "<formative backstory that colors how they speak & what they notice>", "idiolect": "<how they speak — diction, tics, register>", "tag": "<a trackable physical or gesture marker>" } ],
+  "relationships": [ { "id": "<existing id, or omit for new>", "a": "<cast id or exact name>", "b": "<cast id or exact name>", "bond": "<the charge between them, one line>" } ],
+  "world": { "setting": "...", "period": "...", "rules": ["<a load-bearing constraint prose must respect>", "..."] },
+  "narration": { "person": "first|close-third|omniscient", "tense": "past|present", "distance": "<optional one-line note on psychic distance>" },
   "tentpoles": [ { "id": "<existing id, or omit for new>", "text": "<the moment>", "status": "pinned|fluid" } ] }
 \`\`\`
-When talking or pressure-testing, append NO code block. If you send "cast" or "tentpoles", send the COMPLETE list (every member/moment that should remain) — anything omitted is dropped, except pinned/killed items which always survive. Use existing [id]s to revise an item; omit id to add. Never touch the brief; never write spine, beats, or prose.`,
+When talking or pressure-testing, append NO code block. If you send "cast", "tentpoles", or "relationships", send the COMPLETE list (every item that should remain) — anything omitted is dropped, except pinned/killed items which always survive. Use existing [id]s to revise an item; omit id to add. history/idiolect/tag are optional and not pinnable — set them freely. For a relationship to a brand-new member, reference that member by their exact name in "a"/"b". Never touch the brief; never write spine, beats, or prose.`,
     context(ctx) {
       const f = ctx.foundations ?? {};
       const settled = settledContext(f).trim();

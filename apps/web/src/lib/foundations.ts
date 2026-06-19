@@ -10,7 +10,7 @@
 // "skip — use AI default" path auto-selects without pinning, leaving the record fluid.
 import { supabase } from "@/integrations/supabase/client";
 
-export type FoundationsStepKey = "argument" | "ending" | "cast" | "tentpoles" | "voice";
+export type FoundationsStepKey = "argument" | "ending" | "cast" | "world" | "tentpoles" | "voice";
 
 export interface FCandidate { id: string; text: string; implied_ending?: string; label?: string }
 export interface FNode { text?: string; pinned?: boolean; author_edited_at?: string; candidates?: FCandidate[] }
@@ -24,8 +24,19 @@ export interface CastMember {
   // feeds these back in so the character renders coherently across pages.
   appearance?: string;
   portraits?: string[];
+  // F1: per-character voice + history (story-architecture-extensions.md §F1)
+  history?: string;    // formative backstory that colors word choice and interiority
+  idiolect?: string;   // how this character speaks — diction, tics, register
+  tag?: string;        // trackable physical/gesture marker (cosmetic; excluded from fingerprint)
 }
-export interface CastProposal { label: string; members: CastMember[] }
+export interface CastProposal { label: string; members: CastMember[]; relationships?: Relationship[] }
+
+// F2: relationship layer — stable dyad definitions (mutable charges live in PageState)
+export interface Relationship { id: string; a: string; b: string; bond: string; pinned?: boolean }
+// F3a: world/setting foundation node
+export interface WorldNode { setting?: string; period?: string; rules?: string[]; pinned?: boolean }
+// F4a: narration mode — moved here from books.bible so foundations owns it (chat/fingerprint/settledContext)
+export interface Narration { person?: "first" | "close-third" | "omniscient"; tense?: "past" | "present"; distance?: string; pinned?: boolean }
 export interface Tentpole {
   id: string; text: string;
   source: "author" | "ai";
@@ -45,6 +56,12 @@ export interface Foundations {
   art_direction?: string;
   art_theme?: string;
   image_model?: string;
+  // F2: stable relationship definitions (mutable per-page charges live in PageState.relationship_states)
+  relationships?: Relationship[];
+  // F3a: pinned world/setting node (changes prose → included in fingerprint)
+  world?: WorldNode;
+  // F4a: narration mode (person/tense/distance) — book-level prose default
+  narration?: Narration;
 }
 
 // ── Book-level image look: theme presets + render-model choice ───────────────
@@ -144,6 +161,7 @@ export function foundationsProgress(f: Foundations | null | undefined): Record<F
     argument: !!f?.argument?.text?.trim(),
     ending: !!f?.ending?.text?.trim(),
     cast: (f?.cast?.length ?? 0) > 0,
+    world: !!(f?.world?.setting?.trim() || f?.world?.period?.trim() || (f?.world?.rules?.length ?? 0) > 0),
     tentpoles: live.length >= 3,
     voice: !!f?.voice_exemplar?.text?.trim(),
   };
@@ -166,8 +184,16 @@ export function foundationsFingerprint(f: Foundations | null | undefined): strin
     f.argument?.text ?? "",
     f.ending?.text ?? "",
     f.voice_exemplar?.text ?? "",
-    ...(f.cast ?? []).map((c) => `${c.name}|${c.want ?? ""}|${c.wound ?? ""}|${c.lie ?? ""}|${c.role ?? ""}`),
+    // Cast: name/want/wound/lie/role drive prose; history+idiolect drive dialogue/interiority → include.
+    // tag is cosmetic (a visual marker) → excluded so it doesn't flap staleness.
+    ...(f.cast ?? []).map((c) => `${c.name}|${c.want ?? ""}|${c.wound ?? ""}|${c.lie ?? ""}|${c.role ?? ""}|${c.history ?? ""}|${c.idiolect ?? ""}`),
     ...(f.tentpoles ?? []).filter((t) => t.status !== "killed").map((t) => `${t.text}|${t.placed_page_id ?? ""}`),
+    // F2: relationship bonds drive scene drama → include; pair ids are stable references, not prose.
+    ...(f.relationships ?? []).map((r) => `${r.a}~${r.b}|${r.bond}`),
+    // F3a: world setting+period+rules affect prose world-building → include.
+    `world:${f.world?.setting ?? ""}|${f.world?.period ?? ""}|${(f.world?.rules ?? []).join(";")}`,
+    // F4a: narration mode (person/tense/distance) changes how every page reads → include.
+    `narration:${f.narration?.person ?? ""}|${f.narration?.tense ?? ""}|${f.narration?.distance ?? ""}`,
   ];
   return parts.join("␟");
 }
