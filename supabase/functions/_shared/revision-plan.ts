@@ -31,6 +31,7 @@ export interface RevisionPlan {
 
 export interface ExistingPage {
   id: number;
+  page_index?: number;
   page_type: string | null;
   title: string | null;
   metadata: { objective?: string; beat?: string } | null;
@@ -116,19 +117,38 @@ export function sanitizePlan(
     addDelete(ref, (d as { why?: string }).why);
   }
 
-  // Guardrail: any existing page neither carried nor deleted is appended as keep.
-  for (const p of existing) {
-    if (!seen.has(p.id) && !deletedIds.has(p.id)) {
-      pages.push({
-        ref: p.id,
-        op: "keep",
-        pageType: p.page_type === "section" ? "section" : "text",
-        title: p.title ?? "",
-        objective: (p.metadata?.objective ?? "").trim(),
-        beat: ((p.metadata?.beat ?? "").trim()) || undefined,
-        why: "",
-      });
-    }
+  // Guardrail: any existing page neither carried nor deleted is preserved. Keep it near the first
+  // explicitly-carried page that originally followed it; appending all omissions to the end can move
+  // chapter section headers after their pages, making newly inserted pages look orphaned.
+  const original = [...existing].sort((a, b) => (a.page_index ?? 0) - (b.page_index ?? 0));
+  const originalRank = new Map(original.map((p, i) => [p.id, i]));
+  const makeKeep = (p: ExistingPage): PlanPage => ({
+    ref: p.id,
+    op: "keep",
+    pageType: p.page_type === "section" ? "section" : "text",
+    title: p.title ?? "",
+    objective: (p.metadata?.objective ?? "").trim(),
+    beat: ((p.metadata?.beat ?? "").trim()) || undefined,
+    why: "",
+  });
+  for (const p of original) {
+    if (seen.has(p.id) || deletedIds.has(p.id)) continue;
+    const rank = originalRank.get(p.id) ?? Number.MAX_SAFE_INTEGER;
+    let lastRank = Number.NEGATIVE_INFINITY;
+    const before = pages.findIndex((page, i) => {
+      if (page.ref == null) {
+        const nextRef = pages.slice(i + 1).find((candidate) => candidate.ref != null)?.ref;
+        const nextRank = nextRef == null ? Number.POSITIVE_INFINITY : originalRank.get(nextRef) ?? Number.POSITIVE_INFINITY;
+        return lastRank < rank && rank < nextRank;
+      }
+      const pageRank = originalRank.get(page.ref) ?? Number.MAX_SAFE_INTEGER;
+      if (pageRank > rank) return true;
+      lastRank = pageRank;
+      return false;
+    });
+    if (before === -1) pages.push(makeKeep(p));
+    else pages.splice(before, 0, makeKeep(p));
+    seen.add(p.id);
   }
 
   return { summary: String(parsed.summary ?? "").trim(), pages, deletes, planOnly: planOnly || undefined };

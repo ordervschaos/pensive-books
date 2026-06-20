@@ -49,7 +49,7 @@ export async function callClaude(
   if (logId != null) meta.loggedCallId = logId; // hand the row id back so callers can link to it
   const model = body.model as string ?? "";
   const isDeepSeek = model.startsWith("deepseek");
-  const isQwen = model.startsWith("qwen");
+  const isOpenRouter = model.includes("/");
 
   let raw = "";
   // deno-lint-ignore no-explicit-any
@@ -68,13 +68,13 @@ export async function callClaude(
         },
         body: JSON.stringify(anthropicToOpenAI(body)),
       });
-    } else if (isQwen) {
-      const muleKey = Deno.env.get("OPENROUTER_API_KEY") ?? apiKey;
+    } else if (isOpenRouter) {
+      const openRouterKey = Deno.env.get("OPENROUTER_API_KEY") ?? apiKey;
       res = await fetch(OPENROUTER_URL, {
         method: "POST",
         signal: opts?.signal,
         headers: {
-          "Authorization": `Bearer ${muleKey}`,
+          "Authorization": `Bearer ${openRouterKey}`,
           "content-type": "application/json",
         },
         body: JSON.stringify(anthropicToOpenAI(body)),
@@ -92,10 +92,10 @@ export async function callClaude(
       });
     }
     raw = await res.text();
-    if (!res.ok) errMsg = `${isDeepSeek ? "DeepSeek" : isQwen ? "Qwen/OpenRouter" : "Claude"} API ${res.status}: ${raw.slice(0, 500)}`;
+    if (!res.ok) errMsg = `${isDeepSeek ? "DeepSeek" : isOpenRouter ? "OpenRouter" : "Claude"} API ${res.status}: ${raw.slice(0, 500)}`;
     else {
       const parsed = JSON.parse(raw);
-      data = (isDeepSeek || isQwen) ? openAIToAnthropic(parsed) : parsed;
+      data = (isDeepSeek || isOpenRouter) ? openAIToAnthropic(parsed) : parsed;
     }
   } catch (e) {
     errMsg = String((e as Error)?.message ?? e);

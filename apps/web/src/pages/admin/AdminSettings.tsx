@@ -9,7 +9,7 @@ import { Shield, Loader2, CheckCircle2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 
-type ModelTier = "opus" | "sonnet" | "deepseek" | "qwen";
+type ModelTier = "opus" | "sonnet" | "deepseek" | "qwen" | "qwen-plus" | "kimi" | "glm" | "minimax";
 
 const TIERS: { value: ModelTier; label: string; description: string; badge: string; badgeVariant: "default" | "secondary" | "outline" }[] = [
   {
@@ -28,8 +28,36 @@ const TIERS: { value: ModelTier; label: string; description: string; badge: stri
   },
   {
     value: "qwen",
-    label: "Qwen 3",
-    description: "Alibaba's Qwen 3 Max via MuleRouter. Competitive quality at low cost. Requires MULE_ROUTER_API_KEY secret.",
+    label: "Qwen 3 Max",
+    description: "Alibaba's large Qwen model via OpenRouter. Competitive quality at low cost. Requires OPENROUTER_API_KEY secret.",
+    badge: "Budget",
+    badgeVariant: "outline",
+  },
+  {
+    value: "qwen-plus",
+    label: "Qwen 3.7 Plus",
+    description: "Cheaper Qwen tier via OpenRouter. Good first budget candidate for outline and planning experiments.",
+    badge: "Budget",
+    badgeVariant: "outline",
+  },
+  {
+    value: "kimi",
+    label: "Kimi K2.7 Code",
+    description: "Moonshot's Kimi model via OpenRouter. Coding-focused, but worth testing for structured revisions and long-context planning.",
+    badge: "Budget",
+    badgeVariant: "outline",
+  },
+  {
+    value: "glm",
+    label: "GLM 5.2",
+    description: "Z.ai GLM via OpenRouter. Long-context reasoning model; useful for outline and agent-style experiments.",
+    badge: "Budget",
+    badgeVariant: "outline",
+  },
+  {
+    value: "minimax",
+    label: "MiniMax M3",
+    description: "MiniMax model via OpenRouter. Very low-cost option to test against Qwen for planning and drafting.",
     badge: "Budget",
     badgeVariant: "outline",
   },

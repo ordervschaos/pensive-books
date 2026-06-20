@@ -453,18 +453,56 @@ When talking or pressure-testing, append NO code block. If you send "cast", "ten
   },
 };
 
-// The reply is plain markdown prose; a proposed change rides in a TRAILING ```json fenced block.
-// Keeping prose OUT of the JSON means newlines/markdown/truncation can never corrupt the reply —
-// at worst a malformed trailing block costs the proposal (which we'd reject anyway), never the message.
+// The reply is plain markdown prose; a proposed change usually rides in a ```json fenced block.
+// Claude follows the "trailing block" contract closely, but Qwen-style models may add a heading,
+// omit the language tag, or leave a little text after the block. Extract only proposal-shaped JSON so
+// ordinary markdown/code remains prose.
 export function splitReplyAndBlock(text: string): { reply: string; parsed: Record<string, unknown> | null } {
-  const m = text.match(/```(?:json)?\s*([\s\S]*?)```\s*$/);
-  if (!m || m.index == null) return { reply: text, parsed: null };
-  const reply = text.slice(0, m.index).trim();
-  try {
-    const parsed = JSON.parse(extractJsonBlock(m[1]));
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return { reply: reply || "Here's a proposed revision — review it below.", parsed: parsed as Record<string, unknown> };
+  const parseProposal = (raw: string): Record<string, unknown> | null => {
+    try {
+      const parsed = JSON.parse(extractJsonBlock(raw));
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+      const obj = parsed as Record<string, unknown>;
+      const looksLikeProposal =
+        Array.isArray(obj.pages) ||
+        typeof obj.text === "string" ||
+        typeof obj.argument === "string" ||
+        typeof obj.ending === "string" ||
+        typeof obj.voice === "string" ||
+        Array.isArray(obj.cast) ||
+        Array.isArray(obj.tentpoles) ||
+        Array.isArray(obj.relationships) ||
+        (obj.world != null && typeof obj.world === "object" && !Array.isArray(obj.world)) ||
+        (obj.narration != null && typeof obj.narration === "object" && !Array.isArray(obj.narration));
+      return looksLikeProposal ? obj : null;
+    } catch {
+      return null;
     }
-  } catch { /* malformed trailing block → keep the whole text as prose */ }
+  };
+  const withDefaultReply = (reply: string, parsed: Record<string, unknown>) => ({
+    reply: reply.trim() || "Here's a proposed revision — review it below.",
+    parsed,
+  });
+
+  const fences = [...text.matchAll(/```(?:json)?\s*([\s\S]*?)```/g)];
+  for (let i = fences.length - 1; i >= 0; i--) {
+    const fence = fences[i];
+    if (fence.index == null) continue;
+    const parsed = parseProposal(fence[1]);
+    if (!parsed) continue;
+    const before = text.slice(0, fence.index);
+    const after = text.slice(fence.index + fence[0].length);
+    return withDefaultReply(`${before}\n${after}`.trim(), parsed);
+  }
+
+  // Some non-Claude models follow the shape but skip the fence, appending a raw JSON object after the
+  // prose. Treat only a JSON object that reaches the end of the message as a proposal payload.
+  const trimmed = text.trimEnd();
+  if (trimmed.endsWith("}")) {
+    for (let i = trimmed.lastIndexOf("{"); i >= 0; i = trimmed.lastIndexOf("{", i - 1)) {
+      const parsed = parseProposal(trimmed.slice(i));
+      if (parsed) return withDefaultReply(trimmed.slice(0, i), parsed);
+    }
+  }
   return { reply: text, parsed: null };
 }
