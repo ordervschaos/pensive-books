@@ -18,6 +18,7 @@ import {
   TONE_SUGGESTIONS,
 } from "@/lib/brief";
 import { ScopeBandPicker } from "@/components/book/ScopeBandPicker";
+import { HeatLevelPicker } from "@/components/book/HeatLevelPicker";
 
 const STEPS = [
   "scope",
@@ -26,6 +27,7 @@ const STEPS = [
   "premise",
   "tone",
   "success",
+  "heat",
 ] as const;
 
 type StepKey = (typeof STEPS)[number];
@@ -239,6 +241,18 @@ export function BriefIntakeSheet({ bookId, open, onOpenChange, onFinish }: Brief
                   setBrief((prev) => ({ ...prev, success_criteria: e.target.value }))
                 }
                 placeholder="I publish it on Substack. I'm proud of every chapter."
+              />
+            </Step>
+          )}
+
+          {step === "heat" && (
+            <Step
+              title="How explicit may the prose be?"
+              hint="Controls what the AI may depict on the page. Skip if this doesn't apply."
+            >
+              <HeatLevelPicker
+                heat={brief.heat}
+                onChange={(heat) => setBrief((prev) => ({ ...prev, heat }))}
               />
             </Step>
           )}

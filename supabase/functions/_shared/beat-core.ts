@@ -9,7 +9,7 @@
 // where what's said ≠ what's meant (subtext), and name one concrete sensory image. Threads anchored
 // to the page tell it what to SEED or PAY OFF.
 import { type SupabaseClient } from "jsr:@supabase/supabase-js@2";
-import { type Brief, briefContext } from "./brief.ts";
+import { type Brief, briefContext, mandateContext } from "./brief.ts";
 import { callClaude, textFromClaude, type CallMeta } from "./claude.ts";
 import { canonContext, type CanonPacket } from "./canon-core.ts";
 import { getActiveModels } from "./model-config.ts";
@@ -59,7 +59,8 @@ A beat is where the story's ENGINE lives. Weave these into the paragraph (as flo
 Rules:
 - Output ONE paragraph (3–6 sentences). No title, no heading, no preamble, no markdown, no bullet list, no meta commentary — just the beat.
 - It is a PLAN, not prose: say what happens and in what order; do NOT write the page's actual sentences or dialogue.
-- Fulfil the page's objective exactly. Honour the brief (genre, audience, tone, premise) and the spine as the voice/throughline contract.`;
+- Fulfil the page's objective exactly. Honour the brief (genre, audience, tone, premise) and the spine as the voice/throughline contract.
+- Preserve the brief's MANDATE — heat/explicitness, comedy, and set-piece specifics — verbatim. The layer you write must be AT LEAST as committed as its source: never soften, abstract, or fade-to-black a mandated beat. If the brief calls for something explicit, sensual, or funny, that obligation must survive into your output, not get laundered into tasteful vagueness.`;
 
 
 // A compact id-tagged outline so the beat reads in context; the target page is marked.
@@ -175,8 +176,16 @@ async function prepareBeat(client: SupabaseClient, p: BeatParams): Promise<Prepa
   // F2-c: surface current relationship charges so value-flips can target a specific bond.
   const relCtx = current ? relationshipContext(list, current, foundations) : null;
 
+  const _brief = book.brief as Brief | null;
+  const _mandate = mandateContext(_brief);
+  // C4: per-page length budget — flat allocation: word_target / content-page count.
+  // "content pages" = pages whose page_type is not "section" (section pages are dividers, not prose).
+  const _wordTarget = _brief?.scope?.word_target ?? 0;
+  const _contentPageCount = list.filter((pg) => pg.page_type !== "section").length;
+  const _perPageTarget = (_wordTarget > 0 && _contentPageCount > 0) ? Math.round(_wordTarget / _contentPageCount) : 0;
   const userContent =
-    `BOOK: ${book.name}\n\nBRIEF (the voice contract):\n${briefContext(book.brief as Brief | null, { scope: "full", success: true, none: "(no brief set — infer a sensible neutral voice)", empty: "(brief is empty — infer a sensible neutral voice)" })}` +
+    `BOOK: ${book.name}\n\nBRIEF — binding contract (voice AND deliverables):\n${briefContext(_brief, { scope: "full", success: true, none: "(no brief set — infer a sensible neutral voice)", empty: "(brief is empty — infer a sensible neutral voice)" })}` +
+    (_mandate ? `\n\nMANDATE — NON-NEGOTIABLE (the book has FAILED if any of these are not delivered; do not treat them as flavor):\n${_mandate}` : "") +
     (canon ? `\n\nCANON (settled facts from the previous book — honor, never contradict, never retell):\n${canonContext(canon)}` : "") +
     (spine ? `\n\nBOOK SPINE (the throughline):\n${spine}` : "") +
     `\n\nOUTLINE (for continuity — the target page is marked):\n${outlineContext(list, p.pageId)}` +
@@ -185,6 +194,7 @@ async function prepareBeat(client: SupabaseClient, p: BeatParams): Promise<Prepa
     (onPage.length ? `\n\nTHREADS ON THIS PAGE (promises to manage here):\n${threadsContext(onPage)}` : "") +
     steerBlock(readSteer(book.steers, "beats")) +
     (p.prompt?.trim() ? `\n\nAUTHOR'S DIRECTION:\n${p.prompt.trim()}` : "") +
+    (_perPageTarget > 0 ? `\n\nTARGET LENGTH: the prose written from this beat should run ~${_perPageTarget} words — plan enough concrete moments and texture to fill that, neither padding nor rushing.` : "") +
     `\n\nTHIS PAGE'S OBJECTIVE:\n${obj}\n\nWrite the beat for THIS PAGE. One paragraph, plan only.`;
 
   return { userContent, meta, prevBeat: prev?.beat ?? null, objective: obj };

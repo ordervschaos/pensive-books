@@ -655,6 +655,43 @@ function briefContext(brief) {
   return lines.length ? lines.join("\n") : "(brief is empty — infer a sensible neutral voice)";
 }
 
+// Level → full permission sentence. Mirrors HEAT_LEVEL_SENTENCES in supabase/functions/_shared/brief.ts.
+const HEAT_LEVEL_SENTENCES = {
+  closed: "Closed-door — fade before explicit content; intimacy implied, not shown.",
+  warm: "Warm — sensual and on the page (desire, touch, tension) but not graphic.",
+  explicit: "EXPLICIT — graphic and on the page; depict intimacy fully.",
+};
+
+// Render the binding non-voice deliverables as an imperative MANDATE block.
+// Mirrors mandateContext in supabase/functions/_shared/brief.ts.
+// Returns "" when none of the mandate fields are present.
+function mandateContext(brief) {
+  if (!brief) return "";
+  const lines = [];
+  if (brief.success_criteria?.trim()) {
+    lines.push(`- Must deliver on: ${brief.success_criteria.trim()}`);
+  }
+  // C3: typed heat field — use the full permission sentence for known levels.
+  const heat = brief.heat;
+  if (heat) {
+    const level = typeof heat === "string" ? undefined : heat.level;
+    const note = typeof heat === "string" ? undefined : heat.note;
+    const sentence = level
+      ? (HEAT_LEVEL_SENTENCES[level] ?? level)
+      : (typeof heat === "string" ? heat.trim() : "");
+    const heatStr = [sentence, note].filter(Boolean).join(" — ");
+    if (heatStr) lines.push(`- Heat / explicitness: ${heatStr}`);
+  }
+  if (brief.scope?.band) {
+    const wt = brief.scope.word_target ? ` of ≈${brief.scope.word_target} words` : "";
+    lines.push(`- Length: this is a ${brief.scope.band}${wt} — write to that length; do not stop short.`);
+  }
+  if (brief.genre?.trim()) {
+    lines.push(`- Genre obligation: honor the "${brief.genre.trim()}" promise FULLY and ON THE PAGE — e.g. a comedy must stay funny throughout, an ecchi/romance must actually be sensual on the page, never fade to black at the decisive moment.`);
+  }
+  return lines.join("\n");
+}
+
 // ── /eval — existing behaviour ────────────────────────────────────────────────
 function loadReport(bookId) {
   const jsonPath = join(reportsDir, `${bookId}-read.json`);
@@ -692,6 +729,8 @@ function runEvaluation(bookId) {
 // ── /spine-to-objectives ──────────────────────────────────────────────────────
 const SCAFFOLD_INSTRUCTIONS = `You are a book architect. Given the book's SPINE (its throughline) — or, if no spine is set, the author's brief — design the book's chapters and pages as OBJECTIVES, not prose. The outline must realize the spine: every page serves the book-level aim.
 
+Preserve the brief's MANDATE — heat/explicitness, comedy, and set-piece specifics — verbatim. The layer you write must be AT LEAST as committed as its source: never soften, abstract, or fade-to-black a mandated beat. If the brief calls for something explicit, sensual, or funny, that obligation must survive into your output, not get laundered into tasteful vagueness.
+
 Choose a structure appropriate to the genre and scope (e.g. Save the Cat or the Hero's Journey for commercial fiction; the Fichtean curve for thrillers; a five-part arc for self-help; a curated arc for memoir). Lay the book out as an ordered list of pages:
 - "section" pages are chapter/part dividers (a title; an objective is optional).
 - "text" pages are where prose will go; each MUST have a concise objective stating what that page must achieve (the beat it delivers, in one sentence).
@@ -726,12 +765,13 @@ async function runScaffold(bookId) {
   const spine = book.spine?.text?.trim() || null;
   const foundations = book.foundations ?? null;
 
+  const _soMandate = mandateContext(book.brief);
   const prompt = `${SCAFFOLD_INSTRUCTIONS}${foundations ? SCAFFOLD_FOUNDATIONS_ADDENDUM : ""}
 
 BOOK: ${book.name}${spine ? `\n\nBOOK SPINE (the throughline — the outline must realize this):\n${spine}` : ""}
 
-BRIEF:
-${briefContext(book.brief)}${canonSection(book.canon)}${foundations ? `\n\nSETTLED FOUNDATIONS (pinned items are immutable constraints):\n${foundationsContext(foundations)}` : ""}
+BRIEF — binding contract (voice AND deliverables):
+${briefContext(book.brief)}${_soMandate ? `\n\nMANDATE — NON-NEGOTIABLE (the book has FAILED if any of these are not delivered; do not treat them as flavor):\n${_soMandate}` : ""}${canonSection(book.canon)}${foundations ? `\n\nSETTLED FOUNDATIONS (pinned items are immutable constraints):\n${foundationsContext(foundations)}` : ""}
 
 Design the outline. JSON only.`;
 
@@ -1666,7 +1706,8 @@ A beat is where the story's ENGINE lives. Weave these into the paragraph (as flo
 Rules:
 - Output ONE paragraph (3–6 sentences). No title, no heading, no preamble, no markdown, no bullet list, no meta commentary — just the beat.
 - It is a PLAN, not prose: say what happens and in what order; do NOT write the page's actual sentences or dialogue.
-- Fulfil the page's objective exactly. Honour the brief (genre, audience, tone, premise) and the spine as the voice/throughline contract.`;
+- Fulfil the page's objective exactly. Honour the brief (genre, audience, tone, premise) and the spine as the voice/throughline contract.
+- Preserve the brief's MANDATE — heat/explicitness, comedy, and set-piece specifics — verbatim. The layer you write must be AT LEAST as committed as its source: never soften, abstract, or fade-to-black a mandated beat. If the brief calls for something explicit, sensual, or funny, that obligation must survive into your output, not get laundered into tasteful vagueness.`;
 
 async function runObjectiveToBeat(body) {
   const { bookId, pageId, objective } = body;
@@ -1705,15 +1746,20 @@ async function runObjectiveToBeat(body) {
     }
   }
 
+  const _beatMandate = mandateContext(book.brief);
+  // C4: per-page length budget — flat allocation: word_target / content-page count.
+  const _beatWordTarget = book.brief?.scope?.word_target ?? 0;
+  const _beatContentCount = pages.filter((p) => p.page_type !== "section").length;
+  const _beatPerPageTarget = (_beatWordTarget > 0 && _beatContentCount > 0) ? Math.round(_beatWordTarget / _beatContentCount) : 0;
   const prompt = `${BEAT_INSTRUCTIONS}
 
 BOOK: ${book.name}
 
-BRIEF (the voice contract):
-${briefContext(book.brief)}${canonSection(book.canon)}${spine ? `\n\nBOOK SPINE (the throughline):\n${spine}` : ""}
+BRIEF — binding contract (voice AND deliverables):
+${briefContext(book.brief)}${_beatMandate ? `\n\nMANDATE — NON-NEGOTIABLE (the book has FAILED if any of these are not delivered; do not treat them as flavor):\n${_beatMandate}` : ""}${canonSection(book.canon)}${spine ? `\n\nBOOK SPINE (the throughline):\n${spine}` : ""}
 
 OUTLINE (for continuity):
-${outlineContext(pages)}${relCtxBlock ? `\n\n${relCtxBlock}` : ""}
+${outlineContext(pages)}${relCtxBlock ? `\n\n${relCtxBlock}` : ""}${_beatPerPageTarget > 0 ? `\n\nTARGET LENGTH: the prose written from this beat should run ~${_beatPerPageTarget} words — plan enough concrete moments and texture to fill that, neither padding nor rushing.` : ""}
 
 THIS PAGE'S OBJECTIVE:
 ${obj}
@@ -2556,7 +2602,8 @@ async function runFoundationsOptions(body) {
     stepInput += `\n\nAUTHOR'S DIRECTION:\n${body.prompt.trim()}`;
   }
 
-  const prompt = `${FOUNDATIONS_STEP_SYSTEM[step]}${book.canon && step === "cast" ? CAST_SEQUEL_ADDENDUM : ""}\n\nBOOK: ${book.name}\n\nBRIEF:\n${briefContext(book.brief)}${canonSection(book.canon)}\n\nSETTLED FOUNDATIONS SO FAR:\n${foundationsContext(f)}${stepInput}\n\nGenerate the candidates. JSON only.`;
+  const _fsMandate = mandateContext(book.brief);
+  const prompt = `${FOUNDATIONS_STEP_SYSTEM[step]}${book.canon && step === "cast" ? CAST_SEQUEL_ADDENDUM : ""}\n\nBOOK: ${book.name}\n\nBRIEF — binding contract (voice AND deliverables):\n${briefContext(book.brief)}${_fsMandate ? `\n\nMANDATE — NON-NEGOTIABLE (the book has FAILED if any of these are not delivered; do not treat them as flavor):\n${_fsMandate}` : ""}${canonSection(book.canon)}\n\nSETTLED FOUNDATIONS SO FAR:\n${foundationsContext(f)}${stepInput}\n\nGenerate the candidates. JSON only.`;
   const out = await runClaude(prompt, true, { fn: `foundations-${step}`, bookId }, { noTools: true, model: MODEL_PLANNING });
   if (out.error) return out;
   try {
@@ -2640,8 +2687,9 @@ async function runSpineRoutes(body) {
   const pinnedIds = (f.tentpoles ?? []).filter((t) => t.status === "pinned").map((t) => t.id);
   const killedIds = new Set((f.tentpoles ?? []).filter((t) => t.status === "killed").map((t) => t.id));
 
+  const _srMandate = mandateContext(book.brief);
   const userContent =
-    `BOOK: ${book.name}\n\nBRIEF:\n${briefContext(book.brief)}${canonSection(book.canon)}\n\nSETTLED FOUNDATIONS:\n${foundationsContext(f)}` +
+    `BOOK: ${book.name}\n\nBRIEF — binding contract (voice AND deliverables):\n${briefContext(book.brief)}${_srMandate ? `\n\nMANDATE — NON-NEGOTIABLE (the book has FAILED if any of these are not delivered; do not treat them as flavor):\n${_srMandate}` : ""}${canonSection(book.canon)}\n\nSETTLED FOUNDATIONS:\n${foundationsContext(f)}` +
     (avoid?.length ? `\n\nEXISTING ROUTES (vary away from these — don't paraphrase them):\n${avoid.map((s) => `---\n${s}`).join("\n")}` : "") +
     `\n\nGenerate 3 routes. JSON only.`;
 
@@ -2789,9 +2837,12 @@ consistent with the rest of the book.
 Rules:
 - Write ONLY the prose. No preamble, no titles, no headings (no "#" lines), no markdown
   fences, no meta commentary. The page already has its title — never restate it.
-- Honor the book's brief — genre, audience, tone, premise — as the non-negotiable voice contract.
-  When a voice sample is provided it is the strongest style anchor: match its register, rhythm,
-  and diction above all else, including above the register of any beat or objective text.
+- Honor the book's brief as a non-negotiable contract — its VOICE (genre, audience, tone, premise)
+  AND its MANDATE (what the book must deliver: the success criteria, heat/explicitness, genre
+  obligations, and length). When a voice sample is provided it is the strongest STYLE anchor:
+  match its register, rhythm, and diction above all else, including above the register of any beat
+  or objective text. But style anchoring governs HOW the page reads, never WHAT it delivers — it is
+  never license to soften, abstract, or fade-to-black a mandated beat, nor to fall short of length.
 - The beat is a STORY PLAN — follow what it says must happen and in what order, but ignore
   its prose style entirely. The beat tells you WHAT; the brief and voice sample tell you HOW.
 - Use the outline and preceding prose for consistency, facts, AND dramatic irony. The reader
@@ -2968,11 +3019,13 @@ async function runUnit(body) {
     return `NARRATION (the book's default narrative mode — honor it):\nNarrate ${nParts.join(", ")}.`;
   })();
 
+  const _unitMandate = mandateContext(book.brief);
   const parts = [
     mode === "revise" ? UNIT_SYSTEM_REVISE : UNIT_SYSTEM,
     "",
     `BOOK: ${book.name}`,
-    `\nBRIEF (the voice contract):\n${briefContext(book.brief)}`,
+    `\nBRIEF — binding contract (voice AND deliverables):\n${briefContext(book.brief)}`,
+    _unitMandate ? `\nMANDATE — NON-NEGOTIABLE (the book has FAILED if any of these are not delivered; do not treat them as flavor):\n${_unitMandate}` : "",
   ];
   { const c = canonBlock(book.canon); if (c) parts.push(`\nCANON (settled facts from the previous book — honor, never contradict, never retell):\n${c}`); }
   if (voiceSample) parts.push(`\nVOICE SAMPLE (write in THIS voice — match its rhythm, sentence shapes, diction and restraint; this exemplar is a stronger style anchor than any instruction):\n"""\n${voiceSample}\n"""\nAvoid AI-tell crutches: ${VOICE_TELLS}.`);
@@ -3012,6 +3065,15 @@ async function runUnit(body) {
     if (level === "page" && pov) parts.push(`\nPOV: ${pov}`);
     if (pageObjective?.trim()) parts.push(`\nThis paragraph sits on a page whose objective is: ${pageObjective.trim()}`);
     if (precedingText?.trim()) parts.push(`\nThe prose immediately before this paragraph (continue naturally):\n"""\n${precedingText.trim()}\n"""`);
+    // C4: per-page word target injection (page level only, write mode).
+    if (level === "page") {
+      const _unitWordTarget = book.brief?.scope?.word_target ?? 0;
+      const _unitContentCount = _unitWordTarget > 0 ? pages.filter((p) => p.page_type !== "section").length : 0;
+      const _unitPerPageTarget = (_unitWordTarget > 0 && _unitContentCount > 0) ? Math.round(_unitWordTarget / _unitContentCount) : 0;
+      if (_unitPerPageTarget > 0) {
+        parts.push(`\nTARGET LENGTH: aim for ~${_unitPerPageTarget} words for this page. This is a hard requirement from the brief's length mandate — do not stop short; write the full scene.`);
+      }
+    }
     parts.push(
       level === "paragraph"
         ? `\nWrite ONE paragraph that achieves this objective:\n${objective.trim()}`

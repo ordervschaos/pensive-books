@@ -16,6 +16,13 @@ export interface BriefScope {
   word_target?: number;
 }
 
+export type HeatLevel = "closed" | "warm" | "explicit";
+
+export interface BriefHeat {
+  level?: HeatLevel;
+  note?: string;
+}
+
 export interface Brief {
   scope?: BriefScope;
   genre?: string;
@@ -23,6 +30,8 @@ export interface Brief {
   premise?: string;
   tone?: string[];
   success_criteria?: string;
+  // C3 — typed as object; legacy bare-string values are handled by renderers.
+  heat?: BriefHeat;
   updated_at?: string;
 }
 
@@ -33,6 +42,7 @@ export const BRIEF_FIELDS = [
   "premise",
   "tone",
   "success_criteria",
+  "heat",
 ] as const;
 
 export type BriefField = (typeof BRIEF_FIELDS)[number];
@@ -62,6 +72,31 @@ export const SCOPE_GROUPS: { kind: BriefScopeKind; label: string }[] = [
   { kind: "fiction", label: "Fiction" },
   { kind: "nonfiction", label: "Non-fiction" },
 ];
+
+export const HEAT_LEVELS: { value: HeatLevel; label: string; description: string }[] = [
+  {
+    value: "closed",
+    label: "Closed-door",
+    description: "Fade before explicit content; intimacy implied, not shown.",
+  },
+  {
+    value: "warm",
+    label: "Warm",
+    description: "Sensual and on the page — desire, touch, tension — but not graphic.",
+  },
+  {
+    value: "explicit",
+    label: "Explicit",
+    description: "Graphic and on the page; depict intimacy fully.",
+  },
+];
+
+/** Level → mandate sentence injected into the MANDATE block at every generation stage. */
+export const HEAT_LEVEL_SENTENCES: Record<HeatLevel, string> = {
+  closed: "Closed-door — fade before explicit content; intimacy implied, not shown.",
+  warm: "Warm — sensual and on the page (desire, touch, tension) but not graphic.",
+  explicit: "EXPLICIT — graphic and on the page; depict intimacy fully.",
+};
 
 export const GENRE_SUGGESTIONS = [
   "Literary fiction",
@@ -140,5 +175,26 @@ export function briefToPromptContext(brief: Brief | null | undefined): string | 
   if (brief.premise) lines.push(`- Premise: ${brief.premise}`);
   if (brief.tone?.length) lines.push(`- Tone: ${brief.tone.join(", ")}`);
   if (brief.success_criteria) lines.push(`- Success looks like: ${brief.success_criteria}`);
+  // C1: mirror MANDATE fields so staleness hashes reflect deliverable changes
+  const mandateLines: string[] = [];
+  if (brief.success_criteria?.trim()) mandateLines.push(`- Must deliver on: ${brief.success_criteria.trim()}`);
+  const heat = brief.heat;
+  if (heat) {
+    // C3: use full permission sentence for typed level; append optional note.
+    const sentence = heat.level ? HEAT_LEVEL_SENTENCES[heat.level] : "";
+    const heatStr = [sentence, heat.note].filter(Boolean).join(" — ");
+    if (heatStr) mandateLines.push(`- Heat / explicitness: ${heatStr}`);
+  }
+  if (brief.scope?.band) {
+    const wt = brief.scope.word_target ? ` of ≈${brief.scope.word_target} words` : "";
+    mandateLines.push(`- Length: this is a ${brief.scope.band}${wt} — write to that length; do not stop short.`);
+  }
+  if (brief.genre?.trim()) {
+    mandateLines.push(`- Genre obligation: honor the "${brief.genre.trim()}" promise FULLY and ON THE PAGE.`);
+  }
+  if (mandateLines.length) {
+    lines.push("\nMANDATE — NON-NEGOTIABLE:");
+    lines.push(...mandateLines);
+  }
   return lines.join("\n");
 }

@@ -10,7 +10,7 @@
 // calls Claude. The callers own auth and the task row. Prompt assembly is byte-for-byte the same as
 // the original generate-unit (the dev bridge mirrors it), so the output is unchanged.
 import { type SupabaseClient } from "jsr:@supabase/supabase-js@2";
-import { type Brief, briefContext } from "./brief.ts";
+import { type Brief, briefContext, mandateContext } from "./brief.ts";
 import { callClaude as callClaudeApi, textFromClaude, type CallMeta } from "./claude.ts";
 import { getActiveModels, DEFAULT_LOW_MODEL } from "./model-config.ts";
 import { type CharacterState, type PageState, type RelationshipState } from "./page-state.ts";
@@ -168,6 +168,10 @@ export async function beatToProse(client: SupabaseClient, apiKey: string, p: Wri
   const establishedFacts = renderEstablishedFacts(b.bible?.facts, currentPageIndex);
   // F4a: prose-layer craft note
   const craftNoteProse = b.craft_notes?.["prose"] ?? b.craft_notes?.["foundations"] ?? null;
+  // C4: per-page word target. Content pages = lines in objectiveMap starting with `- "` (non-section).
+  const _wtTarget = (b.brief?.scope?.word_target ?? 0);
+  const _contentCount = _wtTarget > 0 ? ctx.objectiveMap.split("\n").filter((l) => l.startsWith(`- "`)).length : 0;
+  const perPageWordTarget = (_wtTarget > 0 && _contentCount > 0) ? Math.round(_wtTarget / _contentCount) : 0;
 
   const text = await renderProse(apiKey, models.high, {
     brief: b.brief, voiceSample: resolveVoice(b), canon: b.canon, bookName: b.name,
@@ -180,6 +184,7 @@ export async function beatToProse(client: SupabaseClient, apiKey: string, p: Wri
     storyTime: ctx.storyTime,
     pov: ctx.pov,
     narration: b.foundations?.narration ?? null,
+    perPageWordTarget,
   }, m);
 
   if (p.level === "page" && p.pageId) {
@@ -475,9 +480,12 @@ consistent with the rest of the book.
 Rules:
 - Write ONLY the prose. No preamble, no titles, no headings (no "#" lines), no markdown
   fences, no meta commentary. The page already has its title — never restate it.
-- Honor the book's brief — genre, audience, tone, premise — as the non-negotiable voice contract.
-  When a voice sample is provided it is the strongest style anchor: match its register, rhythm,
-  and diction above all else, including above the register of any beat or objective text.
+- Honor the book's brief as a non-negotiable contract — its VOICE (genre, audience, tone, premise)
+  AND its MANDATE (what the book must deliver: the success criteria, heat/explicitness, genre
+  obligations, and length). When a voice sample is provided it is the strongest STYLE anchor:
+  match its register, rhythm, and diction above all else, including above the register of any beat
+  or objective text. But style anchoring governs HOW the page reads, never WHAT it delivers — it is
+  never license to soften, abstract, or fade-to-black a mandated beat, nor to fall short of length.
 - The beat is a STORY PLAN — follow what it says must happen and in what order, but ignore
   its prose style entirely. The beat tells you WHAT; the brief and voice sample tell you HOW.
 - Use the outline and preceding prose for consistency, facts, AND dramatic irony. The reader
@@ -544,6 +552,8 @@ interface PromptArgs {
   pov: string | null;
   // F4a: book-level narration defaults (from foundations.narration)
   narration: Narration | null;
+  // C4: per-page word target derived from brief.scope.word_target / content-page count (0 = omit)
+  perPageWordTarget?: number;
 }
 
 function formatIssues(issues: ReviseIssue[]): string {
@@ -604,9 +614,11 @@ function stablePrefix(args: PromptArgs): string {
   const castVoices = renderCastVoices(args.foundations?.cast ?? undefined);
   const world = renderWorld(args.foundations?.world ?? undefined);
   const narration = renderNarration(args.narration);
+  const _mandate = mandateContext(args.brief);
   return [
     `BOOK: ${args.bookName}`,
-    `\nBRIEF (the voice contract):\n${briefContext(args.brief, { scope: "band", success: true, none: "(no brief set — infer a sensible neutral voice)", empty: "(brief is empty — infer a sensible neutral voice)" })}`,
+    `\nBRIEF — binding contract (voice AND deliverables):\n${briefContext(args.brief, { scope: "band", success: true, none: "(no brief set — infer a sensible neutral voice)", empty: "(brief is empty — infer a sensible neutral voice)" })}`,
+    _mandate ? `\nMANDATE — NON-NEGOTIABLE (the book has FAILED if any of these are not delivered; do not treat them as flavor):\n${_mandate}` : "",
     args.canon ? `\nCANON (settled facts from the previous book — honor, never contradict, never retell):\n${canonContext(args.canon)}` : "",
     args.voiceSample
       ? `\nVOICE SAMPLE (write in THIS voice — match its rhythm, sentence shapes, diction and restraint; this exemplar is a stronger style anchor than any instruction):\n"""\n${args.voiceSample}\n"""\nAvoid AI-tell crutches: ${VOICE_TELLS}.`
@@ -682,6 +694,10 @@ function variablePart(args: PromptArgs): string {
     if (args.precedingText) parts.push(`The prose immediately before this paragraph (continue naturally):\n"""\n${args.precedingText}\n"""`);
     parts.push(`\nWrite ONE paragraph that achieves this objective:\n${args.objective}`);
   } else {
+    // C4: inject per-page word target (page level only, write mode)
+    if (args.mode !== "revise" && (args.perPageWordTarget ?? 0) > 0) {
+      parts.push(`TARGET LENGTH: aim for ~${args.perPageWordTarget} words for this page. This is a hard requirement from the brief's length mandate — do not stop short; write the full scene.`);
+    }
     const where = args.currentPageLabel ? ` for the page ${args.currentPageLabel}` : "";
     if (args.beat) {
       // Beat present: write to the beat (the page's concrete plan), in service of the objective.

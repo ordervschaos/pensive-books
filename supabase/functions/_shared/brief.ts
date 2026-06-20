@@ -4,6 +4,15 @@
 // success_criteria is included); those are now options so the rendered bytes stay identical per site.
 // evaluate-core renders the brief differently (a titled block, returns null) and keeps its own.
 
+export type HeatLevel = "closed" | "warm" | "explicit";
+
+/** Level → full permission sentence injected into the MANDATE block. */
+export const HEAT_LEVEL_SENTENCES: Record<HeatLevel, string> = {
+  closed: "Closed-door — fade before explicit content; intimacy implied, not shown.",
+  warm: "Warm — sensual and on the page (desire, touch, tension) but not graphic.",
+  explicit: "EXPLICIT — graphic and on the page; depict intimacy fully.",
+};
+
 export interface Brief {
   scope?: { band?: string; word_target?: number };
   genre?: string;
@@ -11,6 +20,8 @@ export interface Brief {
   premise?: string;
   tone?: string[];
   success_criteria?: string;
+  // C3: typed as object; legacy bare-string values handled by renderers.
+  heat?: { level?: HeatLevel; note?: string } | string;
 }
 
 export interface BriefContextOpts {
@@ -41,4 +52,33 @@ export function briefContext(brief: Brief | null, opts: BriefContextOpts = {}): 
   if (brief.tone?.length) lines.push(`- Tone: ${brief.tone.join(", ")}`);
   if (success && brief.success_criteria) lines.push(`- Success looks like: ${brief.success_criteria}`);
   return lines.length ? lines.join("\n") : empty;
+}
+
+// Render the binding non-voice deliverables as an imperative MANDATE block.
+// Returns "" when none of the mandate fields are present (callers omit the block when "").
+export function mandateContext(brief: Brief | null): string {
+  if (!brief) return "";
+  const lines: string[] = [];
+  if (brief.success_criteria?.trim()) {
+    lines.push(`- Must deliver on: ${brief.success_criteria.trim()}`);
+  }
+  // C3: typed heat field — use the full permission sentence for known levels.
+  const heat = brief.heat;
+  if (heat) {
+    const level = typeof heat === "string" ? undefined : heat.level;
+    const note = typeof heat === "string" ? undefined : heat.note;
+    const sentence = level
+      ? HEAT_LEVEL_SENTENCES[level]
+      : (typeof heat === "string" ? heat.trim() : "");
+    const heatStr = [sentence, note].filter(Boolean).join(" — ");
+    if (heatStr) lines.push(`- Heat / explicitness: ${heatStr}`);
+  }
+  if (brief.scope?.band) {
+    const wt = brief.scope.word_target ? ` of ≈${brief.scope.word_target} words` : "";
+    lines.push(`- Length: this is a ${brief.scope.band}${wt} — write to that length; do not stop short.`);
+  }
+  if (brief.genre?.trim()) {
+    lines.push(`- Genre obligation: honor the "${brief.genre.trim()}" promise FULLY and ON THE PAGE — e.g. a comedy must stay funny throughout, an ecchi/romance must actually be sensual on the page, never fade to black at the decisive moment.`);
+  }
+  return lines.join("\n");
 }

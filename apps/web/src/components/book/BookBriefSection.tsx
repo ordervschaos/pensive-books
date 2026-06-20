@@ -16,6 +16,7 @@ import {
   TONE_SUGGESTIONS,
 } from "@/lib/brief";
 import { ScopeBandPicker } from "@/components/book/ScopeBandPicker";
+import { HeatLevelPicker } from "@/components/book/HeatLevelPicker";
 
 interface BookBriefSectionProps {
   bookId: number;
@@ -190,6 +191,16 @@ export function BookBriefSection({ bookId, brief, onBriefChange, embedded = fals
               onBlur={() => void doSave(draft)}
               placeholder="I publish it on Substack. I'm proud of every chapter."
               rows={2}
+            />
+          </FieldRow>
+
+          <FieldRow
+            label="Heat"
+            hint="How explicit may the prose be? Controls what AI generates on the page."
+          >
+            <HeatLevelPicker
+              heat={draft.heat}
+              onChange={(heat) => updateAndSave({ heat })}
             />
           </FieldRow>
 

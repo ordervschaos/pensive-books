@@ -9,7 +9,7 @@
 //   (c) spineRoutes validates post-hoc that every pinned tentpole appears (and no killed one does)
 //       in every route, and retries once on violation.
 import { type SupabaseClient } from "jsr:@supabase/supabase-js@2";
-import { type Brief, briefContext } from "./brief.ts";
+import { type Brief, briefContext, mandateContext } from "./brief.ts";
 import { callClaude, textFromClaude, type CallMeta } from "./claude.ts";
 import { extractJsonBlock } from "./json.ts";
 import { getActiveModels } from "./model-config.ts";
@@ -246,11 +246,15 @@ export async function foundationsOptions(
     }],
     messages: [{
       role: "user",
-      content: `BOOK: ${book.name}\n\nBRIEF:\n${briefContext(brief)}` +
-        (canon ? `\n\nCANON (settled facts from the previous book — honor, never contradict, never retell):\n${canonContext(canon)}` : "") +
-        `\n\nSETTLED FOUNDATIONS SO FAR:\n${settledContext(f)}${stepInput}` +
-        steerBlock(readSteer(book.steers, "foundations")) +
-        `\n\nGenerate the candidates. JSON only.`,
+      content: (() => {
+        const _fMandate = mandateContext(brief);
+        return `BOOK: ${book.name}\n\nBRIEF — binding contract (voice AND deliverables):\n${briefContext(brief)}` +
+          (_fMandate ? `\n\nMANDATE — NON-NEGOTIABLE (the book has FAILED if any of these are not delivered; do not treat them as flavor):\n${_fMandate}` : "") +
+          (canon ? `\n\nCANON (settled facts from the previous book — honor, never contradict, never retell):\n${canonContext(canon)}` : "") +
+          `\n\nSETTLED FOUNDATIONS SO FAR:\n${settledContext(f)}${stepInput}` +
+          steerBlock(readSteer(book.steers, "foundations")) +
+          `\n\nGenerate the candidates. JSON only.`;
+      })(),
     }],
   }, meta);
 
@@ -358,8 +362,10 @@ export async function spineRoutes(client: SupabaseClient, apiKey: string, p: Spi
 
   const { high: model } = await getActiveModels();
   const meta: CallMeta = { fn: "spine-routes", bookId: p.bookId, userId: p.userId ?? null };
+  const _sMandate = mandateContext(brief);
   const userContent =
-    `BOOK: ${book.name}\n\nBRIEF:\n${briefContext(brief)}` +
+    `BOOK: ${book.name}\n\nBRIEF — binding contract (voice AND deliverables):\n${briefContext(brief)}` +
+    (_sMandate ? `\n\nMANDATE — NON-NEGOTIABLE (the book has FAILED if any of these are not delivered; do not treat them as flavor):\n${_sMandate}` : "") +
     (canon ? `\n\nCANON (settled facts from the previous book — honor, never contradict, never retell):\n${canonContext(canon)}` : "") +
     `\n\nSETTLED FOUNDATIONS:\n${settledContext(f)}` +
     (p.avoid?.length ? `\n\nEXISTING ROUTES (vary away from these — don't paraphrase them):\n${p.avoid.map((s) => `---\n${s}`).join("\n")}` : "") +

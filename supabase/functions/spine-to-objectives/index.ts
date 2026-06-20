@@ -16,7 +16,7 @@
 //
 // Needs the ANTHROPIC_API_KEY secret (shared with the other AI steps).
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { type Brief, briefContext } from "../_shared/brief.ts";
+import { type Brief, briefContext, mandateContext } from "../_shared/brief.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { runInBackground, serviceClient } from "../_shared/task.ts";
@@ -105,6 +105,8 @@ const SYSTEM = `You are a book architect. Given the book's SPINE (its throughlin
 is set, the author's brief — design the book's chapters and pages as OBJECTIVES, not prose. The
 outline must realize the spine: every page serves the book-level aim.
 
+Preserve the brief's MANDATE — heat/explicitness, comedy, and set-piece specifics — verbatim. The layer you write must be AT LEAST as committed as its source: never soften, abstract, or fade-to-black a mandated beat. If the brief calls for something explicit, sensual, or funny, that obligation must survive into your output, not get laundered into tasteful vagueness.
+
 Choose a structure appropriate to the genre and scope (e.g. Save the Cat or the Hero's
 Journey for commercial fiction; the Fichtean curve for thrillers; a five-part arc for
 self-help; a curated arc for memoir). Lay the book out as an ordered list of pages:
@@ -176,9 +178,11 @@ const textOf = (data: any): string => textFromClaude(data).trim();
 
 // The brief/spine context block, shared by the draft and revise prompts.
 function bookContext(bookName: string, brief: Brief | null, spine: string | null, foundations: Foundations | null, canon: CanonPacket | null, steer: string): string {
+  const _mandate = mandateContext(brief);
   return `BOOK: ${bookName}` +
     (spine ? `\n\nBOOK SPINE (the throughline — the outline must realize this):\n${spine}` : "") +
-    `\n\nBRIEF:\n${briefContext(brief, { scope: "full", success: true, none: "(no brief set — infer a sensible book from a neutral premise)", empty: "(brief is empty — infer a sensible book)" })}` +
+    `\n\nBRIEF — binding contract (voice AND deliverables):\n${briefContext(brief, { scope: "full", success: true, none: "(no brief set — infer a sensible book from a neutral premise)", empty: "(brief is empty — infer a sensible book)" })}` +
+    (_mandate ? `\n\nMANDATE — NON-NEGOTIABLE (the book has FAILED if any of these are not delivered; do not treat them as flavor):\n${_mandate}` : "") +
     (canon ? `\n\nCANON (settled facts from the previous book — honor, never contradict, never retell):\n${canonContext(canon)}` : "") +
     (foundations ? `\n\nSETTLED FOUNDATIONS (pinned items are immutable constraints):\n${settledContext(foundations)}` : "") +
     steerBlock(steer);
@@ -218,9 +222,14 @@ async function critiqueScaffold(apiKey: string, model: string, bookName: string,
     system: [{ type: "text", text: CRITIQUE_SYSTEM, cache_control: { type: "ephemeral" } }],
     messages: [{
       role: "user",
-      content: `BOOK: ${bookName}\n\nBRIEF:\n${briefContext(brief, { scope: "full", success: true, none: "(no brief set — infer a sensible book from a neutral premise)", empty: "(brief is empty — infer a sensible book)" })}` +
-        (spine ? `\n\nSPINE:\n${spine}` : "") +
-        `\n\nOUTLINE (structure: ${draft.structure}):${outline}${threads}\n\nCritique this outline.`,
+      content: (() => {
+        const _cBrief = briefContext(brief, { scope: "full", success: true, none: "(no brief set — infer a sensible book from a neutral premise)", empty: "(brief is empty — infer a sensible book)" });
+        const _cMandate = mandateContext(brief);
+        return `BOOK: ${bookName}\n\nBRIEF — binding contract (voice AND deliverables):\n${_cBrief}` +
+          (_cMandate ? `\n\nMANDATE — NON-NEGOTIABLE (the book has FAILED if any of these are not delivered; do not treat them as flavor):\n${_cMandate}` : "") +
+          (spine ? `\n\nSPINE:\n${spine}` : "") +
+          `\n\nOUTLINE (structure: ${draft.structure}):${outline}${threads}\n\nCritique this outline.`;
+      })(),
     }],
   }, meta);
   return textOf(data);

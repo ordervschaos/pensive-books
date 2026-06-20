@@ -8,7 +8,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { BookBriefSection } from "@/components/book/BookBriefSection";
-import { Brief, computeCompletion, scopeSummary } from "@/lib/brief";
+import { Brief, computeCompletion, scopeSummary, HEAT_LEVELS } from "@/lib/brief";
 
 interface BriefSummaryProps {
   bookId: number;
@@ -30,6 +30,11 @@ export function BriefSummary({ bookId, brief, onBriefChange }: BriefSummaryProps
   if (scope) meta.push(scope);
   if (brief?.genre) meta.push(brief.genre);
   if (brief?.tone?.length) meta.push(brief.tone.join(", "));
+  const heatLevel = brief?.heat?.level;
+  if (heatLevel) {
+    const heatLabel = HEAT_LEVELS.find((h) => h.value === heatLevel)?.label;
+    if (heatLabel) meta.push(heatLabel);
+  }
 
   return (
     <div className="mb-6 max-w-[600px]">
