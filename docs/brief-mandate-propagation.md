@@ -147,9 +147,16 @@ book 1150: independently flagged length=FAIL (49%), heat=FAIL ("consummation lau
 subordinate clause"), genre=PARTIAL, success=PARTIAL, with quoted evidence — matching the original
 hand diagnosis exactly.
 
-**Remaining (gate wiring, not yet built):** web client call + UI surfacing of the report, and an
-auto-trigger after `generate-book` completes (post-generation hook). v1 is invokable but not yet
-surfaced in the product.
+**Surfaced (built):** `lib/mandateGate.ts` (client call, bridge-in-dev/edge-in-prod switch mirroring
+`invokeGenerateBook`) + `MandateReport.tsx` (per-axis report card, house style) + auto-trigger wired
+into `WriteAllPages` — when a watched draft finishes (`book_generations` row → `done`), the gate runs
+once and the report renders inline below the build action. Verified: web typecheck + bridge parse
+green; the `/mandate-gate/:bookId` bridge route boots clean and returns its 403 auth gate.
+
+**Remaining:** the report is ephemeral component state (not persisted to a table like
+`book_evaluations`), so it shows right after generation but not on a later revisit — persistence +
+a manual re-check affordance are the natural follow-ups. Authenticated browser round-trip + UI render
+still want a manual-QA pass post-deploy.
 
 ## 7.5 C5: reframe Heat (AI dial) → Content type (publishing-first, AI-derived)
 

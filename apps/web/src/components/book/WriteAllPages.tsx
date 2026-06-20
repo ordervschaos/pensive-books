@@ -8,6 +8,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useLatestTaskRow, type TaskRow } from "@/hooks/useLatestTaskRow";
 import { notify as fireNotification } from "@/lib/notify";
 import { invokeGenerateBook } from "@/lib/generateBook";
+import { invokeMandateGate, type ConformanceReport } from "@/lib/mandateGate";
+import { MandateReportCard } from "./MandateReport";
 import { useEffect, useRef, useState } from "react";
 
 interface WriteAllPagesProps {
@@ -55,6 +57,17 @@ export function WriteAllPages({ bookId, plannedCount }: WriteAllPagesProps) {
   const watchedRef = useRef<number | null>(null);
   useEffect(() => { notifyRef.current = notify; }, [notify]);
 
+  // Conformance backstop (gate (a)): after a watched draft finishes, score it against the brief
+  // MANDATE. Informational — surfaced inline, never blocks. gatedRef dedupes per generation row.
+  const [gate, setGate] = useState<{ status: "idle" | "running" | "done" | "error"; report?: ConformanceReport; error?: string }>({ status: "idle" });
+  const gatedRef = useRef<number | null>(null);
+  const runGate = async () => {
+    setGate({ status: "running" });
+    const { report, error } = await invokeMandateGate(bookId);
+    if (error || !report) setGate({ status: "error", error: error?.message ?? "No report returned" });
+    else setGate({ status: "done", report });
+  };
+
   const { row, refetch, stale } = useLatestTaskRow<WriteAllRow>({
     table: "book_generations",
     bookId,
@@ -98,6 +111,11 @@ export function WriteAllPages({ bookId, plannedCount }: WriteAllPagesProps) {
         description: `${total - failures} of ${total} pages filled${failures ? ` (${failures} failed)` : ""}.`,
         variant: failures ? "destructive" : undefined,
       });
+      // Auto-run the conformance backstop once per finished draft.
+      if (gatedRef.current !== row.id) {
+        gatedRef.current = row.id;
+        void runGate();
+      }
     } else if (row?.status === "error") {
       toast({ title: "Couldn't finish writing", description: row.error ?? "The run stopped.", variant: "destructive" });
     }
@@ -203,6 +221,15 @@ export function WriteAllPages({ bookId, plannedCount }: WriteAllPagesProps) {
             />
             Pause after planning beats, so I can review them before any prose is written
           </label>
+        </div>
+      )}
+      {gate.status !== "idle" && (
+        <div className="px-5">
+          <MandateReportCard
+            report={gate.report ?? null}
+            loading={gate.status === "running"}
+            error={gate.status === "error" ? gate.error : null}
+          />
         </div>
       )}
     </div>
