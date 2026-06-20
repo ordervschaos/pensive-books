@@ -128,13 +128,28 @@ at ~20 call sites (e.g. `eval-bridge.mjs:1234, 2040, 2249`). Checklist per chang
 - [ ] `apps/web/src/lib/brief.ts` (web-side Brief type + `briefToPromptContext`)
 - [ ] Brief modal UI for any new field (C3)
 
-## 6. Why this beats a gate alone
+## 6. Gate (a): the conformance backstop — BUILT
 
 A gate scores the finished manuscript against `success_criteria` and re-rolls on a miss —
 expensive, and it fights a pipeline that is actively laundering the mandate out. The mechanism
-fix makes heat/length/comedy travel *with authority*, so conformance is the default. Keep the
-gate as a backstop (it also catches model refusals on explicit beats — detect "beat called for
-X, prose delivered ¬X"), but build it **after** C1–C4, sized to confirm rather than enforce.
+fix makes heat/length/comedy travel *with authority*, so conformance is the default. The gate is
+the confirm-don't-enforce backstop on top, built **after** C1–C4.
+
+**Built:** `_shared/mandate-gate.ts` (core) + `mandate-gate/index.ts` (thin edge endpoint, sync,
+`POST { bookId } → { report }`) + a `/mandate-gate/:bookId` bridge route. It scores a finished book
+against the SAME MANDATE block the generator was handed and returns a per-axis `ConformanceReport`:
+- **length** — deterministic (word count vs `word_target`; <60% = fail, 60–85% = partial).
+- **heat / genre / success** — one LLM judge call (`getActiveModels().high`) returning JSON verdicts,
+  tuned to catch a *laundered* mandate (fade-to-black, comedy drift).
+
+It **reports**, it does not block — a future re-roll can consume the report. **Verified** against
+book 1150: independently flagged length=FAIL (49%), heat=FAIL ("consummation laundered to a
+subordinate clause"), genre=PARTIAL, success=PARTIAL, with quoted evidence — matching the original
+hand diagnosis exactly.
+
+**Remaining (gate wiring, not yet built):** web client call + UI surfacing of the report, and an
+auto-trigger after `generate-book` completes (post-generation hook). v1 is invokable but not yet
+surfaced in the product.
 
 ## 7.5 C5: reframe Heat (AI dial) → Content type (publishing-first, AI-derived)
 

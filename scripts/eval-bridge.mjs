@@ -3344,6 +3344,68 @@ async function runCallEval(call) {
 }
 
 // ── Server ────────────────────────────────────────────────────────────────────
+// ── mandate gate (conformance backstop) — mirrors supabase/functions/_shared/mandate-gate.ts ──
+const GATE_JUDGE_SYSTEM =
+  `You are a CONFORMANCE AUDITOR for a book-generation pipeline. You are given a book's brief MANDATE ` +
+  `(what the author promised the finished book would deliver) and its full manuscript. For each axis, ` +
+  `judge strictly and from evidence whether the FINISHED PROSE delivers the mandate — a delivery check, ` +
+  `not a quality review. The key failure to catch: a mandate LAUNDERED OUT — an explicit/sensual heat ` +
+  `requirement the prose quietly fades-to-black, or a comedy mandate the book abandons as it gets earnest.\n\n` +
+  `Judge exactly these axes:\n` +
+  `- "heat": does intimacy render at the mandated explicitness? If the MANDATE (content type, or an ` +
+  `ecchi/romance genre, or a "turning on"/"scintillating" success criterion) implies on-the-page heat, do ` +
+  `key intimate scenes appear ON THE PAGE, or fade to black at the decisive moment? FAIL=faded/absent, ` +
+  `PARTIAL=timid/uneven, PASS=delivered.\n` +
+  `- "genre": is the genre obligation honored THROUGHOUT (a comedy stays funny)? FAIL=drifts, PARTIAL=slips, PASS=sustained.\n` +
+  `- "success": are the author's success_criteria met by the finished book?\n` +
+  `If an axis is not mandated, return verdict "pass" with detail "not mandated".\n\n` +
+  `Return ONLY this JSON: {"axes":[{"axis":"heat","verdict":"pass|partial|fail","detail":"<one line>","evidence":"<short quote or page title>"}]}`;
+
+function gateLength(target, wc) {
+  if (!target) return { axis: "length", verdict: "pass", detail: "No word target set — length not mandated.", evidence: `${wc} words` };
+  const ratio = wc / target, pct = Math.round(ratio * 100);
+  const evidence = `${wc.toLocaleString()} / ${target.toLocaleString()} words (${pct}%)`;
+  if (ratio >= 0.85 && ratio <= 1.25) return { axis: "length", verdict: "pass", detail: "Within range of the target length.", evidence };
+  if (ratio < 0.85 && ratio >= 0.6) return { axis: "length", verdict: "partial", detail: "Runs short of the target length.", evidence };
+  if (ratio > 1.25 && ratio <= 1.5) return { axis: "length", verdict: "partial", detail: "Runs over the target length.", evidence };
+  if (ratio < 0.6) return { axis: "length", verdict: "fail", detail: "Far below the target length — unfinished against scope.", evidence };
+  return { axis: "length", verdict: "fail", detail: "Far over the target length.", evidence };
+}
+
+async function runMandateGate(bookId) {
+  const book = await fetchBook(bookId);
+  if (!book) return { error: "Book not found" };
+  const brief = book.brief ?? {};
+  const pages = await fetchPages(bookId);
+  if (!pages.length) return { error: "Book has no pages to check." };
+
+  let wordCount = 0;
+  const manuscript = pages.map((p) => {
+    if ((p.page_type ?? "") === "section") return `\n\n## ${p.title ?? ""}\n`;
+    const text = tiptapToText(p.content).trim();
+    wordCount += text ? text.split(/\s+/).filter(Boolean).length : 0;
+    return `\n\n----- ${p.title ?? `Page ${p.page_index}`} -----\n${text}`;
+  }).join("");
+
+  const target = brief.scope?.word_target ?? null;
+  const lengthAxis = gateLength(target, wordCount);
+
+  const mandate = mandateContext(brief) || "(no explicit mandate set)";
+  const user =
+    `BRIEF MANDATE (what the book promised to deliver):\n${mandate}\n\n` +
+    `GENRE: ${brief.genre ?? "(unset)"}\nSUCCESS CRITERIA: ${brief.success_criteria ?? "(unset)"}\n\n` +
+    `Judge the manuscript below against the mandate. JSON only.\n\nFULL MANUSCRIPT:\n${manuscript}`;
+  const out = await runClaude(`${GATE_JUDGE_SYSTEM}\n\n${user}`, true, { fn: "mandate-gate", bookId }, { noTools: true, model: MODEL_PLANNING });
+  if (out.error) return { error: out.error };
+  let proseAxes;
+  try { proseAxes = (parseLooseJson(out.text).axes ?? []).filter((a) => a && a.axis && a.verdict); }
+  catch { proseAxes = [{ axis: "heat", verdict: "partial", detail: "Judge response could not be parsed — inspect by hand.", evidence: out.text.slice(0, 160) }]; }
+
+  const axes = [lengthAxis, ...proseAxes];
+  const overall = axes.some((a) => a.verdict === "fail") ? "fail" : axes.some((a) => a.verdict === "partial") ? "partial" : "pass";
+  return { report: { overall, axes, wordCount, wordTarget: target } };
+}
+
 const server = createServer(async (req, res) => {
   if (req.method === "OPTIONS") return res.writeHead(204, cors).end();
 
@@ -3401,6 +3463,17 @@ async function route(req, res) {
       return json(res, 200, { status: "done", result: out.result });
     }
     return json(res, 405, { error: "method not allowed" });
+  }
+
+  const gateMatch = url.match(/^\/mandate-gate\/(\d+)\/?$/);
+  if (gateMatch) {
+    if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
+    const bookId = Number(gateMatch[1]);
+    if (!(await authorize(req, res, bookId))) return;
+    console.log(`Running mandate gate for book ${bookId}…`);
+    const out = await runMandateGate(bookId);
+    if (out.error) return json(res, 500, { error: out.error });
+    return json(res, 200, { report: out.report });
   }
 
   const scaffoldMatch = url.match(/^\/spine-to-objectives\/(\d+)\/?$/);
