@@ -1421,7 +1421,7 @@ const FOUNDATIONS_AGENT_INSTRUCTIONS = `You are the FOUNDATIONS EDITOR — a dev
 
 You can do these things, and you choose per message:
 1. TALK — answer, talk through an idea, weigh a trade-off. Be specific.
-2. PRESSURE-TEST — test the foundations' integrity: is the argument a real claim (not a topic)? does the ending pay the argument's cost? does each cast member's want/wound/lie cohere and drive an arc? do the tentpoles dramatize the argument? Name the weak link and the highest-leverage fix.
+2. PRESSURE-TEST — test the foundations' integrity: is the argument a real claim (not a topic)? does the ending pay the argument's cost? does each cast member's want/wound/lie cohere and drive an arc? do the tentpoles BOTH dramatize the argument AND deliver the brief's genre promise on the page? (For a heat/comedy/genre-forward brief the tentpole bank IS the genre engine — its first job is the genre's core appeal rendered explicitly, not argument-proof; NEVER treat that engine as a weakness to "balance away" with stakes/plot, and any new tentpoles must keep the genre mix the brief demands.) Name the weak link and the highest-leverage fix.
 3. GENERATE — when the foundations are largely EMPTY (or the author asks to draft / create / explore them): UNLESS the author has already settled on a direction, FIRST offer 2–3 DISTINCT directions the foundations could take — each a different ARGUMENT and the ending, cast shape, and signature moments it implies — as short prose sketches (numbered), with NO json block, and invite the author to pick or blend. Only once the author has chosen (or asked outright for the full draft) do you deliver the complete foundations (as in PROPOSE).
 4. PROPOSE A CHANGE — when the author wants foundations drafted or changed (or you've agreed on a fix / they've picked a direction). You may set/revise the ARGUMENT, ENDING, and VOICE text; add/revise CAST members (including each one's history, idiolect, and physical tag); add/revise the RELATIONSHIPS between them; set/revise the WORLD (setting, period, rules); set/revise the NARRATION mode (person: first/close-third/omniscient, tense: past/present, and an optional distance note); and add/revise/reorder TENTPOLE moments. PINNED lines, pinned cast fields, pinned relationships, a pinned world, and a pinned narration are IMMUTABLE — never change or drop them. Honor the brief.
 
@@ -1619,28 +1619,40 @@ async function runReviseChat(bookId, layer, message) {
         return { reply, proposal: null };
       }
       system = BEATS_AGENT_INSTRUCTIONS;
+      const _beatsMandate = mandateContext(book.brief);
+      const _beatsSteer = typeof book.steers?.beats === "string" ? book.steers.beats.trim() : "";
       context =
-        `BOOK: ${book.name}\n\nBRIEF (the voice contract):\n${briefContext(book.brief)}` +
+        `BOOK: ${book.name}\n\nBRIEF — the contract (voice AND deliverables):\n${briefContext(book.brief)}` +
+        (_beatsMandate ? `\n\nMANDATE — NON-NEGOTIABLE (the book has FAILED if any of these are not delivered; do not treat them as flavor. The beats are where a mandated property is delivered or quietly faded — every beat must render the mandated genre ON the page, as a recurring engine where the brief implies it; NEVER launder a mandated property into euphemism or fade-to-black):\n${_beatsMandate}` : "") +
         (spineText ? `\n\nSPINE:\n${spineText}` : "") +
         (f ? `\n\nFOUNDATIONS (settled — pinned lines are immutable):\n${foundationsContext(f)}` : "") +
         `\n\nCURRENT BEAT SHEET (real page ids):\n${beatSheetContext(pages)}` +
-        `\n\nFICTION CRITERIA (use when evaluating):\n${BEAT_CRITERIA}`;
+        `\n\nFICTION CRITERIA (use when evaluating):\n${BEAT_CRITERIA}` +
+        (_beatsSteer ? `\n\nAUTHOR'S STEER FOR THIS STEP (honor it as a strong instruction shaping THIS output; it never overrides the brief, the spine, or any PINNED constraint):\n${_beatsSteer}` : "");
       sanitize = (parsed) => { const plan = parseBeatPlan(JSON.stringify(parsed), pages); return plan && !plan.error ? { layer: "beats", data: plan } : null; };
     } else if (layer === "spine") {
       system = SPINE_AGENT_INSTRUCTIONS;
+      const _spineMandate = mandateContext(book.brief);
+      const _spineSteer = typeof book.steers?.spine === "string" ? book.steers.spine.trim() : "";
       context =
         `BOOK: ${book.name}\n\nBRIEF (the contract):\n${briefContext(book.brief)}` +
+        (_spineMandate ? `\n\nMANDATE — NON-NEGOTIABLE (the book has FAILED if any of these are not delivered; do not treat them as flavor — render each mandated property explicitly in the spine, as a recurring engine where the genre implies it; NEVER launder one into euphemism or fade):\n${_spineMandate}` : "") +
         (f ? `\n\nFOUNDATIONS (settled — pinned lines immutable; every pinned tentpole MUST survive in the spine):\n${foundationsContext(f)}` : "") +
-        `\n\nCURRENT SPINE:\n${spineText || "(no spine yet)"}`;
+        `\n\nCURRENT SPINE:\n${spineText || "(no spine yet)"}` +
+        (_spineSteer ? `\n\nAUTHOR'S STEER FOR THIS STEP (honor it as a strong instruction shaping THIS output; it never overrides the brief, the spine, or any PINNED constraint):\n${_spineSteer}` : "");
       sanitize = (parsed) => { const t = (typeof parsed.text === "string" ? parsed.text.trim() : ""); return t ? { layer: "spine", data: { text: t } } : null; };
     } else if (layer === "outline") {
       const pages = await fetchPages(bookId);
       system = OUTLINE_AGENT_INSTRUCTIONS;
+      const _outlineMandate = mandateContext(book.brief);
+      const _outlineSteer = typeof book.steers?.outline === "string" ? book.steers.outline.trim() : "";
       context =
-        `BOOK: ${book.name}\n\nBRIEF (the voice contract):\n${briefContext(book.brief)}` +
+        `BOOK: ${book.name}\n\nBRIEF — the contract (voice AND deliverables):\n${briefContext(book.brief)}` +
+        (_outlineMandate ? `\n\nMANDATE — NON-NEGOTIABLE (the book has FAILED if any of these are not delivered; do not treat them as flavor. Every page's objective must carry the mandated genre where the brief implies it; structure the book so the mandated properties land ON the page as a recurring engine — never structure a mandated property out or relegate it to a single page):\n${_outlineMandate}` : "") +
         (spineText ? `\n\nSPINE (the book in one arc — the outline must realize this):\n${spineText}` : "") +
         (f ? `\n\nFOUNDATIONS (settled — pinned lines are immutable):\n${foundationsContext(f)}` : "") +
-        `\n\nCURRENT OUTLINE (real page ids):\n${outlineContext(pages)}`;
+        `\n\nCURRENT OUTLINE (real page ids):\n${outlineContext(pages)}` +
+        (_outlineSteer ? `\n\nAUTHOR'S STEER FOR THIS STEP (honor it as a strong instruction shaping THIS output; it never overrides the brief, the spine, or any PINNED constraint):\n${_outlineSteer}` : "");
       sanitize = (parsed) => { const plan = parseBeatPlan(JSON.stringify(parsed), pages); return plan && !plan.error ? { layer: "outline", data: plan } : null; };
     } else {
       const ff = f ?? {};
@@ -1648,10 +1660,14 @@ async function runReviseChat(bookId, layer, message) {
         ? ff.cast.map((c) => { const pf = c.pinned_fields ?? []; const fld = (k) => (c[k] ? `\n    ${k}: ${c[k]}${pf.includes(k) ? " [PINNED — immutable]" : ""}` : ""); const extra = (k) => (c[k] ? `\n    ${k}: ${c[k]}` : ""); return `[id=${c.id}] ${c.name} (${c.role ?? "major"})${fld("want")}${fld("wound")}${fld("lie")}${extra("history")}${extra("idiolect")}${extra("tag")}`; }).join("\n")
         : "(no cast yet)";
       system = FOUNDATIONS_AGENT_INSTRUCTIONS;
+      const _foundMandate = mandateContext(book.brief);
+      const _foundSteer = typeof book.steers?.foundations === "string" ? book.steers.foundations.trim() : "";
       context =
         `BOOK: ${book.name}\n\nBRIEF (the frozen contract — never propose changing it):\n${briefContext(book.brief)}` +
+        (_foundMandate ? `\n\nMANDATE — NON-NEGOTIABLE (the book has FAILED if any of these are not delivered; do not treat them as flavor. The TENTPOLES are this brief's genre engine — every set-piece you propose or keep must serve these, rendered explicitly on the page; never propose tentpoles that dilute the mandated genre, and never frame the existing genre engine as a weakness to balance away):\n${_foundMandate}` : "") +
         `\n\nCURRENT FOUNDATIONS (settled — PINNED lines are immutable):\n${foundationsContext(ff)}` +
-        `\n\nCAST (with ids — reference an [id] to revise a member):\n${castIds}`;
+        `\n\nCAST (with ids — reference an [id] to revise a member):\n${castIds}` +
+        (_foundSteer ? `\n\nAUTHOR'S STEER FOR THIS STEP (honor it as a strong instruction shaping THIS output; it never overrides the brief, the spine, or any PINNED constraint):\n${_foundSteer}` : "");
       sanitize = (parsed) => { const data = sanitizeFoundationsPatch(parsed, ff); return data ? { layer: "foundations", data } : null; };
     }
 
@@ -2447,17 +2463,6 @@ Output JSON ONLY:
 { "candidates": [{ "label": "<descriptor>", "text": "<~120 words>" }, …] }`,
 };
 
-const SPINE_ROUTES_SYSTEM = `You are a book architect proposing ROUTES — alternative paths from this book's beginning to its settled ending, through its tentpole moments. A route is ~250 words: the causal road the story takes, not a blurb.
-
-Generate exactly 3 routes. Each must:
-- Realize the settled argument and land on the settled ending
-- Include EVERY pinned tentpole (reference them by their [id]) — order may differ between routes
-- Never include a killed direction
-- Differ genuinely from the other routes: different orderings, different connective tissue, different midpoints
-
-Output JSON ONLY:
-{ "routes": [{ "summary": "<~250 words>", "tentpole_order": ["<tentpole id>", …] }, …] }`;
-
 const bridgeUid = () => crypto.randomUUID().slice(0, 8);
 
 // The settled foundations rendered as hard constraints (pinned = immutable) — mirrors settledContext.
@@ -2678,45 +2683,6 @@ async function runFoundationsOptions(body) {
   }
 }
 
-async function runSpineRoutes(body) {
-  const { bookId, avoid } = body;
-  if (!bookId) return { error: "bookId required" };
-  const book = await fetchBook(bookId);
-  if (!book) return { error: "Book not found" };
-  const f = book.foundations ?? {};
-  const pinnedIds = (f.tentpoles ?? []).filter((t) => t.status === "pinned").map((t) => t.id);
-  const killedIds = new Set((f.tentpoles ?? []).filter((t) => t.status === "killed").map((t) => t.id));
-
-  const _srMandate = mandateContext(book.brief);
-  const userContent =
-    `BOOK: ${book.name}\n\nBRIEF — binding contract (voice AND deliverables):\n${briefContext(book.brief)}${_srMandate ? `\n\nMANDATE — NON-NEGOTIABLE (the book has FAILED if any of these are not delivered; do not treat them as flavor):\n${_srMandate}` : ""}${canonSection(book.canon)}\n\nSETTLED FOUNDATIONS:\n${foundationsContext(f)}` +
-    (avoid?.length ? `\n\nEXISTING ROUTES (vary away from these — don't paraphrase them):\n${avoid.map((s) => `---\n${s}`).join("\n")}` : "") +
-    `\n\nGenerate 3 routes. JSON only.`;
-
-  const attempt = async (extra) => {
-    const out = await runClaude(`${SPINE_ROUTES_SYSTEM}\n\n${userContent}${extra ?? ""}`, true, { fn: "spine-routes", bookId }, { noTools: true, model: MODEL_PLANNING });
-    if (out.error) throw new Error(out.error);
-    const parsed = parseLooseJson(out.text);
-    return (parsed.routes ?? [])
-      .map((r) => ({ id: bridgeUid(), summary: String(r.summary ?? "").trim(), tentpole_order: (Array.isArray(r.tentpole_order) ? r.tentpole_order : []).map(String) }))
-      .filter((r) => r.summary);
-  };
-  const violates = (routes) =>
-    routes.length === 0 ||
-    routes.some((r) => pinnedIds.some((id) => !r.tentpole_order.includes(id)) || r.tentpole_order.some((id) => killedIds.has(id)));
-
-  try {
-    let routes = await attempt();
-    if (violates(routes)) {
-      routes = await attempt(`\n\nIMPORTANT: a previous attempt violated the constraints. EVERY route's tentpole_order must contain ALL of these pinned ids: ${JSON.stringify(pinnedIds)} and NONE of these killed ids: ${JSON.stringify([...killedIds])}.`);
-      if (violates(routes)) return { error: "Couldn't generate routes that honor every pinned tentpole — try unpinning or rewording a tentpole." };
-    }
-    return { routes };
-  } catch (e) {
-    return { error: `Route generation failed: ${e.message}` };
-  }
-}
-
 // ── /ai-run ───────────────────────────────────────────────────────────────────
 // Mirrors supabase/functions/ai-run: the durable harness for short ops. The bridge has no wall-clock
 // cap, so it inserts the running row, runs the worker, and writes the terminal row synchronously
@@ -2741,8 +2707,6 @@ async function aiRunWorker(kind, params, bookId) {
       if (fo.world) return { world: fo.world };
       return { candidates: fo.candidates };
     }
-    case "spine_routes":
-      return { routes: fail(await runSpineRoutes({ bookId, avoid: params.avoid })).routes };
     default:
       throw new Error(`Unknown ai-run kind: ${kind}`);
   }

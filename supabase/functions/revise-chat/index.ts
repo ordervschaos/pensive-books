@@ -50,7 +50,7 @@ Deno.serve(async (req: Request) => {
     const lens = LENSES[layer];
 
     const { data: book, error: bookError } = await userClient
-      .from("books").select("id, name, brief, spine, foundations, craft_notes, owner_id").eq("id", bookId).single();
+      .from("books").select("id, name, brief, spine, foundations, craft_notes, steers, owner_id").eq("id", bookId).single();
     if (bookError || !book) return json({ error: "Book not found" }, 404);
 
     const { data: access } = await userClient
@@ -90,6 +90,7 @@ Deno.serve(async (req: Request) => {
       pages: (pages as PageRow[] | null) ?? [],
       threads: (threads as ThreadLite[] | null) ?? [],
       craftNote: (book.craft_notes as Record<string, string> | null)?.[layer] ?? null,
+      steers: book.steers ?? null,
     };
 
     // "Plan all beats" is a bulk generation op — one model call for a whole book times out on the

@@ -370,7 +370,7 @@ function RelationshipsSub({ cast, relationships, onSave }: {
                 {cast.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
               </select>
               {/* bond */}
-              <input
+              <AutoTextarea
                 defaultValue={r.bond}
                 placeholder="bond — one line on the charge between them…"
                 onBlur={(e) => { const v = e.target.value.trim(); if (v !== r.bond) updateRow(r.id, { bond: v }); }}

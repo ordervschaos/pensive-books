@@ -17,7 +17,6 @@ const EVAL_ACTIVE = ["pending"] as const;
 // book_generations.kind → the step it belongs to. Page-scoped/unknown kinds (e.g. node_revise) are
 // intentionally absent: better no badge than a wrong one.
 const GEN_STEP: Record<string, StepKey> = {
-  spine_routes: "spine",
   foundations_options: "foundations",
   objective_options: "outline",
   beat_candidates: "beats",

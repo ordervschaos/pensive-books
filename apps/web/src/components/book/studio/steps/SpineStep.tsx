@@ -57,15 +57,18 @@ export function SpineStep({ bookId, reloadKey, onStatusChange, onChanged }: Prop
   }, [reloadKey]);
 
   const save = async () => {
-    if (saving) return;
+    console.log("[SpineStep] save() called — spine:", JSON.stringify(spine), "dirty:", dirty, "saving:", saving);
+    if (saving) { console.log("[SpineStep] save() blocked — already saving"); return; }
     setSaving(true);
     try {
       await saveSpine(bookId, spine.trim(), { pinned: true });
+      console.log("[SpineStep] saveSpine() succeeded — text saved:", JSON.stringify(spine.trim()));
       setDirty(false);
       dirtyRef.current = false;
       onStatusChange(!!spine.trim());
       onChanged();
     } catch (e) {
+      console.error("[SpineStep] saveSpine() error:", e);
       toast({ title: "Couldn't save the spine", description: String((e as Error)?.message ?? e), variant: "destructive" });
     } finally {
       setSaving(false);
@@ -74,35 +77,27 @@ export function SpineStep({ bookId, reloadKey, onStatusChange, onChanged }: Prop
 
   if (!loaded) return null;
 
-  if (!spine.trim()) {
-    return (
-      <div className="space-y-4">
-        <p className="pv-serif text-[15px] italic leading-relaxed text-[hsl(var(--pv-text-faint))]">
-          No spine yet.
-        </p>
-        <GenerateInChat bookId={bookId} layer="spine" label="Draft the spine" />
-        <p className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))]">
-          Or type it directly below — one paragraph describing the journey from your argument to your ending.
-        </p>
-        <AutoTextarea
-          value={spine}
-          onChange={(e) => { setSpine(e.target.value); setDirty(true); dirtyRef.current = true; }}
-          onBlur={() => { if (dirty && spine.trim()) void save(); }}
-          placeholder="The spine in one paragraph — how the story moves from argument to ending through the tentpoles…"
-          className="pv-serif w-full border-none bg-transparent px-0 text-[16px] leading-[1.65] focus-visible:ring-0"
-        />
-        <CraftNote bookId={bookId} layer="spine" />
-      </div>
-    );
-  }
+  const isEmpty = !spine.trim();
 
   return (
-    <div>
+    <div className="space-y-4">
+      {isEmpty && (
+        <>
+          <p className="pv-serif text-[15px] italic leading-relaxed text-[hsl(var(--pv-text-faint))]">
+            No spine yet.
+          </p>
+          <GenerateInChat bookId={bookId} layer="spine" label="Draft the spine" />
+          <p className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))]">
+            Or type it directly below — one paragraph describing the journey from your argument to your ending.
+          </p>
+        </>
+      )}
       <AutoTextarea
         value={spine}
         onChange={(e) => { setSpine(e.target.value); setDirty(true); dirtyRef.current = true; }}
         onBlur={() => { if (dirty) void save(); }}
-        className="pv-serif w-full border-none bg-transparent px-0 text-[18px] leading-[1.7] focus-visible:ring-0"
+        placeholder="The spine in one paragraph — how the story moves from argument to ending through the tentpoles…"
+        className={`pv-serif w-full border-none bg-transparent px-0 focus-visible:ring-0 ${isEmpty ? "text-[16px] leading-[1.65]" : "text-[18px] leading-[1.7]"}`}
       />
       <CraftNote bookId={bookId} layer="spine" />
     </div>

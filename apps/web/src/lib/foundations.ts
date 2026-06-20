@@ -3,7 +3,7 @@
 // supabase/functions/_shared/foundations-core.ts — keep the two in sync.
 //
 // The column doubles as the FLOW FLAG: null = old 9-step rail, non-null (even {}) = the new
-// brief → foundations → spine-routes rail. New books get '{}' from the DB default.
+// brief → foundations → spine rail. New books get '{}' from the DB default.
 //
 // Pin semantics (§0/§4 rule 1): any EXPLICIT author gesture — editing text, tap-selecting a
 // candidate, keeping a tentpole — pins the record (pinned: true + author_edited_at). The
@@ -101,18 +101,15 @@ export const IMAGE_MODEL_OPTIONS: ImageModelOption[] = [
 ];
 export const DEFAULT_IMAGE_MODEL = "gemini-3";
 
-export interface SpineRoute { id: string; summary: string; tentpole_order: string[] }
-/** books.spine in the new flow: the old {text, brief_hash} plus routes + pin. */
+/** books.spine: the one-paragraph throughline (text) plus its brief edge-hash and author pin. */
 export interface SpineNode {
   text?: string;
   brief_hash?: string;
   pinned?: boolean;
   author_edited_at?: string;
-  routes?: SpineRoute[];
-  selected_route_id?: string;
 }
 
-/** Merge a patch into books.spine without dropping the other keys (routes, pin, …). */
+/** Merge a patch into books.spine without dropping the other keys (brief_hash, pin, …). */
 export async function writeSpinePatch(bookId: number, patch: Partial<SpineNode>): Promise<void> {
   const { data, error: readErr } = await supabase.from("books").select("spine").eq("id", bookId).maybeSingle();
   if (readErr) throw readErr;

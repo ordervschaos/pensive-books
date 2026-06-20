@@ -79,6 +79,25 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookId, infoKey]);
 
+  // Keep spine/foundations/canon a LIVE projection of the books row. The in-process onChanged chain
+  // (rail apply → refresh) is best-effort; a server-side write or a missed callback would otherwise
+  // leave this panel stale until a manual refresh. Subscribing makes any books UPDATE re-read here.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const bump = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => setInfoKey((k) => k + 1), 300);
+    };
+    const channel = supabase
+      .channel(`studio_build_${bookId}`)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "books", filter: `id=eq.${bookId}` }, bump)
+      .subscribe();
+    return () => {
+      if (timer) clearTimeout(timer);
+      void supabase.removeChannel(channel);
+    };
+  }, [bookId]);
+
   // Wrap the host refresh so a change anywhere also re-reads spine/voice/read.
   const refresh = useCallback(() => { onChanged(); setInfoKey((k) => k + 1); }, [onChanged]);
 

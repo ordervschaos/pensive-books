@@ -11,7 +11,8 @@
 // runs the layer's sanitize on the parsed block to produce a RevisionProposal envelope. The proposal
 // is reviewed by the author and applied through that layer's existing write path — the agent never
 // mutates the book itself.
-import { type Brief, briefContext } from "./brief.ts";
+import { type Brief, briefContext, mandateContext } from "./brief.ts";
+import { readSteer, steerBlock } from "./steer.ts";
 import { extractJsonBlock } from "./json.ts";
 import { sanitizePlan, type RevisionPlan } from "./revision-plan.ts";
 import {
@@ -78,6 +79,8 @@ export interface LensContext {
   threads: ThreadLite[];
   /** TIER 2: this book's author-editable craft note for the active layer (books.craft_notes[layer]). */
   craftNote?: string | null;
+  /** books.steers jsonb — a lens folds in its own step's steer (readSteer(steers, step)). */
+  steers?: unknown;
 }
 
 // ── Craft knowledge — a two-tier frame the reviser reasons AGAINST (never a template) ────────────
@@ -326,13 +329,16 @@ When you are talking, evaluating, or answering — append NO code block at all. 
 - PLAN RULES: use ONLY the real [id]s given; every existing page MUST appear in "pages" (with its ref) or in "deletes" — never drop one silently. "section" = chapter/part divider; "text" pages carry a beat. Give every text page an objective AND a beat — always write the full beat text, never write "[unchanged]" or any placeholder. Reorder by placing entries in final order. Be surgical — "keep" what works. Honor pinned foundations and tracked-thread setups/payoffs. Never write prose; never use a "revise" op.`,
     context(ctx) {
       const settled = ctx.foundations ? settledContext(ctx.foundations).trim() : "";
-      return `BOOK: ${ctx.bookName}\n\nBRIEF (the voice contract):\n${briefBlock(ctx.brief)}` +
+      const mandate = mandateContext(ctx.brief);
+      return `BOOK: ${ctx.bookName}\n\nBRIEF — the contract (voice AND deliverables):\n${briefBlock(ctx.brief)}` +
+        (mandate ? `\n\nMANDATE — NON-NEGOTIABLE (the book has FAILED if any of these are not delivered; do not treat them as flavor. The beats are where a mandated property is delivered or quietly faded — every beat must render the mandated genre ON the page, as a recurring engine where the brief implies it; NEVER launder a mandated property into euphemism or fade-to-black):\n${mandate}` : "") +
         (ctx.spineText?.trim() ? `\n\nSPINE (the book in one arc):\n${ctx.spineText.trim()}` : "") +
         (settled ? `\n\nFOUNDATIONS (settled — pinned lines are immutable):\n${settled}` : "") +
         `\n\nCURRENT BEAT SHEET (these are the real page ids):\n${beatSheetContext(ctx.pages)}` +
         (ctx.threads.length ? `\n\nTRACKED THREADS (keep their setups & payoffs intact):\n${threadsContext(ctx.threads)}` : "") +
         `\n\nFICTION CRITERIA (use when evaluating):\n${BEAT_CRITERIA}` +
-        craftContext("beats", ctx.craftNote);
+        craftContext("beats", ctx.craftNote) +
+        steerBlock(readSteer(ctx.steers, "beats"));
     },
     sanitize(parsed, ctx) {
       const plan = sanitizePlan(parsed as Partial<RevisionPlan>, ctx.pages, true);
@@ -358,12 +364,15 @@ When talking, pressure-testing, or merely OFFERING SHAPES to choose from, append
 - PLAN RULES: use ONLY the real [id]s given; every existing page MUST appear in "pages" (with its ref) or in "deletes" — never drop one silently. "section" = chapter/part divider (no objective); "text" pages each need an OBJECTIVE. Reorder by placing entries in final order. Be surgical — "keep" what works. NEVER write a "beat" field, never write prose, never use a "revise" op. Honor pinned foundations and the spine.`,
     context(ctx) {
       const settled = ctx.foundations ? settledContext(ctx.foundations).trim() : "";
-      return `BOOK: ${ctx.bookName}\n\nBRIEF (the voice contract):\n${briefBlock(ctx.brief)}` +
+      const mandate = mandateContext(ctx.brief);
+      return `BOOK: ${ctx.bookName}\n\nBRIEF — the contract (voice AND deliverables):\n${briefBlock(ctx.brief)}` +
+        (mandate ? `\n\nMANDATE — NON-NEGOTIABLE (the book has FAILED if any of these are not delivered; do not treat them as flavor. Every page's objective must carry the mandated genre where the brief implies it; structure the book so the mandated properties land ON the page as a recurring engine — never structure a mandated property out or relegate it to a single page):\n${mandate}` : "") +
         (ctx.spineText?.trim() ? `\n\nSPINE (the book in one arc — the outline must realize this):\n${ctx.spineText.trim()}` : "") +
         (settled ? `\n\nFOUNDATIONS (settled — pinned lines are immutable):\n${settled}` : "") +
         `\n\nCURRENT OUTLINE (these are the real page ids):\n${outlineContext(ctx.pages)}` +
         (ctx.threads.length ? `\n\nTRACKED THREADS (keep their setups & payoffs intact):\n${threadsContext(ctx.threads)}` : "") +
-        craftContext("outline", ctx.craftNote);
+        craftContext("outline", ctx.craftNote) +
+        steerBlock(readSteer(ctx.steers, "outline"));
     },
     sanitize(parsed, ctx) {
       const plan = sanitizePlan(parsed as Partial<RevisionPlan>, ctx.pages, true);
@@ -372,7 +381,7 @@ When talking, pressure-testing, or merely OFFERING SHAPES to choose from, append
   },
 
   spine: {
-    system: `You are the SPINE EDITOR — a developmental editor in conversation with an author about their book's SPINE: the whole book as ONE causal arc (~250 words), from its beginning, through its tentpole moments, to its settled ending. The spine is the throughline the beats and prose are built to serve. The beat sheet and prose are downstream — not your concern.
+    system: `You are the SPINE EDITOR — a developmental editor in conversation with an author about their book's SPINE: the whole book as ONE causal arc (250–500 words), from its beginning, through its tentpole moments, to its settled ending. The spine is the throughline the beats and prose are built to serve. The beat sheet and prose are downstream — not your concern.
 
 You can do these things, and you choose per message:
 1. TALK — answer, talk through a structural idea, weigh a trade-off. Be specific and concrete.
@@ -383,15 +392,18 @@ You can do these things, and you choose per message:
 
 OUTPUT — reply to the author in plain MARKDOWN prose. If — and ONLY if — this message DELIVERS a full spine to apply (a fresh draft or a revision), append at the very END a single fenced \`\`\`json code block, with nothing after it:
 \`\`\`json
-{ "summary": "<one line: what this spine does / what changed>", "text": "<the full spine, ~250 words, pure narrative prose — no ids, no brackets>" }
+{ "summary": "<one line: what this spine does / what changed>", "text": "<the full spine, 250–500 words, pure narrative prose — no ids, no brackets>" }
 \`\`\`
 When talking, pressure-testing, or merely OFFERING DIRECTIONS to choose from, append NO code block. "text" is the COMPLETE spine (not a diff). Never write beats or prose. Never embed tentpole ids or any bracket markers in the spine text.`,
     context(ctx) {
       const settled = ctx.foundations ? settledContext(ctx.foundations).trim() : "";
+      const mandate = mandateContext(ctx.brief);
       return `BOOK: ${ctx.bookName}\n\nBRIEF (the contract):\n${briefBlock(ctx.brief)}` +
+        (mandate ? `\n\nMANDATE — NON-NEGOTIABLE (the book has FAILED if any of these are not delivered; do not treat them as flavor — render each mandated property explicitly in the spine, as a recurring engine where the genre implies it; NEVER launder one into euphemism or fade):\n${mandate}` : "") +
         (settled ? `\n\nFOUNDATIONS (settled — pinned lines are immutable; every pinned tentpole MUST survive in the spine):\n${settled}` : "") +
         `\n\nCURRENT SPINE:\n${ctx.spineText?.trim() || "(no spine yet)"}` +
-        craftContext("spine", ctx.craftNote);
+        craftContext("spine", ctx.craftNote) +
+        steerBlock(readSteer(ctx.steers, "spine"));
     },
     sanitize(parsed) {
       const text = stripEntityIds(str(parsed.text));
@@ -405,7 +417,7 @@ When talking, pressure-testing, or merely OFFERING DIRECTIONS to choose from, ap
 
 You can do these things, and you choose per message:
 1. TALK — answer, talk through an idea, weigh a trade-off. Be specific.
-2. PRESSURE-TEST — test the foundations' integrity: is the argument a real claim (not a topic)? does the ending pay the argument's cost? does each cast member's want/wound/lie cohere and drive an arc? do the tentpoles dramatize the argument? Name the weak link and the highest-leverage fix.
+2. PRESSURE-TEST — test the foundations' integrity: is the argument a real claim (not a topic)? does the ending pay the argument's cost? does each cast member's want/wound/lie cohere and drive an arc? do the tentpoles BOTH dramatize the argument AND deliver the brief's genre promise on the page? (For a heat/comedy/genre-forward brief the tentpole bank IS the genre engine — its first job is the genre's core appeal rendered explicitly, not argument-proof; NEVER treat that engine as a weakness to "balance away" with stakes/plot, and any new tentpoles must keep the genre mix the brief demands.) Name the weak link and the highest-leverage fix.
 3. GENERATE — when the foundations are largely EMPTY (or the author asks to draft / create / explore them): UNLESS the author has already settled on a direction, FIRST offer 2–3 DISTINCT directions the foundations could take — each a different ARGUMENT and the ending, cast shape, and signature moments it implies — as short prose sketches (numbered), with NO json block, and invite the author to pick or blend. Only once the author has chosen (or asked outright for the full draft) do you deliver the complete foundations (as in PROPOSE).
 4. PROPOSE A CHANGE — when the author wants foundations drafted or changed (or you've agreed on a fix / they've picked a direction). You may set/revise the ARGUMENT, ENDING, and VOICE text; add/revise CAST members (including each one's history, idiolect, and physical tag); add/revise the RELATIONSHIPS between them; set/revise the WORLD (setting, period, rules); set/revise the NARRATION mode (person: first/close-third/omniscient, tense: past/present, and an optional distance note); and add/revise/reorder TENTPOLE moments. PINNED lines, pinned cast fields, pinned relationships, a pinned world, and a pinned narration are IMMUTABLE — never change or drop them. Honor the brief.
 
@@ -425,10 +437,13 @@ When talking or pressure-testing, append NO code block. If you send "cast", "ten
     context(ctx) {
       const f = ctx.foundations ?? {};
       const settled = settledContext(f).trim();
+      const mandate = mandateContext(ctx.brief);
       return `BOOK: ${ctx.bookName}\n\nBRIEF (the frozen contract — never propose changing it):\n${briefBlock(ctx.brief)}` +
+        (mandate ? `\n\nMANDATE — NON-NEGOTIABLE (the book has FAILED if any of these are not delivered; do not treat them as flavor. The TENTPOLES are this brief's genre engine — every set-piece you propose or keep must serve these, rendered explicitly on the page; never propose tentpoles that dilute the mandated genre, and never frame the existing genre engine as a weakness to balance away):\n${mandate}` : "") +
         `\n\nCURRENT FOUNDATIONS (settled — PINNED lines are immutable):\n${settled}` +
         `\n\nCAST (with ids — reference an [id] to revise a member):\n${castWithIds(f)}` +
-        craftContext("foundations", ctx.craftNote);
+        craftContext("foundations", ctx.craftNote) +
+        steerBlock(readSteer(ctx.steers, "foundations"));
     },
     sanitize(parsed, ctx) {
       const data = sanitizeFoundations(parsed, ctx.foundations ?? {});

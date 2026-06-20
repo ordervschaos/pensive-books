@@ -20,7 +20,7 @@ import { runInBackground, serviceClient } from "../_shared/task.ts";
 import { objectiveOptions } from "../_shared/options-core.ts";
 import { reviseNode, type ReviseLayer } from "../_shared/revise-core.ts";
 import { beatCandidates } from "../_shared/beat-core.ts";
-import { foundationsOptions, spineRoutes, type FoundationsStep } from "../_shared/foundations-core.ts";
+import { foundationsOptions, type FoundationsStep } from "../_shared/foundations-core.ts";
 
 // Each kind maps to a worker that produces the row's `result`. Workers throw on failure (the harness
 // turns a throw into a graceful error row). Add a case here to make a new short op durable.
@@ -68,15 +68,6 @@ async function runWorker(
         prompt: params.prompt as string | undefined,
         userId: ctx.userId,
       });
-    }
-    case "spine_routes": {
-      const routes = await spineRoutes(ctx.client, ctx.apiKey, {
-        bookId: ctx.bookId,
-        avoid: params.avoid as string[] | undefined,
-        prompt: params.prompt as string | undefined,
-        userId: ctx.userId,
-      });
-      return { routes };
     }
     default:
       throw new Error(`Unknown ai-run kind: ${kind}`);

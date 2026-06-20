@@ -1,13 +1,11 @@
-// foundations-core — the pure candidate-generation workers for the Foundations stage and the spine
-// routes (pin-driven flow, docs/pinned_method.md §3.2–3.3). No auth, no access check, no row writes —
-// callers own those (mirrors options-core.ts / spine-core.ts). The ai-run dispatcher runs these as
-// durable rows; the CLIENT applies a chosen candidate into books.foundations / books.spine.
+// foundations-core — the pure candidate-generation workers for the Foundations stage (pin-driven
+// flow, docs/pinned_method.md §3.2). No auth, no access check, no row writes — callers own those
+// (mirrors options-core.ts / spine-core.ts). The ai-run dispatcher runs these as durable rows; the
+// CLIENT applies a chosen candidate into books.foundations.
 //
 // Pin enforcement (§4 rule 2) at this layer:
 //   (a) every prompt receives the pinned records in scope, verbatim, as hard constraints;
-//   (b) workers never write rows, so they structurally cannot overwrite a pinned record;
-//   (c) spineRoutes validates post-hoc that every pinned tentpole appears (and no killed one does)
-//       in every route, and retries once on violation.
+//   (b) workers never write rows, so they structurally cannot overwrite a pinned record.
 import { type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { type Brief, briefContext, mandateContext } from "./brief.ts";
 import { callClaude, textFromClaude, type CallMeta } from "./claude.ts";
@@ -70,9 +68,6 @@ export interface Foundations {
   // F4a: narration mode (person/tense/distance) — book-level default for prose generation
   narration?: Narration;
 }
-
-export interface SpineRoute { id: string; summary: string; tentpole_order: string[] }
-
 
 
 // The already-settled foundations, rendered as hard constraints for downstream steps. Pinned items
@@ -326,87 +321,6 @@ export async function foundationsOptions(
     ...(c.label ? { label: String(c.label).trim() } : {}),
   })).filter((c) => c.text);
   return { candidates };
-}
-
-// ── Spine routes (§3.3) ──────────────────────────────────────────────────────
-const ROUTES_SYSTEM = `You are a book architect proposing ROUTES — alternative paths from this book's beginning to its settled ending, through its tentpole moments. A route is ~250 words: the causal road the story takes, not a blurb.
-
-Generate exactly 3 routes. Each must:
-- Realize the settled argument and land on the settled ending
-- Weave EVERY pinned tentpole moment into the narrative prose — do NOT embed any ids or brackets in the text
-- Never include a killed direction
-- Differ genuinely from the other routes: different orderings, different connective tissue, different midpoints
-
-Output JSON ONLY:
-{ "routes": [{ "summary": "<~250 words pure narrative prose, no ids>", "tentpole_order": ["<tentpole id>", …] }, …] }`;
-
-export interface SpineRoutesParams {
-  bookId: number;
-  /** Summaries to vary away from (re-route keeps the selected one client-side). */
-  avoid?: string[];
-  /** Optional per-call author direction (ephemeral chip selection + free note). */
-  prompt?: string;
-  userId?: string | null;
-}
-
-// brief+foundations → 3 candidate routes. Validates pin survival (§4 rule 2c): every pinned tentpole
-// in every route's tentpole_order, no killed ones. One retry on violation, then throw.
-export async function spineRoutes(client: SupabaseClient, apiKey: string, p: SpineRoutesParams): Promise<SpineRoute[]> {
-  const { data: book, error } = await client.from("books").select("id, name, brief, foundations, canon, steers").eq("id", p.bookId).single();
-  if (error || !book) throw new Error("Book not found");
-  const brief = book.brief as Brief | null;
-  const f = (book.foundations as Foundations | null) ?? {};
-  const canon = (book.canon as CanonPacket | null) ?? null;
-  const pinnedIds = (f.tentpoles ?? []).filter((t) => t.status === "pinned").map((t) => t.id);
-  const killedIds = new Set((f.tentpoles ?? []).filter((t) => t.status === "killed").map((t) => t.id));
-
-  const { high: model } = await getActiveModels();
-  const meta: CallMeta = { fn: "spine-routes", bookId: p.bookId, userId: p.userId ?? null };
-  const _sMandate = mandateContext(brief);
-  const userContent =
-    `BOOK: ${book.name}\n\nBRIEF — binding contract (voice AND deliverables):\n${briefContext(brief)}` +
-    (_sMandate ? `\n\nMANDATE — NON-NEGOTIABLE (the book has FAILED if any of these are not delivered; do not treat them as flavor):\n${_sMandate}` : "") +
-    (canon ? `\n\nCANON (settled facts from the previous book — honor, never contradict, never retell):\n${canonContext(canon)}` : "") +
-    `\n\nSETTLED FOUNDATIONS:\n${settledContext(f)}` +
-    (p.avoid?.length ? `\n\nEXISTING ROUTES (vary away from these — don't paraphrase them):\n${p.avoid.map((s) => `---\n${s}`).join("\n")}` : "") +
-    steerBlock(readSteer(book.steers, "spine")) +
-    (p.prompt?.trim() ? `\n\nAUTHOR'S DIRECTION:\n${p.prompt.trim()}` : "") +
-    `\n\nGenerate 3 routes. JSON only.`;
-
-  const attempt = async (extra?: string): Promise<SpineRoute[]> => {
-    const data = await callClaude(apiKey, {
-      model,
-      max_tokens: 4096,
-      temperature: 1,
-      system: [{ type: "text", text: ROUTES_SYSTEM, cache_control: { type: "ephemeral" } }],
-      messages: [{ role: "user", content: userContent + (extra ?? "") }],
-    }, meta);
-    const text = textOf(data);
-    if (!text) throw new Error("Claude returned no routes.");
-    const parsed = parseJson<{ routes?: Array<{ summary?: string; tentpole_order?: unknown[] }> }>(text);
-    return (parsed.routes ?? [])
-      .map((r) => ({
-        id: uid(),
-        summary: stripEntityIds(String(r.summary ?? "")).trim(),
-        tentpole_order: (Array.isArray(r.tentpole_order) ? r.tentpole_order : []).map(String),
-      }))
-      .filter((r) => r.summary);
-  };
-
-  const violates = (routes: SpineRoute[]) =>
-    routes.length === 0 ||
-    routes.some((r) =>
-      pinnedIds.some((id) => !r.tentpole_order.includes(id)) ||
-      r.tentpole_order.some((id) => killedIds.has(id)));
-
-  let routes = await attempt();
-  if (violates(routes)) {
-    routes = await attempt(
-      `\n\nIMPORTANT: a previous attempt violated the constraints. EVERY route's tentpole_order must contain ALL of these pinned ids: ${JSON.stringify(pinnedIds)} and NONE of these killed ids: ${JSON.stringify([...killedIds])}.`,
-    );
-    if (violates(routes)) throw new Error("Couldn't generate routes that honor every pinned tentpole — try unpinning or rewording a tentpole.");
-  }
-  return routes;
 }
 
 // ── Tentpole revise ──────────────────────────────────────────────────────────

@@ -224,7 +224,7 @@ export function PickButton({ onClick, selected, children, className }: { onClick
 }
 
 // A proposal/option card: standard shell with a header row (label eyebrow + pick button + optional
-// delete X). Used for route proposals, cast options, and any "pick one from many" pattern.
+// delete X). Used for cast options and any "pick one from many" pattern.
 export function OptionCard({ label, onPick, pickLabel = "Choose this", onDelete, className, children }: {
   label?: string; onPick?: () => void; pickLabel?: string; onDelete?: () => void;
   className?: string; children: ReactNode;

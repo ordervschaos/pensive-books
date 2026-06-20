@@ -717,20 +717,93 @@ function ProposalReview({ proposal, layer, model, currentSpine, currentFoundatio
   );
 }
 
-// ── Spine diff: before → after text ──────────────────────────────────────────
-function SpineDiff({ before, after, foundations, model }: { before: string; after: string; foundations?: Foundations | null; model?: StudioModel }) {
+// ── Word-level inline diff (LCS over word tokens) ─────────────────────────────
+// Unchanged words read normally; removed words strike through, added words tint
+// accent — so an edit reads as one flowing passage instead of two stacked walls.
+type DiffSeg = { type: "equal" | "del" | "ins"; text: string };
+
+function diffWords(before: string, after: string): DiffSeg[] {
+  const a = before.split(/(\s+)/).filter((t) => t.length);
+  const b = after.split(/(\s+)/).filter((t) => t.length);
+  const n = a.length, m = b.length;
+  if (!n) return b.length ? [{ type: "ins", text: after }] : [];
+  if (!m) return [{ type: "del", text: before }];
+  if (n * m > 4_000_000) return [{ type: "del", text: before }, { type: "ins", text: after }];
+
+  const W = m + 1;
+  const dp = new Uint32Array((n + 1) * W);
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i * W + j] = a[i] === b[j]
+        ? dp[(i + 1) * W + (j + 1)] + 1
+        : Math.max(dp[(i + 1) * W + j], dp[i * W + (j + 1)]);
+    }
+  }
+
+  const segs: DiffSeg[] = [];
+  const push = (type: DiffSeg["type"], text: string) => {
+    const last = segs[segs.length - 1];
+    if (last && last.type === type) last.text += text;
+    else segs.push({ type, text });
+  };
+  let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) { push("equal", a[i]); i++; j++; }
+    else if (dp[(i + 1) * W + j] >= dp[i * W + (j + 1)]) { push("del", a[i++]); }
+    else { push("ins", b[j++]); }
+  }
+  while (i < n) push("del", a[i++]);
+  while (j < m) push("ins", b[j++]);
+  return segs;
+}
+
+// Render a changed run, keeping leading/trailing whitespace outside the tinted
+// span so spaces and line breaks never carry a stray strike or highlight.
+function StyledRun({ text, className, foundations, model }: { text: string; className: string; foundations?: Foundations | null; model?: StudioModel }) {
+  const lead = text.match(/^\s+/)?.[0] ?? "";
+  const trail = text.length > lead.length ? (text.match(/\s+$/)?.[0] ?? "") : "";
+  const core = text.slice(lead.length, text.length - trail.length);
   return (
-    <div className="space-y-3">
-      {before.trim() && (
-        <div>
-          <span className="pv-mono text-[10px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-faint))]">Now</span>
-          <p className="pv-serif mt-1 whitespace-pre-wrap text-[13px] leading-[1.6] text-[hsl(var(--pv-text-faint))] line-through decoration-[hsl(var(--pv-text-faint))]/40"><TextWithChips text={before.trim()} foundations={foundations} model={model} /></p>
+    <>
+      {lead}
+      {core && <span className={className}><TextWithChips text={core} foundations={foundations} model={model} /></span>}
+      {trail}
+    </>
+  );
+}
+
+function InlineWordDiff({ before, after, foundations, model, className }: { before: string; after: string; foundations?: Foundations | null; model?: StudioModel; className?: string }) {
+  const segs = useMemo(() => diffWords(before.trim(), after.trim()), [before, after]);
+  return (
+    <p className={className ?? "pv-serif whitespace-pre-wrap text-[14px] leading-[1.7] text-foreground"}>
+      {segs.map((s, i) => {
+        if (s.type === "equal") return <Fragment key={i}><TextWithChips text={s.text} foundations={foundations} model={model} /></Fragment>;
+        if (s.type === "del") return <StyledRun key={i} text={s.text} foundations={foundations} model={model} className="text-[hsl(var(--pv-text-faint))] line-through decoration-[hsl(var(--pv-text-faint))]/50" />;
+        return <StyledRun key={i} text={s.text} foundations={foundations} model={model} className="rounded-[2px] bg-[hsl(var(--pv-accent))]/12 text-[hsl(var(--pv-accent))] decoration-clone" />;
+      })}
+    </p>
+  );
+}
+
+// ── Spine diff: word-level diff, with a toggle to read the clean redraft ──────
+function SpineDiff({ before, after, foundations, model }: { before: string; after: string; foundations?: Foundations | null; model?: StudioModel }) {
+  const [view, setView] = useState<"diff" | "result">("diff");
+  const hasBefore = !!before.trim();
+  return (
+    <div className="space-y-2">
+      {hasBefore && (
+        <div className="flex items-center gap-1 pv-mono text-[10px] uppercase tracking-[0.12em]">
+          {(["diff", "result"] as const).map((v) => (
+            <button key={v} type="button" onClick={() => setView(v)}
+              className={`rounded px-1.5 py-0.5 transition-colors ${view === v ? "text-[hsl(var(--pv-accent))]" : "text-[hsl(var(--pv-text-faint))] hover:text-foreground"}`}>
+              {v}
+            </button>
+          ))}
         </div>
       )}
-      <div>
-        <span className="pv-mono text-[10px] uppercase tracking-[0.12em] text-[hsl(var(--pv-accent))]">Proposed</span>
-        <p className="pv-serif mt-1 whitespace-pre-wrap text-[14px] leading-[1.65] text-foreground"><TextWithChips text={after.trim()} foundations={foundations} model={model} /></p>
-      </div>
+      {hasBefore && view === "diff"
+        ? <InlineWordDiff before={before} after={after} foundations={foundations} model={model} />
+        : <p className="pv-serif whitespace-pre-wrap text-[14px] leading-[1.7] text-foreground"><TextWithChips text={after.trim()} foundations={foundations} model={model} /></p>}
     </div>
   );
 }
@@ -747,10 +820,9 @@ function FoundationsDiff({ patch, before, model }: { patch: { argument?: string;
       {rows.map((r) => (
         <div key={r.label}>
           <span className="pv-mono text-[10px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-faint))]">{r.label}</span>
-          {r.before?.trim() && (
-            <p className="pv-serif mt-1 text-[12.5px] leading-[1.55] text-[hsl(var(--pv-text-faint))] line-through decoration-[hsl(var(--pv-text-faint))]/40"><TextWithChips text={r.before.trim()} foundations={before} model={model} /></p>
-          )}
-          <p className="pv-serif mt-0.5 text-[14px] leading-[1.6] text-foreground"><TextWithChips text={r.after.trim()} foundations={before} model={model} /></p>
+          {r.before?.trim()
+            ? <InlineWordDiff before={r.before} after={r.after} foundations={before} model={model} className="pv-serif mt-1 whitespace-pre-wrap text-[14px] leading-[1.6] text-foreground" />
+            : <p className="pv-serif mt-0.5 text-[14px] leading-[1.6] text-foreground"><TextWithChips text={r.after.trim()} foundations={before} model={model} /></p>}
         </div>
       ))}
       {Array.isArray(patch.cast) && <CastDiff after={patch.cast as CastMember[]} before={before?.cast ?? []} />}

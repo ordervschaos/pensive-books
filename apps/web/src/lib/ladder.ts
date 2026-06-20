@@ -91,9 +91,9 @@ export async function readProse(pageId: number): Promise<string> {
 // ── Node writes (persist + stamp the touched edges) ──────────────────────────
 /**
  * Save the book spine, reconciled with the current brief (brief→spine is the one-way top edge).
- * MERGES into the existing jsonb — the new flow keeps routes/selected_route_id alongside text
- * (lib/foundations.ts SpineNode) and a plain overwrite would drop them. `pinned` marks an explicit
- * author gesture (edit / picked option) per the pin rules; AI auto-applies leave the pin alone.
+ * MERGES into the existing jsonb (lib/foundations.ts SpineNode) so an AI auto-apply that doesn't
+ * pass `pinned` won't drop a prior author pin / author_edited_at. `pinned` marks an explicit author
+ * gesture (edit / picked option) per the pin rules; AI auto-applies leave the pin alone.
  */
 export async function saveSpine(bookId: number, text: string, opts: { pinned?: boolean } = {}): Promise<void> {
   const { data } = await supabase.from("books").select("brief, spine").eq("id", bookId).maybeSingle();
