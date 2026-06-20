@@ -24,6 +24,7 @@ import {
 import type { StudioModel } from "./studioModel";
 import { ActionLink, Eyebrow, Panel, RunError } from "./studioUi";
 import { stopRun } from "@/lib/stopRun";
+import { discardBeatsAndProse } from "@/lib/discardLadder";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -121,7 +122,7 @@ export function ReviseChat({ bookId, layer, onChanged, model, currentSpine, curr
             : false;
   const chips = (layerEmpty && ui.emptyChips) ? ui.emptyChips : ui.chips;
   const blurb = (layerEmpty && ui.emptyBlurb) ? ui.emptyBlurb : ui.blurb;
-  const { row, refetch } = useLatestTaskRow<RevisionChatRow>({
+  const { row, refetch, stale } = useLatestTaskRow<RevisionChatRow>({
     table: "revision_chats", bookId, match: { layer }, activeStatuses: ["thinking"], staleMs: 120_000,
   });
   const messages = useMemo(() => (Array.isArray(row?.messages) ? row!.messages : []), [row]);
@@ -135,6 +136,7 @@ export function ReviseChat({ bookId, layer, onChanged, model, currentSpine, curr
   // edge fn writes it to the thread and Realtime projects it back (cleared by the effect below).
   const [optimistic, setOptimistic] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [recovering, setRecovering] = useState(false);
   const { scrollRef, atBottom, scrollToBottom } = useChatScroll([messages.length, thinking, !!pending, !!optimistic] as const);
 
   useEffect(() => {
@@ -160,9 +162,11 @@ export function ReviseChat({ bookId, layer, onChanged, model, currentSpine, curr
     catch (e) { toast({ title: "Couldn't continue that chat", description: String((e as Error)?.message ?? e), variant: "destructive" }); }
   };
 
-  const send = async (text: string) => {
+  const send = async (text: string, opts?: { force?: boolean }) => {
     const t = text.trim();
-    if (!t || sending || thinking) return;
+    // `force` bypasses the thinking-guard so a stalled run can be re-driven (the edge fn upserts the
+    // thread in place; a dead worker leaves no looping job to collide with).
+    if (!t || sending || (thinking && !opts?.force)) return;
     setSending(true);
     setDraft("");
     setOptimistic(t);
@@ -205,8 +209,41 @@ export function ReviseChat({ bookId, layer, onChanged, model, currentSpine, curr
 
   const stop = async () => {
     if (!thinking || !row?.id) return;
-    try { await stopRun("revision_chats", row.id); }
+    try { await stopRun("revision_chats", row.id); refetch(); }
     catch (e) { toast({ title: "Couldn't stop", description: String((e as Error)?.message ?? e), variant: "destructive" }); }
+  };
+
+  // Resume planning where it left off: halt any (possibly dead) run, then re-send the layer's generate
+  // prompt. For beats the edge fn only plans pages still missing a beat, so this picks up the unplanned
+  // pages rather than redoing finished beats.
+  const resumePlanning = async () => {
+    if (recovering) return;
+    setRecovering(true);
+    try {
+      if (thinking && row?.id) { await stopRun("revision_chats", row.id); }
+      await send(GENERATE_PROMPTS[layer], { force: true });
+    } catch (e) {
+      toast({ title: "Couldn't continue", description: String((e as Error)?.message ?? e), variant: "destructive" });
+    } finally { setRecovering(false); }
+  };
+
+  // Restart from scratch: discard every planned beat (and the prose drawn from them — a beat can't be
+  // dropped while its prose survives), then re-plan all pages. Beats-only and destructive → confirmed.
+  const restart = async () => {
+    if (recovering || !model) return;
+    const ids = model.textPages.filter((p) => p.beat !== "gap" || p.prose !== "gap").map((p) => p.id);
+    const hasProse = model.textPages.some((p) => p.prose !== "gap");
+    if (ids.length > 0 && !window.confirm(
+      `Re-plan all beats from scratch? This discards the current beats${hasProse ? " and the prose drawn from them" : ""} on ${ids.length} page${ids.length === 1 ? "" : "s"} — it can't be undone.`,
+    )) return;
+    setRecovering(true);
+    try {
+      if (thinking && row?.id) { await stopRun("revision_chats", row.id); }
+      if (ids.length > 0) { await discardBeatsAndProse(bookId, ids); onChanged(); }
+      await send(GENERATE_PROMPTS[layer], { force: true });
+    } catch (e) {
+      toast({ title: "Couldn't restart", description: String((e as Error)?.message ?? e), variant: "destructive" });
+    } finally { setRecovering(false); }
   };
 
   return (
@@ -267,13 +304,36 @@ export function ReviseChat({ bookId, layer, onChanged, model, currentSpine, curr
             </div>
           </>
         )}
-        {thinking && (
+        {/* Inline activity + stop for the single-call layers. Beats run-state lives in the persistent
+            BeatsRunBar (below the chips), so it's not duplicated here. */}
+        {thinking && !stale && layer !== "beats" && (
           <div className="flex items-center gap-2 pv-serif text-[13.5px] italic text-[hsl(var(--pv-text-faint))]">
             <Loader2 className="h-3.5 w-3.5 animate-spin" /> reading the {layer}…
             <button type="button" onClick={() => void stop()} title="Stop"
               className="ml-1 inline-flex items-center gap-1 rounded-full border border-[hsl(var(--pv-border-soft))] px-2 py-0.5 text-[11px] not-italic text-[hsl(var(--pv-text-faint))] transition-colors hover:border-destructive/50 hover:text-destructive">
               <Square className="h-2.5 w-2.5" /> stop
             </button>
+          </div>
+        )}
+
+        {/* Stalled-run escape hatch for single-call layers: the worker stopped advancing (likely
+            killed on the wall clock). Free the dead row and re-try. */}
+        {thinking && stale && layer !== "beats" && (
+          <div className="space-y-2.5 rounded-xl border border-amber-500/40 bg-amber-500/[0.06] px-3.5 py-3">
+            <p className="pv-serif text-[13px] leading-[1.55] text-[hsl(var(--pv-text-muted))]">
+              This run stalled — the editor stopped responding. Your saved work is kept.
+            </p>
+            <div className="flex items-center gap-3">
+              <button type="button" onClick={() => void resumePlanning()} disabled={recovering}
+                className="pv-serif inline-flex items-center gap-1.5 rounded-full bg-primary px-3.5 py-1.5 text-[12.5px] text-primary-foreground disabled:opacity-50">
+                {recovering ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                Try again
+              </button>
+              <button type="button" onClick={() => void stop()} disabled={recovering}
+                className="pv-serif inline-flex items-center gap-1.5 rounded-full border border-[hsl(var(--pv-border-soft))] px-3 py-1.5 text-[12.5px] text-[hsl(var(--pv-text-faint))] transition-colors hover:border-destructive/50 hover:text-destructive disabled:opacity-50">
+                <Square className="h-2.5 w-2.5" /> Reset
+              </button>
+            </div>
           </div>
         )}
 
@@ -301,6 +361,20 @@ export function ReviseChat({ bookId, layer, onChanged, model, currentSpine, curr
 
       {/* Quick actions + composer — pinned to the bottom of the rail. */}
       <div className="mt-3 shrink-0">
+        {/* Persistent beats run-control: stop / resume / restart available at any point. Hidden at
+            cold start (no beats, not running) — the empty-state "Plan all the beats" chip drives that. */}
+        {layer === "beats" && model && (model.counts.beats > 0 || thinking) && (
+          <BeatsRunBar
+            planned={model.counts.beats}
+            remaining={model.beatsRemaining}
+            thinking={thinking}
+            stale={stale}
+            recovering={recovering}
+            onStop={() => void stop()}
+            onResume={() => void resumePlanning()}
+            onRestart={() => void restart()}
+          />
+        )}
         <div className="flex flex-wrap items-center gap-1.5">
           {chips.map((c) => (
             <Chip key={c.label} onClick={() => void send(c.prompt)} disabled={busy}>{c.label}</Chip>
@@ -345,6 +419,62 @@ function SendingDots() {
       <span className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:-0.15s]" />
       <span className="h-1 w-1 animate-bounce rounded-full bg-current" />
     </span>
+  );
+}
+
+// Persistent run controls for bulk beats planning — always present so the author can stop a running
+// pass, resume a stopped/partial one (the edge fn only plans pages still missing a beat), or restart
+// from scratch, at ANY point. `stale` means the worker stopped advancing (likely killed mid-loop).
+function BeatsRunBar({ planned, remaining, thinking, stale, recovering, onStop, onResume, onRestart }: {
+  planned: number; remaining: number; thinking: boolean; stale: boolean; recovering: boolean;
+  onStop: () => void; onResume: () => void; onRestart: () => void;
+}) {
+  const total = planned + remaining;
+  const running = thinking && !stale;
+  const label = running
+    ? `Planning beats… ${planned}/${total}`
+    : stale
+      ? `Stalled at ${planned}/${total} beats`
+      : remaining > 0
+        ? `${planned}/${total} beats planned`
+        : `All ${total} beats planned`;
+
+  return (
+    <div className={`mb-2.5 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border px-3 py-2 ${stale ? "border-amber-500/40 bg-amber-500/[0.06]" : "border-[hsl(var(--pv-border-soft))]/70 bg-[hsl(var(--pv-surface-2))]/30"}`}>
+      <span className="pv-serif inline-flex items-center gap-1.5 text-[12.5px] text-[hsl(var(--pv-text-muted))]">
+        {running && <Loader2 className="h-3 w-3 animate-spin text-[hsl(var(--pv-accent))]" />}
+        {label}
+      </span>
+      <div className="ml-auto flex items-center gap-2">
+        {running ? (
+          <RunBtn onClick={onStop} disabled={recovering} tone="muted"><Square className="h-2.5 w-2.5" /> Stop</RunBtn>
+        ) : (
+          <>
+            {remaining > 0 && (
+              <RunBtn onClick={onResume} disabled={recovering} tone="primary">
+                {recovering ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                {stale ? "Continue" : "Resume"}
+              </RunBtn>
+            )}
+            {total > 0 && (
+              <RunBtn onClick={onRestart} disabled={recovering} tone="muted">Restart</RunBtn>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RunBtn({ onClick, disabled, tone, children }: { onClick: () => void; disabled?: boolean; tone: "primary" | "muted"; children: React.ReactNode }) {
+  const cls = tone === "primary"
+    ? "bg-primary text-primary-foreground"
+    : "border border-[hsl(var(--pv-border-soft))] text-[hsl(var(--pv-text-faint))] hover:border-destructive/50 hover:text-destructive";
+  return (
+    <button type="button" onClick={onClick} disabled={disabled}
+      className={`pv-serif inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[12px] transition-colors disabled:opacity-50 ${cls}`}>
+      {children}
+    </button>
   );
 }
 
