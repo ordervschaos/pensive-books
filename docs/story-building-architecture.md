@@ -74,7 +74,7 @@ ARGUMENT → ENDING → CAST → TENTPOLES → VOICE
 
 ## Step 3 — Spine
 
-One paragraph (~250 words) — the causal throughline: how the story travels from the opening to the settled ending, through the tentpole moments.
+One paragraph (~250-500 words) — the causal throughline: how the story travels from the opening to the settled ending, through the tentpole moments.
 
 The AI generates **3 candidate routes** (different midpoints, different connective tissue, same ending). Each route must weave every pinned tentpole into its `tentpole_order`. A post-generation validator checks this; if violated, it retries once with an explicit constraint reminder.
 

@@ -46,7 +46,7 @@ export interface RevisionProposal { summary: string; patch: RevisionPatch }
 // empty-state chip and the center's empty-state button (which both just send it to the rail thread).
 export const GENERATE_PROMPTS: Record<RevisionLayer, string> = {
   foundations: "Draft the foundations from the brief — the argument (the claim the book argues), the ending it implies, a small cast (each with want/wound/lie), a few tentpole moments, and a voice exemplar.",
-  spine: "Draft the spine from the foundations — the whole book as one ~250-word causal arc, from the beginning, through the pinned tentpoles, to the settled ending.",
+  spine: "Draft the spine from the foundations — the whole book as one ~250-500-word causal arc, from the beginning, through the pinned tentpoles, to the settled ending.",
   outline: "Draft the outline from the spine — the chapter/page structure and a clear objective for each page (no beats or prose yet). Propose it as a plan I can review.",
   beats: "Plan a beat for every page that has an objective but no beat yet — the strongest beat for each, serving the spine and consistent with the pages around it. Propose them as a plan I can review.",
 };

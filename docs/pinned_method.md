@@ -62,7 +62,7 @@ Additions only. Assumes pages already carry a `metadata` jsonb and books carry t
 
 // book.spine (replaces single spine text)
 {
-  routes: [{ id, summary: string,       // ~250 words
+  routes: [{ id, summary: string,       // ~250-500 words
              tentpole_order: string[] }],
   selected_route_id: string,
   text: string, pinned: bool            // selected route's editable text
@@ -112,7 +112,7 @@ A single stage with five sub-steps shown as a horizontal progress strip (small d
 5. **Voice.** Render ONE pinned tentpole moment (~120 words) in 3 distinct voices, side by side, labeled with short descriptors. Tap to select; the selected rendering itself is stored as `voice_exemplar.text`. Editable → pinned.
 
 ### Stage 3 — Spine (reworked)
-Replace the single drafted paragraph with **2–3 route cards**, generated from: brief + argument + ending + cast + non-killed tentpoles. Each card: ~250-word summary + a mini strip showing tentpole order (chips with tentpole short-names). Author picks one → it becomes `spine.text`, editable in the existing approved-spine card UI. "Re-route" regenerates unselected candidates only. Killed tentpoles must not appear; pinned ones must all appear in every route (validate server-side, reject and retry generation if violated).
+Replace the single drafted paragraph with **2–3 route cards**, generated from: brief + argument + ending + cast + non-killed tentpoles. Each card: ~250-500-word summary + a mini strip showing tentpole order (chips with tentpole short-names). Author picks one → it becomes `spine.text`, editable in the existing approved-spine card UI. "Re-route" regenerates unselected candidates only. Killed tentpoles must not appear; pinned ones must all appear in every route (validate server-side, reject and retry generation if violated).
 
 ### Stage 4 — Outline (extended)
 Existing chapters/pages-with-objectives view stays. Additions:
