@@ -16,10 +16,13 @@ export interface BriefScope {
   word_target?: number;
 }
 
-export type HeatLevel = "closed" | "warm" | "explicit";
+// Content type = the author's publishing-first content classification. It is a non-AI brief field
+// (it drives the marketplace / maturity gate); the AI "heat" instruction is DERIVED from it (see
+// HEAT_LEVEL_SENTENCES). Heat is never authored directly.
+export type ContentLevel = "closed" | "warm" | "explicit";
 
-export interface BriefHeat {
-  level?: HeatLevel;
+export interface ContentType {
+  level?: ContentLevel;
   note?: string;
 }
 
@@ -30,8 +33,8 @@ export interface Brief {
   premise?: string;
   tone?: string[];
   success_criteria?: string;
-  // C3 — typed as object; legacy bare-string values are handled by renderers.
-  heat?: BriefHeat;
+  // C5 — content type (publishing-first classification); the AI heat level is derived from it.
+  content_type?: ContentType;
   updated_at?: string;
 }
 
@@ -42,7 +45,7 @@ export const BRIEF_FIELDS = [
   "premise",
   "tone",
   "success_criteria",
-  "heat",
+  "content_type",
 ] as const;
 
 export type BriefField = (typeof BRIEF_FIELDS)[number];
@@ -73,7 +76,7 @@ export const SCOPE_GROUPS: { kind: BriefScopeKind; label: string }[] = [
   { kind: "nonfiction", label: "Non-fiction" },
 ];
 
-export const HEAT_LEVELS: { value: HeatLevel; label: string; description: string }[] = [
+export const CONTENT_TYPES: { value: ContentLevel; label: string; description: string }[] = [
   {
     value: "closed",
     label: "Closed-door",
@@ -91,8 +94,9 @@ export const HEAT_LEVELS: { value: HeatLevel; label: string; description: string
   },
 ];
 
-/** Level → mandate sentence injected into the MANDATE block at every generation stage. */
-export const HEAT_LEVEL_SENTENCES: Record<HeatLevel, string> = {
+/** DERIVED AI value: content level → the heat instruction injected into the MANDATE block.
+ *  Heat is not authored directly — it is derived from the author's content_type. */
+export const HEAT_LEVEL_SENTENCES: Record<ContentLevel, string> = {
   closed: "Closed-door — fade before explicit content; intimacy implied, not shown.",
   warm: "Warm — sensual and on the page (desire, touch, tension) but not graphic.",
   explicit: "EXPLICIT — graphic and on the page; depict intimacy fully.",
@@ -178,11 +182,11 @@ export function briefToPromptContext(brief: Brief | null | undefined): string | 
   // C1: mirror MANDATE fields so staleness hashes reflect deliverable changes
   const mandateLines: string[] = [];
   if (brief.success_criteria?.trim()) mandateLines.push(`- Must deliver on: ${brief.success_criteria.trim()}`);
-  const heat = brief.heat;
-  if (heat) {
-    // C3: use full permission sentence for typed level; append optional note.
-    const sentence = heat.level ? HEAT_LEVEL_SENTENCES[heat.level] : "";
-    const heatStr = [sentence, heat.note].filter(Boolean).join(" — ");
+  const ct = brief.content_type;
+  if (ct) {
+    // C5: derive the heat instruction from the author's content type; append optional note.
+    const sentence = ct.level ? HEAT_LEVEL_SENTENCES[ct.level] : "";
+    const heatStr = [sentence, ct.note].filter(Boolean).join(" — ");
     if (heatStr) mandateLines.push(`- Heat / explicitness: ${heatStr}`);
   }
   if (brief.scope?.band) {

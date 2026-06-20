@@ -16,7 +16,7 @@ import {
   TONE_SUGGESTIONS,
 } from "@/lib/brief";
 import { ScopeBandPicker } from "@/components/book/ScopeBandPicker";
-import { HeatLevelPicker } from "@/components/book/HeatLevelPicker";
+import { ContentTypePicker } from "@/components/book/ContentTypePicker";
 
 interface BookBriefSectionProps {
   bookId: number;
@@ -195,12 +195,12 @@ export function BookBriefSection({ bookId, brief, onBriefChange, embedded = fals
           </FieldRow>
 
           <FieldRow
-            label="Heat"
-            hint="How explicit may the prose be? Controls what AI generates on the page."
+            label="Content type"
+            hint="How mature is this book? Sets its content rating."
           >
-            <HeatLevelPicker
-              heat={draft.heat}
-              onChange={(heat) => updateAndSave({ heat })}
+            <ContentTypePicker
+              value={draft.content_type}
+              onChange={(content_type) => updateAndSave({ content_type })}
             />
           </FieldRow>
 

@@ -4,10 +4,12 @@
 // success_criteria is included); those are now options so the rendered bytes stay identical per site.
 // evaluate-core renders the brief differently (a titled block, returns null) and keeps its own.
 
-export type HeatLevel = "closed" | "warm" | "explicit";
+// content_type = the author's publishing-first content classification (drives the marketplace /
+// maturity gate). The AI "heat" instruction is DERIVED from it — see HEAT_LEVEL_SENTENCES below.
+export type ContentLevel = "closed" | "warm" | "explicit";
 
-/** Level → full permission sentence injected into the MANDATE block. */
-export const HEAT_LEVEL_SENTENCES: Record<HeatLevel, string> = {
+/** DERIVED AI value: content level → the heat instruction injected into the MANDATE block. */
+export const HEAT_LEVEL_SENTENCES: Record<ContentLevel, string> = {
   closed: "Closed-door — fade before explicit content; intimacy implied, not shown.",
   warm: "Warm — sensual and on the page (desire, touch, tension) but not graphic.",
   explicit: "EXPLICIT — graphic and on the page; depict intimacy fully.",
@@ -20,8 +22,10 @@ export interface Brief {
   premise?: string;
   tone?: string[];
   success_criteria?: string;
-  // C3: typed as object; legacy bare-string values handled by renderers.
-  heat?: { level?: HeatLevel; note?: string } | string;
+  // C5: content type (publishing-first); the AI heat level is derived from it. `heat` kept as a
+  // read-only legacy alias for any pre-C5 data.
+  content_type?: { level?: ContentLevel; note?: string } | string;
+  heat?: { level?: ContentLevel; note?: string } | string;
 }
 
 export interface BriefContextOpts {
@@ -62,14 +66,14 @@ export function mandateContext(brief: Brief | null): string {
   if (brief.success_criteria?.trim()) {
     lines.push(`- Must deliver on: ${brief.success_criteria.trim()}`);
   }
-  // C3: typed heat field — use the full permission sentence for known levels.
-  const heat = brief.heat;
-  if (heat) {
-    const level = typeof heat === "string" ? undefined : heat.level;
-    const note = typeof heat === "string" ? undefined : heat.note;
+  // C5: derive the AI heat instruction from the author's content_type (legacy `heat` honored).
+  const ct = brief.content_type ?? brief.heat;
+  if (ct) {
+    const level = typeof ct === "string" ? undefined : ct.level;
+    const note = typeof ct === "string" ? undefined : ct.note;
     const sentence = level
       ? HEAT_LEVEL_SENTENCES[level]
-      : (typeof heat === "string" ? heat.trim() : "");
+      : (typeof ct === "string" ? ct.trim() : "");
     const heatStr = [sentence, note].filter(Boolean).join(" — ");
     if (heatStr) lines.push(`- Heat / explicitness: ${heatStr}`);
   }

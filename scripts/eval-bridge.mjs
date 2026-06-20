@@ -671,14 +671,14 @@ function mandateContext(brief) {
   if (brief.success_criteria?.trim()) {
     lines.push(`- Must deliver on: ${brief.success_criteria.trim()}`);
   }
-  // C3: typed heat field — use the full permission sentence for known levels.
-  const heat = brief.heat;
-  if (heat) {
-    const level = typeof heat === "string" ? undefined : heat.level;
-    const note = typeof heat === "string" ? undefined : heat.note;
+  // C5: derive the AI heat instruction from the author's content_type (legacy `heat` honored).
+  const ct = brief.content_type ?? brief.heat;
+  if (ct) {
+    const level = typeof ct === "string" ? undefined : ct.level;
+    const note = typeof ct === "string" ? undefined : ct.note;
     const sentence = level
       ? (HEAT_LEVEL_SENTENCES[level] ?? level)
-      : (typeof heat === "string" ? heat.trim() : "");
+      : (typeof ct === "string" ? ct.trim() : "");
     const heatStr = [sentence, note].filter(Boolean).join(" — ");
     if (heatStr) lines.push(`- Heat / explicitness: ${heatStr}`);
   }

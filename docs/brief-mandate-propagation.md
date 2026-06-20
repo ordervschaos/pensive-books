@@ -136,12 +136,25 @@ fix makes heat/length/comedy travel *with authority*, so conformance is the defa
 gate as a backstop (it also catches model refusals on explicit beats — detect "beat called for
 X, prose delivered ¬X"), but build it **after** C1–C4, sized to confirm rather than enforce.
 
-## 7.5 QUEUED — C5: reframe Heat (AI dial) → Content type (publishing-first, AI-derived)
+## 7.5 C5: reframe Heat (AI dial) → Content type (publishing-first, AI-derived)
+
+**Status: v1 DONE** (the brief field reframe + AI derivation). **C5b PENDING** = wire `content_type`
+into the publishing/marketplace gate (the separate, non-AI consumer).
 
 C3 shipped the heat axis framed around the AI ("Heat — how explicit may the prose be? Controls
 what AI generates on the page"). That is backwards: the brief is the **human-authored, non-AI-first
 contract**. Reframe so the field is a **content type / rating** an author/publisher understands on
 its own terms, and the AI heat-level becomes a value **derived** from it.
+
+**C5 v1 (done):** renamed `brief.heat` → `brief.content_type` (`{ level, note }`, still in the brief
+jsonb, no migration); `HeatLevelPicker` → `ContentTypePicker`; UI relabeled "Heat" → "Content type"
+with a publishing-first hint; `mandateContext` (edge + bridge) and the web hash now **derive** the
+heat sentence FROM `content_type` (legacy `heat` honored as a read-only fallback). Typecheck + bridge
+parse green.
+
+**C5b (pending):** surface `content_type` in the publish flow / marketplace as a maturity gate
+(age-gating, content warnings, filtering) — see `[[project_publish_revalidation]]`. This is the
+non-AI consumer the field exists for.
 
 One field, **two consumers**:
 1. **Publishing gate** (primary, non-AI): the book's maturity classification drives marketplace
