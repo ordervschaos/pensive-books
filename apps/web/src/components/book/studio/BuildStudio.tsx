@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { briefToPromptContext, type Brief } from "@/lib/brief";
 import { seedGenreThreads, type Foundations } from "@/lib/foundations";
 import type { LintThread } from "@/lib/lints";
+import type { Outline } from "@/lib/outline";
 import { metaHash } from "@/lib/planProvenance";
 import {
   buildStudioModel, rootFingerprints, type Journey, type StepKey, type StudioPageRow,
@@ -54,13 +55,14 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
   const [foundations, setFoundations] = useState<Foundations | null | undefined>(undefined);
   const [canonParent, setCanonParent] = useState<string | null>(null);
   const [threads, setThreads] = useState<LintThread[]>([]);
+  const [outline, setOutline] = useState<Outline | null>(null);
   const [infoKey, setInfoKey] = useState(0);
 
   useEffect(() => {
     let alive = true;
     void (async () => {
       const [{ data: book }, { data: ev }, { data: th }] = await Promise.all([
-        supabase.from("books").select("spine, foundations, canon").eq("id", bookId).maybeSingle(),
+        supabase.from("books").select("spine, foundations, canon, outline").eq("id", bookId).maybeSingle(),
         supabase.from("book_evaluations").select("id").eq("book_id", bookId).eq("status", "done").limit(1),
         supabase.from("book_threads").select("id, name, status, book_thread_anchors(role)").eq("book_id", bookId),
       ]);
@@ -71,6 +73,7 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
       setSpine({ text, stale });
       setHasRead((ev?.length ?? 0) > 0);
       setFoundations((book?.foundations as Foundations | null) ?? null);
+      setOutline((book?.outline as Outline | null) ?? null);
       setCanonParent(((book?.canon as { parent_title?: string } | null)?.parent_title ?? "").trim() || null);
       setThreads(((th as Array<{ id: number; name: string; status: string; book_thread_anchors: Array<{ role: string }> }> | null) ?? [])
         .map((t) => ({ id: t.id, name: t.name, status: t.status, resolutionCount: (t.book_thread_anchors ?? []).filter((a) => a.role === "resolution").length })));
@@ -104,8 +107,8 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
   const briefContext = useMemo(() => briefToPromptContext(brief), [brief]);
 
   const model = useMemo(
-    () => buildStudioModel({ briefSet, briefContext, spineText: spine.text, spineStale: spine.stale, pages, journey, hasRead, isPublic, foundations: foundations ?? null, threads }),
-    [briefSet, briefContext, spine.text, spine.stale, pages, journey, hasRead, isPublic, foundations, threads]
+    () => buildStudioModel({ briefSet, briefContext, spineText: spine.text, spineStale: spine.stale, pages, journey, hasRead, isPublic, foundations: foundations ?? null, threads, outline }),
+    [briefSet, briefContext, spine.text, spine.stale, pages, journey, hasRead, isPublic, foundations, threads, outline]
   );
 
   // Resolve the prop to a concrete (non-null) selection: null means "follow the derived current step".

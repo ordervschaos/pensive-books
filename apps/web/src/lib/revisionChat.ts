@@ -14,6 +14,7 @@ import {
   type CastMember, type Foundations, type Narration, type Relationship, type Tentpole, type WorldNode,
 } from "@/lib/foundations";
 import { saveSpine } from "@/lib/ladder";
+import { applyOutlinePlan } from "@/lib/outline";
 
 export type RevisionLayer = "foundations" | "spine" | "beats" | "outline";
 
@@ -181,10 +182,20 @@ export async function recordApplied(bookId: number, layer: RevisionLayer, note: 
  */
 export async function applyProposal(bookId: number, proposal: RevisionProposal): Promise<void> {
   const { patch } = proposal;
-  // beats & outline both ride the plan-only build-revision path (structure + objectives [+ beats];
-  // never prose). An outline plan simply carries no beat field.
-  if (patch.layer === "beats" || patch.layer === "outline") {
+  if (patch.layer === "beats") {
     await applyBeatPlan(bookId, patch.data);
+    return;
+  }
+  // Outline: structure-first books (already have books.outline) and fresh books (no pages yet) apply
+  // the plan to books.outline + reconcile — the AI outline path stays cheap and structure-owned. A
+  // legacy in-progress book (pages but no outline) keeps the old build-revision page path, undisturbed.
+  if (patch.layer === "outline") {
+    const [{ data: b }, { count }] = await Promise.all([
+      supabase.from("books").select("outline").eq("id", bookId).maybeSingle(),
+      supabase.from("pages").select("id", { count: "exact", head: true }).eq("book_id", bookId).eq("archived", false),
+    ]);
+    if (b?.outline || (count ?? 0) === 0) await applyOutlinePlan(bookId, patch.data);
+    else await applyBeatPlan(bookId, patch.data);
     return;
   }
   if (patch.layer === "spine") {

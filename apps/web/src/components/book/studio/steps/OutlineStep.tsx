@@ -15,8 +15,13 @@ import { AutoTextarea } from "@/components/ui/auto-textarea";
 import { useToast } from "@/hooks/use-toast";
 import { saveObjective } from "@/lib/ladder";
 import { ActionLink, Eyebrow, GenerateInChat, Panel } from "../studioUi";
-import type { Movement } from "../studioModel";
+import type { Movement, StudioModel } from "../studioModel";
 import type { MapPage } from "@/lib/planGraph";
+import type { BookLint } from "@/lib/lints";
+import {
+  mutateOutline, reconcile, withNodeAdded, withNodePatch, withNodesRemoved,
+  type Outline, type OutlineNode,
+} from "@/lib/outline";
 
 export function OutlineStep({
   bookId,
@@ -29,7 +34,13 @@ export function OutlineStep({
   onChanged: () => void;
   onSelectPage: (pageId: number) => void;
 }) {
-  // ── Empty state ─────────────────────────────────────────────────────────────
+  // Structure-as-render (docs/structure-as-render.md): once a book has a books.outline, the outline IS
+  // the editing surface — edits rewrite JSON (cheap, no page churn) and pages are rendered on demand.
+  if (model.outline) {
+    return <OutlineNative bookId={bookId} model={model} onChanged={onChanged} onSelectPage={onSelectPage} />;
+  }
+
+  // ── Legacy (page-native) empty state ────────────────────────────────────────
   if (!model.hasScaffold) {
     return (
       <EmptyOutline bookId={bookId} onChanged={onChanged} />
@@ -39,37 +50,7 @@ export function OutlineStep({
   // ── Lints banner ────────────────────────────────────────────────────────────
   return (
     <div className="space-y-3">
-      {model.lints.length > 0 && (
-        <div className="rounded-2xl border border-amber-500/40 bg-[hsl(var(--pv-surface-2))]/40 px-5 py-4">
-          <div className="pv-mono mb-2 text-[10px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-muted))]">
-            Flags · {model.lints.filter((l) => l.severity === "error").length} need attention
-          </div>
-          <div className="space-y-1.5">
-            {model.lints.map((l, i) => (
-              <div key={`${l.rule}-${i}`} className="flex items-baseline gap-2.5">
-                <span
-                  className={`h-1.5 w-1.5 shrink-0 translate-y-[-1px] rounded-full ${
-                    l.severity === "error" ? "bg-amber-500" : "bg-[hsl(var(--pv-text-faint))]"
-                  }`}
-                  aria-hidden
-                />
-                <span className="pv-serif flex-1 text-[13px] leading-snug text-[hsl(var(--pv-text-muted))]">
-                  {l.message}
-                </span>
-                {l.pageId != null && (
-                  <button
-                    type="button"
-                    onClick={() => onSelectPage(l.pageId!)}
-                    className="pv-serif shrink-0 text-[12px] italic text-[hsl(var(--pv-text-faint))] hover:text-[hsl(var(--pv-accent))]"
-                  >
-                    open →
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      <LintsBanner lints={model.lints} onSelectPage={onSelectPage} />
 
       {/* Movements (chapters and their pages) */}
       {model.movements.map((m) => (
@@ -409,6 +390,270 @@ function PageRow({
         placeholder="What this page must do — the objective…"
         className="pv-serif mt-1.5 w-full border-b border-transparent bg-transparent px-0 py-0 text-[13px] italic leading-snug text-[hsl(var(--pv-text-muted))] outline-none transition-colors placeholder:text-[hsl(var(--pv-text-faint))]/60 hover:border-[hsl(var(--pv-border-soft))] focus:border-[hsl(var(--pv-accent))]/30 focus-visible:ring-0"
       />
+    </div>
+  );
+}
+
+// ── Shared: lints banner ──────────────────────────────────────────────────────
+
+function LintsBanner({ lints, onSelectPage }: { lints: BookLint[]; onSelectPage: (id: number) => void }) {
+  const [dismissed, setDismissed] = useState(false);
+  if (!lints.length || dismissed) return null;
+  return (
+    <div className="rounded-2xl border border-amber-500/40 bg-[hsl(var(--pv-surface-2))]/40 px-5 py-4">
+      <div className="pv-mono mb-2 flex items-center justify-between text-[10px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-muted))]">
+        <span>Flags · {lints.filter((l) => l.severity === "error").length} need attention</span>
+        <button
+          type="button"
+          onClick={() => setDismissed(true)}
+          className="ml-3 text-[hsl(var(--pv-text-faint))] hover:text-[hsl(var(--pv-text-muted))]"
+          aria-label="Dismiss"
+        >
+          ✕
+        </button>
+      </div>
+      <div className="space-y-1.5">
+        {lints.map((l, i) => (
+          <div key={`${l.rule}-${i}`} className="flex items-baseline gap-2.5">
+            <span
+              className={`h-1.5 w-1.5 shrink-0 translate-y-[-1px] rounded-full ${
+                l.severity === "error" ? "bg-amber-500" : "bg-[hsl(var(--pv-text-faint))]"
+              }`}
+              aria-hidden
+            />
+            <span className="pv-serif flex-1 text-[13px] leading-snug text-[hsl(var(--pv-text-muted))]">{l.message}</span>
+            {l.pageId != null && (
+              <button
+                type="button"
+                onClick={() => onSelectPage(l.pageId!)}
+                className="pv-serif shrink-0 text-[12px] italic text-[hsl(var(--pv-text-faint))] hover:text-[hsl(var(--pv-accent))]"
+              >
+                open →
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Outline-native rendering (structure-as-render) ────────────────────────────
+// The outline (books.outline) is the editing surface: inline edits rewrite the JSON (cheap, no page
+// churn); pages are a render produced on demand by reconcile(). See docs/structure-as-render.md.
+
+const ROMAN: [number, string][] = [[10, "X"], [9, "IX"], [5, "V"], [4, "IV"], [1, "I"]];
+function roman(n: number): string { let o = ""; let v = n; for (const [d, s] of ROMAN) while (v >= d) { o += s; v -= d; } return o; }
+
+interface OutlineMovementVM { sectionId: string | null; num: string; title: string; scenes: OutlineNode[] }
+type Apply = (label: string, fn: (o: Outline) => Outline) => Promise<void>;
+
+function OutlineNative({ bookId, model, onChanged, onSelectPage }: {
+  bookId: number; model: StudioModel; onChanged: () => void; onSelectPage: (id: number) => void;
+}) {
+  const { toast } = useToast();
+  const outline = model.outline!;
+  const nodes = outline.nodes;
+
+  // Group nodes into movements: a section opens a chapter; scenes before any section sit in a lead group.
+  const movements: OutlineMovementVM[] = [];
+  let n = 0;
+  for (const node of nodes) {
+    if (node.type === "section") { n += 1; movements.push({ sectionId: node.id, num: roman(n), title: node.title, scenes: [] }); }
+    else {
+      if (!movements.length) movements.push({ sectionId: null, num: "", title: "Pages", scenes: [] });
+      movements[movements.length - 1].scenes.push(node);
+    }
+  }
+
+  const apply: Apply = async (label, fn) => {
+    try { await mutateOutline(bookId, fn); onChanged(); }
+    catch (e) { toast({ title: label, description: String((e as Error)?.message ?? e), variant: "destructive" }); }
+  };
+  const addNode = (type: "scene" | "section") =>
+    apply(`Couldn't add ${type === "section" ? "chapter" : "page"}`, (o) =>
+      withNodeAdded(o, { type, title: type === "section" ? "New chapter" : "New page", objective: "" })[0]);
+
+  return (
+    <div className="space-y-3">
+      <LintsBanner lints={model.lints} onSelectPage={onSelectPage} />
+      {model.outlineAhead && <RenderBanner bookId={bookId} onChanged={onChanged} />}
+
+      {nodes.length === 0 ? (
+        <div className="space-y-4">
+          <p className="pv-serif text-[15px] italic leading-relaxed text-[hsl(var(--pv-text-faint))]">
+            Empty outline — add a page or chapter below, or draft it in the chat.
+          </p>
+          <GenerateInChat bookId={bookId} layer="outline" label="Draft the outline" />
+        </div>
+      ) : (
+        movements.map((m) => (
+          <OutlineMovementBlock key={m.sectionId ?? "lead"} movement={m} model={model} onSelectPage={onSelectPage} apply={apply} />
+        ))
+      )}
+
+      <div className="flex items-center gap-5 px-1">
+        <ActionLink icon={<Plus className="h-3.5 w-3.5" />} onClick={() => void addNode("scene")}>add a page</ActionLink>
+        <ActionLink tone="muted" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => void addNode("section")}>add a chapter</ActionLink>
+      </div>
+      <p className="pv-serif px-1 text-[13px] italic text-[hsl(var(--pv-text-faint))]">
+        Edit titles and objectives inline — changes stay in the plan until you render pages.
+      </p>
+    </div>
+  );
+}
+
+function RenderBanner({ bookId, onChanged }: { bookId: number; onChanged: () => void }) {
+  const { toast } = useToast();
+  const [busy, setBusy] = useState(false);
+  const run = async () => {
+    setBusy(true);
+    try {
+      const r = await reconcile(bookId);
+      onChanged();
+      toast({ title: "Pages rendered", description: `${r.created} added · ${r.updated} updated · ${r.archived} archived.` });
+    } catch (e) {
+      toast({ title: "Couldn't render pages", description: String((e as Error)?.message ?? e), variant: "destructive" });
+    } finally { setBusy(false); }
+  };
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-2xl border border-[hsl(var(--pv-accent))]/30 bg-[hsl(var(--pv-accent))]/[0.06] px-5 py-3">
+      <span className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-muted))]">
+        The outline has changes that aren’t in the pages yet.
+      </span>
+      <ActionLink busy={busy} onClick={() => void run()}>render pages →</ActionLink>
+    </div>
+  );
+}
+
+function OutlineMovementBlock({ movement, model, onSelectPage, apply }: {
+  movement: OutlineMovementVM; model: StudioModel; onSelectPage: (id: number) => void; apply: Apply;
+}) {
+  const isSection = movement.sectionId !== null;
+  const [titleDraft, setTitleDraft] = useState<string | null>(null);
+  const display = titleDraft ?? movement.title;
+
+  const saveTitle = (val: string) => {
+    const t = val.trim();
+    if (!isSection || t === movement.title.trim()) return;
+    void apply("Couldn't rename chapter", (o) => withNodePatch(o, movement.sectionId!, { title: t || "Untitled chapter" }));
+  };
+  const deleteChapter = () => {
+    if (!isSection) return;
+    if (!window.confirm(`Delete the chapter “${movement.title}” and its ${movement.scenes.length} pages?`)) return;
+    void apply("Couldn't delete chapter", (o) => withNodesRemoved(o, [movement.sectionId!, ...movement.scenes.map((s) => s.id)]));
+  };
+
+  return (
+    <Panel variant="soft" className="px-5 py-4">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        {isSection ? (
+          <div className="group flex min-w-0 flex-1 items-center gap-2">
+            <Eyebrow tone="accent" className="shrink-0">{movement.num ? `${movement.num} ·` : ""}</Eyebrow>
+            <input
+              value={display}
+              onChange={(e) => setTitleDraft(e.target.value)}
+              onBlur={() => { const v = titleDraft ?? movement.title; setTitleDraft(null); saveTitle(v); }}
+              className="pv-serif min-w-0 flex-1 border-b border-transparent bg-transparent text-[13px] font-medium uppercase tracking-[0.1em] text-[hsl(var(--pv-accent))] outline-none transition-colors hover:border-[hsl(var(--pv-border-soft))] focus:border-[hsl(var(--pv-accent))]/40"
+            />
+          </div>
+        ) : (
+          <Eyebrow tone="accent">Pages</Eyebrow>
+        )}
+        {isSection && (
+          <button
+            type="button"
+            onClick={deleteChapter}
+            className="shrink-0 text-[hsl(var(--pv-text-faint))] transition-colors hover:text-destructive/70"
+            aria-label="Delete chapter"
+            title="Delete chapter"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+      <div className="space-y-2">
+        {movement.scenes.map((node) => (
+          <OutlineNodeRow key={node.id} node={node} page={model.pageByNodeId(node.id)} onSelectPage={onSelectPage} apply={apply} />
+        ))}
+        {movement.scenes.length === 0 && (
+          <p className="pv-serif px-1 text-[13px] italic text-[hsl(var(--pv-text-faint))]">No pages yet — add one below.</p>
+        )}
+      </div>
+    </Panel>
+  );
+}
+
+function OutlineNodeRow({ node, page, onSelectPage, apply }: {
+  node: OutlineNode; page: MapPage | undefined; onSelectPage: (id: number) => void; apply: Apply;
+}) {
+  const [titleDraft, setTitleDraft] = useState<string | null>(null);
+  const [objDraft, setObjDraft] = useState<string | null>(null);
+  useEffect(() => { setObjDraft(null); }, [node.objective]);
+  const dTitle = titleDraft ?? node.title;
+  const dObj = objDraft ?? (node.objective ?? "");
+
+  const saveTitle = (val: string) => {
+    const t = val.trim();
+    if (t === node.title.trim()) return;
+    void apply("Couldn't save title", (o) => withNodePatch(o, node.id, { title: t }));
+  };
+  const saveObj = (val: string) => {
+    const t = val.trim();
+    if (t === (node.objective ?? "").trim()) return;
+    void apply("Couldn't save objective", (o) => withNodePatch(o, node.id, { objective: t }));
+  };
+  const del = () => {
+    if (!window.confirm(`Delete “${node.title || "this page"}”?`)) return;
+    void apply("Couldn't delete page", (o) => withNodesRemoved(o, [node.id]));
+  };
+
+  // Render state from the last-rendered page (by node_id); a node added since the last render has none.
+  const state = !page ? "unrendered" : page.prose !== "gap" ? "written" : page.beat !== "gap" ? "beat" : "objective";
+
+  return (
+    <div className="group rounded-lg border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/30 px-3.5 py-3">
+      <div className="flex items-center gap-2">
+        {node.tentpoleId && (
+          <span className="shrink-0 text-[hsl(var(--pv-accent))]" title="A tentpole moment lands here" aria-hidden>◆</span>
+        )}
+        <input
+          value={dTitle}
+          onChange={(e) => setTitleDraft(e.target.value)}
+          onBlur={() => { const v = titleDraft ?? node.title; setTitleDraft(null); saveTitle(v); }}
+          placeholder="(untitled)"
+          className="pv-serif min-w-0 flex-1 border-b border-transparent bg-transparent text-[15.5px] leading-snug text-foreground outline-none transition-colors hover:border-[hsl(var(--pv-border-soft))] focus:border-[hsl(var(--pv-accent))]/40"
+        />
+        <span className="pv-mono shrink-0 text-[9px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-faint))]">{state}</span>
+        <div className="flex shrink-0 items-center gap-3 opacity-0 transition-opacity group-hover:opacity-100">
+          {page && (
+            <button
+              type="button"
+              onClick={() => onSelectPage(page.id)}
+              className="pv-serif text-[12px] italic text-[hsl(var(--pv-text-faint))] transition-colors hover:text-[hsl(var(--pv-accent))]"
+            >
+              open →
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={del}
+            className="text-[hsl(var(--pv-text-faint))] transition-colors hover:text-destructive/70"
+            aria-label="Delete page"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+      {node.type === "scene" && (
+        <AutoTextarea
+          value={dObj}
+          onChange={(e) => setObjDraft(e.target.value)}
+          onBlur={() => { const v = objDraft ?? (node.objective ?? ""); setObjDraft(null); saveObj(v); }}
+          placeholder="What this page must do — the objective…"
+          className="pv-serif mt-1.5 w-full border-b border-transparent bg-transparent px-0 py-0 text-[13px] italic leading-snug text-[hsl(var(--pv-text-muted))] outline-none transition-colors placeholder:text-[hsl(var(--pv-text-faint))]/60 hover:border-[hsl(var(--pv-border-soft))] focus:border-[hsl(var(--pv-accent))]/30 focus-visible:ring-0"
+        />
+      )}
     </div>
   );
 }

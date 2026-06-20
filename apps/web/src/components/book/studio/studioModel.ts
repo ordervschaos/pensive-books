@@ -12,6 +12,7 @@ import { buildMap, type CellState, type MapModel, type MapPage } from "@/lib/pla
 import { foundationsComplete, foundationsFingerprint, type Foundations } from "@/lib/foundations";
 import { lintBook, type BookLint, type LintThread } from "@/lib/lints";
 import { metaHash, type PageMeta } from "@/lib/planProvenance";
+import type { Outline } from "@/lib/outline";
 import type { EditorJSON } from "@/types/editor";
 
 export type StepKey =
@@ -108,6 +109,12 @@ export interface StudioModel {
   /** All non-section pages, in reading order. */
   textPages: MapPage[];
   movements: Movement[];
+  /** The durable plan layer (docs/structure-as-render.md), or null on a legacy page-native book. */
+  outline: Outline | null;
+  /** The rendered page for an outline node (by node_id), for completeness chips / "open page". */
+  pageByNodeId: (nodeId: string) => MapPage | undefined;
+  /** The outline has unrendered edits (rev > compiled_rev) — pages need a reconcile to catch up. */
+  outlineAhead: boolean;
   counts: { objective: number; written: number; beats: number };
   hasScaffold: boolean;
   hasWritten: boolean;
@@ -162,6 +169,8 @@ export interface BuildStudioModelInput {
   isPublic: boolean;
   foundations?: Foundations | null;
   threads?: LintThread[];
+  /** The book's durable plan layer (books.outline), when it has opted into the structure-as-render model. */
+  outline?: Outline | null;
 }
 
 /** Derive the whole studio read-model. Pure — the host fetches, this computes. */
@@ -293,9 +302,19 @@ export function buildStudioModel(input: BuildStudioModelInput): StudioModel {
   const byId = new Map(map.pages.map((p) => [p.id, p] as const));
   const textIds = textPages.map((p) => p.id);
 
+  // node_id → its rendered page (set by reconcile), for the outline-native OutlineStep.
+  const pageIdByNode = new Map<string, number>();
+  for (const p of input.pages) { const nid = p.metadata?.node_id; if (nid) pageIdByNode.set(nid, p.id); }
+  const outline = input.outline ?? null;
+  const outlineAhead = !!outline && (outline.rev ?? 0) > (outline.compiled_rev ?? 0);
+
   return {
     buildSteps, newFlow, lints, tentpolePageIds,
-    map, textPages, movements, counts, hasScaffold, hasWritten, beatsRemaining, proseRemaining,
+    map, textPages, movements,
+    outline,
+    pageByNodeId: (nid) => { const pid = pageIdByNode.get(nid); return pid != null ? byId.get(pid) : undefined; },
+    outlineAhead,
+    counts, hasScaffold, hasWritten, beatsRemaining, proseRemaining,
     ready, statusOf, dotOf, staleOf, firstStale, current,
     sync: { pct, gaps },
     journey: input.journey,

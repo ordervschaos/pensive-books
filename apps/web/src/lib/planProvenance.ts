@@ -80,6 +80,9 @@ export interface RelationshipState { pair: string; charge: string; note?: string
 // the two in sync. Note: the page→generating-call link is a real column (pages.last_ai_call_id), NOT
 // part of metadata.
 export interface PageMeta {
+  // The outline node this page renders (docs/structure-as-render.md). Set by reconcile(); a page with
+  // no node_id is sovereign (legacy or author-created outside the outline) and reconcile never touches it.
+  node_id?: string;
   objective?: string;
   beat?: string; // the page's beat (one-paragraph middle resolution between objective and prose)
   summary?: string;
