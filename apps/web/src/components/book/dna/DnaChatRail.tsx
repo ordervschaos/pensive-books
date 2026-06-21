@@ -2,6 +2,7 @@
 // DNA journey). Talks to the dna-chat edge fn scoped to the active stage; a proposed change rides in the
 // thread's pending_proposal as node ops the author reviews and applies. Live projection of dna_chats.
 import { useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
 import { Loader2, Sparkles } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -73,7 +74,9 @@ export function DnaChatRail({ bookId, stage, onApplied }: { bookId: number; stag
         {messages.map((m, i) => (
           <div key={i} className={m.role === "user" ? "text-right" : ""}>
             <div className={`inline-block max-w-[92%] rounded-2xl px-3.5 py-2 text-left text-[13.5px] leading-snug ${m.role === "user" ? "bg-[hsl(var(--pv-accent))]/[0.1] text-foreground" : "text-[hsl(var(--pv-text-muted))]"}`}>
-              <p className="pv-serif whitespace-pre-wrap">{m.text}</p>
+              {m.role === "user"
+                ? <p className="pv-serif whitespace-pre-wrap">{m.text}</p>
+                : <div className="pv-serif prose prose-sm max-w-none dark:prose-invert prose-p:my-1.5 prose-li:my-0.5 prose-headings:mb-1 prose-headings:mt-2 prose-strong:text-foreground"><ReactMarkdown>{m.text}</ReactMarkdown></div>}
             </div>
           </div>
         ))}
