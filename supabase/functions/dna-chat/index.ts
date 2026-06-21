@@ -1,0 +1,117 @@
+// dna-chat — the per-STAGE conversational reviser for the Novel DNA journey (the third studio pillar).
+// One thread per (book, stage). The author talks to a story editor scoped to that resolution; it holds the
+// stage's nodes + the journey context, and may PROPOSE a structured change to the tree (node ops) that the
+// author reviews before applying. Mirrors revise-chat, but over book_nodes. See docs/novel-dna-spec.md.
+//
+//   client → POST { bookId, stage, message } → append user msg → model → append reply + any proposal → save
+//
+// The edge fn is the single writer of the dna_chats row; the client watches it over Realtime (refresh = no-op).
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "jsr:@supabase/supabase-js@2";
+import { corsHeaders, json } from "../_shared/cors.ts";
+import { callClaude, textFromClaude, type CallMeta } from "../_shared/claude.ts";
+import { getActiveModels } from "../_shared/model-config.ts";
+import { extractJsonBlock } from "../_shared/json.ts";
+import { type Brief, briefContext, mandateContext } from "../_shared/brief.ts";
+
+type Stage = "premise" | "foundations" | "structure" | "scenes" | "draft";
+interface Node { id: string; parent_id: string | null; kind: string; level: number; content: Record<string, unknown>; authoring: { locked?: boolean; status?: string } }
+interface ChatMessage { role: "user" | "assistant"; text: string; ts: string; plan?: string }
+
+const STAGE_KINDS: Record<Stage, string[]> = {
+  premise: ["seed", "premise"],
+  foundations: ["pillar", "character", "relationship", "tentpole", "world_fact"],
+  structure: ["movement", "beat"],
+  scenes: ["scene"],
+  draft: ["scene"],
+};
+const STAGE_GUIDE: Record<Stage, string> = {
+  premise: "the PREMISE — the logline, genre, tone, dramatic question, and the 5-part shape. Sharpen the question and the turns; keep it one true idea.",
+  foundations: "the FOUNDATIONS — the controlling idea, the ending, and the CAST (each character's want/need/wound/lie/truth/idiolect), world rules, tentpole set-pieces, and relationships. The wound + lie are the human core. Pressure-test them; deepen, don't generic-ify.",
+  structure: "the STRUCTURE — the acts (movements) and their causal beats. Hunt sagging middles, weak turning points, 'and-then' beats; every beat should connect with therefore/but.",
+  scenes: "the SCENES — each scene's pov/goal/conflict/outcome and its VALUE SHIFT. Every scene must turn a value; fix flat scenes; check order and escalation.",
+  draft: "the DRAFT — the prose of each scene. Voice, heat (per the mandate), pacing, line-level craft. Edit a scene's prose under content.prose.text.",
+};
+
+Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  try {
+    const userClient = createClient(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+      { global: { headers: { Authorization: req.headers.get("Authorization")! } } });
+    const { data: { user } } = await userClient.auth.getUser();
+    if (!user) return json({ error: "Unauthorized" }, 401);
+
+    const { bookId, stage, message } = (await req.json().catch(() => ({}))) as { bookId?: number; stage?: Stage; message?: string };
+    if (!bookId || !stage || !STAGE_KINDS[stage]) return json({ error: "bookId, a valid stage, and message are required" }, 400);
+    const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
+    if (!apiKey) return json({ error: "ANTHROPIC_API_KEY not configured" }, 500);
+
+    const [{ data: book }, { data: nodeRows }, { data: existing }] = await Promise.all([
+      userClient.from("books").select("name, brief").eq("id", bookId).maybeSingle(),
+      userClient.from("book_nodes").select("id, parent_id, kind, level, content, authoring").eq("book_id", bookId),
+      userClient.from("dna_chats").select("messages, pending_proposal").eq("book_id", bookId).eq("stage", stage).maybeSingle(),
+    ]);
+    const nodes = (nodeRows as Node[] | null) ?? [];
+    const prior: ChatMessage[] = Array.isArray(existing?.messages) ? existing!.messages as ChatMessage[] : [];
+    const withUser: ChatMessage[] = [...prior, { role: "user", text: (message ?? "").trim(), ts: new Date().toISOString() }];
+    await userClient.from("dna_chats").upsert({ book_id: bookId, stage, messages: withUser, status: "thinking", error: null }, { onConflict: "book_id,stage" });
+
+    const brief = book?.brief as Brief | null;
+    const mandate = mandateContext(brief);
+    const stageNodes = nodes.filter((n) => STAGE_KINDS[stage].includes(n.kind));
+    // For deeper stages, also show the cast (referenced by scenes) and the ancestors for grounding.
+    const cast = stage !== "foundations" ? nodes.filter((n) => n.kind === "character") : [];
+    const system = `You are a sharp, warm developmental STORY EDITOR in conversation with an author about ${STAGE_GUIDE[stage]}
+
+You hold ONE stage of the book's DNA tree. Reply to the author in plain MARKDOWN prose — discuss, pressure-test, answer. If — and ONLY if — this message DELIVERS a concrete change to apply, append at the VERY END a single fenced \`\`\`json block (nothing after it) with node operations over the REAL node ids given:
+{ "summary": "<one line: what changes>",
+  "ops": [
+    { "op": "edit", "id": "<existing node id>", "content": { <fields to merge> } },
+    { "op": "add", "kind": "<character|world_fact|relationship|tentpole|movement|beat|scene>", "parentId": "<existing node id>", "content": { … } },
+    { "op": "delete", "id": "<existing node id>" }
+  ] }
+Only reference ids that exist. Honor LOCKED nodes (never edit/delete them). Don't propose unless the author asked for a change or agreed to one — talk first.`;
+
+    const ctx = [
+      `BOOK: ${book?.name ?? ""}`,
+      `BRIEF (binding): ${briefContext(brief, { scope: "full", success: true, none: "(no brief)", empty: "(empty)" })}`,
+      mandate ? `MANDATE — NON-NEGOTIABLE: ${mandate}` : "",
+      cast.length ? `CAST (for reference):\n${cast.map((c) => `[${c.id}] ${JSON.stringify(c.content)}`).join("\n")}` : "",
+      `THIS STAGE'S NODES (edit/add/delete by these ids; LOCKED = immutable):\n${stageNodes.map((n) => `[${n.id}${n.authoring?.locked ? " · LOCKED" : ""}] ${n.kind}: ${JSON.stringify(n.content)}`).join("\n") || "(none yet)"}`,
+    ].filter(Boolean).join("\n\n");
+
+    const { high: model } = await getActiveModels();
+    const meta: CallMeta = { fn: "dna-chat", bookId, userId: user.id };
+    const history = withUser.slice(-12).map((m) => ({ role: m.role, content: m.text }));
+    const data = await callClaude(apiKey, {
+      model, max_tokens: 3000,
+      system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+      messages: [{ role: "user", content: `${ctx}\n\n— The conversation so far is below; respond to the latest message.` }, ...history],
+    }, meta);
+
+    const full = textFromClaude(data).trim();
+    let reply = full, proposal: { summary: string; ops: unknown[] } | null = null;
+    const fence = full.match(/```json\s*([\s\S]*?)```\s*$/);
+    if (fence) {
+      try {
+        const parsed = JSON.parse(extractJsonBlock(fence[1]));
+        const ids = new Set(nodes.map((n) => n.id));
+        const locked = new Set(nodes.filter((n) => n.authoring?.locked).map((n) => n.id));
+        const ops = (Array.isArray(parsed.ops) ? parsed.ops : []).filter((o: { op?: string; id?: string; parentId?: string }) =>
+          (o.op === "edit" && o.id && ids.has(o.id) && !locked.has(o.id)) ||
+          (o.op === "delete" && o.id && ids.has(o.id) && !locked.has(o.id)) ||
+          (o.op === "add" && o.parentId && ids.has(o.parentId)));
+        if (ops.length) { proposal = { summary: String(parsed.summary ?? "Proposed change").trim(), ops }; reply = full.slice(0, fence.index).trim(); }
+      } catch { /* keep the prose, drop the malformed block */ }
+    }
+
+    const assistant: ChatMessage = { role: "assistant", text: reply, ts: new Date().toISOString(), plan: proposal?.summary };
+    await userClient.from("dna_chats").update({
+      messages: [...withUser, assistant], pending_proposal: proposal ?? existing?.pending_proposal ?? null, status: "idle",
+    }).eq("book_id", bookId).eq("stage", stage);
+
+    return json({ reply, proposal });
+  } catch (e) {
+    return json({ error: String((e as Error)?.message ?? e).slice(0, 500) }, 500);
+  }
+});

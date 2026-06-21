@@ -3451,6 +3451,64 @@ async function runDnaExpand({ bookId, nodeId, target }) {
   } catch { return { error: "Could not parse expand JSON" }; }
 }
 
+// ── /dna-chat (mirrors supabase/functions/dna-chat) ───────────────────────────
+const DNA_STAGE_KINDS = {
+  premise: ["seed", "premise"], foundations: ["pillar", "character", "relationship", "tentpole", "world_fact"],
+  structure: ["movement", "beat"], scenes: ["scene"], draft: ["scene"],
+};
+const DNA_STAGE_GUIDE = {
+  premise: "the PREMISE — the logline, genre, tone, dramatic question, and the 5-part shape. Sharpen the question and the turns.",
+  foundations: "the FOUNDATIONS — the controlling idea, the ending, and the CAST (want/need/wound/lie/truth/idiolect), world rules, tentpoles, relationships. The wound + lie are the human core; deepen, don't generic-ify.",
+  structure: "the STRUCTURE — acts (movements) and their causal beats. Hunt sagging middles, weak turning points, 'and-then' beats.",
+  scenes: "the SCENES — each scene's pov/goal/conflict/outcome and its VALUE SHIFT. Every scene must turn a value.",
+  draft: "the DRAFT — the prose of each scene. Voice, heat (per the mandate), pacing. Edit a scene's prose under content.prose.text.",
+};
+async function runDnaChat({ bookId, stage, message }) {
+  if (!DNA_STAGE_KINDS[stage]) return { error: "valid stage required" };
+  const book = await fetchBook(bookId);
+  if (!book) return { error: "Book not found" };
+  const nodes = await (await fetch(`${SUPABASE_URL}/rest/v1/book_nodes?book_id=eq.${bookId}&select=id,parent_id,kind,content,authoring`, { headers: sbHeaders })).json();
+  const ex = await (await fetch(`${SUPABASE_URL}/rest/v1/dna_chats?book_id=eq.${bookId}&stage=eq.${stage}&select=messages,pending_proposal`, { headers: sbHeaders })).json();
+  const existing = ex[0];
+  const prior = Array.isArray(existing?.messages) ? existing.messages : [];
+  const withUser = [...prior, { role: "user", text: String(message ?? "").trim(), ts: new Date().toISOString() }];
+  const jh = { ...sbHeaders, "Content-Type": "application/json" };
+  await fetch(`${SUPABASE_URL}/rest/v1/dna_chats?on_conflict=book_id,stage`, { method: "POST", headers: { ...jh, Prefer: "resolution=merge-duplicates" }, body: JSON.stringify({ book_id: bookId, stage, messages: withUser, status: "thinking", error: null }) });
+
+  const mandate = mandateContext(book.brief);
+  const stageNodes = nodes.filter((n) => DNA_STAGE_KINDS[stage].includes(n.kind));
+  const cast = stage !== "foundations" ? nodes.filter((n) => n.kind === "character") : [];
+  const system = `You are a sharp, warm developmental STORY EDITOR in conversation with an author about ${DNA_STAGE_GUIDE[stage]}\n\nReply in plain MARKDOWN prose. If — and ONLY if — this message DELIVERS a concrete change to apply, append at the VERY END a single fenced \`\`\`json block (nothing after it) with node ops over the REAL ids given:\n{ "summary": "<one line>", "ops": [ { "op": "edit", "id": "<id>", "content": { … } }, { "op": "add", "kind": "<kind>", "parentId": "<id>", "content": { … } }, { "op": "delete", "id": "<id>" } ] }\nOnly reference ids that exist; never edit/delete a LOCKED node; talk first, propose only when asked or agreed.`;
+  const ctx = [
+    `BOOK: ${book.name ?? ""}`,
+    `BRIEF (binding): ${briefContext(book.brief)}`,
+    mandate ? `MANDATE — NON-NEGOTIABLE: ${mandate}` : "",
+    cast.length ? `CAST (for reference):\n${cast.map((c) => `[${c.id}] ${JSON.stringify(c.content)}`).join("\n")}` : "",
+    `THIS STAGE'S NODES (edit/add/delete by these ids; LOCKED = immutable):\n${stageNodes.map((n) => `[${n.id}${n.authoring?.locked ? " · LOCKED" : ""}] ${n.kind}: ${JSON.stringify(n.content)}`).join("\n") || "(none yet)"}`,
+  ].filter(Boolean).join("\n\n");
+  const convo = withUser.slice(-12).map((m) => `${m.role.toUpperCase()}: ${m.text}`).join("\n\n");
+  const out = await runClaude(`${system}\n\n${ctx}\n\nCONVERSATION:\n${convo}\n\nRespond to the latest message.`, true, { fn: "dna-chat", bookId }, { noTools: true, model: MODEL_PLANNING });
+  if (out.error) return out;
+
+  const full = out.text.trim();
+  let reply = full, proposal = null;
+  const fence = full.match(/```json\s*([\s\S]*?)```\s*$/);
+  if (fence) {
+    try {
+      let raw = fence[1].trim();
+      const parsed = JSON.parse(raw);
+      const ids = new Set(nodes.map((n) => n.id));
+      const locked = new Set(nodes.filter((n) => n.authoring?.locked).map((n) => n.id));
+      const ops = (Array.isArray(parsed.ops) ? parsed.ops : []).filter((o) =>
+        (o.op === "edit" && ids.has(o.id) && !locked.has(o.id)) || (o.op === "delete" && ids.has(o.id) && !locked.has(o.id)) || (o.op === "add" && ids.has(o.parentId)));
+      if (ops.length) { proposal = { summary: String(parsed.summary ?? "Proposed change").trim(), ops }; reply = full.slice(0, fence.index).trim(); }
+    } catch { /* keep prose */ }
+  }
+  const assistant = { role: "assistant", text: reply, ts: new Date().toISOString(), plan: proposal?.summary };
+  await fetch(`${SUPABASE_URL}/rest/v1/dna_chats?book_id=eq.${bookId}&stage=eq.${stage}`, { method: "PATCH", headers: jh, body: JSON.stringify({ messages: [...withUser, assistant], pending_proposal: proposal ?? existing?.pending_proposal ?? null, status: "idle" }) });
+  return { reply, proposal };
+}
+
 const server = createServer(async (req, res) => {
   if (req.method === "OPTIONS") return res.writeHead(204, cors).end();
 
@@ -3788,6 +3846,16 @@ async function route(req, res) {
     if (!(await authorize(req, res, Number(body.bookId)))) return;
     console.log(`DNA expand ${body.nodeId} (book ${body.bookId})…`);
     const out = await runDnaExpand(body);
+    if (out.error) return json(res, 500, { error: out.error });
+    return json(res, 200, out);
+  }
+
+  if (url === "/dna-chat" || url === "/dna-chat/") {
+    if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
+    const body = await readBody(req);
+    if (!(await authorize(req, res, Number(body.bookId)))) return;
+    console.log(`DNA chat ${body.stage} (book ${body.bookId})…`);
+    const out = await runDnaChat(body);
     if (out.error) return json(res, 500, { error: out.error });
     return json(res, 200, out);
   }

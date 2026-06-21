@@ -10,6 +10,7 @@ import { AutoTextarea } from "@/components/ui/auto-textarea";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { ActionLink, Eyebrow, Panel, RunningInline, StageHead, StepDot } from "@/components/book/studio/studioUi";
 import { buildJourney, type StageKey } from "@/lib/dnaJourney";
+import { DnaChatRail } from "@/components/book/dna/DnaChatRail";
 import { saveNode, deleteNode } from "@/lib/bookNodes";
 import { migrateBookToDna } from "@/lib/migrateToDna";
 import { reconcileDna } from "@/lib/novelDnaRender";
@@ -204,16 +205,21 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
     </div>
   );
 
+  const railHandle = <ResizableHandle className="w-1.5 bg-transparent transition-colors hover:bg-[hsl(var(--pv-accent))]/30 data-[resize-handle-state=drag]:bg-[hsl(var(--pv-accent))]/50" />;
+  const rail = nodes.length > 0 ? <DnaChatRail bookId={bookId} stage={activeKey} onApplied={onChanged} /> : null;
+
   return (
     <div className="flex h-full flex-col">
       <ResizablePanelGroup direction="horizontal" className="hidden min-h-0 flex-1 md:flex">
-        <ResizablePanel defaultSize={24} minSize={16} maxSize={38}>{nav}</ResizablePanel>
-        <ResizableHandle className="w-1.5 bg-transparent transition-colors hover:bg-[hsl(var(--pv-accent))]/30 data-[resize-handle-state=drag]:bg-[hsl(var(--pv-accent))]/50" />
-        <ResizablePanel defaultSize={76} minSize={40}>{stage}</ResizablePanel>
+        <ResizablePanel defaultSize={20} minSize={14} maxSize={32}>{nav}</ResizablePanel>
+        {railHandle}
+        <ResizablePanel defaultSize={rail ? 52 : 80} minSize={32}>{stage}</ResizablePanel>
+        {rail && (<>{railHandle}<ResizablePanel defaultSize={28} minSize={20} maxSize={42}>{rail}</ResizablePanel></>)}
       </ResizablePanelGroup>
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto md:hidden">
         <div className="shrink-0">{nav}</div>
         <div className="shrink-0">{stage}</div>
+        {rail && <div className="h-[70vh] shrink-0">{rail}</div>}
       </div>
     </div>
   );
