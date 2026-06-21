@@ -31,6 +31,9 @@ const SPEC: Record<string, { from: string; childKind: string; childLevel: number
   world: { from: "pillar", childKind: "world_fact", childLevel: 2, count: "3 to 6",
     role: "the WORLD — the load-bearing rules and facts that constrain the story",
     schema: `{ "rule": "...", "category": "..." }` },
+  relationships: { from: "pillar", childKind: "relationship", childLevel: 2, count: "2 to 4",
+    role: "the key RELATIONSHIPS (dyads) between the cast — each with a bond and a current charge/tension; reference characters BY NAME",
+    schema: `{ "a": "<character name>", "b": "<character name>", "bond": "...", "charge": "..." }` },
   movements: { from: "pillar", childKind: "movement", childLevel: 3, count: "3 to 5", role: "the ACTS — each a major movement with a turning point and a value shift",
     schema: `{ "title": "...", "goal": "...", "turning_point": "...", "value": { "name": "...", "from": "...", "to": "..." } }` },
   beats: { from: "movement", childKind: "beat", childLevel: 4, count: "2 to 4", role: "the causal BEATS inside this act; each links to the previous with therefore or but, escalating",
@@ -64,12 +67,24 @@ Deno.serve(async (req: Request) => {
     // Ancestor chain (root → parent), locked ones flagged as hard constraints.
     const chain: Node[] = [];
     for (let p = node.parent_id; p; p = byId.get(p)?.parent_id ?? null) { const a = byId.get(p); if (a) chain.unshift(a); }
+    // The cast/world registry hangs off the pillar (not the ancestor chain) — feed it in so generation
+    // is character- and world-aware (scenes know who exists; relationships pair real characters by name).
+    const pillar = node.kind === "pillar" ? node : chain.find((a) => a.kind === "pillar");
+    const entities = pillar ? nodes.filter((n) => n.parent_id === pillar.id && (n.kind === "character" || n.kind === "world_fact" || n.kind === "relationship")) : [];
+    const chars = entities.filter((e) => e.kind === "character");
+    const cName = (e: Node) => String((e.content as { name?: string }).name ?? "").trim();
+    const entityBlock = entities.length
+      ? "CAST & WORLD (reference characters BY NAME):\n" +
+        chars.map((c) => `- ${cName(c)} [${(c.content as { role?: string }).role ?? "?"}] ${JSON.stringify(c.content)}`).join("\n") +
+        entities.filter((e) => e.kind === "world_fact").map((w) => `\n- WORLD: ${(w.content as { rule?: string }).rule ?? ""}`).join("")
+      : "";
     const ctx = [
       `BOOK: ${book?.name ?? ""}`,
       `BRIEF (binding):\n${briefContext(brief, { scope: "full", success: true, none: "(no brief)", empty: "(empty)" })}`,
       mandate ? `MANDATE — NON-NEGOTIABLE:\n${mandate}` : "",
       "STORY SO FAR (the ladder above this node; LOCKED items are immutable):",
       ...chain.map((a) => `[${a.kind}${a.authoring?.locked ? " · LOCKED" : ""}] ${JSON.stringify(a.content)}`),
+      entityBlock,
       `THIS NODE [${node.kind}]: ${JSON.stringify(node.content)}`,
     ].filter(Boolean).join("\n\n");
 
@@ -90,7 +105,14 @@ Deno.serve(async (req: Request) => {
     const data = await callClaude(apiKey, { model, max_tokens: 4000, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
       messages: [{ role: "user", content: `${ctx}\n\nGenerate the ${spec.childKind}s. JSON only.` }] }, meta);
     const parsed = JSON.parse(extractJsonBlock(textFromClaude(data)));
-    const children = Array.isArray(parsed.children) ? parsed.children : [];
+    let children = Array.isArray(parsed.children) ? parsed.children : [];
+    if (spec.childKind === "relationship") {
+      // Resolve a/b from character NAME → node id; drop any pairing that doesn't resolve to two real chars.
+      const nameToId = new Map(chars.map((c) => [cName(c).toLowerCase(), c.id]));
+      children = children
+        .map((ch: Record<string, unknown>) => ({ ...ch, a: nameToId.get(String(ch.a ?? "").trim().toLowerCase()), b: nameToId.get(String(ch.b ?? "").trim().toLowerCase()) }))
+        .filter((ch: { a?: string; b?: string }) => ch.a && ch.b && ch.a !== ch.b);
+    }
     return json({ childKind: spec.childKind, childLevel: spec.childLevel, children });
   } catch (e) {
     return json({ error: String((e as Error)?.message ?? e).slice(0, 500) }, 500);

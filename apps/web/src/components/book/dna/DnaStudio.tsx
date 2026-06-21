@@ -15,18 +15,19 @@ import { reconcileDna } from "@/lib/novelDnaRender";
 import { expandNode } from "@/lib/dnaExpand";
 import {
   byId, childrenOf, editContent, emptyNode, isProseStale, isStale, lock as lockNode, renderBlockers,
-  setStatus, type DnaNode, type NodeKind, type SceneContent,
+  setStatus, type CharacterContent, type DnaNode, type NodeKind, type RelationshipContent, type SceneContent,
 } from "@/lib/novelDna";
 
 // The expand verb(s) per kind. A node can have several (a pillar generates cast, world, AND acts). Each
 // names the TARGET the engine generates and the child kind it produces. SINGLE targets make exactly one
 // child, so the UI hides them once that child exists.
-interface ExpandTarget { target: string; label: string; childKind: NodeKind }
+interface ExpandTarget { target: string; label: string; childKind: NodeKind; needs?: NodeKind }
 const EXPAND_TARGETS: Partial<Record<NodeKind, ExpandTarget[]>> = {
   seed: [{ target: "premise", label: "generate premise", childKind: "premise" }],
   premise: [{ target: "pillar", label: "generate pillar", childKind: "pillar" }],
   pillar: [
     { target: "cast", label: "generate cast", childKind: "character" },
+    { target: "relationships", label: "generate relationships", childKind: "relationship", needs: "character" },
     { target: "world", label: "generate world", childKind: "world_fact" },
     { target: "movements", label: "generate acts", childKind: "movement" },
   ],
@@ -214,8 +215,17 @@ function NodeCard({ node, index, bookId, kids, onChanged, accent }: {
   useEffect(() => { setDrafts({}); }, [node.id]);
   const fields = FIELDS[node.kind] ?? [];
   const stale = isStale(node, index) || (node.kind === "scene" && isProseStale(node));
-  // Available generate verbs: hide a SINGLE-child target once that child already exists.
-  const targets = (EXPAND_TARGETS[node.kind] ?? []).filter((t) => !(SINGLE.has(t.target) && kids.some((c) => c.kind === t.childKind)));
+  // A relationship card names its dyad (a/b are character node ids).
+  const dyad = node.kind === "relationship" ? (() => {
+    const c = node.content as RelationshipContent;
+    const nm = (id?: string) => (id ? (index.get(id)?.content as CharacterContent | undefined)?.name : undefined);
+    const a = nm(c.a), b = nm(c.b);
+    return a && b ? `${a} ↔ ${b}` : undefined;
+  })() : undefined;
+  // Available generate verbs: hide a SINGLE-child target once made, and a target whose prerequisite kind
+  // (e.g. relationships need a cast) doesn't exist yet.
+  const targets = (EXPAND_TARGETS[node.kind] ?? []).filter((t) =>
+    !(SINGLE.has(t.target) && kids.some((c) => c.kind === t.childKind)) && !(t.needs && !kids.some((c) => c.kind === t.needs)));
 
   const guard = async (label: string, fn: () => Promise<void>) => {
     try { await fn(); onChanged(); } catch (e) { toast({ title: label, description: String((e as Error)?.message ?? e), variant: "destructive" }); }
@@ -243,6 +253,7 @@ function NodeCard({ node, index, bookId, kids, onChanged, accent }: {
     <Panel variant={accent ? "chosen" : "soft"} className="px-4 py-3">
       <div className="mb-2 flex items-center gap-2">
         <Eyebrow tone="accent">{node.kind}</Eyebrow>
+        {dyad && <span className="pv-serif text-[12px] text-[hsl(var(--pv-text-muted))]">{dyad}</span>}
         <span className="pv-mono text-[9px] uppercase tracking-[0.1em] text-[hsl(var(--pv-text-faint))]">{node.authoring.status}</span>
         {stale && <span className="pv-mono text-[9px] uppercase tracking-[0.1em] text-amber-500">stale</span>}
         <div className="ml-auto flex items-center gap-3 text-[hsl(var(--pv-text-faint))]">

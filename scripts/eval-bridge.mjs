@@ -3382,6 +3382,8 @@ const DNA_SPEC = {
     schema: `{ "name": "...", "role": "protagonist|antagonist|ally|love_interest|minor", "want": "...", "need": "...", "wound": "...", "lie": "...", "truth": "...", "idiolect": "..." }` },
   world: { childKind: "world_fact", childLevel: 2, count: "3 to 6", role: "the WORLD — the load-bearing rules and facts that constrain the story",
     schema: `{ "rule": "...", "category": "..." }` },
+  relationships: { childKind: "relationship", childLevel: 2, count: "2 to 4", role: "the key RELATIONSHIPS (dyads) between the cast — each with a bond and a current charge/tension; reference characters BY NAME",
+    schema: `{ "a": "<character name>", "b": "<character name>", "bond": "...", "charge": "..." }` },
   movements: { childKind: "movement", childLevel: 3, count: "3 to 5", role: "the ACTS — each a major movement with a turning point and a value shift",
     schema: `{ "title": "...", "goal": "...", "turning_point": "...", "value": { "name": "...", "from": "...", "to": "..." } }` },
   beats: { childKind: "beat", childLevel: 4, count: "2 to 4", role: "the causal BEATS inside this act; each links to the previous with therefore or but, escalating",
@@ -3401,12 +3403,23 @@ async function runDnaExpand({ bookId, nodeId, target }) {
   const map = new Map(nodes.map((n) => [n.id, n]));
   const chain = [];
   for (let p = node.parent_id; p; p = map.get(p)?.parent_id ?? null) { const a = map.get(p); if (a) chain.unshift(a); }
+  // Cast/world registry off the pillar — feed in so generation is character/world-aware.
+  const pillar = node.kind === "pillar" ? node : chain.find((a) => a.kind === "pillar");
+  const entities = pillar ? nodes.filter((n) => n.parent_id === pillar.id && ["character", "world_fact", "relationship"].includes(n.kind)) : [];
+  const chars = entities.filter((e) => e.kind === "character");
+  const cName = (e) => String(e.content?.name ?? "").trim();
+  const entityBlock = entities.length
+    ? "CAST & WORLD (reference characters BY NAME):\n" +
+      chars.map((c) => `- ${cName(c)} [${c.content?.role ?? "?"}] ${JSON.stringify(c.content)}`).join("\n") +
+      entities.filter((e) => e.kind === "world_fact").map((w) => `\n- WORLD: ${w.content?.rule ?? ""}`).join("")
+    : "";
   const ctx = [
     `BOOK: ${book.name ?? ""}`,
     `BRIEF (binding):\n${briefContext(book.brief)}`,
     mandate ? `MANDATE — NON-NEGOTIABLE:\n${mandate}` : "",
     "STORY SO FAR (the ladder above this node; LOCKED items are immutable):",
     ...chain.map((a) => `[${a.kind}${a.authoring?.locked ? " · LOCKED" : ""}] ${JSON.stringify(a.content)}`),
+    entityBlock,
     `THIS NODE [${node.kind}]: ${JSON.stringify(node.content)}`,
   ].filter(Boolean).join("\n\n");
 
@@ -3427,7 +3440,14 @@ async function runDnaExpand({ bookId, nodeId, target }) {
   else { const f = raw.indexOf("{"), l = raw.lastIndexOf("}"); if (f !== -1 && l > f) raw = raw.slice(f, l + 1); }
   try {
     const parsed = JSON.parse(raw);
-    return { childKind: spec.childKind, childLevel: spec.childLevel, children: Array.isArray(parsed.children) ? parsed.children : [] };
+    let children = Array.isArray(parsed.children) ? parsed.children : [];
+    if (spec.childKind === "relationship") {
+      const nameToId = new Map(chars.map((c) => [cName(c).toLowerCase(), c.id]));
+      children = children
+        .map((ch) => ({ ...ch, a: nameToId.get(String(ch.a ?? "").trim().toLowerCase()), b: nameToId.get(String(ch.b ?? "").trim().toLowerCase()) }))
+        .filter((ch) => ch.a && ch.b && ch.a !== ch.b);
+    }
+    return { childKind: spec.childKind, childLevel: spec.childLevel, children };
   } catch { return { error: "Could not parse expand JSON" }; }
 }
 
