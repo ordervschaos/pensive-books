@@ -59,7 +59,13 @@ const DnaStudioPage = () => {
   }, [bookId, reload]);
 
   if (permLoading || loading || !hasAccess || !canEdit) return null;
-  return <DnaStudio bookId={bookId} bookSlug={bookSlug ?? String(bookId)} settings={settings} nodes={nodes} onChanged={reload} />;
+  return (
+    <div className="flex h-[calc(100vh-3.5rem)] flex-col overflow-hidden bg-background">
+      <div className="min-h-0 flex-1">
+        <DnaStudio bookId={bookId} bookSlug={bookSlug ?? String(bookId)} settings={settings} nodes={nodes} onChanged={reload} />
+      </div>
+    </div>
+  );
 };
 
 export default DnaStudioPage;

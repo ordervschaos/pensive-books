@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { Lock, Unlock, Sparkles } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { AutoTextarea } from "@/components/ui/auto-textarea";
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { ActionLink, Eyebrow, Panel, RunningInline, StageHead } from "@/components/book/studio/studioUi";
 import { saveNode, deleteNode } from "@/lib/bookNodes";
 import { migrateBookToDna } from "@/lib/migrateToDna";
@@ -76,6 +77,7 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
 }) {
   const { toast } = useToast();
   const [busy, setBusy] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string>("premise"); // which rung-section the Stage shows
   const index = byId(nodes);
   const of = (kind: NodeKind) => nodes.filter((n) => n.kind === kind);
   const blockers = renderBlockers(nodes, settings);
@@ -95,76 +97,110 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
     <NodeCard key={n.id} node={n} index={index} bookId={bookId} kids={childrenOf(nodes, n.id)} onChanged={onChanged} accent={accent} />
   );
   const [seed, premise, pillar] = [of("seed")[0], of("premise")[0], of("pillar")[0]];
+  const entityKinds: NodeKind[] = ["character", "tentpole", "relationship", "world_fact"];
 
-  return (
-    <div className="mx-auto max-w-3xl space-y-8 px-4 py-8">
-      <StageHead
-        eyebrow="Novel DNA"
-        title={settings.title || "Untitled"}
-        caption={blockers.length === 0 ? "renderable ✓" : `${blockers.length} to fill: ${blockers.join(" · ")}`}
-        right={
-          <div className="flex items-center gap-3">
-            {nodes.length === 0 && <ActionLink busy={busy === "migrate"} onClick={migrate}>migrate from legacy</ActionLink>}
-            {nodes.length > 0 && <ActionLink busy={busy === "render"} onClick={render}>render pages →</ActionLink>}
-            <a href={`/books/${bookSlug}`} className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-[hsl(var(--pv-accent))]">read</a>
-          </div>
-        }
-      />
+  // The three rungs as navigable sections (the studio's step list, DNA-shaped).
+  const sections = [
+    { key: "premise", label: "Premise", caption: "Seed → premise → pillar — the spine of intent.", count: [seed, premise, pillar].filter(Boolean).length },
+    { key: "cast", label: "Cast & world", caption: "The people, bonds, set-pieces, and rules scenes are built from.", count: entityKinds.flatMap(of).length },
+    { key: "structure", label: "Structure", caption: "Acts → beats → scenes → prose.", count: of("movement").length },
+  ];
+  const section = sections.find((s) => s.key === selected) ?? sections[0];
 
-      {nodes.length === 0 ? (
-        <p className="pv-serif text-[15px] italic text-[hsl(var(--pv-text-faint))]">
-          Empty tree. <button className="text-[hsl(var(--pv-accent))] underline" onClick={migrate}>Migrate the legacy book</button>{" "}
-          or <button className="text-[hsl(var(--pv-accent))] underline" onClick={() => run("seed", () => saveNode(emptyNode(bookId, "seed", 0, null)))}>start a blank seed</button>.
-        </p>
-      ) : (
-        <>
-          <Section title="Premise">{[seed, premise, pillar].filter(Boolean).map((n) => card(n!))}</Section>
-
-          <Section title="Cast & world" action={pillar && (
-            <div className="flex items-center gap-2">
-              {(["character", "tentpole", "relationship", "world_fact"] as NodeKind[]).map((k) => (
-                <button key={k} onClick={() => addChild(pillar, k, 2)} className="pv-serif text-[12px] italic text-[hsl(var(--pv-text-faint))] hover:text-[hsl(var(--pv-accent))]">+ {k}</button>
-              ))}
-            </div>
-          )}>
-            {(["character", "tentpole", "relationship", "world_fact"] as NodeKind[]).flatMap((k) => of(k)).map((n) => card(n))}
-          </Section>
-
-          <Section title="Structure">
-            {of("movement").map((m) => (
-              <div key={m.id} className="space-y-2">
-                {card(m, true)}
-                <div className="ml-4 space-y-2 border-l border-[hsl(var(--pv-border-soft))] pl-4">
-                  {childrenOf(nodes, m.id).filter((b) => b.kind === "beat").map((b) => (
-                    <div key={b.id} className="space-y-2">
-                      {card(b)}
-                      <div className="ml-4 space-y-2 border-l border-[hsl(var(--pv-border-soft))] pl-4">
-                        {childrenOf(nodes, b.id).filter((s) => s.kind === "scene").map((s) => card(s))}
-                        <ActionLink busy={busy === "add"} onClick={() => addChild(b, "scene", 5)}>add scene</ActionLink>
-                      </div>
-                    </div>
-                  ))}
-                  <ActionLink busy={busy === "add"} onClick={() => addChild(m, "beat", 4)}>add beat</ActionLink>
-                </div>
-              </div>
+  const stageBody = () => {
+    if (selected === "cast") return (
+      <>
+        {pillar && (
+          <div className="mb-1 flex flex-wrap items-center gap-2">
+            {entityKinds.map((k) => (
+              <button key={k} onClick={() => addChild(pillar, k, 2)} className="pv-serif text-[12px] italic text-[hsl(var(--pv-text-faint))] hover:text-[hsl(var(--pv-accent))]">+ {k}</button>
             ))}
-            {pillar && <ActionLink busy={busy === "add"} onClick={() => addChild(pillar, "movement", 3)}>add movement</ActionLink>}
-          </Section>
-        </>
-      )}
+          </div>
+        )}
+        {entityKinds.flatMap((k) => of(k)).map((n) => card(n))}
+      </>
+    );
+    if (selected === "structure") return (
+      <>
+        {of("movement").map((m) => (
+          <div key={m.id} className="space-y-2">
+            {card(m, true)}
+            <div className="ml-4 space-y-2 border-l border-[hsl(var(--pv-border-soft))] pl-4">
+              {childrenOf(nodes, m.id).filter((b) => b.kind === "beat").map((b) => (
+                <div key={b.id} className="space-y-2">
+                  {card(b)}
+                  <div className="ml-4 space-y-2 border-l border-[hsl(var(--pv-border-soft))] pl-4">
+                    {childrenOf(nodes, b.id).filter((s) => s.kind === "scene").map((s) => card(s))}
+                    <ActionLink busy={busy === "add"} onClick={() => addChild(b, "scene", 5)}>add scene</ActionLink>
+                  </div>
+                </div>
+              ))}
+              <ActionLink busy={busy === "add"} onClick={() => addChild(m, "beat", 4)}>add beat</ActionLink>
+            </div>
+          </div>
+        ))}
+        {pillar && <ActionLink busy={busy === "add"} onClick={() => addChild(pillar, "movement", 3)}>add movement</ActionLink>}
+      </>
+    );
+    return [seed, premise, pillar].filter(Boolean).map((n) => card(n!)); // premise
+  };
+
+  const nav = (
+    <div className="h-full overflow-y-auto border-b border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/40 px-4 pb-12 pt-5 md:border-b-0 md:border-r">
+      <Eyebrow tone="muted">Novel DNA</Eyebrow>
+      <h1 className="pv-serif mt-1 text-[16px] leading-tight text-foreground">{settings.title || "Untitled"}</h1>
+      <p className="pv-mono mb-4 mt-1 text-[10px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-muted))]">
+        {blockers.length === 0 ? "renderable ✓" : `${blockers.length} to fill`}
+      </p>
+      {sections.map((s) => (
+        <button key={s.key} onClick={() => setSelected(s.key)}
+          className={`mb-0.5 flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left transition-colors ${selected === s.key ? "bg-[hsl(var(--pv-accent))]/[0.08] text-foreground" : "text-[hsl(var(--pv-text-muted))] hover:bg-[hsl(var(--pv-surface-2))]/60"}`}>
+          <span className="pv-serif text-[14px]">{s.label}</span>
+          <span className="pv-mono text-[10px] text-[hsl(var(--pv-text-faint))]">{s.count || ""}</span>
+        </button>
+      ))}
+      <div className="mx-2.5 my-3 h-px bg-[hsl(var(--pv-border-soft))]" />
+      <div className="flex flex-col items-start gap-2 px-2.5">
+        {nodes.length === 0 && <ActionLink busy={busy === "migrate"} onClick={migrate}>migrate from legacy</ActionLink>}
+        {nodes.length > 0 && <ActionLink busy={busy === "render"} onClick={render}>render pages →</ActionLink>}
+        <a href={`/books/${bookSlug}`} className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-[hsl(var(--pv-accent))]">read →</a>
+      </div>
     </div>
   );
-}
 
-function Section({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <section className="space-y-3">
-      <div className="flex items-center justify-between">
-        <Eyebrow tone="muted">{title}</Eyebrow>
-        {action}
+  const stage = (
+    <div className="h-full overflow-y-auto px-6 py-6">
+      <div className="mx-auto max-w-2xl space-y-5">
+        {nodes.length === 0 ? (
+          <div className="space-y-3">
+            <StageHead eyebrow="Novel DNA" title={settings.title || "Untitled"} caption="Nothing here yet." />
+            <p className="pv-serif text-[15px] italic text-[hsl(var(--pv-text-faint))]">
+              <button className="text-[hsl(var(--pv-accent))] underline" onClick={migrate}>Migrate the legacy book</button>{" "}
+              or <button className="text-[hsl(var(--pv-accent))] underline" onClick={() => run("seed", () => saveNode(emptyNode(bookId, "seed", 0, null)))}>start a blank seed</button>.
+            </p>
+          </div>
+        ) : (
+          <>
+            <StageHead eyebrow="Novel DNA" title={section.label} caption={section.caption} />
+            <div className="space-y-2">{stageBody()}</div>
+          </>
+        )}
       </div>
-      <div className="space-y-2">{children}</div>
-    </section>
+    </div>
+  );
+
+  return (
+    <div className="flex h-full flex-col">
+      <ResizablePanelGroup direction="horizontal" className="hidden min-h-0 flex-1 md:flex">
+        <ResizablePanel defaultSize={24} minSize={16} maxSize={38}>{nav}</ResizablePanel>
+        <ResizableHandle className="w-1.5 bg-transparent transition-colors hover:bg-[hsl(var(--pv-accent))]/30 data-[resize-handle-state=drag]:bg-[hsl(var(--pv-accent))]/50" />
+        <ResizablePanel defaultSize={76} minSize={40}>{stage}</ResizablePanel>
+      </ResizablePanelGroup>
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto md:hidden">
+        <div className="shrink-0">{nav}</div>
+        <div className="shrink-0">{stage}</div>
+      </div>
+    </div>
   );
 }
 
