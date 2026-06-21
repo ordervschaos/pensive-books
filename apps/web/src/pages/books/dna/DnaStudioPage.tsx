@@ -51,7 +51,7 @@ const DnaStudioPage = () => {
     let t: ReturnType<typeof setTimeout> | null = null;
     const soon = () => { if (t) clearTimeout(t); t = setTimeout(() => void reload(), 400); };
     const ch = supabase
-      .channel(`dna_${bookId}`)
+      .channel(`dna_${bookId}_${Math.random().toString(36).slice(2)}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "book_nodes", filter: `book_id=eq.${bookId}` }, soon)
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "books", filter: `id=eq.${bookId}` }, soon)
       .subscribe();

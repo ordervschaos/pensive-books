@@ -30,7 +30,9 @@ export function DnaChatRail({ bookId, stage, onApplied }: { bookId: number; stag
       setThinking((data?.status as string | null) === "thinking");
     };
     void load();
-    const ch = supabase.channel(`dnachat_${bookId}_${stage}`)
+    // Unique topic per mount: removeChannel() is async, so under StrictMode's double-mount a stable topic
+    // would be reused after subscribe() → "cannot add postgres_changes callbacks after subscribe()".
+    const ch = supabase.channel(`dnachat_${bookId}_${stage}_${Math.random().toString(36).slice(2)}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "dna_chats", filter: `book_id=eq.${bookId}` }, () => void load())
       .subscribe();
     return () => { alive = false; void supabase.removeChannel(ch); };
