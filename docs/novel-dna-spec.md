@@ -301,8 +301,12 @@ test dupe) end-to-end before touching live books.
    (edit/lock/delete, status+stale chips) for every kind, manual expand (add child slots), Migrate +
    Render actions, render-completeness banner. Live projection of `book_nodes`. (LLM `expand`/proposals
    = Phase 5.)
-5. **`expand` LLM.** Per-rung proposal generation, reusing lenses/options/judge. Locked-ancestor + craft
-   defaults in the prompt.
+5. ✅ **`expand` LLM (all rungs).** `dna-expand` edge fn (deployed) + bridge mirror + `lib/dnaExpand.ts`.
+   **Default expand = ONE authoritative value, NOT 2–3 proposals** (author edits/regenerates/locks after).
+   Target-keyed: seed→premise, premise→pillar, pillar→{cast, world, acts}, movement→beats, beat→scenes,
+   scene→prose — so a **blank seed generates the whole book**. Locked ancestors + MANDATE in the prompt.
+   UI: per-node "generate" verb(s) (a pillar offers cast/world/acts); single-child targets hide once made.
+   Studio primitives. TODO: optional proposals path; full two-pane Navigator/Stage shell.
 6. **Retire.** Drop `books.outline` + the `brief`/`foundations`/`spine` columns once parity is proven.
 
 ---

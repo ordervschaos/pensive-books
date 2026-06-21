@@ -1,25 +1,45 @@
-// DnaStudio — the four-verb authoring surface for the Novel DNA tree (Phase 4). The book IS the tree
+// DnaStudio — the four-verb authoring surface for the Novel DNA tree (Phase 4/5). The book IS the tree
 // (docs/novel-dna-schema.md); this is the "hungry structure" the author fills. One uniform NodeCard for
-// every kind (the self-similar promise: learn expand/choose/edit/lock once). Live projection of
-// book_nodes (refresh = no-op); pages are produced on demand via reconcileDna (the Render action).
+// every kind (the self-similar promise: learn generate/edit/lock once). Styled with the studio's own
+// primitives (studioUi) so it reads as part of the Build Studio. Live projection of book_nodes; pages are
+// produced on demand via reconcileDna (Render). expand = ONE authoritative value (not proposals).
 import { useEffect, useState } from "react";
-import { Lock, Unlock, Plus, Loader2 } from "lucide-react";
+import { Lock, Unlock, Sparkles } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { Button } from "@/components/ui/button";
 import { AutoTextarea } from "@/components/ui/auto-textarea";
+import { ActionLink, Eyebrow, Panel, RunningInline, StageHead } from "@/components/book/studio/studioUi";
 import { saveNode, deleteNode } from "@/lib/bookNodes";
 import { migrateBookToDna } from "@/lib/migrateToDna";
 import { reconcileDna } from "@/lib/novelDnaRender";
+import { expandNode } from "@/lib/dnaExpand";
 import {
   byId, childrenOf, editContent, emptyNode, isProseStale, isStale, lock as lockNode, renderBlockers,
   type DnaNode, type NodeKind,
 } from "@/lib/novelDna";
 
-// The meaningful fields the UI exposes per kind (the ★/U slots; dotted keys reach into nested content).
+// The expand verb(s) per kind. A node can have several (a pillar generates cast, world, AND acts). Each
+// names the TARGET the engine generates and the child kind it produces. SINGLE targets make exactly one
+// child, so the UI hides them once that child exists.
+interface ExpandTarget { target: string; label: string; childKind: NodeKind }
+const EXPAND_TARGETS: Partial<Record<NodeKind, ExpandTarget[]>> = {
+  seed: [{ target: "premise", label: "generate premise", childKind: "premise" }],
+  premise: [{ target: "pillar", label: "generate pillar", childKind: "pillar" }],
+  pillar: [
+    { target: "cast", label: "generate cast", childKind: "character" },
+    { target: "world", label: "generate world", childKind: "world_fact" },
+    { target: "movements", label: "generate acts", childKind: "movement" },
+  ],
+  movement: [{ target: "beats", label: "generate beats", childKind: "beat" }],
+  beat: [{ target: "scenes", label: "generate scenes", childKind: "scene" }],
+  scene: [{ target: "prose", label: "write prose", childKind: "scene" }],
+};
+const SINGLE = new Set(["premise", "pillar"]); // targets that produce exactly one child
+
+// The meaningful fields the UI exposes per kind (★/U slots; dotted keys reach into nested content).
 const FIELDS: Partial<Record<NodeKind, { key: string; label: string }[]>> = {
   seed: [{ key: "logline", label: "logline" }],
   premise: [{ key: "dramatic_question", label: "dramatic question" }, { key: "shape.setup", label: "shape / throughline" }],
-  pillar: [{ key: "controlling_idea", label: "controlling idea" }, { key: "ending", label: "ending" }],
+  pillar: [{ key: "controlling_idea", label: "controlling idea" }, { key: "ending", label: "ending ★" }],
   character: [{ key: "name", label: "name" }, { key: "want", label: "want" }, { key: "need", label: "need ★" }, { key: "wound", label: "wound ★" }, { key: "lie", label: "lie ★" }, { key: "idiolect", label: "idiolect" }],
   relationship: [{ key: "bond", label: "bond" }, { key: "charge", label: "charge" }],
   tentpole: [{ key: "summary", label: "set-piece" }],
@@ -71,26 +91,25 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
   const addChild = (parent: DnaNode, kind: NodeKind, level: number) =>
     run("add", () => saveNode(emptyNode(bookId, kind, level, parent.id, childrenOf(nodes, parent.id).length)));
 
-  const seed = of("seed")[0];
-  const premise = of("premise")[0];
-  const pillar = of("pillar")[0];
+  const card = (n: DnaNode, accent?: boolean) => (
+    <NodeCard key={n.id} node={n} index={index} bookId={bookId} kids={childrenOf(nodes, n.id)} onChanged={onChanged} accent={accent} />
+  );
+  const [seed, premise, pillar] = [of("seed")[0], of("premise")[0], of("pillar")[0]];
 
   return (
     <div className="mx-auto max-w-3xl space-y-8 px-4 py-8">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
-        <div>
-          <h1 className="pv-serif text-xl text-foreground">{settings.title || "Untitled"} · DNA</h1>
-          <p className="pv-mono mt-1 text-[11px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-muted))]">
-            {blockers.length === 0 ? "renderable ✓" : `${blockers.length} blocker(s): ${blockers.join(" · ")}`}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {nodes.length === 0 && <Button size="sm" variant="outline" disabled={!!busy} onClick={migrate}>{busy === "migrate" ? <Loader2 className="h-4 w-4 animate-spin" /> : "Migrate from legacy"}</Button>}
-          <Button size="sm" variant="outline" disabled={!!busy || !nodes.length} onClick={render}>{busy === "render" ? <Loader2 className="h-4 w-4 animate-spin" /> : "Render pages"}</Button>
-          <a href={`/books/${bookSlug}`} className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-[hsl(var(--pv-accent))]">read →</a>
-        </div>
-      </div>
+      <StageHead
+        eyebrow="Novel DNA"
+        title={settings.title || "Untitled"}
+        caption={blockers.length === 0 ? "renderable ✓" : `${blockers.length} to fill: ${blockers.join(" · ")}`}
+        right={
+          <div className="flex items-center gap-3">
+            {nodes.length === 0 && <ActionLink busy={busy === "migrate"} onClick={migrate}>migrate from legacy</ActionLink>}
+            {nodes.length > 0 && <ActionLink busy={busy === "render"} onClick={render}>render pages →</ActionLink>}
+            <a href={`/books/${bookSlug}`} className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-[hsl(var(--pv-accent))]">read</a>
+          </div>
+        }
+      />
 
       {nodes.length === 0 ? (
         <p className="pv-serif text-[15px] italic text-[hsl(var(--pv-text-faint))]">
@@ -99,33 +118,37 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
         </p>
       ) : (
         <>
-          <Section title="Premise">
-            {[seed, premise, pillar].filter(Boolean).map((n) => <NodeCard key={n!.id} node={n!} index={index} onChanged={onChanged} />)}
-          </Section>
+          <Section title="Premise">{[seed, premise, pillar].filter(Boolean).map((n) => card(n!))}</Section>
 
-          <Section title="Cast & world" action={pillar && <AddMenu onAdd={(k, l) => addChild(pillar, k, l)} kinds={[["character", 2], ["tentpole", 2], ["relationship", 2], ["world_fact", 2]]} />}>
-            {(["character", "tentpole", "relationship", "world_fact"] as NodeKind[]).flatMap((k) => of(k)).map((n) => <NodeCard key={n.id} node={n} index={index} onChanged={onChanged} />)}
+          <Section title="Cast & world" action={pillar && (
+            <div className="flex items-center gap-2">
+              {(["character", "tentpole", "relationship", "world_fact"] as NodeKind[]).map((k) => (
+                <button key={k} onClick={() => addChild(pillar, k, 2)} className="pv-serif text-[12px] italic text-[hsl(var(--pv-text-faint))] hover:text-[hsl(var(--pv-accent))]">+ {k}</button>
+              ))}
+            </div>
+          )}>
+            {(["character", "tentpole", "relationship", "world_fact"] as NodeKind[]).flatMap((k) => of(k)).map((n) => card(n))}
           </Section>
 
           <Section title="Structure">
             {of("movement").map((m) => (
               <div key={m.id} className="space-y-2">
-                <NodeCard node={m} index={index} onChanged={onChanged} accent />
+                {card(m, true)}
                 <div className="ml-4 space-y-2 border-l border-[hsl(var(--pv-border-soft))] pl-4">
                   {childrenOf(nodes, m.id).filter((b) => b.kind === "beat").map((b) => (
                     <div key={b.id} className="space-y-2">
-                      <NodeCard node={b} index={index} onChanged={onChanged} />
+                      {card(b)}
                       <div className="ml-4 space-y-2 border-l border-[hsl(var(--pv-border-soft))] pl-4">
-                        {childrenOf(nodes, b.id).filter((s) => s.kind === "scene").map((s) => <NodeCard key={s.id} node={s} index={index} onChanged={onChanged} />)}
-                        <AddLink busy={busy === "add"} onClick={() => addChild(b, "scene", 5)} label="add scene" />
+                        {childrenOf(nodes, b.id).filter((s) => s.kind === "scene").map((s) => card(s))}
+                        <ActionLink busy={busy === "add"} onClick={() => addChild(b, "scene", 5)}>add scene</ActionLink>
                       </div>
                     </div>
                   ))}
-                  <AddLink busy={busy === "add"} onClick={() => addChild(m, "beat", 4)} label="add beat" />
+                  <ActionLink busy={busy === "add"} onClick={() => addChild(m, "beat", 4)}>add beat</ActionLink>
                 </div>
               </div>
             ))}
-            {pillar && <AddLink busy={busy === "add"} onClick={() => addChild(pillar, "movement", 3)} label="add movement" />}
+            {pillar && <ActionLink busy={busy === "add"} onClick={() => addChild(pillar, "movement", 3)}>add movement</ActionLink>}
           </Section>
         </>
       )}
@@ -137,7 +160,7 @@ function Section({ title, action, children }: { title: string; action?: React.Re
   return (
     <section className="space-y-3">
       <div className="flex items-center justify-between">
-        <h2 className="pv-mono text-[11px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-muted))]">{title}</h2>
+        <Eyebrow tone="muted">{title}</Eyebrow>
         {action}
       </div>
       <div className="space-y-2">{children}</div>
@@ -145,40 +168,51 @@ function Section({ title, action, children }: { title: string; action?: React.Re
   );
 }
 
-// The uniform node card — the same four verbs (edit / lock / [choose] / [expand]) at every depth.
-function NodeCard({ node, index, onChanged, accent }: { node: DnaNode; index: Map<string, DnaNode>; onChanged: () => void; accent?: boolean }) {
+// The uniform node card — the same verbs (generate / edit / lock) at every depth.
+function NodeCard({ node, index, bookId, kids, onChanged, accent }: {
+  node: DnaNode; index: Map<string, DnaNode>; bookId: number; kids: DnaNode[]; onChanged: () => void; accent?: boolean;
+}) {
   const { toast } = useToast();
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [generating, setGenerating] = useState<string | null>(null);
   useEffect(() => { setDrafts({}); }, [node.id]);
   const fields = FIELDS[node.kind] ?? [];
   const stale = isStale(node, index) || (node.kind === "scene" && isProseStale(node));
+  // Available generate verbs: hide a SINGLE-child target once that child already exists.
+  const targets = (EXPAND_TARGETS[node.kind] ?? []).filter((t) => !(SINGLE.has(t.target) && kids.some((c) => c.kind === t.childKind)));
 
-  const save = async (patch: Record<string, unknown>) => {
-    try { await saveNode(editContent(node, patch)); onChanged(); }
-    catch (e) { toast({ title: "Couldn't save", description: String((e as Error)?.message ?? e), variant: "destructive" }); }
+  const guard = async (label: string, fn: () => Promise<void>) => {
+    try { await fn(); onChanged(); } catch (e) { toast({ title: label, description: String((e as Error)?.message ?? e), variant: "destructive" }); }
   };
-  const toggleLock = async () => {
-    try { await saveNode(lockNode(node, !node.authoring.locked)); onChanged(); }
-    catch (e) { toast({ title: "Couldn't lock", description: String((e as Error)?.message ?? e), variant: "destructive" }); }
-  };
-  const remove = async () => {
-    if (!window.confirm(`Delete this ${node.kind} and everything under it?`)) return;
-    try { await deleteNode(node.id); onChanged(); } catch (e) { toast({ title: "Couldn't delete", description: String((e as Error)?.message ?? e), variant: "destructive" }); }
+  const save = (patch: Record<string, unknown>) => guard("Couldn't save", () => saveNode(editContent(node, patch)));
+  const toggleLock = () => guard("Couldn't lock", () => saveNode(lockNode(node, !node.authoring.locked)));
+  const remove = () => { if (window.confirm(`Delete this ${node.kind} and everything under it?`)) void guard("Couldn't delete", () => deleteNode(node.id)); };
+  const generate = async (t: ExpandTarget) => {
+    setGenerating(t.target);
+    try { await expandNode(bookId, node, t.target, kids.filter((c) => c.kind === t.childKind).length); onChanged(); }
+    catch (e) { toast({ title: "Couldn't generate", description: String((e as Error)?.message ?? e), variant: "destructive" }); }
+    finally { setGenerating(null); }
   };
 
   return (
-    <div className={`rounded-lg border px-4 py-3 ${accent ? "border-[hsl(var(--pv-accent))]/30 bg-[hsl(var(--pv-accent))]/[0.05]" : "border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/30"}`}>
+    <Panel variant={accent ? "chosen" : "soft"} className="px-4 py-3">
       <div className="mb-2 flex items-center gap-2">
-        <span className="pv-mono text-[10px] uppercase tracking-[0.12em] text-[hsl(var(--pv-accent))]">{node.kind}</span>
+        <Eyebrow tone="accent">{node.kind}</Eyebrow>
         <span className="pv-mono text-[9px] uppercase tracking-[0.1em] text-[hsl(var(--pv-text-faint))]">{node.authoring.status}</span>
         {stale && <span className="pv-mono text-[9px] uppercase tracking-[0.1em] text-amber-500">stale</span>}
-        <div className="ml-auto flex items-center gap-2 text-[hsl(var(--pv-text-faint))]">
+        <div className="ml-auto flex items-center gap-3 text-[hsl(var(--pv-text-faint))]">
+          {!generating && targets.map((t) => (
+            <ActionLink key={t.target} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={() => generate(t)} title={t.label}>{t.label}</ActionLink>
+          ))}
           <button onClick={toggleLock} title={node.authoring.locked ? "unlock" : "lock"} className={node.authoring.locked ? "text-[hsl(var(--pv-accent))]" : "hover:text-foreground"}>
             {node.authoring.locked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
           </button>
           <button onClick={remove} title="delete" className="text-[11px] hover:text-destructive/70">✕</button>
         </div>
       </div>
+
+      {generating && <RunningInline label={generating === "prose" ? "writing prose…" : "generating…"} className="mb-2" />}
+
       <div className="space-y-1.5">
         {fields.map((fld) => {
           const val = drafts[fld.key] ?? getPath(node.content, fld.key);
@@ -197,24 +231,6 @@ function NodeCard({ node, index, onChanged, accent }: { node: DnaNode; index: Ma
           );
         })}
       </div>
-    </div>
-  );
-}
-
-function AddLink({ onClick, label, busy }: { onClick: () => void; label: string; busy?: boolean }) {
-  return (
-    <button onClick={onClick} disabled={busy} className="pv-serif flex items-center gap-1.5 text-[12px] italic text-[hsl(var(--pv-text-faint))] hover:text-[hsl(var(--pv-accent))]">
-      {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />} {label}
-    </button>
-  );
-}
-
-function AddMenu({ kinds, onAdd }: { kinds: [NodeKind, number][]; onAdd: (k: NodeKind, level: number) => void }) {
-  return (
-    <div className="flex items-center gap-2">
-      {kinds.map(([k, l]) => (
-        <button key={k} onClick={() => onAdd(k, l)} className="pv-serif text-[12px] italic text-[hsl(var(--pv-text-faint))] hover:text-[hsl(var(--pv-accent))]">+ {k}</button>
-      ))}
-    </div>
+    </Panel>
   );
 }

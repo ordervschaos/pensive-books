@@ -3370,6 +3370,67 @@ async function runMandateGate(bookId) {
   return { report: { overall, axes, wordCount, wordTarget: target } };
 }
 
+// ── /dna-expand (mirrors supabase/functions/dna-expand) ───────────────────────
+// Single-field expand for the Novel DNA tree: generate a node's next rung as ONE authoritative version
+// (not 2–3 proposals). Scene → prose fills the scene's text. See docs/novel-dna-spec.md §6.
+const DNA_SPEC = {
+  premise: { childKind: "premise", childLevel: 1, count: "exactly 1", role: "the PREMISE — genre, tone, the dramatic question, and a 5-part shape (setup → three turns → resolution)",
+    schema: `{ "genre": ["..."], "tone": ["..."], "dramatic_question": "...", "shape": { "setup": "...", "turn1": "...", "turn2": "...", "turn3": "...", "resolution": "..." } }` },
+  pillar: { childKind: "pillar", childLevel: 2, count: "exactly 1", role: "the PILLAR — the controlling idea the book proves and the ending it must reach",
+    schema: `{ "controlling_idea": "...", "ending": "..." }` },
+  cast: { childKind: "character", childLevel: 2, count: "3 to 5", role: "the CAST — a protagonist plus key opposition/allies; each gets a want, need, wound, lie, truth, idiolect",
+    schema: `{ "name": "...", "role": "protagonist|antagonist|ally|love_interest|minor", "want": "...", "need": "...", "wound": "...", "lie": "...", "truth": "...", "idiolect": "..." }` },
+  world: { childKind: "world_fact", childLevel: 2, count: "3 to 6", role: "the WORLD — the load-bearing rules and facts that constrain the story",
+    schema: `{ "rule": "...", "category": "..." }` },
+  movements: { childKind: "movement", childLevel: 3, count: "3 to 5", role: "the ACTS — each a major movement with a turning point and a value shift",
+    schema: `{ "title": "...", "goal": "...", "turning_point": "...", "value": { "name": "...", "from": "...", "to": "..." } }` },
+  beats: { childKind: "beat", childLevel: 4, count: "2 to 4", role: "the causal BEATS inside this act; each links to the previous with therefore or but, escalating",
+    schema: `{ "summary": "...", "connector": "therefore" | "but" }` },
+  scenes: { childKind: "scene", childLevel: 5, count: "1 to 3", role: "the dramatized SCENES that deliver this beat; EVERY scene must turn a value (no flat 'and-then')",
+    schema: `{ "loc": "...", "goal": "...", "conflict": "...", "outcome": "...", "value_shift": { "value": "...", "from": "...", "to": "..." } }` },
+};
+async function runDnaExpand({ bookId, nodeId, target }) {
+  const book = await fetchBook(bookId);
+  if (!book) return { error: "Book not found" };
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/book_nodes?book_id=eq.${bookId}&select=id,parent_id,kind,content,authoring`, { headers: sbHeaders });
+  const nodes = await r.json();
+  const node = nodes.find((n) => n.id === nodeId);
+  if (!node) return { error: "Node not found" };
+
+  const mandate = mandateContext(book.brief);
+  const map = new Map(nodes.map((n) => [n.id, n]));
+  const chain = [];
+  for (let p = node.parent_id; p; p = map.get(p)?.parent_id ?? null) { const a = map.get(p); if (a) chain.unshift(a); }
+  const ctx = [
+    `BOOK: ${book.name ?? ""}`,
+    `BRIEF (binding):\n${briefContext(book.brief)}`,
+    mandate ? `MANDATE — NON-NEGOTIABLE:\n${mandate}` : "",
+    "STORY SO FAR (the ladder above this node; LOCKED items are immutable):",
+    ...chain.map((a) => `[${a.kind}${a.authoring?.locked ? " · LOCKED" : ""}] ${JSON.stringify(a.content)}`),
+    `THIS NODE [${node.kind}]: ${JSON.stringify(node.content)}`,
+  ].filter(Boolean).join("\n\n");
+
+  if (target === "prose" || (!target && node.kind === "scene")) {
+    const prompt = `You are a novelist writing the PROSE for one scene, from its plan. Write the scene fully — vivid, causal, in the book's voice — honoring the MANDATE (heat/tone/length) without laundering. Output the prose ONLY: no preamble, no headings, no JSON.\n\n${ctx}\n\nWrite this scene's prose.`;
+    const out = await runClaude(prompt, true, { fn: "dna-expand", bookId }, { noTools: true, model: MODEL_PLANNING });
+    if (out.error) return out;
+    return { prose: out.text.trim() };
+  }
+  const spec = target ? DNA_SPEC[target] : undefined;
+  if (!spec) return { error: `Unknown expand target "${target}"` };
+  const prompt = `You are a story architect expanding a ${node.kind} into ${spec.role}. Generate ${spec.count} ${spec.childKind}s as ONE authoritative structure — NOT alternatives. Honor every LOCKED ancestor and the MANDATE verbatim. Output JSON ONLY: { "children": [ ${spec.schema} ] }\n\n${ctx}\n\nGenerate the ${spec.childKind}s. JSON only.`;
+  const out = await runClaude(prompt, true, { fn: "dna-expand", bookId }, { noTools: true, model: MODEL_PLANNING });
+  if (out.error) return out;
+  let raw = out.text.trim();
+  const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fence) raw = fence[1].trim();
+  else { const f = raw.indexOf("{"), l = raw.lastIndexOf("}"); if (f !== -1 && l > f) raw = raw.slice(f, l + 1); }
+  try {
+    const parsed = JSON.parse(raw);
+    return { childKind: spec.childKind, childLevel: spec.childLevel, children: Array.isArray(parsed.children) ? parsed.children : [] };
+  } catch { return { error: "Could not parse expand JSON" }; }
+}
+
 const server = createServer(async (req, res) => {
   if (req.method === "OPTIONS") return res.writeHead(204, cors).end();
 
@@ -3697,6 +3758,16 @@ async function route(req, res) {
     if (!(await authorize(req, res, Number(body.bookId)))) return;
     console.log(`Revising ${body.layer} (book ${body.bookId})…`);
     const out = await runReviseNode(body);
+    if (out.error) return json(res, 500, { error: out.error });
+    return json(res, 200, out);
+  }
+
+  if (url === "/dna-expand" || url === "/dna-expand/") {
+    if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
+    const body = await readBody(req);
+    if (!(await authorize(req, res, Number(body.bookId)))) return;
+    console.log(`DNA expand ${body.nodeId} (book ${body.bookId})…`);
+    const out = await runDnaExpand(body);
     if (out.error) return json(res, 500, { error: out.error });
     return json(res, 200, out);
   }
