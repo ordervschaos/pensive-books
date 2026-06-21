@@ -8,7 +8,8 @@ import { Lock, Unlock, Sparkles } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { AutoTextarea } from "@/components/ui/auto-textarea";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
-import { ActionLink, Eyebrow, Panel, RunningInline, StageHead } from "@/components/book/studio/studioUi";
+import { ActionLink, Eyebrow, Panel, RunningInline, StageHead, StepDot } from "@/components/book/studio/studioUi";
+import { buildJourney, type StageKey } from "@/lib/dnaJourney";
 import { saveNode, deleteNode } from "@/lib/bookNodes";
 import { migrateBookToDna } from "@/lib/migrateToDna";
 import { reconcileDna } from "@/lib/novelDnaRender";
@@ -78,7 +79,7 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
 }) {
   const { toast } = useToast();
   const [busy, setBusy] = useState<string | null>(null);
-  const [selected, setSelected] = useState<string>("premise"); // which rung-section the Stage shows
+  const [selected, setSelected] = useState<StageKey | null>(null); // chosen stage; null = follow the live "now" stage
   const index = byId(nodes);
   const of = (kind: NodeKind) => nodes.filter((n) => n.kind === kind);
   const blockers = renderBlockers(nodes, settings);
@@ -98,21 +99,23 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
     <NodeCard key={n.id} node={n} index={index} bookId={bookId} kids={childrenOf(nodes, n.id)} onChanged={onChanged} accent={accent} />
   );
   const [seed, premise, pillar] = [of("seed")[0], of("premise")[0], of("pillar")[0]];
-  const entityKinds: NodeKind[] = ["character", "tentpole", "relationship", "world_fact"];
+  const entityKinds: NodeKind[] = ["character", "relationship", "tentpole", "world_fact"];
 
-  // The three rungs as navigable sections (the studio's step list, DNA-shaped).
-  const sections = [
-    { key: "premise", label: "Premise", caption: "Seed → premise → pillar — the spine of intent.", count: [seed, premise, pillar].filter(Boolean).length },
-    { key: "cast", label: "Cast & world", caption: "The people, bonds, set-pieces, and rules scenes are built from.", count: entityKinds.flatMap(of).length },
-    { key: "structure", label: "Structure", caption: "Acts → beats → scenes → prose.", count: of("movement").length },
-  ];
-  const section = sections.find((s) => s.key === selected) ?? sections[0];
+  // The guided journey: ordered stages of increasing resolution. Default focus = the live "now" stage.
+  const { stages, nowIndex } = buildJourney(nodes);
+  const nowKey = stages[nowIndex]?.key ?? "premise";
+  const selectable = (k: StageKey) => stages.find((s) => s.key === k)?.status !== "locked";
+  const activeKey: StageKey = selected && selectable(selected) ? selected : nowKey;
+  const active = stages.find((s) => s.key === activeKey)!;
+  const nextStage = stages[stages.findIndex((s) => s.key === activeKey) + 1];
 
-  const stageBody = () => {
-    if (selected === "cast") return (
+  const renderStage = (key: StageKey) => {
+    if (key === "premise") return [seed, premise].filter(Boolean).map((n) => card(n!));
+    if (key === "foundations") return (
       <>
+        {pillar && card(pillar, true)}
         {pillar && (
-          <div className="mb-1 flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {entityKinds.map((k) => (
               <button key={k} onClick={() => addChild(pillar, k, 2)} className="pv-serif text-[12px] italic text-[hsl(var(--pv-text-faint))] hover:text-[hsl(var(--pv-accent))]">+ {k}</button>
             ))}
@@ -121,21 +124,13 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
         {entityKinds.flatMap((k) => of(k)).map((n) => card(n))}
       </>
     );
-    if (selected === "structure") return (
+    if (key === "structure") return (
       <>
         {of("movement").map((m) => (
           <div key={m.id} className="space-y-2">
             {card(m, true)}
             <div className="ml-4 space-y-2 border-l border-[hsl(var(--pv-border-soft))] pl-4">
-              {childrenOf(nodes, m.id).filter((b) => b.kind === "beat").map((b) => (
-                <div key={b.id} className="space-y-2">
-                  {card(b)}
-                  <div className="ml-4 space-y-2 border-l border-[hsl(var(--pv-border-soft))] pl-4">
-                    {childrenOf(nodes, b.id).filter((s) => s.kind === "scene").map((s) => card(s))}
-                    <ActionLink busy={busy === "add"} onClick={() => addChild(b, "scene", 5)}>add scene</ActionLink>
-                  </div>
-                </div>
-              ))}
+              {childrenOf(nodes, m.id).filter((b) => b.kind === "beat").map((b) => card(b))}
               <ActionLink busy={busy === "add"} onClick={() => addChild(m, "beat", 4)}>add beat</ActionLink>
             </div>
           </div>
@@ -143,21 +138,37 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
         {pillar && <ActionLink busy={busy === "add"} onClick={() => addChild(pillar, "movement", 3)}>add movement</ActionLink>}
       </>
     );
-    return [seed, premise, pillar].filter(Boolean).map((n) => card(n!)); // premise
+    // scenes + draft: the scenes in their beat context (draft is where prose gets written + rendered).
+    return (
+      <>
+        {of("movement").map((m) => childrenOf(nodes, m.id).filter((b) => b.kind === "beat").map((b) => (
+          <div key={b.id} className="space-y-2">
+            <Eyebrow tone="muted">{(b.content as { summary?: string }).summary || "beat"}</Eyebrow>
+            {childrenOf(nodes, b.id).filter((s) => s.kind === "scene").map((s) => card(s))}
+            <ActionLink busy={busy === "add"} onClick={() => addChild(b, "scene", 5)}>add scene</ActionLink>
+          </div>
+        )))}
+        {key === "draft" && <ActionLink busy={busy === "render"} onClick={render}>render pages →</ActionLink>}
+      </>
+    );
   };
+
+  const dot = (s: typeof stages[number]): "done" | "active" | "ready" | "locked" =>
+    s.status === "done" ? "done" : s.status === "now" ? "active" : s.status === "locked" ? "locked" : "ready";
 
   const nav = (
     <div className="h-full overflow-y-auto border-b border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/40 px-4 pb-12 pt-5 md:border-b-0 md:border-r">
-      <Eyebrow tone="muted">Novel DNA</Eyebrow>
-      <h1 className="pv-serif mt-1 text-[16px] leading-tight text-foreground">{settings.title || "Untitled"}</h1>
-      <p className="pv-mono mb-4 mt-1 text-[10px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-muted))]">
-        {blockers.length === 0 ? "renderable ✓" : `${blockers.length} to fill`}
-      </p>
-      {sections.map((s) => (
-        <button key={s.key} onClick={() => setSelected(s.key)}
-          className={`mb-0.5 flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left transition-colors ${selected === s.key ? "bg-[hsl(var(--pv-accent))]/[0.08] text-foreground" : "text-[hsl(var(--pv-text-muted))] hover:bg-[hsl(var(--pv-surface-2))]/60"}`}>
-          <span className="pv-serif text-[14px]">{s.label}</span>
-          <span className="pv-mono text-[10px] text-[hsl(var(--pv-text-faint))]">{s.count || ""}</span>
+      <div className="mb-3 flex items-baseline justify-between px-1">
+        <Eyebrow tone="muted">Build</Eyebrow>
+        <span className="pv-mono text-[10px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-faint))]">step {nowIndex + 1} / {stages.length}</span>
+      </div>
+      {stages.map((s) => (
+        <button key={s.key} disabled={s.status === "locked"} onClick={() => setSelected(s.key)}
+          className={`mb-0.5 flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors disabled:opacity-40 ${activeKey === s.key ? "bg-[hsl(var(--pv-accent))]/[0.08]" : "hover:bg-[hsl(var(--pv-surface-2))]/60"}`}>
+          <StepDot state={dot(s)} />
+          <span className="pv-mono text-[11px] text-[hsl(var(--pv-text-faint))]">{s.num}</span>
+          <span className={`pv-serif flex-1 text-[14px] ${s.status === "locked" ? "text-[hsl(var(--pv-text-faint))]" : activeKey === s.key ? "text-foreground" : "text-[hsl(var(--pv-text-muted))]"}`}>{s.label}</span>
+          {s.status === "now" && <span className="pv-mono text-[9px] uppercase tracking-[0.12em] text-[hsl(var(--pv-accent))]">now</span>}
         </button>
       ))}
       <div className="mx-2.5 my-3 h-px bg-[hsl(var(--pv-border-soft))]" />
@@ -174,7 +185,7 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
       <div className="mx-auto max-w-2xl space-y-5">
         {nodes.length === 0 ? (
           <div className="space-y-3">
-            <StageHead eyebrow="Novel DNA" title={settings.title || "Untitled"} caption="Nothing here yet." />
+            <StageHead eyebrow="Novel DNA" title={settings.title || "Untitled"} caption="Nothing here yet — choose where to start." />
             <p className="pv-serif text-[15px] italic text-[hsl(var(--pv-text-faint))]">
               <button className="text-[hsl(var(--pv-accent))] underline" onClick={migrate}>Migrate the legacy book</button>{" "}
               or <button className="text-[hsl(var(--pv-accent))] underline" onClick={() => run("seed", () => saveNode(emptyNode(bookId, "seed", 0, null)))}>start a blank seed</button>.
@@ -182,8 +193,11 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
           </div>
         ) : (
           <>
-            <StageHead eyebrow="Novel DNA" title={section.label} caption={section.caption} />
-            <div className="space-y-2">{stageBody()}</div>
+            <StageHead eyebrow={active.status === "done" ? "Approved" : active.status === "now" ? "Focus · the next move" : "Stage"} title={active.label} caption={active.caption} />
+            <div className="space-y-2">{renderStage(activeKey)}</div>
+            {active.status === "done" && nextStage && nextStage.status !== "locked" && (
+              <div className="pt-2"><ActionLink onClick={() => setSelected(nextStage.key)}>continue to {nextStage.label} →</ActionLink></div>
+            )}
           </>
         )}
       </div>
