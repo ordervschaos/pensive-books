@@ -14,7 +14,7 @@ import { reconcileDna } from "@/lib/novelDnaRender";
 import { expandNode } from "@/lib/dnaExpand";
 import {
   byId, childrenOf, editContent, emptyNode, isProseStale, isStale, lock as lockNode, renderBlockers,
-  type DnaNode, type NodeKind,
+  setStatus, type DnaNode, type NodeKind, type SceneContent,
 } from "@/lib/novelDna";
 
 // The expand verb(s) per kind. A node can have several (a pillar generates cast, world, AND acts). Each
@@ -184,13 +184,22 @@ function NodeCard({ node, index, bookId, kids, onChanged, accent }: {
   const guard = async (label: string, fn: () => Promise<void>) => {
     try { await fn(); onChanged(); } catch (e) { toast({ title: label, description: String((e as Error)?.message ?? e), variant: "destructive" }); }
   };
+  const ready = node.authoring.status === "accepted"; // progressive disclosure: expand only from an accepted rung (§7)
   const save = (patch: Record<string, unknown>) => guard("Couldn't save", () => saveNode(editContent(node, patch)));
+  const accept = () => guard("Couldn't accept", () => saveNode(setStatus(node, "accepted")));
   const toggleLock = () => guard("Couldn't lock", () => saveNode(lockNode(node, !node.authoring.locked)));
   const remove = () => { if (window.confirm(`Delete this ${node.kind} and everything under it?`)) void guard("Couldn't delete", () => deleteNode(node.id)); };
   const generate = async (t: ExpandTarget) => {
+    // Regenerate REPLACES the unlocked children of this kind (locked ones are kept); first run just appends.
+    const existing = kids.filter((c) => c.kind === t.childKind);
+    const unlocked = existing.filter((c) => !c.authoring.locked);
+    if (t.target === "prose" && (node.content as SceneContent).prose?.text?.trim() && !window.confirm("Rewrite this scene's prose?")) return;
+    if (unlocked.length && !window.confirm(`Regenerate? Replaces ${unlocked.length} ${t.childKind}(s)${existing.length - unlocked.length ? `, keeps ${existing.length - unlocked.length} locked` : ""}.`)) return;
     setGenerating(t.target);
-    try { await expandNode(bookId, node, t.target, kids.filter((c) => c.kind === t.childKind).length); onChanged(); }
-    catch (e) { toast({ title: "Couldn't generate", description: String((e as Error)?.message ?? e), variant: "destructive" }); }
+    try {
+      await expandNode(bookId, node, t.target, { startPosition: existing.length - unlocked.length, replaceIds: unlocked.map((c) => c.id) });
+      onChanged();
+    } catch (e) { toast({ title: "Couldn't generate", description: String((e as Error)?.message ?? e), variant: "destructive" }); }
     finally { setGenerating(null); }
   };
 
@@ -201,7 +210,8 @@ function NodeCard({ node, index, bookId, kids, onChanged, accent }: {
         <span className="pv-mono text-[9px] uppercase tracking-[0.1em] text-[hsl(var(--pv-text-faint))]">{node.authoring.status}</span>
         {stale && <span className="pv-mono text-[9px] uppercase tracking-[0.1em] text-amber-500">stale</span>}
         <div className="ml-auto flex items-center gap-3 text-[hsl(var(--pv-text-faint))]">
-          {!generating && targets.map((t) => (
+          {!ready && <ActionLink onClick={accept} title="accept this rung to unlock generating below it">accept</ActionLink>}
+          {!generating && ready && targets.map((t) => (
             <ActionLink key={t.target} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={() => generate(t)} title={t.label}>{t.label}</ActionLink>
           ))}
           <button onClick={toggleLock} title={node.authoring.locked ? "unlock" : "lock"} className={node.authoring.locked ? "text-[hsl(var(--pv-accent))]" : "hover:text-foreground"}>

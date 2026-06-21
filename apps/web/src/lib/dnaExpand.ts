@@ -3,7 +3,7 @@
 // accepted); a scene gets its prose. The author then edits / regenerates / locks. See novel-dna-spec.md §6.
 import { supabase } from "@/integrations/supabase/client";
 import { BRIDGE, bridgeFetch } from "@/lib/bridge";
-import { saveNode, saveNodes } from "@/lib/bookNodes";
+import { deleteNode, saveNode, saveNodes } from "@/lib/bookNodes";
 import { byId, newId, stampInput, stampProse, type DnaNode, type NodeContent, type NodeKind } from "@/lib/novelDna";
 
 interface ExpandResult {
@@ -25,8 +25,15 @@ async function callExpand(bookId: number, nodeId: string, target: string): Promi
 
 const wordCount = (t: string) => (t.trim() ? t.trim().split(/\s+/).length : 0);
 
-/** Expand a node toward `target`: generate prose (scene) or the next-rung children (one true set), persist. */
-export async function expandNode(bookId: number, node: DnaNode, target: string, startPosition = 0): Promise<{ added: number }> {
+/**
+ * Expand a node toward `target`: generate prose (scene) or the next-rung children (one true set), persist.
+ * `replaceIds` (regenerate) are deleted AFTER the new children land — so a regenerate swaps the unlocked
+ * siblings without ever leaving the tree empty mid-flight; locked siblings are simply not passed in.
+ */
+export async function expandNode(
+  bookId: number, node: DnaNode, target: string, opts: { startPosition?: number; replaceIds?: string[] } = {},
+): Promise<{ added: number }> {
+  const { startPosition = 0, replaceIds = [] } = opts;
   const res = await callExpand(bookId, node.id, target);
 
   if (target === "prose") {
@@ -52,5 +59,6 @@ export async function expandNode(bookId: number, node: DnaNode, target: string, 
   // Stamp each against its inputs (parent + the new siblings) so they don't read as stale on arrival.
   const index = byId([node, ...made]);
   await saveNodes(made.map((n) => stampInput(n, index)));
+  for (const id of replaceIds) await deleteNode(id); // regenerate: drop the unlocked predecessors last
   return { added: made.length };
 }
