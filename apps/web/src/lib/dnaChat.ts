@@ -15,18 +15,21 @@ export type NodeOp =
 export interface DnaProposal { summary: string; ops: NodeOp[] }
 
 const KIND_LEVEL: Record<NodeKind, number> = {
-  seed: 0, premise: 1, pillar: 2, character: 2, relationship: 2, tentpole: 2, world_fact: 2, movement: 3, beat: 4, scene: 5,
+  seed: 0, premise: 1, pillar: 2, character: 2, relationship: 2, tentpole: 2, world_fact: 2, thread: 2, movement: 3, beat: 4, scene: 5,
 };
 
-/** Send one message in a (book, stage) thread. The edge fn appends + persists; the rail re-reads over Realtime. */
-export async function sendDnaMessage(bookId: number, stage: StageKey, message: string): Promise<void> {
+/** Send one message in a (book, stage) thread. The edge fn appends + persists; the rail re-reads over Realtime.
+ *  `analysis` = the three-axis story analysis (pacing/promises/topography/lints), computed client-side from the
+ *  live tree (the engine lives in the web app) and handed to the reviser so it can act on drift/dangling/sag. */
+export async function sendDnaMessage(bookId: number, stage: StageKey, message: string, analysis?: string): Promise<void> {
+  const body = { bookId, stage, message, analysis };
   if (BRIDGE) {
-    const r = await bridgeFetch(`/dna-chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ bookId, stage, message }) });
+    const r = await bridgeFetch(`/dna-chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     const d = await r.json();
     if (d.error) throw new Error(d.error);
     return;
   }
-  const { data, error } = await supabase.functions.invoke("dna-chat", { body: { bookId, stage, message } });
+  const { data, error } = await supabase.functions.invoke("dna-chat", { body });
   if (error) throw error;
   if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
 }

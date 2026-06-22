@@ -83,6 +83,9 @@ export async function expandNode(
     // The beat's tentpole placements distribute across its scenes (one set-piece per scene, in order) so
     // each pinned tentpole gets realized by a scene (closes the registry-not-placed gap — same as threads).
     (beat.realizes ?? []).forEach((tpId, i) => { const s = made[i] ?? made[made.length - 1]; if (s) (s.content as SceneContent).realizes_tentpole = tpId; });
+    // The beat's world-rule grounding lands on its LAST scene (the scene that resolves the beat's turn — so
+    // the win fires the rule), making the climax's mechanism explicit (Lester Dent's law).
+    if (beat.grounds_in?.length && made.length) (made[made.length - 1].content as SceneContent).grounds_in = beat.grounds_in;
     // Chaptering: a beat opens a chapter (the legible default; author can merge/rename later).
     if (startPosition === 0 && made[0]) {
       const sc = made[0].content as SceneContent;

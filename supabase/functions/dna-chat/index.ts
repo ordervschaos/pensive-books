@@ -21,7 +21,7 @@ interface ChatMessage { role: "user" | "assistant"; text: string; ts: string; pl
 const STAGE_KINDS: Record<Stage, string[]> = {
   premise: ["seed", "premise"],
   foundations: ["pillar", "character", "relationship", "tentpole", "world_fact"],
-  structure: ["movement", "beat"],
+  structure: ["movement", "beat", "thread"],
   scenes: ["scene"],
   draft: ["scene"],
 };
@@ -41,7 +41,7 @@ Deno.serve(async (req: Request) => {
     const { data: { user } } = await userClient.auth.getUser();
     if (!user) return json({ error: "Unauthorized" }, 401);
 
-    const { bookId, stage, message } = (await req.json().catch(() => ({}))) as { bookId?: number; stage?: Stage; message?: string };
+    const { bookId, stage, message, analysis } = (await req.json().catch(() => ({}))) as { bookId?: number; stage?: Stage; message?: string; analysis?: string };
     if (!bookId || !stage || !STAGE_KINDS[stage]) return json({ error: "bookId, a valid stage, and message are required" }, 400);
     const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!apiKey) return json({ error: "ANTHROPIC_API_KEY not configured" }, 500);
@@ -67,7 +67,7 @@ You hold ONE stage of the book's DNA tree. Reply to the author in plain MARKDOWN
 { "summary": "<one line: what changes>",
   "ops": [
     { "op": "edit", "id": "<existing node id>", "content": { <fields to merge> } },
-    { "op": "add", "kind": "<character|world_fact|relationship|tentpole|movement|beat|scene>", "parentId": "<existing node id>", "content": { … } },
+    { "op": "add", "kind": "<character|world_fact|relationship|tentpole|thread|movement|beat|scene>", "parentId": "<existing node id>", "content": { … } },
     { "op": "delete", "id": "<existing node id>" }
   ] }
 Only reference ids that exist. Honor LOCKED nodes (never edit/delete them). Don't propose unless the author asked for a change or agreed to one — talk first.`;
@@ -77,6 +77,9 @@ Only reference ids that exist. Honor LOCKED nodes (never edit/delete them). Don'
       `BRIEF (binding): ${briefContext(brief, { scope: "full", success: true, none: "(no brief)", empty: "(empty)" })}`,
       mandate ? `MANDATE — NON-NEGOTIABLE: ${mandate}` : "",
       cast.length ? `CAST (for reference):\n${cast.map((c) => `[${c.id}] ${JSON.stringify(c.content)}`).join("\n")}` : "",
+      // The three-axis story analysis (computed client-side from the live tree) — so the editor can act on
+      // pacing drift, dangling promises, and sagging runs rather than eyeballing them.
+      analysis?.trim() ? `STORY ANALYSIS (the structural backstop — address any ⚠ flags):\n${analysis.trim()}` : "",
       `THIS STAGE'S NODES (edit/add/delete by these ids; LOCKED = immutable):\n${stageNodes.map((n) => `[${n.id}${n.authoring?.locked ? " · LOCKED" : ""}] ${n.kind}: ${JSON.stringify(n.content)}`).join("\n") || "(none yet)"}`,
     ].filter(Boolean).join("\n\n");
 

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  blastRadius, byId, chapters, chooseProposal, editContent, emptyNode, enforcePromiseSchedule, inputHash,
-  isProseStale, isRenderable, isStale, lock, pacing, refsOf, renderBlockers, renderPages, scenesInOrder,
-  stampInput, stampProse, topography, validate, type DnaNode, type NodeKind, type ThreadRef,
+  analysisText, blastRadius, byId, chapters, chooseProposal, editContent, emptyNode, enforcePromiseSchedule,
+  inputHash, isProseStale, isRenderable, isStale, lock, pacing, promiseLedger, refsOf, renderBlockers,
+  renderPages, scenesInOrder, stampInput, stampProse, topography, validate, type DnaNode, type NodeKind, type ThreadRef,
 } from "@/lib/novelDna";
 
 let seq = 0;
@@ -263,6 +263,61 @@ describe("global beat-sheet guarantee (enforcePromiseSchedule)", () => {
     const rules = validate([m, b, tA, tB, ...scenes]).map((r) => r.rule);
     expect(rules).not.toContain("unearned_payoff");
     expect(rules).not.toContain("misordered_payoff");
+  });
+});
+
+describe("promise ledger + analysis text (the UI/chat surfacing)", () => {
+  const t = (ref: string, role: ThreadRef["role"]): ThreadRef => ({ ref, role });
+  const build = () => {
+    const m = mk("movement", { id: "m", content: { title: "Act I", target_pct: 0.25 } });
+    const b = mk("beat", { id: "b", parent_id: "m" });
+    const th1 = mk("thread", { id: "th1", content: { name: "the gun", promise: "a planted gun" } });
+    const th2 = mk("thread", { id: "th2", content: { name: "the letter", promise: "an unsent letter" } });
+    const s1 = mk("scene", { id: "s1", parent_id: "b", position: 0, content: { value_shift: vs("up"), threads: [t("th1", "setup"), t("th2", "setup")] } });
+    const s2 = mk("scene", { id: "s2", parent_id: "b", position: 1, content: { value_shift: vs("down"), threads: [t("th1", "payoff")] } });
+    return [m, b, th1, th2, s1, s2];
+  };
+
+  it("promiseLedger counts setups/payoffs per thread", () => {
+    const ledger = promiseLedger(build());
+    expect(ledger.find((r) => r.threadId === "th1")).toMatchObject({ setups: 1, payoffs: 1 });
+    expect(ledger.find((r) => r.threadId === "th2")).toMatchObject({ setups: 1, payoffs: 0 }); // dangling
+  });
+
+  it("analysisText renders all three axes + flags dangling/pacing", () => {
+    const text = analysisText(build(), { word_target: 80000 });
+    expect(text).toContain("PACING");
+    expect(text).toContain("PROMISES");
+    expect(text).toContain("DANGLING");      // th2 set up, never paid
+    expect(text).toContain("TOPOGRAPHY");
+  });
+});
+
+describe("climax grounding (the win must fire a world rule)", () => {
+  const wf = (id: string) => mk("world_fact", { id, content: { name: "manumission", rule: "a slave may redeem themselves", mechanism: "pay full redemption → contract self-held" } });
+  const scene = (id: string, pos: number, grounds?: string[]) => mk("scene", { id, parent_id: "b", position: pos, content: { value_shift: vs("up"), grounds_in: grounds } });
+
+  it("flags an ungrounded resolution scene when the world has rules", () => {
+    const m = mk("movement", { id: "m" }); const b = mk("beat", { id: "b", parent_id: "m" });
+    const nodes = [m, b, wf("w1"), scene("s1", 0, ["w1"]), scene("s2", 1)]; // last scene grounds in nothing
+    expect(validate(nodes).map((i) => i.rule)).toContain("ungrounded_climax");
+  });
+
+  it("a grounded resolution passes, and editing the rule marks the scene stale", () => {
+    const m = mk("movement", { id: "m" }); const b = mk("beat", { id: "b", parent_id: "m" });
+    const rule = wf("w1");
+    let s = scene("s1", 0, ["w1"]);
+    const nodes = [m, b, rule, s];
+    expect(validate(nodes).map((i) => i.rule)).not.toContain("ungrounded_climax");
+    expect(refsOf(s)).toContain("w1");
+    s = stampInput(s, byId([rule, s]));
+    const rule2 = editContent(rule, { mechanism: "redemption requires the holder's signature" });
+    expect(isStale(s, byId([rule2, s]))).toBe(true); // grounding rule changed → scene stale
+  });
+
+  it("no grounding lint when the world has no rules", () => {
+    const m = mk("movement", { id: "m" }); const b = mk("beat", { id: "b", parent_id: "m" });
+    expect(validate([m, b, scene("s1", 0)]).map((i) => i.rule)).not.toContain("ungrounded_climax");
   });
 });
 

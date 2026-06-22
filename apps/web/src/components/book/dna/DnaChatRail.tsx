@@ -10,8 +10,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Eyebrow } from "@/components/book/studio/studioUi";
 import { applyDnaProposal, clearDnaProposal, sendDnaMessage, type DnaChatMessage, type DnaProposal } from "@/lib/dnaChat";
 import { DNA_STAGES, type StageKey } from "@/lib/dnaJourney";
+import { analysisText, type BookSettings, type DnaNode } from "@/lib/novelDna";
 
-export function DnaChatRail({ bookId, stage, onApplied }: { bookId: number; stage: StageKey; onApplied: () => void }) {
+// Stages where the three-axis story analysis is meaningful (there's structure to analyze).
+const ANALYSIS_STAGES = new Set<StageKey>(["structure", "scenes", "draft"]);
+
+export function DnaChatRail({ bookId, stage, nodes, settings, onApplied }: { bookId: number; stage: StageKey; nodes: DnaNode[]; settings: BookSettings; onApplied: () => void }) {
   const { toast } = useToast();
   const [messages, setMessages] = useState<DnaChatMessage[]>([]);
   const [pending, setPending] = useState<DnaProposal | null>(null);
@@ -46,7 +50,9 @@ export function DnaChatRail({ bookId, stage, onApplied }: { bookId: number; stag
     if (!text || thinking) return;
     setDraft(""); setThinking(true);
     setMessages((m) => [...m, { role: "user", text, ts: new Date().toISOString() }]); // optimistic
-    try { await sendDnaMessage(bookId, stage, text); }
+    // Hand the reviser the live story analysis at the stages where it matters (so it can act on drift/sag).
+    const analysis = ANALYSIS_STAGES.has(stage) ? analysisText(nodes, settings) : undefined;
+    try { await sendDnaMessage(bookId, stage, text, analysis); }
     catch (e) { setThinking(false); toast({ title: "Couldn't send", description: String((e as Error)?.message ?? e), variant: "destructive" }); }
   };
   const apply = async () => {

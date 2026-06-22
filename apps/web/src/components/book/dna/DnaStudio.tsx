@@ -11,6 +11,7 @@ import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/componen
 import { ActionLink, Eyebrow, Panel, RunningInline, StageHead, StepDot } from "@/components/book/studio/studioUi";
 import { buildJourney, type StageKey } from "@/lib/dnaJourney";
 import { DnaChatRail } from "@/components/book/dna/DnaChatRail";
+import { DnaAnalysis } from "@/components/book/dna/DnaAnalysis";
 import { saveNode, deleteNode } from "@/lib/bookNodes";
 import { migrateBookToDna } from "@/lib/migrateToDna";
 import { reconcileDna } from "@/lib/novelDnaRender";
@@ -47,21 +48,28 @@ const FIELDS: Partial<Record<NodeKind, { key: string; label: string }[]>> = {
   character: [{ key: "name", label: "name" }, { key: "want", label: "want" }, { key: "need", label: "need ★" }, { key: "wound", label: "wound ★" }, { key: "lie", label: "lie ★" }, { key: "idiolect", label: "idiolect" }],
   relationship: [{ key: "bond", label: "bond" }, { key: "charge", label: "charge" }],
   tentpole: [{ key: "summary", label: "set-piece" }],
-  world_fact: [{ key: "rule", label: "rule" }],
-  movement: [{ key: "title", label: "title" }, { key: "goal", label: "goal" }, { key: "turning_point", label: "turning point ★" }],
-  beat: [{ key: "summary", label: "beat" }, { key: "connector", label: "connector (therefore/but)" }],
+  world_fact: [{ key: "name", label: "name" }, { key: "rule", label: "rule" }, { key: "mechanism", label: "mechanism (what it enables/forbids) ★" }],
+  thread: [{ key: "name", label: "name" }, { key: "promise", label: "promise ★" }, { key: "payoff", label: "payoff" }, { key: "kind", label: "kind (mystery/foreshadow/setup_payoff/arc)" }],
+  movement: [{ key: "title", label: "title" }, { key: "goal", label: "goal" }, { key: "turning_point", label: "turning point ★" }, { key: "target_pct", label: "target position (0–1) ★" }],
+  beat: [{ key: "summary", label: "beat" }, { key: "connector", label: "connector (therefore/but)" }, { key: "polarity", label: "polarity (up/down)" }],
   scene: [{ key: "chapter_start.title", label: "chapter title (blank = mid-chapter)" }, { key: "goal", label: "goal" }, { key: "outcome", label: "outcome" }, { key: "prose.text", label: "prose" }],
 };
 
 const getPath = (obj: Record<string, unknown>, path: string): string => {
   const v = path.split(".").reduce<unknown>((o, k) => (o && typeof o === "object" ? (o as Record<string, unknown>)[k] : undefined), obj);
-  return typeof v === "string" ? v : "";
+  if (typeof v === "string") return v;
+  if (typeof v === "number") return String(v);
+  return "";
 };
+// Numeric content fields (kept as numbers in jsonb so the engine's pacing() reads them).
+const NUMERIC_KEYS = new Set(["target_pct"]);
 const setPath = (path: string, value: string): Record<string, unknown> => {
   const keys = path.split(".");
+  const leaf = keys[keys.length - 1];
+  const coerced: unknown = NUMERIC_KEYS.has(leaf) ? (value.trim() === "" ? undefined : Number(value)) : value;
   const root: Record<string, unknown> = {};
   let cur = root;
-  keys.forEach((k, i) => { if (i === keys.length - 1) cur[k] = value; else { cur[k] = {}; cur = cur[k] as Record<string, unknown>; } });
+  keys.forEach((k, i) => { if (i === keys.length - 1) cur[k] = coerced; else { cur[k] = {}; cur = cur[k] as Record<string, unknown>; } });
   return root;
 };
 const deepMerge = (a: Record<string, unknown>, b: Record<string, unknown>): Record<string, unknown> => {
@@ -95,6 +103,10 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
   const render = () => run("render", async () => { const r = await reconcileDna(bookId); toast({ title: "Rendered", description: `${r.pages} pages · ${r.created} added · ${r.updated} updated · ${r.archived} archived.` }); });
   const addChild = (parent: DnaNode, kind: NodeKind, level: number) =>
     run("add", () => saveNode(emptyNode(bookId, kind, level, parent.id, childrenOf(nodes, parent.id).length)));
+  // Stage-level generation (a whole-arc op, not a per-node verb): threads (the promise registry) and the
+  // GLOBAL beat sheet both read every movement, so they live as structure-stage actions on the pillar.
+  const generateFromPillar = (target: string, label: string) =>
+    run(target, async () => { if (!pillar) return; const { added } = await expandNode(bookId, pillar, target, {}); toast({ title: label, description: `${added} node(s) generated.` }); });
 
   const card = (n: DnaNode, accent?: boolean) => (
     <NodeCard key={n.id} node={n} index={index} bookId={bookId} kids={childrenOf(nodes, n.id)} onChanged={onChanged} accent={accent} />
@@ -125,23 +137,49 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
         {entityKinds.flatMap((k) => of(k)).map((n) => card(n))}
       </>
     );
-    if (key === "structure") return (
-      <>
-        {of("movement").map((m) => (
-          <div key={m.id} className="space-y-2">
-            {card(m, true)}
-            <div className="ml-4 space-y-2 border-l border-[hsl(var(--pv-border-soft))] pl-4">
-              {childrenOf(nodes, m.id).filter((b) => b.kind === "beat").map((b) => card(b))}
-              <ActionLink busy={busy === "add"} onClick={() => addChild(m, "beat", 4)}>add beat</ActionLink>
+    if (key === "structure") {
+      const movements = of("movement");
+      const threads = of("thread");
+      return (
+        <>
+          <DnaAnalysis nodes={nodes} settings={settings} />
+          {movements.map((m) => (
+            <div key={m.id} className="space-y-2">
+              {card(m, true)}
+              <div className="ml-4 space-y-2 border-l border-[hsl(var(--pv-border-soft))] pl-4">
+                {childrenOf(nodes, m.id).filter((b) => b.kind === "beat").map((b) => card(b))}
+                <ActionLink busy={busy === "add"} onClick={() => addChild(m, "beat", 4)}>add beat</ActionLink>
+              </div>
             </div>
-          </div>
-        ))}
-        {pillar && <ActionLink busy={busy === "add"} onClick={() => addChild(pillar, "movement", 3)}>add movement</ActionLink>}
-      </>
-    );
+          ))}
+          {pillar && <ActionLink busy={busy === "add"} onClick={() => addChild(pillar, "movement", 3)}>add movement</ActionLink>}
+
+          {/* The promise registry (threads) + the global beat sheet — whole-arc ops on the acts above. */}
+          {pillar && movements.length > 0 && (
+            <div className="space-y-2 border-t border-[hsl(var(--pv-border-soft))] pt-4">
+              <div className="flex items-center gap-3">
+                <Eyebrow tone="muted">promises · the thread registry</Eyebrow>
+                <ActionLink busy={busy === "threads"} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={() => generateFromPillar("threads", "Threads generated")}>
+                  {threads.length ? "regenerate threads" : "generate threads"}
+                </ActionLink>
+              </div>
+              {threads.map((t) => card(t))}
+              {threads.length > 0 && (
+                <div className="pt-1">
+                  <ActionLink busy={busy === "beatsheet"} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={() => generateFromPillar("beatsheet", "Beat sheet generated")}>
+                    generate beat sheet (schedules promises + paces the whole book)
+                  </ActionLink>
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      );
+    }
     // scenes + draft: the scenes in their beat context (draft is where prose gets written + rendered).
     return (
       <>
+        <DnaAnalysis nodes={nodes} settings={settings} />
         {of("movement").map((m) => childrenOf(nodes, m.id).filter((b) => b.kind === "beat").map((b) => (
           <div key={b.id} className="space-y-2">
             <Eyebrow tone="muted">{(b.content as { summary?: string }).summary || "beat"}</Eyebrow>
@@ -206,7 +244,7 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
   );
 
   const railHandle = <ResizableHandle className="w-1.5 bg-transparent transition-colors hover:bg-[hsl(var(--pv-accent))]/30 data-[resize-handle-state=drag]:bg-[hsl(var(--pv-accent))]/50" />;
-  const rail = nodes.length > 0 ? <DnaChatRail bookId={bookId} stage={activeKey} onApplied={onChanged} /> : null;
+  const rail = nodes.length > 0 ? <DnaChatRail bookId={bookId} stage={activeKey} nodes={nodes} settings={settings} onApplied={onChanged} /> : null;
 
   return (
     <div className="flex h-full flex-col">

@@ -29,8 +29,8 @@ const SPEC: Record<string, { from: string; childKind: string; childLevel: number
     role: "the CAST — a protagonist plus key opposition/allies; each gets a want, need, wound, lie, truth, idiolect",
     schema: `{ "name": "...", "role": "protagonist|antagonist|ally|love_interest|minor", "want": "...", "need": "...", "wound": "...", "lie": "...", "truth": "...", "idiolect": "..." }` },
   world: { from: "pillar", childKind: "world_fact", childLevel: 2, count: "3 to 6",
-    role: "the WORLD — the load-bearing rules and facts that constrain the story",
-    schema: `{ "rule": "...", "category": "..." }` },
+    role: "the WORLD — the load-bearing rules. Each must be OPERABLE, not atmosphere: give a short name handle, the rule, and its MECHANISM (what it enables/forbids with clear inputs→outputs, so the climax's win can fire it — no deus ex machina)",
+    schema: `{ "name": "<short handle>", "rule": "...", "mechanism": "<the operation: what it enables/forbids, inputs→outputs>", "category": "..." }` },
   relationships: { from: "pillar", childKind: "relationship", childLevel: 2, count: "2 to 4",
     role: "the key RELATIONSHIPS (dyads) between the cast — each with a bond and a current charge/tension; reference characters BY NAME",
     schema: `{ "a": "<character name>", "b": "<character name>", "bond": "...", "charge": "..." }` },
@@ -104,6 +104,13 @@ Deno.serve(async (req: Request) => {
       ? "TENTPOLES — set-pieces you MUST place (assign each to the beat that delivers it, BY its summary):\n" +
         tentpoles.map((t) => `- ${tpName(t)}`).join("\n")
       : "";
+    // The world RULES (name + mechanism) — so turning points (esp. the climax) can be GROUNDED in a rule.
+    const worldFacts = pillar ? nodes.filter((n) => n.parent_id === pillar.id && n.kind === "world_fact") : [];
+    const wfName = (e: Node) => String((e.content as { name?: string; rule?: string }).name ?? (e.content as { rule?: string }).rule ?? "").trim();
+    const worldRulesBlock = worldFacts.length
+      ? "WORLD RULES (the mechanisms a turning point can fire — reference BY NAME in grounds_in):\n" +
+        worldFacts.map((w) => `- ${wfName(w)}: ${(w.content as { mechanism?: string; rule?: string }).mechanism ?? (w.content as { rule?: string }).rule ?? ""}`).join("\n")
+      : "";
     const ctx = [
       `BOOK: ${book?.name ?? ""}`,
       `BRIEF (binding):\n${briefContext(brief, { scope: "full", success: true, none: "(no brief)", empty: "(empty)" })}`,
@@ -113,6 +120,7 @@ Deno.serve(async (req: Request) => {
       entityBlock,
       threadBlock,
       tentpoleBlock,
+      worldRulesBlock,
       movementBlock,
       `THIS NODE [${node.kind}]: ${JSON.stringify(node.content)}`,
     ].filter(Boolean).join("\n\n");
@@ -137,14 +145,15 @@ Deno.serve(async (req: Request) => {
       const system = `You are a story architect writing the ENTIRE BOOK'S BEAT SHEET in ONE pass — every beat of every act at once, so you can see the whole sequence. Honor every LOCKED ancestor and the MANDATE verbatim. Rules:
 - 2 to 4 beats per movement; each beat links to the prior with "therefore" or "but" (escalating causality).
 - Set each beat's PLANNED polarity (up = ends better, down = ends worse). The movement's value shift is the MACRO trend; you MUST still OSCILLATE within it — never more than ~3 beats of the same polarity in a row. Place deliberate relief/hope-spots inside down-acts and setbacks inside up-acts.
-- Schedule the THREADS across the whole book: every promise must be SET UP (role:setup) in an EARLIER beat before it is PAID OFF (role:payoff) in a LATER beat; use "advance" for beats that develop it in between. Reference threads BY NAME.${tentpoles.length ? `\n- PLACE every TENTPOLE: assign each set-piece to the ONE beat that delivers it, in "realizes" (by its summary). Every tentpole listed must appear on exactly one beat.` : ""}
-Output JSON ONLY: { "beats": [ { "movement": <1..${movements.length}>, "summary": "...", "connector": "therefore"|"but", "polarity": "up"|"down", "threads": [ { "ref": "<thread name>", "role": "setup"|"advance"|"payoff" } ]${tentpoles.length ? `, "realizes": [ "<tentpole summary>" ]` : ""} } ] }`;
+- Schedule the THREADS across the whole book: every promise must be SET UP (role:setup) in an EARLIER beat before it is PAID OFF (role:payoff) in a LATER beat; use "advance" for beats that develop it in between. Reference threads BY NAME.${tentpoles.length ? `\n- PLACE every TENTPOLE: assign each set-piece to the ONE beat that delivers it, in "realizes" (by its summary). Every tentpole listed must appear on exactly one beat.` : ""}${worldFacts.length ? `\n- GROUND the turns in the WORLD RULES: when a beat's turning point's outcome OPERATES ON a rule's mechanism, list that rule in "grounds_in" (by name). The CLIMAX / final resolution beat MUST ground its win in an established rule — the victory has to be MECHANICALLY EARNED by a rule the reader already knows, never deus ex machina. Plant the rule's setup in an earlier beat too.` : ""}
+Output JSON ONLY: { "beats": [ { "movement": <1..${movements.length}>, "summary": "...", "connector": "therefore"|"but", "polarity": "up"|"down", "threads": [ { "ref": "<thread name>", "role": "setup"|"advance"|"payoff" } ]${tentpoles.length ? `, "realizes": [ "<tentpole summary>" ]` : ""}${worldFacts.length ? `, "grounds_in": [ "<world rule name>" ]` : ""} } ] }`;
       const data = await callClaude(apiKey, { model, max_tokens: 8000, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
         messages: [{ role: "user", content: `${ctx}\n\nWrite the whole beat sheet. JSON only.` }] }, meta);
       const parsed = JSON.parse(extractJsonBlock(textFromClaude(data)));
       const rawBeats = Array.isArray(parsed.beats) ? parsed.beats : [];
       const tNameToId = new Map(threads.map((t) => [tName(t).toLowerCase(), t.id]));
       const tpNameToId = new Map(tentpoles.map((t) => [tpName(t).toLowerCase(), t.id]));
+      const wfNameToId = new Map(worldFacts.map((w) => [wfName(w).toLowerCase(), w.id]));
       const roles = new Set(["setup", "payoff", "advance"]);
       // Resolve refs, clamp movement index, then ENFORCE setup→payoff order (drop orphan payoffs).
       const setUp = new Set<string>();
@@ -159,8 +168,12 @@ Output JSON ONLY: { "beats": [ { "movement": <1..${movements.length}>, "summary"
         const realizes = (Array.isArray(b.realizes) ? b.realizes as string[] : [])
           .map((s) => tpNameToId.get(String(s ?? "").trim().toLowerCase()))
           .filter((id): id is string => !!id && !claimedTp.has(id) && (claimedTp.add(id), true));
+        const grounds = [...new Set((Array.isArray(b.grounds_in) ? b.grounds_in as string[] : [])
+          .map((s) => wfNameToId.get(String(s ?? "").trim().toLowerCase()))
+          .filter((id): id is string => !!id))];
         const content: Record<string, unknown> = { summary: b.summary, connector: b.connector, polarity: b.polarity === "down" ? "down" : "up", threads: threadsKept };
         if (realizes.length) content.realizes = realizes;
+        if (grounds.length) content.grounds_in = grounds;
         return { movement: mi, content };
       });
       return json({ beatsheet: true, childKind: "beat", childLevel: 4, movementIds: movements.map((m) => m.id), beats });

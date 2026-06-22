@@ -132,6 +132,7 @@ The vertical narrative chain. `content` shapes, field by field.
 | threads | `[{ ref→thread, role:setup\|payoff\|advance }]` | ★/A | the promise anchors this scene plants/pays — **references** the thread registry (§4.5). A `payoff` scene must come **after** its `setup` scene in reading order (§7) |
 | advances | `[{ ref→relationship, how }]` | A | the relationship charge this scene moves (threads moved to the field above) |
 | realizes_tentpole | ref→`tentpole` \| null | A/U | the set-piece this scene delivers, if any |
+| grounds_in | `[ref→world_fact]` | A/U | the world rule(s) whose **mechanism** this scene's outcome operates on — assigned by the beat sheet so the resolution's win fires an established rule. The final scene must ground in ≥1 rule (§7 lint) |
 | chapter_start | `{ title, pov?, epigraph? }` \| null | U/A | **partition boundary** — non-null = a chapter begins here (§6) |
 | prose | `{ text, words }` | A→★ **R** | the actual words; AI writes, author does voice corrections |
 
@@ -174,7 +175,9 @@ with no placement is an open obligation (a lint, §7).
 ### `world_fact` (← `foundations.world`)
 | field | type | fill | |
 |---|---|---|---|
+| name | string | A/U | short handle so beats/scenes can reference the rule (`grounds_in`) |
 | rule | string | U/A | a world law / established fact |
+| mechanism | string | ★/A | the **operable** rule — what it enables/forbids, inputs→outputs. A climax's win must FIRE a mechanism (no deus ex machina, Lester Dent's law); atmosphere isn't enough |
 | category | string | A | grouping (magic, politics, tech…) |
 
 ### `thread` (← `foundations.threads`) — the promise registry
@@ -273,6 +276,7 @@ connector, unplaced tentpole):
 | misordered payoff | error | a `payoff` scene precedes its `setup` scene in reading order | promises |
 | pacing drift | warn | a movement's `turning_point` actual % is far from its `target_pct` (off structural gravity) | pacing |
 | sagging middle | warn | a run of ≥N consecutive scenes with the same `value_shift.polarity` | emotional topography |
+| ungrounded climax | warn | the resolution scene's win isn't grounded in any world rule (`grounds_in` empty) — risk of deus ex machina | grounding |
 
 A partially-filled DNA renders a partial book (only scenes with accepted prose appear) — the structure is
 always renderable to *what it has*; "complete" just means every slot that gates render is satisfied.

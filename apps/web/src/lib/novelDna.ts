@@ -39,7 +39,9 @@ export interface ThreadRef { ref: string; role: ThreadRole }
 // realizes: the tentpoles this beat DELIVERS (set-piece schedule) — the beat sheet assigns each pinned
 // tentpole to a beat; scenes inherit them onto scene.realizes_tentpole (so the placement is planned, not
 // left to local scene-gen — same fix as threads).
-export interface BeatContent { summary?: string; connector?: "therefore" | "but"; polarity?: "up" | "down"; threads?: ThreadRef[]; realizes?: string[] }
+// grounds_in: the world_fact(s) whose MECHANISM this beat's turn OPERATES ON. The beat sheet plants this so
+// the climax's win fires an established rule (no deus ex machina, Lester Dent's law); scenes inherit it.
+export interface BeatContent { summary?: string; connector?: "therefore" | "but"; polarity?: "up" | "down"; threads?: ThreadRef[]; realizes?: string[]; grounds_in?: string[] }
 export interface ChapterStart { title?: string; pov?: string; epigraph?: string }
 export interface SceneContent {
   pov?: string; loc?: string; time?: { when?: string; elapsed?: string };
@@ -48,13 +50,16 @@ export interface SceneContent {
   threads?: ThreadRef[];               // promise anchors this scene plants/pays → thread registry
   advances?: { ref: string; how?: string }[];  // relationship charge this scene moves → relationship nodes
   realizes_tentpole?: string | null;
+  grounds_in?: string[];               // world_fact ids whose mechanism this scene's outcome operates on
   chapter_start?: ChapterStart | null;
   prose?: { text?: string; words?: number };
 }
 export interface CharacterContent { name?: string; role?: "protagonist" | "antagonist" | "ally" | "love_interest" | "minor"; want?: string; need?: string; wound?: string; lie?: string; truth?: string; idiolect?: string; tag?: string }
 export interface RelationshipContent { a?: string; b?: string; bond?: string; charge?: string }
 export interface TentpoleContent { summary?: string }
-export interface WorldFactContent { rule?: string; category?: string }
+// name = a short handle (so beats/scenes can reference the rule); mechanism = the OPERABLE rule — what it
+// enables or forbids, with inputs→outputs — not just atmosphere. The climax's win must fire a mechanism.
+export interface WorldFactContent { name?: string; rule?: string; mechanism?: string; category?: string }
 // thread (← foundations.threads): the promise registry — one node both ends point at (§4.5).
 export interface ThreadContent { name?: string; promise?: string; payoff?: string; kind?: "mystery" | "foreshadow" | "setup_payoff" | "arc" }
 export type NodeContent = Record<string, unknown>;
@@ -157,9 +162,11 @@ export function refsOf(node: DnaNode): string[] {
     if (c.realizes_tentpole) out.push(c.realizes_tentpole);
     if (Array.isArray(c.threads)) out.push(...c.threads.map((t) => t.ref).filter(Boolean));
     if (Array.isArray(c.advances)) out.push(...c.advances.map((a) => a.ref).filter(Boolean));
+    if (Array.isArray(c.grounds_in)) out.push(...c.grounds_in.filter(Boolean));
   } else if (node.kind === "beat") {
     const c = node.content as BeatContent;
     if (Array.isArray(c.threads)) out.push(...c.threads.map((t) => t.ref).filter(Boolean));
+    if (Array.isArray(c.grounds_in)) out.push(...c.grounds_in.filter(Boolean));
   } else if (node.kind === "relationship") {
     const c = node.content as RelationshipContent;
     if (c.a) out.push(c.a);
@@ -307,6 +314,43 @@ export function topography(nodes: DnaNode[]): { sceneId: string; polarity: "up" 
   return scenesInOrder(nodes).map((s) => ({ sceneId: s.id, polarity: (s.content as SceneContent).value_shift?.polarity ?? null }));
 }
 
+/** PROMISES (what): per thread, how many scenes set it up vs pay it off (in reading order). The registry
+ *  view the UI shows and the chat is handed — a thread with payoffs:0 is a dangling promise. */
+export interface PromiseLedgerRow { threadId: string; name: string; promise: string; setups: number; payoffs: number }
+export function promiseLedger(nodes: DnaNode[]): PromiseLedgerRow[] {
+  const scenes = scenesInOrder(nodes);
+  return nodes.filter((n) => n.kind === "thread").map((t) => {
+    const c = t.content as ThreadContent;
+    let setups = 0, payoffs = 0;
+    for (const s of scenes) for (const ref of ((s.content as SceneContent).threads ?? [])) {
+      if (ref.ref !== t.id) continue;
+      if (ref.role === "setup") setups++; else if (ref.role === "payoff") payoffs++;
+    }
+    return { threadId: t.id, name: c.name ?? t.id, promise: c.promise ?? "", setups, payoffs };
+  });
+}
+
+/** A compact plain-text STORY ANALYSIS — the three axes + lints — handed to the dna-chat reviser as context
+ *  so it can act on pacing drift / dangling promises / sagging runs. The UI renders the same data visually. */
+export function analysisText(nodes: DnaNode[], settings: BookSettings): string {
+  const lines: string[] = [];
+  const pace = pacing(nodes);
+  if (pace.length) {
+    lines.push("PACING (turning point position vs target):");
+    for (const p of pace) lines.push(`  ${p.title ?? p.movementId}: actual ${Math.round(p.actualPct * 100)}%${typeof p.targetPct === "number" ? ` / target ${Math.round(p.targetPct * 100)}%${Math.abs(p.driftPct) > 0.1 ? " ⚠ DRIFT" : ""}` : ""}`);
+  }
+  const ledger = promiseLedger(nodes);
+  if (ledger.length) {
+    lines.push("PROMISES (thread registry — setups/payoffs):");
+    for (const r of ledger) lines.push(`  "${r.name}": setups ${r.setups}, payoffs ${r.payoffs}${r.setups && !r.payoffs ? " ⚠ DANGLING" : ""}`);
+  }
+  const topo = topography(nodes).map((t) => (t.polarity === "up" ? "+" : t.polarity === "down" ? "-" : "·"));
+  if (topo.length) lines.push(`TOPOGRAPHY (value polarity in reading order): ${topo.join("")}`);
+  const issues = validate(nodes);
+  if (issues.length) { lines.push("LINTS:"); for (const i of issues) lines.push(`  [${i.severity}] ${i.rule}: ${i.message}`); }
+  return lines.join("\n");
+}
+
 /** PROMISES (what): resolve each thread's setup/payoff against reading order (§4.5). Two-pass so a payoff
  *  that precedes its setup is told apart (misordered) from one that has no setup at all (unearned). */
 function promiseLints(nodes: DnaNode[]): DnaIssue[] {
@@ -382,6 +426,18 @@ export function validate(nodes: DnaNode[]): DnaIssue[] {
 
   // Promises axis (§6): dangling / unearned / misordered payoffs.
   issues.push(...promiseLints(nodes));
+
+  // Grounding: the resolution must fire an established world rule (no deus ex machina — Lester Dent's law).
+  // When the world has rules, the last scene in reading order should ground its win in at least one.
+  const worldFacts = nodes.filter((n) => n.kind === "world_fact");
+  const sceneSeq = scenesInOrder(nodes);
+  if (worldFacts.length && sceneSeq.length) {
+    const last = sceneSeq[sceneSeq.length - 1];
+    const g = (last.content as SceneContent).grounds_in;
+    if (!Array.isArray(g) || !g.length) {
+      issues.push({ rule: "ungrounded_climax", severity: "warn", message: "the resolution scene's win isn't grounded in any world rule (risk of deus ex machina)", nodeId: last.id });
+    }
+  }
 
   // Pacing axis (§6): a movement's turning point drifting off its authored target_pct.
   for (const p of pacing(nodes)) {

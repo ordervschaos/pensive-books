@@ -90,6 +90,7 @@ async function expand(bookId, node, target, startPosition = 0) {
     }
     if (children[0] && Array.isArray(beat.threads) && beat.threads.length) children[0].content.threads = beat.threads;
     (Array.isArray(beat.realizes) ? beat.realizes : []).forEach((tpId, i) => { const s = children[i] ?? children[children.length - 1]; if (s) s.content.realizes_tentpole = tpId; });
+    if (Array.isArray(beat.grounds_in) && beat.grounds_in.length && children.length) children[children.length - 1].content.grounds_in = beat.grounds_in;
     if (startPosition === 0 && children[0] && !children[0].content.chapter_start) children[0].content.chapter_start = { title: chapterTitle(String(beat.summary ?? "")) };
   }
   await insertNodes(children);
