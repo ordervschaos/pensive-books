@@ -4,7 +4,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { BRIDGE, bridgeFetch } from "@/lib/bridge";
 import { deleteNode, loadTree, saveNode, saveNodes } from "@/lib/bookNodes";
-import { byId, newId, stampInput, stampProse, type BeatContent, type DnaNode, type NodeContent, type NodeKind, type SceneContent, type ThreadRef } from "@/lib/novelDna";
+import { byId, newId, stampInput, stampProse, type BeatContent, type DnaNode, type GameContent, type NodeContent, type NodeKind, type SceneContent, type ThreadRef } from "@/lib/novelDna";
 
 /** A short, legible chapter title from a beat's summary (the working title; the author renames). */
 function chapterTitleFromBeat(beat: DnaNode): string {
@@ -69,6 +69,19 @@ export async function expandNode(
     position: startPosition + i, content,
     authoring: { source: "ai", locked: false, status: "accepted" },
   }));
+  // Games: couples.to references a SIBLING game by NAME (the edge fn couldn't resolve it — ids are minted
+  // here). Resolve name→id across the freshly-minted batch; drop couples to a game that didn't resolve.
+  if (res.childKind === "game") {
+    const nameToId = new Map(made.map((g) => [String((g.content as GameContent).name ?? "").trim().toLowerCase(), g.id]));
+    for (const g of made) {
+      const c = g.content as GameContent;
+      if (Array.isArray(c.couples)) {
+        c.couples = c.couples
+          .map((k) => ({ ...k, to: nameToId.get(String(k.to ?? "").trim().toLowerCase()) ?? "" }))
+          .filter((k) => k.to && k.to !== g.id); // resolved + not self-coupling
+      }
+    }
+  }
   // Scenes REALIZE their beat (root fix): inherit the beat's planned polarity and its thread schedule rather
   // than re-inventing them locally — so the global plan stays authoritative (novel-dna-flow.md §7).
   if (res.childKind === "scene" && node.kind === "beat") {
@@ -86,6 +99,10 @@ export async function expandNode(
     // The beat's world-rule grounding lands on its LAST scene (the scene that resolves the beat's turn — so
     // the win fires the rule), making the climax's mechanism explicit (Lester Dent's law).
     if (beat.grounds_in?.length && made.length) (made[made.length - 1].content as SceneContent).grounds_in = beat.grounds_in;
+    // The beat's game moves: `plays` lands on the first scene (the turn advances the contest); a `resolves`
+    // (the game is decided) lands on the LAST scene (the contest's outcome scene).
+    if (beat.plays?.length && made[0]) (made[0].content as SceneContent).plays = beat.plays;
+    if (beat.resolves?.length && made.length) (made[made.length - 1].content as SceneContent).resolves = beat.resolves;
     // Chaptering: a beat opens a chapter (the legible default; author can merge/rename later).
     if (startPosition === 0 && made[0]) {
       const sc = made[0].content as SceneContent;

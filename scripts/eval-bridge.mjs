@@ -3386,6 +3386,8 @@ const DNA_SPEC = {
     schema: `{ "a": "<character name>", "b": "<character name>", "bond": "...", "charge": "..." }` },
   threads: { childKind: "thread", childLevel: 2, count: "4 to 7", role: "the PROMISE REGISTRY — the open loops the book opens and must close (a planted clue, a mystery, a foreshadow, a relationship arc). Read THE ARC (the movements) and place promises that pay off across it — setups early, payoffs later",
     schema: `{ "name": "...", "promise": "...", "payoff": "...", "kind": "mystery|foreshadow|setup_payoff|arc" }` },
+  games: { childKind: "game", childLevel: 2, count: "1 to 3", role: "the GAMES — each a CONTEST with an explicit possibility space: an exact WIN condition AND an exact LOSE condition (you can't win if you can't lose). One CENTRAL game is the norm; add a second/third only if it genuinely interlocks. Name the players (cast BY NAME) and governing_rules (world rules whose mechanism the win/lose fires, BY NAME). If two games interlock, add a `couples` edge: when this game is won/lost, what it does to another game (void/raise/lower/enable) — OPTIONAL",
+    schema: `{ "name": "...", "players": ["<character name>"], "win_condition": "...", "lose_condition": "...", "stake": "...", "governing_rules": ["<world rule name>"], "couples": [ { "to": "<other game name>", "when": "won|lost", "effect": "void|raise|lower|enable", "note": "..." } ] }` },
   movements: { childKind: "movement", childLevel: 3, count: "exactly 4", role: "the ACTS — four movements whose turning points land near the structural-gravity marks (≈25%, 50%, 75%, 90% of the book). Each carries a goal, a turning point, a target_pct (where its turn should land, 0–1), and a value shift",
     schema: `{ "title": "...", "goal": "...", "turning_point": "...", "target_pct": 0.25, "value": { "name": "...", "from": "...", "to": "..." } }` },
   beats: { childKind: "beat", childLevel: 4, count: "2 to 4", role: "the causal BEATS inside this act; each links to the previous with therefore or but, escalating. Tag which THREADS each beat sets up / advances / pays off (reference threads BY NAME)",
@@ -3439,6 +3441,12 @@ async function runDnaExpand({ bookId, nodeId, target }) {
     ? "WORLD RULES (the mechanisms a turning point can fire — reference BY NAME in grounds_in):\n" +
       worldFacts.map((w) => `- ${wfName(w)}: ${w.content?.mechanism ?? w.content?.rule ?? ""}`).join("\n")
     : "";
+  const games = pillar ? nodes.filter((n) => n.parent_id === pillar.id && n.kind === "game") : [];
+  const gName = (e) => String(e.content?.name ?? "").trim();
+  const gamesBlock = games.length
+    ? "GAMES (the contests — reference BY NAME in plays/resolves; WIN vs LOSE):\n" +
+      games.map((g) => `- ${gName(g)}: WIN = ${g.content?.win_condition ?? "?"} | LOSE = ${g.content?.lose_condition ?? "?"}`).join("\n")
+    : "";
   const ctx = [
     `BOOK: ${book.name ?? ""}`,
     `BRIEF (binding):\n${briefContext(book.brief)}`,
@@ -3449,6 +3457,7 @@ async function runDnaExpand({ bookId, nodeId, target }) {
     threadBlock,
     tentpoleBlock,
     worldRulesBlock,
+    gamesBlock,
     movementBlock,
     `THIS NODE [${node.kind}]: ${JSON.stringify(node.content)}`,
   ].filter(Boolean).join("\n\n");
@@ -3468,8 +3477,8 @@ async function runDnaExpand({ bookId, nodeId, target }) {
     const prompt = `You are a story architect writing the ENTIRE BOOK'S BEAT SHEET in ONE pass — every beat of every act at once, so you can see the whole sequence. Honor every LOCKED ancestor and the MANDATE verbatim. Rules:
 - 2 to 4 beats per movement; each beat links to the prior with "therefore" or "but" (escalating causality).
 - Set each beat's PLANNED polarity (up = ends better, down = ends worse). The movement's value shift is the MACRO trend; you MUST still OSCILLATE within it — never more than ~3 beats of the same polarity in a row. Place deliberate relief/hope-spots inside down-acts and setbacks inside up-acts.
-- Schedule the THREADS across the whole book: every promise must be SET UP (role:setup) in an EARLIER beat before it is PAID OFF (role:payoff) in a LATER beat; use "advance" for beats in between. Reference threads BY NAME.${tentpoles.length ? `\n- PLACE every TENTPOLE: assign each set-piece to the ONE beat that delivers it, in "realizes" (by its summary). Every tentpole listed must appear on exactly one beat.` : ""}${worldFacts.length ? `\n- GROUND the turns in the WORLD RULES: when a beat's turning point's outcome OPERATES ON a rule's mechanism, list that rule in "grounds_in" (by name). The CLIMAX / final resolution beat MUST ground its win in an established rule — the victory has to be MECHANICALLY EARNED by a rule the reader already knows, never deus ex machina. Plant the rule's setup in an earlier beat too.` : ""}
-Output JSON ONLY: { "beats": [ { "movement": <1..${movements.length}>, "summary": "...", "connector": "therefore"|"but", "polarity": "up"|"down", "threads": [ { "ref": "<thread name>", "role": "setup"|"advance"|"payoff" } ]${tentpoles.length ? `, "realizes": [ "<tentpole summary>" ]` : ""}${worldFacts.length ? `, "grounds_in": [ "<world rule name>" ]` : ""} } ] }\n\n${ctx}\n\nWrite the whole beat sheet. JSON only.`;
+- Schedule the THREADS across the whole book: every promise must be SET UP (role:setup) in an EARLIER beat before it is PAID OFF (role:payoff) in a LATER beat; use "advance" for beats in between. Reference threads BY NAME.${tentpoles.length ? `\n- PLACE every TENTPOLE: assign each set-piece to the ONE beat that delivers it, in "realizes" (by its summary). Every tentpole listed must appear on exactly one beat.` : ""}${worldFacts.length ? `\n- GROUND the turns in the WORLD RULES: when a beat's turning point's outcome OPERATES ON a rule's mechanism, list that rule in "grounds_in" (by name). The CLIMAX / final resolution beat MUST ground its win in an established rule — the victory has to be MECHANICALLY EARNED by a rule the reader already knows, never deus ex machina. Plant the rule's setup in an earlier beat too.` : ""}${games.length ? `\n- PLAY the GAMES: each beat that advances a contest lists it in "plays" (by name). Each game MUST be RESOLVED — exactly one beat lists it in "resolves" with its outcome (won|lost), and the CENTRAL game resolves at the CLIMAX. A game's resolving beat should also ground_in the rule its win/lose fires.` : ""}
+Output JSON ONLY: { "beats": [ { "movement": <1..${movements.length}>, "summary": "...", "connector": "therefore"|"but", "polarity": "up"|"down", "threads": [ { "ref": "<thread name>", "role": "setup"|"advance"|"payoff" } ]${tentpoles.length ? `, "realizes": [ "<tentpole summary>" ]` : ""}${worldFacts.length ? `, "grounds_in": [ "<world rule name>" ]` : ""}${games.length ? `, "plays": [ "<game name>" ], "resolves": [ { "ref": "<game name>", "outcome": "won|lost" } ]` : ""} } ] }\n\n${ctx}\n\nWrite the whole beat sheet. JSON only.`;
     const out = await runClaude(prompt, true, { fn: "dna-expand", bookId }, { noTools: true, model: MODEL_PLANNING });
     if (out.error) return out;
     let raw = out.text.trim();
@@ -3482,9 +3491,11 @@ Output JSON ONLY: { "beats": [ { "movement": <1..${movements.length}>, "summary"
     const tNameToId = new Map(threads.map((t) => [tName(t).toLowerCase(), t.id]));
     const tpNameToId = new Map(tentpoles.map((t) => [tpName(t).toLowerCase(), t.id]));
     const wfNameToId = new Map(worldFacts.map((w) => [wfName(w).toLowerCase(), w.id]));
+    const gNameToId = new Map(games.map((g) => [gName(g).toLowerCase(), g.id]));
     const roles = new Set(["setup", "payoff", "advance"]);
     const setUp = new Set();
     const claimedTp = new Set();
+    const resolvedG = new Set();
     const beats = rawBeats.map((b) => {
       const mi = Math.min(Math.max(parseInt(String(b.movement ?? 1), 10) || 1, 1), movements.length) - 1;
       const refs = (Array.isArray(b.threads) ? b.threads : [])
@@ -3498,9 +3509,17 @@ Output JSON ONLY: { "beats": [ { "movement": <1..${movements.length}>, "summary"
       const grounds = [...new Set((Array.isArray(b.grounds_in) ? b.grounds_in : [])
         .map((s) => wfNameToId.get(String(s ?? "").trim().toLowerCase()))
         .filter(Boolean))];
+      const plays = [...new Set((Array.isArray(b.plays) ? b.plays : [])
+        .map((s) => gNameToId.get(String(s ?? "").trim().toLowerCase()))
+        .filter(Boolean))];
+      const resolves = (Array.isArray(b.resolves) ? b.resolves : [])
+        .map((r) => ({ ref: gNameToId.get(String(r.ref ?? "").trim().toLowerCase()), outcome: r.outcome === "lost" ? "lost" : "won" }))
+        .filter((r) => r.ref && !resolvedG.has(r.ref) && (resolvedG.add(r.ref), true));
       const content = { summary: b.summary, connector: b.connector, polarity: b.polarity === "down" ? "down" : "up", threads: threadsKept };
       if (realizes.length) content.realizes = realizes;
       if (grounds.length) content.grounds_in = grounds;
+      if (plays.length) content.plays = plays;
+      if (resolves.length) content.resolves = resolves;
       return { movement: mi, content };
     });
     return { beatsheet: true, childKind: "beat", childLevel: 4, movementIds: movements.map((m) => m.id), beats };
@@ -3535,6 +3554,22 @@ Output JSON ONLY: { "beats": [ { "movement": <1..${movements.length}>, "summary"
         const { threads: _drop, ...rest } = ch;
         return resolved.length ? { ...rest, threads: resolved } : rest;
       });
+    }
+    if (spec.childKind === "game") {
+      // Resolve players (char names→ids) + governing_rules (rule names→ids). couples.to = SIBLING game name,
+      // left for the caller to resolve post-mint.
+      const cNameToId = new Map(chars.map((c) => [cName(c).toLowerCase(), c.id]));
+      const wfNameToId = new Map(worldFacts.map((w) => [wfName(w).toLowerCase(), w.id]));
+      const effects = new Set(["void", "raise", "lower", "enable"]);
+      const whens = new Set(["won", "lost"]);
+      children = children.map((ch) => ({
+        ...ch,
+        players: [...new Set((Array.isArray(ch.players) ? ch.players : []).map((p) => cNameToId.get(String(p ?? "").trim().toLowerCase())).filter(Boolean))],
+        governing_rules: [...new Set((Array.isArray(ch.governing_rules) ? ch.governing_rules : []).map((r) => wfNameToId.get(String(r ?? "").trim().toLowerCase())).filter(Boolean))],
+        couples: (Array.isArray(ch.couples) ? ch.couples : [])
+          .filter((k) => k.to && whens.has(String(k.when)) && effects.has(String(k.effect)))
+          .map((k) => ({ to: String(k.to).trim(), when: k.when, effect: k.effect, note: k.note })),
+      }));
     }
     return { childKind: spec.childKind, childLevel: spec.childLevel, children };
   } catch { return { error: "Could not parse expand JSON" }; }

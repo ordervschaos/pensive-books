@@ -82,6 +82,17 @@ async function expand(bookId, node, target, startPosition = 0) {
     position: startPosition + i, content,
     authoring: { source: "ai", locked: false, status: "accepted" },
   }));
+  // Games: resolve couples.to (sibling game NAME → minted id) across the fresh batch.
+  if (res.childKind === "game") {
+    const nameToId = new Map(children.map((g) => [String(g.content?.name ?? "").trim().toLowerCase(), g.id]));
+    for (const g of children) {
+      if (Array.isArray(g.content?.couples)) {
+        g.content.couples = g.content.couples
+          .map((k) => ({ ...k, to: nameToId.get(String(k.to ?? "").trim().toLowerCase()) ?? "" }))
+          .filter((k) => k.to && k.to !== g.id);
+      }
+    }
+  }
   // Scenes REALIZE their beat (root fix): inherit the beat's polarity + thread schedule, don't re-invent.
   if ((res.childKind ?? "scene") === "scene" && node.kind === "beat") {
     const beat = node.content || {};
@@ -91,6 +102,8 @@ async function expand(bookId, node, target, startPosition = 0) {
     if (children[0] && Array.isArray(beat.threads) && beat.threads.length) children[0].content.threads = beat.threads;
     (Array.isArray(beat.realizes) ? beat.realizes : []).forEach((tpId, i) => { const s = children[i] ?? children[children.length - 1]; if (s) s.content.realizes_tentpole = tpId; });
     if (Array.isArray(beat.grounds_in) && beat.grounds_in.length && children.length) children[children.length - 1].content.grounds_in = beat.grounds_in;
+    if (Array.isArray(beat.plays) && beat.plays.length && children[0]) children[0].content.plays = beat.plays;
+    if (Array.isArray(beat.resolves) && beat.resolves.length && children.length) children[children.length - 1].content.resolves = beat.resolves;
     if (startPosition === 0 && children[0] && !children[0].content.chapter_start) children[0].content.chapter_start = { title: chapterTitle(String(beat.summary ?? "")) };
   }
   await insertNodes(children);

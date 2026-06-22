@@ -6,7 +6,7 @@ import { metaHash } from "@/lib/planProvenance";
 
 // ── Kinds ─────────────────────────────────────────────────────────────────────
 export const LADDER_KINDS = ["seed", "premise", "pillar", "movement", "beat", "scene"] as const;
-export const ENTITY_KINDS = ["character", "relationship", "tentpole", "world_fact", "thread"] as const;
+export const ENTITY_KINDS = ["character", "relationship", "tentpole", "world_fact", "thread", "game"] as const;
 export type LadderKind = (typeof LADDER_KINDS)[number];
 export type EntityKind = (typeof ENTITY_KINDS)[number];
 export type NodeKind = LadderKind | EntityKind;
@@ -41,7 +41,14 @@ export interface ThreadRef { ref: string; role: ThreadRole }
 // left to local scene-gen — same fix as threads).
 // grounds_in: the world_fact(s) whose MECHANISM this beat's turn OPERATES ON. The beat sheet plants this so
 // the climax's win fires an established rule (no deus ex machina, Lester Dent's law); scenes inherit it.
-export interface BeatContent { summary?: string; connector?: "therefore" | "but"; polarity?: "up" | "down"; threads?: ThreadRef[]; realizes?: string[]; grounds_in?: string[] }
+// A game resolution anchored on a beat/scene (this turn DECIDES the game won/lost).
+export interface GameResolution { ref: string; outcome: "won" | "lost" }
+export interface BeatContent {
+  summary?: string; connector?: "therefore" | "but"; polarity?: "up" | "down";
+  threads?: ThreadRef[]; realizes?: string[]; grounds_in?: string[];
+  plays?: string[];               // game ids this turn advances (a move) — schema/games §3
+  resolves?: GameResolution[];    // games DECIDED on this turn
+}
 export interface ChapterStart { title?: string; pov?: string; epigraph?: string }
 export interface SceneContent {
   pov?: string; loc?: string; time?: { when?: string; elapsed?: string };
@@ -51,6 +58,8 @@ export interface SceneContent {
   advances?: { ref: string; how?: string }[];  // relationship charge this scene moves → relationship nodes
   realizes_tentpole?: string | null;
   grounds_in?: string[];               // world_fact ids whose mechanism this scene's outcome operates on
+  plays?: string[];                    // game ids this scene advances (inherited from its beat)
+  resolves?: GameResolution[];         // games decided in this scene (inherited from its beat)
   chapter_start?: ChapterStart | null;
   prose?: { text?: string; words?: number };
 }
@@ -62,6 +71,14 @@ export interface TentpoleContent { summary?: string }
 export interface WorldFactContent { name?: string; rule?: string; mechanism?: string; category?: string }
 // thread (← foundations.threads): the promise registry — one node both ends point at (§4.5).
 export interface ThreadContent { name?: string; promise?: string; payoff?: string; kind?: "mystery" | "foreshadow" | "setup_payoff" | "arc" }
+// game (← the game pillar, docs/novel-dna-games.md): a contest with a win-condition + a stake. `couples` is
+// the coupling edge — when THIS game resolves `when`, it has `effect` on the target game (the stakes engine).
+export type CouplingEffect = "void" | "raise" | "lower" | "enable";
+export interface Coupling { to: string; when: "won" | "lost"; effect: CouplingEffect; note?: string }
+// A game is a CONTEST with an explicit possibility space — ways to win AND ways to lose. Both poles must
+// exist or there are no real stakes. The climax is solid because it's one realized, legal path through that
+// space (won or lost), not authorial fiat. `couples` is OPTIONAL — only multi-game stories need it.
+export interface GameContent { name?: string; players?: string[]; win_condition?: string; lose_condition?: string; stake?: string; governing_rules?: string[]; couples?: Coupling[] }
 export type NodeContent = Record<string, unknown>;
 
 export interface DnaNode {
@@ -163,14 +180,23 @@ export function refsOf(node: DnaNode): string[] {
     if (Array.isArray(c.threads)) out.push(...c.threads.map((t) => t.ref).filter(Boolean));
     if (Array.isArray(c.advances)) out.push(...c.advances.map((a) => a.ref).filter(Boolean));
     if (Array.isArray(c.grounds_in)) out.push(...c.grounds_in.filter(Boolean));
+    if (Array.isArray(c.plays)) out.push(...c.plays.filter(Boolean));
+    if (Array.isArray(c.resolves)) out.push(...c.resolves.map((r) => r.ref).filter(Boolean));
   } else if (node.kind === "beat") {
     const c = node.content as BeatContent;
     if (Array.isArray(c.threads)) out.push(...c.threads.map((t) => t.ref).filter(Boolean));
     if (Array.isArray(c.grounds_in)) out.push(...c.grounds_in.filter(Boolean));
+    if (Array.isArray(c.plays)) out.push(...c.plays.filter(Boolean));
+    if (Array.isArray(c.resolves)) out.push(...c.resolves.map((r) => r.ref).filter(Boolean));
   } else if (node.kind === "relationship") {
     const c = node.content as RelationshipContent;
     if (c.a) out.push(c.a);
     if (c.b) out.push(c.b);
+  } else if (node.kind === "game") {
+    const c = node.content as GameContent;
+    if (Array.isArray(c.players)) out.push(...c.players.filter(Boolean));
+    if (Array.isArray(c.governing_rules)) out.push(...c.governing_rules.filter(Boolean));
+    if (Array.isArray(c.couples)) out.push(...c.couples.map((k) => k.to).filter(Boolean));
   }
   return [...new Set(out)];
 }
@@ -330,6 +356,39 @@ export function promiseLedger(nodes: DnaNode[]): PromiseLedgerRow[] {
   });
 }
 
+// ── The stakes graph (the game pillar — docs/novel-dna-games.md §4) ───────────
+// Coupling makes stakes COMPUTABLE: a game's stake = what its outcome does to the other games. Pure
+// functions over the games + their `couples` edges.
+
+/** cascade(gameId, outcome): the games this resolution affects, transitively (follow couples edges whose
+ *  `when` matches). Returns each affected game id + the effect that reached it. The propagation the reader
+ *  feels — "if he loses her, everything else collapses." */
+export function cascade(nodes: DnaNode[], gameId: string, outcome: "won" | "lost"): { gameId: string; effect: CouplingEffect }[] {
+  const index = byId(nodes);
+  const out = new Map<string, CouplingEffect>();
+  const walk = (id: string, when: "won" | "lost") => {
+    const g = index.get(id);
+    if (!g || g.kind !== "game") return;
+    for (const c of ((g.content as GameContent).couples ?? [])) {
+      if (c.when !== when || !c.to || out.has(c.to)) continue;
+      out.set(c.to, c.effect);
+      // A voided/enabled target propagates as the same-direction resolution to ITS couplings.
+      if (c.effect === "void") walk(c.to, "lost");
+      else if (c.effect === "enable") walk(c.to, "won");
+    }
+  };
+  walk(gameId, outcome);
+  return [...out].map(([id, effect]) => ({ gameId: id, effect }));
+}
+
+/** stakesOf(game): the magnitude of what rides on a game = the union of games its win OR loss would touch.
+ *  |stakesOf| is the computed stake (schema/games §4) — high when a resolution cascades widely. */
+export function stakesOf(nodes: DnaNode[], gameId: string): string[] {
+  const won = cascade(nodes, gameId, "won").map((c) => c.gameId);
+  const lost = cascade(nodes, gameId, "lost").map((c) => c.gameId);
+  return [...new Set([...won, ...lost])];
+}
+
 /** A compact plain-text STORY ANALYSIS — the three axes + lints — handed to the dna-chat reviser as context
  *  so it can act on pacing drift / dangling promises / sagging runs. The UI renders the same data visually. */
 export function analysisText(nodes: DnaNode[], settings: BookSettings): string {
@@ -443,6 +502,34 @@ export function validate(nodes: DnaNode[]): DnaIssue[] {
   for (const p of pacing(nodes)) {
     if (typeof p.targetPct === "number" && Math.abs(p.driftPct) > PACING_DRIFT_TOL) {
       issues.push({ rule: "pacing_drift", severity: "warn", message: `act turn lands at ${Math.round(p.actualPct * 100)}% (target ${Math.round(p.targetPct * 100)}%)`, nodeId: p.movementId });
+    }
+  }
+
+  // Game pillar (docs/novel-dna-games.md §5): a game is a real possibility space (win AND lose), and a
+  // played game must resolve. Coupling is OPTIONAL — single-game stories are valid; not having couples is
+  // never a fault.
+  const games = nodes.filter((n) => n.kind === "game");
+  if (games.length) {
+    // games referenced as played / resolved anywhere on the spine
+    const played = new Set<string>(), resolved = new Set<string>();
+    for (const n of nodes) {
+      if (n.kind !== "beat" && n.kind !== "scene") continue;
+      const c = n.content as BeatContent & SceneContent;
+      for (const p of (c.plays ?? [])) played.add(p);
+      for (const r of (c.resolves ?? [])) if (r.ref) resolved.add(r.ref);
+    }
+    for (const g of games) {
+      const c = g.content as GameContent;
+      // The core discipline: a genuine possibility space needs BOTH poles — you can't win if you can't lose.
+      if (!c.win_condition?.trim() || !c.lose_condition?.trim()) {
+        issues.push({ rule: "halfopen_game", severity: "warn", message: "game lacks a win or lose condition — no real possibility space (you can't win if you can't lose)", nodeId: g.id });
+      }
+      if (played.has(g.id) && !resolved.has(g.id)) {
+        issues.push({ rule: "unresolved_game", severity: "warn", message: "game is played but never resolved (won/lost) — a dangling contest", nodeId: g.id });
+      }
+      if (!(c.governing_rules ?? []).length && nodes.some((n) => n.kind === "world_fact")) {
+        issues.push({ rule: "ungrounded_game", severity: "warn", message: "game's win isn't bound to any world rule (governing_rules empty)", nodeId: g.id });
+      }
     }
   }
 

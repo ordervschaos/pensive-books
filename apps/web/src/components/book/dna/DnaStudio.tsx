@@ -50,6 +50,7 @@ const FIELDS: Partial<Record<NodeKind, { key: string; label: string }[]>> = {
   tentpole: [{ key: "summary", label: "set-piece" }],
   world_fact: [{ key: "name", label: "name" }, { key: "rule", label: "rule" }, { key: "mechanism", label: "mechanism (what it enables/forbids) ★" }],
   thread: [{ key: "name", label: "name" }, { key: "promise", label: "promise ★" }, { key: "payoff", label: "payoff" }, { key: "kind", label: "kind (mystery/foreshadow/setup_payoff/arc)" }],
+  game: [{ key: "name", label: "name" }, { key: "win_condition", label: "win condition ★" }, { key: "lose_condition", label: "lose condition ★" }, { key: "stake", label: "stake" }],
   movement: [{ key: "title", label: "title" }, { key: "goal", label: "goal" }, { key: "turning_point", label: "turning point ★" }, { key: "target_pct", label: "target position (0–1) ★" }],
   beat: [{ key: "summary", label: "beat" }, { key: "connector", label: "connector (therefore/but)" }, { key: "polarity", label: "polarity (up/down)" }],
   scene: [{ key: "chapter_start.title", label: "chapter title (blank = mid-chapter)" }, { key: "goal", label: "goal" }, { key: "outcome", label: "outcome" }, { key: "prose.text", label: "prose" }],
@@ -140,6 +141,7 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
     if (key === "structure") {
       const movements = of("movement");
       const threads = of("thread");
+      const games = of("game");
       return (
         <>
           <DnaAnalysis nodes={nodes} settings={settings} />
@@ -154,7 +156,7 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
           ))}
           {pillar && <ActionLink busy={busy === "add"} onClick={() => addChild(pillar, "movement", 3)}>add movement</ActionLink>}
 
-          {/* The promise registry (threads) + the global beat sheet — whole-arc ops on the acts above. */}
+          {/* The promise registry (threads) + games + the global beat sheet — whole-arc ops on the acts. */}
           {pillar && movements.length > 0 && (
             <div className="space-y-2 border-t border-[hsl(var(--pv-border-soft))] pt-4">
               <div className="flex items-center gap-3">
@@ -164,10 +166,19 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
                 </ActionLink>
               </div>
               {threads.map((t) => card(t))}
-              {threads.length > 0 && (
+
+              <div className="flex items-center gap-3 pt-2">
+                <Eyebrow tone="muted">games · the contests (win / lose)</Eyebrow>
+                <ActionLink busy={busy === "games"} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={() => generateFromPillar("games", "Games generated")}>
+                  {games.length ? "regenerate games" : "generate games"}
+                </ActionLink>
+              </div>
+              {games.map((g) => card(g))}
+
+              {(threads.length > 0 || games.length > 0) && (
                 <div className="pt-1">
                   <ActionLink busy={busy === "beatsheet"} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={() => generateFromPillar("beatsheet", "Beat sheet generated")}>
-                    generate beat sheet (schedules promises + paces the whole book)
+                    generate beat sheet (schedules promises, plays the games, paces the whole book)
                   </ActionLink>
                 </div>
               )}

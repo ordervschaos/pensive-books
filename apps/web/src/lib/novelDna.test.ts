@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  analysisText, blastRadius, byId, chapters, chooseProposal, editContent, emptyNode, enforcePromiseSchedule,
-  inputHash, isProseStale, isRenderable, isStale, lock, pacing, promiseLedger, refsOf, renderBlockers,
-  renderPages, scenesInOrder, stampInput, stampProse, topography, validate, type DnaNode, type NodeKind, type ThreadRef,
+  analysisText, blastRadius, byId, cascade, chapters, chooseProposal, editContent, emptyNode,
+  enforcePromiseSchedule, inputHash, isProseStale, isRenderable, isStale, lock, pacing, promiseLedger,
+  refsOf, renderBlockers, renderPages, scenesInOrder, stakesOf, stampInput, stampProse, topography,
+  validate, type DnaNode, type NodeKind, type ThreadRef,
 } from "@/lib/novelDna";
 
 let seq = 0;
@@ -290,6 +291,55 @@ describe("promise ledger + analysis text (the UI/chat surfacing)", () => {
     expect(text).toContain("PROMISES");
     expect(text).toContain("DANGLING");      // th2 set up, never paid
     expect(text).toContain("TOPOGRAPHY");
+  });
+});
+
+describe("game pillar — the possibility space (single game is valid; coupling is optional)", () => {
+  const wf = (id = "w1") => mk("world_fact", { id, content: { name: "debt-bondage", mechanism: "redemption → self-held" } });
+  // The CORE case: one central game with both poles, played + resolved, grounded. A solid climax.
+  const single = () => {
+    const pillar = mk("pillar", { id: "p" });
+    const game = mk("game", { id: "g", parent_id: "p", content: { name: "the contract", win_condition: "self-redemption → free", lose_condition: "delivered to the rival → owned", governing_rules: ["w1"] } });
+    const m = mk("movement", { id: "m", parent_id: "p" });
+    const b1 = mk("beat", { id: "b1", parent_id: "m", position: 0, content: { plays: ["g"] } });
+    const b2 = mk("beat", { id: "b2", parent_id: "m", position: 1, content: { connector: "therefore", plays: ["g"], resolves: [{ ref: "g", outcome: "won" }] } });
+    return [pillar, wf(), game, m, b1, b2];
+  };
+
+  it("a single game with both poles, played and resolved, is CLEAN — no game lints", () => {
+    const rules = validate(single()).map((i) => i.rule);
+    expect(rules).not.toContain("halfopen_game");
+    expect(rules).not.toContain("unresolved_game");
+    expect(rules).not.toContain("ungrounded_game");
+  });
+
+  it("flags a half-open game (a win you can't lose) and a played-but-unresolved game", () => {
+    const pillar = mk("pillar", { id: "p" });
+    const halfopen = mk("game", { id: "g", parent_id: "p", content: { name: "g", win_condition: "win", governing_rules: ["w1"] } }); // no lose_condition
+    const m = mk("movement", { id: "m", parent_id: "p" });
+    const b = mk("beat", { id: "b", parent_id: "m", content: { plays: ["g"] } }); // played, never resolved
+    const rules = validate([pillar, wf(), halfopen, m, b]).map((i) => i.rule);
+    expect(rules).toContain("halfopen_game");
+    expect(rules).toContain("unresolved_game");
+  });
+
+  // Coupling: OPTIONAL richness for multi-game stories (the Mara market↔household example).
+  it("coupling makes stakes computable — losing the market voids the household (cascade + stakesOf)", () => {
+    const pillar = mk("pillar", { id: "p" });
+    const both = { win_condition: "w", lose_condition: "l", governing_rules: ["w1"] };
+    const market = mk("game", { id: "g_market", parent_id: "p", content: { name: "market", ...both, couples: [{ to: "g_household", when: "lost", effect: "void" }] } });
+    const household = mk("game", { id: "g_household", parent_id: "p", content: { name: "household", ...both, couples: [{ to: "g_contract", when: "won", effect: "enable" }] } });
+    const contract = mk("game", { id: "g_contract", parent_id: "p", content: { name: "contract", ...both } });
+    const nodes = [pillar, wf(), market, household, contract];
+    expect(cascade(nodes, "g_market", "lost").find((c) => c.gameId === "g_household")).toMatchObject({ effect: "void" });
+    expect(stakesOf(nodes, "g_market")).toContain("g_household");
+  });
+
+  it("a coupling pointing at a missing game is a dangling ref", () => {
+    const pillar = mk("pillar", { id: "p" });
+    const g = mk("game", { id: "g1", parent_id: "p", content: { name: "g", win_condition: "w", lose_condition: "l", couples: [{ to: "g_ghost", when: "lost", effect: "void" }] } });
+    expect(refsOf(g)).toContain("g_ghost");
+    expect(validate([pillar, g]).map((i) => i.rule)).toContain("dangling_ref");
   });
 });
 
