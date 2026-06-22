@@ -1,0 +1,2215 @@
+{
+  "bookId": 1171,
+  "brief": null,
+  "nodes": [
+    {
+      "id": "n_k6cyiwfcg",
+      "parent_id": "n_zezc9xfcg",
+      "kind": "premise",
+      "level": 1,
+      "position": 0,
+      "content": {
+        "tone": [
+          "playful",
+          "warm",
+          "urgent"
+        ],
+        "genre": [
+          "Romantic Ecchi Comedy"
+        ],
+        "shape": {
+          "setup": "Mara arrives at Cassian’s estate in the rain, a ledger chained to her wrist like a mockery of a wedding band. Cassian inspects her with the bored rigor of a man appraising livestock—but when she strips naked in front of his fireplace, her defiance cuts through his performative coldness. “Check my teeth?” she asks, smirking. He blinks. The hole opens slowly: in the drawing room, he mocks her mother’s singing, calls it a “beggar’s tune.” She retaliates by daubing honey on his collarbone during a pantry spat, watching him stiffen as she licks her own finger clean. They’re both playing roles, but the stakes solidify at the market. A rival sneers, “His little slave,” and Mara seizes the moment: “He sold me to you yet?” she growls, yanking Cassian’s collar until he plays along: “Pay my debt, mistress, and I’m yours.” The rival scurries off. Cassian’s eyes blaze—pride, she’ll learn, not anger.\n\nThe fall plunges at dinner. The same rival dines at the long table; Mara catches Cassian’s lingering gaze on her, the slip that gives her away. He retaliates with calculated cruelty: “Take the plates, Mara—your hands are dirty. No one wants to see that.” She obeys, flawless in mask and posture. After the guest leaves, she finds him in the dark, furious. “You did it *too well*,” she spits. “You liked it.” He freezes. The lie of the contract—ownership as armor—cracks, but neither admits it.\n\nThe climb begins with Wenna’s onions. As she chops, the housekeeper drops the truth: she burned the letter from Mara’s mother—the one asking for shelter, affection, *anything*. “Sixpence the lot,” she murmurs. “The man’s legend can’t afford a weakness he never met.” Mara’s mother *chose silence* out of deference to Cassian’s fear. It’s not betrayal; it’s sacrifice. The revelation reframes debt as farce—everyone’s been paying for a lie. Mara’s retaliation is a comic coup: she *invites* the rival to a public auction for her contract, only to outbid him with a punchline: “I’ll buy myself, and twice over—then sell you my dirt cheap.” Cassian’s forced bid (“I don’t have the coin”) is a lie they all see through, but the rival storms off, his reputation scorched.\n\nThe storm’s consummation is the pivot. Rain traps them alone; clothes cling. She presses into him, teeth at his throat. “Still owe me something?” he growls, angry at his own surrender. She rides him on the floor, sweat gleaming. “No,” she whispers as he burns the contract. “Everything just gave me everything.” The rival’s theft of the lease follows—rumors spread, lands lost. Cassian shrugs: “Worth it.” The ending lands on shared sacrifice as comedy, not tragedy. In the kitchen, she licks honey off her finger again, eyes locked on his. “Still your mistress?” He licks his thumb, drags it across her collarbone. “Always.” The lease is ashes; the future is theirs."
+        }
+      },
+      "authoring": {
+        "locked": true,
+        "source": "ai_then_user",
+        "status": "accepted",
+        "src_hash": "2146719824357"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_pb18uyfcg",
+      "parent_id": "n_k6cyiwfcg",
+      "kind": "pillar",
+      "level": 2,
+      "position": 0,
+      "content": {
+        "ending": "She places the ashes of the contract in his palm, then kisses him with the freedom of an equal. He loses the lease on his best hunting grounds to a rival who spreads rumors about them --  a price gladly paid, gains Mara's unbreakable trust.",
+        "controlling_idea": "When the debts of the past come due, the only currency that matters is the future you choose to build together."
+      },
+      "authoring": {
+        "locked": true,
+        "source": "ai_then_user",
+        "status": "accepted",
+        "src_hash": "622dd38467056"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_tbbg0tfcg",
+      "parent_id": "n_pb18uyfcg",
+      "kind": "character",
+      "level": 2,
+      "position": 0,
+      "content": {
+        "lie": "That freedom is a destination she hasn't reached yet — a state she'll unlock once the ledger is settled and the past is answered. Everything she does inside this house — talking back, setting terms, running the power dynamic — is practice for the person she'll be afterward. A rehearsal, not the real thing. The joke the book runs against her, silently, is that there is no audience for this performance except herself: Cassian can see she's been free from the first morning, Wenna can see it, the reader can see it. She is the last to know the rehearsal ended before it started.",
+        "tag": "Tucks a loose strand of hair behind her ear with her middle finger — a small insolence dressed up as tidiness.",
+        "name": "Mara",
+        "role": "protagonist",
+        "want": "To earn her freedom and dig out the truth her mother buried — and, in the meantime, to take every scrap of power no one has handed her: to talk back, set her own terms, and act free inside a house that owns her, as if daring it to correct her.",
+        "wound": "Her mother's debts came due and the man who fathered her cleared the ledger the cheapest way the law allowed — he sold her into bondage and walked, settling a debt she never signed with the only collateral he had left: her own daughter. And the mother who loved her most sang at her work and never once warned her the day was coming, so the deepest love she ever knew was also the love that left her unguarded when the bill arrived.",
+        "idiolect": "Mock-sweet, weaponized courtesy. Answers questions with sharper questions; awards ironic honorifics to people she's deflecting ('optimists,' 'tax collectors'). Declaratives filed to a point. Never asks for a thing outright — makes the room offer it."
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai_then_user",
+        "status": "accepted",
+        "src_hash": "3acd2d23bedbd"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_d2m8kdfcg",
+      "parent_id": "n_pb18uyfcg",
+      "kind": "character",
+      "level": 2,
+      "position": 1,
+      "content": {
+        "lie": "That a man like him can only keep safe what he keeps owned — that the contract is armor, not a leash. To let Mara go free and be openly his would only paint the same target on her that ruined her mother, so the one thing he can't afford to give her is the love that would expose her.",
+        "tag": "Turns a heavy signet ring on his finger — once, twice — right before he lies about why he did something kind.",
+        "name": "Cassian",
+        "role": "ally",
+        "want": "To perform the fearsome name the world has hung on him — cold, calculating, a man you do not want to owe — with enough conviction that no one near him becomes a target worth taking. The moment the world reads him as a man with a heart, everyone he cares about inherits the same exposure that destroyed Mara's mother; so the legend is not vanity, it is the only protection he can afford. He performs coldness at the exact moments he's being warmest — drapes a coat, claims a draught; stocks storybooks, blames the shelf; sneaks half every purse somewhere unprofitable and checks first that no one saw. Mara sees through all of it immediately. He knows she does. He keeps performing anyway, because the legend is load-bearing and he has not yet found the door out.",
+        "wound": "Years ago — Mara already a child by then, fathered by another man — her mother was the one person who saw past his power to the man underneath; he let her slip into debt and disappearance rather than risk being truly known, and never forgave himself. Now her daughter stands in his house as both the bill come due and a second chance he doesn't believe he's owed.",
+        "idiolect": "Dry understatement; deflects warmth into complaint. Announces a cold motive for every warm act ('there's a draught,' 'I was merely hungry'). Clipped when genuinely moved, expansive when performing. Lobs rhetorical questions to swerve away from anything true."
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai_then_user",
+        "status": "accepted",
+        "src_hash": "3acd2d23bedbd"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_e3x02vfcg",
+      "parent_id": "n_pb18uyfcg",
+      "kind": "character",
+      "level": 2,
+      "position": 2,
+      "content": {
+        "lie": "That her place is to run the house and hold her tongue — the same lie she told herself the night she chose silence over a woman who needed intervention more than a kept secret. She learned the wrong lesson from losing her: that staying quiet is the price of staying close. Meddling, gently and relentlessly, is the only atonement this house will allow her, and she calls it minding the house so she doesn't have to call it what it is.",
+        "tag": "Dries her hands on her apron — twice, unhurried — just before she says the thing that costs her.",
+        "name": "Wenna",
+        "role": "minor",
+        "want": "To keep Cassian's house — and the stubborn man rattling around inside it — from curdling into a museum of his own regrets, and to see one warm thing take root under its roof before she's too old to enjoy the show.",
+        "wound": "She loved Mara's mother — not as an employer loves a favored servant, but as a woman who spent a lifetime inventing reasons to stay near. She kept every secret, buried every debt, and held her tongue at the one moment intervention might have saved her, because speaking would have cost Wenna the house, the man in it, and the woman herself. The keeping is the only love she has left to give — which means she has spent thirty years practicing the precise cowardice the argument will eventually ask her to face. Now the woman's daughter is standing in her kitchen.",
+        "idiolect": "Brisk and oblique; buries a confession inside the disgraceful price of onions. Agrees so completely she redirects you mid-sentence. Never leads with the important thing — says it sideways, or not at all."
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai_then_user",
+        "status": "accepted",
+        "src_hash": "3acd2d23bedbd"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_e3i1igfcg",
+      "parent_id": "n_pb18uyfcg",
+      "kind": "relationship",
+      "level": 2,
+      "position": 100,
+      "content": {
+        "a": "n_tbbg0tfcg",
+        "b": "n_d2m8kdfcg",
+        "bond": "Owner and owned by contract, equals by temperament from the first morning — the charge is a duel that keeps losing on purpose: she fences with the language of ownership ('inspect your property properly'), he answers warmth with cold excuses, and both pretend the contract is the only thing in the room. Trajectory: ledger → leash both mistake for armor → the open, dangerous choice to be each other's, paid for in the lost lease."
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai_then_user",
+        "status": "accepted",
+        "src_hash": "197d372e729598"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_klgx9pfch",
+      "parent_id": "n_pb18uyfcg",
+      "kind": "relationship",
+      "level": 2,
+      "position": 101,
+      "content": {
+        "a": "n_tbbg0tfcg",
+        "b": "n_e3x02vfcg",
+        "bond": "The daughter of the woman Wenna loved most, standing in her kitchen — Wenna sees the mother in every gesture and can't say so. The charge is a guilty tenderness disguised as housekeeping: she feeds and frets and steers, atoning sideways. Trajectory: wary servant-and-stray → the kitchen confession that hands Mara her mother's truth and breaks the thirty-year silence."
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai_then_user",
+        "status": "accepted",
+        "src_hash": "15b58000e5398e"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_ggitcnfch",
+      "parent_id": "n_pb18uyfcg",
+      "kind": "relationship",
+      "level": 2,
+      "position": 102,
+      "content": {
+        "a": "n_d2m8kdfcg",
+        "b": "n_e3x02vfcg",
+        "bond": "Thirty years of co-conspiracy in the same grief — the only two who knew the mother and the only two who chose silence over saving her. Wenna is the one witness who has seen the man under the legend and never threatened to expose him; she reads his every cold excuse and meddles anyway. Trajectory: fellow keepers of a fatal secret → Wenna quietly forcing the truth into the open that Cassian spent years burying."
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai_then_user",
+        "status": "accepted",
+        "src_hash": "5b51c9716475"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_2u4dm1fch",
+      "parent_id": "n_pb18uyfcg",
+      "kind": "tentpole",
+      "level": 2,
+      "position": 200,
+      "content": {
+        "summary": "A night where it pours Cassian and Mara finds themselves alone, without pretenses engages themselves in a deep kiss and passionate sex."
+      },
+      "authoring": {
+        "locked": true,
+        "source": "ai_then_user",
+        "status": "accepted",
+        "src_hash": "3acd2d23bedbd"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_57gab8fch",
+      "parent_id": "n_pb18uyfcg",
+      "kind": "tentpole",
+      "level": 2,
+      "position": 201,
+      "content": {
+        "summary": "At the bustling market, a rival lord insinuates Cassian is weak for indulging ‘his little slave.’ Mara strides forward, grabs Cassian by the collar, and growls, ‘He sold me to you yet, you greedy bastard?’ The man stutters; she presses on, ‘Thought not. He OWES me coin, see — for your last shipment of rot-goods.’ Cassian, eyes blazing, plays along: ‘Pay my debt, mistress, and I’m yours.’ Comedy through public role-reversal, tension of exposure."
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai_then_user",
+        "status": "proposed",
+        "src_hash": "3acd2d23bedbd"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_4r9ueafch",
+      "parent_id": "n_pb18uyfcg",
+      "kind": "tentpole",
+      "level": 2,
+      "position": 202,
+      "content": {
+        "summary": "Late-night ledger review: Mara finds Cassian burning old documents. He admits, ‘Your mother’s ledger isn’t here… but this one’s mine. Debts I’ve not settled.’ She slides hers next to it — the small freedoms she stole: ‘Let’s write a new one. One that isn’t repayment.’ Neither speak, but their hands brush over the empty page. Chaste, tense, pivotal."
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai_then_user",
+        "status": "proposed",
+        "src_hash": "3acd2d23bedbd"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_t7lv93fch",
+      "parent_id": "n_pb18uyfcg",
+      "kind": "tentpole",
+      "level": 2,
+      "position": 203,
+      "content": {
+        "summary": "Wenna dices onions, the blade sharp against the wood, and lets the silence sit while the scent sharpens. Then, without looking up, \\\"Sixpence the lot now—*six*—and the market blames the soil. You ever notice how every misfortune blames the weather?\\\" She dries her hands, twice slow. \\\"Letter in the basket.\\\" A pause. \\\"She wrote him a letter. Said she'd settle for his coat, or a night under the door, or even just his eyes on the road to know she wasn’t alone. It rotted there while he slept off the fever, and by the time he woke...\\\" Her knife stills. The apron twice dry again, but her tone never falters: \\\"I burnt it. Thought it kinder. The man’s legend can’t afford a weakness he never met.\\\" She flicks a scrap into the fire. 'There. Now you know the price of onions.'\""
+      },
+      "authoring": {
+        "locked": true,
+        "source": "ai_then_user",
+        "status": "accepted",
+        "src_hash": "3acd2d23bedbd"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_q2k0bufch",
+      "parent_id": "n_pb18uyfcg",
+      "kind": "tentpole",
+      "level": 2,
+      "position": 204,
+      "content": {
+        "summary": "Cassian catches himself humming a tune from his youth—the same one Mara's mother used to sing—and stops abruptly, realizing the girl has already heard him and is watching with a knowing, unreadable expression."
+      },
+      "authoring": {
+        "locked": true,
+        "source": "ai_then_user",
+        "status": "accepted",
+        "src_hash": "3acd2d23bedbd"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_hz7p55fch",
+      "parent_id": "n_pb18uyfcg",
+      "kind": "tentpole",
+      "level": 2,
+      "position": 205,
+      "content": {
+        "summary": "After a mock argument over a trivial rule, Cassian and Mara break into laughter, and he impulsively pulls her into a playful waltz across the drawing-room floor, the power dynamic briefly forgotten."
+      },
+      "authoring": {
+        "locked": true,
+        "source": "ai_then_user",
+        "status": "accepted",
+        "src_hash": "3acd2d23bedbd"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_ltt02ffch",
+      "parent_id": "n_pb18uyfcg",
+      "kind": "tentpole",
+      "level": 2,
+      "position": 206,
+      "content": {
+        "summary": "In the pantry, after a petty squabble over the last jar of honey, Cassian daubs a streak on Mara's nose; she licks her lips, then slowly wipes it off and tastes her own finger, her eyes never leaving his."
+      },
+      "authoring": {
+        "locked": true,
+        "source": "ai_then_user",
+        "status": "accepted",
+        "src_hash": "3acd2d23bedbd"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_rmbwo8fch",
+      "parent_id": "n_pb18uyfcg",
+      "kind": "tentpole",
+      "level": 2,
+      "position": 207,
+      "content": {
+        "summary": "The rival comes to dinner. A neighboring lord — the one who'll eventually take the lease — dines at the long table and watches Cassian's eyes follow Mara when she pours. Cassian, catching it, is needlessly cruel to her in front of the guest to kill the read; Mara plays along, brilliant and icy, and only after the man's carriage rolls out does she find Cassian in the dark, furious not that he was cold but that he was that good at it. — Seeds the ending's rumor and shows us the cost of his armor is real, not paranoid."
+      },
+      "authoring": {
+        "locked": true,
+        "source": "ai_then_user",
+        "status": "accepted",
+        "src_hash": "3acd2d23bedbd"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_8id00bfch",
+      "parent_id": "n_pb18uyfcg",
+      "kind": "tentpole",
+      "level": 2,
+      "position": 208,
+      "content": {
+        "summary": "Mara cooks a dish from home — something her mother made. Cassian eats two helpings in silence, then a third, then announces he was simply hungry. Wenna, carrying dishes to the kitchen, remarks that he said the exact same thing the last time someone made that recipe for him. The room goes briefly quiet."
+      },
+      "authoring": {
+        "locked": true,
+        "source": "ai_then_user",
+        "status": "accepted",
+        "src_hash": "3acd2d23bedbd"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_9yh5qffch",
+      "parent_id": "n_pb18uyfcg",
+      "kind": "world_fact",
+      "level": 2,
+      "position": 300,
+      "content": {
+        "rule": "Debt is property and it is inheritable: a person's labor and body can be legally owned through a written contract, and a child can be born owing a mother's ledger. The contract is a two-edged thing — a leash, but also a property line no rival can legally cross. A woman without a contract-holder is fair game for any creditor with a claim."
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai_then_user",
+        "status": "accepted",
+        "src_hash": "3acd2d23bedbd"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_a84j53fch",
+      "parent_id": "n_pb18uyfcg",
+      "kind": "world_fact",
+      "level": 2,
+      "position": 301,
+      "content": {
+        "rule": "Reputation is the realm's hardest currency, and it is fragile: a man's standing rests on rumor and performance, so a fearsome legend is genuine armor — and any visible softness or open affection paints a target on whoever he loves. Spread the right rumor and you can cost a man his best hunting lease."
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai_then_user",
+        "status": "accepted",
+        "src_hash": "3acd2d23bedbd"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_n7pol0fch",
+      "parent_id": "n_pb18uyfcg",
+      "kind": "world_fact",
+      "level": 2,
+      "position": 302,
+      "content": {
+        "rule": "There is no magic, no fate, no supernatural force — every constraint in this world is social, legal, economic, or institutional. Power is held through money, name, contract, and what people choose to say or keep silent."
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai_then_user",
+        "status": "accepted",
+        "src_hash": "3acd2d23bedbd"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_xi1ampfch",
+      "parent_id": "n_pb18uyfcg",
+      "kind": "world_fact",
+      "level": 2,
+      "position": 303,
+      "content": {
+        "rule": "Within a household, knowledge is leverage: servants and housekeepers wield real power through what they witness and withhold, and the unspoken code of the house is that everyone stays honest only up until the truth might cost them something."
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai_then_user",
+        "status": "accepted",
+        "src_hash": "3acd2d23bedbd"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_zb6qcwl6b",
+      "parent_id": "n_0uodsv9ls",
+      "kind": "scene",
+      "level": 5,
+      "position": 0,
+      "content": {
+        "loc": "The drawing room the morning after the market — low fire, the rain still off in the distance, the two of them flush with a victory neither has named.",
+        "goal": "Riding the high of the collar-yank, Mara presses the new alliance into something warmer — needling Cassian into admitting, out loud, that he liked being made to kneel.",
+        "outcome": "She lands it: for one unperformed moment he laughs without an excuse attached, openly hers, the owner forgetting to own. The room goes soft and conspiratorial; she lets herself believe the man under the mask might be reachable.",
+        "threads": [
+          {
+            "ref": "n_sng7ke4tp",
+            "role": "setup"
+          }
+        ],
+        "conflict": "He volleys back every advance with a cold motive — drapes nothing on her shoulders while complaining of a draught, turns the signet ring before each kindness — but his guard is down and his grin keeps escaping the legend.",
+        "value_shift": {
+          "to": "two people dangerously close to tenderness",
+          "from": "wary accomplices running a winning bit",
+          "value": "Intimacy",
+          "polarity": "up"
+        },
+        "chapter_start": {
+          "title": "But the win opens a wound"
+        },
+        "realizes_tentpole": "n_q2k0bufch"
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_bifi83l6b",
+      "parent_id": "n_0uodsv9ls",
+      "kind": "scene",
+      "level": 5,
+      "position": 1,
+      "content": {
+        "loc": "Same room, minutes later — Cassian at the window with his back half-turned, easy, unwatched, while Mara lingers in the doorway.",
+        "goal": "Lulled by the warmth, Cassian lets the guard slip all the way down and begins, absently, to hum a tune from his youth — comfortable enough to be no one but himself.",
+        "outcome": "He stops dead mid-note, turns the ring once, twice, and reaches for the nearest cold complaint to bury what just surfaced — the fire's smoking, he has accounts to see to — and walks out. Mara doesn't chase it. She files the question away, and the warmth of an hour ago curdles into the old suspicion: he knew her mother, and he is still choosing silence.",
+        "conflict": "The melody is her mother's, the one she sang at her work, and it drags the dead woman bodily into the room — the unanswered letter, the silence Mara has carried as proof his coldness is the real article; she goes still, and he feels her watching, and knows she has placed the song.",
+        "value_shift": {
+          "to": "the mother's ghost wedged between them, the cold reaffirmed and a buried question lit",
+          "from": "dangerously close to tenderness",
+          "value": "Intimacy",
+          "polarity": "down"
+        }
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_wy0r3927y",
+      "parent_id": "n_455duc9ls",
+      "kind": "scene",
+      "level": 5,
+      "position": 0,
+      "content": {
+        "loc": "The pantry, late afternoon, last shaft of light through a high window",
+        "goal": "Mara wants the last jar of honey for the dish she's making — and, beneath that, wants to test whether she can take something in this house simply by deciding it's hers.",
+        "outcome": "Mara loses the open fight — he keeps the jar, recites the rule, and for a beat she's just a servant told no in a larder. The squabble lands against her: the contract still has teeth when he chooses to bare them.",
+        "threads": [
+          {
+            "ref": "n_irwx1o4tp",
+            "role": "setup"
+          }
+        ],
+        "conflict": "Cassian blocks her over a trivial house rule — the good honey is rationed, by his order — turning a kitchen errand into a contest of authority; he wields the rule precisely because it's the one ground where he can still play owner without it costing him anything.",
+        "value_shift": {
+          "to": "reminded the house can still say no",
+          "from": "claiming the run of the house",
+          "value": "Power",
+          "polarity": "down"
+        },
+        "chapter_start": {
+          "title": "Therefore she presses her advantage where he's"
+        },
+        "realizes_tentpole": "n_ltt02ffch"
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_xyverj27y",
+      "parent_id": "n_455duc9ls",
+      "kind": "scene",
+      "level": 5,
+      "position": 1,
+      "content": {
+        "loc": "The pantry, the same evening, the two of them crowded between the shelves",
+        "goal": "Stung, Mara changes weapons — she stops arguing the rule and starts working him, needling him about hoarding sweetness like a man afraid of it.",
+        "outcome": "She doesn't flinch. She licks her lips, wipes the streak off slow, and tastes her own finger with her eyes locked on his — and watches him stiffen, the rule and the jar forgotten. The first gesture entirely hers rattles him worse than any argument; she walks out leaving him holding the honey he won, having lost the room.",
+        "conflict": "Cassian tries to win the spat the only way the legend allows — a small cruelty to put her back in her place — and daubs a streak of honey on her nose, expecting her to flinch or scrub at it like a chastised girl.",
+        "value_shift": {
+          "to": "owner disarmed by a flirtation she invented",
+          "from": "reminded the house can still say no",
+          "value": "Power",
+          "polarity": "up"
+        }
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_zjd72fmby",
+      "parent_id": "n_om558o9ls",
+      "kind": "scene",
+      "level": 5,
+      "position": 0,
+      "content": {
+        "loc": "The market square, mid-morning — stalls, mud, the press of people who know exactly what a collar means.",
+        "goal": "Mara wants to move through the market as Cassian's equal-in-disguise, buying onions and testing how far her leash actually reaches in public.",
+        "outcome": "Cassian goes stone-cold to protect them both and Mara feels the script she's been writing collapse into the role she was sold as; she is, for one public breath, only property.",
+        "threads": [
+          {
+            "ref": "n_rhkmst4tp",
+            "role": "setup"
+          },
+          {
+            "ref": "n_h4p17h4tp",
+            "role": "setup"
+          }
+        ],
+        "conflict": "A rival lord blocks their path and names the thing out loud — 'his little slave' — turning the whole square into an audience and stripping the game down to its ugly fact in front of strangers.",
+        "value_shift": {
+          "to": "owned property exposed as exactly that, in public",
+          "from": "owned property rehearsing defiance",
+          "value": "Power",
+          "polarity": "down"
+        },
+        "chapter_start": {
+          "title": "Therefore the game stops being a game"
+        }
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_4gwc05mby",
+      "parent_id": "n_om558o9ls",
+      "kind": "scene",
+      "level": 5,
+      "position": 1,
+      "content": {
+        "loc": "Same spot, seconds later — the rival still smirking, the crowd leaning in.",
+        "goal": "Mara wants to flip the rival's jeer into a weapon before the silence sets the verdict, seizing the only power the world will let her hold: the script itself.",
+        "outcome": "She yanks his collar — 'He sold me to you yet? Pay my debt, mistress, and I'm yours' — and Cassian plays along, kneeling into the bit; the rival, outclassed, scurries off humiliated and nursing a grudge.",
+        "conflict": "To win she must make Cassian — who has every reason to keep performing the cold owner — abandon his legend on her cue, in public, while the rival watches for any crack to exploit.",
+        "value_shift": {
+          "to": "an accomplice who can make him kneel in public",
+          "from": "property exposed and cornered",
+          "value": "Power",
+          "polarity": "up"
+        }
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_ua6z7hmby",
+      "parent_id": "n_om558o9ls",
+      "kind": "scene",
+      "level": 5,
+      "position": 2,
+      "content": {
+        "loc": "The cart road home, then the estate gate — the high of the win curdling into the long walk back.",
+        "goal": "Mara wants to read Cassian's blazing eyes correctly and brace for the punishment she's certain a man like him must deliver for being made to kneel.",
+        "outcome": "No punishment comes — only a stiff, almost shy quiet she can't decode; she keeps the new power but loses her certainty about what it cost her, the wrong label ('anger') sealed in just as the reader sees it was pride.",
+        "conflict": "Every silence he keeps reads as gathering fury; she has misnamed the blaze, and the harder she armors against the blow, the more his refusal to strike confuses the only framework she trusts.",
+        "value_shift": {
+          "to": "an accomplice who can't yet read the prize she's won",
+          "from": "an accomplice braced for retribution",
+          "value": "Power",
+          "polarity": "up"
+        }
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_59dvtdrc7",
+      "parent_id": "n_69j26q9ls",
+      "kind": "scene",
+      "level": 5,
+      "position": 0,
+      "content": {
+        "loc": "The kitchen, late afternoon — Mara at the board with a pot she's commandeered, Wenna pretending not to supervise",
+        "goal": "Mara wants to cook her mother's dish — to put one unowned thing of her own into this house, a small free act dressed up as earning her keep.",
+        "outcome": "Mara plates it, fierce and tender, certain she's reclaiming a piece of her mother that this house never touched — not yet suspecting the house touched it first.",
+        "threads": [
+          {
+            "ref": "n_sng7ke4tp",
+            "role": "advance"
+          },
+          {
+            "ref": "n_uaio9x4tp",
+            "role": "advance"
+          }
+        ],
+        "conflict": "The act of making it summons her mother into the room; every motion is a memory, and Wenna's too-careful silence (apron dried twice, the price of saffron quoted instead of grief) tells Mara the recipe means something here it shouldn't.",
+        "value_shift": {
+          "to": "a daughter briefly home, cooking love onto a plate",
+          "from": "an orphan rehearsing self-sufficiency in a borrowed kitchen",
+          "value": "Belonging",
+          "polarity": "up"
+        },
+        "chapter_start": {
+          "title": "But the high curdles into longing"
+        },
+        "realizes_tentpole": "n_8id00bfch"
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_ayrw7brc7",
+      "parent_id": "n_69j26q9ls",
+      "kind": "scene",
+      "level": 5,
+      "position": 1,
+      "content": {
+        "loc": "The long table at dinner — Cassian served Mara's dish, Wenna ferrying plates to the kitchen",
+        "goal": "Mara wants to watch him taste it and stay unmoved — to prove her mother's food belongs to her alone, that this man has no claim on the warmth she just made.",
+        "outcome": "The high curdles: the dish wasn't hers to reclaim, the silence at the table is grief with a witness, and the suspicion lands like a swallowed stone — Cassian knew her mother, ate her cooking, and has been performing a stranger's coldness ever since.",
+        "conflict": "He eats two helpings in silence, then a third, turning the signet ring before he mutters he was 'simply hungry' — and Wenna, sweeping past with the dishes, lets slip he said those exact words the last time someone cooked that recipe for him; the room goes still around the impossible arithmetic of who that someone was.",
+        "value_shift": {
+          "to": "her mother a shared ghost this man has been hiding at his own table",
+          "from": "her mother a private wound she alone carries",
+          "value": "The Past",
+          "polarity": "down"
+        }
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_7yynbnci6",
+      "parent_id": "n_7bzjmd9ls",
+      "kind": "scene",
+      "level": 5,
+      "position": 0,
+      "content": {
+        "loc": "The drawing room, late afternoon — Mara has rearranged the firewood stack against some petty edict of Cassian's, and he's caught her at it",
+        "goal": "Cassian wants to reassert one trivial house rule and win it cleanly, to prove the ledger still runs one direction",
+        "outcome": "He digs in past the point of sense, citing a rule he plainly invented thirty seconds ago, and hears how ridiculous it is even as the legend's voice cracks under a laugh he's fighting down",
+        "threads": [
+          {
+            "ref": "n_s4kdv94tp",
+            "role": "advance"
+          }
+        ],
+        "conflict": "Mara refuses to concede an inch over something that doesn't matter — she answers every order with a sharper question, awarding him ironic honorifics ('as my lord the firewood-magistrate decrees'), and the more he insists the more absurd his own authority sounds in his mouth",
+        "value_shift": {
+          "to": "Cassian cornered by his own ridiculous edict, authority audibly hollow",
+          "from": "Cassian commanding from behind the rule",
+          "value": "Control",
+          "polarity": "down"
+        },
+        "chapter_start": {
+          "title": "Therefore the wall comes down for one"
+        },
+        "realizes_tentpole": "n_hz7p55fch"
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_14czhhci6",
+      "parent_id": "n_7bzjmd9ls",
+      "kind": "scene",
+      "level": 5,
+      "position": 1,
+      "content": {
+        "loc": "The same room, seconds later — the standoff a hand's breadth from collapse",
+        "goal": "Each wants to be the one who keeps a straight face, to not be the first to break the performance",
+        "outcome": "They're both laughing helplessly at nothing, the argument forgotten, and for the first time there is no one in the room playing a role",
+        "conflict": "The fight has nowhere left to go but funny; she lands one last deadpan honorific and his composure finally gives — the laugh he's been swallowing breaks loose, hers chases it, and the rule, the ledger, the legend all dissolve mid-breath",
+        "value_shift": {
+          "to": "the masks dropped, both of them just laughing, undefended",
+          "from": "two players braced behind their masks",
+          "value": "Pretense",
+          "polarity": "up"
+        }
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_zezc9xfcg",
+      "parent_id": null,
+      "kind": "seed",
+      "level": 0,
+      "position": 0,
+      "content": {
+        "logline": "relationship between a slave and the master. slave is newly acquired. but the master had sex with her mother years ago.\n---\nwe'll get a glimpse of the two main characters' lives, making them relatable. the girl lovable, the master respectable. she's intelligent and strong, full of paradoxes. he's fun, bold, greedy yet kind and loving."
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai_then_user",
+        "status": "accepted",
+        "src_hash": "1c1e746aed5cd3"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_icwi0bci6",
+      "parent_id": "n_7bzjmd9ls",
+      "kind": "scene",
+      "level": 5,
+      "position": 2,
+      "content": {
+        "loc": "Across the drawing-room floor — the laughter still warm in the air",
+        "goal": "Riding the impulse, Cassian wants to keep the bright thing from ending — he catches her hand and pulls her into a waltz before he can announce a colder reason for it",
+        "outcome": "They turn the room once, breathless, far too close, both of them feeling exactly how little stands between this and everything — and when the turn ends neither steps back as fast as the rules would require",
+        "conflict": "There is no music and no ledger to govern this; her hand fits his, his other settles at her back, and the closeness is suddenly dangerous in a way neither will name — she feels the want under his palm, he feels how easy it would be, and the only thing holding them apart is a contract that has gone silent",
+        "value_shift": {
+          "to": "pulled into each other's orbit, the wanting plain and the distance gone",
+          "from": "kept apart by ownership and performance",
+          "value": "Closeness",
+          "polarity": "up"
+        }
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_ft7vmu6mh",
+      "parent_id": "n_3jt6fb9ls",
+      "kind": "scene",
+      "level": 5,
+      "position": 0,
+      "content": {
+        "loc": "The long dining hall, candlelit, as the rival lord is shown in — Mara in flawless service livery, Cassian at the head of the table performing the cold host",
+        "goal": "Cassian and Mara want to run the dinner like a closed machine — a fearsome master, a faceless servant — and give the visiting lord nothing to read, even savoring the secret game of it between courses",
+        "outcome": "The performance lands beautifully — the lord finds only a cold man and a cold servant, and Cassian lets himself believe the armor is seamless, that they can have the game and the safety both",
+        "threads": [
+          {
+            "ref": "n_rhkmst4tp",
+            "role": "advance"
+          },
+          {
+            "ref": "n_uaio9x4tp",
+            "role": "advance"
+          }
+        ],
+        "conflict": "The lord probes with oily courtesies, fishing for any softness; Mara serves with such icy, weaponized perfection that she and Cassian keep trading coded glances and barbed courtesies, the private comedy of two players nailing the act under a hunter's nose",
+        "value_shift": {
+          "to": "the act mastered, both wrongly certain they are untouchable",
+          "from": "two players exposed to a watching rival",
+          "value": "Concealment / control",
+          "polarity": "up"
+        },
+        "chapter_start": {
+          "title": "But the rival comes to dinner"
+        },
+        "realizes_tentpole": "n_rmbwo8fch"
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_hwq6br6mh",
+      "parent_id": "n_3jt6fb9ls",
+      "kind": "scene",
+      "level": 5,
+      "position": 1,
+      "content": {
+        "loc": "Same table, mid-meal, as Mara leans in to pour the lord's wine and Cassian's gaze follows her hands the length of the pour",
+        "goal": "Cassian wants to keep his eyes dead and bored as Mara serves, betraying nothing of the wanting he's spent the whole house hiding",
+        "outcome": "Mara obeys, flawless in mask and posture, clearing the table without a flinch — but the cruelty is no longer paranoid, it has a real witness, and the slip is already spent into the lord's hands",
+        "conflict": "His eyes slip — they track her, hold a beat too long — and the lord catches it, the single read he came hunting for; cornered, Cassian does the only thing the legend allows and turns the knife on her to kill the look: 'Take the plates, Mara — your hands are dirty. No one wants to see that'",
+        "value_shift": {
+          "to": "the desire seen, then buried at her expense in front of the one man who'll use it",
+          "from": "the desire concealed behind boredom",
+          "value": "Safety / the wanting hidden",
+          "polarity": "down"
+        }
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_7pxcwc6mh",
+      "parent_id": "n_3jt6fb9ls",
+      "kind": "scene",
+      "level": 5,
+      "position": 2,
+      "content": {
+        "loc": "The entrance hall as the lord calls for his carriage, Cassian seeing him out with measured courtesy while Mara stands rigid at the threshold",
+        "goal": "Cassian wants the lord to leave thinking the cruelty was the whole truth — that there is nothing here to exploit, the target unpainted",
+        "outcome": "The carriage rolls out into the dark; the armor held but the cost is paid and irreversible — the rival has his lever, and Cassian is left alone with what protecting her just made him do to her",
+        "conflict": "The lord smiles too warmly going out the door, makes a small mild remark about a fine, well-broken servant — and they both hear it for what it is: he is not fooled, he is satisfied, he is leaving with exactly the weakness he was hunting; Mara holds her icy mask through every syllable",
+        "value_shift": {
+          "to": "the legend revealed as a weapon that wounds the one it shields and arms the enemy anyway",
+          "from": "the legend as costless protection",
+          "value": "The price of the armor",
+          "polarity": "down"
+        }
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_nw1hblcqx",
+      "parent_id": "n_ifdmtc9ls",
+      "kind": "scene",
+      "level": 5,
+      "position": 0,
+      "content": {
+        "loc": "The unlit drawing room, the rival's carriage wheels still grinding away down the drive",
+        "goal": "Still vibrating from the icy performance she just gave at the table, Mara corners Cassian in the dark and forces him to admit the cruelty was a mask — not to wound him, but to drag the wanting out where it can't be denied.",
+        "outcome": "'You did it too well. You liked it.' He freezes — and doesn't deny it. The contract-as-armor cracks audibly in the dark; the wanting is on the table now, unnamed but undeniable, and he is the one without a wall.",
+        "threads": [
+          {
+            "ref": "n_h4p17h4tp",
+            "role": "payoff"
+          },
+          {
+            "ref": "n_uaio9x4tp",
+            "role": "advance"
+          }
+        ],
+        "conflict": "Cassian reaches for the reflex that has never once failed him — a cold motive for a warm act, the dinner reframed as strategy, a draught, a debt being managed. But Mara walks each excuse back word by word, renaming the blaze at the market as pride, not anger, peeling the legend off him until there is nothing left to hide behind.",
+        "value_shift": {
+          "to": "the mask named, the man underneath cornered and bare",
+          "from": "the mask taken at face value, the cruelty believed",
+          "value": "Concealment",
+          "polarity": "down"
+        },
+        "chapter_start": {
+          "title": "Therefore the slip gets named"
+        },
+        "realizes_tentpole": "n_su18zhbvy"
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_v32o8fcqx",
+      "parent_id": "n_ifdmtc9ls",
+      "kind": "scene",
+      "level": 5,
+      "position": 1,
+      "content": {
+        "loc": "The same dark room, the distance between them closing to nothing",
+        "goal": "Mara calls his bluff outright — 'Do it again. Be cruel' — daring him to prove the coldness was real and not a performance, to wound her on purpose with no audience to perform it for.",
+        "outcome": "He can't do it. The cruelty won't form. The fight has nowhere left to go but closer, the anger curdling into a hunger neither of them will get to talk their way out of.",
+        "conflict": "Cassian tries to summon the voice that ruled the long table an hour ago, the fearsome name the whole world reads on him. In public it is load-bearing; here, with her inside his reach and no one watching, it simply will not come. The legend fails in the one place it was never built to stand.",
+        "value_shift": {
+          "to": "the armor failing in private, the performance exposed as a performance",
+          "from": "coldness wielded as armor, fearsome on command",
+          "value": "The Legend",
+          "polarity": "up"
+        }
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_rwwrg0cqx",
+      "parent_id": "n_ifdmtc9ls",
+      "kind": "scene",
+      "level": 5,
+      "position": 2,
+      "content": {
+        "loc": "Against the wall and then the floor of the dark room, the house gone silent around them",
+        "goal": "Mara makes him answer the dinner with his body — demands he disprove every cold word he said at that table, that he be known instead of guarded, the grief turned into heat.",
+        "outcome": "They come together rougher, sadder, hungrier than any rain — fully and explicitly on the page, nothing faded, the armor entirely off. Every cold word at dinner is disproved against her skin; the wanting is no longer deniable but claimed, and for the first time he lets himself be known.",
+        "conflict": "His last instinct fights him — the belief that holding her at arm's length is how he keeps her safe, that to want her openly is to paint her mother's target on her back — wars against a wanting he can no longer mask. She strips the armor off piece by piece, each cruelty from the table answered and overwritten, until there's no excuse left between them.",
+        "value_shift": {
+          "to": "desire claimed and answered, the two of them bared and joined as equals",
+          "from": "desire masked as ownership, held at a safe distance",
+          "value": "Wanting",
+          "polarity": "up"
+        }
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_ilr1x3xhf",
+      "parent_id": "n_tmgr509ls",
+      "kind": "scene",
+      "level": 5,
+      "position": 0,
+      "content": {
+        "loc": "The estate kitchen, late afternoon, onions and a board between them",
+        "goal": "Mara, sensing Wenna circling something, presses her — under cover of helping chop — to give up a scrap of the mother no one in this house will name.",
+        "outcome": "Wenna lets one true thing slip — that she knew Mara's mother, loved her, kept near her — and for a breath the kitchen warms; Mara, who came in armored, finds the one ally in the house who carries her mother in her hands.",
+        "threads": [
+          {
+            "ref": "n_sng7ke4tp",
+            "role": "payoff"
+          }
+        ],
+        "conflict": "Wenna agrees with everything and tells nothing, burying every approach in the disgraceful price of onions; but the more she deflects, the more Mara reads the deflection itself as proof there's a secret worth the dread of it.",
+        "value_shift": {
+          "to": "a living witness within reach, someone who was there",
+          "from": "a silence she's carried alone as abandonment",
+          "value": "Mara's knowledge of her mother",
+          "polarity": "up"
+        },
+        "chapter_start": {
+          "title": "But the foundation of everything she believes"
+        }
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_aw9t0axhf",
+      "parent_id": "n_tmgr509ls",
+      "kind": "scene",
+      "level": 5,
+      "position": 1,
+      "content": {
+        "loc": "The same kitchen, the board, the fire — minutes later, the knife slowing",
+        "goal": "Having opened the door, Wenna does the thing thirty years of cowardice taught her never to do: she lays the letter on the table sideways and names her own crime, atoning the only way the house allows.",
+        "outcome": "The abandonment Mara built her whole self around evaporates and something worse stands in its place — her mother chose silence out of deference, the debt that owns her is a lie everyone's been paying to protect a fearful man, and the grief she'd organized is suddenly grief for nothing she understood.",
+        "conflict": "Mara wants the warm version — that her mother thought of her, reached for this house — and gets it and the knife in the same breath: the letter came, begging for a coat, a night under the door, his eyes on the road; it rotted while Cassian slept off a fever; Wenna burned it herself, 'thought it kinder,' because 'the man's legend can't afford a weakness he never met.'",
+        "value_shift": {
+          "to": "a farce, a sacrifice, a silence she misread for a lifetime — the floor gone",
+          "from": "a ledger owed, a betrayal mourned — a foundation she could stand on",
+          "value": "Truth of the debt",
+          "polarity": "down"
+        }
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_99cjz0jn1",
+      "parent_id": "n_f5rs0k9ls",
+      "kind": "scene",
+      "level": 5,
+      "position": 0,
+      "content": {
+        "loc": "Mara's room, late, the house gone quiet",
+        "goal": "Mara polishes the perfect piece of insolence she's been saving — filing the line to a point against the day she's finally free to mean it, savoring how it will land.",
+        "outcome": "She arms the line anyway, grinning at the ceiling, certain of the fight it will win her — already tasting the freedom-day triumph, the room she'll finally own.",
+        "threads": [
+          {
+            "ref": "n_s4kdv94tp",
+            "role": "payoff"
+          }
+        ],
+        "conflict": "A barb needs a wall to throw it at; she rehearses Cassian's objection so she can demolish it, reaching for the rule he'd surely defend — and her memory keeps returning a man who didn't argue.",
+        "value_shift": {
+          "to": "a loaded, savored weapon",
+          "from": "an idle grievance",
+          "value": "Power saved for later",
+          "polarity": "up"
+        },
+        "chapter_start": {
+          "title": "Therefore, alone, Mara reaches for a piece"
+        },
+        "realizes_tentpole": "n_rg57h2bnc"
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_5288dkbde",
+      "parent_id": "n_pb18uyfcg",
+      "kind": "tentpole",
+      "level": 2,
+      "position": 24,
+      "content": {
+        "summary": "Days in, sick of being discussed like livestock at his own table, Mara forces the premise into the open. When Cassian deflects an order with one of his cold excuses, she steps inside his reach: 'You bought me. You've never once looked at what you paid for. Afraid the goods are flawed — or afraid they aren't?' She makes him perform the inspection he'd never demand, narrating the transaction louder than he can stand, until the man who owns her is the one retreating — claims the fire's too hot, leaves the room. Comedy through his rout, heat through her advance; establishes that the only person in the house ashamed of the contract is him. First real charge, on the page, well before the rain."
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted",
+        "src_hash": "3acd2d23bedbd"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_rg57h2bnc",
+      "parent_id": "n_pb18uyfcg",
+      "kind": "tentpole",
+      "level": 2,
+      "position": 25,
+      "content": {
+        "summary": "Alone, Mara sharpens a piece of insolence she's been saving — the way she always does, filing it for the day she'll finally be free to mean it. Then it lands: Cassian conceded this point a week ago, without her noticing, the way he's quietly conceded all of them. There's no ledger left to settle for it. She's been rehearsing freedom for a house that stopped contesting it. The rehearsal ended before it started, and she is the last to know. The lie cracks here — quiet, no audience, exactly as the wound demands. Sets up the ending: she burns the contract not to win her freedom but to stop pretending she hasn't had it."
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted",
+        "src_hash": "3acd2d23bedbd"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_su18zhbvy",
+      "parent_id": "n_pb18uyfcg",
+      "kind": "tentpole",
+      "level": 2,
+      "position": 26,
+      "content": {
+        "summary": "The rival's carriage rolls out and Mara finds Cassian in the dark, shaking — not because he was cruel to her in front of the guest but because he was so good at it she believed it for a breath. The argument has nowhere to go but closer. 'Do it again,' she dares him, 'be cruel' — and when he can't, when the legend finally fails in private, the fight tips into the second consummation: rougher, sadder, hungrier than the rain, the armor coming off piece by piece because she makes him disprove every cold word he said at that table. Heat as the answer to the dinner's cost — explicit, earned by the grief instead of drowned by it. Pays off the rival-dinner beat directly."
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted",
+        "src_hash": "3acd2d23bedbd"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_2l9sk8jn1",
+      "parent_id": "n_f5rs0k9ls",
+      "kind": "scene",
+      "level": 5,
+      "position": 1,
+      "content": {
+        "loc": "Mara's room, the same hour, the line dying in her mouth",
+        "goal": "She goes to set the line in its place on the ledger of slights owed — to confirm the contest it answers is still standing.",
+        "outcome": "The insolence falls flat in an empty room. She tucks the loose strand behind her ear with her middle finger and finds no one to defy. The rehearsal ended before it started, and she is the last to know it.",
+        "conflict": "The contest isn't there. Cassian conceded this point a week ago without a word, the way he's quietly conceded every one of them; there's no rule left to break, no ledger to settle, no audience but herself — and Cassian, and Wenna, all of them saw she was free from the first morning.",
+        "value_shift": {
+          "to": "a state she already holds, a rehearsal for an empty house",
+          "from": "a prize she's still earning, a performance with a stake",
+          "value": "Freedom as a destination",
+          "polarity": "down"
+        }
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_sng7ke4tp",
+      "parent_id": "n_pb18uyfcg",
+      "kind": "thread",
+      "level": 2,
+      "position": 0,
+      "content": {
+        "kind": "mystery",
+        "name": "The Burned Letter",
+        "payoff": "Wenna confesses she burned the letter herself, 'sixpence the lot' — Mara's mother chose silence out of deference to Cassian's fear, not absence of love. The betrayal reframes as sacrifice, and the debt that defines Mara is exposed as a lie everyone has been paying to protect.",
+        "promise": "Mara's mother once wrote to this house asking for shelter and was answered with silence — a wound Mara carries as proof her mother abandoned her unguarded, and that Cassian's coldness is the genuine article."
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_h4p17h4tp",
+      "parent_id": "n_pb18uyfcg",
+      "kind": "thread",
+      "level": 2,
+      "position": 1,
+      "content": {
+        "kind": "foreshadow",
+        "name": "Pride, Not Anger",
+        "payoff": "In the dark after the slip — 'You did it too well. You liked it' — the blaze is named for what it always was: pride and wanting, the cruelty a mask stretched over it. Every performed coldness retroactively flips, paying off the running joke that Mara saw through him from the first morning.",
+        "promise": "When Mara seizes the script at the market and yanks his collar, Cassian's eyes blaze — and the reader is told it reads as fury. The book plants the wrong label on a man who announces a cold motive for every warm act."
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_pfmusibih",
+      "parent_id": "n_imnxs59ls",
+      "kind": "scene",
+      "level": 5,
+      "position": 0,
+      "content": {
+        "loc": "The great room, late — rain hammering the shutters, the fire low, both of them soaked through from latching the storm-blown doors. They are alone; Wenna's lamp has gone dark down the hall.",
+        "goal": "Cassian, cornered by the closeness and his own want, tries one last time to put the contract between them — to make this a thing he is owed, a transaction, anything but a choice.",
+        "outcome": "His grip closes on her instead of pushing her off; the question dies unanswered. The performance breaks. Neither of them is playing a role anymore — and they both know it before a word names it.",
+        "threads": [
+          {
+            "ref": "n_uaio9x4tp",
+            "role": "payoff"
+          },
+          {
+            "ref": "n_irwx1o4tp",
+            "role": "advance"
+          }
+        ],
+        "conflict": "Mara refuses the frame. Wet clothes clinging, she presses into him, teeth at his throat, and turns every cold excuse he reaches for back on him; he growls 'Still owe me something?' — armoring surrender as a debt — but the legend won't hold at this range, with her breath on his pulse.",
+        "value_shift": {
+          "to": "the mask dropped — desire admitted in the body before the mouth can deny it",
+          "from": "want disguised as a debt owed, armor reached for one last time",
+          "value": "Freedom & belonging",
+          "polarity": "down"
+        },
+        "chapter_start": {
+          "title": "Therefore the storm decides it"
+        },
+        "realizes_tentpole": "n_2u4dm1fch"
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_5eviz5inu",
+      "parent_id": "n_pb18uyfcg",
+      "kind": "movement",
+      "level": 3,
+      "position": 0,
+      "content": {
+        "goal": "Mara, newly delivered to Cassian's estate as collateral on a debt she never signed, sets out to take every scrap of power no one will hand her — talking back, stripping her own armor, setting terms inside a house that owns her — while Cassian performs the bored cruelty of his legend to keep her from becoming a target; both rehearse roles until a sneering rival at the market threatens to make the lie official.",
+        "title": "The Appraisal",
+        "value": {
+          "to": "an accomplice who can make him kneel in public",
+          "from": "owned property performing defiance",
+          "name": "Power"
+        },
+        "target_pct": 0.25,
+        "turning_point": "Cornered at the market by a rival who jeers 'his little slave,' Mara seizes the script and yanks Cassian's collar — 'Pay my debt, mistress, and I'm yours' — forcing him to play along; his eyes blaze with pride, not anger, and the game stops being a game."
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_d4xm0vinu",
+      "parent_id": "n_pb18uyfcg",
+      "kind": "movement",
+      "level": 3,
+      "position": 1,
+      "content": {
+        "goal": "Emboldened that the performance can run both ways, Mara escalates the flirtation-as-warfare — honey on his collarbone, weaponized courtesy — and Cassian, terrified of what his lingering gaze betrayed at the market, doubles down on the legend to wall her off; when the same rival dines at the long table, Cassian's cruelty turns surgical to scrub away any evidence he cares.",
+        "title": "The Slip",
+        "value": {
+          "to": "the wanting exposed, the lie of ownership audibly cracked",
+          "from": "two players hiding behind their roles",
+          "name": "Honesty"
+        },
+        "target_pct": 0.5,
+        "turning_point": "Alone in the dark after the guest leaves, Mara confronts him — 'You did it too well. You liked it' — and he freezes, unable to deny the cruelty was a mask stretched over wanting her; the contract-as-armor cracks, and neither will name it."
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_z17185inu",
+      "parent_id": "n_pb18uyfcg",
+      "kind": "movement",
+      "level": 3,
+      "position": 2,
+      "content": {
+        "goal": "Wenna, dredging atonement out of onion prices, confesses she burned the letter Mara's mother sent begging for shelter — revealing the mother chose silence not from betrayal but to spare Cassian's fearful legend; the revelation reframes the whole debt as a farce everyone's been paying, and Mara answers it not with grief but with a public reckoning that turns the rival's own weapon — reputation — against him.",
+        "title": "The Burned Letter",
+        "value": {
+          "to": "a farce everyone paid for, weaponized into a public coup",
+          "from": "a ledger owed, a betrayal mourned",
+          "name": "Truth of the debt"
+        },
+        "target_pct": 0.75,
+        "turning_point": "Mara invites the rival to a public auction for her own contract and outbids him with a punchline — 'I'll buy myself, twice over, then sell you my dirt cheap' — scorching his standing, while Cassian's forced bid ('I don't have the coin') is a lie the whole room sees through, exposing the two of them as one thing."
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_emahnbinu",
+      "parent_id": "n_pb18uyfcg",
+      "kind": "movement",
+      "level": 3,
+      "position": 3,
+      "content": {
+        "goal": "With the lie of the contract burned down to its last clause and the rival's reputation in ash, the armor has nothing left to protect; rain seals the house, clothes cling, and the two stop performing for each other — choosing, fully and on the floor, the exposure that ruined her mother, knowing exactly what owning it openly will cost.",
+        "title": "Everything for Everything",
+        "value": {
+          "to": "the lease gladly traded for unbreakable trust — a future chosen together, ashes in hand",
+          "from": "ownership mistaken for safety, freedom rehearsed for some later self",
+          "name": "Freedom & belonging"
+        },
+        "target_pct": 0.9,
+        "turning_point": "Rain traps them alone; Mara takes him on the floor as he burns the contract — 'No, everything just gave me everything' — and when the rival's rumors spread and strip away his best hunting lease, Cassian only shrugs: 'Worth it,' placing the ashes in her palm as she kisses him with the freedom of an equal."
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_irwx1o4tp",
+      "parent_id": "n_pb18uyfcg",
+      "kind": "thread",
+      "level": 2,
+      "position": 2,
+      "content": {
+        "kind": "setup_payoff",
+        "name": "The Honey on the Collarbone",
+        "payoff": "In the final kitchen beat the gesture returns as a vow: 'Still your mistress?' He licks his thumb and drags it across her collarbone — 'Always.' The throwaway provocation becomes the language of two equals who own each other freely.",
+        "promise": "In an early pantry spat Mara daubs honey on Cassian's collarbone and licks her own finger clean, watching him stiffen — a flirtation disguised as insolence, a gesture that means nothing yet."
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_uaio9x4tp",
+      "parent_id": "n_pb18uyfcg",
+      "kind": "thread",
+      "level": 2,
+      "position": 3,
+      "content": {
+        "kind": "arc",
+        "name": "The Contract as Armor",
+        "payoff": "Rain traps them; she takes him on the floor as he burns the contract — 'everything just gave me everything.' He learns that armor was a leash, that the legend was load-bearing only until he found the door, and that being known is worth the exposure he feared.",
+        "promise": "Cassian believes the contract is the only protection he can afford to give Mara — that to free her and love her openly would paint on her the same target that destroyed her mother. Ownership is how he keeps her safe."
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_rhkmst4tp",
+      "parent_id": "n_pb18uyfcg",
+      "kind": "thread",
+      "level": 2,
+      "position": 4,
+      "content": {
+        "kind": "setup_payoff",
+        "name": "The Rival's Ledger",
+        "payoff": "At the public auction Mara outbids him into ruin — 'I'll buy myself, twice over, then sell you my dirt cheap' — and he retaliates the only way the world allows: rumors that strip Cassian of his best hunting lease. The cost lands, and Cassian shrugs it off — 'Worth it' — the rival's last move proving the legend no longer protects anything Cassian still needs.",
+        "promise": "A rival sneers 'his little slave' at the market and is forced to scurry off humiliated — a man whose currency is reputation, now nursing a grudge and a claim he means to collect."
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_s4kdv94tp",
+      "parent_id": "n_pb18uyfcg",
+      "kind": "thread",
+      "level": 2,
+      "position": 5,
+      "content": {
+        "kind": "arc",
+        "name": "Mara's Rehearsal",
+        "payoff": "When the ashes of the contract fall into his palm and she kisses him as an equal, Mara learns there was never an audience but herself — Cassian, Wenna, and the reader saw she was free from the first morning. The rehearsal ended before it began; freedom was a choice, not a destination.",
+        "promise": "Mara treats every defiance inside the house as practice for the free woman she'll become once the ledger is settled — talking back, setting terms, running the power as a rehearsal for a life that hasn't started."
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_w9lcd1bih",
+      "parent_id": "n_imnxs59ls",
+      "kind": "scene",
+      "level": 5,
+      "position": 1,
+      "content": {
+        "loc": "The floor in front of the grate, firelight and rain-shadow on bare skin — clothes peeled away and forgotten, sweat gleaming, the storm loud enough to be the only witness.",
+        "goal": "Mara takes him fully — rides him on the floor, sets the pace, makes him disprove every cold word he ever said to her with his hands, his mouth, his surrender — claiming him as openly as she's claimed her own power all along.",
+        "outcome": "He stops bracing against it. The dread that loving her openly will paint a target on her loosens its grip — not solved, but no longer larger than the want. He is, finally, known, and survives it.",
+        "conflict": "He fights it even as he gives in — angry at how badly he wants this, at how much being seen costs, gasping the old reflex that this changes nothing; she answers each retreat by pulling him back into her, until the fear of exposure burns off in the heat of it and what's left is just the two of them, naked of every legend.",
+        "value_shift": {
+          "to": "exposure chosen and survived on the floor — being known proven worth its cost",
+          "from": "the mask dropped, exposure still feared as ruin",
+          "value": "Freedom & belonging",
+          "polarity": "up"
+        }
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_shsxyubih",
+      "parent_id": "n_imnxs59ls",
+      "kind": "scene",
+      "level": 5,
+      "position": 2,
+      "content": {
+        "loc": "Still on the floor after, tangled and breathing hard; Cassian reaches up to the side table, takes the contract, and feeds it into the grate as the fire catches the corner.",
+        "goal": "Cassian burns the contract — the armor, the leash, the only protection he believed he could afford — handing Mara not her freedom but the proof he finally trusts she never needed him to grant it.",
+        "outcome": "She whispers 'No — everything just gave me everything.' The contract is ash; the leash was always a door. They choose each other as equals, fully and out loud, knowing exactly what owning it openly will cost and trading it gladly.",
+        "conflict": "The instinct of a lifetime says the contract was the one wall keeping her safe; the paper resists nothing, curls, and goes. Mara watches the lie of the debt — the thing that defined her — turn to ash, and the only loss left is the safety he thought he was giving up.",
+        "value_shift": {
+          "to": "the contract gladly burned — a future chosen together, ashes between them",
+          "from": "ownership clung to as the only safety he could afford",
+          "value": "Freedom & belonging",
+          "polarity": "up"
+        }
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_m5hz9l140",
+      "parent_id": "n_ivevur9ls",
+      "kind": "scene",
+      "level": 5,
+      "position": 0,
+      "content": {
+        "loc": "the morning kitchen, the day after the rain — sunlight, the ashes of the contract still cooling in a saucer on the table",
+        "goal": "Cassian wants to hold the still, unguarded morning he and Mara have won — to believe the burning settled everything and the world will simply let them keep it",
+        "outcome": "The peace curdles before he's finished tasting it: what they burned for themselves last night, the rival has set on fire in public, and Cassian understands the rumor is moving faster than any denial he could buy",
+        "threads": [
+          {
+            "ref": "n_rhkmst4tp",
+            "role": "payoff"
+          }
+        ],
+        "conflict": "Wenna comes in dry-handed and brisk with the market gossip she's already heard twice in the lane — the lord's name traveling mouth to mouth, soft for his slave — and won't pretend, for once, that it's about the price of onions; the rumor is already loose and there is no contract left to make it a lie",
+        "value_shift": {
+          "to": "that peace named aloud in the lane, already spending",
+          "from": "a private peace believed to be theirs to keep",
+          "value": "Safety / exposure",
+          "polarity": "down"
+        },
+        "chapter_start": {
+          "title": "But the rival collects the only way"
+        }
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_col5f0140",
+      "parent_id": "n_ivevur9ls",
+      "kind": "scene",
+      "level": 5,
+      "position": 1,
+      "content": {
+        "loc": "the steward's office / the lease ledger — Cassian summoned, the neighboring lord's clerk waiting with the papers",
+        "goal": "Cassian wants the legend to do its last job — to hold his best hunting grounds the only way it ever held anything, by being too fearsome a name to cross",
+        "outcome": "He signs the lands away — the legend failing in public, exactly where it was supposed to be strongest — and walks out owning less than he did and known for the one thing he spent his whole life hiding",
+        "conflict": "The rival has done the one thing the world allows: spread the right rumor, and a man read as soft is a man read as weak; the clerk is courteous and immovable, the lease reassigned, and every cold word Cassian ever performed buys him nothing here, because the room no longer believes the cold man exists",
+        "value_shift": {
+          "to": "the legend exposed as spent — the rival's claim collected in full",
+          "from": "the fearsome name still trusted to protect what's his",
+          "value": "Power / standing",
+          "polarity": "down"
+        }
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_6smhro140",
+      "parent_id": "n_ivevur9ls",
+      "kind": "scene",
+      "level": 5,
+      "position": 2,
+      "content": {
+        "loc": "back in the kitchen, dusk — the saucer of ashes still on the table where they left it",
+        "goal": "Mara, who knows what the lease was worth to him, wants him to grieve it honestly to her — to admit out loud that this is the bill her mother's exposure always came with, that the cost is real and his",
+        "outcome": "'Worth it,' he says — and means it flat, no flourish; the lands are gone, the legend is gone, and he hands her the proof of everything it failed to protect as the only thing he still wanted it for — the loss lands, total and chosen, the price of being known paid where they both can see it",
+        "conflict": "Cassian won't perform the loss any more than he'll perform the legend; she braces for the old reflex, the cold motive draped over the wound — and instead he reaches past every cruel word he's ever owed her, takes the cooled ashes from the saucer, and presses them into her open palm",
+        "value_shift": {
+          "to": "the protection gone, the cost his to carry — and pressed into her hand as the price he'd pay again",
+          "from": "the legend's protection as the last thing standing between them and the world",
+          "value": "Freedom & belonging",
+          "polarity": "down"
+        }
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_u2z0k7n43",
+      "parent_id": "n_obzovl9ls",
+      "kind": "scene",
+      "level": 5,
+      "position": 0,
+      "content": {
+        "loc": "The auction-house steps, morning of the sale; Mara has had the crier post her own contract for open bid",
+        "goal": "Mara wants to bait the rival into the room — to make him believe today is the day he finally collects the slave he was denied at the market.",
+        "outcome": "Mara goads the rival's vanity until he can't resist a public win, and he commits to attend — but Cassian leaves convinced she's gambled her own freedom on a coin toss, and she lets him think it.",
+        "threads": [
+          {
+            "ref": "n_rhkmst4tp",
+            "role": "advance"
+          }
+        ],
+        "conflict": "The rival smells a trap and almost doesn't come; Cassian, blindsided that she's put herself on the block without telling him, tries to drag her out of the plan, certain she's about to be bought out from under his protection by a man who'd ruin her.",
+        "value_shift": {
+          "to": "a stage the rival has agreed to walk onto, blind",
+          "from": "a debt the rival means to collect",
+          "value": "Control of the reckoning",
+          "polarity": "down"
+        },
+        "chapter_start": {
+          "title": "Therefore Mara turns the farce on its"
+        }
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_xttlqpn43",
+      "parent_id": "n_obzovl9ls",
+      "kind": "scene",
+      "level": 5,
+      "position": 1,
+      "content": {
+        "loc": "The packed auction floor; the crier holds Mara's contract aloft, the rival in the front row, Cassian frozen at the back",
+        "goal": "Mara wants the bidding to climb — to lure the rival into spending his standing and his purse chasing her, higher than a slave's contract could ever be worth.",
+        "outcome": "Cassian throws in his lie — 'I don't have the coin' — bidding anyway, and the whole room sees through it: the cold legend, publicly, spending what he doesn't have to keep her, the two of them exposed as one thing even as the rival, scenting victory, bids himself to the edge of his fortune.",
+        "conflict": "Every raise the rival makes is real money and real triumph in his face; the room reads it as a man buying a woman away from Cassian, and Cassian — who genuinely cannot match the sums — has to choose between a humiliating forced bid he can't honor and watching her sold; the danger of her actually being bought hangs over the laughter.",
+        "value_shift": {
+          "to": "a sum that has bankrupted his pride and unmasked Cassian's heart",
+          "from": "a slave's price the rival can afford to win",
+          "value": "What the contract is worth",
+          "polarity": "down"
+        }
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_7bzjmd9ls",
+      "parent_id": "n_d4xm0vinu",
+      "kind": "beat",
+      "level": 4,
+      "position": 1,
+      "content": {
+        "summary": "Therefore the wall comes down for one bright, dangerous moment. A mock argument over a trivial house rule collapses into laughter, and Cassian impulsively pulls Mara into a playful waltz across the drawing-room floor, the power dynamic briefly forgotten — two people, no ledger between them. For the length of a turn around the room, the rehearsal and the legend both go silent, and they both feel exactly how easy it would be.",
+        "threads": [
+          {
+            "ref": "n_s4kdv94tp",
+            "role": "advance"
+          }
+        ],
+        "polarity": "up",
+        "realizes": [
+          "n_hz7p55fch"
+        ],
+        "connector": "therefore"
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_rgx1ibn43",
+      "parent_id": "n_obzovl9ls",
+      "kind": "scene",
+      "level": 5,
+      "position": 2,
+      "content": {
+        "loc": "The auction floor at the gavel's fall, the rival half-risen in triumph",
+        "goal": "Mara wants to spring the coup — to outbid the man for her own self and turn his public win into public ruin in a single line.",
+        "outcome": "Mara takes the contract with the punchline — 'I'll buy myself, twice over, then sell you my dirt cheap' — and the rival storms out scorched, a man whose only currency was reputation now publicly bankrupt of it, while Cassian's exposed lie has cost him nothing he isn't gladly paying.",
+        "conflict": "The rival believes he's won until Mara, the property on the block, raises her own bid past his last coin; he can chase no further without admitting he's spent everything on a slave who just bought herself, and the room turns from spectacle to laughter at his expense.",
+        "value_shift": {
+          "to": "a public coup that scorches the rival and crowns Mara her own owner",
+          "from": "a farce everyone's been paying for",
+          "value": "Truth of the debt",
+          "polarity": "up"
+        }
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_pn2e6d8ms",
+      "parent_id": "n_ieyxze9ls",
+      "kind": "scene",
+      "level": 5,
+      "position": 0,
+      "content": {
+        "loc": "The kitchen, morning after — Wenna's onions still on the board, the rival's rumor already loose in the valley",
+        "goal": "Cassian carries the cost of the lost lease into the one room that's theirs, testing whether the price he paid has soured now that the rain and the heat are gone and the bill is just a bill",
+        "outcome": "He sets the ashes of the contract on the board between them instead of pocketing the grievance — 'Worth it' — and the shrug is not performance this time; the loss is named out loud and weighed openly and chosen anyway, the first thing he's ever owned without claiming a draught",
+        "threads": [
+          {
+            "ref": "n_irwx1o4tp",
+            "role": "payoff"
+          },
+          {
+            "ref": "n_s4kdv94tp",
+            "role": "advance"
+          }
+        ],
+        "conflict": "The lease is genuinely gone — best hunting grounds, decades of standing, the legend that was load-bearing — and for a breath he reaches for the old armor, announcing a cold accounting of what her freedom cost him; Mara hears the reflex under the words and refuses to let him retreat into the man who tallies",
+        "value_shift": {
+          "to": "the cost named, weighed, and gladly paid — the future chosen with his eyes open",
+          "from": "the lease lost and the legend in ashes — a man counting what being known has cost him",
+          "value": "Freedom & belonging",
+          "polarity": "down"
+        },
+        "chapter_start": {
+          "title": "Therefore they seal it on their own"
+        }
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_75idgs8ms",
+      "parent_id": "n_ieyxze9ls",
+      "kind": "scene",
+      "level": 5,
+      "position": 1,
+      "content": {
+        "loc": "The same kitchen, the honey jar within reach — where the whole thing began as insolence",
+        "goal": "Mara reaches for the oldest weapon in the house and turns it into a vow, dipping a finger in the honey and locking eyes on him — 'Still your mistress?' — making the room offer her the thing she'd never once ask for outright",
+        "outcome": "He licks his thumb and drags it slow across her collarbone — 'Always' — the provocation become a marriage with no paper, two equals who own each other freely; the lease is ashes, the rehearsal is over, and the future is the only currency either of them ever wanted to spend",
+        "conflict": "The gesture was a throwaway provocation the first time, a flirtation dressed as defiance with nothing staked on it; now there's no contract to hide behind, no rehearsal left to mean it later, no audience but each other — the only thing that can answer the question honestly is the man who used to announce a cold motive for every warm act",
+        "value_shift": {
+          "to": "the gesture as vow — belonging chosen on their own terms, here, with nothing owed and everything given",
+          "from": "the old gesture as insolence meaning nothing, freedom still rehearsed for some later self",
+          "value": "Freedom & belonging",
+          "polarity": "up"
+        }
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_3jt6fb9ls",
+      "parent_id": "n_d4xm0vinu",
+      "kind": "beat",
+      "level": 4,
+      "position": 2,
+      "content": {
+        "summary": "But the rival comes to dinner. The neighboring lord watches Cassian's eyes follow Mara when she pours — the slip that could paint a target on her. Catching himself, Cassian is needlessly cruel to her in front of the guest to kill the read: 'Take the plates, Mara — your hands are dirty.' She plays along, brilliant and icy, flawless in mask and posture. The armor holds; the cost is real, not paranoid — the lord leaves with exactly the weakness he was hunting for.",
+        "threads": [
+          {
+            "ref": "n_rhkmst4tp",
+            "role": "advance"
+          },
+          {
+            "ref": "n_uaio9x4tp",
+            "role": "advance"
+          }
+        ],
+        "polarity": "down",
+        "realizes": [
+          "n_rmbwo8fch"
+        ],
+        "connector": "but"
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_ifdmtc9ls",
+      "parent_id": "n_d4xm0vinu",
+      "kind": "beat",
+      "level": 4,
+      "position": 3,
+      "content": {
+        "summary": "Therefore the slip gets named. The carriage rolls out and Mara finds Cassian in the dark, shaking — not because he was cruel but because he was so good at it she believed it for a breath. 'You did it too well. You liked it,' she spits, and he freezes: the blaze at the market was never fury, it was pride and wanting, the cruelty a mask stretched over it. 'Do it again,' she dares him, 'be cruel' — and when he can't, the fight tips into consummation, rougher and hungrier than any rain, the armor coming off piece by piece as she makes him disprove every cold word he said at that table.",
+        "threads": [
+          {
+            "ref": "n_h4p17h4tp",
+            "role": "payoff"
+          },
+          {
+            "ref": "n_uaio9x4tp",
+            "role": "advance"
+          }
+        ],
+        "polarity": "up",
+        "realizes": [
+          "n_su18zhbvy"
+        ],
+        "connector": "therefore"
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_846gwz9ls",
+      "parent_id": "n_5eviz5inu",
+      "kind": "beat",
+      "level": 4,
+      "position": 0,
+      "content": {
+        "summary": "Mara arrives at Cassian's estate in the rain, ledger chained to her wrist, and is appraised like livestock. Days in and sick of being discussed at his own table, she forces the premise open — steps inside his reach: 'You bought me. You've never once looked at what you paid for. Afraid the goods are flawed — or afraid they aren't?' She narrates the inspection louder than he can stand until the man who owns her is the one retreating, claiming the fire's too hot, leaving the room. The contract is supposed to be his armor; she has already made it his shame.",
+        "threads": [
+          {
+            "ref": "n_uaio9x4tp",
+            "role": "setup"
+          },
+          {
+            "ref": "n_s4kdv94tp",
+            "role": "setup"
+          }
+        ],
+        "polarity": "up",
+        "realizes": [
+          "n_5288dkbde"
+        ],
+        "connector": "therefore"
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_0uodsv9ls",
+      "parent_id": "n_5eviz5inu",
+      "kind": "beat",
+      "level": 4,
+      "position": 1,
+      "content": {
+        "summary": "But the win opens a wound: Cassian catches himself humming a tune from his youth — the same one Mara's mother used to sing at her work — and stops dead, realizing the girl has already heard and is watching with a knowing, unreadable expression. The melody drags her mother back into the room: the letter she always believed went unanswered, the silence she carries as proof the man's coldness is the genuine article. Cassian deflects with a cold complaint and turns the signet ring on his finger; Mara files the question away.",
+        "threads": [
+          {
+            "ref": "n_sng7ke4tp",
+            "role": "setup"
+          }
+        ],
+        "polarity": "down",
+        "realizes": [
+          "n_q2k0bufch"
+        ],
+        "connector": "but"
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_455duc9ls",
+      "parent_id": "n_5eviz5inu",
+      "kind": "beat",
+      "level": 4,
+      "position": 2,
+      "content": {
+        "summary": "Therefore she presses her advantage where he's softest — a petty pantry squabble over the last jar of honey. He daubs a streak on her nose; she licks her lips, then slowly wipes it off and tastes her own finger, her eyes never leaving his, watching him stiffen. It means nothing yet — a flirtation dressed as insolence — but it's the first gesture that's entirely hers, and it rattles him more than any argument.",
+        "threads": [
+          {
+            "ref": "n_irwx1o4tp",
+            "role": "setup"
+          }
+        ],
+        "polarity": "up",
+        "realizes": [
+          "n_ltt02ffch"
+        ],
+        "connector": "therefore"
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_om558o9ls",
+      "parent_id": "n_5eviz5inu",
+      "kind": "beat",
+      "level": 4,
+      "position": 3,
+      "content": {
+        "summary": "Therefore the game stops being a game in public. Cornered at the market by a rival lord who jeers 'his little slave,' Mara seizes the script and yanks Cassian's collar — 'He sold me to you yet? Pay my debt, mistress, and I'm yours' — forcing him to play along until the rival scurries off. Cassian's eyes blaze, and the moment reads as fury. The rival leaves humiliated, nursing a grudge and a claim. Mara, mistaking pride for anger, braces for punishment that never comes.",
+        "threads": [
+          {
+            "ref": "n_rhkmst4tp",
+            "role": "setup"
+          },
+          {
+            "ref": "n_h4p17h4tp",
+            "role": "setup"
+          }
+        ],
+        "polarity": "up",
+        "connector": "therefore"
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_69j26q9ls",
+      "parent_id": "n_d4xm0vinu",
+      "kind": "beat",
+      "level": 4,
+      "position": 0,
+      "content": {
+        "summary": "But the high curdles into longing. Mara cooks a dish from home — something her mother made. Cassian eats two helpings in silence, then a third, then announces he was simply hungry, turning his signet ring. Wenna, carrying dishes to the kitchen, remarks he said the exact same thing the last time someone made that recipe for him. The room goes quiet. The grief of the missing mother — and the suspicion that Cassian knew her better than he admits — sits heavy at the table.",
+        "threads": [
+          {
+            "ref": "n_sng7ke4tp",
+            "role": "advance"
+          },
+          {
+            "ref": "n_uaio9x4tp",
+            "role": "advance"
+          }
+        ],
+        "polarity": "down",
+        "realizes": [
+          "n_8id00bfch"
+        ],
+        "connector": "but"
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_tmgr509ls",
+      "parent_id": "n_z17185inu",
+      "kind": "beat",
+      "level": 4,
+      "position": 0,
+      "content": {
+        "summary": "But the foundation of everything she believes turns out to be a lie. Wenna dices onions, lets the silence sharpen with the scent, and confesses sideways — 'Sixpence the lot.' Mara's mother wrote this house asking for shelter, a coat, a night under the door, just his eyes on the road to know she wasn't alone. The letter rotted in the basket while Cassian slept off a fever; Wenna burned it herself, thought it kinder — 'the man's legend can't afford a weakness he never met.' The silence Mara carried as abandonment was deference, sacrifice. The debt that defines her is exposed as a lie everyone's been paying.",
+        "threads": [
+          {
+            "ref": "n_sng7ke4tp",
+            "role": "payoff"
+          }
+        ],
+        "polarity": "down",
+        "connector": "but"
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_f5rs0k9ls",
+      "parent_id": "n_z17185inu",
+      "kind": "beat",
+      "level": 4,
+      "position": 1,
+      "content": {
+        "summary": "Therefore, alone, Mara reaches for a piece of insolence she's been saving — filing it for the day she'll finally be free to mean it — and it lands wrong: Cassian conceded this point a week ago, without her noticing, the way he's quietly conceded all of them. There's no ledger left to settle. She's been rehearsing freedom for a house that stopped contesting it. The rehearsal ended before it started, and she is the last to know — Cassian, Wenna, the reader all saw it from the first morning. No audience, no triumph, just the quiet of a lie cracking.",
+        "threads": [
+          {
+            "ref": "n_s4kdv94tp",
+            "role": "payoff"
+          }
+        ],
+        "polarity": "down",
+        "realizes": [
+          "n_rg57h2bnc"
+        ],
+        "connector": "therefore"
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_obzovl9ls",
+      "parent_id": "n_z17185inu",
+      "kind": "beat",
+      "level": 4,
+      "position": 2,
+      "content": {
+        "summary": "Therefore Mara turns the farce on its head with a comic coup. She invites the rival to a public auction for her own contract, then outbids him into ruin with a punchline — 'I'll buy myself, twice over, then sell you my dirt cheap.' Cassian's forced bid ('I don't have the coin') is a lie the whole room sees through, exposing the two of them as one thing. The rival storms off, his reputation scorched, a man whose only currency is reputation now publicly bankrupt of it.",
+        "threads": [
+          {
+            "ref": "n_rhkmst4tp",
+            "role": "advance"
+          }
+        ],
+        "polarity": "up",
+        "connector": "therefore"
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_imnxs59ls",
+      "parent_id": "n_emahnbinu",
+      "kind": "beat",
+      "level": 4,
+      "position": 0,
+      "content": {
+        "summary": "Therefore the storm decides it. Rain traps them alone, clothes clinging; she presses into him, teeth at his throat. 'Still owe me something?' he growls, angry at his own surrender, and she rides him on the floor, sweat gleaming. As he burns the contract in the grate she whispers, 'No — everything just gave me everything.' The armor he believed was the only protection he could afford turns out to have been a leash; being known is worth the exposure he feared.",
+        "threads": [
+          {
+            "ref": "n_uaio9x4tp",
+            "role": "payoff"
+          },
+          {
+            "ref": "n_irwx1o4tp",
+            "role": "advance"
+          }
+        ],
+        "polarity": "up",
+        "realizes": [
+          "n_2u4dm1fch"
+        ],
+        "connector": "therefore"
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_ivevur9ls",
+      "parent_id": "n_emahnbinu",
+      "kind": "beat",
+      "level": 4,
+      "position": 1,
+      "content": {
+        "summary": "But the rival collects the only way the world allows. Rumors spread that the fearsome lord has gone soft for his slave, and they cost Cassian his best hunting lease — lands lost, the legend's last function failing in public. Cassian only shrugs and places the cooled ashes of the contract in Mara's palm: 'Worth it.' The rival's final move proves the legend no longer protects anything Cassian still needs.",
+        "threads": [
+          {
+            "ref": "n_rhkmst4tp",
+            "role": "payoff"
+          }
+        ],
+        "polarity": "down",
+        "connector": "but"
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_ieyxze9ls",
+      "parent_id": "n_emahnbinu",
+      "kind": "beat",
+      "level": 4,
+      "position": 2,
+      "content": {
+        "summary": "Therefore they seal it on their own terms, in the kitchen where it began. Mara licks honey off her finger again, eyes locked on his — 'Still your mistress?' He licks his thumb and drags it across her collarbone — 'Always.' The throwaway provocation has become a vow between two equals who own each other freely; the lease is ashes, the rehearsal long over, and the future is the only currency that was ever worth choosing.",
+        "threads": [
+          {
+            "ref": "n_irwx1o4tp",
+            "role": "payoff"
+          },
+          {
+            "ref": "n_s4kdv94tp",
+            "role": "advance"
+          }
+        ],
+        "polarity": "up",
+        "connector": "therefore"
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_6usuzwr00",
+      "parent_id": "n_846gwz9ls",
+      "kind": "scene",
+      "level": 5,
+      "position": 0,
+      "content": {
+        "loc": "The estate's entrance hall, rain-lashed, a fire snapping in the drawing room beyond",
+        "goal": "Newly delivered with the ledger chained to her wrist, Mara wants to cross Cassian's threshold as a person and not a parcel — to make the man appraising her flinch first.",
+        "outcome": "He completes the appraisal, names a value, and has her shown to a room; her one good line bought a flinch but not her standing. She is filed as property in his house, the chain still on her wrist.",
+        "threads": [
+          {
+            "ref": "n_uaio9x4tp",
+            "role": "setup"
+          },
+          {
+            "ref": "n_s4kdv94tp",
+            "role": "setup"
+          }
+        ],
+        "conflict": "Cassian inspects her with the bored rigor of a man pricing livestock, cataloguing her in the third person as if she weren't standing dripping in front of him; her smirking 'Check my teeth?' lands, he blinks — but the ledger is real and the inventory continues over her wit.",
+        "value_shift": {
+          "to": "an item entered in a ledger",
+          "from": "a woman arriving on her own legs",
+          "value": "Power",
+          "polarity": "down"
+        },
+        "chapter_start": {
+          "title": "Mara arrives at Cassian's estate in the"
+        },
+        "realizes_tentpole": "n_5288dkbde"
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_93v28ir00",
+      "parent_id": "n_846gwz9ls",
+      "kind": "scene",
+      "level": 5,
+      "position": 1,
+      "content": {
+        "loc": "The long dining table, several days later, Wenna serving",
+        "goal": "Sick of it but holding her tongue, Mara wants to sit through one more meal where her labor, her keep, and her body are debated as line items — and keep the mask flawless.",
+        "outcome": "She clears the table in perfect silence, swallowing the humiliation whole — and in the swallowing, something hardens: she will not endure a second supper as a topic. The resolve is set; the next move is hers to make.",
+        "conflict": "Cassian and the house discuss her over the plates as though she were furniture being moved between rooms, every cold excuse a fresh reminder that the contract speaks for her; she answers in mock-sweet courtesy, awarding ironic honorifics, but each deflection costs more than the last.",
+        "value_shift": {
+          "to": "a thing discussed at the table that has decided to stop being one",
+          "from": "a thing discussed at the table",
+          "value": "Power",
+          "polarity": "down"
+        }
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    },
+    {
+      "id": "n_lfk3e1r00",
+      "parent_id": "n_846gwz9ls",
+      "kind": "scene",
+      "level": 5,
+      "position": 2,
+      "content": {
+        "loc": "The drawing room by the fire, the morning after, the two of them alone",
+        "goal": "Mara forces the premise into daylight — she will make the man who owns her actually look at what he bought, and narrate the transaction until he can't bear the sound of it.",
+        "outcome": "The man who owns her is the one retreating — he claims the fire's too hot and leaves the room. The contract is still hers to wear, but it is now his embarrassment, not her cage; she holds the first real charge in the house, on the page, and she knows it.",
+        "conflict": "When Cassian deflects an order with one of his cold excuses, she steps inside his reach: 'You bought me. You've never once looked at what you paid for. Afraid the goods are flawed — or afraid they aren't?' She makes him perform the inspection he'd never demand, louder than he can stand, the contract he meant as armor turning in her hands into a confession of shame; comedy through his rout, heat through her advance.",
+        "value_shift": {
+          "to": "the one who runs the inspection while its owner flees the room",
+          "from": "owned property enduring the inspection",
+          "value": "Power",
+          "polarity": "up"
+        }
+      },
+      "authoring": {
+        "locked": false,
+        "source": "ai",
+        "status": "accepted"
+      },
+      "proposals": null,
+      "chosen": null
+    }
+  ]
+}

@@ -106,6 +106,7 @@ The vertical narrative chain. `content` shapes, field by field.
 | title | string | A | optional label |
 | goal | string | A/U | what this movement drives at |
 | turning_point | string | ★ | place the turn — the act's hinge |
+| target_pct | float 0–1 | ★/A | where this act's `turning_point` should land in the book — the **pacing intent**, checked against structural gravity (≈.25 / .50 / .75; §6 pacing). Author states it on movements only; beats/scenes inherit by derivation |
 | value | `{ name, from, to }` | A/U | the value-charge shift across the movement |
 
 ### L4 `beat` (×~3 per movement; the causal skeleton — always its own row)
@@ -113,7 +114,9 @@ The vertical narrative chain. `content` shapes, field by field.
 |---|---|---|---|
 | summary | string | A/U | one line |
 | connector | `therefore` \| `but` | A/U | causal link to the prior beat (first beat exempt) |
-| threads | `[{ id, promise, kind:setup\|payoff\|advance }]` | ★/A | which promises this beat plants/pays; author picks what matters |
+| polarity | `up` \| `down` | A/U | the beat's **planned** emotional charge — set by the global beat-sheet pass so the trajectory oscillates deliberately (no accidental flat runs); scenes inherit it |
+| threads | `[{ ref→thread, role:setup\|advance\|payoff }]` | ★/A | which promises this beat plants/advances/pays — **references** the thread registry (§4.5); the promise text lives once, on the thread node. Assigned by the global beat-sheet pass (§ generation), which guarantees every `payoff` is preceded by a `setup` in reading order |
+| realizes | `[ref→tentpole]` | A/U | the **tentpoles** (set-pieces) this beat delivers — assigned by the global beat-sheet pass so every pinned tentpole lands on a beat; scenes inherit them onto `realizes_tentpole`. Same placement fix as threads |
 
 ### L5 `scene` (the leaf — owns its prose; **R** for render)
 | field | type | fill | |
@@ -125,8 +128,9 @@ The vertical narrative chain. `content` shapes, field by field.
 | goal | string | A/U | scene-level want |
 | conflict | string | A/U | what opposes it |
 | outcome | string | A/U | how it resolves (usually a "no, and…" / "yes, but…") |
-| value_shift | `{ value, from, to }` | ★/A **R-soft** | **must be non-empty** (no flat "and-then" scenes) |
-| advances | `[{ ref:<thread\|relationship id>, how }]` | A | what this scene moves |
+| value_shift | `{ value, from, to, polarity:up\|down }` | ★/A **R-soft** | **must be non-empty** (no flat "and-then" scenes); `polarity` = does the value end better (up) or worse (down) — feeds the emotional-topography graph (§6) and the sagging-middle lint (§7) |
+| threads | `[{ ref→thread, role:setup\|payoff\|advance }]` | ★/A | the promise anchors this scene plants/pays — **references** the thread registry (§4.5). A `payoff` scene must come **after** its `setup` scene in reading order (§7) |
+| advances | `[{ ref→relationship, how }]` | A | the relationship charge this scene moves (threads moved to the field above) |
 | realizes_tentpole | ref→`tentpole` \| null | A/U | the set-piece this scene delivers, if any |
 | chapter_start | `{ title, pov?, epigraph? }` \| null | U/A | **partition boundary** — non-null = a chapter begins here (§6) |
 | prose | `{ text, words }` | A→★ **R** | the actual words; AI writes, author does voice corrections |
@@ -173,6 +177,26 @@ with no placement is an open obligation (a lint, §7).
 | rule | string | U/A | a world law / established fact |
 | category | string | A | grouping (magic, politics, tech…) |
 
+### `thread` (← `foundations.threads`) — the promise registry
+
+The open loops the book opens and must close: a foreshadow, a mystery, a planted gun, a relationship arc.
+A thread is one **promise node** that both ends point at — a `setup` scene and a `payoff` scene reference
+the *same* thread, so a payoff at a distance is a **reference edge reaching forward in reading order**
+(§5), never a reordered beat. Generated at step 5 (after movements, so it can see the whole arc) — see
+`novel-dna-flow.md`.
+
+| field | type | fill | |
+|---|---|---|---|
+| name | string | A/U | short handle for the promise |
+| promise | string | ★/A | what is set up that *demands* discharge — the open loop's question |
+| payoff | string | A/U | what discharges it — the intended resolution |
+| kind | `mystery`\|`foreshadow`\|`setup_payoff`\|`arc` | A | the loop's type |
+| *(state)* | `authoring.status` | — | `proposed`=candidate, `accepted`=tracked; archived=dropped |
+
+A thread is **set up** when some scene `threads[]` references it with `role:setup`, and **paid** when a
+later scene references it with `role:payoff`. The integrity checks (§7): a thread set up but never paid is
+a *dangling promise*; a payoff with no prior setup is *unearned*; a payoff before its setup is *misordered*.
+
 ---
 
 ## 5. References & integrity
@@ -183,8 +207,9 @@ Cross-links (not parent edges) carry a node id; reading order is unaffected by t
 |---|---|
 | scene → character | `pov`, `present[]` |
 | scene → tentpole | `realizes_tentpole` |
-| scene → thread/relationship | `advances[].ref` |
-| beat → thread | `threads[].id` |
+| scene → thread | `threads[].ref` (+ `role`) |
+| scene → relationship | `advances[].ref` |
+| beat → thread | `threads[].ref` (+ `role`) |
 | relationship → character | `a`, `b` |
 
 Integrity rules: a reference must resolve to a live (non-archived) node of the right kind; deleting an
@@ -205,6 +230,18 @@ Pure functions of the tree. Recomputed on read; `reconcile` materializes the pag
 | est_pages | `word_count / wpp(layout)` |
 | pages | per chapter → a `section` page (title) + a `text` page (its scenes' prose, flowed) — `reconcile`, spec §8 |
 
+### The three analytic axes (over scenes-in-reading-order)
+
+The same engine — derive a value per scene along reading order, then read the shape — answers the three
+questions structural theory asks of a draft. All three are **projections** (no stored fields beyond what
+§3/§4.5 already define) and all three feed lints (§7).
+
+| axis | derivation | the question it answers | the failure it catches |
+|---|---|---|---|
+| **pacing** (*when*) | cumulative `prose.words` (or scene count pre-prose) gives each scene an **actual %**; a movement's `turning_point` actual % vs its `target_pct` | does the midpoint land at the midpoint? | turning points drifting off structural gravity (≈.25/.50/.75) — the "sagging" or "rushed" act |
+| **promises** (*what*) | walk scenes in order tracking each `thread`'s open/closed state from `threads[].role` | is every promise paid, and in order? | dangling promise · unearned payoff · payoff-before-setup (§4.5) |
+| **emotional topography** (*charge*) | the sequence of `value_shift.polarity` (up/down) across scenes | does the emotional valence oscillate, or flatline? | a run of same-polarity scenes = the sagging middle (Story Grid / *Bestseller Code*) |
+
 ---
 
 ## 7. The completeness contract
@@ -224,6 +261,19 @@ completeness** is the predicate for "the book exists."
   a single implicit chapter wraps all scenes).
 - every `pinned` tentpole is placed (referenced by some scene) — *warning*, not a hard block.
 
+**Structural lints (warnings — they don't block render, they flag craft failure).** The three analytic
+axes (§6) each emit lints; `validate()` returns them alongside the existing checks (flat scene, beat
+connector, unplaced tentpole):
+
+| lint | severity | rule | source axis |
+|---|---|---|---|
+| flat scene | error | a scene with content but empty `value_shift` — nothing of consequence happened | — |
+| dangling promise | warn | a `thread` set up but never paid | promises |
+| unearned payoff | warn | a scene pays a thread that was never set up | promises |
+| misordered payoff | error | a `payoff` scene precedes its `setup` scene in reading order | promises |
+| pacing drift | warn | a movement's `turning_point` actual % is far from its `target_pct` (off structural gravity) | pacing |
+| sagging middle | warn | a run of ≥N consecutive scenes with the same `value_shift.polarity` | emotional topography |
+
 A partially-filled DNA renders a partial book (only scenes with accepted prose appear) — the structure is
 always renderable to *what it has*; "complete" just means every slot that gates render is satisfied.
 
@@ -239,10 +289,10 @@ pull the ★ slots from the author and let `expand` fill the rest. Ordered by le
 | 1 | logline / dramatic_question | seed/premise | the idea itself |
 | 2 | **wound + lie** of the protagonist | character | the emotional core; AI guesses generically |
 | 3 | controlling_idea + **ending** | pillar | what the book proves, and where it lands |
-| 4 | the **turning points** (shape turns + movement hinges) | premise/movement | the spine's load-bearing reversals |
+| 4 | the **turning points** (shape turns + movement hinges) **and where they land** (`target_pct`) | premise/movement | the spine's load-bearing reversals + their pacing intent |
 | 5 | **mandate**: heat (content_type), word_target, success_criteria | settings | the binding contract — laundered away if not pinned |
 | 6 | voice_exemplar | settings | the single strongest prose anchor |
-| 7 | which **threads** matter; tentpoles to pin/kill | beat/tentpole | author taste over AI's over-seeding |
+| 7 | which **threads** (promises) matter; tentpoles to pin/kill | thread/tentpole | author taste over AI's over-seeding |
 | 8 | value_shift tweaks, scene order, prose voice corrections | scene | taper — AI does the volume, author nudges |
 
 Everything not marked ★ is AI's to propose and the author's to accept — *choose, don't author*. Everything

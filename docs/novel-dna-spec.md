@@ -1,7 +1,8 @@
 # Novel DNA — build spec
 
 **Status:** build spec. Implements `novel-as-json.md` (the model) and generalizes
-`structure-as-render.md` (pages are a render) to the whole ladder.
+`structure-as-render.md` (pages are a render) to the whole ladder. The **information-flow graph** (what
+generates from what, brief → book) is `novel-dna-flow.md` — the core of the system.
 
 **The one idea:** a book is a **single self-similar tree** the author builds rung by rung. The tree is
 the source of truth for *everything* — premise, characters, structure, and prose. **Chapters and pages

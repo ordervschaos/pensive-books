@@ -6,7 +6,7 @@ import { metaHash } from "@/lib/planProvenance";
 
 // ── Kinds ─────────────────────────────────────────────────────────────────────
 export const LADDER_KINDS = ["seed", "premise", "pillar", "movement", "beat", "scene"] as const;
-export const ENTITY_KINDS = ["character", "relationship", "tentpole", "world_fact"] as const;
+export const ENTITY_KINDS = ["character", "relationship", "tentpole", "world_fact", "thread"] as const;
 export type LadderKind = (typeof LADDER_KINDS)[number];
 export type EntityKind = (typeof ENTITY_KINDS)[number];
 export type NodeKind = LadderKind | EntityKind;
@@ -24,18 +24,29 @@ export interface Authoring {
 }
 
 // ── Content shapes (the schema contract, §3/§4) ───────────────────────────────
-export interface ValueShift { value: string; from: string; to: string }
+// polarity: does the value end better (up) or worse (down) — feeds the emotional-topography axis (§6).
+export interface ValueShift { value: string; from: string; to: string; polarity?: "up" | "down" }
 export interface SeedContent { logline?: string }
 export interface PremiseContent { genre?: string[]; tone?: string[]; dramatic_question?: string; shape?: { setup?: string; turn1?: string; turn2?: string; turn3?: string; resolution?: string } }
 export interface PillarContent { controlling_idea?: string; ending?: string }
-export interface MovementContent { title?: string; goal?: string; turning_point?: string; value?: ValueShift }
-export interface BeatThread { id: string; promise: string; kind: "setup" | "payoff" | "advance" }
-export interface BeatContent { summary?: string; connector?: "therefore" | "but"; threads?: BeatThread[] }
+// target_pct: where this act's turning_point should land in the book (0–1) — the pacing intent (§6).
+export interface MovementContent { title?: string; goal?: string; turning_point?: string; target_pct?: number; value?: ValueShift }
+// A reference to a thread node + the role this beat/scene plays for that promise (§4.5/§5).
+export type ThreadRole = "setup" | "payoff" | "advance";
+export interface ThreadRef { ref: string; role: ThreadRole }
+// polarity: the beat's PLANNED emotional charge (up/down) — set by the global beat-sheet pass to make the
+// trajectory oscillate deliberately; scenes inherit it (schema §3, novel-dna-flow.md step 6).
+// realizes: the tentpoles this beat DELIVERS (set-piece schedule) — the beat sheet assigns each pinned
+// tentpole to a beat; scenes inherit them onto scene.realizes_tentpole (so the placement is planned, not
+// left to local scene-gen — same fix as threads).
+export interface BeatContent { summary?: string; connector?: "therefore" | "but"; polarity?: "up" | "down"; threads?: ThreadRef[]; realizes?: string[] }
 export interface ChapterStart { title?: string; pov?: string; epigraph?: string }
 export interface SceneContent {
   pov?: string; loc?: string; time?: { when?: string; elapsed?: string };
   present?: string[]; goal?: string; conflict?: string; outcome?: string;
-  value_shift?: ValueShift; advances?: { ref: string; how?: string }[];
+  value_shift?: ValueShift;
+  threads?: ThreadRef[];               // promise anchors this scene plants/pays → thread registry
+  advances?: { ref: string; how?: string }[];  // relationship charge this scene moves → relationship nodes
   realizes_tentpole?: string | null;
   chapter_start?: ChapterStart | null;
   prose?: { text?: string; words?: number };
@@ -44,6 +55,8 @@ export interface CharacterContent { name?: string; role?: "protagonist" | "antag
 export interface RelationshipContent { a?: string; b?: string; bond?: string; charge?: string }
 export interface TentpoleContent { summary?: string }
 export interface WorldFactContent { rule?: string; category?: string }
+// thread (← foundations.threads): the promise registry — one node both ends point at (§4.5).
+export interface ThreadContent { name?: string; promise?: string; payoff?: string; kind?: "mystery" | "foreshadow" | "setup_payoff" | "arc" }
 export type NodeContent = Record<string, unknown>;
 
 export interface DnaNode {
@@ -142,7 +155,11 @@ export function refsOf(node: DnaNode): string[] {
     if (c.pov) out.push(c.pov);
     if (Array.isArray(c.present)) out.push(...c.present);
     if (c.realizes_tentpole) out.push(c.realizes_tentpole);
+    if (Array.isArray(c.threads)) out.push(...c.threads.map((t) => t.ref).filter(Boolean));
     if (Array.isArray(c.advances)) out.push(...c.advances.map((a) => a.ref).filter(Boolean));
+  } else if (node.kind === "beat") {
+    const c = node.content as BeatContent;
+    if (Array.isArray(c.threads)) out.push(...c.threads.map((t) => t.ref).filter(Boolean));
   } else if (node.kind === "relationship") {
     const c = node.content as RelationshipContent;
     if (c.a) out.push(c.a);
@@ -226,6 +243,97 @@ export function blastRadius(changedId: string, nodes: DnaNode[]): { count: numbe
   return { count: out.size, ids: [...out] };
 }
 
+// ── The global beat-sheet guarantee (root fix) ────────────────────────────────
+// The promise axis (setup→payoff in order) is a property of the WHOLE sequence — so it must be enforced
+// where the whole sequence is in view: the global beat-sheet pass, not per-beat scene-gen. This makes the
+// `unearned_payoff`/`misordered_payoff` lints *invariants the generator can't violate* rather than after-
+// the-fact complaints. Pure + testable; the edge fn / bridge mirror this logic on their parsed beat sheets.
+export interface ThreadCarrier { threads?: ThreadRef[] }
+
+/** Walk items in reading order; for each thread, keep `payoff` roles only once a `setup` for that thread has
+ *  already appeared. Orphan payoffs (no prior setup) are DROPPED. Returns cleaned items + the drop count.
+ *  This guarantees: every surviving payoff is preceded by its setup → no unearned/misordered payoff. */
+export function enforcePromiseSchedule<T extends ThreadCarrier>(itemsInOrder: T[]): { items: T[]; dropped: number } {
+  const setUp = new Set<string>();
+  let dropped = 0;
+  const items = itemsInOrder.map((it) => {
+    if (!it.threads?.length) return it;
+    // first pass: this item's own setups count for payoffs in the SAME item (a beat can set up and pay later
+    // beats, but a single item paying a thread it also sets up is allowed).
+    for (const t of it.threads) if (t.role === "setup") setUp.add(t.ref);
+    const kept = it.threads.filter((t) => {
+      if (t.role !== "payoff") return true;
+      if (setUp.has(t.ref)) return true;
+      dropped++;
+      return false;
+    });
+    return kept.length === it.threads.length ? it : { ...it, threads: kept };
+  });
+  return { items, dropped };
+}
+
+// ── The three analytic axes (schema §6) ───────────────────────────────────────
+// All derive over scenes-in-reading-order; none store anything. Each also feeds a lint in validate().
+
+const PACING_DRIFT_TOL = 0.1;   // a movement turn >10 percentage-points off its target_pct = drift
+const SAGGING_RUN = 4;          // ≥4 consecutive same-polarity scenes = a sagging middle
+
+/** PACING (when): each movement's turning point gets an actual % (cumulative words, or scene count
+ *  pre-prose) and the drift from its authored target_pct. */
+export interface PacingPoint { movementId: string; title?: string; targetPct?: number; actualPct: number; driftPct: number }
+export function pacing(nodes: DnaNode[]): PacingPoint[] {
+  const index = byId(nodes);
+  const scenes = scenesInOrder(nodes);
+  const hasProse = scenes.some((s) => proseWords(s) > 0);
+  const w = (s: DnaNode) => (hasProse ? proseWords(s) : 1); // pre-prose: weight every scene equally
+  const total = scenes.reduce((a, s) => a + w(s), 0) || 1;
+  const movementOf = (s: DnaNode): string | null => {
+    const beat = s.parent_id ? index.get(s.parent_id) : null;
+    const mv = beat?.parent_id ? index.get(beat.parent_id) : null;
+    return mv?.kind === "movement" ? mv.id : null;
+  };
+  let cum = 0;
+  const endFrac = new Map<string, number>(); // cumulative fraction at a movement's LAST scene = where its turn lands
+  for (const s of scenes) { cum += w(s); const m = movementOf(s); if (m) endFrac.set(m, cum / total); }
+  return nodes.filter((n) => n.kind === "movement").sort((a, b) => a.position - b.position).map((m) => {
+    const c = m.content as MovementContent;
+    const actualPct = endFrac.get(m.id) ?? 0;
+    return { movementId: m.id, title: c.title, targetPct: c.target_pct, actualPct, driftPct: typeof c.target_pct === "number" ? actualPct - c.target_pct : 0 };
+  });
+}
+
+/** EMOTIONAL TOPOGRAPHY (charge): the value_shift polarity of each scene in reading order. */
+export function topography(nodes: DnaNode[]): { sceneId: string; polarity: "up" | "down" | null }[] {
+  return scenesInOrder(nodes).map((s) => ({ sceneId: s.id, polarity: (s.content as SceneContent).value_shift?.polarity ?? null }));
+}
+
+/** PROMISES (what): resolve each thread's setup/payoff against reading order (§4.5). Two-pass so a payoff
+ *  that precedes its setup is told apart (misordered) from one that has no setup at all (unearned). */
+function promiseLints(nodes: DnaNode[]): DnaIssue[] {
+  const index = byId(nodes);
+  const scenes = scenesInOrder(nodes);
+  const setupAt = new Map<string, number>();                       // threadId → first setup scene index
+  const payoffAt = new Map<string, { i: number; sceneId: string }>(); // threadId → first payoff
+  scenes.forEach((s, i) => {
+    for (const t of ((s.content as SceneContent).threads ?? [])) {
+      if (index.get(t.ref)?.kind !== "thread") continue;           // dangling_ref handled elsewhere
+      if (t.role === "setup" && !setupAt.has(t.ref)) setupAt.set(t.ref, i);
+      if (t.role === "payoff" && !payoffAt.has(t.ref)) payoffAt.set(t.ref, { i, sceneId: s.id });
+    }
+  });
+  const issues: DnaIssue[] = [];
+  for (const [ref, pay] of payoffAt) {
+    const su = setupAt.get(ref);
+    if (su === undefined) issues.push({ rule: "unearned_payoff", severity: "warn", message: "scene pays a promise that was never set up", nodeId: pay.sceneId });
+    else if (su > pay.i) issues.push({ rule: "misordered_payoff", severity: "error", message: "payoff precedes its setup in reading order", nodeId: pay.sceneId });
+  }
+  // Dangling: an accepted/locked thread set up but never paid by any scene.
+  for (const th of nodes.filter((n) => n.kind === "thread" && (n.authoring.locked || n.authoring.status === "accepted"))) {
+    if (setupAt.has(th.id) && !payoffAt.has(th.id)) issues.push({ rule: "dangling_promise", severity: "warn", message: "promise is set up but never paid off", nodeId: th.id });
+  }
+  return issues;
+}
+
 // ── Validation (§7) ───────────────────────────────────────────────────────────
 export interface DnaIssue { rule: string; severity: "error" | "warn"; message: string; nodeId?: string }
 
@@ -270,6 +378,27 @@ export function validate(nodes: DnaNode[]): DnaIssue[] {
   const placed = new Set(nodes.flatMap((n) => (n.kind === "scene" ? [(n.content as SceneContent).realizes_tentpole] : [])).filter(Boolean) as string[]);
   for (const t of nodes.filter((n) => n.kind === "tentpole" && (n.authoring.locked || n.authoring.status === "accepted"))) {
     if (!placed.has(t.id)) issues.push({ rule: "tentpole_unplaced", severity: "warn", message: "pinned tentpole is never realized by a scene", nodeId: t.id });
+  }
+
+  // Promises axis (§6): dangling / unearned / misordered payoffs.
+  issues.push(...promiseLints(nodes));
+
+  // Pacing axis (§6): a movement's turning point drifting off its authored target_pct.
+  for (const p of pacing(nodes)) {
+    if (typeof p.targetPct === "number" && Math.abs(p.driftPct) > PACING_DRIFT_TOL) {
+      issues.push({ rule: "pacing_drift", severity: "warn", message: `act turn lands at ${Math.round(p.actualPct * 100)}% (target ${Math.round(p.targetPct * 100)}%)`, nodeId: p.movementId });
+    }
+  }
+
+  // Emotional-topography axis (§6): a run of ≥SAGGING_RUN same-polarity scenes = a sagging middle.
+  const topo = topography(nodes);
+  for (let i = 0; i < topo.length; ) {
+    const pol = topo[i].polarity;
+    if (pol == null) { i++; continue; }
+    let j = i;
+    while (j < topo.length && topo[j].polarity === pol) j++;
+    if (j - i >= SAGGING_RUN) issues.push({ rule: "sagging_middle", severity: "warn", message: `${j - i} scenes in a row stay ${pol} — flat emotional charge`, nodeId: topo[i].sceneId });
+    i = j;
   }
   return issues;
 }

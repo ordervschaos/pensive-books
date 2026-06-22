@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  blastRadius, byId, chapters, chooseProposal, editContent, emptyNode, inputHash, isProseStale,
-  isRenderable, isStale, lock, refsOf, renderBlockers, renderPages, scenesInOrder, stampInput, stampProse,
-  validate, type DnaNode, type NodeKind,
+  blastRadius, byId, chapters, chooseProposal, editContent, emptyNode, enforcePromiseSchedule, inputHash,
+  isProseStale, isRenderable, isStale, lock, pacing, refsOf, renderBlockers, renderPages, scenesInOrder,
+  stampInput, stampProse, topography, validate, type DnaNode, type NodeKind, type ThreadRef,
 } from "@/lib/novelDna";
 
 let seq = 0;
@@ -187,5 +187,115 @@ describe("inputHash determinism", () => {
     const p1 = mk("beat", { id: "p", content: { summary: "s", connector: "but" } });
     const p2 = mk("beat", { id: "p", content: { connector: "but", summary: "s" } }); // same data, reordered keys
     expect(inputHash(a, byId([p1, a]))).toBe(inputHash(a, byId([p2, a])));
+  });
+});
+
+// ── The three analytic axes (schema §6) ────────────────────────────────────────
+// A reusable spine: pillar → movement → beat → scenes s1..s4 in reading order.
+const spine = (sceneContent: Record<string, unknown>[], extra: DnaNode[] = []): DnaNode[] => {
+  const m = mk("movement", { id: "m", parent_id: "p", position: 0 });
+  const b = mk("beat", { id: "b", parent_id: "m", position: 0 });
+  const scenes = sceneContent.map((c, i) => mk("scene", { id: `s${i + 1}`, parent_id: "b", position: i, content: c }));
+  return [m, b, ...scenes, ...extra];
+};
+const vs = (polarity: "up" | "down") => ({ value: "hope", from: "x", to: "y", polarity });
+
+describe("promises axis (threads as a registry)", () => {
+  it("a scene's thread refs are part of its input set (stale on the promise changing)", () => {
+    const th = mk("thread", { id: "th", content: { promise: "the gun" } });
+    let s = mk("scene", { id: "s", content: { threads: [{ ref: "th", role: "setup" }] } });
+    expect(refsOf(s)).toContain("th");
+    s = stampInput(s, byId([th, s]));
+    const th2 = editContent(th, { promise: "the knife" });
+    expect(isStale(s, byId([th2, s]))).toBe(true);
+  });
+
+  it("flags dangling, unearned, and misordered payoffs — and a clean setup→payoff passes", () => {
+    const clean = mk("thread", { id: "tc", content: { promise: "p" } });          // setup s1 → payoff s3 ✓
+    const dangling = mk("thread", { id: "td", content: { promise: "p" } });        // setup s2, never paid
+    const unearned = mk("thread", { id: "tu", content: { promise: "p" } });        // payoff s4, no setup
+    const misordered = mk("thread", { id: "tm", content: { promise: "p" } });      // payoff s1 before setup s2
+    const nodes = spine(
+      [
+        { value_shift: vs("up"), threads: [{ ref: "tc", role: "setup" }, { ref: "tm", role: "payoff" }] }, // s1
+        { value_shift: vs("up"), threads: [{ ref: "td", role: "setup" }, { ref: "tm", role: "setup" }] },  // s2
+        { value_shift: vs("up"), threads: [{ ref: "tc", role: "payoff" }] },                               // s3
+        { value_shift: vs("up"), threads: [{ ref: "tu", role: "payoff" }] },                               // s4
+      ],
+      [clean, dangling, unearned, misordered],
+    );
+    const rules = validate(nodes).map((i) => i.rule);
+    expect(rules).toContain("dangling_promise");
+    expect(rules).toContain("unearned_payoff");
+    expect(rules).toContain("misordered_payoff");
+    // the clean thread (tc) raised nothing on its own scenes
+    expect(rules.filter((r) => r === "dangling_promise")).toHaveLength(1);
+  });
+});
+
+describe("global beat-sheet guarantee (enforcePromiseSchedule)", () => {
+  const t = (ref: string, role: ThreadRef["role"]): ThreadRef => ({ ref, role });
+  it("drops payoffs with no prior setup, keeps ordered ones", () => {
+    const beats = [
+      { threads: [t("gun", "setup")] },                       // sets up gun
+      { threads: [t("ghost", "payoff")] },                    // pays ghost — NEVER set up → dropped
+      { threads: [t("gun", "payoff"), t("clock", "payoff")] }, // gun ok (set up), clock orphan → dropped
+    ];
+    const { items, dropped } = enforcePromiseSchedule(beats);
+    expect(dropped).toBe(2);
+    expect(items[1].threads).toEqual([]);                     // ghost payoff removed
+    expect(items[2].threads).toEqual([t("gun", "payoff")]);   // clock removed, gun kept
+  });
+
+  it("allows a single item that both sets up and pays a thread", () => {
+    const beats = [{ threads: [t("twist", "setup"), t("twist", "payoff")] }];
+    expect(enforcePromiseSchedule(beats).dropped).toBe(0);
+  });
+
+  it("the cleaned schedule produces no unearned/misordered lints once realized on scenes", () => {
+    // Realize the cleaned beat threads onto scenes and confirm the promise axis is clean.
+    const raw = [{ threads: [t("a", "setup")] }, { threads: [t("b", "payoff")] }, { threads: [t("a", "payoff")] }];
+    const { items } = enforcePromiseSchedule(raw);
+    const m = mk("movement", { id: "m" });
+    const b = mk("beat", { id: "b", parent_id: "m" });
+    const tA = mk("thread", { id: "a" }); const tB = mk("thread", { id: "b" });
+    const scenes = items.map((it, i) => mk("scene", { id: `s${i}`, parent_id: "b", position: i, content: { value_shift: vs("up"), threads: it.threads } }));
+    const rules = validate([m, b, tA, tB, ...scenes]).map((r) => r.rule);
+    expect(rules).not.toContain("unearned_payoff");
+    expect(rules).not.toContain("misordered_payoff");
+  });
+});
+
+describe("pacing axis (target_pct vs derived position)", () => {
+  it("derives each movement's turn-position from cumulative words and flags drift past tolerance", () => {
+    const m = mk("movement", { id: "m", parent_id: "p", position: 0, content: { target_pct: 0.25 } });
+    const b = mk("beat", { id: "b", parent_id: "m" });
+    // this single movement contains all scenes → its turn lands at 100%, far from a 25% target
+    const s1 = mk("scene", { id: "s1", parent_id: "b", position: 0, content: { value_shift: vs("up"), prose: { words: 500 } } });
+    const s2 = mk("scene", { id: "s2", parent_id: "b", position: 1, content: { value_shift: vs("down"), prose: { words: 500 } } });
+    const pts = pacing([m, b, s1, s2]);
+    expect(pts[0].actualPct).toBeCloseTo(1.0);
+    expect(pts[0].driftPct).toBeCloseTo(0.75);
+    expect(validate([m, b, s1, s2]).map((i) => i.rule)).toContain("pacing_drift");
+  });
+
+  it("no drift lint when target_pct is unset", () => {
+    const m = mk("movement", { id: "m", parent_id: "p" });
+    const b = mk("beat", { id: "b", parent_id: "m" });
+    const s = mk("scene", { id: "s", parent_id: "b", content: { value_shift: vs("up") } });
+    expect(validate([m, b, s]).map((i) => i.rule)).not.toContain("pacing_drift");
+  });
+});
+
+describe("emotional-topography axis (value_shift polarity)", () => {
+  it("returns polarity in reading order and flags a sagging run of same-polarity scenes", () => {
+    const nodes = spine([vs("up"), vs("up"), vs("up"), vs("up")].map((v) => ({ value_shift: v })));
+    expect(topography(nodes).map((t) => t.polarity)).toEqual(["up", "up", "up", "up"]);
+    expect(validate(nodes).map((i) => i.rule)).toContain("sagging_middle");
+  });
+
+  it("an oscillating sequence does not sag", () => {
+    const nodes = spine([vs("up"), vs("down"), vs("up"), vs("down")].map((v) => ({ value_shift: v })));
+    expect(validate(nodes).map((i) => i.rule)).not.toContain("sagging_middle");
   });
 });

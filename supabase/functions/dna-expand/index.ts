@@ -14,7 +14,7 @@ import { getActiveModels } from "../_shared/model-config.ts";
 import { extractJsonBlock } from "../_shared/json.ts";
 import { type Brief, briefContext, mandateContext } from "../_shared/brief.ts";
 
-interface Node { id: string; parent_id: string | null; kind: string; content: Record<string, unknown>; authoring: { locked?: boolean; status?: string } }
+interface Node { id: string; parent_id: string | null; kind: string; position?: number; content: Record<string, unknown>; authoring: { locked?: boolean; status?: string } }
 
 // What each TARGET expands into. One authoritative set; never alternatives. Keyed by target (a node can
 // have several — a pillar generates cast, world, AND acts), so the client passes which to generate.
@@ -34,12 +34,18 @@ const SPEC: Record<string, { from: string; childKind: string; childLevel: number
   relationships: { from: "pillar", childKind: "relationship", childLevel: 2, count: "2 to 4",
     role: "the key RELATIONSHIPS (dyads) between the cast — each with a bond and a current charge/tension; reference characters BY NAME",
     schema: `{ "a": "<character name>", "b": "<character name>", "bond": "...", "charge": "..." }` },
-  movements: { from: "pillar", childKind: "movement", childLevel: 3, count: "3 to 5", role: "the ACTS — each a major movement with a turning point and a value shift",
-    schema: `{ "title": "...", "goal": "...", "turning_point": "...", "value": { "name": "...", "from": "...", "to": "..." } }` },
-  beats: { from: "movement", childKind: "beat", childLevel: 4, count: "2 to 4", role: "the causal BEATS inside this act; each links to the previous with therefore or but, escalating",
-    schema: `{ "summary": "...", "connector": "therefore" | "but" }` },
-  scenes: { from: "beat", childKind: "scene", childLevel: 5, count: "1 to 3", role: "the dramatized SCENES that deliver this beat; EVERY scene must turn a value (no flat 'and-then')",
-    schema: `{ "loc": "...", "goal": "...", "conflict": "...", "outcome": "...", "value_shift": { "value": "...", "from": "...", "to": "..." } }` },
+  threads: { from: "pillar", childKind: "thread", childLevel: 2, count: "4 to 7",
+    role: "the PROMISE REGISTRY — the open loops the book opens and must close (a planted clue, a mystery, a foreshadow, a relationship arc). Read THE ARC (the movements) and place promises that pay off across it — setups early, payoffs later",
+    schema: `{ "name": "...", "promise": "...", "payoff": "...", "kind": "mystery|foreshadow|setup_payoff|arc" }` },
+  movements: { from: "pillar", childKind: "movement", childLevel: 3, count: "exactly 4",
+    role: "the ACTS — four movements whose turning points land near the structural-gravity marks (≈25%, 50%, 75%, 90% of the book). Each carries a goal, a turning point, a target_pct (where its turn should land, 0–1), and a value shift",
+    schema: `{ "title": "...", "goal": "...", "turning_point": "...", "target_pct": 0.25, "value": { "name": "...", "from": "...", "to": "..." } }` },
+  beats: { from: "movement", childKind: "beat", childLevel: 4, count: "2 to 4",
+    role: "the causal BEATS inside this act; each links to the previous with therefore or but, escalating. Tag which THREADS each beat sets up / advances / pays off (reference threads BY NAME)",
+    schema: `{ "summary": "...", "connector": "therefore" | "but", "threads": [ { "ref": "<thread name>", "role": "setup|advance|payoff" } ] }` },
+  scenes: { from: "beat", childKind: "scene", childLevel: 5, count: "1 to 3",
+    role: "the dramatized SCENES that REALIZE this beat; EVERY scene must turn a value (no flat 'and-then'). Set each scene's value_shift.polarity (up = ends better, down = ends worse). The beat's planned polarity is where the beat must LAND (its closing charge) — your last scene reaches it, but VARY internally (a down-beat can open on false hope; an up-beat can dip): do NOT make every scene the same polarity. The thread schedule is inherited automatically — do NOT re-assign threads",
+    schema: `{ "loc": "...", "goal": "...", "conflict": "...", "outcome": "...", "value_shift": { "value": "...", "from": "...", "to": "...", "polarity": "up|down" } }` },
 };
 
 Deno.serve(async (req: Request) => {
@@ -56,7 +62,7 @@ Deno.serve(async (req: Request) => {
     if (!apiKey) return json({ error: "ANTHROPIC_API_KEY not configured" }, 500);
 
     const { data: book } = await userClient.from("books").select("name, brief, foundations").eq("id", bookId).maybeSingle();
-    const { data: nodeRows } = await userClient.from("book_nodes").select("id, parent_id, kind, content, authoring").eq("book_id", bookId);
+    const { data: nodeRows } = await userClient.from("book_nodes").select("id, parent_id, kind, position, content, authoring").eq("book_id", bookId);
     const nodes = (nodeRows as Node[] | null) ?? [];
     const node = nodes.find((n) => n.id === nodeId);
     if (!node) return json({ error: "Node not found" }, 404);
@@ -78,6 +84,26 @@ Deno.serve(async (req: Request) => {
         chars.map((c) => `- ${cName(c)} [${(c.content as { role?: string }).role ?? "?"}] ${JSON.stringify(c.content)}`).join("\n") +
         entities.filter((e) => e.kind === "world_fact").map((w) => `\n- WORLD: ${(w.content as { rule?: string }).rule ?? ""}`).join("")
       : "";
+    // The promise registry + the arc — fed so beats/scenes anchor real threads (by name) and threads
+    // generation can place payoffs across the whole movement sequence (schema §4.5/§6).
+    const threads = pillar ? nodes.filter((n) => n.parent_id === pillar.id && n.kind === "thread") : [];
+    const tName = (e: Node) => String((e.content as { name?: string }).name ?? "").trim();
+    const threadBlock = threads.length
+      ? "THREADS — the promise registry (reference BY NAME):\n" +
+        threads.map((t) => `- ${tName(t)}: ${(t.content as { promise?: string }).promise ?? ""} → ${(t.content as { payoff?: string }).payoff ?? ""}`).join("\n")
+      : "";
+    const movements = pillar ? nodes.filter((n) => n.parent_id === pillar.id && n.kind === "movement").sort((a, b) => (a.position ?? 0) - (b.position ?? 0)) : [];
+    const movementBlock = movements.length
+      ? "THE ARC (movements in order — place promises across these):\n" +
+        movements.map((m) => `- [${(m.content as { title?: string }).title ?? ""}] turn: ${(m.content as { turning_point?: string }).turning_point ?? ""}`).join("\n")
+      : "";
+    // The tentpole registry — set-pieces the beat sheet must place (each pinned tentpole → a beat).
+    const tentpoles = pillar ? nodes.filter((n) => n.parent_id === pillar.id && n.kind === "tentpole" && (n.authoring?.locked || n.authoring?.status === "accepted")) : [];
+    const tpName = (e: Node) => String((e.content as { summary?: string }).summary ?? "").trim();
+    const tentpoleBlock = tentpoles.length
+      ? "TENTPOLES — set-pieces you MUST place (assign each to the beat that delivers it, BY its summary):\n" +
+        tentpoles.map((t) => `- ${tpName(t)}`).join("\n")
+      : "";
     const ctx = [
       `BOOK: ${book?.name ?? ""}`,
       `BRIEF (binding):\n${briefContext(brief, { scope: "full", success: true, none: "(no brief)", empty: "(empty)" })}`,
@@ -85,6 +111,9 @@ Deno.serve(async (req: Request) => {
       "STORY SO FAR (the ladder above this node; LOCKED items are immutable):",
       ...chain.map((a) => `[${a.kind}${a.authoring?.locked ? " · LOCKED" : ""}] ${JSON.stringify(a.content)}`),
       entityBlock,
+      threadBlock,
+      tentpoleBlock,
+      movementBlock,
       `THIS NODE [${node.kind}]: ${JSON.stringify(node.content)}`,
     ].filter(Boolean).join("\n\n");
 
@@ -97,6 +126,44 @@ Deno.serve(async (req: Request) => {
       const data = await callClaude(apiKey, { model, max_tokens: 4000, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
         messages: [{ role: "user", content: `${ctx}\n\nWrite this scene's prose.` }] }, meta);
       return json({ prose: textFromClaude(data).trim() });
+    }
+
+    if (target === "beatsheet") {
+      // GLOBAL beat-sheet pass (root fix): generate EVERY beat in one call with the whole arc + the thread
+      // registry in view, so promises schedule setup→payoff in order and polarity is planned to oscillate.
+      // Returns a flat, movement-indexed list; the client persists it grouped under each movement.
+      if (!movements.length) return json({ error: "generate the movements before the beat sheet" }, 400);
+      if (!threads.length) return json({ error: "generate the threads before the beat sheet" }, 400);
+      const system = `You are a story architect writing the ENTIRE BOOK'S BEAT SHEET in ONE pass — every beat of every act at once, so you can see the whole sequence. Honor every LOCKED ancestor and the MANDATE verbatim. Rules:
+- 2 to 4 beats per movement; each beat links to the prior with "therefore" or "but" (escalating causality).
+- Set each beat's PLANNED polarity (up = ends better, down = ends worse). The movement's value shift is the MACRO trend; you MUST still OSCILLATE within it — never more than ~3 beats of the same polarity in a row. Place deliberate relief/hope-spots inside down-acts and setbacks inside up-acts.
+- Schedule the THREADS across the whole book: every promise must be SET UP (role:setup) in an EARLIER beat before it is PAID OFF (role:payoff) in a LATER beat; use "advance" for beats that develop it in between. Reference threads BY NAME.${tentpoles.length ? `\n- PLACE every TENTPOLE: assign each set-piece to the ONE beat that delivers it, in "realizes" (by its summary). Every tentpole listed must appear on exactly one beat.` : ""}
+Output JSON ONLY: { "beats": [ { "movement": <1..${movements.length}>, "summary": "...", "connector": "therefore"|"but", "polarity": "up"|"down", "threads": [ { "ref": "<thread name>", "role": "setup"|"advance"|"payoff" } ]${tentpoles.length ? `, "realizes": [ "<tentpole summary>" ]` : ""} } ] }`;
+      const data = await callClaude(apiKey, { model, max_tokens: 8000, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+        messages: [{ role: "user", content: `${ctx}\n\nWrite the whole beat sheet. JSON only.` }] }, meta);
+      const parsed = JSON.parse(extractJsonBlock(textFromClaude(data)));
+      const rawBeats = Array.isArray(parsed.beats) ? parsed.beats : [];
+      const tNameToId = new Map(threads.map((t) => [tName(t).toLowerCase(), t.id]));
+      const tpNameToId = new Map(tentpoles.map((t) => [tpName(t).toLowerCase(), t.id]));
+      const roles = new Set(["setup", "payoff", "advance"]);
+      // Resolve refs, clamp movement index, then ENFORCE setup→payoff order (drop orphan payoffs).
+      const setUp = new Set<string>();
+      const claimedTp = new Set<string>(); // a tentpole is realized by at most ONE beat (first claim wins)
+      const beats = rawBeats.map((b: Record<string, unknown>) => {
+        const mi = Math.min(Math.max(parseInt(String(b.movement ?? 1), 10) || 1, 1), movements.length) - 1;
+        const refs = (Array.isArray(b.threads) ? b.threads as { ref?: string; role?: string }[] : [])
+          .map((t) => ({ ref: tNameToId.get(String(t.ref ?? "").trim().toLowerCase()), role: t.role }))
+          .filter((t): t is { ref: string; role: string } => !!t.ref && roles.has(String(t.role)));
+        for (const t of refs) if (t.role === "setup") setUp.add(t.ref);
+        const threadsKept = refs.filter((t) => t.role !== "payoff" || setUp.has(t.ref));
+        const realizes = (Array.isArray(b.realizes) ? b.realizes as string[] : [])
+          .map((s) => tpNameToId.get(String(s ?? "").trim().toLowerCase()))
+          .filter((id): id is string => !!id && !claimedTp.has(id) && (claimedTp.add(id), true));
+        const content: Record<string, unknown> = { summary: b.summary, connector: b.connector, polarity: b.polarity === "down" ? "down" : "up", threads: threadsKept };
+        if (realizes.length) content.realizes = realizes;
+        return { movement: mi, content };
+      });
+      return json({ beatsheet: true, childKind: "beat", childLevel: 4, movementIds: movements.map((m) => m.id), beats });
     }
 
     const spec = target ? SPEC[target] : undefined;
@@ -112,6 +179,19 @@ Deno.serve(async (req: Request) => {
       children = children
         .map((ch: Record<string, unknown>) => ({ ...ch, a: nameToId.get(String(ch.a ?? "").trim().toLowerCase()), b: nameToId.get(String(ch.b ?? "").trim().toLowerCase()) }))
         .filter((ch: { a?: string; b?: string }) => ch.a && ch.b && ch.a !== ch.b);
+    }
+    if (spec.childKind === "beat" || spec.childKind === "scene") {
+      // Resolve each thread ref from thread NAME → node id; drop unresolved refs / bad roles.
+      const tNameToId = new Map(threads.map((t) => [tName(t).toLowerCase(), t.id]));
+      const roles = new Set(["setup", "payoff", "advance"]);
+      children = children.map((ch: Record<string, unknown>) => {
+        const raw = Array.isArray(ch.threads) ? (ch.threads as { ref?: string; role?: string }[]) : [];
+        const resolved = raw
+          .map((t) => ({ ref: tNameToId.get(String(t.ref ?? "").trim().toLowerCase()), role: t.role }))
+          .filter((t) => t.ref && roles.has(String(t.role)));
+        const { threads: _drop, ...rest } = ch;
+        return resolved.length ? { ...rest, threads: resolved } : rest;
+      });
     }
     return json({ childKind: spec.childKind, childLevel: spec.childLevel, children });
   } catch (e) {

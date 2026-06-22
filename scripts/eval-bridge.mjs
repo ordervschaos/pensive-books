@@ -3384,17 +3384,19 @@ const DNA_SPEC = {
     schema: `{ "rule": "...", "category": "..." }` },
   relationships: { childKind: "relationship", childLevel: 2, count: "2 to 4", role: "the key RELATIONSHIPS (dyads) between the cast — each with a bond and a current charge/tension; reference characters BY NAME",
     schema: `{ "a": "<character name>", "b": "<character name>", "bond": "...", "charge": "..." }` },
-  movements: { childKind: "movement", childLevel: 3, count: "3 to 5", role: "the ACTS — each a major movement with a turning point and a value shift",
-    schema: `{ "title": "...", "goal": "...", "turning_point": "...", "value": { "name": "...", "from": "...", "to": "..." } }` },
-  beats: { childKind: "beat", childLevel: 4, count: "2 to 4", role: "the causal BEATS inside this act; each links to the previous with therefore or but, escalating",
-    schema: `{ "summary": "...", "connector": "therefore" | "but" }` },
-  scenes: { childKind: "scene", childLevel: 5, count: "1 to 3", role: "the dramatized SCENES that deliver this beat; EVERY scene must turn a value (no flat 'and-then')",
-    schema: `{ "loc": "...", "goal": "...", "conflict": "...", "outcome": "...", "value_shift": { "value": "...", "from": "...", "to": "..." } }` },
+  threads: { childKind: "thread", childLevel: 2, count: "4 to 7", role: "the PROMISE REGISTRY — the open loops the book opens and must close (a planted clue, a mystery, a foreshadow, a relationship arc). Read THE ARC (the movements) and place promises that pay off across it — setups early, payoffs later",
+    schema: `{ "name": "...", "promise": "...", "payoff": "...", "kind": "mystery|foreshadow|setup_payoff|arc" }` },
+  movements: { childKind: "movement", childLevel: 3, count: "exactly 4", role: "the ACTS — four movements whose turning points land near the structural-gravity marks (≈25%, 50%, 75%, 90% of the book). Each carries a goal, a turning point, a target_pct (where its turn should land, 0–1), and a value shift",
+    schema: `{ "title": "...", "goal": "...", "turning_point": "...", "target_pct": 0.25, "value": { "name": "...", "from": "...", "to": "..." } }` },
+  beats: { childKind: "beat", childLevel: 4, count: "2 to 4", role: "the causal BEATS inside this act; each links to the previous with therefore or but, escalating. Tag which THREADS each beat sets up / advances / pays off (reference threads BY NAME)",
+    schema: `{ "summary": "...", "connector": "therefore" | "but", "threads": [ { "ref": "<thread name>", "role": "setup|advance|payoff" } ] }` },
+  scenes: { childKind: "scene", childLevel: 5, count: "1 to 3", role: "the dramatized SCENES that REALIZE this beat; EVERY scene must turn a value (no flat 'and-then'). Set each scene's value_shift.polarity (up = ends better, down = ends worse). The beat's planned polarity is where the beat must LAND (its closing charge) — your last scene reaches it, but VARY internally (a down-beat can open on false hope; an up-beat can dip): do NOT make every scene the same polarity. The thread schedule is inherited automatically — do NOT re-assign threads",
+    schema: `{ "loc": "...", "goal": "...", "conflict": "...", "outcome": "...", "value_shift": { "value": "...", "from": "...", "to": "...", "polarity": "up|down" } }` },
 };
 async function runDnaExpand({ bookId, nodeId, target }) {
   const book = await fetchBook(bookId);
   if (!book) return { error: "Book not found" };
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/book_nodes?book_id=eq.${bookId}&select=id,parent_id,kind,content,authoring`, { headers: sbHeaders });
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/book_nodes?book_id=eq.${bookId}&select=id,parent_id,kind,position,content,authoring`, { headers: sbHeaders });
   const nodes = await r.json();
   const node = nodes.find((n) => n.id === nodeId);
   if (!node) return { error: "Node not found" };
@@ -3413,6 +3415,24 @@ async function runDnaExpand({ bookId, nodeId, target }) {
       chars.map((c) => `- ${cName(c)} [${c.content?.role ?? "?"}] ${JSON.stringify(c.content)}`).join("\n") +
       entities.filter((e) => e.kind === "world_fact").map((w) => `\n- WORLD: ${w.content?.rule ?? ""}`).join("")
     : "";
+  // Promise registry + the arc — beats/scenes anchor real threads by name; threads gen sees the whole arc.
+  const threads = pillar ? nodes.filter((n) => n.parent_id === pillar.id && n.kind === "thread") : [];
+  const tName = (e) => String(e.content?.name ?? "").trim();
+  const threadBlock = threads.length
+    ? "THREADS — the promise registry (reference BY NAME):\n" +
+      threads.map((t) => `- ${tName(t)}: ${t.content?.promise ?? ""} → ${t.content?.payoff ?? ""}`).join("\n")
+    : "";
+  const movements = pillar ? nodes.filter((n) => n.parent_id === pillar.id && n.kind === "movement").sort((a, b) => (a.position ?? 0) - (b.position ?? 0)) : [];
+  const movementBlock = movements.length
+    ? "THE ARC (movements in order — place promises across these):\n" +
+      movements.map((m) => `- [${m.content?.title ?? ""}] turn: ${m.content?.turning_point ?? ""}`).join("\n")
+    : "";
+  const tentpoles = pillar ? nodes.filter((n) => n.parent_id === pillar.id && n.kind === "tentpole" && (n.authoring?.locked || n.authoring?.status === "accepted")) : [];
+  const tpName = (e) => String(e.content?.summary ?? "").trim();
+  const tentpoleBlock = tentpoles.length
+    ? "TENTPOLES — set-pieces you MUST place (assign each to the beat that delivers it, BY its summary):\n" +
+      tentpoles.map((t) => `- ${tpName(t)}`).join("\n")
+    : "";
   const ctx = [
     `BOOK: ${book.name ?? ""}`,
     `BRIEF (binding):\n${briefContext(book.brief)}`,
@@ -3420,6 +3440,9 @@ async function runDnaExpand({ bookId, nodeId, target }) {
     "STORY SO FAR (the ladder above this node; LOCKED items are immutable):",
     ...chain.map((a) => `[${a.kind}${a.authoring?.locked ? " · LOCKED" : ""}] ${JSON.stringify(a.content)}`),
     entityBlock,
+    threadBlock,
+    tentpoleBlock,
+    movementBlock,
     `THIS NODE [${node.kind}]: ${JSON.stringify(node.content)}`,
   ].filter(Boolean).join("\n\n");
 
@@ -3429,6 +3452,48 @@ async function runDnaExpand({ bookId, nodeId, target }) {
     if (out.error) return out;
     return { prose: out.text.trim() };
   }
+  if (target === "beatsheet") {
+    // GLOBAL beat-sheet pass (root fix) — mirrors supabase/functions/dna-expand. One call, whole arc in view:
+    // schedule setup→payoff in order, plan polarity to oscillate. enforcePromiseSchedule (inline) drops orphan
+    // payoffs so setup→payoff is an INVARIANT. Returns a flat movement-indexed list; the caller persists it.
+    if (!movements.length) return { error: "generate the movements before the beat sheet" };
+    if (!threads.length) return { error: "generate the threads before the beat sheet" };
+    const prompt = `You are a story architect writing the ENTIRE BOOK'S BEAT SHEET in ONE pass — every beat of every act at once, so you can see the whole sequence. Honor every LOCKED ancestor and the MANDATE verbatim. Rules:
+- 2 to 4 beats per movement; each beat links to the prior with "therefore" or "but" (escalating causality).
+- Set each beat's PLANNED polarity (up = ends better, down = ends worse). The movement's value shift is the MACRO trend; you MUST still OSCILLATE within it — never more than ~3 beats of the same polarity in a row. Place deliberate relief/hope-spots inside down-acts and setbacks inside up-acts.
+- Schedule the THREADS across the whole book: every promise must be SET UP (role:setup) in an EARLIER beat before it is PAID OFF (role:payoff) in a LATER beat; use "advance" for beats in between. Reference threads BY NAME.${tentpoles.length ? `\n- PLACE every TENTPOLE: assign each set-piece to the ONE beat that delivers it, in "realizes" (by its summary). Every tentpole listed must appear on exactly one beat.` : ""}
+Output JSON ONLY: { "beats": [ { "movement": <1..${movements.length}>, "summary": "...", "connector": "therefore"|"but", "polarity": "up"|"down", "threads": [ { "ref": "<thread name>", "role": "setup"|"advance"|"payoff" } ]${tentpoles.length ? `, "realizes": [ "<tentpole summary>" ]` : ""} } ] }\n\n${ctx}\n\nWrite the whole beat sheet. JSON only.`;
+    const out = await runClaude(prompt, true, { fn: "dna-expand", bookId }, { noTools: true, model: MODEL_PLANNING });
+    if (out.error) return out;
+    let raw = out.text.trim();
+    const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (fence) raw = fence[1].trim();
+    else { const f = raw.indexOf("{"), l = raw.lastIndexOf("}"); if (f !== -1 && l > f) raw = raw.slice(f, l + 1); }
+    let rawBeats;
+    try { rawBeats = JSON.parse(raw).beats; } catch { return { error: "Could not parse beat sheet JSON" }; }
+    if (!Array.isArray(rawBeats)) return { error: "beat sheet had no beats" };
+    const tNameToId = new Map(threads.map((t) => [tName(t).toLowerCase(), t.id]));
+    const tpNameToId = new Map(tentpoles.map((t) => [tpName(t).toLowerCase(), t.id]));
+    const roles = new Set(["setup", "payoff", "advance"]);
+    const setUp = new Set();
+    const claimedTp = new Set();
+    const beats = rawBeats.map((b) => {
+      const mi = Math.min(Math.max(parseInt(String(b.movement ?? 1), 10) || 1, 1), movements.length) - 1;
+      const refs = (Array.isArray(b.threads) ? b.threads : [])
+        .map((t) => ({ ref: tNameToId.get(String(t.ref ?? "").trim().toLowerCase()), role: t.role }))
+        .filter((t) => t.ref && roles.has(String(t.role)));
+      for (const t of refs) if (t.role === "setup") setUp.add(t.ref);
+      const threadsKept = refs.filter((t) => t.role !== "payoff" || setUp.has(t.ref));
+      const realizes = (Array.isArray(b.realizes) ? b.realizes : [])
+        .map((s) => tpNameToId.get(String(s ?? "").trim().toLowerCase()))
+        .filter((id) => id && !claimedTp.has(id) && (claimedTp.add(id), true));
+      const content = { summary: b.summary, connector: b.connector, polarity: b.polarity === "down" ? "down" : "up", threads: threadsKept };
+      if (realizes.length) content.realizes = realizes;
+      return { movement: mi, content };
+    });
+    return { beatsheet: true, childKind: "beat", childLevel: 4, movementIds: movements.map((m) => m.id), beats };
+  }
+
   const spec = target ? DNA_SPEC[target] : undefined;
   if (!spec) return { error: `Unknown expand target "${target}"` };
   const prompt = `You are a story architect expanding a ${node.kind} into ${spec.role}. Generate ${spec.count} ${spec.childKind}s as ONE authoritative structure — NOT alternatives. Honor every LOCKED ancestor and the MANDATE verbatim. Output JSON ONLY: { "children": [ ${spec.schema} ] }\n\n${ctx}\n\nGenerate the ${spec.childKind}s. JSON only.`;
@@ -3446,6 +3511,18 @@ async function runDnaExpand({ bookId, nodeId, target }) {
       children = children
         .map((ch) => ({ ...ch, a: nameToId.get(String(ch.a ?? "").trim().toLowerCase()), b: nameToId.get(String(ch.b ?? "").trim().toLowerCase()) }))
         .filter((ch) => ch.a && ch.b && ch.a !== ch.b);
+    }
+    if (spec.childKind === "beat" || spec.childKind === "scene") {
+      const tNameToId = new Map(threads.map((t) => [tName(t).toLowerCase(), t.id]));
+      const roles = new Set(["setup", "payoff", "advance"]);
+      children = children.map((ch) => {
+        const raw = Array.isArray(ch.threads) ? ch.threads : [];
+        const resolved = raw
+          .map((t) => ({ ref: tNameToId.get(String(t.ref ?? "").trim().toLowerCase()), role: t.role }))
+          .filter((t) => t.ref && roles.has(String(t.role)));
+        const { threads: _drop, ...rest } = ch;
+        return resolved.length ? { ...rest, threads: resolved } : rest;
+      });
     }
     return { childKind: spec.childKind, childLevel: spec.childLevel, children };
   } catch { return { error: "Could not parse expand JSON" }; }
@@ -3961,6 +4038,13 @@ async function route(req, res) {
   return json(res, 404, { error: "use /eval/:bookId, /spine-to-objectives/:bookId, /bible/:bookId, /eval-call/:aiCallId, or POST /beat-to-prose" });
 }
 
+// Driver hook: a dev script (scripts/dna-flow-test.mjs) imports the run-functions directly to drive the
+// DNA flow end-to-end without the HTTP auth gate (it persists via the service role itself). Set
+// DNA_BRIDGE_NO_LISTEN=1 to import the module without binding the port (avoids EADDRINUSE).
+export { runDnaExpand, runDnaChat, fetchBook, SUPABASE_URL, sbHeaders };
+if (process.env.DNA_BRIDGE_NO_LISTEN) {
+  // imported by a driver — don't start the HTTP server
+} else
 server.listen(PORT, () => {
   console.log(`eval-bridge listening on http://localhost:${PORT}  (repo: ${repoRoot})`);
   console.log(`  GET/POST /eval/:bookId   POST /spine-to-objectives/:bookId   POST /bible/:bookId   POST /revise-outline/:bookId   POST /beat-to-prose   POST /revise-prose   POST /objective-to-beat   POST /prose-to-beat   POST /brief-to-spine   POST /beat-to-objective   POST /objectives-to-spine   POST /revise-node   POST /revise-scaffold   POST /objective-options   POST /spine-options   POST /ai-run   POST /generate-book`);
