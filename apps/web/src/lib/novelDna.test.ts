@@ -110,6 +110,19 @@ describe("pure edits", () => {
     expect(editContent(ai, { goal: "x" }).authoring.source).toBe("ai_then_user");
   });
 
+  it("editContent deep-merges nested fields — a throughline edit can't clobber sibling shape fields", () => {
+    const premise = mk("premise", { content: { shape: { setup: "old setup", turn1: "t1", turn2: "t2", resolution: "res" } } });
+    const edited = editContent(premise, { shape: { setup: "NEW setup" } }); // patch only one nested key
+    expect(edited.content.shape).toEqual({ setup: "NEW setup", turn1: "t1", turn2: "t2", resolution: "res" });
+  });
+
+  it("deep-merge replaces arrays wholesale (DNA arrays are whole values, not appended)", () => {
+    const n = mk("premise", { content: { genre: ["a", "b"], dramatic_question: "q" } });
+    const edited = editContent(n, { genre: ["c"] });
+    expect(edited.content.genre).toEqual(["c"]);          // replaced, not concatenated
+    expect(edited.content.dramatic_question).toBe("q");   // sibling untouched
+  });
+
   it("chooseProposal adopts the proposal content and accepts the node", () => {
     const n = mk("premise", { authoring: { source: "ai", locked: false, status: "proposed" }, proposals: [
       { id: "p1", content: { dramatic_question: "A?" } }, { id: "p2", content: { dramatic_question: "B?" } },
@@ -340,6 +353,24 @@ describe("game pillar — the possibility space (single game is valid; coupling 
     const g = mk("game", { id: "g1", parent_id: "p", content: { name: "g", win_condition: "w", lose_condition: "l", couples: [{ to: "g_ghost", when: "lost", effect: "void" }] } });
     expect(refsOf(g)).toContain("g_ghost");
     expect(validate([pillar, g]).map((i) => i.rule)).toContain("dangling_ref");
+  });
+
+  // [EXP:preconditions] — the unearned-resource lint.
+  it("flags a win that spends an unestablished state precondition, and clears once an earlier beat establishes it", () => {
+    const pillar = mk("pillar", { id: "p" });
+    const wf = mk("world_fact", { id: "w1", content: { name: "redemption", mechanism: "pay → free" } });
+    const game = mk("game", { id: "g", parent_id: "p", content: { name: "redemption", win_condition: "pay from fund", lose_condition: "stay owned", governing_rules: ["w1"], win_requires: [{ type: "rule", what: "redemption frees" }, { type: "state", what: "fund ≥ price", key: "fund_sufficient" }] } });
+    const m = mk("movement", { id: "m", parent_id: "p" });
+    const b1 = mk("beat", { id: "b1", parent_id: "m", position: 0, content: { plays: ["g"] } });
+    const b2 = mk("beat", { id: "b2", parent_id: "m", position: 1, content: { plays: ["g"], resolves: [{ ref: "g", outcome: "won" }] } });
+    // resolving beat spends "fund_sufficient" but nothing established it → illegal_resolution
+    expect(validate([pillar, wf, game, m, b1, b2]).map((i) => i.rule)).toContain("illegal_resolution");
+    // establish it in an EARLIER beat → clean
+    const b1ok = mk("beat", { id: "b1", parent_id: "m", position: 0, content: { plays: ["g"], establishes: ["fund_sufficient"] } });
+    expect(validate([pillar, wf, game, m, b1ok, b2]).map((i) => i.rule)).not.toContain("illegal_resolution");
+    // establishing it only AT/AFTER the resolving beat is still illegal (can't spend what's not yet acquired)
+    const b2late = mk("beat", { id: "b2", parent_id: "m", position: 1, content: { plays: ["g"], establishes: ["fund_sufficient"], resolves: [{ ref: "g", outcome: "won" }] } });
+    expect(validate([pillar, wf, game, m, b1, b2late]).map((i) => i.rule)).toContain("illegal_resolution");
   });
 });
 

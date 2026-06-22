@@ -104,6 +104,7 @@ async function expand(bookId, node, target, startPosition = 0) {
     if (Array.isArray(beat.grounds_in) && beat.grounds_in.length && children.length) children[children.length - 1].content.grounds_in = beat.grounds_in;
     if (Array.isArray(beat.plays) && beat.plays.length && children[0]) children[0].content.plays = beat.plays;
     if (Array.isArray(beat.resolves) && beat.resolves.length && children.length) children[children.length - 1].content.resolves = beat.resolves;
+    if (Array.isArray(beat.establishes) && beat.establishes.length && children[0]) children[0].content.establishes = beat.establishes; // [EXP:preconditions]
     if (startPosition === 0 && children[0] && !children[0].content.chapter_start) children[0].content.chapter_start = { title: chapterTitle(String(beat.summary ?? "")) };
   }
   await insertNodes(children);

@@ -8,7 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
 import { Eyebrow } from "@/components/book/studio/studioUi";
-import { applyDnaProposal, clearDnaProposal, sendDnaMessage, type DnaChatMessage, type DnaProposal } from "@/lib/dnaChat";
+import { applyDnaProposal, clearDnaProposal, describeOps, sendDnaMessage, type DnaChatMessage, type DnaProposal } from "@/lib/dnaChat";
 import { DNA_STAGES, type StageKey } from "@/lib/dnaJourney";
 import { analysisText, type BookSettings, type DnaNode } from "@/lib/novelDna";
 
@@ -90,12 +90,34 @@ export function DnaChatRail({ bookId, stage, nodes, settings, onApplied }: { boo
 
         {pending && (
           <div className="rounded-2xl border border-[hsl(var(--pv-accent))]/40 bg-[hsl(var(--pv-accent))]/[0.06] px-4 py-3">
-            <Eyebrow tone="accent">proposed change</Eyebrow>
+            <Eyebrow tone="accent">proposed change — review before it's saved</Eyebrow>
             <p className="pv-serif mt-1 text-[13.5px] leading-snug text-foreground">{pending.summary}</p>
-            <p className="pv-mono mt-1 text-[10px] uppercase tracking-[0.1em] text-[hsl(var(--pv-text-faint))]">{pending.ops.length} edit(s) to the tree</p>
-            <div className="mt-2 flex items-center gap-4">
-              <button disabled={applying} onClick={() => void apply()} className="pv-serif text-[13px] text-[hsl(var(--pv-accent))] hover:underline disabled:opacity-50">{applying ? "applying…" : "apply"}</button>
-              <button onClick={() => void discard()} className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">discard</button>
+            <div className="mt-2.5 space-y-2.5">
+              {describeOps(pending.ops, nodes).map((row, i) => (
+                <div key={i} className="rounded-lg border border-[hsl(var(--pv-border-soft))] bg-background/40 px-3 py-2">
+                  <p className="pv-mono flex items-center gap-1.5 text-[10px] uppercase tracking-[0.1em] text-[hsl(var(--pv-text-faint))]">
+                    <span>{row.verb === "edit" ? "edit" : row.verb === "add" ? "add" : "remove"} · {row.kind}</span>
+                    {row.verb === "add" && row.parentLabel ? <span>under <span className="text-[hsl(var(--pv-text-muted))]">{row.parentLabel}</span></span> : null}
+                    {row.restales ? <span className="text-amber-500">{row.verb === "delete" ? `−${row.restales} below` : `restales ${row.restales}`}</span> : null}
+                  </p>
+                  <p className="pv-serif mt-0.5 text-[13px] font-medium leading-snug text-foreground">{row.label}</p>
+                  {row.verb === "delete"
+                    ? <p className="pv-serif mt-1 text-[12.5px] italic text-[hsl(var(--pv-text-faint))]">this node will be removed</p>
+                    : row.fields.map((f) => (
+                      <div key={f.key} className="mt-1.5">
+                        <p className="pv-mono text-[10px] uppercase tracking-[0.08em] text-[hsl(var(--pv-text-faint))]">{f.key}</p>
+                        {f.old !== undefined && f.old !== f.next && (
+                          <p className="pv-serif text-[12.5px] leading-snug text-[hsl(var(--pv-text-faint))] line-through decoration-[hsl(var(--pv-text-faint))]/50">{f.old}</p>
+                        )}
+                        <p className="pv-serif text-[12.5px] leading-snug text-foreground whitespace-pre-wrap">{f.next}</p>
+                      </div>
+                    ))}
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 flex items-center gap-4">
+              <button disabled={applying} onClick={() => void apply()} className="pv-serif text-[13px] text-[hsl(var(--pv-accent))] hover:underline disabled:opacity-50">{applying ? "accepting…" : "accept"}</button>
+              <button onClick={() => void discard()} className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-foreground">dismiss</button>
             </div>
           </div>
         )}

@@ -58,12 +58,24 @@ Deno.serve(async (req: Request) => {
 
     const brief = book?.brief as Brief | null;
     const mandate = mandateContext(brief);
-    const stageNodes = nodes.filter((n) => STAGE_KINDS[stage].includes(n.kind));
-    // For deeper stages, also show the cast (referenced by scenes) and the ancestors for grounding.
-    const cast = stage !== "foundations" ? nodes.filter((n) => n.kind === "character") : [];
-    const system = `You are a sharp, warm developmental STORY EDITOR in conversation with an author about ${STAGE_GUIDE[stage]}
+    // The rail holds the WHOLE tree (premise → scenes) and may edit ANY non-locked node — the stage names the
+    // editor's FOCUS, not its reach. Prose is heavy: include scene prose only on the draft stage (its concern),
+    // strip it elsewhere to keep the context lean.
+    const withProse = stage === "draft";
+    const serialize = (n: Node): string => {
+      let content = n.content;
+      if (!withProse && n.kind === "scene" && content && typeof content === "object" && "prose" in content) {
+        const { prose: _drop, ...rest } = content as Record<string, unknown>;
+        content = rest;
+      }
+      return `[${n.id}${n.authoring?.locked ? " · LOCKED" : ""}] L${n.level} ${n.kind}: ${JSON.stringify(content)}`;
+    };
+    const tree = [...nodes].sort((a, b) => a.level - b.level).map(serialize).join("\n");
+    const system = `You are a sharp, warm developmental STORY EDITOR in conversation with an author. Your current FOCUS is ${STAGE_GUIDE[stage]}
 
-You hold ONE stage of the book's DNA tree. Reply to the author in plain MARKDOWN prose — discuss, pressure-test, answer. If — and ONLY if — this message DELIVERS a concrete change to apply, append at the VERY END a single fenced \`\`\`json block (nothing after it) with node operations over the REAL node ids given:
+You hold the book's ENTIRE DNA tree — premise → foundations → structure → scenes${withProse ? " → prose" : ""} — and you may edit, add, or delete ANY non-locked node at ANY level, not just your focus stage. The focus names what the author is working on, not a fence around what you can touch.${withProse ? " Scene PROSE is included here (content.prose.text); you may rewrite it." : ""}
+
+Reply to the author in plain MARKDOWN prose — discuss, pressure-test, answer. If — and ONLY if — this message DELIVERS a concrete change to apply, append at the VERY END a single fenced \`\`\`json block (nothing after it) with node operations over the REAL node ids given:
 { "summary": "<one line: what changes>",
   "ops": [
     { "op": "edit", "id": "<existing node id>", "content": { <fields to merge> } },
@@ -76,11 +88,10 @@ Only reference ids that exist. Honor LOCKED nodes (never edit/delete them). Don'
       `BOOK: ${book?.name ?? ""}`,
       `BRIEF (binding): ${briefContext(brief, { scope: "full", success: true, none: "(no brief)", empty: "(empty)" })}`,
       mandate ? `MANDATE — NON-NEGOTIABLE: ${mandate}` : "",
-      cast.length ? `CAST (for reference):\n${cast.map((c) => `[${c.id}] ${JSON.stringify(c.content)}`).join("\n")}` : "",
       // The three-axis story analysis (computed client-side from the live tree) — so the editor can act on
       // pacing drift, dangling promises, and sagging runs rather than eyeballing them.
       analysis?.trim() ? `STORY ANALYSIS (the structural backstop — address any ⚠ flags):\n${analysis.trim()}` : "",
-      `THIS STAGE'S NODES (edit/add/delete by these ids; LOCKED = immutable):\n${stageNodes.map((n) => `[${n.id}${n.authoring?.locked ? " · LOCKED" : ""}] ${n.kind}: ${JSON.stringify(n.content)}`).join("\n") || "(none yet)"}`,
+      `THE DNA TREE (edit/add/delete by these ids; LOCKED = immutable):\n${tree || "(none yet)"}`,
     ].filter(Boolean).join("\n\n");
 
     const { high: model } = await getActiveModels();

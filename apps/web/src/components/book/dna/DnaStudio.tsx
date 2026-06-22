@@ -73,15 +73,6 @@ const setPath = (path: string, value: string): Record<string, unknown> => {
   keys.forEach((k, i) => { if (i === keys.length - 1) cur[k] = coerced; else { cur[k] = {}; cur = cur[k] as Record<string, unknown>; } });
   return root;
 };
-const deepMerge = (a: Record<string, unknown>, b: Record<string, unknown>): Record<string, unknown> => {
-  const out = { ...a };
-  for (const k of Object.keys(b)) {
-    const bv = b[k], av = out[k];
-    out[k] = bv && typeof bv === "object" && !Array.isArray(bv) && av && typeof av === "object" ? deepMerge(av as Record<string, unknown>, bv as Record<string, unknown>) : bv;
-  }
-  return out;
-};
-
 export interface DnaSettings { title?: string; author?: string; word_target?: number }
 
 export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
@@ -349,7 +340,7 @@ function NodeCard({ node, index, bookId, kids, onChanged, accent }: {
                 value={val}
                 disabled={node.authoring.locked}
                 onChange={(e) => setDrafts((d) => ({ ...d, [fld.key]: e.target.value }))}
-                onBlur={() => { const v = drafts[fld.key]; if (v != null && v !== getPath(node.content, fld.key)) void save(deepMerge(node.content as Record<string, unknown>, setPath(fld.key, v))); }}
+                onBlur={() => { const v = drafts[fld.key]; if (v != null && v !== getPath(node.content, fld.key)) void save(setPath(fld.key, v)); }}
                 placeholder="—"
                 className="pv-serif w-full resize-none border-0 border-b border-transparent bg-transparent px-0 py-0.5 text-[14px] leading-snug text-foreground outline-none focus:border-[hsl(var(--pv-accent))]/40 focus-visible:ring-0 disabled:opacity-60"
               />

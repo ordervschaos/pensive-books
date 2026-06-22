@@ -48,6 +48,7 @@ export interface BeatContent {
   threads?: ThreadRef[]; realizes?: string[]; grounds_in?: string[];
   plays?: string[];               // game ids this turn advances (a move) — schema/games §3
   resolves?: GameResolution[];    // games DECIDED on this turn
+  establishes?: string[];         // [EXP:preconditions] state-precondition keys this turn sets up
 }
 export interface ChapterStart { title?: string; pov?: string; epigraph?: string }
 export interface SceneContent {
@@ -60,6 +61,7 @@ export interface SceneContent {
   grounds_in?: string[];               // world_fact ids whose mechanism this scene's outcome operates on
   plays?: string[];                    // game ids this scene advances (inherited from its beat)
   resolves?: GameResolution[];         // games decided in this scene (inherited from its beat)
+  establishes?: string[];              // [EXP:preconditions] state-precondition keys (inherited from its beat)
   chapter_start?: ChapterStart | null;
   prose?: { text?: string; words?: number };
 }
@@ -75,10 +77,20 @@ export interface ThreadContent { name?: string; promise?: string; payoff?: strin
 // the coupling edge — when THIS game resolves `when`, it has `effect` on the target game (the stakes engine).
 export type CouplingEffect = "void" | "raise" | "lower" | "enable";
 export interface Coupling { to: string; when: "won" | "lost"; effect: CouplingEffect; note?: string }
+// [EXP:preconditions] — EXPERIMENT (removable). A win is a MOVE; its preconditions must hold when made. A
+// `rule` precondition is satisfied by grounding (a known mechanism); a `state` precondition (a resource/state
+// the win SPENDS, e.g. "fund ≥ price") must be ESTABLISHED by an earlier beat or the move is illegal (the
+// "unearned resource" bug). Flip EXP_PRECONDITIONS=false to disable; grep "[EXP:preconditions]" to remove.
+export const EXP_PRECONDITIONS = true;
+export interface WinRequirement { type: "rule" | "state"; what: string; key?: string }
 // A game is a CONTEST with an explicit possibility space — ways to win AND ways to lose. Both poles must
 // exist or there are no real stakes. The climax is solid because it's one realized, legal path through that
 // space (won or lost), not authorial fiat. `couples` is OPTIONAL — only multi-game stories need it.
-export interface GameContent { name?: string; players?: string[]; win_condition?: string; lose_condition?: string; stake?: string; governing_rules?: string[]; couples?: Coupling[] }
+export interface GameContent {
+  name?: string; players?: string[]; win_condition?: string; lose_condition?: string; stake?: string;
+  governing_rules?: string[]; couples?: Coupling[];
+  win_requires?: WinRequirement[]; // [EXP:preconditions] the win's typed preconditions
+}
 export type NodeContent = Record<string, unknown>;
 
 export interface DnaNode {
@@ -234,11 +246,26 @@ export function stampProse(scene: DnaNode): DnaNode {
 }
 
 // ── Pure edits ────────────────────────────────────────────────────────────────
+/** The canonical DNA content merge: nested PLAIN OBJECTS merge recursively; arrays and scalars from the
+ *  patch REPLACE (DNA arrays — threads/players/shape… — are whole values, never appended). Used by EVERY
+ *  edit path so a nested patch (e.g. { shape: { setup } }) can't clobber its sibling fields (turn1…resolution). */
+export function deepMergeContent(base: NodeContent, patch: NodeContent): NodeContent {
+  const out: Record<string, unknown> = { ...(base as Record<string, unknown>) };
+  const p = patch as Record<string, unknown>;
+  for (const k of Object.keys(p)) {
+    const pv = p[k], bv = out[k];
+    out[k] = pv && typeof pv === "object" && !Array.isArray(pv) && bv && typeof bv === "object" && !Array.isArray(bv)
+      ? deepMergeContent(bv as NodeContent, pv as NodeContent)
+      : pv;
+  }
+  return out;
+}
+
 export function editContent(node: DnaNode, patch: NodeContent): DnaNode {
   const wasEmpty = node.authoring.status === "empty";
   return {
     ...node,
-    content: { ...node.content, ...patch },
+    content: deepMergeContent(node.content, patch),
     authoring: {
       ...node.authoring,
       source: wasEmpty ? "user" : node.authoring.source === "ai" ? "ai_then_user" : node.authoring.source,
@@ -529,6 +556,31 @@ export function validate(nodes: DnaNode[]): DnaIssue[] {
       }
       if (!(c.governing_rules ?? []).length && nodes.some((n) => n.kind === "world_fact")) {
         issues.push({ rule: "ungrounded_game", severity: "warn", message: "game's win isn't bound to any world rule (governing_rules empty)", nodeId: g.id });
+      }
+    }
+
+    // [EXP:preconditions] — a resolved game's STATE preconditions must be ESTABLISHED by an EARLIER beat
+    // (you can't spend a resource you never acquired). Beats in reading order; a state key whose first
+    // `establishes` is not strictly before the resolving beat = an illegal move (the "unearned resource" bug).
+    if (EXP_PRECONDITIONS) {
+      const movementsOrdered = nodes.filter((n) => n.kind === "movement").sort((a, b) => a.position - b.position);
+      const beatOrder: DnaNode[] = [];
+      for (const m of movementsOrdered) for (const b of childrenOf(nodes, m.id)) if (b.kind === "beat") beatOrder.push(b);
+      const orderOf = new Map(beatOrder.map((b, i) => [b.id, i]));
+      const establishedAt = new Map<string, number>(); // key → earliest beat index that establishes it
+      beatOrder.forEach((b, i) => { for (const k of ((b.content as BeatContent).establishes ?? [])) if (!establishedAt.has(k)) establishedAt.set(k, i); });
+      for (const g of games) {
+        const stateKeys = ((g.content as GameContent).win_requires ?? []).filter((r) => r.type === "state" && r.key).map((r) => r.key as string);
+        if (!stateKeys.length) continue;
+        const resolver = beatOrder.find((b) => ((b.content as BeatContent).resolves ?? []).some((r) => r.ref === g.id));
+        if (!resolver) continue; // unresolved is its own lint
+        const resolveIdx = orderOf.get(resolver.id)!;
+        for (const key of stateKeys) {
+          const at = establishedAt.get(key);
+          if (at === undefined || at >= resolveIdx) {
+            issues.push({ rule: "illegal_resolution", severity: "warn", message: `the win spends "${key}" but it was never established before the resolving turn (unearned resource)`, nodeId: g.id });
+          }
+        }
       }
     }
   }

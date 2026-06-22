@@ -4,7 +4,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { BRIDGE, bridgeFetch } from "@/lib/bridge";
 import { deleteNode, loadTree, saveNode, saveNodes } from "@/lib/bookNodes";
-import { byId, newId, stampInput, stampProse, type BeatContent, type DnaNode, type GameContent, type NodeContent, type NodeKind, type SceneContent, type ThreadRef } from "@/lib/novelDna";
+import { byId, deepMergeContent, newId, stampInput, stampProse, type BeatContent, type DnaNode, type GameContent, type NodeContent, type NodeKind, type SceneContent, type ThreadRef } from "@/lib/novelDna";
 
 /** A short, legible chapter title from a beat's summary (the working title; the author renames). */
 function chapterTitleFromBeat(beat: DnaNode): string {
@@ -52,7 +52,7 @@ export async function expandNode(
     if (!text) throw new Error("No prose was generated.");
     const updated: DnaNode = {
       ...node,
-      content: { ...node.content, prose: { text, words: wordCount(text) } },
+      content: deepMergeContent(node.content, { prose: { text, words: wordCount(text) } }), // canonical DNA merge
       authoring: { ...node.authoring, source: node.authoring.source === "user" ? "ai_then_user" : "ai", status: "accepted" },
     };
     await saveNode(stampProse(updated));
@@ -103,6 +103,8 @@ export async function expandNode(
     // (the game is decided) lands on the LAST scene (the contest's outcome scene).
     if (beat.plays?.length && made[0]) (made[0].content as SceneContent).plays = beat.plays;
     if (beat.resolves?.length && made.length) (made[made.length - 1].content as SceneContent).resolves = beat.resolves;
+    // [EXP:preconditions] the establishing turn lands on the beat's first scene (the move that acquires it).
+    if (beat.establishes?.length && made[0]) (made[0].content as SceneContent).establishes = beat.establishes;
     // Chaptering: a beat opens a chapter (the legible default; author can merge/rename later).
     if (startPosition === 0 && made[0]) {
       const sc = made[0].content as SceneContent;

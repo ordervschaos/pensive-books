@@ -16,6 +16,11 @@ import { type Brief, briefContext, mandateContext } from "../_shared/brief.ts";
 
 interface Node { id: string; parent_id: string | null; kind: string; position?: number; content: Record<string, unknown>; authoring: { locked?: boolean; status?: string } }
 
+// [EXP:preconditions] — EXPERIMENT (removable). Decompose a game's win into typed preconditions; the beat
+// sheet must ESTABLISH each `state` precondition before the resolving turn. Flip to false to disable; grep
+// "[EXP:preconditions]" to remove. Must match novelDna.ts + eval-bridge.mjs.
+const EXP_PRECONDITIONS = true;
+
 // What each TARGET expands into. One authoritative set; never alternatives. Keyed by target (a node can
 // have several — a pillar generates cast, world, AND acts), so the client passes which to generate.
 const SPEC: Record<string, { from: string; childKind: string; childLevel: number; count: string; schema: string; role: string }> = {
@@ -38,8 +43,10 @@ const SPEC: Record<string, { from: string; childKind: string; childLevel: number
     role: "the PROMISE REGISTRY — the open loops the book opens and must close (a planted clue, a mystery, a foreshadow, a relationship arc). Read THE ARC (the movements) and place promises that pay off across it — setups early, payoffs later",
     schema: `{ "name": "...", "promise": "...", "payoff": "...", "kind": "mystery|foreshadow|setup_payoff|arc" }` },
   games: { from: "pillar", childKind: "game", childLevel: 2, count: "1 to 3",
-    role: "the GAMES — each a CONTEST with an explicit possibility space: an exact WIN condition AND an exact LOSE condition (you can't win if you can't lose). One CENTRAL game is the norm; add a second/third only if it genuinely interlocks. Name the players (the cast in this contest BY NAME) and the governing_rules (the world rules whose mechanism the win/lose fires, BY NAME). If two games interlock, add a `couples` edge: when this game is won/lost, what it does to another game (void/raise/lower/enable) — OPTIONAL, only for real interlock",
-    schema: `{ "name": "...", "players": ["<character name>"], "win_condition": "...", "lose_condition": "...", "stake": "...", "governing_rules": ["<world rule name>"], "couples": [ { "to": "<other game name>", "when": "won|lost", "effect": "void|raise|lower|enable", "note": "..." } ] }` },
+    role: "the GAMES — each a CONTEST with an explicit possibility space: an exact WIN condition AND an exact LOSE condition (you can't win if you can't lose). One CENTRAL game is the norm; add a second/third only if it genuinely interlocks. Name the players (the cast in this contest BY NAME) and the governing_rules (the world rules whose mechanism the win/lose fires, BY NAME). If two games interlock, add a `couples` edge: when this game is won/lost, what it does to another game (void/raise/lower/enable) — OPTIONAL, only for real interlock" +
+      (EXP_PRECONDITIONS ? ". DECOMPOSE the win into win_requires — every precondition the win depends on, each typed: 'rule' (a world mechanism that permits it — must be in governing_rules) or 'state' (a RESOURCE or condition the win SPENDS or needs satisfied, e.g. 'her fund ≥ the price', 'the venue is public') with a short `key` handle. The story will be forced to ESTABLISH each state precondition before the win — so name them honestly; an unnamed resource becomes an unearned one" : ""),
+    schema: `{ "name": "...", "players": ["<character name>"], "win_condition": "...", "lose_condition": "...", "stake": "...", "governing_rules": ["<world rule name>"], "couples": [ { "to": "<other game name>", "when": "won|lost", "effect": "void|raise|lower|enable", "note": "..." } ]` +
+      (EXP_PRECONDITIONS ? `, "win_requires": [ { "type": "rule|state", "what": "...", "key": "<short handle, for state preconditions>" } ]` : "") + ` }` },
   movements: { from: "pillar", childKind: "movement", childLevel: 3, count: "exactly 4",
     role: "the ACTS — four movements whose turning points land near the structural-gravity marks (≈25%, 50%, 75%, 90% of the book). Each carries a goal, a turning point, a target_pct (where its turn should land, 0–1), and a value shift",
     schema: `{ "title": "...", "goal": "...", "turning_point": "...", "target_pct": 0.25, "value": { "name": "...", "from": "...", "to": "..." } }` },
@@ -121,6 +128,15 @@ Deno.serve(async (req: Request) => {
       ? "GAMES (the contests — reference BY NAME in plays/resolves; WIN vs LOSE):\n" +
         games.map((g) => { const c = g.content as { win_condition?: string; lose_condition?: string }; return `- ${gName(g)}: WIN = ${c.win_condition ?? "?"} | LOSE = ${c.lose_condition ?? "?"}`; }).join("\n")
       : "";
+    // [EXP:preconditions] the STATE preconditions each game's win spends — the beat sheet must establish each.
+    const statePreconds = EXP_PRECONDITIONS
+      ? games.flatMap((g) => ((g.content as { win_requires?: { type?: string; what?: string; key?: string }[] }).win_requires ?? [])
+          .filter((r) => r.type === "state" && r.key).map((r) => ({ key: r.key as string, what: r.what ?? "", game: gName(g) })))
+      : [];
+    const precondBlock = statePreconds.length
+      ? "STATE PRECONDITIONS (each must be ESTABLISHED by an earlier beat — list its key in that beat's `establishes` — BEFORE the beat that resolves its game):\n" +
+        statePreconds.map((p) => `- ${p.key} (${p.game}): ${p.what}`).join("\n")
+      : "";
     const ctx = [
       `BOOK: ${book?.name ?? ""}`,
       `BRIEF (binding):\n${briefContext(brief, { scope: "full", success: true, none: "(no brief)", empty: "(empty)" })}`,
@@ -132,6 +148,7 @@ Deno.serve(async (req: Request) => {
       tentpoleBlock,
       worldRulesBlock,
       gamesBlock,
+      precondBlock, // [EXP:preconditions]
       movementBlock,
       `THIS NODE [${node.kind}]: ${JSON.stringify(node.content)}`,
     ].filter(Boolean).join("\n\n");
@@ -156,8 +173,8 @@ Deno.serve(async (req: Request) => {
       const system = `You are a story architect writing the ENTIRE BOOK'S BEAT SHEET in ONE pass — every beat of every act at once, so you can see the whole sequence. Honor every LOCKED ancestor and the MANDATE verbatim. Rules:
 - 2 to 4 beats per movement; each beat links to the prior with "therefore" or "but" (escalating causality).
 - Set each beat's PLANNED polarity (up = ends better, down = ends worse). The movement's value shift is the MACRO trend; you MUST still OSCILLATE within it — never more than ~3 beats of the same polarity in a row. Place deliberate relief/hope-spots inside down-acts and setbacks inside up-acts.
-- Schedule the THREADS across the whole book: every promise must be SET UP (role:setup) in an EARLIER beat before it is PAID OFF (role:payoff) in a LATER beat; use "advance" for beats that develop it in between. Reference threads BY NAME.${tentpoles.length ? `\n- PLACE every TENTPOLE: assign each set-piece to the ONE beat that delivers it, in "realizes" (by its summary). Every tentpole listed must appear on exactly one beat.` : ""}${worldFacts.length ? `\n- GROUND the turns in the WORLD RULES: when a beat's turning point's outcome OPERATES ON a rule's mechanism, list that rule in "grounds_in" (by name). The CLIMAX / final resolution beat MUST ground its win in an established rule — the victory has to be MECHANICALLY EARNED by a rule the reader already knows, never deus ex machina. Plant the rule's setup in an earlier beat too.` : ""}${games.length ? `\n- PLAY the GAMES: each beat that advances a contest lists it in "plays" (by name). Each game MUST be RESOLVED — exactly one beat lists it in "resolves" with its outcome (won|lost), and the CENTRAL game resolves at the CLIMAX. A game's resolving beat should also ground_in the rule its win/lose fires.` : ""}
-Output JSON ONLY: { "beats": [ { "movement": <1..${movements.length}>, "summary": "...", "connector": "therefore"|"but", "polarity": "up"|"down", "threads": [ { "ref": "<thread name>", "role": "setup"|"advance"|"payoff" } ]${tentpoles.length ? `, "realizes": [ "<tentpole summary>" ]` : ""}${worldFacts.length ? `, "grounds_in": [ "<world rule name>" ]` : ""}${games.length ? `, "plays": [ "<game name>" ], "resolves": [ { "ref": "<game name>", "outcome": "won|lost" } ]` : ""} } ] }`;
+- Schedule the THREADS across the whole book: every promise must be SET UP (role:setup) in an EARLIER beat before it is PAID OFF (role:payoff) in a LATER beat; use "advance" for beats that develop it in between. Reference threads BY NAME.${tentpoles.length ? `\n- PLACE every TENTPOLE: assign each set-piece to the ONE beat that delivers it, in "realizes" (by its summary). Every tentpole listed must appear on exactly one beat.` : ""}${worldFacts.length ? `\n- GROUND the turns in the WORLD RULES: when a beat's turning point's outcome OPERATES ON a rule's mechanism, list that rule in "grounds_in" (by name). The CLIMAX / final resolution beat MUST ground its win in an established rule — the victory has to be MECHANICALLY EARNED by a rule the reader already knows, never deus ex machina. Plant the rule's setup in an earlier beat too.` : ""}${games.length ? `\n- PLAY the GAMES: each beat that advances a contest lists it in "plays" (by name). Each game MUST be RESOLVED — exactly one beat lists it in "resolves" with its outcome (won|lost), and the CENTRAL game resolves at the CLIMAX. A game's resolving beat should also ground_in the rule its win/lose fires.` : ""}${statePreconds.length ? `\n- ESTABLISH every STATE PRECONDITION: each game's win SPENDS resources/states (listed above). For each, an EARLIER beat must establish it (list its key in that beat's "establishes") BEFORE the beat that resolves the game — you cannot spend a resource the story never acquired (no "she had enough all along"). Make the establishing a real turn.` : ""}
+Output JSON ONLY: { "beats": [ { "movement": <1..${movements.length}>, "summary": "...", "connector": "therefore"|"but", "polarity": "up"|"down", "threads": [ { "ref": "<thread name>", "role": "setup"|"advance"|"payoff" } ]${tentpoles.length ? `, "realizes": [ "<tentpole summary>" ]` : ""}${worldFacts.length ? `, "grounds_in": [ "<world rule name>" ]` : ""}${games.length ? `, "plays": [ "<game name>" ], "resolves": [ { "ref": "<game name>", "outcome": "won|lost" } ]` : ""}${statePreconds.length ? `, "establishes": [ "<state precondition key>" ]` : ""} } ] }`;
       const data = await callClaude(apiKey, { model, max_tokens: 8000, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
         messages: [{ role: "user", content: `${ctx}\n\nWrite the whole beat sheet. JSON only.` }] }, meta);
       const parsed = JSON.parse(extractJsonBlock(textFromClaude(data)));
@@ -166,6 +183,7 @@ Output JSON ONLY: { "beats": [ { "movement": <1..${movements.length}>, "summary"
       const tpNameToId = new Map(tentpoles.map((t) => [tpName(t).toLowerCase(), t.id]));
       const wfNameToId = new Map(worldFacts.map((w) => [wfName(w).toLowerCase(), w.id]));
       const gNameToId = new Map(games.map((g) => [gName(g).toLowerCase(), g.id]));
+      const validPrecondKeys = new Set(statePreconds.map((p) => p.key)); // [EXP:preconditions]
       const roles = new Set(["setup", "payoff", "advance"]);
       // Resolve refs, clamp movement index, then ENFORCE setup→payoff order (drop orphan payoffs).
       const setUp = new Set<string>();
@@ -190,11 +208,16 @@ Output JSON ONLY: { "beats": [ { "movement": <1..${movements.length}>, "summary"
         const resolves = (Array.isArray(b.resolves) ? b.resolves as { ref?: string; outcome?: string }[] : [])
           .map((r) => ({ ref: gNameToId.get(String(r.ref ?? "").trim().toLowerCase()), outcome: r.outcome === "lost" ? "lost" : "won" }))
           .filter((r): r is { ref: string; outcome: string } => !!r.ref && !resolvedG.has(r.ref) && (resolvedG.add(r.ref), true));
+        // [EXP:preconditions] keep only establishes of real state-precondition keys.
+        const establishes = EXP_PRECONDITIONS ? [...new Set((Array.isArray(b.establishes) ? b.establishes as string[] : [])
+          .map((s) => String(s ?? "").trim().toLowerCase().replace(/\s+/g, "_"))
+          .filter((k) => validPrecondKeys.has(k)))] : [];
         const content: Record<string, unknown> = { summary: b.summary, connector: b.connector, polarity: b.polarity === "down" ? "down" : "up", threads: threadsKept };
         if (realizes.length) content.realizes = realizes;
         if (grounds.length) content.grounds_in = grounds;
         if (plays.length) content.plays = plays;
         if (resolves.length) content.resolves = resolves;
+        if (establishes.length) content.establishes = establishes;
         return { movement: mi, content };
       });
       return json({ beatsheet: true, childKind: "beat", childLevel: 4, movementIds: movements.map((m) => m.id), beats });
@@ -241,6 +264,10 @@ Output JSON ONLY: { "beats": [ { "movement": <1..${movements.length}>, "summary"
         couples: (Array.isArray(ch.couples) ? ch.couples as { to?: string; when?: string; effect?: string; note?: string }[] : [])
           .filter((k) => k.to && whens.has(String(k.when)) && effects.has(String(k.effect)))
           .map((k) => ({ to: String(k.to).trim(), when: k.when, effect: k.effect, note: k.note })), // `to` = game NAME, resolved client-side
+        // [EXP:preconditions] keep typed win_requires; state preconditions need a key (else untrackable).
+        ...(EXP_PRECONDITIONS ? { win_requires: (Array.isArray(ch.win_requires) ? ch.win_requires as { type?: string; what?: string; key?: string }[] : [])
+          .filter((r) => (r.type === "rule" || r.type === "state") && r.what)
+          .map((r) => ({ type: r.type, what: r.what, ...(r.type === "state" && r.key ? { key: String(r.key).trim().toLowerCase().replace(/\s+/g, "_") } : {}) })) } : {}),
       }));
     }
     return json({ childKind: spec.childKind, childLevel: spec.childLevel, children });
