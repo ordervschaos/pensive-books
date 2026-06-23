@@ -4,6 +4,7 @@
 // primitives (studioUi) so it reads as part of the Build Studio. Live projection of book_nodes; pages are
 // produced on demand via reconcileDna (Render). expand = ONE authoritative value (not proposals).
 import { useEffect, useState, type ReactNode } from "react";
+import { useNavigate } from "react-router-dom";
 import { Lock, Unlock, Sparkles, BookOpen, Loader2, Check, X, ChevronRight, ChevronDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { AutoTextarea } from "@/components/ui/auto-textarea";
@@ -80,6 +81,7 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
   bookId: number; bookSlug: string; settings: DnaSettings; nodes: DnaNode[]; onChanged: () => void;
 }) {
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [busy, setBusy] = useState<string | null>(null);
   const [selected, setSelected] = useState<StageKey | null>(null); // chosen stage; null = follow the live "now" stage
   const index = byId(nodes);
@@ -192,6 +194,13 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
       return (
         <>
           <DnaAnalysis nodes={nodes} settings={settings} />
+          {pillar && (
+            <div className="flex items-center gap-3">
+              <ActionLink busy={busy === "movements"} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={() => generateFromPillar("movements", "Acts generated")}>
+                {movements.length ? "regenerate acts" : "generate acts"}
+              </ActionLink>
+            </div>
+          )}
           {movements.map((m) => (
             <div key={m.id} className="space-y-2">
               {card(m, true)}
@@ -312,6 +321,9 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
       ))}
       <div className="mx-2.5 my-3 h-px bg-[hsl(var(--pv-border-soft))]" />
       <div className="flex flex-col items-start gap-2 px-2.5">
+        {/* The brief (genre/length/heat/audience — the binding mandate) lives in the Build Studio; the
+            concept there is the same idea this DNA tree elaborates. Jump out to edit it. */}
+        <ActionLink tone="muted" onClick={() => navigate(`/books/${bookSlug}/studio/brief`)}>edit brief →</ActionLink>
         {nodes.length === 0 && <ActionLink busy={busy === "migrate"} onClick={migrate}>migrate from legacy</ActionLink>}
         {nodes.length > 0 && <ActionLink busy={busy === "render"} onClick={render} tone="faint">render pages →</ActionLink>}
         {nodes.length > 0 && <ActionLink busy={busy === "read"} onClick={renderAndRead}>read →</ActionLink>}
