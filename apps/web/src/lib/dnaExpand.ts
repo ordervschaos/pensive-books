@@ -103,8 +103,9 @@ export async function expandNode(
     // (the game is decided) lands on the LAST scene (the contest's outcome scene).
     if (beat.plays?.length && made[0]) (made[0].content as SceneContent).plays = beat.plays;
     if (beat.resolves?.length && made.length) (made[made.length - 1].content as SceneContent).resolves = beat.resolves;
-    // [EXP:preconditions] the establishing turn lands on the beat's first scene (the move that acquires it).
+    // CAUSALITY: the beat's produced/depended state lands on its first scene (the move that earns/spends it).
     if (beat.establishes?.length && made[0]) (made[0].content as SceneContent).establishes = beat.establishes;
+    if (beat.needs?.length && made[0]) (made[0].content as SceneContent).needs = beat.needs;
     // Chaptering: a beat opens a chapter (the legible default; author can merge/rename later).
     if (startPosition === 0 && made[0]) {
       const sc = made[0].content as SceneContent;

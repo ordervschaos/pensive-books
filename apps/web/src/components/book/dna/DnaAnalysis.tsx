@@ -6,7 +6,7 @@
 import { useState } from "react";
 import { ChevronDown, ChevronRight, TriangleAlert } from "lucide-react";
 import { Eyebrow } from "@/components/book/studio/studioUi";
-import { pacing, promiseLedger, topography, validate, type DnaNode } from "@/lib/novelDna";
+import { causality, pacing, promiseLedger, topography, validate, type DnaNode } from "@/lib/novelDna";
 import type { BookSettings } from "@/lib/novelDna";
 
 export function DnaAnalysis({ nodes, settings }: { nodes: DnaNode[]; settings: BookSettings }) {
@@ -14,6 +14,8 @@ export function DnaAnalysis({ nodes, settings }: { nodes: DnaNode[]; settings: B
   const pace = pacing(nodes);
   const ledger = promiseLedger(nodes);
   const topo = topography(nodes);
+  const causal = causality(nodes);
+  const hasCausal = causal.some((r) => r.connector || r.needs.length);
   const issues = validate(nodes);
   if (!pace.length && !ledger.length && !topo.length) return null;
 
@@ -73,7 +75,14 @@ export function DnaAnalysis({ nodes, settings }: { nodes: DnaNode[]; settings: B
           {/* TOPOGRAPHY */}
           {topo.length > 0 && (
             <section className="space-y-1">
-              <p className="pv-mono text-[9px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-faint))]">topography · emotional charge in reading order</p>
+              <div className="flex items-center justify-between gap-3">
+                <p className="pv-mono text-[9px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-faint))]">topography · emotional charge in reading order</p>
+                <span className="pv-mono flex items-center gap-2 text-[9px] text-[hsl(var(--pv-text-faint))]">
+                  <span className="flex items-center gap-1"><span className="h-2 w-1.5 rounded-sm bg-emerald-500/70" />up</span>
+                  <span className="flex items-center gap-1"><span className="h-2 w-1.5 rounded-sm bg-rose-500/60" />down</span>
+                  <span className="flex items-center gap-1"><span className="h-2 w-1.5 rounded-sm bg-[hsl(var(--pv-surface-2))]" />flat</span>
+                </span>
+              </div>
               <div className="flex flex-wrap gap-0.5">
                 {topo.map((t, i) => (
                   <span key={i} className={`inline-block h-3 w-1.5 rounded-sm ${t.polarity === "up" ? "bg-emerald-500/70" : t.polarity === "down" ? "bg-rose-500/60" : "bg-[hsl(var(--pv-surface-2))]"}`}
@@ -83,14 +92,43 @@ export function DnaAnalysis({ nodes, settings }: { nodes: DnaNode[]; settings: B
             </section>
           )}
 
-          {/* LINTS */}
+          {/* CAUSALITY — the causal spine: each beat's connector + unmet upstream needs */}
+          {hasCausal && (
+            <section className="space-y-1">
+              <p className="pv-mono text-[9px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-faint))]">causality · why each turn follows (∴ therefore · ↯ but)</p>
+              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+                {causal.map((r) => {
+                  const hollow = (r.connector === "therefore" && r.unmet.length > 0) || (r.connector === "but" && !r.reversed && !r.needs.length);
+                  const glyph = r.connector === "therefore" ? "∴" : r.connector === "but" ? "↯" : "·";
+                  const tip = [
+                    r.connector ? `connector: ${r.connector}` : "first beat",
+                    r.needs.length ? `needs: ${r.needs.join(", ")}` : "",
+                    r.produces.length ? `produces: ${r.produces.join(", ")}` : "",
+                    r.unmet.length ? `UNMET: ${r.unmet.join(", ")}` : "",
+                  ].filter(Boolean).join(" · ");
+                  return (
+                    <span key={r.beatId} title={tip}
+                      className={`pv-mono inline-flex h-4 min-w-4 items-center justify-center rounded-sm px-0.5 text-[10px] ${hollow ? "bg-amber-500/20 text-amber-500" : "text-[hsl(var(--pv-text-faint))]"}`}>
+                      {glyph}
+                    </span>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
+          {/* LINTS — each row: a severity dot, the rule name (scannable), then the human message */}
           {issues.length > 0 && (
-            <section className="space-y-0.5 border-t border-[hsl(var(--pv-border-soft))] pt-2">
+            <section className="space-y-1 border-t border-[hsl(var(--pv-border-soft))] pt-2.5">
+              <p className="pv-mono text-[9px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-faint))]">conformance · {errors ? `${errors} to fix · ` : ""}{warns} to review</p>
               {issues.map((i, k) => (
-                <p key={k} className="pv-serif text-[11.5px] leading-snug">
-                  <span className={`pv-mono mr-1.5 text-[9px] uppercase ${i.severity === "error" ? "text-rose-500" : "text-amber-500"}`}>{i.severity}</span>
-                  <span className="text-[hsl(var(--pv-text-muted))]">{i.message}</span>
-                </p>
+                <div key={k} className="flex gap-2">
+                  <span className={`mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full ${i.severity === "error" ? "bg-rose-500" : "bg-amber-500"}`} title={i.severity} />
+                  <p className="pv-serif text-[11.5px] leading-snug">
+                    <span className="pv-mono mr-1.5 text-[9px] text-[hsl(var(--pv-text-faint))]">{i.rule}</span>
+                    <span className="text-[hsl(var(--pv-text-muted))]">{i.message}</span>
+                  </p>
+                </div>
               ))}
             </section>
           )}

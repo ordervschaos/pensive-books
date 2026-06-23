@@ -48,7 +48,8 @@ export interface BeatContent {
   threads?: ThreadRef[]; realizes?: string[]; grounds_in?: string[];
   plays?: string[];               // game ids this turn advances (a move) — schema/games §3
   resolves?: GameResolution[];    // games DECIDED on this turn
-  establishes?: string[];         // [EXP:preconditions] state-precondition keys this turn sets up
+  establishes?: string[];         // CAUSALITY: state keys this turn PRODUCES (was [EXP:preconditions])
+  needs?: string[];               // CAUSALITY: state keys this turn DEPENDS ON (earned upstream, not ambient)
 }
 export interface ChapterStart { title?: string; pov?: string; epigraph?: string }
 export interface SceneContent {
@@ -61,7 +62,8 @@ export interface SceneContent {
   grounds_in?: string[];               // world_fact ids whose mechanism this scene's outcome operates on
   plays?: string[];                    // game ids this scene advances (inherited from its beat)
   resolves?: GameResolution[];         // games decided in this scene (inherited from its beat)
-  establishes?: string[];              // [EXP:preconditions] state-precondition keys (inherited from its beat)
+  establishes?: string[];              // CAUSALITY: state keys produced (inherited from its beat)
+  needs?: string[];                    // CAUSALITY: state keys depended on (inherited from its beat)
   chapter_start?: ChapterStart | null;
   prose?: { text?: string; words?: number };
 }
@@ -124,6 +126,16 @@ export function scenesInOrder(nodes: DnaNode[]): DnaNode[] {
   for (const root of nodes.filter((n) => n.parent_id === null)) walk(root);
   // Also handle trees whose roots are movements directly (no single root) — entities excluded above.
   if (!out.length) for (const m of nodes.filter((n) => n.kind === "movement")) walk(m);
+  return out;
+}
+
+/** Beats in reading order: movements by position, then each movement's beats by position. The causal
+ *  spine operates on beats (the plan), not scenes (the render) — so the producer/consumer walk is here. */
+export function beatsInOrder(nodes: DnaNode[]): DnaNode[] {
+  const out: DnaNode[] = [];
+  for (const m of nodes.filter((n) => n.kind === "movement").sort((a, b) => a.position - b.position)) {
+    for (const b of childrenOf(nodes, m.id)) if (b.kind === "beat") out.push(b);
+  }
   return out;
 }
 
@@ -383,6 +395,51 @@ export function promiseLedger(nodes: DnaNode[]): PromiseLedgerRow[] {
   });
 }
 
+// ── CAUSALITY (why): the causal spine — the 4th axis (when/what/charge/why) ───
+// Every beat claims a `connector` (therefore/but), but that's a self-asserted LABEL until we check it.
+// Make it computable the same way the ledger made thread refs computable: each beat PRODUCES state keys
+// (`establishes`) and DEPENDS ON state keys (`needs`). Walk beats in reading order accumulating produced
+// state; a `therefore` whose `needs` aren't produced upstream is an *uncaused* claim ("and then" in
+// disguise). `needs` are earned-in-story keys only — ambient premise/world givens are NOT needs.
+export interface CausalityRow {
+  beatId: string; idx: number; connector?: "therefore" | "but";
+  needs: string[]; unmet: string[];       // unmet = needs no earlier beat establishes
+  produces: string[]; reversed: boolean;  // reversed = polarity turns vs the prior beat (the `but` test)
+}
+export function causality(nodes: DnaNode[]): CausalityRow[] {
+  const beats = beatsInOrder(nodes);
+  const producedSoFar = new Set<string>();
+  let prevPolarity: "up" | "down" | undefined;
+  return beats.map((b, idx): CausalityRow => {
+    const c = b.content as BeatContent;
+    const needs = c.needs ?? [];
+    const unmet = needs.filter((k) => !producedSoFar.has(k));   // checked BEFORE this beat produces
+    const produces = c.establishes ?? [];
+    for (const k of produces) producedSoFar.add(k);
+    const reversed = !!c.polarity && !!prevPolarity && c.polarity !== prevPolarity;
+    prevPolarity = c.polarity ?? prevPolarity;
+    return { beatId: b.id, idx, connector: c.connector, needs, unmet, produces, reversed };
+  });
+}
+
+/** CAUSALITY lints: a `therefore` whose needs aren't earned upstream (hollow link), and a `but` that
+ *  neither reverses charge nor consumes an established state (a labeled reversal that turns nothing). */
+function causalityLints(nodes: DnaNode[]): DnaIssue[] {
+  const issues: DnaIssue[] = [];
+  for (const r of causality(nodes)) {
+    if (r.idx === 0) continue; // the opener has no prior beat — therefore/but are antecedent-relative
+    if (r.connector === "therefore" && r.unmet.length) {
+      issues.push({ rule: "uncaused_therefore", severity: "warn", nodeId: r.beatId,
+        message: `beat follows "therefore" but needs "${r.unmet.join(", ")}", which no earlier beat establishes — the causal link is hollow` });
+    }
+    if (r.connector === "but" && !r.reversed && !r.needs.length) {
+      issues.push({ rule: "empty_but", severity: "warn", nodeId: r.beatId,
+        message: `beat is labeled "but" but doesn't reverse the charge or consume an established state — the complication turns nothing` });
+    }
+  }
+  return issues;
+}
+
 // ── The stakes graph (the game pillar — docs/novel-dna-games.md §4) ───────────
 // Coupling makes stakes COMPUTABLE: a game's stake = what its outcome does to the other games. Pure
 // functions over the games + their `couples` edges.
@@ -432,6 +489,14 @@ export function analysisText(nodes: DnaNode[], settings: BookSettings): string {
   }
   const topo = topography(nodes).map((t) => (t.polarity === "up" ? "+" : t.polarity === "down" ? "-" : "·"));
   if (topo.length) lines.push(`TOPOGRAPHY (value polarity in reading order): ${topo.join("")}`);
+  const causal = causality(nodes);
+  if (causal.some((r) => r.connector || r.needs.length)) {
+    lines.push("CAUSALITY (why — each beat's connector + unmet needs):");
+    for (const r of causal) {
+      const unmet = r.unmet.length ? ` ⚠ UNMET: ${r.unmet.join(", ")}` : "";
+      lines.push(`  beat ${r.idx + 1} [${r.connector ?? "—"}]${r.needs.length ? ` needs: ${r.needs.join(", ")}` : ""}${r.produces.length ? ` → ${r.produces.join(", ")}` : ""}${unmet}`);
+    }
+  }
   const issues = validate(nodes);
   if (issues.length) { lines.push("LINTS:"); for (const i of issues) lines.push(`  [${i.severity}] ${i.rule}: ${i.message}`); }
   return lines.join("\n");
@@ -513,6 +578,9 @@ export function validate(nodes: DnaNode[]): DnaIssue[] {
   // Promises axis (§6): dangling / unearned / misordered payoffs.
   issues.push(...promiseLints(nodes));
 
+  // Causality axis (why): hollow `therefore` (unmet need) / empty `but` (turns nothing).
+  issues.push(...causalityLints(nodes));
+
   // Grounding: the resolution must fire an established world rule (no deus ex machina — Lester Dent's law).
   // When the world has rules, the last scene in reading order should ground its win in at least one.
   const worldFacts = nodes.filter((n) => n.kind === "world_fact");
@@ -563,9 +631,7 @@ export function validate(nodes: DnaNode[]): DnaIssue[] {
     // (you can't spend a resource you never acquired). Beats in reading order; a state key whose first
     // `establishes` is not strictly before the resolving beat = an illegal move (the "unearned resource" bug).
     if (EXP_PRECONDITIONS) {
-      const movementsOrdered = nodes.filter((n) => n.kind === "movement").sort((a, b) => a.position - b.position);
-      const beatOrder: DnaNode[] = [];
-      for (const m of movementsOrdered) for (const b of childrenOf(nodes, m.id)) if (b.kind === "beat") beatOrder.push(b);
+      const beatOrder = beatsInOrder(nodes);
       const orderOf = new Map(beatOrder.map((b, i) => [b.id, i]));
       const establishedAt = new Map<string, number>(); // key → earliest beat index that establishes it
       beatOrder.forEach((b, i) => { for (const k of ((b.content as BeatContent).establishes ?? [])) if (!establishedAt.has(k)) establishedAt.set(k, i); });

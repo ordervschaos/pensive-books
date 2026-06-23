@@ -3,8 +3,8 @@
 // every kind (the self-similar promise: learn generate/edit/lock once). Styled with the studio's own
 // primitives (studioUi) so it reads as part of the Build Studio. Live projection of book_nodes; pages are
 // produced on demand via reconcileDna (Render). expand = ONE authoritative value (not proposals).
-import { useEffect, useState } from "react";
-import { Lock, Unlock, Sparkles } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { Lock, Unlock, Sparkles, BookOpen, Loader2, Check, X, ChevronRight, ChevronDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { AutoTextarea } from "@/components/ui/auto-textarea";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
@@ -18,7 +18,8 @@ import { reconcileDna } from "@/lib/novelDnaRender";
 import { expandNode } from "@/lib/dnaExpand";
 import {
   byId, childrenOf, editContent, emptyNode, isProseStale, isStale, lock as lockNode, renderBlockers,
-  setStatus, type CharacterContent, type DnaNode, type NodeKind, type RelationshipContent, type SceneContent,
+  setStatus, type BeatContent, type CharacterContent, type DnaNode, type GameContent, type MovementContent,
+  type NodeKind, type RelationshipContent, type SceneContent, type ThreadContent, type WorldFactContent,
 } from "@/lib/novelDna";
 
 // The expand verb(s) per kind. A node can have several (a pillar generates cast, world, AND acts). Each
@@ -93,6 +94,9 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
   };
   const migrate = () => run("migrate", async () => { const { count } = await migrateBookToDna(bookId); toast({ title: "Migrated to DNA", description: `${count} nodes built from the legacy book.` }); });
   const render = () => run("render", async () => { const r = await reconcileDna(bookId); toast({ title: "Rendered", description: `${r.pages} pages · ${r.created} added · ${r.updated} updated · ${r.archived} archived.` }); });
+  // Render-then-read: project the tree onto pages FIRST (idempotent), then open the reader — so the prose
+  // you read is always current, never the stale "I forgot to render" page. One click instead of two.
+  const renderAndRead = () => run("read", async () => { await reconcileDna(bookId); window.location.href = `/books/${bookSlug}`; });
   const addChild = (parent: DnaNode, kind: NodeKind, level: number) =>
     run("add", () => saveNode(emptyNode(bookId, kind, level, parent.id, childrenOf(nodes, parent.id).length)));
   // Stage-level generation (a whole-arc op, not a per-node verb): threads (the promise registry) and the
@@ -100,8 +104,49 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
   const generateFromPillar = (target: string, label: string) =>
     run(target, async () => { if (!pillar) return; const { added } = await expandNode(bookId, pillar, target, {}); toast({ title: label, description: `${added} node(s) generated.` }); });
 
+  // ── Collapse state — keep the long stages an OUTLINE, not a wall. A node defaults OPEN only while it (or
+  // anything beneath it) still needs work; once a whole branch is accepted + in-sync it folds to a one-line
+  // row. `expanded` holds explicit user toggles layered on top of that smart default. Cheap full-tree walk
+  // (trees are small) so it stays correct as nodes change without a memo/deps dance.
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const needsAttn = (n: DnaNode) => n.authoring.status !== "accepted" || isStale(n, index) || (n.kind === "scene" && isProseStale(n));
+  const attn = (() => {
+    const s = new Set<string>();
+    const visit = (n: DnaNode): boolean => {
+      let r = needsAttn(n);
+      for (const c of childrenOf(nodes, n.id)) if (visit(c)) r = true;
+      if (r) s.add(n.id);
+      return r;
+    };
+    for (const root of nodes.filter((n) => n.parent_id === null)) visit(root);
+    return s;
+  })();
+  // A node is also OPEN by default while it's the generative frontier — accepted but still has a child-kind
+  // it can generate that doesn't exist yet (e.g. a pillar before "generate cast", a movement before beats).
+  // So approving a rung reveals its next move instead of folding it away. (Prose isn't a child node — a
+  // scene's done-ness is handled by needsAttn via prose staleness.)
+  const hasOpenTarget = (n: DnaNode) => {
+    const kids = childrenOf(nodes, n.id);
+    return (EXPAND_TARGETS[n.kind] ?? []).some((t) =>
+      t.target !== "prose" && !kids.some((c) => c.kind === t.childKind) && !(t.needs && !kids.some((c) => c.kind === t.needs)));
+  };
+  const openDefault = (n: DnaNode) => attn.has(n.id) || hasOpenTarget(n);
+  const isOpen = (n: DnaNode) => expanded[n.id] ?? openDefault(n);
+  const toggle = (n: DnaNode) => setExpanded((e) => ({ ...e, [n.id]: !(e[n.id] ?? openDefault(n)) }));
+  const setAll = (open: boolean) => setExpanded(Object.fromEntries(nodes.map((n) => [n.id, open])));
+  // The collapsed-row subtitle for a spine parent: how many children, and how many still need work.
+  const collapsedMeta = (n: DnaNode): string | undefined => {
+    if (n.kind !== "movement" && n.kind !== "beat") return undefined;
+    const childKind: NodeKind = n.kind === "movement" ? "beat" : "scene";
+    const kids = childrenOf(nodes, n.id).filter((c) => c.kind === childKind);
+    if (!kids.length) return undefined;
+    const need = kids.filter((k) => attn.has(k.id)).length;
+    return `${kids.length} ${childKind}${kids.length > 1 ? "s" : ""}${need ? ` · ${need} need work` : ""}`;
+  };
+
   const card = (n: DnaNode, accent?: boolean) => (
-    <NodeCard key={n.id} node={n} index={index} bookId={bookId} kids={childrenOf(nodes, n.id)} onChanged={onChanged} accent={accent} />
+    <NodeCard key={n.id} node={n} index={index} bookId={bookId} kids={childrenOf(nodes, n.id)} onChanged={onChanged}
+      accent={accent} expanded={isOpen(n)} onToggle={() => toggle(n)} meta={collapsedMeta(n)} />
   );
   const [seed, premise, pillar] = [of("seed")[0], of("premise")[0], of("pillar")[0]];
   const entityKinds: NodeKind[] = ["character", "relationship", "tentpole", "world_fact"];
@@ -116,19 +161,30 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
 
   const renderStage = (key: StageKey) => {
     if (key === "premise") return [seed, premise].filter(Boolean).map((n) => card(n!));
-    if (key === "foundations") return (
-      <>
-        {pillar && card(pillar, true)}
-        {pillar && (
-          <div className="flex flex-wrap items-center gap-2">
-            {entityKinds.map((k) => (
-              <button key={k} onClick={() => addChild(pillar, k, 2)} className="pv-serif text-[12px] italic text-[hsl(var(--pv-text-faint))] hover:text-[hsl(var(--pv-accent))]">+ {k}</button>
-            ))}
-          </div>
-        )}
-        {entityKinds.flatMap((k) => of(k)).map((n) => card(n))}
-      </>
-    );
+    if (key === "foundations") {
+      const labels: Record<string, string> = { character: "Cast", relationship: "Relationships", tentpole: "Set-pieces", world_fact: "World rules" };
+      return (
+        <>
+          {pillar && card(pillar, true)}
+          {/* Each entity kind in its own labeled, countable section — grouped so the bedrock reads at a glance
+              rather than as one undifferentiated stack. Cast/world are generated from the pillar above; "add"
+              here drops a blank slot for manual authoring. */}
+          {pillar && entityKinds.map((k) => {
+            const items = of(k);
+            return (
+              <section key={k} className="space-y-2 pt-1">
+                <div className="flex items-center gap-2.5 border-b border-[hsl(var(--pv-border-soft))]/60 pb-1">
+                  <Eyebrow tone="muted">{labels[k]}</Eyebrow>
+                  {items.length > 0 && <span className="pv-mono text-[9px] text-[hsl(var(--pv-text-faint))]">{items.length}</span>}
+                  <ActionLink busy={busy === "add"} onClick={() => addChild(pillar, k, 2)} tone="faint" className="ml-auto">+ add</ActionLink>
+                </div>
+                {items.map((n) => card(n))}
+              </section>
+            );
+          })}
+        </>
+      );
+    }
     if (key === "structure") {
       const movements = of("movement");
       const threads = of("thread");
@@ -139,10 +195,13 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
           {movements.map((m) => (
             <div key={m.id} className="space-y-2">
               {card(m, true)}
-              <div className="ml-4 space-y-2 border-l border-[hsl(var(--pv-border-soft))] pl-4">
-                {childrenOf(nodes, m.id).filter((b) => b.kind === "beat").map((b) => card(b))}
-                <ActionLink busy={busy === "add"} onClick={() => addChild(m, "beat", 4)}>add beat</ActionLink>
-              </div>
+              {/* Beats live under the movement; folding the movement (its chevron) hides them all. */}
+              {isOpen(m) && (
+                <div className="ml-4 space-y-2 border-l border-[hsl(var(--pv-border-soft))] pl-4">
+                  {childrenOf(nodes, m.id).filter((b) => b.kind === "beat").map((b) => card(b))}
+                  <ActionLink busy={busy === "add"} onClick={() => addChild(m, "beat", 4)}>add beat</ActionLink>
+                </div>
+              )}
             </div>
           ))}
           {pillar && <ActionLink busy={busy === "add"} onClick={() => addChild(pillar, "movement", 3)}>add movement</ActionLink>}
@@ -178,18 +237,57 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
         </>
       );
     }
-    // scenes + draft: the scenes in their beat context (draft is where prose gets written + rendered).
+    // scenes + draft: the scenes grouped under their beat. Each beat is a collapsible group header (the
+    // beat itself is in the Structure stage) — fold a beat to hide its scenes, so this stage reads as an
+    // outline of beats you drill into one at a time.
     return (
       <>
         <DnaAnalysis nodes={nodes} settings={settings} />
-        {of("movement").map((m) => childrenOf(nodes, m.id).filter((b) => b.kind === "beat").map((b) => (
-          <div key={b.id} className="space-y-2">
-            <Eyebrow tone="muted">{(b.content as { summary?: string }).summary || "beat"}</Eyebrow>
-            {childrenOf(nodes, b.id).filter((s) => s.kind === "scene").map((s) => card(s))}
-            <ActionLink busy={busy === "add"} onClick={() => addChild(b, "scene", 5)}>add scene</ActionLink>
-          </div>
-        )))}
-        {key === "draft" && <ActionLink busy={busy === "render"} onClick={render}>render pages →</ActionLink>}
+        {of("movement").flatMap((m) => childrenOf(nodes, m.id).filter((b) => b.kind === "beat").map((b) => {
+          const scenes = childrenOf(nodes, b.id).filter((s) => s.kind === "scene");
+          const open = isOpen(b);
+          const need = scenes.filter((s) => attn.has(s.id)).length;
+          return (
+            <div key={b.id} className="space-y-2">
+              <button type="button" onClick={() => toggle(b)} className="flex w-full items-center gap-2 border-b border-[hsl(var(--pv-border-soft))]/60 pb-1 text-left">
+                {open ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-[hsl(var(--pv-text-faint))]" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-[hsl(var(--pv-text-faint))]" />}
+                <Eyebrow tone="muted" className="truncate">{(b.content as { summary?: string }).summary || "beat"}</Eyebrow>
+                <span className="pv-mono ml-auto shrink-0 text-[9px] uppercase tracking-[0.1em] text-[hsl(var(--pv-text-faint))]">
+                  {scenes.length} scene{scenes.length === 1 ? "" : "s"}{need ? ` · ${need} need work` : ""}
+                </span>
+              </button>
+              {open && (
+                <>
+                  {scenes.map((s) => card(s))}
+                  <ActionLink busy={busy === "add"} onClick={() => addChild(b, "scene", 5)}>add scene</ActionLink>
+                </>
+              )}
+            </div>
+          );
+        }))}
+        {key === "draft" && (() => {
+          const scenesAll = of("scene");
+          const drafted = scenesAll.filter((s) => (s.content as SceneContent).prose?.text).length;
+          const ready = scenesAll.length > 0 && drafted === scenesAll.length;
+          return (
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 pt-2">
+              <button
+                type="button"
+                disabled={busy === "read" || scenesAll.length === 0}
+                onClick={renderAndRead}
+                title={ready ? "Render the latest prose and open the reader" : `${drafted}/${scenesAll.length} scenes drafted — reads what's written so far`}
+                className="pv-serif inline-flex items-center gap-2 rounded-full bg-[hsl(var(--pv-accent))] px-4 py-2 text-[13.5px] text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              >
+                {busy === "read" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BookOpen className="h-3.5 w-3.5" />}
+                Read the book →
+              </button>
+              {scenesAll.length > 0 && (
+                <span className="pv-mono text-[10px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-faint))]">{drafted}/{scenesAll.length} scenes drafted</span>
+              )}
+              <ActionLink busy={busy === "render"} onClick={render} tone="faint">render only</ActionLink>
+            </div>
+          );
+        })()}
       </>
     );
   };
@@ -215,8 +313,8 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
       <div className="mx-2.5 my-3 h-px bg-[hsl(var(--pv-border-soft))]" />
       <div className="flex flex-col items-start gap-2 px-2.5">
         {nodes.length === 0 && <ActionLink busy={busy === "migrate"} onClick={migrate}>migrate from legacy</ActionLink>}
-        {nodes.length > 0 && <ActionLink busy={busy === "render"} onClick={render}>render pages →</ActionLink>}
-        <a href={`/books/${bookSlug}`} className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))] hover:text-[hsl(var(--pv-accent))]">read →</a>
+        {nodes.length > 0 && <ActionLink busy={busy === "render"} onClick={render} tone="faint">render pages →</ActionLink>}
+        {nodes.length > 0 && <ActionLink busy={busy === "read"} onClick={renderAndRead}>read →</ActionLink>}
       </div>
     </div>
   );
@@ -234,7 +332,13 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
           </div>
         ) : (
           <>
-            <StageHead eyebrow={active.status === "done" ? "Approved" : active.status === "now" ? "Focus · the next move" : "Stage"} title={active.label} caption={active.caption} />
+            <StageHead eyebrow={active.status === "done" ? "Approved" : active.status === "now" ? "Focus · the next move" : "Stage"} title={active.label} caption={active.caption}
+              right={["foundations", "structure", "scenes", "draft"].includes(activeKey) ? (
+                <div className="flex shrink-0 items-center gap-3">
+                  <ActionLink tone="faint" onClick={() => setAll(true)}>expand all</ActionLink>
+                  <ActionLink tone="faint" onClick={() => setAll(false)}>collapse all</ActionLink>
+                </div>
+              ) : undefined} />
             <div className="space-y-2">{renderStage(activeKey)}</div>
             {active.status === "done" && nextStage && nextStage.status !== "locked" && (
               <div className="pt-2"><ActionLink onClick={() => setSelected(nextStage.key)}>continue to {nextStage.label} →</ActionLink></div>
@@ -265,9 +369,105 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
   );
 }
 
-// The uniform node card — the same verbs (generate / edit / lock) at every depth.
-function NodeCard({ node, index, bookId, kids, onChanged, accent }: {
+// ── Card chrome: small read-only chips that make derived state scannable ───────
+const nameOf = (index: Map<string, DnaNode>, id?: string): string | undefined =>
+  id ? (index.get(id)?.content as { name?: string } | undefined)?.name : undefined;
+
+// A status pill: the authoring lifecycle as one glanceable, color-coded token. Approved = the committed
+// rung; draft/proposed = in progress; empty = a hungry slot. One fixed-shape chip → no layout shift.
+function StatusPill({ status }: { status: DnaNode["authoring"]["status"] }) {
+  const tone = status === "accepted" ? "text-emerald-500" : status === "empty" ? "text-[hsl(var(--pv-text-faint))]" : "text-[hsl(var(--pv-text-muted))]";
+  const label = status === "accepted" ? "approved" : status;
+  return <span className={`pv-mono text-[9px] uppercase tracking-[0.12em] ${tone}`}>{label}</span>;
+}
+
+// The DERIVED summary strip — the engine data the old card hid. Read-only, scannable, kind-specific; only
+// renders when there's something to show (so it never adds empty space). This is the "surface the model"
+// move: a game's two poles + its coupling cascade, a beat's causal in/out, a scene's value turn, a
+// relationship's dyad, a character's role. The editable detail still lives in the fields below.
+function KindSummary({ node, index }: { node: DnaNode; index: Map<string, DnaNode> }) {
+  const wrap = (children: ReactNode) =>
+    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11.5px] leading-snug">{children}</div>;
+  const tag = (label: string, tone = "text-[hsl(var(--pv-text-faint))]") =>
+    <span className={`pv-mono text-[9px] uppercase tracking-[0.1em] ${tone}`}>{label}</span>;
+
+  // (relationship dyad is shown as the card title so it survives the collapsed one-line row)
+  if (node.kind === "character") {
+    const c = node.content as CharacterContent;
+    if (!c.role && !c.tag) return null;
+    return wrap(<>{c.role && tag(c.role, "text-[hsl(var(--pv-accent))]")}{c.tag && <span className="pv-serif italic text-[hsl(var(--pv-text-faint))]">“{c.tag}”</span>}</>);
+  }
+  if (node.kind === "game") {
+    const c = node.content as GameContent;
+    const couples = (c.couples ?? []).map((k) => `${k.when} → ${k.effect} ${nameOf(index, k.to) ?? "?"}`);
+    const players = (c.players ?? []).map((p) => nameOf(index, p)).filter(Boolean) as string[];
+    if (!c.win_condition && !c.lose_condition && !couples.length && !players.length) return null;
+    return (
+      <div className="mt-2.5 space-y-1.5 rounded-lg border border-[hsl(var(--pv-border-soft))]/70 bg-background/30 px-3 py-2">
+        {players.length > 0 && <p className="pv-serif text-[12px] text-[hsl(var(--pv-text-muted))]">{players.join(" vs ")}</p>}
+        {c.win_condition && <p className="pv-serif flex gap-1.5 text-[12.5px] leading-snug"><span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-emerald-500/70" /><span className="text-foreground"><b className="font-medium text-emerald-500">WIN </b>{c.win_condition}</span></p>}
+        {c.lose_condition && <p className="pv-serif flex gap-1.5 text-[12.5px] leading-snug"><span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-rose-500/60" /><span className="text-foreground"><b className="font-medium text-rose-500">LOSE </b>{c.lose_condition}</span></p>}
+        {couples.length > 0 && <p className="pv-mono text-[10px] leading-relaxed text-[hsl(var(--pv-text-faint))]">⛓ {couples.join("  ·  ")}</p>}
+      </div>
+    );
+  }
+  if (node.kind === "beat") {
+    const c = node.content as BeatContent;
+    const needs = c.needs ?? [], establishes = c.establishes ?? [];
+    if (!needs.length && !establishes.length) return null;
+    return wrap(
+      <>
+        {needs.length > 0 && <span className="flex items-center gap-1.5">{tag("needs")}<span className="pv-serif text-[12px] text-[hsl(var(--pv-text-muted))]">{needs.join(", ")}</span></span>}
+        {establishes.length > 0 && <span className="flex items-center gap-1.5">{tag("→ establishes", "text-[hsl(var(--pv-accent))]")}<span className="pv-serif text-[12px] text-[hsl(var(--pv-text-muted))]">{establishes.join(", ")}</span></span>}
+      </>,
+    );
+  }
+  if (node.kind === "scene") {
+    const vs = (node.content as SceneContent).value_shift;
+    if (!vs?.from || !vs?.to) return null;
+    const up = vs.polarity === "up", down = vs.polarity === "down";
+    return wrap(
+      <span className="pv-serif text-[12px] text-[hsl(var(--pv-text-muted))]">
+        {vs.value ? <span className="text-[hsl(var(--pv-text-faint))]">{vs.value}: </span> : null}
+        {vs.from} <span className={up ? "text-emerald-500" : down ? "text-rose-500" : "text-[hsl(var(--pv-accent))]"}>{up ? "↗" : down ? "↘" : "→"}</span> {vs.to}
+      </span>,
+    );
+  }
+  if (node.kind === "world_fact") {
+    const c = node.content as WorldFactContent;
+    if (!c.mechanism) return null;
+    return wrap(<span className="flex items-center gap-1.5">{tag("mechanism", "text-[hsl(var(--pv-accent))]")}<span className="pv-serif text-[12px] text-[hsl(var(--pv-text-muted))]">{c.mechanism}</span></span>);
+  }
+  if (node.kind === "thread") {
+    const c = node.content as ThreadContent;
+    if (!c.kind) return null;
+    return wrap(tag(c.kind, "text-[hsl(var(--pv-accent))]"));
+  }
+  return null;
+}
+
+// The card's scannable identity line — a short title from the node's own content, so a stack of cards reads
+// top-to-bottom without opening each. Falls back to nothing (the kind badge carries it).
+function cardTitle(node: DnaNode): string | undefined {
+  const c = node.content as Record<string, unknown>;
+  const s = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
+  switch (node.kind) {
+    case "movement": return s((c as MovementContent).title) ?? s((c as MovementContent).goal);
+    case "beat": return s((c as BeatContent).summary);
+    case "scene": return s((c as SceneContent).chapter_start?.title) ?? s((c as SceneContent).goal);
+    case "tentpole": return s((c as { summary?: string }).summary);
+    case "character": case "world_fact": case "thread": case "game": return s((c as { name?: string }).name);
+    default: return undefined;
+  }
+}
+
+// The uniform node card — the same verbs (generate / edit / lock) at every depth, now in four stable zones:
+// IDENTITY (kind · title · status) → SUMMARY (derived engine data) → FIELDS (editable slots) → ACTIONS (a
+// persistent bar: approve gate, generate, lock, delete). The action bar always occupies its row, so the
+// card never reflows as state changes (low layout shift). A beat's connector glyph (∴/↯) prefixes its title.
+function NodeCard({ node, index, bookId, kids, onChanged, accent, expanded, onToggle, meta }: {
   node: DnaNode; index: Map<string, DnaNode>; bookId: number; kids: DnaNode[]; onChanged: () => void; accent?: boolean;
+  expanded: boolean; onToggle: () => void; meta?: string;
 }) {
   const { toast } = useToast();
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -275,13 +475,13 @@ function NodeCard({ node, index, bookId, kids, onChanged, accent }: {
   useEffect(() => { setDrafts({}); }, [node.id]);
   const fields = FIELDS[node.kind] ?? [];
   const stale = isStale(node, index) || (node.kind === "scene" && isProseStale(node));
-  // A relationship card names its dyad (a/b are character node ids).
-  const dyad = node.kind === "relationship" ? (() => {
-    const c = node.content as RelationshipContent;
-    const nm = (id?: string) => (id ? (index.get(id)?.content as CharacterContent | undefined)?.name : undefined);
-    const a = nm(c.a), b = nm(c.b);
-    return a && b ? `${a} ↔ ${b}` : undefined;
-  })() : undefined;
+  const locked = node.authoring.locked;
+  // Title falls back to the relationship dyad (needs index) so a collapsed relationship row stays labeled.
+  const title = cardTitle(node) ?? (node.kind === "relationship"
+    ? (() => { const c = node.content as RelationshipContent; const a = nameOf(index, c.a), b = nameOf(index, c.b); return a && b ? `${a} ↔ ${b}` : undefined; })()
+    : undefined);
+  const connector = node.kind === "beat" ? (node.content as BeatContent).connector : undefined;
+  const connectorGlyph = connector === "therefore" ? "∴" : connector === "but" ? "↯" : undefined;
   // Available generate verbs: hide a SINGLE-child target once made, and a target whose prerequisite kind
   // (e.g. relationships need a cast) doesn't exist yet.
   const targets = (EXPAND_TARGETS[node.kind] ?? []).filter((t) =>
@@ -293,7 +493,7 @@ function NodeCard({ node, index, bookId, kids, onChanged, accent }: {
   const ready = node.authoring.status === "accepted"; // progressive disclosure: expand only from an accepted rung (§7)
   const save = (patch: Record<string, unknown>) => guard("Couldn't save", () => saveNode(editContent(node, patch)));
   const accept = () => guard("Couldn't accept", () => saveNode(setStatus(node, "accepted")));
-  const toggleLock = () => guard("Couldn't lock", () => saveNode(lockNode(node, !node.authoring.locked)));
+  const toggleLock = () => guard("Couldn't lock", () => saveNode(lockNode(node, !locked)));
   const remove = () => { if (window.confirm(`Delete this ${node.kind} and everything under it?`)) void guard("Couldn't delete", () => deleteNode(node.id)); };
   const generate = async (t: ExpandTarget) => {
     // Regenerate REPLACES the unlocked children of this kind (locked ones are kept); first run just appends.
@@ -311,43 +511,80 @@ function NodeCard({ node, index, bookId, kids, onChanged, accent }: {
 
   return (
     <Panel variant={accent ? "chosen" : "soft"} className="px-4 py-3">
-      <div className="mb-2 flex items-center gap-2">
-        <Eyebrow tone="accent">{node.kind}</Eyebrow>
-        {dyad && <span className="pv-serif text-[12px] text-[hsl(var(--pv-text-muted))]">{dyad}</span>}
-        <span className="pv-mono text-[9px] uppercase tracking-[0.1em] text-[hsl(var(--pv-text-faint))]">{node.authoring.status}</span>
-        {stale && <span className="pv-mono text-[9px] uppercase tracking-[0.1em] text-amber-500">stale</span>}
-        <div className="ml-auto flex items-center gap-3 text-[hsl(var(--pv-text-faint))]">
-          {!ready && <ActionLink onClick={accept} title="accept this rung to unlock generating below it">accept</ActionLink>}
-          {!generating && ready && targets.map((t) => (
-            <ActionLink key={t.target} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={() => generate(t)} title={t.label}>{t.label}</ActionLink>
-          ))}
-          <button onClick={toggleLock} title={node.authoring.locked ? "unlock" : "lock"} className={node.authoring.locked ? "text-[hsl(var(--pv-accent))]" : "hover:text-foreground"}>
-            {node.authoring.locked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
-          </button>
-          <button onClick={remove} title="delete" className="text-[11px] hover:text-destructive/70">✕</button>
+      {/* IDENTITY — the whole row toggles open/closed; chevron · kind · title · status all on one line */}
+      <button type="button" onClick={onToggle} className="flex w-full items-start gap-2 text-left">
+        <span className="mt-0.5 shrink-0 text-[hsl(var(--pv-text-faint))]">
+          {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+        </span>
+        <Eyebrow tone="accent" className="mt-0.5 shrink-0">{node.kind}</Eyebrow>
+        <div className="min-w-0 flex-1">
+          {title && (
+            <p className={`pv-serif text-[13.5px] leading-snug text-foreground ${expanded ? "" : "truncate"}`}>
+              {connectorGlyph && <span className="mr-1 text-[hsl(var(--pv-accent))]" title={connector}>{connectorGlyph}</span>}
+              {title}
+            </p>
+          )}
+          {!expanded && meta && <p className="pv-mono mt-0.5 text-[9px] uppercase tracking-[0.1em] text-[hsl(var(--pv-text-faint))]">{meta}</p>}
         </div>
-      </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {stale && <span className="pv-mono text-[9px] uppercase tracking-[0.12em] text-amber-500" title="inputs changed since this was generated">stale</span>}
+          <StatusPill status={node.authoring.status} />
+          {locked && <Lock className="h-3 w-3 text-[hsl(var(--pv-accent))]" />}
+        </div>
+      </button>
 
-      {generating && <RunningInline label={generating === "prose" ? "writing prose…" : "generating…"} className="mb-2" />}
+      {expanded && (<>
+      {/* SUMMARY — derived engine data (win/lose, coupling, causality, value turn…) */}
+      <KindSummary node={node} index={index} />
 
-      <div className="space-y-1.5">
-        {fields.map((fld) => {
-          const val = drafts[fld.key] ?? getPath(node.content, fld.key);
-          return (
-            <label key={fld.key} className="block">
-              <span className="pv-mono text-[9px] uppercase tracking-[0.1em] text-[hsl(var(--pv-text-faint))]">{fld.label}</span>
-              <AutoTextarea
-                value={val}
-                disabled={node.authoring.locked}
-                onChange={(e) => setDrafts((d) => ({ ...d, [fld.key]: e.target.value }))}
-                onBlur={() => { const v = drafts[fld.key]; if (v != null && v !== getPath(node.content, fld.key)) void save(setPath(fld.key, v)); }}
-                placeholder="—"
-                className="pv-serif w-full resize-none border-0 border-b border-transparent bg-transparent px-0 py-0.5 text-[14px] leading-snug text-foreground outline-none focus:border-[hsl(var(--pv-accent))]/40 focus-visible:ring-0 disabled:opacity-60"
-              />
-            </label>
-          );
-        })}
+      {/* FIELDS — the editable slots; ★ marks a load-bearing one */}
+      {fields.length > 0 && (
+        <div className="mt-2.5 space-y-1.5">
+          {fields.map((fld) => {
+            const required = fld.label.includes("★");
+            const label = fld.label.replace(/\s*★\s*$/, "");
+            const val = drafts[fld.key] ?? getPath(node.content, fld.key);
+            return (
+              <label key={fld.key} className="block">
+                <span className="pv-mono flex items-center gap-1 text-[9px] uppercase tracking-[0.1em] text-[hsl(var(--pv-text-faint))]">
+                  {label}{required && <span className="text-[hsl(var(--pv-accent))]" title="load-bearing field">★</span>}
+                </span>
+                <AutoTextarea
+                  value={val}
+                  disabled={locked}
+                  onChange={(e) => setDrafts((d) => ({ ...d, [fld.key]: e.target.value }))}
+                  onBlur={() => { const v = drafts[fld.key]; if (v != null && v !== getPath(node.content, fld.key)) void save(setPath(fld.key, v)); }}
+                  placeholder="—"
+                  className="pv-serif w-full resize-none border-0 border-b border-transparent bg-transparent px-0 py-0.5 text-[14px] leading-snug text-foreground outline-none focus:border-[hsl(var(--pv-accent))]/40 focus-visible:ring-0 disabled:opacity-60"
+                />
+              </label>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ACTIONS — a persistent bar (never reflows): generate verbs left, edit controls right */}
+      <div className="mt-3 flex min-h-[24px] items-center gap-3 border-t border-[hsl(var(--pv-border-soft))]/60 pt-2.5">
+        {generating ? (
+          <RunningInline label={generating === "prose" ? "writing prose…" : "generating…"} />
+        ) : (
+          <>
+            {!ready && (
+              <ActionLink onClick={accept} icon={<Check className="h-3.5 w-3.5" />} title="approve this rung to unlock generating below it">approve</ActionLink>
+            )}
+            {ready && targets.map((t) => (
+              <ActionLink key={t.target} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={() => generate(t)} title={t.label}>{t.label}</ActionLink>
+            ))}
+            <div className="ml-auto flex items-center gap-3 text-[hsl(var(--pv-text-faint))]">
+              <button onClick={toggleLock} title={locked ? "unlock — let regeneration revise this again" : "lock — pin this so regeneration can't touch it"} className={`transition-colors ${locked ? "text-[hsl(var(--pv-accent))]" : "hover:text-foreground"}`}>
+                {locked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
+              </button>
+              <button onClick={remove} title="delete this node and everything under it" className="transition-colors hover:text-destructive/70"><X className="h-3.5 w-3.5" /></button>
+            </div>
+          </>
+        )}
       </div>
+      </>)}
     </Panel>
   );
 }

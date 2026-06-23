@@ -166,6 +166,7 @@ admission. O5 is the upside the structure uniquely unlocks (paste-workflows can'
    see the truth. (Standing rule across the app — see `feedback_refresh_is_noop`.)
 6. **Show the blast radius.** Before any regeneration, show what it will touch. No silent rewrites.
 7. **Nothing speculative on screen.** Minimum UI that does the job. Clean up our own mess.
+8. **Proposed changes survive their verdict.** When the author accepts or denies a proposal, the change text stays readable in the chat thread — it is not erased. Accept/deny is a state transition on the proposal, not a deletion. An author must always be able to see *what they said yes or no to.*
 
 ---
 

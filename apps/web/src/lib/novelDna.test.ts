@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  analysisText, blastRadius, byId, cascade, chapters, chooseProposal, editContent, emptyNode,
+  analysisText, blastRadius, byId, cascade, causality, chapters, chooseProposal, editContent, emptyNode,
   enforcePromiseSchedule, inputHash, isProseStale, isRenderable, isStale, lock, pacing, promiseLedger,
   refsOf, renderBlockers, renderPages, scenesInOrder, stakesOf, stampInput, stampProse, topography,
   validate, type DnaNode, type NodeKind, type ThreadRef,
@@ -433,5 +433,73 @@ describe("emotional-topography axis (value_shift polarity)", () => {
   it("an oscillating sequence does not sag", () => {
     const nodes = spine([vs("up"), vs("down"), vs("up"), vs("down")].map((v) => ({ value_shift: v })));
     expect(validate(nodes).map((i) => i.rule)).not.toContain("sagging_middle");
+  });
+});
+
+describe("causality axis (why — the causal spine)", () => {
+  // a movement with N beats carrying causal metadata (needs/establishes/connector/polarity)
+  const beatSpine = (beats: Record<string, unknown>[]): DnaNode[] => {
+    const m = mk("movement", { id: "m", parent_id: "p", position: 0 });
+    const bs = beats.map((c, i) => mk("beat", { id: `b${i}`, parent_id: "m", position: i, content: c }));
+    return [m, ...bs];
+  };
+
+  it("a 'therefore' whose need is established upstream is caused (no lint)", () => {
+    const nodes = beatSpine([
+      { polarity: "up", establishes: ["ledger_settled"] },
+      { connector: "therefore", polarity: "down", needs: ["ledger_settled"] },
+    ]);
+    const c = causality(nodes);
+    expect(c[1].unmet).toEqual([]);
+    expect(validate(nodes).map((i) => i.rule)).not.toContain("uncaused_therefore");
+  });
+
+  it("flags a 'therefore' whose need no earlier beat establishes (hollow link)", () => {
+    const nodes = beatSpine([
+      { polarity: "up" },
+      { connector: "therefore", polarity: "down", needs: ["peculium_known"] },
+    ]);
+    expect(causality(nodes)[1].unmet).toEqual(["peculium_known"]);
+    expect(validate(nodes).map((i) => i.rule)).toContain("uncaused_therefore");
+  });
+
+  it("a beat cannot satisfy its own need (establishes is checked after needs)", () => {
+    const nodes = beatSpine([
+      { polarity: "up" },
+      { connector: "therefore", polarity: "down", needs: ["x"], establishes: ["x"] },
+    ]);
+    expect(validate(nodes).map((i) => i.rule)).toContain("uncaused_therefore");
+  });
+
+  it("flags an empty 'but' that neither reverses charge nor consumes a state", () => {
+    const nodes = beatSpine([
+      { polarity: "up" },
+      { connector: "but", polarity: "up" }, // same polarity, no needs → turns nothing
+    ]);
+    expect(validate(nodes).map((i) => i.rule)).toContain("empty_but");
+  });
+
+  it("the opening beat is exempt — therefore/but are antecedent-relative (no prior to link to)", () => {
+    const nodes = beatSpine([
+      { connector: "but", polarity: "down" }, // beat 0: no prior beat, no needs — must NOT lint
+      { connector: "therefore", polarity: "up", needs: ["x"] },
+    ]);
+    expect(validate(nodes).map((i) => i.rule)).not.toContain("empty_but");
+  });
+
+  it("a 'but' that reverses the charge is not empty", () => {
+    const nodes = beatSpine([
+      { polarity: "up" },
+      { connector: "but", polarity: "down" },
+    ]);
+    expect(validate(nodes).map((i) => i.rule)).not.toContain("empty_but");
+  });
+
+  it("a 'but' that consumes an established state is not empty even without a reversal", () => {
+    const nodes = beatSpine([
+      { polarity: "up", establishes: ["rumor"] },
+      { connector: "but", polarity: "up", needs: ["rumor"] },
+    ]);
+    expect(validate(nodes).map((i) => i.rule)).not.toContain("empty_but");
   });
 });
