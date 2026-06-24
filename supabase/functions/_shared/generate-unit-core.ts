@@ -477,9 +477,10 @@ The author works in OBJECTIVES: a short statement of what a unit of the book mus
 Your job is to write the prose that achieves the given objective, in the book's voice and
 consistent with the rest of the book.
 
-Rules:
+<rules>
 - Write ONLY the prose. No preamble, no titles, no headings (no "#" lines), no markdown
-  fences, no meta commentary. The page already has its title — never restate it.
+  fences, no meta commentary. The page already has its title — never restate it. Any framing
+  text is inserted verbatim into the authored document and will corrupt it.
 - Honor the book's brief as a non-negotiable contract — its VOICE (genre, audience, tone, premise)
   AND its MANDATE (what the book must deliver: the success criteria, heat/explicitness, genre
   obligations, and length). When a voice sample is provided it is the strongest STYLE anchor:
@@ -493,8 +494,9 @@ Rules:
   character hasn't — let the reader know more than the narrator does when the story calls for it.
   Do NOT repeat what's already been written; do NOT continue or finish a sentence from the
   preceding prose — begin this unit cleanly with a new sentence.
-- Write a COMPLETE passage that ends at a natural stopping point — a finished sentence.
-  Never stop mid-sentence.
+- Write a COMPLETE passage that ends at a natural stopping point — a finished sentence. Never
+  stop mid-sentence. The text is inserted directly into the document; a truncated sentence
+  has nowhere to go.
 - Serve the objective precisely; do not wander beyond what it asks.
 - Match the requested length: a single paragraph means ONE paragraph.
 - CAST VOICES & POV: If CAST VOICES are provided, render each character's dialogue in their
@@ -503,19 +505,26 @@ Rules:
 - NARRATION: Honor the POV and NARRATION block exactly — person, tense, and distance are the
   author's structural choice, not suggestions.
 - ESTABLISHED FACTS & WORLD: Never contradict any fact in the ESTABLISHED FACTS block or any
-  rule in the WORLD block. These are hard continuity constraints.`;
+  rule in the WORLD block. These are hard continuity constraints.
+</rules>
+
+Before returning, verify: (1) the prose starts clean — no heading, no preamble; (2) the passage ends on a complete sentence; (3) the stated objective is achieved.`;
 
 const SYSTEM_REVISE = `You are a developmental line editor revising a page of an author's book to address specific editorial notes.
 
-Rules:
+<rules>
 - Output ONLY the revised page prose. No preamble, no titles, no headings ("#" lines), no
-  markdown fences, no meta commentary, no list of what you changed.
+  markdown fences, no meta commentary, no list of what you changed — the output is inserted
+  directly into the authored document; any framing text corrupts the saved value.
 - Address EVERY note. Make the concrete change each note calls for — don't merely gesture at it.
 - PRESERVE what works: keep the page's strengths, structure, and the author's voice. Change
   only what the notes require — this is a revision, not a rewrite from scratch.
 - Honor the book's brief (genre, audience, tone, premise) and stay consistent with the
   surrounding pages (names, facts, continuity).
-- Return a COMPLETE page that ends on a finished sentence.`;
+- Return a COMPLETE page that ends on a finished sentence.
+</rules>
+
+Before returning, verify: (1) every editorial note is addressed with a concrete change; (2) the prose starts clean, without a heading or preamble; (3) the passage ends on a complete sentence.`;
 
 
 interface PromptArgs {
@@ -714,9 +723,10 @@ function variablePart(args: PromptArgs): string {
 
 // ── Claude call ──────────────────────────────────────────────────────────────
 async function renderProse(apiKey: string, model: string, args: PromptArgs, meta: CallMeta): Promise<string> {
-  const data = await callClaudeApi(apiKey, {
+  const isPageLevel = args.level === "page" || args.mode === "revise";
+  const body: Record<string, unknown> = {
     model,
-    max_tokens: args.mode === "revise" || args.level === "page" ? 8000 : 600,
+    max_tokens: isPageLevel ? 8000 : 600,
     system: [{ type: "text", text: args.mode === "revise" ? SYSTEM_REVISE : SYSTEM, cache_control: { type: "ephemeral" } }],
     messages: [
       {
@@ -727,7 +737,14 @@ async function renderProse(apiKey: string, model: string, args: PromptArgs, meta
         ],
       },
     ],
-  }, meta);
+  };
+  // Adaptive thinking improves quality on complex page-level generation; silently dropped by
+  // anthropicToOpenAI for non-Anthropic models (OpenRouter/Qwen/DeepSeek).
+  if (isPageLevel) {
+    body.thinking = { type: "adaptive" };
+    body.output_config = { effort: "medium" };
+  }
+  const data = await callClaudeApi(apiKey, body, meta);
 
   const text = textFromClaude(data).trim();
   if (!text) throw new Error("Claude returned no text content.");

@@ -56,11 +56,22 @@ A beat is where the story's ENGINE lives. Weave these into the paragraph (as flo
 - A CONCRETE IMAGE: one specific sensory anchor — an object, a gesture, a detail of place — that the page turns on, not an abstraction.
 - THREADS: if told to SEED a thread, plant it so it reads as natural now but lands later; if told to PAY OFF a thread, deliver the promise so it feels earned.
 
-Rules:
-- Output ONE paragraph (3–6 sentences). No title, no heading, no preamble, no markdown, no bullet list, no meta commentary — just the beat.
+<example>
+WEAK beat — fails the requirements:
+"Tom finds the hidden files. He reads them and discovers that Sarah lied. He confronts her about it."
+Why it fails: pure "and then" chain (no causality), no named value flip, no subtext, no concrete image — the story's engine is off.
+
+STRONG beat — meets the requirements:
+"Because the archive printout Sarah slipped him yesterday listed a date that contradicts her alibi, Tom walks into the meeting already holding the contradiction — trust, which felt solid this morning, is now evidence. He sets the printout face-down on the table before she sits; when she asks how his morning was, he says 'fine,' and means the opposite. She reaches for the paper. He lets her. The moment her eyes move to the date, Tom knows: whatever she says next is a choice to lie or not."
+Why it works — Causality: because yesterday's discovery, therefore today's confrontation; Value flip: trust → evidence/leverage (+ → −); Subtext: "fine" = not fine, "lets her" = he's testing; Concrete image: the printout placed face-down on the table.
+</example>
+
+<rules>
+- Output ONE paragraph (3–6 sentences). No title, no heading, no preamble, no markdown, no bullet list, no meta commentary — just the beat. Any framing text is noise; the beat is the plan itself.
 - It is a PLAN, not prose: say what happens and in what order; do NOT write the page's actual sentences or dialogue.
 - Fulfil the page's objective exactly. Honour the brief (genre, audience, tone, premise) and the spine as the voice/throughline contract.
-- Preserve the brief's MANDATE — heat/explicitness, comedy, and set-piece specifics — verbatim. The layer you write must be AT LEAST as committed as its source: never soften, abstract, or fade-to-black a mandated beat. If the brief calls for something explicit, sensual, or funny, that obligation must survive into your output, not get laundered into tasteful vagueness.`;
+- Preserve the brief's MANDATE — heat/explicitness, comedy, and set-piece specifics — verbatim. The layer you write must be AT LEAST as committed as its source: never soften, abstract, or fade-to-black a mandated beat. If the brief calls for something explicit, sensual, or funny, that obligation must survive into your output, not get laundered into tasteful vagueness.
+</rules>`;
 
 
 // A compact id-tagged outline so the beat reads in context; the target page is marked.
@@ -233,10 +244,14 @@ export async function beatCandidates(client: SupabaseClient, apiKey: string, p: 
 }
 
 // One beat sample. `temperature` (for best-of-n spread) is passed through to the Messages API.
+// Adaptive thinking improves causality + value-flip quality; silently dropped by anthropicToOpenAI
+// for non-Anthropic models (OpenRouter/Qwen/DeepSeek).
 async function generateBeat(apiKey: string, model: string, userContent: string, meta: CallMeta, temperature?: number): Promise<string> {
   const body: Record<string, unknown> = {
     model,
     max_tokens: 1024,
+    thinking: { type: "adaptive" },
+    output_config: { effort: "medium" },
     system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
     messages: [{ role: "user", content: userContent }],
   };

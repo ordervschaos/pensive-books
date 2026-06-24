@@ -67,9 +67,9 @@ export function buildJudgeUser(call: JudgeableCall): string {
   const out = call.output ?? "(no output)";
   return (
     `CALL TYPE (fn): ${call.fn}\n\n` +
-    `INSTRUCTIONS (system):\n${call.system ?? "(none — baked into the context below)"}\n\n` +
-    `CONTEXT (the assembled prompt the model received):\n"""\n${ctx.slice(0, CTX_CAP)}${ctx.length > CTX_CAP ? "\n…[truncated]" : ""}\n"""\n\n` +
-    `OUTPUT (what the model produced):\n"""\n${out.slice(0, OUT_CAP)}${out.length > OUT_CAP ? "\n…[truncated]" : ""}\n"""\n\n` +
+    `<instructions>\n${call.system ?? "(none — baked into the context below)"}\n</instructions>\n\n` +
+    `<context>\n${ctx.slice(0, CTX_CAP)}${ctx.length > CTX_CAP ? "\n…[truncated]" : ""}\n</context>\n\n` +
+    `<output>\n${out.slice(0, OUT_CAP)}${out.length > OUT_CAP ? "\n…[truncated]" : ""}\n</output>\n\n` +
     `Judge the output against the instructions and context. JSON only.`
   );
 }

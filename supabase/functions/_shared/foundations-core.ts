@@ -147,46 +147,46 @@ export const stripEntityIds = (s: string) => s.replace(/\s?\[[0-9a-f]{8}\]/g, ""
 
 // ── Per-step prompts ─────────────────────────────────────────────────────────
 const STEP_SYSTEM: Record<FoundationsStep, string> = {
-  argument: `You are a book architect proposing the book's ARGUMENT — the claim the whole story argues (e.g. "loyalty to a dead man can cost you every living one"). Generate exactly 3 candidates, genuinely different claims pulled from different tensions in the brief. Each: ~2 sentences, plus the ending it implies in one line.
+  argument: `You are a book architect proposing the book's ARGUMENT — the claim the whole story argues (e.g. "loyalty to a dead man can cost you every living one"). Generate exactly 3 candidates, genuinely different claims pulled from different tensions in the brief — three options give the author a real choice between different human stories, not three phrasings of the same claim. Each: ~2 sentences, plus the ending it implies in one line.
 
-Output JSON ONLY:
+Output JSON ONLY (no prose, no fences — the caller parses this directly):
 { "candidates": [{ "text": "<~2 sentence claim>", "implied_ending": "<one line>" }, …] }`,
 
-  ending: `You are a book architect proposing ENDINGS consistent with the book's selected argument. Generate exactly 3 candidates — same argument, different final images/costs/resolutions. Each ~2–3 sentences, concrete (who stands where, what it cost), not a synopsis.
+  ending: `You are a book architect proposing ENDINGS consistent with the book's selected argument. Generate exactly 3 candidates — same argument, different final images/costs/resolutions — so the author can choose how the argument lands, not just that it does. Each ~2–3 sentences, concrete (who stands where, what it cost), not a synopsis.
 
-Output JSON ONLY:
+Output JSON ONLY (no prose, no fences):
 { "candidates": [{ "text": "<the ending>" }, …] }`,
 
   cast: `You are a book architect proposing three complete CAST CONFIGURATIONS for this story. Each configuration stands alone: one protagonist and one or two major characters, each with want (external goal), wound (the unhealed injury driving them), and lie (the false belief the arc will break). Across the three options vary the protagonist's core wound and lie — each should represent a genuinely different human story pulled from different tensions in the brief. The major characters in each option should serve that specific protagonist's arc.
 
 For each character also include:
-- history: 1–2 sentence formative backstory that explains how they got their wound/lie
-- idiolect: one line describing how they speak — diction, verbal tics, register (e.g. "speaks in short declaratives, never asks questions, drops g's")
-- tag: one trackable physical or gesture marker (e.g. "always straightens objects on any surface near her")
+- history: 1–2 sentence formative backstory that explains how they got their wound/lie — this is the cause the idiolect and tag express
+- idiolect: one line describing how they speak — diction, verbal tics, register (e.g. "speaks in short declaratives, never asks questions, drops g's") — specific enough for the prose writer to distinguish this voice in every line of dialogue
+- tag: one trackable physical or gesture marker (e.g. "always straightens objects on any surface near her") — concrete enough to recur and accumulate meaning
 
 For each proposal also include a "relationships" array capturing the key dyads among that proposal's members: { "a": "<member name>", "b": "<member name>", "bond": "<one line describing the relationship charge>" }.
 
-Output JSON ONLY:
+Output JSON ONLY (no prose, no fences):
 { "proposals": [{ "label": "Option A", "members": [{ "name": "…", "role": "protagonist" | "major", "want": "…", "wound": "…", "lie": "…", "history": "…", "idiolect": "…", "tag": "…" }, …], "relationships": [{ "a": "…", "b": "…", "bond": "…" }, …] }, { "label": "Option B", "members": […], "relationships": […] }, { "label": "Option C", "members": […], "relationships": […] }] }`,
 
   world: `You are a book architect proposing the WORLD/SETTING for this story — a pinned, concrete artifact that all subsequent prose must stay consistent with. Ground every detail in the brief and the settled foundations; do not invent genre or setting that contradicts them. For non-genre stories, rules can be social, economic, or institutional constraints rather than magic or physics.
 
 Propose exactly one world definition with:
-- setting: where (and what kind of place) the story lives — specific enough to paint a picture
+- setting: where (and what kind of place) the story lives — specific enough to paint a picture; vague settings produce interchangeable prose
 - period: when (era, season, moment in history, or "contemporary")
-- rules: 3–5 load-bearing constraints of this story-world — the things prose must never contradict (physical laws if genre, social hierarchies, economic realities, institutional rules, etc.)
+- rules: 3–5 load-bearing constraints of this story-world — the things prose must never contradict (physical laws if genre, social hierarchies, economic realities, institutional rules, etc.); these are the constraints that will produce this story's specific conflicts, not generic furniture
 
-Output JSON ONLY:
+Output JSON ONLY (no prose, no fences):
 { "world": { "setting": "…", "period": "…", "rules": ["…", "…", "…"] } }`,
 
   tentpoles: `You are a book architect proposing TENTPOLE MOMENTS — vivid, concrete scenes the author can already see (1–3 sentences each, a moment not a summary). Generate exactly 6 proposals, spread across the book's whole arc, consistent with the settled argument/ending/cast. Never duplicate an existing tentpole; never resemble a killed direction.
 
-Output JSON ONLY:
+Output JSON ONLY (no prose, no fences):
 { "candidates": [{ "text": "<the moment>" }, …] }`,
 
-  voice: `You are a prose stylist. Render the given TENTPOLE MOMENT as ~120 words of finished prose in 3 DISTINCT voices — different sentence rhythm, distance, temperature. Label each with a 2–4 word descriptor (e.g. "spare and cold", "lush close-third"). Same moment, three soundscapes.
+  voice: `You are a prose stylist. Render the given TENTPOLE MOMENT as ~120 words of finished prose in 3 DISTINCT voices — different sentence rhythm, distance, temperature. Label each with a 2–4 word descriptor (e.g. "spare and cold", "lush close-third"). Same moment, three soundscapes — the author picks the register the whole book will live in.
 
-Output JSON ONLY:
+Output JSON ONLY (no prose, no fences):
 { "candidates": [{ "label": "<descriptor>", "text": "<~120 words>" }, …] }`,
 };
 
@@ -326,10 +326,11 @@ export async function foundationsOptions(
 // ── Tentpole revise ──────────────────────────────────────────────────────────
 const TENTPOLE_REVISE_SYSTEM = `You are revising a TENTPOLE MOMENT — a vivid, concrete scene (1–3 sentences) the author has pinned into the book's structure. Apply the author's INSTRUCTION while preserving what already works. This is a targeted revision, not a rewrite from scratch.
 
-Rules:
-- Output only the revised moment. No title, no heading, no preamble, no markdown, no meta commentary.
+<rules>
+- Output only the revised moment. No title, no heading, no preamble, no markdown, no meta commentary — the output is saved verbatim; any framing text corrupts the stored value.
 - Keep the same form: a vivid, concrete scene in 1–3 sentences — a moment, not a summary.
-- Stay consistent with the book's settled argument, ending, and cast.`;
+- Stay consistent with the book's settled argument, ending, and cast.
+</rules>`;
 
 export interface ReviseTentpoleParams {
   bookId: number;

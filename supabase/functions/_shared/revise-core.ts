@@ -30,12 +30,15 @@ function systemFor(layer: ReviseLayer): string {
   const isProse = layer === "prose";
   return `You are revising ${SHAPE[layer]}. Apply the author's INSTRUCTION while PRESERVING what already works — change only what the instruction asks for, keep the rest. This is a revision, not a rewrite from scratch.
 
-Rules:
-- Output only the revised ${layer}. No title, no heading, no preamble, no markdown, no meta commentary, no list of changes.
+<rules>
+- Output only the revised ${layer}. No title, no heading, no preamble, no markdown, no meta commentary, no list of changes — the output is inserted directly into the authored layer; any framing text corrupts the saved value.
 ${isProse
   ? "- Keep the same approximate length and structure as the original unless the instruction asks otherwise.\n- Preserve POV, tense, and established voice."
   : `- Keep the same kind of statement and length as the original (it is ${SHAPE[layer]}).`}
-- Honour the book's brief (genre, audience, tone) and stay consistent with the book spine if given.`;
+- Honour the book's brief (genre, audience, tone) and stay consistent with the book spine if given.
+</rules>
+
+Before returning, verify: the instruction is addressed, no framing text was added, and the output is the complete revised ${layer} only.`;
 }
 
 export interface ReviseParams {

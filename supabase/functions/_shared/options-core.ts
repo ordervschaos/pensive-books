@@ -31,12 +31,12 @@ An OBJECTIVE is 1–2 sentences stating what a page must achieve — its job in 
 You will be given the committed objectives for all pages before this slot as the story-so-far context. Use them as the causal foundation — something has to happen here that follows from where the story has arrived.
 
 Generate exactly 3 ALTERNATIVES. Each must:
-- Connect causally to the committed prefix (follow "therefore" or "but" from what came before)
+- Connect causally to the committed prefix (follow "therefore" or "but" from what came before) — an objective that floats free of the story-so-far reads as imposed rather than discovered, and breaks the causal chain
 - Honor the spine's throughline
-- Be GENUINELY DIFFERENT from each other — different angle, direction, or emotional register
+- Be GENUINELY DIFFERENT from each other — different angle, direction, or emotional register — so the author has a real choice, not three phrasings of the same move
 - Vary in ambition across the set: one quieter interior move, one larger external turn, one unexpected diagonal
 
-Each option is a clean OBJECTIVE — 1–2 sentences of what the page must achieve. Do NOT label it with the technique ("Unexpected diagonal:", "Plant the mother:", etc.), do NOT add meta-commentary or stage directions, do NOT mention the reader. Just the objective itself.
+Each option is a clean OBJECTIVE — 1–2 sentences of what the page must achieve. Do NOT label it with the technique ("Unexpected diagonal:", "Plant the mother:", etc.), do NOT add meta-commentary or stage directions, do NOT mention the reader — labels are noise; the objective text is what gets saved.
 
 Output JSON ONLY (no prose, no fences):
 { "options": ["<option 1>", "<option 2>", "<option 3>"] }`;
