@@ -27,6 +27,22 @@ export const SelectionBubble = ({ editor }: SelectionBubbleProps) => {
     };
   }, [editor]);
 
+  // Collapse selection when clicking outside the editor or bubble — TipTap doesn't
+  // fire a selectionUpdate for clicks on empty whitespace, so shouldShow stays true.
+  useEffect(() => {
+    const handleMouseDown = (e: MouseEvent) => {
+      const target = e.target as Element;
+      if (
+        !editor.view.dom.contains(target) &&
+        !target.closest?.('[data-selection-bubble]')
+      ) {
+        editor.commands.setTextSelection(editor.state.selection.anchor);
+      }
+    };
+    document.addEventListener('mousedown', handleMouseDown);
+    return () => document.removeEventListener('mousedown', handleMouseDown);
+  }, [editor]);
+
   const toggleLink = () => {
     if (editor.isActive('link')) {
       editor.chain().focus().unsetLink().run();
@@ -53,6 +69,7 @@ export const SelectionBubble = ({ editor }: SelectionBubbleProps) => {
       }}
       // Keep the editor selection when pressing a button (otherwise mousedown blurs it).
       onMouseDown={(e) => e.preventDefault()}
+      data-selection-bubble
       className="flex items-center gap-0.5 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
     >
       <Button

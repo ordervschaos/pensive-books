@@ -3370,6 +3370,307 @@ async function runMandateGate(bookId) {
   return { report: { overall, axes, wordCount, wordTarget: target } };
 }
 
+// ── /dna-expand (mirrors supabase/functions/dna-expand) ───────────────────────
+// Single-field expand for the Novel DNA tree: generate a node's next rung as ONE authoritative version
+// (not 2–3 proposals). Scene → prose fills the scene's text. See docs/novel-dna-spec.md §6.
+// [EXP:preconditions] EXPERIMENT (removable) — must match novelDna.ts + dna-expand/index.ts. Flip to false
+// to disable; grep "[EXP:preconditions]" to remove.
+const EXP_PRECONDITIONS = true;
+const DNA_SPEC = {
+  premise: { childKind: "premise", childLevel: 1, count: "exactly 1", role: "the PREMISE — genre, tone, the dramatic question, and a 5-part shape (setup → three turns → resolution)",
+    schema: `{ "genre": ["..."], "tone": ["..."], "dramatic_question": "...", "shape": { "setup": "...", "turn1": "...", "turn2": "...", "turn3": "...", "resolution": "..." } }` },
+  pillar: { childKind: "pillar", childLevel: 2, count: "exactly 1", role: "the PILLAR — the controlling idea the book proves and the ending it must reach",
+    schema: `{ "controlling_idea": "...", "ending": "..." }` },
+  cast: { childKind: "character", childLevel: 2, count: "3 to 5", role: "the CAST — a protagonist plus key opposition/allies; each gets a want, need, wound, lie, truth, idiolect",
+    schema: `{ "name": "...", "role": "protagonist|antagonist|ally|love_interest|minor", "want": "...", "need": "...", "wound": "...", "lie": "...", "truth": "...", "idiolect": "..." }` },
+  world: { childKind: "world_fact", childLevel: 2, count: "3 to 6", role: "the WORLD — the load-bearing rules. Each must be OPERABLE, not atmosphere: give a short name handle, the rule, and its MECHANISM (what it enables/forbids with clear inputs→outputs, so the climax's win can fire it — no deus ex machina)",
+    schema: `{ "name": "<short handle>", "rule": "...", "mechanism": "<the operation: what it enables/forbids, inputs→outputs>", "category": "..." }` },
+  relationships: { childKind: "relationship", childLevel: 2, count: "2 to 4", role: "the key RELATIONSHIPS (dyads) between the cast — each with a bond and a current charge/tension; reference characters BY NAME",
+    schema: `{ "a": "<character name>", "b": "<character name>", "bond": "...", "charge": "..." }` },
+  threads: { childKind: "thread", childLevel: 2, count: "4 to 7", role: "the PROMISE REGISTRY — the open loops the book opens and must close (a planted clue, a mystery, a foreshadow, a relationship arc). Read THE ARC (the movements) and place promises that pay off across it — setups early, payoffs later",
+    schema: `{ "name": "...", "promise": "...", "payoff": "...", "kind": "mystery|foreshadow|setup_payoff|arc" }` },
+  games: { childKind: "game", childLevel: 2, count: "1 to 3", role: "the GAMES — each a CONTEST with an explicit possibility space: an exact WIN condition AND an exact LOSE condition (you can't win if you can't lose). One CENTRAL game is the norm; add a second/third only if it genuinely interlocks. Name the players (cast BY NAME) and governing_rules (world rules whose mechanism the win/lose fires, BY NAME). If two games interlock, add a `couples` edge: when this game is won/lost, what it does to another game (void/raise/lower/enable) — OPTIONAL" +
+      (EXP_PRECONDITIONS ? ". DECOMPOSE the win into win_requires — every precondition the win depends on, each typed: 'rule' (a world mechanism — must be in governing_rules) or 'state' (a RESOURCE/condition the win SPENDS or needs, e.g. 'her fund ≥ the price') with a short `key`. The story will be forced to ESTABLISH each state precondition before the win — name them honestly" : ""),
+    schema: `{ "name": "...", "players": ["<character name>"], "win_condition": "...", "lose_condition": "...", "stake": "...", "governing_rules": ["<world rule name>"], "couples": [ { "to": "<other game name>", "when": "won|lost", "effect": "void|raise|lower|enable", "note": "..." } ]` +
+      (EXP_PRECONDITIONS ? `, "win_requires": [ { "type": "rule|state", "what": "...", "key": "<short handle, for state preconditions>" } ]` : "") + ` }` },
+  movements: { childKind: "movement", childLevel: 3, count: "exactly 4", role: "the ACTS — four movements whose turning points land near the structural-gravity marks (≈25%, 50%, 75%, 90% of the book). Each carries a goal, a turning point, a target_pct (where its turn should land, 0–1), and a value shift",
+    schema: `{ "title": "...", "goal": "...", "turning_point": "...", "target_pct": 0.25, "value": { "name": "...", "from": "...", "to": "..." } }` },
+  beats: { childKind: "beat", childLevel: 4, count: "2 to 4", role: "the causal BEATS inside this act; each links to the previous with therefore or but, escalating. Tag which THREADS each beat sets up / advances / pays off (reference threads BY NAME)",
+    schema: `{ "summary": "...", "connector": "therefore" | "but", "threads": [ { "ref": "<thread name>", "role": "setup|advance|payoff" } ] }` },
+  scenes: { childKind: "scene", childLevel: 5, count: "1 to 3", role: "the dramatized SCENES that REALIZE this beat; EVERY scene must turn a value (no flat 'and-then'). Set each scene's value_shift.polarity (up = ends better, down = ends worse). The beat's planned polarity is where the beat must LAND (its closing charge) — your last scene reaches it, but VARY internally (a down-beat can open on false hope; an up-beat can dip): do NOT make every scene the same polarity. The thread schedule is inherited automatically — do NOT re-assign threads",
+    schema: `{ "loc": "...", "goal": "...", "conflict": "...", "outcome": "...", "value_shift": { "value": "...", "from": "...", "to": "...", "polarity": "up|down" } }` },
+};
+async function runDnaExpand({ bookId, nodeId, target }) {
+  const book = await fetchBook(bookId);
+  if (!book) return { error: "Book not found" };
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/book_nodes?book_id=eq.${bookId}&select=id,parent_id,kind,position,content,authoring`, { headers: sbHeaders });
+  const nodes = await r.json();
+  const node = nodes.find((n) => n.id === nodeId);
+  if (!node) return { error: "Node not found" };
+
+  const mandate = mandateContext(book.brief);
+  const map = new Map(nodes.map((n) => [n.id, n]));
+  const chain = [];
+  for (let p = node.parent_id; p; p = map.get(p)?.parent_id ?? null) { const a = map.get(p); if (a) chain.unshift(a); }
+  // Cast/world registry off the pillar — feed in so generation is character/world-aware.
+  const pillar = node.kind === "pillar" ? node : chain.find((a) => a.kind === "pillar");
+  const entities = pillar ? nodes.filter((n) => n.parent_id === pillar.id && ["character", "world_fact", "relationship"].includes(n.kind)) : [];
+  const chars = entities.filter((e) => e.kind === "character");
+  const cName = (e) => String(e.content?.name ?? "").trim();
+  const entityBlock = entities.length
+    ? "CAST & WORLD (reference characters BY NAME):\n" +
+      chars.map((c) => `- ${cName(c)} [${c.content?.role ?? "?"}] ${JSON.stringify(c.content)}`).join("\n") +
+      entities.filter((e) => e.kind === "world_fact").map((w) => `\n- WORLD: ${w.content?.rule ?? ""}`).join("")
+    : "";
+  // Promise registry + the arc — beats/scenes anchor real threads by name; threads gen sees the whole arc.
+  const threads = pillar ? nodes.filter((n) => n.parent_id === pillar.id && n.kind === "thread") : [];
+  const tName = (e) => String(e.content?.name ?? "").trim();
+  const threadBlock = threads.length
+    ? "THREADS — the promise registry (reference BY NAME):\n" +
+      threads.map((t) => `- ${tName(t)}: ${t.content?.promise ?? ""} → ${t.content?.payoff ?? ""}`).join("\n")
+    : "";
+  const movements = pillar ? nodes.filter((n) => n.parent_id === pillar.id && n.kind === "movement").sort((a, b) => (a.position ?? 0) - (b.position ?? 0)) : [];
+  const movementBlock = movements.length
+    ? "THE ARC (movements in order — place promises across these):\n" +
+      movements.map((m) => `- [${m.content?.title ?? ""}] turn: ${m.content?.turning_point ?? ""}`).join("\n")
+    : "";
+  const tentpoles = pillar ? nodes.filter((n) => n.parent_id === pillar.id && n.kind === "tentpole" && (n.authoring?.locked || n.authoring?.status === "accepted")) : [];
+  const tpName = (e) => String(e.content?.summary ?? "").trim();
+  const tentpoleBlock = tentpoles.length
+    ? "TENTPOLES — set-pieces you MUST place (assign each to the beat that delivers it, BY its summary):\n" +
+      tentpoles.map((t) => `- ${tpName(t)}`).join("\n")
+    : "";
+  const worldFacts = pillar ? nodes.filter((n) => n.parent_id === pillar.id && n.kind === "world_fact") : [];
+  const wfName = (e) => String(e.content?.name ?? e.content?.rule ?? "").trim();
+  const worldRulesBlock = worldFacts.length
+    ? "WORLD RULES (the mechanisms a turning point can fire — reference BY NAME in grounds_in):\n" +
+      worldFacts.map((w) => `- ${wfName(w)}: ${w.content?.mechanism ?? w.content?.rule ?? ""}`).join("\n")
+    : "";
+  const games = pillar ? nodes.filter((n) => n.parent_id === pillar.id && n.kind === "game") : [];
+  const gName = (e) => String(e.content?.name ?? "").trim();
+  const gamesBlock = games.length
+    ? "GAMES (the contests — reference BY NAME in plays/resolves; WIN vs LOSE):\n" +
+      games.map((g) => `- ${gName(g)}: WIN = ${g.content?.win_condition ?? "?"} | LOSE = ${g.content?.lose_condition ?? "?"}`).join("\n")
+    : "";
+  // [EXP:preconditions]
+  const statePreconds = EXP_PRECONDITIONS
+    ? games.flatMap((g) => (g.content?.win_requires ?? []).filter((r) => r.type === "state" && r.key).map((r) => ({ key: r.key, what: r.what ?? "", game: gName(g) })))
+    : [];
+  const precondBlock = statePreconds.length
+    ? "STATE PRECONDITIONS (each must be ESTABLISHED by an earlier beat — list its key in that beat's `establishes` — BEFORE the beat that resolves its game):\n" +
+      statePreconds.map((p) => `- ${p.key} (${p.game}): ${p.what}`).join("\n")
+    : "";
+  const ctx = [
+    `BOOK: ${book.name ?? ""}`,
+    `BRIEF (binding):\n${briefContext(book.brief)}`,
+    mandate ? `MANDATE — NON-NEGOTIABLE:\n${mandate}` : "",
+    "STORY SO FAR (the ladder above this node; LOCKED items are immutable):",
+    ...chain.map((a) => `[${a.kind}${a.authoring?.locked ? " · LOCKED" : ""}] ${JSON.stringify(a.content)}`),
+    entityBlock,
+    threadBlock,
+    tentpoleBlock,
+    worldRulesBlock,
+    gamesBlock,
+    precondBlock, // [EXP:preconditions]
+    movementBlock,
+    `THIS NODE [${node.kind}]: ${JSON.stringify(node.content)}`,
+  ].filter(Boolean).join("\n\n");
+
+  if (target === "prose" || (!target && node.kind === "scene")) {
+    const prompt = `You are a novelist writing the PROSE for one scene, from its plan. Write the scene fully — vivid, causal, in the book's voice — honoring the MANDATE (heat/tone/length) without laundering. Output the prose ONLY: no preamble, no headings, no JSON.
+
+VOICE — write ONLY the fiction, from inside the story: NEVER address or mention "the reader"/"you", and NEVER refer to "the book", "the story", "the scene", "the page", the author, or the writing itself. The plan's notes describe INTENT in craft terms (e.g. "the reader is told it reads as fury", "the book plants the wrong label") — those are directions TO YOU, not lines to reproduce. Dramatize that intent through concrete action, sensation, and subtext; never narrate it or break the fourth wall.
+
+${ctx}\n\nWrite this scene's prose.`;
+    const out = await runClaude(prompt, true, { fn: "dna-expand", bookId }, { noTools: true, model: MODEL_PLANNING });
+    if (out.error) return out;
+    return { prose: out.text.trim() };
+  }
+  if (target === "beatsheet") {
+    // GLOBAL beat-sheet pass (root fix) — mirrors supabase/functions/dna-expand. One call, whole arc in view:
+    // schedule setup→payoff in order, plan polarity to oscillate. enforcePromiseSchedule (inline) drops orphan
+    // payoffs so setup→payoff is an INVARIANT. Returns a flat movement-indexed list; the caller persists it.
+    if (!movements.length) return { error: "generate the movements before the beat sheet" };
+    if (!threads.length) return { error: "generate the threads before the beat sheet" };
+    const prompt = `You are a story architect writing the ENTIRE BOOK'S BEAT SHEET in ONE pass — every beat of every act at once, so you can see the whole sequence. Honor every LOCKED ancestor and the MANDATE verbatim. Rules:
+- 2 to 4 beats per movement; each beat links to the prior with "therefore" or "but" (escalating causality).
+- Set each beat's PLANNED polarity (up = ends better, down = ends worse). The movement's value shift is the MACRO trend; you MUST still OSCILLATE within it — never more than ~3 beats of the same polarity in a row. Place deliberate relief/hope-spots inside down-acts and setbacks inside up-acts.
+- Schedule the THREADS across the whole book: every promise must be SET UP (role:setup) in an EARLIER beat before it is PAID OFF (role:payoff) in a LATER beat; use "advance" for beats in between. Reference threads BY NAME.
+- CAUSE every turn: give each beat "needs" (state keys it DEPENDS ON, each one EARNED by an EARLIER beat — never an ambient world/premise given) and "establishes" (state keys it PRODUCES). Keys are short snake_case handles (e.g. "ledger_settled", "rival_humiliated", "peculium_revealed"). Every "therefore" beat MUST "need" at least one state an earlier beat "establishes" — that upstream dependency is what makes the turn CAUSED, not "and then". A "but" beat must either reverse the polarity or block/consume an established state.${tentpoles.length ? `\n- PLACE every TENTPOLE: assign each set-piece to the ONE beat that delivers it, in "realizes" (by its summary). Every tentpole listed must appear on exactly one beat.` : ""}${worldFacts.length ? `\n- GROUND the turns in the WORLD RULES: when a beat's turning point's outcome OPERATES ON a rule's mechanism, list that rule in "grounds_in" (by name). The CLIMAX / final resolution beat MUST ground its win in an established rule — the victory has to be MECHANICALLY EARNED by a rule the reader already knows, never deus ex machina. Plant the rule's setup in an earlier beat too.` : ""}${games.length ? `\n- PLAY the GAMES: each beat that advances a contest lists it in "plays" (by name). Each game MUST be RESOLVED — exactly one beat lists it in "resolves" with its outcome (won|lost), and the CENTRAL game resolves at the CLIMAX. A game's resolving beat should also ground_in the rule its win/lose fires.` : ""}${statePreconds.length ? `\n- ESTABLISH every STATE PRECONDITION: each game's win SPENDS resources/states (listed above). For each, an EARLIER beat must establish it (list its key in that beat's "establishes") BEFORE the beat that resolves the game — you cannot spend a resource the story never acquired (no "she had enough all along"). Make the establishing a real turn.` : ""}
+Output JSON ONLY: { "beats": [ { "movement": <1..${movements.length}>, "summary": "...", "connector": "therefore"|"but", "polarity": "up"|"down", "threads": [ { "ref": "<thread name>", "role": "setup"|"advance"|"payoff" } ]${tentpoles.length ? `, "realizes": [ "<tentpole summary>" ]` : ""}${worldFacts.length ? `, "grounds_in": [ "<world rule name>" ]` : ""}${games.length ? `, "plays": [ "<game name>" ], "resolves": [ { "ref": "<game name>", "outcome": "won|lost" } ]` : ""}, "needs": [ "<state key earned upstream>" ], "establishes": [ "<state key this beat produces>" ] } ] }\n\n${ctx}\n\nWrite the whole beat sheet. JSON only.`;
+    const out = await runClaude(prompt, true, { fn: "dna-expand", bookId }, { noTools: true, model: MODEL_PLANNING });
+    if (out.error) return out;
+    let raw = out.text.trim();
+    const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (fence) raw = fence[1].trim();
+    else { const f = raw.indexOf("{"), l = raw.lastIndexOf("}"); if (f !== -1 && l > f) raw = raw.slice(f, l + 1); }
+    let rawBeats;
+    try { rawBeats = JSON.parse(raw).beats; } catch { return { error: "Could not parse beat sheet JSON" }; }
+    if (!Array.isArray(rawBeats)) return { error: "beat sheet had no beats" };
+    const tNameToId = new Map(threads.map((t) => [tName(t).toLowerCase(), t.id]));
+    const tpNameToId = new Map(tentpoles.map((t) => [tpName(t).toLowerCase(), t.id]));
+    const wfNameToId = new Map(worldFacts.map((w) => [wfName(w).toLowerCase(), w.id]));
+    const gNameToId = new Map(games.map((g) => [gName(g).toLowerCase(), g.id]));
+    const normKey = (s) => String(s ?? "").trim().toLowerCase().replace(/\s+/g, "_");
+    const roles = new Set(["setup", "payoff", "advance"]);
+    const setUp = new Set();
+    const claimedTp = new Set();
+    const resolvedG = new Set();
+    const beats = rawBeats.map((b) => {
+      const mi = Math.min(Math.max(parseInt(String(b.movement ?? 1), 10) || 1, 1), movements.length) - 1;
+      const refs = (Array.isArray(b.threads) ? b.threads : [])
+        .map((t) => ({ ref: tNameToId.get(String(t.ref ?? "").trim().toLowerCase()), role: t.role }))
+        .filter((t) => t.ref && roles.has(String(t.role)));
+      for (const t of refs) if (t.role === "setup") setUp.add(t.ref);
+      const threadsKept = refs.filter((t) => t.role !== "payoff" || setUp.has(t.ref));
+      const realizes = (Array.isArray(b.realizes) ? b.realizes : [])
+        .map((s) => tpNameToId.get(String(s ?? "").trim().toLowerCase()))
+        .filter((id) => id && !claimedTp.has(id) && (claimedTp.add(id), true));
+      const grounds = [...new Set((Array.isArray(b.grounds_in) ? b.grounds_in : [])
+        .map((s) => wfNameToId.get(String(s ?? "").trim().toLowerCase()))
+        .filter(Boolean))];
+      const plays = [...new Set((Array.isArray(b.plays) ? b.plays : [])
+        .map((s) => gNameToId.get(String(s ?? "").trim().toLowerCase()))
+        .filter(Boolean))];
+      const resolves = (Array.isArray(b.resolves) ? b.resolves : [])
+        .map((r) => ({ ref: gNameToId.get(String(r.ref ?? "").trim().toLowerCase()), outcome: r.outcome === "lost" ? "lost" : "won" }))
+        .filter((r) => r.ref && !resolvedG.has(r.ref) && (resolvedG.add(r.ref), true));
+      // CAUSALITY (core): open snake_case state vocab; experiment's win preconditions are a subset (no filter).
+      const establishes = [...new Set((Array.isArray(b.establishes) ? b.establishes : []).map(normKey).filter(Boolean))];
+      const needs = [...new Set((Array.isArray(b.needs) ? b.needs : []).map(normKey).filter(Boolean))];
+      const content = { summary: b.summary, connector: b.connector, polarity: b.polarity === "down" ? "down" : "up", threads: threadsKept };
+      if (realizes.length) content.realizes = realizes;
+      if (grounds.length) content.grounds_in = grounds;
+      if (plays.length) content.plays = plays;
+      if (resolves.length) content.resolves = resolves;
+      if (establishes.length) content.establishes = establishes;
+      if (needs.length) content.needs = needs;
+      return { movement: mi, content };
+    });
+    return { beatsheet: true, childKind: "beat", childLevel: 4, movementIds: movements.map((m) => m.id), beats };
+  }
+
+  const spec = target ? DNA_SPEC[target] : undefined;
+  if (!spec) return { error: `Unknown expand target "${target}"` };
+  const prompt = `You are a story architect expanding a ${node.kind} into ${spec.role}. Generate ${spec.count} ${spec.childKind}s as ONE authoritative structure — NOT alternatives. Honor every LOCKED ancestor and the MANDATE verbatim. Output JSON ONLY: { "children": [ ${spec.schema} ] }\n\n${ctx}\n\nGenerate the ${spec.childKind}s. JSON only.`;
+  const out = await runClaude(prompt, true, { fn: "dna-expand", bookId }, { noTools: true, model: MODEL_PLANNING });
+  if (out.error) return out;
+  let raw = out.text.trim();
+  const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fence) raw = fence[1].trim();
+  else { const f = raw.indexOf("{"), l = raw.lastIndexOf("}"); if (f !== -1 && l > f) raw = raw.slice(f, l + 1); }
+  try {
+    const parsed = JSON.parse(raw);
+    let children = Array.isArray(parsed.children) ? parsed.children : [];
+    if (spec.childKind === "relationship") {
+      const nameToId = new Map(chars.map((c) => [cName(c).toLowerCase(), c.id]));
+      children = children
+        .map((ch) => ({ ...ch, a: nameToId.get(String(ch.a ?? "").trim().toLowerCase()), b: nameToId.get(String(ch.b ?? "").trim().toLowerCase()) }))
+        .filter((ch) => ch.a && ch.b && ch.a !== ch.b);
+    }
+    if (spec.childKind === "beat" || spec.childKind === "scene") {
+      const tNameToId = new Map(threads.map((t) => [tName(t).toLowerCase(), t.id]));
+      const roles = new Set(["setup", "payoff", "advance"]);
+      children = children.map((ch) => {
+        const raw = Array.isArray(ch.threads) ? ch.threads : [];
+        const resolved = raw
+          .map((t) => ({ ref: tNameToId.get(String(t.ref ?? "").trim().toLowerCase()), role: t.role }))
+          .filter((t) => t.ref && roles.has(String(t.role)));
+        const { threads: _drop, ...rest } = ch;
+        return resolved.length ? { ...rest, threads: resolved } : rest;
+      });
+    }
+    if (spec.childKind === "game") {
+      // Resolve players (char names→ids) + governing_rules (rule names→ids). couples.to = SIBLING game name,
+      // left for the caller to resolve post-mint.
+      const cNameToId = new Map(chars.map((c) => [cName(c).toLowerCase(), c.id]));
+      const wfNameToId = new Map(worldFacts.map((w) => [wfName(w).toLowerCase(), w.id]));
+      const effects = new Set(["void", "raise", "lower", "enable"]);
+      const whens = new Set(["won", "lost"]);
+      children = children.map((ch) => ({
+        ...ch,
+        players: [...new Set((Array.isArray(ch.players) ? ch.players : []).map((p) => cNameToId.get(String(p ?? "").trim().toLowerCase())).filter(Boolean))],
+        governing_rules: [...new Set((Array.isArray(ch.governing_rules) ? ch.governing_rules : []).map((r) => wfNameToId.get(String(r ?? "").trim().toLowerCase())).filter(Boolean))],
+        couples: (Array.isArray(ch.couples) ? ch.couples : [])
+          .filter((k) => k.to && whens.has(String(k.when)) && effects.has(String(k.effect)))
+          .map((k) => ({ to: String(k.to).trim(), when: k.when, effect: k.effect, note: k.note })),
+        // [EXP:preconditions]
+        ...(EXP_PRECONDITIONS ? { win_requires: (Array.isArray(ch.win_requires) ? ch.win_requires : [])
+          .filter((r) => (r.type === "rule" || r.type === "state") && r.what)
+          .map((r) => ({ type: r.type, what: r.what, ...(r.type === "state" && r.key ? { key: String(r.key).trim().toLowerCase().replace(/\s+/g, "_") } : {}) })) } : {}),
+      }));
+    }
+    return { childKind: spec.childKind, childLevel: spec.childLevel, children };
+  } catch { return { error: "Could not parse expand JSON" }; }
+}
+
+// ── /dna-chat (mirrors supabase/functions/dna-chat) ───────────────────────────
+const DNA_STAGE_KINDS = {
+  premise: ["seed", "premise"], foundations: ["pillar", "character", "relationship", "tentpole", "world_fact"],
+  structure: ["movement", "beat", "thread"], scenes: ["scene"], draft: ["scene"],
+};
+const DNA_STAGE_GUIDE = {
+  premise: "the PREMISE — the logline, genre, tone, dramatic question, and the 5-part shape. Sharpen the question and the turns.",
+  foundations: "the FOUNDATIONS — the controlling idea, the ending, and the CAST (want/need/wound/lie/truth/idiolect), world rules, tentpoles, relationships. The wound + lie are the human core; deepen, don't generic-ify.",
+  structure: "the STRUCTURE — acts (movements) and their causal beats. Hunt sagging middles, weak turning points, 'and-then' beats.",
+  scenes: "the SCENES — each scene's pov/goal/conflict/outcome and its VALUE SHIFT. Every scene must turn a value.",
+  draft: "the DRAFT — the prose of each scene. Voice, heat (per the mandate), pacing. Edit a scene's prose under content.prose.text.",
+};
+async function runDnaChat({ bookId, stage, message, analysis }) {
+  if (!DNA_STAGE_KINDS[stage]) return { error: "valid stage required" };
+  const book = await fetchBook(bookId);
+  if (!book) return { error: "Book not found" };
+  const nodes = await (await fetch(`${SUPABASE_URL}/rest/v1/book_nodes?book_id=eq.${bookId}&select=id,parent_id,kind,level,content,authoring`, { headers: sbHeaders })).json();
+  const ex = await (await fetch(`${SUPABASE_URL}/rest/v1/dna_chats?book_id=eq.${bookId}&stage=eq.${stage}&select=messages,pending_proposal`, { headers: sbHeaders })).json();
+  const existing = ex[0];
+  const prior = Array.isArray(existing?.messages) ? existing.messages : [];
+  const withUser = [...prior, { role: "user", text: String(message ?? "").trim(), ts: new Date().toISOString() }];
+  const jh = { ...sbHeaders, "Content-Type": "application/json" };
+  await fetch(`${SUPABASE_URL}/rest/v1/dna_chats?on_conflict=book_id,stage`, { method: "POST", headers: { ...jh, Prefer: "resolution=merge-duplicates" }, body: JSON.stringify({ book_id: bookId, stage, messages: withUser, status: "thinking", error: null }) });
+
+  const mandate = mandateContext(book.brief);
+  // Whole tree, edit anything; prose only on the draft stage (mirrors supabase/functions/dna-chat).
+  const withProse = stage === "draft";
+  const serialize = (n) => {
+    let content = n.content;
+    if (!withProse && n.kind === "scene" && content && typeof content === "object" && "prose" in content) {
+      const { prose: _drop, ...rest } = content;
+      content = rest;
+    }
+    return `[${n.id}${n.authoring?.locked ? " · LOCKED" : ""}] L${n.level} ${n.kind}: ${JSON.stringify(content)}`;
+  };
+  const tree = [...nodes].sort((a, b) => (a.level ?? 0) - (b.level ?? 0)).map(serialize).join("\n");
+  const system = `You are a sharp, warm developmental STORY EDITOR in conversation with an author. Your current FOCUS is ${DNA_STAGE_GUIDE[stage]}\n\nYou hold the book's ENTIRE DNA tree — premise → foundations → structure → scenes${withProse ? " → prose" : ""} — and you may edit, add, or delete ANY non-locked node at ANY level, not just your focus stage.${withProse ? " Scene PROSE is included (content.prose.text); you may rewrite it." : ""}\n\nReply in plain MARKDOWN prose. If — and ONLY if — this message DELIVERS a concrete change to apply, append at the VERY END a single fenced \`\`\`json block (nothing after it) with node ops over the REAL ids given:\n{ "summary": "<one line>", "ops": [ { "op": "edit", "id": "<id>", "content": { … } }, { "op": "add", "kind": "<kind>", "parentId": "<id>", "content": { … } }, { "op": "delete", "id": "<id>" } ] }\nOnly reference ids that exist; never edit/delete a LOCKED node; talk first, propose only when asked or agreed.`;
+  const ctx = [
+    `BOOK: ${book.name ?? ""}`,
+    `BRIEF (binding): ${briefContext(book.brief)}`,
+    mandate ? `MANDATE — NON-NEGOTIABLE: ${mandate}` : "",
+    analysis?.trim() ? `STORY ANALYSIS (the structural backstop — address any ⚠ flags):\n${analysis.trim()}` : "",
+    `THE DNA TREE (edit/add/delete by these ids; LOCKED = immutable):\n${tree || "(none yet)"}`,
+  ].filter(Boolean).join("\n\n");
+  const convo = withUser.slice(-12).map((m) => `${m.role.toUpperCase()}: ${m.text}`).join("\n\n");
+  const out = await runClaude(`${system}\n\n${ctx}\n\nCONVERSATION:\n${convo}\n\nRespond to the latest message.`, true, { fn: "dna-chat", bookId }, { noTools: true, model: MODEL_PLANNING });
+  if (out.error) return out;
+
+  const full = out.text.trim();
+  let reply = full, proposal = null;
+  const fence = full.match(/```json\s*([\s\S]*?)```\s*$/);
+  if (fence) {
+    try {
+      let raw = fence[1].trim();
+      const parsed = JSON.parse(raw);
+      const ids = new Set(nodes.map((n) => n.id));
+      const locked = new Set(nodes.filter((n) => n.authoring?.locked).map((n) => n.id));
+      const ops = (Array.isArray(parsed.ops) ? parsed.ops : []).filter((o) =>
+        (o.op === "edit" && ids.has(o.id) && !locked.has(o.id)) || (o.op === "delete" && ids.has(o.id) && !locked.has(o.id)) || (o.op === "add" && ids.has(o.parentId)));
+      if (ops.length) { proposal = { summary: String(parsed.summary ?? "Proposed change").trim(), ops }; reply = full.slice(0, fence.index).trim(); }
+    } catch { /* keep prose */ }
+  }
+  const assistant = { role: "assistant", text: reply, ts: new Date().toISOString(), plan: proposal?.summary };
+  await fetch(`${SUPABASE_URL}/rest/v1/dna_chats?book_id=eq.${bookId}&stage=eq.${stage}`, { method: "PATCH", headers: jh, body: JSON.stringify({ messages: [...withUser, assistant], pending_proposal: proposal ?? existing?.pending_proposal ?? null, status: "idle" }) });
+  return { reply, proposal };
+}
+
 const server = createServer(async (req, res) => {
   if (req.method === "OPTIONS") return res.writeHead(204, cors).end();
 
@@ -3701,6 +4002,26 @@ async function route(req, res) {
     return json(res, 200, out);
   }
 
+  if (url === "/dna-expand" || url === "/dna-expand/") {
+    if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
+    const body = await readBody(req);
+    if (!(await authorize(req, res, Number(body.bookId)))) return;
+    console.log(`DNA expand ${body.nodeId} (book ${body.bookId})…`);
+    const out = await runDnaExpand(body);
+    if (out.error) return json(res, 500, { error: out.error });
+    return json(res, 200, out);
+  }
+
+  if (url === "/dna-chat" || url === "/dna-chat/") {
+    if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
+    const body = await readBody(req);
+    if (!(await authorize(req, res, Number(body.bookId)))) return;
+    console.log(`DNA chat ${body.stage} (book ${body.bookId})…`);
+    const out = await runDnaChat(body);
+    if (out.error) return json(res, 500, { error: out.error });
+    return json(res, 200, out);
+  }
+
   if (url === "/revise-scaffold" || url === "/revise-scaffold/") {
     if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
     const body = await readBody(req);
@@ -3802,6 +4123,13 @@ async function route(req, res) {
   return json(res, 404, { error: "use /eval/:bookId, /spine-to-objectives/:bookId, /bible/:bookId, /eval-call/:aiCallId, or POST /beat-to-prose" });
 }
 
+// Driver hook: a dev script (scripts/dna-flow-test.mjs) imports the run-functions directly to drive the
+// DNA flow end-to-end without the HTTP auth gate (it persists via the service role itself). Set
+// DNA_BRIDGE_NO_LISTEN=1 to import the module without binding the port (avoids EADDRINUSE).
+export { runDnaExpand, runDnaChat, fetchBook, SUPABASE_URL, sbHeaders };
+if (process.env.DNA_BRIDGE_NO_LISTEN) {
+  // imported by a driver — don't start the HTTP server
+} else
 server.listen(PORT, () => {
   console.log(`eval-bridge listening on http://localhost:${PORT}  (repo: ${repoRoot})`);
   console.log(`  GET/POST /eval/:bookId   POST /spine-to-objectives/:bookId   POST /bible/:bookId   POST /revise-outline/:bookId   POST /beat-to-prose   POST /revise-prose   POST /objective-to-beat   POST /prose-to-beat   POST /brief-to-spine   POST /beat-to-objective   POST /objectives-to-spine   POST /revise-node   POST /revise-scaffold   POST /objective-options   POST /spine-options   POST /ai-run   POST /generate-book`);

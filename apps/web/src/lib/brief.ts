@@ -45,7 +45,6 @@ export const BRIEF_FIELDS = [
   "premise",
   "tone",
   "success_criteria",
-  "content_type",
 ] as const;
 
 export type BriefField = (typeof BRIEF_FIELDS)[number];
