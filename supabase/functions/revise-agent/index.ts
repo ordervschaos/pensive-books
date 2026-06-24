@@ -36,7 +36,7 @@ const CALL_TIMEOUT_MS = 140_000;
 const MAX_PAGE_CHARS = 12_000; // read_page output cap
 
 // ── Row shapes ──
-interface AgentStep { t: "note" | "read" | "ask" | "answer" | "plan" | "done"; label: string }
+interface AgentStep { t: "user" | "note" | "read" | "ask" | "answer" | "plan" | "done"; label: string }
 interface Pending {
   tool_use_id: string;
   question: string;
@@ -49,6 +49,7 @@ interface RunRow {
   id: number;
   book_id: number;
   created_by: string | null;
+  kind: string; // 'eval' (per-run) | 'thread' (the persistent omni-rail conversation)
   status: string;
   evaluation: EvalResult | null;
   transcript: unknown[];
@@ -57,7 +58,7 @@ interface RunRow {
   turns: number;
   cancel_requested: boolean;
 }
-const ROW_COLS = "id, book_id, created_by, status, evaluation, transcript, steps, pending, turns, cancel_requested";
+const ROW_COLS = "id, book_id, created_by, kind, status, evaluation, transcript, steps, pending, turns, cancel_requested";
 
 // The evaluation shape (book_evaluations.result), as produced by evaluate-book.
 interface EvalIssue {
@@ -88,6 +89,7 @@ Deno.serve(async (req: Request) => {
   try {
     const body = (await req.json().catch(() => ({}))) as {
       bookId?: number; evaluation?: EvalResult; instruction?: string; targetPageId?: number; runId?: number; answer?: string; chain?: boolean;
+      message?: string;
     };
 
     // ── Continue call (self/watchdog): advance one model turn ──
@@ -125,13 +127,64 @@ Deno.serve(async (req: Request) => {
           { type: "tool_result", tool_use_id: row.pending.tool_use_id, content: answer },
         ],
       }];
-      const steps = [...row.steps, { t: "answer", label: answer.slice(0, 200) } as AgentStep];
+      const steps = [...row.steps, { t: "answer", label: answer } as AgentStep];
       const { error } = await service.from("book_agent_runs")
         .update({ transcript, steps, pending: null, status: "running" })
         .eq("id", row.id);
       if (error) throw new Error(error.message);
       if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("revise-agent", { runId: row.id }));
       return json({ status: "running", runId: row.id }, 202);
+    }
+
+    // ── Thread message (the persistent omni-rail conversation — docs/agent-rail.md) ──
+    // A free-text message (no evaluation/instruction) to the book's ONE agent thread. Get-or-create
+    // the thread row (kind='thread'), append the message, reset the per-turn budget, and drive it.
+    // A turn ends in 'idle' (not 'done'), so the next message resumes with full transcript context.
+    if (typeof body.message === "string" && !body.evaluation && !body.instruction) {
+      const tBookId = body.bookId;
+      const message = body.message.trim();
+      if (!tBookId) return json({ error: "bookId is required" }, 400);
+      if (!message) return json({ error: "message is required" }, 400);
+      const { data: canEdit } = await userClient.rpc("user_can_edit_book", { _book_id: tBookId });
+      if (canEdit === false) return json({ error: "Access denied" }, 403);
+
+      const { data: existing } = await service
+        .from("book_agent_runs").select(ROW_COLS).eq("book_id", tBookId).eq("kind", "thread").maybeSingle();
+      const thread = existing as RunRow | null;
+
+      if (thread && (thread.status === "running" || thread.status === "awaiting_input")) {
+        return json({ error: "The agent is mid-turn — answer its question or stop it first." }, 409);
+      }
+
+      if (!thread) {
+        const { data: run, error: insErr } = await service
+          .from("book_agent_runs")
+          .insert({
+            book_id: tBookId,
+            created_by: user.id,
+            kind: "thread",
+            status: "running",
+            transcript: [{ role: "user", content: [{ type: "text", text: message }] }],
+            steps: [{ t: "user", label: message }],
+          })
+          .select("id")
+          .single();
+        if (insErr) throw new Error(insErr.message);
+        const id = (run as { id: number }).id;
+        if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("revise-agent", { runId: id }));
+        return json({ status: "running", runId: id }, 202);
+      }
+
+      // A fresh turn on the existing thread: append the message, reset the per-turn budget, clear any
+      // prior error/cancel, and run.
+      const transcript = [...thread.transcript, { role: "user", content: [{ type: "text", text: message }] }];
+      const steps = [...thread.steps, { t: "user", label: message } as AgentStep];
+      const { error } = await service.from("book_agent_runs")
+        .update({ transcript, steps, status: "running", turns: 0, pending: null, error: null, cancel_requested: false })
+        .eq("id", thread.id);
+      if (error) throw new Error(error.message);
+      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("revise-agent", { runId: thread.id }));
+      return json({ status: "running", runId: thread.id }, 202);
     }
 
     // Start a run: snapshot the book context + EITHER the editor's read OR the author's free-text
@@ -221,6 +274,12 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
     // the OpenAI-compatible paths (DeepSeek, MuleRouter/Qwen), so the loop runs on cheap models too.
     const { high: model } = await getActiveModels();
     const turns = row.turns + 1;
+    // Thread runs are the persistent omni-rail conversation: a conversational system prompt grounded
+    // in the CURRENT book state (rebuilt per call so ids stay fresh), and the thread tool belt. Eval
+    // runs keep the static plan-first system + tools.
+    const isThread = row.kind === "thread";
+    const system = isThread ? await threadSystem(service, row.book_id) : SYSTEM;
+    const tools = isThread ? THREAD_TOOLS : TOOLS;
     // Count the turn BEFORE the call: a hard worker death mid-call still consumes budget, so a
     // crash-looping run hits MAX_TURNS instead of being revived forever by the watchdog.
     await service.from("book_agent_runs").update({ turns }).eq("id", runId);
@@ -235,8 +294,8 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
         // five consecutive aborted-and-billed 120s calls). Medium keeps a turn at ~30-60s; the
         // author-gated plan review downstream is the quality backstop.
         output_config: { effort: "medium" },
-        system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
-        tools: TOOLS,
+        system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+        tools,
         messages: withCacheBreakpoints(row.transcript),
       }, {
         fn: "revise-agent",
@@ -259,10 +318,12 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
     const transcript = [...row.transcript, { role: "assistant", content }];
     const steps = [...row.steps];
 
-    // The model's visible narration becomes the progress feed.
+    // The model's visible narration becomes the progress feed. On a thread it IS the agent's chat
+    // reply, so keep it whole; on an eval run it's a one-line activity note, so cap it.
     for (const b of content) {
       if (b.type === "text" && String(b.text ?? "").trim()) {
-        steps.push({ t: "note", label: String(b.text).trim().slice(0, 300) });
+        const txt = String(b.text).trim();
+        steps.push({ t: "note", label: isThread ? txt : txt.slice(0, 300) });
       }
     }
 
@@ -297,7 +358,9 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
     if (finishCall) {
       const report = String((finishCall.input as { report?: string })?.report ?? "").trim() || "The agent finished without proposing changes.";
       steps.push({ t: "done", label: report.slice(0, 300) });
-      await service.from("book_agent_runs").update({ status: "done", transcript, steps, report }).eq("id", runId);
+      // A thread turn ends QUIESCENT ('idle') so the conversation can continue; an eval run is terminal.
+      await service.from("book_agent_runs")
+        .update({ status: isThread ? "idle" : "done", transcript, steps, report }).eq("id", runId);
       return;
     }
 
@@ -329,9 +392,16 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
       return;
     }
 
-    // ── No tool call at all: nudge once and continue (bounded by the turn budget). Ending a turn
-    // with bare text is always wrong here — finish/propose_revision_plan are the only exits — and
-    // silently treating narration as a report masked the deepseek-tier bug for a whole run. ──
+    // ── No tool call at all ──
+    // On a THREAD this is a normal conversational reply (the agent answered without needing a tool):
+    // the assistant's text is already captured as a 'note' step, so the turn is complete → go idle.
+    if (isThread) {
+      await service.from("book_agent_runs").update({ status: "idle", transcript, steps }).eq("id", runId);
+      return;
+    }
+    // On an EVAL run, ending a turn with bare text is always wrong — finish/propose_revision_plan are
+    // the only exits — and silently treating narration as a report masked the deepseek-tier bug for a
+    // whole run. Nudge once and continue (bounded by the turn budget).
     transcript.push({
       role: "user",
       content: [{
@@ -538,6 +608,34 @@ PLAN RULES (the plan is rejected if violated):
 - TRACKED THREADS are promises the book must keep. Never orphan a setup or its payoff — relocate the beat if you delete its page.
 
 STYLE: before each tool call, narrate what you're doing and why in one or two plain sentences — the author sees this as a live progress feed. Be concrete ("Reading the tavern scene the passivity notes point at"), never generic ("Analyzing…").`;
+
+// ── Thread mode (the persistent omni-rail conversation — docs/agent-rail.md) ──
+// Phase 1: the agent can READ and DISCUSS the book. Propose tools (per-layer changes the author
+// applies) land in later phases. The agent ends a turn by simply replying — no tool needed.
+const THREAD_TOOLS = TOOLS.filter((t) => t.name === "read_page" || t.name === "ask_author");
+
+const SYSTEM_THREAD = `You are the story editor's agent for a book-writing studio — the author's single AI collaborator for the WHOLE book, holding an ongoing conversation in the studio's right-hand rail.
+
+You are given the CURRENT book state below: the brief (the voice contract), the outline with each page's real [id], type, title, and objective, and any tracked threads. Use read_page to read a page's full prose before discussing or judging it. Use ask_author when a genuine creative fork needs the author's call — offer 2–4 concrete options with your recommendation first.
+
+Right now your job is to READ and DISCUSS: answer questions, summarize, pressure-test the story, and talk through ideas — grounded in the actual book, referencing pages by their [id]. Reply in plain prose; just end your turn with your message (you don't need a tool to reply). Be concrete and concise. (Proposing concrete changes the author can apply comes later.)`;
+
+// The thread's system prompt carries the CURRENT book state, rebuilt every call so page [id]s stay
+// fresh as the author edits (the transcript holds only the conversation).
+async function threadSystem(service: SupabaseClient, bookId: number): Promise<string> {
+  const { data: book } = await service.from("books").select("name, brief").eq("id", bookId).maybeSingle();
+  const { data: pages } = await service
+    .from("pages").select("id, page_index, page_type, title, metadata")
+    .eq("book_id", bookId).eq("archived", false).order("page_index", { ascending: true });
+  const { data: threads } = await service
+    .from("book_threads").select("name, status, setup_page_id, payoff_page_id")
+    .eq("book_id", bookId).neq("status", "closed");
+  const ctx =
+    `BOOK: ${(book as { name?: string } | null)?.name ?? ""}\n\nBRIEF (the voice contract):\n${briefContext((book as { brief?: Brief } | null)?.brief ?? null, { scope: "full", success: true, none: "(no brief set)", empty: "(brief is empty)" })}` +
+    `\n\nCURRENT OUTLINE (real ids; read_page for full prose):\n${outlineContext(((pages ?? []) as PageRow[]))}` +
+    ((threads?.length) ? `\n\nTRACKED THREADS (keep their setups & payoffs intact):\n${threadsContext(threads as ThreadLite[])}` : "");
+  return `${SYSTEM_THREAD}\n\n${ctx}`;
+}
 
 // ── Context builders (mirror revise-outline) ─────────────────────────────────
 interface ThreadLite { name: string; status: string; setup_page_id: number | null; payoff_page_id: number | null }

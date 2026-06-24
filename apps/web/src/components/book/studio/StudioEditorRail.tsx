@@ -13,6 +13,7 @@ import { useSearchParams } from "react-router-dom";
 import { ReviseChat } from "./ReviseChat";
 import { ProseEditor } from "./ProseEditor";
 import { SceneTab } from "./SceneTab";
+import { AgentRail } from "./AgentRail";
 import type { Foundations } from "@/lib/foundations";
 import type { StepKey, StudioModel } from "./studioModel";
 
@@ -34,9 +35,15 @@ export function StudioEditorRail({ bookId, step, pageId, model, foundations, spi
   const setTab = (t: "prose" | "scene") =>
     setParams((p) => { const n = new URLSearchParams(p); if (t === "prose") n.delete("tab"); else n.set("tab", t); return n; }, { replace: true });
 
+  // The omni-rail agent (docs/agent-rail.md), opt-in via ?rail=agent while it's being built — it
+  // overrides the per-step rail without removing it. Becomes the default rail once layers fold in.
+  const showAgent = params.get("rail") === "agent";
+
   return (
     <aside className="flex h-full min-h-0 flex-col overflow-hidden border-l border-[hsl(var(--pv-border-soft))]/60 px-3 py-3">
-      {pageId != null ? (
+      {showAgent ? (
+        <div className="min-h-0 flex-1"><AgentRail bookId={bookId} /></div>
+      ) : pageId != null ? (
         <>
           <div className="mb-2.5 flex shrink-0 items-center gap-1 rounded-full border border-[hsl(var(--pv-border-soft))]/70 bg-[hsl(var(--pv-surface-2))]/40 p-0.5 text-center">
             {(["prose", "scene"] as const).map((t) => (

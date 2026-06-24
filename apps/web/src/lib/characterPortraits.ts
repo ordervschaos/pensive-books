@@ -33,6 +33,26 @@ export async function unpinCharacterPortrait(node: DnaNode, url: string): Promis
   await saveNode(editContent(node, { portraits: portraitsOf(node).filter((u) => u !== url) }));
 }
 
+/** Ensure a character node has at least one reference portrait, generating one (in the book's house look)
+ *  and pinning it if not. The auto-likeness anchor: scene illustration feeds the FIRST portrait in for
+ *  cross-scene consistency (docs/picture-book-mode.md), so a picture book stays coherent even when the
+ *  author never opened "design the look". Idempotent — a no-op once a portrait exists. Returns the portrait
+ *  URLs (existing or freshly pinned); on generation failure returns [] so the caller degrades gracefully
+ *  (scene still renders, just without a likeness anchor) rather than blocking the illustration. */
+export async function ensurePortraitFor(bookId: number, node: DnaNode): Promise<string[]> {
+  const existing = portraitsOf(node);
+  if (existing.length) return existing;
+  if (!(node.content as CharacterContent).name?.trim()) return []; // can't compose a portrait without a subject
+  try {
+    const [url] = await renderDnaPortraitVariants(bookId, node.id, { count: 1 });
+    if (!url) return [];
+    await pinCharacterPortrait(node, url);
+    return [url];
+  } catch {
+    return [];
+  }
+}
+
 /** Legacy carry-over: portraits this character already has in the book's foundations.cast (matched by name),
  *  minus any already pinned on the node. Lets a book migrated BEFORE picture mode reuse its existing "design
  *  the look" art without re-migrating. Empty for DNA-native books (no foundations.cast). */

@@ -5,7 +5,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { BRIDGE, bridgeFetch } from "@/lib/bridge";
 import { deleteNode, loadTree, saveNode, saveNodes } from "@/lib/bookNodes";
 import { startNodeSceneGeneration } from "@/lib/nodeSceneImages";
-import { byId, deepMergeContent, newId, stampIllus, stampInput, stampProse, type BeatContent, type DnaNode, type GameContent, type NodeContent, type NodeKind, type SceneContent, type ThreadRef } from "@/lib/novelDna";
+import { ensurePortraitFor } from "@/lib/characterPortraits";
+import { byId, deepMergeContent, newId, presentCharacters, stampIllus, stampInput, stampProse, type BeatContent, type DnaNode, type GameContent, type NodeContent, type NodeKind, type SceneContent, type ThreadRef } from "@/lib/novelDna";
 
 /** A short, legible chapter title from a beat's summary (the working title; the author renames). */
 function chapterTitleFromBeat(beat: DnaNode): string {
@@ -139,6 +140,17 @@ export async function illustrateScene(bookId: number, node: DnaNode): Promise<vo
     authoring: { ...node.authoring, source: node.authoring.source === "user" ? "ai_then_user" : "ai", status: "accepted" },
   };
   await saveNode(stampIllus(updated)); // stamp against the current plan (image lands later, plan-only hash)
+
+  // CONSISTENCY ANCHOR (docs/picture-book-mode.md): make sure every character this scene depicts has a
+  // reference portrait BEFORE the scene render — the render reads portraits fresh from the DB and feeds them
+  // in for likeness, so without this a cast that never visited "design the look" renders with NO anchor and
+  // both identity AND style drift scene-to-scene. We read the LIVE tree (not the passed snapshot) so a bulk
+  // "illustrate all" run reuses a portrait minted earlier in the loop instead of regenerating the character.
+  // Sequential + idempotent; a portrait failure degrades to no-anchor (ensurePortraitFor returns []).
+  const tree = await loadTree(bookId);
+  const freshScene = tree.find((n) => n.id === node.id) ?? node;
+  for (const character of presentCharacters(freshScene, tree)) await ensurePortraitFor(bookId, character);
+
   // Per-scene art direction (content.art_note) rides as the render's instruction — folded on top of the
   // book-wide house look for THIS scene only (docs/picture-book-mode.md). stampIllus already hashed it in.
   const artNote = (node.content as SceneContent).art_note?.trim() || undefined;

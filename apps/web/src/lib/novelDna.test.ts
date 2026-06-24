@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   analysisText, blastRadius, byId, cascade, causality, chapters, chooseProposal, editContent, emptyNode,
   enforcePromiseSchedule, inputHash, isIllusStale, isProseStale, isRenderable, isStale, lock, pacing, promiseLedger,
-  refsOf, renderBlockers, renderPages, scenesInOrder, stakesOf, stampIllus, stampInput, stampProse, topography,
+  presentCharacters, refsOf, renderBlockers, renderPages, scenesInOrder, stakesOf, stampIllus, stampInput, stampProse, topography,
   validate, type DnaNode, type NodeKind, type ThreadRef,
 } from "@/lib/novelDna";
 
@@ -128,6 +128,28 @@ describe("staleness (derived from the input-set hash)", () => {
     const edited = editContent(scene, { art_note: "low angle, storm light" });
     expect(isIllusStale(edited)).toBe(true);   // changing the look re-illustrates
     expect(isProseStale(edited)).toBe(false);  // …but never touches the prose
+  });
+});
+
+describe("present cast resolution (the scene's likeness anchors)", () => {
+  const mara = mk("character", { id: "mara", content: { name: "Mara" } });
+  const cassian = mk("character", { id: "cassian", content: { name: "Cassian" } });
+  const wenna = mk("character", { id: "wenna", content: { name: "Wenna" } });
+  const cast = [mara, cassian, wenna];
+
+  it("prefers explicit present[] ids", () => {
+    const scene = mk("scene", { content: { present: ["cassian"], goal: "Mara eats" } });
+    expect(presentCharacters(scene, [...cast, scene]).map((n) => n.id)).toEqual(["cassian"]);
+  });
+
+  it("falls back to name-matching the plan when present[] is empty", () => {
+    const scene = mk("scene", { content: { goal: "Mara wants one meal at the table", conflict: "Cassian blocks her" } });
+    expect(presentCharacters(scene, [...cast, scene]).map((n) => n.id).sort()).toEqual(["cassian", "mara"]);
+  });
+
+  it("name-match is word-bounded (no partial hits) and includes the pov character", () => {
+    const scene = mk("scene", { content: { pov: "wenna", goal: "the marauders close in" } }); // 'mara' must NOT match 'marauders'
+    expect(presentCharacters(scene, [...cast, scene]).map((n) => n.id)).toEqual(["wenna"]);
   });
 });
 

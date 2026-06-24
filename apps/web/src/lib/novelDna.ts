@@ -143,6 +143,27 @@ export function scenesInOrder(nodes: DnaNode[]): DnaNode[] {
   return out;
 }
 
+/** The character nodes a scene depicts (picture mode, docs/picture-book-mode.md). Prefers the scene's
+ *  explicit `present[]` ids; when empty (AI-generated scenes don't populate it) falls back to name-matching
+ *  the cast against the scene plan (goal/conflict/outcome/pov name). MUST mirror generate-dna-scene-image's
+ *  resolution so the portraits the client ensures are exactly the refs the render passes. */
+export function presentCharacters(scene: DnaNode, nodes: DnaNode[]): DnaNode[] {
+  const index = byId(nodes);
+  const c = scene.content as SceneContent;
+  const cName = (n: DnaNode) => String((n.content as CharacterContent).name ?? "").trim();
+  const explicit = (c.present ?? [])
+    .map((id) => index.get(id))
+    .filter((n): n is DnaNode => !!n && n.kind === "character");
+  if (explicit.length) return explicit;
+  const povName = c.pov ? cName(index.get(c.pov) ?? ({} as DnaNode)) : "";
+  const planText = [c.goal, c.conflict, c.outcome, povName].filter(Boolean).join(" \n ");
+  const namedIn = (name: string) => {
+    const n = name.trim();
+    return !!n && new RegExp(`\\b${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(planText);
+  };
+  return nodes.filter((n) => n.kind === "character" && namedIn(cName(n)));
+}
+
 /** Beats in reading order: movements by position, then each movement's beats by position. The causal
  *  spine operates on beats (the plan), not scenes (the render) — so the producer/consumer walk is here. */
 export function beatsInOrder(nodes: DnaNode[]): DnaNode[] {

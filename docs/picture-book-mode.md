@@ -128,6 +128,17 @@ per page differs.
 toggle, per-scene "illustrate" verb + image/caption, "illustrate all scenes", mode-aware
 journey/Overview/Draft counts).
 
+**Auto-likeness (shipped):** the consistency anchor no longer depends on the author opening "design the
+look". `illustrateScene` reads the LIVE tree, resolves the scene's present cast (`presentCharacters` — the
+client mirror of the edge fn's present[]-or-name-match), and `ensurePortraitFor` mints + pins a house-look
+portrait for any character that lacks one BEFORE kicking the scene render. The render reads portraits fresh,
+so it then feeds them in as `refImages` for likeness. This fixes the "scene 1 anime, scene 2 photoreal" drift:
+with no reference image the image model ignores the textual STYLE line and free-renders; with a house-look
+portrait ref it both holds identity AND locks the style. A bulk "illustrate all" run reuses a portrait minted
+earlier in the (sequential) loop instead of regenerating the character; portrait failure degrades to no-anchor
+(returns []) rather than blocking the illustration. NB: nothing ever passes a PRIOR SCENE image as a reference
+— `refImages` is strictly the present characters' `portraits[0]`; prior scenes inform only the text continuity beats.
+
 **Consistency layer (shipped):** "design the look" on DNA character nodes —
 `generate-dna-character-portrait` (node-native, reuses the shared `characterPortraitPrompts` craft)
 renders portrait variants from the character node; the author pins the chosen one(s) onto

@@ -5,8 +5,14 @@
 // produced on demand via reconcileDna (Render). expand = ONE authoritative value (not proposals).
 import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { Lock, Unlock, Sparkles, BookOpen, Loader2, Check, X, ChevronRight, ChevronDown, LayoutDashboard } from "lucide-react";
+import { Lock, Unlock, Sparkles, BookOpen, Loader2, Check, X, ChevronRight, ChevronDown, LayoutDashboard, GripVertical } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import {
+  DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove, SortableContext, useSortable, verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
 import { AutoTextarea } from "@/components/ui/auto-textarea";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { ActionLink, Eyebrow, Panel, RunningInline, StageHead, StepDot } from "@/components/book/studio/studioUi";
@@ -17,7 +23,7 @@ import { DnaLookPanel } from "@/components/book/dna/DnaLookPanel";
 import { DnaAnalysis } from "@/components/book/dna/DnaAnalysis";
 import { DnaStageDiagram } from "@/components/book/dna/DnaStageDiagram";
 import { DnaOverview } from "@/components/book/dna/DnaOverview";
-import { saveNode, deleteNode } from "@/lib/bookNodes";
+import { saveNode, saveNodes, deleteNode } from "@/lib/bookNodes";
 import { migrateBookToDna } from "@/lib/migrateToDna";
 import { reconcileDna } from "@/lib/novelDnaRender";
 import { expandNode, illustrateScene } from "@/lib/dnaExpand";
@@ -341,7 +347,12 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
               {/* Beats live under the movement; folding the movement (its chevron) hides them all. */}
               {isOpen(m) && (
                 <div className="ml-4 space-y-2 border-l border-[hsl(var(--pv-border-soft))] pl-4">
-                  {childrenOf(nodes, m.id).filter((b) => b.kind === "beat").map((b) => card(b))}
+                  <SortableBeatList
+                    beats={childrenOf(nodes, m.id).filter((b) => b.kind === "beat")}
+                    bookId={bookId}
+                    renderCard={card}
+                    onSaved={onChanged}
+                  />
                   <ActionLink busy={busy === "add"} onClick={() => addChild(m, "beat", 4)}>add beat</ActionLink>
                 </div>
               )}
@@ -623,6 +634,72 @@ function SubStepRow({ sub }: { sub: SubStep }) {
       <span className={`pv-serif text-[12.5px] leading-none ${tone}`}>{sub.label}</span>
       {sub.optional && <span className="pv-mono text-[8px] uppercase tracking-[0.1em] text-[hsl(var(--pv-text-faint))]/70">opt</span>}
       {count && <span className="pv-mono ml-auto text-[9px] text-[hsl(var(--pv-text-faint))]">{count}</span>}
+    </div>
+  );
+}
+
+// ── Beat reordering (drag-and-drop within a movement) ────────────────────────
+// SortableBeatList owns local position state so drops feel instant; saves on drop via saveNodes.
+function SortableBeatList({ beats, bookId, renderCard, onSaved }: {
+  beats: DnaNode[];
+  bookId: number;
+  renderCard: (n: DnaNode) => ReactNode;
+  onSaved: () => void;
+}) {
+  const { toast } = useToast();
+  const [items, setItems] = useState(beats);
+  useEffect(() => { setItems(beats); }, [beats]);
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = items.findIndex((b) => b.id === active.id);
+    const newIndex = items.findIndex((b) => b.id === over.id);
+    const reordered = arrayMove(items, oldIndex, newIndex);
+    const prev = items;
+    setItems(reordered);
+    try {
+      await saveNodes(reordered.map((b, i) => ({ ...b, position: i })));
+      onSaved();
+    } catch (e) {
+      setItems(prev);
+      toast({ title: "Couldn't reorder", description: String((e as Error)?.message ?? e), variant: "destructive" });
+    }
+  };
+
+  if (items.length === 0) return null;
+
+  return (
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(e) => { void handleDragEnd(e); }}>
+      <SortableContext items={items.map((b) => b.id)} strategy={verticalListSortingStrategy}>
+        {items.map((b) => (
+          <SortableBeatItem key={b.id} beat={b}>
+            {renderCard(b)}
+          </SortableBeatItem>
+        ))}
+      </SortableContext>
+    </DndContext>
+  );
+}
+
+function SortableBeatItem({ beat, children }: { beat: DnaNode; children: ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: beat.id });
+  const style = transform
+    ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, transition }
+    : undefined;
+  return (
+    <div ref={setNodeRef} style={style} className={`flex items-start gap-1 ${isDragging ? "relative z-10 opacity-50" : ""}`}>
+      <button
+        type="button"
+        {...attributes}
+        {...listeners}
+        className="mt-3 shrink-0 cursor-grab p-0.5 text-[hsl(var(--pv-text-faint))] hover:text-[hsl(var(--pv-text-muted))] active:cursor-grabbing"
+      >
+        <GripVertical className="h-3.5 w-3.5" />
+      </button>
+      <div className="min-w-0 flex-1">{children}</div>
     </div>
   );
 }
