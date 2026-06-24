@@ -98,7 +98,6 @@ export const usePageViewData = (
   useEffect(() => {
     if (pageData) {
       setPage(pageData);
-      setLoading(false); // Clear loading state as soon as we have data
     }
   }, [numericPageId, pageData, isFetching, dataUpdatedAt, pageLoading]);
 
