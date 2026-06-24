@@ -874,7 +874,8 @@ function NodeCard({ node, index, bookId, kids, onChanged, accent, expanded, onTo
   };
 
   return (
-    <Panel variant={accent ? "chosen" : "soft"} className="px-4 py-3">
+    <Panel id={`dna-node-${node.id}`} variant={accent ? "chosen" : "soft"}
+      className={`px-4 py-3 scroll-mt-6 transition-[box-shadow,border-color] ${flash ? "border-[hsl(var(--pv-accent))] ring-2 ring-[hsl(var(--pv-accent))]/40" : ""}`}>
       {/* IDENTITY — the whole row toggles open/closed; chevron · kind · title · status all on one line */}
       <button type="button" onClick={onToggle} className="flex w-full items-start gap-2 text-left">
         <span className="mt-0.5 shrink-0 text-[hsl(var(--pv-text-faint))]">

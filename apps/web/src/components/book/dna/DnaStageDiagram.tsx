@@ -9,7 +9,7 @@
 // conceptual otherwise. Pure presentation; Paper-DS tokens via currentColor.
 import type { ReactNode } from "react";
 import type { StageKey } from "@/lib/dnaJourney";
-import { childrenOf, scenesInOrder, topography, type BeatContent, type DnaNode, type GameContent, type MovementContent, type SceneContent, type ThreadContent } from "@/lib/novelDna";
+import { beatsInOrder, childrenOf, scenesInOrder, topography, type BeatContent, type DnaNode, type GameContent, type MovementContent, type SceneContent, type ThreadContent } from "@/lib/novelDna";
 
 const ACCENT = "text-[hsl(var(--pv-accent))]";
 const FAINT = "text-[hsl(var(--pv-text-faint))]";
@@ -183,12 +183,6 @@ const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : unde
 // dangling promise (set up, never paid), an unresolved game (played, never decided), a half-open game
 // (missing a win or lose condition — no real stakes). Defined-but-unwoven elements show as a dim dashed lane.
 interface Span { id: string; name: string; a: number | null; b: number | null; outcome?: "won" | "lost"; flag?: "dangling" | "unresolved" | "halfopen" }
-
-const beatsInOrder = (nodes: DnaNode[]): DnaNode[] =>
-  childrenOf(nodes, null).filter((n) => n.kind === "movement").length
-    ? nodes.filter((n) => n.kind === "movement").sort((a, b) => a.position - b.position)
-        .flatMap((m) => childrenOf(nodes, m.id).filter((c) => c.kind === "beat"))
-    : nodes.filter((n) => n.kind === "beat").sort((a, b) => a.position - b.position);
 
 function computeSpans(nodes: DnaNode[]): { threads: Span[]; games: Span[]; turns: number } {
   const scenes = scenesInOrder(nodes);

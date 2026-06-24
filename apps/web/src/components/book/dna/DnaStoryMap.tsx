@@ -35,9 +35,9 @@ function Contour({ units, unitsByAct }: { units: DnaNode[]; unitsByAct: number[]
   const W = 1000, H = 60, PAD = 8;
   // running cumulative level
   let lvl = 0; const levels = units.map((u) => { const p = polarityOf(u); lvl += p === "up" ? 1 : p === "down" ? -1 : 0; return lvl; });
-  const lo = Math.min(0, ...levels), hi = Math.max(0, ...levels), span = hi - lo || 1;
+  const lo = Math.min(0, ...levels), hi = Math.max(0, ...levels), span = hi - lo;
   const x = (i: number) => (n === 1 ? W / 2 : (i / (n - 1)) * W);
-  const y = (v: number) => PAD + (1 - (v - lo) / span) * (H - 2 * PAD);
+  const y = (v: number) => span === 0 ? H / 2 : PAD + (1 - (v - lo) / span) * (H - 2 * PAD);
   const pts = levels.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
   const zeroY = y(0);
   // act boundary x positions (cumulative unit counts)
