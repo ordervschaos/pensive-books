@@ -8,6 +8,8 @@ import { blastRadius, byId, editContent, emptyNode, stampInput, type DnaNode, ty
 import type { StageKey } from "@/lib/dnaJourney";
 
 export interface DnaChatMessage { role: "user" | "assistant"; text: string; ts: string; plan?: string }
+export interface DnaSession { messages: DnaChatMessage[]; pending_proposal: DnaProposal | null; ended_at: string }
+
 export type NodeOp =
   | { op: "edit"; id: string; content: NodeContent }
   | { op: "add"; kind: NodeKind; parentId: string; content: NodeContent }
@@ -126,4 +128,31 @@ export async function applyDnaProposal(bookId: number, stage: StageKey, proposal
 /** Discard the pending proposal without applying it. */
 export async function clearDnaProposal(bookId: number, stage: StageKey): Promise<void> {
   await supabase.from("dna_chats").update({ pending_proposal: null }).eq("book_id", bookId).eq("stage", stage);
+}
+
+/** Archive the current thread into `sessions` and start a fresh conversation. */
+export async function startNewDnaSession(bookId: number, stage: StageKey): Promise<void> {
+  const { data } = await supabase.from("dna_chats").select("messages, pending_proposal, sessions").eq("book_id", bookId).eq("stage", stage).maybeSingle();
+  const messages = Array.isArray(data?.messages) ? (data!.messages as DnaChatMessage[]) : [];
+  if (messages.length === 0) return; // nothing to archive
+  const sessions = Array.isArray(data?.sessions) ? (data!.sessions as DnaSession[]) : [];
+  const archived: DnaSession = { messages, pending_proposal: (data?.pending_proposal as DnaProposal | null) ?? null, ended_at: new Date().toISOString() };
+  await supabase.from("dna_chats").update({ messages: [], pending_proposal: null, sessions: [archived, ...sessions], status: "idle" })
+    .eq("book_id", bookId).eq("stage", stage);
+}
+
+/** Restore a past session as the live thread, archiving the current one. */
+export async function resumeDnaSession(bookId: number, stage: StageKey, index: number): Promise<void> {
+  const { data } = await supabase.from("dna_chats").select("messages, pending_proposal, sessions").eq("book_id", bookId).eq("stage", stage).maybeSingle();
+  const sessions = Array.isArray(data?.sessions) ? (data!.sessions as DnaSession[]) : [];
+  const target = sessions[index];
+  if (!target) return;
+  const messages = Array.isArray(data?.messages) ? (data!.messages as DnaChatMessage[]) : [];
+  const remaining = sessions.filter((_, i) => i !== index);
+  const nextSessions: DnaSession[] =
+    messages.length > 0
+      ? [{ messages, pending_proposal: (data?.pending_proposal as DnaProposal | null) ?? null, ended_at: new Date().toISOString() }, ...remaining]
+      : remaining;
+  await supabase.from("dna_chats").update({ messages: target.messages, pending_proposal: target.pending_proposal ?? null, sessions: nextSessions, status: "idle" })
+    .eq("book_id", bookId).eq("stage", stage);
 }

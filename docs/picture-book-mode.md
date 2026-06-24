@@ -100,6 +100,18 @@ per page differs.
 
 ## 5. UI
 
+- **The look (style control)**: the picture book's visual style is two dials, both reusing the existing
+  image craft (no new render code):
+  - **Book-wide house look** — `books.foundations.art_direction` (+ `art_theme` preset + `image_model`),
+    set in the studio via `BookLookControls`. Folded into every scene image *and* portrait `STYLE:` line so
+    the whole book looks like one book. In the DNA studio it's surfaced by `DnaLookPanel` (picture mode only)
+    at the top of **Foundations** (it governs the portraits designed there) and the **Draft** band (before a
+    bulk illustrate). Live-projected + saved through the shared `useBookLook` hook (extracted from `SceneTab`).
+  - **Per-scene art direction** — `scene.content.art_note`, an "art direction (this scene's look)" field on
+    the picture scene card. Rides into *that* scene's image prompt as the author `instruction` (on top of the
+    house look) via `illustrateScene` → `startNodeSceneGeneration({ instruction })`. It's an illustration
+    INPUT, so it lives inside the illus hash (`isIllusStale`) but is excluded from the prose hash — edit it and
+    the scene reads stale → re-illustrate to apply.
 - **Brief/foundations**: a prose/picture toggle (`books.mode`).
 - **DnaStudio** `EXPAND_TARGETS.scene`: in picture mode the verb is **"illustrate"**
   (`target:"illustrate"`, orchestrating spec→image→caption) instead of "write prose".

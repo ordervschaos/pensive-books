@@ -119,6 +119,16 @@ describe("staleness (derived from the input-set hash)", () => {
     expect(isIllusStale(editContent(scene, { caption: { text: "edited" } }))).toBe(false);
     expect(isIllusStale(editContent(scene, { loc: "the bridge" }))).toBe(true);
   });
+
+  it("per-scene art_note is an illustration input (in the illus hash) but not a prose input", () => {
+    let scene = mk("scene", { id: "s", content: { goal: "win", loc: "the hall", image_url: "u", caption: { text: "c" }, prose: { text: "She walked in." } } });
+    scene = stampProse(stampIllus(scene));
+    expect(isIllusStale(scene)).toBe(false);
+    expect(isProseStale(scene)).toBe(false);
+    const edited = editContent(scene, { art_note: "low angle, storm light" });
+    expect(isIllusStale(edited)).toBe(true);   // changing the look re-illustrates
+    expect(isProseStale(edited)).toBe(false);  // …but never touches the prose
+  });
 });
 
 describe("pure edits", () => {

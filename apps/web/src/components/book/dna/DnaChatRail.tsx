@@ -3,12 +3,12 @@
 // thread's pending_proposal as node ops the author reviews and applies. Live projection of dna_chats.
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import { Loader2, Sparkles, X } from "lucide-react";
+import { ChevronDown, Clock, CornerDownLeft, Loader2, Sparkles, SquarePen, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
 import { Eyebrow } from "@/components/book/studio/studioUi";
-import { applyDnaProposal, clearDnaProposal, describeOps, sendDnaMessage, type DnaChatMessage, type DnaProposal } from "@/lib/dnaChat";
+import { applyDnaProposal, clearDnaProposal, describeOps, resumeDnaSession, sendDnaMessage, startNewDnaSession, type DnaChatMessage, type DnaProposal, type DnaSession } from "@/lib/dnaChat";
 import { DNA_STAGES, type StageKey } from "@/lib/dnaJourney";
 import { analysisText, type BookSettings, type DnaNode } from "@/lib/novelDna";
 
@@ -18,19 +18,22 @@ const ANALYSIS_STAGES = new Set<StageKey>(["structure", "scenes", "draft"]);
 export function DnaChatRail({ bookId, stage, nodes, settings, onApplied }: { bookId: number; stage: StageKey; nodes: DnaNode[]; settings: BookSettings; onApplied: () => void }) {
   const { toast } = useToast();
   const [messages, setMessages] = useState<DnaChatMessage[]>([]);
+  const [sessions, setSessions] = useState<DnaSession[]>([]);
   const [pending, setPending] = useState<DnaProposal | null>(null);
   const [thinking, setThinking] = useState(false);
   const [draft, setDraft] = useState("");
   const [applying, setApplying] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const label = DNA_STAGES.find((s) => s.key === stage)?.label ?? "Stage";
 
   useEffect(() => {
     let alive = true;
     const load = async () => {
-      const { data } = await supabase.from("dna_chats").select("messages, pending_proposal, status").eq("book_id", bookId).eq("stage", stage).maybeSingle();
+      const { data } = await supabase.from("dna_chats").select("messages, pending_proposal, sessions, status").eq("book_id", bookId).eq("stage", stage).maybeSingle();
       if (!alive) return;
       setMessages((data?.messages as DnaChatMessage[] | null) ?? []);
+      setSessions(Array.isArray(data?.sessions) ? (data!.sessions as DnaSession[]) : []);
       setPending((data?.pending_proposal as DnaProposal | null) ?? null);
       setThinking((data?.status as string | null) === "thinking");
     };
@@ -44,6 +47,18 @@ export function DnaChatRail({ bookId, stage, nodes, settings, onApplied }: { boo
   }, [bookId, stage]);
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, pending, thinking]);
+
+  const newChat = async () => {
+    if (thinking) return;
+    try { await startNewDnaSession(bookId, stage); setHistoryOpen(false); }
+    catch (e) { toast({ title: "Couldn't start a new chat", description: String((e as Error)?.message ?? e), variant: "destructive" }); }
+  };
+
+  const resume = async (index: number) => {
+    if (thinking) return;
+    try { await resumeDnaSession(bookId, stage, index); setHistoryOpen(false); }
+    catch (e) { toast({ title: "Couldn't continue that chat", description: String((e as Error)?.message ?? e), variant: "destructive" }); }
+  };
 
   const send = async () => {
     const text = draft.trim();
@@ -73,7 +88,26 @@ export function DnaChatRail({ bookId, stage, nodes, settings, onApplied }: { boo
       <div className="flex items-center gap-2 border-b border-[hsl(var(--pv-border-soft))] px-4 py-3">
         <Sparkles className="h-3.5 w-3.5 text-[hsl(var(--pv-accent))]" />
         <Eyebrow tone="accent">{label} editor</Eyebrow>
+        <div className="ml-auto flex items-center gap-1">
+          {sessions.length > 0 && (
+            <button type="button" onClick={() => setHistoryOpen((v) => !v)} title="Past chats"
+              className={`inline-flex items-center gap-1 rounded-full px-2 py-1 pv-mono text-[10px] uppercase tracking-[0.1em] transition-colors ${historyOpen ? "text-[hsl(var(--pv-accent))]" : "text-[hsl(var(--pv-text-faint))] hover:text-foreground"}`}>
+              <Clock className="h-3 w-3" /> {sessions.length}
+              <ChevronDown className={`h-3 w-3 transition-transform ${historyOpen ? "rotate-180" : ""}`} />
+            </button>
+          )}
+          <button type="button" onClick={() => void newChat()} disabled={thinking || messages.length === 0} title="New chat — archives the current one"
+            className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[hsl(var(--pv-text-faint))] transition-colors hover:text-[hsl(var(--pv-accent))] disabled:opacity-40">
+            <SquarePen className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
+
+      {historyOpen && sessions.length > 0 && (
+        <div className="shrink-0 max-h-[40%] overflow-y-auto border-b border-[hsl(var(--pv-border-soft))]/60 bg-[hsl(var(--pv-surface-2))]/20 px-4 py-2">
+          <DnaSessionHistory sessions={sessions} onResume={resume} busy={thinking} />
+        </div>
+      )}
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4">
         {messages.length === 0 && (
@@ -146,6 +180,43 @@ export function DnaChatRail({ bookId, stage, nodes, settings, onApplied }: { boo
           className="resize-none border-[hsl(var(--pv-border-soft))] bg-background text-[13.5px]"
         />
       </div>
+    </div>
+  );
+}
+
+function DnaSessionHistory({ sessions, onResume, busy }: { sessions: DnaSession[]; onResume: (index: number) => void; busy: boolean }) {
+  const [openIdx, setOpenIdx] = useState<number | null>(null);
+  const when = (iso: string) => { try { return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }); } catch { return iso; } };
+  return (
+    <div className="space-y-1">
+      {sessions.map((s, i) => (
+        <div key={i}>
+          <button type="button" onClick={() => setOpenIdx(openIdx === i ? null : i)}
+            className="flex w-full items-center gap-2 py-1 text-left pv-serif text-[12px] text-[hsl(var(--pv-text-muted))] hover:text-foreground">
+            <ChevronDown className={`h-3 w-3 shrink-0 transition-transform ${openIdx === i ? "rotate-180" : ""}`} />
+            <span className="flex-1 truncate italic">{when(s.ended_at)} · {s.messages.length} message{s.messages.length === 1 ? "" : "s"}</span>
+          </button>
+          {openIdx === i && (
+            <div className="space-y-2 border-l border-[hsl(var(--pv-border-soft))]/60 pl-3 pb-2">
+              {s.messages.map((m, j) => (
+                <div key={j} className={m.role === "user" ? "flex justify-end" : ""}>
+                  {m.role === "user" ? (
+                    <div className="max-w-[85%] rounded-xl rounded-br-sm bg-[hsl(var(--pv-surface-2))] px-3 py-1.5 pv-serif text-[12.5px] leading-[1.5] text-foreground whitespace-pre-wrap">{m.text}</div>
+                  ) : (
+                    <div className="max-w-[92%] pv-serif text-[13px] leading-[1.55] text-[hsl(var(--pv-text-muted))] prose prose-sm max-w-none dark:prose-invert"><ReactMarkdown>{m.text}</ReactMarkdown></div>
+                  )}
+                </div>
+              ))}
+              <div className="flex justify-end pt-1">
+                <button type="button" onClick={() => onResume(i)} disabled={busy}
+                  className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 pv-serif text-[11.5px] text-[hsl(var(--pv-text-faint))] transition-colors hover:text-[hsl(var(--pv-accent))] disabled:opacity-40">
+                  <CornerDownLeft className="h-3 w-3" /> Continue this chat
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }

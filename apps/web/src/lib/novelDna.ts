@@ -73,6 +73,10 @@ export interface SceneContent {
   // to this scene's stable id, NOT to a page row (pages are reconciled away). Both staleness-tracked via illus_src_hash.
   caption?: { text?: string; words?: number };
   image_url?: string | null;
+  // Picture mode: optional per-scene art direction folded into THIS scene's image prompt (on top of the
+  // book-wide house look) — e.g. "low angle, storm light, her face hidden". An INPUT, so it sits inside the
+  // illus hash: change it and the scene reads stale (isIllusStale) → re-illustrate. Excluded from the prose hash.
+  art_note?: string;
 }
 // tag = the physical/visual tag (the appearance descriptor an image render reads). portraits (picture mode,
 // docs/picture-book-mode.md) = the character's "design the look" reference images, pinned on the NODE (the
@@ -265,7 +269,7 @@ export function isStale(node: DnaNode, index: Map<string, DnaNode>): boolean {
 export function isProseStale(scene: DnaNode): boolean {
   const c = scene.content as SceneContent;
   if (!c.prose?.text?.trim() || !scene.authoring.prose_src_hash) return false;
-  const { prose: _p, ...plan } = c;
+  const { prose: _p, art_note: _a, ...plan } = c; // art_note is a picture-only input — not a prose input
   return scene.authoring.prose_src_hash !== metaHash(stableStringify(plan));
 }
 
@@ -285,7 +289,7 @@ export function stampInput(node: DnaNode, index: Map<string, DnaNode>): DnaNode 
 }
 /** Stamp a scene's prose hash (call after prose is written from the current plan). */
 export function stampProse(scene: DnaNode): DnaNode {
-  const { prose: _p, ...plan } = scene.content as SceneContent;
+  const { prose: _p, art_note: _a, ...plan } = scene.content as SceneContent;
   return { ...scene, authoring: { ...scene.authoring, prose_src_hash: metaHash(stableStringify(plan)) } };
 }
 /** Stamp a scene's illustration hash (call after the image + caption are made from the current plan). */

@@ -139,7 +139,10 @@ export async function illustrateScene(bookId: number, node: DnaNode): Promise<vo
     authoring: { ...node.authoring, source: node.authoring.source === "user" ? "ai_then_user" : "ai", status: "accepted" },
   };
   await saveNode(stampIllus(updated)); // stamp against the current plan (image lands later, plan-only hash)
-  await startNodeSceneGeneration(bookId, node.id, { pin: true }); // durable render → pins image_url on ready
+  // Per-scene art direction (content.art_note) rides as the render's instruction — folded on top of the
+  // book-wide house look for THIS scene only (docs/picture-book-mode.md). stampIllus already hashed it in.
+  const artNote = (node.content as SceneContent).art_note?.trim() || undefined;
+  await startNodeSceneGeneration(bookId, node.id, { pin: true, instruction: artNote }); // durable render → pins image_url on ready
 }
 
 /**

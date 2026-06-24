@@ -13,6 +13,7 @@ import { ActionLink, Eyebrow, Panel, RunningInline, StageHead, StepDot } from "@
 import { buildJourney, stageSubsteps, type StageKey, type SubStep } from "@/lib/dnaJourney";
 import { DnaChatRail } from "@/components/book/dna/DnaChatRail";
 import { DnaCharacterLook } from "@/components/book/dna/DnaCharacterLook";
+import { DnaLookPanel } from "@/components/book/dna/DnaLookPanel";
 import { DnaAnalysis } from "@/components/book/dna/DnaAnalysis";
 import { DnaStageDiagram } from "@/components/book/dna/DnaStageDiagram";
 import { DnaOverview } from "@/components/book/dna/DnaOverview";
@@ -87,8 +88,8 @@ const FIELDS: Partial<Record<NodeKind, { key: string; label: string }[]>> = {
   ],
   game: [
     { key: "name", label: "name" },
-    { key: "win_condition", label: "win condition ★" },
-    { key: "lose_condition", label: "lose condition ★" },
+    { key: "win_condition", label: "conditions to win ★" },
+    { key: "lose_condition", label: "conditions to lose ★" },
     { key: "stake", label: "stake" },
   ],
   movement: [
@@ -275,6 +276,9 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
       const labels: Record<string, string> = { character: "Cast", relationship: "Relationships", tentpole: "Set-pieces", world_fact: "World rules" };
       return (
         <>
+          {/* Picture mode: the book-wide house look governs the portraits designed here AND every scene
+              image — so set it before "design the look" / illustrating (docs/picture-book-mode.md). */}
+          {picture && <DnaLookPanel bookId={bookId} />}
           {pillar && card(pillar, true)}
           {/* Each entity kind in its own labeled, countable section — grouped so the bedrock reads at a glance
               rather than as one undifferentiated stack. Cast/world are generated from the pillar above; "add"
@@ -441,7 +445,10 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
             toast({ title: "Illustrating", description: `${ok}/${todo.length} scene(s) kicked off${failed.length ? ` · ${failed.length} failed` : ""}.` });
           });
           return (
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 pt-2">
+            <div className="space-y-4 pt-2">
+            {/* Picture mode: the house look the "illustrate" passes inherit — tweak it before a bulk run. */}
+            {picture && <DnaLookPanel bookId={bookId} />}
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
               <button
                 type="button"
                 disabled={busy === "read" || scenesAll.length === 0}
@@ -459,6 +466,7 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
                 <ActionLink busy={busy === "allillus"} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={illustrateAll}>illustrate all scenes</ActionLink>
               )}
               <ActionLink busy={busy === "render"} onClick={render} tone="faint">render only</ActionLink>
+            </div>
             </div>
           );
         })()}
@@ -715,7 +723,12 @@ function NodeCard({ node, index, bookId, kids, onChanged, accent, expanded, onTo
   const isPictureScene = picture && node.kind === "scene";
   // Picture-mode scene cards edit the CAPTION (not prose) + show the illustration; everything else is shared.
   const fields = isPictureScene
-    ? (FIELDS.scene ?? []).map((f) => f.key === "prose.text" ? { key: "caption.text", label: "caption" } : f)
+    ? [
+        ...(FIELDS.scene ?? []).map((f) => f.key === "prose.text" ? { key: "caption.text", label: "caption" } : f),
+        // Per-scene art direction — folded into THIS scene's image prompt on top of the book house look.
+        // Editing it flips the scene stale (it's in the illus hash) → re-illustrate to apply.
+        { key: "art_note", label: "art direction (this scene's look)" },
+      ]
     : FIELDS[node.kind] ?? [];
   const sceneImage = node.kind === "scene" ? (node.content as SceneContent).image_url : null;
   const stale = isStale(node, index) || (node.kind === "scene" && (picture ? isIllusStale(node) : isProseStale(node)));
