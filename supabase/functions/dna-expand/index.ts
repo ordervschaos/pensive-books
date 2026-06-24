@@ -59,7 +59,33 @@ const SPEC: Record<string, { from: string; childKind: string; childLevel: number
   scenes: { from: "beat", childKind: "scene", childLevel: 5, count: "1 to 3",
     role: "the dramatized SCENES that REALIZE this beat; EVERY scene must turn a value (no flat 'and-then'). Set each scene's value_shift.polarity (up = ends better, down = ends worse). The beat's planned polarity is where the beat must LAND (its closing charge) — your last scene reaches it, but VARY internally (a down-beat can open on false hope; an up-beat can dip): do NOT make every scene the same polarity. The thread schedule is inherited automatically — do NOT re-assign threads",
     schema: `{ "loc": "...", "goal": "...", "conflict": "...", "outcome": "...", "value_shift": { "value": "...", "from": "...", "to": "...", "polarity": "up|down" } }` },
+  voice_profile: { from: "pillar", childKind: "voice_profile", childLevel: 2, count: "exactly 1",
+    role: "the VOICE PROFILE — the book's narrative stance and prose signature. Must be OPERABLE: specific enough that any scene can be written in the same voice without drifting. Governs every word of prose. Derive it from the genre, the protagonist's idiolect, and the emotional register of the premise",
+    schema: `{ "pov": "first-person|third-person-limited|third-person-omniscient|second-person", "tense": "past|present", "style": "...", "constraints": ["<a rule the prose must follow — e.g. 'No adverbs', 'Em-dash for interruption', 'Short declarative sentences', 'Interior monologue in italics'>"], "sample": "<a 100–150 word passage written in this exact voice — not a scene summary, actual prose>" }` },
 };
+
+const ENTITY_KINDS_SET = new Set(["character", "relationship", "tentpole", "world_fact", "thread", "game", "voice_profile"]);
+function scenesInOrder(allNodes: Node[]): Node[] {
+  const out: Node[] = [];
+  const childrenSorted = (pid: string | null) => allNodes.filter((n) => n.parent_id === pid).sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+  const walk = (n: Node) => {
+    if (n.kind === "scene") out.push(n);
+    for (const c of childrenSorted(n.id)) if (!ENTITY_KINDS_SET.has(c.kind)) walk(c);
+  };
+  for (const root of allNodes.filter((n) => n.parent_id === null)) walk(root);
+  return out;
+}
+
+function buildPrevProseBlock(allNodes: Node[], currentId: string): string {
+  const ordered = scenesInOrder(allNodes);
+  const idx = ordered.findIndex((s) => s.id === currentId);
+  if (idx <= 0) return "";
+  const prev = ordered.slice(Math.max(0, idx - 3), idx)
+    .filter((s) => String((s.content as { prose?: { text?: string } }).prose?.text ?? "").trim());
+  if (!prev.length) return "";
+  return "PRECEDING PAGES (maintain continuity of voice, cadence, and character — do NOT repeat phrases, images, or sentence patterns used here):\n" +
+    prev.map((s, i) => `--- Page ${idx - prev.length + i + 1} ---\n${(s.content as { prose?: { text?: string } }).prose!.text}`).join("\n\n");
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -124,6 +150,15 @@ Deno.serve(async (req: Request) => {
       ? "WORLD RULES (the mechanisms a turning point can fire — reference BY NAME in grounds_in):\n" +
         worldFacts.map((w) => `- ${wfName(w)}: ${(w.content as { mechanism?: string; rule?: string }).mechanism ?? (w.content as { rule?: string }).rule ?? ""}`).join("\n")
       : "";
+    // The voice profile — governs all prose. Injected into ctx so every generation step can reference it.
+    const voiceProfileNode = pillar ? nodes.find((n) => n.parent_id === pillar.id && n.kind === "voice_profile") : null;
+    const vp = voiceProfileNode?.content as { pov?: string; tense?: string; style?: string; constraints?: string[]; sample?: string } | undefined;
+    const voiceBlock = vp
+      ? "VOICE PROFILE (every word of prose must conform to this):\n" +
+        [vp.pov ? `- POV: ${vp.pov}` : "", vp.tense ? `- Tense: ${vp.tense}` : "", vp.style ? `- Style: ${vp.style}` : ""].filter(Boolean).join("\n") +
+        (vp.constraints?.length ? `\n- Rules:\n${vp.constraints.map((c) => `  • ${c}`).join("\n")}` : "") +
+        (vp.sample ? `\n- Reference sample (match this voice exactly):\n${vp.sample}` : "")
+      : "";
     // The GAMES (the contests + their win/lose poles) — so beats can PLAY them and a beat RESOLVES each.
     const games = pillar ? nodes.filter((n) => n.parent_id === pillar.id && n.kind === "game") : [];
     const gName = (e: Node) => String((e.content as { name?: string }).name ?? "").trim();
@@ -140,10 +175,14 @@ Deno.serve(async (req: Request) => {
       ? "STATE PRECONDITIONS (each must be ESTABLISHED by an earlier beat — list its key in that beat's `establishes` — BEFORE the beat that resolves its game):\n" +
         statePreconds.map((p) => `- ${p.key} (${p.game}): ${p.what}`).join("\n")
       : "";
+    const prevProseBlock = (target === "prose" || (!target && node.kind === "scene") || target === "caption")
+      ? buildPrevProseBlock(nodes, nodeId)
+      : "";
     const ctx = [
       `BOOK: ${book?.name ?? ""}`,
       `BRIEF (binding):\n${briefContext(brief, { scope: "full", success: true, none: "(no brief)", empty: "(empty)" })}`,
       mandate ? `MANDATE — NON-NEGOTIABLE:\n${mandate}` : "",
+      voiceBlock,
       "STORY SO FAR (the ladder above this node; LOCKED items are immutable):",
       ...chain.map((a) => `[${a.kind}${a.authoring?.locked ? " · LOCKED" : ""}] ${JSON.stringify(a.content)}`),
       entityBlock,
@@ -153,6 +192,7 @@ Deno.serve(async (req: Request) => {
       gamesBlock,
       precondBlock, // [EXP:preconditions]
       movementBlock,
+      prevProseBlock,
       `THIS NODE [${node.kind}]: ${JSON.stringify(node.content)}`,
     ].filter(Boolean).join("\n\n");
 

@@ -20,7 +20,7 @@ interface ChatMessage { role: "user" | "assistant"; text: string; ts: string; pl
 
 const STAGE_KINDS: Record<Stage, string[]> = {
   premise: ["seed", "premise"],
-  foundations: ["pillar", "character", "relationship", "tentpole", "world_fact"],
+  foundations: ["pillar", "character", "relationship", "tentpole", "world_fact", "voice_profile"],
   structure: ["movement", "beat", "thread"],
   scenes: ["scene"],
   draft: ["scene"],

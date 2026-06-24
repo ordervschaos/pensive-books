@@ -6,7 +6,7 @@ import { metaHash } from "@/lib/planProvenance";
 
 // ── Kinds ─────────────────────────────────────────────────────────────────────
 export const LADDER_KINDS = ["seed", "premise", "pillar", "movement", "beat", "scene"] as const;
-export const ENTITY_KINDS = ["character", "relationship", "tentpole", "world_fact", "thread", "game"] as const;
+export const ENTITY_KINDS = ["character", "relationship", "tentpole", "world_fact", "thread", "game", "voice_profile"] as const;
 export type LadderKind = (typeof LADDER_KINDS)[number];
 export type EntityKind = (typeof ENTITY_KINDS)[number];
 export type NodeKind = LadderKind | EntityKind;
@@ -107,6 +107,8 @@ export interface GameContent {
   governing_rules?: string[]; couples?: Coupling[];
   win_requires?: WinRequirement[]; // [EXP:preconditions] the win's typed preconditions
 }
+// voice_profile: the book's narrative stance and prose signature — governs every word of prose.
+export interface VoiceContent { pov?: string; tense?: "past" | "present"; style?: string; constraints?: string[]; sample?: string }
 export type NodeContent = Record<string, unknown>;
 
 export interface DnaNode {

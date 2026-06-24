@@ -19,7 +19,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { loadTree } from "@/lib/bookNodes";
 import { expandNode, illustrateScene } from "@/lib/dnaExpand";
-import { childrenOf, type DnaNode, type NodeKind, type SceneContent } from "@/lib/novelDna";
+import { childrenOf, scenesInOrder, type DnaNode, type NodeKind, type SceneContent } from "@/lib/novelDna";
 import { buildJourney, DNA_STAGES, type StageKey } from "@/lib/dnaJourney";
 
 export type AutopilotMode = "auto" | "milestone";
@@ -51,6 +51,7 @@ const RICH_RECIPE: RecipeStep[] = [
   { stepKey: "premise", stage: "premise", target: "premise", label: "generate premise", childKind: "premise", per: "seed" },
   { stepKey: "pillar", stage: "foundations", target: "pillar", label: "generate pillar", childKind: "pillar", per: "premise" },
   { stepKey: "cast", stage: "foundations", target: "cast", label: "generate cast", childKind: "character", per: "pillar" },
+  { stepKey: "voice_profile", stage: "foundations", target: "voice_profile", label: "generate voice profile", childKind: "voice_profile", per: "pillar", needsKind: "character" },
   { stepKey: "world", stage: "foundations", target: "world", label: "generate world", childKind: "world_fact", per: "pillar" },
   { stepKey: "set-pieces", stage: "foundations", target: "set-pieces", label: "generate set-pieces", childKind: "tentpole", per: "pillar" },
   { stepKey: "relationships", stage: "foundations", target: "relationships", label: "generate relationships", childKind: "relationship", per: "pillar", needsKind: "character" },
@@ -133,7 +134,7 @@ export function nextAutopilotAction(nodes: DnaNode[], attempted: Set<string>, fa
       // Mode switch: prose mode writes prose (done = prose text); picture mode illustrates (done = caption).
       const picture = mode === "picture";
       const isDrafted = picture ? hasCaption : hasProse;
-      const scenes = nodes.filter((n) => n.kind === "scene");
+      const scenes = scenesInOrder(nodes);
       const pending = scenes.filter((s) => !isDrafted(s) && !failed.has(s.id));
       if (pending.length) {
         const total = scenes.length, done = total - pending.length;
