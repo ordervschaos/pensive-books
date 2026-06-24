@@ -17,34 +17,12 @@ import { serviceClient } from "../_shared/task.ts";
 import { generateImages, uploadDataUrl } from "../_shared/image.ts";
 import { callClaude, textFromClaude, type CallMeta } from "../_shared/claude.ts";
 import { IMAGE_PROMPT_MODEL } from "../_shared/model-config.ts";
+import { PORTRAIT_SYSTEM, fallbackPortrait, portraitUserContent } from "../_shared/characterPortraitPrompts.ts";
 
 interface CastMember {
   id: string; name: string;
   role?: string; appearance?: string; want?: string; wound?: string;
 }
-
-const PORTRAIT_SYSTEM = `You compose ONE structured image prompt for a character REFERENCE PORTRAIT for a novel. The author will edit it, then it is sent VERBATIM to an image model — so it must be complete and self-contained.
-
-Given the character's name, role, appearance, and inner life, output EXACTLY these labelled lines, in this order, each on its own line, nothing before or after:
-
-SUBJECT: the character's face, apparent age, build, hair, and distinguishing features, their typical dress, and an expression that reflects who they are — a believable, specific person.
-FRAMING: head-and-shoulders character reference portrait.
-BACKGROUND: neutral, with even soft lighting.
-STYLE: the rendering look. If a HOUSE LOOK is given, this line MUST honour it; otherwise default to photorealistic. Keep features consistent and suitable as a reusable reference.
-EXCLUDE: no text, captions, watermarks, or signatures.
-
-Weave any author art direction into the relevant lines.`;
-
-// Fallback when the author renders WITHOUT composing a prompt — mirrors the structured format so a
-// no-AI portrait still carries the framing/background/exclude guidance the composer would have written.
-const fallbackPortrait = (m: CastMember, houseLook: string) =>
-  [
-    `SUBJECT: ${m.name}${m.appearance?.trim() ? ` — ${m.appearance.trim()}` : ""}, an expression true to who they are.`,
-    "FRAMING: head-and-shoulders character reference portrait.",
-    "BACKGROUND: neutral, with even soft lighting.",
-    `STYLE: ${houseLook || "photorealistic"}, consistent features suitable as a reusable reference.`,
-    "EXCLUDE: no text, captions, watermarks, or signatures.",
-  ].join("\n");
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -82,16 +60,7 @@ Deno.serve(async (req: Request) => {
     if (mode === "prompt") {
       const apiKey = Deno.env.get("ANTHROPIC_API_KEY") ?? "";
       const model = IMAGE_PROMPT_MODEL;
-      const userContent = [
-        `NAME: ${member.name}`,
-        member.role ? `ROLE: ${member.role}` : null,
-        member.appearance?.trim() ? `APPEARANCE: ${member.appearance.trim()}` : null,
-        member.want?.trim() ? `WANTS: ${member.want.trim()}` : null,
-        member.wound?.trim() ? `WOUND (informs expression): ${member.wound.trim()}` : null,
-        houseLook ? `HOUSE LOOK (the book's settled visual style — the STYLE line MUST honour this so the cast looks like one book): ${houseLook}` : null,
-        instruction?.trim() ? `ART DIRECTION (author — honor this): ${instruction.trim()}` : null,
-        "Write the portrait prompt.",
-      ].filter(Boolean).join("\n");
+      const userContent = portraitUserContent(member, houseLook, instruction);
       const meta: CallMeta = { fn: "generate-character-portrait", bookId, userId: user.id };
       const data = await callClaude(apiKey, {
         model, max_tokens: 400, temperature: 0.8,

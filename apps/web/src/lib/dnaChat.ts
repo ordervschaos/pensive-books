@@ -17,6 +17,7 @@ export interface DnaProposal { summary: string; ops: NodeOp[] }
 const KIND_LEVEL: Record<NodeKind, number> = {
   seed: 0, premise: 1, pillar: 2, character: 2, relationship: 2, tentpole: 2, world_fact: 2, thread: 2, game: 2, movement: 3, beat: 4, scene: 5,
 };
+const VALID_KINDS = new Set<string>(Object.keys(KIND_LEVEL));
 
 /** Send one message in a (book, stage) thread. The edge fn appends + persists; the rail re-reads over Realtime.
  *  `analysis` = the three-axis story analysis (pacing/promises/topography/lints), computed client-side from the
@@ -113,7 +114,7 @@ export async function applyDnaProposal(bookId: number, stage: StageKey, proposal
     } else if (op.op === "delete") {
       const node = index.get(op.id);
       if (node && !node.authoring.locked) await deleteNode(op.id);
-    } else if (op.op === "add" && index.has(op.parentId)) {
+    } else if (op.op === "add" && index.has(op.parentId) && VALID_KINDS.has(op.kind as string)) {
       const fresh = emptyNode(bookId, op.kind, KIND_LEVEL[op.kind] ?? 5, op.parentId, childCount(op.parentId) + added++);
       const node: DnaNode = { ...fresh, content: op.content, authoring: { source: "ai", locked: false, status: "accepted" } };
       await saveNode(stampInput(node, byId([...nodes, node])));

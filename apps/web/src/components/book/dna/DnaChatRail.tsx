@@ -3,7 +3,7 @@
 // thread's pending_proposal as node ops the author reviews and applies. Live projection of dna_chats.
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import { Loader2, Sparkles } from "lucide-react";
+import { Loader2, Sparkles, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
@@ -63,6 +63,10 @@ export function DnaChatRail({ bookId, stage, nodes, settings, onApplied }: { boo
     finally { setApplying(false); }
   };
   const discard = async () => { setPending(null); try { await clearDnaProposal(bookId, stage); } catch { /* best effort */ } };
+  const cancel = async () => {
+    setThinking(false);
+    await supabase.from("dna_chats").update({ status: "idle" }).eq("book_id", bookId).eq("stage", stage);
+  };
 
   return (
     <div className="flex h-full flex-col border-l border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/30">
@@ -86,7 +90,15 @@ export function DnaChatRail({ bookId, stage, nodes, settings, onApplied }: { boo
             </div>
           </div>
         ))}
-        {thinking && <div className="flex items-center gap-2 text-[hsl(var(--pv-text-faint))]"><Loader2 className="h-3.5 w-3.5 animate-spin" /><span className="pv-serif text-[13px] italic">thinking…</span></div>}
+        {thinking && (
+          <div className="flex items-center gap-2 text-[hsl(var(--pv-text-faint))]">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <span className="pv-serif text-[13px] italic">thinking…</span>
+            <button onClick={() => void cancel()} className="ml-1 flex items-center gap-0.5 text-[12px] italic hover:text-foreground transition-colors">
+              <X className="h-3 w-3" />cancel
+            </button>
+          </div>
+        )}
 
         {pending && (
           <div className="rounded-2xl border border-[hsl(var(--pv-accent))]/40 bg-[hsl(var(--pv-accent))]/[0.06] px-4 py-3">

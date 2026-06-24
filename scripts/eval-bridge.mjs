@@ -3489,6 +3489,21 @@ ${ctx}\n\nWrite this scene's prose.`;
     if (out.error) return out;
     return { prose: out.text.trim() };
   }
+  if (target === "caption") {
+    // Picture mode (docs/picture-book-mode.md) — mirrors supabase/functions/dna-expand. The page TEXT under
+    // a scene's illustration: a short caption (1–3 sentences), NOT full prose. The image carries the moment.
+    const prompt = `You are writing the CAPTION for ONE illustrated page of a picture book, from the scene's plan. The picture carries the moment — your job is the few words beneath it that carry the book's VOICE and move the story one beat. Honor the MANDATE (tone/reading age). Output the caption text ONLY: no preamble, no headings, no quotes, no JSON.
+
+RULES:
+- 1 to 3 sentences. Tight, rhythmic, read-aloud-able. Often one is enough.
+- Tell what the picture cannot: the turn, the feeling, the line of dialogue — never just label what's already visible ("A boy stands in a hall").
+- Write ONLY from inside the story: NEVER address or mention "the reader"/"you", and NEVER refer to "the book", "the story", "the scene", "the page", "the picture/image", the author, or the writing itself. The plan's notes are directions TO YOU, not lines to reproduce.
+
+${ctx}\n\nWrite this page's caption.`;
+    const out = await runClaude(prompt, true, { fn: "dna-expand", bookId }, { noTools: true, model: MODEL_PLANNING });
+    if (out.error) return out;
+    return { caption: out.text.trim() };
+  }
   if (target === "beatsheet") {
     // GLOBAL beat-sheet pass (root fix) — mirrors supabase/functions/dna-expand. One call, whole arc in view:
     // schedule setup→payoff in order, plan polarity to oscillate. enforcePromiseSchedule (inline) drops orphan
@@ -3643,7 +3658,7 @@ async function runDnaChat({ bookId, stage, message, analysis }) {
     return `[${n.id}${n.authoring?.locked ? " · LOCKED" : ""}] L${n.level} ${n.kind}: ${JSON.stringify(content)}`;
   };
   const tree = [...nodes].sort((a, b) => (a.level ?? 0) - (b.level ?? 0)).map(serialize).join("\n");
-  const system = `You are a sharp, warm developmental STORY EDITOR in conversation with an author. Your current FOCUS is ${DNA_STAGE_GUIDE[stage]}\n\nYou hold the book's ENTIRE DNA tree — premise → foundations → structure → scenes${withProse ? " → prose" : ""} — and you may edit, add, or delete ANY non-locked node at ANY level, not just your focus stage.${withProse ? " Scene PROSE is included (content.prose.text); you may rewrite it." : ""}\n\nReply in plain MARKDOWN prose. If — and ONLY if — this message DELIVERS a concrete change to apply, append at the VERY END a single fenced \`\`\`json block (nothing after it) with node ops over the REAL ids given:\n{ "summary": "<one line>", "ops": [ { "op": "edit", "id": "<id>", "content": { … } }, { "op": "add", "kind": "<kind>", "parentId": "<id>", "content": { … } }, { "op": "delete", "id": "<id>" } ] }\nOnly reference ids that exist; never edit/delete a LOCKED node; talk first, propose only when asked or agreed.`;
+  const system = `You are a sharp, warm developmental STORY EDITOR in conversation with an author. Your current FOCUS is ${DNA_STAGE_GUIDE[stage]}\n\nYou hold the book's ENTIRE DNA tree — premise → foundations → structure → scenes${withProse ? " → prose" : ""} — and you may edit, add, or delete ANY non-locked node at ANY level, not just your focus stage.${withProse ? " Scene PROSE is included (content.prose.text); you may rewrite it." : ""}\n\nReply in plain MARKDOWN prose. If — and ONLY if — this message DELIVERS a concrete change to apply, append at the VERY END a single fenced \`\`\`json block (nothing after it) with node ops over the REAL ids given:\n{ "summary": "<one line>", "ops": [ { "op": "edit", "id": "<id>", "content": { … } }, { "op": "add", "kind": "<kind>", "parentId": "<id>", "content": { … } }, { "op": "delete", "id": "<id>" } ] }\nOnly reference ids that exist; never edit/delete a LOCKED node; talk first, propose only when asked or agreed.\n\nCONTENT FIELD SCHEMAS — use EXACTLY these key names (wrong keys silently orphan data):\n- premise  → content.shape keys: setup | turn1 | turn2 | turn3 | resolution  (never "midpoint", never "climax")\n- movement → content: { title, goal, turning_point, target_pct, value: { from, to } }\n- beat     → content: { summary, connector ("therefore"|"but"), polarity ("up"|"down"), threads, grounds_in, needs, establishes, realizes, plays, resolves }\n- scene    → content: { goal, conflict, outcome, pov, value: { from, to }, prose: { text } }\n- character → content: { name, want, need, wound, lie, truth, idiolect, role }\n- relationship → content: { a, b, dynamic, arc }\n- tentpole → content: { title, summary, when }\n- world_fact → content: { name, rule, mechanism }\n- thread   → content: { name, promise, payoff, kind ("mystery"|"foreshadow"|"setup_payoff"|"arc") }`;
   const ctx = [
     `BOOK: ${book.name ?? ""}`,
     `BRIEF (binding): ${briefContext(book.brief)}`,

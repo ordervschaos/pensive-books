@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   analysisText, blastRadius, byId, cascade, causality, chapters, chooseProposal, editContent, emptyNode,
-  enforcePromiseSchedule, inputHash, isProseStale, isRenderable, isStale, lock, pacing, promiseLedger,
-  refsOf, renderBlockers, renderPages, scenesInOrder, stakesOf, stampInput, stampProse, topography,
+  enforcePromiseSchedule, inputHash, isIllusStale, isProseStale, isRenderable, isStale, lock, pacing, promiseLedger,
+  refsOf, renderBlockers, renderPages, scenesInOrder, stakesOf, stampIllus, stampInput, stampProse, topography,
   validate, type DnaNode, type NodeKind, type ThreadRef,
 } from "@/lib/novelDna";
 
@@ -63,6 +63,19 @@ describe("render projection (chapter → section + text page)", () => {
       { nodeId: "ch:s3:body", kind: "text", title: "Two", proseText: "Again." },
     ]);
   });
+
+  it("picture mode emits a section page + one image page per scene (illustration + caption)", () => {
+    const m = mk("movement", { id: "m" });
+    const b = mk("beat", { id: "b", parent_id: "m" });
+    const s1 = mk("scene", { id: "s1", parent_id: "b", position: 0, content: { chapter_start: { title: "One" }, image_url: "u1", caption: { text: "She walked in." } } });
+    const s2 = mk("scene", { id: "s2", parent_id: "b", position: 1, content: { image_url: "u2", caption: { text: "And out." } } });
+    const out = renderPages([m, b, s1, s2], "picture");
+    expect(out).toEqual([
+      { nodeId: "ch:s1", kind: "section", title: "One", proseText: "" },
+      { nodeId: "sc:s1", kind: "image", title: "One", proseText: "", imageUrl: "u1", caption: "She walked in." },
+      { nodeId: "sc:s2", kind: "image", title: "One", proseText: "", imageUrl: "u2", caption: "And out." },
+    ]);
+  });
 });
 
 describe("staleness (derived from the input-set hash)", () => {
@@ -96,6 +109,15 @@ describe("staleness (derived from the input-set hash)", () => {
     expect(isProseStale(scene)).toBe(false);
     const scene2 = editContent(scene, { goal: "lose" });
     expect(isProseStale(scene2)).toBe(true);
+  });
+
+  it("an illustration goes stale when the scene plan changes (image_url + caption excluded from the hash)", () => {
+    let scene = mk("scene", { id: "s", content: { goal: "win", loc: "the hall", image_url: "u", caption: { text: "She walked in." } } });
+    scene = stampIllus(scene);
+    expect(isIllusStale(scene)).toBe(false);
+    // editing the OUTPUT (caption/image) does NOT make it stale — only the plan does
+    expect(isIllusStale(editContent(scene, { caption: { text: "edited" } }))).toBe(false);
+    expect(isIllusStale(editContent(scene, { loc: "the bridge" }))).toBe(true);
   });
 });
 

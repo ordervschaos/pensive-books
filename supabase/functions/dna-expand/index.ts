@@ -169,6 +169,20 @@ VOICE — write ONLY the fiction, from inside the story: NEVER address or mentio
       return json({ prose: textFromClaude(data).trim() });
     }
 
+    if (target === "caption") {
+      // Picture mode (docs/picture-book-mode.md): the page TEXT that sits under the scene's illustration —
+      // a short caption, NOT full prose. The image carries the moment; the caption carries the voice.
+      const system = `You are writing the CAPTION for ONE illustrated page of a picture book, from the scene's plan. The picture carries the moment — your job is the few words beneath it that carry the book's VOICE and move the story one beat. Honor the MANDATE (tone/reading age). Output the caption text ONLY: no preamble, no headings, no quotes, no JSON.
+
+RULES:
+- 1 to 3 sentences. Tight, rhythmic, read-aloud-able. Often one is enough.
+- Tell what the picture cannot: the turn, the feeling, the line of dialogue — never just label what's already visible ("A boy stands in a hall").
+- Write ONLY from inside the story: NEVER address or mention "the reader"/"you", and NEVER refer to "the book", "the story", "the scene", "the page", "the picture/image", the author, or the writing itself. The plan's notes are directions TO YOU, not lines to reproduce.`;
+      const data = await callClaude(apiKey, { model, max_tokens: 400, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+        messages: [{ role: "user", content: `${ctx}\n\nWrite this page's caption.` }] }, meta);
+      return json({ caption: textFromClaude(data).trim() });
+    }
+
     if (target === "beatsheet") {
       // GLOBAL beat-sheet pass (root fix): generate EVERY beat in one call with the whole arc + the thread
       // registry in view, so promises schedule setup→payoff in order and polarity is planned to oscillate.

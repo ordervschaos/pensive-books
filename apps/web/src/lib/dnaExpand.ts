@@ -4,7 +4,8 @@
 import { supabase } from "@/integrations/supabase/client";
 import { BRIDGE, bridgeFetch } from "@/lib/bridge";
 import { deleteNode, loadTree, saveNode, saveNodes } from "@/lib/bookNodes";
-import { byId, deepMergeContent, newId, stampInput, stampProse, type BeatContent, type DnaNode, type GameContent, type NodeContent, type NodeKind, type SceneContent, type ThreadRef } from "@/lib/novelDna";
+import { startNodeSceneGeneration } from "@/lib/nodeSceneImages";
+import { byId, deepMergeContent, newId, stampIllus, stampInput, stampProse, type BeatContent, type DnaNode, type GameContent, type NodeContent, type NodeKind, type SceneContent, type ThreadRef } from "@/lib/novelDna";
 
 /** A short, legible chapter title from a beat's summary (the working title; the author renames). */
 function chapterTitleFromBeat(beat: DnaNode): string {
@@ -17,7 +18,7 @@ function chapterTitleFromBeat(beat: DnaNode): string {
 
 interface BeatSheetEntry { movement: number; content: BeatContent }
 interface ExpandResult {
-  childKind?: NodeKind; childLevel?: number; children?: NodeContent[]; prose?: string;
+  childKind?: NodeKind; childLevel?: number; children?: NodeContent[]; prose?: string; caption?: string;
   beatsheet?: boolean; beats?: BeatSheetEntry[]; movementIds?: string[];
 }
 
@@ -117,6 +118,28 @@ export async function expandNode(
   await saveNodes(made.map((n) => stampInput(n, index)));
   for (const id of replaceIds) await deleteNode(id); // regenerate: drop the unlocked predecessors last
   return { added: made.length };
+}
+
+/**
+ * ILLUSTRATE a scene (picture-book mode, docs/picture-book-mode.md) — the picture-mode analog of writing
+ * prose. Two halves: (1) write the page CAPTION synchronously (cheap dna-expand call) onto the node and
+ * stamp illus_src_hash against the CURRENT plan, then (2) kick the durable scene-image render (node-keyed,
+ * pin:true) which writes the chosen image_url onto the node when ready (over Realtime). Stamping at caption
+ * time records the plan the illustration is made from — if the plan changes before the image lands, the
+ * scene correctly reads stale (isIllusStale). Returns once the caption is saved + the render is kicked.
+ */
+export async function illustrateScene(bookId: number, node: DnaNode): Promise<void> {
+  if (node.kind !== "scene") throw new Error("illustrateScene expects a scene node");
+  const res = await callExpand(bookId, node.id, "caption");
+  const text = (res.caption ?? "").trim();
+  if (!text) throw new Error("No caption was generated.");
+  const updated: DnaNode = {
+    ...node,
+    content: deepMergeContent(node.content, { caption: { text, words: wordCount(text) } }), // canonical DNA merge
+    authoring: { ...node.authoring, source: node.authoring.source === "user" ? "ai_then_user" : "ai", status: "accepted" },
+  };
+  await saveNode(stampIllus(updated)); // stamp against the current plan (image lands later, plan-only hash)
+  await startNodeSceneGeneration(bookId, node.id, { pin: true }); // durable render → pins image_url on ready
 }
 
 /**

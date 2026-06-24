@@ -82,7 +82,18 @@ Reply to the author in plain MARKDOWN prose — discuss, pressure-test, answer. 
     { "op": "add", "kind": "<character|world_fact|relationship|tentpole|thread|movement|beat|scene>", "parentId": "<existing node id>", "content": { … } },
     { "op": "delete", "id": "<existing node id>" }
   ] }
-Only reference ids that exist. Honor LOCKED nodes (never edit/delete them). Don't propose unless the author asked for a change or agreed to one — talk first.`;
+Only reference ids that exist. Honor LOCKED nodes (never edit/delete them). Don't propose unless the author asked for a change or agreed to one — talk first.
+
+CONTENT FIELD SCHEMAS — use EXACTLY these key names (wrong keys silently orphan data):
+- premise  → content.shape keys: setup | turn1 | turn2 | turn3 | resolution  (never "midpoint", never "climax")
+- movement → content: { title, goal, turning_point, target_pct, value: { from, to } }
+- beat     → content: { summary, connector ("therefore"|"but"), polarity ("up"|"down"), threads, grounds_in, needs, establishes, realizes, plays, resolves }
+- scene    → content: { goal, conflict, outcome, pov, value: { from, to }, prose: { text } }
+- character → content: { name, want, need, wound, lie, truth, idiolect, role }
+- relationship → content: { a, b, dynamic, arc }
+- tentpole → content: { title, summary, when }
+- world_fact → content: { name, rule, mechanism }
+- thread   → content: { name, promise, payoff, kind ("mystery"|"foreshadow"|"setup_payoff"|"arc") }`;
 
     const ctx = [
       `BOOK: ${book?.name ?? ""}`,
@@ -111,10 +122,11 @@ Only reference ids that exist. Honor LOCKED nodes (never edit/delete them). Don'
         const parsed = JSON.parse(extractJsonBlock(fence[1]));
         const ids = new Set(nodes.map((n) => n.id));
         const locked = new Set(nodes.filter((n) => n.authoring?.locked).map((n) => n.id));
-        const ops = (Array.isArray(parsed.ops) ? parsed.ops : []).filter((o: { op?: string; id?: string; parentId?: string }) =>
+        const VALID_KINDS = new Set(["seed","premise","pillar","movement","beat","scene","character","relationship","tentpole","world_fact","thread","game"]);
+        const ops = (Array.isArray(parsed.ops) ? parsed.ops : []).filter((o: { op?: string; id?: string; parentId?: string; kind?: string }) =>
           (o.op === "edit" && o.id && ids.has(o.id) && !locked.has(o.id)) ||
           (o.op === "delete" && o.id && ids.has(o.id) && !locked.has(o.id)) ||
-          (o.op === "add" && o.parentId && ids.has(o.parentId)));
+          (o.op === "add" && o.parentId && ids.has(o.parentId) && o.kind && VALID_KINDS.has(o.kind)));
         if (ops.length) { proposal = { summary: String(parsed.summary ?? "Proposed change").trim(), ops }; reply = full.slice(0, fence.index).trim(); }
       } catch { /* keep the prose, drop the malformed block */ }
     }

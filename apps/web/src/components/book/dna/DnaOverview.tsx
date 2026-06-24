@@ -8,6 +8,7 @@
 import { ArrowRight, BookOpen, Check, GitBranch, Network, Sparkles, TriangleAlert } from "lucide-react";
 import { ActionLink, Eyebrow, Hero, Panel, StageHead } from "@/components/book/studio/studioUi";
 import { DnaFullDiagram } from "@/components/book/dna/DnaStageDiagram";
+import { DnaAutopilot } from "@/components/book/dna/DnaAutopilot";
 import { STAGE_KINDS, stageSubsteps, type JourneyStage, type StageKey } from "@/lib/dnaJourney";
 import { byId, childrenOf, isProseStale, isStale, validate, type BookSettings, type DnaNode, type NodeKind, type SceneContent } from "@/lib/novelDna";
 
@@ -50,8 +51,8 @@ function TreeRow({ node, index, label, title, meta, depth, onOpen }: {
   );
 }
 
-export function DnaOverview({ nodes, settings, stages, nowKey, onOpen }: {
-  nodes: DnaNode[]; settings: BookSettings; stages: JourneyStage[]; nowKey: StageKey; onOpen: (k: StageKey) => void;
+export function DnaOverview({ bookId, nodes, settings, stages, nowKey, onOpen, onChanged }: {
+  bookId: number; nodes: DnaNode[]; settings: BookSettings; stages: JourneyStage[]; nowKey: StageKey; onOpen: (k: StageKey) => void; onChanged: () => void;
 }) {
   const index = byId(nodes);
   const of = (k: NodeKind) => nodes.filter((n) => n.kind === k);
@@ -60,13 +61,14 @@ export function DnaOverview({ nodes, settings, stages, nowKey, onOpen }: {
 
   const [seed, premise, pillar] = [first("seed"), first("premise"), first("pillar")];
   const movements = of("movement");
+  const picture = settings.mode === "picture";
   const beats = of("beat"), scenes = of("scene");
-  const drafted = scenes.filter((s) => str((s.content as SceneContent).prose?.text)).length;
+  const drafted = scenes.filter((s) => str(picture ? (s.content as SceneContent).image_url : (s.content as SceneContent).prose?.text)).length;
 
   // ── Next move: the live now-stage + its first open sub-step, plus the optional branches also available now.
   const nowStage = stages.find((s) => s.key === nowKey)!;
   const allDone = stages.every((s) => s.status === "done");
-  const subs = stageSubsteps(nowKey, nodes);
+  const subs = stageSubsteps(nowKey, nodes, picture ? "picture" : "prose");
   const nowSub = subs.find((s) => s.status === "now");
   const alsoAvailable = subs.filter((s) => s.status === "available");
 
@@ -98,13 +100,17 @@ export function DnaOverview({ nodes, settings, stages, nowKey, onOpen }: {
 
       {/* NEXT MOVE — the obvious thing to do, loud. */}
       {allDone ? (
-        <Hero icon={<BookOpen className="h-5 w-5" />} title="Draft complete" sub="Every scene is drafted — open the reader." onClick={() => onOpen("draft")} />
+        <Hero icon={<BookOpen className="h-5 w-5" />} title={picture ? "Picture book complete" : "Draft complete"} sub={picture ? "Every scene is illustrated — open the reader." : "Every scene is drafted — open the reader."} onClick={() => onOpen("draft")} />
       ) : (
         <Hero icon={<Sparkles className="h-5 w-5" />}
           title={`${nowStage.label}${nowSub ? ` · ${nowSub.label}` : ""}`}
           sub={nowStage.caption}
           onClick={() => onOpen(nowKey)} />
       )}
+      {/* Auto-build — drive the whole forward pass from the brief (or pause at each milestone). Only once
+          the book has a seed (i.e. a brief to build from). */}
+      {seed && <DnaAutopilot bookId={bookId} picture={picture} onChanged={onChanged} />}
+
       {alsoAvailable.length > 0 && (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
           <Eyebrow tone="muted">also ready</Eyebrow>
@@ -128,7 +134,7 @@ export function DnaOverview({ nodes, settings, stages, nowKey, onOpen }: {
         {stat("acts", movements.length)}
         {stat("beats", beats.length)}
         {stat("scenes", scenes.length)}
-        {scenes.length > 0 && stat("drafted", drafted, scenes.length)}
+        {scenes.length > 0 && stat(picture ? "illustrated" : "drafted", drafted, scenes.length)}
         {of("character").length > 0 && stat("cast", of("character").length)}
         {of("thread").length > 0 && stat("threads", of("thread").length)}
         {of("game").length > 0 && stat("games", of("game").length)}

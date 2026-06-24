@@ -5,7 +5,7 @@
 // non-destructive (archive, never hard-delete), idempotent (keyed on pages.metadata.node_id = "ch:…").
 // Generalizes lib/outline.ts's reconcile one level up (chapter, not scene, is the page unit). Spec §8.
 import { supabase } from "@/integrations/supabase/client";
-import { buildDoc } from "@/lib/inlineMarkdown";
+import { buildDoc, buildImageDoc } from "@/lib/inlineMarkdown";
 import { loadTree } from "@/lib/bookNodes";
 import { renderPages, type RenderedPage } from "@/lib/novelDna";
 
@@ -27,7 +27,9 @@ const sig = (title: string, type: string, idx: number, content: unknown): string
 /** Render a book's DNA tree to its pages. The DNA owns the whole page list for a DNA-native book. */
 export async function reconcileDna(bookId: number): Promise<DnaRenderResult> {
   const nodes = await loadTree(bookId);
-  const desired: RenderedPage[] = renderPages(nodes);
+  const { data: book } = await supabase.from("books").select("mode").eq("id", bookId).maybeSingle();
+  const mode = (book as { mode?: "prose" | "picture" } | null)?.mode === "picture" ? "picture" : "prose";
+  const desired: RenderedPage[] = renderPages(nodes, mode);
 
   const { data: pageData } = await supabase
     .from("pages").select("id, page_index, page_type, title, content, archived, metadata").eq("book_id", bookId);
@@ -43,7 +45,11 @@ export async function reconcileDna(bookId: number): Promise<DnaRenderResult> {
 
   for (let i = 0; i < desired.length; i++) {
     const d = desired[i];
-    const content = buildDoc(d.title, d.proseText); // section: heading only; text: heading + prose
+    // section: heading only · text: heading + prose · image (picture mode): heading + illustration + caption.
+    // Image pages persist as page_type "text" (their doc just happens to lead with an image) — no new page
+    // type, so the reader/marketing render and word-count filters are untouched.
+    const content = d.kind === "image" ? buildImageDoc(d.imageUrl, d.proseText || d.caption || "") : buildDoc(d.title, d.proseText);
+    const pageType = d.kind === "section" ? "section" : "text";
     let page = byNode.get(d.nodeId);
     if (!page) {
       const { data: created, error } = await supabase.rpc("create_next_page", { p_book_id: bookId }).select().single();
@@ -52,10 +58,10 @@ export async function reconcileDna(bookId: number): Promise<DnaRenderResult> {
       result.created += 1;
     }
     const unchanged = !page.archived && page.page_index === i && page.title === d.title &&
-      page.page_type === d.kind && sig(page.title ?? "", page.page_type ?? "", page.page_index, page.content) === sig(d.title, d.kind, i, content);
+      page.page_type === pageType && sig(page.title ?? "", page.page_type ?? "", page.page_index, page.content) === sig(d.title, pageType, i, content);
     if (!unchanged) {
       const { error } = await supabase.from("pages").update({
-        title: d.title, page_type: d.kind, archived: false, page_index: i, content,
+        title: d.title, page_type: pageType, archived: false, page_index: i, content,
         metadata: { ...(page.metadata ?? {}), node_id: d.nodeId },
       }).eq("id", page.id);
       if (error) throw error;

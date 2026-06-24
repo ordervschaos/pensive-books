@@ -33,11 +33,12 @@ const DnaStudioPage = () => {
   const reload = useCallback(async () => {
     if (!bookId) return;
     const [{ data: book }, tree] = await Promise.all([
-      supabase.from("books").select("name, author, brief").eq("id", bookId).maybeSingle(),
+      supabase.from("books").select("name, author, brief, mode").eq("id", bookId).maybeSingle(),
       loadTree(bookId),
     ]);
     const brief = (book?.brief as Brief | null) ?? null;
-    setSettings({ title: book?.name, author: (book?.author as string | null) ?? undefined, word_target: brief?.scope?.word_target });
+    setSettings({ title: book?.name, author: (book?.author as string | null) ?? undefined, word_target: brief?.scope?.word_target,
+      mode: (book as { mode?: "prose" | "picture" } | null)?.mode === "picture" ? "picture" : "prose" });
     setNodes(tree);
     if (book?.name) setPageTitle(`${book.name} · DNA`);
     setLoading(false);

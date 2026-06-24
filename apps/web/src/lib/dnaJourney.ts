@@ -20,10 +20,13 @@ export const DNA_STAGES: DnaStage[] = [
 export type StageStatus = "done" | "now" | "locked" | "available";
 
 const accepted = (n?: DnaNode) => n?.authoring.status === "accepted";
-const hasText = (s?: string) => !!(s && s.trim());
+const hasText = (s?: string | null) => !!(s && s.trim());
+// A scene's Draft-rung "done": prose written (prose mode) or an illustration pinned (picture mode).
+const sceneDrafted = (s: DnaNode, mode: "prose" | "picture") =>
+  mode === "picture" ? hasText((s.content as SceneContent).image_url) : hasText((s.content as SceneContent).prose?.text);
 
 /** Is each stage's load-bearing content present + accepted? (The gate for advancing.) */
-export function stageComplete(nodes: DnaNode[]): Record<StageKey, boolean> {
+export function stageComplete(nodes: DnaNode[], mode: "prose" | "picture" = "prose"): Record<StageKey, boolean> {
   const of = (k: NodeKind) => nodes.filter((n) => n.kind === k);
   const seed = of("seed")[0], premise = of("premise")[0], pillar = of("pillar")[0];
   const scenes = of("scene");
@@ -32,7 +35,7 @@ export function stageComplete(nodes: DnaNode[]): Record<StageKey, boolean> {
     foundations: !!pillar && accepted(pillar) && of("character").length >= 1,
     structure: of("movement").length >= 1 && of("beat").length >= 1,
     scenes: scenes.length >= 1,
-    draft: scenes.length >= 1 && scenes.every((s) => hasText((s.content as SceneContent).prose?.text)),
+    draft: scenes.length >= 1 && scenes.every((s) => sceneDrafted(s, mode)),
   };
 }
 
@@ -40,8 +43,8 @@ export interface JourneyStage extends DnaStage { num: number; status: StageStatu
 
 /** The journey: each stage's status, plus the index of the current ("now") stage. Sequential — a stage is
  *  locked until everything before it is complete, so the author walks the resolution ladder in order. */
-export function buildJourney(nodes: DnaNode[]): { stages: JourneyStage[]; nowIndex: number } {
-  const done = stageComplete(nodes);
+export function buildJourney(nodes: DnaNode[], mode: "prose" | "picture" = "prose"): { stages: JourneyStage[]; nowIndex: number } {
+  const done = stageComplete(nodes, mode);
   let firstIncomplete = DNA_STAGES.findIndex((s) => !done[s.key]);
   if (firstIncomplete === -1) firstIncomplete = DNA_STAGES.length; // all complete
   const stages = DNA_STAGES.map((s, i): JourneyStage => ({
@@ -82,7 +85,7 @@ function resolveSeq(specs: SubSpec[]): SubStep[] {
 }
 
 /** The serial sub-steps inside one stage, each with its derived status + tally. */
-export function stageSubsteps(key: StageKey, nodes: DnaNode[]): SubStep[] {
+export function stageSubsteps(key: StageKey, nodes: DnaNode[], mode: "prose" | "picture" = "prose"): SubStep[] {
   const of = (k: NodeKind) => nodes.filter((n) => n.kind === k);
   const seed = of("seed")[0], premise = of("premise")[0], pillar = of("pillar")[0];
   const n = (k: NodeKind) => of(k).length;
@@ -117,10 +120,10 @@ export function stageSubsteps(key: StageKey, nodes: DnaNode[]): SubStep[] {
     const scenes = n("scene");
     return resolveSeq([{ key: "scenes", label: "Scenes", done: scenes >= 1, ready: n("beat") >= 1, count: scenes }]);
   }
-  // draft
+  // draft — prose written (prose mode) or scenes illustrated (picture mode)
   const scenes = of("scene");
-  const drafted = scenes.filter((s) => hasText((s.content as SceneContent).prose?.text)).length;
-  return resolveSeq([{ key: "prose", label: "Prose", done: scenes.length > 0 && drafted === scenes.length, ready: scenes.length > 0, count: drafted, total: scenes.length }]);
+  const drafted = scenes.filter((s) => sceneDrafted(s, mode)).length;
+  return resolveSeq([{ key: mode === "picture" ? "illustrate" : "prose", label: mode === "picture" ? "Illustrate" : "Prose", done: scenes.length > 0 && drafted === scenes.length, ready: scenes.length > 0, count: drafted, total: scenes.length }]);
 }
 
 /** Which node kinds belong to a stage's Stage view. */
