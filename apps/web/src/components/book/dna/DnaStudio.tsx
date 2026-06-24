@@ -36,6 +36,7 @@ const EXPAND_TARGETS: Partial<Record<NodeKind, ExpandTarget[]>> = {
     { target: "cast", label: "generate cast", childKind: "character" },
     { target: "relationships", label: "generate relationships", childKind: "relationship", needs: "character" },
     { target: "world", label: "generate world", childKind: "world_fact" },
+    { target: "set-pieces", label: "generate set-pieces", childKind: "tentpole" },
     { target: "movements", label: "generate acts", childKind: "movement" },
   ],
   movement: [{ target: "beats", label: "generate beats", childKind: "beat" }],
@@ -47,31 +48,104 @@ const SINGLE = new Set(["premise", "pillar"]); // targets that produce exactly o
 // The meaningful fields the UI exposes per kind (★/U slots; dotted keys reach into nested content).
 const FIELDS: Partial<Record<NodeKind, { key: string; label: string }[]>> = {
   seed: [{ key: "logline", label: "logline" }],
-  premise: [{ key: "dramatic_question", label: "dramatic question" }, { key: "shape.setup", label: "shape / throughline" }],
+  premise: [
+    { key: "dramatic_question", label: "dramatic question" },
+    { key: "shape.setup", label: "setup" },
+    { key: "shape.turn1", label: "turn 1" },
+    { key: "shape.turn2", label: "turn 2 ★" },
+    { key: "shape.turn3", label: "turn 3" },
+    { key: "shape.resolution", label: "resolution ★" },
+  ],
   pillar: [{ key: "controlling_idea", label: "controlling idea" }, { key: "ending", label: "ending ★" }],
-  character: [{ key: "name", label: "name" }, { key: "want", label: "want" }, { key: "need", label: "need ★" }, { key: "wound", label: "wound ★" }, { key: "lie", label: "lie ★" }, { key: "idiolect", label: "idiolect" }],
+  character: [
+    { key: "name", label: "name" },
+    { key: "role", label: "role" },
+    { key: "want", label: "want" },
+    { key: "need", label: "need ★" },
+    { key: "wound", label: "wound ★" },
+    { key: "lie", label: "lie ★" },
+    { key: "truth", label: "truth ★" },
+    { key: "idiolect", label: "idiolect" },
+    { key: "tag", label: "physical tag" },
+    { key: "history", label: "history" },
+  ],
   relationship: [{ key: "bond", label: "bond" }, { key: "charge", label: "charge" }],
-  tentpole: [{ key: "summary", label: "set-piece" }],
-  world_fact: [{ key: "name", label: "name" }, { key: "rule", label: "rule" }, { key: "mechanism", label: "mechanism (what it enables/forbids) ★" }],
-  thread: [{ key: "name", label: "name" }, { key: "promise", label: "promise ★" }, { key: "payoff", label: "payoff" }, { key: "kind", label: "kind (mystery/foreshadow/setup_payoff/arc)" }],
-  game: [{ key: "name", label: "name" }, { key: "win_condition", label: "win condition ★" }, { key: "lose_condition", label: "lose condition ★" }, { key: "stake", label: "stake" }],
-  movement: [{ key: "title", label: "title" }, { key: "goal", label: "goal" }, { key: "turning_point", label: "turning point ★" }, { key: "target_pct", label: "target position (0–1) ★" }],
-  beat: [{ key: "summary", label: "beat" }, { key: "connector", label: "connector (therefore/but)" }, { key: "polarity", label: "polarity (up/down)" }],
-  scene: [{ key: "chapter_start.title", label: "chapter title (blank = mid-chapter)" }, { key: "goal", label: "goal" }, { key: "outcome", label: "outcome" }, { key: "prose.text", label: "prose" }],
+  tentpole: [{ key: "summary", label: "set-piece ★" }],
+  world_fact: [
+    { key: "name", label: "name" },
+    { key: "rule", label: "rule" },
+    { key: "mechanism", label: "mechanism (what it enables/forbids) ★" },
+    { key: "category", label: "category" },
+  ],
+  thread: [
+    { key: "name", label: "name" },
+    { key: "kind", label: "kind (mystery/foreshadow/setup_payoff/arc)" },
+    { key: "promise", label: "promise ★" },
+    { key: "payoff", label: "payoff ★" },
+  ],
+  game: [
+    { key: "name", label: "name" },
+    { key: "win_condition", label: "win condition ★" },
+    { key: "lose_condition", label: "lose condition ★" },
+    { key: "stake", label: "stake" },
+  ],
+  movement: [
+    { key: "title", label: "title" },
+    { key: "goal", label: "goal" },
+    { key: "turning_point", label: "turning point ★" },
+    { key: "target_pct", label: "target position (0–1) ★" },
+    { key: "value.name", label: "value axis" },
+    { key: "value.from", label: "value: starts as" },
+    { key: "value.to", label: "value: ends as ★" },
+  ],
+  beat: [
+    { key: "summary", label: "beat ★" },
+    { key: "connector", label: "connector (therefore/but)" },
+    { key: "polarity", label: "polarity (up/down)" },
+    { key: "needs", label: "needs (state keys, comma-separated)" },
+    { key: "establishes", label: "establishes (state keys, comma-separated)" },
+    { key: "grounds_in", label: "grounds in (world rules, comma-separated)" },
+  ],
+  scene: [
+    { key: "chapter_start.title", label: "chapter title (blank = mid-chapter)" },
+    { key: "loc", label: "location" },
+    { key: "goal", label: "goal" },
+    { key: "conflict", label: "conflict" },
+    { key: "outcome", label: "outcome ★" },
+    { key: "value_shift.value", label: "value axis" },
+    { key: "value_shift.from", label: "value: starts as" },
+    { key: "value_shift.to", label: "value: ends as ★" },
+    { key: "value_shift.polarity", label: "polarity (up/down)" },
+    { key: "prose.text", label: "prose" },
+  ],
 };
 
 const getPath = (obj: Record<string, unknown>, path: string): string => {
   const v = path.split(".").reduce<unknown>((o, k) => (o && typeof o === "object" ? (o as Record<string, unknown>)[k] : undefined), obj);
   if (typeof v === "string") return v;
   if (typeof v === "number") return String(v);
+  if (Array.isArray(v)) return v.map(String).join(", ");
   return "";
 };
 // Numeric content fields (kept as numbers in jsonb so the engine's pacing() reads them).
 const NUMERIC_KEYS = new Set(["target_pct"]);
+// Array content fields (stored as string[] in jsonb; edited as comma-separated in the UI).
+const ARRAY_KEYS = new Set(["needs", "establishes", "grounds_in"]);
+// Fields that render as a <select> instead of a textarea.
+const SELECT_FIELDS: Record<string, string[]> = {
+  role: ["protagonist", "antagonist", "ally", "love_interest", "minor"],
+  connector: ["therefore", "but"],
+  polarity: ["up", "down"],
+  "value_shift.polarity": ["up", "down"],
+};
 const setPath = (path: string, value: string): Record<string, unknown> => {
   const keys = path.split(".");
   const leaf = keys[keys.length - 1];
-  const coerced: unknown = NUMERIC_KEYS.has(leaf) ? (value.trim() === "" ? undefined : Number(value)) : value;
+  const coerced: unknown = NUMERIC_KEYS.has(leaf)
+    ? (value.trim() === "" ? undefined : Number(value))
+    : ARRAY_KEYS.has(leaf)
+      ? value.split(",").map((s) => s.trim()).filter(Boolean)
+      : value;
   const root: Record<string, unknown> = {};
   let cur = root;
   keys.forEach((k, i) => { if (i === keys.length - 1) cur[k] = coerced; else { cur[k] = {}; cur = cur[k] as Record<string, unknown>; } });
@@ -86,6 +160,8 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
   const navigate = useNavigate();
   const [busy, setBusy] = useState<string | null>(null);
   const [view, setView] = useState<"overview" | StageKey>("overview"); // "overview" = the dashboard; else a stage
+  const [collapsedSections, setCollapsedSections] = useState<Set<NodeKind>>(new Set());
+  const toggleSection = (k: NodeKind) => setCollapsedSections((s) => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
   const index = byId(nodes);
   const of = (kind: NodeKind) => nodes.filter((n) => n.kind === kind);
   const blockers = renderBlockers(nodes, settings);
@@ -179,14 +255,18 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
               here drops a blank slot for manual authoring. */}
           {pillar && entityKinds.map((k) => {
             const items = of(k);
+            const collapsed = collapsedSections.has(k);
             return (
               <section key={k} className="space-y-2 pt-1">
                 <div className="flex items-center gap-2.5 border-b border-[hsl(var(--pv-border-soft))]/60 pb-1">
-                  <Eyebrow tone="muted">{labels[k]}</Eyebrow>
+                  <button onClick={() => toggleSection(k)} className="flex items-center gap-1.5 group">
+                    {collapsed ? <ChevronRight className="h-3 w-3 text-[hsl(var(--pv-text-faint))]" /> : <ChevronDown className="h-3 w-3 text-[hsl(var(--pv-text-faint))]" />}
+                    <Eyebrow tone="muted">{labels[k]}</Eyebrow>
+                  </button>
                   {items.length > 0 && <span className="pv-mono text-[9px] text-[hsl(var(--pv-text-faint))]">{items.length}</span>}
                   <ActionLink busy={busy === "add"} onClick={() => addChild(pillar, k, 2)} tone="faint" className="ml-auto">+ add</ActionLink>
                 </div>
-                {items.map((n) => card(n))}
+                {!collapsed && items.map((n) => card(n))}
               </section>
             );
           })}
@@ -502,10 +582,11 @@ function KindSummary({ node, index }: { node: DnaNode; index: Map<string, DnaNod
     <span className={`pv-mono text-[9px] uppercase tracking-[0.1em] ${tone}`}>{label}</span>;
 
   // (relationship dyad is shown as the card title so it survives the collapsed one-line row)
+  // role is now an editable select field — don't repeat it here; only show the physical tag as flavour.
   if (node.kind === "character") {
     const c = node.content as CharacterContent;
-    if (!c.role && !c.tag) return null;
-    return wrap(<>{c.role && tag(c.role, "text-[hsl(var(--pv-accent))]")}{c.tag && <span className="pv-serif italic text-[hsl(var(--pv-text-faint))]">“{c.tag}”</span>}</>);
+    if (!c.tag) return null;
+    return wrap(<span className="pv-serif italic text-[hsl(var(--pv-text-faint))]">&ldquo;{c.tag}&rdquo;</span>);
   }
   if (node.kind === "game") {
     const c = node.content as GameContent;
@@ -654,19 +735,32 @@ function NodeCard({ node, index, bookId, kids, onChanged, accent, expanded, onTo
             const required = fld.label.includes("★");
             const label = fld.label.replace(/\s*★\s*$/, "");
             const val = drafts[fld.key] ?? getPath(node.content, fld.key);
+            const options = SELECT_FIELDS[fld.key];
             return (
               <label key={fld.key} className="block">
                 <span className="pv-mono flex items-center gap-1 text-[9px] uppercase tracking-[0.1em] text-[hsl(var(--pv-text-faint))]">
                   {label}{required && <span className="text-[hsl(var(--pv-accent))]" title="load-bearing field">★</span>}
                 </span>
-                <AutoTextarea
-                  value={val}
-                  disabled={locked}
-                  onChange={(e) => setDrafts((d) => ({ ...d, [fld.key]: e.target.value }))}
-                  onBlur={() => { const v = drafts[fld.key]; if (v != null && v !== getPath(node.content, fld.key)) void save(setPath(fld.key, v)); }}
-                  placeholder="—"
-                  className="pv-serif w-full resize-none border-0 border-b border-transparent bg-transparent px-0 py-0.5 text-[14px] leading-snug text-foreground outline-none focus:border-[hsl(var(--pv-accent))]/40 focus-visible:ring-0 disabled:opacity-60"
-                />
+                {options ? (
+                  <select
+                    value={val}
+                    disabled={locked}
+                    onChange={(e) => { void save(setPath(fld.key, e.target.value)); }}
+                    className="pv-serif mt-0.5 w-full border-0 border-b border-transparent bg-transparent py-0.5 text-[14px] leading-snug text-foreground outline-none focus:border-[hsl(var(--pv-accent))]/40 disabled:opacity-60"
+                  >
+                    <option value="">—</option>
+                    {options.map((o) => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                ) : (
+                  <AutoTextarea
+                    value={val}
+                    disabled={locked}
+                    onChange={(e) => setDrafts((d) => ({ ...d, [fld.key]: e.target.value }))}
+                    onBlur={() => { const v = drafts[fld.key]; if (v != null && v !== getPath(node.content, fld.key)) void save(setPath(fld.key, v)); }}
+                    placeholder="—"
+                    className="pv-serif w-full resize-none border-0 border-b border-transparent bg-transparent px-0 py-0.5 text-[14px] leading-snug text-foreground outline-none focus:border-[hsl(var(--pv-accent))]/40 focus-visible:ring-0 disabled:opacity-60"
+                  />
+                )}
               </label>
             );
           })}
