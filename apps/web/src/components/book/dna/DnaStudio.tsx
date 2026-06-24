@@ -161,7 +161,7 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
   const [busy, setBusy] = useState<string | null>(null);
   const [view, setView] = useState<"overview" | StageKey>("overview"); // "overview" = the dashboard; else a stage
   const [collapsedSections, setCollapsedSections] = useState<Set<NodeKind>>(new Set());
-  const toggleSection = (k: NodeKind) => setCollapsedSections((s) => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
+  const toggleSection = (k: NodeKind) => setCollapsedSections((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; });
   const index = byId(nodes);
   const of = (kind: NodeKind) => nodes.filter((n) => n.kind === kind);
   const blockers = renderBlockers(nodes, settings);
