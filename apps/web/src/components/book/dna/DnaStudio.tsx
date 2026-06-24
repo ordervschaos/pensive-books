@@ -446,14 +446,26 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
         {key === "draft" && (() => {
           const scenesAll = of("scene");
           // Picture mode counts ILLUSTRATED scenes (a pinned image); prose mode counts written scenes.
-          const done = scenesAll.filter((s) => picture ? (s.content as SceneContent).image_url : (s.content as SceneContent).prose?.text).length;
+          const done = scenesAll.filter((s) =>
+            picture
+              ? (s.content as SceneContent).image_url && !isIllusStale(s)
+              : (s.content as SceneContent).prose?.text && !isProseStale(s)
+          ).length;
           const ready = scenesAll.length > 0 && done === scenesAll.length;
           const noun = picture ? "illustrated" : "drafted";
           const illustrateAll = () => run("allillus", async () => {
-            const todo = scenesAll.filter((s) => !(s.content as SceneContent).image_url || (s.content as SceneContent).caption?.text == null);
+            const todo = scenesAll.filter((s) => !(s.content as SceneContent).image_url || (s.content as SceneContent).caption?.text == null || isIllusStale(s));
             let ok = 0; const failed: string[] = [];
             for (const s of todo) { try { await illustrateScene(bookId, s); ok++; } catch (e) { failed.push(String((e as Error)?.message ?? e)); } }
             toast({ title: "Illustrating", description: `${ok}/${todo.length} scene(s) kicked off${failed.length ? ` · ${failed.length} failed` : ""}.` });
+          });
+          const scenesNeedingProse = !picture ? scenesAll.filter((s) => !(s.content as SceneContent).prose?.text?.trim() || isProseStale(s)) : [];
+          const generateAllProse = () => run("allprose", async () => {
+            let ok = 0; const failed: string[] = [];
+            for (const s of scenesNeedingProse) {
+              try { await expandNode(bookId, s, "prose", {}); ok++; } catch (e) { failed.push(String((e as Error)?.message ?? e)); }
+            }
+            toast({ title: "Prose generated", description: `${ok}/${scenesNeedingProse.length} scene(s) written${failed.length ? ` · ${failed.length} failed` : ""}.` });
           });
           return (
             <div className="space-y-4 pt-2">
@@ -475,6 +487,11 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
               )}
               {picture && scenesAll.length > 0 && !ready && (
                 <ActionLink busy={busy === "allillus"} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={illustrateAll}>illustrate all scenes</ActionLink>
+              )}
+              {!picture && scenesNeedingProse.length > 0 && (
+                <ActionLink busy={busy === "allprose"} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={generateAllProse}>
+                  write prose for all {scenesNeedingProse.length} missing/stale scene{scenesNeedingProse.length !== 1 ? "s" : ""}
+                </ActionLink>
               )}
               <ActionLink busy={busy === "render"} onClick={render} tone="faint">render only</ActionLink>
             </div>
