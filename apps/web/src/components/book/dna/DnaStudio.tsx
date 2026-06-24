@@ -39,7 +39,7 @@ const EXPAND_TARGETS: Partial<Record<NodeKind, ExpandTarget[]>> = {
     { target: "cast", label: "generate cast", childKind: "character" },
     { target: "relationships", label: "generate relationships", childKind: "relationship", needs: "character" },
     { target: "world", label: "generate world", childKind: "world_fact" },
-    { target: "set-pieces", label: "generate set-pieces", childKind: "tentpole" },
+    { target: "set-pieces", label: "generate tent-poles", childKind: "tentpole" },
     { target: "movements", label: "generate acts", childKind: "movement" },
   ],
   movement: [{ target: "beats", label: "generate beats", childKind: "beat" }],
@@ -73,7 +73,7 @@ const FIELDS: Partial<Record<NodeKind, { key: string; label: string }[]>> = {
     { key: "history", label: "history" },
   ],
   relationship: [{ key: "bond", label: "bond" }, { key: "charge", label: "charge" }],
-  tentpole: [{ key: "summary", label: "set-piece ★" }],
+  tentpole: [{ key: "summary", label: "tent-pole ★" }],
   world_fact: [
     { key: "name", label: "name" },
     { key: "rule", label: "rule" },
@@ -273,7 +273,7 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
   const renderStage = (key: StageKey) => {
     if (key === "premise") return [seed, premise].filter(Boolean).map((n) => card(n!));
     if (key === "foundations") {
-      const labels: Record<string, string> = { character: "Cast", relationship: "Relationships", tentpole: "Set-pieces", world_fact: "World rules" };
+      const labels: Record<string, string> = { character: "Cast", relationship: "Relationships", tentpole: "Tent-poles", world_fact: "World rules" };
       return (
         <>
           {/* Picture mode: the book-wide house look governs the portraits designed here AND every scene

@@ -103,7 +103,7 @@ export function stageSubsteps(key: StageKey, nodes: DnaNode[], mode: "prose" | "
       { key: "pillar", label: "Pillar", done: pillarDone, ready: pillarReady },
       { key: "cast", label: "Cast", done: cast >= 1, ready: pillarDone, count: cast },
       { key: "world", label: "World", done: n("world_fact") >= 1, ready: pillarDone, count: n("world_fact"), optional: true },
-      { key: "tentpole", label: "Set-pieces", done: n("tentpole") >= 1, ready: pillarDone, count: n("tentpole"), optional: true },
+      { key: "tentpole", label: "Tent-poles", done: n("tentpole") >= 1, ready: pillarDone, count: n("tentpole"), optional: true },
       { key: "relationship", label: "Relationships", done: n("relationship") >= 1, ready: cast >= 1, count: n("relationship"), optional: true },
     ]);
   }

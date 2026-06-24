@@ -82,7 +82,7 @@ export function DnaOverview({ bookId, nodes, settings, stages, nowKey, onOpen, o
 
   // ── The shape: counts for the entity branches + the cross-cutting registries.
   const counts: [NodeKind, string][] = [
-    ["character", "cast"], ["world_fact", "world"], ["relationship", "relationships"], ["tentpole", "set-pieces"],
+    ["character", "cast"], ["world_fact", "world"], ["relationship", "relationships"], ["tentpole", "tent-poles"],
   ];
   const sceneCountOf = (m: DnaNode) =>
     childrenOf(nodes, m.id).filter((b) => b.kind === "beat").reduce((a, b) => a + childrenOf(nodes, b.id).filter((s) => s.kind === "scene").length, 0);

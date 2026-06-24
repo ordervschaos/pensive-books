@@ -43,7 +43,7 @@ function PremiseDiagram() {
 // ── Foundations: an interlinked web of overarching context ──────────────────────
 function FoundationsDiagram() {
   const sats: [number, number, string][] = [
-    [70, 20, "cast"], [290, 20, "world"], [70, 60, "set-pieces"], [290, 60, "relationships"],
+    [70, 20, "cast"], [290, 20, "world"], [70, 60, "tent-poles"], [290, 60, "relationships"],
   ];
   return (
     <svg viewBox="0 0 360 80" className="h-[80px] w-full" preserveAspectRatio="xMidYMid meet">
@@ -353,7 +353,7 @@ export function DnaFullDiagram({ nodes, onOpen }: { nodes: DnaNode[]; onOpen?: (
           <CountChip n={of("character").length} label="cast" />
           <CountChip n={of("world_fact").length} label="world" />
           <CountChip n={of("relationship").length} label="rel" />
-          <CountChip n={of("tentpole").length} label="set-pieces" />
+          <CountChip n={of("tentpole").length} label="tent-poles" />
         </div>
       </Band>
 
