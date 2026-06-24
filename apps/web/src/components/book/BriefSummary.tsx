@@ -8,7 +8,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { BookBriefSection } from "@/components/book/BookBriefSection";
-import { Brief, computeCompletion, scopeSummary, CONTENT_TYPES } from "@/lib/brief";
+import { Brief, computeCompletion, scopeSummary } from "@/lib/brief";
 
 interface BriefSummaryProps {
   bookId: number;
@@ -30,11 +30,6 @@ export function BriefSummary({ bookId, brief, onBriefChange }: BriefSummaryProps
   if (scope) meta.push(scope);
   if (brief?.genre) meta.push(brief.genre);
   if (brief?.tone?.length) meta.push(brief.tone.join(", "));
-  const contentLevel = brief?.content_type?.level;
-  if (contentLevel) {
-    const contentLabel = CONTENT_TYPES.find((c) => c.value === contentLevel)?.label;
-    if (contentLabel) meta.push(contentLabel);
-  }
 
   return (
     <div className="mb-6 max-w-[600px]">

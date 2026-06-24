@@ -18,7 +18,6 @@ import {
   TONE_SUGGESTIONS,
 } from "@/lib/brief";
 import { ScopeBandPicker } from "@/components/book/ScopeBandPicker";
-import { ContentTypePicker } from "@/components/book/ContentTypePicker";
 
 const STEPS = [
   "scope",
@@ -27,7 +26,6 @@ const STEPS = [
   "premise",
   "tone",
   "success",
-  "content_type",
 ] as const;
 
 type StepKey = (typeof STEPS)[number];
@@ -245,17 +243,7 @@ export function BriefIntakeSheet({ bookId, open, onOpenChange, onFinish }: Brief
             </Step>
           )}
 
-          {step === "content_type" && (
-            <Step
-              title="How mature is this book?"
-              hint="Sets its content ratin. Skip if this doesn't apply."
-            >
-              <ContentTypePicker
-                value={brief.content_type}
-                onChange={(content_type) => setBrief((prev) => ({ ...prev, content_type }))}
-              />
-            </Step>
-          )}
+
         </div>
 
         <div className="flex items-center justify-between pt-2 border-t">

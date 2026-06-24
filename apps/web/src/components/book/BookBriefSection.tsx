@@ -16,7 +16,6 @@ import {
   TONE_SUGGESTIONS,
 } from "@/lib/brief";
 import { ScopeBandPicker } from "@/components/book/ScopeBandPicker";
-import { ContentTypePicker } from "@/components/book/ContentTypePicker";
 
 interface BookBriefSectionProps {
   bookId: number;
@@ -191,16 +190,6 @@ export function BookBriefSection({ bookId, brief, onBriefChange, embedded = fals
               onBlur={() => void doSave(draft)}
               placeholder="I publish it on Substack. I'm proud of every chapter."
               rows={2}
-            />
-          </FieldRow>
-
-          <FieldRow
-            label="Content type"
-            hint="How mature is this book? Sets its content rating."
-          >
-            <ContentTypePicker
-              value={draft.content_type}
-              onChange={(content_type) => updateAndSave({ content_type })}
             />
           </FieldRow>
 

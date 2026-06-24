@@ -5,14 +5,16 @@
 // produced on demand via reconcileDna (Render). expand = ONE authoritative value (not proposals).
 import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { Lock, Unlock, Sparkles, BookOpen, Loader2, Check, X, ChevronRight, ChevronDown } from "lucide-react";
+import { Lock, Unlock, Sparkles, BookOpen, Loader2, Check, X, ChevronRight, ChevronDown, LayoutDashboard } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { AutoTextarea } from "@/components/ui/auto-textarea";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { ActionLink, Eyebrow, Panel, RunningInline, StageHead, StepDot } from "@/components/book/studio/studioUi";
-import { buildJourney, type StageKey } from "@/lib/dnaJourney";
+import { buildJourney, stageSubsteps, type StageKey, type SubStep } from "@/lib/dnaJourney";
 import { DnaChatRail } from "@/components/book/dna/DnaChatRail";
 import { DnaAnalysis } from "@/components/book/dna/DnaAnalysis";
+import { DnaStageDiagram } from "@/components/book/dna/DnaStageDiagram";
+import { DnaOverview } from "@/components/book/dna/DnaOverview";
 import { saveNode, deleteNode } from "@/lib/bookNodes";
 import { migrateBookToDna } from "@/lib/migrateToDna";
 import { reconcileDna } from "@/lib/novelDnaRender";
@@ -83,7 +85,7 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
   const { toast } = useToast();
   const navigate = useNavigate();
   const [busy, setBusy] = useState<string | null>(null);
-  const [selected, setSelected] = useState<StageKey | null>(null); // chosen stage; null = follow the live "now" stage
+  const [view, setView] = useState<"overview" | StageKey>("overview"); // "overview" = the dashboard; else a stage
   const index = byId(nodes);
   const of = (kind: NodeKind) => nodes.filter((n) => n.kind === kind);
   const blockers = renderBlockers(nodes, settings);
@@ -153,11 +155,15 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
   const [seed, premise, pillar] = [of("seed")[0], of("premise")[0], of("pillar")[0]];
   const entityKinds: NodeKind[] = ["character", "relationship", "tentpole", "world_fact"];
 
-  // The guided journey: ordered stages of increasing resolution. Default focus = the live "now" stage.
+  // The guided journey: ordered stages of increasing resolution. The studio opens on the Overview; from there
+  // (or the Navigator) the author picks a stage. `view` is "overview" or a stage key; activeKey resolves the
+  // stage in focus (falling back to the live "now" stage, e.g. while on Overview the rail follows "now").
   const { stages, nowIndex } = buildJourney(nodes);
   const nowKey = stages[nowIndex]?.key ?? "premise";
   const selectable = (k: StageKey) => stages.find((s) => s.key === k)?.status !== "locked";
-  const activeKey: StageKey = selected && selectable(selected) ? selected : nowKey;
+  const onOverview = view === "overview";
+  const activeKey: StageKey = view !== "overview" && selectable(view) ? view : nowKey;
+  const openStage = (k: StageKey) => setView(selectable(k) ? k : "overview");
   const active = stages.find((s) => s.key === activeKey)!;
   const nextStage = stages[stages.findIndex((s) => s.key === activeKey) + 1];
 
@@ -191,14 +197,32 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
       const movements = of("movement");
       const threads = of("thread");
       const games = of("game");
+      // Acts still missing their beats — the targets of the bulk "generate beats for all acts" pass. Mirrors
+      // the per-act "generate beats" verb (same expandNode call), just looped so the whole spine fills in one
+      // click. Skips acts that already have beats (non-destructive); regenerate one at a time on its own card.
+      const movementsNeedingBeats = movements.filter((m) => !childrenOf(nodes, m.id).some((c) => c.kind === "beat"));
+      const generateAllBeats = () => run("allbeats", async () => {
+        const targets = movementsNeedingBeats;
+        let added = 0; const failed: string[] = [];
+        for (const m of targets) {
+          try { added += (await expandNode(bookId, m, "beats", {})).added; }
+          catch (e) { failed.push(String((e as Error)?.message ?? e)); }
+        }
+        toast({ title: "Beats generated", description: `${added} beat(s) across ${targets.length - failed.length}/${targets.length} act(s)${failed.length ? ` · ${failed.length} failed` : ""}.` });
+      });
       return (
         <>
           <DnaAnalysis nodes={nodes} settings={settings} />
           {pillar && (
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
               <ActionLink busy={busy === "movements"} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={() => generateFromPillar("movements", "Acts generated")}>
                 {movements.length ? "regenerate acts" : "generate acts"}
               </ActionLink>
+              {movementsNeedingBeats.length > 0 && (
+                <ActionLink busy={busy === "allbeats"} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={generateAllBeats}>
+                  generate beats for all {movementsNeedingBeats.length} act{movementsNeedingBeats.length > 1 ? "s" : ""}
+                </ActionLink>
+              )}
             </div>
           )}
           {movements.map((m) => (
@@ -249,13 +273,31 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
     // scenes + draft: the scenes grouped under their beat. Each beat is a collapsible group header (the
     // beat itself is in the Structure stage) — fold a beat to hide its scenes, so this stage reads as an
     // outline of beats you drill into one at a time.
+    const beatsAll = of("movement").flatMap((m) => childrenOf(nodes, m.id).filter((b) => b.kind === "beat"));
+    const beatsNeedingScenes = beatsAll.filter((b) => !childrenOf(nodes, b.id).some((c) => c.kind === "scene"));
+    const generateAllScenes = () => run("allscenes", async () => {
+      let added = 0; const failed: string[] = [];
+      for (const b of beatsNeedingScenes) {
+        try { added += (await expandNode(bookId, b, "scenes", {})).added; }
+        catch (e) { failed.push(String((e as Error)?.message ?? e)); }
+      }
+      toast({ title: "Scenes generated", description: `${added} scene(s) across ${beatsNeedingScenes.length - failed.length}/${beatsNeedingScenes.length} beat(s)${failed.length ? ` · ${failed.length} failed` : ""}.` });
+    });
     return (
       <>
         <DnaAnalysis nodes={nodes} settings={settings} />
-        {of("movement").flatMap((m) => childrenOf(nodes, m.id).filter((b) => b.kind === "beat").map((b) => {
+        {beatsNeedingScenes.length > 0 && (
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <ActionLink busy={busy === "allscenes"} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={generateAllScenes}>
+              generate scenes for all {beatsNeedingScenes.length} beat{beatsNeedingScenes.length > 1 ? "s" : ""}
+            </ActionLink>
+          </div>
+        )}
+        {beatsAll.map((b) => {
           const scenes = childrenOf(nodes, b.id).filter((s) => s.kind === "scene");
           const open = isOpen(b);
           const need = scenes.filter((s) => attn.has(s.id)).length;
+          const beatBusy = `scene:${b.id}`;
           return (
             <div key={b.id} className="space-y-2">
               <button type="button" onClick={() => toggle(b)} className="flex w-full items-center gap-2 border-b border-[hsl(var(--pv-border-soft))]/60 pb-1 text-left">
@@ -267,13 +309,19 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
               </button>
               {open && (
                 <>
+                  {scenes.length === 0 && (
+                    <ActionLink busy={busy === beatBusy} icon={<Sparkles className="h-3.5 w-3.5" />}
+                      onClick={() => run(beatBusy, async () => { const { added } = await expandNode(bookId, b, "scenes", {}); toast({ title: "Scenes generated", description: `${added} scene(s).` }); })}>
+                      generate scenes
+                    </ActionLink>
+                  )}
                   {scenes.map((s) => card(s))}
                   <ActionLink busy={busy === "add"} onClick={() => addChild(b, "scene", 5)}>add scene</ActionLink>
                 </>
               )}
             </div>
           );
-        }))}
+        })}
         {key === "draft" && (() => {
           const scenesAll = of("scene");
           const drafted = scenesAll.filter((s) => (s.content as SceneContent).prose?.text).length;
@@ -310,15 +358,39 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
         <Eyebrow tone="muted">Build</Eyebrow>
         <span className="pv-mono text-[10px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-faint))]">step {nowIndex + 1} / {stages.length}</span>
       </div>
-      {stages.map((s) => (
-        <button key={s.key} disabled={s.status === "locked"} onClick={() => setSelected(s.key)}
-          className={`mb-0.5 flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors disabled:opacity-40 ${activeKey === s.key ? "bg-[hsl(var(--pv-accent))]/[0.08]" : "hover:bg-[hsl(var(--pv-surface-2))]/60"}`}>
-          <StepDot state={dot(s)} />
-          <span className="pv-mono text-[11px] text-[hsl(var(--pv-text-faint))]">{s.num}</span>
-          <span className={`pv-serif flex-1 text-[14px] ${s.status === "locked" ? "text-[hsl(var(--pv-text-faint))]" : activeKey === s.key ? "text-foreground" : "text-[hsl(var(--pv-text-muted))]"}`}>{s.label}</span>
-          {s.status === "now" && <span className="pv-mono text-[9px] uppercase tracking-[0.12em] text-[hsl(var(--pv-accent))]">now</span>}
+      {/* Overview — the studio's home; the dashboard, not a resolution rung (so it sits above the ladder). */}
+      {nodes.length > 0 && (
+        <button onClick={() => setView("overview")}
+          className={`mb-1.5 flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors ${onOverview ? "bg-[hsl(var(--pv-accent))]/[0.08]" : "hover:bg-[hsl(var(--pv-surface-2))]/60"}`}>
+          <span className="flex h-5 w-5 items-center justify-center"><LayoutDashboard className={`h-3.5 w-3.5 ${onOverview ? "text-[hsl(var(--pv-accent))]" : "text-[hsl(var(--pv-text-faint))]"}`} /></span>
+          <span className={`pv-serif flex-1 text-[14px] ${onOverview ? "text-foreground" : "text-[hsl(var(--pv-text-muted))]"}`}>Overview</span>
         </button>
-      ))}
+      )}
+      {stages.map((s) => {
+        const subs = nodes.length > 0 ? stageSubsteps(s.key, nodes) : [];
+        const done = subs.filter((ss) => ss.status === "done").length;
+        const focused = !onOverview && activeKey === s.key; // highlighted only when this stage is the open view
+        return (
+          <div key={s.key}>
+            <button disabled={s.status === "locked"} onClick={() => setView(s.key)}
+              className={`mb-0.5 flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors disabled:opacity-40 ${focused ? "bg-[hsl(var(--pv-accent))]/[0.08]" : "hover:bg-[hsl(var(--pv-surface-2))]/60"}`}>
+              <StepDot state={dot(s)} />
+              <span className="pv-mono text-[11px] text-[hsl(var(--pv-text-faint))]">{s.num}</span>
+              <span className={`pv-serif flex-1 text-[14px] ${s.status === "locked" ? "text-[hsl(var(--pv-text-faint))]" : focused ? "text-foreground" : "text-[hsl(var(--pv-text-muted))]"}`}>{s.label}</span>
+              {/* the "now" stage shows a sub-step tally so progress reads without expanding it */}
+              {s.status === "now" && subs.length > 0 && <span className="pv-mono text-[9px] text-[hsl(var(--pv-text-faint))]">{done}/{subs.length}</span>}
+              {s.status === "now" && <span className="pv-mono text-[9px] uppercase tracking-[0.12em] text-[hsl(var(--pv-accent))]">now</span>}
+            </button>
+            {/* The active stage unfolds its serial sub-step spine: dot = state (done/now/blocked), the
+                connector line = the chain, "opt" = a parallel branch off the spine. */}
+            {focused && subs.length > 0 && (
+              <div className="mb-1.5 ml-[26px] space-y-px border-l border-[hsl(var(--pv-border-soft))] py-0.5 pl-3.5">
+                {subs.map((ss) => <SubStepRow key={ss.key} sub={ss} />)}
+              </div>
+            )}
+          </div>
+        );
+      })}
       <div className="mx-2.5 my-3 h-px bg-[hsl(var(--pv-border-soft))]" />
       <div className="flex flex-col items-start gap-2 px-2.5">
         {/* The brief (genre/length/heat/audience — the binding mandate) lives in the Build Studio; the
@@ -342,6 +414,9 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
               or <button className="text-[hsl(var(--pv-accent))] underline" onClick={() => run("seed", () => saveNode(emptyNode(bookId, "seed", 0, null)))}>start a blank seed</button>.
             </p>
           </div>
+        ) : onOverview ? (
+          // The home dashboard — shape, next move, and issues; every action drills into the owning stage.
+          <DnaOverview nodes={nodes} settings={settings} stages={stages} nowKey={nowKey} onOpen={openStage} />
         ) : (
           <>
             <StageHead eyebrow={active.status === "done" ? "Approved" : active.status === "now" ? "Focus · the next move" : "Stage"} title={active.label} caption={active.caption}
@@ -351,9 +426,11 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
                   <ActionLink tone="faint" onClick={() => setAll(false)}>collapse all</ActionLink>
                 </div>
               ) : undefined} />
+            {/* The level's SHAPE at a glance — root / interlinked web / serial-budgeted spine / value turns */}
+            <DnaStageDiagram stage={activeKey} nodes={nodes} />
             <div className="space-y-2">{renderStage(activeKey)}</div>
             {active.status === "done" && nextStage && nextStage.status !== "locked" && (
-              <div className="pt-2"><ActionLink onClick={() => setSelected(nextStage.key)}>continue to {nextStage.label} →</ActionLink></div>
+              <div className="pt-2"><ActionLink onClick={() => setView(nextStage.key)}>continue to {nextStage.label} →</ActionLink></div>
             )}
           </>
         )}
@@ -391,6 +468,27 @@ function StatusPill({ status }: { status: DnaNode["authoring"]["status"] }) {
   const tone = status === "accepted" ? "text-emerald-500" : status === "empty" ? "text-[hsl(var(--pv-text-faint))]" : "text-[hsl(var(--pv-text-muted))]";
   const label = status === "accepted" ? "approved" : status;
   return <span className={`pv-mono text-[9px] uppercase tracking-[0.12em] ${tone}`}>{label}</span>;
+}
+
+// One rung of the Navigator's sub-step spine. The dot encodes state (filled = done, ring = now, lock =
+// blocked, hollow = available); "opt" flags a parallel branch; the right number is the collection's tally.
+// Read-only — it surfaces the serial blocking + progress, it isn't an action.
+function SubStepRow({ sub }: { sub: SubStep }) {
+  const dot =
+    sub.status === "done" ? <span className="h-1.5 w-1.5 rounded-full bg-[hsl(var(--pv-accent))]" />
+      : sub.status === "now" ? <span className="flex h-2.5 w-2.5 items-center justify-center rounded-full border border-[hsl(var(--pv-accent))]"><span className="h-1 w-1 rounded-full bg-[hsl(var(--pv-accent))]" /></span>
+        : sub.status === "locked" ? <Lock className="h-2.5 w-2.5 text-[hsl(var(--pv-text-faint))]" />
+          : <span className="h-1.5 w-1.5 rounded-full border border-[hsl(var(--pv-text-faint))]/60" />;
+  const tone = sub.status === "locked" ? "text-[hsl(var(--pv-text-faint))]" : sub.status === "now" ? "text-foreground" : "text-[hsl(var(--pv-text-muted))]";
+  const count = sub.total != null ? `${sub.count ?? 0}/${sub.total}` : sub.count ? String(sub.count) : null;
+  return (
+    <div className="flex items-center gap-2 py-[3px]" title={sub.status === "locked" ? "blocked — finish the step above it first" : sub.manual ? "hand-authored — type it in" : undefined}>
+      <span className="flex w-2.5 shrink-0 items-center justify-center">{dot}</span>
+      <span className={`pv-serif text-[12.5px] leading-none ${tone}`}>{sub.label}</span>
+      {sub.optional && <span className="pv-mono text-[8px] uppercase tracking-[0.1em] text-[hsl(var(--pv-text-faint))]/70">opt</span>}
+      {count && <span className="pv-mono ml-auto text-[9px] text-[hsl(var(--pv-text-faint))]">{count}</span>}
+    </div>
+  );
 }
 
 // The DERIVED summary strip — the engine data the old card hid. Read-only, scannable, kind-specific; only
