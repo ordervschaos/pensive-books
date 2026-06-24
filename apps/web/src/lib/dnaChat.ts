@@ -17,7 +17,7 @@ export type NodeOp =
 export interface DnaProposal { summary: string; ops: NodeOp[] }
 
 const KIND_LEVEL: Record<NodeKind, number> = {
-  seed: 0, premise: 1, pillar: 2, character: 2, relationship: 2, tentpole: 2, world_fact: 2, thread: 2, game: 2, movement: 3, beat: 4, scene: 5,
+  seed: 0, premise: 1, pillar: 2, character: 2, relationship: 2, tentpole: 2, world_fact: 2, voice_profile: 2, thread: 2, game: 2, movement: 3, beat: 4, scene: 5,
 };
 const VALID_KINDS = new Set<string>(Object.keys(KIND_LEVEL));
 

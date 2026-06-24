@@ -5,9 +5,10 @@
 // the stage that owns it). Pure projection of the tree + journey — no generation happens here; every action
 // navigates into the stage that holds the real verb. Reuses the engine (validate/renderBlockers) and the
 // journey (stageSubsteps) so this never drifts from what the stages themselves compute.
-import { ArrowRight, BookOpen, Check, GitBranch, Network, Sparkles, TriangleAlert } from "lucide-react";
+import { ArrowRight, Activity, BookOpen, Check, GitBranch, Network, Sparkles, TriangleAlert } from "lucide-react";
 import { ActionLink, Eyebrow, Hero, Panel, StageHead } from "@/components/book/studio/studioUi";
 import { DnaFullDiagram } from "@/components/book/dna/DnaStageDiagram";
+import { DnaStoryMap } from "@/components/book/dna/DnaStoryMap";
 import { DnaAutopilot } from "@/components/book/dna/DnaAutopilot";
 import { STAGE_KINDS, stageSubsteps, type JourneyStage, type StageKey } from "@/lib/dnaJourney";
 import { byId, childrenOf, isProseStale, isStale, validate, type BookSettings, type DnaNode, type NodeKind, type SceneContent } from "@/lib/novelDna";
@@ -16,7 +17,7 @@ import { byId, childrenOf, isProseStale, isStale, validate, type BookSettings, t
 // Structure but aren't in STAGE_KINDS' load-bearing lists — patched in here.
 const KIND_STAGE: Record<NodeKind, StageKey> = {
   seed: "premise", premise: "premise",
-  pillar: "foundations", character: "foundations", relationship: "foundations", tentpole: "foundations", world_fact: "foundations",
+  pillar: "foundations", character: "foundations", relationship: "foundations", tentpole: "foundations", world_fact: "foundations", voice_profile: "foundations",
   movement: "structure", beat: "structure", thread: "structure", game: "structure",
   scene: "scenes",
 };
@@ -52,7 +53,7 @@ function TreeRow({ node, index, label, title, meta, depth, onOpen }: {
 }
 
 export function DnaOverview({ bookId, nodes, settings, stages, nowKey, onOpen, onChanged }: {
-  bookId: number; nodes: DnaNode[]; settings: BookSettings; stages: JourneyStage[]; nowKey: StageKey; onOpen: (k: StageKey) => void; onChanged: () => void;
+  bookId: number; nodes: DnaNode[]; settings: BookSettings; stages: JourneyStage[]; nowKey: StageKey; onOpen: (k: StageKey, focusId?: string) => void; onChanged: () => void;
 }) {
   const index = byId(nodes);
   const of = (k: NodeKind) => nodes.filter((n) => n.kind === k);
@@ -129,6 +130,18 @@ export function DnaOverview({ bookId, nodes, settings, stages, nowKey, onOpen, o
         <DnaFullDiagram nodes={nodes} onOpen={onOpen} />
       </Panel>
 
+      {/* STORY MAP — the detailed spine: the emotional contour over every beat (∴/↯ connectors, ↗/↘ turns)
+          and its scenes; click any row to drill straight to that node. */}
+      {movements.length > 0 && (
+        <Panel variant="soft" className="px-4 py-3.5">
+          <div className="mb-2.5 flex items-center gap-2">
+            <Activity className={`h-3.5 w-3.5 ${FAINT}`} />
+            <Eyebrow tone="muted">Story map — the shape of the telling, beat by beat</Eyebrow>
+          </div>
+          <DnaStoryMap nodes={nodes} picture={picture} onOpen={onOpen} />
+        </Panel>
+      )}
+
       {/* AT A GLANCE — the census. */}
       <Panel variant="soft" className="flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3">
         {stat("acts", movements.length)}
@@ -150,7 +163,7 @@ export function DnaOverview({ bookId, nodes, settings, stages, nowKey, onOpen, o
         {issues.length > 0 && (
           <div className="mt-2.5 space-y-1.5">
             {issues.slice(0, 6).map((i, k) => (
-              <button key={k} type="button" onClick={() => onOpen(issueStage(i.nodeId))}
+              <button key={k} type="button" onClick={() => onOpen(issueStage(i.nodeId), i.nodeId)}
                 className="group flex w-full items-start gap-2 text-left">
                 <span className={`mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full ${i.severity === "error" ? "bg-rose-500" : "bg-amber-500"}`} />
                 <p className="pv-serif text-[12px] leading-snug">
