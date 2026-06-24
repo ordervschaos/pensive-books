@@ -204,3 +204,37 @@
   margin: 0.25rem 0;
   font-style: italic;
 }
+
+/* highlight.js / lowlight theme — no external CSS is bundled, so we define it here.
+   Base color matches --foreground; syntax tokens use mid-contrast hues for readability. */
+pre code.hljs {
+  display: block;
+  overflow-x: auto;
+  padding: 0;
+  color: hsl(var(--foreground));
+  background: transparent;
+}
+.hljs-comment, .hljs-quote { color: hsl(var(--muted-foreground)); font-style: italic; }
+.hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-name, .hljs-tag { color: hsl(220 80% 45%); }
+.hljs-string, .hljs-attr, .hljs-template-tag, .hljs-template-variable { color: hsl(0 55% 45%); }
+.hljs-number, .hljs-literal, .hljs-variable, .hljs-params { color: hsl(25 75% 40%); }
+.hljs-title, .hljs-section { color: hsl(260 60% 45%); font-weight: 600; }
+.hljs-type, .hljs-class .hljs-title { color: hsl(190 60% 35%); }
+.hljs-regexp, .hljs-link { color: hsl(330 60% 45%); }
+.hljs-symbol, .hljs-bullet, .hljs-addition { color: hsl(140 50% 35%); }
+.hljs-deletion { color: hsl(0 60% 45%); }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 700; }
+.hljs-meta { color: hsl(var(--muted-foreground)); }
+
+.dark pre code.hljs { color: hsl(var(--foreground)); }
+.dark .hljs-comment, .dark .hljs-quote { color: hsl(var(--muted-foreground)); }
+.dark .hljs-keyword, .dark .hljs-selector-tag, .dark .hljs-built_in, .dark .hljs-name, .dark .hljs-tag { color: hsl(220 85% 72%); }
+.dark .hljs-string, .dark .hljs-attr, .dark .hljs-template-tag, .dark .hljs-template-variable { color: hsl(0 65% 72%); }
+.dark .hljs-number, .dark .hljs-literal, .dark .hljs-variable, .dark .hljs-params { color: hsl(30 80% 68%); }
+.dark .hljs-title, .dark .hljs-section { color: hsl(260 70% 75%); }
+.dark .hljs-type, .dark .hljs-class .hljs-title { color: hsl(190 65% 65%); }
+.dark .hljs-regexp, .dark .hljs-link { color: hsl(330 65% 72%); }
+.dark .hljs-symbol, .dark .hljs-bullet, .dark .hljs-addition { color: hsl(140 55% 60%); }
+.dark .hljs-deletion { color: hsl(0 65% 65%); }
+.dark .hljs-meta { color: hsl(var(--muted-foreground)); }
