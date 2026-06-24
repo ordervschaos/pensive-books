@@ -28,8 +28,10 @@ describe("nextAutopilotAction — the recipe walker", () => {
     const nodes = [mk("seed", { id: "s" }), mk("premise", { id: "pr" }), mk("pillar", { id: "p" })];
     // cast first (no characters yet)
     expect(next(nodes)?.target).toBe("cast");
-    // with cast present → world, then set-pieces, then relationships
+    // with cast present → voice_profile, then world, then set-pieces, then relationships
     nodes.push(mk("character", { parent_id: "p" }));
+    expect(next(nodes)?.target).toBe("voice_profile");
+    nodes.push(mk("voice_profile", { parent_id: "p" }));
     expect(next(nodes)?.target).toBe("world");
     nodes.push(mk("world_fact", { parent_id: "p" }));
     expect(next(nodes)?.target).toBe("set-pieces");
@@ -40,12 +42,12 @@ describe("nextAutopilotAction — the recipe walker", () => {
   it("does not pick a single-yield step that was already attempted (zero-yield optional)", () => {
     const nodes = [mk("seed"), mk("premise"), mk("pillar", { id: "p" }), mk("character", { parent_id: "p" })];
     // world would be next, but if attempted with no result we skip to set-pieces
-    expect(next(nodes, ["world"])?.target).toBe("set-pieces");
+    expect(next(nodes, ["voice_profile", "world"])?.target).toBe("set-pieces");
   });
 
   it("structure runs movements → threads → games → beat sheet (sheet waits for the acts)", () => {
     const base = [mk("seed"), mk("premise"), mk("pillar", { id: "p" }), mk("character", { parent_id: "p" })];
-    const attempted = ["world", "set-pieces", "relationships"]; // optional foundations skipped
+    const attempted = ["voice_profile", "world", "set-pieces", "relationships"]; // optional foundations skipped
     expect(next(base, attempted)?.target).toBe("movements");
     base.push(mk("movement", { id: "m", parent_id: "p" }));
     expect(next(base, attempted)?.target).toBe("threads");
@@ -61,7 +63,7 @@ describe("nextAutopilotAction — the recipe walker", () => {
       mk("movement", { id: "m", parent_id: "p" }),
       mk("beat", { id: "b1", parent_id: "m" }), mk("beat", { id: "b2", parent_id: "m" }),
     ];
-    const attempted = ["world", "set-pieces", "relationships", "threads", "games"];
+    const attempted = ["voice_profile", "world", "set-pieces", "relationships", "threads", "games"];
     // both beats lack scenes → scenes step, per-beat (not singleton)
     const a = next(nodes, attempted);
     expect(a?.target).toBe("scenes");
@@ -85,7 +87,7 @@ describe("nextAutopilotAction — the recipe walker", () => {
       mk("movement", { id: "m", parent_id: "p" }),
       mk("beat", { id: "b1", parent_id: "m" }), mk("beat", { id: "b2", parent_id: "m" }),
     ];
-    const attempted = ["world", "set-pieces", "relationships", "threads", "games"];
+    const attempted = ["voice_profile", "world", "set-pieces", "relationships", "threads", "games"];
     expect(next(nodes, attempted, ["b1"])?.node.id).toBe("b2");
   });
 
@@ -95,7 +97,7 @@ describe("nextAutopilotAction — the recipe walker", () => {
       mk("movement", { id: "m", parent_id: "p" }), mk("beat", { id: "b", parent_id: "m" }),
       mk("scene", { id: "sc", parent_id: "b", content: { prose: { text: "Once upon a time." } } }),
     ];
-    const attempted = ["world", "set-pieces", "relationships", "threads", "games"];
+    const attempted = ["voice_profile", "world", "set-pieces", "relationships", "threads", "games"];
     expect(next(nodes, attempted)).toBeNull();
   });
 
@@ -105,7 +107,7 @@ describe("nextAutopilotAction — the recipe walker", () => {
       mk("movement", { id: "m", parent_id: "p" }), mk("beat", { id: "b", parent_id: "m" }),
       mk("scene", { id: "sc", parent_id: "b" }),
     ];
-    const attempted = ["world", "set-pieces", "relationships", "threads", "games"];
+    const attempted = ["voice_profile", "world", "set-pieces", "relationships", "threads", "games"];
     const a = next(nodes, attempted, [], "picture");
     expect(a?.target).toBe("illustrate");
     expect(a?.node.id).toBe("sc");
@@ -119,7 +121,7 @@ describe("nextAutopilotAction — the recipe walker", () => {
       // caption present, but image_url NOT yet pinned — must still count as done so the loop moves on.
       mk("scene", { id: "sc", parent_id: "b", content: { caption: { text: "A wolf at the door." } } }),
     ];
-    const attempted = ["world", "set-pieces", "relationships", "threads", "games"];
+    const attempted = ["voice_profile", "world", "set-pieces", "relationships", "threads", "games"];
     expect(next(nodes, attempted, [], "picture")).toBeNull();
   });
 
@@ -129,7 +131,7 @@ describe("nextAutopilotAction — the recipe walker", () => {
       mk("movement", { id: "m", parent_id: "p" }), mk("beat", { id: "b", parent_id: "m" }),
       mk("scene", { id: "sc", parent_id: "b", content: { prose: { text: "Once upon a time." } } }),
     ];
-    const attempted = ["world", "set-pieces", "relationships", "threads", "games"];
+    const attempted = ["voice_profile", "world", "set-pieces", "relationships", "threads", "games"];
     expect(next(nodes, attempted, [], "picture")?.target).toBe("illustrate");
   });
 
