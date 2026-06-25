@@ -87,6 +87,86 @@ function buildPrevProseBlock(allNodes: Node[], currentId: string): string {
     prev.map((s, i) => `--- Page ${idx - prev.length + i + 1} ---\n${(s.content as { prose?: { text?: string } }).prose!.text}`).join("\n\n");
 }
 
+// ── Prose context = digest v2 (validated in scripts/prose-context-experiment.mjs) ───────────────
+// Instead of pasting the last N pages verbatim, prose generation gets a COMPACT digest of ALL prior
+// pages — a rolling per-page recap + a continuity ledger + an anti-repeat blocklist — plus the single
+// previous page verbatim, tagged voice-ONLY. The experiment found the verbatim previous page was the
+// top source of accidental copying, so its phrases go INTO the blocklist and it carries an explicit
+// anti-echo instruction. Net: fewer verbatim echoes + higher continuity/craft (judge), at ~⅓ the
+// tokens of all-pages-verbatim. The summary call is built inline here; incremental per-page caching
+// is the documented follow-up. Mirrored in scripts/eval-bridge.mjs (buildProductionDigest).
+const STOP = new Set("the a an and or but of to in on at for with as is was were be been are it its his her their they he she you your we our i me my that this these those there then than so if when while into from over under up down out off not no yes".split(" "));
+const proseWords = (t: string) => (t || "").toLowerCase().replace(/[^a-z0-9'\s]/g, " ").split(/\s+/).filter(Boolean);
+function ngrams(text: string, n: number): string[] {
+  const w = proseWords(text);
+  const out: string[] = [];
+  for (let i = 0; i + n <= w.length; i++) {
+    const gram = w.slice(i, i + n);
+    if (gram.every((g) => STOP.has(g))) continue;
+    out.push(gram.join(" "));
+  }
+  return out;
+}
+// Distinctive multi-word phrases (≥3 content words) already used across the prior pages — fed as the
+// anti-repeat blocklist. Deterministic; mirrors distinctivePhrases() in scripts/lib/prose-lints.mjs.
+function distinctivePhrases(priorText: string, n = 5, limit = 40): string[] {
+  const counts = new Map<string, number>();
+  for (const g of ngrams(priorText, n)) counts.set(g, (counts.get(g) || 0) + 1);
+  return [...counts.keys()].filter((g) => g.split(" ").filter((x) => !STOP.has(x)).length >= 3).slice(0, limit);
+}
+const proseText = (s: Node) => String((s.content as { prose?: { text?: string } }).prose?.text ?? "");
+
+async function buildProseDigest(apiKey: string, model: string, allNodes: Node[], currentId: string, meta: CallMeta): Promise<string> {
+  const ordered = scenesInOrder(allNodes);
+  const idx = ordered.findIndex((s) => s.id === currentId);
+  if (idx <= 0) return "";
+  const priorProsed = ordered.slice(0, idx).filter((s) => proseText(s).trim());
+  if (!priorProsed.length) return "";
+  const last = priorProsed[priorProsed.length - 1];
+  const earlier = priorProsed.slice(0, -1);
+  let storySoFar = "", ledger = "";
+  if (earlier.length) {
+    const corpus = earlier.map((s, i) => `--- Page ${i + 1} ---\n${proseText(s)}`).join("\n\n");
+    const dprompt = `You are compressing a novel-in-progress into a CONTINUITY DIGEST for the writer about to draft the next scene. From the pages below, output STRICT JSON only:
+{
+  "pages": ["<one tight line per page, in order: POV + location/time, the value-shift, the key facts ESTABLISHED, and the closing image>"],
+  "ledger": {
+    "characters": ["<name — current status, where they are, what they want now>"],
+    "objects": ["<object/clue in play — its state>"],
+    "locations": ["<place — what's there>"],
+    "timeline": "<elapsed time / current point in the story>",
+    "open_threads": ["<promise opened but not yet paid — its state>"]
+  }
+}
+Exactly one "pages" entry per page, in order. No prose, no preamble — JSON only.
+
+PAGES:
+${corpus}`;
+    try {
+      const data = await callClaude(apiKey, { model, max_tokens: 2000, messages: [{ role: "user", content: dprompt }] }, { ...meta, fn: "dna-expand-digest" });
+      const p = JSON.parse(extractJsonBlock(textFromClaude(data))) as { pages?: string[]; ledger?: Record<string, unknown> };
+      storySoFar = (p.pages ?? []).map((x, i) => `- Page ${i + 1}: ${x}`).join("\n");
+      const L = (p.ledger ?? {}) as { characters?: string[]; objects?: string[]; locations?: string[]; timeline?: string; open_threads?: string[] };
+      ledger = [
+        L.characters?.length ? `Characters:\n${L.characters.map((c) => `  • ${c}`).join("\n")}` : "",
+        L.objects?.length ? `Objects in play: ${L.objects.join("; ")}` : "",
+        L.locations?.length ? `Locations: ${L.locations.join("; ")}` : "",
+        L.timeline ? `Timeline: ${L.timeline}` : "",
+        L.open_threads?.length ? `Open threads:\n${L.open_threads.map((t) => `  • ${t}`).join("\n")}` : "",
+      ].filter(Boolean).join("\n");
+    } catch { /* degrade gracefully: blocklist + previous page still carry continuity */ }
+  }
+  // v2: blocklist covers ALL prior pages INCLUDING the previous one (its verbatim text was the top echo source).
+  const blocklist = distinctivePhrases(priorProsed.map(proseText).join("\n"));
+  return [
+    "PRECEDING CONTEXT — an efficient digest of the pages so far. Treat it as authoritative continuity; maintain the established voice and do NOT reuse any phrase listed under avoid_repeating:",
+    storySoFar && `<story_so_far>\n${storySoFar}\n</story_so_far>`,
+    ledger && `<continuity_ledger>\n${ledger}\n</continuity_ledger>`,
+    blocklist.length && `<avoid_repeating>\n${blocklist.map((p) => `- ${p}`).join("\n")}\n</avoid_repeating>`,
+    `<previous_page note="for voice + cadence ONLY — do NOT reuse, complete, or paraphrase its closing image or final line; open this scene on a different beat and in a different register">\n${proseText(last)}\n</previous_page>`,
+  ].filter(Boolean).join("\n\n");
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
@@ -175,9 +255,15 @@ Deno.serve(async (req: Request) => {
       ? "STATE PRECONDITIONS (each must be ESTABLISHED by an earlier beat — list its key in that beat's `establishes` — BEFORE the beat that resolves its game):\n" +
         statePreconds.map((p) => `- ${p.key} (${p.game}): ${p.what}`).join("\n")
       : "";
-    const prevProseBlock = (target === "prose" || (!target && node.kind === "scene") || target === "caption")
-      ? buildPrevProseBlock(nodes, nodeId)
-      : "";
+    const { high: model, low } = await getActiveModels();
+    const meta: CallMeta = { fn: "dna-expand", bookId, userId: user.id };
+    // Prose → digest v2 (all-page continuity + anti-echo, built on the cheap `low` model); caption
+    // (picture mode) keeps the short last-3-verbatim window; everything else needs no prose context.
+    const prevProseBlock = (target === "prose" || (!target && node.kind === "scene"))
+      ? await buildProseDigest(apiKey, low, nodes, nodeId, meta)
+      : target === "caption"
+        ? buildPrevProseBlock(nodes, nodeId)
+        : "";
     const ctx = [
       `BOOK: ${book?.name ?? ""}`,
       `BRIEF (binding):\n${briefContext(brief, { scope: "full", success: true, none: "(no brief)", empty: "(empty)" })}`,
@@ -195,9 +281,6 @@ Deno.serve(async (req: Request) => {
       prevProseBlock,
       `THIS NODE [${node.kind}]: ${JSON.stringify(node.content)}`,
     ].filter(Boolean).join("\n\n");
-
-    const { high: model } = await getActiveModels();
-    const meta: CallMeta = { fn: "dna-expand", bookId, userId: user.id };
 
     if (target === "prose" || (!target && node.kind === "scene")) {
       // Scene → prose: fill the scene's own text. One true draft, in voice.

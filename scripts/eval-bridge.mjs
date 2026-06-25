@@ -19,6 +19,7 @@ import { spawn } from "node:child_process";
 import { readdirSync, readFileSync, existsSync, appendFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { distinctivePhrases, approxTokens } from "./lib/prose-lints.mjs";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const reportsDir = join(repoRoot, "reports");
@@ -3417,17 +3418,25 @@ function scenesInOrderBridge(allNodes) {
   for (const root of allNodes.filter((n) => n.parent_id === null)) walk(root);
   return out;
 }
-function buildPrevProseBlockBridge(allNodes, currentId) {
+// mode controls how many preceding pages are fed verbatim:
+//   "default" → last 3 (production behavior)   "last1" → only the immediately-preceding page
+//   "all"     → every prior page in reading order (the prose-context experiment, arm B)
+function buildPrevProseBlockBridge(allNodes, currentId, mode = "default") {
   const ordered = scenesInOrderBridge(allNodes);
   const idx = ordered.findIndex((s) => s.id === currentId);
   if (idx <= 0) return "";
-  const prev = ordered.slice(Math.max(0, idx - 3), idx).filter((s) => String(s.content?.prose?.text ?? "").trim());
+  const start = mode === "all" ? 0 : mode === "last1" ? Math.max(0, idx - 1) : Math.max(0, idx - 3);
+  const prev = ordered.slice(start, idx).filter((s) => String(s.content?.prose?.text ?? "").trim());
   if (!prev.length) return "";
   return "PRECEDING PAGES (maintain continuity of voice, cadence, and character — do NOT repeat phrases, images, or sentence patterns used here):\n" +
     prev.map((s, i) => `--- Page ${idx - prev.length + i + 1} ---\n${s.content.prose.text}`).join("\n\n");
 }
 
-async function runDnaExpand({ bookId, nodeId, target }) {
+// proseWindow / prevProseOverride / captureContext are experiment hooks (default: production behavior):
+//   proseWindow       → which preceding-page window to feed verbatim (see buildPrevProseBlockBridge)
+//   prevProseOverride → replace the PRECEDING PAGES block wholesale (e.g. the arm-C digest packet)
+//   captureContext    → also return the exact assembled prompt, so the harness can size/compare it
+async function runDnaExpand({ bookId, nodeId, target, proseWindow = "default", prevProseOverride = null, captureContext = false }) {
   const book = await fetchBook(bookId);
   if (!book) return { error: "Book not found" };
   const r = await fetch(`${SUPABASE_URL}/rest/v1/book_nodes?book_id=eq.${bookId}&select=id,parent_id,kind,position,content,authoring`, { headers: sbHeaders });
@@ -3496,9 +3505,19 @@ async function runDnaExpand({ bookId, nodeId, target }) {
       (Array.isArray(vp.constraints) && vp.constraints.length ? `\n- Rules:\n${vp.constraints.map((c) => `  • ${c}`).join("\n")}` : "") +
       (vp.sample ? `\n- Reference sample (match this voice exactly):\n${vp.sample}` : "")
     : "";
-  const prevProseBlock = (target === "prose" || (!target && node.kind === "scene") || target === "caption")
-    ? buildPrevProseBlockBridge(nodes, nodeId)
-    : "";
+  // Prose context, mirroring supabase/functions/dna-expand: production prose → digest v2 (all-page
+  // continuity + anti-echo). The experiment passes prevProseOverride (its own digest) or a verbatim
+  // proseWindow (last1/all for arms A/B); production callers pass neither, so they get the v2 digest.
+  // Caption keeps the short last-3-verbatim window.
+  const prevProseBlock = prevProseOverride != null
+    ? prevProseOverride
+    : (target === "prose" || (!target && node.kind === "scene"))
+      ? (proseWindow === "last1" || proseWindow === "all"
+          ? buildPrevProseBlockBridge(nodes, nodeId, proseWindow)
+          : await buildProductionDigest(bookId, nodes, nodeId))
+      : target === "caption"
+        ? buildPrevProseBlockBridge(nodes, nodeId, "default")
+        : "";
   const ctx = [
     `BOOK: ${book.name ?? ""}`,
     `BRIEF (binding):\n${briefContext(book.brief)}`,
@@ -3525,7 +3544,7 @@ VOICE — write ONLY the fiction, from inside the story: NEVER address or mentio
 ${ctx}\n\nWrite this scene's prose.`;
     const out = await runClaude(prompt, true, { fn: "dna-expand", bookId }, { noTools: true, model: MODEL_PLANNING });
     if (out.error) return out;
-    return { prose: out.text.trim() };
+    return captureContext ? { prose: out.text.trim(), prompt, ctx, prevProseBlock } : { prose: out.text.trim() };
   }
   if (target === "caption") {
     // Picture mode (docs/picture-book-mode.md) — mirrors supabase/functions/dna-expand. The page TEXT under
@@ -3725,6 +3744,191 @@ async function runDnaChat({ bookId, stage, message, analysis }) {
   const assistant = { role: "assistant", text: reply, ts: new Date().toISOString(), plan: proposal?.summary };
   await fetch(`${SUPABASE_URL}/rest/v1/dna_chats?book_id=eq.${bookId}&stage=eq.${stage}`, { method: "PATCH", headers: jh, body: JSON.stringify({ messages: [...withUser, assistant], pending_proposal: proposal ?? existing?.pending_proposal ?? null, status: "idle" }) });
   return { reply, proposal };
+}
+
+// ── Prose-context experiment (docs/plan: 1-page vs all-pages vs digest) ─────────
+// Dev-only A/B/C harness: regenerate ONE scene's prose under three preceding-context regimes,
+// holding everything else (voice/cast/threads/plan) constant. Reuses runDnaExpand so the context
+// assembly stays single-sourced. Endpoints below skip the per-book authorize() because the caller
+// is the local CLI orchestrator, not a browser (no user JWT in scope); they're localhost-only.
+
+// Shared context lookup for the experiment + judge: the target node, the prior prosed pages in
+// reading order, the pillar's cast (for name-drift), the voice profile, and a per-scene word target.
+async function getExperimentContext(bookId, nodeId) {
+  const book = await fetchBook(bookId);
+  if (!book) return { error: "Book not found" };
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/book_nodes?book_id=eq.${bookId}&select=id,parent_id,kind,position,content,authoring`, { headers: sbHeaders });
+  const nodes = await r.json();
+  const node = nodes.find((n) => n.id === nodeId);
+  if (!node) return { error: "Node not found" };
+  const ordered = scenesInOrderBridge(nodes);
+  const idx = ordered.findIndex((s) => s.id === nodeId);
+  const priorProsed = ordered.slice(0, idx).filter((s) => String(s.content?.prose?.text ?? "").trim());
+  const map = new Map(nodes.map((n) => [n.id, n]));
+  const chain = [];
+  for (let p = node.parent_id; p; p = map.get(p)?.parent_id ?? null) { const a = map.get(p); if (a) chain.unshift(a); }
+  const pillar = chain.find((a) => a.kind === "pillar");
+  const castNames = pillar ? nodes.filter((n) => n.parent_id === pillar.id && n.kind === "character").map((c) => String(c.content?.name ?? "").trim()).filter(Boolean) : [];
+  const vpNode = pillar ? nodes.find((n) => n.parent_id === pillar.id && n.kind === "voice_profile") : null;
+  const wt = book?.brief?.scope?.word_target;
+  const wordTarget = wt ? Math.round(Number(wt) / Math.max(ordered.length, 1)) : null;
+  return { book, nodes, node, ordered, idx, priorProsed, castNames, voice: vpNode?.content ?? null, wordTarget };
+}
+
+// Arm C's "efficient format": a compressed digest of all earlier pages (one summary-model call) +
+// a continuity ledger + a deterministic anti-repetition blocklist + the LAST page verbatim. In
+// production this digest would be built incrementally as each page is written and cached; here we
+// build it in one pass over the prior prose (a one-time cost, reported separately from the cheap
+// generation call it enables).
+async function buildDigestParts(bookId, earlier) {
+  let storySoFar = "", ledger = "";
+  if (earlier.length) {
+    const corpus = earlier.map((s, i) => `--- Page ${i + 1} ---\n${s.content.prose.text}`).join("\n\n");
+    const dprompt = `You are compressing a novel-in-progress into a CONTINUITY DIGEST for the writer about to draft the next scene. From the pages below, output STRICT JSON only:
+{
+  "pages": ["<one tight line per page, in order: POV + location/time, the value-shift, the key facts ESTABLISHED, and the closing image>"],
+  "ledger": {
+    "characters": ["<name — current status, where they are, what they want now>"],
+    "objects": ["<object/clue in play — its state>"],
+    "locations": ["<place — what's there>"],
+    "timeline": "<elapsed time / current point in the story>",
+    "open_threads": ["<promise opened but not yet paid — its state>"]
+  }
+}
+Exactly one "pages" entry per page, in order. No prose, no preamble — JSON only.
+
+PAGES:
+${corpus}`;
+    const out = await runClaude(dprompt, true, { fn: "prose-exp-digest", bookId }, { noTools: true, model: MODEL_SUMMARY });
+    if (!out.error) {
+      try {
+        const p = parseLooseJson(out.text);
+        storySoFar = (p.pages || []).map((x, i) => `- Page ${i + 1}: ${x}`).join("\n");
+        const L = p.ledger || {};
+        ledger = [
+          L.characters?.length ? `Characters:\n${L.characters.map((c) => `  • ${c}`).join("\n")}` : "",
+          L.objects?.length ? `Objects in play: ${L.objects.join("; ")}` : "",
+          L.locations?.length ? `Locations: ${L.locations.join("; ")}` : "",
+          L.timeline ? `Timeline: ${L.timeline}` : "",
+          L.open_threads?.length ? `Open threads:\n${L.open_threads.map((t) => `  • ${t}`).join("\n")}` : "",
+        ].filter(Boolean).join("\n");
+      } catch { /* leave digest text-light; blocklist + last page still carry continuity */ }
+    }
+  }
+  return { storySoFar, ledger };
+}
+
+// Assemble the digest packet from the shared parts. variant "v1" = original; "v2" applies the
+// experiment's key finding — the verbatim previous page was the top source of accidental verbatim
+// repetition, so its distinctive phrases go INTO the blocklist and it carries an explicit anti-echo
+// instruction (don't reuse/complete/paraphrase its closing image or final line).
+function assembleDigest(parts, info, variant = "v1") {
+  const { priorProsed } = info;
+  const last = priorProsed[priorProsed.length - 1];
+  const earlier = priorProsed.slice(0, -1);
+  const { storySoFar, ledger } = parts || { storySoFar: "", ledger: "" };
+  const blocklistCorpus = (variant === "v2" ? priorProsed : earlier).map((s) => s.content.prose.text).join("\n");
+  const blocklist = distinctivePhrases(blocklistCorpus);
+  const prevPage = variant === "v2"
+    ? `<previous_page note="for voice + cadence ONLY — do NOT reuse, complete, or paraphrase its closing image or final line; open this scene on a different beat and in a different register">\n${last.content.prose.text}\n</previous_page>`
+    : `<previous_page>\n${last.content.prose.text}\n</previous_page>`;
+  return [
+    "PRECEDING CONTEXT — an efficient digest of the pages so far. Treat it as authoritative continuity; maintain the established voice and do NOT reuse any phrase listed under avoid_repeating:",
+    storySoFar && `<story_so_far>\n${storySoFar}\n</story_so_far>`,
+    ledger && `<continuity_ledger>\n${ledger}\n</continuity_ledger>`,
+    blocklist.length && `<avoid_repeating>\n${blocklist.map((p) => `- ${p}`).join("\n")}\n</avoid_repeating>`,
+    prevPage,
+  ].filter(Boolean).join("\n\n");
+}
+
+// Production prose context (mirrors supabase/functions/dna-expand buildProseDigest): the v2 digest
+// for the live "write this scene's prose" path. Built inline per call (incremental caching = follow-up).
+async function buildProductionDigest(bookId, nodes, currentId) {
+  const ordered = scenesInOrderBridge(nodes);
+  const idx = ordered.findIndex((s) => s.id === currentId);
+  if (idx <= 0) return "";
+  const priorProsed = ordered.slice(0, idx).filter((s) => String(s.content?.prose?.text ?? "").trim());
+  if (!priorProsed.length) return "";
+  const parts = await buildDigestParts(bookId, priorProsed.slice(0, -1));
+  return assembleDigest(parts, { priorProsed }, "v2");
+}
+
+// arms: any of A (last1), B (all verbatim), C (digest v1), D (digest v2). Default A/B/C.
+async function runProseExperiment({ bookId, nodeId, arms = ["A", "B", "C"] }) {
+  const info = await getExperimentContext(bookId, nodeId);
+  if (info.error) return info;
+  if (info.idx <= 0) return { error: "target scene has no preceding prose; pick a later scene" };
+  if (!info.priorProsed.length) return { error: "no preceding prosed pages found before the target scene" };
+  const priorText = info.priorProsed.map((s) => s.content.prose.text).join("\n\n");
+  // One summary call powers BOTH digest variants (they differ only in blocklist + prev-page handling).
+  const needDigest = arms.some((a) => a === "C" || a === "D");
+  const parts = needDigest ? await buildDigestParts(bookId, info.priorProsed.slice(0, -1)) : null;
+  const digestV1 = arms.includes("C") ? assembleDigest(parts, info, "v1") : "";
+  const digestV2 = arms.includes("D") ? assembleDigest(parts, info, "v2") : "";
+  const REG = {
+    A: { label: "last 1 page (verbatim)", opts: { proseWindow: "last1" } },
+    B: { label: "all prior pages (verbatim)", opts: { proseWindow: "all" } },
+    C: { label: "digest v1", opts: { prevProseOverride: digestV1 } },
+    D: { label: "digest v2 (prev-page blocklisted + anti-echo)", opts: { prevProseOverride: digestV2 } },
+  };
+  const results = [];
+  for (const armName of arms) {
+    const spec = REG[armName];
+    if (!spec) return { error: `unknown arm ${armName}` };
+    const out = await runDnaExpand({ bookId, nodeId, target: "prose", captureContext: true, ...spec.opts });
+    if (out.error) return { error: `arm ${armName}: ${out.error}` };
+    results.push({
+      arm: armName, label: spec.label, prose: out.prose,
+      ctxChars: out.ctx.length, ctxTokens: approxTokens(out.ctx),
+      prevProseChars: (out.prevProseBlock || "").length, prevProseTokens: approxTokens(out.prevProseBlock || ""),
+    });
+  }
+  return {
+    results,
+    meta: {
+      priorText, castNames: info.castNames, wordTarget: info.wordTarget,
+      priorPageCount: info.priorProsed.length, targetPlan: info.node.content,
+      digestV1Tokens: approxTokens(digestV1), digestV2Tokens: approxTokens(digestV2),
+      digestTokens: approxTokens(digestV2 || digestV1),
+    },
+  };
+}
+
+// LLM judge: ranks the candidate drafts on continuity / voice / non-repetition / scene-craft,
+// grounded in the two pages immediately before the scene + the voice profile + the scene plan.
+async function runProseExperimentJudge({ bookId, nodeId, outputs }) {
+  const info = await getExperimentContext(bookId, nodeId);
+  if (info.error) return info;
+  const lastTwo = info.priorProsed.slice(-2).map((s) => `--- prior page ---\n${s.content.prose.text}`).join("\n\n");
+  const voice = info.voice ? JSON.stringify(info.voice) : "(none)";
+  const plan = JSON.stringify(info.node?.content ?? {});
+  const drafts = (outputs || []).map((o) => `### Candidate ${o.arm}\n${o.prose}`).join("\n\n");
+  const prompt = `You are a fiction editor blind-comparing ${(outputs || []).length} drafts of the SAME scene of the SAME novel. They differ ONLY in how much preceding context the writer was given. Judge each on how well it continues the story.
+
+Score each candidate 1–5 (5 best) on:
+- continuity: consistency with the prior pages (facts, positions, character state, time)
+- voice_fidelity: match to the VOICE PROFILE and the established prose signature
+- non_repetition: avoids reusing phrases/images/sentence patterns from the prior pages
+- scene_craft: turns a value, concrete, dramatized (not summarized)
+
+Output STRICT JSON only:
+{ "ranking": ["A","B","C"], "winner": "B", "rationale": "<2–3 sentences on what separated them>",
+  "arms": { "A": { "continuity": 4, "voice_fidelity": 4, "non_repetition": 3, "scene_craft": 4, "notes": "...", "continuity_breaks": ["..."] } } }
+
+VOICE PROFILE: ${voice}
+
+SCENE PLAN (what this scene must do): ${plan}
+
+THE TWO PAGES IMMEDIATELY BEFORE THIS SCENE:
+${lastTwo || "(none)"}
+
+CANDIDATE DRAFTS:
+${drafts}
+
+JSON only.`;
+  const out = await runClaude(prompt, true, { fn: "prose-exp-judge", bookId }, { noTools: true, model: "sonnet" });
+  if (out.error) return out;
+  try { return { judge: parseLooseJson(out.text) }; } catch { return { judge: null, raw: out.text }; }
 }
 
 const server = createServer(async (req, res) => {
@@ -4064,6 +4268,24 @@ async function route(req, res) {
     if (!(await authorize(req, res, Number(body.bookId)))) return;
     console.log(`DNA expand ${body.nodeId} (book ${body.bookId})…`);
     const out = await runDnaExpand(body);
+    if (out.error) return json(res, 500, { error: out.error });
+    return json(res, 200, out);
+  }
+
+  // Prose-context experiment (dev-only; localhost CLI orchestrator — no authorize, no user JWT).
+  if (url === "/prose-experiment" || url === "/prose-experiment/") {
+    if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
+    const body = await readBody(req);
+    console.log(`Prose-context experiment: node ${body.nodeId} (book ${body.bookId})…`);
+    const out = await runProseExperiment(body);
+    if (out.error) return json(res, 500, { error: out.error });
+    return json(res, 200, out);
+  }
+  if (url === "/prose-experiment-judge" || url === "/prose-experiment-judge/") {
+    if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
+    const body = await readBody(req);
+    console.log(`Prose-context experiment judge: node ${body.nodeId} (book ${body.bookId})…`);
+    const out = await runProseExperimentJudge(body);
     if (out.error) return json(res, 500, { error: out.error });
     return json(res, 200, out);
   }
