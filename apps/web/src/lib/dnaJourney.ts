@@ -14,7 +14,7 @@ export const DNA_STAGES: DnaStage[] = [
   { key: "foundations", label: "Foundations", caption: "The bedrock — controlling idea, ending, cast, world, tentpoles. What you pin here, the AI must keep." },
   { key: "structure", label: "Structure", caption: "The acts and their causal beats — the spine, page by page." },
   { key: "scenes", label: "Scenes", caption: "The dramatized units — each turns a value, no flat 'and-then'." },
-  { key: "draft", label: "Draft", caption: "Render the prose from the approved scenes, then read it back." },
+  { key: "draft", label: "Prose", caption: "Write each approved scene into prose, then read it back." },
 ];
 
 export type StageStatus = "done" | "now" | "locked" | "available";
@@ -123,7 +123,7 @@ export function stageSubsteps(key: StageKey, nodes: DnaNode[], mode: "prose" | "
   // draft — prose written (prose mode) or scenes illustrated (picture mode)
   const scenes = of("scene");
   const drafted = scenes.filter((s) => sceneDrafted(s, mode)).length;
-  return resolveSeq([{ key: mode === "picture" ? "illustrate" : "prose", label: mode === "picture" ? "Illustrate" : "Prose", done: scenes.length > 0 && drafted === scenes.length, ready: scenes.length > 0, count: drafted, total: scenes.length }]);
+  return resolveSeq([{ key: mode === "picture" ? "illustrate" : "prose", label: mode === "picture" ? "Illustrate" : "Scenes", done: scenes.length > 0 && drafted === scenes.length, ready: scenes.length > 0, count: drafted, total: scenes.length }]);
 }
 
 /** Which node kinds belong to a stage's Stage view. */

@@ -14,6 +14,7 @@ export function ImagePromptPreview({
   prompt,
   refImages,
   model,
+  context,
   busy,
   generateLabel = "generate image",
   onGenerate,
@@ -22,12 +23,17 @@ export function ImagePromptPreview({
   prompt: string;
   refImages: string[];
   model: string | null;
+  /** The full upstream context the prompt was drawn from (beat, cast, house look, art direction). Read-only. */
+  context?: string;
   busy?: boolean;
   generateLabel?: string;
   onGenerate: (finalPrompt: string) => void;
   onCancel: () => void;
 }) {
   const [draft, setDraft] = useState(prompt);
+  // Re-seed the editable draft if the upstream prompt changes (e.g. the bulk stepper advances to a new scene).
+  const [seed, setSeed] = useState(prompt);
+  if (seed !== prompt) { setSeed(prompt); setDraft(prompt); }
 
   // Resolve the model key to a human label via the same options list the foundations UI uses.
   const modelLabel = model
@@ -36,16 +42,28 @@ export function ImagePromptPreview({
 
   return (
     <Panel variant="soft" className="mt-3 space-y-3 px-4 py-3">
+      {/* The full context the prompt is drawn from — read-only, collapsible (open by default so it's seen). */}
+      {context && (
+        <details open className="group">
+          <summary className="pv-mono cursor-pointer list-none text-[9px] uppercase tracking-[0.1em] text-[hsl(var(--pv-text-faint))] hover:text-[hsl(var(--pv-text-muted))]">
+            context · what the image is drawn from
+          </summary>
+          <pre className="mt-1.5 max-h-48 overflow-y-auto whitespace-pre-wrap rounded-md border border-[hsl(var(--pv-border-soft))]/60 bg-[hsl(var(--pv-surface-2))]/40 p-2.5 pv-mono text-[10.5px] leading-relaxed text-[hsl(var(--pv-text-muted))]">
+            {context}
+          </pre>
+        </details>
+      )}
+
       {/* Header */}
       <Eyebrow tone="muted">prompt · edit before generating</Eyebrow>
 
-      {/* Editable prompt text */}
+      {/* Editable prompt text — stays visible (just disabled) while generating, so it never vanishes. */}
       <AutoTextarea
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         disabled={busy}
         placeholder="Image prompt…"
-        className="pv-mono w-full resize-none border-0 border-b border-[hsl(var(--pv-border-soft))] bg-transparent px-0 py-0.5 text-[12px] leading-relaxed text-foreground outline-none focus:border-[hsl(var(--pv-accent))]/40 focus-visible:ring-0 disabled:opacity-60"
+        className="pv-mono w-full resize-none rounded-md border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/30 px-2.5 py-2 text-[12px] leading-relaxed text-foreground outline-none focus:border-[hsl(var(--pv-accent))]/50 focus-visible:ring-0 disabled:opacity-60"
       />
 
       {/* Reference thumbnails */}

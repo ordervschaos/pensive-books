@@ -223,6 +223,7 @@ export function DnaVisuals({ bookId, nodes, settings, onChanged }: {
                   prompt={preview.data.prompt}
                   refImages={preview.data.refImages}
                   model={preview.data.model}
+                  context={preview.data.context}
                   busy={busy === "allillus"}
                   generateLabel={`generate · ${queue.i + 1}/${queue.scenes.length}`}
                   onGenerate={(finalPrompt) => void stepIllustrate(finalPrompt)}

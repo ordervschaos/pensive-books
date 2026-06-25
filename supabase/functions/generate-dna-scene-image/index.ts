@@ -134,11 +134,13 @@ Deno.serve(async (req: Request) => {
       return textFromClaude(data).trim();
     };
 
-    // ── mode "compose": synchronous, no render, no row — just return the composed prompt + refs + model ──
+    // ── mode "compose": synchronous, no render, no row — return the composed prompt + refs + model, AND
+    // the full CONTEXT the prompt was drawn from (recent beats, beat to depict, cast, house look, art
+    // direction) so the author can see exactly what's responsible for the image, not just the final prompt. ──
     if (mode === "compose") {
       const promptText = await composeScenePromptText();
       if (!promptText) return json({ error: "Could not compose a scene prompt." }, 502);
-      return json({ prompt: promptText, refImages, model: imageModel ?? null });
+      return json({ prompt: promptText, refImages, model: imageModel ?? null, context: userContent });
     }
 
     // ── mode "render": durable render of a GIVEN (possibly author-edited) prompt; skip compose ──

@@ -52,6 +52,8 @@ const EXPAND_TARGETS: Partial<Record<NodeKind, ExpandTarget[]>> = {
   scene: [{ target: "prose", label: "write prose", childKind: "scene" }],
 };
 const SINGLE = new Set(["premise", "pillar"]); // targets that produce exactly one child
+// Human-readable display name for kinds that have internal/technical names.
+const KIND_DISPLAY: Partial<Record<NodeKind, string>> = { movement: "act", world_fact: "world rule" };
 
 // The meaningful fields the UI exposes per kind (★/U slots; dotted keys reach into nested content).
 const FIELDS: Partial<Record<NodeKind, { key: string; label: string }[]>> = {
@@ -169,8 +171,7 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
   const [busy, setBusy] = useState<string | null>(null);
   const [view, setView] = useState<"overview" | "visuals" | StageKey>("overview"); // "overview" = the dashboard; "visuals" = the non-gating Visuals section; else a stage
   const [flashId, setFlashId] = useState<string | null>(null); // a node to scroll-to + briefly ring (drill-in from the map)
-  const [collapsedSections, setCollapsedSections] = useState<Set<NodeKind>>(new Set());
-  const toggleSection = (k: NodeKind) => setCollapsedSections((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; });
+  const [foundationsTab, setFoundationsTab] = useState<"pillar" | "character" | "world_fact" | "tentpole" | "relationship">("pillar");
   const index = byId(nodes);
   const of = (kind: NodeKind) => nodes.filter((n) => n.kind === kind);
   const blockers = renderBlockers(nodes, settings);
@@ -236,9 +237,9 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
     return `${kids.length} ${childKind}${kids.length > 1 ? "s" : ""}${need ? ` · ${need} need work` : ""}`;
   };
 
-  const card = (n: DnaNode, accent?: boolean) => (
+  const card = (n: DnaNode, accent?: boolean, hideTargetKinds?: NodeKind[]) => (
     <NodeCard key={n.id} node={n} index={index} bookId={bookId} kids={childrenOf(nodes, n.id)} onChanged={onChanged}
-      accent={accent} expanded={isOpen(n)} onToggle={() => toggle(n)} meta={collapsedMeta(n)} picture={picture} flash={flashId === n.id} />
+      accent={accent} expanded={isOpen(n)} onToggle={() => toggle(n)} meta={collapsedMeta(n)} picture={picture} flash={flashId === n.id} hideTargetKinds={hideTargetKinds} />
   );
   const [seed, premise, pillar] = [of("seed")[0], of("premise")[0], of("pillar")[0]];
   const entityKinds: NodeKind[] = ["character", "relationship", "tentpole", "world_fact"];
@@ -276,32 +277,80 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
   const nextStage = stages[stages.findIndex((s) => s.key === activeKey) + 1];
 
   const renderStage = (key: StageKey) => {
-    if (key === "premise") return [seed, premise].filter(Boolean).map((n) => card(n!));
-    if (key === "foundations") {
-      const labels: Record<string, string> = { character: "Cast", relationship: "Relationships", tentpole: "Tent-poles", world_fact: "World rules" };
+    if (key === "premise") {
+      const seedEmpty = seed && !(seed.content as { logline?: string }).logline?.trim();
       return (
         <>
-          {pillar && card(pillar, true)}
-          {/* Each entity kind in its own labeled, countable section — grouped so the bedrock reads at a glance
-              rather than as one undifferentiated stack. Cast/world are generated from the pillar above; "add"
-              here drops a blank slot for manual authoring. */}
-          {pillar && entityKinds.map((k) => {
-            const items = of(k);
-            const collapsed = collapsedSections.has(k);
+          {seedEmpty && (
+            <div className="rounded-xl border border-dashed border-[hsl(var(--pv-border-soft))]/70 bg-[hsl(var(--pv-surface-2))]/40 px-5 py-5 text-center">
+              <p className="pv-serif text-[14px] text-[hsl(var(--pv-text-muted))]">Start with a logline</p>
+              <p className="pv-serif mt-1 text-[12.5px] italic text-[hsl(var(--pv-text-faint))]">
+                One sentence: who wants what, who or what stands in the way, and what's at stake.
+              </p>
+            </div>
+          )}
+          {[seed, premise].filter(Boolean).map((n) => card(n!))}
+        </>
+      );
+    }
+    if (key === "foundations") {
+      const FOUND_TABS = [
+        { key: "pillar" as const, label: "Pillar" },
+        { key: "character" as const, label: "Cast" },
+        { key: "world_fact" as const, label: "World" },
+        { key: "tentpole" as const, label: "Tent-poles" },
+        { key: "relationship" as const, label: "Relationships" },
+      ] as const;
+      type FoundTab = typeof FOUND_TABS[number]["key"];
+      // generate-target for each entity tab (target string → what expandNode calls on the pillar)
+      const genTarget: Partial<Record<FoundTab, { target: string; busy: string; label: string }>> = {
+        character: { target: "cast", busy: "cast", label: "cast" },
+        world_fact: { target: "world", busy: "world", label: "world" },
+        tentpole: { target: "set-pieces", busy: "set-pieces", label: "tent-poles" },
+        relationship: { target: "relationships", busy: "relationships", label: "relationships" },
+      };
+      const tab = foundationsTab;
+      return (
+        <>
+          {/* Tab bar — quick navigation between the 5 foundation layers */}
+          <div className="flex gap-0.5 border-b border-[hsl(var(--pv-border-soft))] mb-4 -mx-1 px-1">
+            {FOUND_TABS.map((t) => {
+              const count = t.key !== "pillar" ? of(t.key as NodeKind).length : null;
+              return (
+                <button key={t.key} onClick={() => setFoundationsTab(t.key)}
+                  className={`pv-serif px-3 py-1.5 text-[13px] border-b-2 -mb-px transition-colors whitespace-nowrap ${
+                    tab === t.key
+                      ? "border-[hsl(var(--pv-accent))] text-foreground"
+                      : "border-transparent text-[hsl(var(--pv-text-muted))] hover:text-foreground"
+                  }`}>
+                  {t.label}{count !== null && count > 0 ? ` · ${count}` : ""}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Pillar tab — the controlling idea + ending; generate actions for children are in each child tab */}
+          {tab === "pillar" && pillar && card(pillar, true, ["character", "relationship", "world_fact", "tentpole", "movement"])}
+
+          {/* Entity tabs — each has its own generate action at the top + card list */}
+          {tab !== "pillar" && pillar && (() => {
+            const items = of(tab as NodeKind);
+            const gen = genTarget[tab];
             return (
-              <section key={k} className="space-y-2 pt-1">
-                <div className="flex items-center gap-2.5 border-b border-[hsl(var(--pv-border-soft))]/60 pb-1">
-                  <button onClick={() => toggleSection(k)} className="flex items-center gap-1.5 group">
-                    {collapsed ? <ChevronRight className="h-3 w-3 text-[hsl(var(--pv-text-faint))]" /> : <ChevronDown className="h-3 w-3 text-[hsl(var(--pv-text-faint))]" />}
-                    <Eyebrow tone="muted">{labels[k]}</Eyebrow>
-                  </button>
-                  {items.length > 0 && <span className="pv-mono text-[9px] text-[hsl(var(--pv-text-faint))]">{items.length}</span>}
-                  <ActionLink busy={busy === "add"} onClick={() => addChild(pillar, k, 2)} tone="faint" className="ml-auto">+ add</ActionLink>
+              <div className="space-y-3">
+                <div className="flex items-center gap-3">
+                  {gen && (
+                    <ActionLink busy={busy === gen.busy} icon={<Sparkles className="h-3.5 w-3.5" />}
+                      onClick={() => generateFromPillar(gen.target, `${gen.label} generated`)}>
+                      {items.length ? `regenerate ${gen.label}` : `generate ${gen.label}`}
+                    </ActionLink>
+                  )}
+                  <ActionLink busy={busy === "add"} onClick={() => addChild(pillar, tab as NodeKind, 2)} tone="faint" className="ml-auto">+ add</ActionLink>
                 </div>
-                {!collapsed && items.map((n) => card(n))}
-              </section>
+                {items.map((n) => card(n))}
+              </div>
             );
-          })}
+          })()}
         </>
       );
     }
@@ -335,6 +384,11 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
                   generate beats for all {movementsNeedingBeats.length} act{movementsNeedingBeats.length > 1 ? "s" : ""}
                 </ActionLink>
               )}
+              {(threads.length > 0 || games.length > 0) && (
+                <ActionLink busy={busy === "beatsheet"} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={() => generateFromPillar("beatsheet", "Beat sheet generated")}>
+                  generate beat sheet
+                </ActionLink>
+              )}
             </div>
           )}
           {movements.map((m) => (
@@ -354,12 +408,12 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
               )}
             </div>
           ))}
-          {pillar && <ActionLink busy={busy === "add"} onClick={() => addChild(pillar, "movement", 3)}>add movement</ActionLink>}
+          {pillar && <ActionLink busy={busy === "add"} onClick={() => addChild(pillar, "movement", 3)}>add act</ActionLink>}
 
-          {/* The promise registry (threads) + games + the global beat sheet — whole-arc ops on the acts. */}
+          {/* The promise registry (threads) + games — optional enrichment on top of the acts. */}
           {pillar && movements.length > 0 && (
             <div className="space-y-2 border-t border-[hsl(var(--pv-border-soft))] pt-4">
-              <div className="flex items-center gap-3">
+              <div id="structure-threads" className="flex items-center gap-3">
                 <Eyebrow tone="muted">promises · the thread registry</Eyebrow>
                 <ActionLink busy={busy === "threads"} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={() => generateFromPillar("threads", "Threads generated")}>
                   {threads.length ? "regenerate threads" : "generate threads"}
@@ -367,21 +421,13 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
               </div>
               {threads.map((t) => card(t))}
 
-              <div className="flex items-center gap-3 pt-2">
+              <div id="structure-games" className="flex items-center gap-3 pt-2">
                 <Eyebrow tone="muted">games · the contests (win / lose)</Eyebrow>
                 <ActionLink busy={busy === "games"} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={() => generateFromPillar("games", "Games generated")}>
                   {games.length ? "regenerate games" : "generate games"}
                 </ActionLink>
               </div>
               {games.map((g) => card(g))}
-
-              {(threads.length > 0 || games.length > 0) && (
-                <div className="pt-1">
-                  <ActionLink busy={busy === "beatsheet"} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={() => generateFromPillar("beatsheet", "Beat sheet generated")}>
-                    generate beat sheet (schedules promises, plays the games, paces the whole book)
-                  </ActionLink>
-                </div>
-              )}
             </div>
           )}
         </>
@@ -536,15 +582,35 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
               {s.status === "now" && <span className="pv-mono text-[9px] uppercase tracking-[0.12em] text-[hsl(var(--pv-accent))]">now</span>}
             </button>
             {/* The active stage unfolds its serial sub-step spine: dot = state (done/now/blocked), the
-                connector line = the chain, "opt" = a parallel branch off the spine. */}
+                connector line = the chain, "opt" = a parallel branch off the spine. Clicking a sub-step
+                navigates to the relevant node or foundation tab. */}
             {focused && subs.length > 0 && (
               <div className="mb-1.5 ml-[26px] space-y-px border-l border-[hsl(var(--pv-border-soft))] py-0.5 pl-3.5">
-                {subs.map((ss) => <SubStepRow key={ss.key} sub={ss} />)}
+                {subs.map((ss) => {
+                  let handler: (() => void) | undefined;
+                  if (s.key === "premise") {
+                    if (ss.key === "seed" && seed) handler = () => openStage("premise", seed.id);
+                    if (ss.key === "premise" && premise) handler = () => openStage("premise", premise.id);
+                  } else if (s.key === "foundations") {
+                    const tabMap: Record<string, typeof foundationsTab> = {
+                      pillar: "pillar", cast: "character", world: "world_fact", tentpole: "tentpole", relationship: "relationship",
+                    };
+                    const dest = tabMap[ss.key];
+                    if (dest) handler = () => { setView("foundations"); setFoundationsTab(dest); };
+                  } else if (s.key === "structure") {
+                    const mvs = of("movement");
+                    if (ss.key === "acts" && mvs.length > 0) handler = () => openStage("structure", mvs[0].id);
+                    if (ss.key === "beats") { const b = of("beat")[0]; if (b) handler = () => openStage("structure", b.id); }
+                    if (ss.key === "threads") handler = () => document.getElementById("structure-threads")?.scrollIntoView({ behavior: "smooth" });
+                    if (ss.key === "games") handler = () => document.getElementById("structure-games")?.scrollIntoView({ behavior: "smooth" });
+                  }
+                  return <SubStepRow key={ss.key} sub={ss} onClick={handler} />;
+                })}
               </div>
             )}
-            {/* Visuals — a standalone, NON-gating section (no StepDot number) that sits right under
-                Foundations. Always reachable; it never blocks the stages below it. */}
-            {s.key === "foundations" && (
+            {/* Visuals — a standalone, NON-gating section placed after the final prose stage.
+                Always reachable; it never blocks the stages below it. */}
+            {s.key === "draft" && (
               <button onClick={() => setView("visuals")}
                 className={`mb-0.5 flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors ${onVisuals ? "bg-[hsl(var(--pv-accent))]/[0.08]" : "hover:bg-[hsl(var(--pv-surface-2))]/60"}`}>
                 <span className="flex h-5 w-5 items-center justify-center"><Image className={`h-3.5 w-3.5 ${onVisuals ? "text-[hsl(var(--pv-accent))]" : "text-[hsl(var(--pv-text-faint))]"}`} /></span>
@@ -598,6 +664,10 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
                   <ActionLink tone="faint" onClick={() => setAll(false)}>collapse all</ActionLink>
                 </div>
               ) : undefined} />
+            {/* "Continue" at the top when the stage is already approved — no need to scroll down to proceed. */}
+            {active.status === "done" && nextStage && nextStage.status !== "locked" && (
+              <div className="-mt-1 pb-1"><ActionLink onClick={() => setView(nextStage.key)}>continue to {nextStage.label} →</ActionLink></div>
+            )}
             {/* The level's SHAPE at a glance — root / interlinked web / serial-budgeted spine / value turns */}
             <DnaStageDiagram stage={activeKey} nodes={nodes} />
             <div className="space-y-2">{renderStage(activeKey)}</div>
@@ -647,7 +717,7 @@ function StatusPill({ status }: { status: DnaNode["authoring"]["status"] }) {
 // One rung of the Navigator's sub-step spine. The dot encodes state (filled = done, ring = now, lock =
 // blocked, hollow = available); "opt" flags a parallel branch; the right number is the collection's tally.
 // Read-only — it surfaces the serial blocking + progress, it isn't an action.
-function SubStepRow({ sub }: { sub: SubStep }) {
+function SubStepRow({ sub, onClick }: { sub: SubStep; onClick?: () => void }) {
   const dot =
     sub.status === "done" ? <span className="h-1.5 w-1.5 rounded-full bg-[hsl(var(--pv-accent))]" />
       : sub.status === "now" ? <span className="flex h-2.5 w-2.5 items-center justify-center rounded-full border border-[hsl(var(--pv-accent))]"><span className="h-1 w-1 rounded-full bg-[hsl(var(--pv-accent))]" /></span>
@@ -655,13 +725,23 @@ function SubStepRow({ sub }: { sub: SubStep }) {
           : <span className="h-1.5 w-1.5 rounded-full border border-[hsl(var(--pv-text-faint))]/60" />;
   const tone = sub.status === "locked" ? "text-[hsl(var(--pv-text-faint))]" : sub.status === "now" ? "text-foreground" : "text-[hsl(var(--pv-text-muted))]";
   const count = sub.total != null ? `${sub.count ?? 0}/${sub.total}` : sub.count ? String(sub.count) : null;
-  return (
-    <div className="flex items-center gap-2 py-[3px]" title={sub.status === "locked" ? "blocked — finish the step above it first" : sub.manual ? "hand-authored — type it in" : undefined}>
+  const title = sub.status === "locked" ? "blocked — finish the step above it first" : sub.manual ? "hand-authored — type it in" : undefined;
+  const inner = (
+    <>
       <span className="flex w-2.5 shrink-0 items-center justify-center">{dot}</span>
       <span className={`pv-serif text-[12.5px] leading-none ${tone}`}>{sub.label}</span>
       {sub.optional && <span className="pv-mono text-[8px] uppercase tracking-[0.1em] text-[hsl(var(--pv-text-faint))]/70">opt</span>}
       {count && <span className="pv-mono ml-auto text-[9px] text-[hsl(var(--pv-text-faint))]">{count}</span>}
-    </div>
+    </>
+  );
+  if (onClick) return (
+    <button type="button" onClick={onClick} title={title}
+      className="flex w-full items-center gap-2 py-[3px] text-left transition-opacity hover:opacity-70">
+      {inner}
+    </button>
+  );
+  return (
+    <div className="flex items-center gap-2 py-[3px]" title={title}>{inner}</div>
   );
 }
 
@@ -816,9 +896,9 @@ function cardTitle(node: DnaNode): string | undefined {
 // IDENTITY (kind · title · status) → SUMMARY (derived engine data) → FIELDS (editable slots) → ACTIONS (a
 // persistent bar: approve gate, generate, lock, delete). The action bar always occupies its row, so the
 // card never reflows as state changes (low layout shift). A beat's connector glyph (∴/↯) prefixes its title.
-function NodeCard({ node, index, bookId, kids, onChanged, accent, expanded, onToggle, meta, picture, flash }: {
+function NodeCard({ node, index, bookId, kids, onChanged, accent, expanded, onToggle, meta, picture, flash, hideTargetKinds }: {
   node: DnaNode; index: Map<string, DnaNode>; bookId: number; kids: DnaNode[]; onChanged: () => void; accent?: boolean;
-  expanded: boolean; onToggle: () => void; meta?: string; picture?: boolean; flash?: boolean;
+  expanded: boolean; onToggle: () => void; meta?: string; picture?: boolean; flash?: boolean; hideTargetKinds?: NodeKind[];
 }) {
   const { toast } = useToast();
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -846,13 +926,21 @@ function NodeCard({ node, index, bookId, kids, onChanged, accent, expanded, onTo
     : undefined);
   const connector = node.kind === "beat" ? (node.content as BeatContent).connector : undefined;
   const connectorGlyph = connector === "therefore" ? "∴" : connector === "but" ? "↯" : undefined;
+  // For beats: suppress the summary field from FIELDS when the card is expanded and the title already shows it.
+  const displayFields = (expanded && title && node.kind === "beat")
+    ? fields.filter((f) => f.key !== "summary")
+    : fields;
   // Available generate verbs: hide a SINGLE-child target once made, and a target whose prerequisite kind
-  // (e.g. relationships need a cast) doesn't exist yet. Picture-mode scenes ILLUSTRATE instead of "write prose".
+  // (e.g. relationships need a cast) doesn't exist yet. hideTargetKinds suppresses targets that produce a
+  // given child kind (used by the foundations tabs to move those actions out of the Pillar card).
+  // Picture-mode scenes ILLUSTRATE instead of "write prose".
   const baseTargets = isPictureScene
     ? [{ target: "illustrate", label: "illustrate", childKind: "scene" as NodeKind }]
     : (EXPAND_TARGETS[node.kind] ?? []);
   const targets = baseTargets.filter((t) =>
-    !(SINGLE.has(t.target) && kids.some((c) => c.kind === t.childKind)) && !(t.needs && !kids.some((c) => c.kind === t.needs)));
+    !(SINGLE.has(t.target) && kids.some((c) => c.kind === t.childKind))
+    && !(t.needs && !kids.some((c) => c.kind === t.needs))
+    && !(hideTargetKinds?.includes(t.childKind)));
 
   const guard = async (label: string, fn: () => Promise<void>) => {
     try { await fn(); onChanged(); } catch (e) { toast({ title: label, description: String((e as Error)?.message ?? e), variant: "destructive" }); }
@@ -901,7 +989,7 @@ function NodeCard({ node, index, bookId, kids, onChanged, accent, expanded, onTo
         <span className="mt-0.5 shrink-0 text-[hsl(var(--pv-text-faint))]">
           {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
         </span>
-        <Eyebrow tone="accent" className="mt-0.5 shrink-0">{node.kind}</Eyebrow>
+        <Eyebrow tone="accent" className="mt-0.5 shrink-0">{KIND_DISPLAY[node.kind] ?? node.kind}</Eyebrow>
         <div className="min-w-0 flex-1">
           {title && (
             <p className={`pv-serif text-[13.5px] leading-snug text-foreground ${expanded ? "" : "truncate"}`}>
@@ -956,7 +1044,7 @@ function NodeCard({ node, index, bookId, kids, onChanged, accent, expanded, onTo
       {/* FIELDS — the editable slots; ★ marks a load-bearing one */}
       {fields.length > 0 && (
         <div className="mt-2.5 space-y-1.5">
-          {fields.map((fld) => {
+          {displayFields.map((fld) => {
             const required = fld.label.includes("★");
             const label = fld.label.replace(/\s*★\s*$/, "");
             const val = drafts[fld.key] ?? getPath(node.content, fld.key);

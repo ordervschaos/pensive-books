@@ -328,7 +328,10 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
     const tools = isThread ? threadToolsFor(scope) : TOOLS;
     // Count the turn BEFORE the call: a hard worker death mid-call still consumes budget, so a
     // crash-looping run hits MAX_TURNS instead of being revived forever by the watchdog.
-    await service.from("book_agent_runs").update({ turns }).eq("id", runId);
+    // Re-write `steps` (unchanged) alongside `turns` so this mid-"thinking" Realtime event carries the
+    // steps column — otherwise Postgres omits the unchanged TOASTed jsonb from the WAL new-tuple and the
+    // client's row arrives with steps=null, blanking the feed. (REPLICA IDENTITY FULL is the broader fix.)
+    await service.from("book_agent_runs").update({ turns, steps: row.steps }).eq("id", runId);
 
     let resp;
     try {

@@ -44,7 +44,9 @@ export async function startNodeSceneGeneration(
   return data as NodeSceneImage;
 }
 
-export interface ComposedSceneImage { prompt: string; refImages: string[]; model: string | null }
+// `context` is the full block the prompt was drawn from (recent beats, beat to depict, cast, house look,
+// art direction) — surfaced so the author sees exactly what's responsible for the image, not just the prompt.
+export interface ComposedSceneImage { prompt: string; refImages: string[]; model: string | null; context?: string }
 
 /** Compose the scene image prompt (+ refs + model) WITHOUT rendering — for the preview/edit step. */
 export async function composeSceneImage(
