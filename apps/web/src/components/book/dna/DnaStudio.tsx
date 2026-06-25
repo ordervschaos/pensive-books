@@ -16,10 +16,9 @@ import {
 import { AutoTextarea } from "@/components/ui/auto-textarea";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { ActionLink, Eyebrow, Panel, RunningInline, StageHead, StepDot } from "@/components/book/studio/studioUi";
-import { buildJourney, stageSubsteps, type StageKey, type SubStep } from "@/lib/dnaJourney";
+import { buildJourney, stageSubsteps, STAGE_KINDS, type StageKey } from "@/lib/dnaJourney";
 import { AgentRail } from "@/components/book/studio/AgentRail";
 import { DnaVisuals } from "@/components/book/dna/DnaVisuals";
-import { DnaAnalysis } from "@/components/book/dna/DnaAnalysis";
 import { DnaStageDiagram } from "@/components/book/dna/DnaStageDiagram";
 import { DnaOverview } from "@/components/book/dna/DnaOverview";
 import { saveNode, saveNodes, deleteNode } from "@/lib/bookNodes";
@@ -171,7 +170,8 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
   const [busy, setBusy] = useState<string | null>(null);
   const [view, setView] = useState<"overview" | "visuals" | StageKey>("overview"); // "overview" = the dashboard; "visuals" = the non-gating Visuals section; else a stage
   const [flashId, setFlashId] = useState<string | null>(null); // a node to scroll-to + briefly ring (drill-in from the map)
-  const [foundationsTab, setFoundationsTab] = useState<"pillar" | "character" | "world_fact" | "tentpole" | "relationship">("pillar");
+  const [foundationsTab, setFoundationsTab] = useState<"pillar" | "character" | "world_fact" | "game" | "tentpole" | "relationship">("pillar");
+  const [structureTab, setStructureTab] = useState<"acts" | "beats">("acts");
   const index = byId(nodes);
   const of = (kind: NodeKind) => nodes.filter((n) => n.kind === kind);
   const blockers = renderBlockers(nodes, settings);
@@ -298,6 +298,7 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
         { key: "pillar" as const, label: "Pillar" },
         { key: "character" as const, label: "Cast" },
         { key: "world_fact" as const, label: "World" },
+        { key: "game" as const, label: "Games" },
         { key: "tentpole" as const, label: "Tent-poles" },
         { key: "relationship" as const, label: "Relationships" },
       ] as const;
@@ -306,6 +307,7 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
       const genTarget: Partial<Record<FoundTab, { target: string; busy: string; label: string }>> = {
         character: { target: "cast", busy: "cast", label: "cast" },
         world_fact: { target: "world", busy: "world", label: "world" },
+        game: { target: "games", busy: "games", label: "games" },
         tentpole: { target: "set-pieces", busy: "set-pieces", label: "tent-poles" },
         relationship: { target: "relationships", busy: "relationships", label: "relationships" },
       };
@@ -371,71 +373,221 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
         }
         toast({ title: "Beats generated", description: `${added} beat(s) across ${targets.length - failed.length}/${targets.length} act(s)${failed.length ? ` · ${failed.length} failed` : ""}.` });
       });
+      // Structure is the pure sequential spine: Acts (coarse) · Beats (the causal units, grouped under their
+      // act). Cross-cutting registries live elsewhere — Games in Foundations (a contest is definable without
+      // beats), Threads in the Overview (a whole-book promise registry). `threads`/`games` are still read here
+      // to gate beat-sheet generation (which weaves the existing registries through the spine).
+      const STR_TABS = [
+        { key: "acts" as const, label: "Acts", count: movements.length },
+        { key: "beats" as const, label: "Beats", count: of("beat").length },
+      ] as const;
+      const stab = structureTab;
       return (
         <>
-          <DnaAnalysis nodes={nodes} settings={settings} />
-          {pillar && (
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-              <ActionLink busy={busy === "movements"} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={() => generateFromPillar("movements", "Acts generated")}>
-                {movements.length ? "regenerate acts" : "generate acts"}
-              </ActionLink>
-              {movementsNeedingBeats.length > 0 && (
-                <ActionLink busy={busy === "allbeats"} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={generateAllBeats}>
-                  generate beats for all {movementsNeedingBeats.length} act{movementsNeedingBeats.length > 1 ? "s" : ""}
+          {/* Tab bar — quick navigation between the 4 structure sections */}
+          <div className="flex gap-0.5 border-b border-[hsl(var(--pv-border-soft))] mb-4 -mx-1 px-1">
+            {STR_TABS.map((t) => (
+              <button key={t.key} onClick={() => setStructureTab(t.key)}
+                className={`pv-serif px-3 py-1.5 text-[13px] border-b-2 -mb-px transition-colors whitespace-nowrap ${
+                  stab === t.key
+                    ? "border-[hsl(var(--pv-accent))] text-foreground"
+                    : "border-transparent text-[hsl(var(--pv-text-muted))] hover:text-foreground"
+                }`}>
+                {t.label}{t.count > 0 ? ` · ${t.count}` : ""}{t.opt ? <span className="pv-mono ml-1 text-[8px] uppercase tracking-[0.1em] text-[hsl(var(--pv-text-faint))]/70">opt</span> : null}
+              </button>
+            ))}
+          </div>
+
+          {/* ACTS — the coarse spine: act-level plan (goal, turning point, value), one card each. */}
+          {stab === "acts" && (
+            <div className="space-y-2">
+              {pillar && (
+                <ActionLink busy={busy === "movements"} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={() => generateFromPillar("movements", "Acts generated")}>
+                  {movements.length ? "regenerate acts" : "generate acts"}
                 </ActionLink>
               )}
-              {(threads.length > 0 || games.length > 0) && (
-                <ActionLink busy={busy === "beatsheet"} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={() => generateFromPillar("beatsheet", "Beat sheet generated")}>
-                  generate beat sheet
-                </ActionLink>
-              )}
+              {movements.map((m) => card(m, true))}
+              {pillar && <ActionLink busy={busy === "add"} onClick={() => addChild(pillar, "movement", 3)} tone="faint">+ add act</ActionLink>}
             </div>
           )}
-          {movements.map((m) => (
-            <div key={m.id} className="space-y-2">
-              {card(m, true)}
-              {/* Beats live under the movement; folding the movement (its chevron) hides them all. */}
-              {isOpen(m) && (
-                <div className="ml-4 space-y-2 border-l border-[hsl(var(--pv-border-soft))] pl-4">
-                  <SortableBeatList
-                    beats={childrenOf(nodes, m.id).filter((b) => b.kind === "beat")}
-                    bookId={bookId}
-                    renderCard={card}
-                    onSaved={onChanged}
-                  />
-                  <ActionLink busy={busy === "add"} onClick={() => addChild(m, "beat", 4)}>add beat</ActionLink>
+
+          {/* BEATS — the causal units, grouped under each act header; reorder within an act. */}
+          {stab === "beats" && (
+            <div className="space-y-4">
+              {pillar && (movementsNeedingBeats.length > 0 || threads.length > 0 || games.length > 0) && (
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                  {movementsNeedingBeats.length > 0 && (
+                    <ActionLink busy={busy === "allbeats"} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={generateAllBeats}>
+                      generate beats for all {movementsNeedingBeats.length} act{movementsNeedingBeats.length > 1 ? "s" : ""}
+                    </ActionLink>
+                  )}
+                  {(threads.length > 0 || games.length > 0) && (
+                    <ActionLink busy={busy === "beatsheet"} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={() => generateFromPillar("beatsheet", "Beat sheet generated")}>
+                      generate beat sheet
+                    </ActionLink>
+                  )}
                 </div>
               )}
-            </div>
-          ))}
-          {pillar && <ActionLink busy={busy === "add"} onClick={() => addChild(pillar, "movement", 3)}>add act</ActionLink>}
-
-          {/* The promise registry (threads) + games — optional enrichment on top of the acts. */}
-          {pillar && movements.length > 0 && (
-            <div className="space-y-2 border-t border-[hsl(var(--pv-border-soft))] pt-4">
-              <div id="structure-threads" className="flex items-center gap-3">
-                <Eyebrow tone="muted">promises · the thread registry</Eyebrow>
-                <ActionLink busy={busy === "threads"} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={() => generateFromPillar("threads", "Threads generated")}>
-                  {threads.length ? "regenerate threads" : "generate threads"}
-                </ActionLink>
-              </div>
-              {threads.map((t) => card(t))}
-
-              <div id="structure-games" className="flex items-center gap-3 pt-2">
-                <Eyebrow tone="muted">games · the contests (win / lose)</Eyebrow>
-                <ActionLink busy={busy === "games"} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={() => generateFromPillar("games", "Games generated")}>
-                  {games.length ? "regenerate games" : "generate games"}
-                </ActionLink>
-              </div>
-              {games.map((g) => card(g))}
+              {movements.length === 0 && (
+                <p className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))]">Generate acts first — beats hang off them.</p>
+              )}
+              {movements.map((m, mi) => {
+                const mc = m.content as MovementContent;
+                return (
+                  <div key={m.id} className="space-y-2">
+                    <div className="flex items-baseline gap-2 border-b border-[hsl(var(--pv-border-soft))]/60 pb-1">
+                      <Eyebrow tone="accent">act {mi + 1}</Eyebrow>
+                      {(mc.title || mc.goal) && <span className="pv-serif truncate text-[13px] text-[hsl(var(--pv-text-muted))]">{mc.title || mc.goal}</span>}
+                    </div>
+                    <SortableBeatList
+                      beats={childrenOf(nodes, m.id).filter((b) => b.kind === "beat")}
+                      bookId={bookId}
+                      renderCard={card}
+                      onSaved={onChanged}
+                    />
+                    <ActionLink busy={busy === "add"} onClick={() => addChild(m, "beat", 4)} tone="faint">+ add beat</ActionLink>
+                  </div>
+                );
+              })}
             </div>
           )}
         </>
       );
     }
-    // scenes + draft: the scenes grouped under their beat. Each beat is a collapsible group header (the
-    // beat itself is in the Structure stage) — fold a beat to hide its scenes, so this stage reads as an
-    // outline of beats you drill into one at a time.
+    if (key === "draft") {
+      // Prose reading view: Act → Beat → prose text. Non-editable; headers link back to Structure.
+      const movements = of("movement");
+      const scenesAll = of("scene");
+      const done = scenesAll.filter((s) =>
+        picture
+          ? (s.content as SceneContent).image_url && !isIllusStale(s)
+          : (s.content as SceneContent).prose?.text && !isProseStale(s)
+      ).length;
+      const ready = scenesAll.length > 0 && done === scenesAll.length;
+      const noun = picture ? "illustrated" : "drafted";
+      const scenesNeedingProse = !picture ? scenesAll.filter((s) => !(s.content as SceneContent).prose?.text?.trim() || isProseStale(s)) : [];
+      const scenesWithProse = !picture ? scenesAll.filter((s) => !!(s.content as SceneContent).prose?.text?.trim()) : [];
+      const generateAllProse = () => run("allprose", async () => {
+        let ok = 0; const failed: string[] = [];
+        for (const s of scenesNeedingProse) {
+          try { await expandNode(bookId, s, "prose", {}); ok++; } catch (e) { failed.push(String((e as Error)?.message ?? e)); }
+        }
+        toast({ title: "Prose generated", description: `${ok}/${scenesNeedingProse.length} scene(s) written${failed.length ? ` · ${failed.length} failed` : ""}.` });
+      });
+      const discardAllProse = () => {
+        if (scenesWithProse.length === 0) return;
+        if (!window.confirm(`Discard the prose on ${scenesWithProse.length} scene${scenesWithProse.length === 1 ? "" : "s"}? The scenes stay — you'll re-draft from them. This can't be undone.`)) return;
+        void run("discard prose", async () => {
+          await Promise.all(scenesWithProse.map((s) => saveNode({
+            ...s,
+            content: { ...(s.content as SceneContent), prose: {} },
+            authoring: { ...s.authoring, prose_src_hash: undefined },
+          })));
+          toast({ title: "Prose discarded", description: `${scenesWithProse.length} scene${scenesWithProse.length === 1 ? "" : "s"} cleared. Write prose to re-draft.` });
+        });
+      };
+      return (
+        <>
+          {/* Top action bar — first fold: read + progress + generate */}
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+            <button
+              type="button"
+              disabled={busy === "read" || scenesAll.length === 0}
+              onClick={renderAndRead}
+              title={ready ? "Render the latest pages and open the reader" : `${done}/${scenesAll.length} scenes ${noun} — reads what's ready so far`}
+              className="pv-serif inline-flex items-center gap-2 rounded-full bg-[hsl(var(--pv-accent))] px-4 py-2 text-[13.5px] text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              {busy === "read" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BookOpen className="h-3.5 w-3.5" />}
+              Read the book →
+            </button>
+            {scenesAll.length > 0 && (
+              <span className="pv-mono text-[10px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-faint))]">{done}/{scenesAll.length} scenes {noun}</span>
+            )}
+            {!picture && scenesNeedingProse.length > 0 && (
+              <ActionLink busy={busy === "allprose"} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={generateAllProse}>
+                write prose for all {scenesNeedingProse.length} missing/stale scene{scenesNeedingProse.length !== 1 ? "s" : ""}
+              </ActionLink>
+            )}
+            {!picture && scenesWithProse.length > 0 && (
+              <ActionLink tone="faint" busy={busy === "discard prose"} onClick={discardAllProse}>discard all prose →</ActionLink>
+            )}
+            <ActionLink busy={busy === "render"} onClick={render} tone="faint">render only</ActionLink>
+          </div>
+          {/* Act → Beat → prose reading view */}
+          {movements.map((m, mi) => {
+            const mvContent = m.content as MovementContent;
+            const mvBeats = childrenOf(nodes, m.id).filter((b) => b.kind === "beat");
+            const actTitle = mvContent.title || mvContent.goal;
+            return (
+              <div key={m.id} className="space-y-3 border-t border-[hsl(var(--pv-border-soft))] pt-4">
+                {/* Act header — click to drill into Structure */}
+                <button type="button" onClick={() => openStage("structure", m.id)}
+                  className="flex items-baseline gap-2 text-left transition-opacity hover:opacity-70">
+                  <Eyebrow tone="accent">act {mi + 1}</Eyebrow>
+                  {actTitle && <span className="pv-serif text-[13px] text-foreground">{actTitle}</span>}
+                </button>
+                {mvBeats.map((b) => {
+                  const beatContent = b.content as BeatContent;
+                  const bScenes = childrenOf(nodes, b.id).filter((s) => s.kind === "scene");
+                  const beatNeedingProse = !picture ? bScenes.filter((s) => !(s.content as SceneContent).prose?.text?.trim() || isProseStale(s)) : [];
+                  return (
+                    <div key={b.id} className="ml-4 space-y-2 border-l border-[hsl(var(--pv-border-soft))] pl-4">
+                      {/* Beat header — click to drill into Structure */}
+                      <button type="button" onClick={() => openStage("structure", b.id)}
+                        className="flex items-baseline gap-2 text-left transition-opacity hover:opacity-70">
+                        <span className="pv-mono text-[9px] uppercase tracking-[0.1em] text-[hsl(var(--pv-text-faint))]">beat</span>
+                        {beatContent.summary && (
+                          <span className="pv-serif text-[12.5px] text-[hsl(var(--pv-text-muted))]">{beatContent.summary}</span>
+                        )}
+                      </button>
+                      {bScenes.map((s) => {
+                        const sc = s.content as SceneContent;
+                        const proseText = sc.prose?.text;
+                        const staleScene = isProseStale(s);
+                        return (
+                          <div key={s.id} id={`dna-node-${s.id}`} className="scroll-mt-6 space-y-1">
+                            {sc.chapter_start?.title && (
+                              <p className="pv-mono text-[10px] uppercase tracking-[0.08em] text-[hsl(var(--pv-text-faint))]">{sc.chapter_start.title}</p>
+                            )}
+                            {proseText ? (
+                              <div className={staleScene ? "opacity-60" : ""}>
+                                <p className="pv-serif whitespace-pre-wrap text-[14.5px] leading-[1.75] text-foreground">{proseText}</p>
+                                {staleScene && <span className="pv-mono mt-1 inline-block text-[9px] uppercase tracking-[0.12em] text-amber-500">stale — scene changed</span>}
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2 rounded-lg border border-dashed border-[hsl(var(--pv-border-soft))]/70 px-3 py-2">
+                                <span className="pv-serif text-[12px] italic text-[hsl(var(--pv-text-faint))]">no prose yet</span>
+                                <ActionLink busy={busy === `prose:${s.id}`} icon={<Sparkles className="h-3.5 w-3.5" />}
+                                  onClick={() => run(`prose:${s.id}`, async () => { await expandNode(bookId, s, "prose", {}); toast({ title: "Prose written", description: "Scene drafted." }); })}
+                                  className="ml-auto">
+                                  write
+                                </ActionLink>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {!picture && beatNeedingProse.length > 1 && (
+                        <ActionLink busy={busy === `beatprose:${b.id}`} icon={<Sparkles className="h-3.5 w-3.5" />}
+                          onClick={() => run(`beatprose:${b.id}`, async () => {
+                            let ok = 0;
+                            for (const s of beatNeedingProse) { try { await expandNode(bookId, s, "prose", {}); ok++; } catch { /**/ } }
+                            toast({ title: "Prose generated", description: `${ok} scene(s) written.` });
+                          })}>
+                          write prose for all {beatNeedingProse.length} in this beat
+                        </ActionLink>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </>
+      );
+    }
+    // scenes: scenes grouped under their beat. Each beat is a collapsible group header —
+    // fold a beat to hide its scenes, so this stage reads as an outline of beats to drill into one at a time.
     const beatsAll = of("movement").flatMap((m) => childrenOf(nodes, m.id).filter((b) => b.kind === "beat"));
     const beatsNeedingScenes = beatsAll.filter((b) => !childrenOf(nodes, b.id).some((c) => c.kind === "scene"));
     const generateAllScenes = () => run("allscenes", async () => {
@@ -448,7 +600,6 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
     });
     return (
       <>
-        <DnaAnalysis nodes={nodes} settings={settings} />
         {beatsNeedingScenes.length > 0 && (
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             <ActionLink busy={busy === "allscenes"} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={generateAllScenes}>
@@ -485,147 +636,85 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
             </div>
           );
         })}
-        {key === "draft" && (() => {
-          const scenesAll = of("scene");
-          // Picture mode counts ILLUSTRATED scenes (a pinned image); prose mode counts written scenes.
-          const done = scenesAll.filter((s) =>
-            picture
-              ? (s.content as SceneContent).image_url && !isIllusStale(s)
-              : (s.content as SceneContent).prose?.text && !isProseStale(s)
-          ).length;
-          const ready = scenesAll.length > 0 && done === scenesAll.length;
-          const noun = picture ? "illustrated" : "drafted";
-          const scenesNeedingProse = !picture ? scenesAll.filter((s) => !(s.content as SceneContent).prose?.text?.trim() || isProseStale(s)) : [];
-          const scenesWithProse = !picture ? scenesAll.filter((s) => !!(s.content as SceneContent).prose?.text?.trim()) : [];
-          const generateAllProse = () => run("allprose", async () => {
-            let ok = 0; const failed: string[] = [];
-            for (const s of scenesNeedingProse) {
-              try { await expandNode(bookId, s, "prose", {}); ok++; } catch (e) { failed.push(String((e as Error)?.message ?? e)); }
-            }
-            toast({ title: "Prose generated", description: `${ok}/${scenesNeedingProse.length} scene(s) written${failed.length ? ` · ${failed.length} failed` : ""}.` });
-          });
-          const discardAllProse = () => {
-            if (scenesWithProse.length === 0) return;
-            if (!window.confirm(`Discard the prose on ${scenesWithProse.length} scene${scenesWithProse.length === 1 ? "" : "s"}? The scenes stay — you'll re-draft from them. This can't be undone.`)) return;
-            void run("discard prose", async () => {
-              await Promise.all(scenesWithProse.map((s) => saveNode({
-                ...s,
-                content: { ...(s.content as SceneContent), prose: {} },
-                authoring: { ...s.authoring, prose_src_hash: undefined },
-              })));
-              toast({ title: "Prose discarded", description: `${scenesWithProse.length} scene${scenesWithProse.length === 1 ? "" : "s"} cleared. Write prose to re-draft.` });
-            });
-          };
-          return (
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 pt-2">
-              <button
-                type="button"
-                disabled={busy === "read" || scenesAll.length === 0}
-                onClick={renderAndRead}
-                title={ready ? "Render the latest pages and open the reader" : `${done}/${scenesAll.length} scenes ${noun} — reads what's ready so far`}
-                className="pv-serif inline-flex items-center gap-2 rounded-full bg-[hsl(var(--pv-accent))] px-4 py-2 text-[13.5px] text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-              >
-                {busy === "read" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BookOpen className="h-3.5 w-3.5" />}
-                Read the book →
-              </button>
-              {scenesAll.length > 0 && (
-                <span className="pv-mono text-[10px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-faint))]">{done}/{scenesAll.length} scenes {noun}</span>
-              )}
-              {!picture && scenesNeedingProse.length > 0 && (
-                <ActionLink busy={busy === "allprose"} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={generateAllProse}>
-                  write prose for all {scenesNeedingProse.length} missing/stale scene{scenesNeedingProse.length !== 1 ? "s" : ""}
-                </ActionLink>
-              )}
-              {!picture && scenesWithProse.length > 0 && (
-                <ActionLink tone="faint" busy={busy === "discard prose"} onClick={discardAllProse}>
-                  discard all prose →
-                </ActionLink>
-              )}
-              <ActionLink busy={busy === "render"} onClick={render} tone="faint">render only</ActionLink>
-            </div>
-          );
-        })()}
       </>
     );
   };
 
   const dot = (s: typeof stages[number]): "done" | "active" | "ready" | "locked" =>
     s.status === "done" ? "done" : s.status === "now" ? "active" : s.status === "locked" ? "locked" : "ready";
+  // Does any load-bearing node in a stage carry a stale flag? This is the non-linear truth a wizard hides:
+  // a layer can be "approved" yet drifted out of sync with an upstream change. Surfaced in the rail so the
+  // ladder tells you where to look, instead of a checkmark that pretends the work is final.
+  const stageStale = (key: StageKey) => STAGE_KINDS[key].some((kind) =>
+    of(kind).some((n) => isStale(n, index) || (n.kind === "scene" && (picture ? isIllusStale(n) : isProseStale(n)))));
+
+  // One layer row in the ladder rail: dot · label · (stale chip / now tally), with its serial sub-step spine
+  // unfolded when focused. Reused for the authoring layers AND the Output rung — no step numbers, no "now"
+  // badge: the rail reads as a resolution ladder (coarse → fine), not a 5-step progress bar.
+  const stageRow = (s: typeof stages[number]) => {
+    const subs = nodes.length > 0 ? stageSubsteps(s.key, nodes, picture ? "picture" : "prose") : [];
+    const done = subs.filter((ss) => ss.status === "done").length;
+    const focused = !onOverview && activeKey === s.key; // highlighted only when this layer is the open view
+    const stale = s.status === "done" && stageStale(s.key);
+    return (
+      <div key={s.key}>
+        <button disabled={s.status === "locked"} onClick={() => setView(s.key)}
+          className={`mb-0.5 flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors disabled:opacity-40 ${focused ? "bg-[hsl(var(--pv-accent))]/[0.08]" : "hover:bg-[hsl(var(--pv-surface-2))]/60"}`}>
+          <StepDot state={dot(s)} stale={stale} />
+          <span className={`pv-serif flex-1 text-[14px] ${s.status === "locked" ? "text-[hsl(var(--pv-text-faint))]" : focused ? "text-foreground" : "text-[hsl(var(--pv-text-muted))]"}`}>{s.label}</span>
+          {/* stale = the honest signal a wizard hides: an approved layer drifted out of sync upstream */}
+          {stale && <span className="pv-mono text-[9px] uppercase tracking-[0.12em] text-amber-500">stale</span>}
+          {/* the "now" layer shows a sub-step tally so progress reads without opening it */}
+          {s.status === "now" && subs.length > 0 && <span className="pv-mono text-[9px] text-[hsl(var(--pv-text-faint))]">{done}/{subs.length}</span>}
+        </button>
+      </div>
+    );
+  };
+
+  // The rail splits into two zones: LAYERS you author (idea → scenes, coarse → fine) and OUTPUT projected
+  // from the whole tree (prose pages + visuals). Prose/Visuals aren't authoring rungs — they're renders of
+  // everything above — so they get their own zone instead of masquerading as "step 5 of 5".
+  const authoringStages = stages.filter((s) => s.key !== "draft");
+  const draftStage = stages.find((s) => s.key === "draft")!;
+  const sectionLabel = (text: string, hint?: string) => (
+    <div className="mb-1 mt-3.5 flex items-baseline justify-between px-2.5">
+      <Eyebrow>{text}</Eyebrow>
+      {hint && <span className="pv-mono text-[8.5px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-faint))]/80">{hint}</span>}
+    </div>
+  );
 
   const nav = (
     <div className="h-full overflow-y-auto border-b border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/40 px-4 pb-12 pt-5 md:border-b-0 md:border-r">
-      <div className="mb-3 flex items-baseline justify-between px-1">
+      <div className="mb-1 px-1">
         <Eyebrow tone="muted">Build</Eyebrow>
-        <span className="pv-mono text-[10px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-faint))]">step {nowIndex + 1} / {stages.length}</span>
       </div>
       {/* Overview — the studio's home; the dashboard, not a resolution rung (so it sits above the ladder). */}
       {nodes.length > 0 && (
         <button onClick={() => setView("overview")}
-          className={`mb-1.5 flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors ${onOverview ? "bg-[hsl(var(--pv-accent))]/[0.08]" : "hover:bg-[hsl(var(--pv-surface-2))]/60"}`}>
+          className={`mb-1.5 mt-2 flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors ${onOverview ? "bg-[hsl(var(--pv-accent))]/[0.08]" : "hover:bg-[hsl(var(--pv-surface-2))]/60"}`}>
           <span className="flex h-5 w-5 items-center justify-center"><LayoutDashboard className={`h-3.5 w-3.5 ${onOverview ? "text-[hsl(var(--pv-accent))]" : "text-[hsl(var(--pv-text-faint))]"}`} /></span>
           <span className={`pv-serif flex-1 text-[14px] ${onOverview ? "text-foreground" : "text-[hsl(var(--pv-text-muted))]"}`}>Overview</span>
         </button>
       )}
-      {stages.map((s) => {
-        const subs = nodes.length > 0 ? stageSubsteps(s.key, nodes, picture ? "picture" : "prose") : [];
-        const done = subs.filter((ss) => ss.status === "done").length;
-        const focused = !onOverview && activeKey === s.key; // highlighted only when this stage is the open view
-        return (
-          <div key={s.key}>
-            <button disabled={s.status === "locked"} onClick={() => setView(s.key)}
-              className={`mb-0.5 flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors disabled:opacity-40 ${focused ? "bg-[hsl(var(--pv-accent))]/[0.08]" : "hover:bg-[hsl(var(--pv-surface-2))]/60"}`}>
-              <StepDot state={dot(s)} />
-              <span className="pv-mono text-[11px] text-[hsl(var(--pv-text-faint))]">{s.num}</span>
-              <span className={`pv-serif flex-1 text-[14px] ${s.status === "locked" ? "text-[hsl(var(--pv-text-faint))]" : focused ? "text-foreground" : "text-[hsl(var(--pv-text-muted))]"}`}>{s.label}</span>
-              {/* the "now" stage shows a sub-step tally so progress reads without expanding it */}
-              {s.status === "now" && subs.length > 0 && <span className="pv-mono text-[9px] text-[hsl(var(--pv-text-faint))]">{done}/{subs.length}</span>}
-              {s.status === "now" && <span className="pv-mono text-[9px] uppercase tracking-[0.12em] text-[hsl(var(--pv-accent))]">now</span>}
-            </button>
-            {/* The active stage unfolds its serial sub-step spine: dot = state (done/now/blocked), the
-                connector line = the chain, "opt" = a parallel branch off the spine. Clicking a sub-step
-                navigates to the relevant node or foundation tab. */}
-            {focused && subs.length > 0 && (
-              <div className="mb-1.5 ml-[26px] space-y-px border-l border-[hsl(var(--pv-border-soft))] py-0.5 pl-3.5">
-                {subs.map((ss) => {
-                  let handler: (() => void) | undefined;
-                  if (s.key === "premise") {
-                    if (ss.key === "seed" && seed) handler = () => openStage("premise", seed.id);
-                    if (ss.key === "premise" && premise) handler = () => openStage("premise", premise.id);
-                  } else if (s.key === "foundations") {
-                    const tabMap: Record<string, typeof foundationsTab> = {
-                      pillar: "pillar", cast: "character", world: "world_fact", tentpole: "tentpole", relationship: "relationship",
-                    };
-                    const dest = tabMap[ss.key];
-                    if (dest) handler = () => { setView("foundations"); setFoundationsTab(dest); };
-                  } else if (s.key === "structure") {
-                    const mvs = of("movement");
-                    if (ss.key === "acts" && mvs.length > 0) handler = () => openStage("structure", mvs[0].id);
-                    if (ss.key === "beats") { const b = of("beat")[0]; if (b) handler = () => openStage("structure", b.id); }
-                    if (ss.key === "threads") handler = () => document.getElementById("structure-threads")?.scrollIntoView({ behavior: "smooth" });
-                    if (ss.key === "games") handler = () => document.getElementById("structure-games")?.scrollIntoView({ behavior: "smooth" });
-                  }
-                  return <SubStepRow key={ss.key} sub={ss} onClick={handler} />;
-                })}
-              </div>
-            )}
-            {/* Visuals — a standalone, NON-gating section placed after the final prose stage.
-                Always reachable; it never blocks the stages below it. */}
-            {s.key === "draft" && (
-              <button onClick={() => setView("visuals")}
-                className={`mb-0.5 flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors ${onVisuals ? "bg-[hsl(var(--pv-accent))]/[0.08]" : "hover:bg-[hsl(var(--pv-surface-2))]/60"}`}>
-                <span className="flex h-5 w-5 items-center justify-center"><Image className={`h-3.5 w-3.5 ${onVisuals ? "text-[hsl(var(--pv-accent))]" : "text-[hsl(var(--pv-text-faint))]"}`} /></span>
-                <span className={`pv-serif flex-1 text-[14px] ${onVisuals ? "text-foreground" : "text-[hsl(var(--pv-text-muted))]"}`}>Visuals</span>
-                {picture && of("scene").length > 0 && (
-                  <span className="pv-mono text-[9px] text-[hsl(var(--pv-text-faint))]">
-                    {of("scene").filter((sc) => (sc.content as SceneContent).image_url && !isIllusStale(sc)).length}/{of("scene").length}
-                  </span>
-                )}
-              </button>
-            )}
-          </div>
-        );
-      })}
-      <div className="mx-2.5 my-3 h-px bg-[hsl(var(--pv-border-soft))]" />
+      {/* LAYERS — the resolution ladder you author, coarse → fine. */}
+      {nodes.length > 0 && sectionLabel("Layers", "coarse → fine")}
+      {authoringStages.map(stageRow)}
+
+      {/* OUTPUT — projected from the whole tree, not authored: prose pages + visuals. */}
+      {nodes.length > 0 && sectionLabel("Output")}
+      {stageRow(draftStage)}
+      <button onClick={() => setView("visuals")}
+        className={`mb-0.5 flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors ${onVisuals ? "bg-[hsl(var(--pv-accent))]/[0.08]" : "hover:bg-[hsl(var(--pv-surface-2))]/60"}`}>
+        <span className="flex h-5 w-5 items-center justify-center"><Image className={`h-3.5 w-3.5 ${onVisuals ? "text-[hsl(var(--pv-accent))]" : "text-[hsl(var(--pv-text-faint))]"}`} /></span>
+        <span className={`pv-serif flex-1 text-[14px] ${onVisuals ? "text-foreground" : "text-[hsl(var(--pv-text-muted))]"}`}>Visuals</span>
+        {picture && of("scene").length > 0 && (
+          <span className="pv-mono text-[9px] text-[hsl(var(--pv-text-faint))]">
+            {of("scene").filter((sc) => (sc.content as SceneContent).image_url && !isIllusStale(sc)).length}/{of("scene").length}
+          </span>
+        )}
+      </button>
+
+      <div className="mx-2.5 my-3 mt-4 h-px bg-[hsl(var(--pv-border-soft))]" />
       <div className="flex flex-col items-start gap-2 px-2.5">
         {/* The brief (genre/length/heat/audience — the binding mandate) lives in the Build Studio; the
             concept there is the same idea this DNA tree elaborates. Jump out to edit it. */}
@@ -651,13 +740,14 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
           </div>
         ) : onOverview ? (
           // The home dashboard — shape, next move, and issues; every action drills into the owning stage.
-          <DnaOverview bookId={bookId} nodes={nodes} settings={settings} stages={stages} nowKey={nowKey} onOpen={openStage} onChanged={onChanged} />
+          <DnaOverview bookId={bookId} nodes={nodes} settings={settings} stages={stages} nowKey={nowKey} onOpen={openStage} onChanged={onChanged}
+            renderCard={card} onGenerateThreads={() => generateFromPillar("threads", "Threads generated")} threadsBusy={busy === "threads"} />
         ) : onVisuals ? (
           // The standalone Visuals control room — look, cast references, illustrations (renders its own StageHead).
           <DnaVisuals bookId={bookId} nodes={nodes} settings={settings} onChanged={onChanged} />
         ) : (
           <>
-            <StageHead eyebrow={active.status === "done" ? "Approved" : active.status === "now" ? "Focus · the next move" : "Stage"} title={active.label} caption={active.caption}
+            <StageHead eyebrow={active.status === "done" ? (stageStale(activeKey) ? "Approved · out of sync" : "Approved") : active.status === "now" ? "Focus · the next move" : "Layer"} title={active.label} caption={active.caption}
               right={["foundations", "structure", "scenes", "draft"].includes(activeKey) ? (
                 <div className="flex shrink-0 items-center gap-3">
                   <ActionLink tone="faint" onClick={() => setAll(true)}>expand all</ActionLink>
@@ -712,37 +802,6 @@ function StatusPill({ status }: { status: DnaNode["authoring"]["status"] }) {
   const tone = status === "accepted" ? "text-emerald-500" : status === "empty" ? "text-[hsl(var(--pv-text-faint))]" : "text-[hsl(var(--pv-text-muted))]";
   const label = status === "accepted" ? "approved" : status;
   return <span className={`pv-mono text-[9px] uppercase tracking-[0.12em] ${tone}`}>{label}</span>;
-}
-
-// One rung of the Navigator's sub-step spine. The dot encodes state (filled = done, ring = now, lock =
-// blocked, hollow = available); "opt" flags a parallel branch; the right number is the collection's tally.
-// Read-only — it surfaces the serial blocking + progress, it isn't an action.
-function SubStepRow({ sub, onClick }: { sub: SubStep; onClick?: () => void }) {
-  const dot =
-    sub.status === "done" ? <span className="h-1.5 w-1.5 rounded-full bg-[hsl(var(--pv-accent))]" />
-      : sub.status === "now" ? <span className="flex h-2.5 w-2.5 items-center justify-center rounded-full border border-[hsl(var(--pv-accent))]"><span className="h-1 w-1 rounded-full bg-[hsl(var(--pv-accent))]" /></span>
-        : sub.status === "locked" ? <Lock className="h-2.5 w-2.5 text-[hsl(var(--pv-text-faint))]" />
-          : <span className="h-1.5 w-1.5 rounded-full border border-[hsl(var(--pv-text-faint))]/60" />;
-  const tone = sub.status === "locked" ? "text-[hsl(var(--pv-text-faint))]" : sub.status === "now" ? "text-foreground" : "text-[hsl(var(--pv-text-muted))]";
-  const count = sub.total != null ? `${sub.count ?? 0}/${sub.total}` : sub.count ? String(sub.count) : null;
-  const title = sub.status === "locked" ? "blocked — finish the step above it first" : sub.manual ? "hand-authored — type it in" : undefined;
-  const inner = (
-    <>
-      <span className="flex w-2.5 shrink-0 items-center justify-center">{dot}</span>
-      <span className={`pv-serif text-[12.5px] leading-none ${tone}`}>{sub.label}</span>
-      {sub.optional && <span className="pv-mono text-[8px] uppercase tracking-[0.1em] text-[hsl(var(--pv-text-faint))]/70">opt</span>}
-      {count && <span className="pv-mono ml-auto text-[9px] text-[hsl(var(--pv-text-faint))]">{count}</span>}
-    </>
-  );
-  if (onClick) return (
-    <button type="button" onClick={onClick} title={title}
-      className="flex w-full items-center gap-2 py-[3px] text-left transition-opacity hover:opacity-70">
-      {inner}
-    </button>
-  );
-  return (
-    <div className="flex items-center gap-2 py-[3px]" title={title}>{inner}</div>
-  );
 }
 
 // ── Beat reordering (drag-and-drop within a movement) ────────────────────────

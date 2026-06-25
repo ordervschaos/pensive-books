@@ -10,7 +10,7 @@ export interface DnaStage { key: StageKey; label: string; caption: string }
 
 // The ladder, lowest resolution → highest. Foundations carries the entity branch; Structure the spine.
 export const DNA_STAGES: DnaStage[] = [
-  { key: "premise", label: "Premise", caption: "The idea, genre, and shape — the lowest-resolution contract every step below is drawn from." },
+  { key: "premise", label: "Idea", caption: "The idea, genre, and shape — the lowest-resolution contract every layer below is drawn from. Holds the seed (logline) and the premise (dramatic question)." },
   { key: "foundations", label: "Foundations", caption: "The bedrock — controlling idea, ending, cast, world, tentpoles. What you pin here, the AI must keep." },
   { key: "structure", label: "Structure", caption: "The acts and their causal beats — the spine, page by page." },
   { key: "scenes", label: "Scenes", caption: "The dramatized units — each turns a value, no flat 'and-then'." },
@@ -103,6 +103,10 @@ export function stageSubsteps(key: StageKey, nodes: DnaNode[], mode: "prose" | "
       { key: "pillar", label: "Pillar", done: pillarDone, ready: pillarReady },
       { key: "cast", label: "Cast", done: cast >= 1, ready: pillarDone, count: cast },
       { key: "world", label: "World", done: n("world_fact") >= 1, ready: pillarDone, count: n("world_fact"), optional: true },
+      // Games are a species of world rule (a contest grounded in world_facts) — a Foundations entity, not a
+      // spine node. Offered here so the author CAN declare them before beats; still optional (beats don't
+      // require them and aren't pre-filled from them).
+      { key: "games", label: "Games", done: n("game") >= 1, ready: pillarDone, count: n("game"), optional: true },
       { key: "tentpole", label: "Tent-poles", done: n("tentpole") >= 1, ready: pillarDone, count: n("tentpole"), optional: true },
       { key: "relationship", label: "Relationships", done: n("relationship") >= 1, ready: cast >= 1, count: n("relationship"), optional: true },
     ]);
@@ -112,8 +116,9 @@ export function stageSubsteps(key: StageKey, nodes: DnaNode[], mode: "prose" | "
     return resolveSeq([
       { key: "acts", label: "Acts", done: acts >= 1, ready: foundationsDone, count: acts },
       { key: "beats", label: "Beats", done: n("beat") >= 1, ready: acts >= 1, count: n("beat") },
+      // Threads stay here: a thread's identity IS its beat anchors (setup→payoff), so it crystallizes during
+      // structure work. Games moved up to Foundations (they're definable without beats).
       { key: "threads", label: "Threads", done: n("thread") >= 1, ready: acts >= 1, count: n("thread"), optional: true },
-      { key: "games", label: "Games", done: n("game") >= 1, ready: acts >= 1, count: n("game"), optional: true },
     ]);
   }
   if (key === "scenes") {
@@ -129,7 +134,7 @@ export function stageSubsteps(key: StageKey, nodes: DnaNode[], mode: "prose" | "
 /** Which node kinds belong to a stage's Stage view. */
 export const STAGE_KINDS: Record<StageKey, NodeKind[]> = {
   premise: ["seed", "premise"],
-  foundations: ["pillar", "character", "relationship", "tentpole", "world_fact"],
+  foundations: ["pillar", "character", "relationship", "tentpole", "world_fact", "game"],
   structure: ["movement", "beat"],
   scenes: ["scene"],
   draft: ["scene"],

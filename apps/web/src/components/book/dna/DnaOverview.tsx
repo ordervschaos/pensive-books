@@ -5,20 +5,23 @@
 // the stage that owns it). Pure projection of the tree + journey — no generation happens here; every action
 // navigates into the stage that holds the real verb. Reuses the engine (validate/renderBlockers) and the
 // journey (stageSubsteps) so this never drifts from what the stages themselves compute.
-import { ArrowRight, Activity, BookOpen, Check, GitBranch, Network, Sparkles, TriangleAlert } from "lucide-react";
+import { useRef, type ReactNode } from "react";
+import { ArrowRight, Activity, BookOpen, Check, GitBranch, Network, Sparkles, TriangleAlert, Waypoints } from "lucide-react";
 import { ActionLink, Eyebrow, Hero, Panel, StageHead } from "@/components/book/studio/studioUi";
 import { DnaFullDiagram } from "@/components/book/dna/DnaStageDiagram";
 import { DnaStoryMap } from "@/components/book/dna/DnaStoryMap";
+import { DnaAnalysis } from "@/components/book/dna/DnaAnalysis";
 import { DnaAutopilot } from "@/components/book/dna/DnaAutopilot";
 import { STAGE_KINDS, stageSubsteps, type JourneyStage, type StageKey } from "@/lib/dnaJourney";
 import { byId, childrenOf, isProseStale, isStale, validate, type BookSettings, type DnaNode, type NodeKind, type SceneContent } from "@/lib/novelDna";
 
-// Which stage owns a node kind (so an issue on a node jumps to the right stage). threads/games live in
-// Structure but aren't in STAGE_KINDS' load-bearing lists — patched in here.
+// Which stage owns a node kind (so an issue on a node jumps to the right stage). game lives in Foundations
+// (a contest is a species of world rule); thread is edited here on the Overview, so thread-issue clicks are
+// special-cased to scroll to the Threads panel rather than routed by this map (the value is just a fallback).
 const KIND_STAGE: Record<NodeKind, StageKey> = {
   seed: "premise", premise: "premise",
-  pillar: "foundations", character: "foundations", relationship: "foundations", tentpole: "foundations", world_fact: "foundations", voice_profile: "foundations",
-  movement: "structure", beat: "structure", thread: "structure", game: "structure",
+  pillar: "foundations", character: "foundations", relationship: "foundations", tentpole: "foundations", world_fact: "foundations", voice_profile: "foundations", game: "foundations",
+  movement: "structure", beat: "structure", thread: "structure",
   scene: "scenes",
 };
 
@@ -52,9 +55,13 @@ function TreeRow({ node, index, label, title, meta, depth, onOpen }: {
   );
 }
 
-export function DnaOverview({ bookId, nodes, settings, stages, nowKey, onOpen, onChanged }: {
+export function DnaOverview({ bookId, nodes, settings, stages, nowKey, onOpen, onChanged, renderCard, onGenerateThreads, threadsBusy }: {
   bookId: number; nodes: DnaNode[]; settings: BookSettings; stages: JourneyStage[]; nowKey: StageKey; onOpen: (k: StageKey, focusId?: string) => void; onChanged: () => void;
+  // Threads are edited in place on the dashboard (a cross-cutting whole-book registry); the studio passes its
+  // own card renderer + generate handler down so we reuse the exact node-card UI without lifting it out.
+  renderCard: (n: DnaNode, accent?: boolean) => ReactNode; onGenerateThreads: () => void; threadsBusy: boolean;
 }) {
+  const threadsRef = useRef<HTMLDivElement>(null);
   const index = byId(nodes);
   const of = (k: NodeKind) => nodes.filter((n) => n.kind === k);
   const first = (k: NodeKind) => of(k)[0];
@@ -63,7 +70,7 @@ export function DnaOverview({ bookId, nodes, settings, stages, nowKey, onOpen, o
   const [seed, premise, pillar] = [first("seed"), first("premise"), first("pillar")];
   const movements = of("movement");
   const picture = settings.mode === "picture";
-  const beats = of("beat"), scenes = of("scene");
+  const beats = of("beat"), scenes = of("scene"), threads = of("thread");
   const drafted = scenes.filter((s) => str(picture ? (s.content as SceneContent).image_url : (s.content as SceneContent).prose?.text)).length;
 
   // ── Next move: the live now-stage + its first open sub-step, plus the optional branches also available now.
@@ -153,6 +160,28 @@ export function DnaOverview({ bookId, nodes, settings, stages, nowKey, onOpen, o
         {of("game").length > 0 && stat("games", of("game").length)}
       </Panel>
 
+      {/* STORY ANALYSIS — the analytic axes (pacing/promises/topography/causality), consolidated here so the
+          stages stay actionable. Each row jumps to the node it's about; lints are hidden because the issues
+          panel below already lists them with stage links. */}
+      {movements.length > 0 && <DnaAnalysis nodes={nodes} settings={settings} onOpen={onOpen} hideLints defaultOpen={false} />}
+
+      {/* THREADS — the promise registry (setup → payoff). A cross-cutting whole-book concern, so it's edited
+          here on the dashboard rather than nested in the sequential spine. Uses the studio's own node card. */}
+      <div ref={threadsRef}>
+        <Panel variant="soft" className="px-4 py-3.5">
+          <div className="mb-2.5 flex items-center gap-2">
+            <Waypoints className={`h-3.5 w-3.5 ${FAINT}`} />
+            <Eyebrow tone="muted">Threads — the promises this book makes, set up → paid off</Eyebrow>
+          </div>
+          {pillar && (
+            <ActionLink busy={threadsBusy} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={onGenerateThreads}>
+              {threads.length ? "regenerate threads" : "generate threads"}
+            </ActionLink>
+          )}
+          {threads.length > 0 && <div className="mt-3 space-y-2">{threads.map((t) => renderCard(t))}</div>}
+        </Panel>
+      </div>
+
       {/* ISSUES — conformance lints + render blockers, routed to their stage. */}
       <Panel variant={issues.length === 0 ? "soft" : "solid"} className="px-4 py-3.5">
         <div className="flex items-center gap-2">
@@ -163,7 +192,12 @@ export function DnaOverview({ bookId, nodes, settings, stages, nowKey, onOpen, o
         {issues.length > 0 && (
           <div className="mt-2.5 space-y-1.5">
             {issues.slice(0, 6).map((i, k) => (
-              <button key={k} type="button" onClick={() => onOpen(issueStage(i.nodeId), i.nodeId)}
+              <button key={k} type="button"
+                onClick={() => {
+                  // thread issues are edited right here on the dashboard — scroll to the panel instead of routing.
+                  if ((i.nodeId ? index.get(i.nodeId)?.kind : undefined) === "thread") { threadsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); return; }
+                  onOpen(issueStage(i.nodeId), i.nodeId);
+                }}
                 className="group flex w-full items-start gap-2 text-left">
                 <span className={`mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full ${i.severity === "error" ? "bg-rose-500" : "bg-amber-500"}`} />
                 <p className="pv-serif text-[12px] leading-snug">
@@ -212,15 +246,23 @@ export function DnaOverview({ bookId, nodes, settings, stages, nowKey, onOpen, o
             );
           })}
 
-          {/* cross-cutting registries that span the whole spine */}
-          {(of("thread").length > 0 || of("game").length > 0) && (
-            <button type="button" onClick={() => onOpen("structure")}
-              className="group mt-1 flex w-full items-center gap-3 rounded-md border-t border-[hsl(var(--pv-border-soft))]/50 py-1.5 pr-2 pt-2 transition-colors hover:bg-[hsl(var(--pv-surface-2))]/50" style={{ paddingLeft: 6 }}>
+          {/* cross-cutting registries: games are a Foundations entity now; threads are edited on this page. */}
+          {(threads.length > 0 || of("game").length > 0) && (
+            <div className="mt-1 flex items-center gap-3 border-t border-[hsl(var(--pv-border-soft))]/50 py-1.5 pr-2 pt-2" style={{ paddingLeft: 6 }}>
               <Eyebrow tone="muted">spanning</Eyebrow>
-              {of("thread").length > 0 && <span className={`pv-mono text-[9px] uppercase tracking-[0.1em] ${MUTED}`}><b className="font-semibold text-foreground">{of("thread").length}</b> threads</span>}
-              {of("game").length > 0 && <span className={`pv-mono text-[9px] uppercase tracking-[0.1em] ${MUTED}`}><b className="font-semibold text-foreground">{of("game").length}</b> games</span>}
-              <ArrowRight className={`h-3 w-3 opacity-0 transition-opacity group-hover:opacity-100 ${FAINT}`} />
-            </button>
+              {of("game").length > 0 && (
+                <button type="button" onClick={() => onOpen("foundations")} className="group flex items-center gap-1.5">
+                  <span className={`pv-mono text-[9px] uppercase tracking-[0.1em] ${MUTED}`}><b className="font-semibold text-foreground">{of("game").length}</b> games</span>
+                  <ArrowRight className={`h-3 w-3 opacity-0 transition-opacity group-hover:opacity-100 ${FAINT}`} />
+                </button>
+              )}
+              {threads.length > 0 && (
+                <button type="button" onClick={() => threadsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })} className="group flex items-center gap-1.5">
+                  <span className={`pv-mono text-[9px] uppercase tracking-[0.1em] ${MUTED}`}><b className="font-semibold text-foreground">{threads.length}</b> threads</span>
+                  <ArrowRight className={`h-3 w-3 opacity-0 transition-opacity group-hover:opacity-100 ${FAINT}`} />
+                </button>
+              )}
+            </div>
           )}
         </div>
       </Panel>
