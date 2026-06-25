@@ -51,3 +51,17 @@ currently the theme selection is not accessibility compliant.
 
 ---
 
+
+Immedite
+--
+issue with rail: "I can't wire the relationship nodes in this same batch — they'd need to point at ids these two don't have yet. Once these land, say the word and I'll add Reeve↔Cassian and Wren↔Mara as proper relationship nodes so the dynamics are tracked.
+
+- continue the rails update
+- run this experiment - 
+    - fork a book after beats and scenes are generated
+    - now, for a single prose generation 
+        - take 1 page of prev prose, or 
+        - take the entire context with all pages so far for the next prose generation. 
+    - record the context used in both scenarios side by side, and evaluate the quality of output
+        - create lints
+    - also create a prompt format to give all this context efficiently
