@@ -45,11 +45,14 @@ interface Pending {
   // message must carry results for every tool_use of that turn, so these ride along.
   preResults?: unknown[];
 }
-// A node op over book_nodes — the DNA substrate's edit/add/delete (mirrors lib/dnaChat.ts NodeOp).
+// A node op over book_nodes — the DNA substrate's edit/add/delete/replace_children (mirrors lib/dnaChat.ts).
+interface NewSubtree { content: Record<string, unknown>; children?: NewSubtree[] }
 type NodeOp =
   | { op: "edit"; id: string; content: Record<string, unknown> }
   | { op: "add"; kind: string; parentId: string; content: Record<string, unknown> }
-  | { op: "delete"; id: string };
+  | { op: "delete"; id: string }
+  // Rebuild a level: delete the parent's existing non-locked `childKind` children (cascade), add `children` fresh.
+  | { op: "replace_children"; parentId: string; childKind: string; children: NewSubtree[] };
 
 // A reviewable change the agent proposes against the DNA tree; the author applies it (applyNodeOps)
 // through the existing book_nodes write path (docs/agent-rail.md). One layer now: the DNA tree.
@@ -718,7 +721,7 @@ const THREAD_DNA_TOOLS = [
   },
   {
     name: "propose_node_ops",
-    description: "Propose a concrete change to the DNA tree the author reviews before it's applied: edit / add / delete nodes by their real ids. This records the proposal and ENDS your turn — narrate what you're changing and why just before calling it. Only touch nodes whose kind is in scope; never touch a LOCKED node.",
+    description: "Propose a concrete change to the DNA tree the author reviews before it's applied: edit / add / delete / replace_children nodes by their real ids. This records the proposal and ENDS your turn — narrate what you're changing and why just before calling it. Only touch nodes whose kind is in scope; never touch a LOCKED node. To REBUILD a whole level (replace all acts, or all beats under an act), use replace_children — NOT a pile of `add` ops, which would duplicate what's already there.",
     input_schema: {
       type: "object",
       properties: {
@@ -728,11 +731,13 @@ const THREAD_DNA_TOOLS = [
           items: {
             type: "object",
             properties: {
-              op: { type: "string", enum: ["edit", "add", "delete"] },
+              op: { type: "string", enum: ["edit", "add", "delete", "replace_children"] },
               id: { type: "string", description: "edit/delete: the existing node id." },
               kind: { type: "string", description: "add: the new node's kind (character|relationship|tentpole|world_fact|thread|game|movement|beat|scene|voice_profile)." },
-              parentId: { type: "string", description: "add: the existing parent node's id." },
+              parentId: { type: "string", description: "add / replace_children: the existing parent node's id (e.g. the pillar, whose movement children are the acts)." },
+              childKind: { type: "string", description: "replace_children: which child kind to rebuild (e.g. 'movement' to replace all acts, 'beat' to replace an act's beats)." },
               content: { type: "object", description: "edit: the fields to merge. add: the new node's content. Use the exact field names from the schema given.", additionalProperties: true },
+              children: { type: "array", description: "replace_children: the NEW children as a nested tree — each { content, children? }; nesting follows the ladder (movement→beat→scene). Every existing non-locked child of childKind is deleted first, so the rebuild never duplicates.", items: { type: "object", additionalProperties: true } },
             },
             required: ["op"],
           },
@@ -769,10 +774,25 @@ You hold the book's DNA TREE: premise → foundations (pillar, cast, world, tent
 You can do two things:
 1. DISCUSS — answer, summarize, pressure-test. Reply in plain MARKDOWN prose and just end your turn (no tool needed). Be concrete, grounded in the real tree, referencing nodes by their [id].
 2. CHANGE THE TREE — when the author asks for a change (or agrees to one), call propose_node_ops with edit/add/delete ops over the real ids. The author reviews the diff and applies it; descendants of an edited node go stale and are regenerated later. ONLY touch nodes whose kind is in scope; NEVER touch a LOCKED node. Don't propose unless asked — talk first.
+   • REBUILDS: to replace a whole level — "rebuild the acts", "4 movements with all-new beats" — use ONE replace_children op (parentId = the level's parent, e.g. the pillar for acts; childKind = movement; children = the new movements, each nesting its beats). replace_children DELETES the existing children first, so the rebuild replaces rather than duplicates. Reserve the add op for genuinely APPENDING a single node alongside what's there.
 
 ${CONTENT_SCHEMAS}
 
 Be tight. Don't propose changes the author didn't ask for; when they're just talking, just talk.`;
+
+// Keep only { content, children } from a model-proposed subtree (drop stray op/kind/id fields the model
+// may emit), recursively — the shape applyNodeOps expects for a replace_children rebuild.
+function sanitizeSubtree(subs: unknown[]): NewSubtree[] {
+  const out: NewSubtree[] = [];
+  for (const s of Array.isArray(subs) ? subs : []) {
+    if (!s || typeof s !== "object") continue;
+    const sub = s as { content?: Record<string, unknown>; children?: unknown[] };
+    if (!sub.content || typeof sub.content !== "object") continue;
+    const kids = Array.isArray(sub.children) ? sanitizeSubtree(sub.children) : [];
+    out.push(kids.length ? { content: sub.content, children: kids } : { content: sub.content });
+  }
+  return out;
+}
 
 // Validate proposed ops against the LIVE tree + the scope fence; build the reviewable proposal. Mirrors
 // dna-chat's parser: ids must exist, never LOCKED, add-kinds valid, and every touched kind in scope.
@@ -790,13 +810,16 @@ async function proposeNodeOps(
 
   const ops: NodeOp[] = [];
   for (const raw of Array.isArray(input.ops) ? input.ops : []) {
-    const o = raw as { op?: string; id?: string; kind?: string; parentId?: string; content?: Record<string, unknown> };
+    const o = raw as { op?: string; id?: string; kind?: string; childKind?: string; parentId?: string; content?: Record<string, unknown>; children?: unknown[] };
     if (o.op === "edit" && o.id && byId.has(o.id) && !byId.get(o.id)!.authoring?.locked && allowed(byId.get(o.id)!.kind) && o.content) {
       ops.push({ op: "edit", id: o.id, content: o.content });
     } else if (o.op === "delete" && o.id && byId.has(o.id) && !byId.get(o.id)!.authoring?.locked && allowed(byId.get(o.id)!.kind)) {
       ops.push({ op: "delete", id: o.id });
     } else if (o.op === "add" && o.parentId && byId.has(o.parentId) && o.kind && ALL_NODE_KINDS.includes(o.kind) && allowed(o.kind) && o.content) {
       ops.push({ op: "add", kind: o.kind, parentId: o.parentId, content: o.content });
+    } else if (o.op === "replace_children" && o.parentId && byId.has(o.parentId) && !byId.get(o.parentId)!.authoring?.locked && o.childKind && ALL_NODE_KINDS.includes(o.childKind) && allowed(o.childKind) && Array.isArray(o.children) && o.children.length) {
+      const children = sanitizeSubtree(o.children);
+      if (children.length) ops.push({ op: "replace_children", parentId: o.parentId, childKind: o.childKind, children });
     }
   }
   if (ops.length === 0) {

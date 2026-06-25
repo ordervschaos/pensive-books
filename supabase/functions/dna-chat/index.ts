@@ -80,9 +80,11 @@ Reply to the author in plain MARKDOWN prose — discuss, pressure-test, answer. 
   "ops": [
     { "op": "edit", "id": "<existing node id>", "content": { <fields to merge> } },
     { "op": "add", "kind": "<character|world_fact|relationship|tentpole|thread|movement|beat|scene>", "parentId": "<existing node id>", "content": { … } },
-    { "op": "delete", "id": "<existing node id>" }
+    { "op": "delete", "id": "<existing node id>" },
+    { "op": "replace_children", "parentId": "<parent id, e.g. the pillar>", "childKind": "movement", "children": [ { "content": { …movement… }, "children": [ { "content": { …beat… } } ] } ] }
   ] }
 Only reference ids that exist. Honor LOCKED nodes (never edit/delete them). Don't propose unless the author asked for a change or agreed to one — talk first.
+To REBUILD a whole level (replace all acts, or all beats under an act), use ONE replace_children op — it deletes the existing non-locked children of childKind first, so the rebuild replaces instead of duplicating. Children nest down the ladder (movement→beat→scene). Use "add" only to APPEND a single node.
 
 CONTENT FIELD SCHEMAS — use EXACTLY these key names (wrong keys silently orphan data):
 - premise  → content.shape keys: setup | turn1 | turn2 | turn3 | resolution  (never "midpoint", never "climax")
@@ -122,11 +124,12 @@ CONTENT FIELD SCHEMAS — use EXACTLY these key names (wrong keys silently orpha
         const parsed = JSON.parse(extractJsonBlock(fence[1]));
         const ids = new Set(nodes.map((n) => n.id));
         const locked = new Set(nodes.filter((n) => n.authoring?.locked).map((n) => n.id));
-        const VALID_KINDS = new Set(["seed","premise","pillar","movement","beat","scene","character","relationship","tentpole","world_fact","thread","game"]);
-        const ops = (Array.isArray(parsed.ops) ? parsed.ops : []).filter((o: { op?: string; id?: string; parentId?: string; kind?: string }) =>
+        const VALID_KINDS = new Set(["seed","premise","pillar","movement","beat","scene","character","relationship","tentpole","world_fact","thread","game","voice_profile"]);
+        const ops = (Array.isArray(parsed.ops) ? parsed.ops : []).filter((o: { op?: string; id?: string; parentId?: string; kind?: string; childKind?: string; children?: unknown[] }) =>
           (o.op === "edit" && o.id && ids.has(o.id) && !locked.has(o.id)) ||
           (o.op === "delete" && o.id && ids.has(o.id) && !locked.has(o.id)) ||
-          (o.op === "add" && o.parentId && ids.has(o.parentId) && o.kind && VALID_KINDS.has(o.kind)));
+          (o.op === "add" && o.parentId && ids.has(o.parentId) && o.kind && VALID_KINDS.has(o.kind)) ||
+          (o.op === "replace_children" && o.parentId && ids.has(o.parentId) && !locked.has(o.parentId) && o.childKind && VALID_KINDS.has(o.childKind) && Array.isArray(o.children) && o.children.length > 0));
         if (ops.length) { proposal = { summary: String(parsed.summary ?? "Proposed change").trim(), ops }; reply = full.slice(0, fence.index).trim(); }
       } catch { /* keep the prose, drop the malformed block */ }
     }

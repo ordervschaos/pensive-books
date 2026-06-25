@@ -373,6 +373,16 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
         }
         toast({ title: "Beats generated", description: `${added} beat(s) across ${targets.length - failed.length}/${targets.length} act(s)${failed.length ? ` · ${failed.length} failed` : ""}.` });
       });
+      // Wipe the whole spine: deleting every act cascades (ON DELETE CASCADE) to its beats and scenes, so this
+      // clears Structure → Scenes in one move. Foundations stay; regenerate acts to rebuild from scratch.
+      const discardAllActs = () => {
+        if (movements.length === 0) return;
+        if (!window.confirm(`Discard all ${movements.length} act${movements.length === 1 ? "" : "s"}? This also removes their beats and scenes. Foundations stay. This can't be undone.`)) return;
+        void run("discard acts", async () => {
+          await Promise.all(movements.map((m) => deleteNode(m.id)));
+          toast({ title: "Acts discarded", description: `${movements.length} act${movements.length === 1 ? "" : "s"} removed. Generate acts to rebuild.` });
+        });
+      };
       // Structure is the pure sequential spine: Acts (coarse) · Beats (the causal units, grouped under their
       // act). Cross-cutting registries live elsewhere — Games in Foundations (a contest is definable without
       // beats), Threads in the Overview (a whole-book promise registry). `threads`/`games` are still read here
@@ -407,7 +417,10 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
                 </ActionLink>
               )}
               {movements.map((m) => card(m, true))}
-              {pillar && <ActionLink busy={busy === "add"} onClick={() => addChild(pillar, "movement", 3)} tone="faint">+ add act</ActionLink>}
+              <div className="flex items-center gap-4">
+                {pillar && <ActionLink busy={busy === "add"} onClick={() => addChild(pillar, "movement", 3)} tone="faint">+ add act</ActionLink>}
+                {movements.length > 0 && <ActionLink busy={busy === "discard acts"} onClick={discardAllActs} tone="faint">discard all acts →</ActionLink>}
+              </div>
             </div>
           )}
 
@@ -598,13 +611,29 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
       }
       toast({ title: "Scenes generated", description: `${added} scene(s) across ${beatsNeedingScenes.length - failed.length}/${beatsNeedingScenes.length} beat(s)${failed.length ? ` · ${failed.length} failed` : ""}.` });
     });
+    const scenesAll = of("scene");
+    // Clear the scene layer without touching the spine: deleting scenes leaves acts/beats intact, so you
+    // re-derive scenes (and their prose) from beats. Acts stay — use "discard all acts" to wipe the spine.
+    const discardAllScenes = () => {
+      if (scenesAll.length === 0) return;
+      if (!window.confirm(`Discard all ${scenesAll.length} scene${scenesAll.length === 1 ? "" : "s"}? This also removes their prose. Acts and beats stay. This can't be undone.`)) return;
+      void run("discard scenes", async () => {
+        await Promise.all(scenesAll.map((s) => deleteNode(s.id)));
+        toast({ title: "Scenes discarded", description: `${scenesAll.length} scene${scenesAll.length === 1 ? "" : "s"} removed. Generate scenes to rebuild.` });
+      });
+    };
     return (
       <>
-        {beatsNeedingScenes.length > 0 && (
+        {(beatsNeedingScenes.length > 0 || scenesAll.length > 0) && (
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <ActionLink busy={busy === "allscenes"} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={generateAllScenes}>
-              generate scenes for all {beatsNeedingScenes.length} beat{beatsNeedingScenes.length > 1 ? "s" : ""}
-            </ActionLink>
+            {beatsNeedingScenes.length > 0 && (
+              <ActionLink busy={busy === "allscenes"} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={generateAllScenes}>
+                generate scenes for all {beatsNeedingScenes.length} beat{beatsNeedingScenes.length > 1 ? "s" : ""}
+              </ActionLink>
+            )}
+            {scenesAll.length > 0 && (
+              <ActionLink busy={busy === "discard scenes"} onClick={discardAllScenes} tone="faint">discard all scenes →</ActionLink>
+            )}
           </div>
         )}
         {beatsAll.map((b) => {

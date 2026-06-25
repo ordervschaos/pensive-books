@@ -10,16 +10,26 @@ import type { StageKey } from "@/lib/dnaJourney";
 export interface DnaChatMessage { role: "user" | "assistant"; text: string; ts: string; plan?: string }
 export interface DnaSession { messages: DnaChatMessage[]; pending_proposal: DnaProposal | null; ended_at: string }
 
+// A node to create, with its own descendants — the unit of a rebuild (replace_children). Nesting follows
+// the ladder (movement→beat→scene), so children's kinds are implied by their parent's.
+export interface NewSubtree { content: NodeContent; children?: NewSubtree[] }
 export type NodeOp =
   | { op: "edit"; id: string; content: NodeContent }
   | { op: "add"; kind: NodeKind; parentId: string; content: NodeContent }
-  | { op: "delete"; id: string };
+  | { op: "delete"; id: string }
+  // Rebuild a whole level: delete the parent's existing (non-locked) children of `childKind` — cascading
+  // their subtrees — then create `children` fresh. The replace semantics `add` lacks, so a "rebuild" never
+  // duplicates the acts/beats it means to replace.
+  | { op: "replace_children"; parentId: string; childKind: NodeKind; children: NewSubtree[] };
 export interface DnaProposal { summary: string; ops: NodeOp[] }
 
 const KIND_LEVEL: Record<NodeKind, number> = {
   seed: 0, premise: 1, pillar: 2, character: 2, relationship: 2, tentpole: 2, world_fact: 2, voice_profile: 2, thread: 2, game: 2, movement: 3, beat: 4, scene: 5,
 };
 const VALID_KINDS = new Set<string>(Object.keys(KIND_LEVEL));
+// The ladder's next kind down — drives the nested adds of a replace_children subtree.
+const LADDER_NEXT: Partial<Record<NodeKind, NodeKind>> = { movement: "beat", beat: "scene" };
+const countSubtree = (subs?: NewSubtree[]): number => (subs ?? []).reduce((n, s) => n + 1 + countSubtree(s.children), 0);
 
 /** Send one message in a (book, stage) thread. The edge fn appends + persists; the rail re-reads over Realtime.
  *  `analysis` = the three-axis story analysis (pacing/promises/topography/lints), computed client-side from the
@@ -80,10 +90,30 @@ export interface OpField { key: string; old?: string; next: string }
 // the author sees the WEIGHT of a high-leverage change (e.g. editing the throughline restales the whole tree).
 export interface OpRow { verb: "edit" | "add" | "delete"; kind: string; label: string; parentLabel?: string; fields: OpField[]; restales?: number }
 
-/** Turn proposal ops into display rows against the live `nodes` (for the accept/dismiss preview). */
+/** Turn proposal ops into display rows against the live `nodes` (for the accept/dismiss preview). A
+ *  replace_children op expands into its delete rows (the children it removes) + add rows (the new set),
+ *  so the author sees the real before/after of a rebuild — not one opaque line. */
 export function describeOps(ops: NodeOp[], nodes: DnaNode[]): OpRow[] {
   const index = byId(nodes);
-  return ops.map((op): OpRow => {
+  return ops.flatMap((op): OpRow[] => {
+    if (op.op === "replace_children") {
+      const parentLabel = nodeLabel(index.get(op.parentId));
+      const removed = nodes.filter((n) => n.parent_id === op.parentId && n.kind === op.childKind && !n.authoring.locked);
+      const removals = removed.map((n): OpRow => ({ verb: "delete", kind: n.kind, label: nodeLabel(n), fields: [], restales: blastRadius(n.id, nodes).count || undefined }));
+      const additions = op.children.map((sub): OpRow => {
+        const fields = Object.entries(sub.content).map(([key, val]): OpField => ({ key, next: renderValue(val) }));
+        const nested = countSubtree(sub.children);
+        if (nested) fields.push({ key: "", next: `+${nested} below` });
+        return { verb: "add", kind: op.childKind, label: nodeLabel({ content: sub.content, kind: op.childKind } as DnaNode), parentLabel, fields };
+      });
+      return [...removals, ...additions];
+    }
+    return [describeOp(op, index, nodes)];
+  });
+}
+
+function describeOp(op: Exclude<NodeOp, { op: "replace_children" }>, index: Map<string, DnaNode>, nodes: DnaNode[]): OpRow {
+  {
     if (op.op === "edit") {
       const node = index.get(op.id);
       const cur = (node?.content ?? {}) as Record<string, unknown>;
@@ -100,7 +130,7 @@ export function describeOps(ops: NodeOp[], nodes: DnaNode[]): OpRow[] {
     }
     const fields = Object.entries(op.content).map(([key, val]): OpField => ({ key, next: renderValue(val) }));
     return { verb: "add", kind: op.kind, label: nodeLabel(undefined, op.kind), parentLabel: nodeLabel(index.get(op.parentId)), fields };
-  });
+  }
 }
 
 /** Run a set of node ops against book_nodes (edit/add/delete), honoring LOCKED nodes. The reusable
@@ -110,6 +140,18 @@ export async function applyNodeOps(bookId: number, ops: NodeOp[]): Promise<void>
   const index = byId(nodes);
   const childCount = (parentId: string) => nodes.filter((n) => n.parent_id === parentId).length;
   let added = 0;
+  // Create one new node (+ its descendants) under `parentId`, recursing down the ladder. Mirrors the
+  // `add` branch's stamping; used by replace_children to build a fresh subtree atomically.
+  const addSubtree = async (sub: NewSubtree, kind: NodeKind, parentId: string, position: number): Promise<void> => {
+    const fresh = emptyNode(bookId, kind, KIND_LEVEL[kind] ?? 5, parentId, position);
+    const node: DnaNode = { ...fresh, content: sub.content, authoring: { source: "ai", locked: false, status: "accepted" } };
+    await saveNode(stampInput(node, byId([...nodes, node])));
+    const childKind = LADDER_NEXT[kind];
+    if (childKind && Array.isArray(sub.children)) {
+      let i = 0;
+      for (const child of sub.children) await addSubtree(child, childKind, node.id, i++);
+    }
+  };
   for (const op of ops) {
     if (op.op === "edit") {
       const node = index.get(op.id);
@@ -121,6 +163,13 @@ export async function applyNodeOps(bookId: number, ops: NodeOp[]): Promise<void>
       const fresh = emptyNode(bookId, op.kind, KIND_LEVEL[op.kind] ?? 5, op.parentId, childCount(op.parentId) + added++);
       const node: DnaNode = { ...fresh, content: op.content, authoring: { source: "ai", locked: false, status: "accepted" } };
       await saveNode(stampInput(node, byId([...nodes, node])));
+    } else if (op.op === "replace_children" && index.has(op.parentId) && VALID_KINDS.has(op.childKind as string)) {
+      // Wipe the parent's existing non-locked children of this kind (FK cascade takes their subtrees),
+      // keeping any locked ones, then build the new set after them. This is what makes rebuild replace.
+      const existing = nodes.filter((n) => n.parent_id === op.parentId && n.kind === op.childKind);
+      for (const child of existing) if (!child.authoring.locked) await deleteNode(child.id);
+      let pos = existing.filter((n) => n.authoring.locked).length;
+      for (const sub of op.children) await addSubtree(sub, op.childKind, op.parentId, pos++);
     }
   }
 }
