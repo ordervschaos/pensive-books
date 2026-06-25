@@ -27,7 +27,7 @@ import { reconcileDna } from "@/lib/novelDnaRender";
 import { expandNode, composeSceneIllustration, renderSceneIllustration, type ComposedSceneImage } from "@/lib/dnaExpand";
 import { ImagePromptPreview } from "@/components/book/dna/ImagePromptPreview";
 import {
-  byId, childrenOf, editContent, emptyNode, isIllusStale, isProseStale, isStale, lock as lockNode, renderBlockers,
+  byId, childrenOf, editContent, emptyNode, isIllusStale, isProseStale, isStale, lock as lockNode, renderBlockers, scenesInOrder,
   setStatus, type BeatContent, type CharacterContent, type DnaNode, type GameContent, type MovementContent,
   type NodeKind, type RelationshipContent, type SceneContent, type ThreadContent, type WorldFactContent,
 } from "@/lib/novelDna";
@@ -470,7 +470,9 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
     if (key === "draft") {
       // Prose reading view: Act → Beat → prose text. Non-editable; headers link back to Structure.
       const movements = of("movement");
-      const scenesAll = of("scene");
+      // Reading order (spine DFS), not node-storage order — so the batch drafts the opening scenes first
+      // and continuity context flows forward, instead of leaving the first pages empty.
+      const scenesAll = scenesInOrder(nodes);
       const done = scenesAll.filter((s) =>
         picture
           ? (s.content as SceneContent).image_url && !isIllusStale(s)
