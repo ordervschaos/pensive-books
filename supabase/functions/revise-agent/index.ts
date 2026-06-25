@@ -336,6 +336,15 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
     // client's row arrives with steps=null, blanking the feed. (REPLICA IDENTITY FULL is the broader fix.)
     await service.from("book_agent_runs").update({ turns, steps: row.steps }).eq("id", runId);
 
+    // Poll for cancel_requested every 5s during the call so a user stop aborts the in-flight
+    // Claude request rather than waiting up to CALL_TIMEOUT_MS for it to finish naturally.
+    const cancelCtrl = new AbortController();
+    const cancelPoll = setInterval(async () => {
+      const { data: cr } = await service.from("book_agent_runs").select("cancel_requested").eq("id", runId).maybeSingle();
+      if ((cr as { cancel_requested?: boolean } | null)?.cancel_requested) cancelCtrl.abort("cancel_requested");
+    }, 5000);
+    const callSignal = AbortSignal.any([AbortSignal.timeout(CALL_TIMEOUT_MS), cancelCtrl.signal]);
+
     let resp;
     try {
       resp = await callClaude(apiKey, {
@@ -355,8 +364,14 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
         taskTable: "book_agent_runs",
         taskId: runId,
         userId: row.created_by,
-      }, { signal: AbortSignal.timeout(CALL_TIMEOUT_MS) });
+      }, { signal: callSignal });
     } catch (e) {
+      clearInterval(cancelPoll);
+      // User cancelled mid-call: mark the row and exit cleanly.
+      if (cancelCtrl.signal.aborted && cancelCtrl.signal.reason === "cancel_requested") {
+        await service.from("book_agent_runs").update({ status: "cancelled" }).eq("id", runId);
+        return;
+      }
       if (isBillingError(e)) throw e; // won't recover — fail the run
       // Transient API failure/timeout: chain again (turn budget already spent bounds retries).
       console.error(`revise-agent run ${runId} call failed (turn ${turns}), retrying:`, e);
@@ -364,6 +379,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
       if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("revise-agent", { runId }));
       return;
     }
+    clearInterval(cancelPoll);
 
     // deno-lint-ignore no-explicit-any
     const content = (resp?.content ?? []) as any[];

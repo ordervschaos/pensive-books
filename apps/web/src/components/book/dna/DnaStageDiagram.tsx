@@ -84,11 +84,12 @@ function StructureDiagram({ nodes }: { nodes: DnaNode[] }) {
       <div className="flex items-stretch gap-1">
         {widths.map((w, i) => (
           <div key={i} className={`flex flex-col justify-between rounded-md border ${MUTED} border-current/40 bg-current/[0.04] px-1.5 py-1`} style={{ flex: `${w} 1 0%` }}>
-            <span className={`pv-mono text-[8px] uppercase tracking-[0.08em] ${MUTED}`}>act {i + 1}</span>
+            <span className={`pv-mono text-[8px] uppercase tracking-[0.08em] ${MUTED}`}>act {i + 1}{beats[i] ? ` · ${beats[i]}` : ""}</span>
             <div className="mt-1 flex items-center gap-[3px]">
               {Array.from({ length: Math.max(1, Math.min(beats[i] || 1, 6)) }).map((_, b) => (
                 <span key={b} className={`h-1 w-1 rounded-full bg-current ${ACCENT}`} />
               ))}
+              {(beats[i] || 0) > 6 && <span className={`pv-mono text-[7px] leading-none ${MUTED}`}>+{beats[i] - 6}</span>}
             </div>
           </div>
         ))}
@@ -361,11 +362,12 @@ export function DnaFullDiagram({ nodes, onOpen }: { nodes: DnaNode[]; onOpen?: (
             <div className="flex items-stretch gap-1">
               {widths.map((w, i) => (
                 <div key={i} className={`flex flex-col justify-between rounded border ${MUTED} border-current/40 bg-current/[0.04] px-1.5 py-1`} style={{ flex: `${w} 1 0%` }}>
-                  <span className={`pv-mono text-[8px] uppercase tracking-[0.07em] ${MUTED}`}>act {i + 1}</span>
+                  <span className={`pv-mono text-[8px] uppercase tracking-[0.07em] ${MUTED}`}>act {i + 1}{beatsOf(movements[i]) ? ` · ${beatsOf(movements[i])}` : ""}</span>
                   <div className="mt-1 flex items-center gap-[3px]">
                     {Array.from({ length: Math.max(1, Math.min(beatsOf(movements[i]) || 1, 6)) }).map((_, b) => (
                       <span key={b} className={`h-1 w-1 rounded-full bg-current ${ACCENT}`} />
                     ))}
+                    {beatsOf(movements[i]) > 6 && <span className={`pv-mono text-[7px] leading-none ${MUTED}`}>+{beatsOf(movements[i]) - 6}</span>}
                   </div>
                 </div>
               ))}

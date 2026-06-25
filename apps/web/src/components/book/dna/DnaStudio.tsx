@@ -628,7 +628,7 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             {beatsNeedingScenes.length > 0 && (
               <ActionLink busy={busy === "allscenes"} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={generateAllScenes}>
-                generate scenes for all {beatsNeedingScenes.length} beat{beatsNeedingScenes.length > 1 ? "s" : ""}
+                generate scenes for {beatsNeedingScenes.length} empty beat{beatsNeedingScenes.length > 1 ? "s" : ""}
               </ActionLink>
             )}
             {scenesAll.length > 0 && (
