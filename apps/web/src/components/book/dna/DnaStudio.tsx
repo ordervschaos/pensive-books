@@ -393,7 +393,7 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
                     ? "border-[hsl(var(--pv-accent))] text-foreground"
                     : "border-transparent text-[hsl(var(--pv-text-muted))] hover:text-foreground"
                 }`}>
-                {t.label}{t.count > 0 ? ` · ${t.count}` : ""}{t.opt ? <span className="pv-mono ml-1 text-[8px] uppercase tracking-[0.1em] text-[hsl(var(--pv-text-faint))]/70">opt</span> : null}
+                {t.label}{t.count > 0 ? ` · ${t.count}` : ""}
               </button>
             ))}
           </div>
