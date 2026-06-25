@@ -103,13 +103,14 @@ export function describeOps(ops: NodeOp[], nodes: DnaNode[]): OpRow[] {
   });
 }
 
-/** Apply a reviewed proposal: run its node ops against book_nodes, then clear the pending proposal. */
-export async function applyDnaProposal(bookId: number, stage: StageKey, proposal: DnaProposal): Promise<void> {
+/** Run a set of node ops against book_nodes (edit/add/delete), honoring LOCKED nodes. The reusable
+ *  core shared by the per-stage chat (applyDnaProposal) and the omni-rail agent (applyAgentProposal). */
+export async function applyNodeOps(bookId: number, ops: NodeOp[]): Promise<void> {
   const nodes = await loadTree(bookId);
   const index = byId(nodes);
   const childCount = (parentId: string) => nodes.filter((n) => n.parent_id === parentId).length;
   let added = 0;
-  for (const op of proposal.ops) {
+  for (const op of ops) {
     if (op.op === "edit") {
       const node = index.get(op.id);
       if (node && !node.authoring.locked) await saveNode(editContent(node, op.content));
@@ -122,6 +123,11 @@ export async function applyDnaProposal(bookId: number, stage: StageKey, proposal
       await saveNode(stampInput(node, byId([...nodes, node])));
     }
   }
+}
+
+/** Apply a reviewed proposal: run its node ops against book_nodes, then clear the pending proposal. */
+export async function applyDnaProposal(bookId: number, stage: StageKey, proposal: DnaProposal): Promise<void> {
+  await applyNodeOps(bookId, proposal.ops);
   await clearDnaProposal(bookId, stage);
 }
 

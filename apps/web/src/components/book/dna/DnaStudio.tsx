@@ -5,7 +5,7 @@
 // produced on demand via reconcileDna (Render). expand = ONE authoritative value (not proposals).
 import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { Lock, Unlock, Sparkles, BookOpen, Loader2, Check, X, ChevronRight, ChevronDown, LayoutDashboard, GripVertical } from "lucide-react";
+import { Lock, Unlock, Sparkles, BookOpen, Loader2, Check, X, ChevronRight, ChevronDown, LayoutDashboard, GripVertical, Image } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent,
@@ -17,17 +17,16 @@ import { AutoTextarea } from "@/components/ui/auto-textarea";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { ActionLink, Eyebrow, Panel, RunningInline, StageHead, StepDot } from "@/components/book/studio/studioUi";
 import { buildJourney, stageSubsteps, type StageKey, type SubStep } from "@/lib/dnaJourney";
-import { DnaChatRail } from "@/components/book/dna/DnaChatRail";
-import { DnaCharacterLook } from "@/components/book/dna/DnaCharacterLook";
-import { DnaLookPanel } from "@/components/book/dna/DnaLookPanel";
+import { AgentRail } from "@/components/book/studio/AgentRail";
+import { DnaVisuals } from "@/components/book/dna/DnaVisuals";
 import { DnaAnalysis } from "@/components/book/dna/DnaAnalysis";
 import { DnaStageDiagram } from "@/components/book/dna/DnaStageDiagram";
 import { DnaOverview } from "@/components/book/dna/DnaOverview";
 import { saveNode, saveNodes, deleteNode } from "@/lib/bookNodes";
 import { migrateBookToDna } from "@/lib/migrateToDna";
 import { reconcileDna } from "@/lib/novelDnaRender";
-import { expandNode, illustrateScene } from "@/lib/dnaExpand";
-import { supabase } from "@/integrations/supabase/client";
+import { expandNode, composeSceneIllustration, renderSceneIllustration, type ComposedSceneImage } from "@/lib/dnaExpand";
+import { ImagePromptPreview } from "@/components/book/dna/ImagePromptPreview";
 import {
   byId, childrenOf, editContent, emptyNode, isIllusStale, isProseStale, isStale, lock as lockNode, renderBlockers,
   setStatus, type BeatContent, type CharacterContent, type DnaNode, type GameContent, type MovementContent,
@@ -168,7 +167,7 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
   const { toast } = useToast();
   const navigate = useNavigate();
   const [busy, setBusy] = useState<string | null>(null);
-  const [view, setView] = useState<"overview" | StageKey>("overview"); // "overview" = the dashboard; else a stage
+  const [view, setView] = useState<"overview" | "visuals" | StageKey>("overview"); // "overview" = the dashboard; "visuals" = the non-gating Visuals section; else a stage
   const [flashId, setFlashId] = useState<string | null>(null); // a node to scroll-to + briefly ring (drill-in from the map)
   const [collapsedSections, setCollapsedSections] = useState<Set<NodeKind>>(new Set());
   const toggleSection = (k: NodeKind) => setCollapsedSections((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; });
@@ -178,8 +177,6 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
   // Picture-book mode (docs/picture-book-mode.md): the Draft rung ILLUSTRATES each scene (image + caption)
   // instead of writing prose. A book-level choice on books.mode; the tree above the scene is mode-agnostic.
   const picture = settings.mode === "picture";
-  const setMode = (mode: "prose" | "picture") =>
-    run("mode", async () => { const { error } = await supabase.from("books").update({ mode }).eq("id", bookId); if (error) throw error; });
 
   const run = async (label: string, fn: () => Promise<void>) => {
     setBusy(label);
@@ -253,7 +250,9 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
   const nowKey = stages[nowIndex]?.key ?? "premise";
   const selectable = (k: StageKey) => stages.find((s) => s.key === k)?.status !== "locked";
   const onOverview = view === "overview";
-  const activeKey: StageKey = view !== "overview" && selectable(view) ? view : nowKey;
+  const onVisuals = view === "visuals";
+  // Treat "visuals" as a non-stage view (like "overview") so activeKey is only set for real stages.
+  const activeKey: StageKey = (view !== "overview" && view !== "visuals" && selectable(view)) ? view : nowKey;
   // Open a stage, optionally drilling to a specific node: reveal it (expand it + every ancestor so it isn't
   // hidden under a folded parent), then flash it (the scroll-into-view + ring runs in an effect below).
   const openStage = (k: StageKey, focusId?: string) => {
@@ -282,9 +281,6 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
       const labels: Record<string, string> = { character: "Cast", relationship: "Relationships", tentpole: "Tent-poles", world_fact: "World rules" };
       return (
         <>
-          {/* Picture mode: the book-wide house look governs the portraits designed here AND every scene
-              image — so set it before "design the look" / illustrating (docs/picture-book-mode.md). */}
-          {picture && <DnaLookPanel bookId={bookId} />}
           {pillar && card(pillar, true)}
           {/* Each entity kind in its own labeled, countable section — grouped so the bedrock reads at a glance
               rather than as one undifferentiated stack. Cast/world are generated from the pillar above; "add"
@@ -453,13 +449,8 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
           ).length;
           const ready = scenesAll.length > 0 && done === scenesAll.length;
           const noun = picture ? "illustrated" : "drafted";
-          const illustrateAll = () => run("allillus", async () => {
-            const todo = scenesAll.filter((s) => !(s.content as SceneContent).image_url || (s.content as SceneContent).caption?.text == null || isIllusStale(s));
-            let ok = 0; const failed: string[] = [];
-            for (const s of todo) { try { await illustrateScene(bookId, s); ok++; } catch (e) { failed.push(String((e as Error)?.message ?? e)); } }
-            toast({ title: "Illustrating", description: `${ok}/${todo.length} scene(s) kicked off${failed.length ? ` · ${failed.length} failed` : ""}.` });
-          });
           const scenesNeedingProse = !picture ? scenesAll.filter((s) => !(s.content as SceneContent).prose?.text?.trim() || isProseStale(s)) : [];
+          const scenesWithProse = !picture ? scenesAll.filter((s) => !!(s.content as SceneContent).prose?.text?.trim()) : [];
           const generateAllProse = () => run("allprose", async () => {
             let ok = 0; const failed: string[] = [];
             for (const s of scenesNeedingProse) {
@@ -467,11 +458,20 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
             }
             toast({ title: "Prose generated", description: `${ok}/${scenesNeedingProse.length} scene(s) written${failed.length ? ` · ${failed.length} failed` : ""}.` });
           });
+          const discardAllProse = () => {
+            if (scenesWithProse.length === 0) return;
+            if (!window.confirm(`Discard the prose on ${scenesWithProse.length} scene${scenesWithProse.length === 1 ? "" : "s"}? The scenes stay — you'll re-draft from them. This can't be undone.`)) return;
+            void run("discard prose", async () => {
+              await Promise.all(scenesWithProse.map((s) => saveNode({
+                ...s,
+                content: { ...(s.content as SceneContent), prose: {} },
+                authoring: { ...s.authoring, prose_src_hash: undefined },
+              })));
+              toast({ title: "Prose discarded", description: `${scenesWithProse.length} scene${scenesWithProse.length === 1 ? "" : "s"} cleared. Write prose to re-draft.` });
+            });
+          };
           return (
-            <div className="space-y-4 pt-2">
-            {/* Picture mode: the house look the "illustrate" passes inherit — tweak it before a bulk run. */}
-            {picture && <DnaLookPanel bookId={bookId} />}
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 pt-2">
               <button
                 type="button"
                 disabled={busy === "read" || scenesAll.length === 0}
@@ -485,16 +485,17 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
               {scenesAll.length > 0 && (
                 <span className="pv-mono text-[10px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-faint))]">{done}/{scenesAll.length} scenes {noun}</span>
               )}
-              {picture && scenesAll.length > 0 && !ready && (
-                <ActionLink busy={busy === "allillus"} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={illustrateAll}>illustrate all scenes</ActionLink>
-              )}
               {!picture && scenesNeedingProse.length > 0 && (
                 <ActionLink busy={busy === "allprose"} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={generateAllProse}>
                   write prose for all {scenesNeedingProse.length} missing/stale scene{scenesNeedingProse.length !== 1 ? "s" : ""}
                 </ActionLink>
               )}
+              {!picture && scenesWithProse.length > 0 && (
+                <ActionLink tone="faint" busy={busy === "discard prose"} onClick={discardAllProse}>
+                  discard all prose →
+                </ActionLink>
+              )}
               <ActionLink busy={busy === "render"} onClick={render} tone="faint">render only</ActionLink>
-            </div>
             </div>
           );
         })()}
@@ -541,6 +542,20 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
                 {subs.map((ss) => <SubStepRow key={ss.key} sub={ss} />)}
               </div>
             )}
+            {/* Visuals — a standalone, NON-gating section (no StepDot number) that sits right under
+                Foundations. Always reachable; it never blocks the stages below it. */}
+            {s.key === "foundations" && (
+              <button onClick={() => setView("visuals")}
+                className={`mb-0.5 flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors ${onVisuals ? "bg-[hsl(var(--pv-accent))]/[0.08]" : "hover:bg-[hsl(var(--pv-surface-2))]/60"}`}>
+                <span className="flex h-5 w-5 items-center justify-center"><Image className={`h-3.5 w-3.5 ${onVisuals ? "text-[hsl(var(--pv-accent))]" : "text-[hsl(var(--pv-text-faint))]"}`} /></span>
+                <span className={`pv-serif flex-1 text-[14px] ${onVisuals ? "text-foreground" : "text-[hsl(var(--pv-text-muted))]"}`}>Visuals</span>
+                {picture && of("scene").length > 0 && (
+                  <span className="pv-mono text-[9px] text-[hsl(var(--pv-text-faint))]">
+                    {of("scene").filter((sc) => (sc.content as SceneContent).image_url && !isIllusStale(sc)).length}/{of("scene").length}
+                  </span>
+                )}
+              </button>
+            )}
           </div>
         );
       })}
@@ -549,17 +564,7 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
         {/* The brief (genre/length/heat/audience — the binding mandate) lives in the Build Studio; the
             concept there is the same idea this DNA tree elaborates. Jump out to edit it. */}
         <ActionLink tone="muted" onClick={() => navigate(`/books/${bookSlug}/studio/brief`)}>edit brief →</ActionLink>
-        {/* Output mode — prose vs picture book (docs/picture-book-mode.md). Changes only the Draft rung:
-            picture mode illustrates each scene (image + caption) instead of writing prose. */}
-        <div className="flex items-center gap-1.5 pt-0.5" title="Output: a prose novel, or an illustrated picture book">
-          <Eyebrow tone="muted">output</Eyebrow>
-          {(["prose", "picture"] as const).map((m) => (
-            <button key={m} disabled={busy === "mode"} onClick={() => { if (m !== (picture ? "picture" : "prose")) setMode(m); }}
-              className={`pv-mono text-[10px] uppercase tracking-[0.1em] transition-colors ${(picture ? "picture" : "prose") === m ? "text-[hsl(var(--pv-accent))]" : "text-[hsl(var(--pv-text-faint))] hover:text-foreground"}`}>
-              {m}
-            </button>
-          ))}
-        </div>
+        {/* Output mode (prose vs picture book) now lives in the Visuals section, alongside the look. */}
         {nodes.length === 0 && <ActionLink busy={busy === "migrate"} onClick={migrate}>migrate from legacy</ActionLink>}
         {nodes.length > 0 && <ActionLink busy={busy === "render"} onClick={render} tone="faint">render pages →</ActionLink>}
         {nodes.length > 0 && <ActionLink busy={busy === "read"} onClick={renderAndRead}>read →</ActionLink>}
@@ -581,6 +586,9 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
         ) : onOverview ? (
           // The home dashboard — shape, next move, and issues; every action drills into the owning stage.
           <DnaOverview bookId={bookId} nodes={nodes} settings={settings} stages={stages} nowKey={nowKey} onOpen={openStage} onChanged={onChanged} />
+        ) : onVisuals ? (
+          // The standalone Visuals control room — look, cast references, illustrations (renders its own StageHead).
+          <DnaVisuals bookId={bookId} nodes={nodes} settings={settings} onChanged={onChanged} />
         ) : (
           <>
             <StageHead eyebrow={active.status === "done" ? "Approved" : active.status === "now" ? "Focus · the next move" : "Stage"} title={active.label} caption={active.caption}
@@ -603,7 +611,9 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
   );
 
   const railHandle = <ResizableHandle className="w-1.5 bg-transparent transition-colors hover:bg-[hsl(var(--pv-accent))]/30 data-[resize-handle-state=drag]:bg-[hsl(var(--pv-accent))]/50" />;
-  const rail = nodes.length > 0 ? <DnaChatRail bookId={bookId} stage={activeKey} nodes={nodes} settings={settings} onApplied={onChanged} /> : null;
+  // The omni-rail agent (docs/agent-rail.md) — one durable, tool-using conversation over the whole DNA
+  // tree, with the context filter + slash commands. Supersedes the per-stage DnaChatRail.
+  const rail = nodes.length > 0 ? <AgentRail bookId={bookId} nodes={nodes} settings={settings} /> : null;
 
   return (
     <div className="flex h-full flex-col">
@@ -813,7 +823,10 @@ function NodeCard({ node, index, bookId, kids, onChanged, accent, expanded, onTo
   const { toast } = useToast();
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [generating, setGenerating] = useState<string | null>(null);
-  useEffect(() => { setDrafts({}); }, [node.id]);
+  // Two-phase illustrate: compose → show preview → author edits → render. preview holds the composed
+  // scene image data (prompt + refImages + model) while the panel is visible.
+  const [preview, setPreview] = useState<ComposedSceneImage | null>(null);
+  useEffect(() => { setDrafts({}); setPreview(null); }, [node.id]);
   const isPictureScene = picture && node.kind === "scene";
   // Picture-mode scene cards edit the CAPTION (not prose) + show the illustration; everything else is shared.
   const fields = isPictureScene
@@ -850,14 +863,21 @@ function NodeCard({ node, index, bookId, kids, onChanged, accent, expanded, onTo
   const toggleLock = () => guard("Couldn't lock", () => saveNode(lockNode(node, !locked)));
   const remove = () => { if (window.confirm(`Delete this ${node.kind} and everything under it?`)) void guard("Couldn't delete", () => deleteNode(node.id)); };
   const generate = async (t: ExpandTarget) => {
-    // Picture mode: ILLUSTRATE the scene — write the caption + kick the durable node-keyed render (which
-    // pins the chosen image when ready, over Realtime). A separate, node-native path from prose generation.
+    // Picture mode: two-phase ILLUSTRATE — compose → show editable preview → render. The preview IS the
+    // confirm, so we drop the window.confirm for re-illustrate. Phase 1 (compose) writes the caption
+    // + stamps the hash, ensures portraits, and returns the prompt. Phase 2 (render) is triggered from
+    // the ImagePromptPreview panel after the author reviews/edits.
     if (t.target === "illustrate") {
-      if (sceneImage?.trim() && !window.confirm("Re-illustrate this scene? (writes a new caption + a new image)")) return;
       setGenerating("illustrate");
-      try { await illustrateScene(bookId, node); onChanged(); }
-      catch (e) { toast({ title: "Couldn't illustrate", description: String((e as Error)?.message ?? e), variant: "destructive" }); }
-      finally { setGenerating(null); }
+      try {
+        const composed = await composeSceneIllustration(bookId, node);
+        setPreview(composed);
+        onChanged(); // caption + stamp already written
+      } catch (e) {
+        toast({ title: "Couldn't compose illustration", description: String((e as Error)?.message ?? e), variant: "destructive" });
+      } finally {
+        setGenerating(null);
+      }
       return;
     }
     // Regenerate REPLACES the unlocked children of this kind (locked ones are kept); first run just appends.
@@ -908,6 +928,31 @@ function NodeCard({ node, index, bookId, kids, onChanged, accent, expanded, onTo
           className="mt-2.5 w-full rounded-md border border-[hsl(var(--pv-border-soft))] object-cover" />
       )}
 
+      {/* PICTURE MODE — editable prompt preview after compose, before render. The author reviews (and
+          optionally edits) the prompt + ref thumbnails + model, then clicks Generate to kick the durable
+          render. Clearing preview after render or cancel. */}
+      {isPictureScene && preview && (
+        <ImagePromptPreview
+          prompt={preview.prompt}
+          refImages={preview.refImages}
+          model={preview.model}
+          busy={generating === "rendering"}
+          onGenerate={async (finalPrompt) => {
+            setGenerating("rendering");
+            try {
+              await renderSceneIllustration(bookId, node.id, { ...preview, prompt: finalPrompt });
+              setPreview(null);
+              onChanged();
+            } catch (e) {
+              toast({ title: "Couldn't generate image", description: String((e as Error)?.message ?? e), variant: "destructive" });
+            } finally {
+              setGenerating(null);
+            }
+          }}
+          onCancel={() => setPreview(null)}
+        />
+      )}
+
       {/* FIELDS — the editable slots; ★ marks a load-bearing one */}
       {fields.length > 0 && (
         <div className="mt-2.5 space-y-1.5">
@@ -947,14 +992,12 @@ function NodeCard({ node, index, bookId, kids, onChanged, accent, expanded, onTo
         </div>
       )}
 
-      {/* PICTURE MODE — "design the look": pin reference portraits onto the character node for cross-scene
-          likeness. Only on character cards in picture mode (the consistency layer). */}
-      {picture && node.kind === "character" && <DnaCharacterLook node={node} bookId={bookId} onChanged={onChanged} />}
+      {/* (Reference portraits live in the standalone Visuals section now, not on the card.) */}
 
       {/* ACTIONS — a persistent bar (never reflows): generate verbs left, edit controls right */}
       <div className="mt-3 flex min-h-[24px] items-center gap-3 border-t border-[hsl(var(--pv-border-soft))]/60 pt-2.5">
         {generating ? (
-          <RunningInline label={generating === "prose" ? "writing prose…" : generating === "illustrate" ? "illustrating…" : "generating…"} />
+          <RunningInline label={generating === "prose" ? "writing prose…" : generating === "illustrate" ? "composing prompt…" : generating === "rendering" ? "rendering…" : "generating…"} />
         ) : (
           <>
             {!ready && (

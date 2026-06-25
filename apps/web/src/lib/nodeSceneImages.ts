@@ -44,6 +44,33 @@ export async function startNodeSceneGeneration(
   return data as NodeSceneImage;
 }
 
+export interface ComposedSceneImage { prompt: string; refImages: string[]; model: string | null }
+
+/** Compose the scene image prompt (+ refs + model) WITHOUT rendering — for the preview/edit step. */
+export async function composeSceneImage(
+  bookId: number, nodeId: string, opts: { instruction?: string; style?: string } = {},
+): Promise<ComposedSceneImage> {
+  const { data, error } = await supabase.functions.invoke("generate-dna-scene-image", {
+    body: { bookId, nodeId, mode: "compose", instruction: opts.instruction, style: opts.style },
+  });
+  if (error) throw error;
+  if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
+  return data as ComposedSceneImage;
+}
+
+/** Render the (possibly author-edited) prompt as a durable scene image; pins onto content.image_url when pin:true. */
+export async function renderNodeSceneImage(
+  bookId: number, nodeId: string,
+  opts: { prompt: string; refImages?: string[]; model?: string | null; pin?: boolean },
+): Promise<NodeSceneImage> {
+  const { data, error } = await supabase.functions.invoke("generate-dna-scene-image", {
+    body: { bookId, nodeId, mode: "render", prompt: opts.prompt, refImages: opts.refImages, model: opts.model ?? undefined, pin: opts.pin ?? false },
+  });
+  if (error) throw error;
+  if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
+  return data as NodeSceneImage;
+}
+
 export async function deleteNodeSceneImage(id: string): Promise<void> {
   const { error } = await supabase.from("node_scene_images").delete().eq("id", id);
   if (error) throw error;

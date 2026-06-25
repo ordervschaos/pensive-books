@@ -8,14 +8,15 @@
 // this panel sends a message and projects the row live (refresh = no-op). Generalizes BeatChat —
 // see docs/beat-sheet-revision.md and the unified-revision plan.
 import { useEffect, useMemo, useRef, useState, Fragment } from "react";
-import { ArrowDown, ArrowUp, Check, ChevronDown, Clock, CornerDownLeft, Loader2, Plus, Sparkles, Square, SquarePen, Trash2, Wand2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, ChevronDown, Clock, CornerDownLeft, Loader2, Sparkles, Square, SquarePen, Wand2, X } from "lucide-react";
 import { useChatScroll } from "./useChatScroll";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useLatestTaskRow } from "@/hooks/useLatestTaskRow";
-import { LENSES as BEAT_LENSES, type RevisionPlan } from "@/lib/beatSheet";
+import { LENSES as BEAT_LENSES } from "@/lib/beatSheet";
+import { BeatDiff } from "./BeatDiff";
 import type { CastMember, Foundations, Tentpole } from "@/lib/foundations";
 import {
   applyProposal, clearPendingProposal, GENERATE_PROMPTS, onGenerate, recordApplied, resumeRevisionSession, sendRevisionMessage, startNewRevisionSession,
@@ -912,58 +913,3 @@ function TentpoleDiff({ after, before }: { after: Tentpole[]; before: Tentpole[]
   );
 }
 
-// ── Beat diff (moved from BeatChat, unchanged) ───────────────────────────────
-type Change = { kind: "add" | "delete" | "retarget" | "rebeat" | "move"; title: string; why?: string; detail?: string };
-
-function diffPlan(plan: RevisionPlan, model: StudioModel): Change[] {
-  const changes: Change[] = [];
-  const curOrder = model.map.pages.map((p) => p.id);
-  const newOrder = plan.pages.map((p) => p.ref).filter((r): r is number => r != null);
-  for (const p of plan.pages) {
-    if (p.op === "add") { changes.push({ kind: "add", title: p.title || "(untitled)", why: p.why, detail: p.beat || p.objective }); continue; }
-    if (p.ref == null) continue;
-    const cur = model.pageById(p.ref);
-    if (!cur) continue;
-    if (p.op === "retarget" && (p.objective ?? "").trim() !== cur.objectiveText.trim())
-      changes.push({ kind: "retarget", title: p.title || cur.title || "(untitled)", why: p.why, detail: p.objective });
-    if ((p.beat ?? "").trim() && (p.beat ?? "").trim() !== cur.beatText.trim())
-      changes.push({ kind: "rebeat", title: p.title || cur.title || "(untitled)", why: p.why, detail: p.beat });
-  }
-  for (const d of plan.deletes) changes.push({ kind: "delete", title: model.pageById(d.ref)?.title || "(untitled)", why: d.why });
-  const keptCur = curOrder.filter((id) => newOrder.includes(id));
-  const keptNew = newOrder.filter((id) => keptCur.includes(id));
-  if (keptCur.join(",") !== keptNew.join(",")) changes.push({ kind: "move", title: "Pages reordered", detail: "Reading order changes." });
-  return changes;
-}
-
-const CHANGE_META: Record<Change["kind"], { icon: typeof Plus; label: string; tone: string }> = {
-  add: { icon: Plus, label: "Add", tone: "text-emerald-600" },
-  delete: { icon: Trash2, label: "Delete", tone: "text-red-600" },
-  retarget: { icon: Wand2, label: "Retarget", tone: "text-amber-600" },
-  rebeat: { icon: Sparkles, label: "Rewrite beat", tone: "text-[hsl(var(--pv-accent))]" },
-  move: { icon: Check, label: "Reorder", tone: "text-[hsl(var(--pv-text-muted))]" },
-};
-
-function BeatDiff({ plan, model }: { plan: RevisionPlan; model: StudioModel }) {
-  const changes = diffPlan(plan, model);
-  if (changes.length === 0) return <p className="pv-serif text-[13.5px] italic text-[hsl(var(--pv-text-faint))]">No structural changes proposed.</p>;
-  return (
-    <ul className="space-y-2.5">
-      {changes.map((c, i) => {
-        const m = CHANGE_META[c.kind];
-        const Icon = m.icon;
-        return (
-          <li key={i} className="flex gap-2.5">
-            <Icon className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${m.tone}`} />
-            <div className="min-w-0">
-              <span className="pv-mono text-[10px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-faint))]">{m.label}</span>
-              <span className="pv-serif ml-2 text-[14px] text-foreground">{c.title}</span>
-              {c.why && <p className="pv-serif text-[12.5px] italic leading-[1.5] text-[hsl(var(--pv-text-faint))]">{c.why}</p>}
-              {c.detail && c.kind !== "move" && <p className="pv-serif mt-0.5 line-clamp-2 text-[12.5px] leading-[1.5] text-[hsl(var(--pv-text-muted))]">{c.detail}</p>}
-            </div>
-          </li>
-        );
-      })}
-    </ul>
-  );
-}

@@ -18,7 +18,7 @@
 // rung is "kicked" (caption written / prose written); in picture mode the images then finish in background.
 import { supabase } from "@/integrations/supabase/client";
 import { loadTree } from "@/lib/bookNodes";
-import { expandNode, illustrateScene } from "@/lib/dnaExpand";
+import { expandNode, composeSceneIllustration, renderSceneIllustration } from "@/lib/dnaExpand";
 import { childrenOf, scenesInOrder, type DnaNode, type NodeKind, type SceneContent } from "@/lib/novelDna";
 import { buildJourney, DNA_STAGES, type StageKey } from "@/lib/dnaJourney";
 
@@ -86,9 +86,9 @@ export interface AutopilotAction {
 
 const accepted = (n?: DnaNode) => n?.authoring.status === "accepted";
 const hasProse = (n: DnaNode) => !!((n.content as SceneContent).prose?.text ?? "").trim();
-// Picture-mode "draft kicked": a CAPTION exists. illustrateScene writes the caption synchronously and then
-// kicks the durable image render (image_url pins later over Realtime), so caption — not image_url — is the
-// loop's completion signal; keying on image_url would re-illustrate the scene every tick while it renders.
+// Picture-mode "draft kicked": a CAPTION exists. composeSceneIllustration writes the caption synchronously
+// then renderSceneIllustration kicks the durable image render (image_url pins later over Realtime), so
+// caption — not image_url — is the loop's completion signal; keying on image_url re-illustrates every tick.
 const hasCaption = (n: DnaNode) => !!((n.content as SceneContent).caption?.text ?? "").trim();
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -157,13 +157,18 @@ async function readBookMode(bookId: number): Promise<BookMode> {
 }
 
 // Run one rung with a small transient retry (LLM/image calls flake) before giving up. The 'illustrate'
-// target is the picture-mode scene path (caption + durable image render); everything else is a tree expand.
+// target is the picture-mode scene path (caption + durable image render); in autopilot (unattended) we
+// skip the human preview gate by running compose→render directly without stopping to show the prompt.
 async function runAction(bookId: number, a: AutopilotAction): Promise<void> {
   let lastErr: unknown;
   for (let i = 0; i < 2; i++) {
     try {
-      if (a.target === "illustrate") await illustrateScene(bookId, a.node);
-      else await expandNode(bookId, a.node, a.target, {});
+      if (a.target === "illustrate") {
+        const composed = await composeSceneIllustration(bookId, a.node);
+        await renderSceneIllustration(bookId, a.node.id, composed);
+      } else {
+        await expandNode(bookId, a.node, a.target, {});
+      }
       return;
     } catch (e) { lastErr = e; if (i === 0) await sleep(900); }
   }

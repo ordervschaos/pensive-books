@@ -6,6 +6,18 @@ import { supabase } from "@/integrations/supabase/client";
 import { saveNode } from "@/lib/bookNodes";
 import { editContent, type CharacterContent, type DnaNode } from "@/lib/novelDna";
 
+export interface ComposedPortraitPrompt { prompt: string; model: string | null }
+
+/** Compose the portrait prompt (+ model label) WITHOUT rendering — for the preview/edit step. */
+export async function composePortraitPrompt(bookId: number, nodeId: string, instruction?: string): Promise<ComposedPortraitPrompt> {
+  const { data, error } = await supabase.functions.invoke("generate-dna-character-portrait", {
+    body: { bookId, nodeId, mode: "prompt", instruction },
+  });
+  if (error) throw error;
+  if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
+  return data as ComposedPortraitPrompt;
+}
+
 /** Render `count` portrait VARIANTS for a character node. Composes a prompt server-side from the node when
  *  none is given (one-click). Returns the stored URLs — NOT pinned; the caller lets the author pick. */
 export async function renderDnaPortraitVariants(

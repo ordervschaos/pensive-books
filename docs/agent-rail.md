@@ -1,5 +1,14 @@
 # Agent Rail — one omni-thread for every AI action
 
+> **SUBSTRATE PIVOT (2026-06-25).** This was first prototyped in the **Build Studio** (page-native:
+> `ReviseChat`, `RevisionPlan`→`build-revision`). It now lives in the **DNA flow** — **DNA is the one
+> flow; the Build Studio is deprecated.** The agent operates on `book_nodes`: tools are `read_node` +
+> `propose_node_ops` (`NodeOp[]`), apply = `applyNodeOps` (lib/dnaChat.ts), proposals render via
+> `describeOps`, and `AgentRail` mounts in `DnaStudio`, subsuming the per-stage `DnaChatRail`. The
+> durable thread, the context filter (§6b), the slash commands, and the rail UI carried over unchanged;
+> only the tools + mount point changed. The §5 "layers" below now read as DNA node kinds, grouped into
+> the §6b aspects (promise / characters / beats / scenes / prose).
+
 > **Relationship to `docs/chat-first-studio.md`.** That plan unified the studio onto a chat-first
 > model but kept **one chat per layer** (foundations / spine / beats / outline each own a
 > `revision_chats` thread; DNA owns `dna_chats`; scenes owned an ephemeral in-component chat). This
@@ -124,6 +133,29 @@ Scenes produce an image, not a text diff, so the gate is:
   live-mutating chat is retired; its spec card becomes the scene proposal renderer, its
   cast/reference-portrait picker stays as manual editing in the center.
 
+## 6b. Context filter — scoping the thread to aspects  *(added; shipped)*
+
+The author can edit parts of the book separately — "just the promise", "just the beats", "just the
+characters". The rail carries a **context filter**: a subset of book **aspects** the agent sees AND can
+touch. Aspects are **DNA-aligned** so the same scope drives which `book_nodes` kinds load once the rail
+re-homes into the DNA flow:
+
+| Aspect | Context it carries | Tools it unlocks |
+|---|---|---|
+| `promise` | brief + argument + ending + voice + tentpoles + spine | (foundations/spine tools later) |
+| `characters` | cast (want/wound/lie) | (cast tools later) |
+| `beats` | the beat sheet (`read_beats`) | `read_beats`, `propose_beats` |
+| `scenes` | scene specs | (scene tools later) |
+| `prose` | page prose (`read_page`) | `read_page` |
+
+- **Default = every aspect that is *created*.** On a foundations-only book the default is
+  `{promise, characters}` (beats/scenes/prose excluded because they don't exist). On a full book it's
+  all → the whole book is in context. If the chat doesn't narrow it, the agent gets everything created.
+- **The filter gates BOTH the system context and the tool belt** (`threadSystem` / `threadToolsFor`):
+  "just beats" literally cannot read prose or touch foundations — it's an enforced firewall, not a hint.
+- The outline frame (page list + ids) is always included when pages exist, so pages are referenceable.
+- Stored per-thread (`book_agent_runs.context_scope`, NULL = all) and sent per-message.
+
 ## 7. Why this answers (not worsens) the context-cost worry
 
 One thread that can touch everything sounds expensive; the agent/tool model is precisely the fix:
@@ -146,20 +178,26 @@ biases the agent's default target. The rich diff renderers are kept (they're the
 The proving slice is a **full beats vertical** (decided) — thread-ify the agent AND fold beats in
 end-to-end, so the whole convergence is validated on a real second layer before scaling.
 
-1. **Thread-ify the agent.** `book_agent_runs` → persistent per-book conversation: free-text message
-   in → agentic turn → `idle`; per-turn `MAX_TURNS`; `proposals[]` replaces single `revision_id`.
-   Reuse stop / chain / watchdog wholesale. Rail UI = a real chat (compose, transcript, step feed,
-   stop), evolved from `EditorAgent.tsx`.
-2. **Generalized envelope + apply dispatcher.** The tagged union (§4); one client
-   `applyAgentProposal(layer, data)` routing to existing writers; proposal renderer switch by `layer`.
-3. **Command registry.** `/generate …`, `/revise …`, etc. — each drops editable, context-carrying
-   composer text. Center buttons fire the same commands (replace the `onGenerate` bus).
-4. **Beats vertical (the proof):** `/revise beats` + `/generate beats`, `read_beats`, `propose_beats`,
-   the `BeatDiff` proposal view, and **retire `ReviseChat` for beats**. Validate generate-from-empty,
-   revise, ask-a-fork, stop, Apply-through-the-existing-beats-writer — all on the one thread.
-5. **Roll the rest in** (each = read tool + propose tool + keep its renderer + retire its chat):
+1. ✅ **Thread-ify the agent.** `book_agent_runs` → persistent per-book conversation (`kind='thread'`,
+   one-per-book unique index): free-text message in → agentic turn → `idle`; per-turn `turns` reset;
+   `proposals[]` added. Reuses stop / chain / watchdog wholesale. Rail = `studio/AgentRail.tsx`
+   (compose, step feed, stop), `lib/agentThread.ts`. Mounted behind `?rail=agent` (non-destructive).
+2. ✅ **Generalized envelope + apply dispatcher.** `AgentProposal { id, layer, summary, data }` in
+   `proposals[]`; `applyAgentProposal` routes to existing writers; rail renders by `layer`.
+3. ✅ **Command registry** (`lib/agentCommands.ts`). Typing `/` in the rail composer opens a filtered
+   menu; picking a command drops its editable prompt in AND focuses the context filter to the
+   command's aspects (∩ created). `availableCommands` shows generate-vs-revise by whether the aspect
+   exists. Beats commands act (`/generate beats`, `/revise beats`); `/summarize` + `/pressure-test`
+   work in any scope; the rest fold in with their layers. *Not yet:* center buttons firing the same
+   commands (waits on retiring the per-layer chats — the `onGenerate` bus still drives those centers).
+4. ✅ **Beats vertical (the proof):** `read_beats`, `propose_beats` (validated via `sanitizePlan`
+   planOnly), `BeatDiff` extracted to a shared component, Apply through the existing beats writer
+   (`applyProposal`→`applyBeatPlan`). *Not yet:* retire `ReviseChat(beats)` (both coexist until the
+   rail is the default) and the slash-command for it (phase 3).
+4b. ✅ **Context filter** (§6b) — scope gates system context + tool belt; default = created aspects.
+5. ⬜ **Roll the rest in** (each = read tool + propose tool + keep its renderer + retire its chat):
    foundations, spine, outline, dna, scenes (§6), prose (already there). Then delete the six chats and
-   point `StudioEditorRail` at the one rail.
+   point `StudioEditorRail` at the one rail (drop the `?rail=agent` gate).
 
 Run `cd apps/web && pnpm run typecheck` after each step; keep it green. Don't commit/push unless asked.
 

@@ -6,14 +6,18 @@ import { useEffect, useState } from "react";
 import { Sparkles, X, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ActionLink, Eyebrow, RunningInline } from "@/components/book/studio/studioUi";
-import { renderDnaPortraitVariants, pinCharacterPortrait, unpinCharacterPortrait, legacyPortraitsFor } from "@/lib/characterPortraits";
+import { ImagePromptPreview } from "@/components/book/dna/ImagePromptPreview";
+import { composePortraitPrompt, renderDnaPortraitVariants, pinCharacterPortrait, unpinCharacterPortrait, legacyPortraitsFor, type ComposedPortraitPrompt } from "@/lib/characterPortraits";
 import { type CharacterContent, type DnaNode } from "@/lib/novelDna";
 
 export function DnaCharacterLook({ node, bookId, onChanged }: { node: DnaNode; bookId: number; onChanged: () => void }) {
   const { toast } = useToast();
   const [variants, setVariants] = useState<string[]>([]);
   const [legacy, setLegacy] = useState<string[]>([]);
-  const [busy, setBusy] = useState<"render" | "pin" | null>(null);
+  const [busy, setBusy] = useState<"compose" | "render" | "pin" | null>(null);
+  // Two-phase portrait flow: compose → preview (editable) → render variants. Preview holds the composed
+  // prompt + model; the author edits if needed, then clicks "design the look" to render.
+  const [preview, setPreview] = useState<ComposedPortraitPrompt | null>(null);
   const pinned = ((node.content as CharacterContent).portraits ?? []).filter(Boolean);
   const named = !!(node.content as CharacterContent).name?.trim();
 
@@ -25,10 +29,20 @@ export function DnaCharacterLook({ node, bookId, onChanged }: { node: DnaNode; b
     return () => { live = false; };
   }, [bookId, node]);
 
-  const render = async () => {
+  // Phase 1: compose the portrait prompt and show the editable preview.
+  const compose = async () => {
+    setBusy("compose");
+    try { setPreview(await composePortraitPrompt(bookId, node.id)); }
+    catch (e) { toast({ title: "Couldn't compose portrait prompt", description: String((e as Error)?.message ?? e), variant: "destructive" }); }
+    finally { setBusy(null); }
+  };
+  // Phase 2: render variants from the (possibly edited) prompt, then clear preview.
+  const renderFromPreview = async (finalPrompt: string) => {
     setBusy("render");
-    try { setVariants(await renderDnaPortraitVariants(bookId, node.id, { count: 3 })); }
-    catch (e) { toast({ title: "Couldn't design the look", description: String((e as Error)?.message ?? e), variant: "destructive" }); }
+    try {
+      setVariants(await renderDnaPortraitVariants(bookId, node.id, { prompt: finalPrompt, count: 3 }));
+      setPreview(null);
+    } catch (e) { toast({ title: "Couldn't design the look", description: String((e as Error)?.message ?? e), variant: "destructive" }); }
     finally { setBusy(null); }
   };
   const pin = async (url: string) => {
@@ -100,10 +114,28 @@ export function DnaCharacterLook({ node, bookId, onChanged }: { node: DnaNode; b
         </div>
       )}
 
-      {busy === "render"
-        ? <RunningInline label="designing the look…" />
-        : <ActionLink icon={<Sparkles className="h-3.5 w-3.5" />} onClick={render} title={named ? undefined : "name the character first"}
-            tone="faint">{pinned.length || variants.length ? "design more" : "design the look"}</ActionLink>}
+      {/* Editable prompt preview — shown after compose, before render. Portrait has no ref images
+          (the pinned portraits ARE the refs; we don't feed them back into the portrait itself). */}
+      {preview && (
+        <ImagePromptPreview
+          prompt={preview.prompt}
+          refImages={[]}
+          model={preview.model}
+          busy={busy === "render"}
+          generateLabel="design the look"
+          onGenerate={(finalPrompt) => void renderFromPreview(finalPrompt)}
+          onCancel={() => setPreview(null)}
+        />
+      )}
+
+      {busy === "compose"
+        ? <RunningInline label="composing look prompt…" />
+        : busy === "render"
+          ? <RunningInline label="designing the look…" />
+          : !preview && (
+              <ActionLink icon={<Sparkles className="h-3.5 w-3.5" />} onClick={compose} title={named ? undefined : "name the character first"}
+                tone="faint">{pinned.length || variants.length ? "design more" : "design the look"}</ActionLink>
+            )}
     </div>
   );
 }

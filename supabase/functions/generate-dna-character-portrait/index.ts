@@ -66,11 +66,11 @@ Deno.serve(async (req: Request) => {
       return textFromClaude(data).trim();
     };
 
-    // ── mode "prompt": compose an editable portrait prompt ──
+    // ── mode "prompt": compose an editable portrait prompt; also returns model so the UI can label it ──
     if (mode === "prompt") {
       const composed = await composePromptText();
       if (!composed) return json({ error: "Could not compose a portrait prompt." }, 502);
-      return json({ prompt: composed });
+      return json({ prompt: composed, model: imageModel ?? null });
     }
 
     // ── mode "image": render `count` variants. With no author prompt, compose one server-side first

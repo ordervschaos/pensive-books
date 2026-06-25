@@ -67,9 +67,12 @@ Deno.serve(async (req: Request) => {
     const { data: { user }, error: authError } = await userClient.auth.getUser();
     if (authError || !user) return json({ error: "Unauthorized" }, 401);
 
-    const { bookId, nodeId, mode = "oneshot", instruction, style, pin = false } =
+    const { bookId, nodeId, mode = "oneshot", instruction, style, pin = false,
+            prompt: reqPrompt, refImages: reqRefImages, model: reqModel } =
       (await req.json().catch(() => ({}))) as {
-        bookId?: number; nodeId?: string; mode?: "oneshot"; instruction?: string; style?: string; pin?: boolean;
+        bookId?: number; nodeId?: string; mode?: "oneshot" | "compose" | "render";
+        instruction?: string; style?: string; pin?: boolean;
+        prompt?: string; refImages?: string[]; model?: string;
       };
     if (!bookId || !nodeId) return json({ error: "bookId and nodeId are required" }, 400);
     if (!(await hasEditAccess(userClient, bookId, user.id))) return json({ error: "Access denied" }, 403);
@@ -130,6 +133,40 @@ Deno.serve(async (req: Request) => {
       }, meta);
       return textFromClaude(data).trim();
     };
+
+    // ── mode "compose": synchronous, no render, no row — just return the composed prompt + refs + model ──
+    if (mode === "compose") {
+      const promptText = await composeScenePromptText();
+      if (!promptText) return json({ error: "Could not compose a scene prompt." }, 502);
+      return json({ prompt: promptText, refImages, model: imageModel ?? null });
+    }
+
+    // ── mode "render": durable render of a GIVEN (possibly author-edited) prompt; skip compose ──
+    if (mode === "render") {
+      const finalPrompt = (reqPrompt ?? "").trim();
+      if (!finalPrompt) return json({ error: "prompt is required for render" }, 400);
+      // Use caller's refs/model when provided; fall back to what we computed from the tree.
+      const refs = (Array.isArray(reqRefImages) && reqRefImages.length) ? reqRefImages : refImages;
+      const useModel = reqModel ?? imageModel;
+      const svc = serviceClient();
+      const { data: row, error: insErr } = await svc
+        .from("node_scene_images")
+        .insert({ node_id: nodeId, book_id: bookId, image_url: null, prompt: finalPrompt, status: "generating", created_by: user.id })
+        .select(NODE_SELECT)
+        .single();
+      if (insErr) throw insErr;
+      runInBackground(svc, "node_scene_images", row.id, "generate-dna-scene-image", async () => {
+        const dataUrl = await generateImage({ prompt: finalPrompt, refImages: refs, model: useModel });
+        const url = await uploadDataUrl(svc, "scene-images", `scenes/node/${nodeId}/${Date.now()}.png`, dataUrl);
+        if (pin) {
+          const { data: cur } = await svc.from("book_nodes").select("content").eq("id", nodeId).single();
+          const content = { ...((cur?.content as Record<string, unknown>) ?? {}), image_url: url };
+          await svc.from("book_nodes").update({ content }).eq("id", nodeId);
+        }
+        return { prompt: finalPrompt, image_url: url, status: "ready" };
+      });
+      return json(row);
+    }
 
     // ── mode "oneshot": DURABLE compose + render in ONE background job (the picture-mode default) ──
     const svc = serviceClient();
