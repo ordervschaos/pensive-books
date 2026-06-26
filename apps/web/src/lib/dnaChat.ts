@@ -4,7 +4,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { BRIDGE, bridgeFetch } from "@/lib/bridge";
 import { deleteNode, loadTree, saveNode } from "@/lib/bookNodes";
-import { blastRadius, byId, editContent, emptyNode, isEntityKind, pillarOf, stampInput, type DnaNode, type NodeContent, type NodeKind } from "@/lib/novelDna";
+import { blastRadius, byId, editContent, emptyNode, PARENT_KIND, pillarOf, stampInput, type DnaNode, type NodeContent, type NodeKind } from "@/lib/novelDna";
 import { KIND_LEVEL, LADDER_NEXT, sanitizeContent, validateContent, VALID_KINDS } from "@/lib/dnaSchema";
 import type { StageKey } from "@/lib/dnaJourney";
 
@@ -140,6 +140,20 @@ export function validateOps(ops: NodeOp[], nodes: DnaNode[]): OpValidation {
   const index = byId(nodes);
   const pillar = pillarOf(nodes);
   const ok: NodeOp[] = [], rejected: OpRejection[] = [];
+  // INVARIANT (schema §4): a node attaches per PARENT_KIND (the single source of truth) — never to whatever
+  // node the model named. Pillar-parented kinds (every entity AND the movement rung) re-home to THE pillar at
+  // apply, so here we only require a pillar to exist. Contextual rungs (beat→movement, scene→beat) must name a
+  // parent that resolves to the required kind. This is what stops the "movement/entity orphaned onto premise"
+  // class from landing — the bug that made movements invisible to the pillar-scoped STORY group + generation.
+  const parentageReason = (childKind: NodeKind, parentId: string): string | null => {
+    const want = PARENT_KIND[childKind];
+    if (want === null) return null;                                              // a root kind — no parent
+    if (want === "pillar") return pillar ? null : `no pillar exists yet for ${childKind} to attach to`;
+    const parent = index.get(parentId);
+    if (!parent) return "parent node no longer exists";
+    if (parent.kind !== want) return `${childKind} must hang off ${want}, not ${parent.kind}`;
+    return null;
+  };
   for (const op of ops) {
     const reasons: string[] = [];
     // Validate the SANITIZED content (enum case coerced, soft issues fixed) and only HARD-reject on errors —
@@ -155,18 +169,19 @@ export function validateOps(ops: NodeOp[], nodes: DnaNode[]): OpValidation {
     } else if (op.op === "add") {
       if (!VALID_KINDS.has(op.kind as string)) reasons.push(`unknown kind "${op.kind}"`);
       else {
-        // INVARIANT (schema §4): an entity MUST hang off the pillar. Fail closed — if there's no pillar, the
-        // add is rejected (was a silent fall-back that orphaned it onto whatever parentId the model chose).
-        if (isEntityKind(op.kind)) { if (!pillar) reasons.push("no pillar exists yet for this entity to attach to"); }
-        else if (!index.has(op.parentId)) reasons.push("parent node no longer exists");
+        const r = parentageReason(op.kind, op.parentId);
+        if (r) reasons.push(r);
         msgs(op.kind, op.content);
       }
     } else if (op.op === "replace_children") {
       const parent = index.get(op.parentId);
-      if (!parent) reasons.push("parent node no longer exists");
-      else if (parent.authoring.locked) reasons.push("parent node is pinned (🔒)");
+      if (parent?.authoring.locked) reasons.push("parent node is pinned (🔒)");
       if (!VALID_KINDS.has(op.childKind as string)) reasons.push(`unknown child kind "${op.childKind}"`);
-      else op.children.forEach((sub, i) => msgs(op.childKind, sub.content, false, `child ${i + 1}: `));
+      else {
+        const r = parentageReason(op.childKind, op.parentId);
+        if (r) reasons.push(r);
+        op.children.forEach((sub, i) => msgs(op.childKind, sub.content, false, `child ${i + 1}: `));
+      }
     }
     if (reasons.length) rejected.push({ op, reasons }); else ok.push(op);
   }
@@ -181,6 +196,13 @@ export async function applyNodeOps(bookId: number, ops: NodeOp[]): Promise<OpVal
   const validation = validateOps(ops, nodes);
   const index = byId(nodes);
   const childCount = (parentId: string) => nodes.filter((n) => n.parent_id === parentId).length;
+  // Resolve the REAL attachment per PARENT_KIND: a pillar-parented kind (every entity AND the movement rung)
+  // re-homes onto the pillar, never the parentId the model named (the premise-orphaning class). Contextual
+  // rungs (beat→movement, scene→beat) keep their named parent. validateOps already guaranteed the pillar /
+  // correct-kind parent exists for anything that reached `ok`, so a `?? parentId` fall-through is only a
+  // belt-and-braces no-op here.
+  const effectiveParent = (kind: NodeKind, parentId: string): string =>
+    PARENT_KIND[kind] === "pillar" ? (pillarOf(nodes)?.id ?? parentId) : parentId;
   let added = 0;
   // Create one new node (+ its descendants) under `parentId`, recursing down the ladder. Mirrors the
   // `add` branch's stamping; used by replace_children to build a fresh subtree atomically.
@@ -202,20 +224,19 @@ export async function applyNodeOps(bookId: number, ops: NodeOp[]): Promise<OpVal
       const node = index.get(op.id);
       if (node && !node.authoring.locked) await deleteNode(op.id);
     } else if (op.op === "add") {
-      // INVARIANT (schema §4): entity kinds hang off the pillar. validateOps already guaranteed a pillar
-      // exists for any entity add that reached `ok`, so this resolves — no silent orphaning fall-back.
-      const parentId = isEntityKind(op.kind) ? pillarOf(nodes)?.id : op.parentId;
-      if (!parentId) continue;
+      const parentId = effectiveParent(op.kind, op.parentId);
       const fresh = emptyNode(bookId, op.kind, KIND_LEVEL[op.kind] ?? 5, parentId, childCount(parentId) + added++);
       const node: DnaNode = { ...fresh, content: sanitizeContent(op.kind, op.content as Record<string, unknown>), authoring: { source: "ai", locked: false, status: "accepted" } };
       await saveNode(stampInput(node, byId([...nodes, node])));
     } else if (op.op === "replace_children") {
-      // Wipe the parent's existing non-locked children of this kind (FK cascade takes their subtrees),
-      // keeping any locked ones, then build the new set after them. This is what makes rebuild replace.
-      const existing = nodes.filter((n) => n.parent_id === op.parentId && n.kind === op.childKind);
+      // Wipe the (re-homed) parent's existing non-locked children of this kind (FK cascade takes their
+      // subtrees), keeping any locked ones, then build the new set after them. Resolving the parent through
+      // PARENT_KIND means a movement rebuild deletes + rebuilds under the PILLAR, never the named premise.
+      const parentId = effectiveParent(op.childKind, op.parentId);
+      const existing = nodes.filter((n) => n.parent_id === parentId && n.kind === op.childKind);
       for (const child of existing) if (!child.authoring.locked) await deleteNode(child.id);
       let pos = existing.filter((n) => n.authoring.locked).length;
-      for (const sub of op.children) await addSubtree(sub, op.childKind, op.parentId, pos++);
+      for (const sub of op.children) await addSubtree(sub, op.childKind, parentId, pos++);
     }
   }
   return validation;

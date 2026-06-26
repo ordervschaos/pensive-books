@@ -6,7 +6,7 @@ import { BRIDGE, bridgeFetch } from "@/lib/bridge";
 import { deleteNode, loadTree, saveNode, saveNodes } from "@/lib/bookNodes";
 import { composeSceneImage, renderNodeSceneImage, type ComposedSceneImage } from "@/lib/nodeSceneImages";
 import { ensurePortraitFor } from "@/lib/characterPortraits";
-import { byId, deepMergeContent, isEntityKind, newId, pillarOf, presentCharacters, stampIllus, stampInput, stampProse, type BeatContent, type DnaNode, type GameContent, type NodeContent, type NodeKind, type SceneContent, type ThreadRef } from "@/lib/novelDna";
+import { byId, deepMergeContent, newId, PARENT_KIND, pillarOf, presentCharacters, stampIllus, stampInput, stampProse, type BeatContent, type DnaNode, type GameContent, type NodeContent, type NodeKind, type SceneContent, type ThreadRef } from "@/lib/novelDna";
 
 /** A short, legible chapter title from a beat's summary (the working title; the author renames). */
 function chapterTitleFromBeat(beat: DnaNode): string {
@@ -65,10 +65,13 @@ export async function expandNode(
 
   const children = res.children ?? [];
   if (!children.length) throw new Error("No children were generated.");
-  // INVARIANT (schema §4): entity kinds ALWAYS hang off the pillar — never whatever node triggered the
-  // expand. Resolve the real pillar so a stray caller (wrong focused node) can't orphan tentpoles / voice /
-  // cast onto premise or a movement — where dna-expand's pillar-scoped filters silently can't see them.
-  const parentNode = res.childKind && isEntityKind(res.childKind) && node.kind !== "pillar"
+  // INVARIANT (schema §4): any kind whose schema parent is the (singleton) pillar — every entity AND the
+  // movement rung — ALWAYS hangs off the real pillar, never whatever node triggered the expand. Drive this
+  // off PARENT_KIND (the single source of truth for attachment) so a stray caller (wrong focused node) can't
+  // orphan tentpoles / voice / cast / movements onto premise — where dna-expand's pillar-scoped filters
+  // silently can't see them. Beats/scenes keep their focused parent (which movement/beat is contextual).
+  const wantsPillar = res.childKind && PARENT_KIND[res.childKind] === "pillar";
+  const parentNode = wantsPillar && node.kind !== "pillar"
     ? (pillarOf(await loadTree(bookId)) ?? node)
     : node;
   const made: DnaNode[] = children.map((content, i) => ({

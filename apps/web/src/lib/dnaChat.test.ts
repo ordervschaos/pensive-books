@@ -58,4 +58,24 @@ describe("validateOps — the fail-closed boundary", () => {
     const { ok, rejected } = validateOps(ops, spine());
     expect(ok).toHaveLength(1); expect(rejected).toHaveLength(1);
   });
+
+  // Movements are pillar-parented like entities — naming the premise is tolerated (re-homed onto the pillar
+  // at apply), but the pillar must exist. This is the bug that put the spine's movements under the premise.
+  it("accepts a movement add/rebuild that names the premise (re-homed onto the pillar)", () => {
+    const add: NodeOp = { op: "add", kind: "movement", parentId: "prem", content: { title: "The Salt and the Leaving", goal: "Finn stows away" } };
+    expect(validateOps([add], spine()).ok).toHaveLength(1);
+    const rebuild: NodeOp = { op: "replace_children", parentId: "prem", childKind: "movement", children: [{ content: { title: "Lowest Hand", goal: "Finn earns a place" } }] };
+    expect(validateOps([rebuild], spine()).ok).toHaveLength(1);
+  });
+
+  it("rejects a movement add when no pillar exists (no silent orphaning onto the premise)", () => {
+    const noPillar = [mk("seed", { id: "seed", content: { logline: "x" } }), mk("premise", { id: "prem", parent_id: "seed", content: { dramatic_question: "q?" } })];
+    const op: NodeOp = { op: "add", kind: "movement", parentId: "prem", content: { title: "x" } };
+    expect(validateOps([op], noPillar).rejected[0].reasons.join(" ")).toMatch(/no pillar/);
+  });
+
+  it("rejects a contextual rung attached to the wrong kind (beat must hang off a movement, not the pillar)", () => {
+    const op: NodeOp = { op: "add", kind: "beat", parentId: "pil", content: { summary: "s" } };
+    expect(validateOps([op], spine()).rejected[0].reasons.join(" ")).toMatch(/must hang off movement/);
+  });
 });
