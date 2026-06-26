@@ -13,6 +13,11 @@ import { callClaude, textFromClaude, type CallMeta } from "../_shared/claude.ts"
 import { getActiveModels } from "../_shared/model-config.ts";
 import { extractJsonBlock } from "../_shared/json.ts";
 import { type Brief, briefContext, mandateContext } from "../_shared/brief.ts";
+// The content schema the model must conform to — GENERATED from the web app's NODE_SCHEMA (the single source
+// of truth) into this checked artifact, kept in sync by apps/web .../dnaSchema.artifact.test.ts. Never hand-
+// edit the field list below; edit NODE_SCHEMA and regenerate. promptGuide = the field block injected into the
+// system prompt; kinds = per-kind required/enum/ref data for validation.
+import dnaSchema from "../_shared/dna-schema.json" with { type: "json" };
 
 type Stage = "premise" | "foundations" | "structure" | "scenes" | "draft";
 interface Node { id: string; parent_id: string | null; kind: string; level: number; content: Record<string, unknown>; authoring: { locked?: boolean; status?: string } }
@@ -86,16 +91,7 @@ Reply to the author in plain MARKDOWN prose — discuss, pressure-test, answer. 
 Only reference ids that exist. Honor LOCKED nodes (never edit/delete them). Don't propose unless the author asked for a change or agreed to one — talk first.
 To REBUILD a whole level (replace all acts, or all beats under an act), use ONE replace_children op — it deletes the existing non-locked children of childKind first, so the rebuild replaces instead of duplicating. Children nest down the ladder (movement→beat→scene). Use "add" only to APPEND a single node.
 
-CONTENT FIELD SCHEMAS — use EXACTLY these key names (wrong keys silently orphan data):
-- premise  → content.shape keys: setup | turn1 | turn2 | turn3 | resolution  (never "midpoint", never "climax")
-- movement → content: { title, goal, turning_point, target_pct, value: { from, to } }
-- beat     → content: { summary, connector ("therefore"|"but"), polarity ("up"|"down"), threads, grounds_in, needs, establishes, realizes, plays, resolves }
-- scene    → content: { goal, conflict, outcome, pov, value: { from, to }, prose: { text } }
-- character → content: { name, want, need, wound, lie, truth, idiolect, role }
-- relationship → content: { a, b, dynamic, arc }
-- tentpole → content: { title, summary, when }
-- world_fact → content: { name, rule, mechanism }
-- thread   → content: { name, promise, payoff, kind ("mystery"|"foreshadow"|"setup_payoff"|"arc") }`;
+${dnaSchema.promptGuide}`;
 
     const ctx = [
       `BOOK: ${book?.name ?? ""}`,
@@ -124,7 +120,7 @@ CONTENT FIELD SCHEMAS — use EXACTLY these key names (wrong keys silently orpha
         const parsed = JSON.parse(extractJsonBlock(fence[1]));
         const ids = new Set(nodes.map((n) => n.id));
         const locked = new Set(nodes.filter((n) => n.authoring?.locked).map((n) => n.id));
-        const VALID_KINDS = new Set(["seed","premise","pillar","movement","beat","scene","character","relationship","tentpole","world_fact","thread","game","voice_profile"]);
+        const VALID_KINDS = new Set(Object.keys(dnaSchema.kinds));
         const ops = (Array.isArray(parsed.ops) ? parsed.ops : []).filter((o: { op?: string; id?: string; parentId?: string; kind?: string; childKind?: string; children?: unknown[] }) =>
           (o.op === "edit" && o.id && ids.has(o.id) && !locked.has(o.id)) ||
           (o.op === "delete" && o.id && ids.has(o.id) && !locked.has(o.id)) ||

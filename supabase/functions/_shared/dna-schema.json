@@ -1,0 +1,225 @@
+{
+  "promptGuide": "CONTENT FIELD SCHEMAS — use EXACTLY these keys. * = required · (a|b) = allowed values · →kind = an id of that kind · [] = a list. Wrong keys silently orphan data.\n- seed → logline*\n- premise → dramatic_question*, genre[], tone[], shape:{ setup, turn1, turn2, turn3, resolution }\n- pillar → controlling_idea*, ending\n- character → name*, role(protagonist|antagonist|ally|love_interest|minor), want, need, wound, lie, truth, idiolect, tag\n- relationship → a*→character, b*→character, bond*, charge\n- world_fact → name*, rule*, mechanism, category\n- thread → name*, kind(mystery|foreshadow|setup_payoff|arc), promise*, payoff\n- game → name*, players[]→character, win_condition*, lose_condition*, stake, governing_rules[]→world_fact\n- tentpole → summary*\n- voice_profile → pov(first-person|third-person-limited|third-person-omniscient|second-person), tense(past|present), style*, constraints[], sample\n- movement → title, goal*, turning_point, target_pct(0..1), value:{ name, from, to }\n- beat → summary*, connector(therefore|but), polarity(up|down), threads [{ ref: thread id, role: setup|payoff|advance }], grounds_in [world_fact id] — the rule this turn operates on, needs [state key] this turn DEPENDS on (earned upstream), establishes [state key] this turn PRODUCES, realizes [tentpole id] this beat delivers, plays [game id] this turn advances, resolves [{ ref: game id, outcome: won|lost }]\n- scene → pov→character, loc, goal*, conflict, outcome, value_shift:{ value, from, to, polarity(up|down) }",
+  "kinds": {
+    "seed": {
+      "required": [
+        "logline"
+      ],
+      "enums": {},
+      "refs": {},
+      "fields": [
+        "logline"
+      ]
+    },
+    "premise": {
+      "required": [
+        "dramatic_question"
+      ],
+      "enums": {},
+      "refs": {},
+      "fields": [
+        "dramatic_question",
+        "genre",
+        "tone",
+        "shape"
+      ]
+    },
+    "pillar": {
+      "required": [
+        "controlling_idea"
+      ],
+      "enums": {},
+      "refs": {},
+      "fields": [
+        "controlling_idea",
+        "ending"
+      ]
+    },
+    "character": {
+      "required": [
+        "name"
+      ],
+      "enums": {
+        "role": [
+          "protagonist",
+          "antagonist",
+          "ally",
+          "love_interest",
+          "minor"
+        ]
+      },
+      "refs": {},
+      "fields": [
+        "name",
+        "role",
+        "want",
+        "need",
+        "wound",
+        "lie",
+        "truth",
+        "idiolect",
+        "tag"
+      ]
+    },
+    "relationship": {
+      "required": [
+        "a",
+        "b",
+        "bond"
+      ],
+      "enums": {},
+      "refs": {
+        "a": "character",
+        "b": "character"
+      },
+      "fields": [
+        "a",
+        "b",
+        "bond",
+        "charge"
+      ]
+    },
+    "world_fact": {
+      "required": [
+        "name",
+        "rule"
+      ],
+      "enums": {},
+      "refs": {},
+      "fields": [
+        "name",
+        "rule",
+        "mechanism",
+        "category"
+      ]
+    },
+    "thread": {
+      "required": [
+        "name",
+        "promise"
+      ],
+      "enums": {
+        "kind": [
+          "mystery",
+          "foreshadow",
+          "setup_payoff",
+          "arc"
+        ]
+      },
+      "refs": {},
+      "fields": [
+        "name",
+        "kind",
+        "promise",
+        "payoff"
+      ]
+    },
+    "game": {
+      "required": [
+        "name",
+        "win_condition",
+        "lose_condition"
+      ],
+      "enums": {},
+      "refs": {
+        "players": "character",
+        "governing_rules": "world_fact"
+      },
+      "fields": [
+        "name",
+        "players",
+        "win_condition",
+        "lose_condition",
+        "stake",
+        "governing_rules"
+      ]
+    },
+    "tentpole": {
+      "required": [
+        "summary"
+      ],
+      "enums": {},
+      "refs": {},
+      "fields": [
+        "summary"
+      ]
+    },
+    "voice_profile": {
+      "required": [
+        "style"
+      ],
+      "enums": {
+        "pov": [
+          "first-person",
+          "third-person-limited",
+          "third-person-omniscient",
+          "second-person"
+        ],
+        "tense": [
+          "past",
+          "present"
+        ]
+      },
+      "refs": {},
+      "fields": [
+        "pov",
+        "tense",
+        "style",
+        "constraints",
+        "sample"
+      ]
+    },
+    "movement": {
+      "required": [
+        "goal"
+      ],
+      "enums": {},
+      "refs": {},
+      "fields": [
+        "title",
+        "goal",
+        "turning_point",
+        "target_pct",
+        "value"
+      ]
+    },
+    "beat": {
+      "required": [
+        "summary"
+      ],
+      "enums": {
+        "connector": [
+          "therefore",
+          "but"
+        ],
+        "polarity": [
+          "up",
+          "down"
+        ]
+      },
+      "refs": {},
+      "fields": [
+        "summary",
+        "connector",
+        "polarity"
+      ]
+    },
+    "scene": {
+      "required": [
+        "goal"
+      ],
+      "enums": {},
+      "refs": {
+        "pov": "character"
+      },
+      "fields": [
+        "pov",
+        "loc",
+        "goal",
+        "conflict",
+        "outcome",
+        "value_shift"
+      ]
+    }
+  }
+}

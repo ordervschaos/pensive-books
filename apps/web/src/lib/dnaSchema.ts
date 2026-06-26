@@ -7,7 +7,7 @@
 // This replaces the old drift where EDIT_FIELDS (editor), the dna-chat prompt, and the TS NodeContent types
 // each hand-described the same shape. The TS interfaces in novelDna stay the COMPILE-TIME view; this is the
 // RUNTIME view. Structure (parent kind, singletons) lives in novelDna (PARENT_KIND); this owns content.
-import { isEntityKind, type DnaIssue, type DnaNode, type NodeKind } from "@/lib/novelDna";
+import { type DnaIssue, type DnaNode, type NodeKind } from "@/lib/novelDna";
 
 // ── Field spec ────────────────────────────────────────────────────────────────
 // text/list (comma) for free text, ref/refs for id pointers (a dropdown/chip-picker of the right kind),
@@ -17,6 +17,10 @@ export interface EditSpec {
   key: string; label: string; type?: FieldType; multiline?: boolean;
   refKind?: NodeKind; options?: string[]; fields?: EditSpec[];
   required?: boolean; // load-bearing — a node missing this reads as incomplete (and is rejected at generation)
+  // genOnly = part of the content CONTRACT (the AI may set it, it appears in the generation prompt) but the
+  // tree editor doesn't render a field for it (complex/derived structural data). `note` is a prompt-only
+  // shape hint for such fields. editSpecs() filters these out; the schema guide (for the prompt) keeps them.
+  genOnly?: boolean; note?: string;
 }
 
 const ROLES = ["protagonist", "antagonist", "ally", "love_interest", "minor"];
@@ -63,6 +67,14 @@ export const NODE_SCHEMA: Partial<Record<NodeKind, EditSpec[]>> = {
   beat: [
     { key: "summary", label: "summary", multiline: true, required: true }, { key: "connector", label: "connector", type: "select", options: ["therefore", "but"] },
     { key: "polarity", label: "polarity", type: "select", options: POLARITY },
+    // Structural fields (causality §why + promises §what + games) — the reviser sets these; the editor doesn't.
+    { key: "threads", label: "threads", genOnly: true, note: "[{ ref: thread id, role: setup|payoff|advance }]" },
+    { key: "grounds_in", label: "grounds_in", genOnly: true, note: "[world_fact id] — the rule this turn operates on" },
+    { key: "needs", label: "needs", genOnly: true, note: "[state key] this turn DEPENDS on (earned upstream)" },
+    { key: "establishes", label: "establishes", genOnly: true, note: "[state key] this turn PRODUCES" },
+    { key: "realizes", label: "realizes", genOnly: true, note: "[tentpole id] this beat delivers" },
+    { key: "plays", label: "plays", genOnly: true, note: "[game id] this turn advances" },
+    { key: "resolves", label: "resolves", genOnly: true, note: "[{ ref: game id, outcome: won|lost }]" },
   ],
   scene: [
     { key: "pov", label: "pov", type: "ref", refKind: "character" }, { key: "loc", label: "loc" },
@@ -72,7 +84,8 @@ export const NODE_SCHEMA: Partial<Record<NodeKind, EditSpec[]>> = {
     ] },
   ],
 };
-export const editSpecs = (kind: NodeKind): EditSpec[] => NODE_SCHEMA[kind] ?? [];
+// The editor renders only the hand-editable fields — structural genOnly fields are prompt/contract-only.
+export const editSpecs = (kind: NodeKind): EditSpec[] => (NODE_SCHEMA[kind] ?? []).filter((s) => !s.genOnly);
 
 // ── Structural constants (single copy; were duplicated across DnaTreePage + dnaChat) ─────────────────────
 export const KIND_LEVEL: Record<NodeKind, number> = {
@@ -114,7 +127,7 @@ function checkSpecs(specs: EditSpec[], content: Record<string, unknown>, kind: N
  *  boundary (reject malformed AI output) and for the completeness score. `partial` treats the content as an
  *  edit PATCH (absent required fields are untouched, not missing). Unknown kinds (no schema) pass. */
 export function validateContent(kind: NodeKind, content: Record<string, unknown>, opts: { nodeId?: string; partial?: boolean } = {}): DnaIssue[] {
-  return checkSpecs(NODE_SCHEMA[kind] ?? [], content ?? {}, kind, opts.nodeId, opts.partial ?? false);
+  return checkSpecs(editSpecs(kind), content ?? {}, kind, opts.nodeId, opts.partial ?? false);
 }
 
 /** The required field keys for a kind (top-level only — the load-bearing minimum). Drives the score. */
@@ -133,4 +146,43 @@ export function contentCompleteness(node: DnaNode): number {
 export const isContentComplete = (node: DnaNode): boolean => validateContent(node.kind, node.content as Record<string, unknown>, { nodeId: node.id }).every((i) => i.rule !== "missing_field");
 
 export const VALID_KINDS = new Set<string>(Object.keys(KIND_LEVEL));
-export { isEntityKind };
+
+// ── The generation artifact (what the prompt + the edge/bridge consume) ──────────────────────────────────
+// One renderer turns NODE_SCHEMA into (a) a human prompt block the model reads and (b) machine `kinds` data
+// for validation. This is emitted to supabase/functions/_shared/dna-schema.json (a checked artifact kept in
+// sync by a golden test); the dna-chat EDGE fn and the dev BRIDGE both inject `promptGuide` verbatim instead
+// of hand-maintaining their own (drift-prone) copy. SSOT: NODE_SCHEMA → artifact → edge + bridge.
+function renderField(spec: EditSpec): string {
+  const star = spec.required ? "*" : "";
+  if (spec.genOnly) return `${spec.key}${star}${spec.note ? ` ${spec.note}` : ""}`;
+  switch (spec.type) {
+    case "object": return `${spec.key}${star}:{ ${(spec.fields ?? []).map(renderField).join(", ")} }`;
+    case "select": return `${spec.key}${star}(${(spec.options ?? []).join("|")})`;
+    case "ref": return `${spec.key}${star}→${spec.refKind}`;
+    case "refs": return `${spec.key}${star}[]→${spec.refKind}`;
+    case "list": return `${spec.key}${star}[]`;
+    case "percent": return `${spec.key}${star}(0..1)`;
+    default: return `${spec.key}${star}`;
+  }
+}
+
+export interface KindSchemaInfo { required: string[]; enums: Record<string, string[]>; refs: Record<string, string>; fields: string[] }
+export interface DnaSchemaArtifact { promptGuide: string; kinds: Record<string, KindSchemaInfo> }
+
+export function dnaSchemaArtifact(): DnaSchemaArtifact {
+  const order = Object.keys(NODE_SCHEMA) as NodeKind[];
+  const header = "CONTENT FIELD SCHEMAS — use EXACTLY these keys. * = required · (a|b) = allowed values · →kind = an id of that kind · [] = a list. Wrong keys silently orphan data.";
+  const promptGuide = [header, ...order.map((k) => `- ${k} → ${(NODE_SCHEMA[k] ?? []).map(renderField).join(", ")}`)].join("\n");
+
+  const kinds: Record<string, KindSchemaInfo> = {};
+  for (const k of order) {
+    const specs = editSpecs(k); // validation-relevant (no genOnly)
+    const enums: Record<string, string[]> = {}, refs: Record<string, string> = {};
+    for (const s of specs) {
+      if (s.options) enums[s.key] = s.options;
+      if ((s.type === "ref" || s.type === "refs") && s.refKind) refs[s.key] = s.refKind;
+    }
+    kinds[k] = { required: specs.filter((s) => s.required).map((s) => s.key), enums, refs, fields: specs.map((s) => s.key) };
+  }
+  return { promptGuide, kinds };
+}

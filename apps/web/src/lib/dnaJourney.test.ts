@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildJourney, stageComplete, stageSubsteps } from "@/lib/dnaJourney";
+import { buildJourney, dnaHealth, stageComplete, stageSubsteps } from "@/lib/dnaJourney";
 import type { DnaNode, NodeKind } from "@/lib/novelDna";
 
 let seq = 0;
@@ -66,6 +66,19 @@ describe("stageSubsteps", () => {
     expect(withCast.cast.status).toBe("done");
     expect(withCast.cast.count).toBe(1);
     expect(withCast.relationship.status).toBe("available");
+  });
+
+  it("dnaHealth: empty tree is 0 complete; a misparented entity dents strength and surfaces in issues", () => {
+    expect(dnaHealth([]).completeness).toBe(0);
+    // seed→premise→pillar, one character correctly on the pillar, one wrongly on the premise (the real bug).
+    const seed = mk("seed", { logline: "x" }, "accepted");
+    const premise = mk("premise", { dramatic_question: "q?" }, "accepted", seed.id);
+    const pillar = mk("pillar", { controlling_idea: "idea" }, "accepted", premise.id);
+    const onPillar = mk("character", { name: "Finn" }, "accepted", pillar.id);
+    const onPremise = mk("character", { name: "Vane" }, "accepted", premise.id); // the fault
+    const h = dnaHealth([seed, premise, pillar, onPillar, onPremise]);
+    expect(h.strength).toBeLessThan(1);
+    expect(h.issues.some((i) => i.rule === "misparented")).toBe(true);
   });
 
   it("Draft prose reports a drafted/total tally", () => {
