@@ -1,12 +1,12 @@
 // DnaTreePage — /books/:slug/dna/tree
 // Visual tree of the live book_nodes hierarchy. No app chrome; nav suppressed via ConditionalNav.
 // Color-coded by node kind; connector lines via CSS borders; collapsible per-node.
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { deleteNode, saveNode } from "@/lib/bookNodes";
-import { analysisText, byId, childrenOf, editContent, isEntityKind, isProseStale, isStale, newId, type BookSettings, type DnaNode, type BeatContent, type NodeContent, type SceneContent } from "@/lib/novelDna";
-import { applyDnaProposal, clearDnaProposal, describeOps, sendDnaMessage, type DnaChatMessage, type DnaProposal } from "@/lib/dnaChat";
+import { analysisText, byId, childrenOf, editContent, isEntityKind, isProseStale, isStale, newId, pillarOf, type BookSettings, type DnaNode, type BeatContent, type NodeContent, type NodeKind, type SceneContent } from "@/lib/novelDna";
+import { applyDnaProposal, clearDnaProposal, describeOps, sendDnaMessage, type DnaChatMessage, type DnaProposal, type NodeOp } from "@/lib/dnaChat";
 import { DNA_STAGES, buildJourney, type StageKey } from "@/lib/dnaJourney";
 
 const getNumericId = (p: string | undefined) => { const m = p?.match(/^(\d+)/); return m ? parseInt(m[1]) : 0; };
@@ -115,6 +115,46 @@ const EDIT_FIELDS: Partial<Record<DnaNode["kind"], EditSpec[]>> = {
 };
 const editSpecs = (kind: DnaNode["kind"]) => EDIT_FIELDS[kind] ?? [];
 const KIND_LEVEL: Record<string, number> = { seed: 0, premise: 1, pillar: 2, character: 2, relationship: 2, tentpole: 2, world_fact: 2, voice_profile: 2, thread: 2, game: 2, movement: 3, beat: 4, scene: 5 };
+
+// ── Active-context highlight (#2) ─────────────────────────────────────────────
+// MIRRORS supabase/functions/dna-chat STAGE_KINDS. The reviser always receives the WHOLE tree as context;
+// `stage` only sets its FOCUS (these kinds) and whether scene prose is included (draft only). So the
+// highlight marks the focus kinds — NOT "the only nodes sent" — which the legend states honestly.
+const STAGE_FOCUS_KINDS: Record<StageKey, DnaNode["kind"][]> = {
+  premise: ["seed", "premise"],
+  foundations: ["pillar", "character", "relationship", "tentpole", "world_fact", "voice_profile"],
+  structure: ["movement", "beat", "thread"],
+  scenes: ["scene"],
+  draft: ["scene"],
+};
+
+// ── Proposal overlay (#1) ─────────────────────────────────────────────────────
+// Resolve a pending proposal's ops into a per-node view the tree can render in place: which nodes are
+// edited (field patch), which are deleted, and which phantom nodes are added under each parent. Entity adds
+// are placed on the pillar (where applyNodeOps actually lands them, schema §4); replace_children expands
+// into deletes (existing non-locked children of childKind) + adds.
+interface PhantomAdd { kind: NodeKind; content: NodeContent }
+interface ProposalView { edits: Map<string, NodeContent>; deletes: Set<string>; addsByParent: Map<string, PhantomAdd[]> }
+const addKey = (parentId: string, kind: string) => `${parentId}::${kind}`;
+function indexProposal(ops: NodeOp[] | undefined, nodes: DnaNode[]): ProposalView | null {
+  if (!ops?.length) return null;
+  const v: ProposalView = { edits: new Map(), deletes: new Set(), addsByParent: new Map() };
+  const pillarId = pillarOf(nodes)?.id;
+  const pushAdd = (parentId: string, kind: NodeKind, content: NodeContent) => {
+    const key = addKey(parentId, kind);
+    (v.addsByParent.get(key) ?? v.addsByParent.set(key, []).get(key)!).push({ kind, content });
+  };
+  for (const op of ops) {
+    if (op.op === "edit") v.edits.set(op.id, op.content);
+    else if (op.op === "delete") v.deletes.add(op.id);
+    else if (op.op === "add") pushAdd(isEntityKind(op.kind) ? (pillarId ?? op.parentId) : op.parentId, op.kind, op.content);
+    else if (op.op === "replace_children") {
+      for (const n of nodes) if (n.parent_id === op.parentId && n.kind === op.childKind && !n.authoring.locked) v.deletes.add(n.id);
+      for (const sub of op.children) pushAdd(op.parentId, op.childKind, sub.content);
+    }
+  }
+  return v;
+}
 
 // ── Connector glyph for beats ────────────────────────────────────────────────
 function beatGlyph(n: DnaNode): string {
@@ -285,15 +325,17 @@ function rawAsDraft(raw: unknown, spec: EditSpec): string {
 }
 
 // ── Single tree row ──────────────────────────────────────────────────────────
-function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete }: {
+function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete, mark, focus }: {
   node: DnaNode; index: Map<string, DnaNode>; depth: number;
   expandable: boolean; open: boolean; onToggle: () => void; onDelete?: () => void;
+  mark?: "edit" | "delete"; focus?: boolean; // mark = proposed change (#1); focus = in the rail's stage focus (#2)
 }) {
   const stale = isStale(node, index) || (node.kind === "scene" && isProseStale(node));
   const color = KIND_COLOR[node.kind] ?? "#888";
   const bg = KIND_BG[node.kind] ?? "transparent";
   const title = nodeTitle(node);
   const glyph = beatGlyph(node);
+  const markColor = mark === "delete" ? "#c06060" : mark === "edit" ? "#8a8aff" : null;
 
   return (
     <div style={{ position: "relative" }}>
@@ -319,6 +361,9 @@ function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete }: {
           paddingRight: 12, paddingTop: 3, paddingBottom: 3,
           cursor: expandable ? "pointer" : "default",
           position: "relative",
+          // #1 proposal mark: left accent + tint. #2 focus: faint accent bar when no proposal mark.
+          boxShadow: markColor ? `inset 3px 0 0 ${markColor}` : focus ? "inset 2px 0 0 #8a8aff66" : undefined,
+          background: markColor ? `${markColor}12` : focus ? "#8a8aff08" : undefined,
         }}
       >
         {/* Horizontal connector line from parent spine to this node */}
@@ -352,8 +397,9 @@ function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete }: {
         {/* Title / content preview */}
         {(glyph || title) && (
           <span style={{
-            fontFamily: "ui-monospace, monospace", fontSize: 12, color: "#c9c9c9",
+            fontFamily: "ui-monospace, monospace", fontSize: 12, color: mark === "delete" ? "#9a7070" : "#c9c9c9",
             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1,
+            textDecoration: mark === "delete" ? "line-through" : undefined,
           }}>
             {glyph && <span style={{ color: "#fbbf24", marginRight: 2 }}>{glyph}</span>}
             {title}
@@ -362,6 +408,7 @@ function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete }: {
 
         {/* Status + stale + locked chips */}
         <span style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, marginLeft: "auto" }}>
+          {markColor && <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 8, textTransform: "uppercase", letterSpacing: "0.12em", color: markColor }}>{mark === "delete" ? "− remove" : "✎ edit"}</span>}
           {stale && <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 8, textTransform: "uppercase", letterSpacing: "0.12em", color: "#f59e0b" }}>stale</span>}
           {node.authoring.locked && <span style={{ fontSize: 10, color: color }}>🔒</span>}
           <span style={{
@@ -378,6 +425,42 @@ function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete }: {
               style={{ fontSize: 11, color: "#5a3030", cursor: "pointer", padding: "0 2px" }}>🗑</span>
           )}
         </span>
+      </div>
+    </div>
+  );
+}
+
+// ── Proposal overlay rows (#1) ────────────────────────────────────────────────
+// The field-level before→after for a proposed EDIT, rendered inline under its node (always visible, not
+// gated on expand) so the change is legible where it lands. Reuses describeOps so the diff matches the rail.
+function OpDiffBlock({ node, content, nodes, depth }: { node: DnaNode; content: NodeContent; nodes: DnaNode[]; depth: number }) {
+  const row = describeOps([{ op: "edit", id: node.id, content }], nodes)[0];
+  if (!row?.fields.length) return null;
+  return (
+    <div style={{ ...detailRowStyle(depth), flexDirection: "column", alignItems: "stretch", gap: 3, paddingTop: 3, paddingBottom: 4 }}>
+      <ConnectorTick depth={depth} />
+      {row.fields.map((f) => (
+        <div key={f.key} style={{ paddingLeft: 20 }}>
+          <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 9, letterSpacing: "0.06em", textTransform: "uppercase", color: "#555" }}>{f.key}</span>
+          {f.old !== undefined && f.old !== f.next && <div style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: "#6a5050", textDecoration: "line-through", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{f.old}</div>}
+          <div style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: "#7fae8f", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{f.next}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// A phantom node the proposal would ADD — rendered in its target container/group, before the ＋ add row.
+function PhantomRow({ add, depth }: { add: PhantomAdd; depth: number }) {
+  const fields = Object.entries(add.content).filter(([, val]) => val != null && val !== "");
+  const title = String((add.content as Record<string, unknown>).name ?? (add.content as Record<string, unknown>).title ?? (add.content as Record<string, unknown>).summary ?? (add.content as Record<string, unknown>).goal ?? "");
+  return (
+    <div style={{ position: "relative", paddingLeft: depth * 20 + 20, paddingRight: 12, paddingTop: 2, paddingBottom: 2, boxShadow: "inset 3px 0 0 #60a070", background: "#60a07012" }}>
+      <ConnectorTick depth={depth} />
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+        <span style={{ width: 12, flexShrink: 0 }} />
+        <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "#60a070", border: "1px solid #60a07040", borderRadius: 3, padding: "1px 5px", flexShrink: 0 }}>＋ {add.kind}</span>
+        <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: "#a8c8b0", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</span>
       </div>
     </div>
   );
@@ -441,22 +524,22 @@ function NodeGroup({ groupId, label, hint, count, depth, collapsedSet, onToggle,
 }
 
 // ── Recursive tree subtree ───────────────────────────────────────────────────
-interface TreeHandlers {
+interface TreeView {
   onToggle: (id: string) => void; onToggleDetail: (id: string) => void;
   onAdd: (parentId: string, kind: DnaNode["kind"]) => void | Promise<void>;
   onDelete: (node: DnaNode) => void;
+  proposal: ProposalView | null;       // #1 — proposed ops to overlay
+  focusKinds: Set<string> | null;       // #2 — the rail's stage focus (null = rail closed)
 }
 function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
   node: DnaNode; index: Map<string, DnaNode>; nodes: DnaNode[]; depth: number;
-  collapsedSet: Set<string>; openSet: Set<string>; h: TreeHandlers;
+  collapsedSet: Set<string>; openSet: Set<string>; h: TreeView;
 }) {
   const kids = childrenOf(nodes, node.id).sort((a, b) => a.position - b.position);
   const hasKids = kids.length > 0;
   const specs = editSpecs(node.kind);
   // A node is expandable if it has children OR editable fields (entities/scenes have fields but no kids).
   const expandable = hasKids || specs.length > 0;
-  // Containers default OPEN (collapsedSet = opt-out); detail-only leaves default CLOSED (openSet = opt-in),
-  // so digging into a character's wound/lie is on demand and the tree stays scannable by default.
   const open = expandable && (hasKids ? !collapsedSet.has(node.id) : openSet.has(node.id));
   const toggle = () => (hasKids ? h.onToggle(node.id) : h.onToggleDetail(node.id));
   const fields = specs.map((spec) => <EditableField key={spec.key} node={node} spec={spec} depth={depth + 1} index={index} />);
@@ -464,6 +547,9 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
     <Subtree key={child.id} node={child} index={index} nodes={nodes} depth={d}
       collapsedSet={collapsedSet} openSet={openSet} h={h} />
   ));
+  // #1 — phantom add rows the proposal would create under (parentId, kind), rendered before the ＋ add row.
+  const phantoms = (parentId: string, kind: string, d: number) =>
+    (h.proposal?.addsByParent.get(addKey(parentId, kind)) ?? []).map((add, i) => <PhantomRow key={`ph-${i}`} add={add} depth={d} />);
 
   // The pillar splits into STORY (the spine) + CAST & WORLD (the registry, sub-grouped by kind); a movement
   // can add beats, a beat can add scenes; every other node just renders its editable fields.
@@ -477,7 +563,7 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
           {fields}
           <NodeGroup groupId={`${node.id}::story`} label="story" hint="the spine — acts in order"
             count={ladder.length} depth={depth + 1} collapsedSet={collapsedSet} onToggle={h.onToggle} alwaysShow
-            footer={<AddRow label="movement" depth={depth + 2} onAdd={() => h.onAdd(node.id, "movement")} />}>
+            footer={<>{phantoms(node.id, "movement", depth + 2)}<AddRow label="movement" depth={depth + 2} onAdd={() => h.onAdd(node.id, "movement")} /></>}>
             {sub(ladder, depth + 2)}
           </NodeGroup>
           <NodeGroup groupId={`${node.id}::world`} label="cast & world" hint="the registry"
@@ -487,7 +573,7 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
               return (
                 <NodeGroup key={kind} groupId={`${node.id}::world::${kind}`} label={label}
                   count={items.length} depth={depth + 2} collapsedSet={collapsedSet} onToggle={h.onToggle} alwaysShow
-                  footer={<AddRow label={kind} depth={depth + 3} onAdd={() => h.onAdd(node.id, kind)} />}>
+                  footer={<>{phantoms(node.id, kind, depth + 3)}<AddRow label={kind} depth={depth + 3} onAdd={() => h.onAdd(node.id, kind)} /></>}>
                   {sub(items, depth + 3)}
                 </NodeGroup>
               );
@@ -501,6 +587,7 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
         <>
           {fields}
           {sub(kids, depth + 1)}
+          {childAdd && phantoms(node.id, childAdd, depth + 1)}
           {childAdd && <AddRow label={childAdd} depth={depth + 1} onAdd={() => h.onAdd(node.id, childAdd as DnaNode["kind"])} />}
         </>
       );
@@ -509,11 +596,16 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
 
   // Delete is allowed on addable kinds (not the seed/premise/pillar singletons) when unlocked.
   const deletable = !node.authoring.locked && (isEntityKind(node.kind) || ["movement", "beat", "scene"].includes(node.kind));
+  // #1 proposal mark for THIS node. #2 focus highlight (only when rail open → focusKinds set).
+  const editPatch = h.proposal?.edits.get(node.id);
+  const mark = h.proposal ? (h.proposal.deletes.has(node.id) ? "delete" : editPatch ? "edit" : undefined) : undefined;
+  const focus = h.focusKinds?.has(node.kind) ?? false;
 
   return (
     <div>
       <TreeRow node={node} index={index} depth={depth} expandable={expandable} open={open} onToggle={toggle}
-        onDelete={deletable ? () => h.onDelete(node) : undefined} />
+        onDelete={deletable ? () => h.onDelete(node) : undefined} mark={mark} focus={focus} />
+      {editPatch && <OpDiffBlock node={node} content={editPatch} nodes={nodes} depth={depth + 1} />}
       {body}
     </div>
   );
@@ -526,9 +618,9 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
 // (and whether the three-axis analysis is attached). Applied ops land in book_nodes → the tree's own
 // subscription refreshes it. `highlightIds` (the active-context highlight) is a follow-up.
 const ANALYSIS_STAGES = new Set<StageKey>(["structure", "scenes", "draft"]);
-function ChatRail({ bookId, stage, setStage, nodes, settings, onClose }: {
+function ChatRail({ bookId, stage, setStage, nodes, settings, onClose, onPending }: {
   bookId: number; stage: StageKey; setStage: (s: StageKey) => void;
-  nodes: DnaNode[]; settings: BookSettings; onClose: () => void;
+  nodes: DnaNode[]; settings: BookSettings; onClose: () => void; onPending: (p: DnaProposal | null) => void;
 }) {
   const [messages, setMessages] = useState<DnaChatMessage[]>([]);
   const [pending, setPending] = useState<DnaProposal | null>(null);
@@ -542,8 +634,9 @@ function ChatRail({ bookId, stage, setStage, nodes, settings, onClose }: {
     const load = async () => {
       const { data } = await supabase.from("dna_chats").select("messages, pending_proposal, status").eq("book_id", bookId).eq("stage", stage).maybeSingle();
       if (!alive) return;
+      const prop = (data?.pending_proposal as DnaProposal | null) ?? null;
       setMessages((data?.messages as DnaChatMessage[] | null) ?? []);
-      setPending((data?.pending_proposal as DnaProposal | null) ?? null);
+      setPending(prop); onPending(prop); // lift to the page so the tree can overlay it (#1)
       setThinking((data?.status as string | null) === "thinking");
     };
     void load();
@@ -551,7 +644,7 @@ function ChatRail({ bookId, stage, setStage, nodes, settings, onClose }: {
       .on("postgres_changes", { event: "*", schema: "public", table: "dna_chats", filter: `book_id=eq.${bookId}` }, () => void load())
       .subscribe();
     return () => { alive = false; void supabase.removeChannel(ch); };
-  }, [bookId, stage]);
+  }, [bookId, stage, onPending]);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, pending, thinking]);
 
   const send = async () => {
@@ -664,6 +757,7 @@ export default function DnaTreePage() {
   const [openSet, setOpenSet] = useState<Set<string>>(new Set()); // detail-only leaves the user dug into
   const [railOpen, setRailOpen] = useState(false);
   const [stage, setStage] = useState<StageKey>("structure");
+  const [proposal, setProposal] = useState<DnaProposal | null>(null); // #1 — mirrored from the rail
 
   useEffect(() => {
     if (!bookId) { setError("no book id"); return; }
@@ -740,6 +834,21 @@ export default function DnaTreePage() {
     void deleteNode(node.id).catch((e) => alert(`Delete failed: ${(e as Error).message}`));
   }, [nodes]);
 
+  // ── Proposal overlay (#1) + focus highlight (#2) ──────────────────────────────
+  const onPending = useCallback((p: DnaProposal | null) => setProposal(p), []);
+  const proposalView = useMemo(() => indexProposal(proposal?.ops, nodes ?? []), [proposal, nodes]);
+  // When the rail is open, mark the stage's focus kinds (the WHOLE tree is still in context — see legend).
+  const focusKinds = useMemo(() => (railOpen ? new Set<string>(STAGE_FOCUS_KINDS[stage]) : null), [railOpen, stage]);
+  const acceptProposal = useCallback(async () => {
+    if (!proposal) return;
+    try { await applyDnaProposal(bookId, stage, proposal); setProposal(null); }
+    catch (e) { alert(`Couldn't apply: ${(e as Error).message}`); }
+  }, [proposal, bookId, stage]);
+  const dismissProposal = useCallback(async () => {
+    setProposal(null);
+    try { await clearDnaProposal(bookId, stage); } catch { /* best effort */ }
+  }, [bookId, stage]);
+
   const base: React.CSSProperties = {
     margin: 0, minHeight: "100vh",
     fontFamily: "ui-monospace, 'Cascadia Code', 'Source Code Pro', monospace",
@@ -760,7 +869,7 @@ export default function DnaTreePage() {
 
   return (
     <div style={{ ...base, marginRight: railOpen ? 420 : 0 }}>
-      {railOpen && <ChatRail bookId={bookId} stage={stage} setStage={setStage} nodes={nodes} settings={settings} onClose={() => setRailOpen(false)} />}
+      {railOpen && <ChatRail bookId={bookId} stage={stage} setStage={setStage} nodes={nodes} settings={settings} onClose={() => setRailOpen(false)} onPending={onPending} />}
       {/* Header bar */}
       <div style={{ padding: "12px 16px", borderBottom: "1px solid #1a1a1a", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
         <span style={{ color: "#666", fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase" }}>
@@ -798,7 +907,23 @@ export default function DnaTreePage() {
         ))}
         <span style={{ fontSize: 9, color: "#f59e0b", letterSpacing: "0.08em", textTransform: "uppercase" }}>amber dot = stale</span>
         <span style={{ fontSize: 9, color: "#fbbf24", marginLeft: 8 }}>∴ therefore  ↯ but</span>
+        {/* #2 — focus legend: honest about the whole tree being in context */}
+        {focusKinds && (
+          <span style={{ fontSize: 9, color: "#8a8aff", letterSpacing: "0.06em", marginLeft: "auto" }}>
+            ▎rail focus: {STAGE_FOCUS_KINDS[stage].join(" · ")} <span style={{ color: "#555" }}>— whole tree in context{stage !== "draft" ? ", prose excluded off Prose stage" : ""}</span>
+          </span>
+        )}
       </div>
+
+      {/* #1 — proposal banner: accept/dismiss the whole pending change, mirrored from the rail */}
+      {proposal && (
+        <div style={{ padding: "8px 16px", borderBottom: "1px solid #2a2a44", background: "#13131a", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 9, color: "#8a8aff", letterSpacing: "0.14em", textTransform: "uppercase" }}>✦ {proposal.ops.length} proposed change{proposal.ops.length === 1 ? "" : "s"}</span>
+          <span style={{ fontFamily: "ui-serif, Georgia, serif", fontSize: 12.5, color: "#c8c8d0", flex: 1, minWidth: 200 }}>{proposal.summary}</span>
+          <span onClick={() => void acceptProposal()} style={{ fontSize: 11, color: "#8a8aff", cursor: "pointer", letterSpacing: "0.08em", textTransform: "uppercase" }}>✓ accept</span>
+          <span onClick={() => void dismissProposal()} style={{ fontSize: 11, color: "#666", cursor: "pointer", letterSpacing: "0.08em", textTransform: "uppercase" }}>dismiss</span>
+        </div>
+      )}
 
       {/* Tree */}
       <div style={{ paddingTop: 8, paddingBottom: 48 }}>
@@ -807,7 +932,7 @@ export default function DnaTreePage() {
         ) : roots.map((root) => (
           <Subtree key={root.id} node={root} index={index} nodes={nodes} depth={0}
             collapsedSet={collapsedSet} openSet={openSet}
-            h={{ onToggle: toggleNode, onToggleDetail: toggleDetail, onAdd: addNode, onDelete: removeNode }} />
+            h={{ onToggle: toggleNode, onToggleDetail: toggleDetail, onAdd: addNode, onDelete: removeNode, proposal: proposalView, focusKinds }} />
         ))}
       </div>
     </div>
