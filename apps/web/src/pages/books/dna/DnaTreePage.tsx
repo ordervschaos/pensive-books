@@ -1,10 +1,11 @@
 // DnaTreePage — /books/:slug/dna/tree
 // Visual tree of the live book_nodes hierarchy. No app chrome; nav suppressed via ConditionalNav.
 // Color-coded by node kind; connector lines via CSS borders; collapsible per-node.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { byId, childrenOf, isEntityKind, isProseStale, isStale, type DnaNode, type BeatContent, type SceneContent } from "@/lib/novelDna";
+import { saveNode } from "@/lib/bookNodes";
+import { byId, childrenOf, editContent, isEntityKind, isProseStale, isStale, type DnaNode, type BeatContent, type NodeContent, type SceneContent } from "@/lib/novelDna";
 
 const getNumericId = (p: string | undefined) => { const m = p?.match(/^(\d+)/); return m ? parseInt(m[1]) : 0; };
 
@@ -53,52 +54,60 @@ function nodeTitle(n: DnaNode): string {
   }
 }
 
-// ── Detail fields per kind (the "dig one layer in" payload) ───────────────────
-// The relevant content fields beneath each node's one-line title — character wants/wounds, scene
-// goal/conflict/outcome, game win/lose, etc. Id references (pov, players, relationship a/b) resolve to
-// names via the index. Returns [] for kinds with nothing beyond their title (so they stay non-expandable).
-function nodeDetails(n: DnaNode, index: Map<string, DnaNode>): { label: string; value: string }[] {
+// ── Editable fields per kind (the "dig one layer in" payload) ─────────────────
+// The simple content fields you can add/edit/delete inline. `list` fields are stored as arrays and edited
+// as a comma-separated string. Derived/ref/object fields (pov, players, value_shift…) are shown read-only
+// via nodeReadonly — they need structured pickers, not a text box (a follow-up).
+interface EditSpec { key: string; label: string; multiline?: boolean; list?: boolean }
+const EDIT_FIELDS: Partial<Record<DnaNode["kind"], EditSpec[]>> = {
+  seed: [{ key: "logline", label: "logline", multiline: true }],
+  premise: [{ key: "dramatic_question", label: "question", multiline: true }, { key: "genre", label: "genre", list: true }, { key: "tone", label: "tone", list: true }],
+  pillar: [{ key: "controlling_idea", label: "idea", multiline: true }, { key: "ending", label: "ending", multiline: true }],
+  character: [
+    { key: "name", label: "name" }, { key: "role", label: "role" }, { key: "want", label: "want", multiline: true },
+    { key: "need", label: "need", multiline: true }, { key: "wound", label: "wound", multiline: true }, { key: "lie", label: "lie", multiline: true },
+    { key: "truth", label: "truth", multiline: true }, { key: "idiolect", label: "idiolect", multiline: true }, { key: "tag", label: "tag" },
+  ],
+  relationship: [{ key: "bond", label: "bond", multiline: true }, { key: "charge", label: "charge", multiline: true }],
+  world_fact: [{ key: "name", label: "name" }, { key: "rule", label: "rule", multiline: true }, { key: "mechanism", label: "mechanism", multiline: true }, { key: "category", label: "category" }],
+  thread: [{ key: "name", label: "name" }, { key: "kind", label: "kind" }, { key: "promise", label: "promise", multiline: true }, { key: "payoff", label: "payoff", multiline: true }],
+  game: [{ key: "name", label: "name" }, { key: "win_condition", label: "win", multiline: true }, { key: "lose_condition", label: "lose", multiline: true }, { key: "stake", label: "stake", multiline: true }],
+  tentpole: [{ key: "summary", label: "summary", multiline: true }],
+  voice_profile: [{ key: "pov", label: "pov" }, { key: "tense", label: "tense" }, { key: "style", label: "style", multiline: true }, { key: "constraints", label: "constraints", list: true }, { key: "sample", label: "sample", multiline: true }],
+  movement: [{ key: "title", label: "title" }, { key: "goal", label: "goal", multiline: true }, { key: "turning_point", label: "turning point", multiline: true }],
+  beat: [{ key: "summary", label: "summary", multiline: true }],
+  scene: [{ key: "goal", label: "goal", multiline: true }, { key: "conflict", label: "conflict", multiline: true }, { key: "outcome", label: "outcome", multiline: true }, { key: "loc", label: "loc" }],
+};
+const editSpecs = (kind: DnaNode["kind"]) => EDIT_FIELDS[kind] ?? [];
+/** The display string for an editable field (arrays joined for the comma-separated editor). */
+function fieldValue(node: DnaNode, spec: EditSpec): string {
+  const raw = (node.content as Record<string, unknown>)[spec.key];
+  if (spec.list) return Array.isArray(raw) ? raw.join(", ") : "";
+  return typeof raw === "string" ? raw : raw != null ? String(raw) : "";
+}
+
+// Read-only derived rows — id references resolved to names, value-shift objects, target %. Not yet editable.
+function nodeReadonly(n: DnaNode, index: Map<string, DnaNode>): { label: string; value: string }[] {
   const c = n.content as Record<string, unknown>;
   const out: { label: string; value: string }[] = [];
-  const add = (label: string, value: unknown) => {
-    const v = Array.isArray(value) ? value.filter(Boolean).join(", ") : typeof value === "string" ? value.trim() : value != null ? String(value) : "";
-    if (v) out.push({ label, value: v });
-  };
+  const add = (label: string, value: string) => { if (value && value.trim()) out.push({ label, value }); };
   const name = (id: unknown) => (typeof id === "string" ? ((index.get(id)?.content as Record<string, unknown>)?.name as string) ?? id : "");
-  const names = (ids: unknown) => (Array.isArray(ids) ? ids.map(name).filter(Boolean) : []);
+  const names = (ids: unknown) => (Array.isArray(ids) ? ids.map(name).filter(Boolean).join(", ") : "");
   switch (n.kind) {
-    case "character":
-      add("role", c.role); add("want", c.want); add("need", c.need); add("wound", c.wound);
-      add("lie", c.lie); add("truth", c.truth); add("idiolect", c.idiolect); add("tag", c.tag); break;
-    case "relationship":
-      add("between", [name(c.a), name(c.b)].filter(Boolean).join("  ↔  ")); add("charge", c.charge); break;
-    case "world_fact":
-      add("rule", c.rule); add("mechanism", c.mechanism); add("category", c.category); break;
-    case "thread":
-      add("kind", c.kind); add("promise", c.promise); add("payoff", c.payoff); break;
-    case "game":
-      add("players", names(c.players)); add("win", c.win_condition); add("lose", c.lose_condition);
-      add("stake", c.stake); add("rules", names(c.governing_rules)); break;
-    case "voice_profile":
-      add("pov", c.pov); add("tense", c.tense); add("constraints", c.constraints); add("sample", c.sample); break;
+    case "relationship": add("between", [name(c.a), name(c.b)].filter(Boolean).join("  ↔  ")); break;
+    case "game": add("players", names(c.players)); add("rules", names(c.governing_rules)); break;
     case "scene": {
       const sc = n.content as SceneContent;
-      add("pov", name(sc.pov)); add("loc", sc.loc); add("goal", sc.goal); add("conflict", sc.conflict); add("outcome", sc.outcome);
+      add("pov", String(name(sc.pov) ?? ""));
       if (sc.value_shift) add("value", `${sc.value_shift.from ?? "?"} → ${sc.value_shift.to ?? "?"}${sc.value_shift.polarity ? `  (${sc.value_shift.polarity})` : ""}`);
       break;
     }
     case "movement": {
-      const m = c as Record<string, unknown>;
-      add("goal", m.goal); add("turning point", m.turning_point);
-      if (typeof m.target_pct === "number") add("target", `${Math.round((m.target_pct as number) * 100)}%`);
-      const val = m.value as Record<string, unknown> | undefined;
+      if (typeof c.target_pct === "number") add("target", `${Math.round((c.target_pct as number) * 100)}%`);
+      const val = c.value as Record<string, unknown> | undefined;
       if (val) add("value", `${val.from ?? "?"} → ${val.to ?? "?"}`);
       break;
     }
-    case "premise":
-      add("genre", c.genre); add("tone", c.tone); break;
-    case "pillar":
-      add("ending", c.ending); break;
     default: break;
   }
   return out;
@@ -111,14 +120,91 @@ function beatGlyph(n: DnaNode): string {
   return c === "therefore" ? "∴ " : c === "but" ? "↯ " : "";
 }
 
-// ── A single content field shown when a node is dug into ──────────────────────
+// ── Shared geometry + atoms for a detail field row ────────────────────────────
+const detailRowStyle = (depth: number): React.CSSProperties => ({ position: "relative", display: "flex", alignItems: "baseline", gap: 8, paddingLeft: depth * 20 + 20, paddingRight: 12, paddingTop: 1, paddingBottom: 1 });
+const labelStyle: React.CSSProperties = { fontFamily: "ui-monospace, monospace", fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "#5c5c5c", width: 92, flexShrink: 0, textAlign: "right" };
+const ConnectorTick = ({ depth }: { depth: number }) => <div style={{ position: "absolute", left: (depth - 1) * 20 + 8, top: 9, width: 12, height: 1, background: "#ffffff12" }} />;
+
+// A read-only derived field (resolved refs, value-shift, target %).
 function DetailRow({ label, value, depth }: { label: string; value: string; depth: number }) {
   return (
-    <div style={{ position: "relative", display: "flex", alignItems: "baseline", gap: 8, paddingLeft: depth * 20 + 20, paddingRight: 12, paddingTop: 1, paddingBottom: 1 }}>
-      <div style={{ position: "absolute", left: (depth - 1) * 20 + 8, top: 9, width: 12, height: 1, background: "#ffffff12" }} />
+    <div style={detailRowStyle(depth)}>
+      <ConnectorTick depth={depth} />
       <span style={{ width: 12, flexShrink: 0 }} />
-      <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "#5c5c5c", width: 92, flexShrink: 0, textAlign: "right" }}>{label}</span>
-      <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: "#aeaeae", whiteSpace: "pre-wrap", wordBreak: "break-word", flex: 1, lineHeight: 1.5 }}>{value}</span>
+      <span style={labelStyle}>{label}</span>
+      <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: "#9a9a9a", whiteSpace: "pre-wrap", wordBreak: "break-word", flex: 1, lineHeight: 1.5 }}>{value}</span>
+    </div>
+  );
+}
+
+// ── An editable content field: click to edit, ✕ to clear, faint "＋ label" when empty ──────────
+// Self-contained — writes straight through saveNode(editContent(...)); Realtime reflects the change back.
+// Locked nodes are read-only. List fields edit as a comma-separated string.
+function EditableField({ node, spec, depth }: { node: DnaNode; spec: EditSpec; depth: number }) {
+  const value = fieldValue(node, spec);
+  const locked = node.authoring.locked;
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const [busy, setBusy] = useState(false);
+  const ref = useRef<HTMLTextAreaElement | HTMLInputElement | null>(null);
+
+  useEffect(() => { if (editing) { const el = ref.current; el?.focus(); if (el) (el as HTMLInputElement).selectionStart = el.value.length; } }, [editing]);
+
+  const begin = () => { if (locked || busy) return; setDraft(value); setEditing(true); };
+  const cancel = () => setEditing(false);
+  const write = async (patch: NodeContent) => { setBusy(true); try { await saveNode(editContent(node, patch)); } catch (e) { alert(`Save failed: ${(e as Error).message}`); } finally { setBusy(false); } };
+  const commit = async () => {
+    setEditing(false);
+    const next: unknown = spec.list ? draft.split(",").map((s) => s.trim()).filter(Boolean) : draft.trim();
+    if (spec.list ? draft.trim() === value : next === value) return; // unchanged
+    await write({ [spec.key]: next } as NodeContent);
+  };
+  const clear = async (e: React.MouseEvent) => { e.stopPropagation(); if (locked || busy) return; await write({ [spec.key]: spec.list ? [] : "" } as NodeContent); };
+
+  if (editing) {
+    const common = {
+      ref: ref as never, value: draft, disabled: busy,
+      onChange: (e: React.ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => setDraft(e.target.value),
+      onBlur: () => void commit(),
+      onKeyDown: (e: React.KeyboardEvent) => {
+        if (e.key === "Escape") { e.preventDefault(); cancel(); }
+        else if (e.key === "Enter" && (!spec.multiline || e.metaKey || e.ctrlKey)) { e.preventDefault(); void commit(); }
+      },
+      style: { fontFamily: "ui-monospace, monospace", fontSize: 12, color: "#e6e6e6", background: "#16161a", border: "1px solid #3a3a55", borderRadius: 3, padding: "3px 6px", flex: 1, lineHeight: 1.5, outline: "none", resize: "vertical" as const },
+    };
+    return (
+      <div style={detailRowStyle(depth)} onClick={(e) => e.stopPropagation()}>
+        <ConnectorTick depth={depth} />
+        <span style={{ width: 12, flexShrink: 0 }} />
+        <span style={labelStyle}>{spec.label}</span>
+        {spec.multiline ? <textarea rows={Math.min(8, Math.max(2, draft.split("\n").length))} {...common} /> : <input {...common} />}
+        <span style={{ fontSize: 9, color: "#555", flexShrink: 0, alignSelf: "center" }}>{spec.multiline ? "⌘↵ save · esc" : "↵ save · esc"}</span>
+      </div>
+    );
+  }
+
+  if (!value) {
+    return (
+      <div style={detailRowStyle(depth)}>
+        <ConnectorTick depth={depth} />
+        <span style={{ width: 12, flexShrink: 0 }} />
+        <span style={labelStyle}>{spec.label}</span>
+        <span onClick={begin} style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, color: locked ? "#333" : "#4a4a4a", flex: 1, cursor: locked ? "default" : "text", fontStyle: "italic" }}>
+          {locked ? "—" : `＋ ${spec.label}`}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div style={detailRowStyle(depth)}>
+      <ConnectorTick depth={depth} />
+      <span style={{ width: 12, flexShrink: 0 }} />
+      <span style={labelStyle}>{spec.label}</span>
+      <span onClick={begin} style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: busy ? "#666" : "#cfcfcf", whiteSpace: "pre-wrap", wordBreak: "break-word", flex: 1, lineHeight: 1.5, cursor: locked ? "default" : "text" }}>
+        {value}
+      </span>
+      {!locked && <span onClick={clear} title="clear field" style={{ fontSize: 11, color: "#4a4a4a", cursor: "pointer", flexShrink: 0, alignSelf: "center", padding: "0 2px" }}>✕</span>}
     </div>
   );
 }
@@ -264,13 +350,19 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, onToggle, o
 }) {
   const kids = childrenOf(nodes, node.id).sort((a, b) => a.position - b.position);
   const hasKids = kids.length > 0;
-  const details = nodeDetails(node, index);
-  const expandable = hasKids || details.length > 0;
+  const specs = editSpecs(node.kind);
+  const readonly = nodeReadonly(node, index);
+  const expandable = hasKids || specs.length > 0 || readonly.length > 0;
   // Containers default OPEN (collapsedSet = opt-out); detail-only leaves default CLOSED (openSet = opt-in),
   // so digging into a character's wound/lie is on demand and the tree stays scannable by default.
   const open = expandable && (hasKids ? !collapsedSet.has(node.id) : openSet.has(node.id));
   const toggle = () => (hasKids ? onToggle(node.id) : onToggleDetail(node.id));
-  const detailRows = details.map((d) => <DetailRow key={d.label} label={d.label} value={d.value} depth={depth + 1} />);
+  const detailRows = (
+    <>
+      {specs.map((spec) => <EditableField key={spec.key} node={node} spec={spec} depth={depth + 1} />)}
+      {readonly.map((d) => <DetailRow key={d.label} label={d.label} value={d.value} depth={depth + 1} />)}
+    </>
+  );
   const sub = (items: DnaNode[], d: number) => items.map((child) => (
     <Subtree key={child.id} node={child} index={index} nodes={nodes} depth={d}
       collapsedSet={collapsedSet} openSet={openSet} onToggle={onToggle} onToggleDetail={onToggleDetail} />
