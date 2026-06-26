@@ -6,7 +6,8 @@ import { useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { deleteNode, saveNode } from "@/lib/bookNodes";
 import { analysisText, byId, childrenOf, editContent, isEntityKind, isProseStale, isStale, newId, pillarOf, type BookSettings, type DnaNode, type BeatContent, type NodeContent, type NodeKind, type SceneContent } from "@/lib/novelDna";
-import { applyDnaProposal, clearDnaProposal, describeOps, sendDnaMessage, type DnaChatMessage, type DnaProposal, type NodeOp } from "@/lib/dnaChat";
+import { editSpecs, KIND_LEVEL, type EditSpec } from "@/lib/dnaSchema";
+import { applyDnaProposal, clearDnaProposal, describeOps, sendDnaMessage, validateOps, type DnaChatMessage, type DnaProposal, type NodeOp, type OpRejection } from "@/lib/dnaChat";
 import { DNA_STAGES, buildJourney, type StageKey } from "@/lib/dnaJourney";
 
 const getNumericId = (p: string | undefined) => { const m = p?.match(/^(\d+)/); return m ? parseInt(m[1]) : 0; };
@@ -56,65 +57,9 @@ function nodeTitle(n: DnaNode): string {
   }
 }
 
-// ── Editable fields per kind (the "dig one layer in" payload) ─────────────────
-// Every meaningful content field, typed so the right editor renders: text/list (comma) for free text,
-// ref/refs for id pointers (a dropdown / chip-picker of the right kind), select for enums, percent for
-// 0–1 floats, object for nested groups (value_shift, movement value, premise shape).
-type FieldType = "text" | "list" | "ref" | "refs" | "select" | "percent" | "object";
-interface EditSpec { key: string; label: string; type?: FieldType; multiline?: boolean; refKind?: DnaNode["kind"]; options?: string[]; fields?: EditSpec[] }
-const ROLES = ["protagonist", "antagonist", "ally", "love_interest", "minor"];
-const POLARITY = ["up", "down"];
-const EDIT_FIELDS: Partial<Record<DnaNode["kind"], EditSpec[]>> = {
-  seed: [{ key: "logline", label: "logline", multiline: true }],
-  premise: [
-    { key: "dramatic_question", label: "question", multiline: true }, { key: "genre", label: "genre", type: "list" }, { key: "tone", label: "tone", type: "list" },
-    { key: "shape", label: "shape", type: "object", fields: [
-      { key: "setup", label: "setup", multiline: true }, { key: "turn1", label: "turn 1", multiline: true }, { key: "turn2", label: "turn 2", multiline: true },
-      { key: "turn3", label: "turn 3", multiline: true }, { key: "resolution", label: "resolution", multiline: true },
-    ] },
-  ],
-  pillar: [{ key: "controlling_idea", label: "idea", multiline: true }, { key: "ending", label: "ending", multiline: true }],
-  character: [
-    { key: "name", label: "name" }, { key: "role", label: "role", type: "select", options: ROLES }, { key: "want", label: "want", multiline: true },
-    { key: "need", label: "need", multiline: true }, { key: "wound", label: "wound", multiline: true }, { key: "lie", label: "lie", multiline: true },
-    { key: "truth", label: "truth", multiline: true }, { key: "idiolect", label: "idiolect", multiline: true }, { key: "tag", label: "tag" },
-  ],
-  relationship: [
-    { key: "a", label: "a", type: "ref", refKind: "character" }, { key: "b", label: "b", type: "ref", refKind: "character" },
-    { key: "bond", label: "bond", multiline: true }, { key: "charge", label: "charge", multiline: true },
-  ],
-  world_fact: [{ key: "name", label: "name" }, { key: "rule", label: "rule", multiline: true }, { key: "mechanism", label: "mechanism", multiline: true }, { key: "category", label: "category" }],
-  thread: [{ key: "name", label: "name" }, { key: "kind", label: "kind", type: "select", options: ["mystery", "foreshadow", "setup_payoff", "arc"] }, { key: "promise", label: "promise", multiline: true }, { key: "payoff", label: "payoff", multiline: true }],
-  game: [
-    { key: "name", label: "name" }, { key: "players", label: "players", type: "refs", refKind: "character" },
-    { key: "win_condition", label: "win", multiline: true }, { key: "lose_condition", label: "lose", multiline: true }, { key: "stake", label: "stake", multiline: true },
-    { key: "governing_rules", label: "rules", type: "refs", refKind: "world_fact" },
-  ],
-  tentpole: [{ key: "summary", label: "summary", multiline: true }],
-  voice_profile: [
-    { key: "pov", label: "pov", type: "select", options: ["first-person", "third-person-limited", "third-person-omniscient", "second-person"] },
-    { key: "tense", label: "tense", type: "select", options: ["past", "present"] }, { key: "style", label: "style", multiline: true },
-    { key: "constraints", label: "constraints", type: "list" }, { key: "sample", label: "sample", multiline: true },
-  ],
-  movement: [
-    { key: "title", label: "title" }, { key: "goal", label: "goal", multiline: true }, { key: "turning_point", label: "turning point", multiline: true },
-    { key: "target_pct", label: "target %", type: "percent" },
-    { key: "value", label: "value", type: "object", fields: [{ key: "name", label: "name" }, { key: "from", label: "from" }, { key: "to", label: "to" }] },
-  ],
-  beat: [
-    { key: "summary", label: "summary", multiline: true }, { key: "connector", label: "connector", type: "select", options: ["therefore", "but"] },
-    { key: "polarity", label: "polarity", type: "select", options: POLARITY },
-  ],
-  scene: [
-    { key: "pov", label: "pov", type: "ref", refKind: "character" }, { key: "loc", label: "loc" },
-    { key: "goal", label: "goal", multiline: true }, { key: "conflict", label: "conflict", multiline: true }, { key: "outcome", label: "outcome", multiline: true },
-    { key: "value_shift", label: "value", type: "object", fields: [
-      { key: "value", label: "value" }, { key: "from", label: "from" }, { key: "to", label: "to" }, { key: "polarity", label: "polarity", type: "select", options: POLARITY },
-    ] },
-  ],
-};
-const editSpecs = (kind: DnaNode["kind"]) => EDIT_FIELDS[kind] ?? [];
-const KIND_LEVEL: Record<string, number> = { seed: 0, premise: 1, pillar: 2, character: 2, relationship: 2, tentpole: 2, world_fact: 2, voice_profile: 2, thread: 2, game: 2, movement: 3, beat: 4, scene: 5 };
+// Editable fields per kind + KIND_LEVEL now live in @/lib/dnaSchema (the single source of truth); the
+// editor below renders straight off editSpecs(kind). EditSpec carries an optional `required` flag the
+// schema's validateContent() reads — the editor ignores it (every field is still editable).
 
 // ── Active-context highlight (#2) ─────────────────────────────────────────────
 // MIRRORS supabase/functions/dna-chat STAGE_KINDS. The reviser always receives the WHOLE tree as context;
@@ -890,9 +835,14 @@ export default function DnaTreePage() {
         <div style={{ marginLeft: "auto", display: "flex", gap: 12 }}>
           <button onClick={expandAll} style={{ background: "none", border: "none", color: "#555", fontSize: 10, cursor: "pointer", letterSpacing: "0.1em", textTransform: "uppercase" }}>expand all</button>
           <button onClick={collapseAll} style={{ background: "none", border: "none", color: "#555", fontSize: 10, cursor: "pointer", letterSpacing: "0.1em", textTransform: "uppercase" }}>collapse all</button>
-          <button onClick={() => setRailOpen((v) => !v)} style={{ background: "none", border: "none", color: railOpen ? "#8a8aff" : "#555", fontSize: 10, cursor: "pointer", letterSpacing: "0.1em", textTransform: "uppercase" }}>✦ ai reviser</button>
           <a href={`/books/${bookSlug}/dna.json`} style={{ color: "#555", fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", textDecoration: "none" }}>json →</a>
           <a href={`/books/${bookSlug}/dna`} style={{ color: "#555", fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", textDecoration: "none" }}>studio →</a>
+          {/* AI reviser — prominent pill so the rail is discoverable (was a buried text button) */}
+          <button onClick={() => setRailOpen((v) => !v)} style={{
+            background: railOpen ? "#8a8aff22" : "#8a8aff14", border: "1px solid #8a8aff66", borderRadius: 5,
+            color: "#a8a8ff", fontSize: 10, cursor: "pointer", letterSpacing: "0.1em", textTransform: "uppercase",
+            padding: "3px 10px", fontFamily: "ui-monospace, monospace",
+          }}>✦ {railOpen ? "close reviser" : "ai reviser"}</button>
         </div>
       </div>
 
