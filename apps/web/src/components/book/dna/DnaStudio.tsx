@@ -1197,3 +1197,4 @@ function NodeCard({ node, index, bookId, kids, onChanged, accent, expanded, onTo
     </Panel>
   );
 }
+

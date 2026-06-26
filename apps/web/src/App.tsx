@@ -34,6 +34,8 @@ const NewBook = lazy(() => import("@/pages/books/new/NewBook"));
 const BookDetails = lazy(() => import("@/pages/books/show/BookDetails"));
 const StudioPage = lazy(() => import("@/pages/books/studio/StudioPage"));
 const DnaStudioPage = lazy(() => import("@/pages/books/dna/DnaStudioPage"));
+const DnaJsonPage = lazy(() => import("@/pages/books/dna/DnaJsonPage"));
+const DnaTreePage = lazy(() => import("@/pages/books/dna/DnaTreePage"));
 const DraftChanges = lazy(() => import("@/pages/books/show/DraftChanges"));
 const VersionHistoryPage = lazy(() => import("@/pages/books/show/VersionHistoryPage"));
 const BookEdit = lazy(() => import("@/pages/books/edit/BookEdit"));
@@ -71,9 +73,11 @@ function ScrollToTop() {
 function ConditionalNav() {
   const location = useLocation();
   const isPageViewRoute = location.pathname.includes('/pages/');
+  const isJsonRoute = location.pathname.endsWith('/dna.json');
+  const isTreeRoute = location.pathname.endsWith('/dna/tree');
 
-  // Hide nav for page view routes (they have their own fixed settings menu)
-  if (isPageViewRoute) {
+  // Hide nav for page view routes (own fixed settings menu) and dev DNA routes.
+  if (isPageViewRoute || isJsonRoute || isTreeRoute) {
     return null;
   }
 
@@ -173,6 +177,8 @@ export default function App() {
                         <Route path="/books/:bookSlug" element={<BookDetails />} />
                         <Route path="/books/:bookSlug/studio" element={<StudioPage />} />
                         <Route path="/books/:bookSlug/dna" element={<DnaStudioPage />} />
+                        <Route path="/books/:bookSlug/dna.json" element={<DnaJsonPage />} />
+                        <Route path="/books/:bookSlug/dna/tree" element={<DnaTreePage />} />
                         <Route path="/books/:bookSlug/studio/page/:pageId" element={<StudioPage />} />
                         <Route path="/books/:bookSlug/studio/:step" element={<StudioPage />} />
                         <Route path="/books/:bookSlug/edit" element={<BookEdit />} />
