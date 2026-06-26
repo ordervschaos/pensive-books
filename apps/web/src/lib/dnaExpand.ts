@@ -6,7 +6,7 @@ import { BRIDGE, bridgeFetch } from "@/lib/bridge";
 import { deleteNode, loadTree, saveNode, saveNodes } from "@/lib/bookNodes";
 import { composeSceneImage, renderNodeSceneImage, type ComposedSceneImage } from "@/lib/nodeSceneImages";
 import { ensurePortraitFor } from "@/lib/characterPortraits";
-import { byId, deepMergeContent, newId, presentCharacters, stampIllus, stampInput, stampProse, type BeatContent, type DnaNode, type GameContent, type NodeContent, type NodeKind, type SceneContent, type ThreadRef } from "@/lib/novelDna";
+import { byId, deepMergeContent, isEntityKind, newId, pillarOf, presentCharacters, stampIllus, stampInput, stampProse, type BeatContent, type DnaNode, type GameContent, type NodeContent, type NodeKind, type SceneContent, type ThreadRef } from "@/lib/novelDna";
 
 /** A short, legible chapter title from a beat's summary (the working title; the author renames). */
 function chapterTitleFromBeat(beat: DnaNode): string {
@@ -65,9 +65,15 @@ export async function expandNode(
 
   const children = res.children ?? [];
   if (!children.length) throw new Error("No children were generated.");
+  // INVARIANT (schema §4): entity kinds ALWAYS hang off the pillar — never whatever node triggered the
+  // expand. Resolve the real pillar so a stray caller (wrong focused node) can't orphan tentpoles / voice /
+  // cast onto premise or a movement — where dna-expand's pillar-scoped filters silently can't see them.
+  const parentNode = res.childKind && isEntityKind(res.childKind) && node.kind !== "pillar"
+    ? (pillarOf(await loadTree(bookId)) ?? node)
+    : node;
   const made: DnaNode[] = children.map((content, i) => ({
-    id: newId(), book_id: bookId, parent_id: node.id,
-    level: res.childLevel ?? node.level + 1, kind: (res.childKind ?? "scene") as NodeKind,
+    id: newId(), book_id: bookId, parent_id: parentNode.id,
+    level: res.childLevel ?? parentNode.level + 1, kind: (res.childKind ?? "scene") as NodeKind,
     position: startPosition + i, content,
     authoring: { source: "ai", locked: false, status: "accepted" },
   }));
@@ -115,7 +121,7 @@ export async function expandNode(
     }
   }
   // Stamp each against its inputs (parent + the new siblings) so they don't read as stale on arrival.
-  const index = byId([node, ...made]);
+  const index = byId([parentNode, ...made]);
   await saveNodes(made.map((n) => stampInput(n, index)));
   for (const id of replaceIds) await deleteNode(id); // regenerate: drop the unlocked predecessors last
   return { added: made.length };

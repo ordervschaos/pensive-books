@@ -129,6 +129,8 @@ export const newId = () => `n_${Math.random().toString(36).slice(2, 8)}${Date.no
 
 // ── Tree helpers ──────────────────────────────────────────────────────────────
 export const byId = (nodes: DnaNode[]): Map<string, DnaNode> => new Map(nodes.map((n) => [n.id, n]));
+/** The single pillar (the hub that parents the whole entity branch, schema §4). */
+export const pillarOf = (nodes: DnaNode[]): DnaNode | undefined => nodes.find((n) => n.kind === "pillar");
 export const childrenOf = (nodes: DnaNode[], parentId: string | null): DnaNode[] =>
   nodes.filter((n) => n.parent_id === parentId).sort((a, b) => a.position - b.position);
 

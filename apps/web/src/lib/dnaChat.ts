@@ -4,7 +4,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { BRIDGE, bridgeFetch } from "@/lib/bridge";
 import { deleteNode, loadTree, saveNode } from "@/lib/bookNodes";
-import { blastRadius, byId, editContent, emptyNode, stampInput, type DnaNode, type NodeContent, type NodeKind } from "@/lib/novelDna";
+import { blastRadius, byId, editContent, emptyNode, isEntityKind, pillarOf, stampInput, type DnaNode, type NodeContent, type NodeKind } from "@/lib/novelDna";
 import type { StageKey } from "@/lib/dnaJourney";
 
 export interface DnaChatMessage { role: "user" | "assistant"; text: string; ts: string; plan?: string }
@@ -160,7 +160,10 @@ export async function applyNodeOps(bookId: number, ops: NodeOp[]): Promise<void>
       const node = index.get(op.id);
       if (node && !node.authoring.locked) await deleteNode(op.id);
     } else if (op.op === "add" && index.has(op.parentId) && VALID_KINDS.has(op.kind as string)) {
-      const fresh = emptyNode(bookId, op.kind, KIND_LEVEL[op.kind] ?? 5, op.parentId, childCount(op.parentId) + added++);
+      // INVARIANT (schema §4): entity kinds hang off the pillar regardless of the parentId the model chose,
+      // so a chat "add a tentpole/character" can't orphan it onto premise/movement (where generation can't see it).
+      const parentId = isEntityKind(op.kind) ? (pillarOf(nodes)?.id ?? op.parentId) : op.parentId;
+      const fresh = emptyNode(bookId, op.kind, KIND_LEVEL[op.kind] ?? 5, parentId, childCount(parentId) + added++);
       const node: DnaNode = { ...fresh, content: op.content, authoring: { source: "ai", locked: false, status: "accepted" } };
       await saveNode(stampInput(node, byId([...nodes, node])));
     } else if (op.op === "replace_children" && index.has(op.parentId) && VALID_KINDS.has(op.childKind as string)) {

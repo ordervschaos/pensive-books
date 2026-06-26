@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { byId, childrenOf, isProseStale, isStale, type DnaNode, type BeatContent, type SceneContent } from "@/lib/novelDna";
+import { byId, childrenOf, isEntityKind, isProseStale, isStale, type DnaNode, type BeatContent, type SceneContent } from "@/lib/novelDna";
 
 const getNumericId = (p: string | undefined) => { const m = p?.match(/^(\d+)/); return m ? parseInt(m[1]) : 0; };
 
@@ -112,7 +112,7 @@ function TreeRow({ node, index, nodes, depth, isLast, collapsed, onToggle }: {
         )}
 
         {/* Expand/collapse chevron */}
-        <span style={{ width: 12, shrink: 0, color: hasKids ? `${color}80` : "transparent", fontSize: 9, lineHeight: 1 }}>
+        <span style={{ width: 12, flexShrink: 0, color: hasKids ? `${color}80` : "transparent", fontSize: 9, lineHeight: 1 }}>
           {hasKids ? (collapsed ? "▶" : "▼") : "·"}
         </span>
 
@@ -156,6 +156,45 @@ function TreeRow({ node, index, nodes, depth, isLast, collapsed, onToggle }: {
   );
 }
 
+// ── A render-only grouping of the pillar's children ──────────────────────────
+// The pillar parents two kinds of thing (schema §3 ladder vs §4 entities), and the entity side spans seven
+// kinds. This projects the `kind` axis into legible buckets without moving any node; a synthetic
+// `${pillar}::story|::world|::world::<kind>` id wires each group into the existing collapse machinery.
+const ENTITY_GROUPS: { kind: DnaNode["kind"]; label: string }[] = [
+  { kind: "character", label: "characters" },
+  { kind: "relationship", label: "relationships" },
+  { kind: "thread", label: "threads" },
+  { kind: "game", label: "games" },
+  { kind: "world_fact", label: "world facts" },
+  { kind: "tentpole", label: "tentpoles" },
+  { kind: "voice_profile", label: "voice" },
+];
+
+// A collapsible labeled section — pure layout, not a real node. `children` is whatever renders inside.
+function NodeGroup({ groupId, label, hint, count, depth, collapsedSet, onToggle, children }: {
+  groupId: string; label: string; hint?: string; count: number; depth: number;
+  collapsedSet: Set<string>; onToggle: (id: string) => void; children: React.ReactNode;
+}) {
+  if (!count) return null;
+  const collapsed = collapsedSet.has(groupId);
+  return (
+    <div style={{ position: "relative" }}>
+      {!collapsed && (
+        <div style={{ position: "absolute", left: depth * 20 + 8, top: 22, bottom: 0, width: 1, background: "#ffffff14", pointerEvents: "none" }} />
+      )}
+      <div onClick={() => onToggle(groupId)} style={{
+        display: "flex", alignItems: "baseline", gap: 8,
+        paddingLeft: depth * 20 + 20, paddingRight: 12, paddingTop: 7, paddingBottom: 3, cursor: "pointer",
+      }}>
+        <span style={{ width: 12, flexShrink: 0, color: "#555", fontSize: 9, lineHeight: 1 }}>{collapsed ? "▶" : "▼"}</span>
+        <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase", color: "#8a8a8a" }}>{label}</span>
+        <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 9, letterSpacing: "0.06em", color: "#3a3a3a" }}>{hint ? `${hint} · ` : ""}{count}</span>
+      </div>
+      {!collapsed && children}
+    </div>
+  );
+}
+
 // ── Recursive tree subtree ───────────────────────────────────────────────────
 function Subtree({ node, index, nodes, depth, isLast, collapsedSet, onToggle }: {
   node: DnaNode; index: Map<string, DnaNode>; nodes: DnaNode[]; depth: number; isLast: boolean;
@@ -164,14 +203,50 @@ function Subtree({ node, index, nodes, depth, isLast, collapsedSet, onToggle }: 
   const kids = childrenOf(nodes, node.id).sort((a, b) => a.position - b.position);
   const collapsed = collapsedSet.has(node.id);
 
+  // The pillar splits into STORY (the spine) + CAST & WORLD (the registry); every other node renders its
+  // children flat as before.
+  let body: React.ReactNode = null;
+  if (!collapsed) {
+    if (node.kind === "pillar") {
+      const ladder = kids.filter((c) => !isEntityKind(c.kind));
+      const entities = kids.filter((c) => isEntityKind(c.kind));
+      const leaves = (items: DnaNode[], d: number) => items.map((child, i) => (
+        <Subtree key={child.id} node={child} index={index} nodes={nodes} depth={d}
+          isLast={i === items.length - 1} collapsedSet={collapsedSet} onToggle={onToggle} />
+      ));
+      body = (
+        <>
+          <NodeGroup groupId={`${node.id}::story`} label="story" hint="the spine — acts in order"
+            count={ladder.length} depth={depth + 1} collapsedSet={collapsedSet} onToggle={onToggle}>
+            {leaves(ladder, depth + 2)}
+          </NodeGroup>
+          <NodeGroup groupId={`${node.id}::world`} label="cast & world" hint="the registry"
+            count={entities.length} depth={depth + 1} collapsedSet={collapsedSet} onToggle={onToggle}>
+            {ENTITY_GROUPS.map(({ kind, label }) => {
+              const items = entities.filter((e) => e.kind === kind);
+              return (
+                <NodeGroup key={kind} groupId={`${node.id}::world::${kind}`} label={label}
+                  count={items.length} depth={depth + 2} collapsedSet={collapsedSet} onToggle={onToggle}>
+                  {leaves(items, depth + 3)}
+                </NodeGroup>
+              );
+            })}
+          </NodeGroup>
+        </>
+      );
+    } else {
+      body = kids.map((child, i) => (
+        <Subtree key={child.id} node={child} index={index} nodes={nodes} depth={depth + 1}
+          isLast={i === kids.length - 1} collapsedSet={collapsedSet} onToggle={onToggle} />
+      ));
+    }
+  }
+
   return (
     <div>
       <TreeRow node={node} index={index} nodes={nodes} depth={depth} isLast={isLast}
         collapsed={collapsed} onToggle={() => onToggle(node.id)} />
-      {!collapsed && kids.map((child, i) => (
-        <Subtree key={child.id} node={child} index={index} nodes={nodes} depth={depth + 1}
-          isLast={i === kids.length - 1} collapsedSet={collapsedSet} onToggle={onToggle} />
-      ))}
+      {body}
     </div>
   );
 }
