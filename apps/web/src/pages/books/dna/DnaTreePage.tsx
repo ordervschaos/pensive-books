@@ -566,11 +566,7 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
         <>
           {fields}
           {backlinks}
-          <NodeGroup groupId={`${node.id}::story`} label="story" hint="the spine — acts in order"
-            count={ladder.length} depth={depth + 1} collapsedSet={collapsedSet} onToggle={h.onToggle} alwaysShow
-            footer={<>{phantoms(node.id, "movement", depth + 2)}<AddRow label="movement" depth={depth + 2} onAdd={() => h.onAdd(node.id, "movement")} /></>}>
-            {sub(ladder, depth + 2)}
-          </NodeGroup>
+          {/* Foundations (cast & world) first — the materials — then the spine built from them. */}
           <NodeGroup groupId={`${node.id}::world`} label="cast & world" hint="the registry"
             count={entities.length} depth={depth + 1} collapsedSet={collapsedSet} onToggle={h.onToggle} alwaysShow>
             {ENTITY_GROUPS.map(({ kind, label }) => {
@@ -583,6 +579,11 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
                 </NodeGroup>
               );
             })}
+          </NodeGroup>
+          <NodeGroup groupId={`${node.id}::story`} label="story" hint="the spine — acts in order"
+            count={ladder.length} depth={depth + 1} collapsedSet={collapsedSet} onToggle={h.onToggle} alwaysShow
+            footer={<>{phantoms(node.id, "movement", depth + 2)}<AddRow label="movement" depth={depth + 2} onAdd={() => h.onAdd(node.id, "movement")} /></>}>
+            {sub(ladder, depth + 2)}
           </NodeGroup>
         </>
       );
