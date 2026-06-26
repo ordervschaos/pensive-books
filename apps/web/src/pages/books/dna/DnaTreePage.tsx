@@ -4,8 +4,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { deleteNode, saveNode } from "@/lib/bookNodes";
-import { analysisText, byId, childrenOf, editContent, isEntityKind, isProseStale, isStale, newId, pillarOf, type BookSettings, type DnaNode, type BeatContent, type NodeContent, type NodeKind, type SceneContent } from "@/lib/novelDna";
+import { deleteNode, patchNodeContent, saveNode, saveNodes } from "@/lib/bookNodes";
+import { analysisText, backlinkIndex, byId, childrenOf, isEntityKind, isProseStale, isStale, newId, pillarOf, type BookSettings, type DnaNode, type BeatContent, type NodeContent, type NodeKind, type SceneContent } from "@/lib/novelDna";
 import { editSpecs, KIND_LEVEL, type EditSpec } from "@/lib/dnaSchema";
 import { applyDnaProposal, clearDnaProposal, describeOps, sendDnaMessage, validateOps, type DnaChatMessage, type DnaProposal, type NodeOp, type OpRejection } from "@/lib/dnaChat";
 import { DNA_STAGES, buildJourney, dnaHealth, type StageKey } from "@/lib/dnaJourney";
@@ -140,8 +140,9 @@ function displayValue(node: DnaNode, spec: EditSpec, index: Map<string, DnaNode>
 // ── An editable content field: typed editor by spec.type ──────────────────────
 // Self-contained — writes straight through saveNode(editContent(...)) so the nested patch deep-merges and
 // Realtime reflects it back. Locked nodes are read-only. `parentKey` nests the patch for object sub-fields.
-function EditableField({ node, spec, depth, index, parentKey }: {
+function EditableField({ node, spec, depth, index, parentKey, onJump }: {
   node: DnaNode; spec: EditSpec; depth: number; index: Map<string, DnaNode>; parentKey?: string;
+  onJump?: (id: string) => void; // #1 — click a ref to jump to its node
 }) {
   const locked = node.authoring.locked;
   const value = displayValue(node, spec, index, parentKey);
@@ -154,7 +155,8 @@ function EditableField({ node, spec, depth, index, parentKey }: {
 
   const write = async (next: unknown) => {
     setBusy(true);
-    try { await saveNode(editContent(node, (parentKey ? { [parentKey]: { [spec.key]: next } } : { [spec.key]: next }) as NodeContent)); }
+    // #3 — patchNodeContent re-reads the live row and merges, so a second field edit can't clobber the first.
+    try { await patchNodeContent(node, (parentKey ? { [parentKey]: { [spec.key]: next } } : { [spec.key]: next }) as NodeContent); }
     catch (e) { alert(`Save failed: ${(e as Error).message}`); }
     finally { setBusy(false); }
   };
@@ -164,7 +166,7 @@ function EditableField({ node, spec, depth, index, parentKey }: {
     return (
       <>
         <div style={detailRowStyle(depth)}>{fieldRowStart(depth)}<span style={{ ...labelStyle, color: "#6e6e6e" }}>{spec.label}</span></div>
-        {spec.fields!.map((sub) => <EditableField key={sub.key} node={node} spec={sub} depth={depth + 1} index={index} parentKey={spec.key} />)}
+        {spec.fields!.map((sub) => <EditableField key={sub.key} node={node} spec={sub} depth={depth + 1} index={index} parentKey={spec.key} onJump={onJump} />)}
       </>
     );
   }
@@ -186,7 +188,7 @@ function EditableField({ node, spec, depth, index, parentKey }: {
         <span style={{ display: "flex", flexWrap: "wrap", gap: 4, flex: 1, alignItems: "center" }}>
           {ids.map((id) => (
             <span key={id} style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, color: "#cfcfcf", background: "#1c1c26", border: "1px solid #2a2a3a", borderRadius: 3, padding: "1px 5px", display: "inline-flex", gap: 4, alignItems: "center" }}>
-              {refName(id, index)}
+              <span onClick={() => onJump?.(id)} title={onJump ? "jump to node" : undefined} style={{ cursor: onJump ? "pointer" : "default", borderBottom: onJump ? "1px dotted #4a5a6a" : undefined }}>{refName(id, index)}</span>
               {!locked && <span onClick={() => !busy && void write(ids.filter((x) => x !== id))} style={{ cursor: "pointer", color: "#666" }}>✕</span>}
             </span>
           ))}
@@ -207,10 +209,16 @@ function EditableField({ node, spec, depth, index, parentKey }: {
   if (spec.type === "ref" || spec.type === "select") {
     if (!editing) {
       if (!value) return emptyRow;
+      const jumpId = spec.type === "ref" && typeof raw === "string" && onJump ? raw : null;
       return (
         <div style={detailRowStyle(depth)}>{fieldRowStart(depth)}<span style={labelStyle}>{spec.label}</span>
-          <span onClick={() => !locked && setEditing(true)} style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: busy ? "#666" : "#cfcfcf", flex: 1, cursor: locked ? "default" : "pointer" }}>{value}</span>
-          {!locked && <span onClick={() => !busy && void write(spec.type === "ref" ? "" : "")} title="clear field" style={{ fontSize: 11, color: "#4a4a4a", cursor: "pointer", flexShrink: 0, alignSelf: "center", padding: "0 2px" }}>✕</span>}
+          <span style={{ flex: 1, display: "flex", alignItems: "baseline", gap: 6, minWidth: 0 }}>
+            {jumpId
+              ? <span onClick={() => onJump!(jumpId)} title="jump to node" style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: busy ? "#666" : "#9bd3e6", cursor: "pointer", borderBottom: "1px dotted #4a5a6a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value}</span>
+              : <span onClick={() => !locked && setEditing(true)} style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: busy ? "#666" : "#cfcfcf", cursor: locked ? "default" : "pointer", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value}</span>}
+            {!locked && jumpId && <span onClick={() => setEditing(true)} title="change" style={{ fontSize: 10, color: "#4a4a4a", cursor: "pointer", flexShrink: 0 }}>▾</span>}
+          </span>
+          {!locked && <span onClick={() => !busy && void write("")} title="clear field" style={{ fontSize: 11, color: "#4a4a4a", cursor: "pointer", flexShrink: 0, alignSelf: "center", padding: "0 2px" }}>✕</span>}
         </div>
       );
     }
@@ -269,12 +277,43 @@ function rawAsDraft(raw: unknown, spec: EditSpec): string {
   return typeof raw === "string" ? raw : raw != null ? String(raw) : "";
 }
 
+// ── Backlinks (#2): the inbound edges — which nodes cross-reference THIS one ───
+// refsOf is one-directional (a scene points at its pov/threads/tentpoles…); this shows the inverse so the
+// tree reads as a graph, not a list. Each is a jump link (#1). Makes an entity's reach visible — and makes
+// delete honest (the same index gates the delete guard, #4).
+function BacklinksRow({ node, backlinks, depth, onJump }: {
+  node: DnaNode; backlinks: Map<string, DnaNode[]>; depth: number; onJump?: (id: string) => void;
+}) {
+  const inbound = backlinks.get(node.id);
+  if (!inbound?.length) return null;
+  return (
+    <div style={detailRowStyle(depth)}>
+      {fieldRowStart(depth)}
+      <span style={{ ...labelStyle, color: "#5a6a7a" }}>referenced by</span>
+      <span style={{ display: "flex", flexWrap: "wrap", gap: 4, flex: 1, alignItems: "center" }}>
+        {inbound.map((n) => (
+          <span key={n.id} onClick={() => onJump?.(n.id)} title={onJump ? "jump to node" : undefined}
+            style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, color: "#cfcfcf", background: "#16161c", border: "1px solid #24242e", borderRadius: 3, padding: "1px 5px", display: "inline-flex", gap: 4, alignItems: "center", cursor: onJump ? "pointer" : "default" }}>
+            <span style={{ color: KIND_COLOR[n.kind] ?? "#888", fontSize: 9, letterSpacing: "0.06em", textTransform: "uppercase" }}>{n.kind}</span>
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 220 }}>{nodeTitle(n) || n.id}</span>
+          </span>
+        ))}
+      </span>
+    </div>
+  );
+}
+
 // ── Single tree row ──────────────────────────────────────────────────────────
-function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete, mark, focus }: {
+function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete, draggable, dragging, canDrop, onDragStartRow, onDragEndRow, onDropRow, mark, focus, flash }: {
   node: DnaNode; index: Map<string, DnaNode>; depth: number;
   expandable: boolean; open: boolean; onToggle: () => void; onDelete?: () => void;
-  mark?: "edit" | "delete"; focus?: boolean; // mark = proposed change (#1); focus = in the rail's stage focus (#2)
+  // #5 — drag-to-reorder among same-kind siblings. draggable = this row has a grip; canDrop = a valid
+  // sibling is being dragged over it; dragging = this is the row being dragged.
+  draggable?: boolean; dragging?: boolean; canDrop?: boolean;
+  onDragStartRow?: () => void; onDragEndRow?: () => void; onDropRow?: (before: boolean) => void;
+  mark?: "edit" | "delete"; focus?: boolean; flash?: boolean; // mark = proposed change (#1); focus = rail focus (#2); flash = jump target (#1)
 }) {
+  const [dropEdge, setDropEdge] = useState<"top" | "bottom" | null>(null);
   const stale = isStale(node, index) || (node.kind === "scene" && isProseStale(node));
   const color = KIND_COLOR[node.kind] ?? "#888";
   const bg = KIND_BG[node.kind] ?? "transparent";
@@ -283,7 +322,13 @@ function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete, mar
   const markColor = mark === "delete" ? "#c06060" : mark === "edit" ? "#8a8aff" : null;
 
   return (
-    <div style={{ position: "relative" }}>
+    <div id={`dna-node-${node.id}`}
+      onDragOver={canDrop ? (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; const r = e.currentTarget.getBoundingClientRect(); setDropEdge(e.clientY < r.top + r.height / 2 ? "top" : "bottom"); } : undefined}
+      onDragLeave={canDrop ? () => setDropEdge(null) : undefined}
+      onDrop={canDrop ? (e) => { e.preventDefault(); onDropRow?.(dropEdge !== "bottom"); setDropEdge(null); } : undefined}
+      style={{ position: "relative", transition: "background 0.4s", opacity: dragging ? 0.4 : undefined, background: flash ? "#8a8aff22" : undefined, boxShadow: flash ? "inset 0 0 0 1px #8a8aff88" : undefined, borderRadius: flash ? 4 : undefined }}>
+      {/* #5 — drop indicator: a line at the edge the dragged sibling would land on */}
+      {dropEdge && <div style={{ position: "absolute", left: depth * 20 + 8, right: 12, [dropEdge]: 0, height: 2, background: "#8a8aff", zIndex: 2, pointerEvents: "none" }} />}
       {/* Vertical connector line from this node down to its last child / detail */}
       {expandable && open && (
         <div style={{
@@ -365,6 +410,13 @@ function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete, mar
           <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 9, color: "#444", letterSpacing: "0.05em" }}>
             {node.id}
           </span>
+          {draggable && (
+            <span draggable
+              onClick={(e) => e.stopPropagation()}
+              onDragStart={(e) => { e.stopPropagation(); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", node.id); onDragStartRow?.(); }}
+              onDragEnd={(e) => { e.stopPropagation(); onDragEndRow?.(); }}
+              title="drag to reorder" style={{ fontSize: 11, color: "#4a4a5a", cursor: "grab", padding: "0 2px", flexShrink: 0, lineHeight: 1 }}>⠿</span>
+          )}
           {onDelete && (
             <span onClick={(e) => { e.stopPropagation(); onDelete(); }} title="delete node + its subtree"
               style={{ fontSize: 11, color: "#5a3030", cursor: "pointer", padding: "0 2px" }}>🗑</span>
@@ -473,8 +525,14 @@ interface TreeView {
   onToggle: (id: string) => void; onToggleDetail: (id: string) => void;
   onAdd: (parentId: string, kind: DnaNode["kind"]) => void | Promise<void>;
   onDelete: (node: DnaNode) => void;
-  proposal: ProposalView | null;       // #1 — proposed ops to overlay
-  focusKinds: Set<string> | null;       // #2 — the rail's stage focus (null = rail closed)
+  onJump: (id: string) => void;         // #1 — reveal + scroll + flash a node by id
+  dragId: string | null;                // #5 — the node currently being dragged (null = no drag)
+  onDragStart: (id: string) => void; onDragEnd: () => void;
+  onDrop: (target: DnaNode, before: boolean) => void; // reorder dragId to before/after target
+  backlinks: Map<string, DnaNode[]>;    // #2 — inbound cross-references
+  flashId: string | null;               // #1 — the just-jumped-to node
+  proposal: ProposalView | null;        // proposed ops to overlay
+  focusKinds: Set<string> | null;       // the rail's stage focus (null = rail closed)
 }
 function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
   node: DnaNode; index: Map<string, DnaNode>; nodes: DnaNode[]; depth: number;
@@ -487,7 +545,8 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
   const expandable = hasKids || specs.length > 0;
   const open = expandable && (hasKids ? !collapsedSet.has(node.id) : openSet.has(node.id));
   const toggle = () => (hasKids ? h.onToggle(node.id) : h.onToggleDetail(node.id));
-  const fields = specs.map((spec) => <EditableField key={spec.key} node={node} spec={spec} depth={depth + 1} index={index} />);
+  const fields = specs.map((spec) => <EditableField key={spec.key} node={node} spec={spec} depth={depth + 1} index={index} onJump={h.onJump} />);
+  const backlinks = <BacklinksRow node={node} backlinks={h.backlinks} depth={depth + 1} onJump={h.onJump} />;
   const sub = (items: DnaNode[], d: number) => items.map((child) => (
     <Subtree key={child.id} node={child} index={index} nodes={nodes} depth={d}
       collapsedSet={collapsedSet} openSet={openSet} h={h} />
@@ -506,6 +565,7 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
       body = (
         <>
           {fields}
+          {backlinks}
           <NodeGroup groupId={`${node.id}::story`} label="story" hint="the spine — acts in order"
             count={ladder.length} depth={depth + 1} collapsedSet={collapsedSet} onToggle={h.onToggle} alwaysShow
             footer={<>{phantoms(node.id, "movement", depth + 2)}<AddRow label="movement" depth={depth + 2} onAdd={() => h.onAdd(node.id, "movement")} /></>}>
@@ -531,6 +591,7 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
       body = (
         <>
           {fields}
+          {backlinks}
           {sub(kids, depth + 1)}
           {childAdd && phantoms(node.id, childAdd, depth + 1)}
           {childAdd && <AddRow label={childAdd} depth={depth + 1} onAdd={() => h.onAdd(node.id, childAdd as DnaNode["kind"])} />}
@@ -541,6 +602,11 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
 
   // Delete is allowed on addable kinds (not the seed/premise/pillar singletons) when unlocked.
   const deletable = !node.authoring.locked && (isEntityKind(node.kind) || ["movement", "beat", "scene"].includes(node.kind));
+  // #5 — drag-to-reorder among same-kind siblings (entities by kind under the pillar; movement/beat/scene by
+  // parent). A row is a drop target only while a SIBLING (same parent + kind) is being dragged.
+  const reorderable = isEntityKind(node.kind) || ["movement", "beat", "scene"].includes(node.kind);
+  const dragged = h.dragId ? index.get(h.dragId) : null;
+  const canDrop = !!dragged && dragged.id !== node.id && dragged.parent_id === node.parent_id && dragged.kind === node.kind;
   // #1 proposal mark for THIS node. #2 focus highlight (only when rail open → focusKinds set).
   const editPatch = h.proposal?.edits.get(node.id);
   const mark = h.proposal ? (h.proposal.deletes.has(node.id) ? "delete" : editPatch ? "edit" : undefined) : undefined;
@@ -549,7 +615,11 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
   return (
     <div>
       <TreeRow node={node} index={index} depth={depth} expandable={expandable} open={open} onToggle={toggle}
-        onDelete={deletable ? () => h.onDelete(node) : undefined} mark={mark} focus={focus} />
+        onDelete={deletable ? () => h.onDelete(node) : undefined}
+        draggable={reorderable} dragging={h.dragId === node.id} canDrop={canDrop}
+        onDragStartRow={() => h.onDragStart(node.id)} onDragEndRow={h.onDragEnd}
+        onDropRow={(before) => h.onDrop(node, before)}
+        mark={mark} focus={focus} flash={h.flashId === node.id} />
       {editPatch && <OpDiffBlock node={node} content={editPatch} nodes={nodes} depth={depth + 1} />}
       {body}
     </div>
@@ -732,7 +802,9 @@ export default function DnaTreePage() {
   const [railOpen, setRailOpen] = useState(false);
   const [stage, setStage] = useState<StageKey>("structure");
   const [proposal, setProposal] = useState<DnaProposal | null>(null); // #1 — mirrored from the rail
-  const [showIssues, setShowIssues] = useState(false); // #4 — drill into the lints behind the score
+  const [showIssues, setShowIssues] = useState(false); // drill into the lints behind the score
+  const [flashId, setFlashId] = useState<string | null>(null); // #1 — the node a jump just revealed
+  const [dragId, setDragId] = useState<string | null>(null); // #5 — the node being dragged
 
   useEffect(() => {
     if (!bookId) { setError("no book id"); return; }
@@ -802,16 +874,74 @@ export default function DnaTreePage() {
     catch (e) { alert(`Add failed: ${(e as Error).message}`); }
   }, [nodes, bookId]);
 
+  // #4 — delete-safety: surface inbound cross-references (which would be left dangling) before confirming.
   const removeNode = useCallback((node: DnaNode) => {
-    const kids = nodes ? childrenOf(nodes, node.id).length : 0;
+    if (!nodes) return;
+    const kids = childrenOf(nodes, node.id).length;
+    const inbound = backlinkIndex(nodes).get(node.id) ?? [];
     const label = nodeTitle(node) || node.kind;
-    if (!window.confirm(`Delete ${node.kind} "${label}"${kids ? ` and its ${kids} child node(s)` : ""}? This cannot be undone.`)) return;
+    const refWarn = inbound.length
+      ? `\n\n⚠ ${inbound.length} node(s) reference this — they'll be left with a dangling link:\n${inbound.slice(0, 8).map((n) => `• ${n.kind}: ${nodeTitle(n) || n.id}`).join("\n")}${inbound.length > 8 ? `\n…and ${inbound.length - 8} more` : ""}`
+      : "";
+    if (!window.confirm(`Delete ${node.kind} "${label}"${kids ? ` and its ${kids} child node(s)` : ""}?${refWarn}\n\nThis cannot be undone.`)) return;
     void deleteNode(node.id).catch((e) => alert(`Delete failed: ${(e as Error).message}`));
   }, [nodes]);
+
+  // #5 — drag-to-reorder. Move the dragged node before/after `target` within their shared sibling group,
+  // then RENORMALIZE the group's positions to 0..n-1 (this also repairs pre-existing duplicate/zero
+  // positions, which is why the old swap-based reorder silently no-op'd). Only the changed rows are written.
+  const onDropReorder = useCallback((target: DnaNode, before: boolean) => {
+    const draggedId = dragId;
+    setDragId(null);
+    if (!nodes || !draggedId || draggedId === target.id) return;
+    const dragged = nodes.find((n) => n.id === draggedId);
+    if (!dragged || dragged.parent_id !== target.parent_id || dragged.kind !== target.kind) return;
+    const group = nodes.filter((n) => n.parent_id === target.parent_id && n.kind === target.kind).sort((a, b) => a.position - b.position);
+    const without = group.filter((n) => n.id !== draggedId);
+    let at = without.findIndex((n) => n.id === target.id);
+    if (at < 0) return;
+    if (!before) at += 1;
+    without.splice(at, 0, dragged);
+    const writes = without.map((n, i) => (n.position === i ? null : { ...n, position: i })).filter(Boolean) as DnaNode[];
+    if (!writes.length) return;
+    void saveNodes(writes).catch((e) => alert(`Reorder failed: ${(e as Error).message}`));
+  }, [nodes, dragId]);
+
+  // #1 — jump to a node by id: un-collapse its ancestors (and the synthetic story/world groups it lives in),
+  // open it if it's a detail-only leaf, then flash it. The scroll happens in the effect below, after the
+  // expansion has committed to the DOM.
+  const jumpTo = useCallback((id: string) => {
+    if (!nodes) return;
+    const idx = byId(nodes);
+    const target = idx.get(id);
+    if (!target) return;
+    const reveal = new Set<string>();
+    let cur: DnaNode | undefined = target;
+    while (cur) { reveal.add(cur.id); cur = cur.parent_id ? idx.get(cur.parent_id) : undefined; }
+    const pillar = pillarOf(nodes);
+    if (pillar) {
+      reveal.add(pillar.id);
+      if (isEntityKind(target.kind)) { reveal.add(`${pillar.id}::world`); reveal.add(`${pillar.id}::world::${target.kind}`); }
+      else if (!["pillar", "premise", "seed"].includes(target.kind)) reveal.add(`${pillar.id}::story`);
+    }
+    setCollapsedSet((prev) => { const next = new Set(prev); for (const r of reveal) next.delete(r); return next; });
+    setOpenSet((prev) => new Set(prev).add(id));
+    setFlashId(id);
+  }, [nodes]);
+
+  // #1 — once a jump has set flashId (and the reveal has rendered), scroll the node into view; clear the
+  // flash after a beat. Re-runs if a new jump fires before the timer elapses.
+  useEffect(() => {
+    if (!flashId) return;
+    document.getElementById(`dna-node-${flashId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    const t = setTimeout(() => setFlashId(null), 1600);
+    return () => clearTimeout(t);
+  }, [flashId]);
 
   // ── Proposal overlay (#1) + focus highlight (#2) ──────────────────────────────
   const onPending = useCallback((p: DnaProposal | null) => setProposal(p), []);
   const proposalView = useMemo(() => indexProposal(proposal?.ops, nodes ?? []), [proposal, nodes]);
+  const backlinks = useMemo(() => backlinkIndex(nodes ?? []), [nodes]); // #2 — inbound cross-references
   // When the rail is open, mark the stage's focus kinds (the WHOLE tree is still in context — see legend).
   const focusKinds = useMemo(() => (railOpen ? new Set<string>(STAGE_FOCUS_KINDS[stage]) : null), [railOpen, stage]);
   const acceptProposal = useCallback(async () => {
@@ -952,7 +1082,7 @@ export default function DnaTreePage() {
         ) : roots.map((root) => (
           <Subtree key={root.id} node={root} index={index} nodes={nodes} depth={0}
             collapsedSet={collapsedSet} openSet={openSet}
-            h={{ onToggle: toggleNode, onToggleDetail: toggleDetail, onAdd: addNode, onDelete: removeNode, proposal: proposalView, focusKinds }} />
+            h={{ onToggle: toggleNode, onToggleDetail: toggleDetail, onAdd: addNode, onDelete: removeNode, onJump: jumpTo, dragId, onDragStart: setDragId, onDragEnd: () => setDragId(null), onDrop: onDropReorder, backlinks, flashId, proposal: proposalView, focusKinds }} />
         ))}
       </div>
     </div>

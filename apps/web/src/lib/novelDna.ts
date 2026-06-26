@@ -286,6 +286,14 @@ export function refsOf(node: DnaNode): string[] {
   return [...new Set(out)];
 }
 
+/** Inverse of refsOf: id → the nodes whose content cross-references it (inbound edges). Powers the tree's
+ *  "referenced by" view and the delete-safety guard (deleting an entity that others point at). One pass. */
+export function backlinkIndex(nodes: DnaNode[]): Map<string, DnaNode[]> {
+  const map = new Map<string, DnaNode[]>();
+  for (const n of nodes) for (const ref of refsOf(n)) (map.get(ref) ?? map.set(ref, []).get(ref)!).push(n);
+  return map;
+}
+
 /** Hash of a node's full input set: its parent's content + every referenced entity's content. */
 export function inputHash(node: DnaNode, index: Map<string, DnaNode>): string {
   const parent = node.parent_id ? index.get(node.parent_id) : null;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  analysisText, blastRadius, byId, cascade, causality, chapters, chooseProposal, editContent, emptyNode,
+  analysisText, backlinkIndex, blastRadius, byId, cascade, causality, chapters, chooseProposal, editContent, emptyNode,
   enforcePromiseSchedule, inputHash, isIllusStale, isProseStale, isRenderable, isStale, lock, pacing, promiseLedger,
   presentCharacters, refsOf, renderBlockers, renderPages, scenesInOrder, stakesOf, stampIllus, stampInput, stampProse, topography,
   validate, type DnaNode, type NodeKind, type ThreadRef,
@@ -128,6 +128,19 @@ describe("staleness (derived from the input-set hash)", () => {
     const edited = editContent(scene, { art_note: "low angle, storm light" });
     expect(isIllusStale(edited)).toBe(true);   // changing the look re-illustrates
     expect(isProseStale(edited)).toBe(false);  // …but never touches the prose
+  });
+});
+
+describe("backlinkIndex (the inverse of refsOf — inbound cross-references)", () => {
+  it("maps each id to the nodes that reference it", () => {
+    const hero = mk("character", { id: "c_hero" });
+    const rel = mk("relationship", { id: "r1", content: { a: "c_hero", b: "c_foe" } });
+    const scene = mk("scene", { id: "s1", content: { pov: "c_hero", present: ["c_hero"] } });
+    const back = backlinkIndex([hero, rel, scene]);
+    const onHero = (back.get("c_hero") ?? []).map((n) => n.id).sort();
+    expect(onHero).toEqual(["r1", "s1"]); // both the relationship and the scene point at the hero
+    expect(back.get("c_foe")?.map((n) => n.id)).toEqual(["r1"]);
+    expect(back.has("s1")).toBe(false); // nothing references the scene
   });
 });
 

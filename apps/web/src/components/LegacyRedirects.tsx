@@ -10,6 +10,13 @@ export function LegacyRedirects() {
   const location = useLocation();
   const { pathname, search, hash } = location;
 
+  // Redirect split-slug book URLs: /books/<id>/<-name>(/<rest>) → /books/<id-name>(/<rest>)
+  // Fires before the studio guard — the studio guard only protects singular→plural rewrites below.
+  const splitSlug = pathname.match(/^\/books\/(\d+)\/(-[^/]+)(\/.*)?$/);
+  if (splitSlug) {
+    return <Navigate to={`/books/${splitSlug[1]}${splitSlug[2]}${splitSlug[3] ?? ''}${search}${hash}`} replace />;
+  }
+
   // The Studio defines its own CRUD-compliant URL space (/books/:slug/studio/:step,
   // /books/:slug/studio/page/:pageId). It is not a legacy surface — bail before the singular→plural
   // rewrites below would mangle /studio/page/:id into a non-existent /studio/pages/:id (blank screen).
