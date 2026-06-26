@@ -22,6 +22,9 @@ import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { callClaude } from "../_shared/claude.ts";
 import { getActiveModels } from "../_shared/model-config.ts";
+// The content schema the agent must conform to — GENERATED from the web app's NODE_SCHEMA (single source of
+// truth), kept in sync by apps/web/.../dnaSchema.artifact.test.ts. Never hand-edit; edit NODE_SCHEMA + regen.
+import dnaSchema from "../_shared/dna-schema.json" with { type: "json" };
 import { tiptapToText } from "../_shared/words.ts";
 import { serviceClient } from "../_shared/task.ts";
 import { reinvoke, isChainCall } from "../_shared/self-chain.ts";
@@ -770,18 +773,7 @@ function threadToolsFor(_scope: Aspect[] | null): unknown[] {
   return [TOOLS.find((t) => t.name === "ask_author")!, ...THREAD_DNA_TOOLS];
 }
 
-const CONTENT_SCHEMAS = `CONTENT FIELD SCHEMAS — use EXACTLY these key names (wrong keys silently orphan data):
-- premise → content.shape keys: setup | turn1 | turn2 | turn3 | resolution (never "midpoint"/"climax")
-- pillar → content: { controlling_idea, ending }
-- character → content: { name, want, need, wound, lie, truth, idiolect, role }
-- relationship → content: { a, b, dynamic, arc }
-- tentpole → content: { title, summary, when }
-- world_fact → content: { name, rule, mechanism }
-- voice_profile → content: { stance, signature }
-- movement → content: { title, goal, turning_point, target_pct, value: { from, to } }
-- beat → content: { summary, connector ("therefore"|"but"), polarity ("up"|"down"), threads, grounds_in, needs, establishes, realizes, plays, resolves }
-- thread → content: { name, promise, payoff, kind ("mystery"|"foreshadow"|"setup_payoff"|"arc") }
-- scene → content: { goal, conflict, outcome, pov, value: { from, to }, prose: { text } }`;
+const CONTENT_SCHEMAS = dnaSchema.promptGuide;
 
 const SYSTEM_THREAD = `You are a sharp, warm developmental STORY EDITOR — the author's single AI collaborator for the whole book, in conversation in the studio's right-hand rail.
 

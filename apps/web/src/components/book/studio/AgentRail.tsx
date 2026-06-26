@@ -157,9 +157,14 @@ export function AgentRail({ bookId, nodes, settings }: { bookId: number; nodes: 
     if (!row || applyingId) return;
     setApplyingId(p.id);
     try {
-      await applyAgentProposal(bookId, row.id, p, proposals);
+      const { rejected } = await applyAgentProposal(bookId, row.id, p, proposals);
       refetch();
-      toast({ title: "Applied", description: p.summary || "Change applied to the DNA tree." });
+      if (rejected.length) {
+        const reasons = rejected.map((r) => r.reasons[0]).filter(Boolean).slice(0, 3).join("; ");
+        toast({ title: `Applied with ${rejected.length} skipped`, description: `Some changes didn't fit the schema and weren't saved: ${reasons}`, variant: "destructive" });
+      } else {
+        toast({ title: "Applied", description: p.summary || "Change applied to the DNA tree." });
+      }
     } catch (e) {
       toast({ title: "Couldn't apply", description: String((e as Error)?.message ?? e), variant: "destructive" });
     } finally { setApplyingId(null); }

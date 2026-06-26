@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { contentCompleteness, validateContent, type EditSpec } from "@/lib/dnaSchema";
+import { contentCompleteness, sanitizeContent, validateContent, type EditSpec } from "@/lib/dnaSchema";
 import type { DnaNode, NodeKind } from "@/lib/novelDna";
 
 const node = (kind: NodeKind, content: Record<string, unknown>): DnaNode => ({
@@ -13,9 +13,13 @@ describe("validateContent", () => {
     expect(rules).toContain("missing_field"); // name is required
   });
 
-  it("flags a bad enum value but passes a valid one", () => {
-    expect(validateContent("beat", { summary: "x", connector: "and-then" }).map((i) => i.rule)).toContain("bad_enum");
+  it("flags a bad enum value (as a soft warn) but passes a valid one — case-insensitively", () => {
+    const bad = validateContent("beat", { summary: "x", connector: "and-then" });
+    expect(bad.map((i) => i.rule)).toContain("bad_enum");
+    expect(bad[0].severity).toBe("warn"); // soft — sanitize fixes/strips it, never a hard reject
     expect(validateContent("beat", { summary: "x", connector: "therefore" })).toHaveLength(0);
+    // a capitalized role is NOT a violation (the real "cast ignored" bug)
+    expect(validateContent("character", { name: "Finn", role: "Protagonist" })).toHaveLength(0);
   });
 
   it("flags a list field that isn't an array", () => {
@@ -24,6 +28,24 @@ describe("validateContent", () => {
 
   it("a fully-specified node is clean", () => {
     expect(validateContent("relationship", { a: "c1", b: "c2", bond: "rivals" })).toHaveLength(0);
+  });
+});
+
+describe("sanitizeContent", () => {
+  it("coerces a capitalized enum to its canonical value (the cast-ignored bug)", () => {
+    expect(sanitizeContent("character", { name: "Finn", role: "Protagonist" }).role).toBe("protagonist");
+  });
+  it("drops an unrecognized enum but keeps the node", () => {
+    const out = sanitizeContent("character", { name: "Vane", role: "Mentor/Antagonist" });
+    expect(out.role).toBeUndefined();
+    expect(out.name).toBe("Vane");
+  });
+  it("splits a comma-string into a list", () => {
+    expect(sanitizeContent("premise", { dramatic_question: "q", genre: "fantasy, adventure" }).genre).toEqual(["fantasy", "adventure"]);
+  });
+  it("recurses into object sub-fields (scene value_shift polarity)", () => {
+    const out = sanitizeContent("scene", { goal: "g", value_shift: { value: "hope", from: "x", to: "y", polarity: "Up" } });
+    expect((out.value_shift as { polarity: string }).polarity).toBe("up");
   });
 });
 

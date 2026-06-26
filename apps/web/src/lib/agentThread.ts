@@ -7,7 +7,7 @@
 // Realtime (useLatestTaskRow); refresh = no-op.
 import { supabase } from "@/integrations/supabase/client";
 import type { TaskRow } from "@/hooks/useLatestTaskRow";
-import { applyNodeOps, type NodeOp } from "@/lib/dnaChat";
+import { applyNodeOps, type NodeOp, type OpValidation } from "@/lib/dnaChat";
 import type { NodeKind } from "@/lib/novelDna";
 import { DNA_STAGES, type StageKey } from "@/lib/dnaJourney";
 
@@ -74,10 +74,12 @@ export async function answerAgent(threadId: number, answer: string): Promise<voi
   await invoke({ runId: threadId, answer });
 }
 
-/** Apply a reviewed proposal: run its node ops against book_nodes, then drop it from the thread. */
-export async function applyAgentProposal(bookId: number, threadId: number, proposal: AgentProposal, all: AgentProposal[]): Promise<void> {
-  await applyNodeOps(bookId, proposal.ops);
+/** Apply a reviewed proposal: run its node ops against book_nodes, then drop it from the thread. Returns the
+ *  validation so the rail can warn when the schema boundary rejected some ops (they didn't land). */
+export async function applyAgentProposal(bookId: number, threadId: number, proposal: AgentProposal, all: AgentProposal[]): Promise<OpValidation> {
+  const validation = await applyNodeOps(bookId, proposal.ops);
   await dropProposal(threadId, proposal.id, all);
+  return validation;
 }
 
 /** Discard a proposal without applying it. */

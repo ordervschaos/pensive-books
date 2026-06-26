@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { BRIDGE, bridgeFetch } from "@/lib/bridge";
 import { deleteNode, loadTree, saveNode } from "@/lib/bookNodes";
 import { blastRadius, byId, editContent, emptyNode, isEntityKind, pillarOf, stampInput, type DnaNode, type NodeContent, type NodeKind } from "@/lib/novelDna";
-import { KIND_LEVEL, LADDER_NEXT, validateContent, VALID_KINDS } from "@/lib/dnaSchema";
+import { KIND_LEVEL, LADDER_NEXT, sanitizeContent, validateContent, VALID_KINDS } from "@/lib/dnaSchema";
 import type { StageKey } from "@/lib/dnaJourney";
 
 export interface DnaChatMessage { role: "user" | "assistant"; text: string; ts: string; plan?: string }
@@ -142,8 +142,11 @@ export function validateOps(ops: NodeOp[], nodes: DnaNode[]): OpValidation {
   const ok: NodeOp[] = [], rejected: OpRejection[] = [];
   for (const op of ops) {
     const reasons: string[] = [];
+    // Validate the SANITIZED content (enum case coerced, soft issues fixed) and only HARD-reject on errors —
+    // a capitalized role or a comma-string list is repaired by sanitizeContent at apply, not a rejection.
     const msgs = (kind: NodeKind, content: NodeContent, partial = false, prefix = "") =>
-      validateContent(kind, content as Record<string, unknown>, { partial }).forEach((i) => reasons.push(prefix + i.message));
+      validateContent(kind, sanitizeContent(kind, content as Record<string, unknown>), { partial })
+        .filter((i) => i.severity === "error").forEach((i) => reasons.push(prefix + i.message));
     if (op.op === "edit" || op.op === "delete") {
       const node = index.get(op.id);
       if (!node) reasons.push("target node no longer exists");
@@ -183,7 +186,7 @@ export async function applyNodeOps(bookId: number, ops: NodeOp[]): Promise<OpVal
   // `add` branch's stamping; used by replace_children to build a fresh subtree atomically.
   const addSubtree = async (sub: NewSubtree, kind: NodeKind, parentId: string, position: number): Promise<void> => {
     const fresh = emptyNode(bookId, kind, KIND_LEVEL[kind] ?? 5, parentId, position);
-    const node: DnaNode = { ...fresh, content: sub.content, authoring: { source: "ai", locked: false, status: "accepted" } };
+    const node: DnaNode = { ...fresh, content: sanitizeContent(kind, sub.content as Record<string, unknown>), authoring: { source: "ai", locked: false, status: "accepted" } };
     await saveNode(stampInput(node, byId([...nodes, node])));
     const childKind = LADDER_NEXT[kind];
     if (childKind && Array.isArray(sub.children)) {
@@ -194,7 +197,7 @@ export async function applyNodeOps(bookId: number, ops: NodeOp[]): Promise<OpVal
   for (const op of validation.ok) {
     if (op.op === "edit") {
       const node = index.get(op.id);
-      if (node && !node.authoring.locked) await saveNode(editContent(node, op.content));
+      if (node && !node.authoring.locked) await saveNode(editContent(node, sanitizeContent(node.kind, op.content as Record<string, unknown>)));
     } else if (op.op === "delete") {
       const node = index.get(op.id);
       if (node && !node.authoring.locked) await deleteNode(op.id);
@@ -204,7 +207,7 @@ export async function applyNodeOps(bookId: number, ops: NodeOp[]): Promise<OpVal
       const parentId = isEntityKind(op.kind) ? pillarOf(nodes)?.id : op.parentId;
       if (!parentId) continue;
       const fresh = emptyNode(bookId, op.kind, KIND_LEVEL[op.kind] ?? 5, parentId, childCount(parentId) + added++);
-      const node: DnaNode = { ...fresh, content: op.content, authoring: { source: "ai", locked: false, status: "accepted" } };
+      const node: DnaNode = { ...fresh, content: sanitizeContent(op.kind, op.content as Record<string, unknown>), authoring: { source: "ai", locked: false, status: "accepted" } };
       await saveNode(stampInput(node, byId([...nodes, node])));
     } else if (op.op === "replace_children") {
       // Wipe the parent's existing non-locked children of this kind (FK cascade takes their subtrees),

@@ -113,14 +113,38 @@ function checkSpecs(specs: EditSpec[], content: Record<string, unknown>, kind: N
       continue;
     }
     if (isEmpty(raw)) continue;
-    if (spec.options && typeof raw === "string" && !spec.options.includes(raw)) {
-      issues.push({ rule: "bad_enum", severity: "error", message: `${kind}.${spec.key} = "${raw}" is not one of ${spec.options.join(" | ")}`, nodeId });
+    // Enum match is CASE-INSENSITIVE ("Protagonist" ≈ "protagonist") — a soft mismatch, not a hard fault.
+    if (spec.options && typeof raw === "string" && !spec.options.some((o) => o.toLowerCase() === raw.toLowerCase())) {
+      issues.push({ rule: "bad_enum", severity: "warn", message: `${kind}.${spec.key} = "${raw}" is not one of ${spec.options.join(" | ")}`, nodeId });
     }
     if ((spec.type === "list" || spec.type === "refs") && !Array.isArray(raw)) {
-      issues.push({ rule: "bad_shape", severity: "error", message: `${kind}.${spec.key} must be a list`, nodeId });
+      issues.push({ rule: "bad_shape", severity: "warn", message: `${kind}.${spec.key} must be a list`, nodeId });
     }
   }
   return issues;
+}
+
+// ── Sanitize: coerce/strip SOFT issues so a node never dies over a capitalized enum or a comma-string list.
+// Enum values are matched case-insensitively and rewritten to the canonical option; an enum value with no
+// match is dropped (the node lands without it); a list field given a string is split on commas. Required
+// fields and unknown keys are left untouched — only the recoverable shape problems are fixed. Pure.
+export function sanitizeContent(kind: NodeKind, content: Record<string, unknown>): Record<string, unknown> {
+  const walk = (specs: EditSpec[], obj: Record<string, unknown>): Record<string, unknown> => {
+    const out: Record<string, unknown> = { ...obj };
+    for (const spec of specs) {
+      const raw = out[spec.key];
+      if (spec.type === "object" && raw && typeof raw === "object" && !Array.isArray(raw)) {
+        out[spec.key] = walk(spec.fields ?? [], raw as Record<string, unknown>);
+      } else if (spec.options && typeof raw === "string" && raw.trim()) {
+        const canon = spec.options.find((o) => o.toLowerCase() === raw.trim().toLowerCase());
+        if (canon) out[spec.key] = canon; else delete out[spec.key]; // unknown enum → drop, keep the node
+      } else if ((spec.type === "list" || spec.type === "refs") && typeof raw === "string") {
+        out[spec.key] = raw.split(",").map((s) => s.trim()).filter(Boolean);
+      }
+    }
+    return out;
+  };
+  return walk(editSpecs(kind), content ?? {});
 }
 
 /** Validate a node's content against its kind's schema. Pure, tree-independent — safe at the generation

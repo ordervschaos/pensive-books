@@ -36,12 +36,18 @@ describe("validateOps — the fail-closed boundary", () => {
     expect(rejected[0].reasons.join(" ")).toMatch(/no pillar/);
   });
 
-  it("rejects edits to a locked node, and bad-enum patches; allows a clean patch", () => {
+  it("rejects edits to a locked node; a bad-enum patch is sanitized (not rejected), not a hard fault", () => {
     const nodes = [...spine(), mk("beat", { id: "b", parent_id: "pil", content: { summary: "s" }, authoring: { source: "ai", locked: true, status: "accepted" } })];
     expect(validateOps([{ op: "edit", id: "b", content: { summary: "new" } }], nodes).rejected[0].reasons.join(" ")).toMatch(/pinned/);
     const free = [...spine(), mk("beat", { id: "b2", parent_id: "pil", content: { summary: "s" } })];
-    expect(validateOps([{ op: "edit", id: "b2", content: { connector: "and-then" } }], free).rejected[0].reasons.join(" ")).toMatch(/not one of/);
+    // an unknown enum is soft → sanitize strips it; the op still applies (no hard reject)
+    expect(validateOps([{ op: "edit", id: "b2", content: { connector: "and-then" } }], free).ok).toHaveLength(1);
     expect(validateOps([{ op: "edit", id: "b2", content: { connector: "therefore" } }], free).ok).toHaveLength(1);
+  });
+
+  it("a capitalized role does NOT get a character rejected (the cast-ignored bug)", () => {
+    const op: NodeOp = { op: "add", kind: "character", parentId: "pil", content: { name: "Finn", role: "Protagonist" } };
+    expect(validateOps([op], spine()).ok).toHaveLength(1);
   });
 
   it("splits a mixed batch into ok + rejected", () => {
