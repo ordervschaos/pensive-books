@@ -5,7 +5,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { deleteNode, saveNode } from "@/lib/bookNodes";
-import { byId, childrenOf, editContent, isEntityKind, isProseStale, isStale, newId, type DnaNode, type BeatContent, type NodeContent, type SceneContent } from "@/lib/novelDna";
+import { analysisText, byId, childrenOf, editContent, isEntityKind, isProseStale, isStale, newId, type BookSettings, type DnaNode, type BeatContent, type NodeContent, type SceneContent } from "@/lib/novelDna";
+import { applyDnaProposal, clearDnaProposal, describeOps, sendDnaMessage, type DnaChatMessage, type DnaProposal } from "@/lib/dnaChat";
+import { DNA_STAGES, buildJourney, type StageKey } from "@/lib/dnaJourney";
 
 const getNumericId = (p: string | undefined) => { const m = p?.match(/^(\d+)/); return m ? parseInt(m[1]) : 0; };
 
@@ -517,27 +519,167 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
   );
 }
 
+// ── AI chat rail (native to this page; wired to the dna_chats backend) ────────
+// Same thread/proposal mechanism as the studio's DnaChatRail — sends via sendDnaMessage, watches dna_chats
+// over Realtime, previews ops with describeOps, applies with applyDnaProposal — but in this page's
+// monospace skin. The reviser may edit ANY non-locked node regardless of stage; stage just sets its focus
+// (and whether the three-axis analysis is attached). Applied ops land in book_nodes → the tree's own
+// subscription refreshes it. `highlightIds` (the active-context highlight) is a follow-up.
+const ANALYSIS_STAGES = new Set<StageKey>(["structure", "scenes", "draft"]);
+function ChatRail({ bookId, stage, setStage, nodes, settings, onClose }: {
+  bookId: number; stage: StageKey; setStage: (s: StageKey) => void;
+  nodes: DnaNode[]; settings: BookSettings; onClose: () => void;
+}) {
+  const [messages, setMessages] = useState<DnaChatMessage[]>([]);
+  const [pending, setPending] = useState<DnaProposal | null>(null);
+  const [thinking, setThinking] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [applying, setApplying] = useState(false);
+  const endRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      const { data } = await supabase.from("dna_chats").select("messages, pending_proposal, status").eq("book_id", bookId).eq("stage", stage).maybeSingle();
+      if (!alive) return;
+      setMessages((data?.messages as DnaChatMessage[] | null) ?? []);
+      setPending((data?.pending_proposal as DnaProposal | null) ?? null);
+      setThinking((data?.status as string | null) === "thinking");
+    };
+    void load();
+    const ch = supabase.channel(`treechat_${bookId}_${stage}_${Math.random().toString(36).slice(2)}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "dna_chats", filter: `book_id=eq.${bookId}` }, () => void load())
+      .subscribe();
+    return () => { alive = false; void supabase.removeChannel(ch); };
+  }, [bookId, stage]);
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, pending, thinking]);
+
+  const send = async () => {
+    const text = draft.trim();
+    if (!text || thinking) return;
+    setDraft(""); setThinking(true);
+    setMessages((m) => [...m, { role: "user", text, ts: new Date().toISOString() }]);
+    const analysis = ANALYSIS_STAGES.has(stage) ? analysisText(nodes, settings) : undefined;
+    try { await sendDnaMessage(bookId, stage, text, analysis); }
+    catch (e) { setThinking(false); alert(`Couldn't send: ${(e as Error).message}`); }
+  };
+  const apply = async () => {
+    if (!pending) return;
+    setApplying(true);
+    try { await applyDnaProposal(bookId, stage, pending); setPending(null); }
+    catch (e) { alert(`Couldn't apply: ${(e as Error).message}`); }
+    finally { setApplying(false); }
+  };
+  const discard = async () => { setPending(null); try { await clearDnaProposal(bookId, stage); } catch { /* best effort */ } };
+  const cancel = async () => { setThinking(false); await supabase.from("dna_chats").update({ status: "idle" }).eq("book_id", bookId).eq("stage", stage); };
+
+  const mono = "ui-monospace, monospace";
+  return (
+    <div style={{ position: "fixed", top: 0, right: 0, bottom: 0, width: 420, display: "flex", flexDirection: "column", background: "#0c0c0f", borderLeft: "1px solid #1c1c22", zIndex: 20 }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderBottom: "1px solid #16161a" }}>
+        <span style={{ fontFamily: mono, fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: "#8a8aff" }}>✦ ai reviser</span>
+        <select value={stage} onChange={(e) => setStage(e.target.value as StageKey)}
+          style={{ ...inputStyle, fontSize: 10, padding: "1px 4px", marginLeft: "auto", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+          {DNA_STAGES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+        </select>
+        <span onClick={onClose} title="close" style={{ color: "#666", cursor: "pointer", fontSize: 14, lineHeight: 1 }}>✕</span>
+      </div>
+
+      {/* Transcript */}
+      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "14px", display: "flex", flexDirection: "column", gap: 10 }}>
+        {messages.length === 0 && (
+          <p style={{ fontFamily: mono, fontSize: 12, lineHeight: 1.6, color: "#555", fontStyle: "italic" }}>
+            Talk through the tree, or ask for a change. I propose a revision you review before it's saved; pinned (🔒) nodes stay untouched. Focus: <span style={{ color: "#8a8aff" }}>{DNA_STAGES.find((s) => s.key === stage)?.label}</span> — but I can edit any node.
+          </p>
+        )}
+        {messages.map((m, i) => (
+          <div key={i} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "94%" }}>
+            <div style={{ fontFamily: m.role === "user" ? mono : "ui-serif, Georgia, serif", fontSize: m.role === "user" ? 12 : 13.5, lineHeight: 1.55, whiteSpace: "pre-wrap", color: m.role === "user" ? "#cfcfcf" : "#b8b8c0", background: m.role === "user" ? "#16161c" : "transparent", border: m.role === "user" ? "1px solid #24242e" : "none", borderRadius: 8, padding: m.role === "user" ? "6px 10px" : "0" }}>
+              {m.text}
+            </div>
+          </div>
+        ))}
+        {thinking && (
+          <div style={{ fontFamily: mono, fontSize: 12, color: "#666", display: "flex", gap: 8, alignItems: "center" }}>
+            <span style={{ fontStyle: "italic" }}>thinking…</span>
+            <span onClick={() => void cancel()} style={{ cursor: "pointer", color: "#7a4a4a" }}>✕ cancel</span>
+          </div>
+        )}
+        {pending && (
+          <div style={{ border: "1px solid #3a3a55", background: "#13131a", borderRadius: 8, padding: "10px 12px" }}>
+            <div style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.14em", textTransform: "uppercase", color: "#8a8aff" }}>proposed — review before save</div>
+            <p style={{ fontFamily: "ui-serif, Georgia, serif", fontSize: 13, color: "#d8d8e0", margin: "5px 0 0" }}>{pending.summary}</p>
+            <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+              {describeOps(pending.ops, nodes).map((row, i) => (
+                <div key={i} style={{ border: "1px solid #22222c", background: "#0d0d11", borderRadius: 6, padding: "6px 9px" }}>
+                  <div style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase", color: "#666", display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    <span style={{ color: row.verb === "delete" ? "#c06060" : row.verb === "add" ? "#60a070" : "#8a8aff" }}>{row.verb} · {row.kind}</span>
+                    {row.verb === "add" && row.parentLabel ? <span>under {row.parentLabel}</span> : null}
+                    {row.restales ? <span style={{ color: "#d08a30" }}>{row.verb === "delete" ? `−${row.restales} below` : `restales ${row.restales}`}</span> : null}
+                  </div>
+                  <div style={{ fontFamily: "ui-serif, Georgia, serif", fontSize: 12.5, color: "#cfcfcf", marginTop: 2 }}>{row.label}</div>
+                  {row.verb === "delete"
+                    ? <div style={{ fontFamily: mono, fontSize: 11, fontStyle: "italic", color: "#666", marginTop: 3 }}>this node will be removed</div>
+                    : row.fields.map((f) => (
+                      <div key={f.key} style={{ marginTop: 5 }}>
+                        <div style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.06em", textTransform: "uppercase", color: "#555" }}>{f.key}</div>
+                        {f.old !== undefined && f.old !== f.next && <div style={{ fontFamily: "ui-serif, Georgia, serif", fontSize: 12, color: "#6a5050", textDecoration: "line-through", whiteSpace: "pre-wrap" }}>{f.old}</div>}
+                        <div style={{ fontFamily: "ui-serif, Georgia, serif", fontSize: 12, color: "#cfcfcf", whiteSpace: "pre-wrap" }}>{f.next}</div>
+                      </div>
+                    ))}
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop: 10, display: "flex", gap: 16 }}>
+              <span onClick={() => !applying && void apply()} style={{ fontFamily: mono, fontSize: 12, color: "#8a8aff", cursor: applying ? "default" : "pointer" }}>{applying ? "accepting…" : "✓ accept"}</span>
+              <span onClick={() => void discard()} style={{ fontFamily: mono, fontSize: 12, color: "#666", cursor: "pointer", fontStyle: "italic" }}>dismiss</span>
+            </div>
+          </div>
+        )}
+        <div ref={endRef} />
+      </div>
+
+      {/* Composer */}
+      <div style={{ borderTop: "1px solid #16161a", padding: 10 }}>
+        <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={3}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }}
+          placeholder="Ask the reviser…  (⏎ send · ⇧⏎ newline)"
+          style={{ ...inputStyle, width: "100%", boxSizing: "border-box", resize: "none", fontSize: 13 }} />
+      </div>
+    </div>
+  );
+}
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default function DnaTreePage() {
   const { bookSlug } = useParams();
   const bookId = getNumericId(bookSlug);
 
   const [bookName, setBookName] = useState<string>("");
+  const [settings, setSettings] = useState<BookSettings>({});
   const [nodes, setNodes] = useState<DnaNode[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [collapsedSet, setCollapsedSet] = useState<Set<string>>(new Set());
   const [openSet, setOpenSet] = useState<Set<string>>(new Set()); // detail-only leaves the user dug into
+  const [railOpen, setRailOpen] = useState(false);
+  const [stage, setStage] = useState<StageKey>("structure");
 
   useEffect(() => {
     if (!bookId) { setError("no book id"); return; }
     void (async () => {
       const [{ data: nodeRows, error: nodesErr }, { data: book, error: bookErr }] = await Promise.all([
         supabase.from("book_nodes").select("*").eq("book_id", bookId).order("position"),
-        supabase.from("books").select("name").eq("id", bookId).maybeSingle(),
+        supabase.from("books").select("name, author, brief, mode").eq("id", bookId).maybeSingle(),
       ]);
       if (nodesErr || bookErr) { setError((nodesErr ?? bookErr)?.message ?? "error"); return; }
       setBookName(book?.name ?? "");
-      setNodes((nodeRows ?? []) as DnaNode[]);
+      const brief = book?.brief as { scope?: { word_target?: number } } | null;
+      setSettings({ title: book?.name ?? undefined, author: (book?.author as string | null) ?? undefined,
+        word_target: brief?.scope?.word_target, mode: (book as { mode?: string } | null)?.mode === "picture" ? "picture" : "prose" });
+      const loaded = (nodeRows ?? []) as DnaNode[];
+      setNodes(loaded);
+      setStage(DNA_STAGES[buildJourney(loaded).nowIndex]?.key ?? "structure"); // open the rail on the current stage
     })();
   }, [bookId]);
 
@@ -617,7 +759,8 @@ export default function DnaTreePage() {
   const staleCount = nodes.filter((n) => isStale(n, index) || (n.kind === "scene" && isProseStale(n))).length;
 
   return (
-    <div style={base}>
+    <div style={{ ...base, marginRight: railOpen ? 420 : 0 }}>
+      {railOpen && <ChatRail bookId={bookId} stage={stage} setStage={setStage} nodes={nodes} settings={settings} onClose={() => setRailOpen(false)} />}
       {/* Header bar */}
       <div style={{ padding: "12px 16px", borderBottom: "1px solid #1a1a1a", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
         <span style={{ color: "#666", fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase" }}>
@@ -638,6 +781,7 @@ export default function DnaTreePage() {
         <div style={{ marginLeft: "auto", display: "flex", gap: 12 }}>
           <button onClick={expandAll} style={{ background: "none", border: "none", color: "#555", fontSize: 10, cursor: "pointer", letterSpacing: "0.1em", textTransform: "uppercase" }}>expand all</button>
           <button onClick={collapseAll} style={{ background: "none", border: "none", color: "#555", fontSize: 10, cursor: "pointer", letterSpacing: "0.1em", textTransform: "uppercase" }}>collapse all</button>
+          <button onClick={() => setRailOpen((v) => !v)} style={{ background: "none", border: "none", color: railOpen ? "#8a8aff" : "#555", fontSize: 10, cursor: "pointer", letterSpacing: "0.1em", textTransform: "uppercase" }}>✦ ai reviser</button>
           <a href={`/books/${bookSlug}/dna.json`} style={{ color: "#555", fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", textDecoration: "none" }}>json →</a>
           <a href={`/books/${bookSlug}/dna`} style={{ color: "#555", fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", textDecoration: "none" }}>studio →</a>
         </div>
