@@ -48,8 +48,60 @@ function nodeTitle(n: DnaNode): string {
     case "movement": return s(c.title) || s(c.goal);
     case "beat": return s((c as BeatContent).summary);
     case "scene": return s((c as SceneContent).chapter_start?.title) || s((c as SceneContent).goal);
+    case "voice_profile": return s(c.style) || "voice profile";
     default: return "";
   }
+}
+
+// ── Detail fields per kind (the "dig one layer in" payload) ───────────────────
+// The relevant content fields beneath each node's one-line title — character wants/wounds, scene
+// goal/conflict/outcome, game win/lose, etc. Id references (pov, players, relationship a/b) resolve to
+// names via the index. Returns [] for kinds with nothing beyond their title (so they stay non-expandable).
+function nodeDetails(n: DnaNode, index: Map<string, DnaNode>): { label: string; value: string }[] {
+  const c = n.content as Record<string, unknown>;
+  const out: { label: string; value: string }[] = [];
+  const add = (label: string, value: unknown) => {
+    const v = Array.isArray(value) ? value.filter(Boolean).join(", ") : typeof value === "string" ? value.trim() : value != null ? String(value) : "";
+    if (v) out.push({ label, value: v });
+  };
+  const name = (id: unknown) => (typeof id === "string" ? ((index.get(id)?.content as Record<string, unknown>)?.name as string) ?? id : "");
+  const names = (ids: unknown) => (Array.isArray(ids) ? ids.map(name).filter(Boolean) : []);
+  switch (n.kind) {
+    case "character":
+      add("role", c.role); add("want", c.want); add("need", c.need); add("wound", c.wound);
+      add("lie", c.lie); add("truth", c.truth); add("idiolect", c.idiolect); add("tag", c.tag); break;
+    case "relationship":
+      add("between", [name(c.a), name(c.b)].filter(Boolean).join("  ↔  ")); add("charge", c.charge); break;
+    case "world_fact":
+      add("rule", c.rule); add("mechanism", c.mechanism); add("category", c.category); break;
+    case "thread":
+      add("kind", c.kind); add("promise", c.promise); add("payoff", c.payoff); break;
+    case "game":
+      add("players", names(c.players)); add("win", c.win_condition); add("lose", c.lose_condition);
+      add("stake", c.stake); add("rules", names(c.governing_rules)); break;
+    case "voice_profile":
+      add("pov", c.pov); add("tense", c.tense); add("constraints", c.constraints); add("sample", c.sample); break;
+    case "scene": {
+      const sc = n.content as SceneContent;
+      add("pov", name(sc.pov)); add("loc", sc.loc); add("goal", sc.goal); add("conflict", sc.conflict); add("outcome", sc.outcome);
+      if (sc.value_shift) add("value", `${sc.value_shift.from ?? "?"} → ${sc.value_shift.to ?? "?"}${sc.value_shift.polarity ? `  (${sc.value_shift.polarity})` : ""}`);
+      break;
+    }
+    case "movement": {
+      const m = c as Record<string, unknown>;
+      add("goal", m.goal); add("turning point", m.turning_point);
+      if (typeof m.target_pct === "number") add("target", `${Math.round((m.target_pct as number) * 100)}%`);
+      const val = m.value as Record<string, unknown> | undefined;
+      if (val) add("value", `${val.from ?? "?"} → ${val.to ?? "?"}`);
+      break;
+    }
+    case "premise":
+      add("genre", c.genre); add("tone", c.tone); break;
+    case "pillar":
+      add("ending", c.ending); break;
+    default: break;
+  }
+  return out;
 }
 
 // ── Connector glyph for beats ────────────────────────────────────────────────
@@ -59,13 +111,23 @@ function beatGlyph(n: DnaNode): string {
   return c === "therefore" ? "∴ " : c === "but" ? "↯ " : "";
 }
 
+// ── A single content field shown when a node is dug into ──────────────────────
+function DetailRow({ label, value, depth }: { label: string; value: string; depth: number }) {
+  return (
+    <div style={{ position: "relative", display: "flex", alignItems: "baseline", gap: 8, paddingLeft: depth * 20 + 20, paddingRight: 12, paddingTop: 1, paddingBottom: 1 }}>
+      <div style={{ position: "absolute", left: (depth - 1) * 20 + 8, top: 9, width: 12, height: 1, background: "#ffffff12" }} />
+      <span style={{ width: 12, flexShrink: 0 }} />
+      <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "#5c5c5c", width: 92, flexShrink: 0, textAlign: "right" }}>{label}</span>
+      <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: "#aeaeae", whiteSpace: "pre-wrap", wordBreak: "break-word", flex: 1, lineHeight: 1.5 }}>{value}</span>
+    </div>
+  );
+}
+
 // ── Single tree row ──────────────────────────────────────────────────────────
-function TreeRow({ node, index, nodes, depth, isLast, collapsed, onToggle }: {
-  node: DnaNode; index: Map<string, DnaNode>; nodes: DnaNode[]; depth: number;
-  isLast: boolean; collapsed: boolean; onToggle: () => void;
+function TreeRow({ node, index, depth, expandable, open, onToggle }: {
+  node: DnaNode; index: Map<string, DnaNode>; depth: number;
+  expandable: boolean; open: boolean; onToggle: () => void;
 }) {
-  const kids = childrenOf(nodes, node.id);
-  const hasKids = kids.length > 0;
   const stale = isStale(node, index) || (node.kind === "scene" && isProseStale(node));
   const color = KIND_COLOR[node.kind] ?? "#888";
   const bg = KIND_BG[node.kind] ?? "transparent";
@@ -74,8 +136,8 @@ function TreeRow({ node, index, nodes, depth, isLast, collapsed, onToggle }: {
 
   return (
     <div style={{ position: "relative" }}>
-      {/* Vertical connector line from this node down to its last child */}
-      {hasKids && !collapsed && (
+      {/* Vertical connector line from this node down to its last child / detail */}
+      {expandable && open && (
         <div style={{
           position: "absolute",
           left: depth * 20 + 8,
@@ -89,12 +151,12 @@ function TreeRow({ node, index, nodes, depth, isLast, collapsed, onToggle }: {
 
       {/* The node row */}
       <div
-        onClick={hasKids ? onToggle : undefined}
+        onClick={expandable ? onToggle : undefined}
         style={{
           display: "flex", alignItems: "baseline", gap: 8,
           paddingLeft: depth * 20 + (depth > 0 ? 20 : 4),
           paddingRight: 12, paddingTop: 3, paddingBottom: 3,
-          cursor: hasKids ? "pointer" : "default",
+          cursor: expandable ? "pointer" : "default",
           position: "relative",
         }}
       >
@@ -112,8 +174,8 @@ function TreeRow({ node, index, nodes, depth, isLast, collapsed, onToggle }: {
         )}
 
         {/* Expand/collapse chevron */}
-        <span style={{ width: 12, flexShrink: 0, color: hasKids ? `${color}80` : "transparent", fontSize: 9, lineHeight: 1 }}>
-          {hasKids ? (collapsed ? "▶" : "▼") : "·"}
+        <span style={{ width: 12, flexShrink: 0, color: expandable ? `${color}80` : "transparent", fontSize: 9, lineHeight: 1 }}>
+          {expandable ? (open ? "▼" : "▶") : "·"}
         </span>
 
         {/* Kind badge */}
@@ -196,29 +258,37 @@ function NodeGroup({ groupId, label, hint, count, depth, collapsedSet, onToggle,
 }
 
 // ── Recursive tree subtree ───────────────────────────────────────────────────
-function Subtree({ node, index, nodes, depth, isLast, collapsedSet, onToggle }: {
-  node: DnaNode; index: Map<string, DnaNode>; nodes: DnaNode[]; depth: number; isLast: boolean;
-  collapsedSet: Set<string>; onToggle: (id: string) => void;
+function Subtree({ node, index, nodes, depth, collapsedSet, openSet, onToggle, onToggleDetail }: {
+  node: DnaNode; index: Map<string, DnaNode>; nodes: DnaNode[]; depth: number;
+  collapsedSet: Set<string>; openSet: Set<string>; onToggle: (id: string) => void; onToggleDetail: (id: string) => void;
 }) {
   const kids = childrenOf(nodes, node.id).sort((a, b) => a.position - b.position);
-  const collapsed = collapsedSet.has(node.id);
+  const hasKids = kids.length > 0;
+  const details = nodeDetails(node, index);
+  const expandable = hasKids || details.length > 0;
+  // Containers default OPEN (collapsedSet = opt-out); detail-only leaves default CLOSED (openSet = opt-in),
+  // so digging into a character's wound/lie is on demand and the tree stays scannable by default.
+  const open = expandable && (hasKids ? !collapsedSet.has(node.id) : openSet.has(node.id));
+  const toggle = () => (hasKids ? onToggle(node.id) : onToggleDetail(node.id));
+  const detailRows = details.map((d) => <DetailRow key={d.label} label={d.label} value={d.value} depth={depth + 1} />);
+  const sub = (items: DnaNode[], d: number) => items.map((child) => (
+    <Subtree key={child.id} node={child} index={index} nodes={nodes} depth={d}
+      collapsedSet={collapsedSet} openSet={openSet} onToggle={onToggle} onToggleDetail={onToggleDetail} />
+  ));
 
-  // The pillar splits into STORY (the spine) + CAST & WORLD (the registry); every other node renders its
-  // children flat as before.
+  // The pillar splits into STORY (the spine) + CAST & WORLD (the registry, sub-grouped by kind); every
+  // other node renders its detail fields then its children.
   let body: React.ReactNode = null;
-  if (!collapsed) {
+  if (open) {
     if (node.kind === "pillar") {
       const ladder = kids.filter((c) => !isEntityKind(c.kind));
       const entities = kids.filter((c) => isEntityKind(c.kind));
-      const leaves = (items: DnaNode[], d: number) => items.map((child, i) => (
-        <Subtree key={child.id} node={child} index={index} nodes={nodes} depth={d}
-          isLast={i === items.length - 1} collapsedSet={collapsedSet} onToggle={onToggle} />
-      ));
       body = (
         <>
+          {detailRows}
           <NodeGroup groupId={`${node.id}::story`} label="story" hint="the spine — acts in order"
             count={ladder.length} depth={depth + 1} collapsedSet={collapsedSet} onToggle={onToggle}>
-            {leaves(ladder, depth + 2)}
+            {sub(ladder, depth + 2)}
           </NodeGroup>
           <NodeGroup groupId={`${node.id}::world`} label="cast & world" hint="the registry"
             count={entities.length} depth={depth + 1} collapsedSet={collapsedSet} onToggle={onToggle}>
@@ -227,7 +297,7 @@ function Subtree({ node, index, nodes, depth, isLast, collapsedSet, onToggle }: 
               return (
                 <NodeGroup key={kind} groupId={`${node.id}::world::${kind}`} label={label}
                   count={items.length} depth={depth + 2} collapsedSet={collapsedSet} onToggle={onToggle}>
-                  {leaves(items, depth + 3)}
+                  {sub(items, depth + 3)}
                 </NodeGroup>
               );
             })}
@@ -235,17 +305,13 @@ function Subtree({ node, index, nodes, depth, isLast, collapsedSet, onToggle }: 
         </>
       );
     } else {
-      body = kids.map((child, i) => (
-        <Subtree key={child.id} node={child} index={index} nodes={nodes} depth={depth + 1}
-          isLast={i === kids.length - 1} collapsedSet={collapsedSet} onToggle={onToggle} />
-      ));
+      body = <>{detailRows}{sub(kids, depth + 1)}</>;
     }
   }
 
   return (
     <div>
-      <TreeRow node={node} index={index} nodes={nodes} depth={depth} isLast={isLast}
-        collapsed={collapsed} onToggle={() => onToggle(node.id)} />
+      <TreeRow node={node} index={index} depth={depth} expandable={expandable} open={open} onToggle={toggle} />
       {body}
     </div>
   );
@@ -260,6 +326,7 @@ export default function DnaTreePage() {
   const [nodes, setNodes] = useState<DnaNode[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [collapsedSet, setCollapsedSet] = useState<Set<string>>(new Set());
+  const [openSet, setOpenSet] = useState<Set<string>>(new Set()); // detail-only leaves the user dug into
 
   useEffect(() => {
     if (!bookId) { setError("no book id"); return; }
@@ -288,9 +355,18 @@ export default function DnaTreePage() {
   const collapseAll = useCallback(() => {
     if (!nodes) return;
     setCollapsedSet(new Set(nodes.filter((n) => childrenOf(nodes, n.id).length > 0).map((n) => n.id)));
+    setOpenSet(new Set()); // also fold any dug-into detail leaves
   }, [nodes]);
 
   const expandAll = useCallback(() => setCollapsedSet(new Set()), []);
+
+  const toggleDetail = useCallback((id: string) => {
+    setOpenSet((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
 
   const toggleNode = useCallback((id: string) => {
     setCollapsedSet((prev) => {
@@ -362,9 +438,9 @@ export default function DnaTreePage() {
       <div style={{ paddingTop: 8, paddingBottom: 48 }}>
         {roots.length === 0 ? (
           <div style={{ padding: "24px 16px", color: "#333", fontSize: 13 }}>no nodes — migrate or seed the tree first</div>
-        ) : roots.map((root, i) => (
+        ) : roots.map((root) => (
           <Subtree key={root.id} node={root} index={index} nodes={nodes} depth={0}
-            isLast={i === roots.length - 1} collapsedSet={collapsedSet} onToggle={toggleNode} />
+            collapsedSet={collapsedSet} openSet={openSet} onToggle={toggleNode} onToggleDetail={toggleDetail} />
         ))}
       </div>
     </div>
