@@ -4,8 +4,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { saveNode } from "@/lib/bookNodes";
-import { byId, childrenOf, editContent, isEntityKind, isProseStale, isStale, type DnaNode, type BeatContent, type NodeContent, type SceneContent } from "@/lib/novelDna";
+import { deleteNode, saveNode } from "@/lib/bookNodes";
+import { byId, childrenOf, editContent, isEntityKind, isProseStale, isStale, newId, type DnaNode, type BeatContent, type NodeContent, type SceneContent } from "@/lib/novelDna";
 
 const getNumericId = (p: string | undefined) => { const m = p?.match(/^(\d+)/); return m ? parseInt(m[1]) : 0; };
 
@@ -55,63 +55,64 @@ function nodeTitle(n: DnaNode): string {
 }
 
 // ── Editable fields per kind (the "dig one layer in" payload) ─────────────────
-// The simple content fields you can add/edit/delete inline. `list` fields are stored as arrays and edited
-// as a comma-separated string. Derived/ref/object fields (pov, players, value_shift…) are shown read-only
-// via nodeReadonly — they need structured pickers, not a text box (a follow-up).
-interface EditSpec { key: string; label: string; multiline?: boolean; list?: boolean }
+// Every meaningful content field, typed so the right editor renders: text/list (comma) for free text,
+// ref/refs for id pointers (a dropdown / chip-picker of the right kind), select for enums, percent for
+// 0–1 floats, object for nested groups (value_shift, movement value, premise shape).
+type FieldType = "text" | "list" | "ref" | "refs" | "select" | "percent" | "object";
+interface EditSpec { key: string; label: string; type?: FieldType; multiline?: boolean; refKind?: DnaNode["kind"]; options?: string[]; fields?: EditSpec[] }
+const ROLES = ["protagonist", "antagonist", "ally", "love_interest", "minor"];
+const POLARITY = ["up", "down"];
 const EDIT_FIELDS: Partial<Record<DnaNode["kind"], EditSpec[]>> = {
   seed: [{ key: "logline", label: "logline", multiline: true }],
-  premise: [{ key: "dramatic_question", label: "question", multiline: true }, { key: "genre", label: "genre", list: true }, { key: "tone", label: "tone", list: true }],
+  premise: [
+    { key: "dramatic_question", label: "question", multiline: true }, { key: "genre", label: "genre", type: "list" }, { key: "tone", label: "tone", type: "list" },
+    { key: "shape", label: "shape", type: "object", fields: [
+      { key: "setup", label: "setup", multiline: true }, { key: "turn1", label: "turn 1", multiline: true }, { key: "turn2", label: "turn 2", multiline: true },
+      { key: "turn3", label: "turn 3", multiline: true }, { key: "resolution", label: "resolution", multiline: true },
+    ] },
+  ],
   pillar: [{ key: "controlling_idea", label: "idea", multiline: true }, { key: "ending", label: "ending", multiline: true }],
   character: [
-    { key: "name", label: "name" }, { key: "role", label: "role" }, { key: "want", label: "want", multiline: true },
+    { key: "name", label: "name" }, { key: "role", label: "role", type: "select", options: ROLES }, { key: "want", label: "want", multiline: true },
     { key: "need", label: "need", multiline: true }, { key: "wound", label: "wound", multiline: true }, { key: "lie", label: "lie", multiline: true },
     { key: "truth", label: "truth", multiline: true }, { key: "idiolect", label: "idiolect", multiline: true }, { key: "tag", label: "tag" },
   ],
-  relationship: [{ key: "bond", label: "bond", multiline: true }, { key: "charge", label: "charge", multiline: true }],
+  relationship: [
+    { key: "a", label: "a", type: "ref", refKind: "character" }, { key: "b", label: "b", type: "ref", refKind: "character" },
+    { key: "bond", label: "bond", multiline: true }, { key: "charge", label: "charge", multiline: true },
+  ],
   world_fact: [{ key: "name", label: "name" }, { key: "rule", label: "rule", multiline: true }, { key: "mechanism", label: "mechanism", multiline: true }, { key: "category", label: "category" }],
-  thread: [{ key: "name", label: "name" }, { key: "kind", label: "kind" }, { key: "promise", label: "promise", multiline: true }, { key: "payoff", label: "payoff", multiline: true }],
-  game: [{ key: "name", label: "name" }, { key: "win_condition", label: "win", multiline: true }, { key: "lose_condition", label: "lose", multiline: true }, { key: "stake", label: "stake", multiline: true }],
+  thread: [{ key: "name", label: "name" }, { key: "kind", label: "kind", type: "select", options: ["mystery", "foreshadow", "setup_payoff", "arc"] }, { key: "promise", label: "promise", multiline: true }, { key: "payoff", label: "payoff", multiline: true }],
+  game: [
+    { key: "name", label: "name" }, { key: "players", label: "players", type: "refs", refKind: "character" },
+    { key: "win_condition", label: "win", multiline: true }, { key: "lose_condition", label: "lose", multiline: true }, { key: "stake", label: "stake", multiline: true },
+    { key: "governing_rules", label: "rules", type: "refs", refKind: "world_fact" },
+  ],
   tentpole: [{ key: "summary", label: "summary", multiline: true }],
-  voice_profile: [{ key: "pov", label: "pov" }, { key: "tense", label: "tense" }, { key: "style", label: "style", multiline: true }, { key: "constraints", label: "constraints", list: true }, { key: "sample", label: "sample", multiline: true }],
-  movement: [{ key: "title", label: "title" }, { key: "goal", label: "goal", multiline: true }, { key: "turning_point", label: "turning point", multiline: true }],
-  beat: [{ key: "summary", label: "summary", multiline: true }],
-  scene: [{ key: "goal", label: "goal", multiline: true }, { key: "conflict", label: "conflict", multiline: true }, { key: "outcome", label: "outcome", multiline: true }, { key: "loc", label: "loc" }],
+  voice_profile: [
+    { key: "pov", label: "pov", type: "select", options: ["first-person", "third-person-limited", "third-person-omniscient", "second-person"] },
+    { key: "tense", label: "tense", type: "select", options: ["past", "present"] }, { key: "style", label: "style", multiline: true },
+    { key: "constraints", label: "constraints", type: "list" }, { key: "sample", label: "sample", multiline: true },
+  ],
+  movement: [
+    { key: "title", label: "title" }, { key: "goal", label: "goal", multiline: true }, { key: "turning_point", label: "turning point", multiline: true },
+    { key: "target_pct", label: "target %", type: "percent" },
+    { key: "value", label: "value", type: "object", fields: [{ key: "name", label: "name" }, { key: "from", label: "from" }, { key: "to", label: "to" }] },
+  ],
+  beat: [
+    { key: "summary", label: "summary", multiline: true }, { key: "connector", label: "connector", type: "select", options: ["therefore", "but"] },
+    { key: "polarity", label: "polarity", type: "select", options: POLARITY },
+  ],
+  scene: [
+    { key: "pov", label: "pov", type: "ref", refKind: "character" }, { key: "loc", label: "loc" },
+    { key: "goal", label: "goal", multiline: true }, { key: "conflict", label: "conflict", multiline: true }, { key: "outcome", label: "outcome", multiline: true },
+    { key: "value_shift", label: "value", type: "object", fields: [
+      { key: "value", label: "value" }, { key: "from", label: "from" }, { key: "to", label: "to" }, { key: "polarity", label: "polarity", type: "select", options: POLARITY },
+    ] },
+  ],
 };
 const editSpecs = (kind: DnaNode["kind"]) => EDIT_FIELDS[kind] ?? [];
-/** The display string for an editable field (arrays joined for the comma-separated editor). */
-function fieldValue(node: DnaNode, spec: EditSpec): string {
-  const raw = (node.content as Record<string, unknown>)[spec.key];
-  if (spec.list) return Array.isArray(raw) ? raw.join(", ") : "";
-  return typeof raw === "string" ? raw : raw != null ? String(raw) : "";
-}
-
-// Read-only derived rows — id references resolved to names, value-shift objects, target %. Not yet editable.
-function nodeReadonly(n: DnaNode, index: Map<string, DnaNode>): { label: string; value: string }[] {
-  const c = n.content as Record<string, unknown>;
-  const out: { label: string; value: string }[] = [];
-  const add = (label: string, value: string) => { if (value && value.trim()) out.push({ label, value }); };
-  const name = (id: unknown) => (typeof id === "string" ? ((index.get(id)?.content as Record<string, unknown>)?.name as string) ?? id : "");
-  const names = (ids: unknown) => (Array.isArray(ids) ? ids.map(name).filter(Boolean).join(", ") : "");
-  switch (n.kind) {
-    case "relationship": add("between", [name(c.a), name(c.b)].filter(Boolean).join("  ↔  ")); break;
-    case "game": add("players", names(c.players)); add("rules", names(c.governing_rules)); break;
-    case "scene": {
-      const sc = n.content as SceneContent;
-      add("pov", String(name(sc.pov) ?? ""));
-      if (sc.value_shift) add("value", `${sc.value_shift.from ?? "?"} → ${sc.value_shift.to ?? "?"}${sc.value_shift.polarity ? `  (${sc.value_shift.polarity})` : ""}`);
-      break;
-    }
-    case "movement": {
-      if (typeof c.target_pct === "number") add("target", `${Math.round((c.target_pct as number) * 100)}%`);
-      const val = c.value as Record<string, unknown> | undefined;
-      if (val) add("value", `${val.from ?? "?"} → ${val.to ?? "?"}`);
-      break;
-    }
-    default: break;
-  }
-  return out;
-}
+const KIND_LEVEL: Record<string, number> = { seed: 0, premise: 1, pillar: 2, character: 2, relationship: 2, tentpole: 2, world_fact: 2, voice_profile: 2, thread: 2, game: 2, movement: 3, beat: 4, scene: 5 };
 
 // ── Connector glyph for beats ────────────────────────────────────────────────
 function beatGlyph(n: DnaNode): string {
@@ -124,95 +125,167 @@ function beatGlyph(n: DnaNode): string {
 const detailRowStyle = (depth: number): React.CSSProperties => ({ position: "relative", display: "flex", alignItems: "baseline", gap: 8, paddingLeft: depth * 20 + 20, paddingRight: 12, paddingTop: 1, paddingBottom: 1 });
 const labelStyle: React.CSSProperties = { fontFamily: "ui-monospace, monospace", fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "#5c5c5c", width: 92, flexShrink: 0, textAlign: "right" };
 const ConnectorTick = ({ depth }: { depth: number }) => <div style={{ position: "absolute", left: (depth - 1) * 20 + 8, top: 9, width: 12, height: 1, background: "#ffffff12" }} />;
+const fieldRowStart = (depth: number) => (
+  <>
+    <ConnectorTick depth={depth} />
+    <span style={{ width: 12, flexShrink: 0 }} />
+  </>
+);
+const inputStyle: React.CSSProperties = { fontFamily: "ui-monospace, monospace", fontSize: 12, color: "#e6e6e6", background: "#16161a", border: "1px solid #3a3a55", borderRadius: 3, padding: "3px 6px", lineHeight: 1.5, outline: "none" };
 
-// A read-only derived field (resolved refs, value-shift, target %).
-function DetailRow({ label, value, depth }: { label: string; value: string; depth: number }) {
-  return (
-    <div style={detailRowStyle(depth)}>
-      <ConnectorTick depth={depth} />
-      <span style={{ width: 12, flexShrink: 0 }} />
-      <span style={labelStyle}>{label}</span>
-      <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: "#9a9a9a", whiteSpace: "pre-wrap", wordBreak: "break-word", flex: 1, lineHeight: 1.5 }}>{value}</span>
-    </div>
-  );
+// ── Field value helpers ───────────────────────────────────────────────────────
+const contentAt = (node: DnaNode, parentKey?: string): Record<string, unknown> =>
+  (parentKey ? ((node.content as Record<string, unknown>)[parentKey] as Record<string, unknown>) ?? {} : node.content) as Record<string, unknown>;
+const refName = (id: unknown, index: Map<string, DnaNode>): string =>
+  typeof id === "string" ? (index.has(id) ? nodeTitle(index.get(id)!) || id : id) : "";
+/** The display string for a field given its type (refs resolved to names, percent rendered, etc.). */
+function displayValue(node: DnaNode, spec: EditSpec, index: Map<string, DnaNode>, parentKey?: string): string {
+  const raw = contentAt(node, parentKey)[spec.key];
+  switch (spec.type) {
+    case "ref": return refName(raw, index);
+    case "refs": return Array.isArray(raw) ? raw.map((r) => refName(r, index)).filter(Boolean).join(", ") : "";
+    case "list": return Array.isArray(raw) ? raw.join(", ") : "";
+    case "percent": return typeof raw === "number" ? `${Math.round(raw * 100)}%` : "";
+    default: return typeof raw === "string" ? raw : raw != null ? String(raw) : "";
+  }
 }
 
-// ── An editable content field: click to edit, ✕ to clear, faint "＋ label" when empty ──────────
-// Self-contained — writes straight through saveNode(editContent(...)); Realtime reflects the change back.
-// Locked nodes are read-only. List fields edit as a comma-separated string.
-function EditableField({ node, spec, depth }: { node: DnaNode; spec: EditSpec; depth: number }) {
-  const value = fieldValue(node, spec);
+// ── An editable content field: typed editor by spec.type ──────────────────────
+// Self-contained — writes straight through saveNode(editContent(...)) so the nested patch deep-merges and
+// Realtime reflects it back. Locked nodes are read-only. `parentKey` nests the patch for object sub-fields.
+function EditableField({ node, spec, depth, index, parentKey }: {
+  node: DnaNode; spec: EditSpec; depth: number; index: Map<string, DnaNode>; parentKey?: string;
+}) {
   const locked = node.authoring.locked;
+  const value = displayValue(node, spec, index, parentKey);
+  const raw = contentAt(node, parentKey)[spec.key];
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value);
+  const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
-  const ref = useRef<HTMLTextAreaElement | HTMLInputElement | null>(null);
+  const ref = useRef<HTMLTextAreaElement | HTMLInputElement | HTMLSelectElement | null>(null);
+  useEffect(() => { if (editing) { const el = ref.current; el?.focus(); if (el && "selectionStart" in el) (el as HTMLInputElement).selectionStart = el.value.length; } }, [editing]);
 
-  useEffect(() => { if (editing) { const el = ref.current; el?.focus(); if (el) (el as HTMLInputElement).selectionStart = el.value.length; } }, [editing]);
-
-  const begin = () => { if (locked || busy) return; setDraft(value); setEditing(true); };
-  const cancel = () => setEditing(false);
-  const write = async (patch: NodeContent) => { setBusy(true); try { await saveNode(editContent(node, patch)); } catch (e) { alert(`Save failed: ${(e as Error).message}`); } finally { setBusy(false); } };
-  const commit = async () => {
-    setEditing(false);
-    const next: unknown = spec.list ? draft.split(",").map((s) => s.trim()).filter(Boolean) : draft.trim();
-    if (spec.list ? draft.trim() === value : next === value) return; // unchanged
-    await write({ [spec.key]: next } as NodeContent);
+  const write = async (next: unknown) => {
+    setBusy(true);
+    try { await saveNode(editContent(node, (parentKey ? { [parentKey]: { [spec.key]: next } } : { [spec.key]: next }) as NodeContent)); }
+    catch (e) { alert(`Save failed: ${(e as Error).message}`); }
+    finally { setBusy(false); }
   };
-  const clear = async (e: React.MouseEvent) => { e.stopPropagation(); if (locked || busy) return; await write({ [spec.key]: spec.list ? [] : "" } as NodeContent); };
 
-  if (editing) {
-    const common = {
-      ref: ref as never, value: draft, disabled: busy,
-      onChange: (e: React.ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => setDraft(e.target.value),
-      onBlur: () => void commit(),
-      onKeyDown: (e: React.KeyboardEvent) => {
-        if (e.key === "Escape") { e.preventDefault(); cancel(); }
-        else if (e.key === "Enter" && (!spec.multiline || e.metaKey || e.ctrlKey)) { e.preventDefault(); void commit(); }
-      },
-      style: { fontFamily: "ui-monospace, monospace", fontSize: 12, color: "#e6e6e6", background: "#16161a", border: "1px solid #3a3a55", borderRadius: 3, padding: "3px 6px", flex: 1, lineHeight: 1.5, outline: "none", resize: "vertical" as const },
-    };
+  // ── object: a header label, then its sub-fields nested one level deeper ──────
+  if (spec.type === "object") {
     return (
-      <div style={detailRowStyle(depth)} onClick={(e) => e.stopPropagation()}>
-        <ConnectorTick depth={depth} />
-        <span style={{ width: 12, flexShrink: 0 }} />
-        <span style={labelStyle}>{spec.label}</span>
-        {spec.multiline ? <textarea rows={Math.min(8, Math.max(2, draft.split("\n").length))} {...common} /> : <input {...common} />}
-        <span style={{ fontSize: 9, color: "#555", flexShrink: 0, alignSelf: "center" }}>{spec.multiline ? "⌘↵ save · esc" : "↵ save · esc"}</span>
-      </div>
+      <>
+        <div style={detailRowStyle(depth)}>{fieldRowStart(depth)}<span style={{ ...labelStyle, color: "#6e6e6e" }}>{spec.label}</span></div>
+        {spec.fields!.map((sub) => <EditableField key={sub.key} node={node} spec={sub} depth={depth + 1} index={index} parentKey={spec.key} />)}
+      </>
     );
   }
 
-  if (!value) {
+  const emptyRow = (
+    <div style={detailRowStyle(depth)}>{fieldRowStart(depth)}<span style={labelStyle}>{spec.label}</span>
+      <span onClick={() => !locked && setEditing(true)} style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, color: locked ? "#333" : "#4a4a4a", flex: 1, cursor: locked ? "default" : "pointer", fontStyle: "italic" }}>
+        {locked ? "—" : `＋ ${spec.label}`}
+      </span>
+    </div>
+  );
+
+  // ── refs: chips + an add-dropdown; always-interactive when expanded ──────────
+  if (spec.type === "refs") {
+    const ids = Array.isArray(raw) ? (raw as string[]) : [];
+    const candidates = [...index.values()].filter((n) => n.kind === spec.refKind && !ids.includes(n.id));
     return (
-      <div style={detailRowStyle(depth)}>
-        <ConnectorTick depth={depth} />
-        <span style={{ width: 12, flexShrink: 0 }} />
-        <span style={labelStyle}>{spec.label}</span>
-        <span onClick={begin} style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, color: locked ? "#333" : "#4a4a4a", flex: 1, cursor: locked ? "default" : "text", fontStyle: "italic" }}>
-          {locked ? "—" : `＋ ${spec.label}`}
+      <div style={detailRowStyle(depth)}>{fieldRowStart(depth)}<span style={labelStyle}>{spec.label}</span>
+        <span style={{ display: "flex", flexWrap: "wrap", gap: 4, flex: 1, alignItems: "center" }}>
+          {ids.map((id) => (
+            <span key={id} style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, color: "#cfcfcf", background: "#1c1c26", border: "1px solid #2a2a3a", borderRadius: 3, padding: "1px 5px", display: "inline-flex", gap: 4, alignItems: "center" }}>
+              {refName(id, index)}
+              {!locked && <span onClick={() => !busy && void write(ids.filter((x) => x !== id))} style={{ cursor: "pointer", color: "#666" }}>✕</span>}
+            </span>
+          ))}
+          {!locked && candidates.length > 0 && (
+            <select value="" disabled={busy} onChange={(e) => e.target.value && void write([...ids, e.target.value])}
+              style={{ ...inputStyle, fontSize: 11, padding: "1px 4px" }}>
+              <option value="">＋ add…</option>
+              {candidates.map((c) => <option key={c.id} value={c.id}>{nodeTitle(c) || c.id}</option>)}
+            </select>
+          )}
+          {!ids.length && locked && <span style={{ color: "#333", fontFamily: "ui-monospace, monospace", fontSize: 11 }}>—</span>}
         </span>
       </div>
     );
   }
 
+  // ── ref / select: a dropdown revealed on click ───────────────────────────────
+  if (spec.type === "ref" || spec.type === "select") {
+    if (!editing) {
+      if (!value) return emptyRow;
+      return (
+        <div style={detailRowStyle(depth)}>{fieldRowStart(depth)}<span style={labelStyle}>{spec.label}</span>
+          <span onClick={() => !locked && setEditing(true)} style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: busy ? "#666" : "#cfcfcf", flex: 1, cursor: locked ? "default" : "pointer" }}>{value}</span>
+          {!locked && <span onClick={() => !busy && void write(spec.type === "ref" ? "" : "")} title="clear field" style={{ fontSize: 11, color: "#4a4a4a", cursor: "pointer", flexShrink: 0, alignSelf: "center", padding: "0 2px" }}>✕</span>}
+        </div>
+      );
+    }
+    const opts = spec.type === "select" ? (spec.options ?? []).map((o) => ({ id: o, label: o }))
+      : [...index.values()].filter((n) => n.kind === spec.refKind).map((n) => ({ id: n.id, label: nodeTitle(n) || n.id }));
+    return (
+      <div style={detailRowStyle(depth)}>{fieldRowStart(depth)}<span style={labelStyle}>{spec.label}</span>
+        <select ref={ref as React.RefObject<HTMLSelectElement>} value={typeof raw === "string" ? raw : ""} disabled={busy}
+          onChange={(e) => { void write(e.target.value); setEditing(false); }} onBlur={() => setEditing(false)}
+          style={{ ...inputStyle, flex: 1 }}>
+          <option value="">(none)</option>
+          {opts.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+        </select>
+      </div>
+    );
+  }
+
+  // ── text / list / percent: click-to-edit input or textarea ───────────────────
+  if (!editing && !value) return emptyRow;
+  if (!editing) {
+    return (
+      <div style={detailRowStyle(depth)}>{fieldRowStart(depth)}<span style={labelStyle}>{spec.label}</span>
+        <span onClick={() => !locked && (setDraft(rawAsDraft(raw, spec)), setEditing(true))} style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: busy ? "#666" : "#cfcfcf", whiteSpace: "pre-wrap", wordBreak: "break-word", flex: 1, lineHeight: 1.5, cursor: locked ? "default" : "text" }}>{value}</span>
+        {!locked && <span onClick={() => !busy && void write(spec.type === "list" ? [] : "")} title="clear field" style={{ fontSize: 11, color: "#4a4a4a", cursor: "pointer", flexShrink: 0, alignSelf: "center", padding: "0 2px" }}>✕</span>}
+      </div>
+    );
+  }
+  const commit = async () => {
+    setEditing(false);
+    const next: unknown = spec.type === "list" ? draft.split(",").map((s) => s.trim()).filter(Boolean)
+      : spec.type === "percent" ? (draft.trim() ? Math.max(0, Math.min(1, parseFloat(draft.replace("%", "")) / 100)) : "")
+      : draft.trim();
+    await write(next);
+  };
+  const common = {
+    ref: ref as never, value: draft, disabled: busy,
+    onChange: (e: React.ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => setDraft(e.target.value),
+    onBlur: () => void commit(),
+    onKeyDown: (e: React.KeyboardEvent) => {
+      if (e.key === "Escape") { e.preventDefault(); setEditing(false); }
+      else if (e.key === "Enter" && (!spec.multiline || e.metaKey || e.ctrlKey)) { e.preventDefault(); void commit(); }
+    },
+    style: { ...inputStyle, flex: 1, resize: "vertical" as const },
+  };
   return (
-    <div style={detailRowStyle(depth)}>
-      <ConnectorTick depth={depth} />
-      <span style={{ width: 12, flexShrink: 0 }} />
-      <span style={labelStyle}>{spec.label}</span>
-      <span onClick={begin} style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: busy ? "#666" : "#cfcfcf", whiteSpace: "pre-wrap", wordBreak: "break-word", flex: 1, lineHeight: 1.5, cursor: locked ? "default" : "text" }}>
-        {value}
-      </span>
-      {!locked && <span onClick={clear} title="clear field" style={{ fontSize: 11, color: "#4a4a4a", cursor: "pointer", flexShrink: 0, alignSelf: "center", padding: "0 2px" }}>✕</span>}
+    <div style={detailRowStyle(depth)} onClick={(e) => e.stopPropagation()}>{fieldRowStart(depth)}<span style={labelStyle}>{spec.label}</span>
+      {spec.multiline ? <textarea rows={Math.min(8, Math.max(2, draft.split("\n").length))} {...common} /> : <input {...common} />}
+      <span style={{ fontSize: 9, color: "#555", flexShrink: 0, alignSelf: "center" }}>{spec.multiline ? "⌘↵ · esc" : "↵ · esc"}</span>
     </div>
   );
 }
+/** The editor's starting string for text/list/percent fields. */
+function rawAsDraft(raw: unknown, spec: EditSpec): string {
+  if (spec.type === "list") return Array.isArray(raw) ? raw.join(", ") : "";
+  if (spec.type === "percent") return typeof raw === "number" ? String(Math.round(raw * 100)) : "";
+  return typeof raw === "string" ? raw : raw != null ? String(raw) : "";
+}
 
 // ── Single tree row ──────────────────────────────────────────────────────────
-function TreeRow({ node, index, depth, expandable, open, onToggle }: {
+function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete }: {
   node: DnaNode; index: Map<string, DnaNode>; depth: number;
-  expandable: boolean; open: boolean; onToggle: () => void;
+  expandable: boolean; open: boolean; onToggle: () => void; onDelete?: () => void;
 }) {
   const stale = isStale(node, index) || (node.kind === "scene" && isProseStale(node));
   const color = KIND_COLOR[node.kind] ?? "#888";
@@ -298,6 +371,10 @@ function TreeRow({ node, index, depth, expandable, open, onToggle }: {
           <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 9, color: "#444", letterSpacing: "0.05em" }}>
             {node.id}
           </span>
+          {onDelete && (
+            <span onClick={(e) => { e.stopPropagation(); onDelete(); }} title="delete node + its subtree"
+              style={{ fontSize: 11, color: "#5a3030", cursor: "pointer", padding: "0 2px" }}>🗑</span>
+          )}
         </span>
       </div>
     </div>
@@ -318,12 +395,29 @@ const ENTITY_GROUPS: { kind: DnaNode["kind"]; label: string }[] = [
   { kind: "voice_profile", label: "voice" },
 ];
 
+// A clickable "＋ <label>" affordance — adds a node (footer of a group or container).
+function AddRow({ label, depth, onAdd }: { label: string; depth: number; onAdd: () => void | Promise<void> }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <div style={detailRowStyle(depth)}>
+      <ConnectorTick depth={depth} />
+      <span style={{ width: 12, flexShrink: 0 }} />
+      <span onClick={async () => { if (busy) return; setBusy(true); try { await onAdd(); } finally { setBusy(false); } }}
+        style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, color: busy ? "#555" : "#4a7a5a", cursor: busy ? "default" : "pointer", letterSpacing: "0.04em" }}>
+        ＋ {label}
+      </span>
+    </div>
+  );
+}
+
 // A collapsible labeled section — pure layout, not a real node. `children` is whatever renders inside.
-function NodeGroup({ groupId, label, hint, count, depth, collapsedSet, onToggle, children }: {
+// `alwaysShow` keeps an empty group visible (so its add affordance is reachable); `footer` renders after.
+function NodeGroup({ groupId, label, hint, count, depth, collapsedSet, onToggle, children, alwaysShow, footer }: {
   groupId: string; label: string; hint?: string; count: number; depth: number;
   collapsedSet: Set<string>; onToggle: (id: string) => void; children: React.ReactNode;
+  alwaysShow?: boolean; footer?: React.ReactNode;
 }) {
-  if (!count) return null;
+  if (!count && !alwaysShow) return null;
   const collapsed = collapsedSet.has(groupId);
   return (
     <div style={{ position: "relative" }}>
@@ -335,41 +429,42 @@ function NodeGroup({ groupId, label, hint, count, depth, collapsedSet, onToggle,
         paddingLeft: depth * 20 + 20, paddingRight: 12, paddingTop: 7, paddingBottom: 3, cursor: "pointer",
       }}>
         <span style={{ width: 12, flexShrink: 0, color: "#555", fontSize: 9, lineHeight: 1 }}>{collapsed ? "▶" : "▼"}</span>
-        <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase", color: "#8a8a8a" }}>{label}</span>
+        <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase", color: count ? "#8a8a8a" : "#555" }}>{label}</span>
         <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 9, letterSpacing: "0.06em", color: "#3a3a3a" }}>{hint ? `${hint} · ` : ""}{count}</span>
       </div>
       {!collapsed && children}
+      {!collapsed && footer}
     </div>
   );
 }
 
 // ── Recursive tree subtree ───────────────────────────────────────────────────
-function Subtree({ node, index, nodes, depth, collapsedSet, openSet, onToggle, onToggleDetail }: {
+interface TreeHandlers {
+  onToggle: (id: string) => void; onToggleDetail: (id: string) => void;
+  onAdd: (parentId: string, kind: DnaNode["kind"]) => void | Promise<void>;
+  onDelete: (node: DnaNode) => void;
+}
+function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
   node: DnaNode; index: Map<string, DnaNode>; nodes: DnaNode[]; depth: number;
-  collapsedSet: Set<string>; openSet: Set<string>; onToggle: (id: string) => void; onToggleDetail: (id: string) => void;
+  collapsedSet: Set<string>; openSet: Set<string>; h: TreeHandlers;
 }) {
   const kids = childrenOf(nodes, node.id).sort((a, b) => a.position - b.position);
   const hasKids = kids.length > 0;
   const specs = editSpecs(node.kind);
-  const readonly = nodeReadonly(node, index);
-  const expandable = hasKids || specs.length > 0 || readonly.length > 0;
+  // A node is expandable if it has children OR editable fields (entities/scenes have fields but no kids).
+  const expandable = hasKids || specs.length > 0;
   // Containers default OPEN (collapsedSet = opt-out); detail-only leaves default CLOSED (openSet = opt-in),
   // so digging into a character's wound/lie is on demand and the tree stays scannable by default.
   const open = expandable && (hasKids ? !collapsedSet.has(node.id) : openSet.has(node.id));
-  const toggle = () => (hasKids ? onToggle(node.id) : onToggleDetail(node.id));
-  const detailRows = (
-    <>
-      {specs.map((spec) => <EditableField key={spec.key} node={node} spec={spec} depth={depth + 1} />)}
-      {readonly.map((d) => <DetailRow key={d.label} label={d.label} value={d.value} depth={depth + 1} />)}
-    </>
-  );
+  const toggle = () => (hasKids ? h.onToggle(node.id) : h.onToggleDetail(node.id));
+  const fields = specs.map((spec) => <EditableField key={spec.key} node={node} spec={spec} depth={depth + 1} index={index} />);
   const sub = (items: DnaNode[], d: number) => items.map((child) => (
     <Subtree key={child.id} node={child} index={index} nodes={nodes} depth={d}
-      collapsedSet={collapsedSet} openSet={openSet} onToggle={onToggle} onToggleDetail={onToggleDetail} />
+      collapsedSet={collapsedSet} openSet={openSet} h={h} />
   ));
 
-  // The pillar splits into STORY (the spine) + CAST & WORLD (the registry, sub-grouped by kind); every
-  // other node renders its detail fields then its children.
+  // The pillar splits into STORY (the spine) + CAST & WORLD (the registry, sub-grouped by kind); a movement
+  // can add beats, a beat can add scenes; every other node just renders its editable fields.
   let body: React.ReactNode = null;
   if (open) {
     if (node.kind === "pillar") {
@@ -377,18 +472,20 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, onToggle, o
       const entities = kids.filter((c) => isEntityKind(c.kind));
       body = (
         <>
-          {detailRows}
+          {fields}
           <NodeGroup groupId={`${node.id}::story`} label="story" hint="the spine — acts in order"
-            count={ladder.length} depth={depth + 1} collapsedSet={collapsedSet} onToggle={onToggle}>
+            count={ladder.length} depth={depth + 1} collapsedSet={collapsedSet} onToggle={h.onToggle} alwaysShow
+            footer={<AddRow label="movement" depth={depth + 2} onAdd={() => h.onAdd(node.id, "movement")} />}>
             {sub(ladder, depth + 2)}
           </NodeGroup>
           <NodeGroup groupId={`${node.id}::world`} label="cast & world" hint="the registry"
-            count={entities.length} depth={depth + 1} collapsedSet={collapsedSet} onToggle={onToggle}>
+            count={entities.length} depth={depth + 1} collapsedSet={collapsedSet} onToggle={h.onToggle} alwaysShow>
             {ENTITY_GROUPS.map(({ kind, label }) => {
               const items = entities.filter((e) => e.kind === kind);
               return (
                 <NodeGroup key={kind} groupId={`${node.id}::world::${kind}`} label={label}
-                  count={items.length} depth={depth + 2} collapsedSet={collapsedSet} onToggle={onToggle}>
+                  count={items.length} depth={depth + 2} collapsedSet={collapsedSet} onToggle={h.onToggle} alwaysShow
+                  footer={<AddRow label={kind} depth={depth + 3} onAdd={() => h.onAdd(node.id, kind)} />}>
                   {sub(items, depth + 3)}
                 </NodeGroup>
               );
@@ -397,13 +494,24 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, onToggle, o
         </>
       );
     } else {
-      body = <>{detailRows}{sub(kids, depth + 1)}</>;
+      const childAdd = node.kind === "movement" ? "beat" : node.kind === "beat" ? "scene" : null;
+      body = (
+        <>
+          {fields}
+          {sub(kids, depth + 1)}
+          {childAdd && <AddRow label={childAdd} depth={depth + 1} onAdd={() => h.onAdd(node.id, childAdd as DnaNode["kind"])} />}
+        </>
+      );
     }
   }
 
+  // Delete is allowed on addable kinds (not the seed/premise/pillar singletons) when unlocked.
+  const deletable = !node.authoring.locked && (isEntityKind(node.kind) || ["movement", "beat", "scene"].includes(node.kind));
+
   return (
     <div>
-      <TreeRow node={node} index={index} depth={depth} expandable={expandable} open={open} onToggle={toggle} />
+      <TreeRow node={node} index={index} depth={depth} expandable={expandable} open={open} onToggle={toggle}
+        onDelete={deletable ? () => h.onDelete(node) : undefined} />
       {body}
     </div>
   );
@@ -467,6 +575,28 @@ export default function DnaTreePage() {
       return next;
     });
   }, []);
+
+  // ── Node CRUD ────────────────────────────────────────────────────────────────
+  // Append a fresh empty node of `kind` under `parentId` (position after its existing siblings of that
+  // kind). Entities still land on the pillar by construction here, honoring schema §4. Realtime refreshes.
+  const addNode = useCallback(async (parentId: string, kind: DnaNode["kind"]) => {
+    if (!nodes) return;
+    const siblings = nodes.filter((n) => n.parent_id === parentId && n.kind === kind);
+    const node: DnaNode = {
+      id: newId(), book_id: bookId, parent_id: parentId, level: KIND_LEVEL[kind] ?? 5, kind,
+      position: siblings.length ? Math.max(...siblings.map((s) => s.position)) + 1 : 0,
+      content: {}, authoring: { source: "user", locked: false, status: "draft" },
+    };
+    try { await saveNode(node); setOpenSet((p) => new Set(p).add(node.id)); } // open it so its empty fields show
+    catch (e) { alert(`Add failed: ${(e as Error).message}`); }
+  }, [nodes, bookId]);
+
+  const removeNode = useCallback((node: DnaNode) => {
+    const kids = nodes ? childrenOf(nodes, node.id).length : 0;
+    const label = nodeTitle(node) || node.kind;
+    if (!window.confirm(`Delete ${node.kind} "${label}"${kids ? ` and its ${kids} child node(s)` : ""}? This cannot be undone.`)) return;
+    void deleteNode(node.id).catch((e) => alert(`Delete failed: ${(e as Error).message}`));
+  }, [nodes]);
 
   const base: React.CSSProperties = {
     margin: 0, minHeight: "100vh",
@@ -532,7 +662,8 @@ export default function DnaTreePage() {
           <div style={{ padding: "24px 16px", color: "#333", fontSize: 13 }}>no nodes — migrate or seed the tree first</div>
         ) : roots.map((root) => (
           <Subtree key={root.id} node={root} index={index} nodes={nodes} depth={0}
-            collapsedSet={collapsedSet} openSet={openSet} onToggle={toggleNode} onToggleDetail={toggleDetail} />
+            collapsedSet={collapsedSet} openSet={openSet}
+            h={{ onToggle: toggleNode, onToggleDetail: toggleDetail, onAdd: addNode, onDelete: removeNode }} />
         ))}
       </div>
     </div>
