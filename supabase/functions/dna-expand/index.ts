@@ -15,54 +15,13 @@ import { extractJsonBlock } from "../_shared/json.ts";
 import { type Brief, briefContext, mandateContext } from "../_shared/brief.ts";
 
 interface Node { id: string; parent_id: string | null; kind: string; position?: number; content: Record<string, unknown>; authoring: { locked?: boolean; status?: string } }
+interface NodeTypeConfig { target: string; child_kind: string; child_level: number; parent_kind: string; role: string; count: string; schema_json: string; slots: SlotConfig }
+interface SlotConfig { voice?: boolean; entities?: boolean; threads?: boolean; tentpoles?: boolean; worldRules?: boolean; games?: boolean; preconditions?: boolean; arc?: boolean }
 
 // [EXP:preconditions] — EXPERIMENT (removable). Decompose a game's win into typed preconditions; the beat
 // sheet must ESTABLISH each `state` precondition before the resolving turn. Flip to false to disable; grep
 // "[EXP:preconditions]" to remove. Must match novelDna.ts + eval-bridge.mjs.
 const EXP_PRECONDITIONS = true;
-
-// What each TARGET expands into. One authoritative set; never alternatives. Keyed by target (a node can
-// have several — a pillar generates cast, world, AND acts), so the client passes which to generate.
-const SPEC: Record<string, { from: string; childKind: string; childLevel: number; count: string; schema: string; role: string }> = {
-  premise: { from: "seed", childKind: "premise", childLevel: 1, count: "exactly 1",
-    role: "the PREMISE — genre, tone, the dramatic question, and a 5-part shape (setup → three turns → resolution)",
-    schema: `{ "genre": ["..."], "tone": ["..."], "dramatic_question": "...", "shape": { "setup": "...", "turn1": "...", "turn2": "...", "turn3": "...", "resolution": "..." } }` },
-  pillar: { from: "premise", childKind: "pillar", childLevel: 2, count: "exactly 1",
-    role: "the PILLAR — the controlling idea the book proves and the ending it must reach",
-    schema: `{ "controlling_idea": "...", "ending": "..." }` },
-  cast: { from: "pillar", childKind: "character", childLevel: 2, count: "3 to 5",
-    role: "the CAST — a protagonist plus key opposition/allies; each gets a want, need, wound, lie, truth, idiolect",
-    schema: `{ "name": "...", "role": "protagonist|antagonist|ally|love_interest|minor", "want": "...", "need": "...", "wound": "...", "lie": "...", "truth": "...", "idiolect": "..." }` },
-  world: { from: "pillar", childKind: "world_fact", childLevel: 2, count: "3 to 6",
-    role: "the WORLD — the load-bearing rules. Each must be OPERABLE, not atmosphere: give a short name handle, the rule, and its MECHANISM (what it enables/forbids with clear inputs→outputs, so the climax's win can fire it — no deus ex machina)",
-    schema: `{ "name": "<short handle>", "rule": "...", "mechanism": "<the operation: what it enables/forbids, inputs→outputs>", "category": "..." }` },
-  relationships: { from: "pillar", childKind: "relationship", childLevel: 2, count: "2 to 4",
-    role: "the key RELATIONSHIPS (dyads) between the cast — each with a bond and a current charge/tension; reference characters BY NAME",
-    schema: `{ "a": "<character name>", "b": "<character name>", "bond": "...", "charge": "..." }` },
-  "set-pieces": { from: "pillar", childKind: "tentpole", childLevel: 2, count: "3 to 6",
-    role: "the TENTPOLE SET-PIECES — the must-happen moments the book is obligated to deliver on the page: the scenes readers came for (the genre's core promise, the emotional peak, the key confrontations). Each is a single concrete moment — not a chapter summary, not a theme — described as what HAPPENS: who does what to whom, the stakes in the room, the specific sensation or image the reader should walk away with. These must be SCENE-specific enough to assign to a single beat, and GENRE-specific enough that omitting one would feel like a broken promise",
-    schema: `{ "summary": "<the set-piece — what concretely happens: action, participants, stakes, the image>" }` },
-  threads: { from: "pillar", childKind: "thread", childLevel: 2, count: "4 to 7",
-    role: "the PROMISE REGISTRY — the open loops the book opens and must close (a planted clue, a mystery, a foreshadow, a relationship arc). Read THE ARC (the movements) and place promises that pay off across it — setups early, payoffs later",
-    schema: `{ "name": "...", "promise": "...", "payoff": "...", "kind": "mystery|foreshadow|setup_payoff|arc" }` },
-  games: { from: "pillar", childKind: "game", childLevel: 2, count: "1 to 3",
-    role: "the GAMES — each a CONTEST with an explicit possibility space: a WIN condition AND a LOSE condition (you can't win if you can't lose). CRITICAL: win_condition and lose_condition are NOT narratives of what winning/losing looks like — that is the stake. They are the specific CRITERIA that must be MET for each outcome to occur: the required states, the who-must-do-what, the thing the story must ESTABLISH before the resolution fires. E.g. 'The venue is public AND witnesses are present AND the freedom paper is presented AND the room names her free' — not 'She is named free.' One CENTRAL game is the norm; add a second/third only if it genuinely interlocks. Name the players (the cast in this contest BY NAME) and the governing_rules (the world rules whose mechanism the win/lose fires, BY NAME). If two games interlock, add a `couples` edge: when this game is won/lost, what it does to another game (void/raise/lower/enable) — OPTIONAL, only for real interlock" +
-      (EXP_PRECONDITIONS ? ". DECOMPOSE the win into win_requires — every precondition the win depends on, each typed: 'rule' (a world mechanism that permits it — must be in governing_rules) or 'state' (a RESOURCE or condition the win SPENDS or needs satisfied, e.g. 'her fund ≥ the price', 'the venue is public') with a short `key` handle. The story will be forced to ESTABLISH each state precondition before the win — so name them honestly; an unnamed resource becomes an unearned one" : ""),
-    schema: `{ "name": "...", "players": ["<character name>"], "win_condition": "...", "lose_condition": "...", "stake": "...", "governing_rules": ["<world rule name>"], "couples": [ { "to": "<other game name>", "when": "won|lost", "effect": "void|raise|lower|enable", "note": "..." } ]` +
-      (EXP_PRECONDITIONS ? `, "win_requires": [ { "type": "rule|state", "what": "...", "key": "<short handle, for state preconditions>" } ]` : "") + ` }` },
-  movements: { from: "pillar", childKind: "movement", childLevel: 3, count: "exactly 4",
-    role: "the ACTS — four movements whose turning points land near the structural-gravity marks (≈25%, 50%, 75%, 90% of the book). Each carries a goal, a turning point, a target_pct (where its turn should land, 0–1), and a value shift",
-    schema: `{ "title": "...", "goal": "...", "turning_point": "...", "target_pct": 0.25, "value": { "name": "...", "from": "...", "to": "..." } }` },
-  beats: { from: "movement", childKind: "beat", childLevel: 4, count: "2 to 4",
-    role: "the causal BEATS inside this act; each links to the previous with therefore or but, escalating. Tag which THREADS each beat sets up / advances / pays off (reference threads BY NAME)",
-    schema: `{ "summary": "...", "connector": "therefore" | "but", "threads": [ { "ref": "<thread name>", "role": "setup|advance|payoff" } ] }` },
-  scenes: { from: "beat", childKind: "scene", childLevel: 5, count: "1 to 3",
-    role: "the dramatized SCENES that REALIZE this beat; EVERY scene must turn a value (no flat 'and-then'). Set each scene's value_shift.polarity (up = ends better, down = ends worse). The beat's planned polarity is where the beat must LAND (its closing charge) — your last scene reaches it, but VARY internally (a down-beat can open on false hope; an up-beat can dip): do NOT make every scene the same polarity. The thread schedule is inherited automatically — do NOT re-assign threads",
-    schema: `{ "loc": "...", "goal": "...", "conflict": "...", "outcome": "...", "value_shift": { "value": "...", "from": "...", "to": "...", "polarity": "up|down" } }` },
-  voice_profile: { from: "pillar", childKind: "voice_profile", childLevel: 2, count: "exactly 1",
-    role: "the VOICE PROFILE — the book's narrative stance and prose signature. Must be OPERABLE: specific enough that any scene can be written in the same voice without drifting. Governs every word of prose. Derive it from the genre, the protagonist's idiolect, and the emotional register of the premise",
-    schema: `{ "pov": "first-person|third-person-limited|third-person-omniscient|second-person", "tense": "past|present", "style": "...", "constraints": ["<a rule the prose must follow — e.g. 'No adverbs', 'Em-dash for interruption', 'Short declarative sentences', 'Interior monologue in italics'>"], "sample": "<a 100–150 word passage written in this exact voice — not a scene summary, actual prose>" }` },
-};
 
 const ENTITY_KINDS_SET = new Set(["character", "relationship", "tentpole", "world_fact", "thread", "game", "voice_profile"]);
 function scenesInOrder(allNodes: Node[]): Node[] {
@@ -367,21 +326,43 @@ Output JSON ONLY: { "beats": [ { "movement": <1..${movements.length}>, "summary"
       return json({ beatsheet: true, childKind: "beat", childLevel: 4, movementIds: movements.map((m) => m.id), beats });
     }
 
-    const spec = target ? SPEC[target] : undefined;
-    if (!spec) return json({ error: `Unknown expand target "${target}"` }, 400);
-    const system = `You are a story architect expanding a ${node.kind} into ${spec.role}. Generate ${spec.count} ${spec.childKind}s as ONE authoritative structure — NOT alternatives to choose among. Honor every LOCKED ancestor and the MANDATE verbatim. Output JSON ONLY: { "children": [ ${spec.schema} ] }`;
+    // Generic DNA target: load config from node_type_configs, rebuild ctx with slot-filtered blocks.
+    const { data: config } = await userClient
+      .from("node_type_configs")
+      .select("target, child_kind, child_level, role, count, schema_json, slots")
+      .eq("target", target ?? "")
+      .maybeSingle() as { data: NodeTypeConfig | null };
+    if (!config) return json({ error: `Unknown expand target "${target}"` }, 400);
+    const slots = (config.slots ?? {}) as SlotConfig;
+    const slottedCtx = [
+      `BOOK: ${book?.name ?? ""}`,
+      `BRIEF (binding):\n${briefContext(brief, { scope: "full", success: true, none: "(no brief)", empty: "(empty)" })}`,
+      mandate ? `MANDATE — NON-NEGOTIABLE:\n${mandate}` : "",
+      slots.voice ? voiceBlock : "",
+      "STORY SO FAR (the ladder above this node; LOCKED items are immutable):",
+      ...chain.map((a) => `[${a.kind}${a.authoring?.locked ? " · LOCKED" : ""}] ${JSON.stringify(a.content)}`),
+      slots.entities ? entityBlock : "",
+      slots.threads ? threadBlock : "",
+      slots.tentpoles ? tentpoleBlock : "",
+      slots.worldRules ? worldRulesBlock : "",
+      slots.games ? gamesBlock : "",
+      slots.preconditions ? precondBlock : "", // [EXP:preconditions]
+      slots.arc ? movementBlock : "",
+      `THIS NODE [${node.kind}]: ${JSON.stringify(node.content)}`,
+    ].filter(Boolean).join("\n\n");
+    const system = `You are a story architect expanding a ${node.kind} into ${config.role}. Generate ${config.count} ${config.child_kind}s as ONE authoritative structure — NOT alternatives to choose among. Honor every LOCKED ancestor and the MANDATE verbatim. Output JSON ONLY: { "children": [ ${config.schema_json} ] }`;
     const data = await callClaude(apiKey, { model, max_tokens: 4000, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
-      messages: [{ role: "user", content: `${ctx}\n\nGenerate the ${spec.childKind}s. JSON only.` }] }, meta);
+      messages: [{ role: "user", content: `${slottedCtx}\n\nGenerate the ${config.child_kind}s. JSON only.` }] }, meta);
     const parsed = JSON.parse(extractJsonBlock(textFromClaude(data)));
     let children = Array.isArray(parsed.children) ? parsed.children : [];
-    if (spec.childKind === "relationship") {
+    if (config.child_kind === "relationship") {
       // Resolve a/b from character NAME → node id; drop any pairing that doesn't resolve to two real chars.
       const nameToId = new Map(chars.map((c) => [cName(c).toLowerCase(), c.id]));
       children = children
         .map((ch: Record<string, unknown>) => ({ ...ch, a: nameToId.get(String(ch.a ?? "").trim().toLowerCase()), b: nameToId.get(String(ch.b ?? "").trim().toLowerCase()) }))
         .filter((ch: { a?: string; b?: string }) => ch.a && ch.b && ch.a !== ch.b);
     }
-    if (spec.childKind === "beat" || spec.childKind === "scene") {
+    if (config.child_kind === "beat" || config.child_kind === "scene") {
       // Resolve each thread ref from thread NAME → node id; drop unresolved refs / bad roles.
       const tNameToId = new Map(threads.map((t) => [tName(t).toLowerCase(), t.id]));
       const roles = new Set(["setup", "payoff", "advance"]);
@@ -394,7 +375,7 @@ Output JSON ONLY: { "beats": [ { "movement": <1..${movements.length}>, "summary"
         return resolved.length ? { ...rest, threads: resolved } : rest;
       });
     }
-    if (spec.childKind === "game") {
+    if (config.child_kind === "game") {
       // Resolve players (char names→ids) + governing_rules (rule names→ids). couples.to references SIBLING
       // games being minted in this same batch — leave it as a NAME for the client to resolve post-mint.
       const cNameToId = new Map(chars.map((c) => [cName(c).toLowerCase(), c.id]));
@@ -414,7 +395,7 @@ Output JSON ONLY: { "beats": [ { "movement": <1..${movements.length}>, "summary"
           .map((r) => ({ type: r.type, what: r.what, ...(r.type === "state" && r.key ? { key: String(r.key).trim().toLowerCase().replace(/\s+/g, "_") } : {}) })) } : {}),
       }));
     }
-    return json({ childKind: spec.childKind, childLevel: spec.childLevel, children });
+    return json({ childKind: config.child_kind, childLevel: config.child_level, children });
   } catch (e) {
     return json({ error: String((e as Error)?.message ?? e).slice(0, 500) }, 500);
   }
