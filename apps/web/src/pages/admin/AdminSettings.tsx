@@ -123,9 +123,14 @@ export default function AdminSettings() {
       <div className="flex items-center gap-2">
         <Shield className="h-5 w-5 text-amber-600" />
         <h1 className="text-xl font-semibold">Admin Settings</h1>
-        <Link to="/admin" className="ml-auto text-sm text-muted-foreground hover:text-foreground">
-          ← Dashboard
-        </Link>
+        <div className="ml-auto flex items-center gap-4">
+          <Link to="/admin/node-types" className="text-sm text-muted-foreground hover:text-foreground">
+            Node types
+          </Link>
+          <Link to="/admin" className="text-sm text-muted-foreground hover:text-foreground">
+            ← Dashboard
+          </Link>
+        </div>
       </div>
 
       <Card>

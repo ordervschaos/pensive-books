@@ -114,6 +114,9 @@ export default function AdminDashboard() {
           <Link to="/admin/ai-calls" className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1">
             <Activity className="h-4 w-4" /> AI Calls
           </Link>
+          <Link to="/admin/node-types" className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1">
+            <Settings className="h-4 w-4" /> Node types
+          </Link>
           <Link to="/admin/settings" className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1">
             <Settings className="h-4 w-4" /> Settings
           </Link>

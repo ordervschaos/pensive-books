@@ -56,6 +56,7 @@ const KindleSettings = lazy(() => import("@/pages/settings/KindleSettings"));
 const AdminDashboard = lazy(() => import("@/pages/admin/AdminDashboard"));
 const AdminAiCalls = lazy(() => import("@/pages/admin/AiCalls"));
 const AdminSettings = lazy(() => import("@/pages/admin/AdminSettings"));
+const AdminNodeTypeConfigs = lazy(() => import("@/pages/admin/NodeTypeConfigs"));
 
 const queryClient = new QueryClient();
 
@@ -158,6 +159,16 @@ export default function App() {
                           <PrivateRoute>
                             <AdminRoute>
                               <AdminSettings />
+                            </AdminRoute>
+                          </PrivateRoute>
+                        }
+                      />
+                      <Route
+                        path="/admin/node-types"
+                        element={
+                          <PrivateRoute>
+                            <AdminRoute>
+                              <AdminNodeTypeConfigs />
                             </AdminRoute>
                           </PrivateRoute>
                         }
