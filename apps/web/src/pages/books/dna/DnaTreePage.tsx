@@ -8,7 +8,7 @@ import { deleteNode, saveNode } from "@/lib/bookNodes";
 import { analysisText, byId, childrenOf, editContent, isEntityKind, isProseStale, isStale, newId, pillarOf, type BookSettings, type DnaNode, type BeatContent, type NodeContent, type NodeKind, type SceneContent } from "@/lib/novelDna";
 import { editSpecs, KIND_LEVEL, type EditSpec } from "@/lib/dnaSchema";
 import { applyDnaProposal, clearDnaProposal, describeOps, sendDnaMessage, validateOps, type DnaChatMessage, type DnaProposal, type NodeOp, type OpRejection } from "@/lib/dnaChat";
-import { DNA_STAGES, buildJourney, type StageKey } from "@/lib/dnaJourney";
+import { DNA_STAGES, buildJourney, dnaHealth, type StageKey } from "@/lib/dnaJourney";
 
 const getNumericId = (p: string | undefined) => { const m = p?.match(/^(\d+)/); return m ? parseInt(m[1]) : 0; };
 
@@ -611,6 +611,21 @@ function ChatRail({ bookId, stage, setStage, nodes, settings, onClose, onPending
   const discard = async () => { setPending(null); try { await clearDnaProposal(bookId, stage); } catch { /* best effort */ } };
   const cancel = async () => { setThinking(false); await supabase.from("dna_chats").update({ status: "idle" }).eq("book_id", bookId).eq("stage", stage); };
 
+  // #3 — the fail-closed boundary, surfaced: which ops in THIS proposal can't be saved, and why. Computed
+  // against the live tree so it tracks edits. Rejected ops won't land on accept; the author can repair them.
+  const rejections: OpRejection[] = pending ? validateOps(pending.ops, nodes).rejected : [];
+  const opLabel = (op: NodeOp): string => op.op === "add" ? `add ${op.kind}` : op.op === "replace_children" ? `rebuild ${op.childKind}` : `${op.op} ${op.id}`;
+  const askFix = async () => {
+    if (!rejections.length || thinking) return;
+    const detail = rejections.map((r, i) => `${i + 1}. ${opLabel(r.op)} — ${r.reasons.join("; ")}`).join("\n");
+    const text = `That proposal has ${rejections.length} change${rejections.length === 1 ? "" : "s"} that can't be saved:\n${detail}\n\nPlease re-propose with these fixed — valid kinds, all required fields filled, real node ids, entities on the pillar.`;
+    setThinking(true);
+    setMessages((m) => [...m, { role: "user", text, ts: new Date().toISOString() }]);
+    const analysis = ANALYSIS_STAGES.has(stage) ? analysisText(nodes, settings) : undefined;
+    try { await sendDnaMessage(bookId, stage, text, analysis); }
+    catch (e) { setThinking(false); alert(`Couldn't send: ${(e as Error).message}`); }
+  };
+
   const mono = "ui-monospace, monospace";
   return (
     <div style={{ position: "fixed", top: 0, right: 0, bottom: 0, width: 420, display: "flex", flexDirection: "column", background: "#0c0c0f", borderLeft: "1px solid #1c1c22", zIndex: 20 }}>
@@ -669,8 +684,22 @@ function ChatRail({ bookId, stage, setStage, nodes, settings, onClose, onPending
                 </div>
               ))}
             </div>
-            <div style={{ marginTop: 10, display: "flex", gap: 16 }}>
-              <span onClick={() => !applying && void apply()} style={{ fontFamily: mono, fontSize: 12, color: "#8a8aff", cursor: applying ? "default" : "pointer" }}>{applying ? "accepting…" : "✓ accept"}</span>
+            {rejections.length > 0 && (
+              <div style={{ marginTop: 8, border: "1px solid #5a3a3a", background: "#1a0f0f", borderRadius: 6, padding: "7px 9px" }}>
+                <div style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "#d08a8a" }}>⚠ {rejections.length} change{rejections.length === 1 ? "" : "s"} can't be saved — won't be applied</div>
+                {rejections.map((r, i) => (
+                  <div key={i} style={{ marginTop: 4 }}>
+                    <span style={{ fontFamily: mono, fontSize: 10, color: "#c99" }}>{opLabel(r.op)}</span>
+                    <span style={{ fontFamily: mono, fontSize: 10, color: "#8a6a6a" }}> — {r.reasons.join("; ")}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ marginTop: 10, display: "flex", gap: 16, alignItems: "center" }}>
+              {rejections.length < pending.ops.length
+                ? <span onClick={() => !applying && void apply()} style={{ fontFamily: mono, fontSize: 12, color: "#8a8aff", cursor: applying ? "default" : "pointer" }}>{applying ? "accepting…" : rejections.length ? `✓ accept ${pending.ops.length - rejections.length} valid` : "✓ accept"}</span>
+                : <span style={{ fontFamily: mono, fontSize: 12, color: "#5a5a5a", fontStyle: "italic" }}>nothing valid to apply</span>}
+              {rejections.length > 0 && <span onClick={() => void askFix()} style={{ fontFamily: mono, fontSize: 12, color: "#d0a060", cursor: thinking ? "default" : "pointer" }}>↻ ask to fix</span>}
               <span onClick={() => void discard()} style={{ fontFamily: mono, fontSize: 12, color: "#666", cursor: "pointer", fontStyle: "italic" }}>dismiss</span>
             </div>
           </div>
@@ -703,6 +732,7 @@ export default function DnaTreePage() {
   const [railOpen, setRailOpen] = useState(false);
   const [stage, setStage] = useState<StageKey>("structure");
   const [proposal, setProposal] = useState<DnaProposal | null>(null); // #1 — mirrored from the rail
+  const [showIssues, setShowIssues] = useState(false); // #4 — drill into the lints behind the score
 
   useEffect(() => {
     if (!bookId) { setError("no book id"); return; }
@@ -812,6 +842,15 @@ export default function DnaTreePage() {
   const accepted = nodes.filter((n) => n.authoring.status === "accepted").length;
   const staleCount = nodes.filter((n) => isStale(n, index) || (n.kind === "scene" && isProseStale(n))).length;
 
+  // #4 — DNA health: completeness + strength + the lints behind them (structural faults included).
+  const health = dnaHealth(nodes, settings, settings.mode);
+  const pct = (n: number) => `${Math.round(n * 100)}%`;
+  const barColor = (n: number) => (n >= 0.8 ? "#4ade80" : n >= 0.5 ? "#fbbf24" : "#f87171");
+  const issueTitle = (i: typeof health.issues[number]) => {
+    const n = i.nodeId ? index.get(i.nodeId) : undefined;
+    return n ? `${n.kind}${nodeTitle(n) ? ` · ${nodeTitle(n)}` : ""}` : i.nodeId ?? "";
+  };
+
   return (
     <div style={{ ...base, marginRight: railOpen ? 420 : 0 }}>
       {railOpen && <ChatRail bookId={bookId} stage={stage} setStage={setStage} nodes={nodes} settings={settings} onClose={() => setRailOpen(false)} onPending={onPending} />}
@@ -823,6 +862,23 @@ export default function DnaTreePage() {
         <span style={{ color: "#333", fontSize: 11 }}>
           {nodes.length} nodes · {accepted} accepted{staleCount > 0 ? ` · ${staleCount} stale` : ""}
         </span>
+        {/* #4 — DNA health: two derived bars + a lint tally that drills down */}
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {([["complete", health.completeness], ["strong", health.strength]] as const).map(([label, val]) => (
+            <span key={label} style={{ display: "flex", alignItems: "center", gap: 5 }} title={label === "complete" ? `${health.stagesDone}/${DNA_STAGES.length} stages · ${pct(health.contentFill)} fields filled` : `${health.errors} errors · ${health.warns} warnings`}>
+              <span style={{ fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "#555" }}>{label}</span>
+              <span style={{ width: 44, height: 4, background: "#1c1c1c", borderRadius: 2, overflow: "hidden" }}>
+                <span style={{ display: "block", height: "100%", width: pct(val), background: barColor(val) }} />
+              </span>
+              <span style={{ fontSize: 9, color: barColor(val), fontVariantNumeric: "tabular-nums" }}>{pct(val)}</span>
+            </span>
+          ))}
+          {(health.errors + health.warns) > 0 && (
+            <button onClick={() => setShowIssues((v) => !v)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase", color: health.errors ? "#f87171" : "#d0a060", fontFamily: "ui-monospace, monospace" }}>
+              {health.errors ? `${health.errors}✕ ` : ""}{health.warns ? `${health.warns}⚠` : ""} {showIssues ? "▲" : "▼"}
+            </button>
+          )}
+        </div>
         {/* Kind legend */}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {Object.entries(counts).map(([kind, n]) => (
@@ -864,6 +920,20 @@ export default function DnaTreePage() {
           </span>
         )}
       </div>
+
+      {/* #4 — the lints behind the score: structural faults (misparented / orphan / duplicate) + craft warns */}
+      {showIssues && (health.errors + health.warns) > 0 && (
+        <div style={{ padding: "8px 16px", borderBottom: "1px solid #1a1a1a", display: "flex", flexDirection: "column", gap: 3, maxHeight: 200, overflowY: "auto" }}>
+          {health.issues.map((i, idx) => (
+            <div key={idx} style={{ display: "flex", alignItems: "baseline", gap: 8, fontFamily: "ui-monospace, monospace", fontSize: 11 }}>
+              <span style={{ color: i.severity === "error" ? "#f87171" : "#d0a060", flexShrink: 0 }}>{i.severity === "error" ? "✕" : "⚠"}</span>
+              <span style={{ color: "#666", letterSpacing: "0.04em", flexShrink: 0, width: 140 }}>{i.rule}</span>
+              <span style={{ color: "#999", flex: 1 }}>{i.message}</span>
+              {i.nodeId && <span style={{ color: "#555", flexShrink: 0 }}>{issueTitle(i)}</span>}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* #1 — proposal banner: accept/dismiss the whole pending change, mirrored from the rail */}
       {proposal && (

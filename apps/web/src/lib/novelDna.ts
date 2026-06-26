@@ -12,6 +12,16 @@ export type EntityKind = (typeof ENTITY_KINDS)[number];
 export type NodeKind = LadderKind | EntityKind;
 export const isEntityKind = (k: NodeKind): k is EntityKind => (ENTITY_KINDS as readonly string[]).includes(k);
 
+// The one legal parent kind for every kind — the skeleton the whole tree hangs on (schema §3 ladder / §4
+// entities-on-the-pillar). `null` = a root. The single source of truth for "where does this attach": the
+// structural linter checks against it, and generation asserts onto it (no silent fail-open re-parenting).
+export const PARENT_KIND: Record<NodeKind, NodeKind | null> = {
+  seed: null, premise: "seed", pillar: "premise", movement: "pillar", beat: "movement", scene: "beat",
+  character: "pillar", relationship: "pillar", tentpole: "pillar", world_fact: "pillar", thread: "pillar", game: "pillar", voice_profile: "pillar",
+};
+// Kinds that must be unique per book (the ladder spine + the single voice). A 2nd is a duplicate.
+export const SINGLETON_KINDS: NodeKind[] = ["seed", "premise", "pillar", "voice_profile"];
+
 export type AuthoringSource = "user" | "ai" | "ai_then_user";
 export type AuthoringStatus = "empty" | "proposed" | "draft" | "accepted";
 
@@ -598,9 +608,31 @@ function promiseLints(nodes: DnaNode[]): DnaIssue[] {
 // ── Validation (§7) ───────────────────────────────────────────────────────────
 export interface DnaIssue { rule: string; severity: "error" | "warn"; message: string; nodeId?: string }
 
-export function validate(nodes: DnaNode[]): DnaIssue[] {
+/** Structural integrity (§3/§4): the tree SHAPE itself — is each node attached to the right kind of parent,
+ *  and are the singletons singular. These are malformations (the entity-on-premise / duplicate-pillar class),
+ *  not weak craft, so they're errors. Pure structure: no content, no order, no inputs. Designed to be
+ *  false-positive-safe on partial trees — a node not yet attached (null parent, no pillar present) is "early",
+ *  not "wrong"; only a parent that RESOLVES to the wrong kind, a dangling parent id, or a real duplicate fires. */
+export function structuralLints(nodes: DnaNode[]): DnaIssue[] {
   const index = byId(nodes);
   const issues: DnaIssue[] = [];
+  for (const n of nodes) {
+    const want = PARENT_KIND[n.kind];
+    if (want === null || !n.parent_id) continue;           // a root, or not yet attached — not a fault
+    const parent = index.get(n.parent_id);
+    if (!parent) issues.push({ rule: "orphan", severity: "error", message: `${n.kind} points at a missing parent`, nodeId: n.id });
+    else if (parent.kind !== want) issues.push({ rule: "misparented", severity: "error", message: `${n.kind} hangs off ${parent.kind}, not ${want} — it'll be invisible to ${want}-scoped generation`, nodeId: n.id });
+  }
+  for (const kind of SINGLETON_KINDS) {
+    const dupes = nodes.filter((n) => n.kind === kind);
+    for (const d of dupes.slice(1)) issues.push({ rule: "duplicate_singleton", severity: "warn", message: `${dupes.length} ${kind} nodes — only one is canonical (the rest split or shadow it)`, nodeId: d.id });
+  }
+  return issues;
+}
+
+export function validate(nodes: DnaNode[]): DnaIssue[] {
+  const index = byId(nodes);
+  const issues: DnaIssue[] = structuralLints(nodes);
 
   for (const n of nodes) {
     // Ladder order: an accepted node whose parent isn't accepted jumped the gate.

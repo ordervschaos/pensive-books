@@ -225,6 +225,30 @@ describe("validation", () => {
     expect(rules).toContain("dangling_ref");
   });
 
+  it("flags misparented entities, dangling parents, and duplicate singletons (the tree-shape faults)", () => {
+    const seed = mk("seed", { id: "seed" });
+    const premise = mk("premise", { id: "prem", parent_id: "seed" });
+    const p1 = mk("pillar", { id: "p1", parent_id: "prem" });
+    const p2 = mk("pillar", { id: "p2", parent_id: "prem" });                       // duplicate pillar
+    const onPillar = mk("character", { id: "c1", parent_id: "p1", content: { name: "Finn" } });
+    const onPremise = mk("character", { id: "c2", parent_id: "prem", content: { name: "Vane" } }); // the real bug
+    const orphan = mk("world_fact", { id: "w", parent_id: "ghost", content: { name: "Sea" } });   // dangling parent
+    const rules = validate([seed, premise, p1, p2, onPillar, onPremise, orphan]).map((i) => i.rule);
+    expect(rules).toContain("misparented");        // character under premise, not pillar
+    expect(rules).toContain("orphan");             // world_fact → missing parent
+    expect(rules).toContain("duplicate_singleton"); // two pillars
+  });
+
+  it("a clean spine + entities on the pillar raise no structural faults", () => {
+    const seed = mk("seed", { id: "seed" });
+    const premise = mk("premise", { id: "prem", parent_id: "seed" });
+    const pillar = mk("pillar", { id: "p", parent_id: "prem" });
+    const ch = mk("character", { id: "c", parent_id: "p", content: { name: "Finn" } });
+    const mv = mk("movement", { id: "m", parent_id: "p" });
+    const structural = new Set(["misparented", "orphan", "duplicate_singleton"]);
+    expect(validate([seed, premise, pillar, ch, mv]).filter((i) => structural.has(i.rule))).toHaveLength(0);
+  });
+
   it("a well-formed beat chain and placed tentpole produce no errors", () => {
     const m = mk("movement", { id: "m" });
     const b1 = mk("beat", { id: "b1", parent_id: "m", position: 0, content: { summary: "a" } });

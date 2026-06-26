@@ -2,7 +2,8 @@
 // author advances through, finishing one before the next unlocks. This is the mental model the old build
 // studio got right (Brief→Foundations→Spine→…); here it's the DNA rungs grouped into stages. Pure: derives
 // each stage's status from the tree so the Navigator only renders. See docs/novel-dna-spec.md.
-import type { DnaNode, NodeKind, SceneContent } from "@/lib/novelDna";
+import { renderBlockers, validate, type BookSettings, type DnaIssue, type DnaNode, type NodeKind, type SceneContent } from "@/lib/novelDna";
+import { contentCompleteness, requiredKeys } from "@/lib/dnaSchema";
 
 export type StageKey = "premise" | "foundations" | "structure" | "scenes" | "draft";
 
@@ -139,3 +140,39 @@ export const STAGE_KINDS: Record<StageKey, NodeKind[]> = {
   scenes: ["scene"],
   draft: ["scene"],
 };
+
+// ── DNA health: two numbers + the lint tally ────────────────────────────────────
+// The answer to "how complete and how strong is the DNA". COMPLETENESS blends journey progress (how far down
+// the resolution ladder) with content fill (are the present nodes' required fields actually filled) — so it
+// moves smoothly as you author, not in 5 coarse jumps. STRENGTH is soundness: 1 minus a lint penalty
+// (errors weigh more than warns), normalized per-node with a floor so a tiny tree isn't whipsawed by one
+// lint. Both are pure, derived live from the tree — nothing stored.
+export interface DnaHealth {
+  completeness: number;   // 0..1 — how much of the target structure exists AND is filled
+  strength: number;       // 0..1 — how sound (free of lints)
+  stagesDone: number;     // of DNA_STAGES.length
+  contentFill: number;    // 0..1 — required fields filled across present nodes
+  errors: number; warns: number;
+  issues: DnaIssue[];     // the lints behind `strength`, for a drill-down
+  blockers: string[];     // what still blocks a gold render
+}
+
+const clamp01 = (n: number) => Math.max(0, Math.min(1, n));
+
+export function dnaHealth(nodes: DnaNode[], settings: BookSettings = {}, mode: "prose" | "picture" = "prose"): DnaHealth {
+  const stages = stageComplete(nodes, mode);
+  const stagesDone = DNA_STAGES.filter((s) => stages[s.key]).length;
+  // Content fill: average required-field completeness over every node that HAS required fields (placeholders
+  // with empty required fields drag it down — exactly the "character with no name" signal).
+  const scored = nodes.filter((n) => requiredKeys(n.kind).length > 0);
+  const contentFill = scored.length ? scored.reduce((sum, n) => sum + contentCompleteness(n), 0) / scored.length : 0;
+  const completeness = clamp01(0.5 * (stagesDone / DNA_STAGES.length) + 0.5 * contentFill);
+
+  const issues = validate(nodes);
+  const errors = issues.filter((i) => i.severity === "error").length;
+  const warns = issues.filter((i) => i.severity === "warn").length;
+  const penalty = (errors + 0.4 * warns) / Math.max(8, nodes.length);
+  const strength = clamp01(1 - penalty);
+
+  return { completeness, strength, stagesDone, contentFill, errors, warns, issues, blockers: renderBlockers(nodes, settings) };
+}

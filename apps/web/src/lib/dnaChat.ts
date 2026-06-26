@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { BRIDGE, bridgeFetch } from "@/lib/bridge";
 import { deleteNode, loadTree, saveNode } from "@/lib/bookNodes";
 import { blastRadius, byId, editContent, emptyNode, isEntityKind, pillarOf, stampInput, type DnaNode, type NodeContent, type NodeKind } from "@/lib/novelDna";
+import { KIND_LEVEL, LADDER_NEXT, validateContent, VALID_KINDS } from "@/lib/dnaSchema";
 import type { StageKey } from "@/lib/dnaJourney";
 
 export interface DnaChatMessage { role: "user" | "assistant"; text: string; ts: string; plan?: string }
@@ -23,12 +24,6 @@ export type NodeOp =
   | { op: "replace_children"; parentId: string; childKind: NodeKind; children: NewSubtree[] };
 export interface DnaProposal { summary: string; ops: NodeOp[] }
 
-const KIND_LEVEL: Record<NodeKind, number> = {
-  seed: 0, premise: 1, pillar: 2, character: 2, relationship: 2, tentpole: 2, world_fact: 2, voice_profile: 2, thread: 2, game: 2, movement: 3, beat: 4, scene: 5,
-};
-const VALID_KINDS = new Set<string>(Object.keys(KIND_LEVEL));
-// The ladder's next kind down — drives the nested adds of a replace_children subtree.
-const LADDER_NEXT: Partial<Record<NodeKind, NodeKind>> = { movement: "beat", beat: "scene" };
 const countSubtree = (subs?: NewSubtree[]): number => (subs ?? []).reduce((n, s) => n + 1 + countSubtree(s.children), 0);
 
 /** Send one message in a (book, stage) thread. The edge fn appends + persists; the rail re-reads over Realtime.
@@ -133,10 +128,54 @@ function describeOp(op: Exclude<NodeOp, { op: "replace_children" }>, index: Map<
   }
 }
 
-/** Run a set of node ops against book_nodes (edit/add/delete), honoring LOCKED nodes. The reusable
- *  core shared by the per-stage chat (applyDnaProposal) and the omni-rail agent (applyAgentProposal). */
-export async function applyNodeOps(bookId: number, ops: NodeOp[]): Promise<void> {
+// ── The fail-closed generation boundary ──────────────────────────────────────
+// Before any proposed op touches book_nodes, validate it against the live tree + the content schema. An
+// invalid op is REJECTED with reasons (surfaced to the author), never silently dropped or coerced — this is
+// what stops the "entity orphaned onto premise / character with no name" class from ever landing. Edits are
+// validated as PATCHES (absent fields untouched); adds + replace_children children as full nodes.
+export interface OpRejection { op: NodeOp; reasons: string[] }
+export interface OpValidation { ok: NodeOp[]; rejected: OpRejection[] }
+
+export function validateOps(ops: NodeOp[], nodes: DnaNode[]): OpValidation {
+  const index = byId(nodes);
+  const pillar = pillarOf(nodes);
+  const ok: NodeOp[] = [], rejected: OpRejection[] = [];
+  for (const op of ops) {
+    const reasons: string[] = [];
+    const msgs = (kind: NodeKind, content: NodeContent, partial = false, prefix = "") =>
+      validateContent(kind, content as Record<string, unknown>, { partial }).forEach((i) => reasons.push(prefix + i.message));
+    if (op.op === "edit" || op.op === "delete") {
+      const node = index.get(op.id);
+      if (!node) reasons.push("target node no longer exists");
+      else if (node.authoring.locked) reasons.push("target node is pinned (🔒) — can't change it");
+      else if (op.op === "edit") msgs(node.kind, op.content, true);
+    } else if (op.op === "add") {
+      if (!VALID_KINDS.has(op.kind as string)) reasons.push(`unknown kind "${op.kind}"`);
+      else {
+        // INVARIANT (schema §4): an entity MUST hang off the pillar. Fail closed — if there's no pillar, the
+        // add is rejected (was a silent fall-back that orphaned it onto whatever parentId the model chose).
+        if (isEntityKind(op.kind)) { if (!pillar) reasons.push("no pillar exists yet for this entity to attach to"); }
+        else if (!index.has(op.parentId)) reasons.push("parent node no longer exists");
+        msgs(op.kind, op.content);
+      }
+    } else if (op.op === "replace_children") {
+      const parent = index.get(op.parentId);
+      if (!parent) reasons.push("parent node no longer exists");
+      else if (parent.authoring.locked) reasons.push("parent node is pinned (🔒)");
+      if (!VALID_KINDS.has(op.childKind as string)) reasons.push(`unknown child kind "${op.childKind}"`);
+      else op.children.forEach((sub, i) => msgs(op.childKind, sub.content, false, `child ${i + 1}: `));
+    }
+    if (reasons.length) rejected.push({ op, reasons }); else ok.push(op);
+  }
+  return { ok, rejected };
+}
+
+/** Run a set of node ops against book_nodes (edit/add/delete), honoring LOCKED nodes and the schema. Only
+ *  VALID ops land (validateOps is the fail-closed gate); the returned `rejected` lets callers report why.
+ *  The reusable core shared by the per-stage chat (applyDnaProposal) and the omni-rail agent. */
+export async function applyNodeOps(bookId: number, ops: NodeOp[]): Promise<OpValidation> {
   const nodes = await loadTree(bookId);
+  const validation = validateOps(ops, nodes);
   const index = byId(nodes);
   const childCount = (parentId: string) => nodes.filter((n) => n.parent_id === parentId).length;
   let added = 0;
@@ -152,21 +191,22 @@ export async function applyNodeOps(bookId: number, ops: NodeOp[]): Promise<void>
       for (const child of sub.children) await addSubtree(child, childKind, node.id, i++);
     }
   };
-  for (const op of ops) {
+  for (const op of validation.ok) {
     if (op.op === "edit") {
       const node = index.get(op.id);
       if (node && !node.authoring.locked) await saveNode(editContent(node, op.content));
     } else if (op.op === "delete") {
       const node = index.get(op.id);
       if (node && !node.authoring.locked) await deleteNode(op.id);
-    } else if (op.op === "add" && index.has(op.parentId) && VALID_KINDS.has(op.kind as string)) {
-      // INVARIANT (schema §4): entity kinds hang off the pillar regardless of the parentId the model chose,
-      // so a chat "add a tentpole/character" can't orphan it onto premise/movement (where generation can't see it).
-      const parentId = isEntityKind(op.kind) ? (pillarOf(nodes)?.id ?? op.parentId) : op.parentId;
+    } else if (op.op === "add") {
+      // INVARIANT (schema §4): entity kinds hang off the pillar. validateOps already guaranteed a pillar
+      // exists for any entity add that reached `ok`, so this resolves — no silent orphaning fall-back.
+      const parentId = isEntityKind(op.kind) ? pillarOf(nodes)?.id : op.parentId;
+      if (!parentId) continue;
       const fresh = emptyNode(bookId, op.kind, KIND_LEVEL[op.kind] ?? 5, parentId, childCount(parentId) + added++);
       const node: DnaNode = { ...fresh, content: op.content, authoring: { source: "ai", locked: false, status: "accepted" } };
       await saveNode(stampInput(node, byId([...nodes, node])));
-    } else if (op.op === "replace_children" && index.has(op.parentId) && VALID_KINDS.has(op.childKind as string)) {
+    } else if (op.op === "replace_children") {
       // Wipe the parent's existing non-locked children of this kind (FK cascade takes their subtrees),
       // keeping any locked ones, then build the new set after them. This is what makes rebuild replace.
       const existing = nodes.filter((n) => n.parent_id === op.parentId && n.kind === op.childKind);
@@ -175,12 +215,15 @@ export async function applyNodeOps(bookId: number, ops: NodeOp[]): Promise<void>
       for (const sub of op.children) await addSubtree(sub, op.childKind, op.parentId, pos++);
     }
   }
+  return validation;
 }
 
-/** Apply a reviewed proposal: run its node ops against book_nodes, then clear the pending proposal. */
-export async function applyDnaProposal(bookId: number, stage: StageKey, proposal: DnaProposal): Promise<void> {
-  await applyNodeOps(bookId, proposal.ops);
+/** Apply a reviewed proposal: run its node ops against book_nodes, then clear the pending proposal. Returns
+ *  the validation so the UI can report any ops that were rejected at the boundary (and didn't land). */
+export async function applyDnaProposal(bookId: number, stage: StageKey, proposal: DnaProposal): Promise<OpValidation> {
+  const validation = await applyNodeOps(bookId, proposal.ops);
   await clearDnaProposal(bookId, stage);
+  return validation;
 }
 
 /** Discard the pending proposal without applying it. */
