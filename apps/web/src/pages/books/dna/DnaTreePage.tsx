@@ -2,7 +2,7 @@
 // Visual tree of the live book_nodes hierarchy. No app chrome; nav suppressed via ConditionalNav.
 // Color-coded by node kind; connector lines via CSS borders; collapsible per-node.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { deleteNode, patchNodeContent, saveNode, saveNodes } from "@/lib/bookNodes";
 import { analysisText, backlinkIndex, byId, childrenOf, isEntityKind, isProseStale, isStale, newId, pillarOf, refsOf, type BookSettings, type DnaIssue, type DnaNode, type BeatContent, type NodeContent, type NodeKind, type SceneContent } from "@/lib/novelDna";
@@ -868,6 +868,7 @@ function VoiceFeelPanel({ nodes, index, onJump }: { nodes: DnaNode[]; index: Map
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default function DnaTreePage() {
   const { bookSlug } = useParams();
+  const navigate = useNavigate();
   const bookId = getNumericId(bookSlug);
 
   const [bookName, setBookName] = useState<string>("");
@@ -937,6 +938,47 @@ export default function DnaTreePage() {
       return next;
     });
   }, []);
+
+  // ── Fork ──────────────────────────────────────────────────────────────────────
+  const [forking, setForking] = useState(false);
+  const forkDna = useCallback(async () => {
+    if (!nodes || !bookId || forking) return;
+    setForking(true);
+    try {
+      const { data: src } = await supabase.from("books")
+        .select("name, author, brief, mode, is_public")
+        .eq("id", bookId)
+        .single();
+      const { data: fork, error: forkErr } = await supabase
+        .from("books")
+        .insert({
+          name: `Fork of ${src?.name ?? bookName}`,
+          author: (src?.author as string | null) ?? null,
+          brief: (src?.brief as object | null) ?? null,
+          mode: (src?.mode as string | null) ?? null,
+          is_public: false,
+        })
+        .select("id")
+        .single();
+      if (forkErr || !fork) throw forkErr ?? new Error("Could not create fork");
+      // Remap all node IDs so the forked tree is independent (same-id rows would violate PK).
+      const idMap = new Map(nodes.map((n) => [n.id, newId()]));
+      const forkedNodes = nodes.map((n) => ({
+        id: idMap.get(n.id)!,
+        book_id: fork.id as number,
+        parent_id: n.parent_id ? (idMap.get(n.parent_id) ?? null) : null,
+        level: n.level, kind: n.kind, position: n.position,
+        content: n.content, authoring: n.authoring,
+        proposals: null, chosen: (n.chosen as unknown) ?? null,
+      }));
+      const { error: nodesErr } = await supabase.from("book_nodes").insert(forkedNodes);
+      if (nodesErr) throw nodesErr;
+      navigate(`/books/${fork.id as number}/dna/tree`);
+    } catch (e) {
+      alert(`Fork failed: ${(e as Error).message}`);
+      setForking(false);
+    }
+  }, [nodes, bookId, bookName, forking, navigate]);
 
   // ── Node CRUD ────────────────────────────────────────────────────────────────
   // Append a fresh empty node of `kind` under `parentId` (position after its existing siblings of that
@@ -1158,6 +1200,10 @@ export default function DnaTreePage() {
           <button onClick={collapseAll} style={{ background: "none", border: "none", color: "#555", fontSize: 10, cursor: "pointer", letterSpacing: "0.1em", textTransform: "uppercase" }}>collapse all</button>
           <a href={`/books/${bookSlug}/dna.json`} style={{ color: "#555", fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", textDecoration: "none" }}>json →</a>
           <a href={`/books/${bookSlug}/dna`} style={{ color: "#555", fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", textDecoration: "none" }}>studio →</a>
+          <button onClick={() => void forkDna()} disabled={forking} title="Copy this DNA tree into a new book to experiment freely"
+            style={{ background: "none", border: "none", color: forking ? "#444" : "#555", fontSize: 10, cursor: forking ? "default" : "pointer", letterSpacing: "0.1em", textTransform: "uppercase" }}>
+            {forking ? "forking…" : "fork →"}
+          </button>
           {/* AI reviser — prominent pill so the rail is discoverable (was a buried text button) */}
           <button onClick={() => setRailOpen((v) => !v)} style={{
             background: railOpen ? "#8a8aff22" : "#8a8aff14", border: "1px solid #8a8aff66", borderRadius: 5,
