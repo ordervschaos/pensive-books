@@ -94,6 +94,9 @@ export const NODE_SCHEMA: Partial<Record<NodeKind, EditSpec[]>> = {
     { key: "value_shift", label: "value", type: "object", fields: [
       { key: "value", label: "value" }, { key: "from", label: "from" }, { key: "to", label: "to" }, { key: "polarity", label: "polarity", type: "select", options: POLARITY },
     ] },
+    // register = how the book's ONE voice BENDS for this scene only (pace, distance, intensity). The signature
+    // stays constant; this knob breaks per-scene monotony. Adjacent scenes should differ so the read never goes flat.
+    { key: "register", label: "register", multiline: true, taste: true, note: "how the voice bends here — pace, distance, intensity (e.g. \"clipped, breathless\" / \"slow, elegiac, interior\"). Adjacent scenes should differ." },
   ],
 };
 // The editor renders only the hand-editable fields — structural genOnly fields are prompt/contract-only.

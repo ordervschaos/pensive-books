@@ -3497,6 +3497,12 @@ async function runDnaExpand({ bookId, nodeId, target, proseWindow = "default", p
   const settingBlock = locNode && locNode.kind === "location"
     ? `SETTING (this scene happens here — honor its established palette, don't re-invent it):\n${locName(locNode)} — ${palette(locNode.content ?? {}) || "(no palette yet)"}`
     : "";
+  // The scene's REGISTER — how the book's ONE voice bends for THIS scene only (anti-monotony). Mirrors
+  // supabase/functions/dna-expand: keeps the signature, varies pace/distance/intensity per scene.
+  const sceneRegister = node.kind === "scene" ? String(node.content?.register ?? "").trim() : "";
+  const registerBlock = sceneRegister
+    ? `THIS SCENE'S REGISTER (keep the voice profile's signature, but bend it toward this for THIS scene only — vary sentence length, pace, and narrative distance accordingly; do NOT carry it into the next scene): ${sceneRegister}`
+    : "";
   // Voice profile — governs all prose; inject into every generation call.
   const voiceProfileNode = pillar ? nodes.find((n) => n.parent_id === pillar.id && n.kind === "voice_profile") : null;
   const vp = voiceProfileNode?.content;
@@ -3535,6 +3541,7 @@ async function runDnaExpand({ bookId, nodeId, target, proseWindow = "default", p
     precondBlock, // [EXP:preconditions]
     movementBlock,
     settingBlock, // this scene's resolved location palette (prose grounding)
+    registerBlock, // this scene's voice modulation (anti-monotony) — bends the signature for this scene only
     prevProseBlock,
     `THIS NODE [${node.kind}]: ${JSON.stringify(node.content)}`,
   ].filter(Boolean).join("\n\n");
