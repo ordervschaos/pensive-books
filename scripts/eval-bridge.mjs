@@ -3394,7 +3394,7 @@ const _DNA_SPEC_MOVED_TO_DB = true;
 // ── begin DNA_SPEC stubs (now in DB) ──
 // relationships, set-pieces, threads, games, movements, beats, scenes, voice_profile — all in DB now.
 // ── end DNA_SPEC stubs ──
-const DNA_ENTITY_KINDS = new Set(["character", "relationship", "tentpole", "world_fact", "thread", "game", "voice_profile"]);
+const DNA_ENTITY_KINDS = new Set(["character", "relationship", "tentpole", "world_fact", "location", "thread", "game", "voice_profile"]);
 function scenesInOrderBridge(allNodes) {
   const out = [];
   const childrenSorted = (pid) => allNodes.filter((n) => n.parent_id === pid).sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
@@ -3483,6 +3483,20 @@ async function runDnaExpand({ bookId, nodeId, target, proseWindow = "default", p
     ? "STATE PRECONDITIONS (each must be ESTABLISHED by an earlier beat — list its key in that beat's `establishes` — BEFORE the beat that resolves its game):\n" +
       statePreconds.map((p) => `- ${p.key} (${p.game}): ${p.what}`).join("\n")
     : "";
+  // Locations registry (name + sensory palette) — scenes reference places BY NAME in `loc`; the same place
+  // reads consistently across every scene set there (continuity; aim 1). Mirrors supabase/functions/dna-expand.
+  const locations = pillar ? nodes.filter((n) => n.parent_id === pillar.id && n.kind === "location") : [];
+  const locName = (e) => String(e.content?.name ?? "").trim();
+  const palette = (c) => [c.sight && `sight: ${c.sight}`, c.sound && `sound: ${c.sound}`, c.smell && `smell: ${c.smell}`, c.texture && `texture: ${c.texture}`, c.mood && `mood: ${c.mood}`].filter(Boolean).join(" · ");
+  const locationBlock = locations.length
+    ? "LOCATIONS — places with a fixed sensory palette (reference BY NAME in loc; render the SAME palette every time):\n" +
+      locations.map((l) => `- ${locName(l)}: ${palette(l.content ?? {}) || "(no palette yet)"}`).join("\n")
+    : "";
+  const sceneLoc = node.kind === "scene" ? node.content?.loc : undefined;
+  const locNode = typeof sceneLoc === "string" && sceneLoc.startsWith("n_") ? map.get(sceneLoc) : undefined;
+  const settingBlock = locNode && locNode.kind === "location"
+    ? `SETTING (this scene happens here — honor its established palette, don't re-invent it):\n${locName(locNode)} — ${palette(locNode.content ?? {}) || "(no palette yet)"}`
+    : "";
   // Voice profile — governs all prose; inject into every generation call.
   const voiceProfileNode = pillar ? nodes.find((n) => n.parent_id === pillar.id && n.kind === "voice_profile") : null;
   const vp = voiceProfileNode?.content;
@@ -3513,12 +3527,14 @@ async function runDnaExpand({ bookId, nodeId, target, proseWindow = "default", p
     "STORY SO FAR (the ladder above this node; LOCKED items are immutable):",
     ...chain.map((a) => `[${a.kind}${a.authoring?.locked ? " · LOCKED" : ""}] ${JSON.stringify(a.content)}`),
     entityBlock,
+    locationBlock,
     threadBlock,
     tentpoleBlock,
     worldRulesBlock,
     gamesBlock,
     precondBlock, // [EXP:preconditions]
     movementBlock,
+    settingBlock, // this scene's resolved location palette (prose grounding)
     prevProseBlock,
     `THIS NODE [${node.kind}]: ${JSON.stringify(node.content)}`,
   ].filter(Boolean).join("\n\n");
@@ -3686,7 +3702,7 @@ Output JSON ONLY: { "beats": [ { "movement": <1..${movements.length}>, "summary"
 
 // ── /dna-chat (mirrors supabase/functions/dna-chat) ───────────────────────────
 const DNA_STAGE_KINDS = {
-  premise: ["seed", "premise"], foundations: ["pillar", "character", "relationship", "tentpole", "world_fact", "voice_profile"],
+  premise: ["seed", "premise"], foundations: ["pillar", "character", "relationship", "tentpole", "world_fact", "location", "voice_profile"],
   structure: ["movement", "beat", "thread"], scenes: ["scene"], draft: ["scene"],
 };
 // The content schema the reviser must conform to — GENERATED from the web app's NODE_SCHEMA (the single

@@ -20,7 +20,7 @@ import { byId, childrenOf, isProseStale, isStale, validate, type BookSettings, t
 // special-cased to scroll to the Threads panel rather than routed by this map (the value is just a fallback).
 const KIND_STAGE: Record<NodeKind, StageKey> = {
   seed: "premise", premise: "premise",
-  pillar: "foundations", character: "foundations", relationship: "foundations", tentpole: "foundations", world_fact: "foundations", voice_profile: "foundations", game: "foundations",
+  pillar: "foundations", character: "foundations", relationship: "foundations", tentpole: "foundations", world_fact: "foundations", location: "foundations", voice_profile: "foundations", game: "foundations",
   movement: "structure", beat: "structure", thread: "structure",
   scene: "scenes",
 };

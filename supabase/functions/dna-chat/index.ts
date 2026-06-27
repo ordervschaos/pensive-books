@@ -25,14 +25,14 @@ interface ChatMessage { role: "user" | "assistant"; text: string; ts: string; pl
 
 const STAGE_KINDS: Record<Stage, string[]> = {
   premise: ["seed", "premise"],
-  foundations: ["pillar", "character", "relationship", "tentpole", "world_fact", "voice_profile"],
+  foundations: ["pillar", "character", "relationship", "tentpole", "world_fact", "location", "voice_profile"],
   structure: ["movement", "beat", "thread"],
   scenes: ["scene"],
   draft: ["scene"],
 };
 const STAGE_GUIDE: Record<Stage, string> = {
   premise: "the PREMISE — the logline, genre, tone, dramatic question, and the 5-part shape. Sharpen the question and the turns; keep it one true idea.",
-  foundations: "the FOUNDATIONS — the controlling idea, the ending, and the CAST (each character's want/need/wound/lie/truth/idiolect), world rules, tentpole set-pieces, and relationships. The wound + lie are the human core. Pressure-test them; deepen, don't generic-ify.",
+  foundations: "the FOUNDATIONS — the controlling idea, the ending, and the CAST (each character's want/need/wound/lie/truth/idiolect), world rules, LOCATIONS (places with a persistent sensory palette scenes draw on), tentpole set-pieces, and relationships. The wound + lie are the human core. Pressure-test them; deepen, don't generic-ify.",
   structure: "the STRUCTURE — the acts (movements) and their causal beats. Hunt sagging middles, weak turning points, 'and-then' beats; every beat should connect with therefore/but.",
   scenes: "the SCENES — each scene's pov/goal/conflict/outcome and its VALUE SHIFT. Every scene must turn a value; fix flat scenes; check order and escalation.",
   draft: "the DRAFT — the prose of each scene. Voice, heat (per the mandate), pacing, line-level craft. Edit a scene's prose under content.prose.text.",
@@ -84,7 +84,7 @@ Reply to the author in plain MARKDOWN prose — discuss, pressure-test, answer. 
 { "summary": "<one line: what changes>",
   "ops": [
     { "op": "edit", "id": "<existing node id>", "content": { <fields to merge> } },
-    { "op": "add", "kind": "<character|world_fact|relationship|tentpole|thread|movement|beat|scene>", "parentId": "<existing node id>", "content": { … } },
+    { "op": "add", "kind": "<character|world_fact|location|relationship|tentpole|thread|movement|beat|scene>", "parentId": "<existing node id>", "content": { … } },
     { "op": "delete", "id": "<existing node id>" },
     { "op": "replace_children", "parentId": "<parent id, e.g. the pillar>", "childKind": "movement", "children": [ { "content": { …movement… }, "children": [ { "content": { …beat… } } ] } ] }
   ] }

@@ -6,7 +6,7 @@ import { metaHash } from "@/lib/planProvenance";
 
 // ── Kinds ─────────────────────────────────────────────────────────────────────
 export const LADDER_KINDS = ["seed", "premise", "pillar", "movement", "beat", "scene"] as const;
-export const ENTITY_KINDS = ["character", "relationship", "tentpole", "world_fact", "thread", "game", "voice_profile"] as const;
+export const ENTITY_KINDS = ["character", "relationship", "tentpole", "world_fact", "location", "thread", "game", "voice_profile"] as const;
 export type LadderKind = (typeof LADDER_KINDS)[number];
 export type EntityKind = (typeof ENTITY_KINDS)[number];
 export type NodeKind = LadderKind | EntityKind;
@@ -17,7 +17,7 @@ export const isEntityKind = (k: NodeKind): k is EntityKind => (ENTITY_KINDS as r
 // structural linter checks against it, and generation asserts onto it (no silent fail-open re-parenting).
 export const PARENT_KIND: Record<NodeKind, NodeKind | null> = {
   seed: null, premise: "seed", pillar: "premise", movement: "pillar", beat: "movement", scene: "beat",
-  character: "pillar", relationship: "pillar", tentpole: "pillar", world_fact: "pillar", thread: "pillar", game: "pillar", voice_profile: "pillar",
+  character: "pillar", relationship: "pillar", tentpole: "pillar", world_fact: "pillar", location: "pillar", thread: "pillar", game: "pillar", voice_profile: "pillar",
 };
 // Kinds that must be unique per book (the ladder spine + the single voice). A 2nd is a duplicate.
 export const SINGLETON_KINDS: NodeKind[] = ["seed", "premise", "pillar", "voice_profile"];
@@ -97,6 +97,10 @@ export interface TentpoleContent { summary?: string }
 // name = a short handle (so beats/scenes can reference the rule); mechanism = the OPERABLE rule — what it
 // enables or forbids, with inputs→outputs — not just atmosphere. The climax's win must fire a mechanism.
 export interface WorldFactContent { name?: string; rule?: string; mechanism?: string; category?: string }
+// location: a PLACE with a persistent sensory palette (unlike world_fact, which is a rule/mechanism). A
+// scene points at one via scene.loc (the way scene.pov points at a character), so the palette carries across
+// every scene set there — prose-gen reads the SAME harbor smell each time instead of re-inventing it (§ aim 1).
+export interface LocationContent { name?: string; summary?: string; sight?: string; sound?: string; smell?: string; texture?: string; mood?: string }
 // thread (← foundations.threads): the promise registry — one node both ends point at (§4.5).
 export interface ThreadContent { name?: string; promise?: string; payoff?: string; kind?: "mystery" | "foreshadow" | "setup_payoff" | "arc" }
 // game (← the game pillar, docs/novel-dna-games.md): a contest with a win-condition + a stake. `couples` is
@@ -260,6 +264,9 @@ export function refsOf(node: DnaNode): string[] {
   if (node.kind === "scene") {
     const c = node.content as SceneContent;
     if (c.pov) out.push(c.pov);
+    // loc is now a location ref (like pov→character). Only treat it as a ref when it's a node id (`n_…`) so
+    // legacy free-text locs ("the harbor") aren't flagged as dangling — they just render as their own string.
+    if (c.loc && c.loc.startsWith("n_")) out.push(c.loc);
     if (Array.isArray(c.present)) out.push(...c.present);
     if (c.realizes_tentpole) out.push(c.realizes_tentpole);
     if (Array.isArray(c.threads)) out.push(...c.threads.map((t) => t.ref).filter(Boolean));

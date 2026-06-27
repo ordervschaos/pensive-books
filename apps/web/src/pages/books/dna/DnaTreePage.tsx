@@ -5,8 +5,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { deleteNode, patchNodeContent, saveNode, saveNodes } from "@/lib/bookNodes";
-import { analysisText, backlinkIndex, byId, childrenOf, isEntityKind, isProseStale, isStale, newId, pillarOf, type BookSettings, type DnaNode, type BeatContent, type NodeContent, type NodeKind, type SceneContent } from "@/lib/novelDna";
-import { editSpecs, KIND_LEVEL, type EditSpec } from "@/lib/dnaSchema";
+import { analysisText, backlinkIndex, byId, childrenOf, isEntityKind, isProseStale, isStale, newId, pillarOf, refsOf, type BookSettings, type DnaIssue, type DnaNode, type BeatContent, type NodeContent, type NodeKind, type SceneContent } from "@/lib/novelDna";
+import { editSpecs, KIND_LEVEL, tasteSpecs, type EditSpec } from "@/lib/dnaSchema";
 import { applyDnaProposal, clearDnaProposal, describeOps, sendDnaMessage, validateOps, type DnaChatMessage, type DnaProposal, type NodeOp, type OpRejection } from "@/lib/dnaChat";
 import { DNA_STAGES, buildJourney, dnaHealth, type StageKey } from "@/lib/dnaJourney";
 
@@ -20,6 +20,7 @@ const KIND_COLOR: Record<string, string> = {
   character: "#38bdf8",  // sky — entities
   relationship: "#7dd3fc",
   world_fact: "#bae6fd",
+  location: "#5eead4",   // teal — places (a sensory palette, not a rule)
   tentpole: "#e0f2fe",
   game: "#93c5fd",
   thread: "#f9a8d4",     // pink — cross-cutting promises
@@ -30,7 +31,7 @@ const KIND_COLOR: Record<string, string> = {
 
 const KIND_BG: Record<string, string> = {
   seed: "#1e1a2e", premise: "#1a1a2e", pillar: "#16163a",
-  character: "#0c1e2e", relationship: "#0c1e2e", world_fact: "#0c1e2e", tentpole: "#0c1e2e", game: "#0c1e2e",
+  character: "#0c1e2e", relationship: "#0c1e2e", world_fact: "#0c1e2e", location: "#031e1a", tentpole: "#0c1e2e", game: "#0c1e2e",
   thread: "#2a1020",
   movement: "#1e1200", beat: "#1e1600", scene: "#001a10",
 };
@@ -46,6 +47,7 @@ function nodeTitle(n: DnaNode): string {
     case "character": return s(c.name);
     case "relationship": return s(c.bond);
     case "world_fact": return s(c.name) || s(c.rule);
+    case "location": return s(c.name) || s(c.summary);
     case "tentpole": return s(c.summary);
     case "game": return s(c.name);
     case "thread": return s(c.name) || s(c.promise);
@@ -67,7 +69,7 @@ function nodeTitle(n: DnaNode): string {
 // highlight marks the focus kinds — NOT "the only nodes sent" — which the legend states honestly.
 const STAGE_FOCUS_KINDS: Record<StageKey, DnaNode["kind"][]> = {
   premise: ["seed", "premise"],
-  foundations: ["pillar", "character", "relationship", "tentpole", "world_fact", "voice_profile"],
+  foundations: ["pillar", "character", "relationship", "tentpole", "world_fact", "location", "voice_profile"],
   structure: ["movement", "beat", "thread"],
   scenes: ["scene"],
   draft: ["scene"],
@@ -304,7 +306,7 @@ function BacklinksRow({ node, backlinks, depth, onJump }: {
 }
 
 // ── Single tree row ──────────────────────────────────────────────────────────
-function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete, draggable, dragging, canDrop, onDragStartRow, onDragEndRow, onDropRow, mark, focus, flash }: {
+function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete, draggable, dragging, canDrop, onDragStartRow, onDragEndRow, onDropRow, mark, focus, flash, issues, dimmed, ctx, onContextFocus }: {
   node: DnaNode; index: Map<string, DnaNode>; depth: number;
   expandable: boolean; open: boolean; onToggle: () => void; onDelete?: () => void;
   // #5 — drag-to-reorder among same-kind siblings. draggable = this row has a grip; canDrop = a valid
@@ -312,6 +314,8 @@ function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete, dra
   draggable?: boolean; dragging?: boolean; canDrop?: boolean;
   onDragStartRow?: () => void; onDragEndRow?: () => void; onDropRow?: (before: boolean) => void;
   mark?: "edit" | "delete"; focus?: boolean; flash?: boolean; // mark = proposed change (#1); focus = rail focus (#2); flash = jump target (#1)
+  issues?: DnaIssue[]; dimmed?: boolean; // health-lens (#6): this node's lints + dim-when-clean
+  ctx?: "focus" | "consumes" | "consumedBy"; onContextFocus?: () => void; // #7 context-highlight role + the badge trigger
 }) {
   const [dropEdge, setDropEdge] = useState<"top" | "bottom" | null>(null);
   const stale = isStale(node, index) || (node.kind === "scene" && isProseStale(node));
@@ -320,13 +324,18 @@ function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete, dra
   const title = nodeTitle(node);
   const glyph = beatGlyph(node);
   const markColor = mark === "delete" ? "#c06060" : mark === "edit" ? "#8a8aff" : null;
+  // Health glyph — a right-side ▲/△ on a different visual axis than the round stale dot, so they don't fight.
+  const hasErr = issues?.some((i) => i.severity === "error") ?? false;
+  const hasIssue = (issues?.length ?? 0) > 0;
+  // #7 context-highlight hue: the focus node, what it's BUILT FROM (green), what's built ON it (blue).
+  const ctxColor = ctx === "focus" ? "#cfcfcf" : ctx === "consumes" ? "#60a070" : ctx === "consumedBy" ? "#6a8aff" : null;
 
   return (
     <div id={`dna-node-${node.id}`}
       onDragOver={canDrop ? (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; const r = e.currentTarget.getBoundingClientRect(); setDropEdge(e.clientY < r.top + r.height / 2 ? "top" : "bottom"); } : undefined}
       onDragLeave={canDrop ? () => setDropEdge(null) : undefined}
       onDrop={canDrop ? (e) => { e.preventDefault(); onDropRow?.(dropEdge !== "bottom"); setDropEdge(null); } : undefined}
-      style={{ position: "relative", transition: "background 0.4s", opacity: dragging ? 0.4 : undefined, background: flash ? "#8a8aff22" : undefined, boxShadow: flash ? "inset 0 0 0 1px #8a8aff88" : undefined, borderRadius: flash ? 4 : undefined }}>
+      style={{ position: "relative", transition: "background 0.4s, opacity 0.3s", opacity: dragging ? 0.4 : dimmed ? 0.3 : undefined, background: flash ? "#8a8aff22" : undefined, boxShadow: flash ? "inset 0 0 0 1px #8a8aff88" : undefined, borderRadius: flash ? 4 : undefined }}>
       {/* #5 — drop indicator: a line at the edge the dragged sibling would land on */}
       {dropEdge && <div style={{ position: "absolute", left: depth * 20 + 8, right: 12, [dropEdge]: 0, height: 2, background: "#8a8aff", zIndex: 2, pointerEvents: "none" }} />}
       {/* Vertical connector line from this node down to its last child / detail */}
@@ -351,9 +360,9 @@ function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete, dra
           paddingRight: 12, paddingTop: 3, paddingBottom: 3,
           cursor: expandable ? "pointer" : "default",
           position: "relative",
-          // #1 proposal mark: left accent + tint. #2 focus: faint accent bar when no proposal mark.
-          boxShadow: markColor ? `inset 3px 0 0 ${markColor}` : focus ? "inset 2px 0 0 #8a8aff66" : undefined,
-          background: markColor ? `${markColor}12` : focus ? "#8a8aff08" : undefined,
+          // Precedence (spec collision budget): proposal mark > context hue (#7) > rail focus (#2).
+          boxShadow: markColor ? `inset 3px 0 0 ${markColor}` : ctxColor ? `inset 3px 0 0 ${ctxColor}` : focus ? "inset 2px 0 0 #8a8aff66" : undefined,
+          background: markColor ? `${markColor}12` : ctxColor ? `${ctxColor}1a` : focus ? "#8a8aff08" : undefined,
         }}
       >
         {/* Horizontal connector line from parent spine to this node */}
@@ -374,13 +383,16 @@ function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete, dra
           {expandable ? (open ? "▼" : "▶") : "·"}
         </span>
 
-        {/* Kind badge */}
-        <span style={{
-          fontFamily: "ui-monospace, monospace", fontSize: 9, letterSpacing: "0.1em",
-          textTransform: "uppercase", color, background: bg,
-          padding: "1px 5px", borderRadius: 3, border: `1px solid ${color}30`,
-          whiteSpace: "nowrap", flexShrink: 0,
-        }}>
+        {/* Kind badge — also the #7 context-focus trigger (light this node's ref-neighborhood) */}
+        <span
+          onClick={onContextFocus ? (e) => { e.stopPropagation(); onContextFocus(); } : undefined}
+          title={onContextFocus ? "focus: light what this is built from / what draws on it" : undefined}
+          style={{
+            fontFamily: "ui-monospace, monospace", fontSize: 9, letterSpacing: "0.1em",
+            textTransform: "uppercase", color: ctx === "focus" ? "#0a0a0a" : color, background: ctx === "focus" ? color : bg,
+            padding: "1px 5px", borderRadius: 3, border: `1px solid ${ctx === "focus" ? color : `${color}30`}`,
+            whiteSpace: "nowrap", flexShrink: 0, cursor: onContextFocus ? "pointer" : "default",
+          }}>
           {node.kind}
         </span>
 
@@ -398,6 +410,8 @@ function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete, dra
 
         {/* Status + stale + locked chips */}
         <span style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, marginLeft: "auto" }}>
+          {hasIssue && <span title={issues!.map((i) => `${i.severity === "error" ? "✕" : "⚠"} ${i.rule}: ${i.message}`).join("\n")}
+            style={{ fontSize: 10, lineHeight: 1, color: hasErr ? "#f87171" : "#d0a060", flexShrink: 0 }}>{hasErr ? "▲" : "△"}</span>}
           {markColor && <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 8, textTransform: "uppercase", letterSpacing: "0.12em", color: markColor }}>{mark === "delete" ? "− remove" : "✎ edit"}</span>}
           {stale && <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 8, textTransform: "uppercase", letterSpacing: "0.12em", color: "#f59e0b" }}>stale</span>}
           {node.authoring.locked && <span style={{ fontSize: 10, color: color }}>🔒</span>}
@@ -473,6 +487,7 @@ const ENTITY_GROUPS: { kind: DnaNode["kind"]; label: string }[] = [
   { kind: "thread", label: "threads" },
   { kind: "game", label: "games" },
   { kind: "world_fact", label: "world facts" },
+  { kind: "location", label: "locations" },
   { kind: "tentpole", label: "tentpoles" },
   { kind: "voice_profile", label: "voice" },
 ];
@@ -533,6 +548,12 @@ interface TreeView {
   flashId: string | null;               // #1 — the just-jumped-to node
   proposal: ProposalView | null;        // proposed ops to overlay
   focusKinds: Set<string> | null;       // the rail's stage focus (null = rail closed)
+  issuesByNode: Map<string, DnaIssue[]>; // #6 — health lints grouped by the node they attach to
+  healthLens: boolean;                  // #6 — dim clean nodes so only the broken ones (+ groups) pop
+  contextId: string | null;             // #7 — the focused node (null = no context active)
+  ctxConsumes: Set<string>;             // #7 — ids the focused node REFERENCES (built from)
+  ctxConsumedBy: Set<string>;           // #7 — ids that reference the focused node (built on it)
+  onContextFocus: (id: string) => void; // #7 — toggle context focus from a kind badge
 }
 function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
   node: DnaNode; index: Map<string, DnaNode>; nodes: DnaNode[]; depth: number;
@@ -612,6 +633,15 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
   const editPatch = h.proposal?.edits.get(node.id);
   const mark = h.proposal ? (h.proposal.deletes.has(node.id) ? "delete" : editPatch ? "edit" : undefined) : undefined;
   const focus = h.focusKinds?.has(node.kind) ?? false;
+  // #6 health lens: this node's lints. #7 context-highlight: this node's role in the focused neighborhood.
+  const issues = h.issuesByNode.get(node.id);
+  const ctxActive = h.contextId !== null;
+  const ctx = !ctxActive ? undefined
+    : node.id === h.contextId ? "focus"
+      : h.ctxConsumes.has(node.id) ? "consumes"
+        : h.ctxConsumedBy.has(node.id) ? "consumedBy" : undefined;
+  // Dim when: health lens on + clean, OR context active + not in the neighborhood.
+  const dimmed = (h.healthLens && !issues?.length) || (ctxActive && !ctx);
 
   return (
     <div>
@@ -620,7 +650,8 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
         draggable={reorderable} dragging={h.dragId === node.id} canDrop={canDrop}
         onDragStartRow={() => h.onDragStart(node.id)} onDragEndRow={h.onDragEnd}
         onDropRow={(before) => h.onDrop(node, before)}
-        mark={mark} focus={focus} flash={h.flashId === node.id} />
+        mark={mark} focus={focus} flash={h.flashId === node.id} issues={issues} dimmed={dimmed}
+        ctx={ctx} onContextFocus={() => h.onContextFocus(node.id)} />
       {editPatch && <OpDiffBlock node={node} content={editPatch} nodes={nodes} depth={depth + 1} />}
       {body}
     </div>
@@ -789,6 +820,51 @@ function ChatRail({ bookId, stage, setStage, nodes, settings, onClose, onPending
   );
 }
 
+// ── Voice & Feel panel (#2 — taste lives here) ────────────────────────────────
+// Aim 2: TASTE is user-owned and subjective (premise tone, pillar controlling idea, the whole voice profile,
+// each character's idiolect) but it's scattered across four tree depths, so it reads as "more work than
+// writing." This pins every `taste` field (tagged in dnaSchema, the SSOT) into ONE surface at the top of the
+// tree. The MACHINERY (state keys, thread roles, grounds_in — the genOnly fields) is the AI's to maintain
+// and stays hidden from the editor entirely. Reuses EditableField so edits flow through the same save path,
+// and each group title jumps to the full node in the tree below.
+function VoiceFeelPanel({ nodes, index, onJump }: { nodes: DnaNode[]; index: Map<string, DnaNode>; onJump: (id: string) => void }) {
+  const [open, setOpen] = useState(true);
+  // Taste-bearing nodes in authoring order: premise → pillar → voice, then the cast (idiolect each).
+  const groups: { node: DnaNode; label: string; specs: EditSpec[] }[] = [];
+  for (const kind of ["premise", "pillar", "voice_profile"] as const) {
+    const n = nodes.find((x) => x.kind === kind);
+    if (n && tasteSpecs(kind).length) groups.push({ node: n, label: kind === "voice_profile" ? "voice" : kind, specs: tasteSpecs(kind) });
+  }
+  for (const c of nodes.filter((n) => n.kind === "character").sort((a, b) => a.position - b.position)) {
+    const specs = tasteSpecs("character");
+    if (specs.length) groups.push({ node: c, label: `◦ ${nodeTitle(c) || "character"}`, specs });
+  }
+  if (!groups.length) return null;
+  const mono = "ui-monospace, monospace";
+  return (
+    <div style={{ borderBottom: "1px solid #1a1a1a", background: "#0c0c10" }}>
+      <div onClick={() => setOpen((v) => !v)} style={{ display: "flex", alignItems: "baseline", gap: 10, padding: "9px 16px", cursor: "pointer" }}>
+        <span style={{ width: 12, color: "#7dd3fc", fontSize: 9 }}>{open ? "▼" : "▶"}</span>
+        <span style={{ fontFamily: mono, fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase", color: "#9bd3e6" }}>voice & feel</span>
+        <span style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.06em", color: "#3a4a52" }}>taste lives here — tone · idea · voice · idiolect</span>
+      </div>
+      {open && (
+        <div style={{ paddingBottom: 8 }}>
+          {groups.map((g) => (
+            <div key={g.node.id}>
+              <div onClick={() => onJump(g.node.id)} title="jump to this node in the tree"
+                style={{ display: "flex", alignItems: "baseline", gap: 8, padding: "5px 16px 2px", cursor: "pointer" }}>
+                <span style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.14em", textTransform: "uppercase", color: KIND_COLOR[g.node.kind] ?? "#888", borderBottom: "1px dotted #2a3a42" }}>{g.label}</span>
+              </div>
+              {g.specs.map((spec) => <EditableField key={spec.key} node={g.node} spec={spec} depth={1} index={index} onJump={onJump} />)}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default function DnaTreePage() {
   const { bookSlug } = useParams();
@@ -804,6 +880,8 @@ export default function DnaTreePage() {
   const [stage, setStage] = useState<StageKey>("structure");
   const [proposal, setProposal] = useState<DnaProposal | null>(null); // #1 — mirrored from the rail
   const [showIssues, setShowIssues] = useState(false); // drill into the lints behind the score
+  const [healthLens, setHealthLens] = useState(false); // #6 — dim clean nodes; surface only the broken ones
+  const [contextId, setContextId] = useState<string | null>(null); // #7 — the node whose ref-neighborhood is lit
   const [flashId, setFlashId] = useState<string | null>(null); // #1 — the node a jump just revealed
   const [dragId, setDragId] = useState<string | null>(null); // #5 — the node being dragged
 
@@ -930,6 +1008,26 @@ export default function DnaTreePage() {
     setFlashId(id);
   }, [nodes]);
 
+  // #6 — un-collapse the ancestors (and synthetic story/world groups) of many nodes at once, no flash. Used
+  // by the health lens so a broken beat/scene isn't dimmed-AND-hidden inside a collapsed act. Mirrors jumpTo.
+  const revealNodes = useCallback((ids: string[]) => {
+    if (!nodes || !ids.length) return;
+    const idx = byId(nodes);
+    const pillar = pillarOf(nodes);
+    const reveal = new Set<string>();
+    for (const id of ids) {
+      let cur: DnaNode | undefined = idx.get(id);
+      const target = cur;
+      while (cur) { reveal.add(cur.id); cur = cur.parent_id ? idx.get(cur.parent_id) : undefined; }
+      if (pillar && target) {
+        reveal.add(pillar.id);
+        if (isEntityKind(target.kind)) { reveal.add(`${pillar.id}::world`); reveal.add(`${pillar.id}::world::${target.kind}`); }
+        else if (!["pillar", "premise", "seed"].includes(target.kind)) reveal.add(`${pillar.id}::story`);
+      }
+    }
+    setCollapsedSet((prev) => { const next = new Set(prev); for (const r of reveal) next.delete(r); return next; });
+  }, [nodes]);
+
   // #1 — once a jump has set flashId (and the reveal has rendered), scroll the node into view; clear the
   // flash after a beat. Re-runs if a new jump fires before the timer elapses.
   useEffect(() => {
@@ -945,6 +1043,27 @@ export default function DnaTreePage() {
   const backlinks = useMemo(() => backlinkIndex(nodes ?? []), [nodes]); // #2 — inbound cross-references
   // When the rail is open, mark the stage's focus kinds (the WHOLE tree is still in context — see legend).
   const focusKinds = useMemo(() => (railOpen ? new Set<string>(STAGE_FOCUS_KINDS[stage]) : null), [railOpen, stage]);
+
+  // #7 — context-highlight: toggle the focused node, and auto-reveal its ref-neighborhood so a referenced
+  // character/world_fact buried in a collapsed group isn't dimmed-AND-hidden. Clicking the same badge clears.
+  const focusContext = useCallback((id: string) => {
+    setContextId((cur) => {
+      if (cur === id) return null;
+      if (nodes) {
+        const node = byId(nodes).get(id);
+        const neighborhood = [id, ...(node ? refsOf(node) : []), ...(backlinks.get(id) ?? []).map((n) => n.id)];
+        revealNodes(neighborhood);
+      }
+      return id;
+    });
+  }, [nodes, backlinks, revealNodes]);
+  // Esc clears the active context focus.
+  useEffect(() => {
+    if (contextId === null) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setContextId(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [contextId]);
   const acceptProposal = useCallback(async () => {
     if (!proposal) return;
     try { await applyDnaProposal(bookId, stage, proposal); setProposal(null); }
@@ -975,6 +1094,13 @@ export default function DnaTreePage() {
 
   // #4 — DNA health: completeness + strength + the lints behind them (structural faults included).
   const health = dnaHealth(nodes, settings, settings.mode);
+  // #6 — group the lints by the node they attach to, for the per-row health glyph + the lens.
+  const issuesByNode = new Map<string, DnaIssue[]>();
+  for (const i of health.issues) { if (!i.nodeId) continue; const a = issuesByNode.get(i.nodeId); if (a) a.push(i); else issuesByNode.set(i.nodeId, [i]); }
+  // #7 — the focused node's neighborhood: what it's built from (refsOf) and what's built on it (backlinks).
+  const ctxNode = contextId ? index.get(contextId) : undefined;
+  const ctxConsumes = new Set<string>(ctxNode ? refsOf(ctxNode) : []);
+  const ctxConsumedBy = new Set<string>(contextId ? (backlinks.get(contextId)?.map((n) => n.id) ?? []) : []);
   const pct = (n: number) => `${Math.round(n * 100)}%`;
   const barColor = (n: number) => (n >= 0.8 ? "#4ade80" : n >= 0.5 ? "#fbbf24" : "#f87171");
   const issueTitle = (i: typeof health.issues[number]) => {
@@ -1007,6 +1133,14 @@ export default function DnaTreePage() {
           {(health.errors + health.warns) > 0 && (
             <button onClick={() => setShowIssues((v) => !v)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase", color: health.errors ? "#f87171" : "#d0a060", fontFamily: "ui-monospace, monospace" }}>
               {health.errors ? `${health.errors}✕ ` : ""}{health.warns ? `${health.warns}⚠` : ""} {showIssues ? "▲" : "▼"}
+            </button>
+          )}
+          {/* #6 — health lens: dim every clean node so only the broken ones (+ their groups) stay lit */}
+          {(health.errors + health.warns) > 0 && (
+            <button onClick={() => { const on = !healthLens; setHealthLens(on); if (on) revealNodes(health.issues.map((i) => i.nodeId).filter((x): x is string => !!x)); }}
+              title="dim healthy nodes — surface only the broken ones"
+              style={{ background: healthLens ? "#d0a06022" : "none", border: `1px solid ${healthLens ? "#d0a06066" : "#2a2a2a"}`, borderRadius: 4, cursor: "pointer", fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase", color: healthLens ? "#d0a060" : "#555", fontFamily: "ui-monospace, monospace", padding: "2px 7px" }}>
+              ◐ lens
             </button>
           )}
         </div>
@@ -1044,6 +1178,16 @@ export default function DnaTreePage() {
         ))}
         <span style={{ fontSize: 9, color: "#f59e0b", letterSpacing: "0.08em", textTransform: "uppercase" }}>amber dot = stale</span>
         <span style={{ fontSize: 9, color: "#fbbf24", marginLeft: 8 }}>∴ therefore  ↯ but</span>
+        <span style={{ fontSize: 9, color: "#4a5a52", marginLeft: 8, letterSpacing: "0.04em" }} title="state keys, thread roles, grounds_in, polarity oscillation — the AI maintains these; you author taste (Voice & Feel)">plumbing (state · roles · grounds_in) is AI-maintained</span>
+        {/* #7 — context legend: what the lit hues mean + how to clear */}
+        {ctxNode && (
+          <span style={{ fontSize: 9, letterSpacing: "0.06em", display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ color: "#cfcfcf" }}>▎context: {ctxNode.kind}{nodeTitle(ctxNode) ? ` ${nodeTitle(ctxNode)}` : ""}</span>
+            <span style={{ color: "#60a070" }}>green = built from</span>
+            <span style={{ color: "#6a8aff" }}>blue = draws on it</span>
+            <span onClick={() => setContextId(null)} style={{ color: "#555", cursor: "pointer", textTransform: "uppercase" }}>esc ✕</span>
+          </span>
+        )}
         {/* #2 — focus legend: honest about the whole tree being in context */}
         {focusKinds && (
           <span style={{ fontSize: 9, color: "#8a8aff", letterSpacing: "0.06em", marginLeft: "auto" }}>
@@ -1056,11 +1200,14 @@ export default function DnaTreePage() {
       {showIssues && (health.errors + health.warns) > 0 && (
         <div style={{ padding: "8px 16px", borderBottom: "1px solid #1a1a1a", display: "flex", flexDirection: "column", gap: 3, maxHeight: 200, overflowY: "auto" }}>
           {health.issues.map((i, idx) => (
-            <div key={idx} style={{ display: "flex", alignItems: "baseline", gap: 8, fontFamily: "ui-monospace, monospace", fontSize: 11 }}>
+            <div key={idx} onClick={i.nodeId ? () => jumpTo(i.nodeId!) : undefined}
+              style={{ display: "flex", alignItems: "baseline", gap: 8, fontFamily: "ui-monospace, monospace", fontSize: 11, cursor: i.nodeId ? "pointer" : "default", borderRadius: 3, padding: "1px 4px", marginLeft: -4 }}
+              onMouseEnter={i.nodeId ? (e) => { e.currentTarget.style.background = "#ffffff08"; } : undefined}
+              onMouseLeave={i.nodeId ? (e) => { e.currentTarget.style.background = "transparent"; } : undefined}>
               <span style={{ color: i.severity === "error" ? "#f87171" : "#d0a060", flexShrink: 0 }}>{i.severity === "error" ? "✕" : "⚠"}</span>
               <span style={{ color: "#666", letterSpacing: "0.04em", flexShrink: 0, width: 140 }}>{i.rule}</span>
               <span style={{ color: "#999", flex: 1 }}>{i.message}</span>
-              {i.nodeId && <span style={{ color: "#555", flexShrink: 0 }}>{issueTitle(i)}</span>}
+              {i.nodeId && <span style={{ color: "#555", flexShrink: 0 }}>{issueTitle(i)} →</span>}
             </div>
           ))}
         </div>
@@ -1076,6 +1223,9 @@ export default function DnaTreePage() {
         </div>
       )}
 
+      {/* #2 — Voice & Feel: the consolidated taste surface (the machinery below stays the AI's) */}
+      <VoiceFeelPanel nodes={nodes} index={index} onJump={jumpTo} />
+
       {/* Tree */}
       <div style={{ paddingTop: 8, paddingBottom: 48 }}>
         {roots.length === 0 ? (
@@ -1083,7 +1233,7 @@ export default function DnaTreePage() {
         ) : roots.map((root) => (
           <Subtree key={root.id} node={root} index={index} nodes={nodes} depth={0}
             collapsedSet={collapsedSet} openSet={openSet}
-            h={{ onToggle: toggleNode, onToggleDetail: toggleDetail, onAdd: addNode, onDelete: removeNode, onJump: jumpTo, dragId, onDragStart: setDragId, onDragEnd: () => setDragId(null), onDrop: onDropReorder, backlinks, flashId, proposal: proposalView, focusKinds }} />
+            h={{ onToggle: toggleNode, onToggleDetail: toggleDetail, onAdd: addNode, onDelete: removeNode, onJump: jumpTo, dragId, onDragStart: setDragId, onDragEnd: () => setDragId(null), onDrop: onDropReorder, backlinks, flashId, proposal: proposalView, focusKinds, issuesByNode, healthLens, contextId, ctxConsumes, ctxConsumedBy, onContextFocus: focusContext }} />
         ))}
       </div>
     </div>

@@ -17,6 +17,10 @@ export interface EditSpec {
   key: string; label: string; type?: FieldType; multiline?: boolean;
   refKind?: NodeKind; options?: string[]; fields?: EditSpec[];
   required?: boolean; // load-bearing — a node missing this reads as incomplete (and is rejected at generation)
+  // taste = a USER-OWNED, subjective field ("to their taste"): tone, controlling idea, voice style, idiolect.
+  // The Voice & Feel panel (DnaTreePage) gathers every taste field into one surface so the author isn't
+  // chasing them across four tree depths. Untagged editable fields are shared craft; genOnly = AI-maintained.
+  taste?: boolean;
   // genOnly = part of the content CONTRACT (the AI may set it, it appears in the generation prompt) but the
   // tree editor doesn't render a field for it (complex/derived structural data). `note` is a prompt-only
   // shape hint for such fields. editSpecs() filters these out; the schema guide (for the prompt) keeps them.
@@ -30,23 +34,31 @@ const POLARITY = ["up", "down"];
 export const NODE_SCHEMA: Partial<Record<NodeKind, EditSpec[]>> = {
   seed: [{ key: "logline", label: "logline", multiline: true, required: true }],
   premise: [
-    { key: "dramatic_question", label: "question", multiline: true, required: true }, { key: "genre", label: "genre", type: "list" }, { key: "tone", label: "tone", type: "list" },
+    { key: "dramatic_question", label: "question", multiline: true, required: true }, { key: "genre", label: "genre", type: "list", taste: true }, { key: "tone", label: "tone", type: "list", taste: true },
     { key: "shape", label: "shape", type: "object", fields: [
       { key: "setup", label: "setup", multiline: true }, { key: "turn1", label: "turn 1", multiline: true }, { key: "turn2", label: "turn 2", multiline: true },
       { key: "turn3", label: "turn 3", multiline: true }, { key: "resolution", label: "resolution", multiline: true },
     ] },
   ],
-  pillar: [{ key: "controlling_idea", label: "idea", multiline: true, required: true }, { key: "ending", label: "ending", multiline: true }],
+  pillar: [{ key: "controlling_idea", label: "idea", multiline: true, required: true, taste: true }, { key: "ending", label: "ending", multiline: true, taste: true }],
   character: [
     { key: "name", label: "name", required: true }, { key: "role", label: "role", type: "select", options: ROLES }, { key: "want", label: "want", multiline: true },
     { key: "need", label: "need", multiline: true }, { key: "wound", label: "wound", multiline: true }, { key: "lie", label: "lie", multiline: true },
-    { key: "truth", label: "truth", multiline: true }, { key: "idiolect", label: "idiolect", multiline: true }, { key: "tag", label: "tag" },
+    { key: "truth", label: "truth", multiline: true }, { key: "idiolect", label: "idiolect", multiline: true, taste: true }, { key: "tag", label: "tag" },
   ],
   relationship: [
     { key: "a", label: "a", type: "ref", refKind: "character", required: true }, { key: "b", label: "b", type: "ref", refKind: "character", required: true },
     { key: "bond", label: "bond", multiline: true, required: true }, { key: "charge", label: "charge", multiline: true },
   ],
   world_fact: [{ key: "name", label: "name", required: true }, { key: "rule", label: "rule", multiline: true, required: true }, { key: "mechanism", label: "mechanism", multiline: true }, { key: "category", label: "category" }],
+  location: [
+    { key: "name", label: "name", required: true }, { key: "summary", label: "summary", multiline: true },
+    // The sensory palette — what a scene set here SMELLS/SOUNDS/LOOKS like. Carried verbatim into every
+    // scene that points at this location, so continuity holds (the nautical harbor reads the same each time).
+    { key: "sight", label: "sight", multiline: true }, { key: "sound", label: "sound", multiline: true },
+    { key: "smell", label: "smell", multiline: true }, { key: "texture", label: "texture", multiline: true },
+    { key: "mood", label: "mood", multiline: true },
+  ],
   thread: [{ key: "name", label: "name", required: true }, { key: "kind", label: "kind", type: "select", options: ["mystery", "foreshadow", "setup_payoff", "arc"] }, { key: "promise", label: "promise", multiline: true, required: true }, { key: "payoff", label: "payoff", multiline: true }],
   game: [
     { key: "name", label: "name", required: true }, { key: "players", label: "players", type: "refs", refKind: "character" },
@@ -55,9 +67,9 @@ export const NODE_SCHEMA: Partial<Record<NodeKind, EditSpec[]>> = {
   ],
   tentpole: [{ key: "summary", label: "summary", multiline: true, required: true }],
   voice_profile: [
-    { key: "pov", label: "pov", type: "select", options: ["first-person", "third-person-limited", "third-person-omniscient", "second-person"] },
-    { key: "tense", label: "tense", type: "select", options: ["past", "present"] }, { key: "style", label: "style", multiline: true, required: true },
-    { key: "constraints", label: "constraints", type: "list" }, { key: "sample", label: "sample", multiline: true },
+    { key: "pov", label: "pov", type: "select", options: ["first-person", "third-person-limited", "third-person-omniscient", "second-person"], taste: true },
+    { key: "tense", label: "tense", type: "select", options: ["past", "present"], taste: true }, { key: "style", label: "style", multiline: true, required: true, taste: true },
+    { key: "constraints", label: "constraints", type: "list", taste: true }, { key: "sample", label: "sample", multiline: true, taste: true },
   ],
   movement: [
     { key: "title", label: "title" }, { key: "goal", label: "goal", multiline: true, required: true }, { key: "turning_point", label: "turning point", multiline: true },
@@ -77,7 +89,7 @@ export const NODE_SCHEMA: Partial<Record<NodeKind, EditSpec[]>> = {
     { key: "resolves", label: "resolves", genOnly: true, note: "[{ ref: game id, outcome: won|lost }]" },
   ],
   scene: [
-    { key: "pov", label: "pov", type: "ref", refKind: "character" }, { key: "loc", label: "loc" },
+    { key: "pov", label: "pov", type: "ref", refKind: "character" }, { key: "loc", label: "loc", type: "ref", refKind: "location" },
     { key: "goal", label: "goal", multiline: true, required: true }, { key: "conflict", label: "conflict", multiline: true }, { key: "outcome", label: "outcome", multiline: true },
     { key: "value_shift", label: "value", type: "object", fields: [
       { key: "value", label: "value" }, { key: "from", label: "from" }, { key: "to", label: "to" }, { key: "polarity", label: "polarity", type: "select", options: POLARITY },
@@ -86,10 +98,12 @@ export const NODE_SCHEMA: Partial<Record<NodeKind, EditSpec[]>> = {
 };
 // The editor renders only the hand-editable fields — structural genOnly fields are prompt/contract-only.
 export const editSpecs = (kind: NodeKind): EditSpec[] => (NODE_SCHEMA[kind] ?? []).filter((s) => !s.genOnly);
+// The taste (user-owned, subjective) fields for a kind — the atoms the Voice & Feel panel consolidates.
+export const tasteSpecs = (kind: NodeKind): EditSpec[] => (NODE_SCHEMA[kind] ?? []).filter((s) => s.taste);
 
 // ── Structural constants (single copy; were duplicated across DnaTreePage + dnaChat) ─────────────────────
 export const KIND_LEVEL: Record<NodeKind, number> = {
-  seed: 0, premise: 1, pillar: 2, character: 2, relationship: 2, tentpole: 2, world_fact: 2, voice_profile: 2, thread: 2, game: 2, movement: 3, beat: 4, scene: 5,
+  seed: 0, premise: 1, pillar: 2, character: 2, relationship: 2, tentpole: 2, world_fact: 2, location: 2, voice_profile: 2, thread: 2, game: 2, movement: 3, beat: 4, scene: 5,
 };
 // The ladder's next kind down — drives the nested adds of a replace_children subtree.
 export const LADDER_NEXT: Partial<Record<NodeKind, NodeKind>> = { movement: "beat", beat: "scene" };

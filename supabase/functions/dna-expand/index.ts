@@ -23,7 +23,7 @@ interface SlotConfig { voice?: boolean; entities?: boolean; threads?: boolean; t
 // "[EXP:preconditions]" to remove. Must match novelDna.ts + eval-bridge.mjs.
 const EXP_PRECONDITIONS = true;
 
-const ENTITY_KINDS_SET = new Set(["character", "relationship", "tentpole", "world_fact", "thread", "game", "voice_profile"]);
+const ENTITY_KINDS_SET = new Set(["character", "relationship", "tentpole", "world_fact", "location", "thread", "game", "voice_profile"]);
 function scenesInOrder(allNodes: Node[]): Node[] {
   const out: Node[] = [];
   const childrenSorted = (pid: string | null) => allNodes.filter((n) => n.parent_id === pid).sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
@@ -189,6 +189,23 @@ Deno.serve(async (req: Request) => {
       ? "WORLD RULES (the mechanisms a turning point can fire — reference BY NAME in grounds_in):\n" +
         worldFacts.map((w) => `- ${wfName(w)}: ${(w.content as { mechanism?: string; rule?: string }).mechanism ?? (w.content as { rule?: string }).rule ?? ""}`).join("\n")
       : "";
+    // The LOCATIONS registry (name + persistent sensory palette) — so scenes reference real places BY NAME in
+    // `loc` and the same place reads consistently across every scene set there (continuity; aim 1).
+    const locations = pillar ? nodes.filter((n) => n.parent_id === pillar.id && n.kind === "location") : [];
+    const locName = (e: Node) => String((e.content as { name?: string }).name ?? "").trim();
+    const palette = (c: { sight?: string; sound?: string; smell?: string; texture?: string; mood?: string }) =>
+      [c.sight && `sight: ${c.sight}`, c.sound && `sound: ${c.sound}`, c.smell && `smell: ${c.smell}`, c.texture && `texture: ${c.texture}`, c.mood && `mood: ${c.mood}`].filter(Boolean).join(" · ");
+    const locationBlock = locations.length
+      ? "LOCATIONS — places with a fixed sensory palette (reference BY NAME in loc; render the SAME palette every time):\n" +
+        locations.map((l) => `- ${locName(l)}: ${palette(l.content as Record<string, string>) || "(no palette yet)"}`).join("\n")
+      : "";
+    // When THIS node is a scene, resolve its loc → the location's full palette so the prose grounds itself in
+    // the established setting rather than re-inventing it. loc may be a node id (new) or free text (legacy).
+    const sceneLoc = node.kind === "scene" ? (node.content as { loc?: string }).loc : undefined;
+    const locNode = sceneLoc?.startsWith("n_") ? byId.get(sceneLoc) : undefined;
+    const settingBlock = locNode && locNode.kind === "location"
+      ? `SETTING (this scene happens here — honor its established palette, don't re-invent it):\n${locName(locNode)} — ${palette(locNode.content as Record<string, string>) || "(no palette yet)"}`
+      : "";
     // The voice profile — governs all prose. Injected into ctx so every generation step can reference it.
     const voiceProfileNode = pillar ? nodes.find((n) => n.parent_id === pillar.id && n.kind === "voice_profile") : null;
     const vp = voiceProfileNode?.content as { pov?: string; tense?: string; style?: string; constraints?: string[]; sample?: string } | undefined;
@@ -231,12 +248,14 @@ Deno.serve(async (req: Request) => {
       "STORY SO FAR (the ladder above this node; LOCKED items are immutable):",
       ...chain.map((a) => `[${a.kind}${a.authoring?.locked ? " · LOCKED" : ""}] ${JSON.stringify(a.content)}`),
       entityBlock,
+      locationBlock,
       threadBlock,
       tentpoleBlock,
       worldRulesBlock,
       gamesBlock,
       precondBlock, // [EXP:preconditions]
       movementBlock,
+      settingBlock, // this scene's resolved location palette (prose grounding)
       prevProseBlock,
       `THIS NODE [${node.kind}]: ${JSON.stringify(node.content)}`,
     ].filter(Boolean).join("\n\n");
@@ -342,6 +361,8 @@ Output JSON ONLY: { "beats": [ { "movement": <1..${movements.length}>, "summary"
       "STORY SO FAR (the ladder above this node; LOCKED items are immutable):",
       ...chain.map((a) => `[${a.kind}${a.authoring?.locked ? " · LOCKED" : ""}] ${JSON.stringify(a.content)}`),
       slots.entities ? entityBlock : "",
+      slots.entities ? locationBlock : "",
+      slots.entities && settingBlock ? settingBlock : "",
       slots.threads ? threadBlock : "",
       slots.tentpoles ? tentpoleBlock : "",
       slots.worldRules ? worldRulesBlock : "",
