@@ -37,7 +37,10 @@ import {
 // child, so the UI hides them once that child exists.
 interface ExpandTarget { target: string; label: string; childKind: NodeKind; needs?: NodeKind }
 const EXPAND_TARGETS: Partial<Record<NodeKind, ExpandTarget[]>> = {
-  seed: [{ target: "premise", label: "generate premise", childKind: "premise" }],
+  seed: [
+    { target: "logline", label: "draft logline", childKind: "seed" }, // forge brief.idea → a real logline (own content, not a child)
+    { target: "premise", label: "generate premise", childKind: "premise" },
+  ],
   premise: [{ target: "pillar", label: "generate pillar", childKind: "pillar" }],
   pillar: [
     { target: "cast", label: "generate cast", childKind: "character" },
@@ -221,7 +224,8 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
   const hasOpenTarget = (n: DnaNode) => {
     const kids = childrenOf(nodes, n.id);
     return (EXPAND_TARGETS[n.kind] ?? []).some((t) =>
-      t.target !== "prose" && !kids.some((c) => c.kind === t.childKind) && !(t.needs && !kids.some((c) => c.kind === t.needs)));
+      t.target !== "prose" && t.target !== "logline" // own-content targets, not children — don't keep the node "open" forever
+      && !kids.some((c) => c.kind === t.childKind) && !(t.needs && !kids.some((c) => c.kind === t.needs)));
   };
   const openDefault = (n: DnaNode) => attn.has(n.id) || hasOpenTarget(n);
   const isOpen = (n: DnaNode) => expanded[n.id] ?? openDefault(n);
@@ -1061,6 +1065,7 @@ function NodeCard({ node, index, bookId, kids, onChanged, accent, expanded, onTo
     // Regenerate REPLACES the unlocked children of this kind (locked ones are kept); first run just appends.
     const existing = kids.filter((c) => c.kind === t.childKind);
     const unlocked = existing.filter((c) => !c.authoring.locked);
+    if (t.target === "logline" && (node.content as { logline?: string }).logline?.trim() && !window.confirm("Redraft the logline from the idea?")) return;
     if (t.target === "prose" && (node.content as SceneContent).prose?.text?.trim() && !window.confirm("Rewrite this scene's prose?")) return;
     if (unlocked.length && !window.confirm(`Regenerate? Replaces ${unlocked.length} ${t.childKind}(s)${existing.length - unlocked.length ? `, keeps ${existing.length - unlocked.length} locked` : ""}.`)) return;
     setGenerating(t.target);

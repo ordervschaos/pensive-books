@@ -281,6 +281,25 @@ Deno.serve(async (req: Request) => {
       `THIS NODE [${node.kind}]: ${JSON.stringify(node.content)}`,
     ].filter(Boolean).join("\n\n");
 
+    if (target === "logline") {
+      // Seed → logline: forge the author's RAW idea (brief.idea) into a polished LOGLINE. A logline is NOT
+      // the raw idea — it names protagonist · inciting incident · primary goal · main obstacle · stakes in
+      // one or two sentences. This is the system's first refinement (docs/dna-studio-analysis.md §0/§1).
+      const system = `You are a story editor. Turn the author's raw idea into ONE polished LOGLINE for the book — one or two sentences that make the story instantly legible and compelling.
+
+A logline names FIVE things, concretely and specifically (no generic placeholders):
+- the PROTAGONIST (who they are, with the defining trait that matters),
+- the INCITING INCIDENT (the event that upends their world),
+- their PRIMARY GOAL (what they must now do),
+- the MAIN OBSTACLE / antagonist (what stands in the way),
+- the STAKES (what is lost if they fail).
+
+Honor the MANDATE (genre/tone) and any LOCKED ancestors. Do NOT invent a title. Do NOT restate the raw idea verbatim — SHARPEN it into a real logline. Output the LOGLINE ONLY: one or two sentences, no preamble, no label, no quotes, no JSON.`;
+      const data = await callClaude(apiKey, { model, max_tokens: 400, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+        messages: [{ role: "user", content: `${ctx}\n\nWrite the logline.` }] }, meta);
+      return json({ logline: textFromClaude(data).trim() });
+    }
+
     if (target === "prose" || (!target && node.kind === "scene")) {
       // Scene → prose: fill the scene's own text. One true draft, in voice.
       const system = `You are a novelist writing the PROSE for one scene, from its plan. Write the scene fully — vivid, causal, in the book's voice — honoring the MANDATE (heat/tone/length) without laundering. Output the prose ONLY: no preamble, no headings, no JSON.

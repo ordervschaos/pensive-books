@@ -982,13 +982,15 @@ export default function DnaTreePage() {
     const { error: err } = await supabase.from("books").update({ brief: next }).eq("id", bookId);
     if (err) throw new Error(err.message);
     setSettings((prev) => ({ ...prev, word_target: next.scope?.word_target }));
-    // TODO(premise≠logline): today the raw idea is mirrored straight into the seed's logline. The
-    // intended model DERIVES a real logline (protagonist/inciting/goal/obstacle/stakes) from the idea
-    // instead of equating them — see docs/dna-studio-analysis.md §0. Until then, keep the mirror so the
-    // journey gating, studio, and overview (which read seed.content.logline) stay consistent.
+    // idea ≠ logline (docs/dna-studio-analysis.md §0/§1): the raw idea is NOT the logline. We only seed the
+    // logline from the idea when it's still EMPTY (a provisional starting point), and never overwrite a
+    // logline that already exists — once the author drafts/refines one (the "draft logline" verb generates a
+    // real protagonist/inciting/goal/obstacle/stakes logline via dna-expand), editing the idea won't clobber
+    // it. Journey gating / studio / overview read seed.content.logline, so the empty-seed case still fills.
     if ("idea" in patch && nodes) {
       const seed = nodes.find((n) => n.kind === "seed");
-      if (seed) await patchNodeContent(seed, { logline: (patch.idea ?? "").trim() } as NodeContent);
+      const existing = (seed?.content as { logline?: string } | undefined)?.logline?.trim();
+      if (seed && !existing) await patchNodeContent(seed, { logline: (patch.idea ?? "").trim() } as NodeContent);
     }
   }, [brief, bookId, nodes]);
 

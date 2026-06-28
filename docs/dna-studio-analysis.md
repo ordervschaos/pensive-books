@@ -50,14 +50,13 @@ levels of polish:
   the primary goal, the main obstacle, and the stakes**. This is a *structured craft artifact* — the
   system's first real value-add: it refines the raw idea into a proper logline.
 
-> **Current vs. intended.** Today the code still mirrors `seed.logline ≡ brief.idea` (the raw idea is
-> dumped straight into the seed's logline field — see the `seed` branch in `DnaTreePage.tsx`, marked
-> with a `TODO(premise≠logline)`). That collapses the distinction. **Intended:** the brief carries the
-> raw idea; the seed's `logline` is *generated* from it (raw idea → the AI fleshes out protagonist /
-> inciting incident / goal / obstacle / stakes into a one- to two-sentence logline the author then
-> edits/locks). The amateur supplies the spark; the first rung's job is to forge it into a real logline
-> before anything downstream reads it. **The naming half of this is done; the derive-logline behavior is
-> the remaining work.**
+> **Status: built.** Both halves are now in place. The brief carries the raw idea; the seed's `logline`
+> is *generated* from it by a dedicated `dna-expand` step (`target: "logline"`) that fleshes the idea out
+> into a one- to two-sentence logline naming protagonist / inciting incident / goal / obstacle / stakes —
+> surfaced as the **"draft logline"** verb on the seed (DnaStudio). The brief→seed sync now only fills the
+> logline when it's *empty* (a provisional starting point) and never clobbers a drafted/refined one, so
+> editing the idea no longer overwrites the logline. The amateur supplies the spark; the first rung forges
+> it into a real logline before anything downstream reads it. *(Mirrored in the dev bridge; edge deployed.)*
 
 **Where it sits:** this is the third generation of the system. v1 was a heterogeneous stack
 (`brief`/`foundations`/`spine`/`outline` columns). v2 was the "Build Studio". DNA collapses all of it

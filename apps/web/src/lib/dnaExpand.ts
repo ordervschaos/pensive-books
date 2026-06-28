@@ -19,7 +19,7 @@ function chapterTitleFromBeat(beat: DnaNode): string {
 
 interface BeatSheetEntry { movement: number; content: BeatContent }
 interface ExpandResult {
-  childKind?: NodeKind; childLevel?: number; children?: NodeContent[]; prose?: string; caption?: string;
+  childKind?: NodeKind; childLevel?: number; children?: NodeContent[]; prose?: string; caption?: string; logline?: string;
   beatsheet?: boolean; beats?: BeatSheetEntry[]; movementIds?: string[];
 }
 
@@ -48,6 +48,19 @@ export async function expandNode(
 ): Promise<{ added: number }> {
   const { startPosition = 0, replaceIds = [] } = opts;
   const res = await callExpand(bookId, node.id, target);
+
+  if (target === "logline") {
+    // Seed → logline: write the seed's OWN logline (a polished refinement of brief.idea), not a child node.
+    const text = (res.logline ?? "").trim();
+    if (!text) throw new Error("No logline was generated.");
+    const updated: DnaNode = {
+      ...node,
+      content: deepMergeContent(node.content, { logline: text }),
+      authoring: { ...node.authoring, source: node.authoring.source === "user" ? "ai_then_user" : "ai", status: "accepted" },
+    };
+    await saveNode(updated);
+    return { added: 0 };
+  }
 
   if (target === "prose") {
     const text = (res.prose ?? "").trim();
