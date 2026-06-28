@@ -9,7 +9,7 @@ import { Shield, Loader2, CheckCircle2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 
-type ModelTier = "opus" | "sonnet" | "deepseek" | "qwen" | "qwen-plus" | "kimi" | "glm" | "minimax";
+type ModelTier = "opus" | "sonnet" | "deepseek" | "qwen" | "qwen-plus" | "kimi" | "glm" | "minimax" | "gpt";
 
 const TIERS: { value: ModelTier; label: string; description: string; badge: string; badgeVariant: "default" | "secondary" | "outline" }[] = [
   {
@@ -24,6 +24,13 @@ const TIERS: { value: ModelTier; label: string; description: string; badge: stri
     label: "Claude Sonnet",
     description: "Strong quality at ~5× lower cost. Good for most generation tasks. Recommended during development.",
     badge: "Recommended",
+    badgeVariant: "secondary",
+  },
+  {
+    value: "gpt",
+    label: "GPT-5.5",
+    description: "OpenAI GPT-5.5 via OpenRouter. Standout in prose tests — richest, warmest, wittiest drafts (best at the romcom register the brief asks for), though it runs long. Requires OPENROUTER_API_KEY secret.",
+    badge: "Strong",
     badgeVariant: "secondary",
   },
   {

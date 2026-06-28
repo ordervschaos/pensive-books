@@ -6,7 +6,7 @@
 // All expensive edge functions call getActiveModels() instead of hardcoding MODEL.
 import { serviceClient } from "./task.ts";
 
-export type ModelTier = "opus" | "sonnet" | "deepseek" | "qwen" | "qwen-plus" | "kimi" | "glm" | "minimax";
+export type ModelTier = "opus" | "sonnet" | "deepseek" | "qwen" | "qwen-plus" | "kimi" | "glm" | "minimax" | "gpt";
 
 // The cheap/fast model for incidental passes (summaries, character-state extraction). Exported so
 // callers that default a `low` model don't re-hardcode the string and drift from this file.
@@ -28,6 +28,7 @@ const TIER_MODELS: Record<ModelTier, { high: string; low: string }> = {
   kimi:        { high: "moonshotai/kimi-k2.7-code", low: "qwen/qwen3-8b" },
   glm:         { high: "z-ai/glm-5.2",              low: "qwen/qwen3-8b" },
   minimax:     { high: "minimax/minimax-m3",        low: "qwen/qwen3-8b" },
+  gpt:         { high: "openai/gpt-5.5",            low: "qwen/qwen3-8b" },
 };
 
 export async function getActiveModels(): Promise<{ high: string; low: string }> {

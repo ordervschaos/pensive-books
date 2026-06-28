@@ -448,6 +448,26 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
       return;
     }
 
+    // ── propose_options (thread): stage 2–4 alternatives ON the node and end the turn ──
+    // The candidates land on book_nodes.proposals (NOT the run's proposals[]) — the tree's picker renders
+    // them and chooseProposal commits one. The agent's narration is the reply; the pick waits for the author.
+    const optionsCall = toolUses.find((t) => t.name === "propose_options");
+    if (optionsCall) {
+      const outcome = await proposeOptions(service, row.book_id, scope, optionsCall.input as { nodeId?: string; note?: string; options?: unknown[] });
+      if (outcome.ok) {
+        steps.push({ t: "plan", label: `Staged ${outcome.count} options for "${outcome.handle}" — pick one in the tree.` });
+        await service.from("book_agent_runs").update({ status: "idle", transcript, steps }).eq("id", runId);
+        return;
+      }
+      const results = await toolResults(service, row.book_id, toolUses, steps, {
+        [optionsCall.id]: `The options were rejected: ${outcome.error} Fix and call propose_options again, or just reply.`,
+      });
+      transcript.push({ role: "user", content: results });
+      await service.from("book_agent_runs").update({ transcript, steps }).eq("id", runId);
+      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("revise-agent", { runId }));
+      return;
+    }
+
     const finishCall = toolUses.find((t) => t.name === "finish");
     if (finishCall) {
       const report = String((finishCall.input as { report?: string })?.report ?? "").trim() || "The agent finished without proposing changes.";
@@ -800,7 +820,7 @@ STYLE: before each tool call, narrate what you're doing and why in one or two pl
 // ── Thread mode = the DNA omni-rail (docs/agent-rail.md) ──────────────────────
 // The agent holds the book's DNA tree (book_nodes), discusses it, and proposes node ops the author
 // reviews and applies. The context filter (scope) fences which node kinds it sees AND may write.
-interface DnaNodeRow { id: string; parent_id: string | null; kind: string; level: number; content: Record<string, unknown>; authoring: { locked?: boolean; status?: string } | null }
+interface DnaNodeRow { id: string; parent_id: string | null; kind: string; level: number; content: Record<string, unknown>; authoring: { locked?: boolean; status?: string } | null; proposals?: { id: string; content: Record<string, unknown>; note?: string }[] | null }
 
 // A short human handle for a node (mirror of lib/dnaChat nodeLabel) for read summaries + step labels.
 function nodeHandle(content: Record<string, unknown> | null | undefined): string {
@@ -852,6 +872,23 @@ const THREAD_DNA_TOOLS = [
       required: ["summary", "ops"],
     },
   },
+  {
+    name: "propose_options",
+    description: "Offer the author 2–4 ALTERNATIVE versions of ONE node's content to choose among (the options picker). Use this when the author asks for options/alternatives, or to break a node out of its one obvious 'modal' version. Each option is a COMPLETE content object for that node's kind (the exact field names from the schema, like an edit's content). The options must be meaningfully different FROM EACH OTHER — but every option MUST HONOR the node's ancestors as FIXED: a child elaborates what's above it (the logline, then the premise), it never rewrites it. Vary ONLY what the parent leaves open (e.g. premise options keep the logline's protagonist / inciting incident / goal / obstacle / stakes fixed and vary only the dramatic question + 5-part shape). NEVER reshape an ancestor's story into a different book, and never offer near-duplicates. This stages the options ON the node (the author picks one in the tree) and ENDS your turn. For a SINGLE sharpened revision (e.g. an eval pass), use propose_node_ops (edit) instead. Only target a non-locked node whose kind is in scope.",
+    input_schema: {
+      type: "object",
+      properties: {
+        nodeId: { type: "string", description: "The existing node id to generate alternatives for." },
+        note: { type: "string", description: "One line: the axis the options vary along (e.g. 'three takes on the protagonist's wound')." },
+        options: {
+          type: "array",
+          description: "2–4 alternative content objects for this node's kind — each a complete value, meaningfully different from the others.",
+          items: { type: "object", additionalProperties: true },
+        },
+      },
+      required: ["nodeId", "options"],
+    },
+  },
 ];
 
 // The thread tool belt: ask_author always; read_node + propose_node_ops whenever ANY aspect is in
@@ -866,10 +903,11 @@ const SYSTEM_THREAD = `You are a sharp, warm developmental STORY EDITOR — the 
 
 You hold the book's DNA TREE: premise → foundations (pillar, cast, world, tentpoles, voice) → structure (movements, beats, threads) → scenes → prose. The tree below is FILTERED to the aspects in scope for this conversation, and prose is stripped to stay lean — use read_node to read a scene's full prose before judging or rewriting it.
 
-You can do three things:
-1. DISCUSS — answer, summarize, pressure-test. Reply in plain MARKDOWN prose and just end your turn (no tool needed). Be concrete, grounded in the real tree, referencing nodes by their [id].
-2. CHANGE THE TREE — when the author asks for a change (or agrees to one), call propose_node_ops with edit/add/delete ops over the real ids. The author reviews the diff and applies it; descendants of an edited node go stale and are regenerated later. ONLY touch nodes whose kind is in scope; NEVER touch a LOCKED node. Don't propose unless asked — talk first.
-3. DRAFT & CHECK PROSE — call render_scene_prose with a scene's [id] to draft (or redraft) its prose from its plan, in the book's voice (it saves to the scene and returns the text). Call check_against_contract with a scene's [id] to judge its existing prose against the brief mandate (genre, heat, voice, success criteria) and get a per-axis verdict you relay to the author. A common request — "write the first scene and see if it meets the brief" — is render_scene_prose then check_against_contract on the same scene. render OVERWRITES existing prose, so if a scene already has prose, confirm before redrafting.
+You can do four things:
+1. DISCUSS — answer, summarize, pressure-test. Reply in plain MARKDOWN prose and just end your turn (no tool needed). Be concrete, grounded in the real tree, referencing nodes by their [id]. When a node has PENDING OPTIONS and the author asks which is strongest, just RECOMMEND one in prose (name its option number + a one-line reason tied to the brief) — committing the pick is theirs, in the tree.
+2. CHANGE THE TREE — when the author asks for a change (or agrees to one), call propose_node_ops with edit/add/delete ops over the real ids. The author reviews the diff and applies it; descendants of an edited node go stale and are regenerated later. ONLY touch nodes whose kind is in scope; NEVER touch a LOCKED node. Don't propose unless asked — talk first. SHARPEN (the eval pass): when asked to improve a node FROM what it produced, read its direct children (one layer — they're in the tree above, or read_node them), judge how well the node serves them and the brief, then propose ONE sharpened revision as a propose_node_ops EDIT. Accepting it re-stales those children for regeneration — that closes the loop.
+3. OFFER OPTIONS — when the author asks for alternatives/options, or to break a node out of its one obvious version, call propose_options with the node's [id] and 2–4 COMPLETE content objects, meaningfully different FROM EACH OTHER but each one HONORING the node's ancestors as fixed: a child elaborates the logline/premise above, it never rewrites it. Vary only what the parent leaves open (premise options keep the logline's protagonist/inciting/goal/obstacle/stakes and vary the dramatic question + shape); never reshape an ancestor into a different story, never near-duplicates. The author picks one in the tree. Use this only for choose-among-N; a single revision is propose_node_ops.
+4. DRAFT & CHECK PROSE — call render_scene_prose with a scene's [id] to draft (or redraft) its prose from its plan, in the book's voice (it saves to the scene and returns the text). Call check_against_contract with a scene's [id] to judge its existing prose against the brief mandate (genre, heat, voice, success criteria) and get a per-axis verdict you relay to the author. A common request — "write the first scene and see if it meets the brief" — is render_scene_prose then check_against_contract on the same scene. render OVERWRITES existing prose, so if a scene already has prose, confirm before redrafting.
    • REBUILDS: to replace a whole level — "rebuild the acts", "4 movements with all-new beats" — use ONE replace_children op (parentId = the level's parent, e.g. the pillar for acts; childKind = movement; children = the new movements, each nesting its beats). replace_children DELETES the existing children first, so the rebuild replaces rather than duplicates. Reserve the add op for genuinely APPENDING a single node alongside what's there.
 
 ${CONTENT_SCHEMAS}
@@ -924,6 +962,31 @@ async function proposeNodeOps(
   return { ok: true, proposal: { id: crypto.randomUUID(), layer: "dna", summary: String(input.summary ?? "Proposed change").trim() || "Proposed change", ops } };
 }
 
+// Stage 2–4 alternative content objects ON a node as pickable options (the options/picker channel). The
+// candidates write to book_nodes.proposals; the author commits one in the tree (chooseProposal). Gated by
+// the same live-tree + scope + lock fence as proposeNodeOps — this only stages, it never commits.
+async function proposeOptions(
+  service: SupabaseClient,
+  bookId: number,
+  scope: Aspect[] | null,
+  input: { nodeId?: string; note?: string; options?: unknown[] },
+): Promise<{ ok: true; handle: string; count: number } | { ok: false; error: string }> {
+  const { data: rows } = await service.from("book_nodes").select("id, kind, content, authoring").eq("book_id", bookId);
+  const nodes = (rows ?? []) as { id: string; kind: string; content: Record<string, unknown> | null; authoring: { locked?: boolean } | null }[];
+  const node = nodes.find((n) => n.id === input.nodeId);
+  if (!node) return { ok: false, error: `No node with id ${input.nodeId}.` };
+  if (node.authoring?.locked) return { ok: false, error: `Node ${input.nodeId} is LOCKED — unlock it before offering options.` };
+  const kinds = scopedKinds(scope);
+  if (kinds && !kinds.has(node.kind)) return { ok: false, error: `Node ${input.nodeId} is a ${node.kind}, not in scope (${scope!.join(", ")}).` };
+  const objects = (Array.isArray(input.options) ? input.options : []).filter((o) => o && typeof o === "object" && !Array.isArray(o)) as Record<string, unknown>[];
+  if (objects.length < 2) return { ok: false, error: "Offer at least 2 distinct option objects (2–4)." };
+  const note = input.note?.trim();
+  const proposals = objects.slice(0, 4).map((content) => ({ id: crypto.randomUUID(), content, ...(note ? { note } : {}), source: "options" }));
+  const { error } = await service.from("book_nodes").update({ proposals }).eq("id", node.id);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, handle: nodeHandle(node.content), count: proposals.length };
+}
+
 // The thread's system prompt carries the CURRENT DNA tree, FILTERED to the in-scope kinds and rebuilt
 // every call so ids stay fresh as the author edits (the transcript holds only the conversation). Prose
 // is always stripped (read_node fetches it). A one-line premise/pillar frame is always included so the
@@ -932,7 +995,7 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
   const { data: book } = await service.from("books").select("name, brief").eq("id", bookId).maybeSingle();
   const b = book as { name?: string; brief?: Brief } | null;
   const { data: rows } = await service
-    .from("book_nodes").select("id, parent_id, kind, level, content, authoring").eq("book_id", bookId);
+    .from("book_nodes").select("id, parent_id, kind, level, content, authoring, proposals").eq("book_id", bookId);
   const nodes = (rows ?? []) as DnaNodeRow[];
   const kinds = scopedKinds(scope); // null = all
 
@@ -942,7 +1005,13 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
       const { prose: _drop, ...rest } = content as Record<string, unknown>;
       content = rest; // prose is heavy — read_node fetches it
     }
-    return `[${n.id}${n.authoring?.locked ? " · LOCKED" : ""}] L${n.level} ${n.kind}: ${JSON.stringify(content)}`;
+    let line = `[${n.id}${n.authoring?.locked ? " · LOCKED" : ""}] L${n.level} ${n.kind}: ${JSON.stringify(content)}`;
+    // Pending options (the picker channel) — surfaced so you can RECOMMEND which the author should pick.
+    if (Array.isArray(n.proposals) && n.proposals.length) {
+      line += `\n  PENDING OPTIONS (${n.proposals.length} — the author picks one; you may recommend which by its number): ` +
+        JSON.stringify(n.proposals.map((p, i) => ({ option: i + 1, ...p.content })));
+    }
+    return line;
   };
 
   const inTree = nodes.filter((n) => !kinds || kinds.has(n.kind)).sort((a, b) => a.level - b.level);

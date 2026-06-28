@@ -74,6 +74,20 @@ export async function answerAgent(threadId: number, answer: string): Promise<voi
   await invoke({ runId: threadId, answer });
 }
 
+/** Log a HUMAN decision into the book's agent thread as a visible step WITHOUT a model call — the chat is
+ *  the agent's surface, so author actions like choosing/discarding an option register there too. Best-effort:
+ *  no-op if the thread doesn't exist yet (nothing to log into) or is mid-turn (don't race the edge fn's
+ *  writes — same idle-only safety as dropProposal). Surfaces over Realtime in the rail; refresh = no-op. */
+export async function logAgentTurn(bookId: number, label: string, t: AgentStep["t"] = "answer"): Promise<void> {
+  const { data } = await supabase.from("book_agent_runs")
+    .select("id, status, steps").eq("book_id", bookId).eq("kind", "thread").maybeSingle();
+  if (!data) return;
+  const busy = data.status === "running" || data.status === "awaiting_input";
+  if (busy) return; // don't write steps while the edge fn owns the row
+  const steps = [...(Array.isArray(data.steps) ? (data.steps as AgentStep[]) : []), { t, label }];
+  await supabase.from("book_agent_runs").update({ steps }).eq("id", data.id);
+}
+
 /** Apply a reviewed proposal: run its node ops against book_nodes, then drop it from the thread. Returns the
  *  validation so the rail can warn when the schema boundary rejected some ops (they didn't land). */
 export async function applyAgentProposal(bookId: number, threadId: number, proposal: AgentProposal, all: AgentProposal[]): Promise<OpValidation> {

@@ -11,7 +11,8 @@ import { editSpecs, KIND_LEVEL, tasteSpecs, type EditSpec } from "@/lib/dnaSchem
 import { CONTENT_TYPES, SCOPE_BANDS, briefIdea, type Brief } from "@/lib/brief";
 import { describeOps, type NodeOp } from "@/lib/dnaChat";
 import { AgentRail } from "@/components/book/studio/AgentRail";
-import { type AgentProposal } from "@/lib/agentThread";
+import { sendAgentMessage, type AgentProposal } from "@/lib/agentThread";
+import { chooseNodeProposal, discardNodeProposals } from "@/lib/dnaProposals";
 import { DNA_STAGES, dnaHealth } from "@/lib/dnaJourney";
 
 const getNumericId = (p: string | undefined) => { const m = p?.match(/^(\d+)/); return m ? parseInt(m[1]) : 0; };
@@ -641,6 +642,154 @@ function ProseBlock({ node, depth, open, onToggle }: {
   );
 }
 
+// ── Options / picker (the candidate+judge channel) ───────────────────────────
+// The spine rungs (logline/premise/pillar) are where one-shot error compounds hardest (analysis §6.1), so
+// the manual generator omits the variety they need. These are the author's selection-pressure surface:
+//  • SpineLab — three affordances that drive the ONE agent (every AI call is a chat turn): generate options,
+//    sharpen-from-children (the closed eval loop), and ask-the-AI-to-pick. They send a templated message and
+//    open the rail; the agent does the work as a visible turn.
+//  • ProposalPicker — the agent's propose_options stages 2–4 candidates onto node.proposals; this renders
+//    them as before→after cards. Picking commits (chooseProposal) + re-stales descendants; both pick and
+//    discard log a turn back to the agent thread (dnaProposals.ts).
+const SPINE_KINDS = new Set<string>(["seed", "premise", "pillar"]);
+const SPINE_LABEL: Record<string, string> = { seed: "logline", premise: "premise", pillar: "pillar" };
+// The next rung down each spine singleton — generation flows DOWN one step at a time, so each node leaves a
+// hanging "generate {child}" slot (the spine singletons have no AddRow otherwise; deeper rungs do).
+const SPINE_CHILD: Record<string, NodeKind> = { seed: "premise", premise: "pillar" };
+
+function LabButton({ label, busy, onClick }: { label: string; busy: boolean; onClick: () => void }) {
+  return (
+    <span onClick={() => !busy && onClick()} style={{
+      fontFamily: "ui-monospace, monospace", fontSize: 10, letterSpacing: "0.06em",
+      color: busy ? "#555" : "#a8a8ff", cursor: busy ? "default" : "pointer",
+      border: "1px solid #8a8aff44", borderRadius: 4, padding: "2px 8px", background: "#8a8aff10",
+    }}>{busy ? "…" : label}</span>
+  );
+}
+
+// The AI lab: generate/options · sharpen-from-children (the eval loop) · ask the AI to pick. Every button is
+// a turn on the book's ONE agent thread — the chat is the agent's surface, so no AI action happens off it.
+// Verbs name the artifact they act on (logline / premise / pillar) and adapt to state: an unforged logline
+// (still the raw brief idea, no children yet) gets a single "draft logline"; once a real logline / node and
+// its children exist, you get options + sharpen.
+function SpineLab({ node, depth, bookId, brief, hasChildren, openRail }: {
+  node: DnaNode; depth: number; bookId: number; brief: Brief | null; hasChildren: boolean; openRail: () => void;
+}) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const label = SPINE_LABEL[node.kind] ?? node.kind;       // "logline" | "premise" | "pillar"
+  const hasProposals = !!node.proposals?.length;
+  const locked = node.authoring.locked;
+  // The seed's logline is "unforged" while it's empty or still just the raw brief idea (the provisional copy
+  // the seed gets on creation). Until it's forged, the meaningful verb is "draft", not "alternatives".
+  const logline = node.kind === "seed" ? String((node.content as Record<string, unknown>).logline ?? "").trim() : "";
+  const rawIdea = (briefIdea(brief) ?? "").trim();
+  const unforged = node.kind === "seed" && (!logline || logline === rawIdea);
+  // Empty (just-added placeholder) vs existing content → generate vs regenerate (the author's pick: a fresh
+  // placeholder fills via options; an existing value re-stages a new best-of-N).
+  const emptyContent = Object.keys((node.content ?? {}) as Record<string, unknown>).length === 0;
+  const forgeable = node.kind === "seed" ? unforged : emptyContent; // not yet a real value to vary/sharpen
+
+  const send = async (key: string, message: string) => {
+    setBusy(key);
+    try { await sendAgentMessage(bookId, message); openRail(); }
+    catch (e) { alert(`Couldn't reach the agent: ${(e as Error).message}`); }
+    finally { setBusy(null); }
+  };
+  const draftLoglineMsg = `Forge the LOGLINE for node [${node.id}] from the brief idea: one or two sentences naming the protagonist, the inciting incident, the primary goal, the main obstacle, and the stakes — sharpen the raw idea into a real logline (don't restate it). Propose it as a propose_node_ops edit to the logline field. Don't ask first — just propose it.`;
+  // Bounded divergence: options must HONOR the parent (the ladder's one law — a child elaborates what's above
+  // it, it never rewrites it). Name what's FIXED per rung so the agent varies only the open axis, instead of
+  // reshaping the seed into different books.
+  const constraint =
+    node.kind === "seed"
+      ? `Every option must be a faithful, SHARPER read of the SAME brief idea above — same story, not a different one; vary the framing, emphasis, and which angle leads.`
+      : node.kind === "premise"
+        ? `HARD CONSTRAINT — treat the logline above as LOCKED: every option must serve that SAME logline, keeping its protagonist, inciting incident, central goal, main obstacle, and stakes FIXED. Vary ONLY the dramatic question and the 5-part shape (how it's structured/interpreted). Do NOT change the curse, the heist, the characters, or the world the logline already fixed — never reshape it into a different book.`
+        : `HARD CONSTRAINT — treat the logline + premise above as LOCKED: every option must serve them. Vary ONLY the controlling idea and the ending; do NOT alter the established premise or story.`;
+  const optionsMsg = `Draft 3 alternative ${label}s for node [${node.id}] and stage them with propose_options. ${constraint} Make them meaningfully different from EACH OTHER along the allowed axis, never near-duplicates. Honor the brief MANDATE (genre, heat, tone) verbatim. Don't ask first — just propose the options.`;
+  const sharpenMsg = `Sharpen the ${label} [${node.id}] from what it produced: read its direct children (one layer down), judge how well it serves them and the brief, then propose ONE improved version as a propose_node_ops edit. Accepting it will re-stale those children for regeneration. Don't ask first — just propose the edit.`;
+  const pickMsg = `Of the pending options on node [${node.id}], which is strongest for the brief and the book? Recommend ONE by its option number with a one-line reason — I'll commit the pick in the tree.`;
+  return (
+    <div style={{ ...detailRowStyle(depth), paddingTop: 4, paddingBottom: 4 }} onClick={(e) => e.stopPropagation()}>
+      <ConnectorTick depth={depth} />
+      <span style={{ width: 12, flexShrink: 0 }} />
+      <span style={{ ...labelStyle, color: "#6a6a9a" }}>ai lab</span>
+      <span style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        {locked ? <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 10, color: "#444" }}>🔒 unlock to generate</span> : (
+          <>
+            {node.kind === "seed" && unforged
+              ? <LabButton label="✦ derive logline from brief" busy={busy === "draft"} onClick={() => void send("draft", draftLoglineMsg)} />
+              : <LabButton
+                  label={node.kind === "seed" ? "↻ logline options" : emptyContent ? `✦ generate ${label} options` : `↻ regenerate ${label} options`}
+                  busy={busy === "options"} onClick={() => void send("options", optionsMsg)} />}
+            {/* sharpen-from-children (eval up) only once this node is a real value AND has children to read. */}
+            {hasChildren && !forgeable && <LabButton label={`↑ sharpen ${label}`} busy={busy === "sharpen"} onClick={() => void send("sharpen", sharpenMsg)} />}
+            {hasProposals && <LabButton label="⚖ ask AI to pick" busy={busy === "pick"} onClick={() => void send("pick", pickMsg)} />}
+          </>
+        )}
+      </span>
+    </div>
+  );
+}
+
+// The picker: render each staged option as a before→after card (reusing describeOps, like the proposal
+// overlay). "use this" commits it; "discard all" clears. Both register a turn on the agent thread.
+function ProposalPicker({ node, nodes, depth }: { node: DnaNode; nodes: DnaNode[]; depth: number }) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const props = node.proposals ?? [];
+  const mono = "ui-monospace, monospace";
+  if (!props.length) return null;
+  const choose = async (id: string) => {
+    setBusy(id);
+    try { await chooseNodeProposal(node, id, nodes); } // commit + re-stale descendants + log a turn
+    catch (e) { alert(`Couldn't apply the option: ${(e as Error).message}`); setBusy(null); }
+  };
+  const discard = async () => {
+    setBusy("discard");
+    try { await discardNodeProposals(node); }
+    catch (e) { alert(`Discard failed: ${(e as Error).message}`); setBusy(null); }
+  };
+  return (
+    <div style={{ position: "relative", paddingLeft: depth * 20 + 20, paddingRight: 12, paddingTop: 2, paddingBottom: 8 }} onClick={(e) => e.stopPropagation()}>
+      <ConnectorTick depth={depth} />
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, paddingBottom: 4 }}>
+        <span style={{ width: 12, flexShrink: 0 }} />
+        <span style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.16em", textTransform: "uppercase", color: "#60a070" }}>✦ {props.length} option{props.length === 1 ? "" : "s"} — pick one</span>
+        <span onClick={() => !busy && void discard()} style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase", color: busy ? "#444" : "#7a3030", cursor: busy ? "default" : "pointer", marginLeft: "auto" }}>discard all ✕</span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, paddingLeft: 20 }}>
+        {props.map((p, i) => {
+          const fields = describeOps([{ op: "edit", id: node.id, content: p.content }], nodes)[0]?.fields ?? [];
+          return (
+            <div key={p.id} style={{ border: "1px solid #2a3a2e", borderRadius: 5, background: "#0e140f", padding: "7px 10px" }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                <span style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "#7fae8f" }}>
+                  option {i + 1}{p.source === "eval" ? " · sharpened" : ""}
+                </span>
+                <span onClick={() => !busy && void choose(p.id)} style={{
+                  fontFamily: mono, fontSize: 10, letterSpacing: "0.06em", textTransform: "uppercase", marginLeft: "auto",
+                  color: busy === p.id ? "#555" : "#9fe0b0", cursor: busy ? "default" : "pointer",
+                  border: "1px solid #4a7a5a", borderRadius: 4, padding: "2px 9px", background: "#1a2a1e",
+                }}>{busy === p.id ? "applying…" : "use this →"}</span>
+              </div>
+              {p.note && <div style={{ fontFamily: mono, fontSize: 10, color: "#6a8a72", paddingTop: 4, fontStyle: "italic" }}>{p.note}</div>}
+              <div style={{ paddingTop: 5, display: "flex", flexDirection: "column", gap: 3 }}>
+                {fields.length === 0 && <div style={{ fontFamily: mono, fontSize: 11, color: "#555" }}>(no fields)</div>}
+                {fields.map((f) => (
+                  <div key={f.key}>
+                    <span style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.06em", textTransform: "uppercase", color: "#4a5a4e" }}>{f.key}</span>
+                    {f.old !== undefined && f.old !== f.next && <div style={{ fontFamily: mono, fontSize: 11.5, color: "#6a5050", textDecoration: "line-through", whiteSpace: "pre-wrap", lineHeight: 1.45 }}>{f.old}</div>}
+                    <div style={{ fontFamily: mono, fontSize: 11.5, color: "#bfcfc3", whiteSpace: "pre-wrap", lineHeight: 1.45 }}>{f.next}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── Recursive tree subtree ───────────────────────────────────────────────────
 interface TreeView {
   onToggle: (id: string) => void; onToggleDetail: (id: string) => void;
@@ -665,6 +814,8 @@ interface TreeView {
   onDiscardStory: () => void;
   brief: Brief | null;                  // seed: the book's mandate (saved to books.brief)
   onSaveBrief: (patch: Partial<Brief>) => Promise<void>;
+  bookId: number;                       // options/eval lab → drives the agent thread
+  openRail: () => void;                 // surface the agent rail when a lab action fires a turn
 }
 function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
   node: DnaNode; index: Map<string, DnaNode>; nodes: DnaNode[]; depth: number;
@@ -686,6 +837,23 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
   // #1 — phantom add rows the proposal would create under (parentId, kind), rendered before the ＋ add row.
   const phantoms = (parentId: string, kind: string, d: number) =>
     (h.proposal?.addsByParent.get(addKey(parentId, kind)) ?? []).map((add, i) => <PhantomRow key={`ph-${i}`} add={add} depth={d} />);
+  // The AI lab (spine nodes only — where one-shot error compounds) + the options picker (any node with staged
+  // candidates). Both render after this node's own fields, before its children. The picker shows even when the
+  // lab doesn't (e.g. proposals on a non-spine node), and vice-versa.
+  const lab = open ? (
+    <>
+      {SPINE_KINDS.has(node.kind) && <SpineLab node={node} depth={depth + 1} bookId={h.bookId} brief={h.brief} hasChildren={hasKids} openRail={h.openRail} />}
+      {node.proposals?.length ? <ProposalPicker node={node} nodes={nodes} depth={depth + 1} /> : null}
+    </>
+  ) : null;
+  // The hanging "generate the next rung →" slot for the spine singletons (seed→premise→pillar) — shown once
+  // THIS node has real content and its single child rung is still empty. Adds an empty child placeholder
+  // (its own options lab then fills it). Deeper rungs (pillar→movements, movement→beats) already have AddRows.
+  const spineChildKind = SPINE_CHILD[node.kind];
+  const nodeEmpty = Object.keys((node.content ?? {}) as Record<string, unknown>).length === 0;
+  const spineChildRow = open && spineChildKind && !nodeEmpty && !kids.some((k) => k.kind === spineChildKind)
+    ? <AddRow label={`generate ${spineChildKind} →`} depth={depth + 1} onAdd={() => h.onAdd(node.id, spineChildKind)} />
+    : null;
 
   // The pillar splits into STORY (the spine) + CAST & WORLD (the registry, sub-grouped by kind); a movement
   // can add beats, a beat can add scenes; every other node just renders its editable fields.
@@ -698,6 +866,7 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
         <>
           {fields}
           {backlinks}
+          {lab}
           {/* Foundations (cast & world) first — the materials — then the spine built from them. */}
           <NodeGroup groupId={`${node.id}::world`} label="cast & world" hint="the registry"
             count={entities.length} depth={depth + 1} collapsedSet={collapsedSet} onToggle={h.onToggle} alwaysShow>
@@ -727,13 +896,24 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
         </>
       );
     } else if (node.kind === "seed") {
-      // The seed IS the brief — its node-local logline is folded into the brief's `premise` field below,
-      // then its structural children (premise → pillar → the rest of the tree) render beneath.
+      // The seed IS the LOGLINE node — the first DERIVED artifact (protagonist · inciting · goal · obstacle ·
+      // stakes). Show that labeled field first, then the lab that forges/refines it, then the BRIEF (the
+      // constant, book-level origin it derives FROM — not a tree rung), then the premise child.
       body = (
         <>
+          {fields}
+          <div style={{ ...detailRowStyle(depth + 1), paddingTop: 0, paddingBottom: 2 }}>
+            <ConnectorTick depth={depth + 1} />
+            <span style={{ width: 12, flexShrink: 0 }} />
+            <span style={{ ...labelStyle, color: "transparent" }}>·</span>
+            <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 10, color: "#555", fontStyle: "italic" }}>
+              the logline — derived from the brief (the origin) above; ≠ the raw idea. Refine it with the lab.
+            </span>
+          </div>
           {backlinks}
-          <BriefSection brief={h.brief} onSave={h.onSaveBrief} depth={depth + 1} />
+          {lab}
           {sub(kids, depth + 1)}
+          {spineChildRow}
         </>
       );
     } else {
@@ -742,10 +922,12 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
         <>
           {fields}
           {backlinks}
+          {lab}
           {node.kind === "scene" && (
             <ProseBlock node={node} depth={depth + 1} open={h.proseOpenSet.has(node.id)} onToggle={() => h.onToggleProse(node.id)} />
           )}
           {sub(kids, depth + 1)}
+          {spineChildRow}
           {childAdd && phantoms(node.id, childAdd, depth + 1)}
           {childAdd && <AddRow label={childAdd} depth={depth + 1} onAdd={() => h.onAdd(node.id, childAdd as DnaNode["kind"])} />}
         </>
@@ -850,7 +1032,7 @@ function BriefSection({ brief, onSave, depth }: { brief: Brief | null; onSave: (
       <div style={{ ...detailRowStyle(depth - 1), paddingTop: 6 }}>
         <ConnectorTick depth={depth - 1} />
         <span style={{ width: 12, flexShrink: 0 }} />
-        <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", color: "#5a5a7a" }}>brief — mandate</span>
+        <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", color: "#5a5a7a" }}>brief — mandate · the constant origin</span>
       </div>
 
       {/* idea — the author's raw "what is the book about?" (brief.idea); the logline is DERIVED from this, not equal to it */}
@@ -900,6 +1082,41 @@ function BriefSection({ brief, onSave, depth }: { brief: Brief | null; onSave: (
         </select>
       </div>
     </>
+  );
+}
+
+// ── Brief origin (step 0) ─────────────────────────────────────────────────────
+// The brief is the ORIGIN — book-level input on books.brief, NOT a tree node. The seed (= the logline) is
+// step 1, DERIVED from it (docs/dna-studio-analysis.md §1). So the brief renders here, ABOVE the tree, with a
+// "↓ derives" cue — not nested inside the seed (which wrongly read as the brief being a detail OF the logline).
+// Empty tree → the seed button lives here too (seeding derives the first node from this origin).
+function BriefOrigin({ brief, onSave, seeded, onSeed, seeding }: {
+  brief: Brief | null; onSave: (patch: Partial<Brief>) => Promise<void>; seeded: boolean; onSeed: () => void; seeding: boolean;
+}) {
+  const mono = "ui-monospace, monospace";
+  return (
+    <div style={{ borderBottom: "1px solid #1a1a1a", background: "#0b0b0f", paddingBottom: 8 }}>
+      <BriefSection brief={brief} onSave={onSave} depth={1} />
+      {seeded ? (
+        <div style={{ padding: "8px 16px 2px 20px", display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ color: "#a78bfa", fontSize: 13, lineHeight: 1 }}>↓</span>
+          <span style={{ fontFamily: mono, fontSize: 10, color: "#6a6a8a", fontStyle: "italic" }}>
+            derives the SEED below — a polished logline (protagonist · inciting · goal · obstacle · stakes), generated from this brief
+          </span>
+        </div>
+      ) : (
+        <div style={{ padding: "12px 16px 4px" }}>
+          <div style={{ padding: "0 0 10px", color: "#555", fontSize: 12, fontStyle: "italic", letterSpacing: "0.02em" }}>
+            No DNA tree yet — this brief is the origin. Edit it, then seed to derive the logline (the first node) from it.
+          </div>
+          <button onClick={onSeed} disabled={seeding} style={{
+            background: "#8a8aff14", border: "1px solid #8a8aff66", borderRadius: 5,
+            color: "#a8a8ff", fontSize: 10, cursor: seeding ? "default" : "pointer", letterSpacing: "0.1em",
+            textTransform: "uppercase", padding: "5px 12px", fontFamily: mono,
+          }}>{seeding ? "seeding…" : "✦ seed the tree — derive the logline from this brief"}</button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1418,31 +1635,18 @@ export default function DnaTreePage() {
         </div>
       )}
 
+      {/* The BRIEF — the ORIGIN (step 0), above the tree. The seed (logline) below is derived from it. */}
+      <BriefOrigin brief={brief} onSave={saveBrief} seeded={roots.length > 0} onSeed={() => void seedTree()} seeding={seeding} />
+
       {/* #2 — Voice & Feel: the consolidated taste surface (the machinery below stays the AI's) */}
       <VoiceFeelPanel nodes={nodes} index={index} onJump={jumpTo} />
 
       {/* Tree */}
       <div style={{ paddingTop: 8, paddingBottom: 48 }}>
-        {roots.length === 0 ? (
-          <div style={{ padding: "16px 0" }}>
-            {/* The brief exists on the book even before the tree is seeded — it's the origin everything
-                derives from, so let the author read/edit it here and grow the tree from it. */}
-            <div style={{ padding: "0 16px 12px", color: "#555", fontSize: 12, fontStyle: "italic", letterSpacing: "0.02em" }}>
-              No DNA tree yet. The brief below is the origin — edit it, then seed the tree to start building from it.
-            </div>
-            <BriefSection brief={brief} onSave={saveBrief} depth={1} />
-            <div style={{ padding: "16px 16px 0" }}>
-              <button onClick={() => void seedTree()} disabled={seeding} style={{
-                background: "#8a8aff14", border: "1px solid #8a8aff66", borderRadius: 5,
-                color: "#a8a8ff", fontSize: 10, cursor: seeding ? "default" : "pointer", letterSpacing: "0.1em",
-                textTransform: "uppercase", padding: "5px 12px", fontFamily: "ui-monospace, monospace",
-              }}>{seeding ? "seeding…" : "✦ seed the tree from this brief"}</button>
-            </div>
-          </div>
-        ) : roots.map((root) => (
+        {roots.map((root) => (
           <Subtree key={root.id} node={root} index={index} nodes={nodes} depth={0}
             collapsedSet={collapsedSet} openSet={openSet}
-            h={{ onToggle: toggleNode, onToggleDetail: toggleDetail, onAdd: addNode, onDelete: removeNode, onJump: jumpTo, dragId, onDragStart: setDragId, onDragEnd: () => setDragId(null), onDrop: onDropReorder, backlinks, flashId, proposal: proposalView, focusKinds: null, issuesByNode, healthLens, contextId, ctxConsumes, ctxConsumedBy, onContextFocus: focusContext, proseOpenSet, onToggleProse: toggleProse, onDiscardStory: discardStory, brief, onSaveBrief: saveBrief }} />
+            h={{ onToggle: toggleNode, onToggleDetail: toggleDetail, onAdd: addNode, onDelete: removeNode, onJump: jumpTo, dragId, onDragStart: setDragId, onDragEnd: () => setDragId(null), onDrop: onDropReorder, backlinks, flashId, proposal: proposalView, focusKinds: null, issuesByNode, healthLens, contextId, ctxConsumes, ctxConsumedBy, onContextFocus: focusContext, proseOpenSet, onToggleProse: toggleProse, onDiscardStory: discardStory, brief, onSaveBrief: saveBrief, bookId, openRail: () => setRailOpen(true) }} />
         ))}
       </div>
     </div>

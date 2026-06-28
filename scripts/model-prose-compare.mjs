@@ -25,8 +25,8 @@ const env = Object.fromEntries(
 );
 const SUPABASE_URL = `https://${env.VITE_SUPABASE_PROJECT_ID}.supabase.co`;
 const SR = env.SERVICE_ROLE_SECRET;
-const MULE_KEY = env.MULE_ROUTER_API_KEY;
-const MULE_URL = "https://api.mulerouter.ai/vendors/openai/v1/chat/completions";
+const OR_KEY = env.OPENROUTER_API_KEY;
+const OR_URL = "https://openrouter.ai/api/v1/chat/completions";
 const sb = { apikey: SR, Authorization: `Bearer ${SR}` };
 
 const args = process.argv.slice(2);
@@ -34,19 +34,19 @@ const argVal = (f, d) => { const i = args.indexOf(f); return i !== -1 ? args[i +
 const BOOK = Number(argVal("--book", 1204));
 const INDEX = Number(argVal("--index", 1)); // 1-based reading-order scene index
 
-// Models. Claude family → claude -p; the rest → MuleRouter. Labels mirror the app's tier names.
+// Models. Claude family → claude -p; the rest → real OpenRouter API (defeats MuleRouter's prefix
+// caching, so per-model attribution is honest). Ids are the production TIER_MODELS "high" ids.
 const CLAUDE_MODELS = [
   { id: "opus",   label: "opus (claude-opus-4-8)" },
   { id: "sonnet", label: "sonnet (claude-sonnet-4-6)" },
 ];
-const MULE_MODELS = [
-  { id: "qwen3.7-plus",    label: "qwen3.7-plus  ← PRODUCTION tier" },
-  { id: "qwen3-max",       label: "qwen3-max" },
-  { id: "deepseek-v4-pro", label: "deepseek-v4-pro" },
-  { id: "kimi-k2.6",       label: "kimi-k2.6" },
-  { id: "glm-5.1",         label: "glm-5.1" },
-  { id: "gpt-5.5",         label: "gpt-5.5" },
-  { id: "grok-4",          label: "grok-4" },
+const OR_MODELS = [
+  { id: "qwen/qwen3.7-plus",         label: "qwen3.7-plus  ← PRODUCTION tier" },
+  { id: "qwen/qwen3-235b-a22b",      label: "qwen3-235b-a22b (qwen tier)" },
+  { id: "deepseek/deepseek-chat",    label: "deepseek-chat (deepseek tier)" },
+  { id: "moonshotai/kimi-k2.7-code", label: "kimi-k2.7-code (kimi tier)" },
+  { id: "z-ai/glm-5.2",              label: "glm-5.2 (glm tier)" },
+  { id: "minimax/minimax-m3",        label: "minimax-m3 (minimax tier)" },
 ];
 
 const ENTITY_KINDS = new Set(["character","relationship","tentpole","world_fact","location","thread","game","voice_profile"]);
@@ -73,34 +73,33 @@ function claudeP(prompt, model) {
   });
 }
 
-async function muleCall(model, prompt, attempt = 1) {
+async function orCall(model, prompt, attempt = 1) {
   const t0 = Date.now();
-  // Per-model nonce: MuleRouter coalesces/caches CONCURRENT identical prompts and returns the same
-  // bytes for different model ids (verified — deepseek/glm/grok came back byte-identical). A trailing
-  // marker makes each request's prompt unique so each model actually runs. temperature>0 for variety.
+  // Real OpenRouter: no automatic prefix-coalescing (caching is opt-in via cache_control), so the
+  // production prompt goes through verbatim and each model id returns its own generation.
   const body = JSON.stringify({
     model,
-    messages: [{ role: "user", content: `${prompt}\n\n<!-- gen-variant: ${model} -->` }],
-    max_tokens: 4000,
+    messages: [{ role: "user", content: prompt }],
+    max_tokens: 8000,
     temperature: 0.8,
   });
   try {
-    const res = await fetch(MULE_URL, {
+    const res = await fetch(OR_URL, {
       method: "POST",
-      headers: { Authorization: `Bearer ${MULE_KEY}`, "content-type": "application/json" },
+      headers: { Authorization: `Bearer ${OR_KEY}`, "content-type": "application/json" },
       body,
     });
     const raw = await res.text();
     const ms = Date.now() - t0;
     if (!res.ok) {
-      if (res.status >= 500 && attempt < 3) return muleCall(model, prompt, attempt + 1);
+      if (res.status >= 500 && attempt < 3) return orCall(model, prompt, attempt + 1);
       return { error: `HTTP ${res.status}: ${raw.slice(0, 300)}`, ms };
     }
     let j; try { j = JSON.parse(raw); } catch { return { error: `bad json: ${raw.slice(0,200)}`, ms }; }
     const text = (j.choices?.[0]?.message?.content ?? "").trim();
     return { text, ms, usage: j.usage };
   } catch (e) {
-    if (attempt < 3) return muleCall(model, prompt, attempt + 1); // ECONNRESET etc. — retry
+    if (attempt < 3) return orCall(model, prompt, attempt + 1); // ECONNRESET etc. — retry
     return { error: `fetch failed: ${String(e?.message ?? e)}`, ms: Date.now() - t0 };
   }
 }
@@ -140,15 +139,15 @@ async function main() {
   results.push({ model: "opus", label: CLAUDE_MODELS[0].label, via: "claude -p", text: opusProse, ms: null });
   results.push({ model: "sonnet", label: CLAUDE_MODELS[1].label, via: "claude -p", text: sonnetProse, ms: null });
 
-  // 3) MuleRouter models — SEQUENTIALLY. Concurrent identical large prompts make MuleRouter fan one
-  // cached completion out to multiple model ids (verified: byte-identical outputs across vendors, and
-  // neither a per-model nonce nor temperature>0 defeated it — only running one-at-a-time does).
-  console.error(`[compare] ${MULE_MODELS.length} MuleRouter models SEQUENTIALLY …`);
-  for (const m of MULE_MODELS) {
-    const r = await muleCall(m.id, PROMPT);
+  // 3) OpenRouter production models — in parallel (OpenRouter doesn't coalesce, so each id returns
+  // its own generation; orCall retries on 5xx/network and returns {error} rather than throwing).
+  console.error(`[compare] ${OR_MODELS.length} OpenRouter models in parallel …`);
+  const orResults = await Promise.all(OR_MODELS.map(async (m) => {
+    const r = await orCall(m.id, PROMPT);
     console.error(`[compare]   ${m.id}: ${r.error ? "ERR " + r.error.slice(0,80) : (wordCount(r.text) + "w " + r.ms + "ms")}`);
-    results.push({ model: m.id, label: m.label, via: "mulerouter", text: r.text || "", ms: r.ms, error: r.error });
-  }
+    return { model: m.id, label: m.label, via: "openrouter", text: r.text || "", ms: r.ms, error: r.error };
+  }));
+  results.push(...orResults);
 
   // 4) Lints (objective)
   const castNames = nodes.filter((n) => n.kind === "character").map((n) => String(n.content?.name ?? "").trim()).filter(Boolean);
@@ -186,7 +185,8 @@ ${labeled.map((l) => `\n----- ${l.tag} -----\n${l.text}`).join("\n")}`;
   } else judge = { error: judgeOut.error };
 
   // 6) Write outputs
-  for (const r of results) writeFileSync(join(outDir, `${r.model}.md`), `# ${r.label}\n\n${r.text || "(no output: " + (r.error || "empty") + ")"}\n`);
+  const slug = (m) => m.replace(/[/\\]/g, "_");
+  for (const r of results) writeFileSync(join(outDir, `${slug(r.model)}.md`), `# ${r.label}\n\n${r.text || "(no output: " + (r.error || "empty") + ")"}\n`);
   writeFileSync(join(outDir, "_data.json"), JSON.stringify({ book: BOOK, scene: scene.id, beat: scene.content, prompt: PROMPT, tagMap, results: results.map(({ lints, ...r }) => ({ ...r, lints })), judge }, null, 2));
 
   // 7) Console summary table
