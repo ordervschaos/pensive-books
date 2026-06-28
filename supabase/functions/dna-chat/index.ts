@@ -107,7 +107,7 @@ ${dnaSchema.promptGuide}`;
     const meta: CallMeta = { fn: "dna-chat", bookId, userId: user.id };
     const history = withUser.slice(-12).map((m) => ({ role: m.role, content: m.text }));
     const data = await callClaude(apiKey, {
-      model, max_tokens: 3000,
+      model, max_tokens: 6000,
       system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
       messages: [{ role: "user", content: `${ctx}\n\n— The conversation so far is below; respond to the latest message.` }, ...history],
     }, meta);

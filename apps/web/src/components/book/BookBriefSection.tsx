@@ -134,10 +134,10 @@ export function BookBriefSection({ bookId, brief, onBriefChange, embedded = fals
             />
           </FieldRow>
 
-          <FieldRow label="Concept" hint="What is the book about, in 1–2 sentences?">
+          <FieldRow label="Idea" hint="What is the book about? A rough idea is fine.">
             <Textarea
-              value={draft.premise ?? ""}
-              onChange={(e) => setDraft((prev) => ({ ...prev, premise: e.target.value }))}
+              value={draft.idea ?? ""}
+              onChange={(e) => setDraft((prev) => ({ ...prev, idea: e.target.value }))}
               onBlur={() => void doSave(draft)}
               placeholder="A translator returns home for a funeral and gets stuck…"
               rows={3}

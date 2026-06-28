@@ -2,13 +2,17 @@
 // Visual tree of the live book_nodes hierarchy. No app chrome; nav suppressed via ConditionalNav.
 // Color-coded by node kind; connector lines via CSS borders; collapsible per-node.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import ReactMarkdown from "react-markdown";
+import { useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { deleteNode, patchNodeContent, saveNode, saveNodes } from "@/lib/bookNodes";
-import { analysisText, backlinkIndex, byId, childrenOf, isEntityKind, isProseStale, isStale, newId, pillarOf, refsOf, type BookSettings, type DnaIssue, type DnaNode, type BeatContent, type NodeContent, type NodeKind, type SceneContent } from "@/lib/novelDna";
+import { backlinkIndex, byId, childrenOf, emptyNode, isEntityKind, isProseStale, isStale, newId, pillarOf, refsOf, type BookSettings, type DnaIssue, type DnaNode, type BeatContent, type NodeContent, type NodeKind, type SceneContent } from "@/lib/novelDna";
 import { editSpecs, KIND_LEVEL, tasteSpecs, type EditSpec } from "@/lib/dnaSchema";
-import { applyDnaProposal, clearDnaProposal, describeOps, sendDnaMessage, validateOps, type DnaChatMessage, type DnaProposal, type NodeOp, type OpRejection } from "@/lib/dnaChat";
-import { DNA_STAGES, buildJourney, dnaHealth, type StageKey } from "@/lib/dnaJourney";
+import { CONTENT_TYPES, SCOPE_BANDS, briefIdea, type Brief } from "@/lib/brief";
+import { describeOps, type NodeOp } from "@/lib/dnaChat";
+import { AgentRail } from "@/components/book/studio/AgentRail";
+import { type AgentProposal } from "@/lib/agentThread";
+import { DNA_STAGES, dnaHealth } from "@/lib/dnaJourney";
 
 const getNumericId = (p: string | undefined) => { const m = p?.match(/^(\d+)/); return m ? parseInt(m[1]) : 0; };
 
@@ -62,18 +66,6 @@ function nodeTitle(n: DnaNode): string {
 // Editable fields per kind + KIND_LEVEL now live in @/lib/dnaSchema (the single source of truth); the
 // editor below renders straight off editSpecs(kind). EditSpec carries an optional `required` flag the
 // schema's validateContent() reads — the editor ignores it (every field is still editable).
-
-// ── Active-context highlight (#2) ─────────────────────────────────────────────
-// MIRRORS supabase/functions/dna-chat STAGE_KINDS. The reviser always receives the WHOLE tree as context;
-// `stage` only sets its FOCUS (these kinds) and whether scene prose is included (draft only). So the
-// highlight marks the focus kinds — NOT "the only nodes sent" — which the legend states honestly.
-const STAGE_FOCUS_KINDS: Record<StageKey, DnaNode["kind"][]> = {
-  premise: ["seed", "premise"],
-  foundations: ["pillar", "character", "relationship", "tentpole", "world_fact", "location", "voice_profile"],
-  structure: ["movement", "beat", "thread"],
-  scenes: ["scene"],
-  draft: ["scene"],
-};
 
 // ── Proposal overlay (#1) ─────────────────────────────────────────────────────
 // Resolve a pending proposal's ops into a per-node view the tree can render in place: which nodes are
@@ -509,10 +501,10 @@ function AddRow({ label, depth, onAdd }: { label: string; depth: number; onAdd: 
 
 // A collapsible labeled section — pure layout, not a real node. `children` is whatever renders inside.
 // `alwaysShow` keeps an empty group visible (so its add affordance is reachable); `footer` renders after.
-function NodeGroup({ groupId, label, hint, count, depth, collapsedSet, onToggle, children, alwaysShow, footer }: {
+function NodeGroup({ groupId, label, hint, count, depth, collapsedSet, onToggle, children, alwaysShow, footer, action }: {
   groupId: string; label: string; hint?: string; count: number; depth: number;
   collapsedSet: Set<string>; onToggle: (id: string) => void; children: React.ReactNode;
-  alwaysShow?: boolean; footer?: React.ReactNode;
+  alwaysShow?: boolean; footer?: React.ReactNode; action?: React.ReactNode;
 }) {
   if (!count && !alwaysShow) return null;
   const collapsed = collapsedSet.has(groupId);
@@ -528,9 +520,123 @@ function NodeGroup({ groupId, label, hint, count, depth, collapsedSet, onToggle,
         <span style={{ width: 12, flexShrink: 0, color: "#555", fontSize: 9, lineHeight: 1 }}>{collapsed ? "▶" : "▼"}</span>
         <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase", color: count ? "#8a8a8a" : "#555" }}>{label}</span>
         <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 9, letterSpacing: "0.06em", color: "#3a3a3a" }}>{hint ? `${hint} · ` : ""}{count}</span>
+        {action && <span onClick={(e) => e.stopPropagation()} style={{ marginLeft: "auto" }}>{action}</span>}
       </div>
       {!collapsed && children}
       {!collapsed && footer}
+    </div>
+  );
+}
+
+// ── Discard story modal ───────────────────────────────────────────────────────
+type DiscardLevel = "prose" | "scenes" | "beats" | "story";
+const DISCARD_OPTIONS: { level: DiscardLevel; label: string; detail: string }[] = [
+  { level: "prose",  label: "prose only",         detail: "clear written prose — keep scene plans, beats, movements" },
+  { level: "scenes", label: "scenes + prose",      detail: "delete all scene nodes — keep beats and movements" },
+  { level: "beats",  label: "beats + scenes",      detail: "delete all beat nodes and their scenes — keep movements" },
+  { level: "story",  label: "full story",          detail: "delete movements, beats, scenes and all prose — keep foundations" },
+];
+function DiscardStoryModal({ nodes, onClose }: { nodes: DnaNode[]; onClose: () => void }) {
+  const [level, setLevel] = useState<DiscardLevel>("prose");
+  const [busy, setBusy] = useState(false);
+  const mono = "ui-monospace, monospace";
+
+  const movements = nodes.filter((n) => n.kind === "movement");
+  const beats     = nodes.filter((n) => n.kind === "beat");
+  const scenes    = nodes.filter((n) => n.kind === "scene");
+  const counts: Record<DiscardLevel, string> = {
+    prose:  `${scenes.filter((s) => (s.content as SceneContent).prose?.text?.trim()).length} scenes with prose`,
+    scenes: `${scenes.length} scenes`,
+    beats:  `${beats.length} beats · ${scenes.length} scenes`,
+    story:  `${movements.length} movements · ${beats.length} beats · ${scenes.length} scenes`,
+  };
+
+  const run = async () => {
+    setBusy(true);
+    try {
+      if (level === "prose") {
+        const withProse = scenes.filter((s) => (s.content as SceneContent).prose?.text?.trim());
+        await Promise.all(withProse.map((s) => {
+          const { prose: _p, ...rest } = s.content as SceneContent;
+          return saveNode({ ...s, content: rest as NodeContent });
+        }));
+      } else if (level === "scenes") {
+        await Promise.all(scenes.map((s) => deleteNode(s.id)));
+      } else if (level === "beats") {
+        await Promise.all(beats.map((b) => deleteNode(b.id)));
+      } else {
+        await Promise.all(movements.map((m) => deleteNode(m.id)));
+      }
+      onClose();
+    } catch (e) {
+      alert(`Discard failed: ${(e as Error).message}`);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center" }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{ position: "absolute", inset: 0, background: "#000000aa" }} />
+      <div style={{ position: "relative", background: "#0e0e12", border: "1px solid #2a2a38", borderRadius: 8, padding: "22px 24px", width: 420, display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{ fontFamily: mono, fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase", color: "#c06060" }}>discard story content</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {DISCARD_OPTIONS.map((o) => (
+            <label key={o.level} style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer", padding: "8px 10px", borderRadius: 5, background: level === o.level ? "#1e1e2a" : "transparent", border: `1px solid ${level === o.level ? "#3a3a5a" : "transparent"}` }}>
+              <input type="radio" name="discard-level" value={o.level} checked={level === o.level} onChange={() => setLevel(o.level)}
+                style={{ marginTop: 2, accentColor: "#c06060", flexShrink: 0 }} />
+              <div>
+                <div style={{ fontFamily: mono, fontSize: 11, color: "#cfcfcf", letterSpacing: "0.04em" }}>{o.label}</div>
+                <div style={{ fontFamily: mono, fontSize: 10, color: "#555", marginTop: 2 }}>{o.detail}</div>
+                {level === o.level && <div style={{ fontFamily: mono, fontSize: 9, color: "#7a3030", marginTop: 4, letterSpacing: "0.04em" }}>{counts[o.level]}</div>}
+              </div>
+            </label>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 16, justifyContent: "flex-end", paddingTop: 4 }}>
+          <button onClick={onClose} disabled={busy} style={{ background: "none", border: "none", fontFamily: mono, fontSize: 11, color: "#555", cursor: "pointer", letterSpacing: "0.08em" }}>cancel</button>
+          <button onClick={() => void run()} disabled={busy} style={{ background: "#3a1515", border: "1px solid #7a3030", borderRadius: 4, fontFamily: mono, fontSize: 11, color: busy ? "#7a3030" : "#e07070", cursor: busy ? "default" : "pointer", padding: "4px 14px", letterSpacing: "0.08em" }}>
+            {busy ? "discarding…" : "discard"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Prose block — collapsible prose text under an expanded scene node ─────────
+function ProseBlock({ node, depth, open, onToggle }: {
+  node: DnaNode; depth: number; open: boolean; onToggle: () => void;
+}) {
+  const c = node.content as SceneContent;
+  const text = c.prose?.text?.trim() ?? "";
+  const words = c.prose?.words ?? (text ? text.split(/\s+/).length : 0);
+  const stale = isProseStale(node);
+  const mono = "ui-monospace, monospace";
+  return (
+    <div style={{ position: "relative" }}>
+      <ConnectorTick depth={depth} />
+      {/* Toggle row */}
+      <div onClick={onToggle} style={{ display: "flex", alignItems: "baseline", gap: 8, paddingLeft: depth * 20 + 20, paddingRight: 12, paddingTop: 4, paddingBottom: 4, cursor: "pointer" }}>
+        <span style={{ width: 12, flexShrink: 0, color: "#3a4a3a", fontSize: 9 }}>{open ? "▼" : "▶"}</span>
+        <span style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.14em", textTransform: "uppercase", color: text ? "#4ade8066" : "#2a3a2a" }}>prose</span>
+        {words > 0 && <span style={{ fontFamily: mono, fontSize: 9, color: "#3a4a3a" }}>{words}w</span>}
+        {stale && <span style={{ fontFamily: mono, fontSize: 8, letterSpacing: "0.1em", textTransform: "uppercase", color: "#f59e0b" }}>stale</span>}
+        {!text && <span style={{ fontFamily: mono, fontSize: 9, color: "#2a3a2a", fontStyle: "italic" }}>not yet written</span>}
+      </div>
+      {/* Prose text */}
+      {open && text && (
+        <div style={{ paddingLeft: depth * 20 + 32, paddingRight: 16, paddingBottom: 10 }}>
+          <div style={{ fontFamily: "ui-serif, Georgia, serif", fontSize: 13, lineHeight: 1.7, color: stale ? "#8a8060" : "#a8a8b0", whiteSpace: "pre-wrap", borderLeft: `2px solid ${stale ? "#f59e0b22" : "#4ade8022"}`, paddingLeft: 12 }}>
+            {text}
+          </div>
+        </div>
+      )}
+      {open && !text && (
+        <div style={{ paddingLeft: depth * 20 + 32, paddingRight: 16, paddingBottom: 8, fontFamily: mono, fontSize: 11, color: "#2a3a2a", fontStyle: "italic" }}>
+          — no prose yet
+        </div>
+      )}
     </div>
   );
 }
@@ -554,6 +660,11 @@ interface TreeView {
   ctxConsumes: Set<string>;             // #7 — ids the focused node REFERENCES (built from)
   ctxConsumedBy: Set<string>;           // #7 — ids that reference the focused node (built on it)
   onContextFocus: (id: string) => void; // #7 — toggle context focus from a kind badge
+  proseOpenSet: Set<string>;            // scene ids whose prose block is expanded
+  onToggleProse: (id: string) => void;
+  onDiscardStory: () => void;
+  brief: Brief | null;                  // seed: the book's mandate (saved to books.brief)
+  onSaveBrief: (patch: Partial<Brief>) => Promise<void>;
 }
 function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
   node: DnaNode; index: Map<string, DnaNode>; nodes: DnaNode[]; depth: number;
@@ -603,9 +714,26 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
           </NodeGroup>
           <NodeGroup groupId={`${node.id}::story`} label="story" hint="the spine — acts in order"
             count={ladder.length} depth={depth + 1} collapsedSet={collapsedSet} onToggle={h.onToggle} alwaysShow
-            footer={<>{phantoms(node.id, "movement", depth + 2)}<AddRow label="movement" depth={depth + 2} onAdd={() => h.onAdd(node.id, "movement")} /></>}>
+            footer={<>{phantoms(node.id, "movement", depth + 2)}<AddRow label="movement" depth={depth + 2} onAdd={() => h.onAdd(node.id, "movement")} /></>}
+            action={ladder.length > 0 ? (
+              <span onClick={() => h.onDiscardStory()}
+                title="Delete all movements, beats, scenes and prose"
+                style={{ fontFamily: "ui-monospace, monospace", fontSize: 8, letterSpacing: "0.1em", textTransform: "uppercase", color: "#7a3030", cursor: "pointer" }}>
+                discard ✕
+              </span>
+            ) : undefined}>
             {sub(ladder, depth + 2)}
           </NodeGroup>
+        </>
+      );
+    } else if (node.kind === "seed") {
+      // The seed IS the brief — its node-local logline is folded into the brief's `premise` field below,
+      // then its structural children (premise → pillar → the rest of the tree) render beneath.
+      body = (
+        <>
+          {backlinks}
+          <BriefSection brief={h.brief} onSave={h.onSaveBrief} depth={depth + 1} />
+          {sub(kids, depth + 1)}
         </>
       );
     } else {
@@ -614,6 +742,9 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
         <>
           {fields}
           {backlinks}
+          {node.kind === "scene" && (
+            <ProseBlock node={node} depth={depth + 1} open={h.proseOpenSet.has(node.id)} onToggle={() => h.onToggleProse(node.id)} />
+          )}
           {sub(kids, depth + 1)}
           {childAdd && phantoms(node.id, childAdd, depth + 1)}
           {childAdd && <AddRow label={childAdd} depth={depth + 1} onAdd={() => h.onAdd(node.id, childAdd as DnaNode["kind"])} />}
@@ -658,165 +789,117 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
   );
 }
 
-// ── AI chat rail (native to this page; wired to the dna_chats backend) ────────
-// Same thread/proposal mechanism as the studio's DnaChatRail — sends via sendDnaMessage, watches dna_chats
-// over Realtime, previews ops with describeOps, applies with applyDnaProposal — but in this page's
-// monospace skin. The reviser may edit ANY non-locked node regardless of stage; stage just sets its focus
-// (and whether the three-axis analysis is attached). Applied ops land in book_nodes → the tree's own
-// subscription refreshes it. `highlightIds` (the active-context highlight) is a follow-up.
-const ANALYSIS_STAGES = new Set<StageKey>(["structure", "scenes", "draft"]);
-function ChatRail({ bookId, stage, setStage, nodes, settings, onClose, onPending }: {
-  bookId: number; stage: StageKey; setStage: (s: StageKey) => void;
-  nodes: DnaNode[]; settings: BookSettings; onClose: () => void; onPending: (p: DnaProposal | null) => void;
+// ── Brief section — rendered inside the seed when expanded ───────────────────
+// The brief lives on books.brief (not in book_nodes), so it has its own save path.
+// Fields: genre, audience, tone, success_criteria, scope.word_target, content_type.level.
+// The seed's logline field (book_nodes.content.logline) is the prose distillation;
+// these are the publishing/mandate fields the whole generation stack derives from.
+function BriefFieldRow({ label, depth, display, onEdit, children }: {
+  label: string; depth: number; display: React.ReactNode; onEdit?: () => void; children?: React.ReactNode;
 }) {
-  const [messages, setMessages] = useState<DnaChatMessage[]>([]);
-  const [pending, setPending] = useState<DnaProposal | null>(null);
-  const [thinking, setThinking] = useState(false);
-  const [draft, setDraft] = useState("");
-  const [applying, setApplying] = useState(false);
-  const endRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    let alive = true;
-    const load = async () => {
-      const { data } = await supabase.from("dna_chats").select("messages, pending_proposal, status").eq("book_id", bookId).eq("stage", stage).maybeSingle();
-      if (!alive) return;
-      const prop = (data?.pending_proposal as DnaProposal | null) ?? null;
-      setMessages((data?.messages as DnaChatMessage[] | null) ?? []);
-      setPending(prop); onPending(prop); // lift to the page so the tree can overlay it (#1)
-      setThinking((data?.status as string | null) === "thinking");
-    };
-    void load();
-    const ch = supabase.channel(`treechat_${bookId}_${stage}_${Math.random().toString(36).slice(2)}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "dna_chats", filter: `book_id=eq.${bookId}` }, () => void load())
-      .subscribe();
-    return () => { alive = false; void supabase.removeChannel(ch); };
-  }, [bookId, stage, onPending]);
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, pending, thinking]);
-
-  const send = async () => {
-    const text = draft.trim();
-    if (!text || thinking) return;
-    setDraft(""); setThinking(true);
-    setMessages((m) => [...m, { role: "user", text, ts: new Date().toISOString() }]);
-    const analysis = ANALYSIS_STAGES.has(stage) ? analysisText(nodes, settings) : undefined;
-    try { await sendDnaMessage(bookId, stage, text, analysis); }
-    catch (e) { setThinking(false); alert(`Couldn't send: ${(e as Error).message}`); }
-  };
-  const apply = async () => {
-    if (!pending) return;
-    setApplying(true);
-    try { await applyDnaProposal(bookId, stage, pending); setPending(null); }
-    catch (e) { alert(`Couldn't apply: ${(e as Error).message}`); }
-    finally { setApplying(false); }
-  };
-  const discard = async () => { setPending(null); try { await clearDnaProposal(bookId, stage); } catch { /* best effort */ } };
-  const cancel = async () => { setThinking(false); await supabase.from("dna_chats").update({ status: "idle" }).eq("book_id", bookId).eq("stage", stage); };
-
-  // #3 — the fail-closed boundary, surfaced: which ops in THIS proposal can't be saved, and why. Computed
-  // against the live tree so it tracks edits. Rejected ops won't land on accept; the author can repair them.
-  const rejections: OpRejection[] = pending ? validateOps(pending.ops, nodes).rejected : [];
-  const opLabel = (op: NodeOp): string => op.op === "add" ? `add ${op.kind}` : op.op === "replace_children" ? `rebuild ${op.childKind}` : `${op.op} ${op.id}`;
-  const askFix = async () => {
-    if (!rejections.length || thinking) return;
-    const detail = rejections.map((r, i) => `${i + 1}. ${opLabel(r.op)} — ${r.reasons.join("; ")}`).join("\n");
-    const text = `That proposal has ${rejections.length} change${rejections.length === 1 ? "" : "s"} that can't be saved:\n${detail}\n\nPlease re-propose with these fixed — valid kinds, all required fields filled, real node ids, entities on the pillar.`;
-    setThinking(true);
-    setMessages((m) => [...m, { role: "user", text, ts: new Date().toISOString() }]);
-    const analysis = ANALYSIS_STAGES.has(stage) ? analysisText(nodes, settings) : undefined;
-    try { await sendDnaMessage(bookId, stage, text, analysis); }
-    catch (e) { setThinking(false); alert(`Couldn't send: ${(e as Error).message}`); }
-  };
-
-  const mono = "ui-monospace, monospace";
   return (
-    <div style={{ position: "fixed", top: 0, right: 0, bottom: 0, width: 420, display: "flex", flexDirection: "column", background: "#0c0c0f", borderLeft: "1px solid #1c1c22", zIndex: 20 }}>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderBottom: "1px solid #16161a" }}>
-        <span style={{ fontFamily: mono, fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: "#8a8aff" }}>✦ ai reviser</span>
-        <select value={stage} onChange={(e) => setStage(e.target.value as StageKey)}
-          style={{ ...inputStyle, fontSize: 10, padding: "1px 4px", marginLeft: "auto", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-          {DNA_STAGES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
-        </select>
-        <span onClick={onClose} title="close" style={{ color: "#666", cursor: "pointer", fontSize: 14, lineHeight: 1 }}>✕</span>
-      </div>
-
-      {/* Transcript */}
-      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "14px", display: "flex", flexDirection: "column", gap: 10 }}>
-        {messages.length === 0 && (
-          <p style={{ fontFamily: mono, fontSize: 12, lineHeight: 1.6, color: "#555", fontStyle: "italic" }}>
-            Talk through the tree, or ask for a change. I propose a revision you review before it's saved; pinned (🔒) nodes stay untouched. Focus: <span style={{ color: "#8a8aff" }}>{DNA_STAGES.find((s) => s.key === stage)?.label}</span> — but I can edit any node.
-          </p>
-        )}
-        {messages.map((m, i) => (
-          <div key={i} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "94%" }}>
-            <div style={{ fontFamily: m.role === "user" ? mono : "ui-serif, Georgia, serif", fontSize: m.role === "user" ? 12 : 13.5, lineHeight: 1.55, whiteSpace: "pre-wrap", color: m.role === "user" ? "#cfcfcf" : "#b8b8c0", background: m.role === "user" ? "#16161c" : "transparent", border: m.role === "user" ? "1px solid #24242e" : "none", borderRadius: 8, padding: m.role === "user" ? "6px 10px" : "0" }}>
-              {m.text}
-            </div>
-          </div>
-        ))}
-        {thinking && (
-          <div style={{ fontFamily: mono, fontSize: 12, color: "#666", display: "flex", gap: 8, alignItems: "center" }}>
-            <span style={{ fontStyle: "italic" }}>thinking…</span>
-            <span onClick={() => void cancel()} style={{ cursor: "pointer", color: "#7a4a4a" }}>✕ cancel</span>
-          </div>
-        )}
-        {pending && (
-          <div style={{ border: "1px solid #3a3a55", background: "#13131a", borderRadius: 8, padding: "10px 12px" }}>
-            <div style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.14em", textTransform: "uppercase", color: "#8a8aff" }}>proposed — review before save</div>
-            <p style={{ fontFamily: "ui-serif, Georgia, serif", fontSize: 13, color: "#d8d8e0", margin: "5px 0 0" }}>{pending.summary}</p>
-            <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
-              {describeOps(pending.ops, nodes).map((row, i) => (
-                <div key={i} style={{ border: "1px solid #22222c", background: "#0d0d11", borderRadius: 6, padding: "6px 9px" }}>
-                  <div style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase", color: "#666", display: "flex", gap: 6, flexWrap: "wrap" }}>
-                    <span style={{ color: row.verb === "delete" ? "#c06060" : row.verb === "add" ? "#60a070" : "#8a8aff" }}>{row.verb} · {row.kind}</span>
-                    {row.verb === "add" && row.parentLabel ? <span>under {row.parentLabel}</span> : null}
-                    {row.restales ? <span style={{ color: "#d08a30" }}>{row.verb === "delete" ? `−${row.restales} below` : `restales ${row.restales}`}</span> : null}
-                  </div>
-                  <div style={{ fontFamily: "ui-serif, Georgia, serif", fontSize: 12.5, color: "#cfcfcf", marginTop: 2 }}>{row.label}</div>
-                  {row.verb === "delete"
-                    ? <div style={{ fontFamily: mono, fontSize: 11, fontStyle: "italic", color: "#666", marginTop: 3 }}>this node will be removed</div>
-                    : row.fields.map((f) => (
-                      <div key={f.key} style={{ marginTop: 5 }}>
-                        <div style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.06em", textTransform: "uppercase", color: "#555" }}>{f.key}</div>
-                        {f.old !== undefined && f.old !== f.next && <div style={{ fontFamily: "ui-serif, Georgia, serif", fontSize: 12, color: "#6a5050", textDecoration: "line-through", whiteSpace: "pre-wrap" }}>{f.old}</div>}
-                        <div style={{ fontFamily: "ui-serif, Georgia, serif", fontSize: 12, color: "#cfcfcf", whiteSpace: "pre-wrap" }}>{f.next}</div>
-                      </div>
-                    ))}
-                </div>
-              ))}
-            </div>
-            {rejections.length > 0 && (
-              <div style={{ marginTop: 8, border: "1px solid #5a3a3a", background: "#1a0f0f", borderRadius: 6, padding: "7px 9px" }}>
-                <div style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "#d08a8a" }}>⚠ {rejections.length} change{rejections.length === 1 ? "" : "s"} can't be saved — won't be applied</div>
-                {rejections.map((r, i) => (
-                  <div key={i} style={{ marginTop: 4 }}>
-                    <span style={{ fontFamily: mono, fontSize: 10, color: "#c99" }}>{opLabel(r.op)}</span>
-                    <span style={{ fontFamily: mono, fontSize: 10, color: "#8a6a6a" }}> — {r.reasons.join("; ")}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div style={{ marginTop: 10, display: "flex", gap: 16, alignItems: "center" }}>
-              {rejections.length < pending.ops.length
-                ? <span onClick={() => !applying && void apply()} style={{ fontFamily: mono, fontSize: 12, color: "#8a8aff", cursor: applying ? "default" : "pointer" }}>{applying ? "accepting…" : rejections.length ? `✓ accept ${pending.ops.length - rejections.length} valid` : "✓ accept"}</span>
-                : <span style={{ fontFamily: mono, fontSize: 12, color: "#5a5a5a", fontStyle: "italic" }}>nothing valid to apply</span>}
-              {rejections.length > 0 && <span onClick={() => void askFix()} style={{ fontFamily: mono, fontSize: 12, color: "#d0a060", cursor: thinking ? "default" : "pointer" }}>↻ ask to fix</span>}
-              <span onClick={() => void discard()} style={{ fontFamily: mono, fontSize: 12, color: "#666", cursor: "pointer", fontStyle: "italic" }}>dismiss</span>
-            </div>
-          </div>
-        )}
-        <div ref={endRef} />
-      </div>
-
-      {/* Composer */}
-      <div style={{ borderTop: "1px solid #16161a", padding: 10 }}>
-        <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={3}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }}
-          placeholder="Ask the reviser…  (⏎ send · ⇧⏎ newline)"
-          style={{ ...inputStyle, width: "100%", boxSizing: "border-box", resize: "none", fontSize: 13 }} />
-      </div>
+    <div style={detailRowStyle(depth)} onClick={(e) => e.stopPropagation()}>
+      <ConnectorTick depth={depth} />
+      <span style={{ width: 12, flexShrink: 0 }} />
+      <span style={labelStyle}>{label}</span>
+      {children || (
+        <span onClick={onEdit} style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: display ? "#cfcfcf" : "#4a4a4a", whiteSpace: "pre-wrap", wordBreak: "break-word", flex: 1, lineHeight: 1.5, cursor: onEdit ? "text" : "default", fontStyle: display ? "normal" : "italic" }}>
+          {display || `＋ ${label}`}
+        </span>
+      )}
     </div>
+  );
+}
+
+function BriefSection({ brief, onSave, depth }: { brief: Brief | null; onSave: (patch: Partial<Brief>) => Promise<void>; depth: number }) {
+  const [editingField, setEditingField] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const inputRef = useRef<HTMLTextAreaElement | HTMLInputElement | null>(null);
+  useEffect(() => { if (editingField) inputRef.current?.focus(); }, [editingField]);
+
+  const commit = async (field: string, value: unknown) => {
+    setBusy(true);
+    setEditingField(null);
+    try {
+      if (field === "word_target") await onSave({ scope: { ...brief?.scope, word_target: value as number } });
+      else if (field === "heat") await onSave({ content_type: { ...brief?.content_type, level: value as Brief["content_type"] extends { level?: infer L } | undefined ? L : never } });
+      else await onSave({ [field]: value });
+    } catch (e) { alert(`Save failed: ${(e as Error).message}`); }
+    finally { setBusy(false); }
+  };
+
+  const startEdit = (field: string, current: string) => { setDraft(current); setEditingField(field); };
+  const commonProps = (field: string, multiline?: boolean) => ({
+    ref: inputRef as never, value: draft, disabled: busy,
+    onChange: (e: React.ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => setDraft(e.target.value),
+    onBlur: () => { void commit(field, multiline ? draft.trim() : draft.trim()); },
+    onKeyDown: (e: React.KeyboardEvent) => {
+      if (e.key === "Escape") { e.preventDefault(); setEditingField(null); }
+      else if (e.key === "Enter" && (!multiline || e.metaKey || e.ctrlKey)) { e.preventDefault(); void commit(field, draft.trim()); }
+    },
+    style: { ...inputStyle, flex: 1, resize: "vertical" as const },
+  });
+
+  const toneArr = Array.isArray(brief?.tone) ? brief.tone : [];
+  const heatLabel = CONTENT_TYPES.find((c) => c.value === brief?.content_type?.level)?.label ?? "";
+  const bandLabel = SCOPE_BANDS.find((b) => b.value === brief?.scope?.band)?.label ?? "";
+
+  return (
+    <>
+      <div style={{ ...detailRowStyle(depth - 1), paddingTop: 6 }}>
+        <ConnectorTick depth={depth - 1} />
+        <span style={{ width: 12, flexShrink: 0 }} />
+        <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", color: "#5a5a7a" }}>brief — mandate</span>
+      </div>
+
+      {/* idea — the author's raw "what is the book about?" (brief.idea); the logline is DERIVED from this, not equal to it */}
+      <BriefFieldRow label="idea" depth={depth} display={briefIdea(brief)} onEdit={() => startEdit("idea", briefIdea(brief) ?? "")}>
+        {editingField === "idea" && <textarea rows={Math.min(6, Math.max(2, draft.split("\n").length))} {...commonProps("idea", true)} />}
+      </BriefFieldRow>
+
+      {/* genre */}
+      <BriefFieldRow label="genre" depth={depth} display={brief?.genre} onEdit={() => startEdit("genre", brief?.genre ?? "")}>
+        {editingField === "genre" && <input {...commonProps("genre")} />}
+      </BriefFieldRow>
+
+      {/* audience */}
+      <BriefFieldRow label="audience" depth={depth} display={brief?.audience} onEdit={() => startEdit("audience", brief?.audience ?? "")}>
+        {editingField === "audience" && <input {...commonProps("audience")} />}
+      </BriefFieldRow>
+
+      {/* tone — comma-sep list */}
+      <BriefFieldRow label="tone" depth={depth} display={toneArr.join(", ")} onEdit={() => startEdit("tone", toneArr.join(", "))}>
+        {editingField === "tone" && (
+          <input {...commonProps("tone")} onBlur={() => { void commit("tone", draft.split(",").map((s) => s.trim()).filter(Boolean)); }} style={{ ...inputStyle, flex: 1 }} />
+        )}
+      </BriefFieldRow>
+
+      {/* success_criteria */}
+      <BriefFieldRow label="success criteria" depth={depth} display={brief?.success_criteria} onEdit={() => startEdit("success_criteria", brief?.success_criteria ?? "")}>
+        {editingField === "success_criteria" && <textarea rows={3} {...commonProps("success_criteria", true)} />}
+      </BriefFieldRow>
+
+      {/* scope.word_target */}
+      <BriefFieldRow label="word target" depth={depth} display={brief?.scope?.word_target ? `${brief.scope.word_target.toLocaleString()} words${bandLabel ? ` · ${bandLabel}` : ""}` : bandLabel} onEdit={() => startEdit("word_target", String(brief?.scope?.word_target ?? ""))}>
+        {editingField === "word_target" && (
+          <input type="number" {...commonProps("word_target")} onBlur={() => { const n = parseInt(draft); void commit("word_target", isNaN(n) ? undefined : n); }} style={{ ...inputStyle, flex: 1 }} />
+        )}
+      </BriefFieldRow>
+
+      {/* content_type.level — select */}
+      <div style={detailRowStyle(depth)} onClick={(e) => e.stopPropagation()}>
+        <ConnectorTick depth={depth} />
+        <span style={{ width: 12, flexShrink: 0 }} />
+        <span style={labelStyle}>heat</span>
+        <select value={brief?.content_type?.level ?? ""} disabled={busy}
+          onChange={(e) => { void commit("heat", e.target.value || undefined); }}
+          style={{ ...inputStyle, fontSize: 11, padding: "1px 4px", flex: 1 }}>
+          <option value="">(not set)</option>
+          {CONTENT_TYPES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+        </select>
+      </div>
+    </>
   );
 }
 
@@ -868,7 +951,6 @@ function VoiceFeelPanel({ nodes, index, onJump }: { nodes: DnaNode[]; index: Map
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default function DnaTreePage() {
   const { bookSlug } = useParams();
-  const navigate = useNavigate();
   const bookId = getNumericId(bookSlug);
 
   const [bookName, setBookName] = useState<string>("");
@@ -878,13 +960,53 @@ export default function DnaTreePage() {
   const [collapsedSet, setCollapsedSet] = useState<Set<string>>(new Set());
   const [openSet, setOpenSet] = useState<Set<string>>(new Set()); // detail-only leaves the user dug into
   const [railOpen, setRailOpen] = useState(false);
-  const [stage, setStage] = useState<StageKey>("structure");
-  const [proposal, setProposal] = useState<DnaProposal | null>(null); // #1 — mirrored from the rail
+  // #1 — pending proposals from the agent thread (book_agent_runs), mirrored so the tree can overlay them.
+  const [agentProposals, setAgentProposals] = useState<AgentProposal[]>([]);
   const [showIssues, setShowIssues] = useState(false); // drill into the lints behind the score
   const [healthLens, setHealthLens] = useState(false); // #6 — dim clean nodes; surface only the broken ones
   const [contextId, setContextId] = useState<string | null>(null); // #7 — the node whose ref-neighborhood is lit
   const [flashId, setFlashId] = useState<string | null>(null); // #1 — the node a jump just revealed
   const [dragId, setDragId] = useState<string | null>(null); // #5 — the node being dragged
+  const [brief, setBrief] = useState<Brief | null>(null);
+  const [proseOpenSet, setProseOpenSet] = useState<Set<string>>(new Set());
+  const toggleProse = useCallback((id: string) => {
+    setProseOpenSet((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  }, []);
+
+  const [discardOpen, setDiscardOpen] = useState(false);
+  const discardStory = useCallback(() => setDiscardOpen(true), []);
+
+  const saveBrief = useCallback(async (patch: Partial<Brief>) => {
+    const next = { ...brief, ...patch, updated_at: new Date().toISOString() } as Brief;
+    setBrief(next);
+    const { error: err } = await supabase.from("books").update({ brief: next }).eq("id", bookId);
+    if (err) throw new Error(err.message);
+    setSettings((prev) => ({ ...prev, word_target: next.scope?.word_target }));
+    // TODO(premise≠logline): today the raw idea is mirrored straight into the seed's logline. The
+    // intended model DERIVES a real logline (protagonist/inciting/goal/obstacle/stakes) from the idea
+    // instead of equating them — see docs/dna-studio-analysis.md §0. Until then, keep the mirror so the
+    // journey gating, studio, and overview (which read seed.content.logline) stay consistent.
+    if ("idea" in patch && nodes) {
+      const seed = nodes.find((n) => n.kind === "seed");
+      if (seed) await patchNodeContent(seed, { logline: (patch.idea ?? "").trim() } as NodeContent);
+    }
+  }, [brief, bookId, nodes]);
+
+  // Seed an empty tree: create the root `seed` node, prefilling its logline from the brief's idea.
+  // Everything else (premise/pillar/cast/spine) grows from here via the reviser or the studio.
+  const [seeding, setSeeding] = useState(false);
+  const seedTree = useCallback(async () => {
+    if (seeding) return;
+    setSeeding(true);
+    try {
+      const seed = emptyNode(bookId, "seed", 0, null);
+      const idea = briefIdea(brief)?.trim();
+      if (idea) seed.content = { logline: idea };
+      await saveNode(seed);
+      setOpenSet((p) => new Set(p).add(seed.id)); // open it so the brief shows immediately
+    } catch (e) { alert(`Couldn't seed the tree: ${(e as Error).message}`); }
+    finally { setSeeding(false); }
+  }, [bookId, brief, seeding]);
 
   useEffect(() => {
     if (!bookId) { setError("no book id"); return; }
@@ -895,13 +1017,29 @@ export default function DnaTreePage() {
       ]);
       if (nodesErr || bookErr) { setError((nodesErr ?? bookErr)?.message ?? "error"); return; }
       setBookName(book?.name ?? "");
-      const brief = book?.brief as { scope?: { word_target?: number } } | null;
+      const loadedBrief = (book?.brief as Brief | null) ?? null;
+      setBrief(loadedBrief);
       setSettings({ title: book?.name ?? undefined, author: (book?.author as string | null) ?? undefined,
-        word_target: brief?.scope?.word_target, mode: (book as { mode?: string } | null)?.mode === "picture" ? "picture" : "prose" });
+        word_target: loadedBrief?.scope?.word_target, mode: (book as { mode?: string } | null)?.mode === "picture" ? "picture" : "prose" });
       const loaded = (nodeRows ?? []) as DnaNode[];
       setNodes(loaded);
-      setStage(DNA_STAGES[buildJourney(loaded).nowIndex]?.key ?? "structure"); // open the rail on the current stage
     })();
+  }, [bookId]);
+
+  // #1 — mirror the agent thread's pending proposals so the tree can overlay them in place. The AgentRail
+  // owns apply/discard; this is read-only (live over Realtime, refresh = no-op).
+  useEffect(() => {
+    if (!bookId) return;
+    let alive = true;
+    const load = async () => {
+      const { data } = await supabase.from("book_agent_runs").select("proposals").eq("book_id", bookId).eq("kind", "thread").maybeSingle();
+      if (alive) setAgentProposals((data?.proposals as AgentProposal[] | null) ?? []);
+    };
+    void load();
+    const ch = supabase.channel(`treeagent_${bookId}_${Math.random().toString(36).slice(2)}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "book_agent_runs", filter: `book_id=eq.${bookId}` }, () => void load())
+      .subscribe();
+    return () => { alive = false; void supabase.removeChannel(ch); };
   }, [bookId]);
 
   // Live subscription
@@ -973,12 +1111,13 @@ export default function DnaTreePage() {
       }));
       const { error: nodesErr } = await supabase.from("book_nodes").insert(forkedNodes);
       if (nodesErr) throw nodesErr;
-      navigate(`/books/${fork.id as number}/dna/tree`);
+      window.open(`/books/${fork.id as number}/dna/tree`, "_blank");
     } catch (e) {
       alert(`Fork failed: ${(e as Error).message}`);
+    } finally {
       setForking(false);
     }
-  }, [nodes, bookId, bookName, forking, navigate]);
+  }, [nodes, bookId, bookName, forking]);
 
   // ── Node CRUD ────────────────────────────────────────────────────────────────
   // Append a fresh empty node of `kind` under `parentId` (position after its existing siblings of that
@@ -1079,12 +1218,10 @@ export default function DnaTreePage() {
     return () => clearTimeout(t);
   }, [flashId]);
 
-  // ── Proposal overlay (#1) + focus highlight (#2) ──────────────────────────────
-  const onPending = useCallback((p: DnaProposal | null) => setProposal(p), []);
-  const proposalView = useMemo(() => indexProposal(proposal?.ops, nodes ?? []), [proposal, nodes]);
+  // ── Proposal overlay (#1) ─────────────────────────────────────────────────────
+  // Overlay the union of all the agent thread's pending proposals' ops in the tree, in place.
+  const proposalView = useMemo(() => indexProposal(agentProposals.flatMap((p) => p.ops), nodes ?? []), [agentProposals, nodes]);
   const backlinks = useMemo(() => backlinkIndex(nodes ?? []), [nodes]); // #2 — inbound cross-references
-  // When the rail is open, mark the stage's focus kinds (the WHOLE tree is still in context — see legend).
-  const focusKinds = useMemo(() => (railOpen ? new Set<string>(STAGE_FOCUS_KINDS[stage]) : null), [railOpen, stage]);
 
   // #7 — context-highlight: toggle the focused node, and auto-reveal its ref-neighborhood so a referenced
   // character/world_fact buried in a collapsed group isn't dimmed-AND-hidden. Clicking the same badge clears.
@@ -1106,15 +1243,6 @@ export default function DnaTreePage() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [contextId]);
-  const acceptProposal = useCallback(async () => {
-    if (!proposal) return;
-    try { await applyDnaProposal(bookId, stage, proposal); setProposal(null); }
-    catch (e) { alert(`Couldn't apply: ${(e as Error).message}`); }
-  }, [proposal, bookId, stage]);
-  const dismissProposal = useCallback(async () => {
-    setProposal(null);
-    try { await clearDnaProposal(bookId, stage); } catch { /* best effort */ }
-  }, [bookId, stage]);
 
   const base: React.CSSProperties = {
     margin: 0, minHeight: "100vh",
@@ -1152,7 +1280,32 @@ export default function DnaTreePage() {
 
   return (
     <div style={{ ...base, marginRight: railOpen ? 420 : 0 }}>
-      {railOpen && <ChatRail bookId={bookId} stage={stage} setStage={setStage} nodes={nodes} settings={settings} onClose={() => setRailOpen(false)} onPending={onPending} />}
+      {discardOpen && <DiscardStoryModal nodes={nodes} onClose={() => setDiscardOpen(false)} />}
+      {/* The tool-using editor's agent (durable revise-agent thread), promoted into the tree rail. The
+          studio components read theme CSS vars; we override them here with the tree's dark monospace
+          palette (#8a8aff accent) so the rail matches the page instead of the app's light studio skin. */}
+      {railOpen && (
+        <div style={{
+          position: "fixed", top: 0, right: 0, bottom: 0, width: 420, zIndex: 20,
+          background: "hsl(var(--background))", borderLeft: "1px solid #1c1c22", display: "flex", flexDirection: "column",
+          // Dark-mono palette override (HSL triplets) scoped to the rail.
+          "--background": "240 11% 5%", "--foreground": "0 0% 80%",
+          "--card": "240 11% 6%", "--popover": "240 11% 6%",
+          "--primary": "240 100% 77%", "--primary-foreground": "240 30% 10%",
+          "--muted-foreground": "0 0% 50%", "--destructive": "0 70% 60%",
+          "--border": "240 16% 18%", "--input": "240 16% 20%", "--ring": "240 100% 77%",
+          "--pv-accent": "240 100% 77%", "--pv-border-soft": "240 16% 22%",
+          "--pv-surface-2": "240 14% 11%", "--pv-text-faint": "0 0% 40%",
+          "--pv-text-muted": "0 0% 60%", "--pv-ink-soft": "0 0% 70%",
+        } as React.CSSProperties}>
+          <div style={{ display: "flex", justifyContent: "flex-end", padding: "8px 10px 0" }}>
+            <span onClick={() => setRailOpen(false)} title="close" style={{ color: "#666", cursor: "pointer", fontSize: 14, lineHeight: 1 }}>✕</span>
+          </div>
+          <div style={{ flex: 1, minHeight: 0 }}>
+            <AgentRail bookId={bookId} nodes={nodes} settings={settings} />
+          </div>
+        </div>
+      )}
       {/* Header bar */}
       <div style={{ padding: "12px 16px", borderBottom: "1px solid #1a1a1a", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
         <span style={{ color: "#666", fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase" }}>
@@ -1234,12 +1387,6 @@ export default function DnaTreePage() {
             <span onClick={() => setContextId(null)} style={{ color: "#555", cursor: "pointer", textTransform: "uppercase" }}>esc ✕</span>
           </span>
         )}
-        {/* #2 — focus legend: honest about the whole tree being in context */}
-        {focusKinds && (
-          <span style={{ fontSize: 9, color: "#8a8aff", letterSpacing: "0.06em", marginLeft: "auto" }}>
-            ▎rail focus: {STAGE_FOCUS_KINDS[stage].join(" · ")} <span style={{ color: "#555" }}>— whole tree in context{stage !== "draft" ? ", prose excluded off Prose stage" : ""}</span>
-          </span>
-        )}
       </div>
 
       {/* #4 — the lints behind the score: structural faults (misparented / orphan / duplicate) + craft warns */}
@@ -1259,13 +1406,13 @@ export default function DnaTreePage() {
         </div>
       )}
 
-      {/* #1 — proposal banner: accept/dismiss the whole pending change, mirrored from the rail */}
-      {proposal && (
-        <div style={{ padding: "8px 16px", borderBottom: "1px solid #2a2a44", background: "#13131a", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 9, color: "#8a8aff", letterSpacing: "0.14em", textTransform: "uppercase" }}>✦ {proposal.ops.length} proposed change{proposal.ops.length === 1 ? "" : "s"}</span>
-          <span style={{ fontFamily: "ui-serif, Georgia, serif", fontSize: 12.5, color: "#c8c8d0", flex: 1, minWidth: 200 }}>{proposal.summary}</span>
-          <span onClick={() => void acceptProposal()} style={{ fontSize: 11, color: "#8a8aff", cursor: "pointer", letterSpacing: "0.08em", textTransform: "uppercase" }}>✓ accept</span>
-          <span onClick={() => void dismissProposal()} style={{ fontSize: 11, color: "#666", cursor: "pointer", letterSpacing: "0.08em", textTransform: "uppercase" }}>dismiss</span>
+      {/* #1 — proposal banner: the agent's pending changes are previewed in the tree; review + apply in the rail */}
+      {agentProposals.length > 0 && (
+        <div onClick={() => setRailOpen(true)} title="open the agent to review + apply"
+          style={{ padding: "8px 16px", borderBottom: "1px solid #2a2a44", background: "#13131a", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", cursor: "pointer" }}>
+          <span style={{ fontSize: 9, color: "#8a8aff", letterSpacing: "0.14em", textTransform: "uppercase" }}>✦ {agentProposals.reduce((n, p) => n + p.ops.length, 0)} proposed change{agentProposals.reduce((n, p) => n + p.ops.length, 0) === 1 ? "" : "s"}</span>
+          <span style={{ fontFamily: "ui-serif, Georgia, serif", fontSize: 12.5, color: "#c8c8d0", flex: 1, minWidth: 200 }}>{agentProposals.map((p) => p.summary).filter(Boolean).join(" · ")}</span>
+          <span style={{ fontSize: 11, color: "#8a8aff", letterSpacing: "0.08em", textTransform: "uppercase" }}>review in agent →</span>
         </div>
       )}
 
@@ -1275,11 +1422,25 @@ export default function DnaTreePage() {
       {/* Tree */}
       <div style={{ paddingTop: 8, paddingBottom: 48 }}>
         {roots.length === 0 ? (
-          <div style={{ padding: "24px 16px", color: "#333", fontSize: 13 }}>no nodes — migrate or seed the tree first</div>
+          <div style={{ padding: "16px 0" }}>
+            {/* The brief exists on the book even before the tree is seeded — it's the origin everything
+                derives from, so let the author read/edit it here and grow the tree from it. */}
+            <div style={{ padding: "0 16px 12px", color: "#555", fontSize: 12, fontStyle: "italic", letterSpacing: "0.02em" }}>
+              No DNA tree yet. The brief below is the origin — edit it, then seed the tree to start building from it.
+            </div>
+            <BriefSection brief={brief} onSave={saveBrief} depth={1} />
+            <div style={{ padding: "16px 16px 0" }}>
+              <button onClick={() => void seedTree()} disabled={seeding} style={{
+                background: "#8a8aff14", border: "1px solid #8a8aff66", borderRadius: 5,
+                color: "#a8a8ff", fontSize: 10, cursor: seeding ? "default" : "pointer", letterSpacing: "0.1em",
+                textTransform: "uppercase", padding: "5px 12px", fontFamily: "ui-monospace, monospace",
+              }}>{seeding ? "seeding…" : "✦ seed the tree from this brief"}</button>
+            </div>
+          </div>
         ) : roots.map((root) => (
           <Subtree key={root.id} node={root} index={index} nodes={nodes} depth={0}
             collapsedSet={collapsedSet} openSet={openSet}
-            h={{ onToggle: toggleNode, onToggleDetail: toggleDetail, onAdd: addNode, onDelete: removeNode, onJump: jumpTo, dragId, onDragStart: setDragId, onDragEnd: () => setDragId(null), onDrop: onDropReorder, backlinks, flashId, proposal: proposalView, focusKinds, issuesByNode, healthLens, contextId, ctxConsumes, ctxConsumedBy, onContextFocus: focusContext }} />
+            h={{ onToggle: toggleNode, onToggleDetail: toggleDetail, onAdd: addNode, onDelete: removeNode, onJump: jumpTo, dragId, onDragStart: setDragId, onDragEnd: () => setDragId(null), onDrop: onDropReorder, backlinks, flashId, proposal: proposalView, focusKinds: null, issuesByNode, healthLens, contextId, ctxConsumes, ctxConsumedBy, onContextFocus: focusContext, proseOpenSet, onToggleProse: toggleProse, onDiscardStory: discardStory, brief, onSaveBrief: saveBrief }} />
         ))}
       </div>
     </div>

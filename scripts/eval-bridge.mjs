@@ -650,7 +650,8 @@ function briefContext(brief) {
   if (b || wt) lines.push(`- Scope: ${[b, wt ? `≈${wt} words` : null].filter(Boolean).join(" · ")}`);
   if (brief.genre) lines.push(`- Genre: ${brief.genre}`);
   if (brief.audience) lines.push(`- Audience: ${brief.audience}`);
-  if (brief.premise) lines.push(`- Premise: ${brief.premise}`);
+  const idea = brief.idea ?? brief.premise; // back-compat: raw idea historically stored under `premise`
+  if (idea) lines.push(`- Idea: ${idea}`);
   if (brief.tone?.length) lines.push(`- Tone: ${brief.tone.join(", ")}`);
   if (brief.success_criteria) lines.push(`- Success looks like: ${brief.success_criteria}`);
   return lines.length ? lines.join("\n") : "(brief is empty — infer a sensible neutral voice)";

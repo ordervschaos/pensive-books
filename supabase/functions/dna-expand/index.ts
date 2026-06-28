@@ -13,6 +13,8 @@ import { callClaude, textFromClaude, type CallMeta } from "../_shared/claude.ts"
 import { getActiveModels } from "../_shared/model-config.ts";
 import { extractJsonBlock } from "../_shared/json.ts";
 import { type Brief, briefContext, mandateContext } from "../_shared/brief.ts";
+import { isChainCall } from "../_shared/self-chain.ts";
+import { serviceClient } from "../_shared/task.ts";
 
 interface Node { id: string; parent_id: string | null; kind: string; position?: number; content: Record<string, unknown>; authoring: { locked?: boolean; status?: string } }
 interface NodeTypeConfig { target: string; child_kind: string; child_level: number; parent_kind: string; role: string; count: string; schema_json: string; slots: SlotConfig }
@@ -131,16 +133,24 @@ Deno.serve(async (req: Request) => {
   try {
     const userClient = createClient(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_ANON_KEY") ?? "",
       { global: { headers: { Authorization: req.headers.get("Authorization")! } } });
-    const { data: { user } } = await userClient.auth.getUser();
-    if (!user) return json({ error: "Unauthorized" }, 401);
+    // Trusted server-to-server call (the editor agent's render_scene_prose tool) carries the chain secret →
+    // skip user auth and read via the service client. A logged-out client can't forge it. Otherwise: user auth.
+    const trusted = isChainCall(req);
+    let userId: string | null = null;
+    if (!trusted) {
+      const { data: { user } } = await userClient.auth.getUser();
+      if (!user) return json({ error: "Unauthorized" }, 401);
+      userId = user.id;
+    }
+    const db = trusted ? serviceClient() : userClient;
 
-    const { bookId, nodeId, target } = (await req.json().catch(() => ({}))) as { bookId?: number; nodeId?: string; target?: string };
+    const { bookId, nodeId, target, light } = (await req.json().catch(() => ({}))) as { bookId?: number; nodeId?: string; target?: string; light?: boolean };
     if (!bookId || !nodeId) return json({ error: "bookId and nodeId are required" }, 400);
     const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!apiKey) return json({ error: "ANTHROPIC_API_KEY not configured" }, 500);
 
-    const { data: book } = await userClient.from("books").select("name, brief, foundations").eq("id", bookId).maybeSingle();
-    const { data: nodeRows } = await userClient.from("book_nodes").select("id, parent_id, kind, position, content, authoring").eq("book_id", bookId);
+    const { data: book } = await db.from("books").select("name, brief, foundations").eq("id", bookId).maybeSingle();
+    const { data: nodeRows } = await db.from("book_nodes").select("id, parent_id, kind, position, content, authoring").eq("book_id", bookId);
     const nodes = (nodeRows as Node[] | null) ?? [];
     const node = nodes.find((n) => n.id === nodeId);
     if (!node) return json({ error: "Node not found" }, 404);
@@ -238,10 +248,14 @@ Deno.serve(async (req: Request) => {
         statePreconds.map((p) => `- ${p.key} (${p.game}): ${p.what}`).join("\n")
       : "";
     const { high: model, low } = await getActiveModels();
-    const meta: CallMeta = { fn: "dna-expand", bookId, userId: user.id };
+    const meta: CallMeta = { fn: "dna-expand", bookId, userId };
     // Prose → digest v2 (all-page continuity + anti-echo, built on the cheap `low` model); caption
     // (picture mode) keeps the short last-3-verbatim window; everything else needs no prose context.
-    const prevProseBlock = (target === "prose" || (!target && node.kind === "scene"))
+    // `light` skips the all-page continuity digest (a separate, slow Claude call) — used by the editor
+    // agent's render_scene_prose so a single render fits inside one worker's wall-clock. Trades cross-scene
+    // anti-repetition polish for speed; fine for a draft-to-check, not for the canonical book build.
+    const prevProseBlock = light ? ""
+      : (target === "prose" || (!target && node.kind === "scene"))
       ? await buildProseDigest(apiKey, low, nodes, nodeId, meta)
       : target === "caption"
         ? buildPrevProseBlock(nodes, nodeId)
@@ -353,7 +367,7 @@ Output JSON ONLY: { "beats": [ { "movement": <1..${movements.length}>, "summary"
     }
 
     // Generic DNA target: load config from node_type_configs, rebuild ctx with slot-filtered blocks.
-    const { data: config } = await userClient
+    const { data: config } = await db
       .from("node_type_configs")
       .select("target, child_kind, child_level, role, count, schema_json, slots")
       .eq("target", target ?? "")

@@ -137,7 +137,8 @@ function briefContext(brief: Brief | null): string | null {
   if (b || wt) lines.push(`- Scope: ${[b, wt ? `≈${wt.toLocaleString()} words` : null].filter(Boolean).join(" · ")}`);
   if (brief.genre) lines.push(`- Genre: ${brief.genre}`);
   if (brief.audience) lines.push(`- Audience: ${brief.audience}`);
-  if (brief.premise) lines.push(`- Premise: ${brief.premise}`);
+  const idea = brief.idea ?? brief.premise;
+  if (idea) lines.push(`- Idea: ${idea}`);
   if (brief.tone?.length) lines.push(`- Tone: ${brief.tone.join(", ")}`);
   if (brief.success_criteria) lines.push(`- Success looks like: ${brief.success_criteria}`);
   return lines.length > 1 ? lines.join("\n") : null;

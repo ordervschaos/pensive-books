@@ -5,7 +5,7 @@ import { chapters, renderPages, scenesInOrder, validate, type SceneContent } fro
 const doc = (text: string) => ({ type: "doc", content: [{ type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: "T" }] }, { type: "paragraph", content: [{ type: "text", text }] }] });
 
 const input: MigrationInput = {
-  brief: { premise: "A salt clerk falls for a smuggler.", genre: "romance", tone: ["wry"] },
+  brief: { idea: "A salt clerk falls for a smuggler.", genre: "romance", tone: ["wry"] },
   foundations: {
     argument: { text: "Freedom is chosen, not granted.", pinned: true },
     ending: { text: "She burns the ledger.", pinned: true },

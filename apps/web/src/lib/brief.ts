@@ -30,7 +30,10 @@ export interface Brief {
   scope?: BriefScope;
   genre?: string;
   audience?: string;
-  premise?: string;
+  /** The author's raw, unpolished idea — "what is the book about?" (the amateur entry point).
+   *  NOT a logline (a logline is the polished protagonist/inciting-incident/goal/obstacle/stakes
+   *  summary derived from this). Historically stored under `premise`; read via `briefIdea()`. */
+  idea?: string;
   tone?: string[];
   success_criteria?: string;
   // C5 — content type (publishing-first classification); the AI heat level is derived from it.
@@ -42,12 +45,17 @@ export const BRIEF_FIELDS = [
   "scope",
   "genre",
   "audience",
-  "premise",
+  "idea",
   "tone",
   "success_criteria",
 ] as const;
 
 export type BriefField = (typeof BRIEF_FIELDS)[number];
+
+/** Back-compat reader: the raw idea was historically stored under `premise`. Read either; write `idea`. */
+export function briefIdea(brief: Brief | null | undefined): string | undefined {
+  return brief?.idea ?? (brief as { premise?: string } | null | undefined)?.premise ?? undefined;
+}
 
 export const SCOPE_BANDS: {
   value: BriefScopeBand;
@@ -128,7 +136,7 @@ export const TONE_SUGGESTIONS = [
 
 export function isFieldFilled(brief: Brief | null | undefined, field: BriefField): boolean {
   if (!brief) return false;
-  const value = brief[field];
+  const value = field === "idea" ? briefIdea(brief) : brief[field];
   if (value == null) return false;
   if (Array.isArray(value)) return value.length > 0;
   if (typeof value === "string") return value.trim().length > 0;
@@ -175,7 +183,8 @@ export function briefToPromptContext(brief: Brief | null | undefined): string | 
   if (scope) lines.push(`- Scope: ${scope}`);
   if (brief.genre) lines.push(`- Genre: ${brief.genre}`);
   if (brief.audience) lines.push(`- Audience: ${brief.audience}`);
-  if (brief.premise) lines.push(`- Premise: ${brief.premise}`);
+  const idea = briefIdea(brief);
+  if (idea) lines.push(`- Idea: ${idea}`);
   if (brief.tone?.length) lines.push(`- Tone: ${brief.tone.join(", ")}`);
   if (brief.success_criteria) lines.push(`- Success looks like: ${brief.success_criteria}`);
   // C1: mirror MANDATE fields so staleness hashes reflect deliverable changes

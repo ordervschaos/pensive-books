@@ -102,7 +102,10 @@ const JUDGE_SYSTEM =
   `Return ONLY this JSON, no prose, no fences:\n` +
   `{"axes":[{"axis":"heat","verdict":"pass|partial|fail","detail":"<one line>","evidence":"<short quote or page title>"}, ...]}`;
 
-async function judgeProse(apiKey: string, model: string, brief: Brief, manuscript: string, meta: CallMeta): Promise<MandateAxisVerdict[]> {
+// Judge an arbitrary span of prose (a scene, a chapter, the whole book) against the brief's mandate.
+// Exported so the editor agent can check a single scene's prose against the genre/heat/success contract
+// without running the whole-book gate (which is page-based — see runMandateGate).
+export async function judgeProse(apiKey: string, model: string, brief: Brief, manuscript: string, meta: CallMeta): Promise<MandateAxisVerdict[]> {
   const mandate = mandateContext(brief) || "(no explicit mandate set)";
   const user =
     `BRIEF MANDATE (what the book promised to deliver):\n${mandate}\n\n` +

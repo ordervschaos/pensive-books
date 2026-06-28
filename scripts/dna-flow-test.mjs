@@ -26,7 +26,7 @@ const OWNER = "91f66fef-e7f0-455d-833e-080fd65d8aed"; // book 1171's owner (the 
 const BRIEF = {
   scope: { band: "novel", word_target: 80000 },
   genre: "thriller / mystery",
-  premise: "A small-town coroner finds her own signature on a death certificate for a man who is still alive — dated eleven days from today.",
+  idea: "A small-town coroner finds her own signature on a death certificate for a man who is still alive — dated eleven days from today.",
   tone: ["dread", "propulsive"],
   content_type: { level: "closed", note: "" },
   success_criteria: "the reader re-reads chapter 1 after the ending; every clue was fair.",

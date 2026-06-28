@@ -23,7 +23,7 @@ const STEPS = [
   "scope",
   "genre",
   "audience",
-  "premise",
+  "idea",
   "tone",
   "success",
 ] as const;
@@ -174,13 +174,13 @@ export function BriefIntakeSheet({ bookId, open, onOpenChange, onFinish }: Brief
             </Step>
           )}
 
-          {step === "premise" && (
-            <Step title="What is the book about?" hint="One or two sentences.">
+          {step === "idea" && (
+            <Step title="What is the book about?" hint="A rough idea is fine — we'll shape it into a logline.">
               <Textarea
                 autoFocus
                 rows={3}
-                value={brief.premise ?? ""}
-                onChange={(e) => setBrief((prev) => ({ ...prev, premise: e.target.value }))}
+                value={brief.idea ?? ""}
+                onChange={(e) => setBrief((prev) => ({ ...prev, idea: e.target.value }))}
                 placeholder="A translator returns home for a funeral and gets stuck…"
               />
             </Step>

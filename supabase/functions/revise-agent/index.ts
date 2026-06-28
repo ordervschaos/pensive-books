@@ -30,6 +30,7 @@ import { serviceClient } from "../_shared/task.ts";
 import { reinvoke, isChainCall } from "../_shared/self-chain.ts";
 import { captureException, isBillingError } from "../_shared/sentry.ts";
 import { sanitizePlan, type RevisionPlan } from "../_shared/revision-plan.ts";
+import { judgeProse } from "../_shared/mandate-gate.ts";
 
 const MAX_TURNS = 20;          // model calls per run — the runaway guard
 // One call must finish inside the ~150s worker wall clock (with headroom for the row writes and
@@ -564,6 +565,82 @@ async function toolResults(
         type: "tool_result", tool_use_id: t.id,
         content: `[${n.id}${n.authoring?.locked ? " · LOCKED" : ""}] ${n.kind}: ${JSON.stringify(n.content)}` + (childLines ? `\nchildren:\n${childLines}` : ""),
       });
+    } else if (t.name === "render_scene_prose") {
+      const id = String((t.input as { id?: string })?.id ?? "");
+      const { data: node } = await service
+        .from("book_nodes").select("id, kind, content, authoring, book_id").eq("id", id).maybeSingle();
+      if (!node || (node as { book_id?: number }).book_id !== bookId) {
+        results.push({ type: "tool_result", tool_use_id: t.id, content: `No node with id ${id} in this book.`, is_error: true });
+        continue;
+      }
+      const n = node as { id: string; kind: string; content: Record<string, unknown>; authoring: Record<string, unknown> };
+      if (n.kind !== "scene") {
+        results.push({ type: "tool_result", tool_use_id: t.id, content: `Node ${id} is a ${n.kind}, not a scene — only scenes have prose.`, is_error: true });
+        continue;
+      }
+      // Render via the deployed dna-expand (the single source of the DNA prose pipeline), authenticated
+      // server-to-server with the chain secret, then persist the prose to the scene node.
+      const url = `${Deno.env.get("SUPABASE_URL")}/functions/v1/dna-expand`;
+      try {
+        const resp = await fetch(url, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""}`,
+            "x-chain": Deno.env.get("CHAIN_SECRET") ?? "",
+          },
+          body: JSON.stringify({ bookId, nodeId: id, target: "prose", light: true }),
+        });
+        const out = (await resp.json().catch(() => ({}))) as { prose?: string; error?: string };
+        const prose = (out.prose ?? "").trim();
+        if (!resp.ok || out.error || !prose) {
+          results.push({ type: "tool_result", tool_use_id: t.id, content: `Render failed: ${out.error ?? `status ${resp.status}`}`, is_error: true });
+          continue;
+        }
+        const words = prose.split(/\s+/).filter(Boolean).length;
+        await service.from("book_nodes").update({
+          content: { ...n.content, prose: { text: prose, words } },
+          authoring: { ...n.authoring, source: n.authoring.source === "user" ? "ai_then_user" : "ai", status: "accepted" },
+        }).eq("id", id);
+        steps.push({ t: "read", label: `Drafted prose for scene “${nodeHandle(n.content)}” (${words} words).` });
+        results.push({ type: "tool_result", tool_use_id: t.id, content: `Rendered ${words} words and saved to scene ${id}. Prose:\n\n${prose.slice(0, MAX_PAGE_CHARS)}` });
+      } catch (e) {
+        results.push({ type: "tool_result", tool_use_id: t.id, content: `Render failed: ${String((e as Error)?.message ?? e)}`, is_error: true });
+      }
+    } else if (t.name === "check_against_contract") {
+      const id = String((t.input as { id?: string })?.id ?? "");
+      const { data: node } = await service
+        .from("book_nodes").select("id, kind, content, book_id").eq("id", id).maybeSingle();
+      if (!node || (node as { book_id?: number }).book_id !== bookId) {
+        results.push({ type: "tool_result", tool_use_id: t.id, content: `No node with id ${id} in this book.`, is_error: true });
+        continue;
+      }
+      const n = node as { id: string; kind: string; content: { prose?: { text?: string }; goal?: string } };
+      const proseText = (n.content?.prose?.text ?? "").trim();
+      if (n.kind !== "scene") {
+        results.push({ type: "tool_result", tool_use_id: t.id, content: `Node ${id} is a ${n.kind}, not a scene — only scene prose can be checked against the contract.`, is_error: true });
+        continue;
+      }
+      if (!proseText) {
+        results.push({ type: "tool_result", tool_use_id: t.id, content: `Scene ${id} has no prose yet (content.prose.text is empty). Render or write the scene before checking it.`, is_error: true });
+        continue;
+      }
+      const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
+      if (!apiKey) {
+        results.push({ type: "tool_result", tool_use_id: t.id, content: "Contract check unavailable: ANTHROPIC_API_KEY not configured.", is_error: true });
+        continue;
+      }
+      const { data: book } = await service.from("books").select("brief").eq("id", bookId).maybeSingle();
+      const brief = ((book as { brief?: Brief } | null)?.brief ?? {}) as Brief;
+      const { high: model } = await getActiveModels();
+      try {
+        const axes = await judgeProse(apiKey, model, brief, proseText, { fn: "revise-agent-contract", bookId, taskTable: "book_agent_runs", taskId: null, userId: null });
+        const summary = axes.map((a) => `${a.axis}: ${a.verdict.toUpperCase()} — ${a.detail}${a.evidence ? ` (e.g. "${a.evidence}")` : ""}`).join("\n");
+        steps.push({ t: "read", label: `Checked scene “${nodeHandle(n.content)}” against the brief contract.` });
+        results.push({ type: "tool_result", tool_use_id: t.id, content: summary || "The judge returned no axes — inspect by hand." });
+      } catch (e) {
+        results.push({ type: "tool_result", tool_use_id: t.id, content: `Contract check failed: ${String((e as Error)?.message ?? e)}`, is_error: true });
+      }
     } else {
       results.push({ type: "tool_result", tool_use_id: t.id, content: `Unknown tool ${t.name}.`, is_error: true });
     }
@@ -734,6 +811,16 @@ function nodeHandle(content: Record<string, unknown> | null | undefined): string
 
 const THREAD_DNA_TOOLS = [
   {
+    name: "render_scene_prose",
+    description: "Generate (draft) the PROSE for a scene from its plan, in the book's voice, and save it to the scene's content.prose.text. Pass the scene node's id. Use this to draft a scene the author asked you to write, or before checking it against the contract. Returns the drafted prose. Overwrites any existing prose on that scene, so confirm with the author first if the scene already has prose you'd be replacing.",
+    input_schema: { type: "object", properties: { id: { type: "string", description: "The scene node's id." } }, required: ["id"] },
+  },
+  {
+    name: "check_against_contract",
+    description: "Judge a scene's PROSE against the book's brief mandate (genre, heat, success criteria). Pass the scene node's id; the scene must already have prose (content.prose.text) — render or write it first if it's empty. Returns a per-axis verdict (pass / partial / fail) with evidence, so you can tell the author whether the draft delivers what the brief promised. Read the scene first if you haven't.",
+    input_schema: { type: "object", properties: { id: { type: "string", description: "The scene node's id." } }, required: ["id"] },
+  },
+  {
     name: "read_node",
     description: "Read one DNA node's FULL content by id — including a scene's prose (content.prose.text) and a one-line summary of its children. The tree summary you're given strips prose to stay lean; use this to read a scene in full before judging or rewriting it.",
     input_schema: { type: "object", properties: { id: { type: "string", description: "The node's id from the tree." } }, required: ["id"] },
@@ -779,9 +866,10 @@ const SYSTEM_THREAD = `You are a sharp, warm developmental STORY EDITOR — the 
 
 You hold the book's DNA TREE: premise → foundations (pillar, cast, world, tentpoles, voice) → structure (movements, beats, threads) → scenes → prose. The tree below is FILTERED to the aspects in scope for this conversation, and prose is stripped to stay lean — use read_node to read a scene's full prose before judging or rewriting it.
 
-You can do two things:
+You can do three things:
 1. DISCUSS — answer, summarize, pressure-test. Reply in plain MARKDOWN prose and just end your turn (no tool needed). Be concrete, grounded in the real tree, referencing nodes by their [id].
 2. CHANGE THE TREE — when the author asks for a change (or agrees to one), call propose_node_ops with edit/add/delete ops over the real ids. The author reviews the diff and applies it; descendants of an edited node go stale and are regenerated later. ONLY touch nodes whose kind is in scope; NEVER touch a LOCKED node. Don't propose unless asked — talk first.
+3. DRAFT & CHECK PROSE — call render_scene_prose with a scene's [id] to draft (or redraft) its prose from its plan, in the book's voice (it saves to the scene and returns the text). Call check_against_contract with a scene's [id] to judge its existing prose against the brief mandate (genre, heat, voice, success criteria) and get a per-axis verdict you relay to the author. A common request — "write the first scene and see if it meets the brief" — is render_scene_prose then check_against_contract on the same scene. render OVERWRITES existing prose, so if a scene already has prose, confirm before redrafting.
    • REBUILDS: to replace a whole level — "rebuild the acts", "4 movements with all-new beats" — use ONE replace_children op (parentId = the level's parent, e.g. the pillar for acts; childKind = movement; children = the new movements, each nesting its beats). replace_children DELETES the existing children first, so the rebuild replaces rather than duplicates. Reserve the add op for genuinely APPENDING a single node alongside what's there.
 
 ${CONTENT_SCHEMAS}

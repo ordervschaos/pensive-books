@@ -19,6 +19,10 @@ export interface Brief {
   scope?: { band?: string; word_target?: number };
   genre?: string;
   audience?: string;
+  /** Author's raw idea ("what is the book about?"). Historically stored under `premise`; read via
+   *  `briefIdea()`. NOT a logline (the polished summary is derived from this downstream). */
+  idea?: string;
+  /** @deprecated legacy key for `idea` — kept so pre-rename books still read. */
   premise?: string;
   tone?: string[];
   success_criteria?: string;
@@ -52,7 +56,8 @@ export function briefContext(brief: Brief | null, opts: BriefContextOpts = {}): 
   }
   if (brief.genre) lines.push(`- Genre: ${brief.genre}`);
   if (brief.audience) lines.push(`- Audience: ${brief.audience}`);
-  if (brief.premise) lines.push(`- Premise: ${brief.premise}`);
+  const idea = brief.idea ?? brief.premise;
+  if (idea) lines.push(`- Idea: ${idea}`);
   if (brief.tone?.length) lines.push(`- Tone: ${brief.tone.join(", ")}`);
   if (success && brief.success_criteria) lines.push(`- Success looks like: ${brief.success_criteria}`);
   return lines.length ? lines.join("\n") : empty;

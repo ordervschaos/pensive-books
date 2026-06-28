@@ -6,7 +6,7 @@ import { saveNodes } from "@/lib/bookNodes";
 import {
   byId, newId, stampInput, stampProse, type Authoring, type DnaNode, type NodeContent, type NodeKind,
 } from "@/lib/novelDna";
-import type { Brief } from "@/lib/brief";
+import { briefIdea, type Brief } from "@/lib/brief";
 import type { CastMember, Foundations, Relationship, Tentpole, WorldNode } from "@/lib/foundations";
 
 export interface MigrationPage {
@@ -46,7 +46,7 @@ export function buildDnaFromStack(bookId: number, input: MigrationInput): DnaNod
   };
 
   // ── Ladder top: seed → premise → pillar ───────────────────────────────────
-  const seed = mk("seed", 0, null, { logline: (brief?.premise ?? "").trim() }, accepted());
+  const seed = mk("seed", 0, null, { logline: (briefIdea(brief) ?? "").trim() }, accepted());
   const premise = mk("premise", 1, seed.id, {
     genre: brief?.genre ? [brief.genre] : [], tone: brief?.tone ?? [],
     shape: spine?.text?.trim() ? { setup: spine.text.trim() } : {},

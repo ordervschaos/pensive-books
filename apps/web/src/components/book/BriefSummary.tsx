@@ -8,7 +8,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { BookBriefSection } from "@/components/book/BookBriefSection";
-import { Brief, computeCompletion, scopeSummary } from "@/lib/brief";
+import { Brief, briefIdea, computeCompletion, scopeSummary } from "@/lib/brief";
 
 interface BriefSummaryProps {
   bookId: number;
@@ -38,9 +38,9 @@ export function BriefSummary({ bookId, brief, onBriefChange }: BriefSummaryProps
           <div className="pv-eyebrow mb-1.5">Brief</div>
           {isSet ? (
             <>
-              {brief?.premise && (
+              {briefIdea(brief) && (
                 <p className="pv-serif text-[15px] italic leading-snug text-foreground">
-                  {brief.premise}
+                  {briefIdea(brief)}
                 </p>
               )}
               {meta.length > 0 && (
