@@ -80,18 +80,17 @@ interface RunRow {
 }
 const ROW_COLS = "id, book_id, created_by, kind, status, evaluation, transcript, steps, pending, proposals, context_scope, context_analysis, turns, cancel_requested";
 
-// The context filter's aspects ARE the DNA journey stages. null/[] scope = all.
-type Aspect = "premise" | "foundations" | "structure" | "scenes" | "draft";
-const ASPECTS: Aspect[] = ["premise", "foundations", "structure", "scenes", "draft"];
+// Context filter aspects mirror the DNA tree's visual layers. null/[] scope = all.
+type Aspect = "seed" | "premise" | "cast_world" | "story" | "prose";
+const ASPECTS: Aspect[] = ["seed", "premise", "cast_world", "story", "prose"];
 
-// Which book_nodes kinds each stage covers (scenes = scene structure, draft = scene prose — both scene
-// nodes). Mirrors lib/agentThread.ts ASPECT_KINDS + dna-chat STAGE_KINDS.
+// Which book_nodes kinds each aspect covers. Mirrors lib/agentThread.ts ASPECT_KINDS.
 const ASPECT_KINDS: Record<Aspect, string[]> = {
-  premise: ["seed", "premise"],
-  foundations: ["pillar", "character", "relationship", "tentpole", "world_fact", "voice_profile"],
-  structure: ["movement", "beat", "thread", "game"],
-  scenes: ["scene"],
-  draft: ["scene"],
+  seed: ["seed"],
+  premise: ["premise"],
+  cast_world: ["pillar", "character", "relationship", "tentpole", "world_fact", "location", "thread", "game", "voice_profile"],
+  story: ["movement", "beat", "scene"],
+  prose: ["scene"],
 };
 // The set of node kinds in scope (null/[] = every kind). Used to filter context AND fence which nodes
 // the agent may write ops against.
@@ -101,7 +100,7 @@ function scopedKinds(scope: Aspect[] | null): Set<string> | null {
   for (const a of scope) for (const k of ASPECT_KINDS[a]) s.add(k);
   return s;
 }
-const ALL_NODE_KINDS = ["seed", "premise", "pillar", "movement", "beat", "scene", "character", "relationship", "tentpole", "world_fact", "thread", "game", "voice_profile"];
+const ALL_NODE_KINDS = ["seed", "premise", "pillar", "movement", "beat", "scene", "character", "relationship", "tentpole", "world_fact", "location", "thread", "game", "voice_profile"];
 
 // The evaluation shape (book_evaluations.result), as produced by evaluate-book.
 interface EvalIssue {

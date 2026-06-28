@@ -39,15 +39,24 @@ export function AgentRail({ bookId, nodes, settings }: { bookId: number; nodes: 
     const kinds = new Set<NodeKind>(nodes.map((n) => n.kind));
     const hasProse = nodes.some((n) => n.kind === "scene" && !!(n.content as { prose?: { text?: string } })?.prose?.text?.trim());
     return (Object.keys(ASPECT_KINDS) as Aspect[]).filter((a) =>
-      a === "draft" ? hasProse : ASPECT_KINDS[a].some((k) => kinds.has(k)),
+      a === "prose" ? hasProse : ASPECT_KINDS[a].some((k) => kinds.has(k)),
     );
   }, [nodes]);
-  // The context filter. null = the default ("whole book" — every existing aspect, auto-following
-  // `available`); a non-null array = the author narrowed it by hand. Sent with each message.
-  const [custom, setCustom] = useState<Aspect[] | null>(null);
+  // The context filter — persisted to localStorage so it survives new chats and page reloads.
+  // null = the default ("whole book" — every existing aspect, auto-following `available`);
+  // a non-null array = the author narrowed it by hand. Sent with each message.
+  const lsKey = `agent-context-${bookId}`;
+  const [custom, setCustom] = useState<Aspect[] | null>(() => {
+    try { const v = localStorage.getItem(lsKey); return v ? (JSON.parse(v) as Aspect[]) : null; } catch { return null; }
+  });
   const scope = custom ?? available;
   const toggleAspect = (a: Aspect) =>
-    setCustom((c) => { const base = c ?? available; return base.includes(a) ? base.filter((x) => x !== a) : [...base, a]; });
+    setCustom((c) => {
+      const base = c ?? available;
+      const next = base.includes(a) ? base.filter((x) => x !== a) : [...base, a];
+      try { localStorage.setItem(lsKey, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
   // When the filter is the full set (or empty), send nothing → the edge treats it as the whole book.
   const sentScope = custom && custom.length && custom.length < available.length ? custom : undefined;
   const { row, refetch, stale } = useLatestTaskRow<AgentThreadRow>({

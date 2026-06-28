@@ -9,7 +9,6 @@ import { supabase } from "@/integrations/supabase/client";
 import type { TaskRow } from "@/hooks/useLatestTaskRow";
 import { applyNodeOps, type NodeOp, type OpValidation } from "@/lib/dnaChat";
 import type { NodeKind } from "@/lib/novelDna";
-import { DNA_STAGES, type StageKey } from "@/lib/dnaJourney";
 
 export interface AgentStep {
   // user = the author's message · note = the agent's reply/narration · read = a node it read ·
@@ -18,19 +17,20 @@ export interface AgentStep {
   label: string;
 }
 
-// The context filter's aspects ARE the DNA journey stages (premise → foundations → structure → scenes
-// → draft). Empty/absent scope = the whole book.
-export type Aspect = StageKey;
-export const ALL_ASPECTS: Aspect[] = DNA_STAGES.map((s) => s.key);
-export const ASPECT_LABELS = Object.fromEntries(DNA_STAGES.map((s) => [s.key, s.label])) as Record<Aspect, string>;
-// Which book_nodes kinds each stage covers (scenes = scene structure, draft = scene prose — both are
-// scene nodes). Mirrors STAGE_KINDS in supabase/functions/revise-agent/index.ts + dna-chat.
+// The context filter aspects mirror the DNA tree's visual layers (not the journey stages).
+// "cast_world" = pillar + all entity kinds (the tree's "cast & world" group);
+// "story" = movements + beats + scenes (the tree's "story" spine).
+export type Aspect = "seed" | "premise" | "cast_world" | "story" | "prose";
+export const ALL_ASPECTS: Aspect[] = ["seed", "premise", "cast_world", "story", "prose"];
+export const ASPECT_LABELS: Record<Aspect, string> = {
+  seed: "seed", premise: "premise", cast_world: "cast & world", story: "story", prose: "prose",
+};
 export const ASPECT_KINDS: Record<Aspect, NodeKind[]> = {
-  premise: ["seed", "premise"],
-  foundations: ["pillar", "character", "relationship", "tentpole", "world_fact", "voice_profile"],
-  structure: ["movement", "beat", "thread", "game"],
-  scenes: ["scene"],
-  draft: ["scene"],
+  seed: ["seed"],
+  premise: ["premise"],
+  cast_world: ["pillar", "character", "relationship", "tentpole", "world_fact", "location", "thread", "game", "voice_profile"],
+  story: ["movement", "beat", "scene"],
+  prose: ["scene"],
 };
 
 // A reviewable change the agent proposes against the DNA tree; the author applies it through the
