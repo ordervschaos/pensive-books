@@ -34,7 +34,10 @@ const POLARITY = ["up", "down"];
 export const NODE_SCHEMA: Partial<Record<NodeKind, EditSpec[]>> = {
   seed: [{ key: "logline", label: "logline", multiline: true, required: true }],
   premise: [
-    { key: "dramatic_question", label: "question", multiline: true, required: true }, { key: "genre", label: "genre", type: "list", taste: true }, { key: "tone", label: "tone", type: "list", taste: true },
+    // genre + tone live on the BRIEF (the book-level contract / MANDATE), not here — they were duplicated
+    // onto premise but nothing downstream read them (drift risk only). The premise rung holds only what it
+    // genuinely refines: the dramatic question + the 5-part shape.
+    { key: "dramatic_question", label: "question", multiline: true, required: true },
     { key: "shape", label: "shape", type: "object", fields: [
       { key: "setup", label: "setup", multiline: true }, { key: "turn1", label: "turn 1", multiline: true }, { key: "turn2", label: "turn 2", multiline: true },
       { key: "turn3", label: "turn 3", multiline: true }, { key: "resolution", label: "resolution", multiline: true },

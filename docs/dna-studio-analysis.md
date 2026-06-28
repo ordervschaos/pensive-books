@@ -44,8 +44,14 @@ its own save path), but renders inline at the top of the tree and shows even bef
 levels of polish:
 - **idea** (`brief.idea`) = the author's raw *idea* — "what is the book about?". Unpolished, partial,
   amateur-grade. This is brief input. *(Renamed from `brief.premise` to disambiguate it from the L1
-  `premise` node — genre/tone/dramatic_question/shape. Migration `20260628120000`; readers fall back to
-  the old `premise` key for safety.)*
+  `premise` node — dramatic_question + shape. Migration `20260628120000`; readers fall back to the old
+  `premise` key for safety.)*
+
+  Note: **genre and tone are book-level contract fields on the brief** (they derive the MANDATE every step
+  reads), not ladder content. They used to be duplicated onto the L1 `premise` node too, but nothing
+  downstream read those copies — pure drift risk — so they were dropped from the premise rung (migration
+  `20260628140000`). The brief is the single source for genre/tone; the premise node holds only the
+  dramatic question + the 5-part shape.
 - **logline** = a polished **1–2 sentence summary** that names the **protagonist, the inciting incident,
   the primary goal, the main obstacle, and the stakes**. This is a *structured craft artifact* — the
   system's first real value-add: it refines the raw idea into a proper logline.
@@ -71,7 +77,7 @@ reacting to.
 |---|---|---|---|
 | 0 | `brief` (the root, **amateur input**) | raw **idea** (`brief.idea`) + settings → MANDATE/VOICE | — (author-supplied origin) |
 | 1 | `seed` | a polished **logline** (protagonist · inciting incident · goal · obstacle · stakes) — *derived from the raw idea*, not equal to it | brief |
-| 2 | `premise` (L1) | genre, tone, dramatic_question, 5-part shape | seed + brief |
+| 2 | `premise` (L1) | dramatic_question + 5-part shape (genre/tone live on the brief, not here) | seed + brief |
 | 3 | `pillar` | controlling_idea + ending | premise + brief |
 | 3a–e | entities | cast, world_facts, relationships, tentpoles, locations, voice_profile | pillar argument+ending |
 | 4 | `movements` | acts: goal, **turning_point**, value, target_pct | pillar + cast |

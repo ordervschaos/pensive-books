@@ -47,8 +47,8 @@ export function buildDnaFromStack(bookId: number, input: MigrationInput): DnaNod
 
   // ── Ladder top: seed → premise → pillar ───────────────────────────────────
   const seed = mk("seed", 0, null, { logline: (briefIdea(brief) ?? "").trim() }, accepted());
+  // genre/tone stay on the brief (the contract) — not duplicated onto the premise node.
   const premise = mk("premise", 1, seed.id, {
-    genre: brief?.genre ? [brief.genre] : [], tone: brief?.tone ?? [],
     shape: spine?.text?.trim() ? { setup: spine.text.trim() } : {},
   }, accepted(!!spine?.text));
   const pillar = mk("pillar", 2, premise.id, {

@@ -3738,7 +3738,7 @@ const DNA_STAGE_KINDS = {
 // Never hand-edit the field guide; edit NODE_SCHEMA and regenerate. Mirrors supabase/functions/dna-chat.
 const DNA_SCHEMA = JSON.parse(readFileSync(join(repoRoot, "supabase/functions/_shared/dna-schema.json"), "utf8"));
 const DNA_STAGE_GUIDE = {
-  premise: "the PREMISE — the logline, genre, tone, dramatic question, and the 5-part shape. Sharpen the question and the turns.",
+  premise: "the PREMISE — the dramatic question and the 5-part shape. Sharpen the question and the turns. (genre/tone live on the brief, not here.)",
   foundations: "the FOUNDATIONS — the controlling idea, the ending, and the CAST (want/need/wound/lie/truth/idiolect), world rules, tentpoles, relationships. The wound + lie are the human core; deepen, don't generic-ify.",
   structure: "the STRUCTURE — acts (movements) and their causal beats. Hunt sagging middles, weak turning points, 'and-then' beats.",
   scenes: "the SCENES — each scene's pov/goal/conflict/outcome and its VALUE SHIFT. Every scene must turn a value.",

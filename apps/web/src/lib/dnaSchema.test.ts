@@ -23,7 +23,7 @@ describe("validateContent", () => {
   });
 
   it("flags a list field that isn't an array", () => {
-    expect(validateContent("premise", { dramatic_question: "q", genre: "fantasy" }).map((i) => i.rule)).toContain("bad_shape");
+    expect(validateContent("voice_profile", { style: "x", constraints: "not-an-array" }).map((i) => i.rule)).toContain("bad_shape");
   });
 
   it("a fully-specified node is clean", () => {
@@ -41,7 +41,7 @@ describe("sanitizeContent", () => {
     expect(out.name).toBe("Vane");
   });
   it("splits a comma-string into a list", () => {
-    expect(sanitizeContent("premise", { dramatic_question: "q", genre: "fantasy, adventure" }).genre).toEqual(["fantasy", "adventure"]);
+    expect(sanitizeContent("voice_profile", { style: "x", constraints: "terse, wry" }).constraints).toEqual(["terse", "wry"]);
   });
   it("recurses into object sub-fields (scene value_shift polarity)", () => {
     const out = sanitizeContent("scene", { goal: "g", value_shift: { value: "hope", from: "x", to: "y", polarity: "Up" } });
