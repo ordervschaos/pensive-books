@@ -75,10 +75,11 @@ interface RunRow {
   proposals: AgentProposal[] | null;
   context_scope: Aspect[] | null; // thread scope (docs/agent-rail.md): null = whole book
   context_analysis: string | null; // latest client-computed story analysis (backstop)
+  context_effort: "low" | "high" | null; // null = high (default)
   turns: number;
   cancel_requested: boolean;
 }
-const ROW_COLS = "id, book_id, created_by, kind, status, evaluation, transcript, steps, pending, proposals, context_scope, context_analysis, turns, cancel_requested";
+const ROW_COLS = "id, book_id, created_by, kind, status, evaluation, transcript, steps, pending, proposals, context_scope, context_analysis, context_effort, turns, cancel_requested";
 
 // Context filter aspects mirror the DNA tree's visual layers. null/[] scope = all.
 type Aspect = "seed" | "premise" | "cast_world" | "story" | "prose";
@@ -196,6 +197,8 @@ Deno.serve(async (req: Request) => {
         : null;
       // The client-computed story analysis (the engine lives in the web app) — refreshed this turn.
       const analysis: string | null = typeof body.analysis === "string" && body.analysis.trim() ? body.analysis.trim() : null;
+      // Effort: "low" = propose inline on first response without exploring; "high" (default) = full tool loop.
+      const effort: "low" | "high" = body.effort === "low" ? "low" : "high";
 
       const { data: existing } = await service
         .from("book_agent_runs").select(ROW_COLS).eq("book_id", tBookId).eq("kind", "thread").maybeSingle();
@@ -215,6 +218,7 @@ Deno.serve(async (req: Request) => {
             status: "running",
             context_scope: scope,
             context_analysis: analysis,
+            context_effort: effort,
             transcript: [{ role: "user", content: [{ type: "text", text: message }] }],
             steps: [{ t: "user", label: message }],
           })
@@ -231,7 +235,7 @@ Deno.serve(async (req: Request) => {
       const transcript = [...thread.transcript, { role: "user", content: [{ type: "text", text: message }] }];
       const steps = [...thread.steps, { t: "user", label: message } as AgentStep];
       const { error } = await service.from("book_agent_runs")
-        .update({ transcript, steps, status: "running", turns: 0, pending: null, error: null, cancel_requested: false, context_scope: scope, context_analysis: analysis })
+        .update({ transcript, steps, status: "running", turns: 0, pending: null, error: null, cancel_requested: false, context_scope: scope, context_analysis: analysis, context_effort: effort })
         .eq("id", thread.id);
       if (error) throw new Error(error.message);
       if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("revise-agent", { runId: thread.id }));
@@ -330,7 +334,8 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
     // runs keep the static plan-first system + tools.
     const isThread = row.kind === "thread";
     const scope = row.context_scope;
-    const system = isThread ? await threadSystem(service, row.book_id, scope, row.context_analysis) : SYSTEM;
+    const effort = row.context_effort ?? "high";
+    const system = isThread ? await threadSystem(service, row.book_id, scope, row.context_analysis, effort) : SYSTEM;
     const tools = isThread ? threadToolsFor(scope) : TOOLS;
     // Count the turn BEFORE the call: a hard worker death mid-call still consumes budget, so a
     // crash-looping run hits MAX_TURNS instead of being revived forever by the watchdog.
@@ -1009,7 +1014,7 @@ async function proposeOptions(
 // every call so ids stay fresh as the author edits (the transcript holds only the conversation). Prose
 // is always stripped (read_node fetches it). A one-line premise/pillar frame is always included so the
 // agent is grounded even when 'premise' isn't in scope.
-async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspect[] | null, analysis: string | null): Promise<string> {
+async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspect[] | null, analysis: string | null, effort: "low" | "high" = "high"): Promise<string> {
   const { data: book } = await service.from("books").select("name, brief").eq("id", bookId).maybeSingle();
   const b = book as { name?: string; brief?: Brief } | null;
   const { data: rows } = await service
@@ -1037,12 +1042,17 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
 
   // Always-on grounding frame: the premise logline + pillar controlling idea (one line each), even when
   // 'premise' isn't scoped, so the agent knows what book it's editing.
+  // The pillar's ID is always exposed so the agent can use it as parentId for add ops targeting
+  // character / world_fact / location even when cast_world is not in scope.
   const frame: string[] = [];
   if (kinds) {
     const premise = nodes.find((n) => n.kind === "premise");
     const pillar = nodes.find((n) => n.kind === "pillar");
-    if (premise) frame.push(`premise: ${nodeHandle(premise.content)}`);
-    if (pillar?.content?.controlling_idea) frame.push(`controlling idea: ${String(pillar.content.controlling_idea).slice(0, 160)}`);
+    if (premise && !kinds.has("premise")) frame.push(`[${premise.id}] premise: ${nodeHandle(premise.content)}`);
+    if (pillar && !kinds.has("pillar")) {
+      const ci = pillar.content?.controlling_idea ? ` — ${String(pillar.content.controlling_idea).slice(0, 120)}` : "";
+      frame.push(`[${pillar.id}] pillar (parent container for character / world_fact / location / movement adds)${ci}`);
+    }
   }
 
   const blocks = [
@@ -1055,7 +1065,10 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
   ].filter(Boolean);
 
   const scopeLine = scope && scope.length ? `\n\nIN SCOPE THIS CONVERSATION: ${scope.join(", ")}. Only propose changes to these aspects.` : "";
-  return `${SYSTEM_THREAD}${scopeLine}\n\n${blocks.join("\n\n")}`;
+  const effortLine = effort === "low"
+    ? "\n\nFAST MODE: The author wants a quick response. If the change is clear from the tree, call propose_node_ops immediately — one sentence of narration, then the proposal. Skip read_node unless prose content is essential. Only pause to ask if the request is genuinely ambiguous."
+    : "";
+  return `${SYSTEM_THREAD}${scopeLine}${effortLine}\n\n${blocks.join("\n\n")}`;
 }
 
 // ── Context builders (mirror revise-outline) ─────────────────────────────────

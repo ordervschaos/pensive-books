@@ -6,7 +6,7 @@
 // and projects the row live (refresh = no-op). Mirrors ReviseChat's shape but is driven by the
 // agent's `steps` feed rather than a per-layer chat thread.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, BookOpen, Check, ChevronDown, Clock, CornerDownLeft, Loader2, Slash, Square, SquarePen, Wand2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, BookOpen, Check, ChevronDown, Clock, CornerDownLeft, Loader2, Slash, Square, SquarePen, Wand2, X, Zap } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
@@ -59,6 +59,17 @@ export function AgentRail({ bookId, nodes, settings }: { bookId: number; nodes: 
     });
   // When the filter is the full set (or empty), send nothing → the edge treats it as the whole book.
   const sentScope = custom && custom.length && custom.length < available.length ? custom : undefined;
+
+  // Effort: "low" = propose inline first response; "high" = full tool loop. Persisted per book.
+  const effortKey = `agent-effort-${bookId}`;
+  const [effort, setEffort] = useState<"low" | "high">(() => {
+    try { return localStorage.getItem(effortKey) === "low" ? "low" : "high"; } catch { return "high"; }
+  });
+  const toggleEffort = () => setEffort((e) => {
+    const next = e === "high" ? "low" : "high";
+    try { localStorage.setItem(effortKey, next); } catch { /* ignore */ }
+    return next;
+  });
   const { row, refetch, stale } = useLatestTaskRow<AgentThreadRow>({
     table: "book_agent_runs",
     bookId,
@@ -119,7 +130,7 @@ export function AgentRail({ bookId, nodes, settings }: { bookId: number; nodes: 
     setDraft("");
     setOptimistic(t);
     try {
-      await sendAgentMessage(bookId, t, sentScope, analysis);
+      await sendAgentMessage(bookId, t, sentScope, analysis, effort);
       refetch();
     } catch (e) {
       setOptimistic(null);
@@ -236,6 +247,15 @@ export function AgentRail({ bookId, nodes, settings }: { bookId: number; nodes: 
               </button>
             );
           })}
+          <button type="button" onClick={toggleEffort} disabled={active}
+            title={effort === "low" ? "Fast mode — proposes inline on first response. Click for deep." : "Deep mode — full tool loop. Click for fast."}
+            className={`ml-auto inline-flex items-center gap-1 rounded-full border px-2 py-0.5 pv-mono text-[10px] transition-colors disabled:opacity-50 ${
+              effort === "low"
+                ? "border-[hsl(var(--pv-accent))]/50 bg-[hsl(var(--pv-accent))]/[0.08] text-[hsl(var(--pv-accent))]"
+                : "border-[hsl(var(--pv-border-soft))] text-[hsl(var(--pv-text-faint))] hover:text-foreground"
+            }`}>
+            <Zap className="h-2.5 w-2.5" /> {effort === "low" ? "fast" : "deep"}
+          </button>
         </div>
       )}
 

@@ -64,9 +64,10 @@ async function invoke(body: Record<string, unknown>): Promise<void> {
 
 /** Send a free-text message to the book's one agent thread (creates it on first use). `scope` filters
  *  which book aspects the agent sees + can touch (omit / empty = the whole book). `analysis` is the
- *  client-computed story analysis (the engine lives in the web app) fed as a structural backstop. */
-export async function sendAgentMessage(bookId: number, message: string, scope?: Aspect[], analysis?: string): Promise<void> {
-  await invoke({ bookId, message, ...(scope && scope.length ? { scope } : {}), ...(analysis?.trim() ? { analysis } : {}) });
+ *  client-computed story analysis (the engine lives in the web app) fed as a structural backstop.
+ *  `effort` controls response style: "low" = propose inline on first response; "high" (default) = full tool loop. */
+export async function sendAgentMessage(bookId: number, message: string, scope?: Aspect[], analysis?: string, effort?: "low" | "high"): Promise<void> {
+  await invoke({ bookId, message, ...(scope && scope.length ? { scope } : {}), ...(analysis?.trim() ? { analysis } : {}), ...(effort ? { effort } : {}) });
 }
 
 /** Answer the agent's pending ask_author question, resuming the parked turn. */
