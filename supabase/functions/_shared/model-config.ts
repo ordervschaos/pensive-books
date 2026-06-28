@@ -28,7 +28,7 @@ const TIER_MODELS: Record<ModelTier, { high: string; low: string }> = {
   kimi:        { high: "moonshotai/kimi-k2.7-code", low: "qwen/qwen3-8b" },
   glm:         { high: "z-ai/glm-5.2",              low: "qwen/qwen3-8b" },
   minimax:     { high: "minimax/minimax-m3",        low: "qwen/qwen3-8b" },
-  gpt:         { high: "openai/gpt-5.5",            low: "qwen/qwen3-8b" },
+  gpt:         { high: "openai/gpt-5",               low: "qwen/qwen3-8b" },
 };
 
 export async function getActiveModels(): Promise<{ high: string; low: string }> {

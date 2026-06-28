@@ -75,7 +75,7 @@ function ConditionalNav() {
   const location = useLocation();
   const isPageViewRoute = location.pathname.includes('/pages/');
   const isJsonRoute = location.pathname.endsWith('/dna.json');
-  const isTreeRoute = location.pathname.endsWith('/dna/tree');
+  const isTreeRoute = location.pathname.includes('/dna/tree');
 
   // Hide nav for page view routes (own fixed settings menu) and dev DNA routes.
   if (isPageViewRoute || isJsonRoute || isTreeRoute) {
@@ -189,7 +189,7 @@ export default function App() {
                         <Route path="/books/:bookSlug/studio" element={<StudioPage />} />
                         <Route path="/books/:bookSlug/dna" element={<DnaStudioPage />} />
                         <Route path="/books/:bookSlug/dna.json" element={<DnaJsonPage />} />
-                        <Route path="/books/:bookSlug/dna/tree" element={<DnaTreePage />} />
+                        <Route path="/books/:bookSlug/dna/tree/*" element={<DnaTreePage />} />
                         <Route path="/books/:bookSlug/studio/page/:pageId" element={<StudioPage />} />
                         <Route path="/books/:bookSlug/studio/:step" element={<StudioPage />} />
                         <Route path="/books/:bookSlug/edit" element={<BookEdit />} />

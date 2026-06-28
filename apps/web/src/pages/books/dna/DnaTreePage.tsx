@@ -3,7 +3,7 @@
 // Color-coded by node kind; connector lines via CSS borders; collapsible per-node.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import { useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { deleteNode, patchNodeContent, saveNode, saveNodes } from "@/lib/bookNodes";
 import { backlinkIndex, byId, childrenOf, emptyNode, isEntityKind, isProseStale, isStale, newId, pillarOf, refsOf, type BookSettings, type DnaIssue, type DnaNode, type BeatContent, type NodeContent, type NodeKind, type SceneContent } from "@/lib/novelDna";
@@ -703,7 +703,7 @@ function SpineLab({ node, depth, bookId, brief, hasChildren, openRail }: {
     node.kind === "seed"
       ? `Every option must be a faithful, SHARPER read of the SAME brief idea above — same story, not a different one; vary the framing, emphasis, and which angle leads.`
       : node.kind === "premise"
-        ? `HARD CONSTRAINT — treat the logline above as LOCKED: every option must serve that SAME logline, keeping its protagonist, inciting incident, central goal, main obstacle, and stakes FIXED. Vary ONLY the dramatic question and the 5-part shape (how it's structured/interpreted). Do NOT change the curse, the heist, the characters, or the world the logline already fixed — never reshape it into a different book.`
+        ? `HARD CONSTRAINT — treat the logline above as LOCKED: every option must serve that SAME logline, keeping its protagonist, inciting incident, central goal, main obstacle, and stakes FIXED. Vary ONLY the dramatic question and the 5-part shape (how it's structured/interpreted). Do NOT alter any story element the logline already established — never reshape it into a different book.`
         : `HARD CONSTRAINT — treat the logline + premise above as LOCKED: every option must serve them. Vary ONLY the controlling idea and the ending; do NOT alter the established premise or story.`;
   const optionsMsg = `Draft 3 alternative ${label}s for node [${node.id}] and stage them with propose_options. ${constraint} Make them meaningfully different from EACH OTHER along the allowed axis, never near-duplicates. Honor the brief MANDATE (genre, heat, tone) verbatim. Don't ask first — just propose the options.`;
   const sharpenMsg = `Sharpen the ${label} [${node.id}] from what it produced: read its direct children (one layer down), judge how well it serves them and the brief, then propose ONE improved version as a propose_node_ops edit. Accepting it will re-stale those children for regeneration. Don't ask first — just propose the edit.`;
@@ -1127,7 +1127,9 @@ function BriefOrigin({ brief, onSave, seeded, onSeed, seeding }: {
 // tree. The MACHINERY (state keys, thread roles, grounds_in — the genOnly fields) is the AI's to maintain
 // and stays hidden from the editor entirely. Reuses EditableField so edits flow through the same save path,
 // and each group title jumps to the full node in the tree below.
-function VoiceFeelPanel({ nodes, index, onJump }: { nodes: DnaNode[]; index: Map<string, DnaNode>; onJump: (id: string) => void }) {
+// `asPage` renders it as the body of its own /dna/tree/taste tab (always open, no collapse chrome) instead of
+// pinned atop the tree — keeps the taste fields from interleaving with the structural tree.
+function VoiceFeelPanel({ nodes, index, onJump, asPage }: { nodes: DnaNode[]; index: Map<string, DnaNode>; onJump: (id: string) => void; asPage?: boolean }) {
   const [open, setOpen] = useState(true);
   // Taste-bearing nodes in authoring order: premise → pillar → voice, then the cast (idiolect each).
   const groups: { node: DnaNode; label: string; specs: EditSpec[] }[] = [];
@@ -1139,16 +1141,23 @@ function VoiceFeelPanel({ nodes, index, onJump }: { nodes: DnaNode[]; index: Map
     const specs = tasteSpecs("character");
     if (specs.length) groups.push({ node: c, label: `◦ ${nodeTitle(c) || "character"}`, specs });
   }
-  if (!groups.length) return null;
+  if (!groups.length) {
+    return asPage ? (
+      <div style={{ padding: "24px 16px", fontFamily: "ui-monospace, monospace", fontSize: 11, color: "#444" }}>
+        no taste fields yet — they appear once the premise, pillar, voice profile, or characters exist.
+      </div>
+    ) : null;
+  }
   const mono = "ui-monospace, monospace";
+  const expanded = asPage || open;
   return (
-    <div style={{ borderBottom: "1px solid #1a1a1a", background: "#0c0c10" }}>
-      <div onClick={() => setOpen((v) => !v)} style={{ display: "flex", alignItems: "baseline", gap: 10, padding: "9px 16px", cursor: "pointer" }}>
-        <span style={{ width: 12, color: "#7dd3fc", fontSize: 9 }}>{open ? "▼" : "▶"}</span>
+    <div style={asPage ? { background: "#0c0c10" } : { borderBottom: "1px solid #1a1a1a", background: "#0c0c10" }}>
+      <div onClick={asPage ? undefined : () => setOpen((v) => !v)} style={{ display: "flex", alignItems: "baseline", gap: 10, padding: "9px 16px", cursor: asPage ? "default" : "pointer" }}>
+        {!asPage && <span style={{ width: 12, color: "#7dd3fc", fontSize: 9 }}>{open ? "▼" : "▶"}</span>}
         <span style={{ fontFamily: mono, fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase", color: "#9bd3e6" }}>voice & feel</span>
         <span style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.06em", color: "#3a4a52" }}>taste lives here — tone · idea · voice · idiolect</span>
       </div>
-      {open && (
+      {expanded && (
         <div style={{ paddingBottom: 8 }}>
           {groups.map((g) => (
             <div key={g.node.id}>
@@ -1169,6 +1178,13 @@ function VoiceFeelPanel({ nodes, index, onJump }: { nodes: DnaNode[]; index: Map
 export default function DnaTreePage() {
   const { bookSlug } = useParams();
   const bookId = getNumericId(bookSlug);
+  // Two views share this page (one route, splat-matched so switching doesn't remount): the structural tree and
+  // the "voice & feel" taste surface. Keeping taste on its own /dna/tree/taste tab stops its fields from
+  // interleaving with the tree structure.
+  const location = useLocation();
+  const navigate = useNavigate();
+  const tab: "tree" | "taste" = location.pathname.endsWith("/taste") ? "taste" : "tree";
+  const treePath = `/books/${bookSlug}/dna/tree`;
 
   const [bookName, setBookName] = useState<string>("");
   const [settings, setSettings] = useState<BookSettings>({});
@@ -1176,7 +1192,11 @@ export default function DnaTreePage() {
   const [error, setError] = useState<string | null>(null);
   const [collapsedSet, setCollapsedSet] = useState<Set<string>>(new Set());
   const [openSet, setOpenSet] = useState<Set<string>>(new Set()); // detail-only leaves the user dug into
-  const [railOpen, setRailOpen] = useState(false);
+  // The reviser rail's open/closed state persists across tab switches (no remount) AND reloads (localStorage,
+  // per book) — the chat thread itself lives server-side in book_agent_runs, this just remembers the rail.
+  const railKey = `dna-rail-open:${bookId}`;
+  const [railOpen, setRailOpen] = useState<boolean>(() => localStorage.getItem(railKey) === "1");
+  useEffect(() => { localStorage.setItem(railKey, railOpen ? "1" : "0"); }, [railKey, railOpen]);
   // #1 — pending proposals from the agent thread (book_agent_runs), mirrored so the tree can overlay them.
   const [agentProposals, setAgentProposals] = useState<AgentProposal[]>([]);
   const [showIssues, setShowIssues] = useState(false); // drill into the lints behind the score
@@ -1528,8 +1548,18 @@ export default function DnaTreePage() {
       {/* Header bar */}
       <div style={{ padding: "12px 16px", borderBottom: "1px solid #1a1a1a", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
         <span style={{ color: "#666", fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase" }}>
-          {bookName || bookSlug} · dna tree
+          {bookName || bookSlug} · dna
         </span>
+        {/* Tab strip — tree (structure) vs voice & feel (taste). Same component, splat route, no remount. */}
+        <div style={{ display: "flex", gap: 4 }}>
+          {([["tree", "tree", treePath], ["taste", "voice & feel", `${treePath}/taste`]] as const).map(([key, label, to]) => (
+            <button key={key} onClick={() => navigate(to)} style={{
+              background: tab === key ? "#9bd3e618" : "none", border: `1px solid ${tab === key ? "#9bd3e655" : "transparent"}`,
+              borderRadius: 5, color: tab === key ? "#9bd3e6" : "#555", fontSize: 10, cursor: "pointer",
+              letterSpacing: "0.1em", textTransform: "uppercase", padding: "3px 10px", fontFamily: "ui-monospace, monospace",
+            }}>{label}</button>
+          ))}
+        </div>
         <span style={{ color: "#333", fontSize: 11 }}>
           {nodes.length} nodes · {accepted} accepted{staleCount > 0 ? ` · ${staleCount} stale` : ""}
         </span>
@@ -1568,8 +1598,8 @@ export default function DnaTreePage() {
         </div>
         {/* Controls */}
         <div style={{ marginLeft: "auto", display: "flex", gap: 12 }}>
-          <button onClick={expandAll} style={{ background: "none", border: "none", color: "#555", fontSize: 10, cursor: "pointer", letterSpacing: "0.1em", textTransform: "uppercase" }}>expand all</button>
-          <button onClick={collapseAll} style={{ background: "none", border: "none", color: "#555", fontSize: 10, cursor: "pointer", letterSpacing: "0.1em", textTransform: "uppercase" }}>collapse all</button>
+          {tab === "tree" && <button onClick={expandAll} style={{ background: "none", border: "none", color: "#555", fontSize: 10, cursor: "pointer", letterSpacing: "0.1em", textTransform: "uppercase" }}>expand all</button>}
+          {tab === "tree" && <button onClick={collapseAll} style={{ background: "none", border: "none", color: "#555", fontSize: 10, cursor: "pointer", letterSpacing: "0.1em", textTransform: "uppercase" }}>collapse all</button>}
           <a href={`/books/${bookSlug}/dna.json`} style={{ color: "#555", fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", textDecoration: "none" }}>json →</a>
           <a href={`/books/${bookSlug}/dna`} style={{ color: "#555", fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", textDecoration: "none" }}>studio →</a>
           <button onClick={() => void forkDna()} disabled={forking} title="Copy this DNA tree into a new book to experiment freely"
@@ -1585,6 +1615,13 @@ export default function DnaTreePage() {
         </div>
       </div>
 
+      {/* ── voice & feel tab: the taste surface on its own, off the structural tree ── */}
+      {tab === "taste" && (
+        <VoiceFeelPanel nodes={nodes} index={index} asPage onJump={(id) => { navigate(treePath); jumpTo(id); }} />
+      )}
+
+      {/* ── tree tab: legend → lints → proposals → brief → the structural tree ── */}
+      {tab === "tree" && (<>
       {/* Legend */}
       <div style={{ padding: "8px 16px", borderBottom: "1px solid #111", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
         <span style={{ fontSize: 9, color: "#333", letterSpacing: "0.1em", textTransform: "uppercase" }}>status</span>
@@ -1638,9 +1675,6 @@ export default function DnaTreePage() {
       {/* The BRIEF — the ORIGIN (step 0), above the tree. The seed (logline) below is derived from it. */}
       <BriefOrigin brief={brief} onSave={saveBrief} seeded={roots.length > 0} onSeed={() => void seedTree()} seeding={seeding} />
 
-      {/* #2 — Voice & Feel: the consolidated taste surface (the machinery below stays the AI's) */}
-      <VoiceFeelPanel nodes={nodes} index={index} onJump={jumpTo} />
-
       {/* Tree */}
       <div style={{ paddingTop: 8, paddingBottom: 48 }}>
         {roots.map((root) => (
@@ -1649,6 +1683,7 @@ export default function DnaTreePage() {
             h={{ onToggle: toggleNode, onToggleDetail: toggleDetail, onAdd: addNode, onDelete: removeNode, onJump: jumpTo, dragId, onDragStart: setDragId, onDragEnd: () => setDragId(null), onDrop: onDropReorder, backlinks, flashId, proposal: proposalView, focusKinds: null, issuesByNode, healthLens, contextId, ctxConsumes, ctxConsumedBy, onContextFocus: focusContext, proseOpenSet, onToggleProse: toggleProse, onDiscardStory: discardStory, brief, onSaveBrief: saveBrief, bookId, openRail: () => setRailOpen(true) }} />
         ))}
       </div>
+      </>)}
     </div>
   );
 }

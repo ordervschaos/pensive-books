@@ -377,6 +377,12 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
         return;
       }
       if (isBillingError(e)) throw e; // won't recover — fail the run
+      // 4xx = bad request / model not found — not transient, fail immediately.
+      const errMsg = (e instanceof Error ? e.message : String(e));
+      if (/API 4\d\d:/.test(errMsg)) {
+        await service.from("book_agent_runs").update({ status: "error", error: errMsg.slice(0, 500) }).eq("id", runId);
+        return;
+      }
       // Transient API failure/timeout: chain again (turn budget already spent bounds retries).
       console.error(`revise-agent run ${runId} call failed (turn ${turns}), retrying:`, e);
       await sleep(2000);
@@ -401,12 +407,22 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
 
     const toolUses = content.filter((b) => b.type === "tool_use");
 
+    // OpenAI (GPT) requires a role:"tool" message for EVERY tool_call in an assistant message —
+    // even for terminal calls (propose_node_ops, finish, etc.) that end the turn. Claude's API is
+    // lenient (end_turn closes open calls implicitly), but GPT will error on the next user message
+    // if any prior tool_call has no corresponding result. We inject synthetic ACK results for every
+    // tool_use whose id is NOT covered by a real toolResults() call, then append them once per turn
+    // ONLY when the run ends without a live toolResults() append (i.e. the terminal success paths).
+    // deno-lint-ignore no-explicit-any
+    const ackResults = (toolIds: string[]) => toolIds.map((id) => ({ type: "tool_result", tool_use_id: id, content: "ok" }));
+
     // ── Terminal tools first: a valid plan or a finish ends the run ──
     const planCall = toolUses.find((t) => t.name === "propose_revision_plan");
     if (planCall) {
       const outcome = await proposePlan(service, row, planCall.input as Partial<RevisionPlan>);
       if (outcome.ok) {
         steps.push({ t: "plan", label: outcome.summary });
+        transcript.push({ role: "user", content: ackResults(toolUses.map((t) => t.id)) });
         await service.from("book_agent_runs").update({
           status: "done",
           transcript,
@@ -435,6 +451,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
       if (outcome.ok) {
         steps.push({ t: "plan", label: outcome.proposal.summary });
         const proposals = [...(row.proposals ?? []), outcome.proposal];
+        transcript.push({ role: "user", content: ackResults(toolUses.map((t) => t.id)) });
         await service.from("book_agent_runs")
           .update({ status: "idle", transcript, steps, proposals }).eq("id", runId);
         return; // the agent's narration is the reply; the proposal waits for the author
@@ -456,6 +473,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
       const outcome = await proposeOptions(service, row.book_id, scope, optionsCall.input as { nodeId?: string; note?: string; options?: unknown[] });
       if (outcome.ok) {
         steps.push({ t: "plan", label: `Staged ${outcome.count} options for "${outcome.handle}" — pick one in the tree.` });
+        transcript.push({ role: "user", content: ackResults(toolUses.map((t) => t.id)) });
         await service.from("book_agent_runs").update({ status: "idle", transcript, steps }).eq("id", runId);
         return;
       }
@@ -473,6 +491,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
       const report = String((finishCall.input as { report?: string })?.report ?? "").trim() || "The agent finished without proposing changes.";
       steps.push({ t: "done", label: report.slice(0, 300) });
       // A thread turn ends QUIESCENT ('idle') so the conversation can continue; an eval run is terminal.
+      transcript.push({ role: "user", content: ackResults(toolUses.map((t) => t.id)) });
       await service.from("book_agent_runs")
         .update({ status: isThread ? "idle" : "done", transcript, steps, report }).eq("id", runId);
       return;
