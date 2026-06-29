@@ -14,7 +14,7 @@ import { AgentRail } from "@/components/book/dna/AgentRail";
 import { sendAgentMessage, type AgentProposal } from "@/lib/agentThread";
 import { chooseNodeProposal, discardNodeProposals } from "@/lib/dnaProposals";
 import { expandNode, proposeGeneration } from "@/lib/dnaExpand";
-import { DNA_STAGES, dnaHealth } from "@/lib/dnaJourney";
+import { DNA_STAGES, dnaHealth, buildJourney, stageProgress, STAGE_KINDS, type StageKey } from "@/lib/dnaJourney";
 
 const getNumericId = (p: string | undefined) => { const m = p?.match(/^(\d+)/); return m ? parseInt(m[1]) : 0; };
 
@@ -1425,6 +1425,179 @@ function VoiceFeelPanel({ nodes, index, onJump, asPage }: { nodes: DnaNode[]; in
   );
 }
 
+// ── Journey strip — "where am I / what's left" ────────────────────────────────
+// The studio's strength the flat tree lacks: a sense of PLACE. The DNA rungs are grouped into 5 ordered
+// stages (Idea→Foundations→Structure→Scenes→Prose); buildJourney derives each stage's done|now|locked from
+// the tree, and stageSubsteps names the single next action inside the "now" stage. Clicking a stage reveals
+// + scrolls to its layer (STAGE_KINDS). Pure-derived — no stored progress.
+function JourneyStrip({ nodes, mode, onGoStage }: {
+  nodes: DnaNode[]; mode: "prose" | "picture"; onGoStage: (key: StageKey) => void;
+}) {
+  const mono = "ui-monospace, monospace";
+  const { stages } = buildJourney(nodes, mode);
+  const prog = stageProgress(nodes, mode);
+  // The open gaps, in spine order — the literal "what's left" ("18 beats need scenes · 29 scenes need prose").
+  const gaps = DNA_STAGES.map((s) => prog[s.key].gapLabel).filter((g): g is string => !!g);
+  // A stage's hue: done = green, partial = amber (started-not-finished), now = accent, locked = faint.
+  const hue = (status: string, partial: boolean) =>
+    status === "done" ? "#4ade80" : partial ? "#f59e0b" : status === "now" ? "#a8a8ff" : status === "locked" ? "#3a3a3a" : "#666";
+  const glyph = (status: string, partial: boolean) =>
+    status === "done" ? "✓" : partial ? "◑" : status === "now" ? "◉" : status === "locked" ? "·" : "○";
+
+  return (
+    <div style={{ padding: "8px 16px", borderBottom: "1px solid #111", display: "flex", flexDirection: "column", gap: 6 }}>
+      {/* The 5 stages — each with its coverage fraction + a progress bar */}
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 4, flexWrap: "wrap" }}>
+        {stages.map((s, i) => {
+          const p = prog[s.key];
+          const locked = s.status === "locked";
+          const c = hue(s.status, p.partial);
+          return (
+            <span key={s.key} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+              <span onClick={locked ? undefined : () => onGoStage(s.key)} title={`${s.caption}\n\n${p.label}`}
+                style={{
+                  display: "inline-flex", flexDirection: "column", gap: 3, cursor: locked ? "default" : "pointer",
+                  padding: "3px 9px", borderRadius: 5, minWidth: 72,
+                  background: s.status === "now" ? "#8a8aff14" : "transparent",
+                  border: `1px solid ${s.status === "now" ? "#8a8aff44" : "transparent"}`,
+                }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                  <span style={{ fontFamily: mono, fontSize: 9, color: c, width: 8, textAlign: "center" }}>{glyph(s.status, p.partial)}</span>
+                  <span style={{ fontFamily: mono, fontSize: 9, color: "#444", fontVariantNumeric: "tabular-nums" }}>{s.num}</span>
+                  <span style={{ fontFamily: mono, fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: c }}>{s.label}</span>
+                  {p.total > 0 && (
+                    <span style={{ fontFamily: mono, fontSize: 9, color: c, fontVariantNumeric: "tabular-nums", marginLeft: 2 }}>{p.done}/{p.total}</span>
+                  )}
+                </span>
+                {/* coverage bar */}
+                <span style={{ height: 3, background: "#1c1c1c", borderRadius: 2, overflow: "hidden" }}>
+                  <span style={{ display: "block", height: "100%", width: `${Math.round(p.ratio * 100)}%`, background: c, transition: "width 0.3s" }} />
+                </span>
+              </span>
+              {i < stages.length - 1 && <span style={{ color: "#262626", fontSize: 10, alignSelf: "center" }}>→</span>}
+            </span>
+          );
+        })}
+      </div>
+      {/* What's left — the open gaps in plain words, in spine order */}
+      {gaps.length > 0 && (
+        <div style={{ display: "flex", alignItems: "baseline", gap: 6, flexWrap: "wrap" }}>
+          <span style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.14em", textTransform: "uppercase", color: "#5c5c5c" }}>what's left</span>
+          <span style={{ fontFamily: mono, fontSize: 10, color: "#9a7a4a" }}>{gaps.join("  ·  ")}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Focus readout (#7) — "what controls this" ────────────────────────────────
+// The badge-click context-focus already LIGHTS the ref-neighborhood in the tree (green = built from,
+// blue = draws on it). But those rows scatter across a long tree, and the highlight is ref-graph only.
+// This gathers the same focus into one fixed readout AND adds the three the in-tree hue omits: up-spine
+// LINEAGE (the rungs it was hydrated from — inputHash uses the direct parent's content), LOCKS (pinned
+// intent on it or above it), and STALENESS (an input moved since it was generated, with the suspects).
+// Pure-derived; reuses the consumes/consumedBy sets the page already computes + refsOf/isStale.
+function FocusPanel({ node, index, consumes, consumedBy, onJump, onClear }: {
+  node: DnaNode; index: Map<string, DnaNode>;
+  consumes: Set<string>; consumedBy: Set<string>;
+  onJump: (id: string) => void; onClear: () => void;
+}) {
+  const mono = "ui-monospace, monospace";
+  // Up-spine lineage: walk parent_id to the root (root-first). The DIRECT parent is the rung this node
+  // was generated from (inputHash hashes parent content), so we flag it as the source.
+  const ancestors: DnaNode[] = [];
+  for (let cur = node.parent_id ? index.get(node.parent_id) : undefined; cur; cur = cur.parent_id ? index.get(cur.parent_id) : undefined) ancestors.unshift(cur);
+  const parent = node.parent_id ? index.get(node.parent_id) : undefined;
+  const lockedAncestors = ancestors.filter((a) => a.authoring.locked);
+  const consumesNodes = [...consumes].map((id) => index.get(id)).filter((n): n is DnaNode => !!n);
+  const consumedByNodes = [...consumedBy].map((id) => index.get(id)).filter((n): n is DnaNode => !!n);
+  const stale = isStale(node, index);
+  const proseStale = node.kind === "scene" && isProseStale(node);
+  // The candidate sources of staleness — the same input set inputHash() hashes: parent + referenced entities.
+  const inputs = [parent, ...refsOf(node).map((id) => index.get(id))].filter((n): n is DnaNode => !!n);
+
+  const Chip = ({ n, hue }: { n: DnaNode; hue?: string }) => (
+    <span onClick={() => onJump(n.id)} title="jump to node"
+      style={{ fontFamily: mono, fontSize: 11, color: "#cfcfcf", background: "#16161c", border: `1px solid ${hue ? `${hue}55` : "#24242e"}`, borderRadius: 3, padding: "1px 5px", display: "inline-flex", gap: 4, alignItems: "center", cursor: "pointer", maxWidth: 280 }}>
+      <span style={{ color: hue ?? (KIND_COLOR[n.kind] ?? "#888"), fontSize: 9, letterSpacing: "0.06em", textTransform: "uppercase", flexShrink: 0 }}>{n.kind}</span>
+      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nodeTitle(n) || n.id}</span>
+      {n.authoring.locked && <span style={{ flexShrink: 0 }}>🔒</span>}
+    </span>
+  );
+  const Section = ({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) => (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <span style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.14em", textTransform: "uppercase", color: "#5c5c5c" }}>
+        {label}{hint ? <span style={{ color: "#3a3a3a", letterSpacing: "0.06em" }}> · {hint}</span> : null}
+      </span>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }}>{children}</div>
+    </div>
+  );
+  const dash = <span style={{ fontFamily: mono, fontSize: 11, color: "#333" }}>—</span>;
+
+  return (
+    <div style={{
+      position: "fixed", bottom: 16, left: 16, zIndex: 15, width: 320, maxHeight: "62vh", overflowY: "auto",
+      background: "#0d0d11", border: "1px solid #2a2a38", borderRadius: 8, padding: "12px 14px",
+      display: "flex", flexDirection: "column", gap: 12, boxShadow: "0 8px 30px #000000aa",
+    }}>
+      {/* Header — the focused node + clear */}
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+        <span style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.16em", textTransform: "uppercase", color: KIND_COLOR[node.kind] ?? "#888", flexShrink: 0 }}>{node.kind}</span>
+        <span style={{ fontFamily: mono, fontSize: 12, color: "#e6e6e6", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nodeTitle(node) || node.id}</span>
+        <span onClick={onClear} title="clear focus (esc)" style={{ fontSize: 12, color: "#555", cursor: "pointer", flexShrink: 0 }}>✕</span>
+      </div>
+
+      {/* Lineage ↑ — the rungs above; direct parent = the source it was hydrated from */}
+      <Section label="lineage ↑" hint="hydrated from">
+        {ancestors.length ? ancestors.map((a, i) => (
+          <span key={a.id} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+            <Chip n={a} hue={a.id === parent?.id ? "#cfcfcf" : undefined} />
+            {i < ancestors.length - 1 && <span style={{ color: "#3a3a3a", fontSize: 11 }}>›</span>}
+          </span>
+        )) : dash}
+      </Section>
+
+      {/* Built from ↑ (green) — the refs it consumes */}
+      <Section label="built from" hint="refs ↑">
+        {consumesNodes.length ? consumesNodes.map((n) => <Chip key={n.id} n={n} hue="#60a070" />) : dash}
+      </Section>
+
+      {/* Draws on it ↓ (blue) — the blast radius: what breaks if this changes */}
+      <Section label="draws on it" hint={consumedByNodes.length ? `${consumedByNodes.length} downstream` : undefined}>
+        {consumedByNodes.length ? consumedByNodes.map((n) => <Chip key={n.id} n={n} hue="#6a8aff" />) : dash}
+      </Section>
+
+      {/* Locks 🔒 — pinned intent on this node or above it */}
+      <Section label="locks 🔒">
+        {node.authoring.locked && <span style={{ fontFamily: mono, fontSize: 11, color: "#cfcfcf" }}>this node</span>}
+        {lockedAncestors.map((a) => <Chip key={a.id} n={a} />)}
+        {!node.authoring.locked && !lockedAncestors.length && <span style={{ fontFamily: mono, fontSize: 11, color: "#555" }}>none — free to regenerate</span>}
+      </Section>
+
+      {/* Freshness ⚠ — stale iff an input moved since this was generated */}
+      <Section label="freshness">
+        {stale || proseStale ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span style={{ fontFamily: mono, fontSize: 11, color: "#f59e0b" }}>
+              ⚠ {proseStale && !stale ? "prose stale — the scene plan changed since it was written" : "stale — an input changed since this was generated"}
+            </span>
+            {stale && inputs.length > 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }}>
+                <span style={{ fontFamily: mono, fontSize: 9, color: "#5c5c5c", letterSpacing: "0.06em" }}>suspects:</span>
+                {inputs.map((n) => <Chip key={n.id} n={n} />)}
+              </div>
+            )}
+          </div>
+        ) : (
+          <span style={{ fontFamily: mono, fontSize: 11, color: node.authoring.src_hash ? "#4ade80" : "#555" }}>
+            {node.authoring.src_hash ? "✓ fresh — in sync with its inputs" : "not generated yet"}
+          </span>
+        )}
+      </Section>
+    </div>
+  );
+}
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default function DnaTreePage() {
   const { bookSlug } = useParams();
@@ -1726,6 +1899,16 @@ export default function DnaTreePage() {
       return id;
     });
   }, [nodes, backlinks, revealNodes]);
+  // Journey strip — clicking a stage reveals its whole layer (so nothing's collapsed-and-hidden) and
+  // scrolls to the first node of that layer in position order.
+  const goStage = useCallback((key: StageKey) => {
+    const kinds = STAGE_KINDS[key];
+    const matches = nodes.filter((n) => kinds.includes(n.kind));
+    if (!matches.length) return;
+    revealNodes(matches.map((n) => n.id));
+    const target = matches.slice().sort((a, b) => a.position - b.position)[0];
+    jumpTo(target.id);
+  }, [nodes, revealNodes, jumpTo]);
   // Esc clears the active context focus.
   useEffect(() => {
     if (contextId === null) return;
@@ -1795,6 +1978,11 @@ export default function DnaTreePage() {
             <AgentRail bookId={bookId} nodes={nodes} settings={settings} />
           </div>
         </div>
+      )}
+      {/* #7 — the focus readout: "what controls this" for the badge-clicked node (bottom-left, clears of the rail) */}
+      {tab === "tree" && ctxNode && (
+        <FocusPanel node={ctxNode} index={index} consumes={ctxConsumes} consumedBy={ctxConsumedBy}
+          onJump={jumpTo} onClear={() => setContextId(null)} />
       )}
       {/* Header bar */}
       <div style={{ padding: "12px 16px", borderBottom: "1px solid #1a1a1a", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
@@ -1871,8 +2059,10 @@ export default function DnaTreePage() {
         <VoiceFeelPanel nodes={nodes} index={index} asPage onJump={(id) => { navigate(treePath); jumpTo(id); }} />
       )}
 
-      {/* ── tree tab: legend → lints → proposals → brief → the structural tree ── */}
+      {/* ── tree tab: journey → legend → lints → proposals → brief → the structural tree ── */}
       {tab === "tree" && (<>
+      {/* Journey strip — where am I / what's left (studio's strength, brought onto the tree) */}
+      {roots.length > 0 && <JourneyStrip nodes={nodes} mode={settings.mode ?? "prose"} onGoStage={goStage} />}
       {/* Legend */}
       <div style={{ padding: "8px 16px", borderBottom: "1px solid #111", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
         <span style={{ fontSize: 9, color: "#333", letterSpacing: "0.1em", textTransform: "uppercase" }}>status</span>

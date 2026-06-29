@@ -132,6 +132,40 @@ export function stageSubsteps(key: StageKey, nodes: DnaNode[], mode: "prose" | "
   return resolveSeq([{ key: mode === "picture" ? "illustrate" : "prose", label: mode === "picture" ? "Illustrate" : "Scenes", done: scenes.length > 0 && drafted === scenes.length, ready: scenes.length > 0, count: drafted, total: scenes.length }]);
 }
 
+// ── Stage progress (coverage) ───────────────────────────────────────────────────
+// Not "present vs absent" but HOW MUCH of each layer is filled — the "what's left" signal. The spine is a
+// coverage chain: every act should grow beats, every beat scenes, every scene prose. A stage is `partial`
+// when it's started but the layer below isn't fully grown ("beats partly generated", "scenes not all
+// written"). `gapLabel` is the plain-English remainder for the what's-left line. Pure, derived live.
+export interface StageProgress { done: number; total: number; ratio: number; label: string; partial: boolean; gapLabel?: string }
+
+export function stageProgress(nodes: DnaNode[], mode: "prose" | "picture" = "prose"): Record<StageKey, StageProgress> {
+  const of = (k: NodeKind) => nodes.filter((n) => n.kind === k);
+  const hasChild = (pid: string, kind: NodeKind) => nodes.some((n) => n.parent_id === pid && n.kind === kind);
+  const seed = of("seed")[0], premise = of("premise")[0], pillar = of("pillar")[0];
+  const cast = of("character").length;
+  const acts = of("movement"), beats = of("beat"), scenes = of("scene");
+  const seedDone = !!seed && hasText((seed.content as { logline?: string }).logline) && accepted(seed);
+  const actsWithBeats = acts.filter((a) => hasChild(a.id, "beat")).length;
+  const beatsWithScenes = beats.filter((b) => hasChild(b.id, "scene")).length;
+  const drafted = scenes.filter((s) => sceneDrafted(s, mode)).length;
+  const word = mode === "picture" ? "illustrated" : "written";
+  const mk = (done: number, total: number, label: string, gapLabel?: string): StageProgress => ({
+    done, total, ratio: total ? done / total : 0, label, partial: done > 0 && done < total,
+    gapLabel: done < total ? gapLabel : undefined,
+  });
+  return {
+    premise: mk((seedDone ? 1 : 0) + (accepted(premise) ? 1 : 0), 2, accepted(premise) ? "premise set" : seedDone ? "seed set" : "empty"),
+    foundations: mk((accepted(pillar) ? 1 : 0) + (cast >= 1 ? 1 : 0), 2, cast ? `${cast} cast` : "no cast", accepted(pillar) ? "add cast" : "set pillar"),
+    structure: mk(actsWithBeats, acts.length, acts.length ? `${actsWithBeats}/${acts.length} acts → beats` : "no acts",
+      acts.length ? `${acts.length - actsWithBeats} acts need beats` : "generate acts"),
+    scenes: mk(beatsWithScenes, beats.length, beats.length ? `${beatsWithScenes}/${beats.length} beats → scenes` : "no beats",
+      beats.length ? `${beats.length - beatsWithScenes} beats need scenes` : "generate beats"),
+    draft: mk(drafted, scenes.length, scenes.length ? `${drafted}/${scenes.length} ${word}` : "no scenes",
+      scenes.length ? `${scenes.length - drafted} scenes need prose` : "generate scenes"),
+  };
+}
+
 /** Which node kinds belong to a stage's Stage view. */
 export const STAGE_KINDS: Record<StageKey, NodeKind[]> = {
   premise: ["seed", "premise"],
