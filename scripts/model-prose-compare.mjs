@@ -40,7 +40,9 @@ const CLAUDE_MODELS = [
   { id: "opus",   label: "opus (claude-opus-4-8)" },
   { id: "sonnet", label: "sonnet (claude-sonnet-4-6)" },
 ];
-const OR_MODELS = [
+// Default = the production tier line-up. Override with `--models id1,id2,…` to compare a custom set
+// (e.g. non-reasoning permissive/fiction models) without touching this default.
+const DEFAULT_OR_MODELS = [
   { id: "qwen/qwen3.7-plus",         label: "qwen3.7-plus  ← PRODUCTION tier" },
   { id: "qwen/qwen3-235b-a22b",      label: "qwen3-235b-a22b (qwen tier)" },
   { id: "deepseek/deepseek-chat",    label: "deepseek-chat (deepseek tier)" },
@@ -48,6 +50,12 @@ const OR_MODELS = [
   { id: "z-ai/glm-5.2",              label: "glm-5.2 (glm tier)" },
   { id: "minimax/minimax-m3",        label: "minimax-m3 (minimax tier)" },
 ];
+// --models accepts `id` or `id@maxTokens` (the @N caps output for context-limited endpoints, e.g.
+// magnum-v4-72b serves only 16k total / 2k completion, so `…magnum-v4-72b@2048` fits the 10k-tok prompt).
+const modelsArg = argVal("--models", "");
+const OR_MODELS = modelsArg
+  ? modelsArg.split(",").map((s) => { const [id, mx] = s.trim().split("@"); return { id: id.trim(), label: id.trim() + (mx ? ` (max ${mx})` : ""), max: mx ? Number(mx) : undefined }; }).filter((m) => m.id)
+  : DEFAULT_OR_MODELS;
 
 const ENTITY_KINDS = new Set(["character","relationship","tentpole","world_fact","location","thread","game","voice_profile"]);
 function scenesInOrder(nodes) {
@@ -73,14 +81,14 @@ function claudeP(prompt, model) {
   });
 }
 
-async function orCall(model, prompt, attempt = 1) {
+async function orCall(model, prompt, maxTokens = 8000, attempt = 1) {
   const t0 = Date.now();
   // Real OpenRouter: no automatic prefix-coalescing (caching is opt-in via cache_control), so the
   // production prompt goes through verbatim and each model id returns its own generation.
   const body = JSON.stringify({
     model,
     messages: [{ role: "user", content: prompt }],
-    max_tokens: 8000,
+    max_tokens: maxTokens,
     temperature: 0.8,
   });
   try {
@@ -92,14 +100,14 @@ async function orCall(model, prompt, attempt = 1) {
     const raw = await res.text();
     const ms = Date.now() - t0;
     if (!res.ok) {
-      if (res.status >= 500 && attempt < 3) return orCall(model, prompt, attempt + 1);
+      if (res.status >= 500 && attempt < 3) return orCall(model, prompt, maxTokens, attempt + 1);
       return { error: `HTTP ${res.status}: ${raw.slice(0, 300)}`, ms };
     }
     let j; try { j = JSON.parse(raw); } catch { return { error: `bad json: ${raw.slice(0,200)}`, ms }; }
     const text = (j.choices?.[0]?.message?.content ?? "").trim();
     return { text, ms, usage: j.usage };
   } catch (e) {
-    if (attempt < 3) return orCall(model, prompt, attempt + 1); // ECONNRESET etc. — retry
+    if (attempt < 3) return orCall(model, prompt, maxTokens, attempt + 1); // ECONNRESET etc. — retry
     return { error: `fetch failed: ${String(e?.message ?? e)}`, ms: Date.now() - t0 };
   }
 }
@@ -143,7 +151,7 @@ async function main() {
   // its own generation; orCall retries on 5xx/network and returns {error} rather than throwing).
   console.error(`[compare] ${OR_MODELS.length} OpenRouter models in parallel …`);
   const orResults = await Promise.all(OR_MODELS.map(async (m) => {
-    const r = await orCall(m.id, PROMPT);
+    const r = await orCall(m.id, PROMPT, m.max ?? 8000);
     console.error(`[compare]   ${m.id}: ${r.error ? "ERR " + r.error.slice(0,80) : (wordCount(r.text) + "w " + r.ms + "ms")}`);
     return { model: m.id, label: m.label, via: "openrouter", text: r.text || "", ms: r.ms, error: r.error };
   }));

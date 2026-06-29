@@ -601,21 +601,28 @@ function WriteAllProseButton({ bookId, nodes, depth }: { bookId: number; nodes: 
     if (!list.length) return;
     cancelRef.current = false;
     setProgress({ done: 0, total: list.length });
+    // A scene that exhausts callExpand's retries SKIPS rather than aborting the whole batch — one unlucky
+    // scene must not strand the other 80. Failures are collected and reported once at the end so the run can
+    // be re-clicked to mop them up (it re-derives `pending`, so only the still-prose-less scenes re-run).
+    const failures: { scene: number; message: string }[] = [];
     for (let i = 0; i < list.length; i++) {
       if (cancelRef.current) break; // stop at the boundary — the in-flight call (if any) already returned
       abortRef.current = new AbortController();
       try {
         await expandNode(bookId, list[i], "prose", { signal: abortRef.current.signal });
-        setProgress({ done: i + 1, total: list.length });
       } catch (e) {
         if (cancelRef.current) break; // intentional stop aborted the in-flight call — exit cleanly
-        alert(`Write prose failed at scene ${i + 1}: ${(e as Error).message}`);
-        setProgress(null);
-        return;
+        failures.push({ scene: i + 1, message: (e as Error).message });
       }
+      setProgress({ done: i + 1, total: list.length });
     }
     abortRef.current = null;
     setProgress(null);
+    if (failures.length && !cancelRef.current) {
+      alert(`Wrote ${list.length - failures.length}/${list.length} scenes. ${failures.length} failed (re-click to retry them):\n` +
+        failures.slice(0, 8).map((f) => `  scene ${f.scene}: ${f.message}`).join("\n") +
+        (failures.length > 8 ? `\n  …and ${failures.length - 8} more` : ""));
+    }
   };
   const label = progress
     ? `writing ${progress.done}/${progress.total}… ✕ stop`

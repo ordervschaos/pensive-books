@@ -6,7 +6,7 @@
 // All expensive edge functions call getActiveModels() instead of hardcoding MODEL.
 import { serviceClient } from "./task.ts";
 
-export type ModelTier = "opus" | "sonnet" | "deepseek" | "qwen" | "qwen-plus" | "kimi" | "glm" | "minimax" | "gpt";
+export type ModelTier = "opus" | "sonnet" | "deepseek" | "qwen" | "qwen-plus" | "kimi" | "glm" | "minimax" | "gpt" | "hermes";
 
 // The cheap/fast model for incidental passes (summaries, character-state extraction). Exported so
 // callers that default a `low` model don't re-hardcode the string and drift from this file.
@@ -29,6 +29,11 @@ const TIER_MODELS: Record<ModelTier, { high: string; low: string }> = {
   glm:         { high: "z-ai/glm-5.2",              low: "qwen/qwen3-8b" },
   minimax:     { high: "minimax/minimax-m3",        low: "qwen/qwen3-8b" },
   gpt:         { high: "openai/gpt-5",               low: "qwen/qwen3-8b" },
+  // Non-reasoning, fast (~37s/scene vs qwen-plus ~207s) and the one model that delivered explicit heat
+  // that LANDS while honoring the beat + voice contract (model-prose-compare, book 1192 scene 22). Picked
+  // for the explicit-mandate books. NOTE: this tier governs ALL high-tier generation (beats/outline JSON
+  // too) — hermes is a creative generalist, so watch structural-JSON passes if you flip it on globally.
+  hermes:      { high: "nousresearch/hermes-3-llama-3.1-405b", low: "qwen/qwen3-8b" },
 };
 
 export async function getActiveModels(): Promise<{ high: string; low: string }> {

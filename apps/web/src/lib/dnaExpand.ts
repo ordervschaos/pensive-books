@@ -20,9 +20,126 @@ function chapterTitleFromBeat(beat: DnaNode): string {
 }
 
 interface BeatSheetEntry { movement: number; content: BeatContent }
+interface PreparedProse { system: string; userContent: string; model: string; max_tokens: number }
 interface ExpandResult {
   childKind?: NodeKind; childLevel?: number; children?: NodeContent[]; prose?: string; caption?: string; logline?: string;
-  beatsheet?: boolean; beats?: BeatSheetEntry[]; movementIds?: string[];
+  beatsheet?: boolean; beats?: BeatSheetEntry[]; movementIds?: string[]; prepared?: PreparedProse;
+}
+
+// Browser-owned orchestration of the per-call retry. The dominant prod failure is a HUNG edge call:
+// qwen tail-latency runs 10× its ~82s median and overruns the Supabase worker's ~150s wall-clock, so the
+// worker is killed and supabase-js surfaces a contentless non-2xx. We don't wait for that — cap each
+// attempt and retry, since a fresh call almost always lands back in the normal band. dna-expand returns
+// content and the BROWSER persists (expandNode → saveNode), so the edge call writes no nodes and retrying
+// it can't double-write. The user's `signal` (batch Stop) is a real cancel and is never retried.
+// Sized ABOVE the Supabase worker's own ~150s wall-clock kill: the server self-bounds a stall (returns a
+// 546 / dropped connection near 150s), so the browser timeout is only a backstop for the rare case where
+// the worker hangs without closing. Set too low (e.g. 120s) it would abort — and discard — calls the server
+// actually completes in the 116–140s band, which is strictly worse. Raise the SERVER ceiling (or move the
+// digest out of the worker, TO-DO/dna-streaming-proxy.md) to make calls land comfortably under it.
+const ATTEMPT_TIMEOUT_MS = 170_000;
+const MAX_ATTEMPTS = 3;
+
+// supabase-js FunctionsHttpError parks the actual `{ error }` body on `.context` (a Response) and only
+// exposes the generic "Edge Function returned a non-2xx status code" as `.message`. Dig out the real text.
+async function readInvokeError(error: unknown): Promise<string> {
+  const ctx = (error as { context?: Response })?.context;
+  if (ctx && typeof ctx.text === "function") {
+    try {
+      const body = await ctx.clone().text();
+      const parsed = JSON.parse(body) as { error?: string };
+      if (parsed?.error) return parsed.error;
+      if (body.trim()) return body.slice(0, 500);
+    } catch { /* not JSON / already consumed — fall through to the generic message */ }
+  }
+  return String((error as Error)?.message ?? error);
+}
+
+// dna-expand invoke with per-attempt timeout + retry. Body is whatever the edge fn expects (target,
+// optionally prepare). Used for everything EXCEPT the long prose generation, which streams off-worker.
+async function invokeWithRetry(body: Record<string, unknown>, signal?: AbortSignal): Promise<ExpandResult> {
+  let lastErr: Error = new Error("dna-expand failed");
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    // Combine the caller's cancel signal with a per-attempt timeout. If the timeout fires, `signal` is
+    // still un-aborted → we know it was a stall (not a user Stop) and retry.
+    const timeout = AbortSignal.timeout(ATTEMPT_TIMEOUT_MS);
+    const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
+    try {
+      const { data, error } = await supabase.functions.invoke("dna-expand", { body, signal: combined });
+      if (error) throw error;
+      if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
+      return data as ExpandResult;
+    } catch (e) {
+      if (signal?.aborted) throw e; // real user cancel — propagate, never retry
+      const timedOut = (e as Error)?.name === "TimeoutError" || (e as Error)?.name === "AbortError";
+      lastErr = new Error(timedOut
+        ? `edge call timed out after ${ATTEMPT_TIMEOUT_MS / 1000}s (attempt ${attempt}/${MAX_ATTEMPTS})`
+        : await readInvokeError(e));
+      if (attempt < MAX_ATTEMPTS) await new Promise((r) => setTimeout(r, 1500)); // brief backoff before retry
+    }
+  }
+  throw lastErr;
+}
+
+// Prose streams from the same-origin /api/stream-prose proxy (Vite middleware in dev, Vercel fn in prod):
+// the long qwen generation runs OFF the Supabase worker, so its 80–140s wall-clock never hits the ~150s
+// ceiling that was killing ~54% of calls (TO-DO/dna-streaming-proxy.md). The proxy holds the OpenRouter key
+// and just pipes deltas; we accumulate them here. IDLE timeout (not total): a healthy stream emits tokens
+// continuously, so "no bytes for STREAM_IDLE_MS" means a stall → abort + retry; a slow-but-flowing 3-minute
+// generation is never wrongly cut. dna-expand assembled the prompt (incl. the v2 digest) in `prepare` mode.
+const STREAM_IDLE_MS = 45_000;
+
+async function streamProse(prepared: PreparedProse, signal?: AbortSignal): Promise<string> {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token ?? "";
+  let lastErr: Error = new Error("stream-prose failed");
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    const idle = new AbortController();
+    const combined = signal ? AbortSignal.any([signal, idle.signal]) : idle.signal;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const bump = () => { clearTimeout(timer); timer = setTimeout(() => idle.abort(), STREAM_IDLE_MS); };
+    try {
+      bump();
+      const res = await fetch("/api/stream-prose", {
+        method: "POST",
+        headers: { "content-type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(prepared),
+        signal: combined,
+      });
+      if (!res.ok || !res.body) {
+        const t = await res.text().catch(() => "");
+        let msg = `stream-prose ${res.status}`;
+        try { msg = (JSON.parse(t) as { error?: string }).error ?? msg; } catch { if (t.trim()) msg = t.slice(0, 300); }
+        throw new Error(msg);
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let text = "";
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        bump(); // ANY byte (prose OR a reasoning-phase heartbeat) resets the idle clock — that's what keeps
+                // a reasoning model's long thinking phase from tripping the timeout.
+        text += decoder.decode(value, { stream: true });
+      }
+      clearTimeout(timer);
+      // Strip the proxy's NUL heartbeats (STREAM_HEARTBEAT, emitted during the model's reasoning phase) —
+      // they kept the connection alive but are not prose. Strip BEFORE the empty-check so an all-heartbeat
+      // (content-never-arrived / truncated) stream correctly reads as "no prose" and retries.
+      const prose = text.replace(/\u0000/g, "").trim();
+      if (!prose) throw new Error("stream produced no prose");
+      return prose;
+    } catch (e) {
+      clearTimeout(timer);
+      if (signal?.aborted) throw e; // real user cancel — never retry
+      const stalled = (e as Error)?.name === "AbortError";
+      lastErr = new Error(stalled ? `prose stream stalled (>${STREAM_IDLE_MS / 1000}s idle, attempt ${attempt}/${MAX_ATTEMPTS})` : (e as Error).message);
+      if (attempt < MAX_ATTEMPTS) await new Promise((r) => setTimeout(r, 1500));
+    }
+  }
+  throw lastErr;
 }
 
 async function callExpand(bookId: number, nodeId: string, target: string, signal?: AbortSignal): Promise<ExpandResult> {
@@ -32,10 +149,15 @@ async function callExpand(bookId: number, nodeId: string, target: string, signal
     if (d.error) throw new Error(d.error);
     return d as ExpandResult;
   }
-  const { data, error } = await supabase.functions.invoke("dna-expand", { body: { bookId, nodeId, target }, signal });
-  if (error) throw error;
-  if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
-  return data as ExpandResult;
+  // Prose: two hops — a fast `prepare` invoke (context + v2 digest, under the worker ceiling) then an
+  // off-worker stream of the long generation. Everything else: one invoke with retry.
+  if (target === "prose") {
+    const { prepared } = await invokeWithRetry({ bookId, nodeId, target, prepare: true }, signal);
+    if (!prepared) throw new Error("dna-expand prepare returned no payload");
+    const prose = await streamProse(prepared, signal);
+    return { prose };
+  }
+  return invokeWithRetry({ bookId, nodeId, target }, signal);
 }
 
 const wordCount = (t: string) => (t.trim() ? t.trim().split(/\s+/).length : 0);

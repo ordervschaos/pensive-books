@@ -144,7 +144,11 @@ Deno.serve(async (req: Request) => {
     }
     const db = trusted ? serviceClient() : userClient;
 
-    const { bookId, nodeId, target, light } = (await req.json().catch(() => ({}))) as { bookId?: number; nodeId?: string; target?: string; light?: boolean };
+    // `prepare` (prose only): build the full context — INCLUDING the v2 digest — but return the assembled
+    // model request instead of calling the model. The browser then streams the long prose generation through
+    // the same-origin /api/stream-prose proxy, so the 80–140s call never rides this worker's ~150s wall-clock
+    // (the timeout/546 failures). See TO-DO/dna-streaming-proxy.md. Digest + assembly stay here (fast, DB-bound).
+    const { bookId, nodeId, target, light, prepare } = (await req.json().catch(() => ({}))) as { bookId?: number; nodeId?: string; target?: string; light?: boolean; prepare?: boolean };
     if (!bookId || !nodeId) return json({ error: "bookId and nodeId are required" }, 400);
     const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!apiKey) return json({ error: "ANTHROPIC_API_KEY not configured" }, 500);
@@ -370,8 +374,11 @@ Honor the MANDATE (genre/tone) and any LOCKED ancestors. Do NOT invent a title. 
       const system = `You are a novelist writing the PROSE for one scene, from its plan. Write the scene fully — vivid, causal, in the book's voice — honoring the MANDATE (heat/tone/length) without laundering. Output the prose ONLY: no preamble, no headings, no JSON.
 
 VOICE — write ONLY the fiction, from inside the story: NEVER address or mention "the reader"/"you", and NEVER refer to "the book", "the story", "the scene", "the page", the author, or the writing itself. The plan's notes describe INTENT in craft terms (e.g. "the reader is told it reads as fury", "the book plants the wrong label") — those are directions TO YOU, not lines to reproduce. Dramatize that intent through concrete action, sensation, and subtext; never narrate it or break the fourth wall.`;
+      const userContent = `${ctx}\n\nWrite this scene's prose.`;
+      // Browser-streamed path: hand back the assembled request; the client streams it via /api/stream-prose.
+      if (prepare) return json({ prepared: { system, userContent, model, max_tokens: 8000 } });
       const data = await callClaude(apiKey, { model, max_tokens: 8000, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
-        messages: [{ role: "user", content: `${ctx}\n\nWrite this scene's prose.` }] }, meta);
+        messages: [{ role: "user", content: userContent }] }, meta);
       return json({ prose: textFromClaude(data).trim() });
     }
 
