@@ -467,7 +467,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
       // Invalid plan: hand the validation error back (with results for any sibling reads) and retry.
       const results = await toolResults(service, row.book_id, toolUses, steps, {
         [planCall.id]: `The plan was rejected: ${outcome.error} Fix it and call propose_revision_plan again.`,
-      });
+      }, auto);
       transcript.push({ role: "user", content: results });
       await service.from("book_agent_runs").update({ transcript, steps }).eq("id", runId);
       if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("revise-agent", { runId }));
@@ -505,7 +505,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
       }
       const results = await toolResults(service, row.book_id, toolUses, steps, {
         [opsCall.id]: `The change was rejected: ${outcome.error} Fix it and call propose_node_ops again, or just reply.`,
-      });
+      }, auto);
       transcript.push({ role: "user", content: results });
       await service.from("book_agent_runs").update({ transcript, steps }).eq("id", runId);
       if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("revise-agent", { runId }));
@@ -526,7 +526,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
       }
       const results = await toolResults(service, row.book_id, toolUses, steps, {
         [optionsCall.id]: `The options were rejected: ${outcome.error} Fix and call propose_options again, or just reply.`,
-      });
+      }, auto);
       transcript.push({ role: "user", content: results });
       await service.from("book_agent_runs").update({ transcript, steps }).eq("id", runId);
       if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("revise-agent", { runId }));
@@ -550,7 +550,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
     if (askCall && auto) {
       const results = await toolResults(service, row.book_id, toolUses, steps, {
         [askCall.id]: "You're in AUTONOMOUS mode — the author is away and cannot answer. Make the strongest creative decision yourself and proceed; don't ask again.",
-      });
+      }, auto);
       transcript.push({ role: "user", content: results });
       await service.from("book_agent_runs").update({ transcript, steps }).eq("id", runId);
       if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("revise-agent", { runId }));
@@ -560,7 +560,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
     if (askCall) {
       const input = askCall.input as { question?: string; options?: string[] };
       const question = String(input?.question ?? "").trim();
-      const preResults = await toolResults(service, row.book_id, toolUses.filter((t) => t.id !== askCall.id), steps);
+      const preResults = await toolResults(service, row.book_id, toolUses.filter((t) => t.id !== askCall.id), steps, {}, auto);
       steps.push({ t: "ask", label: question.slice(0, 300) });
       const pending: Pending = {
         tool_use_id: askCall.id,
@@ -576,7 +576,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
 
     // ── Plain reads: execute, append, chain ──
     if (toolUses.length) {
-      const results = await toolResults(service, row.book_id, toolUses, steps);
+      const results = await toolResults(service, row.book_id, toolUses, steps, {}, auto);
       transcript.push({ role: "user", content: results });
       await service.from("book_agent_runs").update({ transcript, steps }).eq("id", runId);
       if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("revise-agent", { runId }));
@@ -622,6 +622,7 @@ async function toolResults(
   toolUses: any[],
   steps: AgentStep[],
   overrides: Record<string, string> = {},
+  auto = false,
 ): Promise<unknown[]> {
   const results: unknown[] = [];
   for (const t of toolUses) {
@@ -653,6 +654,14 @@ async function toolResults(
         continue;
       }
       const n = node as { id: string; kind: string; content: Record<string, unknown>; authoring: { locked?: boolean } };
+      // Autonomous mode: the full tree (every structure node's plan) is already in the system prompt, so
+      // reading a non-scene node returns nothing new — it only bloats the transcript and feeds a read-loop.
+      // Refuse it at the tool level (no content, no feed clutter) and push the agent to act. Scenes still
+      // read their prose (the one thing NOT in context).
+      if (auto && n.kind !== "scene") {
+        results.push({ type: "tool_result", tool_use_id: t.id, content: `This ${n.kind}'s full plan is ALREADY in the DNA tree in your context above — re-read it there. read_node is only for a scene's PROSE. Stop reading structure and act: make the change with propose_node_ops, or call finish.`, is_error: true });
+        continue;
+      }
       // Children (one level down) as a summary so the agent can navigate without re-reading everything.
       const { data: kids } = await service
         .from("book_nodes").select("id, kind, content").eq("book_id", bookId).eq("parent_id", id).order("position", { ascending: true });
