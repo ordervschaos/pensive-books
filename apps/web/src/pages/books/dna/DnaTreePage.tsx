@@ -551,6 +551,18 @@ function scenesInOrder(nodes: DnaNode[]): DnaNode[] {
   return out;
 }
 
+// Beats in book order: pillar → movements → beats, each level sorted by position.
+function beatsInOrder(nodes: DnaNode[]): DnaNode[] {
+  const kids = (pid: string, kind: string) =>
+    nodes.filter((n) => n.parent_id === pid && n.kind === kind).sort((a, b) => a.position - b.position);
+  const pillar = nodes.find((n) => n.kind === "pillar");
+  if (!pillar) return [];
+  const out: DnaNode[] = [];
+  for (const mov of kids(pillar.id, "movement"))
+    out.push(...kids(mov.id, "beat"));
+  return out;
+}
+
 // Direct-commit prose write for a single scene — no proposal step.
 function WriteProseButton({ bookId, node, depth }: { bookId: number; node: DnaNode; depth: number }) {
   const [busy, setBusy] = useState(false);
@@ -577,14 +589,17 @@ function WriteProseButton({ bookId, node, depth }: { bookId: number; node: DnaNo
 // Sequential prose writer for all prose-less scenes in book order.
 function WriteAllProseButton({ bookId, nodes, depth }: { bookId: number; nodes: DnaNode[]; depth: number }) {
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const cancelRef = useRef(false); // set true to stop the loop after the current in-flight call returns
   const pending = scenesInOrder(nodes).filter((s) => !(s.content as SceneContent).prose?.text?.trim());
   if (!pending.length && !progress) return null;
   const run = async () => {
-    if (progress) return;
+    if (progress) { cancelRef.current = true; return; } // a click while running requests a stop
     const list = scenesInOrder(nodes).filter((s) => !(s.content as SceneContent).prose?.text?.trim());
     if (!list.length) return;
+    cancelRef.current = false;
     setProgress({ done: 0, total: list.length });
     for (let i = 0; i < list.length; i++) {
+      if (cancelRef.current) break; // stop at the boundary — the in-flight call (if any) already returned
       try {
         await expandNode(bookId, list[i], "prose");
         setProgress({ done: i + 1, total: list.length });
@@ -597,7 +612,7 @@ function WriteAllProseButton({ bookId, nodes, depth }: { bookId: number; nodes: 
     setProgress(null);
   };
   const label = progress
-    ? `writing ${progress.done}/${progress.total}…`
+    ? `writing ${progress.done}/${progress.total}… ✕ stop`
     : `✦ write all prose (${pending.length})`;
   return (
     <div style={detailRowStyle(depth)}>
@@ -605,7 +620,48 @@ function WriteAllProseButton({ bookId, nodes, depth }: { bookId: number; nodes: 
       <span style={{ width: 12, flexShrink: 0 }} />
       <span onClick={() => void run()} style={{
         fontFamily: "ui-monospace, monospace", fontSize: 11, letterSpacing: "0.04em",
-        color: progress ? "#6a6a9a" : "#a8a8ff", cursor: progress ? "default" : "pointer",
+        color: progress ? "#6a6a9a" : "#a8a8ff", cursor: "pointer",
+        border: `1px solid ${progress ? "#8a8aff22" : "#8a8aff44"}`, borderRadius: 4, padding: "1px 8px", background: "#8a8aff10",
+      }}>{label}</span>
+    </div>
+  );
+}
+
+// Sequential scene generator: for all beats without scenes, in book order.
+function GenerateAllScenesButton({ bookId, nodes, depth }: { bookId: number; nodes: DnaNode[]; depth: number }) {
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const cancelRef = useRef(false); // set true to stop the loop after the current in-flight call returns
+  const pending = beatsInOrder(nodes).filter((b) => !nodes.some((n) => n.parent_id === b.id && n.kind === "scene"));
+  if (!pending.length && !progress) return null;
+  const run = async () => {
+    if (progress) { cancelRef.current = true; return; } // a click while running requests a stop
+    const list = beatsInOrder(nodes).filter((b) => !nodes.some((n) => n.parent_id === b.id && n.kind === "scene"));
+    if (!list.length) return;
+    cancelRef.current = false;
+    setProgress({ done: 0, total: list.length });
+    for (let i = 0; i < list.length; i++) {
+      if (cancelRef.current) break; // stop at the boundary — the in-flight call (if any) already returned
+      try {
+        await expandNode(bookId, list[i], "scenes");
+        setProgress({ done: i + 1, total: list.length });
+      } catch (e) {
+        alert(`Generate scenes failed at beat ${i + 1}: ${(e as Error).message}`);
+        setProgress(null);
+        return;
+      }
+    }
+    setProgress(null);
+  };
+  const label = progress
+    ? `generating scenes ${progress.done}/${progress.total}… ✕ stop`
+    : `✦ generate all scenes (${pending.length})`;
+  return (
+    <div style={detailRowStyle(depth)}>
+      <ConnectorTick depth={depth} />
+      <span style={{ width: 12, flexShrink: 0 }} />
+      <span onClick={() => void run()} style={{
+        fontFamily: "ui-monospace, monospace", fontSize: 11, letterSpacing: "0.04em",
+        color: progress ? "#6a6a9a" : "#a8a8ff", cursor: "pointer",
         border: `1px solid ${progress ? "#8a8aff22" : "#8a8aff44"}`, borderRadius: 4, padding: "1px 8px", background: "#8a8aff10",
       }}>{label}</span>
     </div>
@@ -769,6 +825,67 @@ const SPINE_LABEL: Record<string, string> = { seed: "logline", premise: "premise
 // hanging "generate {child}" slot (the spine singletons have no AddRow otherwise; deeper rungs do).
 const SPINE_CHILD: Record<string, NodeKind> = { seed: "premise", premise: "pillar" };
 
+// Sharpen-from-children button with an optional inline note — lives at the TOP of the node so the
+// eval loop (read children → improve this node) is the first action the author sees when opening.
+function SharpenButton({ node, depth, bookId, openRail }: {
+  node: DnaNode; depth: number; bookId: number; openRail: () => void;
+}) {
+  const [state, setState] = useState<"idle" | "note" | "busy">("idle");
+  const [note, setNote] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const label = SPINE_LABEL[node.kind] ?? node.kind;
+
+  useEffect(() => { if (state === "note") inputRef.current?.focus(); }, [state]);
+
+  const send = async () => {
+    setState("busy");
+    const noteClause = note.trim() ? ` Author's note: ${note.trim()}` : "";
+    const msg = `Sharpen the ${label} [${node.id}] from what it produced: read its direct children (one layer down), judge how well it serves them and the brief, then propose ONE improved version as a propose_node_ops edit. Accepting it will re-stale those children for regeneration. Don't ask first — just propose the edit.${noteClause}`;
+    try { await sendAgentMessage(bookId, msg); openRail(); }
+    catch (e) { alert(`Couldn't reach the agent: ${(e as Error).message}`); }
+    finally { setState("idle"); setNote(""); }
+  };
+
+  const mono = "ui-monospace, monospace";
+  return (
+    <div style={{ ...detailRowStyle(depth), paddingTop: 4, paddingBottom: 4 }} onClick={(e) => e.stopPropagation()}>
+      <ConnectorTick depth={depth} />
+      <span style={{ width: 12, flexShrink: 0 }} />
+      {state === "idle" && (
+        <span onClick={() => setState("note")} style={{
+          fontFamily: mono, fontSize: 10, letterSpacing: "0.06em",
+          color: "#a8a8ff", cursor: "pointer",
+          border: "1px solid #8a8aff44", borderRadius: 4, padding: "2px 8px", background: "#8a8aff10",
+        }}>↑ sharpen {label}</span>
+      )}
+      {state === "note" && (
+        <span style={{ display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
+          <input ref={inputRef} value={note} onChange={(e) => setNote(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.preventDefault(); void send(); }
+              if (e.key === "Escape") { setState("idle"); setNote(""); }
+            }}
+            placeholder="note for the agent (optional) — Enter to send"
+            style={{
+              flex: 1, background: "#0d0d14", border: "1px solid #8a8aff44", borderRadius: 4,
+              padding: "2px 8px", fontFamily: mono, fontSize: 11, color: "#ccc", outline: "none",
+            }} />
+          <span onClick={() => void send()} style={{
+            fontFamily: mono, fontSize: 10, color: "#a8a8ff", cursor: "pointer",
+            border: "1px solid #8a8aff44", borderRadius: 4, padding: "2px 8px", background: "#8a8aff10",
+          }}>↑ send</span>
+          <span onClick={() => { setState("idle"); setNote(""); }} style={{
+            fontFamily: mono, fontSize: 10, color: "#555", cursor: "pointer",
+          }}>✕</span>
+        </span>
+      )}
+      {state === "busy" && (
+        <span style={{ fontFamily: mono, fontSize: 10, color: "#555" }}>sharpening…</span>
+      )}
+    </div>
+  );
+}
+
 function LabButton({ label, busy, onClick }: { label: string; busy: boolean; onClick: () => void }) {
   return (
     <span onClick={() => !busy && onClick()} style={{
@@ -818,7 +935,6 @@ function SpineLab({ node, depth, bookId, brief, hasChildren, openRail }: {
         ? `HARD CONSTRAINT — treat the logline above as LOCKED: every option must serve that SAME logline, keeping its protagonist, inciting incident, central goal, main obstacle, and stakes FIXED. Vary ONLY the dramatic question and the 5-part shape (how it's structured/interpreted). Do NOT alter any story element the logline already established — never reshape it into a different book.`
         : `HARD CONSTRAINT — treat the logline + premise above as LOCKED: every option must serve them. Vary ONLY the controlling idea and the ending; do NOT alter the established premise or story.`;
   const optionsMsg = `Draft 3 alternative ${label}s for node [${node.id}] and stage them with propose_options. ${constraint} Make them meaningfully different from EACH OTHER along the allowed axis, never near-duplicates. Honor the brief MANDATE (genre, heat, tone) verbatim. Don't ask first — just propose the options.`;
-  const sharpenMsg = `Sharpen the ${label} [${node.id}] from what it produced: read its direct children (one layer down), judge how well it serves them and the brief, then propose ONE improved version as a propose_node_ops edit. Accepting it will re-stale those children for regeneration. Don't ask first — just propose the edit.`;
   const pickMsg = `Of the pending options on node [${node.id}], which is strongest for the brief and the book? Recommend ONE by its option number with a one-line reason — I'll commit the pick in the tree.`;
   return (
     <div style={{ ...detailRowStyle(depth), paddingTop: 4, paddingBottom: 4 }} onClick={(e) => e.stopPropagation()}>
@@ -833,8 +949,6 @@ function SpineLab({ node, depth, bookId, brief, hasChildren, openRail }: {
               : <LabButton
                   label={node.kind === "seed" ? "↻ logline options" : emptyContent ? `✦ generate ${label} options` : `↻ regenerate ${label} options`}
                   busy={busy === "options"} onClick={() => void send("options", optionsMsg)} />}
-            {/* sharpen-from-children (eval up) only once this node is a real value AND has children to read. */}
-            {hasChildren && !forgeable && <LabButton label={`↑ sharpen ${label}`} busy={busy === "sharpen"} onClick={() => void send("sharpen", sharpenMsg)} />}
             {hasProposals && <LabButton label="⚖ ask AI to pick" busy={busy === "pick"} onClick={() => void send("pick", pickMsg)} />}
           </>
         )}
@@ -949,6 +1063,11 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
   // #1 — phantom add rows the proposal would create under (parentId, kind), rendered before the ＋ add row.
   const phantoms = (parentId: string, kind: string, d: number) =>
     (h.proposal?.addsByParent.get(addKey(parentId, kind)) ?? []).map((add, i) => <PhantomRow key={`ph-${i}`} add={add} depth={d} />);
+  // Sharpen button: spine nodes only, once they have children to read from. Placed before fields so
+  // the eval loop is the first action visible when opening the node.
+  const sharpenRow = open && SPINE_KINDS.has(node.kind) && hasKids && !node.authoring.locked
+    ? <SharpenButton node={node} depth={depth + 1} bookId={h.bookId} openRail={h.openRail} />
+    : null;
   // The AI lab (spine nodes only — where one-shot error compounds) + the options picker (any node with staged
   // candidates). Both render after this node's own fields, before its children. The picker shows even when the
   // lab doesn't (e.g. proposals on a non-spine node), and vice-versa.
@@ -976,6 +1095,7 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
       const entities = kids.filter((c) => isEntityKind(c.kind));
       body = (
         <>
+          {sharpenRow}
           {fields}
           {backlinks}
           {lab}
@@ -1004,6 +1124,7 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
               <GenerateRow label="generate acts" depth={depth + 2} bookId={h.bookId} node={node} target="movements" openRail={h.openRail} />
               {/* The beat sheet is generated globally off the pillar (across all acts), not per-movement — show it only once acts exist. */}
               {ladder.some((c) => c.kind === "movement") && <GenerateRow label="generate beat sheet" depth={depth + 2} bookId={h.bookId} node={node} target="beatsheet" openRail={h.openRail} />}
+              <GenerateAllScenesButton bookId={h.bookId} nodes={nodes} depth={depth + 2} />
               <WriteAllProseButton bookId={h.bookId} nodes={nodes} depth={depth + 2} />
               <AddRow label="movement" depth={depth + 2} onAdd={() => h.onAdd(node.id, "movement")} />
             </>}
@@ -1024,6 +1145,7 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
       // constant, book-level origin it derives FROM — not a tree rung), then the premise child.
       body = (
         <>
+          {sharpenRow}
           {fields}
           <div style={{ ...detailRowStyle(depth + 1), paddingTop: 0, paddingBottom: 2 }}>
             <ConnectorTick depth={depth + 1} />
@@ -1043,6 +1165,7 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
       const childAdd = node.kind === "movement" ? "beat" : node.kind === "beat" ? "scene" : null;
       body = (
         <>
+          {sharpenRow}
           {fields}
           {backlinks}
           {lab}

@@ -58,7 +58,7 @@ export function realizeScenesFromBeat(beatNode: DnaNode, scenes: SceneContent[],
   // is what the promise axis checks; which inner scene realizes it is fine detail.
   if (scenes[0] && beat.threads?.length) scenes[0].threads = beat.threads as ThreadRef[];
   // The beat's tentpole placements distribute across its scenes (one set-piece per scene, in order).
-  (beat.realizes ?? []).forEach((tpId, i) => { const s = scenes[i] ?? scenes[scenes.length - 1]; if (s) s.realizes_tentpole = tpId; });
+  (Array.isArray(beat.realizes) ? beat.realizes : []).forEach((tpId, i) => { const s = scenes[i] ?? scenes[scenes.length - 1]; if (s) s.realizes_tentpole = tpId; });
   // World-rule grounding lands on the LAST scene (the scene that resolves the beat's turn — the win fires the rule).
   if (beat.grounds_in?.length && scenes.length) scenes[scenes.length - 1].grounds_in = beat.grounds_in;
   // Game moves: `plays` advances the contest (first scene); `resolves` decides it (last scene).

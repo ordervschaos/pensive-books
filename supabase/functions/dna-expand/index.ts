@@ -18,7 +18,7 @@ import { serviceClient } from "../_shared/task.ts";
 
 interface Node { id: string; parent_id: string | null; kind: string; position?: number; content: Record<string, unknown>; authoring: { locked?: boolean; status?: string } }
 interface NodeTypeConfig { target: string; child_kind: string; child_level: number; parent_kind: string; role: string; count: string; schema_json: string; slots: SlotConfig }
-interface SlotConfig { voice?: boolean; entities?: boolean; threads?: boolean; tentpoles?: boolean; worldRules?: boolean; games?: boolean; preconditions?: boolean; arc?: boolean }
+interface SlotConfig { voice?: boolean; entities?: boolean; threads?: boolean; tentpoles?: boolean; worldRules?: boolean; games?: boolean; preconditions?: boolean; arc?: boolean; priorScenes?: boolean }
 
 // [EXP:preconditions] — EXPERIMENT (removable). Decompose a game's win into typed preconditions; the beat
 // sheet must ESTABLISH each `state` precondition before the resolving turn. Flip to false to disable; grep
@@ -247,6 +247,71 @@ Deno.serve(async (req: Request) => {
       ? "STATE PRECONDITIONS (each must be ESTABLISHED by an earlier beat — list its key in that beat's `establishes` — BEFORE the beat that resolves its game):\n" +
         statePreconds.map((p) => `- ${p.key} (${p.game}): ${p.what}`).join("\n")
       : "";
+    // PRIOR SCENES — structured continuity block for scene planning, mirroring what prose gen gets via the
+    // digest: entry state (where the story stands NOW), polarity rhythm, used locations. Formatted with
+    // instructive XML tags so the model understands HOW to use each piece, not just what's there.
+    const beatsInOrder = movements.flatMap((m) =>
+      nodes.filter((n) => n.parent_id === m.id && n.kind === "beat").sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+    );
+    const beatIdx = beatsInOrder.findIndex((b) => b.id === node.id);
+    const priorBeats = beatIdx > 0 ? beatsInOrder.slice(0, beatIdx) : [];
+    const resolveLoc = (loc?: string) => loc?.startsWith("n_") ? (byId.get(loc)?.content as { name?: string })?.name ?? loc : loc;
+    const priorScenesBlock = (() => {
+      // Rules always appear (they're injected only when priorScenes slot is active = scenes target).
+      const rules = `SCENE RULES:
+(1) Continue causally from the entry state — your first scene opens where the last planned scene left off. Do not reset.
+(2) Every scene turns a value (no flat "and-then"). Set value_shift.polarity: up = ends better, down = ends worse.
+(3) Vary polarity internally — the beat's closing polarity is where the LAST scene must land; dip/rise internally.
+(4) Vary location — if prior scenes used a location, prefer a different place unless the drama demands it.
+(5) Each scene = one attempt: a character wants something, meets a specific obstacle, gets it or doesn't.`;
+      if (!priorBeats.length) return rules;
+      // All prior scenes in order (beats that had scenes planned)
+      const allPriorScenes = priorBeats.flatMap((b) =>
+        nodes.filter((n) => n.parent_id === b.id && n.kind === "scene").sort((a, b2) => (a.position ?? 0) - (b2.position ?? 0))
+          .map((s) => ({ beat: b, scene: s }))
+      );
+      if (!allPriorScenes.length) return "";
+      // Beat-grouped scene map
+      const beatLines = priorBeats.flatMap((b) => {
+        const beatScenes = allPriorScenes.filter((x) => x.beat.id === b.id).map((x) => x.scene);
+        if (!beatScenes.length) return [];
+        const bSummary = String((b.content as { summary?: string }).summary ?? "").trim();
+        const connector = String((b.content as { connector?: string }).connector ?? "").trim();
+        return [
+          `  Beat [${connector || "—"}]: "${bSummary}"`,
+          ...beatScenes.map((s, i) => {
+            const c = s.content as { loc?: string; goal?: string; conflict?: string; outcome?: string; value_shift?: { value?: string; from?: string; to?: string; polarity?: string } };
+            const loc = resolveLoc(c.loc);
+            const vs = c.value_shift ? `${c.value_shift.value ?? ""}: ${c.value_shift.from ?? ""} → ${c.value_shift.to ?? ""} (${c.value_shift.polarity ?? ""})` : "";
+            return `    Scene ${i + 1}: loc=${loc ?? "?"} | goal=${c.goal ?? "?"} | outcome=${c.outcome ?? "?"}${vs ? ` | value=${vs}` : ""}`;
+          }),
+        ];
+      });
+      // Entry state — what the first new scene inherits from the last planned scene
+      const { beat: lastBeat, scene: lastScene } = allPriorScenes[allPriorScenes.length - 1];
+      const lc = lastScene.content as { loc?: string; outcome?: string; value_shift?: { polarity?: string } };
+      const lastLoc = resolveLoc(lc.loc);
+      const lastBeatSummary = String((lastBeat.content as { summary?: string }).summary ?? "").trim();
+      // Polarity chain (↑/↓ per scene, left to right = story order)
+      const polarityChain = allPriorScenes
+        .map((x) => (x.scene.content as { value_shift?: { polarity?: string } }).value_shift?.polarity === "up" ? "↑" : "↓")
+        .join(" ");
+      // Distinct locations used
+      const usedLocs = [...new Set(allPriorScenes.map((x) => resolveLoc((x.scene.content as { loc?: string }).loc)).filter(Boolean))];
+      return [
+        rules,
+        `<scenes_so_far note="the scene plan as written — understand the story's current state and rhythm before placing new scenes">`,
+        beatLines.join("\n"),
+        `</scenes_so_far>`,
+        `<entry_state note="where the story stands when your FIRST new scene opens — continue causally from here">`,
+        `  Last scene ended: at ${lastLoc ?? "?"} — ${lc.outcome ?? "?"}`,
+        `  Entering via beat: "${lastBeatSummary}"`,
+        `  Polarity rhythm so far: ${polarityChain} → [your scenes must land this beat at its planned polarity]`,
+        `  Locations already used: ${usedLocs.join(", ")} — vary if dramatically possible`,
+        `</entry_state>`,
+      ].join("\n");
+    })();
+
     const { high: model, low } = await getActiveModels();
     const meta: CallMeta = { fn: "dna-expand", bookId, userId };
     // Prose → digest v2 (all-page continuity + anti-echo, built on the cheap `low` model); caption
@@ -409,6 +474,7 @@ Output JSON ONLY: { "beats": [ { "movement": <1..${movements.length}>, "summary"
       slots.games ? gamesBlock : "",
       slots.preconditions ? precondBlock : "", // [EXP:preconditions]
       slots.arc ? movementBlock : "",
+      slots.priorScenes ? priorScenesBlock : "",
       `THIS NODE [${node.kind}]: ${JSON.stringify(node.content)}`,
     ].filter(Boolean).join("\n\n");
     const system = `You are a story architect expanding a ${node.kind} into ${config.role}. Generate ${config.count} ${config.child_kind}s as ONE authoritative structure — NOT alternatives to choose among. Honor every LOCKED ancestor and the MANDATE verbatim. Output JSON ONLY: { "children": [ ${config.schema_json} ] }`;
