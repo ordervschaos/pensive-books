@@ -36,6 +36,7 @@ const StudioPage = lazy(() => import("@/pages/books/studio/StudioPage"));
 const DnaStudioPage = lazy(() => import("@/pages/books/dna/DnaStudioPage"));
 const DnaJsonPage = lazy(() => import("@/pages/books/dna/DnaJsonPage"));
 const DnaTreePage = lazy(() => import("@/pages/books/dna/DnaTreePage"));
+const DnaMetersPage = lazy(() => import("@/pages/books/dna/DnaMetersPage"));
 const DraftChanges = lazy(() => import("@/pages/books/show/DraftChanges"));
 const VersionHistoryPage = lazy(() => import("@/pages/books/show/VersionHistoryPage"));
 const BookEdit = lazy(() => import("@/pages/books/edit/BookEdit"));
@@ -76,9 +77,10 @@ function ConditionalNav() {
   const isPageViewRoute = location.pathname.includes('/pages/');
   const isJsonRoute = location.pathname.endsWith('/dna.json');
   const isTreeRoute = location.pathname.includes('/dna/tree');
+  const isMetersRoute = location.pathname.includes('/dna/meters');
 
   // Hide nav for page view routes (own fixed settings menu) and dev DNA routes.
-  if (isPageViewRoute || isJsonRoute || isTreeRoute) {
+  if (isPageViewRoute || isJsonRoute || isTreeRoute || isMetersRoute) {
     return null;
   }
 
@@ -189,6 +191,7 @@ export default function App() {
                         <Route path="/books/:bookSlug/studio" element={<StudioPage />} />
                         <Route path="/books/:bookSlug/dna" element={<DnaStudioPage />} />
                         <Route path="/books/:bookSlug/dna.json" element={<DnaJsonPage />} />
+                        <Route path="/books/:bookSlug/dna/meters" element={<DnaMetersPage />} />
                         <Route path="/books/:bookSlug/dna/tree/*" element={<DnaTreePage />} />
                         <Route path="/books/:bookSlug/studio/page/:pageId" element={<StudioPage />} />
                         <Route path="/books/:bookSlug/studio/:step" element={<StudioPage />} />

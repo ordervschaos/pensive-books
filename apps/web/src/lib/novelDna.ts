@@ -6,7 +6,7 @@ import { metaHash } from "@/lib/planProvenance";
 
 // ── Kinds ─────────────────────────────────────────────────────────────────────
 export const LADDER_KINDS = ["seed", "premise", "pillar", "movement", "beat", "scene"] as const;
-export const ENTITY_KINDS = ["character", "relationship", "tentpole", "world_fact", "location", "thread", "game", "voice_profile"] as const;
+export const ENTITY_KINDS = ["character", "relationship", "tentpole", "world_fact", "location", "thread", "game", "meter", "voice_profile"] as const;
 export type LadderKind = (typeof LADDER_KINDS)[number];
 export type EntityKind = (typeof ENTITY_KINDS)[number];
 export type NodeKind = LadderKind | EntityKind;
@@ -17,7 +17,7 @@ export const isEntityKind = (k: NodeKind): k is EntityKind => (ENTITY_KINDS as r
 // structural linter checks against it, and generation asserts onto it (no silent fail-open re-parenting).
 export const PARENT_KIND: Record<NodeKind, NodeKind | null> = {
   seed: null, premise: "seed", pillar: "premise", movement: "pillar", beat: "movement", scene: "beat",
-  character: "pillar", relationship: "pillar", tentpole: "pillar", world_fact: "pillar", location: "pillar", thread: "pillar", game: "pillar", voice_profile: "pillar",
+  character: "pillar", relationship: "pillar", tentpole: "pillar", world_fact: "pillar", location: "pillar", thread: "pillar", game: "pillar", meter: "pillar", voice_profile: "pillar",
 };
 // Kinds that must be unique per book (the ladder spine + the single voice). A 2nd is a duplicate.
 export const SINGLETON_KINDS: NodeKind[] = ["seed", "premise", "pillar", "voice_profile"];
@@ -54,6 +54,9 @@ export interface ThreadRef { ref: string; role: ThreadRole }
 // the climax's win fires an established rule (no deus ex machina, Lester Dent's law); scenes inherit it.
 // A game resolution anchored on a beat/scene (this turn DECIDES the game won/lost).
 export interface GameResolution { ref: string; outcome: "won" | "lost" }
+// A meter reading on a beat/scene: the LEVEL of a meter at this turn (a y-value, not a delta). Carry-forward:
+// a turn with no reading on a meter holds the prior level (docs/novel-dna-meters.md §3).
+export interface Reading { ref: string; value: number }
 export interface BeatContent {
   summary?: string; connector?: "therefore" | "but"; polarity?: "up" | "down";
   threads?: ThreadRef[]; realizes?: string[]; grounds_in?: string[];
@@ -61,6 +64,7 @@ export interface BeatContent {
   resolves?: GameResolution[];    // games DECIDED on this turn
   establishes?: string[];         // CAUSALITY: state keys this turn PRODUCES (was [EXP:preconditions])
   needs?: string[];               // CAUSALITY: state keys this turn DEPENDS ON (earned upstream, not ambient)
+  readings?: Reading[];           // METERS: this turn's level on each meter (docs/novel-dna-meters.md)
 }
 export interface ChapterStart { title?: string; pov?: string; epigraph?: string }
 export interface SceneContent {
@@ -75,6 +79,7 @@ export interface SceneContent {
   resolves?: GameResolution[];         // games decided in this scene (inherited from its beat)
   establishes?: string[];              // CAUSALITY: state keys produced (inherited from its beat)
   needs?: string[];                    // CAUSALITY: state keys depended on (inherited from its beat)
+  readings?: Reading[];                // METERS: this scene's level on each meter (inherited/refined from its beat)
   chapter_start?: ChapterStart | null;
   prose?: { text?: string; words?: number };
   // Picture mode (docs/picture-book-mode.md): the scene's illustrated page. caption = the 1–3 sentence
@@ -120,6 +125,16 @@ export interface GameContent {
   name?: string; players?: string[]; win_condition?: string; lose_condition?: string; stake?: string;
   governing_rules?: string[]; couples?: Coupling[];
   win_requires?: WinRequirement[]; // [EXP:preconditions] the win's typed preconditions
+}
+// meter (docs/novel-dna-meters.md): one named bounded axis (comedy/heat/freedom/game-score). Defined once on
+// the pillar; beats/scenes carry numeric `readings` on it. `target` is the planned curve generation aims at;
+// `owner` (optional) ties an owned meter to a character/game/relationship (e.g. Mara's hope, the contract's score).
+export type MeterKind = "value" | "game_score" | "affect" | "relationship" | "heat" | "comedy" | "tension" | "custom";
+export interface MeterContent {
+  name?: string; kind?: MeterKind; owner?: string;
+  poles?: { low?: string; high?: string };
+  scale?: { min?: number; max?: number };
+  target?: { at: number; value: number }[];
 }
 // voice_profile: the book's narrative stance and prose signature — governs every word of prose.
 export interface VoiceContent { pov?: string; tense?: "past" | "present"; style?: string; constraints?: string[]; sample?: string }
@@ -278,12 +293,17 @@ export function refsOf(node: DnaNode): string[] {
     if (Array.isArray(c.grounds_in)) out.push(...c.grounds_in.filter(Boolean));
     if (Array.isArray(c.plays)) out.push(...c.plays.filter(Boolean));
     if (Array.isArray(c.resolves)) out.push(...c.resolves.map((r) => r.ref).filter(Boolean));
+    if (Array.isArray(c.readings)) out.push(...c.readings.map((r) => r.ref).filter(Boolean));
   } else if (node.kind === "beat") {
     const c = node.content as BeatContent;
     if (Array.isArray(c.threads)) out.push(...c.threads.map((t) => t.ref).filter(Boolean));
     if (Array.isArray(c.grounds_in)) out.push(...c.grounds_in.filter(Boolean));
     if (Array.isArray(c.plays)) out.push(...c.plays.filter(Boolean));
     if (Array.isArray(c.resolves)) out.push(...c.resolves.map((r) => r.ref).filter(Boolean));
+    if (Array.isArray(c.readings)) out.push(...c.readings.map((r) => r.ref).filter(Boolean));
+  } else if (node.kind === "meter") {
+    const c = node.content as MeterContent;
+    if (c.owner) out.push(c.owner);
   } else if (node.kind === "relationship") {
     const c = node.content as RelationshipContent;
     if (c.a) out.push(c.a);
@@ -444,6 +464,9 @@ export function enforcePromiseSchedule<T extends ThreadCarrier>(itemsInOrder: T[
 
 const PACING_DRIFT_TOL = 0.1;   // a movement turn >10 percentage-points off its target_pct = drift
 const SAGGING_RUN = 4;          // ≥4 consecutive same-polarity scenes = a sagging middle
+const METER_FLAT_RUN = 4;       // ≥4 consecutive ~equal readings on a meter = a dead stretch on that axis
+const METER_MIN_OSC = 2;        // a meter that changes direction fewer times over its life reads monotone
+const METER_POLE_BAND = 0.15;   // a game_score must come within 15% of its losing pole or there's no jeopardy
 
 /** PACING (when): each movement's turning point gets an actual % (cumulative words, or scene count
  *  pre-prose) and the drift from its authored target_pct. */
@@ -568,6 +591,66 @@ export function stakesOf(nodes: DnaNode[], gameId: string): string[] {
   return [...new Set([...won, ...lost])];
 }
 
+// ── METERS (the plottable axis layer — docs/novel-dna-meters.md) ──────────────
+// A meter is one named bounded axis (comedy/heat/freedom/game-score). Beats carry numeric `readings`; this
+// derives the series (what a chart plots) and the shape stats the lints read. Pure, over the beat spine (the
+// PLAN layer, like causality) with carry-forward so a gap means "held", not 0. Nothing is stored.
+export interface MeterPoint { id: string; idx: number; value: number | null }
+export function meterSeries(nodes: DnaNode[], meterId: string): MeterPoint[] {
+  let last: number | null = null;
+  return beatsInOrder(nodes).map((b, idx) => {
+    const r = ((b.content as BeatContent).readings ?? []).find((x) => x.ref === meterId);
+    if (r && typeof r.value === "number") last = r.value;
+    return { id: b.id, idx, value: last };
+  });
+}
+
+/** Summary stats the lints + UI read off a series: range used, # direction changes (oscillation), longest
+ *  flat run, terminal value. Carry-forward nulls (leading gaps before the first reading) are ignored. */
+export function meterShape(series: MeterPoint[]): { range: number; oscillations: number; flatRun: number; last: number | null } {
+  const ys = series.map((p) => p.value).filter((v): v is number => v != null);
+  if (!ys.length) return { range: 0, oscillations: 0, flatRun: 0, last: null };
+  let osc = 0, flat = 1, maxFlat = 1, dir = 0;
+  for (let i = 1; i < ys.length; i++) {
+    const d = Math.sign(ys[i] - ys[i - 1]);
+    if (d === 0) { flat++; maxFlat = Math.max(maxFlat, flat); }
+    else { flat = 1; if (dir && d !== dir) osc++; dir = d; }
+  }
+  return { range: Math.max(...ys) - Math.min(...ys), oscillations: osc, flatRun: maxFlat, last: ys[ys.length - 1] };
+}
+
+/** A meter is "serial" (plottable as a line) once it carries ≥2 readings across the spine. */
+export function isSerialMeter(nodes: DnaNode[], meterId: string): boolean {
+  return meterSeries(nodes, meterId).filter((p) => p.value != null).length >= 2;
+}
+
+/** METER lints: a flat axis (nothing moves), a monotone axis (never reverses), and — for game_score meters —
+ *  a possibility space that never nears its losing pole (the measurable "no jeopardy" the games doc wants). */
+function meterLints(nodes: DnaNode[]): DnaIssue[] {
+  const issues: DnaIssue[] = [];
+  for (const m of nodes.filter((n) => n.kind === "meter")) {
+    const c = m.content as MeterContent;
+    const series = meterSeries(nodes, m.id);
+    const s = meterShape(series);
+    if (s.last == null) continue; // no readings yet — "early", not "wrong" (mirror the other axes)
+    if (s.flatRun >= METER_FLAT_RUN) {
+      issues.push({ rule: "flat_meter", severity: "warn", nodeId: m.id, message: `"${c.name ?? m.id}" holds flat for ${s.flatRun} beats — nothing moves on this axis` });
+    }
+    if (s.oscillations < METER_MIN_OSC && series.filter((p) => p.value != null).length >= METER_FLAT_RUN) {
+      issues.push({ rule: "no_oscillation", severity: "warn", nodeId: m.id, message: `"${c.name ?? m.id}" barely changes direction — monotone charge` });
+    }
+    if (c.kind === "game_score") {
+      const min = c.scale?.min ?? 0, max = c.scale?.max ?? 100;
+      const lowBand = min + (max - min) * METER_POLE_BAND;
+      const neared = series.some((p) => p.value != null && p.value <= lowBand);
+      if (!neared) {
+        issues.push({ rule: "no_jeopardy", severity: "warn", nodeId: m.id, message: `game-score "${c.name ?? m.id}" never nears its losing pole — the win was never in doubt (soft climax)` });
+      }
+    }
+  }
+  return issues;
+}
+
 /** A compact plain-text STORY ANALYSIS — the three axes + lints — handed to the dna-chat reviser as context
  *  so it can act on pacing drift / dangling promises / sagging runs. The UI renders the same data visually. */
 export function analysisText(nodes: DnaNode[], settings: BookSettings): string {
@@ -590,6 +673,17 @@ export function analysisText(nodes: DnaNode[], settings: BookSettings): string {
     for (const r of causal) {
       const unmet = r.unmet.length ? ` ⚠ UNMET: ${r.unmet.join(", ")}` : "";
       lines.push(`  beat ${r.idx + 1} [${r.connector ?? "—"}]${r.needs.length ? ` needs: ${r.needs.join(", ")}` : ""}${r.produces.length ? ` → ${r.produces.join(", ")}` : ""}${unmet}`);
+    }
+  }
+  const meters = nodes.filter((n) => n.kind === "meter");
+  if (meters.length) {
+    lines.push("METERS (tracked axes — level over the beat spine):");
+    for (const m of meters) {
+      const c = m.content as MeterContent;
+      const series = meterSeries(nodes, m.id);
+      const s = meterShape(series);
+      const vals = series.map((p) => (p.value == null ? "·" : String(p.value))).join("→");
+      lines.push(`  "${c.name ?? m.id}"${c.kind ? ` (${c.kind})` : ""}: ${vals || "(no readings)"}${s.last != null ? ` [range ${s.range}, osc ${s.oscillations}]` : ""}`);
     }
   }
   const issues = validate(nodes);
@@ -697,6 +791,9 @@ export function validate(nodes: DnaNode[]): DnaIssue[] {
 
   // Causality axis (why): hollow `therefore` (unmet need) / empty `but` (turns nothing).
   issues.push(...causalityLints(nodes));
+
+  // Meters axis (docs/novel-dna-meters.md): flat / monotone / no-jeopardy on a tracked axis.
+  issues.push(...meterLints(nodes));
 
   // Grounding: the resolution must fire an established world rule (no deus ex machina — Lester Dent's law).
   // When the world has rules, the last scene in reading order should ground its win in at least one.

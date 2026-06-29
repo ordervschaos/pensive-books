@@ -3395,7 +3395,7 @@ const _DNA_SPEC_MOVED_TO_DB = true;
 // ── begin DNA_SPEC stubs (now in DB) ──
 // relationships, set-pieces, threads, games, movements, beats, scenes, voice_profile — all in DB now.
 // ── end DNA_SPEC stubs ──
-const DNA_ENTITY_KINDS = new Set(["character", "relationship", "tentpole", "world_fact", "location", "thread", "game", "voice_profile"]);
+const DNA_ENTITY_KINDS = new Set(["character", "relationship", "tentpole", "world_fact", "location", "thread", "game", "meter", "voice_profile"]);
 function scenesInOrderBridge(allNodes) {
   const out = [];
   const childrenSorted = (pid) => allNodes.filter((n) => n.parent_id === pid).sort((a, b) => (a.position ?? 0) - (b.position ?? 0));

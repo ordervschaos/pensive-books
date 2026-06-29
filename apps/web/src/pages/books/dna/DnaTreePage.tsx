@@ -246,6 +246,7 @@ function EditableField({ node, spec, depth, index, parentKey, onJump }: {
     setEditing(false);
     const next: unknown = spec.type === "list" ? draft.split(",").map((s) => s.trim()).filter(Boolean)
       : spec.type === "percent" ? (draft.trim() ? Math.max(0, Math.min(1, parseFloat(draft.replace("%", "")) / 100)) : "")
+      : spec.type === "number" ? (draft.trim() && !Number.isNaN(parseFloat(draft)) ? parseFloat(draft) : "")
       : draft.trim();
     await write(next);
   };
@@ -270,6 +271,7 @@ function EditableField({ node, spec, depth, index, parentKey, onJump }: {
 function rawAsDraft(raw: unknown, spec: EditSpec): string {
   if (spec.type === "list") return Array.isArray(raw) ? raw.join(", ") : "";
   if (spec.type === "percent") return typeof raw === "number" ? String(Math.round(raw * 100)) : "";
+  if (spec.type === "number") return typeof raw === "number" ? String(raw) : "";
   return typeof raw === "string" ? raw : raw != null ? String(raw) : "";
 }
 
@@ -589,26 +591,30 @@ function WriteProseButton({ bookId, node, depth }: { bookId: number; node: DnaNo
 // Sequential prose writer for all prose-less scenes in book order.
 function WriteAllProseButton({ bookId, nodes, depth }: { bookId: number; nodes: DnaNode[]; depth: number }) {
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
-  const cancelRef = useRef(false); // set true to stop the loop after the current in-flight call returns
+  const cancelRef = useRef(false);  // set true to stop the loop at the next boundary
+  const abortRef = useRef<AbortController | null>(null); // aborts the in-flight call immediately on stop
   const pending = scenesInOrder(nodes).filter((s) => !(s.content as SceneContent).prose?.text?.trim());
   if (!pending.length && !progress) return null;
   const run = async () => {
-    if (progress) { cancelRef.current = true; return; } // a click while running requests a stop
+    if (progress) { cancelRef.current = true; abortRef.current?.abort(); return; } // a click while running stops now
     const list = scenesInOrder(nodes).filter((s) => !(s.content as SceneContent).prose?.text?.trim());
     if (!list.length) return;
     cancelRef.current = false;
     setProgress({ done: 0, total: list.length });
     for (let i = 0; i < list.length; i++) {
       if (cancelRef.current) break; // stop at the boundary — the in-flight call (if any) already returned
+      abortRef.current = new AbortController();
       try {
-        await expandNode(bookId, list[i], "prose");
+        await expandNode(bookId, list[i], "prose", { signal: abortRef.current.signal });
         setProgress({ done: i + 1, total: list.length });
       } catch (e) {
+        if (cancelRef.current) break; // intentional stop aborted the in-flight call — exit cleanly
         alert(`Write prose failed at scene ${i + 1}: ${(e as Error).message}`);
         setProgress(null);
         return;
       }
     }
+    abortRef.current = null;
     setProgress(null);
   };
   const label = progress
@@ -630,26 +636,30 @@ function WriteAllProseButton({ bookId, nodes, depth }: { bookId: number; nodes: 
 // Sequential scene generator: for all beats without scenes, in book order.
 function GenerateAllScenesButton({ bookId, nodes, depth }: { bookId: number; nodes: DnaNode[]; depth: number }) {
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
-  const cancelRef = useRef(false); // set true to stop the loop after the current in-flight call returns
+  const cancelRef = useRef(false);  // set true to stop the loop at the next boundary
+  const abortRef = useRef<AbortController | null>(null); // aborts the in-flight call immediately on stop
   const pending = beatsInOrder(nodes).filter((b) => !nodes.some((n) => n.parent_id === b.id && n.kind === "scene"));
   if (!pending.length && !progress) return null;
   const run = async () => {
-    if (progress) { cancelRef.current = true; return; } // a click while running requests a stop
+    if (progress) { cancelRef.current = true; abortRef.current?.abort(); return; } // a click while running stops now
     const list = beatsInOrder(nodes).filter((b) => !nodes.some((n) => n.parent_id === b.id && n.kind === "scene"));
     if (!list.length) return;
     cancelRef.current = false;
     setProgress({ done: 0, total: list.length });
     for (let i = 0; i < list.length; i++) {
       if (cancelRef.current) break; // stop at the boundary — the in-flight call (if any) already returned
+      abortRef.current = new AbortController();
       try {
-        await expandNode(bookId, list[i], "scenes");
+        await expandNode(bookId, list[i], "scenes", { signal: abortRef.current.signal });
         setProgress({ done: i + 1, total: list.length });
       } catch (e) {
+        if (cancelRef.current) break; // intentional stop aborted the in-flight call — exit cleanly
         alert(`Generate scenes failed at beat ${i + 1}: ${(e as Error).message}`);
         setProgress(null);
         return;
       }
     }
+    abortRef.current = null;
     setProgress(null);
   };
   const label = progress
@@ -1497,10 +1507,10 @@ function JourneyStrip({ nodes, mode, onGoStage }: {
 // LINEAGE (the rungs it was hydrated from — inputHash uses the direct parent's content), LOCKS (pinned
 // intent on it or above it), and STALENESS (an input moved since it was generated, with the suspects).
 // Pure-derived; reuses the consumes/consumedBy sets the page already computes + refsOf/isStale.
-function FocusPanel({ node, index, consumes, consumedBy, onJump, onClear }: {
+function FocusPanel({ node, index, consumes, consumedBy, onJump, onClear, bottomInset = 16 }: {
   node: DnaNode; index: Map<string, DnaNode>;
   consumes: Set<string>; consumedBy: Set<string>;
-  onJump: (id: string) => void; onClear: () => void;
+  onJump: (id: string) => void; onClear: () => void; bottomInset?: number;
 }) {
   const mono = "ui-monospace, monospace";
   // Up-spine lineage: walk parent_id to the root (root-first). The DIRECT parent is the rung this node
@@ -1536,7 +1546,7 @@ function FocusPanel({ node, index, consumes, consumedBy, onJump, onClear }: {
 
   return (
     <div style={{
-      position: "fixed", bottom: 16, left: 16, zIndex: 15, width: 320, maxHeight: "62vh", overflowY: "auto",
+      position: "fixed", bottom: bottomInset, left: 16, zIndex: 15, width: 320, maxHeight: "62vh", overflowY: "auto",
       background: "#0d0d11", border: "1px solid #2a2a38", borderRadius: 8, padding: "12px 14px",
       display: "flex", flexDirection: "column", gap: 12, boxShadow: "0 8px 30px #000000aa",
     }}>
@@ -1598,6 +1608,226 @@ function FocusPanel({ node, index, consumes, consumedBy, onJump, onClear }: {
   );
 }
 
+// A small accent action used inside the timeline — runs an async generate and shows a busy state.
+function GenAction({ label, title, onRun, size = "sm" }: { label: string; title?: string; onRun: () => Promise<void>; size?: "sm" | "xs" }) {
+  const [busy, setBusy] = useState(false);
+  const run = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (busy) return;
+    setBusy(true);
+    try { await onRun(); } catch (err) { alert(`Generate failed: ${(err as Error).message}`); }
+    finally { setBusy(false); }
+  };
+  return (
+    <span onClick={run} title={title} style={{
+      fontFamily: "ui-monospace, monospace", fontSize: size === "xs" ? 8 : 9, letterSpacing: "0.06em",
+      color: busy ? "#6a6a9a" : "#a8a8ff", cursor: busy ? "default" : "pointer", whiteSpace: "nowrap",
+      border: `1px solid ${busy ? "#8a8aff22" : "#8a8aff44"}`, borderRadius: 4, padding: size === "xs" ? "0px 5px" : "1px 7px", background: "#8a8aff10",
+    }}>{busy ? "…" : `✦ ${label}`}</span>
+  );
+}
+
+// ── Spine timeline — the SERIAL structure (reading order) ─────────────────────
+// The tree shows HIERARCHY (grouped, collapsible); this shows the SPINE as it's actually experienced —
+// movements left→right, beats ordered within each, scenes ordered within each. A filmstrip of the story's
+// flow + completion: each scene cell is colored by whether its prose is written / stale / still just planned,
+// so "where the draft actually stands" reads in one glance. Clicking any unit jumps to it in the tree.
+function SpineTimeline({ nodes, mode, rightInset, bookId, onJump, onClose }: {
+  nodes: DnaNode[]; mode: "prose" | "picture"; rightInset: number; bookId: number;
+  onJump: (id: string) => void; onClose: () => void;
+}) {
+  const mono = "ui-monospace, monospace";
+  const kids = (pid: string, kind: NodeKind) => nodes.filter((n) => n.parent_id === pid && n.kind === kind).sort((a, b) => a.position - b.position);
+  const pillar = nodes.find((n) => n.kind === "pillar");
+  const movs = pillar ? kids(pillar.id, "movement") : [];
+  // Acts collapse by default — the strip opens as an at-a-glance overview (act + scene pips); expand one act
+  // to get its working detail (beat cards, scene cells, the generate/write actions).
+  const [expandedActs, setExpandedActs] = useState<Set<string>>(new Set());
+  const toggleAct = (id: string) => setExpandedActs((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const allExpanded = movs.length > 0 && movs.every((m) => expandedActs.has(m.id));
+  const toggleAll = () => setExpandedActs(allExpanded ? new Set() : new Set(movs.map((m) => m.id)));
+
+  // Generate verbs, mirroring the tree's expand targets (pillar→acts, act→beats, beat→scenes, scene→prose).
+  // Direct commit (like the tree's bulk buttons); Realtime refreshes the strip. Prose loops the beat's
+  // unwritten scenes in order.
+  const genActs = () => expandNode(bookId, pillar!, "movements").then(() => undefined);
+  const genBeats = (mov: DnaNode) => expandNode(bookId, mov, "beats").then(() => undefined);
+  const genScenes = (beat: DnaNode) => expandNode(bookId, beat, "scenes").then(() => undefined);
+  const writeBeatProse = async (beat: DnaNode) => {
+    const pending = kids(beat.id, "scene").filter((s) => sceneState(s) === "planned");
+    for (const s of pending) await expandNode(bookId, s, "prose");
+  };
+
+  const sceneWritten = (s: DnaNode) => {
+    const c = s.content as SceneContent;
+    return mode === "picture" ? !!c.image_url?.trim() : !!c.prose?.text?.trim();
+  };
+  // Scene cell is always SCENE-green-outlined (it IS a scene); the FILL is the completion signal: hollow =
+  // planned, solid green = prose written. Stale (written-but-out-of-date) is the amber exception.
+  const sceneState = (s: DnaNode): "planned" | "written" | "stale" =>
+    !sceneWritten(s) ? "planned" : (mode !== "picture" && isProseStale(s)) ? "stale" : "written";
+
+  const roman = (n: number) => ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"][n] ?? String(n + 1);
+  const beatGlyphOf = (b: DnaNode) => {
+    const c = (b.content as BeatContent).connector;
+    return c === "therefore" ? "∴" : c === "but" ? "↯" : "";
+  };
+
+  return (
+    <div style={{
+      position: "fixed", left: 0, right: rightInset, bottom: 0, zIndex: 16,
+      background: "#0b0b0f", borderTop: "1px solid #20202c", maxHeight: 300, display: "flex", flexDirection: "column",
+      boxShadow: "0 -8px 30px #00000088",
+    }}>
+      {/* Header — title + nesting key + scene-state legend + close */}
+      <div style={{ display: "flex", alignItems: "center", gap: 16, padding: "9px 16px", borderBottom: "1px solid #16161c", flexWrap: "wrap" }}>
+        <span style={{ fontFamily: mono, fontSize: 11, letterSpacing: "0.16em", textTransform: "uppercase", color: "#cfcfcf" }}>Spine · reading order</span>
+        {/* nesting key — what contains what */}
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: mono, fontSize: 10 }}>
+          <span style={{ color: KIND_COLOR.movement, letterSpacing: "0.08em", textTransform: "uppercase" }}>act</span>
+          <span style={{ color: "#444" }}>▸</span>
+          <span style={{ color: KIND_COLOR.beat, letterSpacing: "0.08em", textTransform: "uppercase" }}>beat</span>
+          <span style={{ color: "#444" }}>▸</span>
+          <span style={{ color: KIND_COLOR.scene, letterSpacing: "0.08em", textTransform: "uppercase" }}>scene</span>
+        </span>
+        <span style={{ width: 1, height: 14, background: "#222" }} />
+        {/* scene-state legend — hollow green = planned · solid green = written · amber = stale */}
+        <span style={{ display: "flex", gap: 12 }}>
+          {([
+            ["planned", { background: "transparent", border: `1.5px solid ${KIND_COLOR.scene}` }],
+            ["written", { background: KIND_COLOR.scene, border: `1.5px solid ${KIND_COLOR.scene}` }],
+            ["stale", { background: "#f59e0b", border: "1.5px solid #f59e0b" }],
+          ] as const).map(([l, swatch]) => (
+            <span key={l} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+              <span style={{ width: 12, height: 14, borderRadius: 3, ...swatch }} />
+              <span style={{ fontFamily: mono, fontSize: 10, color: "#777", letterSpacing: "0.06em", textTransform: "uppercase" }}>{l}</span>
+            </span>
+          ))}
+        </span>
+        {movs.length > 0 && (
+          <span onClick={toggleAll} style={{ marginLeft: "auto", fontFamily: mono, fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "#666", cursor: "pointer" }}>
+            {allExpanded ? "collapse all" : "expand all"}
+          </span>
+        )}
+        <span onClick={onClose} title="close timeline" style={{ marginLeft: movs.length > 0 ? 0 : "auto", fontSize: 15, color: "#666", cursor: "pointer", lineHeight: 1 }}>✕</span>
+      </div>
+
+      {/* The filmstrip — acts left→right, each holding its beats, each beat holding its scenes */}
+      <div style={{ display: "flex", gap: 10, padding: "12px 16px", overflowX: "auto", alignItems: "flex-start" }}>
+        {!movs.length && (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontFamily: mono, fontSize: 12, color: "#444" }}>no acts yet</span>
+            {pillar && <GenAction label="generate acts" title="generate the act structure from the pillar" onRun={genActs} />}
+          </span>
+        )}
+        {movs.map((mov, mi) => {
+          const beats = kids(mov.id, "beat");
+          const allScenes = beats.flatMap((b) => kids(b.id, "scene"));
+          const written = allScenes.filter(sceneWritten).length;
+          const expanded = expandedActs.has(mov.id);
+          return (
+            <div key={mov.id} style={{ display: "flex", flexDirection: "column", gap: 7, border: `1px solid ${KIND_COLOR.movement}33`, borderRadius: 8, padding: "8px 10px", background: "#0e0e14", flexShrink: 0 }}>
+              {/* ACT header — the Act pill jumps to it in the tree; expand/collapse is the chevron bottom-right */}
+              <div style={{ display: "flex", alignItems: "center", gap: 7, maxWidth: expanded ? 360 : 320, minWidth: 190 }}>
+                <span onClick={() => onJump(mov.id)} title={`open act in tree`} style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.14em", textTransform: "uppercase", color: "#0a0a0a", background: KIND_COLOR.movement, padding: "1px 6px", borderRadius: 4, flexShrink: 0, cursor: "pointer" }}>Act {roman(mi)}</span>
+                <span style={{ fontFamily: mono, fontSize: 11, color: "#dcdcdc", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nodeTitle(mov) || ""}</span>
+                <span style={{ fontFamily: mono, fontSize: 9, color: "#666", flexShrink: 0, marginLeft: "auto", paddingLeft: 6 }}>{written}/{allScenes.length}</span>
+              </div>
+
+              {/* COLLAPSED — at-a-glance: scene pips grouped by beat (gaps mark beat boundaries) */}
+              {!expanded && (
+                <div style={{ display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap", maxWidth: 340, minHeight: 14 }}>
+                  {!beats.length && (pillar
+                    ? <GenAction size="xs" label="generate beats" title="generate this act's beats" onRun={() => genBeats(mov)} />
+                    : <span style={{ fontFamily: mono, fontSize: 9, color: "#3a3a3a", fontStyle: "italic" }}>no beats</span>)}
+                  {beats.map((beat, bi) => {
+                    const sc = kids(beat.id, "scene");
+                    return (
+                      <div key={beat.id} onClick={(e) => { e.stopPropagation(); onJump(beat.id); }} title={`beat ${bi + 1} — ${nodeTitle(beat)}`}
+                        style={{ display: "flex", gap: 2, cursor: "pointer" }}>
+                        {!sc.length && <span title="no scenes yet" style={{ width: 7, height: 12, borderRadius: 2, border: `1px dashed ${KIND_COLOR.beat}88` }} />}
+                        {sc.map((s) => {
+                          const st = sceneState(s);
+                          const edge = st === "stale" ? "#f59e0b" : KIND_COLOR.scene;
+                          return <span key={s.id} style={{ width: 7, height: 12, borderRadius: 2, background: st !== "planned" ? edge : "transparent", border: `1px solid ${edge}` }} />;
+                        })}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* EXPANDED — full BEATS row */}
+              {expanded && (
+              <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
+                {!beats.length && (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 10px", border: "1px dashed #24242e", borderRadius: 6 }}>
+                    <span style={{ fontFamily: mono, fontSize: 10, color: "#3a3a3a", fontStyle: "italic" }}>no beats</span>
+                    <GenAction label="generate beats" title="generate this act's beats" onRun={() => genBeats(mov)} />
+                  </span>
+                )}
+                {beats.map((beat, bi) => {
+                  const scenes = kids(beat.id, "scene");
+                  return (
+                    <div key={beat.id} style={{ display: "flex", flexDirection: "column", gap: 6, border: `1px solid ${KIND_COLOR.beat}33`, borderRadius: 6, padding: "6px 7px", background: "#13130c", width: 122 }}>
+                      {/* BEAT header */}
+                      <div onClick={() => onJump(beat.id)} title={`beat ${bi + 1} — ${nodeTitle(beat)}`} style={{ display: "flex", flexDirection: "column", gap: 3, cursor: "pointer" }}>
+                        <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                          <span style={{ fontFamily: mono, fontSize: 8, letterSpacing: "0.1em", textTransform: "uppercase", color: KIND_COLOR.beat, border: `1px solid ${KIND_COLOR.beat}55`, borderRadius: 3, padding: "0px 4px" }}>B{bi + 1}</span>
+                          {beatGlyphOf(beat) && <span style={{ color: KIND_COLOR.beat, fontSize: 10 }}>{beatGlyphOf(beat)}</span>}
+                          <span style={{ fontFamily: mono, fontSize: 8, color: "#4a4a4a", marginLeft: "auto" }}>{scenes.length || ""}</span>
+                        </span>
+                        <span style={{ fontFamily: mono, fontSize: 9.5, color: "#aeaeae", lineHeight: 1.35, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{nodeTitle(beat) || "—"}</span>
+                      </div>
+                      {/* SCENES — numbered cells + the generate/write action for this beat */}
+                      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                        <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
+                          {scenes.map((sc, si) => {
+                            const state = sceneState(sc);
+                            // Always green outline (it IS a scene). Filled green = prose written; hollow = planned;
+                            // amber = stale. Number ink flips to dark on a filled cell for contrast.
+                            const edge = state === "stale" ? "#f59e0b" : KIND_COLOR.scene;
+                            const filled = state !== "planned";
+                            return (
+                              <span key={sc.id} onClick={() => onJump(sc.id)} title={`scene ${si + 1} — ${nodeTitle(sc) || "untitled"} · ${state}`}
+                                style={{ width: 20, height: 22, borderRadius: 4, background: filled ? edge : "transparent", border: `1.5px solid ${edge}`, color: filled ? "#0a1a0e" : KIND_COLOR.scene, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: mono, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
+                                {si + 1}
+                              </span>
+                            );
+                          })}
+                        </div>
+                        {/* beat-scoped action: no scenes → generate; planned scenes → write their prose */}
+                        {(() => {
+                          if (!scenes.length) return <GenAction size="xs" label="scenes" title="generate this beat's scenes" onRun={() => genScenes(beat)} />;
+                          const planned = scenes.filter((s) => sceneState(s) === "planned").length;
+                          if (planned > 0) return <GenAction size="xs" label={`write prose (${planned})`} title="write prose for this beat's planned scenes" onRun={() => writeBeatProse(beat)} />;
+                          return null;
+                        })()}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              )}
+
+              {/* Expand/collapse — bottom-right chevron: ▾ points down to "more", ▴ folds it back up */}
+              {beats.length > 0 && (
+                <div onClick={() => toggleAct(mov.id)} title={expanded ? "collapse act" : "expand act — beats & scenes"}
+                  onMouseEnter={(e) => { e.currentTarget.style.color = KIND_COLOR.movement; e.currentTarget.style.background = `${KIND_COLOR.movement}14`; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.color = `${KIND_COLOR.movement}aa`; e.currentTarget.style.background = "transparent"; }}
+                  style={{ alignSelf: "flex-end", display: "flex", alignItems: "center", gap: 4, cursor: "pointer", color: `${KIND_COLOR.movement}aa`, borderRadius: 5, padding: "1px 7px", marginTop: 1 }}>
+                  <span style={{ fontFamily: mono, fontSize: 8, letterSpacing: "0.12em", textTransform: "uppercase" }}>{expanded ? "less" : `${beats.length} beats`}</span>
+                  <span style={{ fontSize: 11, lineHeight: 1 }}>{expanded ? "▴" : "▾"}</span>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default function DnaTreePage() {
   const { bookSlug } = useParams();
@@ -1624,6 +1854,7 @@ export default function DnaTreePage() {
   // #1 — pending proposals from the agent thread (book_agent_runs), mirrored so the tree can overlay them.
   const [agentProposals, setAgentProposals] = useState<AgentProposal[]>([]);
   const [showIssues, setShowIssues] = useState(false); // drill into the lints behind the score
+  const [timelineOpen, setTimelineOpen] = useState(false); // the serial spine filmstrip (bottom)
   const [healthLens, setHealthLens] = useState(false); // #6 — dim clean nodes; surface only the broken ones
   const [contextId, setContextId] = useState<string | null>(null); // #7 — the node whose ref-neighborhood is lit
   const [flashId, setFlashId] = useState<string | null>(null); // #1 — the node a jump just revealed
@@ -1982,7 +2213,12 @@ export default function DnaTreePage() {
       {/* #7 — the focus readout: "what controls this" for the badge-clicked node (bottom-left, clears of the rail) */}
       {tab === "tree" && ctxNode && (
         <FocusPanel node={ctxNode} index={index} consumes={ctxConsumes} consumedBy={ctxConsumedBy}
-          onJump={jumpTo} onClear={() => setContextId(null)} />
+          onJump={jumpTo} onClear={() => setContextId(null)} bottomInset={timelineOpen ? 212 : 16} />
+      )}
+      {/* The serial spine — reading-order filmstrip across the bottom (movements → beats → scenes) */}
+      {tab === "tree" && timelineOpen && (
+        <SpineTimeline nodes={nodes} mode={settings.mode ?? "prose"} rightInset={railOpen ? 420 : 0} bookId={bookId}
+          onJump={jumpTo} onClose={() => setTimelineOpen(false)} />
       )}
       {/* Header bar */}
       <div style={{ padding: "12px 16px", borderBottom: "1px solid #1a1a1a", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
@@ -2045,6 +2281,14 @@ export default function DnaTreePage() {
             style={{ background: "none", border: "none", color: forking ? "#444" : "#555", fontSize: 10, cursor: forking ? "default" : "pointer", letterSpacing: "0.1em", textTransform: "uppercase" }}>
             {forking ? "forking…" : "fork →"}
           </button>
+          {/* Spine timeline — the serial reading-order filmstrip (bottom drawer) */}
+          {tab === "tree" && (
+            <button onClick={() => setTimelineOpen((v) => !v)} style={{
+              background: timelineOpen ? "#fb923c22" : "none", border: `1px solid ${timelineOpen ? "#fb923c66" : "#2a2a2a"}`, borderRadius: 5,
+              color: timelineOpen ? "#fb923c" : "#555", fontSize: 10, cursor: "pointer", letterSpacing: "0.1em", textTransform: "uppercase",
+              padding: "3px 10px", fontFamily: "ui-monospace, monospace",
+            }}>▦ timeline</button>
+          )}
           {/* AI reviser — prominent pill so the rail is discoverable (was a buried text button) */}
           <button onClick={() => setRailOpen((v) => !v)} style={{
             background: railOpen ? "#8a8aff22" : "#8a8aff14", border: "1px solid #8a8aff66", borderRadius: 5,
@@ -2117,7 +2361,7 @@ export default function DnaTreePage() {
       <BriefOrigin brief={brief} onSave={saveBrief} seeded={roots.length > 0} onSeed={() => void seedTree()} seeding={seeding} />
 
       {/* Tree */}
-      <div style={{ paddingTop: 8, paddingBottom: 48 }}>
+      <div style={{ paddingTop: 8, paddingBottom: timelineOpen ? 220 : 48 }}>
         {roots.map((root) => (
           <Subtree key={root.id} node={root} index={index} nodes={nodes} depth={0}
             collapsedSet={collapsedSet} openSet={openSet}

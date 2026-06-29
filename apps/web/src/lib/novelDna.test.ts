@@ -3,7 +3,7 @@ import {
   analysisText, backlinkIndex, blastRadius, byId, cascade, causality, chapters, chooseProposal, editContent, emptyNode,
   enforcePromiseSchedule, inputHash, isIllusStale, isProseStale, isRenderable, isStale, lock, pacing, promiseLedger,
   presentCharacters, refsOf, renderBlockers, renderPages, scenesInOrder, stakesOf, stampIllus, stampInput, stampProse, topography,
-  validate, type DnaNode, type NodeKind, type ThreadRef,
+  validate, meterSeries, meterShape, isSerialMeter, type DnaNode, type NodeKind, type ThreadRef,
 } from "@/lib/novelDna";
 
 let seq = 0;
@@ -592,5 +592,72 @@ describe("causality axis (why — the causal spine)", () => {
       { connector: "but", polarity: "up", needs: ["rumor"] },
     ]);
     expect(validate(nodes).map((i) => i.rule)).not.toContain("empty_but");
+  });
+});
+
+
+describe("meters axis (docs/novel-dna-meters.md)", () => {
+  // A small spine: pillar → one movement → N beats, each carrying a reading on meter "cm" (comedy).
+  const spine = (values: (number | null)[]) => {
+    const pillar = mk("pillar", { id: "p" });
+    const mv = mk("movement", { id: "mv", parent_id: "p", position: 0 });
+    const beats = values.map((v, i) =>
+      mk("beat", { id: `b${i}`, parent_id: "mv", position: i, content: v == null ? {} : { readings: [{ ref: "cm", value: v }] } }));
+    return [pillar, mv, ...beats];
+  };
+  const meter = (over: Record<string, unknown> = {}) => mk("meter", { id: "cm", parent_id: "p", content: { name: "comedy", kind: "comedy", ...over } });
+
+  it("meterSeries plots the readings over the beat spine, carry-forward filling gaps", () => {
+    const nodes = [meter(), ...spine([10, null, 40, null])];
+    expect(meterSeries(nodes, "cm").map((p) => p.value)).toEqual([10, 10, 40, 40]); // gaps HOLD, not 0
+  });
+
+  it("a leading gap before the first reading is null (nothing to hold yet)", () => {
+    const nodes = [meter(), ...spine([null, 30, 30])];
+    expect(meterSeries(nodes, "cm").map((p) => p.value)).toEqual([null, 30, 30]);
+  });
+
+  it("meterShape reports range, oscillations, longest flat run, terminal value", () => {
+    const s1 = meterShape(meterSeries([meter(), ...spine([10, 50, 20, 20, 20, 60])], "cm"));
+    expect(s1.range).toBe(50);        // 60 - 10
+    expect(s1.oscillations).toBe(2);  // up→down, down→up
+    expect(s1.flatRun).toBe(3);       // 20,20,20
+    expect(s1.last).toBe(60);
+  });
+
+  it("isSerialMeter is true only once ≥2 readings exist", () => {
+    expect(isSerialMeter([meter(), ...spine([10])], "cm")).toBe(false);
+    expect(isSerialMeter([meter(), ...spine([10, 20])], "cm")).toBe(true);
+  });
+
+  it("flat_meter fires on a long flat run; clean when the meter moves", () => {
+    const flat = validate([meter(), ...spine([20, 20, 20, 20])]);
+    expect(flat.some((i) => i.rule === "flat_meter")).toBe(true);
+    const moving = validate([meter(), ...spine([20, 40, 20, 50])]);
+    expect(moving.some((i) => i.rule === "flat_meter")).toBe(false);
+  });
+
+  it("no_oscillation fires on a monotone climb (≥4 readings, never reverses)", () => {
+    const mono = validate([meter(), ...spine([10, 20, 30, 40])]);
+    expect(mono.some((i) => i.rule === "no_oscillation")).toBe(true);
+  });
+
+  it("no_jeopardy fires on a game_score that never nears its losing pole", () => {
+    const safe = validate([meter({ kind: "game_score", scale: { min: 0, max: 100 } }), ...spine([80, 90, 70, 95])]);
+    expect(safe.some((i) => i.rule === "no_jeopardy")).toBe(true);
+    const risky = validate([meter({ kind: "game_score", scale: { min: 0, max: 100 } }), ...spine([80, 10, 70, 95])]);
+    expect(risky.some((i) => i.rule === "no_jeopardy")).toBe(false);
+  });
+
+  it("a meter with no readings yet is silent (early, not wrong)", () => {
+    const issues = validate([meter(), ...spine([null, null])]);
+    expect(issues.some((i) => i.rule.startsWith("flat") || i.rule.startsWith("no_"))).toBe(false);
+  });
+
+  it("refsOf surfaces a beat's reading refs and a meter's owner (so dangling_ref + staleness see them)", () => {
+    const beat = mk("beat", { id: "b", content: { readings: [{ ref: "cm", value: 5 }] } });
+    expect(refsOf(beat)).toContain("cm");
+    const owned = mk("meter", { id: "m", content: { name: "hope", owner: "char1" } });
+    expect(refsOf(owned)).toContain("char1");
   });
 });

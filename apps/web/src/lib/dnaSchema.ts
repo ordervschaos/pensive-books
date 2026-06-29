@@ -12,7 +12,7 @@ import { type DnaIssue, type DnaNode, type NodeKind } from "@/lib/novelDna";
 // ── Field spec ────────────────────────────────────────────────────────────────
 // text/list (comma) for free text, ref/refs for id pointers (a dropdown/chip-picker of the right kind),
 // select for enums, percent for 0–1 floats, object for nested groups (value_shift, premise shape).
-export type FieldType = "text" | "list" | "ref" | "refs" | "select" | "percent" | "object";
+export type FieldType = "text" | "list" | "ref" | "refs" | "select" | "percent" | "number" | "object";
 export interface EditSpec {
   key: string; label: string; type?: FieldType; multiline?: boolean;
   refKind?: NodeKind; options?: string[]; fields?: EditSpec[];
@@ -69,6 +69,20 @@ export const NODE_SCHEMA: Partial<Record<NodeKind, EditSpec[]>> = {
     { key: "governing_rules", label: "rules", type: "refs", refKind: "world_fact" },
   ],
   tentpole: [{ key: "summary", label: "summary", multiline: true, required: true }],
+  // meter (docs/novel-dna-meters.md): a named bounded axis (comedy/heat/freedom/game-score) defined once on
+  // the pillar. Beats/scenes carry numeric `readings` on it; the engine plots the series + lints its shape.
+  meter: [
+    { key: "name", label: "name", required: true },
+    { key: "kind", label: "kind", type: "select", options: ["value", "game_score", "affect", "relationship", "heat", "comedy", "tension", "custom"] },
+    // poles give a bare number meaning (the low/high ends); for game_score they mirror the lose/win condition.
+    { key: "poles", label: "poles", type: "object", fields: [{ key: "low", label: "low", multiline: true }, { key: "high", label: "high", multiline: true }] },
+    { key: "scale", label: "scale", type: "object", fields: [{ key: "min", label: "min", type: "number" }, { key: "max", label: "max", type: "number" }] },
+    // owner OPTIONAL — character|game|relationship. refKind takes one kind, so this is left unconstrained; the
+    // editor offers a free ref and novelDna's dangling_ref still checks existence across kinds.
+    { key: "owner", label: "owner", type: "ref" },
+    // target = the PLANNED curve (sparse word-% anchors). genOnly: the planner sets it, complex shape.
+    { key: "target", label: "target", genOnly: true, note: "[{ at: 0..1 word%, value: number }] — the planned curve generation aims at" },
+  ],
   voice_profile: [
     { key: "pov", label: "pov", type: "select", options: ["first-person", "third-person-limited", "third-person-omniscient", "second-person"], taste: true },
     { key: "tense", label: "tense", type: "select", options: ["past", "present"], taste: true }, { key: "style", label: "style", multiline: true, required: true, taste: true },
@@ -90,6 +104,7 @@ export const NODE_SCHEMA: Partial<Record<NodeKind, EditSpec[]>> = {
     { key: "realizes", label: "realizes", genOnly: true, note: "[tentpole id] this beat delivers" },
     { key: "plays", label: "plays", genOnly: true, note: "[game id] this turn advances" },
     { key: "resolves", label: "resolves", genOnly: true, note: "[{ ref: game id, outcome: won|lost }]" },
+    { key: "readings", label: "readings", genOnly: true, note: "[{ ref: meter id, value: number }] this turn's level on each meter (a y-value)" },
   ],
   scene: [
     { key: "pov", label: "pov", type: "ref", refKind: "character" }, { key: "loc", label: "loc", type: "ref", refKind: "location" },
@@ -100,6 +115,7 @@ export const NODE_SCHEMA: Partial<Record<NodeKind, EditSpec[]>> = {
     // register = how the book's ONE voice BENDS for this scene only (pace, distance, intensity). The signature
     // stays constant; this knob breaks per-scene monotony. Adjacent scenes should differ so the read never goes flat.
     { key: "register", label: "register", multiline: true, taste: true, note: "how the voice bends here — pace, distance, intensity (e.g. \"clipped, breathless\" / \"slow, elegiac, interior\"). Adjacent scenes should differ." },
+    { key: "readings", label: "readings", genOnly: true, note: "[{ ref: meter id, value: number }] this scene's level on each meter (inherited/refined from its beat)" },
   ],
 };
 // The editor renders only the hand-editable fields — structural genOnly fields are prompt/contract-only.
@@ -109,7 +125,7 @@ export const tasteSpecs = (kind: NodeKind): EditSpec[] => (NODE_SCHEMA[kind] ?? 
 
 // ── Structural constants (single copy; were duplicated across DnaTreePage + dnaChat) ─────────────────────
 export const KIND_LEVEL: Record<NodeKind, number> = {
-  seed: 0, premise: 1, pillar: 2, character: 2, relationship: 2, tentpole: 2, world_fact: 2, location: 2, voice_profile: 2, thread: 2, game: 2, movement: 3, beat: 4, scene: 5,
+  seed: 0, premise: 1, pillar: 2, character: 2, relationship: 2, tentpole: 2, world_fact: 2, location: 2, voice_profile: 2, thread: 2, game: 2, meter: 2, movement: 3, beat: 4, scene: 5,
 };
 // The ladder's next kind down — drives the nested adds of a replace_children subtree.
 export const LADDER_NEXT: Partial<Record<NodeKind, NodeKind>> = { movement: "beat", beat: "scene" };
@@ -139,6 +155,9 @@ function checkSpecs(specs: EditSpec[], content: Record<string, unknown>, kind: N
     }
     if ((spec.type === "list" || spec.type === "refs") && !Array.isArray(raw)) {
       issues.push({ rule: "bad_shape", severity: "warn", message: `${kind}.${spec.key} must be a list`, nodeId });
+    }
+    if ((spec.type === "number" || spec.type === "percent") && typeof raw !== "number") {
+      issues.push({ rule: "bad_shape", severity: "warn", message: `${kind}.${spec.key} must be a number`, nodeId });
     }
   }
   return issues;
@@ -206,6 +225,7 @@ function renderField(spec: EditSpec): string {
     case "refs": return `${spec.key}${star}[]→${spec.refKind}`;
     case "list": return `${spec.key}${star}[]`;
     case "percent": return `${spec.key}${star}(0..1)`;
+    case "number": return `${spec.key}${star}(num)`;
     default: return `${spec.key}${star}`;
   }
 }

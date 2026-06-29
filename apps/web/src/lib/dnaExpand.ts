@@ -25,14 +25,14 @@ interface ExpandResult {
   beatsheet?: boolean; beats?: BeatSheetEntry[]; movementIds?: string[];
 }
 
-async function callExpand(bookId: number, nodeId: string, target: string): Promise<ExpandResult> {
+async function callExpand(bookId: number, nodeId: string, target: string, signal?: AbortSignal): Promise<ExpandResult> {
   if (BRIDGE) {
-    const r = await bridgeFetch(`/dna-expand`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ bookId, nodeId, target }) });
+    const r = await bridgeFetch(`/dna-expand`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ bookId, nodeId, target }), signal });
     const d = await r.json();
     if (d.error) throw new Error(d.error);
     return d as ExpandResult;
   }
-  const { data, error } = await supabase.functions.invoke("dna-expand", { body: { bookId, nodeId, target } });
+  const { data, error } = await supabase.functions.invoke("dna-expand", { body: { bookId, nodeId, target }, signal });
   if (error) throw error;
   if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
   return data as ExpandResult;
@@ -72,10 +72,10 @@ export function realizeScenesFromBeat(beatNode: DnaNode, scenes: SceneContent[],
 }
 
 export async function expandNode(
-  bookId: number, node: DnaNode, target: string, opts: { startPosition?: number; replaceIds?: string[] } = {},
+  bookId: number, node: DnaNode, target: string, opts: { startPosition?: number; replaceIds?: string[]; signal?: AbortSignal } = {},
 ): Promise<{ added: number }> {
-  const { startPosition = 0, replaceIds = [] } = opts;
-  const res = await callExpand(bookId, node.id, target);
+  const { startPosition = 0, replaceIds = [], signal } = opts;
+  const res = await callExpand(bookId, node.id, target, signal);
 
   if (target === "logline") {
     // Seed → logline: write the seed's OWN logline (a polished refinement of brief.idea), not a child node.
