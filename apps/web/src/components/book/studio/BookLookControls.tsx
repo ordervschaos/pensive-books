@@ -8,7 +8,7 @@ import { AutoTextarea } from "@/components/ui/auto-textarea";
 import {
   ART_THEMES, DEFAULT_IMAGE_MODEL, IMAGE_MODEL_OPTIONS, type Foundations,
 } from "@/lib/foundations";
-import { Eyebrow } from "./studioUi";
+import { Eyebrow } from "@/components/book/shared/studioUi";
 
 const chip = (on: boolean) =>
   `pv-serif rounded-full border px-3 py-1 text-[13px] transition-colors ${

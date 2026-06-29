@@ -7,7 +7,7 @@
 // journey (stageSubsteps) so this never drifts from what the stages themselves compute.
 import { useRef, type ReactNode } from "react";
 import { ArrowRight, Activity, BookOpen, Check, GitBranch, Network, Sparkles, TriangleAlert, Waypoints } from "lucide-react";
-import { ActionLink, Eyebrow, Hero, Panel, StageHead } from "@/components/book/studio/studioUi";
+import { ActionLink, Eyebrow, Hero, Panel, StageHead } from "@/components/book/shared/studioUi";
 import { DnaFullDiagram } from "@/components/book/dna/DnaStageDiagram";
 import { DnaStoryMap } from "@/components/book/dna/DnaStoryMap";
 import { DnaAnalysis } from "@/components/book/dna/DnaAnalysis";

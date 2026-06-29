@@ -12,7 +12,7 @@ import { AutoTextarea } from "@/components/ui/auto-textarea";
 import { saveBeat, saveObjective } from "@/lib/ladder";
 import type { StudioModel } from "./studioModel";
 import type { MapPage } from "@/lib/planGraph";
-import { ActionLink, Eyebrow, Panel, Pip } from "./studioUi";
+import { ActionLink, Eyebrow, Panel, Pip } from "@/components/book/shared/studioUi";
 
 export function BeatSheet({ bookId, model, onChanged, onSelectPage, onDiscardAll, discarding }: {
   bookId: number; model: StudioModel; onChanged: () => void;

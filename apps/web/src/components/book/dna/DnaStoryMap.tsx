@@ -4,7 +4,7 @@
 // the whole shape at a glance, then dig into any part" view — every row jumps to the exact node (onOpen
 // carries a focusId). Pure projection of the tree + the engine's causality axis; nothing generates here.
 import { ChevronRight } from "lucide-react";
-import { Eyebrow } from "@/components/book/studio/studioUi";
+import { Eyebrow } from "@/components/book/shared/studioUi";
 import type { StageKey } from "@/lib/dnaJourney";
 import {
   beatsInOrder, causality, childrenOf, scenesInOrder,

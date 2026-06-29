@@ -5,7 +5,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Sparkles } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { ActionLink, Eyebrow, Panel, RunningInline, StageHead } from "@/components/book/studio/studioUi";
+import { ActionLink, Eyebrow, Panel, RunningInline, StageHead } from "@/components/book/shared/studioUi";
 import { DnaLookPanel } from "@/components/book/dna/DnaLookPanel";
 import { DnaCharacterLook } from "@/components/book/dna/DnaCharacterLook";
 import { ImagePromptPreview } from "@/components/book/dna/ImagePromptPreview";

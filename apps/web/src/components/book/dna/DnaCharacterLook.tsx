@@ -5,7 +5,7 @@
 import { useEffect, useState } from "react";
 import { Sparkles, X, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { ActionLink, Eyebrow, RunningInline } from "@/components/book/studio/studioUi";
+import { ActionLink, Eyebrow, RunningInline } from "@/components/book/shared/studioUi";
 import { ImagePromptPreview } from "@/components/book/dna/ImagePromptPreview";
 import { composePortraitPrompt, renderDnaPortraitVariants, pinCharacterPortrait, unpinCharacterPortrait, legacyPortraitsFor, type ComposedPortraitPrompt } from "@/lib/characterPortraits";
 import { type CharacterContent, type DnaNode } from "@/lib/novelDna";

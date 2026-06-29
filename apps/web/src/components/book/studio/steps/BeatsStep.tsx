@@ -9,7 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { discardBeatsAndProse } from "@/lib/discardLadder";
 import { BeatSheet } from "../BeatSheet";
 import type { StudioModel } from "../studioModel";
-import { GenerateInChat } from "../studioUi";
+import { GenerateInChat } from "@/components/book/shared/studioUi";
 
 export function BeatsStep({ bookId, model, onChanged, onSelectPage }: { bookId: number; model: StudioModel; onChanged: () => void; onSelectPage?: (pageId: number) => void }) {
   const { toast } = useToast();

@@ -7,7 +7,7 @@ import { ChevronDown, Clock, CornerDownLeft, Loader2, Sparkles, SquarePen, X } f
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
-import { Eyebrow } from "@/components/book/studio/studioUi";
+import { Eyebrow } from "@/components/book/shared/studioUi";
 import { applyDnaProposal, clearDnaProposal, describeOps, resumeDnaSession, sendDnaMessage, startNewDnaSession, type DnaChatMessage, type DnaProposal, type DnaSession } from "@/lib/dnaChat";
 import { DNA_STAGES, type StageKey } from "@/lib/dnaJourney";
 import { analysisText, type BookSettings, type DnaNode } from "@/lib/novelDna";

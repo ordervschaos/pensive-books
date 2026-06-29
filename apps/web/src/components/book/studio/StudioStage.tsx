@@ -11,7 +11,7 @@ import { BookEvaluationSection, type CurrentRead } from "../BookEvaluationSectio
 import type { Brief } from "@/lib/brief";
 import type { Foundations } from "@/lib/foundations";
 import { STEP_CAPTION, STEP_LABEL, type StepKey, type StudioModel } from "./studioModel";
-import { Gate, StageHead } from "./studioUi";
+import { Gate, StageHead } from "@/components/book/shared/studioUi";
 import { PageReview } from "./PageReview";
 import { FoundationsStep } from "./steps/FoundationsStep";
 import { BeatsStep } from "./steps/BeatsStep";

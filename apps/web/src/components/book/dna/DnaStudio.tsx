@@ -15,9 +15,9 @@ import {
 } from "@dnd-kit/sortable";
 import { AutoTextarea } from "@/components/ui/auto-textarea";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
-import { ActionLink, Eyebrow, Panel, RunningInline, StageHead, StepDot } from "@/components/book/studio/studioUi";
+import { ActionLink, Eyebrow, Panel, RunningInline, StageHead, StepDot } from "@/components/book/shared/studioUi";
 import { buildJourney, stageSubsteps, STAGE_KINDS, type StageKey } from "@/lib/dnaJourney";
-import { AgentRail } from "@/components/book/studio/AgentRail";
+import { AgentRail } from "@/components/book/dna/AgentRail";
 import { DnaVisuals } from "@/components/book/dna/DnaVisuals";
 import { DnaStageDiagram } from "@/components/book/dna/DnaStageDiagram";
 import { DnaOverview } from "@/components/book/dna/DnaOverview";

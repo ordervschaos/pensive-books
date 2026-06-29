@@ -13,7 +13,7 @@ import { readNode, readProse, saveBeat, saveObjective } from "@/lib/ladder";
 import { deleteSceneImage, readSceneImages, uploadSceneImage, type SceneImage } from "@/lib/sceneImages";
 import type { CellState } from "@/lib/planGraph";
 import type { StudioModel } from "./studioModel";
-import { ActionLink, Eyebrow, ImageLightbox, Panel, Pip } from "./studioUi";
+import { ActionLink, Eyebrow, ImageLightbox, Panel, Pip } from "@/components/book/shared/studioUi";
 import { CharacterLedgerGraph } from "./CharacterLedgerGraph";
 
 interface PageReviewProps {

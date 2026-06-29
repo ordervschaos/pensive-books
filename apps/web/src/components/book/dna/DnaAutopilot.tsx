@@ -8,7 +8,7 @@ import { Sparkles, Loader2, Check, Play, X, TriangleAlert, Flag } from "lucide-r
 import { useToast } from "@/hooks/use-toast";
 import { useLatestTaskRow } from "@/hooks/useLatestTaskRow";
 import { stopRun } from "@/lib/stopRun";
-import { ActionLink, Eyebrow, Panel } from "@/components/book/studio/studioUi";
+import { ActionLink, Eyebrow, Panel } from "@/components/book/shared/studioUi";
 import { DNA_STAGES } from "@/lib/dnaJourney";
 import {
   continueAutopilot, resumeAutopilot, runAutopilot, startAutopilot,

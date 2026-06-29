@@ -4,7 +4,7 @@
 // ladder. Status comes entirely from the derived model.
 import { ChevronRight, ChevronDown, Loader2 } from "lucide-react";
 import { POST_STEPS, STEP_LABEL, type StepKey, type StudioModel } from "./studioModel";
-import { Pip3, StepDot } from "./studioUi";
+import { Pip3, StepDot } from "@/components/book/shared/studioUi";
 import type { Selection } from "./BuildStudio";
 
 interface NavigatorProps {

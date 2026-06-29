@@ -15,7 +15,7 @@ import {
   type CastMember, type FNode, type Foundations, type FoundationsStepKey, type Narration, type Relationship, type Tentpole, type WorldNode,
 } from "@/lib/foundations";
 import { BookLookControls } from "../BookLookControls";
-import { ActionLink, Eyebrow, GenerateInChat, ImageLightbox, Panel, RunError, RunningInline } from "../studioUi";
+import { ActionLink, Eyebrow, GenerateInChat, ImageLightbox, Panel, RunError, RunningInline } from "@/components/book/shared/studioUi";
 import { useAIRun } from "@/hooks/useAIRun";
 
 const uid = () => crypto.randomUUID().slice(0, 8);

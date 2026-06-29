@@ -23,7 +23,7 @@ import {
   type RevisionChatRow, type RevisionLayer, type RevisionProposal, type RevisionSession,
 } from "@/lib/revisionChat";
 import type { StudioModel } from "./studioModel";
-import { ActionLink, Eyebrow, Panel, RunError } from "./studioUi";
+import { ActionLink, Eyebrow, Panel, RunError } from "@/components/book/shared/studioUi";
 import { stopRun } from "@/lib/stopRun";
 import { discardBeatsAndProse } from "@/lib/discardLadder";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";

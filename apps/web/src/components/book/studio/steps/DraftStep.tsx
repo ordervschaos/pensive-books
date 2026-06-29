@@ -14,7 +14,7 @@ import { discardProse } from "@/lib/discardLadder";
 import { NotifyWhenDone } from "../../NotifyWhenDone";
 import { RunControls } from "../../RunControls";
 import type { StudioModel } from "../studioModel";
-import { ActionLink, DoneStrip, Hero, Pip3, ProgressMeter, RunningCard } from "../studioUi";
+import { ActionLink, DoneStrip, Hero, Pip3, ProgressMeter, RunningCard } from "@/components/book/shared/studioUi";
 
 interface BuildProgress { done: number; total: number; phase?: string; stage?: string }
 interface BuildRow extends TaskRow { progress: BuildProgress | null; error: string | null }

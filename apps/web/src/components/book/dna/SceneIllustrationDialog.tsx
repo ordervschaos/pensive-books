@@ -8,7 +8,7 @@ import { useState, useEffect } from "react";
 import { Maximize2, Trash2, RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ActionLink, ImageLightbox, RunningInline } from "@/components/book/studio/studioUi";
+import { ActionLink, ImageLightbox, RunningInline } from "@/components/book/shared/studioUi";
 import { ImagePromptPreview } from "@/components/book/dna/ImagePromptPreview";
 import { composeSceneIllustration, renderSceneIllustration, type ComposedSceneImage } from "@/lib/dnaExpand";
 import { composeSceneImage, readNodeSceneImages, deleteNodeSceneImage } from "@/lib/nodeSceneImages";

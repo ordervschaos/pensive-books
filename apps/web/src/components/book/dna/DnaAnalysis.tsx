@@ -5,7 +5,7 @@
 // there's structure to analyze.
 import { useState, type ReactNode } from "react";
 import { ChevronDown, ChevronRight, TriangleAlert } from "lucide-react";
-import { Eyebrow } from "@/components/book/studio/studioUi";
+import { Eyebrow } from "@/components/book/shared/studioUi";
 import { causality, pacing, promiseLedger, topography, validate, type DnaNode } from "@/lib/novelDna";
 import type { BookSettings } from "@/lib/novelDna";
 import type { StageKey } from "@/lib/dnaJourney";

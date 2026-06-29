@@ -21,7 +21,7 @@ import { useLatestTaskRow, type TaskRow } from "@/hooks/useLatestTaskRow";
 import { Textarea } from "@/components/ui/textarea";
 import { WorkingIndicator } from "../WorkingIndicator";
 import type { EvalResult } from "../BookEvaluationSection";
-import { ActionLink, Eyebrow, Panel, RunError } from "./studioUi";
+import { ActionLink, Eyebrow, Panel, RunError } from "@/components/book/shared/studioUi";
 
 interface AgentStep { t: "note" | "read" | "ask" | "answer" | "plan" | "done"; label: string }
 interface AgentRow extends TaskRow {

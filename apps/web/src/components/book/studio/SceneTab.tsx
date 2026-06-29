@@ -15,7 +15,7 @@ import { composeSceneSpec, getBookCast, getSceneImage, readSceneSpec, renderScen
 import { asSpec, EMPTY_SPEC, isSpecEmpty, specToPrompt, type SceneSpec, type SceneSubject } from "@/lib/sceneSpec";
 import { useBookLook } from "@/hooks/useBookLook";
 import { BookLookControls } from "./BookLookControls";
-import { Eyebrow, Panel, RunError } from "./studioUi";
+import { Eyebrow, Panel, RunError } from "@/components/book/shared/studioUi";
 
 interface ChatMsg { role: "user" | "assistant"; text: string }
 

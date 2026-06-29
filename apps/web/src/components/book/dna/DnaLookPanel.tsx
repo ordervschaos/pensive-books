@@ -3,7 +3,7 @@
 // whole picture book reads as one book. Same books.foundations fields the Build Studio's Scene tab edits
 // (via useBookLook) — change it here or there, one source. Only mounted in picture mode.
 import { BookLookControls } from "@/components/book/studio/BookLookControls";
-import { Eyebrow, Panel } from "@/components/book/studio/studioUi";
+import { Eyebrow, Panel } from "@/components/book/shared/studioUi";
 import { useBookLook } from "@/hooks/useBookLook";
 
 export function DnaLookPanel({ bookId }: { bookId: number }) {

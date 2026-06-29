@@ -20,8 +20,8 @@ import {
 import { availableCommands, matchCommands, type AgentCommand } from "@/lib/agentCommands";
 import { describeOps } from "@/lib/dnaChat";
 import { analysisText, type BookSettings, type DnaNode, type NodeKind } from "@/lib/novelDna";
-import { useChatScroll } from "./useChatScroll";
-import { ActionLink, Eyebrow, Panel, RunError } from "./studioUi";
+import { useChatScroll } from "@/components/book/studio/useChatScroll";
+import { ActionLink, Eyebrow, Panel, RunError } from "@/components/book/shared/studioUi";
 
 export function AgentRail({ bookId, nodes, settings }: { bookId: number; nodes: DnaNode[]; settings: BookSettings }) {
   const { toast } = useToast();

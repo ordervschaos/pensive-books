@@ -8,7 +8,7 @@ import { AutoTextarea } from "@/components/ui/auto-textarea";
 import { useToast } from "@/hooks/use-toast";
 import { saveSpine } from "@/lib/ladder";
 import { readSpineNode } from "@/lib/foundations";
-import { GenerateInChat } from "../studioUi";
+import { GenerateInChat } from "@/components/book/shared/studioUi";
 import { CraftNote } from "../CraftNote";
 
 interface Props {

@@ -6,7 +6,7 @@
 // portrait "design the look" step. Compose with studioUi primitives + Paper-DS tokens.
 import { useState } from "react";
 import { AutoTextarea } from "@/components/ui/auto-textarea";
-import { ActionLink, Eyebrow, Panel, RunningInline } from "@/components/book/studio/studioUi";
+import { ActionLink, Eyebrow, Panel, RunningInline } from "@/components/book/shared/studioUi";
 import { Sparkles, X } from "lucide-react";
 import { IMAGE_MODEL_OPTIONS } from "@/lib/foundations";
 

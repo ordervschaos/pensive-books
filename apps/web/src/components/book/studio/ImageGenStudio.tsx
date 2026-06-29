@@ -13,7 +13,7 @@ import { useEffect, useRef, useState } from "react";
 import { ImageIcon, Loader2, Plus, RefreshCw, Sparkles, Upload, X } from "lucide-react";
 import { AutoTextarea } from "@/components/ui/auto-textarea";
 import { useToast } from "@/hooks/use-toast";
-import { ActionLink, Eyebrow } from "./studioUi";
+import { ActionLink, Eyebrow } from "@/components/book/shared/studioUi";
 
 export interface StyleTheme { id: string; label: string; prompt: string; hint?: string }
 

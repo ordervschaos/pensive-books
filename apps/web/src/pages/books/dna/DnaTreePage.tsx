@@ -10,7 +10,7 @@ import { backlinkIndex, byId, childrenOf, emptyNode, isEntityKind, isProseStale,
 import { editSpecs, KIND_LEVEL, tasteSpecs, type EditSpec } from "@/lib/dnaSchema";
 import { CONTENT_TYPES, SCOPE_BANDS, briefIdea, type Brief } from "@/lib/brief";
 import { describeOps, type NodeOp } from "@/lib/dnaChat";
-import { AgentRail } from "@/components/book/studio/AgentRail";
+import { AgentRail } from "@/components/book/dna/AgentRail";
 import { sendAgentMessage, type AgentProposal } from "@/lib/agentThread";
 import { chooseNodeProposal, discardNodeProposals } from "@/lib/dnaProposals";
 import { expandNode, proposeGeneration } from "@/lib/dnaExpand";

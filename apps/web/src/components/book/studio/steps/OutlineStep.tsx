@@ -14,7 +14,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { AutoTextarea } from "@/components/ui/auto-textarea";
 import { useToast } from "@/hooks/use-toast";
 import { saveObjective } from "@/lib/ladder";
-import { ActionLink, Eyebrow, GenerateInChat, Panel } from "../studioUi";
+import { ActionLink, Eyebrow, GenerateInChat, Panel } from "@/components/book/shared/studioUi";
 import type { Movement, StudioModel } from "../studioModel";
 import type { MapPage } from "@/lib/planGraph";
 import type { BookLint } from "@/lib/lints";
