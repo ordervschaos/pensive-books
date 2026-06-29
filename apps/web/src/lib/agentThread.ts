@@ -12,9 +12,11 @@ import type { NodeKind } from "@/lib/novelDna";
 
 export interface AgentStep {
   // user = the author's message · note = the agent's reply/narration · read = a node it read ·
-  // ask = a creative question · answer = the author's answer to one · plan = a proposed change.
-  t: "user" | "note" | "read" | "ask" | "answer" | "plan" | "done";
+  // ask = a creative question · answer = the author's answer to one · plan = a proposed change ·
+  // applied/discarded = a resolved proposal kept in the feed as a collapsed card (carries its ops).
+  t: "user" | "note" | "read" | "ask" | "answer" | "plan" | "done" | "applied" | "discarded";
   label: string;
+  ops?: NodeOp[]; // present on applied/discarded steps — the change, for the collapsed card's detail
 }
 
 // The context filter aspects mirror the DNA tree's visual layers (not the journey stages).
@@ -49,10 +51,11 @@ export interface AgentThreadRow extends TaskRow {
   report: string | null;
   cancel_requested: boolean;
   error: string | null;
+  context_auto: boolean | null; // auto-accept mode is armed on this run (the watcher mirrors it)
 }
 
 export const AGENT_THREAD_SELECT =
-  "id, book_id, kind, status, created_at, updated_at, steps, pending, proposals, sessions, report, cancel_requested, error";
+  "id, book_id, kind, status, created_at, updated_at, steps, pending, proposals, sessions, report, cancel_requested, error, context_auto";
 
 // revise-agent is invoked directly (it is NOT mirrored in the dev bridge — the tool loop runs against
 // the deployed edge fn + the active model stack in dev and prod alike).
@@ -65,9 +68,11 @@ async function invoke(body: Record<string, unknown>): Promise<void> {
 /** Send a free-text message to the book's one agent thread (creates it on first use). `scope` filters
  *  which book aspects the agent sees + can touch (omit / empty = the whole book). `analysis` is the
  *  client-computed story analysis (the engine lives in the web app) fed as a structural backstop.
- *  `effort` controls response style: "low" = propose inline on first response; "high" (default) = full tool loop. */
-export async function sendAgentMessage(bookId: number, message: string, scope?: Aspect[], analysis?: string, effort?: "low" | "high"): Promise<void> {
-  await invoke({ bookId, message, ...(scope && scope.length ? { scope } : {}), ...(analysis?.trim() ? { analysis } : {}), ...(effort ? { effort } : {}) });
+ *  `effort` controls response style: "low" = propose inline on first response; "high" (default) = full tool loop.
+ *  `auto` arms auto-accept mode on the run: the agent runs autonomously (commits its own option picks, never
+ *  parks on ask_author) and the client watcher auto-applies whatever it stages. */
+export async function sendAgentMessage(bookId: number, message: string, scope?: Aspect[], analysis?: string, effort?: "low" | "high", auto?: boolean): Promise<void> {
+  await invoke({ bookId, message, ...(scope && scope.length ? { scope } : {}), ...(analysis?.trim() ? { analysis } : {}), ...(effort ? { effort } : {}), ...(auto ? { auto: true } : {}) });
 }
 
 /** Answer the agent's pending ask_author question, resuming the parked turn. */
@@ -75,10 +80,17 @@ export async function answerAgent(threadId: number, answer: string): Promise<voi
   await invoke({ runId: threadId, answer });
 }
 
+/** Auto-accept LIVE loop: after the client applies the agent's staged change to the tree, resume the run so
+ *  the agent's next turn reads the updated tree (one change per turn). No-op server-side unless the run is an
+ *  idle autonomous thread. */
+export async function continueAgent(threadId: number): Promise<void> {
+  await invoke({ runId: threadId, autoContinue: true });
+}
+
 /** Log a HUMAN decision into the book's agent thread as a visible step WITHOUT a model call — the chat is
  *  the agent's surface, so author actions like choosing/discarding an option register there too. Best-effort:
  *  no-op if the thread doesn't exist yet (nothing to log into) or is mid-turn (don't race the edge fn's
- *  writes — same idle-only safety as dropProposal). Surfaces over Realtime in the rail; refresh = no-op. */
+ *  writes — same idle-only safety as resolveProposal). Surfaces over Realtime in the rail; refresh = no-op. */
 export async function logAgentTurn(bookId: number, label: string, t: AgentStep["t"] = "answer"): Promise<void> {
   const { data } = await supabase.from("book_agent_runs")
     .select("id, status, steps").eq("book_id", bookId).eq("kind", "thread").maybeSingle();
@@ -109,24 +121,30 @@ export async function stageGeneratedProposal(bookId: number, proposal: AgentProp
   if (error) throw new Error(error.message);
 }
 
-/** Apply a reviewed proposal: run its node ops against book_nodes, then drop it from the thread. Returns the
- *  validation so the rail can warn when the schema boundary rejected some ops (they didn't land). */
+/** Apply a reviewed proposal: run its node ops against book_nodes, then resolve it on the thread — drop it
+ *  from proposals[] and leave an `applied` step (a collapsed card) so the chat keeps the context of what
+ *  changed. Returns the validation so the rail can warn when the schema boundary rejected some ops. */
 export async function applyAgentProposal(bookId: number, threadId: number, proposal: AgentProposal, all: AgentProposal[]): Promise<OpValidation> {
   const validation = await applyNodeOps(bookId, proposal.ops);
-  await dropProposal(threadId, proposal.id, all);
+  await resolveProposal(threadId, proposal, "applied", all);
   return validation;
 }
 
-/** Discard a proposal without applying it. */
+/** Discard a proposal without applying it — leaves a `discarded` step (a collapsed card) for context. */
 export async function discardAgentProposal(threadId: number, proposalId: string, all: AgentProposal[]): Promise<void> {
-  await dropProposal(threadId, proposalId, all);
+  const proposal = all.find((p) => p.id === proposalId);
+  if (proposal) await resolveProposal(threadId, proposal, "discarded", all);
 }
 
-// Remove one proposal from the thread's proposals[] (RLS lets the editor update the row; the edge fn
-// only writes proposals during a running turn, so there's no collision while the thread is idle).
-async function dropProposal(threadId: number, proposalId: string, all: AgentProposal[]): Promise<void> {
-  const next = all.filter((p) => p.id !== proposalId);
-  const { error } = await supabase.from("book_agent_runs").update({ proposals: next }).eq("id", threadId);
+// Resolve a proposal: drop it from proposals[] AND append an applied/discarded step that carries its ops, so
+// the resolution stays visible in the feed as a collapsed card. One row write (steps re-read fresh to avoid
+// clobbering anything the edge fn wrote). Safe because resolution only happens while the thread is idle.
+async function resolveProposal(threadId: number, proposal: AgentProposal, verb: "applied" | "discarded", all: AgentProposal[]): Promise<void> {
+  const { data } = await supabase.from("book_agent_runs").select("steps").eq("id", threadId).maybeSingle();
+  const steps = Array.isArray(data?.steps) ? (data!.steps as AgentStep[]) : [];
+  const step: AgentStep = { t: verb, label: proposal.summary, ops: proposal.ops };
+  const next = all.filter((p) => p.id !== proposal.id);
+  const { error } = await supabase.from("book_agent_runs").update({ steps: [...steps, step], proposals: next }).eq("id", threadId);
   if (error) throw error;
 }
 

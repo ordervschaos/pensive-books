@@ -76,10 +76,11 @@ interface RunRow {
   context_scope: Aspect[] | null; // thread scope (docs/agent-rail.md): null = whole book
   context_analysis: string | null; // latest client-computed story analysis (backstop)
   context_effort: "low" | "high" | null; // null = high (default)
+  context_auto: boolean | null; // auto-accept mode: run autonomously, never park on ask_author
   turns: number;
   cancel_requested: boolean;
 }
-const ROW_COLS = "id, book_id, created_by, kind, status, evaluation, transcript, steps, pending, proposals, context_scope, context_analysis, context_effort, turns, cancel_requested";
+const ROW_COLS = "id, book_id, created_by, kind, status, evaluation, transcript, steps, pending, proposals, context_scope, context_analysis, context_effort, context_auto, turns, cancel_requested";
 
 // Context filter aspects mirror the DNA tree's visual layers. null/[] scope = all.
 type Aspect = "seed" | "premise" | "cast_world" | "story" | "prose";
@@ -131,8 +132,8 @@ Deno.serve(async (req: Request) => {
 
   try {
     const body = (await req.json().catch(() => ({}))) as {
-      bookId?: number; evaluation?: EvalResult; instruction?: string; targetPageId?: number; runId?: number; answer?: string; chain?: boolean;
-      message?: string; scope?: string[]; analysis?: string;
+      bookId?: number; evaluation?: EvalResult; instruction?: string; targetPageId?: number; runId?: number; answer?: string; chain?: boolean; autoContinue?: boolean;
+      message?: string; scope?: string[]; analysis?: string; effort?: "low" | "high"; auto?: boolean;
     };
 
     // ── Continue call (self/watchdog): advance one model turn ──
@@ -151,6 +152,23 @@ Deno.serve(async (req: Request) => {
     );
     const { data: { user }, error: authError } = await userClient.auth.getUser();
     if (authError || !user) return json({ error: "Unauthorized" }, 401);
+
+    // Auto-accept LIVE loop: the client applied the agent's last staged change to the tree and is asking us
+    // to resume the run, so the agent's next turn reads the updated tree. Pure status flip + chain — no
+    // transcript edit (the transcript already ends with the propose_node_ops tool_result the model replies
+    // to) and NO turns reset, so MAX_TURNS still bounds the whole autonomous instruction.
+    if (body.runId && body.autoContinue) {
+      const { data } = await userClient.from("book_agent_runs").select(ROW_COLS).eq("id", body.runId).maybeSingle();
+      const row = data as RunRow | null;
+      if (!row) return json({ error: "Run not found" }, 404);
+      const { data: canEdit } = await userClient.rpc("user_can_edit_book", { _book_id: row.book_id });
+      if (canEdit === false) return json({ error: "Access denied" }, 403);
+      if (row.kind !== "thread" || !row.context_auto) return json({ error: "Not an autonomous thread" }, 409);
+      if (row.status !== "idle") return json({ status: row.status, runId: row.id }, 202); // already running/parked — nothing to resume
+      await service.from("book_agent_runs").update({ status: "running" }).eq("id", row.id);
+      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("revise-agent", { runId: row.id }));
+      return json({ status: "running", runId: row.id }, 202);
+    }
 
     // Answer to an ask_author question: append the tool_result and resume the chain.
     if (body.runId) {
@@ -199,6 +217,9 @@ Deno.serve(async (req: Request) => {
       const analysis: string | null = typeof body.analysis === "string" && body.analysis.trim() ? body.analysis.trim() : null;
       // Effort: "low" = propose inline on first response without exploring; "high" (default) = full tool loop.
       const effort: "low" | "high" = body.effort === "low" ? "low" : "high";
+      // Auto-accept: run autonomously — the agent commits its own picks and never parks on ask_author; the
+      // client auto-applies the proposals it stages. Carried on the run so every chain link sees it.
+      const auto: boolean = body.auto === true;
 
       const { data: existing } = await service
         .from("book_agent_runs").select(ROW_COLS).eq("book_id", tBookId).eq("kind", "thread").maybeSingle();
@@ -219,6 +240,7 @@ Deno.serve(async (req: Request) => {
             context_scope: scope,
             context_analysis: analysis,
             context_effort: effort,
+            context_auto: auto,
             transcript: [{ role: "user", content: [{ type: "text", text: message }] }],
             steps: [{ t: "user", label: message }],
           })
@@ -235,7 +257,7 @@ Deno.serve(async (req: Request) => {
       const transcript = [...thread.transcript, { role: "user", content: [{ type: "text", text: message }] }];
       const steps = [...thread.steps, { t: "user", label: message } as AgentStep];
       const { error } = await service.from("book_agent_runs")
-        .update({ transcript, steps, status: "running", turns: 0, pending: null, error: null, cancel_requested: false, context_scope: scope, context_analysis: analysis, context_effort: effort })
+        .update({ transcript, steps, status: "running", turns: 0, pending: null, error: null, cancel_requested: false, context_scope: scope, context_analysis: analysis, context_effort: effort, context_auto: auto })
         .eq("id", thread.id);
       if (error) throw new Error(error.message);
       if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("revise-agent", { runId: thread.id }));
@@ -335,7 +357,8 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
     const isThread = row.kind === "thread";
     const scope = row.context_scope;
     const effort = row.context_effort ?? "high";
-    const system = isThread ? await threadSystem(service, row.book_id, scope, row.context_analysis, effort) : SYSTEM;
+    const auto = isThread && !!row.context_auto; // autonomous mode: never park, commit own picks
+    const system = isThread ? await threadSystem(service, row.book_id, scope, row.context_analysis, effort, auto) : SYSTEM;
     const tools = isThread ? threadToolsFor(scope) : TOOLS;
     // Count the turn BEFORE the call: a hard worker death mid-call still consumes budget, so a
     // crash-looping run hits MAX_TURNS instead of being revived forever by the watchdog.
@@ -455,6 +478,21 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
       if (outcome.ok) {
         steps.push({ t: "plan", label: outcome.proposal.summary });
         const proposals = [...(row.proposals ?? []), outcome.proposal];
+        if (auto) {
+          // Autonomous + LIVE apply: end the turn (idle) so the CLIENT applies these ops to book_nodes right
+          // now, then resumes the run (the autoContinue call). One change per turn — the agent's NEXT turn
+          // reads the UPDATED tree, so each change is visible before it proposes the next. The tool_result
+          // tells it the change landed so it either continues or finishes (a real conclusion, not a dead stop).
+          const ack = toolUses.map((t) => ({
+            type: "tool_result", tool_use_id: t.id,
+            content: t.id === opsCall.id
+              ? "✓ Applied to the tree (autonomous mode — no review step). Your next turn will show the updated tree above. Propose the next change if the request needs more, or call finish with a one-line summary to conclude."
+              : "ok",
+          }));
+          transcript.push({ role: "user", content: ack });
+          await service.from("book_agent_runs").update({ status: "idle", transcript, steps, proposals }).eq("id", runId);
+          return;
+        }
         transcript.push({ role: "user", content: ackResults(toolUses.map((t) => t.id)) });
         await service.from("book_agent_runs")
           .update({ status: "idle", transcript, steps, proposals }).eq("id", runId);
@@ -501,8 +539,19 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
       return;
     }
 
-    // ── ask_author parks the run; sibling read results ride along in `pending` ──
+    // ── ask_author: in auto mode the author is away, so don't park — answer the agent's own question with
+    // "decide yourself and proceed" and chain, so an unattended run can't deadlock on a creative fork. ──
     const askCall = toolUses.find((t) => t.name === "ask_author");
+    if (askCall && auto) {
+      const results = await toolResults(service, row.book_id, toolUses, steps, {
+        [askCall.id]: "You're in AUTONOMOUS mode — the author is away and cannot answer. Make the strongest creative decision yourself and proceed; don't ask again.",
+      });
+      transcript.push({ role: "user", content: results });
+      await service.from("book_agent_runs").update({ transcript, steps }).eq("id", runId);
+      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("revise-agent", { runId }));
+      return;
+    }
+    // ── ask_author parks the run; sibling read results ride along in `pending` ──
     if (askCall) {
       const input = askCall.input as { question?: string; options?: string[] };
       const question = String(input?.question ?? "").trim();
@@ -1014,7 +1063,7 @@ async function proposeOptions(
 // every call so ids stay fresh as the author edits (the transcript holds only the conversation). Prose
 // is always stripped (read_node fetches it). A one-line premise/pillar frame is always included so the
 // agent is grounded even when 'premise' isn't in scope.
-async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspect[] | null, analysis: string | null, effort: "low" | "high" = "high"): Promise<string> {
+async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspect[] | null, analysis: string | null, effort: "low" | "high" = "high", auto = false): Promise<string> {
   const { data: book } = await service.from("books").select("name, brief").eq("id", bookId).maybeSingle();
   const b = book as { name?: string; brief?: Brief } | null;
   const { data: rows } = await service
@@ -1055,7 +1104,12 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
   const effortLine = effort === "low"
     ? "\n\nFAST MODE: The author wants a quick response. If the change is clear from the tree, call propose_node_ops immediately — one sentence of narration, then the proposal. Skip read_node unless prose content is essential. Only pause to ask if the request is genuinely ambiguous."
     : "";
-  return `${SYSTEM_THREAD}${scopeLine}${effortLine}\n\n${blocks.join("\n\n")}`;
+  // Autonomous mode: the author is AWAY. The agent must carry every request to a committed change with no
+  // human gate — it makes the option choices itself and never waits. (The client auto-applies what it stages.)
+  const autoLine = auto
+    ? "\n\nAUTONOMOUS MODE — the author has stepped away and CANNOT review, pick, or answer. Carry every request all the way to a finished result yourself, then conclude:\n• Make ONE change per turn with propose_node_ops. It is APPLIED LIVE immediately — there is no review step, and your NEXT turn shows the updated tree. Don't say \"I propose\" or wait for approval; just make the change, then continue.\n• NEVER call ask_author. At a creative fork, decide with your best judgment and proceed.\n• Prefer to commit directly: when you'd weigh options, just pick the strongest and write it with propose_node_ops. (Avoid propose_options in autonomous mode — there's no one to pick.)\n• ALWAYS CONCLUDE: once the request is fully handled, call finish with a one-line summary of what you changed. Don't stop mid-thought after a change — keep going until you finish."
+    : "";
+  return `${SYSTEM_THREAD}${scopeLine}${effortLine}${autoLine}\n\n${blocks.join("\n\n")}`;
 }
 
 // ── Context builders (mirror revise-outline) ─────────────────────────────────

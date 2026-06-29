@@ -6,7 +6,7 @@
 // and projects the row live (refresh = no-op). Mirrors ReviseChat's shape but is driven by the
 // agent's `steps` feed rather than a per-layer chat thread.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, BookOpen, Check, ChevronDown, Clock, CornerDownLeft, Loader2, Slash, Square, SquarePen, Wand2, X, Zap } from "lucide-react";
+import { ArrowDown, ArrowUp, BookOpen, Check, ChevronDown, Clock, CornerDownLeft, Infinity as InfinityIcon, Loader2, Slash, Square, SquarePen, Wand2, X, Zap } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
@@ -18,9 +18,10 @@ import {
   type AgentProposal, type AgentSession, type Aspect, type AgentStep, type AgentThreadRow,
 } from "@/lib/agentThread";
 import { availableCommands, matchCommands, type AgentCommand } from "@/lib/agentCommands";
-import { describeOps } from "@/lib/dnaChat";
+import { describeOps, type NodeOp } from "@/lib/dnaChat";
 import { analysisText, type BookSettings, type DnaNode, type NodeKind } from "@/lib/novelDna";
 import { useChatScroll } from "@/components/book/studio/useChatScroll";
+import { useAutoAccept } from "@/hooks/useAutoAccept";
 import { ActionLink, Eyebrow, Panel, RunError } from "@/components/book/shared/studioUi";
 
 export function AgentRail({ bookId, nodes, settings }: { bookId: number; nodes: DnaNode[]; settings: BookSettings }) {
@@ -70,6 +71,18 @@ export function AgentRail({ bookId, nodes, settings }: { bookId: number; nodes: 
     try { localStorage.setItem(effortKey, next); } catch { /* ignore */ }
     return next;
   });
+
+  // Auto-accept: arm autonomous mode. The agent commits its own option picks and never parks; the watcher
+  // (useAutoAccept, below) auto-applies whatever it stages. Persisted per book.
+  const autoKey = `agent-auto-${bookId}`;
+  const [auto, setAuto] = useState<boolean>(() => {
+    try { return localStorage.getItem(autoKey) === "1"; } catch { return false; }
+  });
+  const toggleAuto = () => setAuto((v) => {
+    const next = !v;
+    try { localStorage.setItem(autoKey, next ? "1" : "0"); } catch { /* ignore */ }
+    return next;
+  });
   const { row, refetch, stale } = useLatestTaskRow<AgentThreadRow>({
     table: "book_agent_runs",
     bookId,
@@ -85,6 +98,9 @@ export function AgentRail({ bookId, nodes, settings }: { bookId: number; nodes: 
   const running = row?.status === "running";
   const awaiting = row?.status === "awaiting_input";
   const active = running || awaiting;
+
+  // Auto-accept watcher — when armed, performs the author's gestures (apply / pick / answer) automatically.
+  useAutoAccept({ enabled: auto, bookId, row, nodes, refetch });
 
   const [draft, setDraft] = useState("");
   const [answer, setAnswer] = useState("");
@@ -130,7 +146,7 @@ export function AgentRail({ bookId, nodes, settings }: { bookId: number; nodes: 
     setDraft("");
     setOptimistic(t);
     try {
-      await sendAgentMessage(bookId, t, sentScope, analysis, effort);
+      await sendAgentMessage(bookId, t, sentScope, analysis, effort, auto);
       refetch();
     } catch (e) {
       setOptimistic(null);
@@ -247,9 +263,18 @@ export function AgentRail({ bookId, nodes, settings }: { bookId: number; nodes: 
               </button>
             );
           })}
+          <button type="button" onClick={toggleAuto} disabled={active}
+            title={auto ? "Auto-accept ON — the agent runs autonomously: it makes its own choices and applies them, no review. Click to turn off." : "Auto-accept OFF — you review and apply each change. Click to let the agent run autonomously."}
+            className={`ml-auto inline-flex items-center gap-1 rounded-full border px-2 py-0.5 pv-mono text-[10px] transition-colors disabled:opacity-50 ${
+              auto
+                ? "border-[hsl(var(--pv-accent))]/50 bg-[hsl(var(--pv-accent))]/[0.08] text-[hsl(var(--pv-accent))]"
+                : "border-[hsl(var(--pv-border-soft))] text-[hsl(var(--pv-text-faint))] hover:text-foreground"
+            }`}>
+            <InfinityIcon className="h-2.5 w-2.5" /> auto
+          </button>
           <button type="button" onClick={toggleEffort} disabled={active}
             title={effort === "low" ? "Fast mode — proposes inline on first response. Click for deep." : "Deep mode — full tool loop. Click for fast."}
-            className={`ml-auto inline-flex items-center gap-1 rounded-full border px-2 py-0.5 pv-mono text-[10px] transition-colors disabled:opacity-50 ${
+            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 pv-mono text-[10px] transition-colors disabled:opacity-50 ${
               effort === "low"
                 ? "border-[hsl(var(--pv-accent))]/50 bg-[hsl(var(--pv-accent))]/[0.08] text-[hsl(var(--pv-accent))]"
                 : "border-[hsl(var(--pv-border-soft))] text-[hsl(var(--pv-text-faint))] hover:text-foreground"
@@ -422,10 +447,55 @@ function StepBubble({ step }: { step: AgentStep }) {
       </p>
     );
   }
+  if (step.t === "applied" || step.t === "discarded") return <ResolvedCard step={step} />;
   // note / ask / done — the agent speaking
   return (
     <div className="max-w-[92%] pv-serif text-[14.5px] leading-[1.62] text-[hsl(var(--pv-text-muted))] prose prose-sm max-w-none dark:prose-invert prose-p:my-2 prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0 prose-headings:text-foreground prose-strong:text-foreground prose-strong:font-semibold">
       <ReactMarkdown>{step.label}</ReactMarkdown>
+    </div>
+  );
+}
+
+// A short human handle for an op's content (its first meaningful field) — used by the collapsed resolved card.
+function opHandle(content: unknown): string {
+  const c = (content ?? {}) as Record<string, unknown>;
+  const h = c.logline ?? c.name ?? c.title ?? c.controlling_idea ?? c.dramatic_question ?? c.summary ?? c.goal ?? c.text;
+  return typeof h === "string" && h.trim() ? h.trim().slice(0, 80) : "";
+}
+
+// One line per op for a resolved (applied/discarded) proposal — self-contained from the stored ops, so it
+// reads the same in the live feed and in archived sessions (no live-tree lookup, no stale before/after).
+function opLine(op: NodeOp): string {
+  if (op.op === "edit") { const h = opHandle((op as { content?: unknown }).content); return h ? `edit · ${h}` : "edit a node"; }
+  if (op.op === "add") { const h = opHandle((op as { content?: unknown }).content); return `add ${(op as { kind?: string }).kind ?? "node"}${h ? ` · ${h}` : ""}`; }
+  if (op.op === "delete") return "remove a node";
+  if (op.op === "replace_children") { const o = op as { childKind?: string; children?: unknown[] }; return `rebuild ${o.childKind ?? "children"} · ${o.children?.length ?? 0} new`; }
+  return "change";
+}
+
+// A resolved proposal kept in the chat for context: a collapsed one-line summary (✓ applied / ✕ discarded)
+// that expands to the list of changes. Mirrors ProposalCard's look but read-only — the change already landed.
+function ResolvedCard({ step }: { step: AgentStep }) {
+  const [open, setOpen] = useState(false);
+  const applied = step.t === "applied";
+  const ops = step.ops ?? [];
+  return (
+    <div className={`rounded-xl border px-3 py-2 ${applied ? "border-emerald-600/30 bg-emerald-600/[0.04]" : "border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/30"}`}>
+      <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center gap-2 text-left">
+        {applied
+          ? <Check className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+          : <X className="h-3.5 w-3.5 shrink-0 text-[hsl(var(--pv-text-faint))]" />}
+        <span className="pv-mono text-[9.5px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-faint))]">{applied ? "applied" : "discarded"}</span>
+        <span className="flex-1 truncate pv-serif text-[12.5px] text-[hsl(var(--pv-text-muted))]">{step.label}</span>
+        {ops.length > 0 && <ChevronDown className={`h-3 w-3 shrink-0 text-[hsl(var(--pv-text-faint))] transition-transform ${open ? "rotate-180" : ""}`} />}
+      </button>
+      {open && ops.length > 0 && (
+        <ul className="mt-2 space-y-1 border-t border-[hsl(var(--pv-border-soft))]/50 pt-2">
+          {ops.map((op, i) => (
+            <li key={i} className="pv-mono text-[10.5px] leading-snug text-[hsl(var(--pv-text-faint))]">· {opLine(op)}</li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
