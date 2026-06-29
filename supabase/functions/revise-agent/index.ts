@@ -632,7 +632,7 @@ async function toolResults(
             Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""}`,
             "x-chain": Deno.env.get("CHAIN_SECRET") ?? "",
           },
-          body: JSON.stringify({ bookId, nodeId: id, target: "prose", light: true }),
+          body: JSON.stringify({ bookId, nodeId: id, target: "prose" }),
         });
         const out = (await resp.json().catch(() => ({}))) as { prose?: string; error?: string };
         const prose = (out.prose ?? "").trim();
@@ -1022,7 +1022,8 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
   const nodes = (rows ?? []) as DnaNodeRow[];
   const kinds = scopedKinds(scope); // null = all
 
-  const serialize = (n: DnaNodeRow): string => {
+  const serialize = (n: DnaNodeRow, inScope: boolean): string => {
+    if (!inScope) return `[${n.id}] L${n.level} ${n.kind}: <hidden>`;
     let content = n.content;
     if (n.kind === "scene" && content && typeof content === "object" && "prose" in content) {
       const { prose: _drop, ...rest } = content as Record<string, unknown>;
@@ -1037,31 +1038,17 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
     return line;
   };
 
-  const inTree = nodes.filter((n) => !kinds || kinds.has(n.kind)).sort((a, b) => a.level - b.level);
-  const tree = inTree.map(serialize).join("\n");
-
-  // Always-on grounding frame: the premise logline + pillar controlling idea (one line each), even when
-  // 'premise' isn't scoped, so the agent knows what book it's editing.
-  // The pillar's ID is always exposed so the agent can use it as parentId for add ops targeting
-  // character / world_fact / location even when cast_world is not in scope.
-  const frame: string[] = [];
-  if (kinds) {
-    const premise = nodes.find((n) => n.kind === "premise");
-    const pillar = nodes.find((n) => n.kind === "pillar");
-    if (premise && !kinds.has("premise")) frame.push(`[${premise.id}] premise: ${nodeHandle(premise.content)}`);
-    if (pillar && !kinds.has("pillar")) {
-      const ci = pillar.content?.controlling_idea ? ` — ${String(pillar.content.controlling_idea).slice(0, 120)}` : "";
-      frame.push(`[${pillar.id}] pillar (parent container for character / world_fact / location / movement adds)${ci}`);
-    }
-  }
+  // Always show the full structural shape — out-of-scope nodes appear as <hidden> so the agent
+  // always has every node's id (needed for parentId in add ops) without seeing irrelevant content.
+  const sorted = [...nodes].sort((a, b) => a.level - b.level);
+  const tree = sorted.map((n) => serialize(n, !kinds || kinds.has(n.kind))).join("\n");
 
   const blocks = [
     `BOOK: ${b?.name ?? ""}`,
     `BRIEF (binding voice contract): ${briefContext(b?.brief ?? null, { scope: "full", success: true, none: "(no brief)", empty: "(empty)" })}`,
-    frame.length ? `FOR GROUNDING (not necessarily in scope):\n${frame.join("\n")}` : "",
     // The structural backstop (pacing / dangling-promise / sagging-run lints) — act on any ⚠ flags.
     analysis?.trim() ? `STORY ANALYSIS (the structural backstop — address any ⚠ flags):\n${analysis.trim()}` : "",
-    `THE DNA TREE${kinds ? ` (in scope: ${[...kinds].join(", ")})` : ""} — edit/add/delete by these ids; LOCKED = immutable:\n${tree || "(no nodes in scope yet)"}`,
+    `THE DNA TREE${kinds ? ` (in scope: ${[...kinds].join(", ")}; others shown as <hidden>)` : ""} — edit/add/delete by these ids; LOCKED = immutable:\n${tree || "(no nodes yet)"}`,
   ].filter(Boolean);
 
   const scopeLine = scope && scope.length ? `\n\nIN SCOPE THIS CONVERSATION: ${scope.join(", ")}. Only propose changes to these aspects.` : "";

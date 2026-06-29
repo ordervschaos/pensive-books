@@ -7,6 +7,8 @@ import { deleteNode, loadTree, saveNode, saveNodes } from "@/lib/bookNodes";
 import { composeSceneImage, renderNodeSceneImage, type ComposedSceneImage } from "@/lib/nodeSceneImages";
 import { ensurePortraitFor } from "@/lib/characterPortraits";
 import { byId, deepMergeContent, newId, PARENT_KIND, pillarOf, presentCharacters, stampIllus, stampInput, stampProse, type BeatContent, type DnaNode, type GameContent, type NodeContent, type NodeKind, type SceneContent, type ThreadRef } from "@/lib/novelDna";
+import { stageGeneratedProposal, type AgentProposal } from "@/lib/agentThread";
+import type { NewSubtree, NodeOp } from "@/lib/dnaChat";
 
 /** A short, legible chapter title from a beat's summary (the working title; the author renames). */
 function chapterTitleFromBeat(beat: DnaNode): string {
@@ -43,6 +45,32 @@ const wordCount = (t: string) => (t.trim() ? t.trim().split(/\s+/).length : 0);
  * `replaceIds` (regenerate) are deleted AFTER the new children land — so a regenerate swaps the unlocked
  * siblings without ever leaving the tree empty mid-flight; locked siblings are simply not passed in.
  */
+// Scenes REALIZE their beat (root fix, novel-dna-flow.md §7): inherit the beat's planned polarity, thread
+// anchors, set-piece placements, game moves, causal state and chaptering rather than re-inventing them
+// locally — so the global plan stays authoritative. Mutates `scenes` in place. Shared by the COMMIT path
+// (expandNode) and the PROPOSE path (generateExpansionOps) so a proposed scene set carries the SAME plan.
+export function realizeScenesFromBeat(beatNode: DnaNode, scenes: SceneContent[], startPosition: number): void {
+  const beat = beatNode.content as BeatContent;
+  scenes.forEach((sc) => {
+    if (beat.polarity && sc.value_shift && !sc.value_shift.polarity) sc.value_shift.polarity = beat.polarity;
+  });
+  // The beat's thread anchors land on its first (representative) scene — the beat's position in reading order
+  // is what the promise axis checks; which inner scene realizes it is fine detail.
+  if (scenes[0] && beat.threads?.length) scenes[0].threads = beat.threads as ThreadRef[];
+  // The beat's tentpole placements distribute across its scenes (one set-piece per scene, in order).
+  (beat.realizes ?? []).forEach((tpId, i) => { const s = scenes[i] ?? scenes[scenes.length - 1]; if (s) s.realizes_tentpole = tpId; });
+  // World-rule grounding lands on the LAST scene (the scene that resolves the beat's turn — the win fires the rule).
+  if (beat.grounds_in?.length && scenes.length) scenes[scenes.length - 1].grounds_in = beat.grounds_in;
+  // Game moves: `plays` advances the contest (first scene); `resolves` decides it (last scene).
+  if (beat.plays?.length && scenes[0]) scenes[0].plays = beat.plays;
+  if (beat.resolves?.length && scenes.length) scenes[scenes.length - 1].resolves = beat.resolves;
+  // CAUSALITY: the beat's produced/depended state lands on its first scene (the move that earns/spends it).
+  if (beat.establishes?.length && scenes[0]) scenes[0].establishes = beat.establishes;
+  if (beat.needs?.length && scenes[0]) scenes[0].needs = beat.needs;
+  // Chaptering: a beat opens a chapter (the legible default; author can merge/rename later).
+  if (startPosition === 0 && scenes[0] && !scenes[0].chapter_start) scenes[0].chapter_start = { title: chapterTitleFromBeat(beatNode) };
+}
+
 export async function expandNode(
   bookId: number, node: DnaNode, target: string, opts: { startPosition?: number; replaceIds?: string[] } = {},
 ): Promise<{ added: number }> {
@@ -106,35 +134,9 @@ export async function expandNode(
       }
     }
   }
-  // Scenes REALIZE their beat (root fix): inherit the beat's planned polarity and its thread schedule rather
-  // than re-inventing them locally — so the global plan stays authoritative (novel-dna-flow.md §7).
+  // Scenes REALIZE their beat (root fix): inherit the beat's plan rather than re-inventing it locally.
   if (res.childKind === "scene" && node.kind === "beat") {
-    const beat = node.content as BeatContent;
-    made.forEach((s) => {
-      const sc = s.content as SceneContent;
-      if (beat.polarity && sc.value_shift && !sc.value_shift.polarity) sc.value_shift.polarity = beat.polarity;
-    });
-    // The beat's thread anchors land on its first (representative) scene — the beat's position in reading
-    // order is what the promise axis checks; which inner scene realizes it is fine detail.
-    if (made[0] && beat.threads?.length) (made[0].content as SceneContent).threads = beat.threads as ThreadRef[];
-    // The beat's tentpole placements distribute across its scenes (one set-piece per scene, in order) so
-    // each pinned tentpole gets realized by a scene (closes the registry-not-placed gap — same as threads).
-    (beat.realizes ?? []).forEach((tpId, i) => { const s = made[i] ?? made[made.length - 1]; if (s) (s.content as SceneContent).realizes_tentpole = tpId; });
-    // The beat's world-rule grounding lands on its LAST scene (the scene that resolves the beat's turn — so
-    // the win fires the rule), making the climax's mechanism explicit (Lester Dent's law).
-    if (beat.grounds_in?.length && made.length) (made[made.length - 1].content as SceneContent).grounds_in = beat.grounds_in;
-    // The beat's game moves: `plays` lands on the first scene (the turn advances the contest); a `resolves`
-    // (the game is decided) lands on the LAST scene (the contest's outcome scene).
-    if (beat.plays?.length && made[0]) (made[0].content as SceneContent).plays = beat.plays;
-    if (beat.resolves?.length && made.length) (made[made.length - 1].content as SceneContent).resolves = beat.resolves;
-    // CAUSALITY: the beat's produced/depended state lands on its first scene (the move that earns/spends it).
-    if (beat.establishes?.length && made[0]) (made[0].content as SceneContent).establishes = beat.establishes;
-    if (beat.needs?.length && made[0]) (made[0].content as SceneContent).needs = beat.needs;
-    // Chaptering: a beat opens a chapter (the legible default; author can merge/rename later).
-    if (startPosition === 0 && made[0]) {
-      const sc = made[0].content as SceneContent;
-      if (!sc.chapter_start) sc.chapter_start = { title: chapterTitleFromBeat(node) };
-    }
+    realizeScenesFromBeat(node, made.map((s) => s.content as SceneContent), startPosition);
   }
   // Stamp each against its inputs (parent + the new siblings) so they don't read as stale on arrival.
   const index = byId([parentNode, ...made]);
@@ -213,4 +215,62 @@ async function persistBeatSheet(bookId: number, res: ExpandResult): Promise<{ ad
   await saveNodes(made.map((n) => stampInput(n, index)));
   for (const b of oldBeats) await deleteNode(b.id); // replace last — cascade removes their scenes
   return { added: made.length };
+}
+
+// ── The PROPOSE path — generate, but don't commit ────────────────────────────
+// expandNode commits the engine's output as authoritative, accepted nodes. generateExpansionOps runs the
+// SAME engine (callExpand) but converts the result into reviewable node OPS instead of saving — so a
+// post-pillar "✦ generate" can ride the agent thread's review channel (phantoms in the tree, apply/discard
+// in the rail) exactly like the chat agent's propose_node_ops. Engine quality + proposal review.
+const GEN_LABEL: Partial<Record<NodeKind, string>> = {
+  character: "cast", world_fact: "world", relationship: "relationships", tentpole: "set-pieces",
+  game: "games", thread: "threads", voice_profile: "voice", movement: "acts", scene: "scenes", location: "locations",
+};
+
+/** Generate via the dna-expand engine and return the result as reviewable ops (no writes). One network call
+ *  plus the SAME local enrichment the commit path applies (scene→beat realization). */
+export async function generateExpansionOps(bookId: number, node: DnaNode, target: string): Promise<{ ops: NodeOp[]; summary: string }> {
+  const res = await callExpand(bookId, node.id, target);
+
+  if (target === "logline") {
+    const text = (res.logline ?? "").trim();
+    if (!text) throw new Error("No logline was generated.");
+    return { ops: [{ op: "edit", id: node.id, content: { logline: text } }], summary: "Refine the logline" };
+  }
+  if (target === "prose") {
+    const text = (res.prose ?? "").trim();
+    if (!text) throw new Error("No prose was generated.");
+    return { ops: [{ op: "edit", id: node.id, content: { prose: { text, words: wordCount(text) } } }], summary: `Write prose (${wordCount(text)}w)` };
+  }
+  if (res.beatsheet) {
+    const movementIds = res.movementIds ?? [];
+    const entries = res.beats ?? [];
+    if (!movementIds.length || !entries.length) throw new Error("Empty beat sheet.");
+    // One replace_children per movement — mirrors persistBeatSheet's replace semantics, so the review shows a
+    // real before→after (the unlocked beats it removes + the new set) and a regenerate never duplicates beats.
+    const byMovement = new Map<string, NewSubtree[]>();
+    for (const e of entries) {
+      const pid = movementIds[e.movement] ?? movementIds[0];
+      (byMovement.get(pid) ?? byMovement.set(pid, []).get(pid)!).push({ content: e.content as NodeContent });
+    }
+    const ops: NodeOp[] = [...byMovement].map(([parentId, children]) => ({ op: "replace_children", parentId, childKind: "beat", children }));
+    return { ops, summary: `Generate beat sheet (${entries.length} beats)` };
+  }
+
+  const children = res.children ?? [];
+  if (!children.length) throw new Error("No children were generated.");
+  const childKind = (res.childKind ?? "scene") as NodeKind;
+  // Scenes inherit their beat's plan before being proposed (parity with the commit path).
+  if (childKind === "scene" && node.kind === "beat") realizeScenesFromBeat(node, children as SceneContent[], 0);
+  // parentId = the triggering node; applyNodeOps re-homes pillar-parented kinds (entities + movements) onto
+  // the pillar at apply, so the named parent only matters for the contextual rungs (scene→beat).
+  const ops: NodeOp[] = children.map((content) => ({ op: "add", kind: childKind, parentId: node.id, content }));
+  return { ops, summary: `Generate ${GEN_LABEL[childKind] ?? childKind} (${children.length})` };
+}
+
+/** Generate via the engine and STAGE the result as a proposal on the book's agent thread (review in the rail). */
+export async function proposeGeneration(bookId: number, node: DnaNode, target: string): Promise<void> {
+  const { ops, summary } = await generateExpansionOps(bookId, node, target);
+  const proposal: AgentProposal = { id: newId(), layer: "dna", summary, ops };
+  await stageGeneratedProposal(bookId, proposal);
 }

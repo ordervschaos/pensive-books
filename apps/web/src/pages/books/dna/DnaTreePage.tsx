@@ -13,6 +13,7 @@ import { describeOps, type NodeOp } from "@/lib/dnaChat";
 import { AgentRail } from "@/components/book/studio/AgentRail";
 import { sendAgentMessage, type AgentProposal } from "@/lib/agentThread";
 import { chooseNodeProposal, discardNodeProposals } from "@/lib/dnaProposals";
+import { expandNode, proposeGeneration } from "@/lib/dnaExpand";
 import { DNA_STAGES, dnaHealth } from "@/lib/dnaJourney";
 
 const getNumericId = (p: string | undefined) => { const m = p?.match(/^(\d+)/); return m ? parseInt(m[1]) : 0; };
@@ -500,6 +501,117 @@ function AddRow({ label, depth, onAdd }: { label: string; depth: number; onAdd: 
   );
 }
 
+// Post-pillar levels that the dna-expand engine can generate, mapped to their expand `target`. The cast &
+// world groups, the story acts, the beat sheet, scenes, and prose — every place that previously only had a
+// blank AddRow. (location has no engine target; movement→beats comes from the pillar-level "beatsheet", not
+// per-movement — so neither gets a GenerateRow.)
+const ENTITY_TARGET: Partial<Record<DnaNode["kind"], string>> = {
+  character: "cast", world_fact: "world", relationship: "relationships",
+  tentpole: "set-pieces", game: "games", thread: "threads", voice_profile: "voice_profile",
+};
+
+// A clickable "✦ generate <label>" affordance — runs the dna-expand engine and STAGES the result as a
+// reviewable proposal on the agent thread (phantoms appear in the tree; apply/discard in the rail). The
+// engine-quality sibling of AddRow (which inserts ONE blank node). Mirrors SpineLab's discipline: every AI
+// action surfaces as a proposal first, never an auto-commit.
+function GenerateRow({ label, depth, bookId, node, target, openRail }: {
+  label: string; depth: number; bookId: number; node: DnaNode; target: string; openRail: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const run = async () => {
+    if (busy) return;
+    setBusy(true);
+    try { await proposeGeneration(bookId, node, target); openRail(); }
+    catch (e) { alert(`Generate failed: ${(e as Error).message}`); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div style={detailRowStyle(depth)}>
+      <ConnectorTick depth={depth} />
+      <span style={{ width: 12, flexShrink: 0 }} />
+      <span onClick={() => void run()} style={{
+        fontFamily: "ui-monospace, monospace", fontSize: 11, letterSpacing: "0.04em",
+        color: busy ? "#6a6a9a" : "#a8a8ff", cursor: busy ? "default" : "pointer",
+        border: `1px solid ${busy ? "#8a8aff22" : "#8a8aff44"}`, borderRadius: 4, padding: "1px 8px", background: "#8a8aff10",
+      }}>{busy ? "generating…" : `✦ ${label}`}</span>
+    </div>
+  );
+}
+
+// Scenes in book order: pillar → movements → beats → scenes, each level sorted by position.
+function scenesInOrder(nodes: DnaNode[]): DnaNode[] {
+  const kids = (pid: string, kind: string) =>
+    nodes.filter((n) => n.parent_id === pid && n.kind === kind).sort((a, b) => a.position - b.position);
+  const pillar = nodes.find((n) => n.kind === "pillar");
+  if (!pillar) return [];
+  const out: DnaNode[] = [];
+  for (const mov of kids(pillar.id, "movement"))
+    for (const beat of kids(mov.id, "beat"))
+      out.push(...kids(beat.id, "scene"));
+  return out;
+}
+
+// Direct-commit prose write for a single scene — no proposal step.
+function WriteProseButton({ bookId, node, depth }: { bookId: number; node: DnaNode; depth: number }) {
+  const [busy, setBusy] = useState(false);
+  const run = async () => {
+    if (busy) return;
+    setBusy(true);
+    try { await expandNode(bookId, node, "prose"); }
+    catch (e) { alert(`Write prose failed: ${(e as Error).message}`); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div style={detailRowStyle(depth)}>
+      <ConnectorTick depth={depth} />
+      <span style={{ width: 12, flexShrink: 0 }} />
+      <span onClick={() => void run()} style={{
+        fontFamily: "ui-monospace, monospace", fontSize: 11, letterSpacing: "0.04em",
+        color: busy ? "#6a6a9a" : "#a8a8ff", cursor: busy ? "default" : "pointer",
+        border: `1px solid ${busy ? "#8a8aff22" : "#8a8aff44"}`, borderRadius: 4, padding: "1px 8px", background: "#8a8aff10",
+      }}>{busy ? "writing…" : "✦ write prose"}</span>
+    </div>
+  );
+}
+
+// Sequential prose writer for all prose-less scenes in book order.
+function WriteAllProseButton({ bookId, nodes, depth }: { bookId: number; nodes: DnaNode[]; depth: number }) {
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const pending = scenesInOrder(nodes).filter((s) => !(s.content as SceneContent).prose?.text?.trim());
+  if (!pending.length && !progress) return null;
+  const run = async () => {
+    if (progress) return;
+    const list = scenesInOrder(nodes).filter((s) => !(s.content as SceneContent).prose?.text?.trim());
+    if (!list.length) return;
+    setProgress({ done: 0, total: list.length });
+    for (let i = 0; i < list.length; i++) {
+      try {
+        await expandNode(bookId, list[i], "prose");
+        setProgress({ done: i + 1, total: list.length });
+      } catch (e) {
+        alert(`Write prose failed at scene ${i + 1}: ${(e as Error).message}`);
+        setProgress(null);
+        return;
+      }
+    }
+    setProgress(null);
+  };
+  const label = progress
+    ? `writing ${progress.done}/${progress.total}…`
+    : `✦ write all prose (${pending.length})`;
+  return (
+    <div style={detailRowStyle(depth)}>
+      <ConnectorTick depth={depth} />
+      <span style={{ width: 12, flexShrink: 0 }} />
+      <span onClick={() => void run()} style={{
+        fontFamily: "ui-monospace, monospace", fontSize: 11, letterSpacing: "0.04em",
+        color: progress ? "#6a6a9a" : "#a8a8ff", cursor: progress ? "default" : "pointer",
+        border: `1px solid ${progress ? "#8a8aff22" : "#8a8aff44"}`, borderRadius: 4, padding: "1px 8px", background: "#8a8aff10",
+      }}>{label}</span>
+    </div>
+  );
+}
+
 // A collapsible labeled section — pure layout, not a real node. `children` is whatever renders inside.
 // `alwaysShow` keeps an empty group visible (so its add affordance is reachable); `footer` renders after.
 function NodeGroup({ groupId, label, hint, count, depth, collapsedSet, onToggle, children, alwaysShow, footer, action }: {
@@ -875,7 +987,11 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
               return (
                 <NodeGroup key={kind} groupId={`${node.id}::world::${kind}`} label={label}
                   count={items.length} depth={depth + 2} collapsedSet={collapsedSet} onToggle={h.onToggle} alwaysShow
-                  footer={<>{phantoms(node.id, kind, depth + 3)}<AddRow label={kind} depth={depth + 3} onAdd={() => h.onAdd(node.id, kind)} /></>}>
+                  footer={<>
+                    {phantoms(node.id, kind, depth + 3)}
+                    {ENTITY_TARGET[kind] && <GenerateRow label={`generate ${label}`} depth={depth + 3} bookId={h.bookId} node={node} target={ENTITY_TARGET[kind]!} openRail={h.openRail} />}
+                    <AddRow label={kind} depth={depth + 3} onAdd={() => h.onAdd(node.id, kind)} />
+                  </>}>
                   {sub(items, depth + 3)}
                 </NodeGroup>
               );
@@ -883,7 +999,14 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
           </NodeGroup>
           <NodeGroup groupId={`${node.id}::story`} label="story" hint="the spine — acts in order"
             count={ladder.length} depth={depth + 1} collapsedSet={collapsedSet} onToggle={h.onToggle} alwaysShow
-            footer={<>{phantoms(node.id, "movement", depth + 2)}<AddRow label="movement" depth={depth + 2} onAdd={() => h.onAdd(node.id, "movement")} /></>}
+            footer={<>
+              {phantoms(node.id, "movement", depth + 2)}
+              <GenerateRow label="generate acts" depth={depth + 2} bookId={h.bookId} node={node} target="movements" openRail={h.openRail} />
+              {/* The beat sheet is generated globally off the pillar (across all acts), not per-movement — show it only once acts exist. */}
+              {ladder.some((c) => c.kind === "movement") && <GenerateRow label="generate beat sheet" depth={depth + 2} bookId={h.bookId} node={node} target="beatsheet" openRail={h.openRail} />}
+              <WriteAllProseButton bookId={h.bookId} nodes={nodes} depth={depth + 2} />
+              <AddRow label="movement" depth={depth + 2} onAdd={() => h.onAdd(node.id, "movement")} />
+            </>}
             action={ladder.length > 0 ? (
               <span onClick={() => h.onDiscardStory()}
                 title="Delete all movements, beats, scenes and prose"
@@ -926,9 +1049,14 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
           {node.kind === "scene" && (
             <ProseBlock node={node} depth={depth + 1} open={h.proseOpenSet.has(node.id)} onToggle={() => h.onToggleProse(node.id)} />
           )}
+          {node.kind === "scene" && !(node.content as SceneContent).prose?.text?.trim() && (
+            <WriteProseButton bookId={h.bookId} node={node} depth={depth + 1} />
+          )}
           {sub(kids, depth + 1)}
           {spineChildRow}
           {childAdd && phantoms(node.id, childAdd, depth + 1)}
+          {/* Beat → generate scenes (engine, proposed). Movement → beats has no per-movement target (pillar-level beat sheet), so only the blank AddRow there. */}
+          {node.kind === "beat" && <GenerateRow label="generate scenes" depth={depth + 1} bookId={h.bookId} node={node} target="scenes" openRail={h.openRail} />}
           {childAdd && <AddRow label={childAdd} depth={depth + 1} onAdd={() => h.onAdd(node.id, childAdd as DnaNode["kind"])} />}
         </>
       );

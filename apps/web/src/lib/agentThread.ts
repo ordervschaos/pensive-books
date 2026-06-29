@@ -89,6 +89,26 @@ export async function logAgentTurn(bookId: number, label: string, t: AgentStep["
   await supabase.from("book_agent_runs").update({ steps }).eq("id", data.id);
 }
 
+/** Stage a client-GENERATED proposal (produced by the dna-expand engine, not the chat agent) onto the book's
+ *  ONE agent thread, so it rides the SAME review channel as the agent's own propose_node_ops: the tree
+ *  overlays it as phantoms/marks, and the rail applies/discards it. Creates the thread row (idle) if none
+ *  exists yet; refuses while a turn is running (the edge fn owns the row's proposals[] then). */
+export async function stageGeneratedProposal(bookId: number, proposal: AgentProposal): Promise<void> {
+  const { data } = await supabase.from("book_agent_runs")
+    .select("id, status, proposals").eq("book_id", bookId).eq("kind", "thread").maybeSingle();
+  if (!data) {
+    const { error } = await supabase.from("book_agent_runs")
+      .insert({ book_id: bookId, kind: "thread", status: "idle", proposals: [proposal] });
+    if (error) throw new Error(error.message);
+    return;
+  }
+  if (data.status === "running" || data.status === "awaiting_input")
+    throw new Error("The agent is mid-turn — wait for it to finish, then generate.");
+  const next = [...(Array.isArray(data.proposals) ? (data.proposals as AgentProposal[]) : []), proposal];
+  const { error } = await supabase.from("book_agent_runs").update({ proposals: next }).eq("id", data.id);
+  if (error) throw new Error(error.message);
+}
+
 /** Apply a reviewed proposal: run its node ops against book_nodes, then drop it from the thread. Returns the
  *  validation so the rail can warn when the schema boundary rejected some ops (they didn't land). */
 export async function applyAgentProposal(bookId: number, threadId: number, proposal: AgentProposal, all: AgentProposal[]): Promise<OpValidation> {
