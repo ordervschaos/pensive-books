@@ -11,7 +11,7 @@
 // snapshot can't re-apply an `add` and duplicate nodes, and a poison item can't hot-loop). The autonomous
 // instruction is bounded by the run's MAX_TURNS server-side (continueAgent doesn't reset the turn budget).
 import { useEffect, useRef } from "react";
-import { applyAgentProposal, answerAgent, continueAgent, type AgentProposal, type AgentThreadRow } from "@/lib/agentThread";
+import { applyAgentProposal, answerAgent, continueAgent, discardAgentProposal, type AgentProposal, type AgentThreadRow } from "@/lib/agentThread";
 import { chooseNodeProposal } from "@/lib/dnaProposals";
 import type { DnaNode } from "@/lib/novelDna";
 
@@ -49,17 +49,28 @@ export function useAutoAccept({ enabled, bookId, row, nodes, refetch }: {
       run = () => answerAgent(row.id, AUTO_ANSWER);
     } else if (row.status === "idle" && proposals.length) {
       // A staged proposal (the agent's own edit OR an engine generation routed through the thread): apply it
-      // LIVE, then resume the run so the agent's next turn sees the updated tree.
+      // LIVE, then ALWAYS resume the run so the agent's next turn sees the updated tree. Crucially, resume
+      // even if the apply fails — otherwise a single un-appliable proposal leaves the run idle-stuck forever
+      // (the watchdog only revives 'running'). A hard failure → discard it (a discarded card) so the agent
+      // isn't re-confronted with the same bad change, then continue.
       const p = proposals[0];
+      const all = (row.proposals ?? []) as AgentProposal[];
       key = p.id;
-      run = () => applyAgentProposal(bookId, row.id, p, (row.proposals ?? []) as AgentProposal[]).then(() => continueAgent(row.id));
+      run = async () => {
+        try { await applyAgentProposal(bookId, row.id, p, all); }
+        catch { await discardAgentProposal(row.id, p.id, all).catch(() => {}); }
+        finally { await continueAgent(row.id).catch(() => {}); }
+      };
     } else if (row.status === "idle" && optionNode) {
       // Staged options the author would pick among: commit the sharpened one if present, else the first, then
       // resume the run (the edge case where the agent staged options in autonomous mode).
       const props = optionNode.proposals!;
       const pick = props.find((p) => p.source === "eval") ?? props[0];
       key = optKey(optionNode);
-      run = () => chooseNodeProposal(optionNode, pick.id, nodes).then(() => continueAgent(row.id));
+      run = async () => {
+        try { await chooseNodeProposal(optionNode, pick.id, nodes); } catch { /* leave for the human */ }
+        finally { await continueAgent(row.id).catch(() => {}); }
+      };
     } else {
       return; // nothing to auto-accept
     }

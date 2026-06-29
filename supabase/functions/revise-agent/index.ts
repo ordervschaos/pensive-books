@@ -33,6 +33,7 @@ import { sanitizePlan, type RevisionPlan } from "../_shared/revision-plan.ts";
 import { judgeProse } from "../_shared/mandate-gate.ts";
 
 const MAX_TURNS = 20;          // model calls per run — the runaway guard
+const AUTO_MAX_TURNS = 50;     // autonomous threads iterate change-by-change, so they get a higher ceiling
 // One call must finish inside the ~150s worker wall clock (with headroom for the row writes and
 // the chain dispatch). An abort still BILLS — the API keeps generating after we hang up — so the
 // real defense is keeping turns short (effort: medium below), not this timer.
@@ -339,9 +340,13 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
     await service.from("book_agent_runs").update({ status: "cancelled" }).eq("id", runId);
     return;
   }
-  if (row.turns >= MAX_TURNS) {
+  // Autonomous threads iterate one change per turn (plus a read or two), so they need a higher ceiling than
+  // a single eval pass — but still bounded so a runaway can't loop forever.
+  const auto = row.kind === "thread" && !!row.context_auto;
+  const maxTurns = auto ? AUTO_MAX_TURNS : MAX_TURNS;
+  if (row.turns >= maxTurns) {
     await service.from("book_agent_runs")
-      .update({ status: "error", error: `The agent ran past ${MAX_TURNS} turns without finishing — stopped as a safety measure.` })
+      .update({ status: "error", error: `The agent ran past ${maxTurns} turns without finishing — stopped as a safety measure.` })
       .eq("id", runId);
     return;
   }
@@ -357,7 +362,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
     const isThread = row.kind === "thread";
     const scope = row.context_scope;
     const effort = row.context_effort ?? "high";
-    const auto = isThread && !!row.context_auto; // autonomous mode: never park, commit own picks
+    // `auto` (autonomous mode: never park, commit own picks) computed above for the turn ceiling.
     const system = isThread ? await threadSystem(service, row.book_id, scope, row.context_analysis, effort, auto) : SYSTEM;
     const tools = isThread ? threadToolsFor(scope) : TOOLS;
     // Count the turn BEFORE the call: a hard worker death mid-call still consumes budget, so a
@@ -1107,7 +1112,7 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
   // Autonomous mode: the author is AWAY. The agent must carry every request to a committed change with no
   // human gate — it makes the option choices itself and never waits. (The client auto-applies what it stages.)
   const autoLine = auto
-    ? "\n\nAUTONOMOUS MODE — the author has stepped away and CANNOT review, pick, or answer. Carry every request all the way to a finished result yourself, then conclude:\n• Make ONE change per turn with propose_node_ops. It is APPLIED LIVE immediately — there is no review step, and your NEXT turn shows the updated tree. Don't say \"I propose\" or wait for approval; just make the change, then continue.\n• NEVER call ask_author. At a creative fork, decide with your best judgment and proceed.\n• Prefer to commit directly: when you'd weigh options, just pick the strongest and write it with propose_node_ops. (Avoid propose_options in autonomous mode — there's no one to pick.)\n• ALWAYS CONCLUDE: once the request is fully handled, call finish with a one-line summary of what you changed. Don't stop mid-thought after a change — keep going until you finish."
+    ? "\n\nAUTONOMOUS MODE — the author has stepped away and CANNOT review, pick, or answer. Carry every request all the way to a finished result yourself, then conclude:\n• Make ONE change per turn with propose_node_ops. It is APPLIED LIVE immediately — there is no review step, and your NEXT turn shows the updated tree. Don't say \"I propose\" or wait for approval; just make the change, then continue.\n• DON'T OVER-READ. The full DNA tree (all structure — movements, beats, scene plans) is ALREADY in your context above. Only use read_node for a scene's PROSE; never read_node a movement/beat/scene just to see its plan — you can already see it. Act, don't explore.\n• NEVER call ask_author. At a creative fork, decide with your best judgment and proceed.\n• Prefer to commit directly: when you'd weigh options, just pick the strongest and write it with propose_node_ops. (Avoid propose_options in autonomous mode — there's no one to pick.)\n• ALWAYS CONCLUDE: once the request is fully handled, call finish with a one-line summary of what you changed. Don't stop mid-thought after a change — keep going until you finish."
     : "";
   return `${SYSTEM_THREAD}${scopeLine}${effortLine}${autoLine}\n\n${blocks.join("\n\n")}`;
 }
