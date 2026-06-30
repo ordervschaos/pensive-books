@@ -2319,7 +2319,7 @@ export default function DnaTreePage() {
   const [proseOpenSet, setProseOpenSet] = useState<Set<string>>(new Set());
   const [writingProseIds, setWritingProseIds] = useState<Set<string>>(new Set());
   const onProseWriting = useCallback((id: string, busy: boolean) => {
-    setWritingProseIds((prev) => { const next = new Set(prev); busy ? next.add(id) : next.delete(id); return next; });
+    setWritingProseIds((prev) => { const next = new Set(prev); if (busy) next.add(id); else next.delete(id); return next; });
   }, []);
   const [proseReaderSceneId, setProseReaderSceneId] = useState<string | null>(null); // prose reader modal
   const toggleProse = useCallback((id: string) => {
