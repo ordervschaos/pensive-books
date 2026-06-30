@@ -57,7 +57,7 @@ export function useAutoAccept({ enabled, bookId, row, nodes, refetch }: {
       const all = (row.proposals ?? []) as AgentProposal[];
       key = p.id;
       run = async () => {
-        try { await applyAgentProposal(bookId, row.id, p, all); }
+        try { await applyAgentProposal(bookId, row.id, p, all, nodes); }
         catch { await discardAgentProposal(row.id, p.id, all).catch(() => {}); }
         finally { await continueAgent(row.id).catch(() => {}); }
       };

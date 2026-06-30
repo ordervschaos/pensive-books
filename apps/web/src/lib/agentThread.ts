@@ -8,7 +8,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { TaskRow } from "@/hooks/useLatestTaskRow";
 import { applyNodeOps, type NodeOp, type OpValidation } from "@/lib/dnaChat";
-import type { NodeKind } from "@/lib/novelDna";
+import type { DnaNode, NodeKind } from "@/lib/novelDna";
 
 export interface AgentStep {
   // user = the author's message · note = the agent's reply/narration · read = a node it read ·
@@ -35,9 +35,11 @@ export const ASPECT_KINDS: Record<Aspect, NodeKind[]> = {
   prose: ["scene"],
 };
 
-// A reviewable change the agent proposes against the DNA tree; the author applies it through the
-// existing book_nodes write path (applyNodeOps). See docs/agent-rail.md.
-export interface AgentProposal { id: string; layer: "dna"; summary: string; ops: NodeOp[] }
+// A reviewable change the agent proposes. layer 'dna' = node ops applied through the book_nodes write path
+// (applyNodeOps). layer 'prose-render' = a request to (re)generate scene prose: ops is empty, sceneIds names
+// the scenes, and Apply runs the v2 prose pipeline client-side (docs/agent-context-model.md) — the agent
+// never generates prose itself (it's a long browser-streamed render). See docs/agent-rail.md.
+export interface AgentProposal { id: string; layer: "dna" | "prose-render"; summary: string; ops: NodeOp[]; sceneIds?: string[] }
 
 // An archived conversation (the "+ New chat" snapshot), kept on the row for the history viewer.
 export interface AgentSession { steps: AgentStep[]; transcript: unknown[]; proposals: AgentProposal[]; ended_at: string }
@@ -125,7 +127,19 @@ export async function stageGeneratedProposal(bookId: number, proposal: AgentProp
 /** Apply a reviewed proposal: run its node ops against book_nodes, then resolve it on the thread — drop it
  *  from proposals[] and leave an `applied` step (a collapsed card) so the chat keeps the context of what
  *  changed. Returns the validation so the rail can warn when the schema boundary rejected some ops. */
-export async function applyAgentProposal(bookId: number, threadId: number, proposal: AgentProposal, all: AgentProposal[]): Promise<OpValidation> {
+export async function applyAgentProposal(bookId: number, threadId: number, proposal: AgentProposal, all: AgentProposal[], nodes: DnaNode[] = []): Promise<OpValidation> {
+  if (proposal.layer === "prose-render") {
+    // Delegate to the v2 prose pipeline — expandNode streams off-worker (/api/stream-prose) + saves. The
+    // dynamic import breaks the agentThread ↔ dnaExpand cycle (dnaExpand → stageGeneratedProposal → here).
+    const { expandNode } = await import("@/lib/dnaExpand");
+    const index = new Map(nodes.map((n) => [n.id, n]));
+    for (const id of proposal.sceneIds ?? []) {
+      const scene = index.get(id);
+      if (scene) await expandNode(bookId, scene, "prose");
+    }
+    await resolveProposal(threadId, proposal, "applied", all);
+    return { ok: [], rejected: [] };
+  }
   const validation = await applyNodeOps(bookId, proposal.ops);
   await resolveProposal(threadId, proposal, "applied", all);
   return validation;

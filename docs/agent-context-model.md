@@ -1,8 +1,12 @@
 # Agent context model — anchors, not fences
 
-Status: spec (2026-06-30). Supersedes the aspect-scope filter in `AgentRail`. Builds on
-[agent-rail.md](agent-rail.md) (one agent thread per book) and the v2 prose pipeline
+Status: SHIPPED (2026-06-30) — all three slices landed. Supersedes the aspect-scope filter in `AgentRail`.
+Builds on [agent-rail.md](agent-rail.md) (one agent thread per book) and the v2 prose pipeline
 ([dna-streaming-proxy] / `dnaExpand.expandNode`).
+
+- Slice 1 — scope fence removed. Commit `01383bd` (revise-agent deployed).
+- Slice 2 — context tray. Rail side `007970b`; DnaTreePage side rides the author's tree-connector WIP.
+- Slice 3 — prose-render delegation (`propose_prose_render` → client `expandNode`). revise-agent deployed.
 
 ## Thesis
 

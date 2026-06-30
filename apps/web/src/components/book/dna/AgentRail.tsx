@@ -195,13 +195,13 @@ export function AgentRail({ bookId, nodes, settings, attachedIds = [], onDetach 
     if (!row || applyingId) return;
     setApplyingId(p.id);
     try {
-      const { rejected } = await applyAgentProposal(bookId, row.id, p, proposals);
+      const { rejected } = await applyAgentProposal(bookId, row.id, p, proposals, nodes);
       refetch();
       if (rejected.length) {
         const reasons = rejected.map((r) => r.reasons[0]).filter(Boolean).slice(0, 3).join("; ");
         toast({ title: `Applied with ${rejected.length} skipped`, description: `Some changes didn't fit the schema and weren't saved: ${reasons}`, variant: "destructive" });
       } else {
-        toast({ title: "Applied", description: p.summary || "Change applied to the DNA tree." });
+        toast({ title: p.layer === "prose-render" ? "Prose rendered" : "Applied", description: p.summary || "Change applied to the DNA tree." });
       }
     } catch (e) {
       toast({ title: "Couldn't apply", description: String((e as Error)?.message ?? e), variant: "destructive" });
@@ -503,37 +503,56 @@ function ResolvedCard({ step }: { step: AgentStep }) {
 function ProposalCard({ proposal, nodes, applying, onApply, onDiscard }: {
   proposal: AgentProposal; nodes: DnaNode[]; applying: boolean; onApply: () => void; onDiscard: () => void;
 }) {
-  const rows = describeOps(proposal.ops, nodes);
+  const isProseRender = proposal.layer === "prose-render";
+  const index = byId(nodes);
+  const scenes = isProseRender ? (proposal.sceneIds ?? []).map((id) => index.get(id)).filter((n): n is DnaNode => !!n) : [];
+  const rows = isProseRender ? [] : describeOps(proposal.ops, nodes);
   return (
     <Panel className="border-[hsl(var(--pv-accent))]/45 px-4 py-3.5">
       <div className="flex items-start justify-between gap-3">
-        <Eyebrow tone="accent">Proposed change</Eyebrow>
+        <Eyebrow tone="accent">{isProseRender ? "Render prose" : "Proposed change"}</Eyebrow>
         <button type="button" onClick={onDiscard} title="Discard" className="shrink-0 text-[hsl(var(--pv-text-faint))] hover:text-foreground"><X className="h-4 w-4" /></button>
       </div>
       {proposal.summary && <p className="pv-serif mt-1.5 text-[13.5px] leading-[1.55] text-[hsl(var(--pv-text-muted))]">{proposal.summary}</p>}
-      <ul className="mt-3 space-y-2.5">
-        {rows.map((row, i) => (
-          <li key={i} className="border-l-2 border-[hsl(var(--pv-border-soft))] pl-2.5">
-            <div className="flex items-baseline gap-2">
-              <span className={`pv-mono text-[9.5px] uppercase tracking-[0.12em] ${row.verb === "delete" ? "text-red-600" : row.verb === "add" ? "text-emerald-600" : "text-amber-600"}`}>{row.verb}</span>
-              <span className="pv-serif text-[13px] text-foreground">{row.kind} · {row.label}</span>
-              {row.parentLabel && <span className="pv-serif text-[11.5px] italic text-[hsl(var(--pv-text-faint))]">in {row.parentLabel}</span>}
-              {!!row.restales && <span className="pv-mono text-[9px] text-[hsl(var(--pv-text-faint))]">±{row.restales}</span>}
-            </div>
-            {row.fields.map((f) => (
-              <div key={f.key} className="mt-0.5">
-                <span className="pv-mono text-[9px] uppercase tracking-[0.1em] text-[hsl(var(--pv-text-faint))]">{f.key}</span>
-                {f.old && <p className="pv-serif text-[12px] leading-[1.45] text-[hsl(var(--pv-text-faint))] line-through decoration-[hsl(var(--pv-text-faint))]/40">{f.old}</p>}
-                <p className="pv-serif text-[12.5px] leading-[1.5] text-[hsl(var(--pv-text-muted))]">{f.next}</p>
-              </div>
+      {isProseRender ? (
+        <div className="mt-3 space-y-2">
+          <p className="pv-serif text-[12px] italic leading-[1.5] text-[hsl(var(--pv-text-faint))]">
+            Applying streams fresh prose for {scenes.length} scene{scenes.length === 1 ? "" : "s"} in your browser — in the book's voice, with full continuity. This can take a minute per scene.
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {scenes.map((n) => (
+              <span key={n.id} className="inline-flex items-center gap-1.5 rounded-full border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/40 px-2 py-0.5 pv-serif text-[12px] text-foreground">
+                <span className="pv-mono text-[9px] uppercase tracking-[0.08em] text-[hsl(var(--pv-accent))]">scene</span>
+                <span className="max-w-[170px] truncate">{nodeLabel(n)}</span>
+              </span>
             ))}
-          </li>
-        ))}
-      </ul>
+          </div>
+        </div>
+      ) : (
+        <ul className="mt-3 space-y-2.5">
+          {rows.map((row, i) => (
+            <li key={i} className="border-l-2 border-[hsl(var(--pv-border-soft))] pl-2.5">
+              <div className="flex items-baseline gap-2">
+                <span className={`pv-mono text-[9.5px] uppercase tracking-[0.12em] ${row.verb === "delete" ? "text-red-600" : row.verb === "add" ? "text-emerald-600" : "text-amber-600"}`}>{row.verb}</span>
+                <span className="pv-serif text-[13px] text-foreground">{row.kind} · {row.label}</span>
+                {row.parentLabel && <span className="pv-serif text-[11.5px] italic text-[hsl(var(--pv-text-faint))]">in {row.parentLabel}</span>}
+                {!!row.restales && <span className="pv-mono text-[9px] text-[hsl(var(--pv-text-faint))]">±{row.restales}</span>}
+              </div>
+              {row.fields.map((f) => (
+                <div key={f.key} className="mt-0.5">
+                  <span className="pv-mono text-[9px] uppercase tracking-[0.1em] text-[hsl(var(--pv-text-faint))]">{f.key}</span>
+                  {f.old && <p className="pv-serif text-[12px] leading-[1.45] text-[hsl(var(--pv-text-faint))] line-through decoration-[hsl(var(--pv-text-faint))]/40">{f.old}</p>}
+                  <p className="pv-serif text-[12.5px] leading-[1.5] text-[hsl(var(--pv-text-muted))]">{f.next}</p>
+                </div>
+              ))}
+            </li>
+          ))}
+        </ul>
+      )}
       <div className="mt-3.5 flex items-center gap-4">
         <button type="button" onClick={onApply} disabled={applying}
           className="pv-serif inline-flex items-center gap-1.5 rounded-full bg-primary px-4 py-2 text-[13.5px] text-primary-foreground disabled:opacity-50">
-          {applying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} Apply
+          {applying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} {isProseRender ? (applying ? "Rendering…" : "Render") : "Apply"}
         </button>
         <ActionLink tone="faint" onClick={onDiscard}>discard</ActionLink>
       </div>

@@ -61,7 +61,10 @@ type NodeOp =
 
 // A reviewable change the agent proposes against the DNA tree; the author applies it (applyNodeOps)
 // through the existing book_nodes write path (docs/agent-rail.md). One layer now: the DNA tree.
-interface AgentProposal { id: string; layer: "dna"; summary: string; ops: NodeOp[] }
+// layer 'dna' = node ops the author applies to book_nodes. layer 'prose-render' = a request to (re)generate
+// scene prose; ops is empty and sceneIds names the scenes — the AUTHOR applies it and the prose streams in
+// their browser via the v2 pipeline (docs/agent-context-model.md). The agent never generates prose itself.
+interface AgentProposal { id: string; layer: "dna" | "prose-render"; summary: string; ops: NodeOp[]; sceneIds?: string[] }
 
 interface RunRow {
   id: number;
@@ -515,6 +518,34 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
       return;
     }
 
+    // ── propose_prose_render (thread): stage a "render prose" request and end the turn ──
+    // The agent never generates prose itself (it's a long browser-streamed render); this records the
+    // request in proposals[] and the AUTHOR applies it — the prose then streams in their browser via the
+    // v2 pipeline (docs/agent-context-model.md). Same review channel as propose_node_ops.
+    const renderCall = toolUses.find((t) => t.name === "propose_prose_render");
+    if (renderCall) {
+      const outcome = await proposeProseRender(service, row.book_id, renderCall.input as { summary?: string; sceneIds?: unknown });
+      if (outcome.ok) {
+        steps.push({ t: "plan", label: outcome.proposal.summary });
+        const proposals = [...(row.proposals ?? []), outcome.proposal];
+        const ack = auto
+          ? `✓ Render requested and applied (autonomous mode — the scene prose was (re)generated in the author's browser). Your next turn will show the updated scene; continue if more is needed, or call finish.`
+          : null;
+        transcript.push({ role: "user", content: ack
+          ? toolUses.map((t) => ({ type: "tool_result", tool_use_id: t.id, content: t.id === renderCall.id ? ack : "ok" }))
+          : ackResults(toolUses.map((t) => t.id)) });
+        await service.from("book_agent_runs").update({ status: "idle", transcript, steps, proposals }).eq("id", runId);
+        return; // the proposal waits for the author to apply (the prose render runs client-side)
+      }
+      const results = await toolResults(service, row.book_id, toolUses, steps, {
+        [renderCall.id]: `The render request was rejected: ${outcome.error} Fix it and call propose_prose_render again, or just reply.`,
+      }, auto);
+      transcript.push({ role: "user", content: results });
+      await service.from("book_agent_runs").update({ transcript, steps }).eq("id", runId);
+      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("revise-agent", { runId }));
+      return;
+    }
+
     // ── propose_options (thread): stage 2–4 alternatives ON the node and end the turn ──
     // The candidates land on book_nodes.proposals (NOT the run's proposals[]) — the tree's picker renders
     // them and chooseProposal commits one. The agent's narration is the reply; the pick waits for the author.
@@ -674,48 +705,6 @@ async function toolResults(
         type: "tool_result", tool_use_id: t.id,
         content: `[${n.id}${n.authoring?.locked ? " · LOCKED" : ""}] ${n.kind}: ${JSON.stringify(n.content)}` + (childLines ? `\nchildren:\n${childLines}` : ""),
       });
-    } else if (t.name === "render_scene_prose") {
-      const id = String((t.input as { id?: string })?.id ?? "");
-      const { data: node } = await service
-        .from("book_nodes").select("id, kind, content, authoring, book_id").eq("id", id).maybeSingle();
-      if (!node || (node as { book_id?: number }).book_id !== bookId) {
-        results.push({ type: "tool_result", tool_use_id: t.id, content: `No node with id ${id} in this book.`, is_error: true });
-        continue;
-      }
-      const n = node as { id: string; kind: string; content: Record<string, unknown>; authoring: Record<string, unknown> };
-      if (n.kind !== "scene") {
-        results.push({ type: "tool_result", tool_use_id: t.id, content: `Node ${id} is a ${n.kind}, not a scene — only scenes have prose.`, is_error: true });
-        continue;
-      }
-      // Render via the deployed dna-expand (the single source of the DNA prose pipeline), authenticated
-      // server-to-server with the chain secret, then persist the prose to the scene node.
-      const url = `${Deno.env.get("SUPABASE_URL")}/functions/v1/dna-expand`;
-      try {
-        const resp = await fetch(url, {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""}`,
-            "x-chain": Deno.env.get("CHAIN_SECRET") ?? "",
-          },
-          body: JSON.stringify({ bookId, nodeId: id, target: "prose" }),
-        });
-        const out = (await resp.json().catch(() => ({}))) as { prose?: string; error?: string };
-        const prose = (out.prose ?? "").trim();
-        if (!resp.ok || out.error || !prose) {
-          results.push({ type: "tool_result", tool_use_id: t.id, content: `Render failed: ${out.error ?? `status ${resp.status}`}`, is_error: true });
-          continue;
-        }
-        const words = prose.split(/\s+/).filter(Boolean).length;
-        await service.from("book_nodes").update({
-          content: { ...n.content, prose: { text: prose, words } },
-          authoring: { ...n.authoring, source: n.authoring.source === "user" ? "ai_then_user" : "ai", status: "accepted" },
-        }).eq("id", id);
-        steps.push({ t: "read", label: `Drafted prose for scene “${nodeHandle(n.content)}” (${words} words).` });
-        results.push({ type: "tool_result", tool_use_id: t.id, content: `Rendered ${words} words and saved to scene ${id}. Prose:\n\n${prose.slice(0, MAX_PAGE_CHARS)}` });
-      } catch (e) {
-        results.push({ type: "tool_result", tool_use_id: t.id, content: `Render failed: ${String((e as Error)?.message ?? e)}`, is_error: true });
-      }
     } else if (t.name === "check_against_contract") {
       const id = String((t.input as { id?: string })?.id ?? "");
       const { data: node } = await service
@@ -921,13 +910,20 @@ function nodeHandle(content: Record<string, unknown> | null | undefined): string
 
 const THREAD_DNA_TOOLS = [
   {
-    name: "render_scene_prose",
-    description: "Generate (draft) the PROSE for a scene from its plan, in the book's voice, and save it to the scene's content.prose.text. Pass the scene node's id. Use this to draft a scene the author asked you to write, or before checking it against the contract. Returns the drafted prose. Overwrites any existing prose on that scene, so confirm with the author first if the scene already has prose you'd be replacing.",
-    input_schema: { type: "object", properties: { id: { type: "string", description: "The scene node's id." } }, required: ["id"] },
+    name: "propose_prose_render",
+    description: "Request that the book's prose pipeline (re)generate the FULL prose for one or more scenes — use this whenever the author asks you to write or rewrite a scene's prose from scratch. You do NOT generate the prose yourself: full prose generation is a long, browser-streamed render the author runs (it can't run inside this turn), so this stages a reviewable 'render prose' request the author applies — it then streams in their browser, in the book's voice, with full continuity. Pass the scene node id(s) (reading order) and a one-line summary. For SMALL wording fixes to EXISTING prose, use propose_node_ops to edit content.prose.text directly instead — only use this for full (re)generation. This records the request and ENDS your turn.",
+    input_schema: {
+      type: "object",
+      properties: {
+        summary: { type: "string", description: "One line: which scene(s) and why you're (re)generating their prose." },
+        sceneIds: { type: "array", items: { type: "string" }, description: "The scene node id(s) to (re)generate prose for, in reading order." },
+      },
+      required: ["summary", "sceneIds"],
+    },
   },
   {
     name: "check_against_contract",
-    description: "Judge a scene's PROSE against the book's brief mandate (genre, heat, success criteria). Pass the scene node's id; the scene must already have prose (content.prose.text) — render or write it first if it's empty. Returns a per-axis verdict (pass / partial / fail) with evidence, so you can tell the author whether the draft delivers what the brief promised. Read the scene first if you haven't.",
+    description: "Judge a scene's PROSE against the book's brief mandate (genre, heat, success criteria). Pass the scene node's id; the scene must already have prose (content.prose.text) — if it's empty, propose_prose_render first. Returns a per-axis verdict (pass / partial / fail) with evidence, so you can tell the author whether the draft delivers what the brief promised. Read the scene first if you haven't.",
     input_schema: { type: "object", properties: { id: { type: "string", description: "The scene node's id." } }, required: ["id"] },
   },
   {
@@ -997,7 +993,7 @@ You can do four things:
 1. DISCUSS — answer, summarize, pressure-test. Reply in plain MARKDOWN prose and just end your turn (no tool needed). Be concrete, grounded in the real tree, referencing nodes by their [id]. When a node has PENDING OPTIONS and the author asks which is strongest, just RECOMMEND one in prose (name its option number + a one-line reason tied to the brief) — committing the pick is theirs, in the tree.
 2. CHANGE THE TREE — when the author asks for a change (or agrees to one), call propose_node_ops with edit/add/delete ops over the real ids. The author reviews the diff and applies it; descendants of an edited node go stale and are regenerated later. NEVER touch a LOCKED node. Don't propose unless asked — talk first.
 3. OFFER OPTIONS — when the author asks for alternatives/options, or to break a node out of its one obvious version, call propose_options with the node's [id] and 2–4 COMPLETE content objects, meaningfully different FROM EACH OTHER but each one HONORING the node's ancestors as fixed: a child elaborates the logline/premise above, it never rewrites it. Vary only what the parent leaves open (premise options keep the logline's protagonist/inciting/goal/obstacle/stakes and vary the dramatic question + shape); never reshape an ancestor into a different story, never near-duplicates. The author picks one in the tree. Use this only for choose-among-N; a single revision is propose_node_ops.
-4. DRAFT & CHECK PROSE — call render_scene_prose with a scene's [id] to draft (or redraft) its prose from its plan, in the book's voice (it saves to the scene and returns the text). Call check_against_contract with a scene's [id] to judge its existing prose against the brief mandate (genre, heat, voice, success criteria) and get a per-axis verdict you relay to the author. A common request — "write the first scene and see if it meets the brief" — is render_scene_prose then check_against_contract on the same scene. render OVERWRITES existing prose, so if a scene already has prose, confirm before redrafting.
+4. PROSE — to WRITE or REWRITE a scene's full prose, call propose_prose_render with the scene [id](s): you do NOT generate prose yourself (it's a long, browser-streamed render the author runs); you stage a request the author applies, and it streams in their browser. For SMALL wording fixes to EXISTING prose, use propose_node_ops to edit content.prose.text directly. Call check_against_contract with a scene's [id] to judge its EXISTING prose against the brief mandate (genre, heat, voice, success criteria) and relay the per-axis verdict. A common request — "write the first scene and see if it meets the brief" — is propose_prose_render (the author applies it; prose streams in) then check_against_contract once the scene has prose.
    • REBUILDS: to replace a whole level — "rebuild the acts", "4 acts with all-new beats" — use ONE replace_children op (parentId = the level's parent, e.g. the pillar for acts; childKind = act; children = the new acts, each nesting its beats). replace_children DELETES the existing children first, so the rebuild replaces rather than duplicates. Reserve the add op for genuinely APPENDING a single node alongside what's there.
 
 ${CONTENT_SCHEMAS}
@@ -1050,6 +1046,26 @@ async function proposeNodeOps(
     return { ok: false, error: kinds ? `No valid ops — every op must target a non-locked node whose kind is in scope (${scope!.join(", ")}), or add a child of one.` : "No valid ops — reference real, non-locked node ids." };
   }
   return { ok: true, proposal: { id: crypto.randomUUID(), layer: "dna", summary: String(input.summary ?? "Proposed change").trim() || "Proposed change", ops } };
+}
+
+// Validate a prose-render request: every id must be a real, non-locked SCENE in this book. Builds the
+// reviewable proposal (layer 'prose-render', no ops). The author applies it and the prose streams in their
+// browser via the v2 pipeline — the agent never renders prose in-worker (docs/agent-context-model.md).
+async function proposeProseRender(
+  service: SupabaseClient,
+  bookId: number,
+  input: { summary?: string; sceneIds?: unknown },
+): Promise<{ ok: true; proposal: AgentProposal } | { ok: false; error: string }> {
+  const { data: rows } = await service.from("book_nodes").select("id, kind, authoring").eq("book_id", bookId);
+  const byId = new Map(((rows ?? []) as { id: string; kind: string; authoring: { locked?: boolean } | null }[]).map((n) => [n.id, n]));
+  const ids = Array.isArray(input.sceneIds) ? input.sceneIds.filter((x): x is string => typeof x === "string") : [];
+  const sceneIds: string[] = [];
+  for (const id of ids) {
+    const n = byId.get(id);
+    if (n && n.kind === "scene" && !n.authoring?.locked && !sceneIds.includes(id)) sceneIds.push(id);
+  }
+  if (sceneIds.length === 0) return { ok: false, error: "No valid scene ids — propose_prose_render targets real, non-locked SCENE nodes by their [id]." };
+  return { ok: true, proposal: { id: crypto.randomUUID(), layer: "prose-render", summary: String(input.summary ?? "Render prose").trim() || "Render prose", ops: [], sceneIds } };
 }
 
 // Stage 2–4 alternative content objects ON a node as pickable options (the options/picker channel). The
