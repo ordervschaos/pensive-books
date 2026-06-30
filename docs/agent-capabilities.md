@@ -88,7 +88,9 @@ The agent doesn't just react; it **leads the author through the DNA one rung at 
 - **Nothing to "remove when done."** Because the objective is recomputed from the tree each message, the
   instant a gate is satisfied the next turn already points at the next rung. The tree is the only state.
 - It's an **anchor, not a fence**: the whole tree is still visible, and if the author steers elsewhere the
-  agent follows. The `AgentRail` also surfaces the now-step as an idle "Next step" nudge.
+  agent follows. The `AgentRail` surfaces the now-step as a "Next step" card **in the chat feed** — shown
+  as the last item only when the agent's work is settled (idle, nothing running/awaiting, no proposal to
+  review, no error), so it reads as "here's what's next" rather than a pinned CTA.
 - **Steps 9–10 (render → pages, publish) are a hand-off, not a write.** Per limits #6/#7 below the agent
   can't cross the render seam, so the final objective tells it to *surface the Render/Publish actions* (and
   the reader URL), never to perform them.

@@ -289,6 +289,22 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [],
             <ProposalCard key={p.id} proposal={p} nodes={nodes}
               applying={applyingId === p.id} onApply={() => void apply(p)} onDiscard={() => void discard(p)} />
           ))}
+          {/* Guided-flow nudge (lib/dnaJourney.currentObjective) — appears in the feed as the LAST item
+              only when the agent's work is settled: idle, nothing running/awaiting, no proposal to review,
+              no error. So it reads as "here's what's next", not a pinned CTA. One click hands the step to
+              the agent (the objective itself already rides every message's context). */}
+          {!active && !optimistic && proposals.length === 0 && row?.status !== "error" && objectiveHeadline && (
+            <button type="button" onClick={() => void send("Let's work on the next step.")} disabled={busy}
+              title="Let the agent lead you through this step"
+              className="flex w-full items-center gap-2.5 rounded-2xl border border-dashed border-[hsl(var(--pv-accent))]/35 bg-[hsl(var(--pv-accent))]/[0.05] px-3.5 py-2.5 text-left transition-colors hover:border-[hsl(var(--pv-accent))]/60 hover:bg-[hsl(var(--pv-accent))]/[0.08] disabled:opacity-50">
+              <Wand2 className="h-4 w-4 shrink-0 text-[hsl(var(--pv-accent))]" />
+              <span className="min-w-0 flex-1">
+                <span className="block pv-mono text-[9px] uppercase tracking-[0.12em] text-[hsl(var(--pv-accent))]">next step</span>
+                <span className="block pv-serif text-[13px] leading-snug text-foreground">{objectiveHeadline}</span>
+              </span>
+              <ArrowUp className="h-3.5 w-3.5 shrink-0 rotate-90 text-[hsl(var(--pv-text-faint))]" />
+            </button>
+          )}
           {optimistic && (
             <div className="flex justify-end">
               <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-[hsl(var(--pv-surface-2))] px-3.5 py-2 pv-serif text-[14px] leading-[1.55] text-foreground whitespace-pre-wrap opacity-60">
@@ -360,19 +376,6 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [],
           </div>
         ) : (
           <div className="relative">
-            {/* Guided-flow nudge — the current journey rung (lib/dnaJourney.currentObjective). One click
-                hands the step to the agent; the objective itself already rides every message's context. */}
-            {!active && objectiveHeadline && proposals.length === 0 && draft === "" && (
-              <button type="button" onClick={() => void send("Let's work on the next step.")} disabled={busy}
-                title="Let the agent lead you through this step"
-                className="mb-2 flex w-full items-center gap-2 rounded-xl border border-[hsl(var(--pv-accent))]/30 bg-[hsl(var(--pv-accent))]/[0.06] px-3 py-2 text-left transition-colors hover:border-[hsl(var(--pv-accent))]/60 disabled:opacity-50">
-                <CornerDownLeft className="h-3.5 w-3.5 shrink-0 text-[hsl(var(--pv-accent))]" />
-                <span className="min-w-0 flex-1">
-                  <span className="block pv-mono text-[9px] uppercase tracking-[0.12em] text-[hsl(var(--pv-accent))]">next step</span>
-                  <span className="block truncate pv-serif text-[12.5px] leading-snug text-foreground">{objectiveHeadline}</span>
-                </span>
-              </button>
-            )}
             {/* Slash-command menu — opens above the composer when the draft starts with "/". */}
             {showMenu && (
               <div className="absolute bottom-[calc(100%+6px)] left-0 right-0 z-10 overflow-hidden rounded-xl border border-[hsl(var(--pv-border-soft))] bg-background shadow-lg">
