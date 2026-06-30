@@ -82,6 +82,6 @@ export function ledgerFindingsMessage(nodes: DnaNode[]): string | null {
 export async function sendBreaksToEditor(bookId: number, nodes: DnaNode[], settings: BookSettings): Promise<boolean> {
   const message = ledgerFindingsMessage(nodes);
   if (!message) return false;
-  await sendAgentMessage(bookId, message, undefined, analysisText(nodes, settings));
+  await sendAgentMessage(bookId, message, analysisText(nodes, settings));
   return true;
 }

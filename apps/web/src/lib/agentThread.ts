@@ -65,14 +65,15 @@ async function invoke(body: Record<string, unknown>): Promise<void> {
   if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
 }
 
-/** Send a free-text message to the book's one agent thread (creates it on first use). `scope` filters
- *  which book aspects the agent sees + can touch (omit / empty = the whole book). `analysis` is the
- *  client-computed story analysis (the engine lives in the web app) fed as a structural backstop.
- *  `effort` controls response style: "low" = propose inline on first response; "high" (default) = full tool loop.
- *  `auto` arms auto-accept mode on the run: the agent runs autonomously (commits its own option picks, never
- *  parks on ask_author) and the client watcher auto-applies whatever it stages. */
-export async function sendAgentMessage(bookId: number, message: string, scope?: Aspect[], analysis?: string, effort?: "low" | "high", auto?: boolean): Promise<void> {
-  await invoke({ bookId, message, ...(scope && scope.length ? { scope } : {}), ...(analysis?.trim() ? { analysis } : {}), ...(effort ? { effort } : {}), ...(auto ? { auto: true } : {}) });
+/** Send a free-text message to the book's one agent thread (creates it on first use). The agent always
+ *  sees + may touch the whole book — context is anchored by attached nodes, not fenced by aspect scope
+ *  (docs/agent-context-model.md). `analysis` is the client-computed story analysis (the engine lives in
+ *  the web app) fed as a structural backstop. `effort` controls response style: "low" = propose inline on
+ *  first response; "high" (default) = full tool loop. `auto` arms auto-accept mode on the run: the agent
+ *  runs autonomously (commits its own option picks, never parks on ask_author) and the client watcher
+ *  auto-applies whatever it stages. */
+export async function sendAgentMessage(bookId: number, message: string, analysis?: string, effort?: "low" | "high", auto?: boolean): Promise<void> {
+  await invoke({ bookId, message, ...(analysis?.trim() ? { analysis } : {}), ...(effort ? { effort } : {}), ...(auto ? { auto: true } : {}) });
 }
 
 /** Answer the agent's pending ask_author question, resuming the parked turn. */

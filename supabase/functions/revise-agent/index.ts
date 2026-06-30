@@ -360,7 +360,10 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
     // in the CURRENT book state (rebuilt per call so ids stay fresh), and the thread tool belt. Eval
     // runs keep the static plan-first system + tools.
     const isThread = row.kind === "thread";
-    const scope = row.context_scope;
+    // Boundaries removed (docs/agent-context-model.md): the agent always sees + may touch the whole book.
+    // Forced null here (not row.context_scope) so even threads created under the old aspect-fence run
+    // unfenced from now on; context is anchored by attached nodes, not filtered by kind.
+    const scope: Aspect[] | null = null;
     const effort = row.context_effort ?? "high";
     // `auto` (autonomous mode: never park, commit own picks) computed above for the turn ceiling.
     const system = isThread ? await threadSystem(service, row.book_id, scope, row.context_analysis, effort, auto) : SYSTEM;
@@ -905,7 +908,8 @@ STYLE: before each tool call, narrate what you're doing and why in one or two pl
 
 // ── Thread mode = the DNA omni-rail (docs/agent-rail.md) ──────────────────────
 // The agent holds the book's DNA tree (book_nodes), discusses it, and proposes node ops the author
-// reviews and applies. The context filter (scope) fences which node kinds it sees AND may write.
+// reviews and applies. No context fence: it sees + may write the whole book (scope is forced null,
+// docs/agent-context-model.md); the scope plumbing below is inert until/unless a fence returns.
 interface DnaNodeRow { id: string; parent_id: string | null; kind: string; level: number; content: Record<string, unknown>; authoring: { locked?: boolean; status?: string } | null; proposals?: { id: string; content: Record<string, unknown>; note?: string }[] | null }
 
 // A short human handle for a node (mirror of lib/dnaChat nodeLabel) for read summaries + step labels.
@@ -933,7 +937,7 @@ const THREAD_DNA_TOOLS = [
   },
   {
     name: "propose_node_ops",
-    description: "Propose a concrete change to the DNA tree the author reviews before it's applied: edit / add / delete / replace_children nodes by their real ids. This records the proposal and ENDS your turn — narrate what you're changing and why just before calling it. Only touch nodes whose kind is in scope; never touch a LOCKED node. To REBUILD a whole level (replace all acts, or all beats under an act), use replace_children — NOT a pile of `add` ops, which would duplicate what's already there.",
+    description: "Propose a concrete change to the DNA tree the author reviews before it's applied: edit / add / delete / replace_children nodes by their real ids. This records the proposal and ENDS your turn — narrate what you're changing and why just before calling it. Never touch a LOCKED node. To REBUILD a whole level (replace all acts, or all beats under an act), use replace_children — NOT a pile of `add` ops, which would duplicate what's already there.",
     input_schema: {
       type: "object",
       properties: {
@@ -960,7 +964,7 @@ const THREAD_DNA_TOOLS = [
   },
   {
     name: "propose_options",
-    description: "Offer the author 2–4 ALTERNATIVE versions of ONE node's content to choose among (the options picker). Use this when the author asks for options/alternatives, or to break a node out of its one obvious 'modal' version. Each option is a COMPLETE content object for that node's kind (the exact field names from the schema, like an edit's content). The options must be meaningfully different FROM EACH OTHER — but every option MUST HONOR the node's ancestors as FIXED: a child elaborates what's above it (the logline, then the premise), it never rewrites it. Vary ONLY what the parent leaves open (e.g. premise options keep the logline's protagonist / inciting incident / goal / obstacle / stakes fixed and vary only the dramatic question + 5-part shape). NEVER reshape an ancestor's story into a different book, and never offer near-duplicates. This stages the options ON the node (the author picks one in the tree) and ENDS your turn. For a SINGLE revision, use propose_node_ops (edit) instead. Only target a non-locked node whose kind is in scope.",
+    description: "Offer the author 2–4 ALTERNATIVE versions of ONE node's content to choose among (the options picker). Use this when the author asks for options/alternatives, or to break a node out of its one obvious 'modal' version. Each option is a COMPLETE content object for that node's kind (the exact field names from the schema, like an edit's content). The options must be meaningfully different FROM EACH OTHER — but every option MUST HONOR the node's ancestors as FIXED: a child elaborates what's above it (the logline, then the premise), it never rewrites it. Vary ONLY what the parent leaves open (e.g. premise options keep the logline's protagonist / inciting incident / goal / obstacle / stakes fixed and vary only the dramatic question + 5-part shape). NEVER reshape an ancestor's story into a different book, and never offer near-duplicates. This stages the options ON the node (the author picks one in the tree) and ENDS your turn. For a SINGLE revision, use propose_node_ops (edit) instead. Only target a non-locked node.",
     input_schema: {
       type: "object",
       properties: {
@@ -987,11 +991,11 @@ const CONTENT_SCHEMAS = dnaSchema.promptGuide;
 
 const SYSTEM_THREAD = `You are a sharp, warm developmental STORY EDITOR — the author's single AI collaborator for the whole book, in conversation in the studio's right-hand rail.
 
-You hold the book's DNA TREE: premise → foundations (pillar, cast, world, tentpoles, voice) → structure (acts, beats, threads) → scenes → prose. The tree below is FILTERED to the aspects in scope for this conversation, and prose is stripped to stay lean — use read_node to read a scene's full prose before judging or rewriting it.
+You hold the book's DNA TREE: premise → foundations (pillar, cast, world, tentpoles, voice) → structure (acts, beats, threads) → scenes → prose. You see the WHOLE book and may touch any node (except LOCKED ones); the author anchors your attention by attaching nodes, but never fences you out of the rest. The tree below has prose stripped to stay lean — use read_node to read a scene's full prose before judging or rewriting it.
 
 You can do four things:
 1. DISCUSS — answer, summarize, pressure-test. Reply in plain MARKDOWN prose and just end your turn (no tool needed). Be concrete, grounded in the real tree, referencing nodes by their [id]. When a node has PENDING OPTIONS and the author asks which is strongest, just RECOMMEND one in prose (name its option number + a one-line reason tied to the brief) — committing the pick is theirs, in the tree.
-2. CHANGE THE TREE — when the author asks for a change (or agrees to one), call propose_node_ops with edit/add/delete ops over the real ids. The author reviews the diff and applies it; descendants of an edited node go stale and are regenerated later. ONLY touch nodes whose kind is in scope; NEVER touch a LOCKED node. Don't propose unless asked — talk first.
+2. CHANGE THE TREE — when the author asks for a change (or agrees to one), call propose_node_ops with edit/add/delete ops over the real ids. The author reviews the diff and applies it; descendants of an edited node go stale and are regenerated later. NEVER touch a LOCKED node. Don't propose unless asked — talk first.
 3. OFFER OPTIONS — when the author asks for alternatives/options, or to break a node out of its one obvious version, call propose_options with the node's [id] and 2–4 COMPLETE content objects, meaningfully different FROM EACH OTHER but each one HONORING the node's ancestors as fixed: a child elaborates the logline/premise above, it never rewrites it. Vary only what the parent leaves open (premise options keep the logline's protagonist/inciting/goal/obstacle/stakes and vary the dramatic question + shape); never reshape an ancestor into a different story, never near-duplicates. The author picks one in the tree. Use this only for choose-among-N; a single revision is propose_node_ops.
 4. DRAFT & CHECK PROSE — call render_scene_prose with a scene's [id] to draft (or redraft) its prose from its plan, in the book's voice (it saves to the scene and returns the text). Call check_against_contract with a scene's [id] to judge its existing prose against the brief mandate (genre, heat, voice, success criteria) and get a per-axis verdict you relay to the author. A common request — "write the first scene and see if it meets the brief" — is render_scene_prose then check_against_contract on the same scene. render OVERWRITES existing prose, so if a scene already has prose, confirm before redrafting.
    • REBUILDS: to replace a whole level — "rebuild the acts", "4 acts with all-new beats" — use ONE replace_children op (parentId = the level's parent, e.g. the pillar for acts; childKind = act; children = the new acts, each nesting its beats). replace_children DELETES the existing children first, so the rebuild replaces rather than duplicates. Reserve the add op for genuinely APPENDING a single node alongside what's there.

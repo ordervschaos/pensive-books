@@ -13,7 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useLatestTaskRow } from "@/hooks/useLatestTaskRow";
 import { stopRun } from "@/lib/stopRun";
 import {
-  AGENT_THREAD_SELECT, answerAgent, applyAgentProposal, ASPECT_KINDS, ASPECT_LABELS, discardAgentProposal,
+  AGENT_THREAD_SELECT, answerAgent, applyAgentProposal, ASPECT_KINDS, discardAgentProposal,
   resumeAgentSession, sendAgentMessage, startNewAgentSession,
   type AgentProposal, type AgentSession, type Aspect, type AgentStep, type AgentThreadRow,
 } from "@/lib/agentThread";
@@ -34,8 +34,9 @@ export function AgentRail({ bookId, nodes, settings }: { bookId: number; nodes: 
     return hasStructure ? analysisText(nodes, settings) : undefined;
   }, [nodes, settings]);
 
-  // Which stages EXIST (have nodes of their kinds) — the default scope is all of these. 'draft' needs
-  // a scene with written prose; the others just need a node of one of their kinds.
+  // Which aspects EXIST (have nodes of their kinds). The agent always sees the whole book — there is no
+  // context fence (docs/agent-context-model.md); this only gates slash-command relevance (generate vs
+  // revise). 'prose' needs a scene with written prose; the others just need a node of one of their kinds.
   const available = useMemo<Aspect[]>(() => {
     const kinds = new Set<NodeKind>(nodes.map((n) => n.kind));
     const hasProse = nodes.some((n) => n.kind === "scene" && !!(n.content as { prose?: { text?: string } })?.prose?.text?.trim());
@@ -43,23 +44,6 @@ export function AgentRail({ bookId, nodes, settings }: { bookId: number; nodes: 
       a === "prose" ? hasProse : ASPECT_KINDS[a].some((k) => kinds.has(k)),
     );
   }, [nodes]);
-  // The context filter — persisted to localStorage so it survives new chats and page reloads.
-  // null = the default ("whole book" — every existing aspect, auto-following `available`);
-  // a non-null array = the author narrowed it by hand. Sent with each message.
-  const lsKey = `agent-context-${bookId}`;
-  const [custom, setCustom] = useState<Aspect[] | null>(() => {
-    try { const v = localStorage.getItem(lsKey); return v ? (JSON.parse(v) as Aspect[]) : null; } catch { return null; }
-  });
-  const scope = custom ?? available;
-  const toggleAspect = (a: Aspect) =>
-    setCustom((c) => {
-      const base = c ?? available;
-      const next = base.includes(a) ? base.filter((x) => x !== a) : [...base, a];
-      try { localStorage.setItem(lsKey, JSON.stringify(next)); } catch { /* ignore */ }
-      return next;
-    });
-  // When the filter is the full set (or empty), send nothing → the edge treats it as the whole book.
-  const sentScope = custom && custom.length && custom.length < available.length ? custom : undefined;
 
   // Effort: "low" = propose inline first response; "high" = full tool loop. Persisted per book.
   const effortKey = `agent-effort-${bookId}`;
@@ -125,7 +109,6 @@ export function AgentRail({ bookId, nodes, settings }: { bookId: number; nodes: 
 
   const pickCommand = (c: AgentCommand) => {
     setDraft(c.prompt);
-    if (c.scope) { const next = c.scope.filter((a) => available.includes(a)); if (next.length) setCustom(next); }
     requestAnimationFrame(() => {
       const el = taRef.current;
       if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
@@ -146,7 +129,7 @@ export function AgentRail({ bookId, nodes, settings }: { bookId: number; nodes: 
     setDraft("");
     setOptimistic(t);
     try {
-      await sendAgentMessage(bookId, t, sentScope, analysis, effort, auto);
+      await sendAgentMessage(bookId, t, analysis, effort, auto);
       refetch();
     } catch (e) {
       setOptimistic(null);
@@ -224,6 +207,24 @@ export function AgentRail({ bookId, nodes, settings }: { bookId: number; nodes: 
           </button>
         )}
         <div className={`flex items-center gap-1 ${active ? "" : "ml-auto"}`}>
+          <button type="button" onClick={toggleAuto} disabled={active}
+            title={auto ? "Auto-accept ON — the agent runs autonomously: it makes its own choices and applies them, no review. Click to turn off." : "Auto-accept OFF — you review and apply each change. Click to let the agent run autonomously."}
+            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 pv-mono text-[10px] transition-colors disabled:opacity-50 ${
+              auto
+                ? "border-[hsl(var(--pv-accent))]/50 bg-[hsl(var(--pv-accent))]/[0.08] text-[hsl(var(--pv-accent))]"
+                : "border-[hsl(var(--pv-border-soft))] text-[hsl(var(--pv-text-faint))] hover:text-foreground"
+            }`}>
+            <InfinityIcon className="h-2.5 w-2.5" /> auto
+          </button>
+          <button type="button" onClick={toggleEffort} disabled={active}
+            title={effort === "low" ? "Fast mode — proposes inline on first response. Click for deep." : "Deep mode — full tool loop. Click for fast."}
+            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 pv-mono text-[10px] transition-colors disabled:opacity-50 ${
+              effort === "low"
+                ? "border-[hsl(var(--pv-accent))]/50 bg-[hsl(var(--pv-accent))]/[0.08] text-[hsl(var(--pv-accent))]"
+                : "border-[hsl(var(--pv-border-soft))] text-[hsl(var(--pv-text-faint))] hover:text-foreground"
+            }`}>
+            <Zap className="h-2.5 w-2.5" /> {effort === "low" ? "fast" : "deep"}
+          </button>
           {sessions.length > 0 && (
             <button type="button" onClick={() => setHistoryOpen((v) => !v)} title="Past chats"
               className={`inline-flex items-center gap-1 rounded-full px-2 py-1 pv-mono text-[10px] uppercase tracking-[0.1em] transition-colors ${historyOpen ? "text-[hsl(var(--pv-accent))]" : "text-[hsl(var(--pv-text-faint))] hover:text-foreground"}`}>
@@ -242,45 +243,6 @@ export function AgentRail({ bookId, nodes, settings }: { bookId: number; nodes: 
       {historyOpen && sessions.length > 0 && (
         <div className="mt-2 shrink-0 max-h-[40%] overflow-y-auto rounded-xl border border-[hsl(var(--pv-border-soft))]/60 bg-[hsl(var(--pv-surface-2))]/30 px-3 py-2">
           <SessionHistory sessions={sessions} onResume={resume} busy={busy || active} />
-        </div>
-      )}
-
-      {/* Context filter — which book aspects the agent sees + can touch. Defaults to all created. */}
-      {available.length > 0 && (
-        <div className="mt-2.5 flex shrink-0 flex-wrap items-center gap-1.5">
-          <span className="pv-mono text-[9.5px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-faint))]">context</span>
-          {available.map((a) => {
-            const on = scope.includes(a);
-            return (
-              <button key={a} type="button" onClick={() => toggleAspect(a)} disabled={active}
-                title={on ? `${ASPECT_LABELS[a]} in scope — tap to exclude` : `${ASPECT_LABELS[a]} excluded — tap to include`}
-                className={`rounded-full border px-2.5 py-0.5 pv-serif text-[12px] transition-colors disabled:opacity-50 ${
-                  on
-                    ? "border-[hsl(var(--pv-accent))]/50 bg-[hsl(var(--pv-accent))]/[0.08] text-[hsl(var(--pv-accent))]"
-                    : "border-[hsl(var(--pv-border-soft))] text-[hsl(var(--pv-text-faint))] hover:text-foreground"
-                }`}>
-                {ASPECT_LABELS[a]}
-              </button>
-            );
-          })}
-          <button type="button" onClick={toggleAuto} disabled={active}
-            title={auto ? "Auto-accept ON — the agent runs autonomously: it makes its own choices and applies them, no review. Click to turn off." : "Auto-accept OFF — you review and apply each change. Click to let the agent run autonomously."}
-            className={`ml-auto inline-flex items-center gap-1 rounded-full border px-2 py-0.5 pv-mono text-[10px] transition-colors disabled:opacity-50 ${
-              auto
-                ? "border-[hsl(var(--pv-accent))]/50 bg-[hsl(var(--pv-accent))]/[0.08] text-[hsl(var(--pv-accent))]"
-                : "border-[hsl(var(--pv-border-soft))] text-[hsl(var(--pv-text-faint))] hover:text-foreground"
-            }`}>
-            <InfinityIcon className="h-2.5 w-2.5" /> auto
-          </button>
-          <button type="button" onClick={toggleEffort} disabled={active}
-            title={effort === "low" ? "Fast mode — proposes inline on first response. Click for deep." : "Deep mode — full tool loop. Click for fast."}
-            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 pv-mono text-[10px] transition-colors disabled:opacity-50 ${
-              effort === "low"
-                ? "border-[hsl(var(--pv-accent))]/50 bg-[hsl(var(--pv-accent))]/[0.08] text-[hsl(var(--pv-accent))]"
-                : "border-[hsl(var(--pv-border-soft))] text-[hsl(var(--pv-text-faint))] hover:text-foreground"
-            }`}>
-            <Zap className="h-2.5 w-2.5" /> {effort === "low" ? "fast" : "deep"}
-          </button>
         </div>
       )}
 
