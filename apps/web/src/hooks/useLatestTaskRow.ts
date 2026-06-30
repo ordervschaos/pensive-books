@@ -92,8 +92,20 @@ export function useLatestTaskRow<T extends TaskRow = TaskRow>(opts: Options): {
         if (prev && prev.id !== incoming.id) {
           // A different row arrived — only replace if it's newer (a fresh task supersedes an old one).
           if (new Date(incoming.created_at).getTime() < new Date(prev.created_at).getTime()) return prev;
+          return incoming;
         }
-        return incoming;
+        if (!prev) return incoming;
+        // Realtime can deliver a column as null when an UPDATE didn't touch it but Postgres omitted an
+        // unchanged TOASTed jsonb value from the WAL (the "unchanged TOAST" gotcha — REPLICA IDENTITY FULL
+        // on the source table helps but individual callers can still slip through). No writer in this app
+        // intentionally nulls out a column that previously held real data, so patch any such regression
+        // back in from the held row rather than letting it blank the UI.
+        const merged: Record<string, unknown> = { ...incoming };
+        const prevRec = prev as unknown as Record<string, unknown>;
+        for (const key of Object.keys(prevRec)) {
+          if (merged[key] == null && prevRec[key] != null) merged[key] = prevRec[key];
+        }
+        return merged as T;
       });
     },
     [match] // eslint-disable-line react-hooks/exhaustive-deps

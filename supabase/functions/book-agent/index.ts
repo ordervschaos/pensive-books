@@ -171,7 +171,10 @@ Deno.serve(async (req: Request) => {
       if (canEdit === false) return json({ error: "Access denied" }, 403);
       if (row.kind !== "thread" || !row.context_auto) return json({ error: "Not an autonomous thread" }, 409);
       if (row.status !== "idle") return json({ status: row.status, runId: row.id }, 202); // already running/parked — nothing to resume
-      await service.from("book_agent_runs").update({ status: "running" }).eq("id", row.id);
+      // Re-write `steps` (unchanged) alongside `status` — same unchanged-TOAST gotcha as the `turns` tick
+      // below: a partial update can still arrive over Realtime with steps=null, blanking the feed, even with
+      // REPLICA IDENTITY FULL. This fires on every auto-accept apply→continue cycle, so it's worth hardening.
+      await service.from("book_agent_runs").update({ status: "running", steps: row.steps }).eq("id", row.id);
       if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("book-agent", { runId: row.id }));
       return json({ status: "running", runId: row.id }, 202);
     }
