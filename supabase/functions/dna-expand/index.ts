@@ -149,8 +149,9 @@ async function foldDigest(apiKey: string, model: string, prior: DigestAccum, pag
 }
 
 READING DISCIPLINE — get this right; downstream prose trusts this digest as authoritative:
-- A label, title, number, or form of address (e.g. "Lot Seven", "the prisoner", "girl", "your highness") usually REFERS TO an existing character — most often the POV character — it is NOT automatically a new person. Before adding anyone to "characters" or a meeting/thread to "open_threads", decide WHO the label points to from the prose. Do not invent a character or a thread from a designation. (If the POV character is being auctioned and the guards call her "Lot Seven," then she IS Lot Seven — there is no separate person and no "upcoming meeting with Lot Seven.")
-- Resolve pronouns and epithets to the character they denote; merge, never duplicate.
+- Record only what the page actually establishes. Resolve every reference — a name, label, title, number, role, epithet, or pronoun — to the entity it denotes, which is usually one already in play (often the POV character). A new way of REFERRING to someone or something is not a new someone or something.
+- Do NOT mint a new character, object, location, or open thread out of a mere designation or form of address. Add an entity only when the prose genuinely introduces it; open a thread only when the prose genuinely opens a promise.
+- Merge, never duplicate: if two references point to the same entity, they are one entry.
 
 The ledger is CUMULATIVE state: carry forward everything still true, UPDATE what changed, CLOSE threads this page paid off, and ADVANCE the timeline.
 The impressions are the reader's MEMORY of the read so far — not every fact, but what resonates. CARRY the prior impressions forward; RAISE the weight of any that this page reinforces or pays off (a recurring motif, a deepening dread, a promise kept); ADD what this page newly makes a reader feel or notice. Weight: 5 = central / emotionally charged / unforgettable; 1 = minor. Keep the list tight (≈8 strongest); drop the weakest if it grows past that. No prose, no preamble — JSON only.

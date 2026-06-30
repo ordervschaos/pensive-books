@@ -128,6 +128,7 @@ async function streamProse(prepared: PreparedProse, signal?: AbortSignal): Promi
       // Strip the proxy's NUL heartbeats (STREAM_HEARTBEAT, emitted during the model's reasoning phase) —
       // they kept the connection alive but are not prose. Strip BEFORE the empty-check so an all-heartbeat
       // (content-never-arrived / truncated) stream correctly reads as "no prose" and retries.
+      // eslint-disable-next-line no-control-regex
       const prose = text.replace(/\u0000/g, "").trim();
       if (!prose) throw new Error("stream produced no prose");
       return prose;
