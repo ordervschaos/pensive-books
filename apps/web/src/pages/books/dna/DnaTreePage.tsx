@@ -6,7 +6,7 @@ import ReactMarkdown from "react-markdown";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { deleteNode, patchNodeContent, saveNode, saveNodes } from "@/lib/bookNodes";
-import { backlinkIndex, byId, childrenOf, emptyNode, isEntityKind, isProseStale, isStale, newId, pillarOf, refsOf, type BookSettings, type DnaIssue, type DnaNode, type BeatContent, type NodeContent, type NodeKind, type SceneContent } from "@/lib/novelDna";
+import { backlinkIndex, byId, childrenOf, emptyNode, isEntityKind, isProseStale, isStale, newId, pillarOf, refsOf, stampInput, stampProse, type BookSettings, type DnaIssue, type DnaNode, type BeatContent, type NodeContent, type NodeKind, type SceneContent } from "@/lib/novelDna";
 import { editSpecs, KIND_LEVEL, tasteSpecs, type EditSpec } from "@/lib/dnaSchema";
 import { CONTENT_TYPES, SCOPE_BANDS, briefIdea, type Brief } from "@/lib/brief";
 import { describeOps, type NodeOp } from "@/lib/dnaChat";
@@ -404,12 +404,13 @@ function NodeKebab({ onDelete, items = [] }: { onDelete?: () => void; items?: Ke
 }
 
 // ── Single tree row ──────────────────────────────────────────────────────────
-function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete, kebabItems, draggable, dragging, canDrop, onDragStartRow, onDragEndRow, onDropRow, mark, focus, flash, issues, dimmed, ctx, onContextFocus, prose, headerActions }: {
+function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete, kebabItems, draggable, dragging, canDrop, onDragStartRow, onDragEndRow, onDropRow, mark, focus, flash, issues, dimmed, ctx, onContextFocus, prose, headerActions, staleActions }: {
   node: DnaNode; index: Map<string, DnaNode>; depth: number;
   expandable: boolean; open: boolean; onToggle: () => void; onDelete?: () => void;
   kebabItems?: KebabItem[]; // regen actions, AI options, etc (all go in the ⋮ menu)
   prose?: ProseRollup | null; // act/beat: rolled-up prose-completion of descendant scenes
   headerActions?: React.ReactNode; // compact action buttons pinned to the header row
+  staleActions?: { onApprove: () => Promise<void>; onRegen?: () => Promise<void>; onDiscard: () => Promise<void> };
   // #5 — drag-to-reorder among same-kind siblings. draggable = this row has a grip; canDrop = a valid
   // sibling is being dragged over it; dragging = this is the row being dragged.
   draggable?: boolean; dragging?: boolean; canDrop?: boolean;
@@ -419,6 +420,17 @@ function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete, keb
   ctx?: "focus" | "consumes" | "consumedBy"; onContextFocus?: () => void; // #7 context-highlight role + the badge trigger
 }) {
   const [dropEdge, setDropEdge] = useState<"top" | "bottom" | null>(null);
+  const [staleOpen, setStaleOpen] = useState(false);
+  const [staleBusy, setStaleBusy] = useState<string | null>(null);
+  const runStale = async (key: string, fn: () => Promise<void>) => {
+    setStaleBusy(key);
+    try { await fn(); setStaleOpen(false); }
+    catch (e) { alert((e as Error).message); }
+    finally { setStaleBusy(null); }
+  };
+  const suspects = isStale(node, index)
+    ? ([node.parent_id ? index.get(node.parent_id) : null, ...refsOf(node).map((id) => index.get(id))].filter((n): n is DnaNode => !!n))
+    : [];
   const stale = isStale(node, index) || (node.kind === "scene" && isProseStale(node));
   const color = KIND_COLOR[node.kind] ?? "#888";
   const bg = KIND_BG[node.kind] ?? "transparent";
@@ -461,6 +473,9 @@ function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete, keb
           paddingRight: 12, paddingTop: 3, paddingBottom: 3,
           cursor: expandable ? "pointer" : "default",
           position: "relative",
+          border: `1px solid ${color}22`,
+          borderRadius: 4,
+          marginBottom: 1,
           // Precedence (spec collision budget): proposal mark > context hue (#7) > rail focus (#2).
           boxShadow: markColor ? `inset 3px 0 0 ${markColor}` : ctxColor ? `inset 3px 0 0 ${ctxColor}` : focus ? "inset 2px 0 0 #8a8aff66" : undefined,
           background: markColor ? `${markColor}12` : ctxColor ? `${ctxColor}1a` : focus ? "#8a8aff08" : undefined,
@@ -523,7 +538,37 @@ function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete, keb
           {hasIssue && <span title={issues!.map((i) => `${i.severity === "error" ? "✕" : "⚠"} ${i.rule}: ${i.message}`).join("\n")}
             style={{ fontSize: 10, lineHeight: 1, color: hasErr ? "#f87171" : "#d0a060", flexShrink: 0 }}>{hasErr ? "▲" : "△"}</span>}
           {markColor && <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 8, textTransform: "uppercase", letterSpacing: "0.12em", color: markColor }}>{mark === "delete" ? "− remove" : "✎ edit"}</span>}
-          {stale && <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 8, textTransform: "uppercase", letterSpacing: "0.12em", color: "#f59e0b" }}>stale</span>}
+          {stale && (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }} onClick={(e) => e.stopPropagation()}>
+              <span
+                title={suspects.length ? `suspects: ${suspects.map((n) => `${n.kind} ${nodeTitle(n) || n.id}`).join(", ")}` : undefined}
+                onClick={() => staleActions && setStaleOpen((p) => !p)}
+                style={{ fontFamily: "ui-monospace, monospace", fontSize: 8, textTransform: "uppercase", letterSpacing: "0.12em", color: "#f59e0b", cursor: staleActions ? "pointer" : "default", userSelect: "none" }}>
+                stale
+              </span>
+              {staleOpen && staleActions && (
+                <>
+                  <span onClick={() => !staleBusy && void runStale("approve", staleActions.onApprove)}
+                    title="approve — accept content as fresh"
+                    style={{ fontFamily: "ui-monospace, monospace", fontSize: 8, color: staleBusy === "approve" ? "#555" : "#6abf6a", cursor: staleBusy ? "default" : "pointer", border: "1px solid #6abf6a44", borderRadius: 3, padding: "0 4px", lineHeight: "14px" }}>
+                    {staleBusy === "approve" ? "…" : "✓"}
+                  </span>
+                  {staleActions.onRegen && (
+                    <span onClick={() => !staleBusy && void runStale("regen", staleActions.onRegen!)}
+                      title="regen — regenerate from current inputs"
+                      style={{ fontFamily: "ui-monospace, monospace", fontSize: 8, color: staleBusy === "regen" ? "#555" : "#8a8aff", cursor: staleBusy ? "default" : "pointer", border: "1px solid #8a8aff44", borderRadius: 3, padding: "0 4px", lineHeight: "14px" }}>
+                      {staleBusy === "regen" ? "…" : "↻"}
+                    </span>
+                  )}
+                  <span onClick={() => !staleBusy && void runStale("discard", staleActions.onDiscard)}
+                    title="discard — clear the stale signal"
+                    style={{ fontFamily: "ui-monospace, monospace", fontSize: 8, color: staleBusy === "discard" ? "#555" : "#c06060", cursor: staleBusy ? "default" : "pointer", border: "1px solid #c0606044", borderRadius: 3, padding: "0 4px", lineHeight: "14px" }}>
+                    {staleBusy === "discard" ? "…" : "✕"}
+                  </span>
+                </>
+              )}
+            </span>
+          )}
           {node.authoring.locked && <span style={{ fontSize: 10, color: color }}>🔒</span>}
           <span style={{
             width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
@@ -1464,6 +1509,30 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
   // Dim when: health lens on + clean, OR context active + not in the neighborhood.
   const dimmed = (h.healthLens && !issues?.length) || (ctxActive && !ctx);
 
+  // Stale actions — approve/regen/discard for any stale node.
+  const nodeStale = isStale(node, index);
+  const proseStale = node.kind === "scene" && isProseStale(node);
+  const anyStale = nodeStale || proseStale;
+  const staleActions = anyStale ? {
+    onApprove: async () => {
+      let n = node;
+      if (nodeStale) n = stampInput(n, index);
+      if (proseStale) n = stampProse(n);
+      await saveNode(n);
+    },
+    onRegen: node.kind === "scene" && (proseStale || nodeStale)
+      ? async () => { await expandNode(h.bookId, node, "prose"); }
+      : undefined,
+    onDiscard: async () => {
+      if (proseStale && !nodeStale) {
+        const sc = node.content as SceneContent;
+        await saveNode({ ...node, content: { ...sc, prose: undefined }, authoring: { ...node.authoring, prose_src_hash: undefined } });
+      } else {
+        await saveNode({ ...node, authoring: { ...node.authoring, src_hash: undefined, prose_src_hash: undefined } });
+      }
+    },
+  } : undefined;
+
   return (
     <div>
       <TreeRow node={node} index={index} depth={depth} expandable={expandable} open={open} onToggle={toggle}
@@ -1474,7 +1543,7 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
         onDropRow={(before) => h.onDrop(node, before)}
         mark={mark} focus={focus} flash={h.flashId === node.id} issues={issues} dimmed={dimmed}
         ctx={ctx} onContextFocus={() => h.onContextFocus(node.id)} prose={proseRollup(node, nodes)}
-        headerActions={headerActions} />
+        headerActions={headerActions} staleActions={staleActions} />
       {editPatch && <OpDiffBlock node={node} content={editPatch} nodes={nodes} depth={depth + 1} />}
       {body}
     </div>
@@ -1756,12 +1825,20 @@ function JourneyStrip({ nodes, mode, onGoStage }: {
 // LINEAGE (the rungs it was hydrated from — inputHash uses the direct parent's content), LOCKS (pinned
 // intent on it or above it), and STALENESS (an input moved since it was generated, with the suspects).
 // Pure-derived; reuses the consumes/consumedBy sets the page already computes + refsOf/isStale.
-function FocusPanel({ node, index, consumes, consumedBy, onJump, onClear, bottomInset = 16 }: {
+function FocusPanel({ node, index, consumes, consumedBy, onJump, onClear, bottomInset = 16, staleActions }: {
   node: DnaNode; index: Map<string, DnaNode>;
   consumes: Set<string>; consumedBy: Set<string>;
   onJump: (id: string) => void; onClear: () => void; bottomInset?: number;
+  staleActions?: { onApprove: () => Promise<void>; onRegen?: () => Promise<void>; onDiscard: () => Promise<void> };
 }) {
   const mono = "ui-monospace, monospace";
+  const [panelStaleBusy, setPanelStaleBusy] = useState<string | null>(null);
+  const runPanelStale = async (key: string, fn: () => Promise<void>) => {
+    setPanelStaleBusy(key);
+    try { await fn(); }
+    catch (e) { alert((e as Error).message); }
+    finally { setPanelStaleBusy(null); }
+  };
   // Up-spine lineage: walk parent_id to the root (root-first). The DIRECT parent is the rung this node
   // was generated from (inputHash hashes parent content), so we flag it as the source.
   const ancestors: DnaNode[] = [];
@@ -1836,7 +1913,7 @@ function FocusPanel({ node, index, consumes, consumedBy, onJump, onClear, bottom
       {/* Freshness ⚠ — stale iff an input moved since this was generated */}
       <Section label="freshness">
         {stale || proseStale ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <span style={{ fontFamily: mono, fontSize: 11, color: "#f59e0b" }}>
               ⚠ {proseStale && !stale ? "prose stale — the scene plan changed since it was written" : "stale — an input changed since this was generated"}
             </span>
@@ -1844,6 +1921,24 @@ function FocusPanel({ node, index, consumes, consumedBy, onJump, onClear, bottom
               <div style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }}>
                 <span style={{ fontFamily: mono, fontSize: 9, color: "#5c5c5c", letterSpacing: "0.06em" }}>suspects:</span>
                 {inputs.map((n) => <Chip key={n.id} n={n} />)}
+              </div>
+            )}
+            {staleActions && (
+              <div style={{ display: "flex", gap: 6 }}>
+                {(["approve", "regen", "discard"] as const).map((key) => {
+                  const fn = key === "approve" ? staleActions.onApprove : key === "regen" ? staleActions.onRegen : staleActions.onDiscard;
+                  if (!fn) return null;
+                  const color = key === "approve" ? "#6abf6a" : key === "regen" ? "#8a8aff" : "#c06060";
+                  const label = key === "approve" ? "✓ approve" : key === "regen" ? "↻ regen" : "✕ discard";
+                  const busy = panelStaleBusy === key;
+                  return (
+                    <span key={key} onClick={() => !panelStaleBusy && void runPanelStale(key, fn)}
+                      title={key === "approve" ? "accept content as fresh" : key === "regen" ? "regenerate from current inputs" : "clear the stale signal"}
+                      style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.06em", color: busy ? "#555" : color, cursor: panelStaleBusy ? "default" : "pointer", border: `1px solid ${color}44`, borderRadius: 4, padding: "2px 8px", background: `${color}0d` }}>
+                      {busy ? "…" : label}
+                    </span>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -2087,6 +2182,73 @@ function SpineTimeline({ nodes, mode, rightInset, bookId, onJump, onClose }: {
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+// ── Prose reader ─────────────────────────────────────────────────────────────
+// A focused reading view for a scene's written prose, with prev/next navigation
+// through all scenes that have prose (in reading order).
+function ProseReaderModal({ sceneId, nodes, bookId: _bookId, onClose }: {
+  sceneId: string; nodes: DnaNode[]; bookId: number; onClose: () => void;
+}) {
+  const mono = "ui-monospace, monospace";
+  const [currentId, setCurrentId] = useState(sceneId);
+  const written = scenesInOrder(nodes).filter((s) => (s.content as SceneContent).prose?.text?.trim());
+  const idx = written.findIndex((s) => s.id === currentId);
+  // The opened scene may have no prose yet (e.g. opened from its header before writing);
+  // fall back to showing it standalone so the reader still renders something sensible.
+  const scene = idx >= 0 ? written[idx] : byId(nodes)[currentId];
+  const prose = scene ? (scene.content as SceneContent).prose : undefined;
+  const text = prose?.text?.trim() ?? "";
+  const paragraphs = text ? text.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean) : [];
+  const prev = idx > 0 ? written[idx - 1] : null;
+  const next = idx >= 0 && idx < written.length - 1 ? written[idx + 1] : null;
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 60, display: "flex", alignItems: "stretch", justifyContent: "center", padding: "32px 24px" }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{ position: "absolute", inset: 0, background: "#000000c8" }} />
+      <div style={{ position: "relative", background: "#0e0e12", border: "1px solid #2a2a38", borderRadius: 8, width: "min(720px, 100%)", display: "flex", flexDirection: "column", maxHeight: "100%", overflow: "hidden" }}>
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, padding: "16px 28px", borderBottom: "1px solid #1c1c26", flexShrink: 0 }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", color: "#5a6a80" }}>
+              prose reader{idx >= 0 ? ` · ${idx + 1} / ${written.length}` : ""}
+            </div>
+            <div style={{ fontFamily: mono, fontSize: 13, color: "#cfcfcf", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {scene ? (nodeTitle(scene) || "untitled scene") : "scene not found"}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontFamily: mono, fontSize: 16, color: "#666", cursor: "pointer", lineHeight: 1, flexShrink: 0 }}>✕</button>
+        </div>
+        {/* Body */}
+        <div style={{ overflowY: "auto", padding: "32px 28px 40px", flex: 1 }}>
+          {paragraphs.length > 0 ? (
+            <div style={{ maxWidth: 640, margin: "0 auto", display: "flex", flexDirection: "column", gap: "1.1em" }}>
+              {paragraphs.map((p, i) => (
+                <p key={i} style={{ margin: 0, fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 17, lineHeight: 1.7, color: "#d8d8dc" }}>{p}</p>
+              ))}
+            </div>
+          ) : (
+            <div style={{ fontFamily: mono, fontSize: 12, color: "#666", textAlign: "center", marginTop: 40 }}>no prose written for this scene yet</div>
+          )}
+        </div>
+        {/* Footer nav */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 28px", borderTop: "1px solid #1c1c26", flexShrink: 0 }}>
+          <button onClick={() => prev && setCurrentId(prev.id)} disabled={!prev}
+            style={{ background: "none", border: "none", fontFamily: mono, fontSize: 11, color: prev ? "#8a9ab0" : "#333", cursor: prev ? "pointer" : "default", letterSpacing: "0.06em" }}>← prev</button>
+          <span style={{ fontFamily: mono, fontSize: 10, color: "#555" }}>{prose?.words ? `${prose.words}w` : ""}</span>
+          <button onClick={() => next && setCurrentId(next.id)} disabled={!next}
+            style={{ background: "none", border: "none", fontFamily: mono, fontSize: 11, color: next ? "#8a9ab0" : "#333", cursor: next ? "pointer" : "default", letterSpacing: "0.06em" }}>next →</button>
+        </div>
       </div>
     </div>
   );
@@ -2490,10 +2652,35 @@ export default function DnaTreePage() {
         </div>
       )}
       {/* #7 — the focus readout: "what controls this" for the badge-clicked node (bottom-left, clears of the rail) */}
-      {tab === "tree" && ctxNode && (
-        <FocusPanel node={ctxNode} index={index} consumes={ctxConsumes} consumedBy={ctxConsumedBy}
-          onJump={jumpTo} onClear={() => setContextId(null)} bottomInset={timelineOpen ? 212 : 16} />
-      )}
+      {tab === "tree" && ctxNode && (() => {
+        const ctxNodeStale = isStale(ctxNode, index);
+        const ctxProseStale = ctxNode.kind === "scene" && isProseStale(ctxNode);
+        const ctxAnyStale = ctxNodeStale || ctxProseStale;
+        const ctxStaleActions = ctxAnyStale ? {
+          onApprove: async () => {
+            let n = ctxNode;
+            if (ctxNodeStale) n = stampInput(n, index);
+            if (ctxProseStale) n = stampProse(n);
+            await saveNode(n);
+          },
+          onRegen: ctxNode.kind === "scene" && (ctxProseStale || ctxNodeStale)
+            ? async () => { await expandNode(bookId, ctxNode, "prose"); }
+            : undefined,
+          onDiscard: async () => {
+            if (ctxProseStale && !ctxNodeStale) {
+              const sc = ctxNode.content as SceneContent;
+              await saveNode({ ...ctxNode, content: { ...sc, prose: undefined }, authoring: { ...ctxNode.authoring, prose_src_hash: undefined } });
+            } else {
+              await saveNode({ ...ctxNode, authoring: { ...ctxNode.authoring, src_hash: undefined, prose_src_hash: undefined } });
+            }
+          },
+        } : undefined;
+        return (
+          <FocusPanel node={ctxNode} index={index} consumes={ctxConsumes} consumedBy={ctxConsumedBy}
+            onJump={jumpTo} onClear={() => setContextId(null)} bottomInset={timelineOpen ? 212 : 16}
+            staleActions={ctxStaleActions} />
+        );
+      })()}
       {/* The serial spine — reading-order filmstrip across the bottom (acts → beats → scenes) */}
       {tab === "tree" && timelineOpen && (
         <SpineTimeline nodes={nodes} mode={settings.mode ?? "prose"} rightInset={railOpen ? 420 : 0} bookId={bookId}
