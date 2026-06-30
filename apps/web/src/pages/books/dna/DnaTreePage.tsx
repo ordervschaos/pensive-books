@@ -107,7 +107,9 @@ function beatGlyph(n: DnaNode): string {
 // ── Shared geometry + atoms for a detail field row ────────────────────────────
 const detailRowStyle = (depth: number): React.CSSProperties => ({ position: "relative", display: "flex", alignItems: "baseline", gap: 8, paddingLeft: depth * 20 + 20, paddingRight: 12, paddingTop: 1, paddingBottom: 1 });
 const labelStyle: React.CSSProperties = { fontFamily: "ui-monospace, monospace", fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "#5c5c5c", width: 92, flexShrink: 0, textAlign: "right" };
-const ConnectorTick = ({ depth }: { depth: number }) => <div style={{ position: "absolute", left: (depth - 1) * 20 + 8, top: 9, width: 12, height: 1, background: "#ffffff12" }} />;
+// Vertical guide rail dropping from the parent's chevron — one short segment per detail row;
+// stacked rows fuse into a continuous line aligned with the parent node's spine (left: depth*20+8).
+const ConnectorTick = ({ depth }: { depth: number }) => <div style={{ position: "absolute", left: (depth - 1) * 20 + 8, top: 0, bottom: 0, width: 1, background: "#ffffff14" }} />;
 const fieldRowStart = (depth: number) => (
   <>
     <ConnectorTick depth={depth} />
@@ -404,13 +406,14 @@ function NodeKebab({ onDelete, items = [] }: { onDelete?: () => void; items?: Ke
 }
 
 // ── Single tree row ──────────────────────────────────────────────────────────
-function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete, kebabItems, draggable, dragging, canDrop, onDragStartRow, onDragEndRow, onDropRow, mark, focus, flash, issues, dimmed, ctx, onContextFocus, prose, headerActions, staleActions }: {
+function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete, kebabItems, draggable, dragging, canDrop, onDragStartRow, onDragEndRow, onDropRow, mark, focus, flash, issues, dimmed, ctx, onContextFocus, prose, headerActions, staleActions, writingProse }: {
   node: DnaNode; index: Map<string, DnaNode>; depth: number;
   expandable: boolean; open: boolean; onToggle: () => void; onDelete?: () => void;
   kebabItems?: KebabItem[]; // regen actions, AI options, etc (all go in the ⋮ menu)
   prose?: ProseRollup | null; // act/beat: rolled-up prose-completion of descendant scenes
   headerActions?: React.ReactNode; // compact action buttons pinned to the header row
   staleActions?: { onApprove: () => Promise<void>; onRegen?: () => Promise<void>; onDiscard: () => Promise<void> };
+  writingProse?: boolean; // true while this scene's prose is being streamed
   // #5 — drag-to-reorder among same-kind siblings. draggable = this row has a grip; canDrop = a valid
   // sibling is being dragged over it; dragging = this is the row being dragged.
   draggable?: boolean; dragging?: boolean; canDrop?: boolean;
@@ -487,9 +490,6 @@ function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete, keb
           paddingRight: 12, paddingTop: 3, paddingBottom: 3,
           cursor: expandable ? "pointer" : "default",
           position: "relative",
-          border: `1px solid ${color}22`,
-          borderRadius: 4,
-          marginBottom: 1,
           // Precedence (spec collision budget): proposal mark > context hue (#7) > rail focus (#2).
           boxShadow: markColor ? `inset 3px 0 0 ${markColor}` : ctxColor ? `inset 3px 0 0 ${ctxColor}` : focus ? "inset 2px 0 0 #8a8aff66" : undefined,
           background: markColor ? `${markColor}12` : ctxColor ? `${ctxColor}1a` : focus ? "#8a8aff08" : undefined,
@@ -602,12 +602,15 @@ function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete, keb
             </>
           )}
           {node.authoring.locked && <span style={{ fontSize: 10, color: color }}>🔒</span>}
-          <span style={{
-            width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
-            background: node.authoring.status === "accepted" ? (stale ? "#f59e0b" : "#4ade80")
-              : node.authoring.status === "draft" ? "#fbbf24"
-                : "#444",
-          }} title={node.authoring.status ?? "empty"} />
+          {writingProse
+            ? <span className="dna-writing-label" style={{ fontFamily: "ui-monospace, monospace", fontSize: 9, letterSpacing: "0.08em", color: "#a8a8ff", flexShrink: 0, whiteSpace: "nowrap" }}>writing…</span>
+            : <span style={{
+                width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
+                background: node.authoring.status === "accepted" ? (stale ? "#f59e0b" : "#4ade80")
+                  : node.authoring.status === "draft" ? "#fbbf24"
+                    : "#444",
+              }} title={node.authoring.status ?? "empty"} />
+          }
           <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 9, color: "#444", letterSpacing: "0.05em" }}>
             {node.id}
           </span>
@@ -1250,8 +1253,9 @@ function ProposalPicker({ node, nodes, depth }: { node: DnaNode; nodes: DnaNode[
 // ── Compact header action buttons — inline versions for the node header row ──
 // These replace the full-width body versions; the same action, just smaller and at the top.
 
-function HeaderWriteProseButton({ bookId, node, generatable, onOpenReader }: {
+function HeaderWriteProseButton({ bookId, node, generatable, onOpenReader, onBusyChange }: {
   bookId: number; node: DnaNode; generatable: boolean; onOpenReader?: () => void;
+  onBusyChange?: (busy: boolean) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const hasProse = !!(node.content as SceneContent).prose?.text?.trim();
@@ -1264,9 +1268,10 @@ function HeaderWriteProseButton({ bookId, node, generatable, onOpenReader }: {
     if (canRead) { onOpenReader!(); return; }
     if (busy || blocked) return;
     setBusy(true);
+    onBusyChange?.(true);
     try { await expandNode(bookId, node, "prose"); }
     catch (err) { alert(`Write prose failed: ${(err as Error).message}`); }
-    finally { setBusy(false); }
+    finally { setBusy(false); onBusyChange?.(false); }
   };
   return (
     <span onClick={(e) => void run(e)}
@@ -1332,6 +1337,8 @@ interface TreeView {
   proseGeneratable: Set<string>;        // scene ids whose prose can be written now (predecessors finished)
   proseOpenSet: Set<string>;            // scene ids whose prose block is expanded
   onToggleProse: (id: string) => void;
+  writingProseIds: Set<string>;         // scene ids currently having prose streamed
+  onProseWriting: (id: string, busy: boolean) => void;
   onDiscardStory: () => void;
   brief: Brief | null;                  // seed: the book's mandate (saved to books.brief)
   onSaveBrief: (patch: Partial<Brief>) => Promise<void>;
@@ -1378,7 +1385,7 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
   // Header actions — primary / first-time generate only. Manual adds and regenerate go to the kebab.
   const hasChildScenes = node.kind === "beat" && kids.some((k) => k.kind === "scene");
   const headerActions: React.ReactNode =
-    node.kind === "scene" ? <HeaderWriteProseButton bookId={h.bookId} node={node} generatable={h.proseGeneratable.has(node.id)} onOpenReader={() => h.onOpenProseReader(node.id)} />
+    node.kind === "scene" ? <HeaderWriteProseButton bookId={h.bookId} node={node} generatable={h.proseGeneratable.has(node.id)} onOpenReader={() => h.onOpenProseReader(node.id)} onBusyChange={(busy) => h.onProseWriting(node.id, busy)} />
     : node.kind === "beat" && !hasChildScenes ? <HeaderGenerateButton label="✦ scenes" bookId={h.bookId} node={node} target="scenes" openRail={h.openRail} />
     : null;
 
@@ -1575,7 +1582,8 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
         onDropRow={(before) => h.onDrop(node, before)}
         mark={mark} focus={focus} flash={h.flashId === node.id} issues={issues} dimmed={dimmed}
         ctx={ctx} onContextFocus={() => h.onContextFocus(node.id)} prose={proseRollup(node, nodes)}
-        headerActions={headerActions} staleActions={staleActions} />
+        headerActions={headerActions} staleActions={staleActions}
+        writingProse={h.writingProseIds.has(node.id)} />
       {editPatch && <OpDiffBlock node={node} content={editPatch} nodes={nodes} depth={depth + 1} />}
       {body}
     </div>
@@ -2318,6 +2326,10 @@ export default function DnaTreePage() {
   const [dragId, setDragId] = useState<string | null>(null); // #5 — the node being dragged
   const [brief, setBrief] = useState<Brief | null>(null);
   const [proseOpenSet, setProseOpenSet] = useState<Set<string>>(new Set());
+  const [writingProseIds, setWritingProseIds] = useState<Set<string>>(new Set());
+  const onProseWriting = useCallback((id: string, busy: boolean) => {
+    setWritingProseIds((prev) => { const next = new Set(prev); busy ? next.add(id) : next.delete(id); return next; });
+  }, []);
   const [proseReaderSceneId, setProseReaderSceneId] = useState<string | null>(null); // prose reader modal
   const toggleProse = useCallback((id: string) => {
     setProseOpenSet((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
@@ -2849,7 +2861,7 @@ export default function DnaTreePage() {
         {roots.map((root) => (
           <Subtree key={root.id} node={root} index={index} nodes={nodes} depth={0}
             collapsedSet={collapsedSet} openSet={openSet}
-            h={{ onToggle: toggleNode, onToggleDetail: toggleDetail, onAdd: addNode, onDelete: removeNode, onJump: jumpTo, dragId, onDragStart: setDragId, onDragEnd: () => setDragId(null), onDrop: onDropReorder, backlinks, flashId, proposal: proposalView, focusKinds: null, issuesByNode, healthLens, contextId, ctxConsumes, ctxConsumedBy, onContextFocus: focusContext, proseGeneratable, proseOpenSet, onToggleProse: toggleProse, onDiscardStory: discardStory, brief, onSaveBrief: saveBrief, bookId, openRail: () => setRailOpen(true), onOpenProseReader: setProseReaderSceneId }} />
+            h={{ onToggle: toggleNode, onToggleDetail: toggleDetail, onAdd: addNode, onDelete: removeNode, onJump: jumpTo, dragId, onDragStart: setDragId, onDragEnd: () => setDragId(null), onDrop: onDropReorder, backlinks, flashId, proposal: proposalView, focusKinds: null, issuesByNode, healthLens, contextId, ctxConsumes, ctxConsumedBy, onContextFocus: focusContext, proseGeneratable, proseOpenSet, onToggleProse: toggleProse, writingProseIds, onProseWriting, onDiscardStory: discardStory, brief, onSaveBrief: saveBrief, bookId, openRail: () => setRailOpen(true), onOpenProseReader: setProseReaderSceneId }} />
         ))}
       </div>
       </>)}

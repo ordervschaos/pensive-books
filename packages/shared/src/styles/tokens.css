@@ -349,10 +349,21 @@
   animation: pv-sweep 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
+/* Prose-writing status indicator — subtle pulse on the "writing…" label */
+@keyframes dna-writing-pulse {
+  0%, 100% { opacity: 0.5; }
+  50%       { opacity: 1; }
+}
+.dna-writing-label {
+  animation: dna-writing-pulse 1.2s ease-in-out infinite;
+}
+
 /* DS motion rule: decorative motion is disabled under reduced-motion. */
 @media (prefers-reduced-motion: reduce) {
   .animate-progress,
-  .animate-pv-sweep {
+  .animate-pv-sweep,
+  .dna-writing-label {
     animation: none;
+    opacity: 1;
   }
 }
