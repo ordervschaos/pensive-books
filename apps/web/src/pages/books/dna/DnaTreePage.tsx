@@ -301,10 +301,64 @@ function BacklinksRow({ node, backlinks, depth, onJump }: {
   );
 }
 
+// ── Prose-completion rollup for parent nodes (act / beat) ────────────────────
+// A scene's prose is in one of three states: done (has prose, plan unchanged since), stale (prose exists but
+// the scene plan moved under it → needs a re-write), or none (no prose yet). A beat rolls up its direct
+// scenes; an act rolls up the scenes under all its beats. The badge on the parent makes "what's written /
+// half-written / unwritten" legible without expanding the subtree.
+type ProseState = "done" | "stale" | "none";
+function proseStateOf(scene: DnaNode): ProseState {
+  const text = (scene.content as SceneContent).prose?.text?.trim();
+  if (!text) return "none";
+  return isProseStale(scene) ? "stale" : "done";
+}
+function descendantScenes(node: DnaNode, nodes: DnaNode[]): DnaNode[] {
+  if (node.kind === "beat") return nodes.filter((n) => n.parent_id === node.id && n.kind === "scene");
+  if (node.kind === "act") {
+    const beats = nodes.filter((n) => n.parent_id === node.id && n.kind === "beat");
+    return beats.flatMap((b) => nodes.filter((n) => n.parent_id === b.id && n.kind === "scene"));
+  }
+  return [];
+}
+interface ProseRollup { done: number; stale: number; none: number; total: number }
+function proseRollup(node: DnaNode, nodes: DnaNode[]): ProseRollup | null {
+  if (node.kind !== "act" && node.kind !== "beat") return null;
+  const scenes = descendantScenes(node, nodes);
+  if (!scenes.length) return null;
+  let done = 0, stale = 0, none = 0;
+  for (const s of scenes) {
+    const st = proseStateOf(s);
+    if (st === "done") done++;
+    else if (st === "stale") stale++;
+    else none++;
+  }
+  return { done, stale, none, total: scenes.length };
+}
+
+// The compact bar + count chip the rollup renders on its parent row. Three-state hue: all-done green,
+// nothing-started grey, anything-between amber (in progress). The segmented bar shows the mix at a glance.
+const PROSE_DONE = "#4ade80", PROSE_STALE = "#f59e0b", PROSE_NONE = "#3a3a3a";
+function ProseRollupBadge({ r }: { r: ProseRollup }) {
+  const state = r.done === r.total ? "complete" : r.done === 0 && r.stale === 0 ? "none" : "in progress";
+  const color = state === "complete" ? PROSE_DONE : state === "none" ? "#5a5a5a" : PROSE_STALE;
+  const title = `prose ${state} — ${r.done} done · ${r.stale} stale · ${r.none} no prose (of ${r.total} scenes)`;
+  return (
+    <span title={title} style={{ display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+      <span style={{ display: "inline-flex", width: 22, height: 4, borderRadius: 2, overflow: "hidden", background: "#1a1a1a", border: "1px solid #00000040" }}>
+        <span style={{ flex: r.done, background: PROSE_DONE }} />
+        <span style={{ flex: r.stale, background: PROSE_STALE }} />
+        <span style={{ flex: r.none, background: PROSE_NONE }} />
+      </span>
+      <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 8, letterSpacing: "0.06em", color }}>{r.done}/{r.total}</span>
+    </span>
+  );
+}
+
 // ── Single tree row ──────────────────────────────────────────────────────────
-function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete, draggable, dragging, canDrop, onDragStartRow, onDragEndRow, onDropRow, mark, focus, flash, issues, dimmed, ctx, onContextFocus }: {
+function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete, draggable, dragging, canDrop, onDragStartRow, onDragEndRow, onDropRow, mark, focus, flash, issues, dimmed, ctx, onContextFocus, prose }: {
   node: DnaNode; index: Map<string, DnaNode>; depth: number;
   expandable: boolean; open: boolean; onToggle: () => void; onDelete?: () => void;
+  prose?: ProseRollup | null; // act/beat: rolled-up prose-completion of descendant scenes
   // #5 — drag-to-reorder among same-kind siblings. draggable = this row has a grip; canDrop = a valid
   // sibling is being dragged over it; dragging = this is the row being dragged.
   draggable?: boolean; dragging?: boolean; canDrop?: boolean;
@@ -406,6 +460,7 @@ function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete, dra
 
         {/* Status + stale + locked chips */}
         <span style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, marginLeft: "auto" }}>
+          {prose && <ProseRollupBadge r={prose} />}
           {hasIssue && <span title={issues!.map((i) => `${i.severity === "error" ? "✕" : "⚠"} ${i.rule}: ${i.message}`).join("\n")}
             style={{ fontSize: 10, lineHeight: 1, color: hasErr ? "#f87171" : "#d0a060", flexShrink: 0 }}>{hasErr ? "▲" : "△"}</span>}
           {markColor && <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 8, textTransform: "uppercase", letterSpacing: "0.12em", color: markColor }}>{mark === "delete" ? "− remove" : "✎ edit"}</span>}
@@ -735,7 +790,7 @@ function DiscardStoryModal({ nodes, onClose }: { nodes: DnaNode[]; onClose: () =
   const proseScenes = scenesInOrder(nodes).filter((s) => (s.content as SceneContent).prose?.text?.trim());
   const [picked, setPicked] = useState<Set<string>>(() => new Set(proseScenes.map((s) => s.id)));
   const togglePick = (id: string) =>
-    setPicked((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
+    setPicked((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   const allPicked = proseScenes.length > 0 && picked.size === proseScenes.length;
   const toggleAll = () =>
     setPicked(allPicked ? new Set() : new Set(proseScenes.map((s) => s.id)));
@@ -1275,7 +1330,7 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
         onDragStartRow={() => h.onDragStart(node.id)} onDragEndRow={h.onDragEnd}
         onDropRow={(before) => h.onDrop(node, before)}
         mark={mark} focus={focus} flash={h.flashId === node.id} issues={issues} dimmed={dimmed}
-        ctx={ctx} onContextFocus={() => h.onContextFocus(node.id)} />
+        ctx={ctx} onContextFocus={() => h.onContextFocus(node.id)} prose={proseRollup(node, nodes)} />
       {editPatch && <OpDiffBlock node={node} content={editPatch} nodes={nodes} depth={depth + 1} />}
       {body}
     </div>
@@ -1708,7 +1763,7 @@ function SpineTimeline({ nodes, mode, rightInset, bookId, onJump, onClose }: {
   // Acts are EXPANDED by default (working detail visible). We track the COLLAPSED ones, so empty = all open
   // and a newly generated act also starts expanded. Collapse one to get the at-a-glance pip overview.
   const [collapsedActs, setCollapsedActs] = useState<Set<string>>(new Set());
-  const toggleAct = (id: string) => setCollapsedActs((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleAct = (id: string) => setCollapsedActs((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const allExpanded = collapsedActs.size === 0;
   const toggleAll = () => setCollapsedActs(allExpanded ? new Set(movs.map((m) => m.id)) : new Set());
 
