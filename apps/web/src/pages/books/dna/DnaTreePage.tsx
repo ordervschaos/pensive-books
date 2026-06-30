@@ -566,7 +566,7 @@ function beatsInOrder(nodes: DnaNode[]): DnaNode[] {
 }
 
 // Direct-commit prose write for a single scene — no proposal step.
-function WriteProseButton({ bookId, node, depth }: { bookId: number; node: DnaNode; depth: number }) {
+function WriteProseButton({ bookId, node, depth, hasProse }: { bookId: number; node: DnaNode; depth: number; hasProse?: boolean }) {
   const [busy, setBusy] = useState(false);
   const run = async () => {
     if (busy) return;
@@ -583,7 +583,7 @@ function WriteProseButton({ bookId, node, depth }: { bookId: number; node: DnaNo
         fontFamily: "ui-monospace, monospace", fontSize: 11, letterSpacing: "0.04em",
         color: busy ? "#6a6a9a" : "#a8a8ff", cursor: busy ? "default" : "pointer",
         border: `1px solid ${busy ? "#8a8aff22" : "#8a8aff44"}`, borderRadius: 4, padding: "1px 8px", background: "#8a8aff10",
-      }}>{busy ? "writing…" : "✦ write prose"}</span>
+      }}>{busy ? "writing…" : hasProse ? "↻ re-write prose" : "✦ write prose"}</span>
     </div>
   );
 }
@@ -730,8 +730,18 @@ function DiscardStoryModal({ nodes, onClose }: { nodes: DnaNode[]; onClose: () =
   const movements = nodes.filter((n) => n.kind === "movement");
   const beats     = nodes.filter((n) => n.kind === "beat");
   const scenes    = nodes.filter((n) => n.kind === "scene");
+
+  // Prose-only is selectable per-scene: list scenes that have prose, in reading order, all picked by default.
+  const proseScenes = scenesInOrder(nodes).filter((s) => (s.content as SceneContent).prose?.text?.trim());
+  const [picked, setPicked] = useState<Set<string>>(() => new Set(proseScenes.map((s) => s.id)));
+  const togglePick = (id: string) =>
+    setPicked((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
+  const allPicked = proseScenes.length > 0 && picked.size === proseScenes.length;
+  const toggleAll = () =>
+    setPicked(allPicked ? new Set() : new Set(proseScenes.map((s) => s.id)));
+
   const counts: Record<DiscardLevel, string> = {
-    prose:  `${scenes.filter((s) => (s.content as SceneContent).prose?.text?.trim()).length} scenes with prose`,
+    prose:  `${picked.size} of ${proseScenes.length} scenes selected`,
     scenes: `${scenes.length} scenes`,
     beats:  `${beats.length} beats · ${scenes.length} scenes`,
     story:  `${movements.length} movements · ${beats.length} beats · ${scenes.length} scenes`,
@@ -741,7 +751,7 @@ function DiscardStoryModal({ nodes, onClose }: { nodes: DnaNode[]; onClose: () =
     setBusy(true);
     try {
       if (level === "prose") {
-        const withProse = scenes.filter((s) => (s.content as SceneContent).prose?.text?.trim());
+        const withProse = proseScenes.filter((s) => picked.has(s.id));
         await Promise.all(withProse.map((s) => {
           const { prose: _p, ...rest } = s.content as SceneContent;
           return saveNode({ ...s, content: rest as NodeContent });
@@ -771,19 +781,52 @@ function DiscardStoryModal({ nodes, onClose }: { nodes: DnaNode[]; onClose: () =
             <label key={o.level} style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer", padding: "8px 10px", borderRadius: 5, background: level === o.level ? "#1e1e2a" : "transparent", border: `1px solid ${level === o.level ? "#3a3a5a" : "transparent"}` }}>
               <input type="radio" name="discard-level" value={o.level} checked={level === o.level} onChange={() => setLevel(o.level)}
                 style={{ marginTop: 2, accentColor: "#c06060", flexShrink: 0 }} />
-              <div>
-                <div style={{ fontFamily: mono, fontSize: 11, color: "#cfcfcf", letterSpacing: "0.04em" }}>{o.label}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
+                  <div style={{ fontFamily: mono, fontSize: 11, color: "#cfcfcf", letterSpacing: "0.04em" }}>{o.label}</div>
+                  {o.level === "prose" && level === "prose" && proseScenes.length > 0 && (
+                    <span onClick={(e) => { e.preventDefault(); toggleAll(); }}
+                      style={{ fontFamily: mono, fontSize: 9, color: "#6a8aa0", cursor: "pointer", letterSpacing: "0.04em" }}>
+                      {allPicked ? "select none" : "select all"}
+                    </span>
+                  )}
+                </div>
                 <div style={{ fontFamily: mono, fontSize: 10, color: "#555", marginTop: 2 }}>{o.detail}</div>
                 {level === o.level && <div style={{ fontFamily: mono, fontSize: 9, color: "#7a3030", marginTop: 4, letterSpacing: "0.04em" }}>{counts[o.level]}</div>}
+                {o.level === "prose" && level === "prose" && (
+                  proseScenes.length === 0
+                    ? <div style={{ fontFamily: mono, fontSize: 10, color: "#555", marginTop: 6 }}>no scenes have prose yet</div>
+                    : <div style={{ marginTop: 6, maxHeight: 200, overflowY: "auto", display: "flex", flexDirection: "column", gap: 1, borderTop: "1px solid #22222e", paddingTop: 6 }}>
+                        {proseScenes.map((s, i) => {
+                          const sel = picked.has(s.id);
+                          const words = (s.content as SceneContent).prose?.words ?? 0;
+                          return (
+                            <label key={s.id} onClick={(e) => { e.preventDefault(); e.stopPropagation(); togglePick(s.id); }}
+                              style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 4px", borderRadius: 3, cursor: "pointer", background: sel ? "#1a1414" : "transparent" }}>
+                              <input type="checkbox" checked={sel} readOnly style={{ accentColor: "#c06060", flexShrink: 0, pointerEvents: "none" }} />
+                              <span style={{ fontFamily: mono, fontSize: 10, color: sel ? "#cf999c" : "#666", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {i + 1}. {nodeTitle(s) || "untitled scene"}
+                              </span>
+                              <span style={{ fontFamily: mono, fontSize: 9, color: "#555", flexShrink: 0 }}>{words}w</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                )}
               </div>
             </label>
           ))}
         </div>
         <div style={{ display: "flex", gap: 16, justifyContent: "flex-end", paddingTop: 4 }}>
           <button onClick={onClose} disabled={busy} style={{ background: "none", border: "none", fontFamily: mono, fontSize: 11, color: "#555", cursor: "pointer", letterSpacing: "0.08em" }}>cancel</button>
-          <button onClick={() => void run()} disabled={busy} style={{ background: "#3a1515", border: "1px solid #7a3030", borderRadius: 4, fontFamily: mono, fontSize: 11, color: busy ? "#7a3030" : "#e07070", cursor: busy ? "default" : "pointer", padding: "4px 14px", letterSpacing: "0.08em" }}>
-            {busy ? "discarding…" : "discard"}
-          </button>
+          {(() => {
+            const disabled = busy || (level === "prose" && picked.size === 0);
+            return (
+              <button onClick={() => void run()} disabled={disabled} style={{ background: "#3a1515", border: "1px solid #7a3030", borderRadius: 4, fontFamily: mono, fontSize: 11, color: disabled ? "#7a3030" : "#e07070", cursor: disabled ? "default" : "pointer", padding: "4px 14px", letterSpacing: "0.08em", opacity: disabled && !busy ? 0.5 : 1 }}>
+                {busy ? "discarding…" : "discard"}
+              </button>
+            );
+          })()}
         </div>
       </div>
     </div>
@@ -1189,8 +1232,8 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
           {node.kind === "scene" && (
             <ProseBlock node={node} depth={depth + 1} open={h.proseOpenSet.has(node.id)} onToggle={() => h.onToggleProse(node.id)} />
           )}
-          {node.kind === "scene" && !(node.content as SceneContent).prose?.text?.trim() && (
-            <WriteProseButton bookId={h.bookId} node={node} depth={depth + 1} />
+          {node.kind === "scene" && (
+            <WriteProseButton bookId={h.bookId} node={node} depth={depth + 1} hasProse={!!(node.content as SceneContent).prose?.text?.trim()} />
           )}
           {sub(kids, depth + 1)}
           {spineChildRow}

@@ -3,7 +3,8 @@ import {
   analysisText, backlinkIndex, blastRadius, byId, cascade, causality, chapters, chooseProposal, editContent, emptyNode,
   enforcePromiseSchedule, inputHash, isIllusStale, isProseStale, isRenderable, isStale, lock, pacing, promiseLedger,
   presentCharacters, refsOf, renderBlockers, renderPages, scenesInOrder, stakesOf, stampIllus, stampInput, stampProse, topography,
-  validate, meterSeries, meterShape, isSerialMeter, type DnaNode, type NodeKind, type ThreadRef,
+  validate, meterSeries, meterShape, isSerialMeter, meterTarget, targetGap, observedSeries, observedGap,
+  type DnaNode, type NodeKind, type ThreadRef,
 } from "@/lib/novelDna";
 
 let seq = 0;
@@ -659,5 +660,82 @@ describe("meters axis (docs/novel-dna-meters.md)", () => {
     expect(refsOf(beat)).toContain("cm");
     const owned = mk("meter", { id: "m", content: { name: "hope", owner: "char1" } });
     expect(refsOf(owned)).toContain("char1");
+  });
+
+  // ── target curve (the INTENT layer) + plan-vs-intent diff (Diff A) ──
+  it("meterTarget linearly interpolates the sparse target keyframes across the beat spine", () => {
+    // 5 beats sit at fractions 0, .25, .5, .75, 1; a 0→100 ramp samples to 0,25,50,75,100.
+    const nodes = [meter({ target: [{ at: 0, value: 0 }, { at: 1, value: 100 }] }), ...spine([0, 0, 0, 0, 0])];
+    expect(meterTarget(nodes, "cm").map((p) => p.value)).toEqual([0, 25, 50, 75, 100]);
+  });
+
+  it("meterTarget clamps flat beyond the first/last keyframe (a single keyframe = a constant target)", () => {
+    const nodes = [meter({ target: [{ at: 0.5, value: 60 }] }), ...spine([0, 0, 0])];
+    expect(meterTarget(nodes, "cm").map((p) => p.value)).toEqual([60, 60, 60]);
+  });
+
+  it("meterTarget is null at every beat when the meter has no target (nothing to aim at)", () => {
+    const nodes = [meter(), ...spine([10, 20, 30])];
+    expect(meterTarget(nodes, "cm").every((p) => p.value === null)).toBe(true);
+  });
+
+  it("targetGap diffs the plan (readings) against the intent (target curve), flagging the worst beat", () => {
+    const target = [{ at: 0, value: 0 }, { at: 1, value: 100 }]; // → 0,25,50,75,100
+    const onPlan = [meter({ target }), ...spine([0, 25, 50, 75, 100])];
+    expect(targetGap(onPlan, "cm").maxAbs).toBe(0);
+    const drift = [meter({ target }), ...spine([0, 25, 50, 75, 40])]; // last beat lands at 40, wants 100
+    const gap = targetGap(drift, "cm");
+    expect(gap.maxAbs).toBe(60);
+    expect(gap.worstBeatId).toBe("b4");
+  });
+
+  it("target_drift fires when the plan strays beyond the band of scale; silent on-target / no target / no readings", () => {
+    const target = [{ at: 0, value: 0 }, { at: 1, value: 100 }];
+    const scale = { min: 0, max: 100 }; // band = 20% → 20
+    const drift = validate([meter({ scale, target }), ...spine([0, 25, 50, 75, 40])]);
+    expect(drift.some((i) => i.rule === "target_drift")).toBe(true);
+    const onTarget = validate([meter({ scale, target }), ...spine([0, 25, 50, 75, 100])]);
+    expect(onTarget.some((i) => i.rule === "target_drift")).toBe(false);
+    const noTarget = validate([meter({ scale }), ...spine([0, 25, 50, 75, 40])]);
+    expect(noTarget.some((i) => i.rule === "target_drift")).toBe(false);
+    const noReadings = validate([meter({ scale, target }), ...spine([null, null, null, null, null])]);
+    expect(noReadings.some((i) => i.rule === "target_drift")).toBe(false);
+  });
+
+  // ── observed trace (the editor's read) + observed-vs-plan diff (Diff B) ──
+  // A spine carrying BOTH planned readings and observed readings on "cm" per beat.
+  const dualSpine = (planned: (number | null)[], observed: (number | null)[]) => {
+    const pillar = mk("pillar", { id: "p" });
+    const mv = mk("movement", { id: "mv", parent_id: "p", position: 0 });
+    const beats = planned.map((v, i) => {
+      const content: Record<string, unknown> = {};
+      if (v != null) content.readings = [{ ref: "cm", value: v }];
+      if (observed[i] != null) content.observed_readings = [{ ref: "cm", value: observed[i] }];
+      return mk("beat", { id: `b${i}`, parent_id: "mv", position: i, content });
+    });
+    return [pillar, mv, ...beats];
+  };
+
+  it("observedSeries reads the observed_readings channel (carry-forward), independent of the plan", () => {
+    const nodes = dualSpine([10, 20, 30], [5, null, 25]);
+    expect(observedSeries(nodes, "cm").map((p) => p.value)).toEqual([5, 5, 25]); // gap holds
+    expect(meterSeries(nodes, "cm").map((p) => p.value)).toEqual([10, 20, 30]);  // plan untouched
+  });
+
+  it("observedGap diffs observed − planned over beats where both exist, flagging the worst beat", () => {
+    const gap = observedGap(dualSpine([10, 20, 30], [10, 20, 5]), "cm"); // beat 3: prose 5 vs plan 30
+    expect(gap.maxAbs).toBe(25);
+    expect(gap.worstBeatId).toBe("b2");
+    expect(gap.perBeat[2].delta).toBe(-25); // under-delivers
+  });
+
+  it("read_gap fires when the prose departs from the plan beyond the band; silent on-plan / before a read", () => {
+    const scale = { min: 0, max: 100 }; // band = 20
+    const off = validate([meter({ scale }), ...dualSpine([50, 60, 70], [50, 60, 20])]);
+    expect(off.some((i) => i.rule === "read_gap")).toBe(true);
+    const onPlan = validate([meter({ scale }), ...dualSpine([50, 60, 70], [50, 60, 70])]);
+    expect(onPlan.some((i) => i.rule === "read_gap")).toBe(false);
+    const noRead = validate([meter({ scale }), ...spine([50, 60, 70])]); // no observed_readings yet
+    expect(noRead.some((i) => i.rule === "read_gap")).toBe(false);
   });
 });

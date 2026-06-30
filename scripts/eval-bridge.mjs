@@ -19,7 +19,7 @@ import { spawn } from "node:child_process";
 import { readdirSync, readFileSync, existsSync, appendFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { distinctivePhrases, approxTokens } from "./lib/prose-lints.mjs";
+import { distinctivePhrases, priorDialogue, approxTokens } from "./lib/prose-lints.mjs";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const reportsDir = join(repoRoot, "reports");
@@ -1283,6 +1283,46 @@ Produce the beat revision plan. JSON only.`;
   const out = await runClaude(prompt, true, { fn: "revise-beats", bookId }, { noTools: true, model: MODEL_PLANNING });
   if (out.error) return out;
   return parseBeatPlan(out.text, pages);
+}
+
+// ── /read-meters ────────────────────────────────────────────────────────────
+// Mirrors supabase/functions/read-meters: rate where each beat's PROSE sits on every meter — the OBSERVED
+// trace of the verify loop (docs/true-agent.md). Stateless: the client sends beats+meters, gets readings.
+async function runReadMeters(bookId, beats, meters) {
+  if (!Array.isArray(beats) || !Array.isArray(meters)) return { error: "beats[] and meters[] are required" };
+  if (!beats.length || !meters.length) return { readings: [] };
+  const meterMenu = meters.map((m) => {
+    const range = typeof m.min === "number" && typeof m.max === "number" ? ` [${m.min}…${m.max}]` : "";
+    const poles = m.low || m.high ? ` (low=${m.low ?? "?"}, high=${m.high ?? "?"})` : "";
+    return `- ${m.id} · "${m.name}"${m.kind ? ` ${m.kind}` : ""}${range}${poles}`;
+  }).join("\n");
+  const manuscript = beats.map((b, i) =>
+    `\n[beat=${b.beatId} · #${i + 1}${b.summary ? ` · "${b.summary}"` : ""}]\n${String(b.prose ?? "").slice(0, 4000)}`
+  ).join("\n");
+  const prompt = `You are an editor reading a manuscript to MEASURE what the prose actually delivers, beat by beat. For each beat, rate where its PROSE sits on each meter's scale — read the words on the page, not the author's intent. Use the meter's own scale; if no numeric scale is given, use 0–100. Skip a (beat, meter) pair you genuinely cannot judge from the prose. Be calibrated; do not flatter the text.
+
+METERS (the axes to rate):
+${meterMenu}
+
+MANUSCRIPT (beat-segmented; rate each beat by its prose):
+${manuscript}
+
+Output ONLY this JSON (no prose, no fences):
+{ "readings": [ { "beatId": "<a beat= id above>", "meterId": "<a meter id above>", "value": <number on that meter's scale> } ] }`;
+  const out = await runClaude(prompt, true, { fn: "read-meters", bookId }, { noTools: true, model: MODEL_PLANNING });
+  if (out.error) return out;
+  let parsed;
+  try {
+    const s = out.text.indexOf("{"), e = out.text.lastIndexOf("}");
+    if (s < 0 || e < 0) throw new Error("no JSON object in output");
+    parsed = JSON.parse(out.text.slice(s, e + 1));
+  } catch (err) { return { error: `parse read-meters output: ${err.message}` }; }
+  const beatIds = new Set(beats.map((b) => b.beatId));
+  const meterIds = new Set(meters.map((m) => m.id));
+  const readings = (Array.isArray(parsed.readings) ? parsed.readings : []).filter(
+    (r) => r && typeof r.beatId === "string" && typeof r.meterId === "string" && typeof r.value === "number" && beatIds.has(r.beatId) && meterIds.has(r.meterId)
+  );
+  return { readings };
 }
 
 // ── /beats-agent ──────────────────────────────────────────────────────────────
@@ -3526,6 +3566,25 @@ async function runDnaExpand({ bookId, nodeId, target, proseWindow = "default", p
       : target === "caption"
         ? buildPrevProseBlockBridge(nodes, nodeId, "default")
         : "";
+  // Beat neighbourhood — sibling beats of the scene's parent beat, in movement order.
+  // Mirrors the same block in supabase/functions/dna-expand/index.ts.
+  const beatNeighbourhoodBlock = (() => {
+    if (node.kind !== "scene") return "";
+    const parentBeat = node.parent_id ? map.get(node.parent_id) : undefined;
+    if (!parentBeat || parentBeat.kind !== "beat") return "";
+    const movementId = parentBeat.parent_id;
+    if (!movementId) return "";
+    const siblingBeats = nodes
+      .filter((n) => n.parent_id === movementId && n.kind === "beat")
+      .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+    if (siblingBeats.length <= 1) return "";
+    const lines = siblingBeats.map((b) => {
+      const isCurrent = b.id === parentBeat.id;
+      const summary = String(b.content?.summary ?? "").trim();
+      return `  ${isCurrent ? "▶ " : "  "}[beat pos=${b.position}${isCurrent ? " ← THIS SCENE'S BEAT" : ""}] ${summary}`;
+    });
+    return `BEAT PLAN — all beats in this act, in order (honour any specific facts, names, numbers, or objects established here):\n${lines.join("\n")}`;
+  })();
   const ctx = [
     `BOOK: ${book.name ?? ""}`,
     `BRIEF (binding):\n${briefContext(book.brief)}`,
@@ -3541,6 +3600,7 @@ async function runDnaExpand({ bookId, nodeId, target, proseWindow = "default", p
     gamesBlock,
     precondBlock, // [EXP:preconditions]
     movementBlock,
+    beatNeighbourhoodBlock, // sibling beats — keeps prose from contradicting plan-layer facts
     settingBlock, // this scene's resolved location palette (prose grounding)
     registerBlock, // this scene's voice modulation (anti-monotony) — bends the signature for this scene only
     prevProseBlock,
@@ -3571,6 +3631,8 @@ ${ctx}\n\nWrite the logline.`;
     const prompt = `You are a novelist writing the PROSE for one scene, from its plan. Write the scene fully — vivid, causal, in the book's voice — honoring the MANDATE (heat/tone/length) without laundering. Output the prose ONLY: no preamble, no headings, no JSON.
 
 VOICE — write ONLY the fiction, from inside the story: NEVER address or mention "the reader"/"you", and NEVER refer to "the book", "the story", "the scene", "the page", the author, or the writing itself. The plan's notes describe INTENT in craft terms (e.g. "the reader is told it reads as fury", "the book plants the wrong label") — those are directions TO YOU, not lines to reproduce. Dramatize that intent through concrete action, sensation, and subtext; never narrate it or break the fourth wall.
+
+ANTI-REPETITION (critical): Never repeat any physical gesture, character reaction, sentence structure, or phrase within this scene — not even once. If a character smirks in paragraph 2, they cannot smirk (or twitch, or smile faintly) again. Each beat of the scene must be rendered with entirely fresh language. If you feel the urge to reuse a phrase or gesture, stop and invent a different one. This scene ends when the plan's goal/outcome is dramatized — do not loop, pad, or re-dramatize beats already written.
 
 ${ctx}\n\nWrite this scene's prose.`;
     const out = await runClaude(prompt, true, { fn: "dna-expand", bookId }, { noTools: true, model: MODEL_PLANNING });
@@ -3883,14 +3945,16 @@ function assembleDigest(parts, info, variant = "v1") {
   const { storySoFar, ledger } = parts || { storySoFar: "", ledger: "" };
   const blocklistCorpus = (variant === "v2" ? priorProsed : earlier).map((s) => s.content.prose.text).join("\n");
   const blocklist = distinctivePhrases(blocklistCorpus);
+  const dialogue = priorDialogue(blocklistCorpus);
   const prevPage = variant === "v2"
-    ? `<previous_page note="for voice + cadence ONLY — do NOT reuse, complete, or paraphrase its closing image or final line; open this scene on a different beat and in a different register">\n${last.content.prose.text}\n</previous_page>`
+    ? `<previous_page note="for voice + cadence ONLY — do NOT copy or echo its opening image, its closing image, its character gestures, or any of its phrases; this new scene must open in a DIFFERENT place, time, or emotional register than where this page opens or closes">\n${last.content.prose.text}\n</previous_page>`
     : `<previous_page>\n${last.content.prose.text}\n</previous_page>`;
   return [
-    "PRECEDING CONTEXT — an efficient digest of the pages so far. Treat it as authoritative continuity; maintain the established voice and do NOT reuse any phrase listed under avoid_repeating:",
+    "PRECEDING CONTEXT — an efficient digest of the pages so far. Treat it as authoritative continuity; maintain the established voice and do NOT reuse any phrase or dialogue line listed below:",
     storySoFar && `<story_so_far>\n${storySoFar}\n</story_so_far>`,
     ledger && `<continuity_ledger>\n${ledger}\n</continuity_ledger>`,
     blocklist.length && `<avoid_repeating>\n${blocklist.map((p) => `- ${p}`).join("\n")}\n</avoid_repeating>`,
+    dialogue.length && `<avoid_repeating_dialogue note="these exact lines have already been spoken — do NOT reuse them verbatim or near-verbatim in this scene">\n${dialogue.map((d) => `- ${d}`).join("\n")}\n</avoid_repeating_dialogue>`,
     prevPage,
   ].filter(Boolean).join("\n\n");
 }
@@ -4155,6 +4219,19 @@ async function route(req, res) {
     if (!(await authorize(req, res, bookId))) return;
     console.log(`Revising beats for book ${bookId}${body.lens ? ` (lens: ${body.lens})` : ""}…`);
     const out = await runReviseBeats(bookId, body.instruction, body.lens);
+    if (out.error) return json(res, 500, { error: out.error });
+    return json(res, 200, out);
+  }
+
+  // read-meters — rate each beat's prose on every meter (the OBSERVED trace, docs/true-agent.md).
+  if (url === "/read-meters" || url === "/read-meters/") {
+    if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
+    const body = await readBody(req);
+    const bookId = Number(body.bookId);
+    if (!bookId) return json(res, 400, { error: "bookId is required" });
+    if (!(await authorize(req, res, bookId))) return;
+    console.log(`Reading meters · book ${bookId}: ${body.beats?.length ?? 0} beats × ${body.meters?.length ?? 0} meters…`);
+    const out = await runReadMeters(bookId, body.beats, body.meters);
     if (out.error) return json(res, 500, { error: out.error });
     return json(res, 200, out);
   }

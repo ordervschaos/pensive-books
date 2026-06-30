@@ -64,7 +64,9 @@ export interface BeatContent {
   resolves?: GameResolution[];    // games DECIDED on this turn
   establishes?: string[];         // CAUSALITY: state keys this turn PRODUCES (was [EXP:preconditions])
   needs?: string[];               // CAUSALITY: state keys this turn DEPENDS ON (earned upstream, not ambient)
-  readings?: Reading[];           // METERS: this turn's level on each meter (docs/novel-dna-meters.md)
+  readings?: Reading[];           // METERS: this turn's PLANNED level on each meter (docs/novel-dna-meters.md)
+  observed_readings?: Reading[];  // METERS: the level the PROSE actually delivers, written by the editor's read
+                                  // (the verify loop, docs/true-agent.md). Output data — excluded from chat context.
 }
 export interface ChapterStart { title?: string; pov?: string; epigraph?: string }
 export interface SceneContent {
@@ -301,6 +303,7 @@ export function refsOf(node: DnaNode): string[] {
     if (Array.isArray(c.plays)) out.push(...c.plays.filter(Boolean));
     if (Array.isArray(c.resolves)) out.push(...c.resolves.map((r) => r.ref).filter(Boolean));
     if (Array.isArray(c.readings)) out.push(...c.readings.map((r) => r.ref).filter(Boolean));
+    if (Array.isArray(c.observed_readings)) out.push(...c.observed_readings.map((r) => r.ref).filter(Boolean));
   } else if (node.kind === "meter") {
     const c = node.content as MeterContent;
     if (c.owner) out.push(c.owner);
@@ -467,6 +470,8 @@ const SAGGING_RUN = 4;          // ≥4 consecutive same-polarity scenes = a sag
 const METER_FLAT_RUN = 4;       // ≥4 consecutive ~equal readings on a meter = a dead stretch on that axis
 const METER_MIN_OSC = 2;        // a meter that changes direction fewer times over its life reads monotone
 const METER_POLE_BAND = 0.15;   // a game_score must come within 15% of its losing pole or there's no jeopardy
+const METER_TARGET_DRIFT_BAND = 0.2; // the PLAN's readings may sit within 20% of scale of the INTENDED target curve
+const METER_READ_GAP_BAND = 0.2;     // the prose-OBSERVED reading may sit within 20% of scale of the PLANNED reading
 
 /** PACING (when): each movement's turning point gets an actual % (cumulative words, or scene count
  *  pre-prose) and the drift from its authored target_pct. */
@@ -596,14 +601,20 @@ export function stakesOf(nodes: DnaNode[], gameId: string): string[] {
 // derives the series (what a chart plots) and the shape stats the lints read. Pure, over the beat spine (the
 // PLAN layer, like causality) with carry-forward so a gap means "held", not 0. Nothing is stored.
 export interface MeterPoint { id: string; idx: number; value: number | null }
-export function meterSeries(nodes: DnaNode[], meterId: string): MeterPoint[] {
+/** A meter's level over the beat spine from one reading channel, carry-forward filling gaps. `readings` is
+ *  the PLAN (authored); `observed_readings` is what the editor's read measured off the prose (the verify loop). */
+function seriesFrom(nodes: DnaNode[], meterId: string, field: "readings" | "observed_readings"): MeterPoint[] {
   let last: number | null = null;
   return beatsInOrder(nodes).map((b, idx) => {
-    const r = ((b.content as BeatContent).readings ?? []).find((x) => x.ref === meterId);
+    const r = ((b.content as BeatContent)[field] ?? []).find((x) => x.ref === meterId);
     if (r && typeof r.value === "number") last = r.value;
     return { id: b.id, idx, value: last };
   });
 }
+/** The PLAN series — the beat sheet's authored `readings` on a meter. */
+export const meterSeries = (nodes: DnaNode[], meterId: string): MeterPoint[] => seriesFrom(nodes, meterId, "readings");
+/** The OBSERVED series — what the editor's read measured off the prose (`observed_readings`). The 3rd trace. */
+export const observedSeries = (nodes: DnaNode[], meterId: string): MeterPoint[] => seriesFrom(nodes, meterId, "observed_readings");
 
 /** Summary stats the lints + UI read off a series: range used, # direction changes (oscillation), longest
  *  flat run, terminal value. Carry-forward nulls (leading gaps before the first reading) are ignored. */
@@ -622,6 +633,89 @@ export function meterShape(series: MeterPoint[]): { range: number; oscillations:
 /** A meter is "serial" (plottable as a line) once it carries ≥2 readings across the spine. */
 export function isSerialMeter(nodes: DnaNode[], meterId: string): boolean {
   return meterSeries(nodes, meterId).filter((p) => p.value != null).length >= 2;
+}
+
+/** Linear-interpolate a sparse target curve (keyframes at fractions 0..1, pre-sorted) at fraction f,
+ *  clamped flat beyond the first/last keyframe. */
+function interpTarget(pts: { at: number; value: number }[], f: number): number {
+  if (f <= pts[0].at) return pts[0].value;
+  if (f >= pts[pts.length - 1].at) return pts[pts.length - 1].value;
+  for (let i = 1; i < pts.length; i++) {
+    if (f <= pts[i].at) {
+      const a = pts[i - 1], b = pts[i];
+      const t = (f - a.at) / (b.at - a.at || 1);
+      return a.value + t * (b.value - a.value);
+    }
+  }
+  return pts[pts.length - 1].value;
+}
+
+/** The INTENT layer: the meter's planned `target` curve sampled at every beat. The sparse keyframes
+ *  ({at: 0..1 fraction of the book, value}) are linearly interpolated across the beat spine (beat i sits
+ *  at fraction i/(n-1), the same x the chart uses). Returns null at every beat when the meter has no
+ *  target — there's nothing to aim at. Compare against meterSeries (the PLAN) via targetGap. */
+export function meterTarget(nodes: DnaNode[], meterId: string): MeterPoint[] {
+  const beats = beatsInOrder(nodes);
+  const meter = nodes.find((n) => n.id === meterId && n.kind === "meter");
+  const pts = (((meter?.content as MeterContent | undefined)?.target) ?? [])
+    .filter((p) => typeof p?.at === "number" && typeof p?.value === "number")
+    .sort((a, b) => a.at - b.at);
+  const n = beats.length;
+  return beats.map((b, idx) => ({
+    id: b.id, idx,
+    value: pts.length === 0 ? null : interpTarget(pts, n <= 1 ? 0 : idx / (n - 1)),
+  }));
+}
+
+/** Plan-vs-intent diff (Diff A — pure, no model): per-beat delta between the PLAN (meterSeries readings)
+ *  and the INTENT (meterTarget curve), over the beats where BOTH are present, plus the worst beat and the
+ *  RMS deviation. The cheap half of the verify loop — does the beat sheet even aim at the intended shape? */
+export interface TargetGap {
+  perBeat: { id: string; idx: number; planned: number; target: number; delta: number }[];
+  maxAbs: number;            // largest |delta| across compared beats
+  worstBeatId: string | null;
+  rms: number;               // root-mean-square deviation
+}
+export function targetGap(nodes: DnaNode[], meterId: string): TargetGap {
+  const plan = meterSeries(nodes, meterId);
+  const tgt = meterTarget(nodes, meterId);
+  const perBeat: TargetGap["perBeat"] = [];
+  for (let i = 0; i < plan.length; i++) {
+    const p = plan[i].value, t = tgt[i]?.value;
+    if (p == null || t == null) continue;
+    perBeat.push({ id: plan[i].id, idx: i, planned: p, target: t, delta: p - t });
+  }
+  let maxAbs = 0, worstBeatId: string | null = null, sumSq = 0;
+  for (const r of perBeat) {
+    sumSq += r.delta * r.delta;
+    if (Math.abs(r.delta) > maxAbs) { maxAbs = Math.abs(r.delta); worstBeatId = r.id; }
+  }
+  return { perBeat, maxAbs, worstBeatId, rms: perBeat.length ? Math.sqrt(sumSq / perBeat.length) : 0 };
+}
+
+/** Observed-vs-plan diff (Diff B — the experiential read, docs/true-agent.md): per-beat delta between what
+ *  the PROSE delivers (observedSeries) and what the beat sheet PLANNED (meterSeries), over beats where both
+ *  exist, plus the worst beat. delta = observed − planned (negative = the prose under-delivers the plan).
+ *  Empty until a read has populated observed_readings. The other half of the verify loop. */
+export interface ObservedGap {
+  perBeat: { id: string; idx: number; observed: number; planned: number; delta: number }[];
+  maxAbs: number; worstBeatId: string | null; rms: number;
+}
+export function observedGap(nodes: DnaNode[], meterId: string): ObservedGap {
+  const obs = observedSeries(nodes, meterId);
+  const plan = meterSeries(nodes, meterId);
+  const perBeat: ObservedGap["perBeat"] = [];
+  for (let i = 0; i < plan.length; i++) {
+    const o = obs[i]?.value, p = plan[i].value;
+    if (o == null || p == null) continue;
+    perBeat.push({ id: plan[i].id, idx: i, observed: o, planned: p, delta: o - p });
+  }
+  let maxAbs = 0, worstBeatId: string | null = null, sumSq = 0;
+  for (const r of perBeat) {
+    sumSq += r.delta * r.delta;
+    if (Math.abs(r.delta) > maxAbs) { maxAbs = Math.abs(r.delta); worstBeatId = r.id; }
+  }
+  return { perBeat, maxAbs, worstBeatId, rms: perBeat.length ? Math.sqrt(sumSq / perBeat.length) : 0 };
 }
 
 /** METER lints: a flat axis (nothing moves), a monotone axis (never reverses), and — for game_score meters —
@@ -645,6 +739,28 @@ function meterLints(nodes: DnaNode[]): DnaIssue[] {
       const neared = series.some((p) => p.value != null && p.value <= lowBand);
       if (!neared) {
         issues.push({ rule: "no_jeopardy", severity: "warn", nodeId: m.id, message: `game-score "${c.name ?? m.id}" never nears its losing pole — the win was never in doubt (soft climax)` });
+      }
+    }
+    // A meter's comparison band = a fraction of its scale (explicit scale, else the readings' observed range).
+    const span = typeof c.scale?.min === "number" && typeof c.scale?.max === "number" ? c.scale.max - c.scale.min : s.range;
+    // The PLAN vs the INTENT: when a target curve is set, the beat-sheet readings must aim at it. A drift
+    // beyond a band of the meter's scale = the beat sheet isn't tracking the shape it declared it wants.
+    if ((c.target ?? []).length && span > 0) {
+      const gap = targetGap(nodes, m.id);
+      if (gap.maxAbs > METER_TARGET_DRIFT_BAND * span) {
+        const worst = gap.perBeat.find((r) => r.id === gap.worstBeatId);
+        issues.push({ rule: "target_drift", severity: "warn", nodeId: m.id,
+          message: `"${c.name ?? m.id}" planned readings drift from the target curve by up to ${Math.round(gap.maxAbs)}${worst ? ` (beat ${worst.idx + 1}: plan ${worst.planned} vs target ${Math.round(worst.target)})` : ""} — the beat sheet isn't aiming at the intended shape` });
+      }
+    }
+    // The OBSERVED vs the PLAN (the verify loop): once the editor's read has populated observed_readings, a
+    // beat whose prose departs from its planned reading by more than the band = the prose underdelivers the plan.
+    if (span > 0 && observedSeries(nodes, m.id).some((p) => p.value != null)) {
+      const gap = observedGap(nodes, m.id);
+      if (gap.maxAbs > METER_READ_GAP_BAND * span) {
+        const worst = gap.perBeat.find((r) => r.id === gap.worstBeatId);
+        issues.push({ rule: "read_gap", severity: "warn", nodeId: m.id,
+          message: `"${c.name ?? m.id}" reads off-plan by up to ${Math.round(gap.maxAbs)}${worst ? ` (beat ${worst.idx + 1}: prose ${worst.observed} vs planned ${worst.planned})` : ""} — the prose doesn't deliver the planned level` });
       }
     }
   }

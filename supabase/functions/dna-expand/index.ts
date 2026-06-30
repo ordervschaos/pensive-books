@@ -16,7 +16,13 @@ import { type Brief, briefContext, mandateContext } from "../_shared/brief.ts";
 import { isChainCall } from "../_shared/self-chain.ts";
 import { serviceClient } from "../_shared/task.ts";
 
-interface Node { id: string; parent_id: string | null; kind: string; position?: number; content: Record<string, unknown>; authoring: { locked?: boolean; status?: string } }
+// The rolling continuity digest cached per scene node (authoring.prose_digest). `value` = the accumulator
+// covering all prosed pages UP TO AND INCLUDING this one; src_hash = this page's prose; prev_hash chains to
+// the accumulator it was folded onto (so editing any earlier page invalidates the whole suffix).
+interface DigestLedger { characters?: string[]; objects?: string[]; locations?: string[]; timeline?: string; open_threads?: string[] }
+interface DigestAccum { pages: string[]; ledger: DigestLedger }
+interface DigestLink { value: DigestAccum; src_hash: string; prev_hash: string }
+interface Node { id: string; parent_id: string | null; kind: string; position?: number; content: Record<string, unknown>; authoring: { locked?: boolean; status?: string; prose_digest?: DigestLink } }
 interface NodeTypeConfig { target: string; child_kind: string; child_level: number; parent_kind: string; role: string; count: string; schema_json: string; slots: SlotConfig }
 interface SlotConfig { voice?: boolean; entities?: boolean; threads?: boolean; tentpoles?: boolean; worldRules?: boolean; games?: boolean; preconditions?: boolean; arc?: boolean; priorScenes?: boolean }
 
@@ -70,27 +76,44 @@ function ngrams(text: string, n: number): string[] {
 }
 // Distinctive multi-word phrases (≥3 content words) already used across the prior pages — fed as the
 // anti-repeat blocklist. Deterministic; mirrors distinctivePhrases() in scripts/lib/prose-lints.mjs.
-function distinctivePhrases(priorText: string, n = 5, limit = 40): string[] {
+function distinctivePhrases(priorText: string, n = 5, limit = 80): string[] {
   const counts = new Map<string, number>();
   for (const g of ngrams(priorText, n)) counts.set(g, (counts.get(g) || 0) + 1);
   return [...counts.keys()].filter((g) => g.split(" ").filter((x) => !STOP.has(x)).length >= 3).slice(0, limit);
 }
+// Quoted dialogue lines from prior pages — 4-word dialogue like "Try to keep up" slips through the
+// 5-gram phrase blocklist (too short to appear as a full n-gram). Extract them separately so the
+// model never re-uses a memorable line verbatim across scenes.
+function priorDialogue(priorText: string, limit = 30): string[] {
+  const matches = priorText.match(/"[^"]{8,100}"/g) ?? [];
+  return [...new Set(matches)].slice(0, limit);
+}
 const proseText = (s: Node) => String((s.content as { prose?: { text?: string } }).prose?.text ?? "");
 
-async function buildProseDigest(apiKey: string, model: string, allNodes: Node[], currentId: string, meta: CallMeta): Promise<string> {
-  const ordered = scenesInOrder(allNodes);
-  const idx = ordered.findIndex((s) => s.id === currentId);
-  if (idx <= 0) return "";
-  const priorProsed = ordered.slice(0, idx).filter((s) => proseText(s).trim());
-  if (!priorProsed.length) return "";
-  const last = priorProsed[priorProsed.length - 1];
-  const earlier = priorProsed.slice(0, -1);
-  let storySoFar = "", ledger = "";
-  if (earlier.length) {
-    const corpus = earlier.map((s, i) => `--- Page ${i + 1} ---\n${proseText(s)}`).join("\n\n");
-    const dprompt = `You are compressing a novel-in-progress into a CONTINUITY DIGEST for the writer about to draft the next scene. From the pages below, output STRICT JSON only:
+// Non-crypto FNV-1a (32-bit) — deterministic, synchronous; used only to chain/invalidate cached digests.
+function fnv1a(s: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return (h >>> 0).toString(16);
+}
+function formatLedger(L: DigestLedger): string {
+  return [
+    L.characters?.length ? `Characters:\n${L.characters.map((c) => `  • ${c}`).join("\n")}` : "",
+    L.objects?.length ? `Objects in play: ${L.objects.join("; ")}` : "",
+    L.locations?.length ? `Locations: ${L.locations.join("; ")}` : "",
+    L.timeline ? `Timeline: ${L.timeline}` : "",
+    L.open_threads?.length ? `Open threads:\n${L.open_threads.map((t) => `  • ${t}`).join("\n")}` : "",
+  ].filter(Boolean).join("\n");
+}
+// Fold ONE page into the running digest: the model sees only the cumulative ledger (bounded) + this one
+// page, NOT the whole book. It writes this page's recap line (appended in code) and reconciles the ledger
+// (carry forward, update statuses, close paid-off threads, advance the timeline). This is the O(1)-per-page
+// step that replaces re-summarizing every prior page on every generation.
+async function foldDigest(apiKey: string, model: string, prior: DigestAccum, pageText: string, meta: CallMeta): Promise<DigestAccum> {
+  const stateSoFar = prior.pages.length ? (formatLedger(prior.ledger) || "(no ledger yet)") : "(this is the first page — no prior state)";
+  const dprompt = `You are maintaining a running CONTINUITY DIGEST of a novel-in-progress, one page at a time. You are given the STORY STATE so far (a cumulative continuity ledger) and the NEXT page's prose. Update the state to INCLUDE this page. Output STRICT JSON only:
 {
-  "pages": ["<one tight line per page, in order: POV + location/time, the value-shift, the key facts ESTABLISHED, and the closing image>"],
+  "page": "<one tight line for THIS page: POV + location/time, the value-shift, the key facts ESTABLISHED, and the closing image>",
   "ledger": {
     "characters": ["<name — current status, where they are, what they want now>"],
     "objects": ["<object/clue in play — its state>"],
@@ -99,32 +122,67 @@ async function buildProseDigest(apiKey: string, model: string, allNodes: Node[],
     "open_threads": ["<promise opened but not yet paid — its state>"]
   }
 }
-Exactly one "pages" entry per page, in order. No prose, no preamble — JSON only.
+The ledger is CUMULATIVE state, not just this page: carry forward everything still true, UPDATE what changed, CLOSE threads this page paid off, and ADVANCE the timeline. No prose, no preamble — JSON only.
 
-PAGES:
-${corpus}`;
+STORY STATE SO FAR:
+${stateSoFar}
+
+THIS PAGE:
+${pageText}`;
+  const data = await callClaude(apiKey, { model, max_tokens: 2000, messages: [{ role: "user", content: dprompt }] }, { ...meta, fn: "dna-expand-digest" });
+  const p = JSON.parse(extractJsonBlock(textFromClaude(data))) as { page?: string; ledger?: DigestLedger };
+  return { pages: [...prior.pages, (p.page ?? "").trim()].filter(Boolean), ledger: p.ledger ?? prior.ledger };
+}
+// Persist refreshed cache links back to the nodes (service client — this is a server-side optimization that
+// must work whether the caller was a user or a trusted chain call). Idempotent: same prose → same link.
+async function persistDigestLinks(bookId: number, links: { id: string; authoring: Node["authoring"] }[]): Promise<void> {
+  const sb = serviceClient();
+  await Promise.all(links.map((l) => sb.from("book_nodes").update({ authoring: l.authoring }).eq("id", l.id).eq("book_id", bookId)));
+}
+
+async function buildProseDigest(apiKey: string, model: string, allNodes: Node[], currentId: string, bookId: number, meta: CallMeta): Promise<string> {
+  const ordered = scenesInOrder(allNodes);
+  const idx = ordered.findIndex((s) => s.id === currentId);
+  if (idx <= 0) return "";
+  const priorProsed = ordered.slice(0, idx).filter((s) => proseText(s).trim());
+  if (!priorProsed.length) return "";
+  const last = priorProsed[priorProsed.length - 1];
+  const earlier = priorProsed.slice(0, -1);
+  // Rolling fold: walk `earlier` in order, carrying the accumulator. A page's cached link is reused iff its
+  // prose is unchanged (src_hash) AND the prefix that produced it is unchanged (prev_hash chains to the
+  // accumulator). In steady state (appending the next page) every earlier page is already cached except the
+  // one that just graduated from verbatim-`last` to `earlier`, so exactly ONE fold runs. Editing an earlier
+  // page breaks the chain from that point and the suffix recomputes lazily. (Cold backfill — an existing
+  // many-page book's first generation after this shipped — folds all earlier pages once; new books built
+  // page-by-page never hit it, since each page only ever folds its single newest predecessor.)
+  let accum: DigestAccum = { pages: [], ledger: {} };
+  const refreshed: { id: string; authoring: Node["authoring"] }[] = [];
+  for (const page of earlier) {
+    const txt = proseText(page);
+    const srcHash = fnv1a(txt);
+    const prevHash = fnv1a(JSON.stringify(accum));
+    const cached = page.authoring?.prose_digest;
+    if (cached && cached.src_hash === srcHash && cached.prev_hash === prevHash) { accum = cached.value; continue; }
     try {
-      const data = await callClaude(apiKey, { model, max_tokens: 2000, messages: [{ role: "user", content: dprompt }] }, { ...meta, fn: "dna-expand-digest" });
-      const p = JSON.parse(extractJsonBlock(textFromClaude(data))) as { pages?: string[]; ledger?: Record<string, unknown> };
-      storySoFar = (p.pages ?? []).map((x, i) => `- Page ${i + 1}: ${x}`).join("\n");
-      const L = (p.ledger ?? {}) as { characters?: string[]; objects?: string[]; locations?: string[]; timeline?: string; open_threads?: string[] };
-      ledger = [
-        L.characters?.length ? `Characters:\n${L.characters.map((c) => `  • ${c}`).join("\n")}` : "",
-        L.objects?.length ? `Objects in play: ${L.objects.join("; ")}` : "",
-        L.locations?.length ? `Locations: ${L.locations.join("; ")}` : "",
-        L.timeline ? `Timeline: ${L.timeline}` : "",
-        L.open_threads?.length ? `Open threads:\n${L.open_threads.map((t) => `  • ${t}`).join("\n")}` : "",
-      ].filter(Boolean).join("\n");
-    } catch { /* degrade gracefully: blocklist + previous page still carry continuity */ }
+      accum = await foldDigest(apiKey, model, accum, txt, meta);
+      page.authoring = { ...page.authoring, prose_digest: { value: accum, src_hash: srcHash, prev_hash: prevHash } };
+      refreshed.push({ id: page.id, authoring: page.authoring });
+    } catch { /* degrade gracefully: skip this page's fold; blocklist + previous page still carry continuity */ }
   }
+  if (refreshed.length) await persistDigestLinks(bookId, refreshed);
+  const storySoFar = accum.pages.map((x, i) => `- Page ${i + 1}: ${x}`).join("\n");
+  const ledger = formatLedger(accum.ledger);
   // v2: blocklist covers ALL prior pages INCLUDING the previous one (its verbatim text was the top echo source).
-  const blocklist = distinctivePhrases(priorProsed.map(proseText).join("\n"));
+  const allPriorText = priorProsed.map(proseText).join("\n");
+  const blocklist = distinctivePhrases(allPriorText);
+  const dialogue = priorDialogue(allPriorText);
   return [
-    "PRECEDING CONTEXT — an efficient digest of the pages so far. Treat it as authoritative continuity; maintain the established voice and do NOT reuse any phrase listed under avoid_repeating:",
+    "PRECEDING CONTEXT — an efficient digest of the pages so far. Treat it as authoritative continuity; maintain the established voice and do NOT reuse any phrase or dialogue line listed below:",
     storySoFar && `<story_so_far>\n${storySoFar}\n</story_so_far>`,
     ledger && `<continuity_ledger>\n${ledger}\n</continuity_ledger>`,
     blocklist.length && `<avoid_repeating>\n${blocklist.map((p) => `- ${p}`).join("\n")}\n</avoid_repeating>`,
-    `<previous_page note="for voice + cadence ONLY — do NOT reuse, complete, or paraphrase its closing image or final line; open this scene on a different beat and in a different register">\n${proseText(last)}\n</previous_page>`,
+    dialogue.length && `<avoid_repeating_dialogue note="these exact lines have already been spoken — do NOT reuse them verbatim or near-verbatim in this scene">\n${dialogue.map((d) => `- ${d}`).join("\n")}\n</avoid_repeating_dialogue>`,
+    `<previous_page note="for voice + cadence ONLY — do NOT copy or echo its opening image, its closing image, its character gestures, or any of its phrases; this new scene must open in a DIFFERENT place, time, or emotional register than where this page opens or closes">\n${proseText(last)}\n</previous_page>`,
   ].filter(Boolean).join("\n\n");
 }
 
@@ -325,10 +383,33 @@ Deno.serve(async (req: Request) => {
     // anti-repetition polish for speed; fine for a draft-to-check, not for the canonical book build.
     const prevProseBlock = light ? ""
       : (target === "prose" || (!target && node.kind === "scene"))
-      ? await buildProseDigest(apiKey, low, nodes, nodeId, meta)
+      ? await buildProseDigest(apiKey, low, nodes, nodeId, bookId, meta)
       : target === "caption"
         ? buildPrevProseBlock(nodes, nodeId)
         : "";
+    // Beat neighbourhood — the sibling beats of the scene's parent beat, in movement order.
+    // Prose generation only sees its direct ancestor chain (parent beat + movement + …), so it never
+    // knows what specific facts (names, numbers, objects) are established in adjacent beats. That gap
+    // causes contradictions: prose invents "Lot 7" while the next beat's plan says "Lot 27". Feeding
+    // the full beat list of the parent movement gives prose a view of the surrounding plan, so it
+    // can honour the specifics those beats have already committed to.
+    const beatNeighbourhoodBlock = (() => {
+      if (node.kind !== "scene") return "";
+      const parentBeat = node.parent_id ? byId.get(node.parent_id) : undefined;
+      if (!parentBeat || parentBeat.kind !== "beat") return "";
+      const movementId = parentBeat.parent_id;
+      if (!movementId) return "";
+      const siblingBeats = nodes
+        .filter((n) => n.parent_id === movementId && n.kind === "beat")
+        .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+      if (siblingBeats.length <= 1) return "";
+      const lines = siblingBeats.map((b) => {
+        const isCurrent = b.id === parentBeat.id;
+        const summary = String((b.content as { summary?: string }).summary ?? "").trim();
+        return `  ${isCurrent ? "▶ " : "  "}[beat pos=${b.position}${isCurrent ? " ← THIS SCENE'S BEAT" : ""}] ${summary}`;
+      });
+      return `BEAT PLAN — all beats in this act, in order (honour any specific facts, names, numbers, or objects established here):\n${lines.join("\n")}`;
+    })();
     const ctx = [
       `BOOK: ${book?.name ?? ""}`,
       `BRIEF (binding):\n${briefContext(brief, { scope: "full", success: true, none: "(no brief)", empty: "(empty)" })}`,
@@ -344,6 +425,7 @@ Deno.serve(async (req: Request) => {
       gamesBlock,
       precondBlock, // [EXP:preconditions]
       movementBlock,
+      beatNeighbourhoodBlock, // sibling beats — keeps prose from contradicting plan-layer facts
       settingBlock, // this scene's resolved location palette (prose grounding)
       registerBlock, // this scene's voice modulation (anti-monotony) — bends the signature for this scene only
       prevProseBlock,
@@ -373,7 +455,9 @@ Honor the MANDATE (genre/tone) and any LOCKED ancestors. Do NOT invent a title. 
       // Scene → prose: fill the scene's own text. One true draft, in voice.
       const system = `You are a novelist writing the PROSE for one scene, from its plan. Write the scene fully — vivid, causal, in the book's voice — honoring the MANDATE (heat/tone/length) without laundering. Output the prose ONLY: no preamble, no headings, no JSON.
 
-VOICE — write ONLY the fiction, from inside the story: NEVER address or mention "the reader"/"you", and NEVER refer to "the book", "the story", "the scene", "the page", the author, or the writing itself. The plan's notes describe INTENT in craft terms (e.g. "the reader is told it reads as fury", "the book plants the wrong label") — those are directions TO YOU, not lines to reproduce. Dramatize that intent through concrete action, sensation, and subtext; never narrate it or break the fourth wall.`;
+VOICE — write ONLY the fiction, from inside the story: NEVER address or mention "the reader"/"you", and NEVER refer to "the book", "the story", "the scene", "the page", the author, or the writing itself. The plan's notes describe INTENT in craft terms (e.g. "the reader is told it reads as fury", "the book plants the wrong label") — those are directions TO YOU, not lines to reproduce. Dramatize that intent through concrete action, sensation, and subtext; never narrate it or break the fourth wall.
+
+ANTI-REPETITION (critical): Never repeat any physical gesture, character reaction, sentence structure, or phrase within this scene — not even once. If a character smirks in paragraph 2, they cannot smirk (or twitch, or smile faintly) again. Each beat of the scene must be rendered with entirely fresh language. If you feel the urge to reuse a phrase or gesture, stop and invent a different one. This scene ends when the plan's goal/outcome is dramatized — do not loop, pad, or re-dramatize beats already written.`;
       const userContent = `${ctx}\n\nWrite this scene's prose.`;
       // Browser-streamed path: hand back the assembled request; the client streams it via /api/stream-prose.
       if (prepare) return json({ prepared: { system, userContent, model, max_tokens: 8000 } });

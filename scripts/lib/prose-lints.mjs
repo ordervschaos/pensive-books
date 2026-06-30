@@ -29,12 +29,19 @@ export function ngrams(text, n) {
 // The distinctive multi-word phrases used across the prior pages — fed to generation as an
 // "avoid repeating" blocklist, and used by repetition_prior to score echoes. Ranked by length
 // then frequency; deduped; capped.
-export function distinctivePhrases(priorText, { n = 5, limit = 40 } = {}) {
+export function distinctivePhrases(priorText, { n = 5, limit = 80 } = {}) {
   const counts = new Map();
   for (const g of ngrams(priorText, n)) counts.set(g, (counts.get(g) || 0) + 1);
   // A phrase is "distinctive" if it contains at least 3 content (non-stop) words.
   const distinctive = [...counts.keys()].filter((g) => g.split(" ").filter((x) => !STOP.has(x)).length >= 3);
   return distinctive.slice(0, limit);
+}
+
+// Quoted dialogue lines from prior prose — 4-word lines like "Try to keep up" slip through the
+// 5-gram phrase blocklist. Extract them explicitly so the model never reuses a line verbatim.
+export function priorDialogue(priorText, limit = 30) {
+  const matches = priorText.match(/"[^"]{8,100}"/g) ?? [];
+  return [...new Set(matches)].slice(0, limit);
 }
 
 // LINT: repetition_prior — distinctive n-grams the new prose reuses verbatim from earlier pages.

@@ -4,12 +4,13 @@
 // scale so axes with different ranges (comedy 0..100, affect −100..100, a game-score) coexist on one chart.
 // Pure projection of the live tree — nothing generates here. Nav suppressed (a dev DNA route, like the tree).
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import {
-  beatsInOrder, byId, childrenOf, isSerialMeter, meterSeries, meterShape, validate,
-  type DnaNode, type MeterContent, type DnaIssue,
+  beatsInOrder, byId, childrenOf, isSerialMeter, meterSeries, meterShape, meterTarget, observedSeries, validate,
+  type DnaNode, type MeterContent, type DnaIssue, type MeterPoint,
 } from "@/lib/novelDna";
+import { buildMeterReadInput, invokeMeterRead, observedFindingsMessage, sendFindingsToEditor, writeObserved } from "@/lib/meterRead";
 
 const getNumericId = (p: string | undefined) => { const m = p?.match(/^(\d+)/); return m ? parseInt(m[1]) : 0; };
 
@@ -22,6 +23,8 @@ const LINT_COLOR: Record<string, string> = { error: "#f87171", warn: "#fbbf24" }
 // ── The serial graph: one normalized line per serial meter over the beat spine ──────────────────────────
 // x = beat index (the PLAN layer meterSeries walks). Each meter maps its own [min,max] → [0,1] so unlike-scaled
 // meters share the canvas; the legend carries the real values. Faint act dividers mark movement boundaries.
+// The PLAN line (solid) is the beat readings; when a meter declares a target curve, its INTENT (dashed, same
+// color) is overlaid so the plan-vs-intent gap is visible (the target_drift lint reads the same diff).
 function SerialGraph({ nodes, meters, colorOf }: { nodes: DnaNode[]; meters: DnaNode[]; colorOf: (id: string) => string }) {
   const beats = beatsInOrder(nodes);
   const n = beats.length;
@@ -40,14 +43,28 @@ function SerialGraph({ nodes, meters, colorOf }: { nodes: DnaNode[]; meters: Dna
     acc += c; if (acc > 0 && acc < n) bounds.push(acc);
   }
 
-  const normOf = (m: DnaNode) => {
+  // Normalize the PLAN (readings), the INTENT (target curve), and the OBSERVED read onto the SAME [lo,hi] so
+  // they're comparable. Without an explicit scale, the bounds span all three so no line clips off-canvas.
+  const normsOf = (m: DnaNode) => {
     const c = m.content as MeterContent;
-    const series = meterSeries(nodes, m.id);
-    const ys = series.map((p) => p.value).filter((v): v is number => v != null);
+    const plan = meterSeries(nodes, m.id);
+    const target = meterTarget(nodes, m.id);
+    const observed = observedSeries(nodes, m.id);
+    const ys = [...plan, ...target, ...observed].map((p) => p.value).filter((v): v is number => v != null);
     const lo = c.scale?.min ?? Math.min(...ys);
     const hi = c.scale?.max ?? Math.max(...ys);
     const span = hi - lo || 1;
-    return series.map((p) => (p.value == null ? null : (p.value - lo) / span));
+    const norm = (s: MeterPoint[]) => s.map((p) => (p.value == null ? null : (p.value - lo) / span));
+    return { plan: norm(plan), target: norm(target), observed: norm(observed) };
+  };
+  // A normalized series → SVG point segments (null gaps split the line so a never-read stretch isn't bridged).
+  const segmentsOf = (norms: (number | null)[]): string[][] => {
+    const segments: string[][] = [[]];
+    norms.forEach((v, i) => {
+      if (v == null) { if (segments[segments.length - 1].length) segments.push([]); return; }
+      segments[segments.length - 1].push(`${x(i).toFixed(1)},${y(v).toFixed(1)}`);
+    });
+    return segments.filter((s) => s.length);
   };
 
   return (
@@ -60,22 +77,25 @@ function SerialGraph({ nodes, meters, colorOf }: { nodes: DnaNode[]; meters: Dna
       {bounds.map((b, i) => (
         <line key={`b${i}`} x1={x(b - 0.5)} y1={0} x2={x(b - 0.5)} y2={H} stroke="#555" strokeWidth={1} vectorEffect="non-scaling-stroke" opacity={0.4} />
       ))}
-      {/* one polyline per meter; null gaps split the line into segments (don't bridge a never-read stretch) */}
+      {/* per meter: PLAN (solid) + target INTENT (dashed) + OBSERVED read (dotted). null gaps split each. */}
       {meters.map((m) => {
-        const norms = normOf(m);
+        const { plan, target, observed } = normsOf(m);
         const color = colorOf(m.id);
-        const segments: string[][] = [[]];
-        norms.forEach((v, i) => {
-          if (v == null) { if (segments[segments.length - 1].length) segments.push([]); return; }
-          segments[segments.length - 1].push(`${x(i).toFixed(1)},${y(v).toFixed(1)}`);
-        });
+        const hasTarget = target.some((v) => v != null);
+        const hasObserved = observed.some((v) => v != null);
         return (
           <g key={m.id}>
-            {segments.filter((s) => s.length).map((pts, si) => (
+            {hasTarget && segmentsOf(target).map((pts, si) => (
+              <polyline key={`t${si}`} points={pts.join(" ")} fill="none" stroke={color} strokeWidth={1.5} strokeDasharray="4 4" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" opacity={0.5} />
+            ))}
+            {hasObserved && segmentsOf(observed).map((pts, si) => (
+              <polyline key={`o${si}`} points={pts.join(" ")} fill="none" stroke={color} strokeWidth={1.5} strokeDasharray="1 4" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" opacity={0.8} />
+            ))}
+            {segmentsOf(plan).map((pts, si) => (
               <polyline key={si} points={pts.join(" ")} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" opacity={0.92} />
             ))}
-            {/* end dot at the last real value */}
-            {(() => { const li = norms.map((v, i) => (v == null ? -1 : i)).reduce((a, b) => Math.max(a, b), -1); return li >= 0 ? <circle cx={x(li)} cy={y(norms[li]!)} r={3} fill={color} /> : null; })()}
+            {/* end dot at the last real PLAN value */}
+            {(() => { const li = plan.map((v, i) => (v == null ? -1 : i)).reduce((a, b) => Math.max(a, b), -1); return li >= 0 ? <circle cx={x(li)} cy={y(plan[li]!)} r={3} fill={color} /> : null; })()}
           </g>
         );
       })}
@@ -117,9 +137,42 @@ function MeterRow({ nodes, meter, color, serial, issues }: { nodes: DnaNode[]; m
 
 export default function DnaMetersPage() {
   const { bookSlug } = useParams<{ bookSlug: string }>();
+  const navigate = useNavigate();
   const bookId = getNumericId(bookSlug);
   const [nodes, setNodes] = useState<DnaNode[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reading, setReading] = useState(false); // the read / send is in flight
+  const [note, setNote] = useState<string | null>(null);
+
+  // The editor's read: rate the prose against the meters, write the OBSERVED trace onto the beats (the
+  // dotted line appears via the book_nodes subscription). The author then reviews the gaps before sending.
+  const runRead = async () => {
+    if (!nodes || !bookId) return;
+    setReading(true); setNote("Reading the prose against the meters…");
+    try {
+      const input = buildMeterReadInput(nodes);
+      if (!input.meters.length) { setNote("No meters defined yet — add a meter node first."); return; }
+      if (!input.beats.length) { setNote("No beats with prose to read yet."); return; }
+      const readings = await invokeMeterRead(bookId, input);
+      await writeObserved(nodes, readings);
+      setNote(`Read ${readings.length} reading(s) across ${input.beats.length} beat(s). The dotted line is what the prose delivers.`);
+    } catch (e) {
+      setNote(`Read failed: ${String((e as Error)?.message ?? e)}`);
+    } finally { setReading(false); }
+  };
+
+  // Hand the read's gaps to the editor agent (the manual taste gate), then jump to the tree's agent rail.
+  const sendToEditor = async () => {
+    if (!nodes || !bookId) return;
+    setReading(true);
+    try {
+      const sent = await sendFindingsToEditor(bookId, nodes, {});
+      if (sent) navigate(`/books/${bookSlug}/dna/tree`);
+      else setNote("The prose is on-plan — no gaps to send.");
+    } catch (e) {
+      setNote(`Couldn't send to the editor: ${String((e as Error)?.message ?? e)}`);
+    } finally { setReading(false); }
+  };
 
   // initial load
   useEffect(() => {
@@ -145,7 +198,7 @@ export default function DnaMetersPage() {
     const serialMeters = meters.filter((m) => isSerialMeter(ns, m.id));
     const colorMap = new Map(serialMeters.map((m, i) => [m.id, LINE_COLORS[i % LINE_COLORS.length]]));
     const colorOf = (id: string) => colorMap.get(id) ?? "#888";
-    const issues = validate(ns).filter((i) => ["flat_meter", "no_oscillation", "no_jeopardy"].includes(i.rule));
+    const issues = validate(ns).filter((i) => ["flat_meter", "no_oscillation", "no_jeopardy", "target_drift", "read_gap"].includes(i.rule));
     return { meters, serialMeters, colorOf, issues };
   }, [nodes]);
 
@@ -159,9 +212,22 @@ export default function DnaMetersPage() {
           <h1 style={{ fontSize: 18, fontWeight: 700, letterSpacing: -0.2 }}>Meters</h1>
           <a href={`/books/${bookSlug}/dna/tree`} style={{ fontSize: 12, color: "#7dd3fc", textDecoration: "none" }}>← tree</a>
         </div>
-        <p style={{ fontSize: 12, color: "#777", marginTop: 0, marginBottom: 18 }}>
+        <p style={{ fontSize: 12, color: "#777", marginTop: 0, marginBottom: 12 }}>
           The story's tracked axes (docs/novel-dna-meters.md). Serial meters — those with readings across ≥2 beats — plot below, each normalized to its own scale.
         </p>
+        {meters.length > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18, flexWrap: "wrap" }}>
+            <button type="button" onClick={() => void runRead()} disabled={reading}
+              style={{ fontSize: 12, color: "#0a0a0a", background: "#7dd3fc", border: "none", borderRadius: 6, padding: "6px 12px", fontWeight: 600, cursor: reading ? "default" : "pointer", opacity: reading ? 0.6 : 1 }}>
+              {reading ? "Reading…" : "Read the emotional trace"}
+            </button>
+            <button type="button" onClick={() => void sendToEditor()} disabled={reading || !observedFindingsMessage(nodes)}
+              style={{ fontSize: 12, color: "#ddd", background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "6px 12px", cursor: reading || !observedFindingsMessage(nodes) ? "default" : "pointer", opacity: reading || !observedFindingsMessage(nodes) ? 0.4 : 1 }}>
+              Send gaps to editor →
+            </button>
+            {note && <span style={{ fontSize: 12, color: note.toLowerCase().includes("fail") || note.toLowerCase().includes("couldn't") ? "#f87171" : "#888" }}>{note}</span>}
+          </div>
+        )}
 
         {meters.length === 0 ? (
           <div style={{ fontSize: 13, color: "#777", border: "1px dashed #2a2a2a", borderRadius: 8, padding: 20 }}>
@@ -182,6 +248,9 @@ export default function DnaMetersPage() {
                       </span>
                     );
                   })}
+                  <span style={{ fontSize: 11, color: "#777", marginLeft: "auto" }}>
+                    solid = plan{serialMeters.some((m) => (m.content as MeterContent).target?.length) ? " · dashed = target" : ""}{serialMeters.some((m) => observedSeries(nodes, m.id).some((p) => p.value != null)) ? " · dotted = read" : ""}
+                  </span>
                 </div>
               </div>
             )}
