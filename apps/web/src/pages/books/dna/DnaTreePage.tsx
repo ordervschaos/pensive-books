@@ -105,11 +105,15 @@ function beatGlyph(n: DnaNode): string {
 }
 
 // ── Shared geometry + atoms for a detail field row ────────────────────────────
+// spineX = x of the chevron's CENTER for a node at this depth. Row paddingLeft is depth*20+(depth>0?20:4)
+// and the chevron is a 12px span at the start, so its center sits 6px in. Every vertical rail/connector
+// hangs off this so the line drops dead-center through the chevron above it.
+const spineX = (depth: number) => depth * 20 + (depth > 0 ? 26 : 10);
 const detailRowStyle = (depth: number): React.CSSProperties => ({ position: "relative", display: "flex", alignItems: "baseline", gap: 8, paddingLeft: depth * 20 + 20, paddingRight: 12, paddingTop: 1, paddingBottom: 1 });
 const labelStyle: React.CSSProperties = { fontFamily: "ui-monospace, monospace", fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "#5c5c5c", width: 92, flexShrink: 0, textAlign: "right" };
-// Vertical guide rail dropping from the parent's chevron — one short segment per detail row;
-// stacked rows fuse into a continuous line aligned with the parent node's spine (left: depth*20+8).
-const ConnectorTick = ({ depth }: { depth: number }) => <div style={{ position: "absolute", left: (depth - 1) * 20 + 8, top: 0, bottom: 0, width: 1, background: "#ffffff14" }} />;
+// Tree connector lines removed — indentation alone carries the hierarchy. Kept as a no-op so the many
+// detail-row call sites (fieldRowStart, OpDiffBlock, etc.) don't all need editing.
+const ConnectorTick = (_: { depth: number }) => null;
 const fieldRowStart = (depth: number) => (
   <>
     <ConnectorTick depth={depth} />
@@ -467,19 +471,7 @@ function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete, keb
       onDrop={canDrop ? (e) => { e.preventDefault(); onDropRow?.(dropEdge !== "bottom"); setDropEdge(null); } : undefined}
       style={{ position: "relative", transition: "background 0.4s, opacity 0.3s", opacity: dragging ? 0.4 : dimmed ? 0.3 : undefined, background: flash ? "#8a8aff22" : undefined, boxShadow: flash ? "inset 0 0 0 1px #8a8aff88" : undefined, borderRadius: flash ? 4 : undefined }}>
       {/* #5 — drop indicator: a line at the edge the dragged sibling would land on */}
-      {dropEdge && <div style={{ position: "absolute", left: depth * 20 + 8, right: 12, [dropEdge]: 0, height: 2, background: "#8a8aff", zIndex: 2, pointerEvents: "none" }} />}
-      {/* Vertical connector line from this node down to its last child / detail */}
-      {expandable && open && (
-        <div style={{
-          position: "absolute",
-          left: depth * 20 + 8,
-          top: 22,
-          bottom: 0,
-          width: 1,
-          background: `${color}30`,
-          pointerEvents: "none",
-        }} />
-      )}
+      {dropEdge && <div style={{ position: "absolute", left: spineX(depth), right: 12, [dropEdge]: 0, height: 2, background: "#8a8aff", zIndex: 2, pointerEvents: "none" }} />}
 
       {/* The node row */}
       <div
@@ -495,19 +487,6 @@ function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete, keb
           background: markColor ? `${markColor}12` : ctxColor ? `${ctxColor}1a` : focus ? "#8a8aff08" : undefined,
         }}
       >
-        {/* Horizontal connector line from parent spine to this node */}
-        {depth > 0 && (
-          <div style={{
-            position: "absolute",
-            left: (depth - 1) * 20 + 8,
-            top: "50%",
-            width: 12,
-            height: 1,
-            background: `${color}40`,
-            transform: "translateY(-50%)",
-          }} />
-        )}
-
         {/* Expand/collapse chevron */}
         <span style={{ width: 12, flexShrink: 0, color: expandable ? `${color}80` : "transparent", fontSize: 9, lineHeight: 1 }}>
           {expandable ? (open ? "▼" : "▶") : "·"}
@@ -931,9 +910,6 @@ function NodeGroup({ groupId, label, hint, count, depth, collapsedSet, onToggle,
   const collapsed = collapsedSet.has(groupId);
   return (
     <div style={{ position: "relative" }}>
-      {!collapsed && (
-        <div style={{ position: "absolute", left: depth * 20 + 8, top: 22, bottom: 0, width: 1, background: "#ffffff14", pointerEvents: "none" }} />
-      )}
       <div onClick={() => onToggle(groupId)} style={{
         display: "flex", alignItems: "baseline", gap: 8,
         paddingLeft: depth * 20 + 20, paddingRight: 12, paddingTop: 7, paddingBottom: 3, cursor: "pointer",
@@ -1344,6 +1320,7 @@ interface TreeView {
   onSaveBrief: (patch: Partial<Brief>) => Promise<void>;
   bookId: number;                       // options/eval lab → drives the agent thread
   openRail: () => void;                 // surface the agent rail when a lab action fires a turn
+  onAttachNode: (id: string) => void;   // slice 2 — attach this node to the agent's context tray (anchors)
   onOpenProseReader: (sceneId: string) => void; // open the prose reader modal for a scene
 }
 function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
@@ -1391,6 +1368,9 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
 
   // Kebab items — regenerate actions, manual adds, AI options.
   const kebabItems: KebabItem[] = [];
+  // Attach this node to the agent's context tray (slice 2) — on every node; the agent always sees the
+  // whole book, this just anchors where it looks (the @-mention model). Detach from the chip in the rail.
+  kebabItems.push({ label: "＋ add to agent context", color: "#a8a8ff", onClick: () => h.onAttachNode(node.id) });
   // Act: add a beat manually
   if (node.kind === "act") {
     kebabItems.push({ label: "+ add beat", color: "#4a7a5a", onClick: () => h.onAdd(node.id, "beat") });
@@ -1399,7 +1379,7 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
   if (node.kind === "scene") {
     const hasProse = !!(node.content as SceneContent).prose?.text?.trim();
     if (hasProse) {
-      kebabItems.push({ label: "↻ regenerate prose", color: "#8a8aaa", onClick: () => expandNode(h.bookId, node, "prose") });
+      kebabItems.push({ label: "↻ regenerate prose", color: "#8a8aaa", onClick: () => { void expandNode(h.bookId, node, "prose"); } });
     }
   }
   // Beat with scenes → regenerate scenes (first-time is the header button; this is the redo)
@@ -2313,6 +2293,17 @@ export default function DnaTreePage() {
   const railKey = `dna-rail-open:${bookId}`;
   const [railOpen, setRailOpen] = useState<boolean>(() => localStorage.getItem(railKey) === "1");
   useEffect(() => { localStorage.setItem(railKey, railOpen ? "1" : "0"); }, [railKey, railOpen]);
+  // Slice 2 (docs/agent-context-model.md): the agent's context tray — DNA node ids the author attached as
+  // anchors (Cursor's @-file model). Persisted per book; the agent always sees the whole book, these just
+  // bias where it looks. Attach from a node's kebab; detach from the chip in the rail. Opening the rail on
+  // attach makes the new context visible immediately.
+  const attachKey = `agent-attached:${bookId}`;
+  const [attachedIds, setAttachedIds] = useState<string[]>(() => {
+    try { const v = localStorage.getItem(attachKey); return v ? (JSON.parse(v) as string[]) : []; } catch { return []; }
+  });
+  useEffect(() => { try { localStorage.setItem(attachKey, JSON.stringify(attachedIds)); } catch { /* ignore */ } }, [attachKey, attachedIds]);
+  const attachNode = useCallback((id: string) => { setAttachedIds((ids) => (ids.includes(id) ? ids : [...ids, id])); setRailOpen(true); }, []);
+  const detachNode = useCallback((id: string) => setAttachedIds((ids) => ids.filter((x) => x !== id)), []);
   // #1 — pending proposals from the agent thread (book_agent_runs), mirrored so the tree can overlay them.
   const [agentProposals, setAgentProposals] = useState<AgentProposal[]>([]);
   const [showIssues, setShowIssues] = useState(false); // drill into the lints behind the score
@@ -2690,7 +2681,7 @@ export default function DnaTreePage() {
             <span onClick={() => setRailOpen(false)} title="close" style={{ color: "#666", cursor: "pointer", fontSize: 14, lineHeight: 1 }}>✕</span>
           </div>
           <div style={{ flex: 1, minHeight: 0 }}>
-            <AgentRail bookId={bookId} nodes={nodes} settings={settings} />
+            <AgentRail bookId={bookId} nodes={nodes} settings={settings} attachedIds={attachedIds} onDetach={detachNode} />
           </div>
         </div>
       )}
@@ -2861,7 +2852,7 @@ export default function DnaTreePage() {
         {roots.map((root) => (
           <Subtree key={root.id} node={root} index={index} nodes={nodes} depth={0}
             collapsedSet={collapsedSet} openSet={openSet}
-            h={{ onToggle: toggleNode, onToggleDetail: toggleDetail, onAdd: addNode, onDelete: removeNode, onJump: jumpTo, dragId, onDragStart: setDragId, onDragEnd: () => setDragId(null), onDrop: onDropReorder, backlinks, flashId, proposal: proposalView, focusKinds: null, issuesByNode, healthLens, contextId, ctxConsumes, ctxConsumedBy, onContextFocus: focusContext, proseGeneratable, proseOpenSet, onToggleProse: toggleProse, writingProseIds, onProseWriting, onDiscardStory: discardStory, brief, onSaveBrief: saveBrief, bookId, openRail: () => setRailOpen(true), onOpenProseReader: setProseReaderSceneId }} />
+            h={{ onToggle: toggleNode, onToggleDetail: toggleDetail, onAdd: addNode, onDelete: removeNode, onJump: jumpTo, dragId, onDragStart: setDragId, onDragEnd: () => setDragId(null), onDrop: onDropReorder, backlinks, flashId, proposal: proposalView, focusKinds: null, issuesByNode, healthLens, contextId, ctxConsumes, ctxConsumedBy, onContextFocus: focusContext, proseGeneratable, proseOpenSet, onToggleProse: toggleProse, writingProseIds, onProseWriting, onDiscardStory: discardStory, brief, onSaveBrief: saveBrief, bookId, openRail: () => setRailOpen(true), onAttachNode: attachNode, onOpenProseReader: setProseReaderSceneId }} />
         ))}
       </div>
       </>)}

@@ -400,20 +400,15 @@ function CallDialog({ call, evals, onClose, onJudge, judging, profile }: {
             {call.system && <Section title="System"><pre className="whitespace-pre-wrap text-xs font-mono leading-5">{call.system}</pre></Section>}
             {call.artifacts != null && <Section title="Artifacts (labeled inputs)"><ArtifactsView artifacts={call.artifacts} /></Section>}
 
-            {call.source === "stream-proxy" ? (
-              <p className="text-xs text-muted-foreground italic border rounded px-4 py-3 bg-muted/30">
-                Streams are not recorded — context and output are only captured for <code>edge</code> and <code>bridge</code> calls.
-              </p>
-            ) : (
-              <>
-                <Section title="Context (assembled prompt)">
-                  <ProseBlock text={ctx} />
-                </Section>
-                <Section title="Output">
-                  <OutputBlock text={call.output ?? "(none)"} />
-                </Section>
-              </>
-            )}
+            {/* Streamed prose calls are now recorded too: _proseProxy.logStreamCall writes system/input/output
+                in one insert, so render them like edge/bridge calls. Pre-enrichment rows have null input/output
+                and degrade to the "(no context recorded)" / "(none)" fallbacks below. */}
+            <Section title="Context (assembled prompt)">
+              <ProseBlock text={ctx} />
+            </Section>
+            <Section title="Output">
+              <OutputBlock text={call.output ?? "(none)"} />
+            </Section>
 
             <div className="flex items-center justify-between border-t pt-3">
               <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Evaluations</h3>
