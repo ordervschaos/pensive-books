@@ -62,10 +62,10 @@ export function useAutoAccept({ enabled, bookId, row, nodes, refetch }: {
         finally { await continueAgent(row.id).catch(() => {}); }
       };
     } else if (row.status === "idle" && optionNode) {
-      // Staged options the author would pick among: commit the sharpened one if present, else the first, then
-      // resume the run (the edge case where the agent staged options in autonomous mode).
+      // Staged options the author would pick among: commit the first, then resume the run (the edge case
+      // where the agent staged options in autonomous mode).
       const props = optionNode.proposals!;
-      const pick = props.find((p) => p.source === "eval") ?? props[0];
+      const pick = props[0];
       key = optKey(optionNode);
       run = async () => {
         try { await chooseNodeProposal(optionNode, pick.id, nodes); } catch { /* leave for the human */ }

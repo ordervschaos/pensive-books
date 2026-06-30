@@ -160,10 +160,9 @@ export interface DnaNode {
   content: NodeContent;
   authoring: Authoring;
   // Candidate alternatives the author picks ONE of (the options/picker channel). Written by the agent's
-  // propose_options tool; `note` carries the agent's per-option rationale (or an eval critique for a single
-  // sharpened revision); `source` distinguishes blind options from an eval-loop revision. jsonb — extending
-  // this shape needs no migration. chosen = the committed proposal id (set by chooseProposal).
-  proposals?: { id: string; content: NodeContent; note?: string; source?: "options" | "eval" }[];
+  // propose_options tool; `note` carries the agent's per-option rationale. jsonb — extending this shape needs
+  // no migration. chosen = the committed proposal id (set by chooseProposal).
+  proposals?: { id: string; content: NodeContent; note?: string; source?: "options" }[];
   chosen?: string | null;
 }
 
