@@ -57,6 +57,12 @@ export interface GameResolution { ref: string; outcome: "won" | "lost" }
 // A meter reading on a beat/scene: the LEVEL of a meter at this turn (a y-value, not a delta). Carry-forward:
 // a turn with no reading on a meter holds the prior level (docs/novel-dna-meters.md §3).
 export interface Reading { ref: string; value: number }
+// CONTINUITY LEDGER (docs/true-agent.md Step 3): a fact a scene's PROSE asserted — key→value canon the rest of
+// the book must stay consistent with ("mara" → "lot 7"). Folded left-to-right over scenes (last-write-wins =
+// supersede) into the running "story so far". Observed OUTPUT of the read — the state-axis twin of observed_readings.
+export interface LedgerFact { key: string; value: string; note?: string }
+// A continuity break the read found in a scene's prose vs the canon established before it (was → now).
+export interface ContinuityFlag { key: string; was: string; now: string; note?: string }
 export interface BeatContent {
   summary?: string; connector?: "therefore" | "but"; polarity?: "up" | "down";
   threads?: ThreadRef[]; realizes?: string[]; grounds_in?: string[];
@@ -82,6 +88,8 @@ export interface SceneContent {
   establishes?: string[];              // CAUSALITY: state keys produced (inherited from its beat)
   needs?: string[];                    // CAUSALITY: state keys depended on (inherited from its beat)
   readings?: Reading[];                // METERS: this scene's level on each meter (inherited/refined from its beat)
+  observed_establishes?: LedgerFact[]; // CONTINUITY: key→value facts this scene's prose asserted (the ledger delta)
+  continuity_flags?: ContinuityFlag[]; // CONTINUITY: breaks the read found here vs prior canon (output, not plan input)
   chapter_start?: ChapterStart | null;
   prose?: { text?: string; words?: number };
   // Picture mode (docs/picture-book-mode.md): the scene's illustrated page. caption = the 1–3 sentence
@@ -328,11 +336,23 @@ export function backlinkIndex(nodes: DnaNode[]): Map<string, DnaNode[]> {
   return map;
 }
 
-/** Hash of a node's full input set: its parent's content + every referenced entity's content. */
+// Fields that are OUTPUTS of generation/the read, never plan INPUTS — stripped before any input-set hash so
+// writing them (e.g. a meter read onto a beat, a fact ledger onto a scene) never spuriously stales the nodes
+// that hash this content. Mirrors how the prose/illus hashes already exclude prose/caption/image_url.
+const OUTPUT_FIELDS = ["prose", "caption", "image_url", "observed_readings", "observed_establishes", "continuity_flags"] as const;
+function planOf(content: NodeContent | null | undefined): NodeContent | null {
+  if (!content) return null;
+  const out: Record<string, unknown> = { ...(content as Record<string, unknown>) };
+  for (const k of OUTPUT_FIELDS) delete out[k];
+  return out;
+}
+
+/** Hash of a node's full input set: its parent's content + every referenced entity's content — with OUTPUT
+ *  fields stripped, so a generated value living in a parent's content never leaks into a child's staleness. */
 export function inputHash(node: DnaNode, index: Map<string, DnaNode>): string {
   const parent = node.parent_id ? index.get(node.parent_id) : null;
-  const refs = refsOf(node).map((id) => index.get(id)?.content ?? null);
-  return metaHash(stableStringify([parent?.content ?? null, ...refs]));
+  const refs = refsOf(node).map((id) => planOf(index.get(id)?.content));
+  return metaHash(stableStringify([planOf(parent?.content), ...refs]));
 }
 
 /** A node is stale iff its recorded src_hash no longer matches its current input set. Never stale before
@@ -346,7 +366,8 @@ export function isStale(node: DnaNode, index: Map<string, DnaNode>): boolean {
 export function isProseStale(scene: DnaNode): boolean {
   const c = scene.content as SceneContent;
   if (!c.prose?.text?.trim() || !scene.authoring.prose_src_hash) return false;
-  const { prose: _p, art_note: _a, ...plan } = c; // art_note is a picture-only input — not a prose input
+  // art_note is a picture-only input; observed_establishes/continuity_flags are OUTPUTS of the read, not inputs.
+  const { prose: _p, art_note: _a, observed_establishes: _oe, continuity_flags: _cf, ...plan } = c;
   return scene.authoring.prose_src_hash !== metaHash(stableStringify(plan));
 }
 
@@ -356,7 +377,7 @@ export function isIllusStale(scene: DnaNode): boolean {
   const c = scene.content as SceneContent;
   const made = !!(c.image_url?.trim() || c.caption?.text?.trim());
   if (!made || !scene.authoring.illus_src_hash) return false;
-  const { image_url: _i, caption: _c, prose: _p, ...plan } = c;
+  const { image_url: _i, caption: _c, prose: _p, observed_establishes: _oe, continuity_flags: _cf, ...plan } = c;
   return scene.authoring.illus_src_hash !== metaHash(stableStringify(plan));
 }
 
@@ -366,12 +387,12 @@ export function stampInput(node: DnaNode, index: Map<string, DnaNode>): DnaNode 
 }
 /** Stamp a scene's prose hash (call after prose is written from the current plan). */
 export function stampProse(scene: DnaNode): DnaNode {
-  const { prose: _p, art_note: _a, ...plan } = scene.content as SceneContent;
+  const { prose: _p, art_note: _a, observed_establishes: _oe, continuity_flags: _cf, ...plan } = scene.content as SceneContent;
   return { ...scene, authoring: { ...scene.authoring, prose_src_hash: metaHash(stableStringify(plan)) } };
 }
 /** Stamp a scene's illustration hash (call after the image + caption are made from the current plan). */
 export function stampIllus(scene: DnaNode): DnaNode {
-  const { image_url: _i, caption: _c, prose: _p, ...plan } = scene.content as SceneContent;
+  const { image_url: _i, caption: _c, prose: _p, observed_establishes: _oe, continuity_flags: _cf, ...plan } = scene.content as SceneContent;
   return { ...scene, authoring: { ...scene.authoring, illus_src_hash: metaHash(stableStringify(plan)) } };
 }
 
@@ -767,6 +788,36 @@ function meterLints(nodes: DnaNode[]): DnaIssue[] {
   return issues;
 }
 
+// ── CONTINUITY LEDGER (the prefix-sum "story so far" — docs/true-agent.md Step 3) ──────────────────────────
+// A scan over scenes in reading order: each scene's observed_establishes (the key→value facts its prose
+// asserted) fold left-to-right, LAST-WRITE-WINS per key (re-asserting a key supersedes the old value — the
+// assert/supersede lifecycle). ledgerBefore returns the canon a scene INHERITS (1..n-1, never itself or the
+// future) — the bounded context the per-page coherence check reads, and the state-axis cousin of meterSeries.
+type StampedFact = LedgerFact & { sceneId: string };
+function foldFacts(scenes: DnaNode[]): Map<string, StampedFact> {
+  const canon = new Map<string, StampedFact>();
+  for (const s of scenes) {
+    for (const f of ((s.content as SceneContent).observed_establishes ?? [])) {
+      if (!f?.key) continue;
+      canon.set(f.key, { key: f.key, value: f.value, note: f.note, sceneId: s.id });
+    }
+  }
+  return canon;
+}
+/** The continuity canon a scene inherits: facts asserted by every scene strictly BEFORE it in reading order,
+ *  last-write-wins. Empty for the opening scene. The bounded "story so far" the per-page check reads. */
+export function ledgerBefore(nodes: DnaNode[], sceneId: string): LedgerFact[] {
+  const scenes = scenesInOrder(nodes);
+  const i = scenes.findIndex((s) => s.id === sceneId);
+  const prior = i < 0 ? scenes : scenes.slice(0, i);
+  return [...foldFacts(prior).values()].map(({ sceneId: _s, ...f }) => f);
+}
+/** The whole-book continuity canon (every fact, last-write-wins), each tagged with the scene that set it. The
+ *  ledger view + the input the macro re-read audits. */
+export function ledgerFull(nodes: DnaNode[]): StampedFact[] {
+  return [...foldFacts(scenesInOrder(nodes)).values()];
+}
+
 /** A compact plain-text STORY ANALYSIS — the three axes + lints — handed to the dna-chat reviser as context
  *  so it can act on pacing drift / dangling promises / sagging runs. The UI renders the same data visually. */
 export function analysisText(nodes: DnaNode[], settings: BookSettings): string {
@@ -990,6 +1041,15 @@ export function validate(nodes: DnaNode[]): DnaIssue[] {
     while (j < topo.length && topo[j].polarity === pol) j++;
     if (j - i >= SAGGING_RUN) issues.push({ rule: "sagging_middle", severity: "warn", message: `${j - i} scenes in a row stay ${pol} — flat emotional charge`, nodeId: topo[i].sceneId });
     i = j;
+  }
+
+  // Continuity ledger (docs/true-agent.md Step 3): contradictions the read recorded on a scene's prose vs the
+  // canon established before it. Pure — surfaces the stored flags so the editor handoff reuses this filter.
+  for (const s of nodes.filter((n) => n.kind === "scene")) {
+    for (const f of ((s.content as SceneContent).continuity_flags ?? [])) {
+      issues.push({ rule: "continuity_break", severity: "error", nodeId: s.id,
+        message: `prose contradicts established canon — "${f.key}" was "${f.was}", now "${f.now}"${f.note ? ` (${f.note})` : ""}` });
+    }
   }
   return issues;
 }

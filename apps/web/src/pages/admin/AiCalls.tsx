@@ -338,6 +338,26 @@ export default function AiCalls() {
   );
 }
 
+function ProseBlock({ text, className = "" }: { text: string; className?: string }) {
+  return (
+    <div className={`space-y-3 ${className}`}>
+      {text.split(/\n{2,}/).map((para, i) => (
+        <p key={i} className="text-sm leading-relaxed">{para.replace(/\n/g, " ")}</p>
+      ))}
+    </div>
+  );
+}
+
+function OutputBlock({ text }: { text: string }) {
+  const trimmed = text.trim();
+  let parsed: unknown = null;
+  try { parsed = JSON.parse(trimmed); } catch { /* not JSON */ }
+  if (parsed !== null) {
+    return <pre className="whitespace-pre-wrap text-xs font-mono leading-5">{JSON.stringify(parsed, null, 2)}</pre>;
+  }
+  return <ProseBlock text={trimmed} />;
+}
+
 function CallDialog({ call, evals, onClose, onJudge, judging, profile }: {
   call: AiCall | null;
   evals: AiCallEval[];
@@ -347,19 +367,21 @@ function CallDialog({ call, evals, onClose, onJudge, judging, profile }: {
   profile?: UserProfile | null;
 }) {
   if (!call) return null;
+  const ctx = contextText(call.input);
   return (
     <Dialog open={!!call} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="max-w-4xl">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
+          <DialogTitle className="flex items-center gap-2 flex-wrap">
             <span>#{call.id} · {call.fn}</span>
             <Badge variant={call.source === "bridge" ? "outline" : "secondary"} className="text-xs">{call.source}</Badge>
             <span className="text-xs font-normal text-muted-foreground">{call.model}</span>
           </DialogTitle>
         </DialogHeader>
-        <ScrollArea className="max-h-[70vh] pr-4">
-          <div className="space-y-4 text-sm">
-            <div className="text-xs text-muted-foreground flex gap-4 flex-wrap items-center">
+        <ScrollArea className="max-h-[78vh] pr-4">
+          <div className="space-y-5 text-sm pb-2">
+            {/* Meta row */}
+            <div className="text-xs text-muted-foreground flex gap-3 flex-wrap items-center border-b pb-3">
               {profile ? (
                 <span className="flex items-center gap-1.5">
                   {profile.profile_pic && <img src={profile.profile_pic} className="h-4 w-4 rounded-full object-cover" />}
@@ -375,10 +397,23 @@ function CallDialog({ call, evals, onClose, onJudge, judging, profile }: {
             </div>
 
             {call.error && <Section title="Error"><pre className="whitespace-pre-wrap text-destructive text-xs">{call.error}</pre></Section>}
-            {call.system && <Section title="System"><pre className="whitespace-pre-wrap text-xs">{call.system}</pre></Section>}
+            {call.system && <Section title="System"><pre className="whitespace-pre-wrap text-xs font-mono leading-5">{call.system}</pre></Section>}
             {call.artifacts != null && <Section title="Artifacts (labeled inputs)"><ArtifactsView artifacts={call.artifacts} /></Section>}
-            <Section title="Context (assembled prompt)"><pre className="whitespace-pre-wrap text-xs">{contextText(call.input)}</pre></Section>
-            <Section title="Output"><pre className="whitespace-pre-wrap text-xs">{call.output ?? "(none)"}</pre></Section>
+
+            {call.source === "stream-proxy" ? (
+              <p className="text-xs text-muted-foreground italic border rounded px-4 py-3 bg-muted/30">
+                Streams are not recorded — context and output are only captured for <code>edge</code> and <code>bridge</code> calls.
+              </p>
+            ) : (
+              <>
+                <Section title="Context (assembled prompt)">
+                  <ProseBlock text={ctx} />
+                </Section>
+                <Section title="Output">
+                  <OutputBlock text={call.output ?? "(none)"} />
+                </Section>
+              </>
+            )}
 
             <div className="flex items-center justify-between border-t pt-3">
               <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Evaluations</h3>
@@ -424,8 +459,8 @@ function ArtifactsView({ artifacts }: { artifacts: unknown }) {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
-      <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-1">{title}</h3>
-      <div className="rounded border bg-muted/30 p-2 max-h-64 overflow-auto">{children}</div>
+      <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-2">{title}</h3>
+      <div className="rounded border bg-muted/30 px-4 py-3">{children}</div>
     </div>
   );
 }

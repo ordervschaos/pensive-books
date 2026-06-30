@@ -23,7 +23,56 @@
   - **Manual gate:** "Read the emotional trace" runs the read; "Send gaps to editor" hands the `read_gap`
     findings to `revise-agent` (free-text path) and jumps to the tree's AgentRail. `lib/meterRead.ts` is the
     client orchestrator.
-- **Step 3 (granularity policy + loop closure) — not started.**
+- **Step 3 (the running continuity ledger — micro-verify) — v1 shipped.** Engine (`observed_establishes` +
+  `continuity_flags` on scenes, `ledgerBefore`/`ledgerFull` fold, `continuity_break` lint) + `read-facts`
+  (edge fn + bridge) + `lib/factLedger.ts` (sequential `runLedgerScan`) + `/dna/ledger` dev page. Also fixed
+  a latent Step-2 bug: output fields (`observed_readings`/`observed_establishes`/`continuity_flags`) are now
+  stripped from `inputHash`, so writing a read onto a node no longer stales its children. Wiring the scan
+  *into* prose-gen (the true per-page loop) + ledger compaction are the fast-follows. See below.
+
+## Step 3 — the running continuity ledger (micro-verify)
+
+The macro read (Step 2) re-reads the whole book at checkpoints. The micro-verify runs **per page** during
+prose generation: instead of reading the book back every page (O(n²) tokens — page 300 re-reads 299), keep a
+**prefix-sum "story so far" ledger** so each page reads a *bounded* digest of 1..n−1. (The prose-context
+experiment already showed a digest beats raw read-back: ~B-grade continuity at ⅓ the tokens, and verbatim
+prev-page text is the top *repetition* source.) Structurally it's the same scan as `meterSeries`
+carry-forward, over the **scene** spine instead of beats.
+
+**Two ledgers, checked differently:**
+- **Fact ledger** ("mara → lot 7") — discrete canon. Check = **contradiction detection** (binary, gating).
+- **Affect digest** — felt trajectory + live tensions + meter position. Check = **trajectory matching**
+  (graded). This *is Step 2 applied incrementally*: the new page's observed reading vs the planned `target`
+  here — `observedGap` per page. Mostly wiring what exists.
+
+**The fact ledger is the state-axis twin of the meter trace.** Planned state already lives in the DNA
+(beat `establishes` / `needs`, the causality axis). The fact ledger is the **observed** counterpart —
+`scene.content.observed_establishes` (key→value the prose actually asserted) — diffed against the plan the
+same way `observed_readings` diffs `readings`:
+
+| | Planned | Observed (from prose) |
+|---|---|---|
+| Meters | beat `readings` | `observed_readings` (Step 2) |
+| **State / facts** | beat `establishes`/`needs` | **`observed_establishes`** (this) |
+
+**Fold semantics.** `ledgerBefore(nodes, sceneId)` = fold `observed_establishes` of every scene strictly
+before `sceneId` in reading order, **last-write-wins per key** (re-asserting a key supersedes — that's the
+lifecycle: assert / supersede / resolve). Pure, on-node, causal (scene *n* sees only 1..n−1, no future leak).
+Compaction (live facts ride forward, settled ones fall out of the digest) is the lever that keeps it O(n);
+v1 uses last-write-wins as implicit supersede and keeps the full set (compaction is a fast-follow).
+
+**Generation as a guarded scan** (per scene): read `ledger_in` as context → emit prose + a `delta` → check
+(*coherence* = contradicts `ledger_in`? · *resonance* = `observedGap` vs target) → fold the delta forward.
+Contradiction ⇒ **flag, don't auto-reject** (the page may legitimately reveal/change a fact — author/agent
+arbitrates at the manual gate). `continuity_break` lint surfaces stored flags, so the editor handoff reuses
+the same `validate()`-filter path as `read_gap`.
+
+**v1 build (this step):** the engine (`observed_establishes` + `ledgerBefore` fold + `continuity_break`
+lint), a `read-facts` extraction-and-contradiction pass (edge fn + dev bridge), and a `/dna/ledger` dev page
+that runs the scan sequentially (the batch form of the per-page loop) and shows the canon + breaks. Wiring it
+*into* prose-gen (the true per-page loop) is the fast-follow. Open fork resolved: the delta is produced by a
+**separate extraction pass** (reuses `extract-character-states`/`summarize` infra) rather than self-reported
+by the prose call — continuity is canon, least-hallucination wins.
 
 ## Thesis
 

@@ -4,6 +4,7 @@ import {
   enforcePromiseSchedule, inputHash, isIllusStale, isProseStale, isRenderable, isStale, lock, pacing, promiseLedger,
   presentCharacters, refsOf, renderBlockers, renderPages, scenesInOrder, stakesOf, stampIllus, stampInput, stampProse, topography,
   validate, meterSeries, meterShape, isSerialMeter, meterTarget, targetGap, observedSeries, observedGap,
+  ledgerBefore, ledgerFull,
   type DnaNode, type NodeKind, type ThreadRef,
 } from "@/lib/novelDna";
 
@@ -737,5 +738,68 @@ describe("meters axis (docs/novel-dna-meters.md)", () => {
     expect(onPlan.some((i) => i.rule === "read_gap")).toBe(false);
     const noRead = validate([meter({ scale }), ...spine([50, 60, 70])]); // no observed_readings yet
     expect(noRead.some((i) => i.rule === "read_gap")).toBe(false);
+  });
+});
+
+describe("continuity ledger (the prefix-sum story-so-far)", () => {
+  const scn = (id: string, pos: number, facts?: { key: string; value: string }[], over: Record<string, unknown> = {}) =>
+    mk("scene", { id, parent_id: "b", position: pos, content: { ...(facts ? { observed_establishes: facts } : {}), ...over } });
+  const ledgerSpine = (...scenes: DnaNode[]) => {
+    const pillar = mk("pillar", { id: "p" });
+    const mv = mk("movement", { id: "mv", parent_id: "p", position: 0 });
+    const b = mk("beat", { id: "b", parent_id: "mv", position: 0 });
+    return [pillar, mv, b, ...scenes];
+  };
+
+  it("ledgerBefore folds facts from PRIOR scenes only, last-write-wins (supersede)", () => {
+    const nodes = ledgerSpine(
+      scn("s1", 0, [{ key: "mara", value: "lot 7" }]),
+      scn("s2", 1, [{ key: "door", value: "locked" }]),
+      scn("s3", 2, [{ key: "door", value: "unlocked" }]), // supersedes "locked" — but only for scenes after s3
+    );
+    const before3 = ledgerBefore(nodes, "s3");
+    expect(before3.find((f) => f.key === "mara")?.value).toBe("lot 7");
+    expect(before3.find((f) => f.key === "door")?.value).toBe("locked"); // s3 isn't folded into its OWN "before"
+    expect(ledgerBefore(nodes, "s2").map((f) => f.key)).toEqual(["mara"]); // door not set yet
+    expect(ledgerBefore(nodes, "s1")).toEqual([]); // opening scene inherits nothing
+  });
+
+  it("ledgerFull is the whole-book canon, last-write-wins, tagged with the asserting scene", () => {
+    const nodes = ledgerSpine(
+      scn("s1", 0, [{ key: "mara", value: "lot 7" }]),
+      scn("s2", 1, [{ key: "door", value: "locked" }]),
+      scn("s3", 2, [{ key: "door", value: "unlocked" }]),
+    );
+    const full = ledgerFull(nodes);
+    expect(full.find((f) => f.key === "door")?.value).toBe("unlocked");
+    expect(full.find((f) => f.key === "door")?.sceneId).toBe("s3");
+  });
+
+  it("continuity_break lint surfaces stored contradiction flags as errors", () => {
+    const nodes = ledgerSpine(
+      scn("s1", 0, [{ key: "mara", value: "lot 7" }]),
+      scn("s2", 1, undefined, { continuity_flags: [{ key: "mara", was: "lot 7", now: "lot 9" }] }),
+    );
+    const breaks = validate(nodes).filter((i) => i.rule === "continuity_break");
+    expect(breaks).toHaveLength(1);
+    expect(breaks[0].severity).toBe("error");
+    expect(breaks[0].nodeId).toBe("s2");
+  });
+
+  it("ledger output fields don't stale a scene's prose (output, not plan input)", () => {
+    let s = mk("scene", { id: "s", parent_id: "b", position: 0, content: { goal: "g", prose: { text: "the words on the page" } } });
+    s = stampProse(s);
+    const withFacts = { ...s, content: { ...s.content, observed_establishes: [{ key: "mara", value: "lot 7" }], continuity_flags: [{ key: "x", was: "a", now: "b" }] } };
+    expect(isProseStale(withFacts)).toBe(false);
+  });
+
+  it("a meter read on a beat (observed_readings) does not stale the scenes under it", () => {
+    const pillar = mk("pillar", { id: "p" });
+    const mv = mk("movement", { id: "mv", parent_id: "p", position: 0 });
+    const b = mk("beat", { id: "b", parent_id: "mv", position: 0, content: { summary: "x" } });
+    let s = mk("scene", { id: "s", parent_id: "b", position: 0, content: { goal: "g" } });
+    s = stampInput(s, byId([pillar, mv, b, s]));
+    const b2 = { ...b, content: { ...b.content, observed_readings: [{ ref: "cm", value: 5 }] } };
+    expect(isStale(s, byId([pillar, mv, b2, s]))).toBe(false); // the beat's OUTPUT field is stripped from the child's input hash
   });
 });

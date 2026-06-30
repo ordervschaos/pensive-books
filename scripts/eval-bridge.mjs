@@ -1285,6 +1285,38 @@ Produce the beat revision plan. JSON only.`;
   return parseBeatPlan(out.text, pages);
 }
 
+// ── /read-facts ───────────────────────────────────────────────────────────────
+// Mirrors supabase/functions/read-facts: per scene, extract durable facts + flag contradictions vs the
+// "story so far" canon (the continuity ledger, docs/true-agent.md Step 3). Stateless; client folds ledgerIn.
+async function runReadFacts(bookId, ledgerIn, scene) {
+  if (!scene?.id || !String(scene.prose ?? "").trim()) return { error: "a scene with prose is required" };
+  const canon = (Array.isArray(ledgerIn) ? ledgerIn : []).slice(0, 200)
+    .map((f) => `- ${f.key}: ${f.value}`).join("\n") || "(nothing established yet — this is the opening)";
+  const prompt = `You maintain a story's continuity ledger. Given the CANON established so far (key→value facts) and the NEW scene's prose, do two things: (1) EXTRACT the durable, trackable facts this scene asserts or changes — concise snake_case key + a short value (identities, roles, relationships, possessions, locations, physical/world facts). Reuse an existing canon key when the scene UPDATES it (that supersedes the old value); omit facts already in the canon and unchanged. Skip transient mood. (2) FLAG contradictions: any fact in the prose that conflicts with a canon value (was → now). A deliberate, narrated change is NOT a contradiction — only an unintended conflict is.
+
+CANON (story so far):
+${canon}
+
+NEW SCENE${scene.summary ? ` ("${scene.summary}")` : ""} — prose:
+${String(scene.prose).slice(0, 8000)}
+
+Output ONLY this JSON (no prose, no fences):
+{ "facts": [ { "key": "<snake_case>", "value": "<short>", "note": "<optional>" } ], "contradictions": [ { "key": "<canon key>", "was": "<canon value>", "now": "<what the prose says>", "note": "<optional>" } ] }`;
+  const out = await runClaude(prompt, true, { fn: "read-facts", bookId }, { noTools: true, model: MODEL_SUMMARY });
+  if (out.error) return out;
+  let parsed;
+  try {
+    const s = out.text.indexOf("{"), e = out.text.lastIndexOf("}");
+    if (s < 0 || e < 0) throw new Error("no JSON object in output");
+    parsed = JSON.parse(out.text.slice(s, e + 1));
+  } catch (err) { return { error: `parse read-facts output: ${err.message}` }; }
+  const facts = (Array.isArray(parsed.facts) ? parsed.facts : []).filter((f) => f && typeof f.key === "string" && typeof f.value === "string")
+    .map((f) => ({ key: f.key, value: f.value, ...(f.note ? { note: f.note } : {}) }));
+  const contradictions = (Array.isArray(parsed.contradictions) ? parsed.contradictions : []).filter((c) => c && typeof c.key === "string" && typeof c.was === "string" && typeof c.now === "string")
+    .map((c) => ({ key: c.key, was: c.was, now: c.now, ...(c.note ? { note: c.note } : {}) }));
+  return { facts, contradictions };
+}
+
 // ── /read-meters ────────────────────────────────────────────────────────────
 // Mirrors supabase/functions/read-meters: rate where each beat's PROSE sits on every meter — the OBSERVED
 // trace of the verify loop (docs/true-agent.md). Stateless: the client sends beats+meters, gets readings.
@@ -3961,6 +3993,14 @@ function assembleDigest(parts, info, variant = "v1") {
 
 // Production prose context (mirrors supabase/functions/dna-expand buildProseDigest): the v2 digest
 // for the live "write this scene's prose" path. Built inline per call (incremental caching = follow-up).
+//
+// ⚠️ BRIDGE DIVERGENCE (as of commit c1222de) — this is NO LONGER an exact mirror of the edge fn.
+// The edge fn's buildProseDigest was rewritten into an incremental per-page FOLD: each page is folded
+// into a running accumulator (pages[] + ledger) exactly once and cached on node.authoring.prose_digest
+// with an src_hash/prev_hash chain (O(1)/page; lazy suffix invalidation on edit). This bridge still
+// does the old O(N²) all-pages re-summary every call. Dev prose continuity therefore differs from prod.
+// To re-converge (per project_dev_bridge_mirror), port the fold + per-node cache here; until then dev is
+// intentionally behind. See learning_incremental_digest.md / project_incremental_digest memory.
 async function buildProductionDigest(bookId, nodes, currentId) {
   const ordered = scenesInOrderBridge(nodes);
   const idx = ordered.findIndex((s) => s.id === currentId);
@@ -4219,6 +4259,19 @@ async function route(req, res) {
     if (!(await authorize(req, res, bookId))) return;
     console.log(`Revising beats for book ${bookId}${body.lens ? ` (lens: ${body.lens})` : ""}…`);
     const out = await runReviseBeats(bookId, body.instruction, body.lens);
+    if (out.error) return json(res, 500, { error: out.error });
+    return json(res, 200, out);
+  }
+
+  // read-facts — per scene, extract facts + flag contradictions vs the canon (continuity ledger).
+  if (url === "/read-facts" || url === "/read-facts/") {
+    if (req.method !== "POST") return json(res, 405, { error: "method not allowed" });
+    const body = await readBody(req);
+    const bookId = Number(body.bookId);
+    if (!bookId) return json(res, 400, { error: "bookId is required" });
+    if (!(await authorize(req, res, bookId))) return;
+    console.log(`Reading facts · book ${bookId} · scene ${body.scene?.id ?? "?"} (canon: ${body.ledgerIn?.length ?? 0})…`);
+    const out = await runReadFacts(bookId, body.ledgerIn, body.scene);
     if (out.error) return json(res, 500, { error: out.error });
     return json(res, 200, out);
   }

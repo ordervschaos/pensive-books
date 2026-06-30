@@ -1690,12 +1690,12 @@ function SpineTimeline({ nodes, mode, rightInset, bookId, onJump, onClose }: {
   const kids = (pid: string, kind: NodeKind) => nodes.filter((n) => n.parent_id === pid && n.kind === kind).sort((a, b) => a.position - b.position);
   const pillar = nodes.find((n) => n.kind === "pillar");
   const movs = pillar ? kids(pillar.id, "movement") : [];
-  // Acts collapse by default — the strip opens as an at-a-glance overview (act + scene pips); expand one act
-  // to get its working detail (beat cards, scene cells, the generate/write actions).
-  const [expandedActs, setExpandedActs] = useState<Set<string>>(new Set());
-  const toggleAct = (id: string) => setExpandedActs((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const allExpanded = movs.length > 0 && movs.every((m) => expandedActs.has(m.id));
-  const toggleAll = () => setExpandedActs(allExpanded ? new Set() : new Set(movs.map((m) => m.id)));
+  // Acts are EXPANDED by default (working detail visible). We track the COLLAPSED ones, so empty = all open
+  // and a newly generated act also starts expanded. Collapse one to get the at-a-glance pip overview.
+  const [collapsedActs, setCollapsedActs] = useState<Set<string>>(new Set());
+  const toggleAct = (id: string) => setCollapsedActs((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const allExpanded = collapsedActs.size === 0;
+  const toggleAll = () => setCollapsedActs(allExpanded ? new Set(movs.map((m) => m.id)) : new Set());
 
   // Generate verbs, mirroring the tree's expand targets (pillar→acts, act→beats, beat→scenes, scene→prose).
   // Direct commit (like the tree's bulk buttons); Realtime refreshes the strip. Prose loops the beat's
@@ -1774,7 +1774,7 @@ function SpineTimeline({ nodes, mode, rightInset, bookId, onJump, onClose }: {
           const beats = kids(mov.id, "beat");
           const allScenes = beats.flatMap((b) => kids(b.id, "scene"));
           const written = allScenes.filter(sceneWritten).length;
-          const expanded = expandedActs.has(mov.id);
+          const expanded = !collapsedActs.has(mov.id);
           return (
             <div key={mov.id} style={{ display: "flex", flexDirection: "column", gap: 7, border: `1px solid ${KIND_COLOR.movement}33`, borderRadius: 8, padding: "8px 10px", background: "#0e0e14", flexShrink: 0 }}>
               {/* ACT header — the Act pill jumps to it in the tree; expand/collapse is the chevron bottom-right */}

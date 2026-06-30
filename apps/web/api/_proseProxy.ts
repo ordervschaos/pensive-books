@@ -50,7 +50,10 @@ async function verifyJwt(authToken: string): Promise<string> {
 // Best-effort: record the streamed generation in ai_calls so it stays visible in /admin alongside every
 // other model call (preserves the project_ai_call_logging invariant; the stream bypasses _shared/claude.ts).
 // Fire-and-forget — never blocks or breaks the stream.
-async function logStreamCall(row: { model: string; userId: string; latencyMs: number; chars: number; errMsg: string | null }): Promise<void> {
+async function logStreamCall(row: {
+  model: string; userId: string; latencyMs: number; chars: number; errMsg: string | null;
+  system?: string; userContent?: string; output?: string;
+}): Promise<void> {
   try {
     const url = supabaseUrl();
     const service = process.env.SERVICE_ROLE_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || "";
@@ -67,6 +70,12 @@ async function logStreamCall(row: { model: string; userId: string; latencyMs: nu
         status: row.errMsg ? "error" : "done",
         error: row.errMsg,
         output_tokens: Math.round(row.chars / 4), // rough token estimate; the stream gives us only char counts
+        system: row.system ?? null,
+        // Store as messages array so contextText() in AiCalls.tsx can render it the same way edge calls do.
+        input: row.userContent != null
+          ? [{ role: "user", content: row.userContent }]
+          : null,
+        output: row.output ?? null,
       }),
     });
   } catch { /* observability is best-effort; the prose is what matters */ }
@@ -79,6 +88,7 @@ export async function* streamProse(body: PrepareReq, authToken: string): AsyncGe
   const started = Date.now();
   let userId = "";
   let chars = 0;
+  let output = "";
   let errMsg: string | null = null;
   try {
     if (!authToken) throw new ProxyError(401, "missing Authorization token");
@@ -128,6 +138,7 @@ export async function* streamProse(body: PrepareReq, authToken: string): AsyncGe
           const content = delta?.content;
           if (typeof content === "string" && content) {
             chars += content.length;
+            output += content;
             yield content;
           } else if (delta?.reasoning || delta?.reasoning_content) {
             // qwen3.7-plus and other REASONING models stream a long `delta.reasoning` phase (content empty)
@@ -144,6 +155,6 @@ export async function* streamProse(body: PrepareReq, authToken: string): AsyncGe
     errMsg = e instanceof Error ? e.message : String(e);
     throw e;
   } finally {
-    void logStreamCall({ model: body?.model ?? "", userId, latencyMs: Date.now() - started, chars, errMsg });
+    void logStreamCall({ model: body?.model ?? "", userId, latencyMs: Date.now() - started, chars, errMsg, system: body?.system, userContent: body?.userContent, output: output || undefined });
   }
 }
