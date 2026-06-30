@@ -453,6 +453,40 @@ Deno.serve(async (req: Request) => {
       });
       return `BEAT PLAN — all beats in this act, in order (honour any specific facts, names, numbers, or objects established here):\n${lines.join("\n")}`;
     })();
+    // Render targets (prose/caption) get a SCOPED bible, not the whole book. A scene RENDERS one moment;
+    // it doesn't schedule threads or place tentpoles across the arc — that breadth is the planning targets'
+    // job. So instead of broadcasting every character/location/thread/rule (which both costs tokens AND
+    // dilutes the signal with cast that isn't in the room), anchor on what THIS scene's plan + its parent
+    // beat actually reference — the plan declares its own anchors ("anchors, not fences"). Floor: the leads
+    // are always in, as insurance against the single-shot call's inability to re-fetch what the plan under-named.
+    const renderTarget = target === "prose" || target === "caption" || (!target && node.kind === "scene");
+    const proseScope = (() => {
+      if (!renderTarget) return "";
+      const parentBeatNode = node.parent_id ? byId.get(node.parent_id) : undefined;
+      const anchorText = [JSON.stringify(node.content), parentBeatNode ? JSON.stringify(parentBeatNode.content) : ""].join(" ");
+      const isLead = (c: Node) => /protagonist|deuteragonist/i.test(String((c.content as { role?: string }).role ?? ""));
+      const nameHit = (c: Node) => cName(c).split(/\s+/).filter((w) => w.length >= 3)
+        .some((w) => new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(anchorText));
+      const scopedChars = chars.filter((c) => isLead(c) || nameHit(c));
+      const cast = scopedChars.length
+        ? "CAST (characters in or bearing on THIS scene — reference BY NAME):\n" +
+          scopedChars.map((c) => `- ${cName(c)} [${(c.content as { role?: string }).role ?? "?"}] ${JSON.stringify(c.content)}`).join("\n")
+        : "";
+      // Only the threads this beat carries and the world rules it grounds in — not the whole registry.
+      const beatThreadRefs = new Set(((parentBeatNode?.content as { threads?: { ref?: string }[] })?.threads ?? []).map((t) => t.ref));
+      const scopedThreads = threads.filter((t) => beatThreadRefs.has(t.id));
+      const threadsBlk = scopedThreads.length
+        ? "THREADS this scene carries (reference BY NAME):\n" +
+          scopedThreads.map((t) => `- ${tName(t)}: ${(t.content as { promise?: string }).promise ?? ""} → ${(t.content as { payoff?: string }).payoff ?? ""}`).join("\n")
+        : "";
+      const beatGrounds = new Set(((parentBeatNode?.content as { grounds_in?: string[] })?.grounds_in ?? []).map(String));
+      const scopedRules = worldFacts.filter((w) => beatGrounds.has(w.id));
+      const rulesBlk = scopedRules.length
+        ? "WORLD RULES in play this scene (reference BY NAME):\n" +
+          scopedRules.map((w) => `- ${wfName(w)}: ${(w.content as { mechanism?: string; rule?: string }).mechanism ?? (w.content as { rule?: string }).rule ?? ""}`).join("\n")
+        : "";
+      return [cast, threadsBlk, rulesBlk].filter(Boolean).join("\n\n");
+    })();
     const ctx = [
       `BOOK: ${book?.name ?? ""}`,
       `BRIEF (binding):\n${briefContext(brief, { scope: "full", success: true, none: "(no brief)", empty: "(empty)" })}`,
@@ -460,14 +494,10 @@ Deno.serve(async (req: Request) => {
       voiceBlock,
       "STORY SO FAR (the ladder above this node; LOCKED items are immutable):",
       ...chain.map((a) => `[${a.kind}${a.authoring?.locked ? " · LOCKED" : ""}] ${JSON.stringify(a.content)}`),
-      entityBlock,
-      locationBlock,
-      threadBlock,
-      tentpoleBlock,
-      worldRulesBlock,
-      gamesBlock,
-      precondBlock, // [EXP:preconditions]
-      actBlock,
+      // Render targets get the scene-scoped slice; planning targets get the whole arc (breadth is their job).
+      ...(renderTarget
+        ? [proseScope]
+        : [entityBlock, locationBlock, threadBlock, tentpoleBlock, worldRulesBlock, gamesBlock, precondBlock /* [EXP:preconditions] */, actBlock]),
       beatNeighbourhoodBlock, // sibling beats — keeps prose from contradicting plan-layer facts
       settingBlock, // this scene's resolved location palette (prose grounding)
       registerBlock, // this scene's voice modulation (anti-monotony) — bends the signature for this scene only

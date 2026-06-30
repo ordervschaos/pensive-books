@@ -38,6 +38,7 @@ const AUTO_MAX_TURNS = 50;     // autonomous threads iterate change-by-change, s
 // the chain dispatch). An abort still BILLS — the API keeps generating after we hang up — so the
 // real defense is keeping turns short (effort: medium below), not this timer.
 const CALL_TIMEOUT_MS = 140_000;
+const ACK_TIMEOUT_MS = 15_000; // fast chat acknowledgement; the real tool turn follows
 const MAX_PAGE_CHARS = 12_000; // read_page output cap
 
 // ── Row shapes ──
@@ -357,12 +358,15 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
   try {
     // Any tier works here: _shared/claude.ts converts tools/tool_use/tool_result both ways for
     // the OpenAI-compatible paths (DeepSeek, MuleRouter/Qwen), so the loop runs on cheap models too.
-    const { high: model } = await getActiveModels();
-    const turns = row.turns + 1;
+    const { high: model, low: ackModel } = await getActiveModels();
     // Thread runs are the persistent omni-rail conversation: a conversational system prompt grounded
     // in the CURRENT book state (rebuilt per call so ids stay fresh), and the thread tool belt. Eval
     // runs keep the static plan-first system + tools.
     const isThread = row.kind === "thread";
+    if (isThread && row.turns === 0) {
+      await maybeEagerAck(service, apiKey, row, ackModel);
+    }
+    const turns = row.turns + 1;
     // Boundaries removed (docs/agent-context-model.md): the agent always sees + may touch the whole book.
     // Forced null here (not row.context_scope) so even threads created under the old aspect-fence run
     // unfenced from now on; context is anchored by attached nodes, not filtered by kind.
@@ -644,6 +648,64 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
   }
 }
 
+const EAGER_ACK_SYSTEM = `You are the story editor's quick acknowledgement pass.
+Reply with ONE short sentence (max 28 words) saying what you will do next.
+Do not answer the substance yet. Do not claim findings. Do not use tools, bullets, or markdown.`;
+
+function latestPlainUserText(transcript: unknown[]): string {
+  const msg = transcript[transcript.length - 1] as { role?: string; content?: unknown[] } | undefined;
+  if (msg?.role !== "user" || !Array.isArray(msg.content)) return "";
+  // Only ack fresh human text. Tool-result user messages resume a prior tool turn and should not get a
+  // synthetic "I'll..." note in the middle of the model's reasoning chain.
+  if (msg.content.some((b) => (b as { type?: string })?.type === "tool_result")) return "";
+  return msg.content
+    .filter((b) => (b as { type?: string })?.type === "text")
+    .map((b) => String((b as { text?: unknown }).text ?? "").trim())
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+}
+
+// Two-phase "say, then do" for thread chat: make a tiny no-tools call from only the latest human
+// message, write that one-line acknowledgement to the visible feed, then let the normal grounded
+// tool loop run. If the ack itself has a transient issue, continue into the real turn rather than
+// making UX worse; billing/config failures still surface through the main call path.
+async function maybeEagerAck(service: SupabaseClient, apiKey: string, row: RunRow, model: string) {
+  const userText = latestPlainUserText(row.transcript);
+  if (!userText) return;
+  const lastStep = row.steps[row.steps.length - 1];
+  if (lastStep?.t !== "user") return; // ack already written for this fresh user message
+  try {
+    const resp = await callClaude(apiKey, {
+      model,
+      max_tokens: 120,
+      system: [{ type: "text", text: EAGER_ACK_SYSTEM }],
+      messages: [{ role: "user", content: [{ type: "text", text: userText.slice(0, 2000) }] }],
+    }, {
+      fn: "revise-agent-ack",
+      bookId: row.book_id,
+      taskTable: "book_agent_runs",
+      taskId: row.id,
+      userId: row.created_by,
+    }, { signal: AbortSignal.timeout(ACK_TIMEOUT_MS) });
+
+    const text = ((resp?.content ?? []) as Array<{ type?: string; text?: string }>)
+      .filter((b) => b.type === "text")
+      .map((b) => b.text ?? "")
+      .join("")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 300);
+    if (!text) return;
+
+    row.steps = [...row.steps, { t: "note", label: text } as AgentStep];
+    await service.from("book_agent_runs").update({ steps: row.steps }).eq("id", row.id);
+  } catch (e) {
+    if (isBillingError(e)) throw e;
+    console.error(`revise-agent run ${row.id} eager ack skipped:`, e);
+  }
+}
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // Execute a turn's non-terminal tool calls (read_page; unknown tools get an error result) and
@@ -656,7 +718,7 @@ async function toolResults(
   toolUses: any[],
   steps: AgentStep[],
   overrides: Record<string, string> = {},
-  auto = false,
+  _auto = false,
 ): Promise<unknown[]> {
   const results: unknown[] = [];
   for (const t of toolUses) {
@@ -688,22 +750,52 @@ async function toolResults(
         continue;
       }
       const n = node as { id: string; kind: string; content: Record<string, unknown>; authoring: { locked?: boolean } };
-      // Autonomous mode: the full tree (every structure node's plan) is already in the system prompt, so
-      // reading a non-scene node returns nothing new — it only bloats the transcript and feeds a read-loop.
-      // Refuse it at the tool level (no content, no feed clutter) and push the agent to act. Scenes still
-      // read their prose (the one thing NOT in context).
-      if (auto && n.kind !== "scene") {
-        results.push({ type: "tool_result", tool_use_id: t.id, content: `This ${n.kind}'s full plan is ALREADY in the DNA tree in your context above — re-read it there. read_node is only for a scene's PROSE. Stop reading structure and act: make the change with propose_node_ops, or call finish.`, is_error: true });
-        continue;
-      }
       // Children (one level down) as a summary so the agent can navigate without re-reading everything.
       const { data: kids } = await service
         .from("book_nodes").select("id, kind, content").eq("book_id", bookId).eq("parent_id", id).order("position", { ascending: true });
       const childLines = (kids ?? []).map((k) => `  - [${(k as { id: string }).id}] ${(k as { kind: string }).kind}: ${nodeHandle((k as { content: Record<string, unknown> }).content)}`).join("\n");
+      const schema = schemaFor([n.kind]); // hand back the kind's field schema so an edit uses the right keys
       steps.push({ t: "read", label: `Read ${n.kind} “${nodeHandle(n.content)}” in full.` });
       results.push({
         type: "tool_result", tool_use_id: t.id,
-        content: `[${n.id}${n.authoring?.locked ? " · LOCKED" : ""}] ${n.kind}: ${JSON.stringify(n.content)}` + (childLines ? `\nchildren:\n${childLines}` : ""),
+        content: `[${n.id}${n.authoring?.locked ? " · LOCKED" : ""}] ${n.kind}: ${JSON.stringify(n.content)}` + (childLines ? `\nchildren:\n${childLines}` : "") + (schema ? `\n\n${schema}` : ""),
+      });
+    } else if (t.name === "get_schema") {
+      const kinds = (Array.isArray((t.input as { kinds?: unknown })?.kinds) ? (t.input as { kinds: unknown[] }).kinds : [])
+        .filter((k): k is string => typeof k === "string");
+      const schema = schemaFor(kinds);
+      results.push(schema
+        ? { type: "tool_result", tool_use_id: t.id, content: schema }
+        : { type: "tool_result", tool_use_id: t.id, content: `No schema for ${JSON.stringify(kinds)}. Valid kinds: ${Object.keys(SCHEMA_BY_KIND).join(", ")}.`, is_error: true });
+    } else if (t.name === "search_nodes") {
+      // The agent's grep: full-text substring over EVERY node's content (incl. scene prose, which the digest
+      // drops). ~200 nodes/book — fetch all and match in JS; only id/kind/handle/snippet go back to the model.
+      const q = String((t.input as { query?: string })?.query ?? "").trim();
+      if (!q) {
+        results.push({ type: "tool_result", tool_use_id: t.id, content: "Provide a non-empty query string.", is_error: true });
+        continue;
+      }
+      const { data: rows } = await service
+        .from("book_nodes").select("id, kind, content").eq("book_id", bookId);
+      const needle = q.toLowerCase();
+      const hits: string[] = [];
+      let more = 0;
+      for (const r of (rows ?? []) as { id: string; kind: string; content: Record<string, unknown> | null }[]) {
+        const text = JSON.stringify(r.content ?? {});
+        const idx = text.toLowerCase().indexOf(needle);
+        if (idx === -1) continue;
+        if (hits.length >= 30) { more++; continue; }
+        const start = Math.max(0, idx - 60);
+        const end = Math.min(text.length, idx + needle.length + 60);
+        const snippet = (start > 0 ? "…" : "") + text.slice(start, end).replace(/\s+/g, " ") + (end < text.length ? "…" : "");
+        hits.push(`[${r.id}] ${r.kind} “${nodeHandle(r.content)}” — ${snippet}`);
+      }
+      steps.push({ t: "read", label: `Searched for “${q}” (${hits.length + more} hit${hits.length + more === 1 ? "" : "s"}).` });
+      results.push({
+        type: "tool_result", tool_use_id: t.id,
+        content: hits.length
+          ? `${hits.length + more} match(es) for "${q}"${more ? ` (showing first 30)` : ""} — read_node any [id] for full content:\n${hits.join("\n")}`
+          : `No nodes match "${q}".`,
       });
     } else if (t.name === "check_against_contract") {
       const id = String((t.input as { id?: string })?.id ?? "");
@@ -908,6 +1000,64 @@ function nodeHandle(content: Record<string, unknown> | null | undefined): string
   return typeof h === "string" && h.trim() ? h.trim().slice(0, 60) : "(untitled)";
 }
 
+// ── Tree digest (docs/agent-context-model.md) ────────────────────────────────
+// The system prompt ships the WHOLE tree every turn; dumping each node's full content (a beat's paragraph
+// summary, every foundation field) is the bulk of the tokens. Instead each node shows a DIGEST: its
+// handle/gist plus, for structure, its causal + meter SPINE (connector, needs, establishes, readings) —
+// the relational glue an editor reasons over (e.g. a beat with no `connector`/`needs` reads as floating).
+// Full content (the whole summary, a character's wound/lie, a scene's prose) is one read_node away.
+const DIGEST_FIELDS: Record<string, string[]> = {
+  seed: ["logline"],
+  premise: ["dramatic_question"],
+  pillar: ["controlling_idea"],
+  character: ["name", "role", "tag"],
+  relationship: ["a", "b", "bond"],
+  world_fact: ["name", "category"],
+  location: ["name", "mood"],
+  thread: ["name", "kind", "promise"],
+  game: ["name"],
+  tentpole: ["title"],
+  meter: ["name", "kind"],
+  voice_profile: ["pov", "tense"],
+  act: ["title", "goal", "target_pct", "turning_point"],
+  beat: ["connector", "polarity", "needs", "establishes", "threads", "grounds_in", "realizes", "plays", "resolves", "readings"],
+  scene: ["goal", "value_shift", "pov", "loc", "needs", "establishes", "grounds_in", "readings"],
+};
+
+// Pick only the digest fields that carry a value (drop null/empty so an ABSENT spine field — a beat with
+// no `connector`/`needs` — reads clearly as missing rather than hiding inside a full dump).
+function pickFields(content: Record<string, unknown> | null | undefined, fields: string[]): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const f of fields) {
+    const v = content?.[f];
+    if (v == null) continue;
+    if (typeof v === "string" && !v.trim()) continue;
+    if (Array.isArray(v) && v.length === 0) continue;
+    out[f] = v;
+  }
+  return out;
+}
+
+// First sentence (≤180 chars) of a beat's summary — its paragraph is too long to ship in full every turn.
+function gistLine(content: Record<string, unknown> | null | undefined): string {
+  const s = content?.summary;
+  if (typeof s !== "string" || !s.trim()) return "";
+  const t = s.trim();
+  const m = t.match(/^[\s\S]*?[.!?](\s|$)/);
+  let first = (m ? m[0] : t).trim();
+  if (first.length > 180) first = first.slice(0, 179) + "…";
+  return first;
+}
+
+// One-line digest of a node: handle/gist + compact spine (prose + verbose fields dropped; read_node for full).
+function digestNode(kind: string, content: Record<string, unknown> | null | undefined): string {
+  const fields = DIGEST_FIELDS[kind];
+  const spine = fields ? pickFields(content, fields) : (content ?? {});
+  const gist = kind === "beat" ? gistLine(content) : "";
+  const json = Object.keys(spine).length ? JSON.stringify(spine) : "";
+  return [gist, json].filter(Boolean).join(" · ") || nodeHandle(content);
+}
+
 const THREAD_DNA_TOOLS = [
   {
     name: "propose_prose_render",
@@ -928,8 +1078,18 @@ const THREAD_DNA_TOOLS = [
   },
   {
     name: "read_node",
-    description: "Read one DNA node's FULL content by id — including a scene's prose (content.prose.text) and a one-line summary of its children. The tree summary you're given strips prose to stay lean; use this to read a scene in full before judging or rewriting it.",
+    description: "Read one DNA node's FULL content by id — its complete fields (a beat's whole summary, a character's wound/lie/idiolect, a scene's prose content.prose.text), the schema for its kind, and a one-line summary of its children. The tree you're given is a DIGEST (handle/gist + causal spine); use this to pull a node's full detail before judging or rewriting it.",
     input_schema: { type: "object", properties: { id: { type: "string", description: "The node's id from the tree." } }, required: ["id"] },
+  },
+  {
+    name: "get_schema",
+    description: "Get the EXACT content field schema for one or more node kinds (e.g. beat, scene, character) — the required keys, allowed values, and id-ref types. Call this before you WRITE a node's content with propose_node_ops or propose_options (add / edit / replace_children) when you don't already have the schema in hand, so you use the right field names — wrong keys silently orphan the data.",
+    input_schema: { type: "object", properties: { kinds: { type: "array", items: { type: "string" }, description: "The node kind(s) you're about to write, e.g. [\"beat\"] or [\"act\",\"beat\",\"scene\"] for a rebuild." } }, required: ["kinds"] },
+  },
+  {
+    name: "search_nodes",
+    description: "Full-text search across ALL the book's DNA nodes — every field of every node's content, INCLUDING scene prose (which the tree digest does NOT show). Returns matching node ids with a snippet around each hit, so you can FIND where something appears — a character name, a motif word, an echoed line, a phrase in the prose — and then read_node the ones you want in full. This is your grep: use it to gain context the digest doesn't carry (e.g. 'where is the keyring mentioned?', 'is this line echoed in the prose?', 'which scenes name Lena?').",
+    input_schema: { type: "object", properties: { query: { type: "string", description: "Case-insensitive text to search for — a name, motif word, or short phrase." } }, required: ["query"] },
   },
   {
     name: "propose_node_ops",
@@ -985,9 +1145,26 @@ function threadToolsFor(_scope: Aspect[] | null): unknown[] {
 
 const CONTENT_SCHEMAS = dnaSchema.promptGuide;
 
+// Schema-on-demand: the full CONTENT_SCHEMAS block is ~2k chars of every kind's field list. Rather than
+// ship it every turn, we serve the relevant kind's schema when the agent reads or writes a node
+// (read_node result + the get_schema tool). promptGuide is a legend line followed by one `- <kind> → …`
+// bullet per kind; split it so we can hand back just the kinds in play.
+const SCHEMA_LINES = CONTENT_SCHEMAS.split("\n");
+const SCHEMA_HEADER = SCHEMA_LINES[0];
+const SCHEMA_BY_KIND: Record<string, string> = {};
+for (const line of SCHEMA_LINES) {
+  const m = line.match(/^- (\w+) →/);
+  if (m) SCHEMA_BY_KIND[m[1]] = line;
+}
+// The exact field schema for one or more kinds (legend + the matching bullets), or "" if none match.
+function schemaFor(kinds: string[]): string {
+  const lines = [...new Set(kinds)].map((k) => SCHEMA_BY_KIND[k]).filter(Boolean);
+  return lines.length ? `${SCHEMA_HEADER}\n${lines.join("\n")}` : "";
+}
+
 const SYSTEM_THREAD = `You are a sharp, warm developmental STORY EDITOR — the author's single AI collaborator for the whole book, in conversation in the studio's right-hand rail.
 
-You hold the book's DNA TREE: premise → foundations (pillar, cast, world, tentpoles, voice) → structure (acts, beats, threads) → scenes → prose. You see the WHOLE book and may touch any node (except LOCKED ones); the author anchors your attention by attaching nodes, but never fences you out of the rest. The tree below has prose stripped to stay lean — use read_node to read a scene's full prose before judging or rewriting it.
+You hold the book's DNA TREE: premise → foundations (pillar, cast, world, tentpoles, voice) → structure (acts, beats, threads) → scenes → prose. You see the WHOLE book and may touch any node (except LOCKED ones); the author anchors your attention by attaching nodes, but never fences you out of the rest. The tree below is a DIGEST — each node shows its handle/gist plus, for structure, its causal + meter spine (connector, needs, establishes, readings). When a node's full detail matters — a beat's whole summary, a character's wound/lie, a scene's prose — read_node it before judging or rewriting. To FIND where something appears across the whole book — a name, a motif, an echoed line, a phrase in the prose the digest doesn't show — use search_nodes, then read_node the hits.
 
 You can do four things:
 1. DISCUSS — answer, summarize, pressure-test. Reply in plain MARKDOWN prose and just end your turn (no tool needed). Be concrete, grounded in the real tree, referencing nodes by their [id]. When a node has PENDING OPTIONS and the author asks which is strongest, just RECOMMEND one in prose (name its option number + a one-line reason tied to the brief) — committing the pick is theirs, in the tree.
@@ -996,7 +1173,7 @@ You can do four things:
 4. PROSE — to WRITE or REWRITE a scene's full prose, call propose_prose_render with the scene [id](s): you do NOT generate prose yourself (it's a long, browser-streamed render the author runs); you stage a request the author applies, and it streams in their browser. For SMALL wording fixes to EXISTING prose, use propose_node_ops to edit content.prose.text directly. Call check_against_contract with a scene's [id] to judge its EXISTING prose against the brief mandate (genre, heat, voice, success criteria) and relay the per-axis verdict. A common request — "write the first scene and see if it meets the brief" — is propose_prose_render (the author applies it; prose streams in) then check_against_contract once the scene has prose.
    • REBUILDS: to replace a whole level — "rebuild the acts", "4 acts with all-new beats" — use ONE replace_children op (parentId = the level's parent, e.g. the pillar for acts; childKind = act; children = the new acts, each nesting its beats). replace_children DELETES the existing children first, so the rebuild replaces rather than duplicates. Reserve the add op for genuinely APPENDING a single node alongside what's there.
 
-${CONTENT_SCHEMAS}
+NODE KINDS: seed, premise, pillar; foundations — character, relationship, world_fact, location, thread, game, tentpole, meter, voice_profile; structure — act, beat, scene. Before you WRITE a node's content (add / edit / replace_children), get the kind's EXACT field names with get_schema (read_node also returns them) — wrong keys silently orphan data.
 
 Be tight. Don't propose changes the author didn't ask for; when they're just talking, just talk.`;
 
@@ -1094,9 +1271,9 @@ async function proposeOptions(
 }
 
 // The thread's system prompt carries the CURRENT DNA tree, FILTERED to the in-scope kinds and rebuilt
-// every call so ids stay fresh as the author edits (the transcript holds only the conversation). Prose
-// is always stripped (read_node fetches it). A one-line premise/pillar frame is always included so the
-// agent is grounded even when 'premise' isn't in scope.
+// every call so ids stay fresh as the author edits (the transcript holds only the conversation). Each node
+// is a DIGEST — handle/gist + causal spine, full content via read_node (see digestNode). A one-line
+// premise/pillar frame is always included so the agent is grounded even when 'premise' isn't in scope.
 async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspect[] | null, analysis: string | null, effort: "low" | "high" = "high", auto = false): Promise<string> {
   const { data: book } = await service.from("books").select("name, brief").eq("id", bookId).maybeSingle();
   const b = book as { name?: string; brief?: Brief } | null;
@@ -1107,12 +1284,7 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
 
   const serialize = (n: DnaNodeRow, inScope: boolean): string => {
     if (!inScope) return `[${n.id}] L${n.level} ${n.kind}: <hidden>`;
-    let content = n.content;
-    if (n.kind === "scene" && content && typeof content === "object" && "prose" in content) {
-      const { prose: _drop, ...rest } = content as Record<string, unknown>;
-      content = rest; // prose is heavy — read_node fetches it
-    }
-    let line = `[${n.id}${n.authoring?.locked ? " · LOCKED" : ""}] L${n.level} ${n.kind}: ${JSON.stringify(content)}`;
+    let line = `[${n.id}${n.authoring?.locked ? " · LOCKED" : ""}] L${n.level} ${n.kind}: ${digestNode(n.kind, n.content)}`;
     // Pending options (the picker channel) — surfaced so you can RECOMMEND which the author should pick.
     if (Array.isArray(n.proposals) && n.proposals.length) {
       line += `\n  PENDING OPTIONS (${n.proposals.length} — the author picks one; you may recommend which by its number): ` +
@@ -1141,7 +1313,7 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
   // Autonomous mode: the author is AWAY. The agent must carry every request to a committed change with no
   // human gate — it makes the option choices itself and never waits. (The client auto-applies what it stages.)
   const autoLine = auto
-    ? "\n\nAUTONOMOUS MODE — the author has stepped away and CANNOT review, pick, or answer. Carry every request all the way to a finished result yourself, then conclude:\n• Make ONE change per turn with propose_node_ops. It is APPLIED LIVE immediately — there is no review step, and your NEXT turn shows the updated tree. Don't say \"I propose\" or wait for approval; just make the change, then continue.\n• DON'T OVER-READ. The full DNA tree (all structure — acts, beats, scene plans) is ALREADY in your context above. Only use read_node for a scene's PROSE; never read_node a act/beat/scene just to see its plan — you can already see it. Act, don't explore.\n• NEVER call ask_author. At a creative fork, decide with your best judgment and proceed.\n• Prefer to commit directly: when you'd weigh options, just pick the strongest and write it with propose_node_ops. (Avoid propose_options in autonomous mode — there's no one to pick.)\n• ALWAYS CONCLUDE: once the request is fully handled, call finish with a one-line summary of what you changed. Don't stop mid-thought after a change — keep going until you finish."
+    ? "\n\nAUTONOMOUS MODE — the author has stepped away and CANNOT review, pick, or answer. Carry every request all the way to a finished result yourself, then conclude:\n• Make ONE change per turn with propose_node_ops. It is APPLIED LIVE immediately — there is no review step, and your NEXT turn shows the updated tree. Don't say \"I propose\" or wait for approval; just make the change, then continue.\n• READ THEN ACT — don't over-read. The tree above is a DIGEST (handle/gist + causal spine). When the change needs a node's full detail (a beat's whole summary, a character's profile, a scene's prose), read_node it FIRST — but only the node(s) you're about to change. Don't sweep the tree; the digest is enough to decide what to touch.\n• NEVER call ask_author. At a creative fork, decide with your best judgment and proceed.\n• Prefer to commit directly: when you'd weigh options, just pick the strongest and write it with propose_node_ops. (Avoid propose_options in autonomous mode — there's no one to pick.)\n• ALWAYS CONCLUDE: once the request is fully handled, call finish with a one-line summary of what you changed. Don't stop mid-thought after a change — keep going until you finish."
     : "";
   return `${SYSTEM_THREAD}${scopeLine}${effortLine}${autoLine}\n\n${blocks.join("\n\n")}`;
 }
@@ -1224,4 +1396,3 @@ function evalContext(ev: EvalResult): string {
 
   return `${head}\n\n${sections}`.trim();
 }
-

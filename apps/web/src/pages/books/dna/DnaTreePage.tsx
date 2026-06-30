@@ -2838,7 +2838,9 @@ export default function DnaTreePage() {
       {agentProposals.length > 0 && (
         <div onClick={() => setRailOpen(true)} title="open the agent to review + apply"
           style={{ padding: "8px 16px", borderBottom: "1px solid #2a2a44", background: "#13131a", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", cursor: "pointer" }}>
-          <span style={{ fontSize: 9, color: "#8a8aff", letterSpacing: "0.14em", textTransform: "uppercase" }}>✦ {agentProposals.reduce((n, p) => n + p.ops.length, 0)} proposed change{agentProposals.reduce((n, p) => n + p.ops.length, 0) === 1 ? "" : "s"}</span>
+          {(() => { const count = agentProposals.reduce((n, p) => n + (p.layer === "prose-render" ? (p.sceneIds?.length ?? 1) : p.ops.length), 0); return (
+            <span style={{ fontSize: 9, color: "#8a8aff", letterSpacing: "0.14em", textTransform: "uppercase" }}>✦ {count} proposed change{count === 1 ? "" : "s"}</span>
+          ); })()}
           <span style={{ fontFamily: "ui-serif, Georgia, serif", fontSize: 12.5, color: "#c8c8d0", flex: 1, minWidth: 200 }}>{agentProposals.map((p) => p.summary).filter(Boolean).join(" · ")}</span>
           <span style={{ fontSize: 11, color: "#8a8aff", letterSpacing: "0.08em", textTransform: "uppercase" }}>review in agent →</span>
         </div>
