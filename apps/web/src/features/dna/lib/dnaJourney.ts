@@ -2,8 +2,8 @@
 // author advances through, finishing one before the next unlocks. This is the mental model the old build
 // studio got right (Brief→Foundations→Spine→…); here it's the DNA rungs grouped into stages. Pure: derives
 // each stage's status from the tree so the Navigator only renders. See docs/novel-dna-spec.md.
-import { renderBlockers, validate, type BookSettings, type DnaIssue, type DnaNode, type NodeKind, type SceneContent } from "@/lib/novelDna";
-import { contentCompleteness, requiredKeys } from "@/lib/dnaSchema";
+import { renderBlockers, validate, type BookSettings, type DnaIssue, type DnaNode, type NodeKind, type SceneContent } from "@/features/dna/lib/novelDna";
+import { contentCompleteness, requiredKeys } from "@/features/dna/lib/dnaSchema";
 
 export type StageKey = "premise" | "foundations" | "structure" | "scenes" | "draft";
 

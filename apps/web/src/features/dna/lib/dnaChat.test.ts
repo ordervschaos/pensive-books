@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { validateOps, type NodeOp } from "@/lib/dnaChat";
-import type { DnaNode, NodeKind } from "@/lib/novelDna";
+import { validateOps, type NodeOp } from "@/features/dna/lib/dnaChat";
+import type { DnaNode, NodeKind } from "@/features/dna/lib/novelDna";
 
 const mk = (kind: NodeKind, over: Partial<DnaNode> = {}): DnaNode => ({
   id: over.id ?? "n", book_id: 1, parent_id: over.parent_id ?? null, level: 0, kind, position: 0,

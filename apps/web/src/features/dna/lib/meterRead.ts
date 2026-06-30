@@ -8,11 +8,11 @@
 // trace + the read_gap lint from it. The author reviews the gaps, then hands them to the editor agent.
 import { supabase } from "@/integrations/supabase/client";
 import { BRIDGE, bridgeFetch } from "@/lib/bridge";
-import { sendAgentMessage } from "@/lib/agentThread";
+import { sendAgentMessage } from "@/features/dna/lib/agentThread";
 import {
   analysisText, beatsInOrder, byId, childrenOf, validate,
   type BeatContent, type BookSettings, type DnaNode, type MeterContent, type SceneContent,
-} from "@/lib/novelDna";
+} from "@/features/dna/lib/novelDna";
 
 export interface MeterDef { id: string; name: string; kind?: string; low?: string; high?: string; min?: number; max?: number }
 export interface MeterReadBeat { beatId: string; summary: string; prose: string }

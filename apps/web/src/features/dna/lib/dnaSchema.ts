@@ -7,7 +7,7 @@
 // This replaces the old drift where EDIT_FIELDS (editor), the dna-chat prompt, and the TS NodeContent types
 // each hand-described the same shape. The TS interfaces in novelDna stay the COMPILE-TIME view; this is the
 // RUNTIME view. Structure (parent kind, singletons) lives in novelDna (PARENT_KIND); this owns content.
-import { type DnaIssue, type DnaNode, type NodeKind } from "@/lib/novelDna";
+import { type DnaIssue, type DnaNode, type NodeKind } from "@/features/dna/lib/novelDna";
 
 // ── Field spec ────────────────────────────────────────────────────────────────
 // text/list (comma) for free text, ref/refs for id pointers (a dropdown/chip-picker of the right kind),

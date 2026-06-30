@@ -6,9 +6,9 @@ import { useEffect, useState } from "react";
 import { Sparkles, X, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ActionLink, Eyebrow, RunningInline } from "@/components/book/shared/studioUi";
-import { ImagePromptPreview } from "@/components/book/dna/ImagePromptPreview";
-import { composePortraitPrompt, renderDnaPortraitVariants, pinCharacterPortrait, unpinCharacterPortrait, legacyPortraitsFor, type ComposedPortraitPrompt } from "@/lib/characterPortraits";
-import { type CharacterContent, type DnaNode } from "@/lib/novelDna";
+import { ImagePromptPreview } from "@/features/dna/components/ImagePromptPreview";
+import { composePortraitPrompt, renderDnaPortraitVariants, pinCharacterPortrait, unpinCharacterPortrait, legacyPortraitsFor, type ComposedPortraitPrompt } from "@/features/dna/lib/characterPortraits";
+import { type CharacterContent, type DnaNode } from "@/features/dna/lib/novelDna";
 
 export function DnaCharacterLook({ node, bookId, onChanged }: { node: DnaNode; bookId: number; onChanged: () => void }) {
   const { toast } = useToast();

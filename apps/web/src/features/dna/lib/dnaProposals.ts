@@ -2,9 +2,9 @@
 // propose_options tool STAGES 2–4 candidate contents onto a node; here the author commits one or discards
 // them. Both register a turn on the book's agent thread (the chat is the agent's surface — docs/agent-rail.md),
 // best-effort. Generating/judging options are AI calls that happen IN the agent; this side is pure local state.
-import { saveNode } from "@/lib/bookNodes";
-import { byId, chooseProposal, stampInput, type DnaNode, type NodeContent } from "@/lib/novelDna";
-import { logAgentTurn } from "@/lib/agentThread";
+import { saveNode } from "@/features/dna/lib/bookNodes";
+import { byId, chooseProposal, stampInput, type DnaNode, type NodeContent } from "@/features/dna/lib/novelDna";
+import { logAgentTurn } from "@/features/dna/lib/agentThread";
 
 /** A short human handle for a node/option content (first meaningful field). */
 function handleOf(content: NodeContent | undefined): string {

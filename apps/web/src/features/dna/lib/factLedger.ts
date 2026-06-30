@@ -7,11 +7,11 @@
 // call's context is bounded by the ledger, not the whole prior manuscript (the O(n²) read-back it replaces).
 import { supabase } from "@/integrations/supabase/client";
 import { BRIDGE, bridgeFetch } from "@/lib/bridge";
-import { sendAgentMessage } from "@/lib/agentThread";
+import { sendAgentMessage } from "@/features/dna/lib/agentThread";
 import {
   analysisText, byId, scenesInOrder, validate,
   type BeatContent, type BookSettings, type ContinuityFlag, type DnaNode, type LedgerFact, type SceneContent,
-} from "@/lib/novelDna";
+} from "@/features/dna/lib/novelDna";
 
 export interface FactReadResult { facts: LedgerFact[]; contradictions: ContinuityFlag[] }
 

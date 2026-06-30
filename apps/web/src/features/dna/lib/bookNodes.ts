@@ -2,7 +2,7 @@
 // is pure in lib/novelDna.ts. The studio is a live projection: subscribe to book_nodes over Realtime and
 // re-load (refresh = no-op). See docs/novel-dna-spec.md.
 import { supabase } from "@/integrations/supabase/client";
-import { editContent, type DnaNode, type NodeContent } from "@/lib/novelDna";
+import { editContent, type DnaNode, type NodeContent } from "@/features/dna/lib/novelDna";
 
 const COLS = "id, book_id, parent_id, level, kind, position, content, authoring, proposals, chosen";
 

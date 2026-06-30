@@ -9,8 +9,8 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   beatsInOrder, byId, childrenOf, isSerialMeter, meterSeries, meterShape, meterTarget, observedSeries, validate,
   type DnaNode, type MeterContent, type DnaIssue, type MeterPoint,
-} from "@/lib/novelDna";
-import { buildMeterReadInput, invokeMeterRead, observedFindingsMessage, sendFindingsToEditor, writeObserved } from "@/lib/meterRead";
+} from "@/features/dna/lib/novelDna";
+import { buildMeterReadInput, invokeMeterRead, observedFindingsMessage, sendFindingsToEditor, writeObserved } from "@/features/dna/lib/meterRead";
 
 const getNumericId = (p: string | undefined) => { const m = p?.match(/^(\d+)/); return m ? parseInt(m[1]) : 0; };
 

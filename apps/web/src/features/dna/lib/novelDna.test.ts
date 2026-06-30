@@ -6,7 +6,7 @@ import {
   validate, meterSeries, meterShape, isSerialMeter, meterTarget, targetGap, observedSeries, observedGap,
   ledgerBefore, ledgerFull,
   type DnaNode, type NodeKind, type ThreadRef,
-} from "@/lib/novelDna";
+} from "@/features/dna/lib/novelDna";
 
 let seq = 0;
 const mk = (kind: NodeKind, over: Partial<DnaNode> & { content?: Record<string, unknown> } = {}): DnaNode => ({

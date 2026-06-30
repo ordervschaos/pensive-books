@@ -13,7 +13,7 @@ import { describe, it, expect } from "vitest";
 import {
   byId, scenesInOrder, chapters, validate, pacing, topography,
   type DnaNode, type SceneContent, type ActContent, type ThreadContent,
-} from "@/lib/novelDna";
+} from "@/features/dna/lib/novelDna";
 
 const FIXTURE = join(process.cwd(), "../../scripts/.dna-flow-tree.json");
 const present = existsSync(FIXTURE);

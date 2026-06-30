@@ -8,12 +8,12 @@
 import { useRef, type ReactNode } from "react";
 import { ArrowRight, Activity, BookOpen, Check, GitBranch, Network, Sparkles, TriangleAlert, Waypoints } from "lucide-react";
 import { ActionLink, Eyebrow, Hero, Panel, StageHead } from "@/components/book/shared/studioUi";
-import { DnaFullDiagram } from "@/components/book/dna/DnaStageDiagram";
-import { DnaStoryMap } from "@/components/book/dna/DnaStoryMap";
-import { DnaAnalysis } from "@/components/book/dna/DnaAnalysis";
-import { DnaAutopilot } from "@/components/book/dna/DnaAutopilot";
-import { STAGE_KINDS, stageSubsteps, type JourneyStage, type StageKey } from "@/lib/dnaJourney";
-import { byId, childrenOf, isProseStale, isStale, validate, type BookSettings, type DnaNode, type NodeKind, type SceneContent } from "@/lib/novelDna";
+import { DnaFullDiagram } from "@/features/dna/components/DnaStageDiagram";
+import { DnaStoryMap } from "@/features/dna/components/DnaStoryMap";
+import { DnaAnalysis } from "@/features/dna/components/DnaAnalysis";
+import { DnaAutopilot } from "@/features/dna/components/DnaAutopilot";
+import { STAGE_KINDS, stageSubsteps, type JourneyStage, type StageKey } from "@/features/dna/lib/dnaJourney";
+import { byId, childrenOf, isProseStale, isStale, validate, type BookSettings, type DnaNode, type NodeKind, type SceneContent } from "@/features/dna/lib/novelDna";
 
 // Which stage owns a node kind (so an issue on a node jumps to the right stage). game lives in Foundations
 // (a contest is a species of world rule); thread is edited here on the Overview, so thread-issue clicks are

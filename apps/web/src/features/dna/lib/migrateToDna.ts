@@ -2,10 +2,10 @@
 // into the Novel DNA tree (book_nodes). The PURE builder is testable; the thin wrapper loads + saves.
 // See docs/novel-dna-spec.md §9. Idempotent at the call site (caller clears prior nodes first).
 import { supabase } from "@/integrations/supabase/client";
-import { saveNodes } from "@/lib/bookNodes";
+import { saveNodes } from "@/features/dna/lib/bookNodes";
 import {
   byId, newId, stampInput, stampProse, type Authoring, type DnaNode, type NodeContent, type NodeKind,
-} from "@/lib/novelDna";
+} from "@/features/dna/lib/novelDna";
 import { briefIdea, type Brief } from "@/lib/brief";
 import type { CastMember, Foundations, Relationship, Tentpole, WorldNode } from "@/lib/foundations";
 

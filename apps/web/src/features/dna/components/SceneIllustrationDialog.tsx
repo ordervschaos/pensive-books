@@ -9,11 +9,11 @@ import { Maximize2, Trash2, RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ActionLink, ImageLightbox, RunningInline } from "@/components/book/shared/studioUi";
-import { ImagePromptPreview } from "@/components/book/dna/ImagePromptPreview";
-import { composeSceneIllustration, renderSceneIllustration, type ComposedSceneImage } from "@/lib/dnaExpand";
-import { composeSceneImage, readNodeSceneImages, deleteNodeSceneImage } from "@/lib/nodeSceneImages";
-import { saveNode } from "@/lib/bookNodes";
-import { editContent, type DnaNode, type SceneContent } from "@/lib/novelDna";
+import { ImagePromptPreview } from "@/features/dna/components/ImagePromptPreview";
+import { composeSceneIllustration, renderSceneIllustration, type ComposedSceneImage } from "@/features/dna/lib/dnaExpand";
+import { composeSceneImage, readNodeSceneImages, deleteNodeSceneImage } from "@/features/dna/lib/nodeSceneImages";
+import { saveNode } from "@/features/dna/lib/bookNodes";
+import { editContent, type DnaNode, type SceneContent } from "@/features/dna/lib/novelDna";
 
 export function SceneIllustrationDialog({ node, bookId, open, onOpenChange, onChanged }: {
   node: DnaNode | null;

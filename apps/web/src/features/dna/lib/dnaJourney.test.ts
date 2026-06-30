@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildJourney, dnaHealth, stageComplete, stageSubsteps } from "@/lib/dnaJourney";
-import type { DnaNode, NodeKind } from "@/lib/novelDna";
+import { buildJourney, dnaHealth, stageComplete, stageSubsteps } from "@/features/dna/lib/dnaJourney";
+import type { DnaNode, NodeKind } from "@/features/dna/lib/novelDna";
 
 let seq = 0;
 const mk = (kind: NodeKind, content: Record<string, unknown> = {}, status: "empty" | "draft" | "accepted" = "accepted", parent_id: string | null = null): DnaNode => ({

@@ -6,9 +6,9 @@
 import { useState, type ReactNode } from "react";
 import { ChevronDown, ChevronRight, TriangleAlert } from "lucide-react";
 import { Eyebrow } from "@/components/book/shared/studioUi";
-import { causality, pacing, promiseLedger, topography, validate, type DnaNode } from "@/lib/novelDna";
-import type { BookSettings } from "@/lib/novelDna";
-import type { StageKey } from "@/lib/dnaJourney";
+import { causality, pacing, promiseLedger, topography, validate, type DnaNode } from "@/features/dna/lib/novelDna";
+import type { BookSettings } from "@/features/dna/lib/novelDna";
+import type { StageKey } from "@/features/dna/lib/dnaJourney";
 
 // onOpen wires every analytic row to the node it's about (the act/thread/scene/beat) so the read-only
 // report is also a jump-table into the owning stage. hideLints drops the conformance section for surfaces

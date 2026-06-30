@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildDnaFromStack, type MigrationInput } from "@/lib/migrateToDna";
-import { chapters, renderPages, scenesInOrder, validate, type SceneContent } from "@/lib/novelDna";
+import { buildDnaFromStack, type MigrationInput } from "@/features/dna/lib/migrateToDna";
+import { chapters, renderPages, scenesInOrder, validate, type SceneContent } from "@/features/dna/lib/novelDna";
 
 const doc = (text: string) => ({ type: "doc", content: [{ type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: "T" }] }, { type: "paragraph", content: [{ type: "text", text }] }] });
 

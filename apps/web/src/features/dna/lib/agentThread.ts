@@ -7,8 +7,8 @@
 // Realtime (useLatestTaskRow); refresh = no-op.
 import { supabase } from "@/integrations/supabase/client";
 import type { TaskRow } from "@/hooks/useLatestTaskRow";
-import { applyNodeOps, type NodeOp, type OpValidation } from "@/lib/dnaChat";
-import type { DnaNode, NodeKind } from "@/lib/novelDna";
+import { applyNodeOps, type NodeOp, type OpValidation } from "@/features/dna/lib/dnaChat";
+import type { DnaNode, NodeKind } from "@/features/dna/lib/novelDna";
 
 export interface AgentStep {
   // user = the author's message · note = the agent's reply/narration · read = a node it read ·
@@ -131,7 +131,7 @@ export async function applyAgentProposal(bookId: number, threadId: number, propo
   if (proposal.layer === "prose-render") {
     // Delegate to the v2 prose pipeline — expandNode streams off-worker (/api/stream-prose) + saves. The
     // dynamic import breaks the agentThread ↔ dnaExpand cycle (dnaExpand → stageGeneratedProposal → here).
-    const { expandNode } = await import("@/lib/dnaExpand");
+    const { expandNode } = await import("@/features/dna/lib/dnaExpand");
     const index = new Map(nodes.map((n) => [n.id, n]));
     for (const id of proposal.sceneIds ?? []) {
       const scene = index.get(id);

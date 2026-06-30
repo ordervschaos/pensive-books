@@ -6,14 +6,14 @@ import { useState, useRef, useEffect } from "react";
 import { Sparkles } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ActionLink, Eyebrow, Panel, RunningInline, StageHead } from "@/components/book/shared/studioUi";
-import { DnaLookPanel } from "@/components/book/dna/DnaLookPanel";
-import { DnaCharacterLook } from "@/components/book/dna/DnaCharacterLook";
-import { ImagePromptPreview } from "@/components/book/dna/ImagePromptPreview";
-import { SceneIllustrationDialog } from "@/components/book/dna/SceneIllustrationDialog";
-import { composeSceneIllustration, renderSceneIllustration, type ComposedSceneImage } from "@/lib/dnaExpand";
-import { isIllusStale, type CharacterContent, type DnaNode, type SceneContent } from "@/lib/novelDna";
+import { DnaLookPanel } from "@/features/dna/components/DnaLookPanel";
+import { DnaCharacterLook } from "@/features/dna/components/DnaCharacterLook";
+import { ImagePromptPreview } from "@/features/dna/components/ImagePromptPreview";
+import { SceneIllustrationDialog } from "@/features/dna/components/SceneIllustrationDialog";
+import { composeSceneIllustration, renderSceneIllustration, type ComposedSceneImage } from "@/features/dna/lib/dnaExpand";
+import { isIllusStale, type CharacterContent, type DnaNode, type SceneContent } from "@/features/dna/lib/novelDna";
 import { supabase } from "@/integrations/supabase/client";
-import type { DnaSettings } from "@/components/book/dna/DnaStudio";
+import type { DnaSettings } from "@/features/dna/components/DnaStudio";
 
 // ── DnaVisuals ────────────────────────────────────────────────────────────────
 export function DnaVisuals({ bookId, nodes, settings, onChanged }: {

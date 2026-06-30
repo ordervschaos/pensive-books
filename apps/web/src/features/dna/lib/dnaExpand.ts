@@ -3,12 +3,12 @@
 // accepted); a scene gets its prose. The author then edits / regenerates / locks. See novel-dna-spec.md §6.
 import { supabase } from "@/integrations/supabase/client";
 import { BRIDGE, bridgeFetch } from "@/lib/bridge";
-import { deleteNode, loadTree, saveNode, saveNodes } from "@/lib/bookNodes";
-import { composeSceneImage, renderNodeSceneImage, type ComposedSceneImage } from "@/lib/nodeSceneImages";
-import { ensurePortraitFor } from "@/lib/characterPortraits";
-import { byId, deepMergeContent, newId, PARENT_KIND, pillarOf, presentCharacters, stampIllus, stampInput, stampProse, type BeatContent, type DnaNode, type GameContent, type NodeContent, type NodeKind, type SceneContent, type ThreadRef } from "@/lib/novelDna";
-import { stageGeneratedProposal, type AgentProposal } from "@/lib/agentThread";
-import type { NewSubtree, NodeOp } from "@/lib/dnaChat";
+import { deleteNode, loadTree, saveNode, saveNodes } from "@/features/dna/lib/bookNodes";
+import { composeSceneImage, renderNodeSceneImage, type ComposedSceneImage } from "@/features/dna/lib/nodeSceneImages";
+import { ensurePortraitFor } from "@/features/dna/lib/characterPortraits";
+import { byId, deepMergeContent, newId, PARENT_KIND, pillarOf, presentCharacters, stampIllus, stampInput, stampProse, type BeatContent, type DnaNode, type GameContent, type NodeContent, type NodeKind, type SceneContent, type ThreadRef } from "@/features/dna/lib/novelDna";
+import { stageGeneratedProposal, type AgentProposal } from "@/features/dna/lib/agentThread";
+import type { NewSubtree, NodeOp } from "@/features/dna/lib/dnaChat";
 
 /** A short, legible chapter title from a beat's summary (the working title; the author renames). */
 function chapterTitleFromBeat(beat: DnaNode): string {

@@ -6,8 +6,8 @@
 // Generalizes lib/outline.ts's reconcile one level up (chapter, not scene, is the page unit). Spec §8.
 import { supabase } from "@/integrations/supabase/client";
 import { buildDoc, buildImageDoc } from "@/lib/inlineMarkdown";
-import { loadTree } from "@/lib/bookNodes";
-import { renderPages, type RenderedPage } from "@/lib/novelDna";
+import { loadTree } from "@/features/dna/lib/bookNodes";
+import { renderPages, type RenderedPage } from "@/features/dna/lib/novelDna";
 
 export interface DnaRenderResult { created: number; updated: number; archived: number; pages: number }
 

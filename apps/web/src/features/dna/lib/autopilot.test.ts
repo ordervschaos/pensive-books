@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { nextAutopilotAction } from "@/lib/autopilot";
-import { type DnaNode, type NodeKind } from "@/lib/novelDna";
+import { nextAutopilotAction } from "@/features/dna/lib/autopilot";
+import { type DnaNode, type NodeKind } from "@/features/dna/lib/novelDna";
 
 let seq = 0;
 const mk = (kind: NodeKind, over: Partial<DnaNode> & { content?: Record<string, unknown> } = {}): DnaNode => ({

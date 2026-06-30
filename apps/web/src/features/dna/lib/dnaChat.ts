@@ -3,10 +3,10 @@
 // OPS the author reviews, then applies to book_nodes here. See docs/novel-dna-spec.md.
 import { supabase } from "@/integrations/supabase/client";
 import { BRIDGE, bridgeFetch } from "@/lib/bridge";
-import { deleteNode, loadTree, saveNode } from "@/lib/bookNodes";
-import { blastRadius, byId, editContent, emptyNode, PARENT_KIND, pillarOf, stampInput, type DnaNode, type NodeContent, type NodeKind } from "@/lib/novelDna";
-import { KIND_LEVEL, LADDER_NEXT, sanitizeContent, validateContent, VALID_KINDS } from "@/lib/dnaSchema";
-import type { StageKey } from "@/lib/dnaJourney";
+import { deleteNode, loadTree, saveNode } from "@/features/dna/lib/bookNodes";
+import { blastRadius, byId, editContent, emptyNode, PARENT_KIND, pillarOf, stampInput, type DnaNode, type NodeContent, type NodeKind } from "@/features/dna/lib/novelDna";
+import { KIND_LEVEL, LADDER_NEXT, sanitizeContent, validateContent, VALID_KINDS } from "@/features/dna/lib/dnaSchema";
+import type { StageKey } from "@/features/dna/lib/dnaJourney";
 
 export interface DnaChatMessage { role: "user" | "assistant"; text: string; ts: string; plan?: string }
 export interface DnaSession { messages: DnaChatMessage[]; pending_proposal: DnaProposal | null; ended_at: string }

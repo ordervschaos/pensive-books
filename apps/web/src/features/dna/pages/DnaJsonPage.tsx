@@ -6,7 +6,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import type { DnaNode } from "@/lib/novelDna";
+import type { DnaNode } from "@/features/dna/lib/novelDna";
 
 const getNumericId = (param: string | undefined) => {
   const m = param?.match(/^(\d+)/);

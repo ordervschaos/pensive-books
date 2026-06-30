@@ -5,10 +5,10 @@ import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useBookPermissions } from "@/hooks/use-book-permissions";
 import { setPageTitle } from "@/utils/pageTitle";
-import { loadTree } from "@/lib/bookNodes";
-import type { DnaNode } from "@/lib/novelDna";
+import { loadTree } from "@/features/dna/lib/bookNodes";
+import type { DnaNode } from "@/features/dna/lib/novelDna";
 import type { Brief } from "@/lib/brief";
-import { DnaStudio, type DnaSettings } from "@/components/book/dna/DnaStudio";
+import { DnaStudio, type DnaSettings } from "@/features/dna/components/DnaStudio";
 
 const getNumericId = (param: string | undefined) => {
   const m = param?.match(/^(\d+)/);

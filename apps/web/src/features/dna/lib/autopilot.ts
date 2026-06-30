@@ -17,10 +17,10 @@
 // writes prose; picture mode illustrates each scene (caption + a durable image render). The loop's draft
 // rung is "kicked" (caption written / prose written); in picture mode the images then finish in background.
 import { supabase } from "@/integrations/supabase/client";
-import { loadTree } from "@/lib/bookNodes";
-import { expandNode, composeSceneIllustration, renderSceneIllustration } from "@/lib/dnaExpand";
-import { childrenOf, scenesInOrder, type DnaNode, type NodeKind, type SceneContent } from "@/lib/novelDna";
-import { buildJourney, DNA_STAGES, type StageKey } from "@/lib/dnaJourney";
+import { loadTree } from "@/features/dna/lib/bookNodes";
+import { expandNode, composeSceneIllustration, renderSceneIllustration } from "@/features/dna/lib/dnaExpand";
+import { childrenOf, scenesInOrder, type DnaNode, type NodeKind, type SceneContent } from "@/features/dna/lib/novelDna";
+import { buildJourney, DNA_STAGES, type StageKey } from "@/features/dna/lib/dnaJourney";
 
 export type AutopilotMode = "auto" | "milestone";
 // The book's OUTPUT mode (docs/picture-book-mode.md) — orthogonal to AutopilotMode. It changes only the

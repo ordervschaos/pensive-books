@@ -8,8 +8,8 @@
 // Reflects real counts/budgets where cheap (act widths from target_pct, beat ticks from beat counts),
 // conceptual otherwise. Pure presentation; Paper-DS tokens via currentColor.
 import type { ReactNode } from "react";
-import type { StageKey } from "@/lib/dnaJourney";
-import { beatsInOrder, childrenOf, scenesInOrder, topography, type BeatContent, type DnaNode, type GameContent, type ActContent, type SceneContent, type ThreadContent } from "@/lib/novelDna";
+import type { StageKey } from "@/features/dna/lib/dnaJourney";
+import { beatsInOrder, childrenOf, scenesInOrder, topography, type BeatContent, type DnaNode, type GameContent, type ActContent, type SceneContent, type ThreadContent } from "@/features/dna/lib/novelDna";
 
 const ACCENT = "text-[hsl(var(--pv-accent))]";
 const FAINT = "text-[hsl(var(--pv-text-faint))]";

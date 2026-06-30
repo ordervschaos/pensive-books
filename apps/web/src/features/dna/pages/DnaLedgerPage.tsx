@@ -6,8 +6,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { ledgerFull, scenesInOrder, validate, type DnaNode } from "@/lib/novelDna";
-import { ledgerFindingsMessage, runLedgerScan, sendBreaksToEditor, type LedgerScanProgress } from "@/lib/factLedger";
+import { ledgerFull, scenesInOrder, validate, type DnaNode } from "@/features/dna/lib/novelDna";
+import { ledgerFindingsMessage, runLedgerScan, sendBreaksToEditor, type LedgerScanProgress } from "@/features/dna/lib/factLedger";
 
 const getNumericId = (p: string | undefined) => { const m = p?.match(/^(\d+)/); return m ? parseInt(m[1]) : 0; };
 

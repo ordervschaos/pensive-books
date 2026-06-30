@@ -5,7 +5,7 @@
 // per-stage "generate" buttons — every AI action passes through the one rail. The agent always sees the
 // whole book; there is no context fence (docs/agent-context-model.md). `aspect` only gates command
 // RELEVANCE (offer "generate beats" when beats are absent, "revise" when present) — not what's touched.
-import type { Aspect } from "@/lib/agentThread";
+import type { Aspect } from "@/features/dna/lib/agentThread";
 
 export interface AgentCommand {
   id: string;

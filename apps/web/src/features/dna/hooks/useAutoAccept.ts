@@ -11,9 +11,9 @@
 // snapshot can't re-apply an `add` and duplicate nodes, and a poison item can't hot-loop). The autonomous
 // instruction is bounded by the run's MAX_TURNS server-side (continueAgent doesn't reset the turn budget).
 import { useEffect, useRef } from "react";
-import { applyAgentProposal, answerAgent, continueAgent, discardAgentProposal, type AgentProposal, type AgentThreadRow } from "@/lib/agentThread";
-import { chooseNodeProposal } from "@/lib/dnaProposals";
-import type { DnaNode } from "@/lib/novelDna";
+import { applyAgentProposal, answerAgent, continueAgent, discardAgentProposal, type AgentProposal, type AgentThreadRow } from "@/features/dna/lib/agentThread";
+import { chooseNodeProposal } from "@/features/dna/lib/dnaProposals";
+import type { DnaNode } from "@/features/dna/lib/novelDna";
 
 const AUTO_ANSWER =
   "I'm away — auto-accept mode is on, so I can't answer. Make the strongest creative call yourself and keep going.";

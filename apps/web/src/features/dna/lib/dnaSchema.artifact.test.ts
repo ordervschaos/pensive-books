@@ -2,12 +2,12 @@ import { describe, expect, it } from "vitest";
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
-import { dnaSchemaArtifact } from "@/lib/dnaSchema";
+import { dnaSchemaArtifact } from "@/features/dna/lib/dnaSchema";
 
 // The committed artifact the dna-chat EDGE fn + the dev BRIDGE read. This test is the lock that keeps it in
 // sync with NODE_SCHEMA: edit the schema, run `UPDATE_DNA_SCHEMA=1 npx vitest run dnaSchema.artifact` to
 // regenerate, commit the JSON. If they drift, this fails — so the prompt can never silently go stale again.
-const ARTIFACT_PATH = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../supabase/functions/_shared/dna-schema.json");
+const ARTIFACT_PATH = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../../../supabase/functions/_shared/dna-schema.json");
 
 describe("dna-schema artifact (edge/bridge ↔ NODE_SCHEMA)", () => {
   it("matches the committed supabase/functions/_shared/dna-schema.json", () => {

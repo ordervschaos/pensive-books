@@ -16,12 +16,12 @@ import {
   AGENT_THREAD_SELECT, answerAgent, applyAgentProposal, ASPECT_KINDS, discardAgentProposal,
   resumeAgentSession, sendAgentMessage, startNewAgentSession,
   type AgentProposal, type AgentSession, type Aspect, type AgentStep, type AgentThreadRow,
-} from "@/lib/agentThread";
-import { availableCommands, matchCommands, type AgentCommand } from "@/lib/agentCommands";
-import { describeOps, nodeLabel, type NodeOp } from "@/lib/dnaChat";
-import { analysisText, byId, type BookSettings, type DnaNode, type NodeKind } from "@/lib/novelDna";
+} from "@/features/dna/lib/agentThread";
+import { availableCommands, matchCommands, type AgentCommand } from "@/features/dna/lib/agentCommands";
+import { describeOps, nodeLabel, type NodeOp } from "@/features/dna/lib/dnaChat";
+import { analysisText, byId, type BookSettings, type DnaNode, type NodeKind } from "@/features/dna/lib/novelDna";
 import { useChatScroll } from "@/components/book/shared/useChatScroll";
-import { useAutoAccept } from "@/hooks/useAutoAccept";
+import { useAutoAccept } from "@/features/dna/hooks/useAutoAccept";
 import { ActionLink, Eyebrow, Panel, RunError } from "@/components/book/shared/studioUi";
 
 export function AgentRail({ bookId, nodes, settings, attachedIds = [], onDetach }: {

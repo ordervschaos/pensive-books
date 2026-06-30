@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { contentCompleteness, sanitizeContent, validateContent, type EditSpec } from "@/lib/dnaSchema";
-import type { DnaNode, NodeKind } from "@/lib/novelDna";
+import { contentCompleteness, sanitizeContent, validateContent, type EditSpec } from "@/features/dna/lib/dnaSchema";
+import type { DnaNode, NodeKind } from "@/features/dna/lib/novelDna";
 
 const node = (kind: NodeKind, content: Record<string, unknown>): DnaNode => ({
   id: "n", book_id: 1, parent_id: null, level: 0, kind, position: 0, content,

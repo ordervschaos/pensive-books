@@ -9,11 +9,11 @@ import { useToast } from "@/hooks/use-toast";
 import { useLatestTaskRow } from "@/hooks/useLatestTaskRow";
 import { stopRun } from "@/lib/stopRun";
 import { ActionLink, Eyebrow, Panel } from "@/components/book/shared/studioUi";
-import { DNA_STAGES } from "@/lib/dnaJourney";
+import { DNA_STAGES } from "@/features/dna/lib/dnaJourney";
 import {
   continueAutopilot, resumeAutopilot, runAutopilot, startAutopilot,
   type AutopilotMode, type AutopilotProgress,
-} from "@/lib/autopilot";
+} from "@/features/dna/lib/autopilot";
 
 const STAGE_NUM = Object.fromEntries(DNA_STAGES.map((s, i) => [s.key, i + 1]));
 

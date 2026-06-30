@@ -5,16 +5,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { deleteNode, patchNodeContent, saveNode, saveNodes } from "@/lib/bookNodes";
-import { backlinkIndex, byId, childrenOf, emptyNode, isEntityKind, isProseStale, isStale, newId, pillarOf, refsOf, stampInput, stampProse, type BookSettings, type DnaIssue, type DnaNode, type BeatContent, type NodeContent, type NodeKind, type SceneContent } from "@/lib/novelDna";
-import { editSpecs, KIND_LEVEL, tasteSpecs, type EditSpec } from "@/lib/dnaSchema";
+import { deleteNode, patchNodeContent, saveNode, saveNodes } from "@/features/dna/lib/bookNodes";
+import { backlinkIndex, byId, childrenOf, emptyNode, isEntityKind, isProseStale, isStale, newId, pillarOf, refsOf, stampInput, stampProse, type BookSettings, type DnaIssue, type DnaNode, type BeatContent, type NodeContent, type NodeKind, type SceneContent } from "@/features/dna/lib/novelDna";
+import { editSpecs, KIND_LEVEL, tasteSpecs, type EditSpec } from "@/features/dna/lib/dnaSchema";
 import { CONTENT_TYPES, SCOPE_BANDS, briefIdea, type Brief } from "@/lib/brief";
-import { describeOps, type NodeOp } from "@/lib/dnaChat";
-import { AgentRail } from "@/components/book/dna/AgentRail";
-import { sendAgentMessage, type AgentProposal } from "@/lib/agentThread";
-import { chooseNodeProposal, discardNodeProposals } from "@/lib/dnaProposals";
-import { expandNode, proposeGeneration } from "@/lib/dnaExpand";
-import { DNA_STAGES, dnaHealth, buildJourney, stageProgress, STAGE_KINDS, type StageKey } from "@/lib/dnaJourney";
+import { describeOps, type NodeOp } from "@/features/dna/lib/dnaChat";
+import { AgentRail } from "@/features/dna/components/AgentRail";
+import { sendAgentMessage, type AgentProposal } from "@/features/dna/lib/agentThread";
+import { chooseNodeProposal, discardNodeProposals } from "@/features/dna/lib/dnaProposals";
+import { expandNode, proposeGeneration } from "@/features/dna/lib/dnaExpand";
+import { DNA_STAGES, dnaHealth, buildJourney, stageProgress, STAGE_KINDS, type StageKey } from "@/features/dna/lib/dnaJourney";
 
 const getNumericId = (p: string | undefined) => { const m = p?.match(/^(\d+)/); return m ? parseInt(m[1]) : 0; };
 
@@ -65,7 +65,7 @@ function nodeTitle(n: DnaNode): string {
   }
 }
 
-// Editable fields per kind + KIND_LEVEL now live in @/lib/dnaSchema (the single source of truth); the
+// Editable fields per kind + KIND_LEVEL now live in @/features/dna/lib/dnaSchema (the single source of truth); the
 // editor below renders straight off editSpecs(kind). EditSpec carries an optional `required` flag the
 // schema's validateContent() reads — the editor ignores it (every field is still editable).
 

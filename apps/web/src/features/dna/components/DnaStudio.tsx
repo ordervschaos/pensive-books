@@ -16,21 +16,21 @@ import {
 import { AutoTextarea } from "@/components/ui/auto-textarea";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { ActionLink, Eyebrow, Panel, RunningInline, StageHead, StepDot } from "@/components/book/shared/studioUi";
-import { buildJourney, stageSubsteps, STAGE_KINDS, type StageKey } from "@/lib/dnaJourney";
-import { AgentRail } from "@/components/book/dna/AgentRail";
-import { DnaVisuals } from "@/components/book/dna/DnaVisuals";
-import { DnaStageDiagram } from "@/components/book/dna/DnaStageDiagram";
-import { DnaOverview } from "@/components/book/dna/DnaOverview";
-import { saveNode, saveNodes, deleteNode } from "@/lib/bookNodes";
-import { migrateBookToDna } from "@/lib/migrateToDna";
-import { reconcileDna } from "@/lib/novelDnaRender";
-import { expandNode, composeSceneIllustration, renderSceneIllustration, type ComposedSceneImage } from "@/lib/dnaExpand";
-import { ImagePromptPreview } from "@/components/book/dna/ImagePromptPreview";
+import { buildJourney, stageSubsteps, STAGE_KINDS, type StageKey } from "@/features/dna/lib/dnaJourney";
+import { AgentRail } from "@/features/dna/components/AgentRail";
+import { DnaVisuals } from "@/features/dna/components/DnaVisuals";
+import { DnaStageDiagram } from "@/features/dna/components/DnaStageDiagram";
+import { DnaOverview } from "@/features/dna/components/DnaOverview";
+import { saveNode, saveNodes, deleteNode } from "@/features/dna/lib/bookNodes";
+import { migrateBookToDna } from "@/features/dna/lib/migrateToDna";
+import { reconcileDna } from "@/features/dna/lib/novelDnaRender";
+import { expandNode, composeSceneIllustration, renderSceneIllustration, type ComposedSceneImage } from "@/features/dna/lib/dnaExpand";
+import { ImagePromptPreview } from "@/features/dna/components/ImagePromptPreview";
 import {
   byId, childrenOf, editContent, emptyNode, isIllusStale, isProseStale, isStale, lock as lockNode, renderBlockers, scenesInOrder,
   setStatus, type BeatContent, type CharacterContent, type DnaNode, type GameContent, type ActContent,
   type NodeKind, type RelationshipContent, type SceneContent, type ThreadContent, type WorldFactContent,
-} from "@/lib/novelDna";
+} from "@/features/dna/lib/novelDna";
 
 // The expand verb(s) per kind. A node can have several (a pillar generates cast, world, AND acts). Each
 // names the TARGET the engine generates and the child kind it produces. SINGLE targets make exactly one

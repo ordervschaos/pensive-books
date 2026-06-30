@@ -3,8 +3,8 @@
 // the edge fn generate-dna-character-portrait (the bridge can't generate images), and the author pins the
 // chosen one(s) onto character.content.portraits — which scene renders feed back in for likeness.
 import { supabase } from "@/integrations/supabase/client";
-import { saveNode } from "@/lib/bookNodes";
-import { editContent, type CharacterContent, type DnaNode } from "@/lib/novelDna";
+import { saveNode } from "@/features/dna/lib/bookNodes";
+import { editContent, type CharacterContent, type DnaNode } from "@/features/dna/lib/novelDna";
 
 export interface ComposedPortraitPrompt { prompt: string; model: string | null }
 

@@ -5,11 +5,11 @@
 // carries a focusId). Pure projection of the tree + the engine's causality axis; nothing generates here.
 import { ChevronRight } from "lucide-react";
 import { Eyebrow } from "@/components/book/shared/studioUi";
-import type { StageKey } from "@/lib/dnaJourney";
+import type { StageKey } from "@/features/dna/lib/dnaJourney";
 import {
   beatsInOrder, causality, childrenOf, scenesInOrder,
   type BeatContent, type CausalityRow, type DnaNode, type ActContent, type SceneContent,
-} from "@/lib/novelDna";
+} from "@/features/dna/lib/novelDna";
 
 const ACCENT = "text-[hsl(var(--pv-accent))]";
 const FAINT = "text-[hsl(var(--pv-text-faint))]";
