@@ -594,7 +594,6 @@ function runClaude(prompt, captureStdout = false, meta = null, { noTools = false
       const bookId = meta?.bookId ?? "—";
       const mdl = model ?? "default";
       const header = `\n${"═".repeat(80)}\n[${ts}]  fn=${fn}  book=${bookId}  model=${mdl}  noTools=${noTools}\n${"─".repeat(80)}\n`;
-      appendFileSync(join(repoRoot, "bridge-calls.log"), header + prompt + "\n");
     } catch { /* non-fatal */ }
     // stdin = /dev/null so `claude -p` gets immediate EOF instead of waiting on an empty pipe
     // ("no stdin data received in 3s…"); the prompt is passed via the -p arg, not stdin.
