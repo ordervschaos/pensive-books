@@ -18,12 +18,15 @@ export const DEFAULT_LOW_MODEL = "claude-haiku-4-5-20251001";
 // claude-local.) `provider/model` ids route through OPENROUTER_API_KEY in claude.ts.
 export const IMAGE_PROMPT_MODEL = "qwen/qwen3-235b-a22b";
 
-// Continuity-DIGEST model (dna-expand's per-page fold). Deliberately NOT the cheap `low` model: the digest
-// is read-comprehension that downstream prose treats as authoritative, so a weak model's misreadings
-// (e.g. taking the protagonist's auction-lot designation "Lot Seven" as a separate character) poison every
-// later page. Pinned to qwen-plus (a reasoning model) regardless of the active tier — correctness here is
-// worth more than the few cents saved. `provider/model` routes through OPENROUTER_API_KEY in claude.ts.
-export const DIGEST_MODEL = "qwen/qwen3.7-plus";
+// Continuity-DIGEST model (dna-expand's per-page fold). Deliberately NOT the cheap `low` model (qwen3-8b):
+// the digest is read-comprehension that downstream prose treats as authoritative, so a weak model's
+// misreadings (e.g. taking the protagonist's auction-lot designation "Lot Seven" as a separate character)
+// poison every later page. But NOT a slow reasoning model either (qwen-plus reads it correctly but at
+// ~84s/fold — a cold backfill of N pages then blows the ~150s worker ceiling, the fold runs synchronously
+// on the worker). qwen3-235b is the sweet spot: capable enough to read designations correctly (verified on
+// book 1192's "Lot Seven") at ~13s/fold. Pinned regardless of the active tier. `provider/model` routes
+// through OPENROUTER_API_KEY in claude.ts.
+export const DIGEST_MODEL = "qwen/qwen3-235b-a22b";
 
 // high = selected generation model; low = cheap passes (summaries, scans).
 const TIER_MODELS: Record<ModelTier, { high: string; low: string }> = {

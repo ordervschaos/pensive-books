@@ -29,6 +29,13 @@ interface DigestAccum { pages: string[]; ledger: DigestLedger; impressions?: Dig
 // `v` bumps when the accumulator shape or the digest model/prompt changes — an older `v` invalidates the
 // whole cached chain (we re-fold rather than trust a digest built by a weaker model or an older schema).
 const DIGEST_VERSION = 2;
+// The fold runs synchronously on the worker (~150s wall-clock ceiling). A cold backfill of an existing
+// many-page book would do N sequential folds and blow it. Cap the time spent folding per call: when the
+// budget is hit we stop and return the partial digest (the prefix folded/cached so far). Because each fold
+// is persisted immediately, the NEXT generation resumes from here, so the cache warms over a generation or
+// two instead of the worker dying every time. New books built page-by-page only ever fold ONE page, so
+// they never approach this. ~100s leaves headroom for the rest of `prepare` under the ceiling.
+const FOLD_BUDGET_MS = 100_000;
 interface DigestLink { v?: number; value: DigestAccum; src_hash: string; prev_hash: string }
 interface Node { id: string; parent_id: string | null; kind: string; position?: number; content: Record<string, unknown>; authoring: { locked?: boolean; status?: string; prose_digest?: DigestLink } }
 interface NodeTypeConfig { target: string; child_kind: string; child_level: number; parent_kind: string; role: string; count: string; schema_json: string; slots: SlotConfig }
@@ -163,13 +170,6 @@ ${pageText}`;
     : prior.impressions;
   return { pages: [...prior.pages, (p.page ?? "").trim()].filter(Boolean), ledger: p.ledger ?? prior.ledger, impressions };
 }
-// Persist refreshed cache links back to the nodes (service client — this is a server-side optimization that
-// must work whether the caller was a user or a trusted chain call). Idempotent: same prose → same link.
-async function persistDigestLinks(bookId: number, links: { id: string; authoring: Node["authoring"] }[]): Promise<void> {
-  const sb = serviceClient();
-  await Promise.all(links.map((l) => sb.from("book_nodes").update({ authoring: l.authoring }).eq("id", l.id).eq("book_id", bookId)));
-}
-
 async function buildProseDigest(apiKey: string, model: string, allNodes: Node[], currentId: string, bookId: number, meta: CallMeta): Promise<string> {
   const ordered = scenesInOrder(allNodes);
   const idx = ordered.findIndex((s) => s.id === currentId);
@@ -186,20 +186,28 @@ async function buildProseDigest(apiKey: string, model: string, allNodes: Node[],
   // many-page book's first generation after this shipped — folds all earlier pages once; new books built
   // page-by-page never hit it, since each page only ever folds its single newest predecessor.)
   let accum: DigestAccum = { pages: [], ledger: {} };
-  const refreshed: { id: string; authoring: Node["authoring"] }[] = [];
+  const sb = serviceClient();
+  const startFold = Date.now();
+  let truncated = false;
   for (const page of earlier) {
     const txt = proseText(page);
     const srcHash = fnv1a(txt);
     const prevHash = fnv1a(JSON.stringify(accum));
     const cached = page.authoring?.prose_digest;
     if (cached && cached.v === DIGEST_VERSION && cached.src_hash === srcHash && cached.prev_hash === prevHash) { accum = cached.value; continue; }
+    // Out of fold budget → stop and return the partial digest (covers the prefix folded/cached so far). The
+    // fold is sequential (each depends on the prior accumulator) so we can't skip ahead — earliest-uncached
+    // first. Each completed fold below is already persisted, so the next generation resumes from here.
+    if (Date.now() - startFold > FOLD_BUDGET_MS) { truncated = true; break; }
     try {
       accum = await foldDigest(apiKey, model, accum, txt, meta);
       page.authoring = { ...page.authoring, prose_digest: { v: DIGEST_VERSION, value: accum, src_hash: srcHash, prev_hash: prevHash } };
-      refreshed.push({ id: page.id, authoring: page.authoring });
+      // Persist THIS fold immediately — a worker death at the ~150s ceiling must not lose progress (the
+      // old persist-at-end lost everything on death, so the cache never warmed and prose never recalculated).
+      await sb.from("book_nodes").update({ authoring: page.authoring }).eq("id", page.id).eq("book_id", bookId);
     } catch { /* degrade gracefully: skip this page's fold; blocklist + previous page still carry continuity */ }
   }
-  if (refreshed.length) await persistDigestLinks(bookId, refreshed);
+  if (truncated) console.warn(`dna-expand digest: fold budget hit for book ${bookId} — partial digest (${accum.pages.length}/${earlier.length} pages); cache warms on next generation`);
   const storySoFar = accum.pages.map((x, i) => `- Page ${i + 1}: ${x}`).join("\n");
   const ledger = formatLedger(accum.ledger);
   const impressions = formatImpressions(accum.impressions);
