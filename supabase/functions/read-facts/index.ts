@@ -10,7 +10,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
-import { callClaude, textFromClaude, type CallMeta } from "../_shared/claude.ts";
+import { callLLM, textFromLLM, type CallMeta } from "../_shared/llm.ts";
 import { getActiveModels } from "../_shared/model-config.ts";
 import { extractJsonBlock } from "../_shared/json.ts";
 
@@ -44,7 +44,7 @@ Deno.serve(async (req: Request) => {
 
     const { high: model } = await getActiveModels();
     const meta: CallMeta = { fn: "read-facts", bookId, taskTable: "book_nodes", taskId: bookId };
-    const data = await callClaude(apiKey, {
+    const data = await callLLM(apiKey, {
       model,
       max_tokens: 2000,
       thinking: { type: "adaptive" },
@@ -71,7 +71,7 @@ Deno.serve(async (req: Request) => {
       }],
     }, meta, { signal: AbortSignal.timeout(90_000) });
 
-    const parsed = JSON.parse(extractJsonBlock(textFromClaude(data).trim())) as { facts?: unknown; contradictions?: unknown };
+    const parsed = JSON.parse(extractJsonBlock(textFromLLM(data).trim())) as { facts?: unknown; contradictions?: unknown };
     const facts = (Array.isArray(parsed.facts) ? parsed.facts : []).filter(
       (f): f is Fact => !!f && typeof (f as Fact).key === "string" && typeof (f as Fact).value === "string"
     ).map((f) => ({ key: f.key, value: f.value, ...(f.note ? { note: f.note } : {}) }));

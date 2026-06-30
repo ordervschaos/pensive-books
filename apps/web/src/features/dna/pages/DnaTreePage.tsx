@@ -2660,7 +2660,7 @@ export default function DnaTreePage() {
         )}
       </div>
       {discardOpen && <DiscardStoryModal nodes={nodes} onClose={() => setDiscardOpen(false)} />}
-      {/* The tool-using editor's agent (durable revise-agent thread), promoted into the tree rail. The
+      {/* The tool-using editor's agent (durable book-agent thread), promoted into the tree rail. The
           studio components read theme CSS vars; we override them here with the tree's dark monospace
           palette (#8a8aff accent) so the rail matches the page instead of the app's light studio skin. */}
       {railOpen && (

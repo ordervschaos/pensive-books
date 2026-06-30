@@ -48,7 +48,7 @@ async function verifyJwt(authToken: string): Promise<string> {
 }
 
 // Best-effort: record the streamed generation in ai_calls so it stays visible in /admin alongside every
-// other model call (preserves the project_ai_call_logging invariant; the stream bypasses _shared/claude.ts).
+// other model call (preserves the project_ai_call_logging invariant; the stream bypasses _shared/llm.ts).
 // Fire-and-forget — never blocks or breaks the stream.
 async function logStreamCall(row: {
   model: string; userId: string; latencyMs: number; chars: number; errMsg: string | null;

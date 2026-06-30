@@ -10,7 +10,7 @@
 // to the page tell it what to SEED or PAY OFF.
 import { type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { type Brief, briefContext, mandateContext } from "./brief.ts";
-import { callClaude, textFromClaude, type CallMeta } from "./claude.ts";
+import { callLLM, textFromLLM, type CallMeta } from "./llm.ts";
 import { canonContext, type CanonPacket } from "./canon-core.ts";
 import { getActiveModels } from "./model-config.ts";
 import { readSteer, steerBlock } from "./steer.ts";
@@ -256,8 +256,8 @@ async function generateBeat(apiKey: string, model: string, userContent: string, 
     messages: [{ role: "user", content: userContent }],
   };
   if (temperature != null) body.temperature = temperature;
-  const data = await callClaude(apiKey, body, meta);
-  return textFromClaude(data).trim();
+  const data = await callLLM(apiKey, body, meta);
+  return textFromLLM(data).trim();
 }
 
 const JUDGE_SYSTEM = `You are a story editor choosing the single strongest BEAT among candidates for one page. The winner is the one that best, in order of weight: (a) connects to the PREVIOUS beat by "therefore" or "but" — caused by or colliding with it, never "and then"; (b) turns a clear VALUE FLIP across the page; (c) carries real SUBTEXT (said ≠ meant); (d) anchors on a CONCRETE image; (e) fulfils the page's objective. Reply with ONLY the number of the best candidate — no words, no punctuation.`;
@@ -265,7 +265,7 @@ const JUDGE_SYSTEM = `You are a story editor choosing the single strongest BEAT 
 async function pickBestBeat(apiKey: string, model: string, candidates: string[], prevBeat: string | null, objective: string, meta: CallMeta): Promise<string> {
   const list = candidates.map((c, i) => `[${i + 1}]\n${c}`).join("\n\n");
   try {
-    const data = await callClaude(apiKey, {
+    const data = await callLLM(apiKey, {
       model,
       max_tokens: 8,
       temperature: 0,
@@ -278,7 +278,7 @@ async function pickBestBeat(apiKey: string, model: string, candidates: string[],
           `\n\nCANDIDATE BEATS:\n${list}\n\nWhich single beat is best? Reply with ONLY its number.`,
       }],
     }, meta);
-    const text = textFromClaude(data);
+    const text = textFromLLM(data);
     const idx = parseInt(text.match(/\d+/)?.[0] ?? "1", 10) - 1;
     return candidates[idx] ?? candidates[0];
   } catch {

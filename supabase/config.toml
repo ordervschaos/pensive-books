@@ -343,7 +343,7 @@ verify_jwt = false
 [functions.build-revision]
 verify_jwt = false
 
-[functions.revise-agent]
+[functions.book-agent]
 verify_jwt = false
 
 [analytics]

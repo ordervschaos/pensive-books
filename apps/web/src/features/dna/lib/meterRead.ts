@@ -82,7 +82,7 @@ export function observedFindingsMessage(nodes: DnaNode[]): string | null {
   ].join("\n");
 }
 
-/** Hand the read's findings to the editor agent (the existing revise-agent thread). The author triggers this
+/** Hand the read's findings to the editor agent (the existing book-agent thread). The author triggers this
  *  (the manual taste gate); the AgentRail on the tree page renders the run via Realtime. */
 export async function sendFindingsToEditor(bookId: number, nodes: DnaNode[], settings: BookSettings): Promise<boolean> {
   const message = observedFindingsMessage(nodes);

@@ -2,7 +2,7 @@
 // option B). The omni-rail: every AI action will eventually be a message/command into this thread.
 //
 // The thread lives in a book_agent_runs row with kind='thread' (one per book), driven by the
-// revise-agent edge fn — the same durable, self-chaining, stoppable loop as the editor agent, but it
+// book-agent edge fn — the same durable, self-chaining, stoppable loop as the editor agent, but it
 // ends a turn in 'idle' instead of 'done' so the conversation continues. The rail watches the row over
 // Realtime (useLatestTaskRow); refresh = no-op.
 import { supabase } from "@/integrations/supabase/client";
@@ -59,10 +59,10 @@ export interface AgentThreadRow extends TaskRow {
 export const AGENT_THREAD_SELECT =
   "id, book_id, kind, status, created_at, updated_at, steps, pending, proposals, sessions, report, cancel_requested, error, context_auto";
 
-// revise-agent is invoked directly (it is NOT mirrored in the dev bridge — the tool loop runs against
+// book-agent is invoked directly (it is NOT mirrored in the dev bridge — the tool loop runs against
 // the deployed edge fn + the active model stack in dev and prod alike).
 async function invoke(body: Record<string, unknown>): Promise<void> {
-  const { data, error } = await supabase.functions.invoke("revise-agent", { body });
+  const { data, error } = await supabase.functions.invoke("book-agent", { body });
   if (error) throw error;
   if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
 }

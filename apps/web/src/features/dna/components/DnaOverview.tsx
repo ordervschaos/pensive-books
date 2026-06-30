@@ -11,7 +11,6 @@ import { ActionLink, Eyebrow, Hero, Panel, StageHead } from "@/components/book/s
 import { DnaFullDiagram } from "@/features/dna/components/DnaStageDiagram";
 import { DnaStoryMap } from "@/features/dna/components/DnaStoryMap";
 import { DnaAnalysis } from "@/features/dna/components/DnaAnalysis";
-import { DnaAutopilot } from "@/features/dna/components/DnaAutopilot";
 import { STAGE_KINDS, stageSubsteps, type JourneyStage, type StageKey } from "@/features/dna/lib/dnaJourney";
 import { byId, childrenOf, isProseStale, isStale, validate, type BookSettings, type DnaNode, type NodeKind, type SceneContent } from "@/features/dna/lib/novelDna";
 
@@ -116,9 +115,7 @@ export function DnaOverview({ bookId, nodes, settings, stages, nowKey, onOpen, o
           sub={nowStage.caption}
           onClick={() => onOpen(nowKey)} />
       )}
-      {/* Auto-build — drive the whole forward pass from the brief (or pause at each milestone). Only once
-          the book has a seed (i.e. a brief to build from). */}
-      {seed && <DnaAutopilot bookId={bookId} picture={picture} onChanged={onChanged} />}
+      
 
       {alsoAvailable.length > 0 && (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">

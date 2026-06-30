@@ -15,7 +15,7 @@ export const DEFAULT_LOW_MODEL = "claude-haiku-4-5-20251001";
 // Image-PROMPT composition (scene/portrait) is a tiny text task we deliberately keep OFF the Anthropic
 // path so prod doesn't depend on ANTHROPIC_API_KEY for it — it always runs on a cheap OpenRouter
 // (Qwen) model, regardless of the admin tier. (In dev this never runs: the bridge composes on
-// claude-local.) `provider/model` ids route through OPENROUTER_API_KEY in claude.ts.
+// claude-local.) `provider/model` ids route through OPENROUTER_API_KEY in llm.ts.
 export const IMAGE_PROMPT_MODEL = "qwen/qwen3-235b-a22b";
 
 // Continuity-DIGEST model (dna-expand's per-page fold). Deliberately NOT the cheap `low` model (qwen3-8b):
@@ -25,7 +25,7 @@ export const IMAGE_PROMPT_MODEL = "qwen/qwen3-235b-a22b";
 // ~84s/fold — a cold backfill of N pages then blows the ~150s worker ceiling, the fold runs synchronously
 // on the worker). qwen3-235b is the sweet spot: capable enough to read designations correctly (verified on
 // book 1192's "Lot Seven") at ~13s/fold. Pinned regardless of the active tier. `provider/model` routes
-// through OPENROUTER_API_KEY in claude.ts.
+// through OPENROUTER_API_KEY in llm.ts.
 export const DIGEST_MODEL = "qwen/qwen3-235b-a22b";
 
 // high = selected generation model; low = cheap passes (summaries, scans).

@@ -2,7 +2,7 @@
 //
 // A revision plan is the ONLY way AI changes a book's structure (book doctor, editor's agent), and
 // it is always reviewed by the author before build-revision applies it. Whatever produced the plan
-// (parsed JSON text in revise-outline, structured tool input in revise-agent), it must pass the
+// (parsed JSON text in revise-outline, structured tool input in book-agent), it must pass the
 // same sanitization — mirrors revise-outline's parsePlan, which remains the text-parsing wrapper:
 //  - only real page ids; coerce shapes; default unknown ops to "keep".
 //  - every existing page must be carried (in pages[]) or deleted — any the model omitted are

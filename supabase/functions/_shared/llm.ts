@@ -1,4 +1,9 @@
-// claude.ts — the single chokepoint for Anthropic Messages calls in edge functions.
+// llm.ts — the single chokepoint for LLM provider calls in edge functions.
+//
+// Callers always build an Anthropic Messages-shaped request (system/messages/tool_use/tool_result);
+// this wrapper routes it to the right provider — Anthropic, DeepSeek, or any `provider/model` id via
+// OpenRouter — converting the request + response shape both ways so callers stay provider-agnostic.
+// (The name is the INTERFACE callers speak, not the backend that runs the call.)
 //
 // Before this, ~6 functions each had their own fetch("https://api.anthropic.com/v1/messages"). They
 // all build the same request shape and discard the response's `usage`. This wrapper centralizes the
@@ -26,13 +31,13 @@ export interface CallMeta {
   // open_loops, preceding-prose refs…). Logged to ai_calls.artifacts as provenance — the full merged
   // prompt is still in `input`. Optional; callers that don't assemble unit context leave it null.
   artifacts?: Record<string, unknown> | null;
-  // Set BY callClaude after the log row is inserted: the ai_calls.id of this call, so a caller can
+  // Set BY callLLM after the log row is inserted: the ai_calls.id of this call, so a caller can
   // link the produced artifact back to its call (e.g. pages.last_ai_call_id). Do not set yourself.
   loggedCallId?: number;
 }
 
 // deno-lint-ignore no-explicit-any
-export async function callClaude(
+export async function callLLM(
   apiKey: string,
   body: Record<string, unknown>,
   meta: CallMeta,
@@ -113,7 +118,7 @@ export async function callClaude(
 // Join all text blocks from a Claude (or OpenAI-normalized) response's content array. Untrimmed —
 // callers add .trim() where they need it. The single place response text is pulled from `content`.
 // deno-lint-ignore no-explicit-any
-export function textFromClaude(data: any): string {
+export function textFromLLM(data: any): string {
   return ((data?.content ?? []) as Array<{ type?: string; text?: string }>)
     .filter((b) => b.type === "text")
     .map((b) => b.text ?? "")
@@ -122,7 +127,7 @@ export function textFromClaude(data: any): string {
 
 // Convert an Anthropic-format request body to OpenAI-compatible format (DeepSeek, MuleRouter/Qwen).
 // Carries TOOLS both ways: Anthropic tool defs → OpenAI function defs, assistant tool_use blocks →
-// tool_calls, and tool_result blocks → role:"tool" messages — so tool-using loops (revise-agent)
+// tool_calls, and tool_result blocks → role:"tool" messages — so tool-using loops (book-agent)
 // work on the OpenAI-compatible tiers. Drops what those APIs don't speak: cache_control, thinking
 // blocks, and Anthropic-specific params (`thinking`, `output_config`).
 function anthropicToOpenAI(body: Record<string, unknown>): Record<string, unknown> {
@@ -269,7 +274,7 @@ async function logEnd(
   errMsg: string | null,
 ): Promise<void> {
   const terminal = {
-    output: data ? textFromClaude(data) : null,
+    output: data ? textFromLLM(data) : null,
     input_tokens: data?.usage?.input_tokens ?? null,
     output_tokens: data?.usage?.output_tokens ?? null,
     latency_ms: latencyMs,

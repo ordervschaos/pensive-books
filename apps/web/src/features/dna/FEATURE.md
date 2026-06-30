@@ -41,7 +41,7 @@ private), the editor never needs to know DNA exists.
 | Dir | What |
 |---|---|
 | `pages/` | 5 route components: `DnaStudioPage` (`/books/:slug/dna`), `DnaTreePage` (`/dna/tree/*`), `DnaMetersPage`, `DnaLedgerPage`, `DnaJsonPage` |
-| `components/` | 12 UI components: `DnaStudio`, `AgentRail` (the agent thread rail), `DnaOverview`, `DnaStoryMap`, `DnaVisuals`, `DnaAutopilot`, `DnaLookPanel`, `DnaCharacterLook`, `DnaAnalysis`, `DnaStageDiagram`, `ImagePromptPreview`, `SceneIllustrationDialog` |
+| `components/` | 12 UI components: `DnaStudio`, `AgentRail` (the agent thread rail), `DnaOverview`, `DnaStoryMap`, `DnaVisuals`, `DnaLookPanel`, `DnaCharacterLook`, `DnaAnalysis`, `DnaStageDiagram`, `ImagePromptPreview`, `SceneIllustrationDialog` |
 | `hooks/` | `useAutoAccept` (auto-applies agent proposals) |
 | `lib/` | engine + clients (DNA-only): `novelDna` (pure tree engine), `novelDnaRender` (tree→pages), `bookNodes` (DB load/save), `dnaSchema` (SSOT content schema + lints), `dnaChat`, `dnaExpand`, `dnaJourney`, `dnaProposals`, `agentThread`, `autopilot`, `migrateToDna`, `meterRead`, `factLedger`, `characterPortraits`, `nodeSceneImages`, `agentCommands` (+ their `.test.ts`) |
 
@@ -50,7 +50,7 @@ Routes are registered in `apps/web/src/App.tsx`.
 ## Edge functions — `supabase/functions/` (cannot move; see below)
 
 Invoked by the web layer above:
-`dna-expand` · `dna-chat` · `revise-agent` · `read-meters` · `read-facts`
+`dna-expand` · `dna-chat` · `book-agent` · `read-meters` · `read-facts`
 · `generate-dna-character-portrait` · `generate-dna-scene-image`
 (siblings `beats-agent`, `revise-node` also belong to the feature.)
 
@@ -73,7 +73,7 @@ stop chokepoint), `@/hooks/useLatestTaskRow`, `@/hooks/use-toast`,
 `@/hooks/useBookLook`, `@/components/book/shared/*` (studioUi, BookLookControls,
 useChatScroll), `@/components/ui/*`.
 
-**Edge** (`_shared/`): `claude.ts` (single AI-call chokepoint → `ai_calls` log,
+**Edge** (`_shared/`): `llm.ts` (single AI-call chokepoint → `ai_calls` log,
 used by ~19 fns), `task.ts` (durable tasks, ~13), `access.ts` (auth, ~14),
 `brief.ts` (~12), `cors`, `model-config`, `json`, `self-chain`.
 

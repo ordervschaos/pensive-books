@@ -17,7 +17,7 @@ import { corsHeaders, json } from "../_shared/cors.ts";
 import { hasEditAccess } from "../_shared/access.ts";
 import { runInBackground, serviceClient } from "../_shared/task.ts";
 import { generateImage, uploadDataUrl } from "../_shared/image.ts";
-import { callClaude, textFromClaude, type CallMeta } from "../_shared/claude.ts";
+import { callLLM, textFromLLM, type CallMeta } from "../_shared/llm.ts";
 import { IMAGE_PROMPT_MODEL } from "../_shared/model-config.ts";
 import { PROMPT_SYSTEM } from "../_shared/sceneImagePrompts.ts";
 
@@ -126,12 +126,12 @@ Deno.serve(async (req: Request) => {
     const composeScenePromptText = async (): Promise<string> => {
       const apiKey = Deno.env.get("ANTHROPIC_API_KEY") ?? "";
       const meta: CallMeta = { fn: "generate-dna-scene-image", bookId, userId: user.id };
-      const data = await callClaude(apiKey, {
+      const data = await callLLM(apiKey, {
         model: IMAGE_PROMPT_MODEL, max_tokens: 400, temperature: 0.8,
         system: [{ type: "text", text: PROMPT_SYSTEM, cache_control: { type: "ephemeral" } }],
         messages: [{ role: "user", content: userContent }],
       }, meta);
-      return textFromClaude(data).trim();
+      return textFromLLM(data).trim();
     };
 
     // ── mode "compose": synchronous, no render, no row — return the composed prompt + refs + model, AND

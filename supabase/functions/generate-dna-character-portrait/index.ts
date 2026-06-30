@@ -16,7 +16,7 @@ import { corsHeaders, json } from "../_shared/cors.ts";
 import { hasEditAccess } from "../_shared/access.ts";
 import { serviceClient } from "../_shared/task.ts";
 import { generateImages, uploadDataUrl } from "../_shared/image.ts";
-import { callClaude, textFromClaude, type CallMeta } from "../_shared/claude.ts";
+import { callLLM, textFromLLM, type CallMeta } from "../_shared/llm.ts";
 import { IMAGE_PROMPT_MODEL } from "../_shared/model-config.ts";
 import { PORTRAIT_SYSTEM, fallbackPortrait, portraitUserContent, type PortraitSubject } from "../_shared/characterPortraitPrompts.ts";
 
@@ -58,12 +58,12 @@ Deno.serve(async (req: Request) => {
     const composePromptText = async (): Promise<string> => {
       const apiKey = Deno.env.get("ANTHROPIC_API_KEY") ?? "";
       const meta: CallMeta = { fn: "generate-dna-character-portrait", bookId, userId: user.id };
-      const data = await callClaude(apiKey, {
+      const data = await callLLM(apiKey, {
         model: IMAGE_PROMPT_MODEL, max_tokens: 400, temperature: 0.8,
         system: [{ type: "text", text: PORTRAIT_SYSTEM, cache_control: { type: "ephemeral" } }],
         messages: [{ role: "user", content: portraitUserContent(subject, houseLook, instruction) }],
       }, meta);
-      return textFromClaude(data).trim();
+      return textFromLLM(data).trim();
     };
 
     // ── mode "prompt": compose an editable portrait prompt; also returns model so the UI can label it ──

@@ -11,7 +11,7 @@
 // the original generate-unit (the dev bridge mirrors it), so the output is unchanged.
 import { type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { type Brief, briefContext, mandateContext } from "./brief.ts";
-import { callClaude as callClaudeApi, textFromClaude, type CallMeta } from "./claude.ts";
+import { callLLM as callLLMApi, textFromLLM, type CallMeta } from "./llm.ts";
 import { getActiveModels, DEFAULT_LOW_MODEL } from "./model-config.ts";
 import { type CharacterState, type PageState, type RelationshipState } from "./page-state.ts";
 import { canonContext, type CanonPacket } from "./canon-core.ts";
@@ -744,9 +744,9 @@ async function renderProse(apiKey: string, model: string, args: PromptArgs, meta
     body.thinking = { type: "adaptive" };
     body.output_config = { effort: "medium" };
   }
-  const data = await callClaudeApi(apiKey, body, meta);
+  const data = await callLLMApi(apiKey, body, meta);
 
-  const text = textFromClaude(data).trim();
+  const text = textFromLLM(data).trim();
   if (!text) throw new Error("Claude returned no text content.");
   return stripLeadingHeadings(text);
 }
@@ -767,7 +767,7 @@ function stripLeadingHeadings(text: string): string {
 interface SummarizeResult { summary: string; time?: { when?: string; elapsed?: string } }
 
 async function summarize(apiKey: string, prose: string, meta: CallMeta, summaryModel?: string): Promise<SummarizeResult> {
-  const data = await callClaudeApi(apiKey, {
+  const data = await callLLMApi(apiKey, {
     model: summaryModel ?? DEFAULT_LOW_MODEL,
     max_tokens: 300,
     system: [{
@@ -780,7 +780,7 @@ Omit "time" or its sub-keys if they cannot be inferred from the prose. "summary"
     }],
     messages: [{ role: "user", content: prose.slice(0, 12000) }],
   }, { ...meta, fn: "summarize", artifacts: null });
-  const raw = textFromClaude(data).trim();
+  const raw = textFromLLM(data).trim();
   // Parse the JSON envelope; fall back to treating the whole response as a plain summary if it fails
   // (backward compat — old callers may not have had JSON output, and we never want to lose the summary).
   try {
@@ -878,7 +878,7 @@ async function extractStates(
 ): Promise<{ characters: CharacterState[]; relationship_states: RelationshipState[] }> {
   const priorCharsBlock = priorChars.length ? JSON.stringify(priorChars) : "(none yet — first page with characters)";
   const priorRelBlock = priorRel.length ? JSON.stringify(priorRel) : "(none yet)";
-  const data = await callClaudeApi(apiKey, {
+  const data = await callLLMApi(apiKey, {
     model: model ?? DEFAULT_LOW_MODEL,
     max_tokens: 2000,
     system: [{
@@ -896,7 +896,7 @@ Output JSON ONLY (no prose, no fences):
     }],
   }, { ...meta, fn: "extract-character-states", artifacts: null });
 
-  const text = textFromClaude(data).trim();
+  const text = textFromLLM(data).trim();
   return parseExtractedStates(text);
 }
 

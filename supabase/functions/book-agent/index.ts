@@ -1,4 +1,4 @@
-// revise-agent — the editor's AGENT: a durable, tool-using loop that addresses the editor's
+// book-agent — the editor's AGENT: a durable, tool-using loop that addresses the editor's
 // evaluation the way a careful human would — read the actual pages the notes point at, ask the
 // author the creative questions that matter (with suggested options), then propose a surgical
 // revision plan.
@@ -20,7 +20,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { type Brief, briefContext } from "../_shared/brief.ts";
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
-import { callClaude } from "../_shared/claude.ts";
+import { callLLM } from "../_shared/llm.ts";
 import { getActiveModels } from "../_shared/model-config.ts";
 // The content schema the agent must conform to — GENERATED from the web app's NODE_SCHEMA (single source of
 // truth), kept in sync by apps/web/.../dnaSchema.artifact.test.ts. Never hand-edit; edit NODE_SCHEMA + regen.
@@ -171,7 +171,7 @@ Deno.serve(async (req: Request) => {
       if (row.kind !== "thread" || !row.context_auto) return json({ error: "Not an autonomous thread" }, 409);
       if (row.status !== "idle") return json({ status: row.status, runId: row.id }, 202); // already running/parked — nothing to resume
       await service.from("book_agent_runs").update({ status: "running" }).eq("id", row.id);
-      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("revise-agent", { runId: row.id }));
+      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("book-agent", { runId: row.id }));
       return json({ status: "running", runId: row.id }, 202);
     }
 
@@ -198,7 +198,7 @@ Deno.serve(async (req: Request) => {
         .update({ transcript, steps, pending: null, status: "running" })
         .eq("id", row.id);
       if (error) throw new Error(error.message);
-      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("revise-agent", { runId: row.id }));
+      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("book-agent", { runId: row.id }));
       return json({ status: "running", runId: row.id }, 202);
     }
 
@@ -253,7 +253,7 @@ Deno.serve(async (req: Request) => {
           .single();
         if (insErr) throw new Error(insErr.message);
         const id = (run as { id: number }).id;
-        if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("revise-agent", { runId: id }));
+        if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("book-agent", { runId: id }));
         return json({ status: "running", runId: id }, 202);
       }
 
@@ -265,7 +265,7 @@ Deno.serve(async (req: Request) => {
         .update({ transcript, steps, status: "running", turns: 0, pending: null, error: null, cancel_requested: false, context_scope: scope, context_analysis: analysis, context_effort: effort, context_auto: auto })
         .eq("id", thread.id);
       if (error) throw new Error(error.message);
-      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("revise-agent", { runId: thread.id }));
+      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("book-agent", { runId: thread.id }));
       return json({ status: "running", runId: thread.id }, 202);
     }
 
@@ -326,10 +326,10 @@ Deno.serve(async (req: Request) => {
       .single();
     if (insErr) throw new Error(insErr.message);
 
-    if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("revise-agent", { runId: (run as { id: number }).id }));
+    if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("book-agent", { runId: (run as { id: number }).id }));
     return json({ status: "running", run }, 202);
   } catch (e) {
-    console.error("revise-agent error:", e);
+    console.error("book-agent error:", e);
     return json({ error: String((e as Error)?.message ?? e).slice(0, 500) }, 500);
   }
 });
@@ -356,7 +356,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
   }
 
   try {
-    // Any tier works here: _shared/claude.ts converts tools/tool_use/tool_result both ways for
+    // Any tier works here: _shared/llm.ts converts tools/tool_use/tool_result both ways for
     // the OpenAI-compatible paths (DeepSeek, MuleRouter/Qwen), so the loop runs on cheap models too.
     const { high: model, low: ackModel } = await getActiveModels();
     // Thread runs are the persistent omni-rail conversation: a conversational system prompt grounded
@@ -393,7 +393,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
 
     let resp;
     try {
-      resp = await callClaude(apiKey, {
+      resp = await callLLM(apiKey, {
         model,
         max_tokens: 8000,
         thinking: { type: "adaptive" },
@@ -405,7 +405,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
         tools,
         messages: withCacheBreakpoints(row.transcript),
       }, {
-        fn: "revise-agent",
+        fn: "book-agent",
         bookId: row.book_id,
         taskTable: "book_agent_runs",
         taskId: runId,
@@ -426,9 +426,9 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
         return;
       }
       // Transient API failure/timeout: chain again (turn budget already spent bounds retries).
-      console.error(`revise-agent run ${runId} call failed (turn ${turns}), retrying:`, e);
+      console.error(`book-agent run ${runId} call failed (turn ${turns}), retrying:`, e);
       await sleep(2000);
-      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("revise-agent", { runId }));
+      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("book-agent", { runId }));
       return;
     }
     clearInterval(cancelPoll);
@@ -480,7 +480,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
       }, auto);
       transcript.push({ role: "user", content: results });
       await service.from("book_agent_runs").update({ transcript, steps }).eq("id", runId);
-      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("revise-agent", { runId }));
+      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("book-agent", { runId }));
       return;
     }
 
@@ -518,7 +518,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
       }, auto);
       transcript.push({ role: "user", content: results });
       await service.from("book_agent_runs").update({ transcript, steps }).eq("id", runId);
-      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("revise-agent", { runId }));
+      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("book-agent", { runId }));
       return;
     }
 
@@ -546,7 +546,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
       }, auto);
       transcript.push({ role: "user", content: results });
       await service.from("book_agent_runs").update({ transcript, steps }).eq("id", runId);
-      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("revise-agent", { runId }));
+      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("book-agent", { runId }));
       return;
     }
 
@@ -567,7 +567,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
       }, auto);
       transcript.push({ role: "user", content: results });
       await service.from("book_agent_runs").update({ transcript, steps }).eq("id", runId);
-      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("revise-agent", { runId }));
+      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("book-agent", { runId }));
       return;
     }
 
@@ -591,7 +591,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
       }, auto);
       transcript.push({ role: "user", content: results });
       await service.from("book_agent_runs").update({ transcript, steps }).eq("id", runId);
-      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("revise-agent", { runId }));
+      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("book-agent", { runId }));
       return;
     }
     // ── ask_author parks the run; sibling read results ride along in `pending` ──
@@ -617,7 +617,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
       const results = await toolResults(service, row.book_id, toolUses, steps, {}, auto);
       transcript.push({ role: "user", content: results });
       await service.from("book_agent_runs").update({ transcript, steps }).eq("id", runId);
-      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("revise-agent", { runId }));
+      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("book-agent", { runId }));
       return;
     }
 
@@ -639,10 +639,10 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
       }],
     });
     await service.from("book_agent_runs").update({ transcript, steps }).eq("id", runId);
-    if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("revise-agent", { runId }));
+    if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("book-agent", { runId }));
   } catch (e) {
     const billing = isBillingError(e);
-    await captureException(e, { function: "revise-agent", book_id: String(row.book_id), billing: String(billing) });
+    await captureException(e, { function: "book-agent", book_id: String(row.book_id), billing: String(billing) });
     const msg = billing ? "AI credits exhausted — the team has been notified." : String((e as Error)?.message ?? e).slice(0, 1000);
     await service.from("book_agent_runs").update({ status: "error", error: msg }).eq("id", runId);
   }
@@ -676,13 +676,13 @@ async function maybeEagerAck(service: SupabaseClient, apiKey: string, row: RunRo
   const lastStep = row.steps[row.steps.length - 1];
   if (lastStep?.t !== "user") return; // ack already written for this fresh user message
   try {
-    const resp = await callClaude(apiKey, {
+    const resp = await callLLM(apiKey, {
       model,
       max_tokens: 120,
       system: [{ type: "text", text: EAGER_ACK_SYSTEM }],
       messages: [{ role: "user", content: [{ type: "text", text: userText.slice(0, 2000) }] }],
     }, {
-      fn: "revise-agent-ack",
+      fn: "book-agent-ack",
       bookId: row.book_id,
       taskTable: "book_agent_runs",
       taskId: row.id,
@@ -702,7 +702,7 @@ async function maybeEagerAck(service: SupabaseClient, apiKey: string, row: RunRo
     await service.from("book_agent_runs").update({ steps: row.steps }).eq("id", row.id);
   } catch (e) {
     if (isBillingError(e)) throw e;
-    console.error(`revise-agent run ${row.id} eager ack skipped:`, e);
+    console.error(`book-agent run ${row.id} eager ack skipped:`, e);
   }
 }
 
@@ -824,7 +824,7 @@ async function toolResults(
       const brief = ((book as { brief?: Brief } | null)?.brief ?? {}) as Brief;
       const { high: model } = await getActiveModels();
       try {
-        const axes = await judgeProse(apiKey, model, brief, proseText, { fn: "revise-agent-contract", bookId, taskTable: "book_agent_runs", taskId: null, userId: null });
+        const axes = await judgeProse(apiKey, model, brief, proseText, { fn: "book-agent-contract", bookId, taskTable: "book_agent_runs", taskId: null, userId: null });
         const summary = axes.map((a) => `${a.axis}: ${a.verdict.toUpperCase()} — ${a.detail}${a.evidence ? ` (e.g. "${a.evidence}")` : ""}`).join("\n");
         steps.push({ t: "read", label: `Checked scene “${nodeHandle(n.content)}” against the brief contract.` });
         results.push({ type: "tool_result", tool_use_id: t.id, content: summary || "The judge returned no axes — inspect by hand." });

@@ -7,7 +7,7 @@
 //   DRAFT     — { scaffold, pageIndex } → prefix built from an in-memory scaffold draft (pre-commit).
 import { type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { type Brief, briefContext } from "./brief.ts";
-import { callClaude, textFromClaude, type CallMeta } from "./claude.ts";
+import { callLLM, textFromLLM, type CallMeta } from "./llm.ts";
 import { getActiveModels } from "./model-config.ts";
 import { parseJsonOptions } from "./json.ts";
 
@@ -95,7 +95,7 @@ export async function objectiveOptions(client: SupabaseClient, apiKey: string, p
     (current ? `\n\nCURRENT OBJECTIVE (what's there now — vary away from it):\n${current}` : "\n\n(No objective set yet for this slot.)") +
     `\n\nGenerate 3 wide-varying alternatives for this slot. JSON only.`;
 
-  const data = await callClaude(apiKey, {
+  const data = await callLLM(apiKey, {
     model,
     max_tokens: 1024,
     temperature: 1,
@@ -103,7 +103,7 @@ export async function objectiveOptions(client: SupabaseClient, apiKey: string, p
     messages: [{ role: "user", content: userContent }],
   }, meta);
 
-  const text = textFromClaude(data).trim();
+  const text = textFromLLM(data).trim();
   if (!text) throw new Error("Claude returned no options.");
 
   const options = parseJsonOptions(text);

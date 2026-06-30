@@ -54,6 +54,7 @@ const JoinBook = lazy(() => import("@/pages/invitation/JoinBook"));
 const KindleSettings = lazy(() => import("@/pages/settings/KindleSettings"));
 
 // Admin pages
+const AdminLayout = lazy(() => import("@/pages/admin/AdminLayout"));
 const AdminDashboard = lazy(() => import("@/pages/admin/AdminDashboard"));
 const AdminAiCalls = lazy(() => import("@/pages/admin/AiCalls"));
 const AdminSettings = lazy(() => import("@/pages/admin/AdminSettings"));

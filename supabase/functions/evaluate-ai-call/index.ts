@@ -3,7 +3,7 @@
 //   client/script → POST { aiCallId }   (authenticated)
 //     → read the ai_call (RLS: caller must be able to edit its book)
 //     → INSERT ai_call_evals { status:'running' }   ← returned in ~1s
-//     → background: judge via the shared callClaude chokepoint (the judge call is itself logged to
+//     → background: judge via the shared callLLM chokepoint (the judge call is itself logged to
 //       ai_calls as fn='judge-ai-call'), then UPDATE the eval row with scores/findings/amendments.
 //
 // On demand only — nothing auto-evaluates. The dev bridge has a parallel /eval-call that runs the
@@ -12,7 +12,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { runInBackground, serviceClient } from "../_shared/task.ts";
-import { callClaude, textFromClaude } from "../_shared/claude.ts";
+import { callLLM, textFromLLM } from "../_shared/llm.ts";
 import { JUDGE_MODEL, JUDGE_SYSTEM, buildJudgeUser, parseJudgement } from "../_shared/judge.ts";
 
 Deno.serve(async (req: Request) => {
@@ -52,14 +52,14 @@ Deno.serve(async (req: Request) => {
     if (insertError || !row) return json({ error: "Could not start eval" }, 500);
 
     runInBackground(service, "ai_call_evals", row.id, "evaluate-ai-call", async () => {
-      const data = await callClaude(apiKey, {
+      const data = await callLLM(apiKey, {
         model: JUDGE_MODEL,
         max_tokens: 2000,
         system: [{ type: "text", text: JUDGE_SYSTEM, cache_control: { type: "ephemeral" } }],
         messages: [{ role: "user", content: buildJudgeUser(call) }],
       }, { fn: "judge-ai-call", bookId: call.book_id, taskTable: "ai_call_evals", taskId: row.id });
 
-      const text = textFromClaude(data).trim();
+      const text = textFromLLM(data).trim();
       const j = parseJudgement(text);
       return { status: "done", scores: j.scores, verdict: j.verdict, findings: j.findings, amendments: j.amendments };
     });

@@ -16,7 +16,7 @@ import { type Brief, briefContext } from "../_shared/brief.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { hasEditAccess } from "../_shared/access.ts";
-import { callClaude, textFromClaude, type CallMeta } from "../_shared/claude.ts";
+import { callLLM, textFromLLM, type CallMeta } from "../_shared/llm.ts";
 import { getActiveModels } from "../_shared/model-config.ts";
 import { parseJsonOptions } from "../_shared/json.ts";
 
@@ -133,7 +133,7 @@ Deno.serve(async (req: Request) => {
       (current ? `\n\nCURRENT OBJECTIVE (what's there now — vary away from it):\n${current}` : "\n\n(No objective set yet for this slot.)") +
       `\n\nGenerate 3 wide-varying alternatives for this slot. JSON only.`;
 
-    const data = await callClaude(apiKey, {
+    const data = await callLLM(apiKey, {
       model,
       max_tokens: 1024,
       temperature: 1,
@@ -141,7 +141,7 @@ Deno.serve(async (req: Request) => {
       messages: [{ role: "user", content: userContent }],
     }, meta);
 
-    const text = textFromClaude(data).trim();
+    const text = textFromLLM(data).trim();
 
     if (!text) return json({ error: "Claude returned no options." }, 502);
 

@@ -11,7 +11,7 @@
 //   • length  — deterministic (word count vs brief.scope.word_target); no model call.
 //   • heat / genre / success — one LLM judge call against the manuscript.
 import { type SupabaseClient } from "jsr:@supabase/supabase-js@2";
-import { callClaude, textFromClaude, type CallMeta } from "./claude.ts";
+import { callLLM, textFromLLM, type CallMeta } from "./llm.ts";
 import { type Brief, mandateContext } from "./brief.ts";
 import { getActiveModels } from "./model-config.ts";
 import { tiptapToText } from "./words.ts";
@@ -111,7 +111,7 @@ export async function judgeProse(apiKey: string, model: string, brief: Brief, ma
     `BRIEF MANDATE (what the book promised to deliver):\n${mandate}\n\n` +
     `GENRE: ${brief.genre ?? "(unset)"}\nSUCCESS CRITERIA: ${brief.success_criteria ?? "(unset)"}\n\n` +
     `Judge the manuscript below against the mandate. JSON only.`;
-  const data = await callClaude(
+  const data = await callLLM(
     apiKey,
     {
       model,
@@ -124,7 +124,7 @@ export async function judgeProse(apiKey: string, model: string, brief: Brief, ma
     },
     meta,
   );
-  const text = textFromClaude(data);
+  const text = textFromLLM(data);
   try {
     const parsed = JSON.parse(extractJsonBlock(text)) as { axes?: MandateAxisVerdict[] };
     return (parsed.axes ?? []).filter((a) => a && a.axis && a.verdict);

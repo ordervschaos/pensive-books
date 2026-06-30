@@ -9,7 +9,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
-import { callClaude, textFromClaude, type CallMeta } from "../_shared/claude.ts";
+import { callLLM, textFromLLM, type CallMeta } from "../_shared/llm.ts";
 import { getActiveModels, DIGEST_MODEL } from "../_shared/model-config.ts";
 import { extractJsonBlock } from "../_shared/json.ts";
 import { type Brief, briefContext, mandateContext } from "../_shared/brief.ts";
@@ -164,8 +164,8 @@ ${impressionsSoFar}
 
 THIS PAGE:
 ${pageText}`;
-  const data = await callClaude(apiKey, { model, max_tokens: 2500, messages: [{ role: "user", content: dprompt }] }, { ...meta, fn: "dna-expand-digest" });
-  const p = JSON.parse(extractJsonBlock(textFromClaude(data))) as { page?: string; ledger?: DigestLedger; impressions?: DigestImpression[] };
+  const data = await callLLM(apiKey, { model, max_tokens: 2500, messages: [{ role: "user", content: dprompt }] }, { ...meta, fn: "dna-expand-digest" });
+  const p = JSON.parse(extractJsonBlock(textFromLLM(data))) as { page?: string; ledger?: DigestLedger; impressions?: DigestImpression[] };
   const impressions = Array.isArray(p.impressions)
     ? p.impressions.filter((i) => i && typeof i.note === "string" && i.note.trim()).map((i) => ({ note: i.note.trim(), weight: Math.max(1, Math.min(5, Math.round(Number(i.weight) || 1))) }))
     : prior.impressions;
@@ -519,9 +519,9 @@ A logline names FIVE things, concretely and specifically (no generic placeholder
 - the STAKES (what is lost if they fail).
 
 Honor the MANDATE (genre/tone) and any LOCKED ancestors. Do NOT invent a title. Do NOT restate the raw idea verbatim — SHARPEN it into a real logline. Output the LOGLINE ONLY: one or two sentences, no preamble, no label, no quotes, no JSON.`;
-      const data = await callClaude(apiKey, { model, max_tokens: 400, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+      const data = await callLLM(apiKey, { model, max_tokens: 400, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
         messages: [{ role: "user", content: `${ctx}\n\nWrite the logline.` }] }, meta);
-      return json({ logline: textFromClaude(data).trim() });
+      return json({ logline: textFromLLM(data).trim() });
     }
 
     if (target === "prose" || (!target && node.kind === "scene")) {
@@ -534,9 +534,9 @@ ANTI-REPETITION (critical): Never repeat any physical gesture, character reactio
       const userContent = `${ctx}\n\nWrite this scene's prose.`;
       // Browser-streamed path: hand back the assembled request; the client streams it via /api/stream-prose.
       if (prepare) return json({ prepared: { system, userContent, model, max_tokens: 8000 } });
-      const data = await callClaude(apiKey, { model, max_tokens: 8000, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+      const data = await callLLM(apiKey, { model, max_tokens: 8000, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
         messages: [{ role: "user", content: userContent }] }, meta);
-      return json({ prose: textFromClaude(data).trim() });
+      return json({ prose: textFromLLM(data).trim() });
     }
 
     if (target === "caption") {
@@ -548,9 +548,9 @@ RULES:
 - 1 to 3 sentences. Tight, rhythmic, read-aloud-able. Often one is enough.
 - Tell what the picture cannot: the turn, the feeling, the line of dialogue — never just label what's already visible ("A boy stands in a hall").
 - Write ONLY from inside the story: NEVER address or mention "the reader"/"you", and NEVER refer to "the book", "the story", "the scene", "the page", "the picture/image", the author, or the writing itself. The plan's notes are directions TO YOU, not lines to reproduce.`;
-      const data = await callClaude(apiKey, { model, max_tokens: 400, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+      const data = await callLLM(apiKey, { model, max_tokens: 400, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
         messages: [{ role: "user", content: `${ctx}\n\nWrite this page's caption.` }] }, meta);
-      return json({ caption: textFromClaude(data).trim() });
+      return json({ caption: textFromLLM(data).trim() });
     }
 
     if (target === "beatsheet") {
@@ -565,9 +565,9 @@ RULES:
 - Schedule the THREADS across the whole book: every promise must be SET UP (role:setup) in an EARLIER beat before it is PAID OFF (role:payoff) in a LATER beat; use "advance" for beats that develop it in between. Reference threads BY NAME.
 - CAUSE every turn: give each beat "needs" (state keys it DEPENDS ON, each one EARNED by an EARLIER beat — never an ambient world/premise given) and "establishes" (state keys it PRODUCES). Keys are short snake_case handles (e.g. "ledger_settled", "rival_humiliated", "peculium_revealed"). Every "therefore" beat MUST "need" at least one state an earlier beat "establishes" — that upstream dependency is what makes the turn CAUSED, not "and then". A "but" beat must either reverse the polarity or block/consume an established state.${tentpoles.length ? `\n- PLACE every TENTPOLE: assign each set-piece to the ONE beat that delivers it, in "realizes" (by its summary). Every tentpole listed must appear on exactly one beat.` : ""}${worldFacts.length ? `\n- GROUND the turns in the WORLD RULES: when a beat's turning point's outcome OPERATES ON a rule's mechanism, list that rule in "grounds_in" (by name). The CLIMAX / final resolution beat MUST ground its win in an established rule — the victory has to be MECHANICALLY EARNED by a rule the reader already knows, never deus ex machina. Plant the rule's setup in an earlier beat too.` : ""}${games.length ? `\n- PLAY the GAMES: each beat that advances a contest lists it in "plays" (by name). Each game MUST be RESOLVED — exactly one beat lists it in "resolves" with its outcome (won|lost), and the CENTRAL game resolves at the CLIMAX. A game's resolving beat should also ground_in the rule its win/lose fires.` : ""}${statePreconds.length ? `\n- ESTABLISH every STATE PRECONDITION: each game's win SPENDS resources/states (listed above). For each, an EARLIER beat must establish it (list its key in that beat's "establishes") BEFORE the beat that resolves the game — you cannot spend a resource the story never acquired (no "she had enough all along"). Make the establishing a real turn.` : ""}
 Output JSON ONLY: { "beats": [ { "act": <1..${acts.length}>, "summary": "...", "connector": "therefore"|"but", "polarity": "up"|"down", "threads": [ { "ref": "<thread name>", "role": "setup"|"advance"|"payoff" } ]${tentpoles.length ? `, "realizes": [ "<tentpole summary>" ]` : ""}${worldFacts.length ? `, "grounds_in": [ "<world rule name>" ]` : ""}${games.length ? `, "plays": [ "<game name>" ], "resolves": [ { "ref": "<game name>", "outcome": "won|lost" } ]` : ""}, "needs": [ "<state key earned upstream>" ], "establishes": [ "<state key this beat produces>" ] } ] }`;
-      const data = await callClaude(apiKey, { model, max_tokens: 8000, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+      const data = await callLLM(apiKey, { model, max_tokens: 8000, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
         messages: [{ role: "user", content: `${ctx}\n\nWrite the whole beat sheet. JSON only.` }] }, meta);
-      const parsed = JSON.parse(extractJsonBlock(textFromClaude(data)));
+      const parsed = JSON.parse(extractJsonBlock(textFromLLM(data)));
       const rawBeats = Array.isArray(parsed.beats) ? parsed.beats : [];
       const tNameToId = new Map(threads.map((t) => [tName(t).toLowerCase(), t.id]));
       const tpNameToId = new Map(tentpoles.map((t) => [tpName(t).toLowerCase(), t.id]));
@@ -642,9 +642,9 @@ Output JSON ONLY: { "beats": [ { "act": <1..${acts.length}>, "summary": "...", "
       `THIS NODE [${node.kind}]: ${JSON.stringify(node.content)}`,
     ].filter(Boolean).join("\n\n");
     const system = `You are a story architect expanding a ${node.kind} into ${config.role}. Generate ${config.count} ${config.child_kind}s as ONE authoritative structure — NOT alternatives to choose among. Honor every LOCKED ancestor and the MANDATE verbatim. Output JSON ONLY: { "children": [ ${config.schema_json} ] }`;
-    const data = await callClaude(apiKey, { model, max_tokens: 4000, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+    const data = await callLLM(apiKey, { model, max_tokens: 4000, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
       messages: [{ role: "user", content: `${slottedCtx}\n\nGenerate the ${config.child_kind}s. JSON only.` }] }, meta);
-    const parsed = JSON.parse(extractJsonBlock(textFromClaude(data)));
+    const parsed = JSON.parse(extractJsonBlock(textFromLLM(data)));
     let children = Array.isArray(parsed.children) ? parsed.children : [];
     if (config.child_kind === "relationship") {
       // Resolve a/b from character NAME → node id; drop any pairing that doesn't resolve to two real chars.
