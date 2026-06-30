@@ -40,6 +40,8 @@ interface Options {
 }
 
 const DEFAULT_STALE_MS = 10 * 60 * 1000;
+// Coalesce a burst of Realtime events into a single authoritative re-read.
+const REFETCH_DEBOUNCE_MS = 200;
 
 function rowMatches(row: Record<string, unknown>, match?: Record<string, MatchValue>): boolean {
   if (!match) return true;
@@ -76,6 +78,7 @@ export function useLatestTaskRow<T extends TaskRow = TaskRow>(opts: Options): {
   const mounted = useRef(true);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const staleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Serialize match/activeStatuses so the effect re-runs when they change without needing the
   // caller to memoize the objects.
@@ -142,20 +145,31 @@ export function useLatestTaskRow<T extends TaskRow = TaskRow>(opts: Options): {
     setRow(null);
     refetch();
 
+    // A Realtime event is only a SIGNAL — re-read the authoritative row over HTTP (debounced to coalesce a
+    // burst). PostgREST has no payload-size limit, so this catches the cases the payload body can't carry:
+    // an oversized UPDATE that Realtime drops as an empty/413 payload (which would otherwise freeze us on the
+    // last-seen status — e.g. the auto-accept loop stuck at "running"), and unchanged-TOAST null columns.
+    const scheduleRefetch = () => {
+      if (refetchTimer.current) clearTimeout(refetchTimer.current);
+      refetchTimer.current = setTimeout(() => { if (mounted.current) refetch(); }, REFETCH_DEBOUNCE_MS);
+    };
+
     // Watch the whole book's task table; the callback narrows to our `match`. One channel covers
-    // both a brand-new task (INSERT) and an advancing one (UPDATE).
+    // both a brand-new task (INSERT) and an advancing one (UPDATE). `consider` applies the payload
+    // optimistically for instant feedback; `scheduleRefetch` reconciles against the true row right after.
     const channel = supabase
       .channel(`task_${table}_${bookId}_${Math.random().toString(36).slice(2)}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table, filter: `book_id=eq.${bookId}` },
-        (payload) => consider((payload as unknown as { new: T }).new)
+        (payload) => { consider((payload as unknown as { new: T }).new); scheduleRefetch(); }
       )
       .subscribe();
     channelRef.current = channel;
 
     return () => {
       mounted.current = false;
+      if (refetchTimer.current) { clearTimeout(refetchTimer.current); refetchTimer.current = null; }
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;
