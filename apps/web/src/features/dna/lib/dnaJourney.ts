@@ -132,6 +132,52 @@ export function stageSubsteps(key: StageKey, nodes: DnaNode[], mode: "prose" | "
   return resolveSeq([{ key: mode === "picture" ? "illustrate" : "prose", label: mode === "picture" ? "Illustrate" : "Scenes", done: scenes.length > 0 && drafted === scenes.length, ready: scenes.length > 0, count: drafted, total: scenes.length }]);
 }
 
+// ── The agent's current objective (the guided-flow anchor) ───────────────────────
+// Derived from the journey: the ONE step to drive the author through next, plus its done-gate recipe.
+// Injected into the agent's system prompt as an ANCHOR (not a fence) — the agent still sees the whole
+// tree, but is pointed at this single rung and told how to run it, so the NEXT turn (objective recomputed
+// from the tree) advances on its own once the gate is met. Pure. When the book is fully drafted it returns
+// the render/publish HAND-OFF — which the agent SURFACES but cannot perform (docs/agent-capabilities.md
+// limits #6/#7: applying ops writes book_nodes only; render→pages and publish are deliberate author gestures
+// across the render seam). One recipe per serial sub-step key (see stageSubsteps).
+const STEP_RECIPE: Record<string, string> = {
+  seed: "Generate 2–4 logline options from the brief with propose_options on the seed node — a logline names the protagonist, their goal, the obstacle, and the stakes in one sentence. Recommend one and ask the author which direction fits and what to change.",
+  premise: "Generate 2–4 premise options with propose_options on the premise node, each elaborating the ACCEPTED logline (keep its protagonist/goal/obstacle/stakes fixed). The premise's core is its CENTRAL QUESTION — the question the whole book lives inside. It can be a PLOT question (\"will she escape the colony?\") OR a thematic one (\"can a single day hold a whole life?\"); pick whichever the brief's genre calls for — don't force a \"will the hero win\" frame onto a character/literary book. The 5-part shape (setup/turns/resolution) is an OPTIONAL sketch, not required.",
+  pillar: "Propose the pillar with propose_node_ops (edit): the controlling idea (the book's one-sentence thematic argument) and the ending it implies. Talk it through, then propose.",
+  cast: "Add the core cast with propose_node_ops (add character nodes under the pillar) — at minimum the protagonist and antagonist, each with want / need / wound / lie. Ask the author about anyone central you're unsure of. Relationships, world, games, and tentpoles are optional enrichment — offer them, don't block on them.",
+  acts: "Generate the acts with ONE propose_node_ops replace_children op (parentId = the pillar, childKind = act) — each act with a goal and turning point. Revise with the author before moving to beats.",
+  beats: "Generate the beats under each act (replace_children, childKind = beat) — a causal chain where each beat's connector is 'therefore' or 'but' and is earned by what came before. Revise with the author.",
+  threads: "Optional: name the open loops with thread nodes (a promise set up early, paid off later) and anchor each to its beats.",
+  scenes: "Break each beat into scenes (replace_children, childKind = scene) — each scene must turn a value (goal → outcome), never a flat 'and-then'.",
+  prose: "Render prose ONE scene at a time with propose_prose_render (you don't write prose yourself — the author applies it and it streams in their browser). Once a scene has prose, check_against_contract to judge it against the brief, then offer a revision. Walk scene by scene in reading order.",
+  illustrate: "Generate the scene illustration for each scene, one at a time, walking in reading order.",
+};
+
+/** The agent's CURRENT objective — the one rung to drive the author through next, derived live from the
+ *  tree. See STEP_RECIPE above. `bookSlug` (when known) puts the reader URL into the final hand-off. */
+export function currentObjective(nodes: DnaNode[], opts: { mode?: "prose" | "picture"; bookSlug?: string } = {}): string {
+  const mode = opts.mode ?? "prose";
+  const { stages, nowIndex } = buildJourney(nodes, mode);
+  if (stages.every((s) => s.status === "done")) {
+    const reader = opts.bookSlug ? ` (then read it at /books/${opts.bookSlug})` : "";
+    return [
+      "CURRENT OBJECTIVE — the book's DNA is fully drafted: every scene has prose.",
+      `You CANNOT render or publish yourself — those are deliberate author gestures across the render seam. HAND OFF: tell the author the draft is complete and point them to the two remaining actions — (1) **Render**, which projects the DNA tree into readable pages${reader}; (2) **Publish**, which makes the book public. Then offer another revision pass if they want one.`,
+    ].join("\n");
+  }
+  const stage = stages[nowIndex];
+  const now = stageSubsteps(stage.key, nodes, mode).find((s) => s.status === "now");
+  const recipe = STEP_RECIPE[now?.key ?? stage.key] ?? "";
+  const tally = now?.total != null ? ` (${now.count ?? 0}/${now.total})` : now?.count != null ? ` (${now.count} so far)` : "";
+  const next = stages[nowIndex + 1];
+  return [
+    "CURRENT OBJECTIVE — drive the author through ONE step at a time; don't work ahead unless they ask.",
+    `▸ Step ${stage.num}/${stages.length} · ${stage.label}${now ? ` — ${now.label}` : ""}${tally}`,
+    recipe ? `HOW TO RUN THIS STEP: ${recipe}` : "",
+    `Once that's in the tree and accepted, the objective advances on its own${next ? ` (next: ${next.label})` : ""} — so move on rather than over-polishing.`,
+  ].filter(Boolean).join("\n");
+}
+
 // ── Stage progress (coverage) ───────────────────────────────────────────────────
 // Not "present vs absent" but HOW MUCH of each layer is filled — the "what's left" signal. The spine is a
 // coverage chain: every act should grow beats, every beat scenes, every scene prose. A stage is `partial`

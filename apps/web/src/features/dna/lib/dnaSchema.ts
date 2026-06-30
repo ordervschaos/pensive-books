@@ -37,7 +37,11 @@ export const NODE_SCHEMA: Partial<Record<NodeKind, EditSpec[]>> = {
     // genre + tone live on the BRIEF (the book-level contract / MANDATE), not here — they were duplicated
     // onto premise but nothing downstream read them (drift risk only). The premise rung holds only what it
     // genuinely refines: the dramatic question + the 5-part shape.
-    { key: "dramatic_question", label: "question", multiline: true, required: true },
+    // The premise's load-bearing minimum: the CENTRAL QUESTION the whole book lives inside. Framed wide
+    // on purpose — it can be a PLOT question ("will she escape?") OR a thematic one ("can a single day hold
+    // a whole life?"), so the rung stays universal across genre and literary work. The 5-part shape below
+    // is an OPTIONAL sketch (not required), demoted because acts/beats own structure one rung down.
+    { key: "dramatic_question", label: "central question", multiline: true, required: true },
     { key: "shape", label: "shape", type: "object", fields: [
       { key: "setup", label: "setup", multiline: true }, { key: "turn1", label: "turn 1", multiline: true }, { key: "turn2", label: "turn 2", multiline: true },
       { key: "turn3", label: "turn 3", multiline: true }, { key: "resolution", label: "resolution", multiline: true },

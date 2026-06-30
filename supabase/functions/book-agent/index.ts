@@ -80,12 +80,13 @@ interface RunRow {
   proposals: AgentProposal[] | null;
   context_scope: Aspect[] | null; // thread scope (docs/agent-rail.md): null = whole book
   context_analysis: string | null; // latest client-computed story analysis (backstop)
+  context_objective: string | null; // latest client-computed current journey objective (guided-flow anchor)
   context_effort: "low" | "high" | null; // null = high (default)
   context_auto: boolean | null; // auto-accept mode: run autonomously, never park on ask_author
   turns: number;
   cancel_requested: boolean;
 }
-const ROW_COLS = "id, book_id, created_by, kind, status, evaluation, transcript, steps, pending, proposals, context_scope, context_analysis, context_effort, context_auto, turns, cancel_requested";
+const ROW_COLS = "id, book_id, created_by, kind, status, evaluation, transcript, steps, pending, proposals, context_scope, context_analysis, context_objective, context_effort, context_auto, turns, cancel_requested";
 
 // Context filter aspects mirror the DNA tree's visual layers. null/[] scope = all.
 type Aspect = "seed" | "premise" | "cast_world" | "story" | "prose";
@@ -138,7 +139,7 @@ Deno.serve(async (req: Request) => {
   try {
     const body = (await req.json().catch(() => ({}))) as {
       bookId?: number; evaluation?: EvalResult; instruction?: string; targetPageId?: number; runId?: number; answer?: string; chain?: boolean; autoContinue?: boolean;
-      message?: string; scope?: string[]; analysis?: string; effort?: "low" | "high"; auto?: boolean;
+      message?: string; scope?: string[]; analysis?: string; effort?: "low" | "high"; auto?: boolean; objective?: string;
     };
 
     // ── Continue call (self/watchdog): advance one model turn ──
@@ -220,6 +221,8 @@ Deno.serve(async (req: Request) => {
         : null;
       // The client-computed story analysis (the engine lives in the web app) — refreshed this turn.
       const analysis: string | null = typeof body.analysis === "string" && body.analysis.trim() ? body.analysis.trim() : null;
+      // The client-computed CURRENT OBJECTIVE (the now journey rung + recipe) — the guided-flow anchor.
+      const objective: string | null = typeof body.objective === "string" && body.objective.trim() ? body.objective.trim() : null;
       // Effort: "low" = propose inline on first response without exploring; "high" (default) = full tool loop.
       const effort: "low" | "high" = body.effort === "low" ? "low" : "high";
       // Auto-accept: run autonomously — the agent commits its own picks and never parks on ask_author; the
@@ -244,6 +247,7 @@ Deno.serve(async (req: Request) => {
             status: "running",
             context_scope: scope,
             context_analysis: analysis,
+            context_objective: objective,
             context_effort: effort,
             context_auto: auto,
             transcript: [{ role: "user", content: [{ type: "text", text: message }] }],
@@ -262,7 +266,7 @@ Deno.serve(async (req: Request) => {
       const transcript = [...thread.transcript, { role: "user", content: [{ type: "text", text: message }] }];
       const steps = [...thread.steps, { t: "user", label: message } as AgentStep];
       const { error } = await service.from("book_agent_runs")
-        .update({ transcript, steps, status: "running", turns: 0, pending: null, error: null, cancel_requested: false, context_scope: scope, context_analysis: analysis, context_effort: effort, context_auto: auto })
+        .update({ transcript, steps, status: "running", turns: 0, pending: null, error: null, cancel_requested: false, context_scope: scope, context_analysis: analysis, context_objective: objective, context_effort: effort, context_auto: auto })
         .eq("id", thread.id);
       if (error) throw new Error(error.message);
       if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("book-agent", { runId: thread.id }));
@@ -373,7 +377,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
     const scope: Aspect[] | null = null;
     const effort = row.context_effort ?? "high";
     // `auto` (autonomous mode: never park, commit own picks) computed above for the turn ceiling.
-    const system = isThread ? await threadSystem(service, row.book_id, scope, row.context_analysis, effort, auto) : SYSTEM;
+    const system = isThread ? await threadSystem(service, row.book_id, scope, row.context_analysis, effort, auto, row.context_objective) : SYSTEM;
     const tools = isThread ? threadToolsFor(scope) : TOOLS;
     // Count the turn BEFORE the call: a hard worker death mid-call still consumes budget, so a
     // crash-looping run hits MAX_TURNS instead of being revived forever by the watchdog.
@@ -1120,7 +1124,7 @@ const THREAD_DNA_TOOLS = [
   },
   {
     name: "propose_options",
-    description: "Offer the author 2–4 ALTERNATIVE versions of ONE node's content to choose among (the options picker). Use this when the author asks for options/alternatives, or to break a node out of its one obvious 'modal' version. Each option is a COMPLETE content object for that node's kind (the exact field names from the schema, like an edit's content). The options must be meaningfully different FROM EACH OTHER — but every option MUST HONOR the node's ancestors as FIXED: a child elaborates what's above it (the logline, then the premise), it never rewrites it. Vary ONLY what the parent leaves open (e.g. premise options keep the logline's protagonist / inciting incident / goal / obstacle / stakes fixed and vary only the dramatic question + 5-part shape). NEVER reshape an ancestor's story into a different book, and never offer near-duplicates. This stages the options ON the node (the author picks one in the tree) and ENDS your turn. For a SINGLE revision, use propose_node_ops (edit) instead. Only target a non-locked node.",
+    description: "Offer the author 2–4 ALTERNATIVE versions of ONE node's content to choose among (the options picker). Use this when the author asks for options/alternatives, or to break a node out of its one obvious 'modal' version. Each option is a COMPLETE content object for that node's kind (the exact field names from the schema, like an edit's content). The options must be meaningfully different FROM EACH OTHER — but every option MUST HONOR the node's ancestors as FIXED: a child elaborates what's above it (the logline, then the premise), it never rewrites it. Vary ONLY what the parent leaves open (e.g. premise options keep the logline's protagonist / inciting incident / goal / obstacle / stakes fixed and vary only the central question — plot OR thematic — and the optional 5-part shape). NEVER reshape an ancestor's story into a different book, and never offer near-duplicates. This stages the options ON the node (the author picks one in the tree) and ENDS your turn. For a SINGLE revision, use propose_node_ops (edit) instead. Only target a non-locked node.",
     input_schema: {
       type: "object",
       properties: {
@@ -1169,11 +1173,13 @@ You hold the book's DNA TREE: premise → foundations (pillar, cast, world, tent
 You can do four things:
 1. DISCUSS — answer, summarize, pressure-test. Reply in plain MARKDOWN prose and just end your turn (no tool needed). Be concrete, grounded in the real tree, referencing nodes by their [id]. When a node has PENDING OPTIONS and the author asks which is strongest, just RECOMMEND one in prose (name its option number + a one-line reason tied to the brief) — committing the pick is theirs, in the tree.
 2. CHANGE THE TREE — when the author asks for a change (or agrees to one), call propose_node_ops with edit/add/delete ops over the real ids. The author reviews the diff and applies it; descendants of an edited node go stale and are regenerated later. NEVER touch a LOCKED node. Don't propose unless asked — talk first.
-3. OFFER OPTIONS — when the author asks for alternatives/options, or to break a node out of its one obvious version, call propose_options with the node's [id] and 2–4 COMPLETE content objects, meaningfully different FROM EACH OTHER but each one HONORING the node's ancestors as fixed: a child elaborates the logline/premise above, it never rewrites it. Vary only what the parent leaves open (premise options keep the logline's protagonist/inciting/goal/obstacle/stakes and vary the dramatic question + shape); never reshape an ancestor into a different story, never near-duplicates. The author picks one in the tree. Use this only for choose-among-N; a single revision is propose_node_ops.
+3. OFFER OPTIONS — when the author asks for alternatives/options, or to break a node out of its one obvious version, call propose_options with the node's [id] and 2–4 COMPLETE content objects, meaningfully different FROM EACH OTHER but each one HONORING the node's ancestors as fixed: a child elaborates the logline/premise above, it never rewrites it. Vary only what the parent leaves open (premise options keep the logline's protagonist/inciting/goal/obstacle/stakes and vary the central question — plot OR thematic — and optional shape); never reshape an ancestor into a different story, never near-duplicates. The author picks one in the tree. Use this only for choose-among-N; a single revision is propose_node_ops.
 4. PROSE — to WRITE or REWRITE a scene's full prose, call propose_prose_render with the scene [id](s): you do NOT generate prose yourself (it's a long, browser-streamed render the author runs); you stage a request the author applies, and it streams in their browser. For SMALL wording fixes to EXISTING prose, use propose_node_ops to edit content.prose.text directly. Call check_against_contract with a scene's [id] to judge its EXISTING prose against the brief mandate (genre, heat, voice, success criteria) and relay the per-axis verdict. A common request — "write the first scene and see if it meets the brief" — is propose_prose_render (the author applies it; prose streams in) then check_against_contract once the scene has prose.
    • REBUILDS: to replace a whole level — "rebuild the acts", "4 acts with all-new beats" — use ONE replace_children op (parentId = the level's parent, e.g. the pillar for acts; childKind = act; children = the new acts, each nesting its beats). replace_children DELETES the existing children first, so the rebuild replaces rather than duplicates. Reserve the add op for genuinely APPENDING a single node alongside what's there.
 
 NODE KINDS: seed, premise, pillar; foundations — character, relationship, world_fact, location, thread, game, tentpole, meter, voice_profile; structure — act, beat, scene. Before you WRITE a node's content (add / edit / replace_children), get the kind's EXACT field names with get_schema (read_node also returns them) — wrong keys silently orphan data.
+
+GUIDED FLOW: when a CURRENT OBJECTIVE block is given, that's the one step to lead the author through next — the lowest unfinished rung of the book's DNA. If the author asks "what's next?", opens a fresh thread, or has no specific ask, drive THAT objective: do the step's recipe, then let the next message advance it. Don't march ahead to later rungs unprompted. But this is an anchor, not a leash — if the author steers somewhere else, follow them.
 
 Be tight. Don't propose changes the author didn't ask for; when they're just talking, just talk.`;
 
@@ -1274,7 +1280,7 @@ async function proposeOptions(
 // every call so ids stay fresh as the author edits (the transcript holds only the conversation). Each node
 // is a DIGEST — handle/gist + causal spine, full content via read_node (see digestNode). A one-line
 // premise/pillar frame is always included so the agent is grounded even when 'premise' isn't in scope.
-async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspect[] | null, analysis: string | null, effort: "low" | "high" = "high", auto = false): Promise<string> {
+async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspect[] | null, analysis: string | null, effort: "low" | "high" = "high", auto = false, objective: string | null = null): Promise<string> {
   const { data: book } = await service.from("books").select("name, brief").eq("id", bookId).maybeSingle();
   const b = book as { name?: string; brief?: Brief } | null;
   const { data: rows } = await service
@@ -1301,6 +1307,11 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
   const blocks = [
     `BOOK: ${b?.name ?? ""}`,
     `BRIEF (binding voice contract): ${briefContext(b?.brief ?? null, { scope: "full", success: true, none: "(no brief)", empty: "(empty)" })}`,
+    // The guided-flow anchor (docs/agent-capabilities.md): the ONE journey rung to drive the author
+    // through next, derived client-side from the tree (lib/dnaJourney.currentObjective). An anchor, not
+    // a fence — the agent still sees the whole tree below, but leads with this step unless the author
+    // steers elsewhere. Recomputed each message, so it advances on its own as the tree fills.
+    objective?.trim() ?? "",
     // The structural backstop (pacing / dangling-promise / sagging-run lints) — act on any ⚠ flags.
     analysis?.trim() ? `STORY ANALYSIS (the structural backstop — address any ⚠ flags):\n${analysis.trim()}` : "",
     `THE DNA TREE${kinds ? ` (in scope: ${[...kinds].join(", ")}; others shown as <hidden>)` : ""} — edit/add/delete by these ids; LOCKED = immutable:\n${tree || "(no nodes yet)"}`,

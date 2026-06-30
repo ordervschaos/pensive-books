@@ -808,7 +808,7 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
   const railHandle = <ResizableHandle className="w-1.5 bg-transparent transition-colors hover:bg-[hsl(var(--pv-accent))]/30 data-[resize-handle-state=drag]:bg-[hsl(var(--pv-accent))]/50" />;
   // The omni-rail agent (docs/agent-rail.md) — one durable, tool-using conversation over the whole DNA
   // tree, with the context filter + slash commands. Supersedes the per-stage DnaChatRail.
-  const rail = nodes.length > 0 ? <AgentRail bookId={bookId} nodes={nodes} settings={settings} /> : null;
+  const rail = nodes.length > 0 ? <AgentRail bookId={bookId} nodes={nodes} settings={settings} bookSlug={bookSlug} /> : null;
 
   return (
     <div className="flex h-full flex-col">

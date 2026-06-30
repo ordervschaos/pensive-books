@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildJourney, dnaHealth, stageComplete, stageSubsteps } from "@/features/dna/lib/dnaJourney";
+import { buildJourney, currentObjective, dnaHealth, stageComplete, stageSubsteps } from "@/features/dna/lib/dnaJourney";
 import type { DnaNode, NodeKind } from "@/features/dna/lib/novelDna";
 
 let seq = 0;
@@ -89,5 +89,40 @@ describe("stageSubsteps", () => {
     expect(subs.prose.count).toBe(1);
     expect(subs.prose.total).toBe(2);
     expect(subs.prose.status).toBe("now"); // not all drafted yet
+  });
+});
+
+describe("currentObjective", () => {
+  it("an empty tree points at the seed step with its recipe", () => {
+    const obj = currentObjective([]);
+    expect(obj).toContain("Step 1/5 · Idea");
+    expect(obj).toContain("logline options");
+    expect(obj).toContain("don't work ahead"); // the focus anchor
+  });
+
+  it("advances to the now step as the tree fills", () => {
+    const obj = currentObjective([
+      mk("seed", { logline: "A clerk falls for a smuggler." }),
+      mk("premise", { dramatic_question: "Will she choose?" }),
+      mk("pillar", { controlling_idea: "Freedom is chosen.", ending: "She burns it." }),
+      // pillar accepted but no cast → Foundations / Cast is the now step
+    ]);
+    expect(obj).toContain("Foundations — Cast");
+    expect(obj).toContain("want / need / wound / lie");
+  });
+
+  it("a fully drafted book yields the render/publish hand-off, never an op", () => {
+    const obj = currentObjective([
+      mk("seed", { logline: "x" }),
+      mk("premise", { dramatic_question: "q?" }),
+      mk("pillar", { controlling_idea: "idea", ending: "end" }),
+      mk("character", { name: "Mara", role: "protagonist" }),
+      mk("act", { goal: "g" }),
+      mk("beat", { summary: "b" }),
+      mk("scene", { goal: "g", prose: { text: "Words." } }),
+    ], { bookSlug: "my-book" });
+    expect(obj).toContain("fully drafted");
+    expect(obj).toContain("CANNOT render or publish");
+    expect(obj).toContain("/books/my-book");
   });
 });

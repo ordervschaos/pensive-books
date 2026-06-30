@@ -20,12 +20,13 @@ import {
 import { availableCommands, matchCommands, type AgentCommand } from "@/features/dna/lib/agentCommands";
 import { describeOps, nodeLabel, type NodeOp } from "@/features/dna/lib/dnaChat";
 import { analysisText, byId, type BookSettings, type DnaNode, type NodeKind } from "@/features/dna/lib/novelDna";
+import { currentObjective } from "@/features/dna/lib/dnaJourney";
 import { useChatScroll } from "@/components/book/shared/useChatScroll";
 import { useAutoAccept } from "@/features/dna/hooks/useAutoAccept";
 import { ActionLink, Eyebrow, Panel, RunError } from "@/components/book/shared/studioUi";
 
-export function AgentRail({ bookId, nodes, settings, attachedIds = [], onDetach }: {
-  bookId: number; nodes: DnaNode[]; settings: BookSettings;
+export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [], onDetach }: {
+  bookId: number; nodes: DnaNode[]; settings: BookSettings; bookSlug?: string; // bookSlug feeds the reader URL into the final render/publish hand-off
   attachedIds?: string[]; onDetach?: (id: string) => void; // slice 2 — the context tray (anchors); omitted = no tray
 }) {
   const { toast } = useToast();
@@ -36,6 +37,16 @@ export function AgentRail({ bookId, nodes, settings, attachedIds = [], onDetach 
     const hasStructure = nodes.some((n) => n.kind === "beat" || n.kind === "scene");
     return hasStructure ? analysisText(nodes, settings) : undefined;
   }, [nodes, settings]);
+
+  // The guided-flow anchor (docs/agent-capabilities.md): the ONE journey rung to drive the author through
+  // next, derived live from the tree. Sent with each message so the agent leads with it; also surfaced as
+  // the idle "Next" nudge below. mode follows the book's draft mode (prose vs picture-book illustration).
+  const objective = useMemo(
+    () => currentObjective(nodes, { mode: settings.mode === "picture" ? "picture" : "prose", bookSlug }),
+    [nodes, settings.mode, bookSlug],
+  );
+  // The one-line headline of the objective (the "▸ Step n/5 · …" line), for the idle nudge chip.
+  const objectiveHeadline = useMemo(() => objective.split("\n").find((l) => l.startsWith("▸"))?.replace(/^▸\s*/, "") ?? "", [objective]);
 
   // The attached nodes resolved against the live tree (ids referencing since-deleted nodes drop out). These
   // anchor the agent — on send their ids/kinds/titles ride in the message as a "Focus" prefix; the agent
@@ -148,7 +159,7 @@ export function AgentRail({ bookId, nodes, settings, attachedIds = [], onDetach 
     const full = focusPrefix + t;
     setOptimistic(full);
     try {
-      await sendAgentMessage(bookId, full, analysis, effort, auto);
+      await sendAgentMessage(bookId, full, analysis, effort, auto, objective);
       refetch();
     } catch (e) {
       setOptimistic(null);
@@ -349,6 +360,19 @@ export function AgentRail({ bookId, nodes, settings, attachedIds = [], onDetach 
           </div>
         ) : (
           <div className="relative">
+            {/* Guided-flow nudge — the current journey rung (lib/dnaJourney.currentObjective). One click
+                hands the step to the agent; the objective itself already rides every message's context. */}
+            {!active && objectiveHeadline && proposals.length === 0 && draft === "" && (
+              <button type="button" onClick={() => void send("Let's work on the next step.")} disabled={busy}
+                title="Let the agent lead you through this step"
+                className="mb-2 flex w-full items-center gap-2 rounded-xl border border-[hsl(var(--pv-accent))]/30 bg-[hsl(var(--pv-accent))]/[0.06] px-3 py-2 text-left transition-colors hover:border-[hsl(var(--pv-accent))]/60 disabled:opacity-50">
+                <CornerDownLeft className="h-3.5 w-3.5 shrink-0 text-[hsl(var(--pv-accent))]" />
+                <span className="min-w-0 flex-1">
+                  <span className="block pv-mono text-[9px] uppercase tracking-[0.12em] text-[hsl(var(--pv-accent))]">next step</span>
+                  <span className="block truncate pv-serif text-[12.5px] leading-snug text-foreground">{objectiveHeadline}</span>
+                </span>
+              </button>
+            )}
             {/* Slash-command menu — opens above the composer when the draft starts with "/". */}
             {showMenu && (
               <div className="absolute bottom-[calc(100%+6px)] left-0 right-0 z-10 overflow-hidden rounded-xl border border-[hsl(var(--pv-border-soft))] bg-background shadow-lg">
