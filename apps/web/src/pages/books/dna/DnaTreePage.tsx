@@ -420,14 +420,28 @@ function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete, keb
   ctx?: "focus" | "consumes" | "consumedBy"; onContextFocus?: () => void; // #7 context-highlight role + the badge trigger
 }) {
   const [dropEdge, setDropEdge] = useState<"top" | "bottom" | null>(null);
-  const [staleOpen, setStaleOpen] = useState(false);
+  const [staleCardPos, setStaleCardPos] = useState<{ top: number; right: number } | null>(null);
   const [staleBusy, setStaleBusy] = useState<string | null>(null);
+  const staleChipRef = useRef<HTMLSpanElement>(null);
   const runStale = async (key: string, fn: () => Promise<void>) => {
     setStaleBusy(key);
-    try { await fn(); setStaleOpen(false); }
+    try { await fn(); setStaleCardPos(null); }
     catch (e) { alert((e as Error).message); }
     finally { setStaleBusy(null); }
   };
+  const openStaleCard = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!staleActions) return;
+    const rect = staleChipRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setStaleCardPos({ top: rect.bottom + 6, right: window.innerWidth - rect.right });
+  };
+  useEffect(() => {
+    if (!staleCardPos) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setStaleCardPos(null); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [staleCardPos]);
   const suspects = isStale(node, index)
     ? ([node.parent_id ? index.get(node.parent_id) : null, ...refsOf(node).map((id) => index.get(id))].filter((n): n is DnaNode => !!n))
     : [];
@@ -539,35 +553,53 @@ function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete, keb
             style={{ fontSize: 10, lineHeight: 1, color: hasErr ? "#f87171" : "#d0a060", flexShrink: 0 }}>{hasErr ? "▲" : "△"}</span>}
           {markColor && <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 8, textTransform: "uppercase", letterSpacing: "0.12em", color: markColor }}>{mark === "delete" ? "− remove" : "✎ edit"}</span>}
           {stale && (
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }} onClick={(e) => e.stopPropagation()}>
-              <span
-                title={suspects.length ? `suspects: ${suspects.map((n) => `${n.kind} ${nodeTitle(n) || n.id}`).join(", ")}` : undefined}
-                onClick={() => staleActions && setStaleOpen((p) => !p)}
-                style={{ fontFamily: "ui-monospace, monospace", fontSize: 8, textTransform: "uppercase", letterSpacing: "0.12em", color: "#f59e0b", cursor: staleActions ? "pointer" : "default", userSelect: "none" }}>
-                stale
-              </span>
-              {staleOpen && staleActions && (
-                <>
-                  <span onClick={() => !staleBusy && void runStale("approve", staleActions.onApprove)}
-                    title="approve — accept content as fresh"
-                    style={{ fontFamily: "ui-monospace, monospace", fontSize: 8, color: staleBusy === "approve" ? "#555" : "#6abf6a", cursor: staleBusy ? "default" : "pointer", border: "1px solid #6abf6a44", borderRadius: 3, padding: "0 4px", lineHeight: "14px" }}>
-                    {staleBusy === "approve" ? "…" : "✓"}
-                  </span>
+            <span ref={staleChipRef} onClick={openStaleCard}
+              style={{ fontFamily: "ui-monospace, monospace", fontSize: 8, textTransform: "uppercase", letterSpacing: "0.12em", color: "#f59e0b", cursor: staleActions ? "pointer" : "default", userSelect: "none" }}>
+              stale
+            </span>
+          )}
+          {/* Stale card — fixed-position popover anchored to the chip */}
+          {staleCardPos && staleActions && (
+            <>
+              <div style={{ position: "fixed", inset: 0, zIndex: 49 }} onClick={() => setStaleCardPos(null)} />
+              <div style={{ position: "fixed", top: staleCardPos.top, right: staleCardPos.right, zIndex: 50, width: 280, background: "#0d0d11", border: "1px solid #2a2a38", borderRadius: 8, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10, boxShadow: "0 8px 30px #000000aa", fontFamily: "ui-monospace, monospace" }}
+                onClick={(e) => e.stopPropagation()}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span style={{ fontSize: 9, letterSpacing: "0.16em", textTransform: "uppercase", color: "#f59e0b" }}>stale</span>
+                  <span onClick={() => setStaleCardPos(null)} style={{ fontSize: 11, color: "#555", cursor: "pointer" }}>✕</span>
+                </div>
+                <span style={{ fontSize: 11, color: "#c8a060", lineHeight: 1.5 }}>
+                  {isProseStale(node) && !isStale(node, index)
+                    ? "prose stale — the scene plan changed since it was written"
+                    : "an input changed since this was generated"}
+                </span>
+                {suspects.length > 0 && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                    <span style={{ fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "#5c5c5c" }}>suspects</span>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                      {suspects.map((n) => (
+                        <span key={n.id} style={{ fontSize: 11, color: "#cfcfcf", background: "#16161c", border: `1px solid ${(KIND_COLOR[n.kind] ?? "#888")}44`, borderRadius: 3, padding: "1px 6px", display: "inline-flex", gap: 4, alignItems: "center" }}>
+                          <span style={{ color: KIND_COLOR[n.kind] ?? "#888", fontSize: 9, letterSpacing: "0.06em", textTransform: "uppercase", flexShrink: 0 }}>{n.kind}</span>
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 160 }}>{nodeTitle(n) || n.id}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: 6 }}>
                   {staleActions.onRegen && (
                     <span onClick={() => !staleBusy && void runStale("regen", staleActions.onRegen!)}
-                      title="regen — regenerate from current inputs"
-                      style={{ fontFamily: "ui-monospace, monospace", fontSize: 8, color: staleBusy === "regen" ? "#555" : "#8a8aff", cursor: staleBusy ? "default" : "pointer", border: "1px solid #8a8aff44", borderRadius: 3, padding: "0 4px", lineHeight: "14px" }}>
-                      {staleBusy === "regen" ? "…" : "↻"}
+                      style={{ fontSize: 9, letterSpacing: "0.06em", color: staleBusy === "regen" ? "#555" : "#8a8aff", cursor: staleBusy ? "default" : "pointer", border: "1px solid #8a8aff44", borderRadius: 4, padding: "3px 10px", background: "#8a8aff0d" }}>
+                      {staleBusy === "regen" ? "…" : "↻ regen"}
                     </span>
                   )}
-                  <span onClick={() => !staleBusy && void runStale("discard", staleActions.onDiscard)}
-                    title="discard — clear the stale signal"
-                    style={{ fontFamily: "ui-monospace, monospace", fontSize: 8, color: staleBusy === "discard" ? "#555" : "#c06060", cursor: staleBusy ? "default" : "pointer", border: "1px solid #c0606044", borderRadius: 3, padding: "0 4px", lineHeight: "14px" }}>
-                    {staleBusy === "discard" ? "…" : "✕"}
+                  <span onClick={() => !staleBusy && void runStale("approve", staleActions.onApprove)}
+                    style={{ fontSize: 9, letterSpacing: "0.06em", color: staleBusy === "approve" ? "#555" : "#6abf6a", cursor: staleBusy ? "default" : "pointer", border: "1px solid #6abf6a44", borderRadius: 4, padding: "3px 10px", background: "#6abf6a0d" }}>
+                    {staleBusy === "approve" ? "…" : "✓ accept"}
                   </span>
-                </>
-              )}
-            </span>
+                </div>
+              </div>
+            </>
           )}
           {node.authoring.locked && <span style={{ fontSize: 10, color: color }}>🔒</span>}
           <span style={{
@@ -1925,20 +1957,16 @@ function FocusPanel({ node, index, consumes, consumedBy, onJump, onClear, bottom
             )}
             {staleActions && (
               <div style={{ display: "flex", gap: 6 }}>
-                {(["approve", "regen", "discard"] as const).map((key) => {
-                  const fn = key === "approve" ? staleActions.onApprove : key === "regen" ? staleActions.onRegen : staleActions.onDiscard;
-                  if (!fn) return null;
-                  const color = key === "approve" ? "#6abf6a" : key === "regen" ? "#8a8aff" : "#c06060";
-                  const label = key === "approve" ? "✓ approve" : key === "regen" ? "↻ regen" : "✕ discard";
-                  const busy = panelStaleBusy === key;
-                  return (
-                    <span key={key} onClick={() => !panelStaleBusy && void runPanelStale(key, fn)}
-                      title={key === "approve" ? "accept content as fresh" : key === "regen" ? "regenerate from current inputs" : "clear the stale signal"}
-                      style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.06em", color: busy ? "#555" : color, cursor: panelStaleBusy ? "default" : "pointer", border: `1px solid ${color}44`, borderRadius: 4, padding: "2px 8px", background: `${color}0d` }}>
-                      {busy ? "…" : label}
-                    </span>
-                  );
-                })}
+                {staleActions.onRegen && (
+                  <span onClick={() => !panelStaleBusy && void runPanelStale("regen", staleActions.onRegen!)}
+                    style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.06em", color: panelStaleBusy === "regen" ? "#555" : "#8a8aff", cursor: panelStaleBusy ? "default" : "pointer", border: "1px solid #8a8aff44", borderRadius: 4, padding: "2px 8px", background: "#8a8aff0d" }}>
+                    {panelStaleBusy === "regen" ? "…" : "↻ regen"}
+                  </span>
+                )}
+                <span onClick={() => !panelStaleBusy && void runPanelStale("approve", staleActions.onApprove)}
+                  style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.06em", color: panelStaleBusy === "approve" ? "#555" : "#6abf6a", cursor: panelStaleBusy ? "default" : "pointer", border: "1px solid #6abf6a44", borderRadius: 4, padding: "2px 8px", background: "#6abf6a0d" }}>
+                  {panelStaleBusy === "approve" ? "…" : "✓ accept"}
+                </span>
               </div>
             )}
           </div>
@@ -2280,7 +2308,10 @@ export default function DnaTreePage() {
   // #1 — pending proposals from the agent thread (book_agent_runs), mirrored so the tree can overlay them.
   const [agentProposals, setAgentProposals] = useState<AgentProposal[]>([]);
   const [showIssues, setShowIssues] = useState(false); // drill into the lints behind the score
-  const [timelineOpen, setTimelineOpen] = useState(false); // the serial spine filmstrip (bottom)
+  // The serial spine filmstrip (bottom) — persists across reloads, per book (mirrors railOpen above).
+  const timelineKey = `dna-timeline-open:${bookId}`;
+  const [timelineOpen, setTimelineOpen] = useState<boolean>(() => localStorage.getItem(timelineKey) === "1");
+  useEffect(() => { localStorage.setItem(timelineKey, timelineOpen ? "1" : "0"); }, [timelineKey, timelineOpen]);
   const [healthLens, setHealthLens] = useState(false); // #6 — dim clean nodes; surface only the broken ones
   const [contextId, setContextId] = useState<string | null>(null); // #7 — the node whose ref-neighborhood is lit
   const [flashId, setFlashId] = useState<string | null>(null); // #1 — the node a jump just revealed
