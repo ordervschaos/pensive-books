@@ -6,7 +6,6 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Shield, Loader2, CheckCircle2 } from "lucide-react";
-import { Link } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 
 type ModelTier = "opus" | "sonnet" | "deepseek" | "qwen" | "qwen-plus" | "kimi" | "glm" | "minimax" | "gpt" | "hermes";
@@ -136,15 +135,7 @@ export default function AdminSettings() {
     <div className="max-w-2xl mx-auto px-4 py-8 space-y-6">
       <div className="flex items-center gap-2">
         <Shield className="h-5 w-5 text-amber-600" />
-        <h1 className="text-xl font-semibold">Admin Settings</h1>
-        <div className="ml-auto flex items-center gap-4">
-          <Link to="/admin/node-types" className="text-sm text-muted-foreground hover:text-foreground">
-            Node types
-          </Link>
-          <Link to="/admin" className="text-sm text-muted-foreground hover:text-foreground">
-            ← Dashboard
-          </Link>
-        </div>
+        <h1 className="text-xl font-semibold">Settings</h1>
       </div>
 
       <Card>

@@ -142,41 +142,16 @@ export default function App() {
                         element={
                           <PrivateRoute>
                             <AdminRoute>
-                              <AdminDashboard />
+                              <AdminLayout />
                             </AdminRoute>
                           </PrivateRoute>
                         }
-                      />
-                      <Route
-                        path="/admin/ai-calls"
-                        element={
-                          <PrivateRoute>
-                            <AdminRoute>
-                              <AdminAiCalls />
-                            </AdminRoute>
-                          </PrivateRoute>
-                        }
-                      />
-                      <Route
-                        path="/admin/settings"
-                        element={
-                          <PrivateRoute>
-                            <AdminRoute>
-                              <AdminSettings />
-                            </AdminRoute>
-                          </PrivateRoute>
-                        }
-                      />
-                      <Route
-                        path="/admin/node-types"
-                        element={
-                          <PrivateRoute>
-                            <AdminRoute>
-                              <AdminNodeTypeConfigs />
-                            </AdminRoute>
-                          </PrivateRoute>
-                        }
-                      />
+                      >
+                        <Route index element={<AdminDashboard />} />
+                        <Route path="ai-calls" element={<AdminAiCalls />} />
+                        <Route path="settings" element={<AdminSettings />} />
+                        <Route path="node-types" element={<AdminNodeTypeConfigs />} />
+                      </Route>
 
                       {/* Protected routes */}
                       <Route element={<ProtectedLayout />}>

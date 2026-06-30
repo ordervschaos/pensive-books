@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
-import { Activity, Sparkles, Loader2 } from "lucide-react";
+import { Sparkles, Loader2, Shield } from "lucide-react";
 
 // These tables aren't in the generated Database types yet; supabase.from() accepts a string-typed
 // name via its permissive overload (same as useLatestTaskRow), so we pass string vars and cast rows.
@@ -226,7 +226,7 @@ export default function AiCalls() {
   return (
     <div className="max-w-6xl mx-auto px-4 py-8 space-y-6">
       <div className="flex items-center gap-2">
-        <Activity className="h-5 w-5 text-amber-600" />
+        <Shield className="h-5 w-5 text-amber-600" />
         <h1 className="text-xl font-semibold">AI Calls</h1>
         <span className="text-sm text-muted-foreground">— every Claude call: context, output, cost, and on-demand evals</span>
       </div>
