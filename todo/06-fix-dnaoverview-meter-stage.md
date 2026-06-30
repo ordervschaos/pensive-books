@@ -3,7 +3,7 @@
 Status: **not started** · Pre-existing (not introduced by the verify-loop work) · ~1 line
 
 ## Problem
-`apps/web/src/components/book/dna/DnaOverview.tsx:21` — a `Record<NodeKind, StageKey>` is missing the `meter`
+`apps/web/src/features/dna/components/DnaOverview.tsx:21` — a `Record<NodeKind, StageKey>` is missing the `meter`
 key. The `meter` kind was added to `ENTITY_KINDS` in `novelDna.ts` but the stage map wasn't updated. This is
 the **sole** TypeScript error in the app build (`tsc -p tsconfig.app.json`), so it blocks a clean full build.
 

@@ -103,8 +103,10 @@ to force the book into the template." `lens: null` = pure instruction-driven rev
 - **Prose stays** on apply; only its staleness flips. Verify in the Resolution Map / page pips.
 
 ## Related
-- `docs/build-studio.md` (the Beats step), `docs/multiresolution-outline.md` (the dirty graph),
-  `docs/pinned_method.md`. Memory: `project_multiresolution_outline`, `project_build_studio_redesign`,
-  `project_revise_with_ai`, `project_sota_roadmap`.
+- `docs/multiresolution-outline.md` (the dirty graph), `docs/pinned_method.md`.
+  Memory: `project_multiresolution_outline`, `project_revise_with_ai`.
+
+> Note: the Build Studio (which hosted the Beats step described here) was removed in the DNA
+> substrate pivot; the edge fns (`beats-agent`, `revise-beats`) and `lib/beatSheet.ts` remain.
 </content>
 </invoke>

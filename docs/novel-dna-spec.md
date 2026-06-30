@@ -1,6 +1,6 @@
 # Novel DNA — build spec
 
-**Status:** build spec. Implements `novel-as-json.md` (the model) and generalizes
+**Status:** build spec. Generalizes
 `structure-as-render.md` (pages are a render) to the whole ladder. The **information-flow graph** (what
 generates from what, brief → book) is `novel-dna-flow.md` — the core of the system.
 

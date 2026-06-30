@@ -47,19 +47,7 @@ Test setup and global mocks:
 - `ResizeObserver` mock
 - Automatic cleanup after each test
 
-#### `src/test/mocks/supabase.ts`
-Reusable Supabase client mocks:
-- Mock query builder methods
-- Mock auth methods
-- Mock storage methods
-- Helper for creating responses
-
-#### `src/test/mocks/react-router.ts`
-React Router mocks:
-- `useNavigate`
-- `useParams`
-- `useSearchParams`
-- `useLocation`
+> **Note:** `src/test/` currently contains only `setup.ts`. Tests mock Supabase / React Router inline (per-file `vi.mock(...)`) rather than from shared `src/test/mocks/*` modules.
 
 ## Running Tests
 
@@ -88,6 +76,8 @@ When running `npm test`:
 - Press `q` to quit
 
 ## Test Files Breakdown
+
+> Coverage has since grown beyond the suites listed below — notably `src/features/dna/lib/*.test.ts` (DNA schema, flow, journey, autopilot) and `src/lib/epub*.test.ts`. Run `npx vitest list` for the current set.
 
 ### 1. `slugService.test.ts` (73 tests)
 

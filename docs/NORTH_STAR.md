@@ -2,7 +2,7 @@
 
 > **What this is.** The standing reference for *why this product exists and when it is done.*
 > Business, product, and UI/UX in one place. Implementation specs (`novel-dna-spec.md`,
-> `chat-first-studio.md`, `sota-story-generation.md`, …) answer **how**. This answers **what for** and
+> `novel-dna-flow.md`, …) answer **how**. This answers **what for** and
 > **how we know it's working**. When a decision is contested, it is settled against this doc.
 >
 > **Status:** living. Edit it when the hypothesis or the bar changes — not when the code changes.
@@ -75,8 +75,7 @@ generation ease, or intuitiveness is not a priority — it's a distraction.
 - **Locate the break.** When read-through stops, name the rung (was the *beat* causal-but-flat? the
   *scene* shift missing? the *voice* generic?). That rung is the next sprint.
 - This is the existing `evaluate-book` rubric (editor's read) plus the human read-through. The rubric
-  catches craft failures cheaply; the human read is the ground truth. (`docs/book-evaluation.md`,
-  `docs/book-1150-gold-standard-log.md`.)
+  catches craft failures cheaply; the human read is the ground truth. (`docs/book-evaluation.md`.)
 
 ---
 

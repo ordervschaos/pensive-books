@@ -1,19 +1,19 @@
 # Pensive Design System — Rules of Use
 
-A living doc. Defines **how to use** the tokens and components that already exist in the codebase. Companion to `THEME_SYSTEM_COMPLETE.md`, which defines what tokens *are*.
+A living doc. Defines **how to use** the tokens and components that already exist in the codebase. The tokens themselves are defined in `packages/shared/src/styles/tokens.css`.
 
-> **Scope:** color tokens, component variants, layout patterns, anti-patterns. The goal is consistency *across themes* — rules here must hold whether the active theme is default, coffee, muji, or pumpkin.
+> **Scope:** color tokens, component variants, layout patterns, anti-patterns. The goal is consistency *across themes* — rules here must hold whether the active theme is paper, coffee, or pumpkin.
 
 ---
 
-## 1. The four themes are real
+## 1. The three themes are real
 
-The app supports **default, coffee, muji, pumpkin** — each with light + dark. Two implications:
+The app supports **paper, coffee, pumpkin** — each with light + dark. Two implications:
 
-1. **Never hardcode a hex color in a component.** A coral that looks great on pumpkin will be wrong on muji. Always go through tokens.
-2. **Don't pick tokens by their *appearance* in your dev theme.** Pick by *role*. `bg-primary` is "the brand action color" — it happens to be orange in pumpkin, brown in coffee, maroon in muji. The rule "use `bg-primary` for the page's primary action" works in all four.
+1. **Never hardcode a hex color in a component.** A coral that looks great on pumpkin will be wrong on coffee. Always go through tokens.
+2. **Don't pick tokens by their *appearance* in your dev theme.** Pick by *role*. `bg-primary` is "the brand action color" — its actual hue differs per theme (e.g. orange in pumpkin, brown in coffee). The rule "use `bg-primary` for the page's primary action" works in all three.
 
-If you find yourself wanting a color that doesn't exist as a token, the answer is *almost never* "add a hex." It's: pick the closest token, or — if a real new role exists — add a token to all four themes in `src/index.css`.
+If you find yourself wanting a color that doesn't exist as a token, the answer is *almost never* "add a hex." It's: pick the closest token, or — if a real new role exists — add a token to all themes in `packages/shared/src/styles/tokens.css`.
 
 ---
 
@@ -140,9 +140,9 @@ Before adding a CSS variable, ask:
 
 1. **Is there an existing token for this role?** Almost always yes — re-read §2 above.
 2. **Is this a *new role* (e.g. "warning" — currently absent) or a *new shade* of an existing role?** Only the former justifies a token. New shades go on the existing scale (`muted/50`, `card/30`).
-3. **Will every theme define it?** A token only exists if all four themes (default, coffee, muji, pumpkin) and both modes (light, dark) have a value. Half-defined tokens break theme switching.
+3. **Will every theme define it?** A token only exists if all three themes (paper, coffee, pumpkin) and both modes (light, dark) have a value. Half-defined tokens break theme switching.
 
-If yes to all three: add to `:root` *and* `.dark` *and* every `.theme-*` block in `src/index.css`. Map it in `tailwind.config.ts`. Document its role here.
+If yes to all three: add to `:root` *and* `.dark` *and* every `.theme-*` block in `packages/shared/src/styles/tokens.css`. Map it in `tailwind.config.ts`. Document its role here.
 
 ---
 

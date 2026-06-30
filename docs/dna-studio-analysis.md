@@ -4,7 +4,7 @@
 What's good, what's genuinely great, why it will produce a good story, where it will fall short, and
 how to get the most out of it. Grounded in the actual engine (`supabase/functions/dna-expand/index.ts`,
 `apps/web/src/lib/novelDna.ts`) and the design docs (`novel-dna-flow.md`, `-schema.md`, `-games.md`,
-`dna-studio-system.md`, `sota-story-generation.md`, `can-i-generate-a-better-book.md`).
+`dna-studio-system.md`, `can-i-generate-a-better-book.md`).
 
 ---
 
@@ -66,8 +66,7 @@ levels of polish:
 
 **Where it sits:** this is the third generation of the system. v1 was a heterogeneous stack
 (`brief`/`foundations`/`spine`/`outline` columns). v2 was the "Build Studio". DNA collapses all of it
-into one node store + one generation graph. Read `sota-story-generation.md` for the problems it's
-reacting to.
+into one node store + one generation graph.
 
 ---
 
@@ -213,7 +212,7 @@ graph with the right things factored to the right rungs.
 
 ## 5. Why it *won't* (the honest limits)
 
-The system's own `sota-story-generation.md` names the meta-problem: **it is a single forward pass with
+The meta-problem: **it is a single forward pass with
 author-triggered revision bolted on. State-of-the-art output is not a better first draft — it is
 loops.** Here are the specific gaps, ordered by how much each caps quality.
 
