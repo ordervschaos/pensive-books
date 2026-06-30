@@ -18,13 +18,16 @@ import {
   type AgentProposal, type AgentSession, type Aspect, type AgentStep, type AgentThreadRow,
 } from "@/lib/agentThread";
 import { availableCommands, matchCommands, type AgentCommand } from "@/lib/agentCommands";
-import { describeOps, type NodeOp } from "@/lib/dnaChat";
-import { analysisText, type BookSettings, type DnaNode, type NodeKind } from "@/lib/novelDna";
+import { describeOps, nodeLabel, type NodeOp } from "@/lib/dnaChat";
+import { analysisText, byId, type BookSettings, type DnaNode, type NodeKind } from "@/lib/novelDna";
 import { useChatScroll } from "@/components/book/studio/useChatScroll";
 import { useAutoAccept } from "@/hooks/useAutoAccept";
 import { ActionLink, Eyebrow, Panel, RunError } from "@/components/book/shared/studioUi";
 
-export function AgentRail({ bookId, nodes, settings }: { bookId: number; nodes: DnaNode[]; settings: BookSettings }) {
+export function AgentRail({ bookId, nodes, settings, attachedIds = [], onDetach }: {
+  bookId: number; nodes: DnaNode[]; settings: BookSettings;
+  attachedIds?: string[]; onDetach?: (id: string) => void; // slice 2 — the context tray (anchors); omitted = no tray
+}) {
   const { toast } = useToast();
 
   // The structural backstop (pacing / dangling-promise / sagging-run lints), computed from the live
@@ -33,6 +36,19 @@ export function AgentRail({ bookId, nodes, settings }: { bookId: number; nodes: 
     const hasStructure = nodes.some((n) => n.kind === "beat" || n.kind === "scene");
     return hasStructure ? analysisText(nodes, settings) : undefined;
   }, [nodes, settings]);
+
+  // The attached nodes resolved against the live tree (ids referencing since-deleted nodes drop out). These
+  // anchor the agent — on send their ids/kinds/titles ride in the message as a "Focus" prefix; the agent
+  // still sees the whole book and read_nodes for detail (docs/agent-context-model.md).
+  const attached = useMemo(() => {
+    const index = byId(nodes);
+    return attachedIds.map((id) => index.get(id)).filter((n): n is DnaNode => !!n);
+  }, [attachedIds, nodes]);
+  const focusPrefix = useMemo(() => (
+    attached.length
+      ? `Focus — the author attached these DNA nodes to work on (you still see the whole book; read_node for detail):\n${attached.map((n) => `- [${n.id}] ${n.kind}: ${nodeLabel(n)}`).join("\n")}\n\n`
+      : ""
+  ), [attached]);
 
   // Which aspects EXIST (have nodes of their kinds). The agent always sees the whole book — there is no
   // context fence (docs/agent-context-model.md); this only gates slash-command relevance (generate vs
@@ -127,9 +143,12 @@ export function AgentRail({ bookId, nodes, settings }: { bookId: number; nodes: 
     if (!t || busy || active) return;
     setBusy(true);
     setDraft("");
-    setOptimistic(t);
+    // Anchors ride in the message as a "Focus" prefix (persists via transcript replay across the tool loop).
+    // optimistic = the full sent message so the echo matches the stored 'user' step and clears cleanly.
+    const full = focusPrefix + t;
+    setOptimistic(full);
     try {
-      await sendAgentMessage(bookId, t, analysis, effort, auto);
+      await sendAgentMessage(bookId, full, analysis, effort, auto);
       refetch();
     } catch (e) {
       setOptimistic(null);
@@ -285,6 +304,23 @@ export function AgentRail({ bookId, nodes, settings }: { bookId: number; nodes: 
           </button>
         )}
       </div>
+
+      {/* Context tray (slice 2) — the DNA nodes the author attached as anchors. Add from a node's kebab in
+          the tree; remove here. On send they become a "Focus" prefix on the message. */}
+      {attached.length > 0 && (
+        <div className="mt-2.5 flex shrink-0 flex-wrap items-center gap-1.5">
+          <span className="pv-mono text-[9.5px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-faint))]">focus</span>
+          {attached.map((n) => (
+            <span key={n.id} title={nodeLabel(n)}
+              className="inline-flex items-center gap-1.5 rounded-full border border-[hsl(var(--pv-accent))]/40 bg-[hsl(var(--pv-accent))]/[0.06] py-0.5 pl-2 pr-1.5 pv-serif text-[12px] text-foreground">
+              <span className="pv-mono text-[9px] uppercase tracking-[0.08em] text-[hsl(var(--pv-accent))]">{n.kind}</span>
+              <span className="max-w-[150px] truncate">{nodeLabel(n)}</span>
+              <button type="button" onClick={() => onDetach?.(n.id)} title="remove from context"
+                className="text-[hsl(var(--pv-text-faint))] transition-colors hover:text-foreground"><X className="h-3 w-3" /></button>
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* Composer — or the answer card when the agent has asked a question */}
       <div className="mt-3 shrink-0">
