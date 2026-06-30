@@ -161,7 +161,7 @@ const NewBook = () => {
     setChoiceOpen(false);
     if (!intakeBookId) return;
     // Studio mode lands on the full-screen Studio route; manual mode lands on the book page.
-    navigate(`/books/${intakeBookId}${mode === "studio" ? "/studio" : ""}`);
+    navigate(`/books/${intakeBookId}${mode === "studio" ? "/dna" : ""}`);
   };
 
   // Dismissing the choice (Esc / overlay) still lands the author on the book — as if they chose manual.

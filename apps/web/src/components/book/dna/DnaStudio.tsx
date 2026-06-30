@@ -751,9 +751,9 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
 
       <div className="mx-2.5 my-3 mt-4 h-px bg-[hsl(var(--pv-border-soft))]" />
       <div className="flex flex-col items-start gap-2 px-2.5">
-        {/* The brief (genre/length/heat/audience — the binding mandate) lives in the Build Studio; the
+        {/* The brief (genre/length/heat/audience — the binding mandate) renders above the DNA tree; the
             concept there is the same idea this DNA tree elaborates. Jump out to edit it. */}
-        <ActionLink tone="muted" onClick={() => navigate(`/books/${bookSlug}/studio/brief`)}>edit brief →</ActionLink>
+        <ActionLink tone="muted" onClick={() => navigate(`/books/${bookSlug}/dna/tree`)}>edit brief →</ActionLink>
         {/* Output mode (prose vs picture book) now lives in the Visuals section, alongside the look. */}
         {nodes.length === 0 && <ActionLink busy={busy === "migrate"} onClick={migrate}>migrate from legacy</ActionLink>}
         {nodes.length > 0 && <ActionLink busy={busy === "render"} onClick={render} tone="faint">render pages →</ActionLink>}

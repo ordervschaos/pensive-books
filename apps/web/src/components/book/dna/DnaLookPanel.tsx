@@ -2,7 +2,7 @@
 // art_direction it sets is folded into EVERY scene illustration AND character portrait's STYLE line, so the
 // whole picture book reads as one book. Same books.foundations fields the Build Studio's Scene tab edits
 // (via useBookLook) — change it here or there, one source. Only mounted in picture mode.
-import { BookLookControls } from "@/components/book/studio/BookLookControls";
+import { BookLookControls } from "@/components/book/shared/BookLookControls";
 import { Eyebrow, Panel } from "@/components/book/shared/studioUi";
 import { useBookLook } from "@/hooks/useBookLook";
 

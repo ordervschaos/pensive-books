@@ -5,7 +5,10 @@ import { AlertTriangle, ArrowRight, Check, ChevronDown, ChevronUp, Loader2, Lock
 import { cn } from "@/lib/utils";
 import type { CellState } from "@/lib/planGraph";
 import { emitGenerate, type RevisionLayer } from "@/lib/revisionChat";
-import type { DotState } from "@/components/book/studio/studioModel";
+
+// The four visual states a step dot can show. Inlined here (was in the deleted studio/studioModel)
+// so this shared primitive carries no dependency on the old Studio surface.
+export type DotState = "done" | "active" | "ready" | "locked";
 
 // The center's empty-state CTA: a button that asks the always-on rail chat to GENERATE this layer.
 // The bulk/generate action lives in the chat (the rail watches revision_chats over Realtime); this is

@@ -278,7 +278,7 @@ function buildCrumb(pathname: string, bookName: string, pageName: string, interc
       </>
     );
   }
-  if (pathname.endsWith("/studio")) {
+  if (pathname.endsWith("/dna")) {
     const name = bookName || deslug(bookSlug);
     return (
       <>

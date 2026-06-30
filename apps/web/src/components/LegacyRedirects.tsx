@@ -17,10 +17,10 @@ export function LegacyRedirects() {
     return <Navigate to={`/books/${splitSlug[1]}${splitSlug[2]}${splitSlug[3] ?? ''}${search}${hash}`} replace />;
   }
 
-  // The Studio defines its own CRUD-compliant URL space (/books/:slug/studio/:step,
-  // /books/:slug/studio/page/:pageId). It is not a legacy surface — bail before the singular→plural
-  // rewrites below would mangle /studio/page/:id into a non-existent /studio/pages/:id (blank screen).
-  if (pathname.includes('/studio')) {
+  // The DNA studio defines its own CRUD-compliant URL space (/books/:slug/dna, /dna/tree/*, /dna/meters,
+  // /dna/ledger, /dna.json). It is not a legacy surface — bail before the singular→plural rewrites below
+  // could mangle any future /dna/.../page/... sub-route into a non-existent /pages/ path (blank screen).
+  if (pathname.includes('/dna')) {
     return null;
   }
 

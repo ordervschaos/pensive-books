@@ -20,7 +20,7 @@ import {
 import { availableCommands, matchCommands, type AgentCommand } from "@/lib/agentCommands";
 import { describeOps, nodeLabel, type NodeOp } from "@/lib/dnaChat";
 import { analysisText, byId, type BookSettings, type DnaNode, type NodeKind } from "@/lib/novelDna";
-import { useChatScroll } from "@/components/book/studio/useChatScroll";
+import { useChatScroll } from "@/components/book/shared/useChatScroll";
 import { useAutoAccept } from "@/hooks/useAutoAccept";
 import { ActionLink, Eyebrow, Panel, RunError } from "@/components/book/shared/studioUi";
 
