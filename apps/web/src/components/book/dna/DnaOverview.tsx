@@ -22,6 +22,7 @@ const KIND_STAGE: Record<NodeKind, StageKey> = {
   seed: "premise", premise: "premise",
   pillar: "foundations", character: "foundations", relationship: "foundations", tentpole: "foundations", world_fact: "foundations", location: "foundations", voice_profile: "foundations", game: "foundations",
   act: "structure", beat: "structure", thread: "structure",
+  meter: "foundations",
   scene: "scenes",
 };
 

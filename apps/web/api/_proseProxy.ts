@@ -43,7 +43,7 @@ async function verifyJwt(authToken: string): Promise<string> {
   if (!url || !anon) throw new ProxyError(500, "stream-prose proxy missing SUPABASE_URL / anon key");
   const r = await fetch(`${url}/auth/v1/user`, { headers: { apikey: anon, Authorization: `Bearer ${authToken}` } });
   if (!r.ok) throw new ProxyError(401, "invalid or expired session");
-  const u = await r.json().catch(() => ({} as { id?: string }));
+  const u = (await r.json().catch(() => ({}))) as { id?: string };
   return u?.id ?? "";
 }
 

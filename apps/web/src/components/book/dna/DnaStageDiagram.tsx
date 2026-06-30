@@ -65,13 +65,13 @@ function FoundationsDiagram() {
 
 // ── Structure: serial, budgeted acts with nested beats; threads/games span across ─
 function StructureDiagram({ nodes }: { nodes: DnaNode[] }) {
-  const acts = nodes.filter((n) => n.kind === "act");
+  const allActs = nodes.filter((n) => n.kind === "act");
   const beatsOf = (m: DnaNode) => nodes.filter((n) => n.kind === "beat" && n.parent_id === m.id).length;
   const games = nodes.filter((n) => n.kind === "game").length;
   const threads = nodes.filter((n) => n.kind === "thread").length;
 
   // Act widths from target_pct (the budget); fall back to equal blocks for an empty/conceptual tree.
-  const acts = acts.length ? acts : null;
+  const acts = allActs.length ? allActs : null;
   const raw = acts ? acts.map((m) => (m.content as ActContent).target_pct ?? 0) : [0.3, 0.45, 0.25];
   const sum = raw.reduce((a, b) => a + b, 0);
   const widths = sum > 0 ? raw.map((p) => p / sum) : raw.map(() => 1 / raw.length);
