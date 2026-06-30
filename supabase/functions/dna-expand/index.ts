@@ -10,7 +10,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { callClaude, textFromClaude, type CallMeta } from "../_shared/claude.ts";
-import { getActiveModels } from "../_shared/model-config.ts";
+import { getActiveModels, DIGEST_MODEL } from "../_shared/model-config.ts";
 import { extractJsonBlock } from "../_shared/json.ts";
 import { type Brief, briefContext, mandateContext } from "../_shared/brief.ts";
 import { isChainCall } from "../_shared/self-chain.ts";
@@ -20,8 +20,16 @@ import { serviceClient } from "../_shared/task.ts";
 // covering all prosed pages UP TO AND INCLUDING this one; src_hash = this page's prose; prev_hash chains to
 // the accumulator it was folded onto (so editing any earlier page invalidates the whole suffix).
 interface DigestLedger { characters?: string[]; objects?: string[]; locations?: string[]; timeline?: string; open_threads?: string[] }
-interface DigestAccum { pages: string[]; ledger: DigestLedger }
-interface DigestLink { value: DigestAccum; src_hash: string; prev_hash: string }
+// A reader's takeaway from the story so far: what actually LANDED, with a memory weight (1–5). Models the
+// experiential read — not every fact, but the things a reader would carry forward and feel. Recurring or
+// emotionally charged notes accumulate weight; the next page's writer sees the highest-weight ones so the
+// prose stays loyal to what resonates, not just to what's literally true. See docs/true-agent.md.
+interface DigestImpression { note: string; weight: number }
+interface DigestAccum { pages: string[]; ledger: DigestLedger; impressions?: DigestImpression[] }
+// `v` bumps when the accumulator shape or the digest model/prompt changes — an older `v` invalidates the
+// whole cached chain (we re-fold rather than trust a digest built by a weaker model or an older schema).
+const DIGEST_VERSION = 2;
+interface DigestLink { v?: number; value: DigestAccum; src_hash: string; prev_hash: string }
 interface Node { id: string; parent_id: string | null; kind: string; position?: number; content: Record<string, unknown>; authoring: { locked?: boolean; status?: string; prose_digest?: DigestLink } }
 interface NodeTypeConfig { target: string; child_kind: string; child_level: number; parent_kind: string; role: string; count: string; schema_json: string; slots: SlotConfig }
 interface SlotConfig { voice?: boolean; entities?: boolean; threads?: boolean; tentpoles?: boolean; worldRules?: boolean; games?: boolean; preconditions?: boolean; arc?: boolean; priorScenes?: boolean }
@@ -105,13 +113,22 @@ function formatLedger(L: DigestLedger): string {
     L.open_threads?.length ? `Open threads:\n${L.open_threads.map((t) => `  • ${t}`).join("\n")}` : "",
   ].filter(Boolean).join("\n");
 }
-// Fold ONE page into the running digest: the model sees only the cumulative ledger (bounded) + this one
-// page, NOT the whole book. It writes this page's recap line (appended in code) and reconciles the ledger
-// (carry forward, update statuses, close paid-off threads, advance the timeline). This is the O(1)-per-page
-// step that replaces re-summarizing every prior page on every generation.
+// Render the carried impressions as the reader's running memory — highest weight first, so the model (and
+// the downstream prose writer) see what resonates most.
+function formatImpressions(imps: DigestImpression[] | undefined): string {
+  if (!imps?.length) return "";
+  return [...imps].sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0)).map((i) => `  • [${i.weight}] ${i.note}`).join("\n");
+}
+// Fold ONE page into the running digest: the model sees only the cumulative state (bounded) + this one
+// page, NOT the whole book. It writes this page's recap line (appended in code), reconciles the ledger
+// (carry forward, update statuses, close paid-off threads, advance the timeline), and maintains the
+// reader's running IMPRESSIONS (what landed, with a memory weight). O(1)-per-page; replaces re-summarizing
+// every prior page on every generation.
 async function foldDigest(apiKey: string, model: string, prior: DigestAccum, pageText: string, meta: CallMeta): Promise<DigestAccum> {
-  const stateSoFar = prior.pages.length ? (formatLedger(prior.ledger) || "(no ledger yet)") : "(this is the first page — no prior state)";
-  const dprompt = `You are maintaining a running CONTINUITY DIGEST of a novel-in-progress, one page at a time. You are given the STORY STATE so far (a cumulative continuity ledger) and the NEXT page's prose. Update the state to INCLUDE this page. Output STRICT JSON only:
+  const first = !prior.pages.length;
+  const ledgerSoFar = first ? "(this is the first page — no prior state)" : (formatLedger(prior.ledger) || "(no ledger yet)");
+  const impressionsSoFar = first ? "(none yet)" : (formatImpressions(prior.impressions) || "(none yet)");
+  const dprompt = `You are maintaining a running CONTINUITY DIGEST of a novel-in-progress, one page at a time. You are given the STORY STATE so far (a cumulative continuity ledger + the reader's running impressions) and the NEXT page's prose. Read the page CLOSELY, then update the state to INCLUDE it. Output STRICT JSON only:
 {
   "page": "<one tight line for THIS page: POV + location/time, the value-shift, the key facts ESTABLISHED, and the closing image>",
   "ledger": {
@@ -120,18 +137,31 @@ async function foldDigest(apiKey: string, model: string, prior: DigestAccum, pag
     "locations": ["<place — what's there>"],
     "timeline": "<elapsed time / current point in the story>",
     "open_threads": ["<promise opened but not yet paid — its state>"]
-  }
+  },
+  "impressions": [{ "note": "<a thing a reader actually TAKES AWAY and remembers from the story so far — an image, a feeling, a turn, a line that lands, a dawning realization>", "weight": <integer 1-5> }]
 }
-The ledger is CUMULATIVE state, not just this page: carry forward everything still true, UPDATE what changed, CLOSE threads this page paid off, and ADVANCE the timeline. No prose, no preamble — JSON only.
 
-STORY STATE SO FAR:
-${stateSoFar}
+READING DISCIPLINE — get this right; downstream prose trusts this digest as authoritative:
+- A label, title, number, or form of address (e.g. "Lot Seven", "the prisoner", "girl", "your highness") usually REFERS TO an existing character — most often the POV character — it is NOT automatically a new person. Before adding anyone to "characters" or a meeting/thread to "open_threads", decide WHO the label points to from the prose. Do not invent a character or a thread from a designation. (If the POV character is being auctioned and the guards call her "Lot Seven," then she IS Lot Seven — there is no separate person and no "upcoming meeting with Lot Seven.")
+- Resolve pronouns and epithets to the character they denote; merge, never duplicate.
+
+The ledger is CUMULATIVE state: carry forward everything still true, UPDATE what changed, CLOSE threads this page paid off, and ADVANCE the timeline.
+The impressions are the reader's MEMORY of the read so far — not every fact, but what resonates. CARRY the prior impressions forward; RAISE the weight of any that this page reinforces or pays off (a recurring motif, a deepening dread, a promise kept); ADD what this page newly makes a reader feel or notice. Weight: 5 = central / emotionally charged / unforgettable; 1 = minor. Keep the list tight (≈8 strongest); drop the weakest if it grows past that. No prose, no preamble — JSON only.
+
+CONTINUITY LEDGER SO FAR:
+${ledgerSoFar}
+
+READER'S IMPRESSIONS SO FAR (weight in brackets):
+${impressionsSoFar}
 
 THIS PAGE:
 ${pageText}`;
-  const data = await callClaude(apiKey, { model, max_tokens: 2000, messages: [{ role: "user", content: dprompt }] }, { ...meta, fn: "dna-expand-digest" });
-  const p = JSON.parse(extractJsonBlock(textFromClaude(data))) as { page?: string; ledger?: DigestLedger };
-  return { pages: [...prior.pages, (p.page ?? "").trim()].filter(Boolean), ledger: p.ledger ?? prior.ledger };
+  const data = await callClaude(apiKey, { model, max_tokens: 2500, messages: [{ role: "user", content: dprompt }] }, { ...meta, fn: "dna-expand-digest" });
+  const p = JSON.parse(extractJsonBlock(textFromClaude(data))) as { page?: string; ledger?: DigestLedger; impressions?: DigestImpression[] };
+  const impressions = Array.isArray(p.impressions)
+    ? p.impressions.filter((i) => i && typeof i.note === "string" && i.note.trim()).map((i) => ({ note: i.note.trim(), weight: Math.max(1, Math.min(5, Math.round(Number(i.weight) || 1))) }))
+    : prior.impressions;
+  return { pages: [...prior.pages, (p.page ?? "").trim()].filter(Boolean), ledger: p.ledger ?? prior.ledger, impressions };
 }
 // Persist refreshed cache links back to the nodes (service client — this is a server-side optimization that
 // must work whether the caller was a user or a trusted chain call). Idempotent: same prose → same link.
@@ -162,16 +192,17 @@ async function buildProseDigest(apiKey: string, model: string, allNodes: Node[],
     const srcHash = fnv1a(txt);
     const prevHash = fnv1a(JSON.stringify(accum));
     const cached = page.authoring?.prose_digest;
-    if (cached && cached.src_hash === srcHash && cached.prev_hash === prevHash) { accum = cached.value; continue; }
+    if (cached && cached.v === DIGEST_VERSION && cached.src_hash === srcHash && cached.prev_hash === prevHash) { accum = cached.value; continue; }
     try {
       accum = await foldDigest(apiKey, model, accum, txt, meta);
-      page.authoring = { ...page.authoring, prose_digest: { value: accum, src_hash: srcHash, prev_hash: prevHash } };
+      page.authoring = { ...page.authoring, prose_digest: { v: DIGEST_VERSION, value: accum, src_hash: srcHash, prev_hash: prevHash } };
       refreshed.push({ id: page.id, authoring: page.authoring });
     } catch { /* degrade gracefully: skip this page's fold; blocklist + previous page still carry continuity */ }
   }
   if (refreshed.length) await persistDigestLinks(bookId, refreshed);
   const storySoFar = accum.pages.map((x, i) => `- Page ${i + 1}: ${x}`).join("\n");
   const ledger = formatLedger(accum.ledger);
+  const impressions = formatImpressions(accum.impressions);
   // v2: blocklist covers ALL prior pages INCLUDING the previous one (its verbatim text was the top echo source).
   const allPriorText = priorProsed.map(proseText).join("\n");
   const blocklist = distinctivePhrases(allPriorText);
@@ -180,6 +211,7 @@ async function buildProseDigest(apiKey: string, model: string, allNodes: Node[],
     "PRECEDING CONTEXT — an efficient digest of the pages so far. Treat it as authoritative continuity; maintain the established voice and do NOT reuse any phrase or dialogue line listed below:",
     storySoFar && `<story_so_far>\n${storySoFar}\n</story_so_far>`,
     ledger && `<continuity_ledger>\n${ledger}\n</continuity_ledger>`,
+    impressions && `<reader_impressions note="what has LANDED for the reader so far, strongest first (memory weight 1-5) — stay loyal to these; pay them off, deepen them, don't contradict what already resonates">\n${impressions}\n</reader_impressions>`,
     blocklist.length && `<avoid_repeating>\n${blocklist.map((p) => `- ${p}`).join("\n")}\n</avoid_repeating>`,
     dialogue.length && `<avoid_repeating_dialogue note="these exact lines have already been spoken — do NOT reuse them verbatim or near-verbatim in this scene">\n${dialogue.map((d) => `- ${d}`).join("\n")}\n</avoid_repeating_dialogue>`,
     `<previous_page note="for voice + cadence ONLY — do NOT copy or echo its opening image, its closing image, its character gestures, or any of its phrases; this new scene must open in a DIFFERENT place, time, or emotional register than where this page opens or closes">\n${proseText(last)}\n</previous_page>`,
@@ -235,17 +267,17 @@ Deno.serve(async (req: Request) => {
         entities.filter((e) => e.kind === "world_fact").map((w) => `\n- WORLD: ${(w.content as { rule?: string }).rule ?? ""}`).join("")
       : "";
     // The promise registry + the arc — fed so beats/scenes anchor real threads (by name) and threads
-    // generation can place payoffs across the whole movement sequence (schema §4.5/§6).
+    // generation can place payoffs across the whole act sequence (schema §4.5/§6).
     const threads = pillar ? nodes.filter((n) => n.parent_id === pillar.id && n.kind === "thread") : [];
     const tName = (e: Node) => String((e.content as { name?: string }).name ?? "").trim();
     const threadBlock = threads.length
       ? "THREADS — the promise registry (reference BY NAME):\n" +
         threads.map((t) => `- ${tName(t)}: ${(t.content as { promise?: string }).promise ?? ""} → ${(t.content as { payoff?: string }).payoff ?? ""}`).join("\n")
       : "";
-    const movements = pillar ? nodes.filter((n) => n.parent_id === pillar.id && n.kind === "movement").sort((a, b) => (a.position ?? 0) - (b.position ?? 0)) : [];
-    const movementBlock = movements.length
-      ? "THE ARC (movements in order — place promises across these):\n" +
-        movements.map((m) => `- [${(m.content as { title?: string }).title ?? ""}] turn: ${(m.content as { turning_point?: string }).turning_point ?? ""}`).join("\n")
+    const acts = pillar ? nodes.filter((n) => n.parent_id === pillar.id && n.kind === "act").sort((a, b) => (a.position ?? 0) - (b.position ?? 0)) : [];
+    const actBlock = acts.length
+      ? "THE ARC (acts in order — place promises across these):\n" +
+        acts.map((m) => `- [${(m.content as { title?: string }).title ?? ""}] turn: ${(m.content as { turning_point?: string }).turning_point ?? ""}`).join("\n")
       : "";
     // The tentpole registry — set-pieces the beat sheet must place (each pinned tentpole → a beat).
     const tentpoles = pillar ? nodes.filter((n) => n.parent_id === pillar.id && n.kind === "tentpole" && (n.authoring?.locked || n.authoring?.status === "accepted")) : [];
@@ -312,7 +344,7 @@ Deno.serve(async (req: Request) => {
     // PRIOR SCENES — structured continuity block for scene planning, mirroring what prose gen gets via the
     // digest: entry state (where the story stands NOW), polarity rhythm, used locations. Formatted with
     // instructive XML tags so the model understands HOW to use each piece, not just what's there.
-    const beatsInOrder = movements.flatMap((m) =>
+    const beatsInOrder = acts.flatMap((m) =>
       nodes.filter((n) => n.parent_id === m.id && n.kind === "beat").sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
     );
     const beatIdx = beatsInOrder.findIndex((b) => b.id === node.id);
@@ -374,33 +406,35 @@ Deno.serve(async (req: Request) => {
       ].join("\n");
     })();
 
-    const { high: model, low } = await getActiveModels();
+    const { high: model } = await getActiveModels();
     const meta: CallMeta = { fn: "dna-expand", bookId, userId };
-    // Prose → digest v2 (all-page continuity + anti-echo, built on the cheap `low` model); caption
-    // (picture mode) keeps the short last-3-verbatim window; everything else needs no prose context.
+    // Prose → digest v2 (all-page continuity + anti-echo). The per-page fold runs on DIGEST_MODEL (qwen-plus,
+    // a reasoning model) — NOT the cheap `low` model: the digest is read-comprehension that downstream prose
+    // trusts as authoritative, so a weak model's misreadings poison every later page. Caption (picture mode)
+    // keeps the short last-3-verbatim window; everything else needs no prose context.
     // `light` skips the all-page continuity digest (a separate, slow Claude call) — used by the editor
     // agent's render_scene_prose so a single render fits inside one worker's wall-clock. Trades cross-scene
     // anti-repetition polish for speed; fine for a draft-to-check, not for the canonical book build.
     const prevProseBlock = light ? ""
       : (target === "prose" || (!target && node.kind === "scene"))
-      ? await buildProseDigest(apiKey, low, nodes, nodeId, bookId, meta)
+      ? await buildProseDigest(apiKey, DIGEST_MODEL, nodes, nodeId, bookId, meta)
       : target === "caption"
         ? buildPrevProseBlock(nodes, nodeId)
         : "";
-    // Beat neighbourhood — the sibling beats of the scene's parent beat, in movement order.
-    // Prose generation only sees its direct ancestor chain (parent beat + movement + …), so it never
+    // Beat neighbourhood — the sibling beats of the scene's parent beat, in act order.
+    // Prose generation only sees its direct ancestor chain (parent beat + act + …), so it never
     // knows what specific facts (names, numbers, objects) are established in adjacent beats. That gap
     // causes contradictions: prose invents "Lot 7" while the next beat's plan says "Lot 27". Feeding
-    // the full beat list of the parent movement gives prose a view of the surrounding plan, so it
+    // the full beat list of the parent act gives prose a view of the surrounding plan, so it
     // can honour the specifics those beats have already committed to.
     const beatNeighbourhoodBlock = (() => {
       if (node.kind !== "scene") return "";
       const parentBeat = node.parent_id ? byId.get(node.parent_id) : undefined;
       if (!parentBeat || parentBeat.kind !== "beat") return "";
-      const movementId = parentBeat.parent_id;
-      if (!movementId) return "";
+      const actId = parentBeat.parent_id;
+      if (!actId) return "";
       const siblingBeats = nodes
-        .filter((n) => n.parent_id === movementId && n.kind === "beat")
+        .filter((n) => n.parent_id === actId && n.kind === "beat")
         .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
       if (siblingBeats.length <= 1) return "";
       const lines = siblingBeats.map((b) => {
@@ -424,7 +458,7 @@ Deno.serve(async (req: Request) => {
       worldRulesBlock,
       gamesBlock,
       precondBlock, // [EXP:preconditions]
-      movementBlock,
+      actBlock,
       beatNeighbourhoodBlock, // sibling beats — keeps prose from contradicting plan-layer facts
       settingBlock, // this scene's resolved location palette (prose grounding)
       registerBlock, // this scene's voice modulation (anti-monotony) — bends the signature for this scene only
@@ -483,15 +517,15 @@ RULES:
     if (target === "beatsheet") {
       // GLOBAL beat-sheet pass (root fix): generate EVERY beat in one call with the whole arc + the thread
       // registry in view, so promises schedule setup→payoff in order and polarity is planned to oscillate.
-      // Returns a flat, movement-indexed list; the client persists it grouped under each movement.
-      if (!movements.length) return json({ error: "generate the movements before the beat sheet" }, 400);
+      // Returns a flat, act-indexed list; the client persists it grouped under each act.
+      if (!acts.length) return json({ error: "generate the acts before the beat sheet" }, 400);
       if (!threads.length) return json({ error: "generate the threads before the beat sheet" }, 400);
       const system = `You are a story architect writing the ENTIRE BOOK'S BEAT SHEET in ONE pass — every beat of every act at once, so you can see the whole sequence. Honor every LOCKED ancestor and the MANDATE verbatim. Rules:
-- 2 to 4 beats per movement; each beat links to the prior with "therefore" or "but" (escalating causality).
-- Set each beat's PLANNED polarity (up = ends better, down = ends worse). The movement's value shift is the MACRO trend; you MUST still OSCILLATE within it — never more than ~3 beats of the same polarity in a row. Place deliberate relief/hope-spots inside down-acts and setbacks inside up-acts.
+- 2 to 4 beats per act; each beat links to the prior with "therefore" or "but" (escalating causality).
+- Set each beat's PLANNED polarity (up = ends better, down = ends worse). The act's value shift is the MACRO trend; you MUST still OSCILLATE within it — never more than ~3 beats of the same polarity in a row. Place deliberate relief/hope-spots inside down-acts and setbacks inside up-acts.
 - Schedule the THREADS across the whole book: every promise must be SET UP (role:setup) in an EARLIER beat before it is PAID OFF (role:payoff) in a LATER beat; use "advance" for beats that develop it in between. Reference threads BY NAME.
 - CAUSE every turn: give each beat "needs" (state keys it DEPENDS ON, each one EARNED by an EARLIER beat — never an ambient world/premise given) and "establishes" (state keys it PRODUCES). Keys are short snake_case handles (e.g. "ledger_settled", "rival_humiliated", "peculium_revealed"). Every "therefore" beat MUST "need" at least one state an earlier beat "establishes" — that upstream dependency is what makes the turn CAUSED, not "and then". A "but" beat must either reverse the polarity or block/consume an established state.${tentpoles.length ? `\n- PLACE every TENTPOLE: assign each set-piece to the ONE beat that delivers it, in "realizes" (by its summary). Every tentpole listed must appear on exactly one beat.` : ""}${worldFacts.length ? `\n- GROUND the turns in the WORLD RULES: when a beat's turning point's outcome OPERATES ON a rule's mechanism, list that rule in "grounds_in" (by name). The CLIMAX / final resolution beat MUST ground its win in an established rule — the victory has to be MECHANICALLY EARNED by a rule the reader already knows, never deus ex machina. Plant the rule's setup in an earlier beat too.` : ""}${games.length ? `\n- PLAY the GAMES: each beat that advances a contest lists it in "plays" (by name). Each game MUST be RESOLVED — exactly one beat lists it in "resolves" with its outcome (won|lost), and the CENTRAL game resolves at the CLIMAX. A game's resolving beat should also ground_in the rule its win/lose fires.` : ""}${statePreconds.length ? `\n- ESTABLISH every STATE PRECONDITION: each game's win SPENDS resources/states (listed above). For each, an EARLIER beat must establish it (list its key in that beat's "establishes") BEFORE the beat that resolves the game — you cannot spend a resource the story never acquired (no "she had enough all along"). Make the establishing a real turn.` : ""}
-Output JSON ONLY: { "beats": [ { "movement": <1..${movements.length}>, "summary": "...", "connector": "therefore"|"but", "polarity": "up"|"down", "threads": [ { "ref": "<thread name>", "role": "setup"|"advance"|"payoff" } ]${tentpoles.length ? `, "realizes": [ "<tentpole summary>" ]` : ""}${worldFacts.length ? `, "grounds_in": [ "<world rule name>" ]` : ""}${games.length ? `, "plays": [ "<game name>" ], "resolves": [ { "ref": "<game name>", "outcome": "won|lost" } ]` : ""}, "needs": [ "<state key earned upstream>" ], "establishes": [ "<state key this beat produces>" ] } ] }`;
+Output JSON ONLY: { "beats": [ { "act": <1..${acts.length}>, "summary": "...", "connector": "therefore"|"but", "polarity": "up"|"down", "threads": [ { "ref": "<thread name>", "role": "setup"|"advance"|"payoff" } ]${tentpoles.length ? `, "realizes": [ "<tentpole summary>" ]` : ""}${worldFacts.length ? `, "grounds_in": [ "<world rule name>" ]` : ""}${games.length ? `, "plays": [ "<game name>" ], "resolves": [ { "ref": "<game name>", "outcome": "won|lost" } ]` : ""}, "needs": [ "<state key earned upstream>" ], "establishes": [ "<state key this beat produces>" ] } ] }`;
       const data = await callClaude(apiKey, { model, max_tokens: 8000, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
         messages: [{ role: "user", content: `${ctx}\n\nWrite the whole beat sheet. JSON only.` }] }, meta);
       const parsed = JSON.parse(extractJsonBlock(textFromClaude(data)));
@@ -502,12 +536,12 @@ Output JSON ONLY: { "beats": [ { "movement": <1..${movements.length}>, "summary"
       const gNameToId = new Map(games.map((g) => [gName(g).toLowerCase(), g.id]));
       const normKey = (s: unknown) => String(s ?? "").trim().toLowerCase().replace(/\s+/g, "_");
       const roles = new Set(["setup", "payoff", "advance"]);
-      // Resolve refs, clamp movement index, then ENFORCE setup→payoff order (drop orphan payoffs).
+      // Resolve refs, clamp act index, then ENFORCE setup→payoff order (drop orphan payoffs).
       const setUp = new Set<string>();
       const claimedTp = new Set<string>(); // a tentpole is realized by at most ONE beat (first claim wins)
       const resolvedG = new Set<string>(); // a game is resolved by at most ONE beat (first claim wins)
       const beats = rawBeats.map((b: Record<string, unknown>) => {
-        const mi = Math.min(Math.max(parseInt(String(b.movement ?? 1), 10) || 1, 1), movements.length) - 1;
+        const mi = Math.min(Math.max(parseInt(String(b.act ?? 1), 10) || 1, 1), acts.length) - 1;
         const refs = (Array.isArray(b.threads) ? b.threads as { ref?: string; role?: string }[] : [])
           .map((t) => ({ ref: tNameToId.get(String(t.ref ?? "").trim().toLowerCase()), role: t.role }))
           .filter((t): t is { ref: string; role: string } => !!t.ref && roles.has(String(t.role)));
@@ -536,9 +570,9 @@ Output JSON ONLY: { "beats": [ { "movement": <1..${movements.length}>, "summary"
         if (resolves.length) content.resolves = resolves;
         if (establishes.length) content.establishes = establishes;
         if (needs.length) content.needs = needs;
-        return { movement: mi, content };
+        return { act: mi, content };
       });
-      return json({ beatsheet: true, childKind: "beat", childLevel: 4, movementIds: movements.map((m) => m.id), beats });
+      return json({ beatsheet: true, childKind: "beat", childLevel: 4, actIds: acts.map((m) => m.id), beats });
     }
 
     // Generic DNA target: load config from node_type_configs, rebuild ctx with slot-filtered blocks.
@@ -564,7 +598,7 @@ Output JSON ONLY: { "beats": [ { "movement": <1..${movements.length}>, "summary"
       slots.worldRules ? worldRulesBlock : "",
       slots.games ? gamesBlock : "",
       slots.preconditions ? precondBlock : "", // [EXP:preconditions]
-      slots.arc ? movementBlock : "",
+      slots.arc ? actBlock : "",
       slots.priorScenes ? priorScenesBlock : "",
       `THIS NODE [${node.kind}]: ${JSON.stringify(node.content)}`,
     ].filter(Boolean).join("\n\n");

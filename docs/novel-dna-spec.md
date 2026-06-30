@@ -23,7 +23,7 @@ DNA TREE (authoring — the source of truth)            RENDER (reader-facing, d
 seed                                                   (no render)
  └ premise                                             (no render)
     └ pillar                                           (no render)
-       └ movement ×3–5                                 (no render — structural)
+       └ act ×3–5                                 (no render — structural)
            └ beat ×~3                                  (no render — causal skeleton)
                └ scene ×~3   ← leaf; owns its prose     scenes partition into CHAPTERS:
                   · plan: goal/conflict/outcome/shift    each chapter ──► [ section page (title)
@@ -31,7 +31,7 @@ seed                                                   (no render)
                                                          page_index, est_pages = derived
 ```
 
-- **Reading order** = depth-first leaf order of the tree (movements→beats→scenes).
+- **Reading order** = depth-first leaf order of the tree (acts→beats→scenes).
 - **Chapter** = a contiguous partition of that scene order (see §4). Pure derived grouping.
 - **Page** = a render unit produced by `reconcile()` (§8). Pure projection.
 - Nothing below "scene" is authored on a page; a page is *assembled* from scenes.
@@ -48,7 +48,7 @@ One shape at every level. Four verbs (§6) act on it identically.
   "book_id": 1169,
   "parent_id": "n_root",
   "level": 5,                     // 0..5 (entities sit on the pillar's branch, level 2-ish)
-  "kind": "scene",               // ladder: seed|premise|pillar|movement|beat|scene
+  "kind": "scene",               // ladder: seed|premise|pillar|act|beat|scene
                                   // entities (§3b): character|relationship|tentpole|world_fact
   "position": 2,                 // order among siblings
 
@@ -86,7 +86,7 @@ front-loaded onto L2 (the human core the AI can't guess) and tapers to "voice co
 | 0 | seed | `{ logline }` | give the idea, or pick a proposal |
 | 1 | premise | `{ genre[], tone[], dramatic_question, shape:{setup,turn1,turn2,turn3,resolution} }` | steer the turns + ending |
 | 2 | pillar | `{ controlling_idea, ending }` + a **cast/world branch** (§3b) | **supply wound + lie** (on the protagonist character node) |
-| 3 | movement | `{ goal, turning_point, value }` (×3–5) | place the turning points |
+| 3 | act | `{ goal, turning_point, value }` (×3–5) | place the turning points |
 | 4 | beat | `{ summary, connector:"therefore"\|"but", threads:[{promise,kind}] }` | which promises matter |
 | 5 | scene | `{ pov, loc, present[], goal, conflict, outcome, value_shift, advances[], realizes_tentpole?, prose:{ text, src_hash } }` | tweak shifts / order; voice |
 
@@ -109,7 +109,7 @@ Foundations is **not a rung.** Its content splits two ways: *ladder content* tha
 distinct from the narrative spine:
 
 ```
-pillar ──┬── (narrative spine)  movement → beat → scene
+pillar ──┬── (narrative spine)  act → beat → scene
          └── (cast & world)     character ×N · relationship ×N · tentpole ×N · world_fact ×N
 ```
 
@@ -168,7 +168,7 @@ create table public.book_nodes (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint book_nodes_kind_chk check (kind in (
-    'seed','premise','pillar','movement','beat','scene',        -- ladder
+    'seed','premise','pillar','act','beat','scene',        -- ladder
     'character','relationship','tentpole','world_fact'))        -- entities (§3b)
 );
 create index book_nodes_book_idx   on public.book_nodes (book_id);
@@ -237,7 +237,7 @@ regen(n): if n.locked: return                     // STOP — protected subtree
 - `expand(n)` allowed only if `parent.status == "accepted"` (enforces ladder order / progressive disclosure).
 - Every L4 `thread.promise` resolves to a later scene that `advances`/closes it (setup index < payoff index).
 - Every L5 scene has a non-empty `value_shift` (no flat "and-then" scenes).
-- Every non-first beat in a movement has `connector ∈ {therefore, but}`.
+- Every non-first beat in a act has `connector ∈ {therefore, but}`.
 - A regenerate sweep never mutates a `locked` node.
 - After any edit, show the newly-stale count **before** regenerating (visible blast radius).
 
@@ -249,7 +249,7 @@ Generalizes the `structure-as-render` reconcile from scene→page to **chapter�
 incremental (only changed rows write), non-destructive (archive, never delete).
 
 ```
-scenes  = DFS leaf order of the tree (movements→beats→scenes)
+scenes  = DFS leaf order of the tree (acts→beats→scenes)
 chapters = partition scenes by chapter_start boundaries (§4)
 for each chapter (in order):
   ensure SECTION page  (node_id = chapter.boundarySceneId)  title = chapter.title
@@ -275,7 +275,7 @@ Tractable because the backfill already stamped `pages.metadata.node_id`, so page
 |---|---|
 | `books.brief` | `seed` (logline) + `premise` (genre/tone/dramatic_question/shape) |
 | `books.foundations` | `pillar` (cast→protagonist want/need/wound/lie/truth; world→world_rules; argument→controlling_idea); pins → `authoring.locked`; voice → book-level |
-| `books.spine` | `premise.shape` + `movement.turning_point`s |
+| `books.spine` | `premise.shape` + `act.turning_point`s |
 | `books.outline.nodes` | `section`→`scene.chapter_start`; `scene`→`scene` (objective→goal/summary, `pages.metadata.beat`→a `beat` parent or scene plan) |
 | `pages.content` | `scene.content.prose.text` (via `pages.metadata.node_id`) |
 
@@ -295,7 +295,7 @@ test dupe) end-to-end before touching live books.
    incremental + idempotent (keyed on `metadata.node_id="ch:…"`). Pure `renderPages` in `novelDna.ts`,
    tested.
 3. ✅ **Migration (done).** `lib/migrateToDna.ts`: pure `buildDnaFromStack` (brief/foundations/spine/
-   pages → tree; pins→locks; legacy pov-name→char id; one movement, a beat per chapter, scene per text
+   pages → tree; pins→locks; legacy pov-name→char id; one act, a beat per chapter, scene per text
    page; prose carried) + `migrateBookToDna` (load+rebuild+save). Tested; data shapes validated against
    real books. Test book #1171 (full copy of #1150 with pages) ready.
 4. ✅ **UI (done).** `/books/:slug/dna` → `DnaStudioPage` + `DnaStudio` — one uniform `NodeCard`
@@ -304,7 +304,7 @@ test dupe) end-to-end before touching live books.
    = Phase 5.)
 5. ✅ **`expand` LLM (all rungs).** `dna-expand` edge fn (deployed) + bridge mirror + `lib/dnaExpand.ts`.
    **Default expand = ONE authoritative value, NOT 2–3 proposals** (author edits/regenerates/locks after).
-   Target-keyed: seed→premise, premise→pillar, pillar→{cast, world, acts}, movement→beats, beat→scenes,
+   Target-keyed: seed→premise, premise→pillar, pillar→{cast, world, acts}, act→beats, beat→scenes,
    scene→prose — so a **blank seed generates the whole book**. Locked ancestors + MANDATE in the prompt.
    UI: per-node "generate" verb(s) (a pillar offers cast/world/acts); single-child targets hide once made.
    Studio primitives. TODO: optional proposals path; full two-pane Navigator/Stage shell.

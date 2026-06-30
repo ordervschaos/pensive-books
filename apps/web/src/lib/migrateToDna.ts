@@ -84,20 +84,20 @@ export function buildDnaFromStack(bookId: number, input: MigrationInput): DnaNod
   const world = f?.world as WorldNode | undefined;
   (world?.rules ?? []).forEach((rule, i) => mk("world_fact", 2, pillar.id, { rule }, accepted(!!world?.pinned), 300 + i));
 
-  // ── Narrative spine: one movement; one beat per chapter; a scene per text page ──
-  const movement = mk("movement", 3, pillar.id, { title: "The Book" }, accepted(), 1000);
+  // ── Narrative spine: one act; one beat per chapter; a scene per text page ──
+  const act = mk("act", 3, pillar.id, { title: "The Book" }, accepted(), 1000);
   let beat: DnaNode | null = null;
   let pendingChapterTitle: string | null = null;
   let beatPos = 0, scenePos = 0;
   const ordered = [...pages].sort((a, b) => a.page_index - b.page_index);
   for (const p of ordered) {
     if (p.page_type === "section") {
-      beat = mk("beat", 4, movement.id, { summary: (p.title ?? "").trim() }, accepted(), beatPos++);
+      beat = mk("beat", 4, act.id, { summary: (p.title ?? "").trim() }, accepted(), beatPos++);
       pendingChapterTitle = (p.title ?? "").trim() || "Chapter";
       scenePos = 0;
       continue;
     }
-    if (!beat) { beat = mk("beat", 4, movement.id, { summary: "Opening" }, accepted(), beatPos++); }
+    if (!beat) { beat = mk("beat", 4, act.id, { summary: "Opening" }, accepted(), beatPos++); }
     const prose = extractProse(p.content);
     const povName = p.metadata?.pov?.trim().toLowerCase();
     const content: NodeContent = {

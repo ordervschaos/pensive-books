@@ -25,8 +25,8 @@ const mk = (kind: NodeKind, over: Partial<DnaNode> & { content?: Record<string, 
 describe("reading order + chapters", () => {
   it("scenesInOrder is the DFS leaf order of the spine, skipping entities", () => {
     const pillar = mk("pillar", { id: "p" });
-    const m1 = mk("movement", { id: "m1", parent_id: "p", position: 0 });
-    const m2 = mk("movement", { id: "m2", parent_id: "p", position: 1 });
+    const m1 = mk("act", { id: "m1", parent_id: "p", position: 0 });
+    const m2 = mk("act", { id: "m2", parent_id: "p", position: 1 });
     const b1 = mk("beat", { id: "b1", parent_id: "m1", position: 0 });
     const b2 = mk("beat", { id: "b2", parent_id: "m1", position: 1 });
     const b3 = mk("beat", { id: "b3", parent_id: "m2", position: 0 });
@@ -37,7 +37,7 @@ describe("reading order + chapters", () => {
   });
 
   it("chapters partition scenes by chapter_start, with an implicit opening", () => {
-    const m = mk("movement", { id: "m" });
+    const m = mk("act", { id: "m" });
     const s = (id: string, pos: number, cs?: unknown, words?: number) =>
       mk("scene", { id, parent_id: "m", position: pos, content: { chapter_start: cs ?? null, prose: { words } } });
     const nodes = [m, s("s1", 0, undefined, 100), s("s2", 1, undefined, 100), s("s3", 2, { title: "Two" }, 300), s("s4", 3, undefined, 60)];
@@ -52,7 +52,7 @@ describe("reading order + chapters", () => {
 
 describe("render projection (chapter → section + text page)", () => {
   it("emits a section page and a text page (scenes' prose concatenated) per chapter", () => {
-    const m = mk("movement", { id: "m" });
+    const m = mk("act", { id: "m" });
     const b = mk("beat", { id: "b", parent_id: "m" });
     const s1 = mk("scene", { id: "s1", parent_id: "b", position: 0, content: { chapter_start: { title: "One" }, prose: { text: "Hello." } } });
     const s2 = mk("scene", { id: "s2", parent_id: "b", position: 1, content: { prose: { text: "World." } } });
@@ -67,7 +67,7 @@ describe("render projection (chapter → section + text page)", () => {
   });
 
   it("picture mode emits a section page + one image page per scene (illustration + caption)", () => {
-    const m = mk("movement", { id: "m" });
+    const m = mk("act", { id: "m" });
     const b = mk("beat", { id: "b", parent_id: "m" });
     const s1 = mk("scene", { id: "s1", parent_id: "b", position: 0, content: { chapter_start: { title: "One" }, image_url: "u1", caption: { text: "She walked in." } } });
     const s2 = mk("scene", { id: "s2", parent_id: "b", position: 1, content: { image_url: "u2", caption: { text: "And out." } } });
@@ -207,7 +207,7 @@ describe("pure edits", () => {
 describe("blast radius", () => {
   it("counts the unlocked subtree, stopping cold at any lock", () => {
     const pillar = mk("pillar", { id: "p" });
-    const m = mk("movement", { id: "m", parent_id: "p" });
+    const m = mk("act", { id: "m", parent_id: "p" });
     const b1 = mk("beat", { id: "b1", parent_id: "m" });
     const b2 = mk("beat", { id: "b2", parent_id: "m", authoring: { source: "user", locked: true, status: "accepted" } });
     const s1 = mk("scene", { id: "s1", parent_id: "b1" });
@@ -227,7 +227,7 @@ describe("blast radius", () => {
 
 describe("validation", () => {
   it("flags flat scenes, missing beat connectors, unplaced pinned tentpoles, and dangling refs", () => {
-    const m = mk("movement", { id: "m" });
+    const m = mk("act", { id: "m" });
     const b1 = mk("beat", { id: "b1", parent_id: "m", position: 0, content: { summary: "open" } });
     const b2 = mk("beat", { id: "b2", parent_id: "m", position: 1, content: { summary: "next" } }); // no connector
     const flat = mk("scene", { id: "s1", parent_id: "b1", content: { goal: "g", outcome: "o" } }); // no value_shift
@@ -259,13 +259,13 @@ describe("validation", () => {
     const premise = mk("premise", { id: "prem", parent_id: "seed" });
     const pillar = mk("pillar", { id: "p", parent_id: "prem" });
     const ch = mk("character", { id: "c", parent_id: "p", content: { name: "Finn" } });
-    const mv = mk("movement", { id: "m", parent_id: "p" });
+    const mv = mk("act", { id: "m", parent_id: "p" });
     const structural = new Set(["misparented", "orphan", "duplicate_singleton"]);
     expect(validate([seed, premise, pillar, ch, mv]).filter((i) => structural.has(i.rule))).toHaveLength(0);
   });
 
   it("a well-formed beat chain and placed tentpole produce no errors", () => {
-    const m = mk("movement", { id: "m" });
+    const m = mk("act", { id: "m" });
     const b1 = mk("beat", { id: "b1", parent_id: "m", position: 0, content: { summary: "a" } });
     const b2 = mk("beat", { id: "b2", parent_id: "m", position: 1, content: { summary: "b", connector: "therefore" } });
     const tent = mk("tentpole", { id: "t", authoring: { source: "user", locked: true, status: "accepted" } });
@@ -277,7 +277,7 @@ describe("validation", () => {
 describe("render completeness", () => {
   const settings = { title: "Book", author: "Me", word_target: 50000 };
   it("blocks on missing settings and unwritten scenes; clears when all scenes have accepted prose", () => {
-    const m = mk("movement", { id: "m" });
+    const m = mk("act", { id: "m" });
     const b = mk("beat", { id: "b", parent_id: "m" });
     const planned = mk("scene", { id: "s", parent_id: "b", content: { goal: "g" } }); // no prose
     expect(renderBlockers([m, b, planned], settings)).toContain("1 scene(s) without accepted prose");
@@ -298,9 +298,9 @@ describe("inputHash determinism", () => {
 });
 
 // ── The three analytic axes (schema §6) ────────────────────────────────────────
-// A reusable spine: pillar → movement → beat → scenes s1..s4 in reading order.
+// A reusable spine: pillar → act → beat → scenes s1..s4 in reading order.
 const spine = (sceneContent: Record<string, unknown>[], extra: DnaNode[] = []): DnaNode[] => {
-  const m = mk("movement", { id: "m", parent_id: "p", position: 0 });
+  const m = mk("act", { id: "m", parent_id: "p", position: 0 });
   const b = mk("beat", { id: "b", parent_id: "m", position: 0 });
   const scenes = sceneContent.map((c, i) => mk("scene", { id: `s${i + 1}`, parent_id: "b", position: i, content: c }));
   return [m, b, ...scenes, ...extra];
@@ -363,7 +363,7 @@ describe("global beat-sheet guarantee (enforcePromiseSchedule)", () => {
     // Realize the cleaned beat threads onto scenes and confirm the promise axis is clean.
     const raw = [{ threads: [t("a", "setup")] }, { threads: [t("b", "payoff")] }, { threads: [t("a", "payoff")] }];
     const { items } = enforcePromiseSchedule(raw);
-    const m = mk("movement", { id: "m" });
+    const m = mk("act", { id: "m" });
     const b = mk("beat", { id: "b", parent_id: "m" });
     const tA = mk("thread", { id: "a" }); const tB = mk("thread", { id: "b" });
     const scenes = items.map((it, i) => mk("scene", { id: `s${i}`, parent_id: "b", position: i, content: { value_shift: vs("up"), threads: it.threads } }));
@@ -376,7 +376,7 @@ describe("global beat-sheet guarantee (enforcePromiseSchedule)", () => {
 describe("promise ledger + analysis text (the UI/chat surfacing)", () => {
   const t = (ref: string, role: ThreadRef["role"]): ThreadRef => ({ ref, role });
   const build = () => {
-    const m = mk("movement", { id: "m", content: { title: "Act I", target_pct: 0.25 } });
+    const m = mk("act", { id: "m", content: { title: "Act I", target_pct: 0.25 } });
     const b = mk("beat", { id: "b", parent_id: "m" });
     const th1 = mk("thread", { id: "th1", content: { name: "the gun", promise: "a planted gun" } });
     const th2 = mk("thread", { id: "th2", content: { name: "the letter", promise: "an unsent letter" } });
@@ -406,7 +406,7 @@ describe("game pillar — the possibility space (single game is valid; coupling 
   const single = () => {
     const pillar = mk("pillar", { id: "p" });
     const game = mk("game", { id: "g", parent_id: "p", content: { name: "the contract", win_condition: "self-redemption → free", lose_condition: "delivered to the rival → owned", governing_rules: ["w1"] } });
-    const m = mk("movement", { id: "m", parent_id: "p" });
+    const m = mk("act", { id: "m", parent_id: "p" });
     const b1 = mk("beat", { id: "b1", parent_id: "m", position: 0, content: { plays: ["g"] } });
     const b2 = mk("beat", { id: "b2", parent_id: "m", position: 1, content: { connector: "therefore", plays: ["g"], resolves: [{ ref: "g", outcome: "won" }] } });
     return [pillar, wf(), game, m, b1, b2];
@@ -422,7 +422,7 @@ describe("game pillar — the possibility space (single game is valid; coupling 
   it("flags a half-open game (a win you can't lose) and a played-but-unresolved game", () => {
     const pillar = mk("pillar", { id: "p" });
     const halfopen = mk("game", { id: "g", parent_id: "p", content: { name: "g", win_condition: "win", governing_rules: ["w1"] } }); // no lose_condition
-    const m = mk("movement", { id: "m", parent_id: "p" });
+    const m = mk("act", { id: "m", parent_id: "p" });
     const b = mk("beat", { id: "b", parent_id: "m", content: { plays: ["g"] } }); // played, never resolved
     const rules = validate([pillar, wf(), halfopen, m, b]).map((i) => i.rule);
     expect(rules).toContain("halfopen_game");
@@ -453,7 +453,7 @@ describe("game pillar — the possibility space (single game is valid; coupling 
     const pillar = mk("pillar", { id: "p" });
     const wf = mk("world_fact", { id: "w1", content: { name: "redemption", mechanism: "pay → free" } });
     const game = mk("game", { id: "g", parent_id: "p", content: { name: "redemption", win_condition: "pay from fund", lose_condition: "stay owned", governing_rules: ["w1"], win_requires: [{ type: "rule", what: "redemption frees" }, { type: "state", what: "fund ≥ price", key: "fund_sufficient" }] } });
-    const m = mk("movement", { id: "m", parent_id: "p" });
+    const m = mk("act", { id: "m", parent_id: "p" });
     const b1 = mk("beat", { id: "b1", parent_id: "m", position: 0, content: { plays: ["g"] } });
     const b2 = mk("beat", { id: "b2", parent_id: "m", position: 1, content: { plays: ["g"], resolves: [{ ref: "g", outcome: "won" }] } });
     // resolving beat spends "fund_sufficient" but nothing established it → illegal_resolution
@@ -472,13 +472,13 @@ describe("climax grounding (the win must fire a world rule)", () => {
   const scene = (id: string, pos: number, grounds?: string[]) => mk("scene", { id, parent_id: "b", position: pos, content: { value_shift: vs("up"), grounds_in: grounds } });
 
   it("flags an ungrounded resolution scene when the world has rules", () => {
-    const m = mk("movement", { id: "m" }); const b = mk("beat", { id: "b", parent_id: "m" });
+    const m = mk("act", { id: "m" }); const b = mk("beat", { id: "b", parent_id: "m" });
     const nodes = [m, b, wf("w1"), scene("s1", 0, ["w1"]), scene("s2", 1)]; // last scene grounds in nothing
     expect(validate(nodes).map((i) => i.rule)).toContain("ungrounded_climax");
   });
 
   it("a grounded resolution passes, and editing the rule marks the scene stale", () => {
-    const m = mk("movement", { id: "m" }); const b = mk("beat", { id: "b", parent_id: "m" });
+    const m = mk("act", { id: "m" }); const b = mk("beat", { id: "b", parent_id: "m" });
     const rule = wf("w1");
     let s = scene("s1", 0, ["w1"]);
     const nodes = [m, b, rule, s];
@@ -490,16 +490,16 @@ describe("climax grounding (the win must fire a world rule)", () => {
   });
 
   it("no grounding lint when the world has no rules", () => {
-    const m = mk("movement", { id: "m" }); const b = mk("beat", { id: "b", parent_id: "m" });
+    const m = mk("act", { id: "m" }); const b = mk("beat", { id: "b", parent_id: "m" });
     expect(validate([m, b, scene("s1", 0)]).map((i) => i.rule)).not.toContain("ungrounded_climax");
   });
 });
 
 describe("pacing axis (target_pct vs derived position)", () => {
-  it("derives each movement's turn-position from cumulative words and flags drift past tolerance", () => {
-    const m = mk("movement", { id: "m", parent_id: "p", position: 0, content: { target_pct: 0.25 } });
+  it("derives each act's turn-position from cumulative words and flags drift past tolerance", () => {
+    const m = mk("act", { id: "m", parent_id: "p", position: 0, content: { target_pct: 0.25 } });
     const b = mk("beat", { id: "b", parent_id: "m" });
-    // this single movement contains all scenes → its turn lands at 100%, far from a 25% target
+    // this single act contains all scenes → its turn lands at 100%, far from a 25% target
     const s1 = mk("scene", { id: "s1", parent_id: "b", position: 0, content: { value_shift: vs("up"), prose: { words: 500 } } });
     const s2 = mk("scene", { id: "s2", parent_id: "b", position: 1, content: { value_shift: vs("down"), prose: { words: 500 } } });
     const pts = pacing([m, b, s1, s2]);
@@ -509,7 +509,7 @@ describe("pacing axis (target_pct vs derived position)", () => {
   });
 
   it("no drift lint when target_pct is unset", () => {
-    const m = mk("movement", { id: "m", parent_id: "p" });
+    const m = mk("act", { id: "m", parent_id: "p" });
     const b = mk("beat", { id: "b", parent_id: "m" });
     const s = mk("scene", { id: "s", parent_id: "b", content: { value_shift: vs("up") } });
     expect(validate([m, b, s]).map((i) => i.rule)).not.toContain("pacing_drift");
@@ -530,9 +530,9 @@ describe("emotional-topography axis (value_shift polarity)", () => {
 });
 
 describe("causality axis (why — the causal spine)", () => {
-  // a movement with N beats carrying causal metadata (needs/establishes/connector/polarity)
+  // a act with N beats carrying causal metadata (needs/establishes/connector/polarity)
   const beatSpine = (beats: Record<string, unknown>[]): DnaNode[] => {
-    const m = mk("movement", { id: "m", parent_id: "p", position: 0 });
+    const m = mk("act", { id: "m", parent_id: "p", position: 0 });
     const bs = beats.map((c, i) => mk("beat", { id: `b${i}`, parent_id: "m", position: i, content: c }));
     return [m, ...bs];
   };
@@ -599,10 +599,10 @@ describe("causality axis (why — the causal spine)", () => {
 
 
 describe("meters axis (docs/novel-dna-meters.md)", () => {
-  // A small spine: pillar → one movement → N beats, each carrying a reading on meter "cm" (comedy).
+  // A small spine: pillar → one act → N beats, each carrying a reading on meter "cm" (comedy).
   const spine = (values: (number | null)[]) => {
     const pillar = mk("pillar", { id: "p" });
-    const mv = mk("movement", { id: "mv", parent_id: "p", position: 0 });
+    const mv = mk("act", { id: "mv", parent_id: "p", position: 0 });
     const beats = values.map((v, i) =>
       mk("beat", { id: `b${i}`, parent_id: "mv", position: i, content: v == null ? {} : { readings: [{ ref: "cm", value: v }] } }));
     return [pillar, mv, ...beats];
@@ -707,7 +707,7 @@ describe("meters axis (docs/novel-dna-meters.md)", () => {
   // A spine carrying BOTH planned readings and observed readings on "cm" per beat.
   const dualSpine = (planned: (number | null)[], observed: (number | null)[]) => {
     const pillar = mk("pillar", { id: "p" });
-    const mv = mk("movement", { id: "mv", parent_id: "p", position: 0 });
+    const mv = mk("act", { id: "mv", parent_id: "p", position: 0 });
     const beats = planned.map((v, i) => {
       const content: Record<string, unknown> = {};
       if (v != null) content.readings = [{ ref: "cm", value: v }];
@@ -746,7 +746,7 @@ describe("continuity ledger (the prefix-sum story-so-far)", () => {
     mk("scene", { id, parent_id: "b", position: pos, content: { ...(facts ? { observed_establishes: facts } : {}), ...over } });
   const ledgerSpine = (...scenes: DnaNode[]) => {
     const pillar = mk("pillar", { id: "p" });
-    const mv = mk("movement", { id: "mv", parent_id: "p", position: 0 });
+    const mv = mk("act", { id: "mv", parent_id: "p", position: 0 });
     const b = mk("beat", { id: "b", parent_id: "mv", position: 0 });
     return [pillar, mv, b, ...scenes];
   };
@@ -795,7 +795,7 @@ describe("continuity ledger (the prefix-sum story-so-far)", () => {
 
   it("a meter read on a beat (observed_readings) does not stale the scenes under it", () => {
     const pillar = mk("pillar", { id: "p" });
-    const mv = mk("movement", { id: "mv", parent_id: "p", position: 0 });
+    const mv = mk("act", { id: "mv", parent_id: "p", position: 0 });
     const b = mk("beat", { id: "b", parent_id: "mv", position: 0, content: { summary: "x" } });
     let s = mk("scene", { id: "s", parent_id: "b", position: 0, content: { goal: "g" } });
     s = stampInput(s, byId([pillar, mv, b, s]));

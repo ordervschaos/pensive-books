@@ -33,12 +33,12 @@ interface CharContent { name?: string; tag?: string; portraits?: string[] }
 
 const NODE_SELECT = "id, node_id, book_id, image_url, prompt, status, error, scene_spec, created_at";
 
-// Scenes in reading order: movements (by position) → their beats (by position) → their scenes (by position).
+// Scenes in reading order: acts (by position) → their beats (by position) → their scenes (by position).
 // Mirrors novelDna.scenesInOrder, minimally, so we can hand the renderer the PRIOR scenes for continuity.
 function scenesInOrder(nodes: Node[]): Node[] {
   const childrenOf = (pid: string) => nodes.filter((n) => n.parent_id === pid).sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
   const out: Node[] = [];
-  for (const m of nodes.filter((n) => n.kind === "movement").sort((a, b) => (a.position ?? 0) - (b.position ?? 0)))
+  for (const m of nodes.filter((n) => n.kind === "act").sort((a, b) => (a.position ?? 0) - (b.position ?? 0)))
     for (const b of childrenOf(m.id)) if (b.kind === "beat")
       for (const s of childrenOf(b.id)) if (s.kind === "scene") out.push(s);
   return out;

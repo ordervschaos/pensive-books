@@ -18,7 +18,7 @@ how to get the most out of it. Grounded in the actual engine (`supabase/function
   │   + settings)            │  injected into EVERY step below                              │
   │       │                  ▼                                                              │
   │       ▼  (refine raw idea → a real logline)                                             │
-  │  seed (logline) → premise → pillar ──┬── (spine)  movement → [THREADS] → [GAMES] →      │
+  │  seed (logline) → premise → pillar ──┬── (spine)  act → [THREADS] → [GAMES] →      │
   │                     │            ══ GLOBAL BEAT SHEET ══ → scene → prose                │
   │                     └── (entities) character · world_fact · relationship ·              │
   │                                    tentpole · thread · game · location · voice          │
@@ -80,7 +80,7 @@ reacting to.
 | 2 | `premise` (L1) | dramatic_question + 5-part shape (genre/tone live on the brief, not here) | seed + brief |
 | 3 | `pillar` | controlling_idea + ending | premise + brief |
 | 3a–e | entities | cast, world_facts, relationships, tentpoles, locations, voice_profile | pillar argument+ending |
-| 4 | `movements` | acts: goal, **turning_point**, value, target_pct | pillar + cast |
+| 4 | `acts` | acts: goal, **turning_point**, value, target_pct | pillar + cast |
 | 5 | `threads` | **promise registry** {name, promise, payoff} | premise+pillar + **the whole arc** |
 | 6 | `games` | possibility space {win/lose, governing_rules, couples} | arc + cast + world rules |
 | 7 | **BEAT SHEET** | ALL beats at once: summary, connector, polarity, thread roles, needs/establishes, realizes, plays/resolves, grounds_in | **the whole sequence** + threads + games + tentpoles + cast |
@@ -127,7 +127,7 @@ These are the ideas that make this more than a prompt-chain — the reasons it c
 **good** story, not just a competent one.
 
 ### 3.1 Two edge types: the ladder vs. the reference graph
-The tree has **parent edges** ("is composed of": pillar→movement→beat→scene — defines reading order &
+The tree has **parent edges** ("is composed of": pillar→act→beat→scene — defines reading order &
 render) *and* **reference edges** ("points at": scene→character, scene→thread, beat→game). This is the
 key structural insight: **a payoff at a distance is a reference edge reaching forward in reading order**,
 not a reordered beat. The setup scene and payoff scene both point at the same `thread`; the words
@@ -137,11 +137,11 @@ fragile page anchors that drift on reorder (the C7 flaw of the old stack).
 ### 3.2 The global beat sheet pass (the root fix)
 This is the single best decision in the system. A first end-to-end run (book 1172) produced a 15-scene
 unrelieved descent (`sagging_middle`) and a promise paid off but never set up (`unearned_payoff`). Root
-cause: when beats were generated *per-movement* and scenes *per-beat*, **no step ever held the whole
+cause: when beats were generated *per-act* and scenes *per-beat*, **no step ever held the whole
 sequence** while assigning thread roles or emotional polarity. They emerged from local decisions, and
 emerged badly.
 
-The fix is structural: **generate the entire beat sheet in ONE pass** that sees every movement and
+The fix is structural: **generate the entire beat sheet in ONE pass** that sees every act and
 every thread, so it can (a) schedule each promise's setup *before* its payoff and (b) plan polarity to
 **oscillate** (never >3 same-polarity beats in a row). The general principle is the quotable one:
 

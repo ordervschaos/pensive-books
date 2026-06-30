@@ -191,7 +191,7 @@ export function BuildStudio({ bookId, briefSet, brief, pages, journey, isPublic,
       generatingPages={generatingPages}
       onSelectStep={(k) => onSelect({ kind: "step", step: k })}
       onSelectPage={(pageId) => onSelect({ kind: "page", pageId })}
-      onToggleMovement={(key) => setCollapsed((c) => ({ ...c, [key]: !c[key] }))}
+      onToggleAct={(key) => setCollapsed((c) => ({ ...c, [key]: !c[key] }))}
     />
   );
   const stage = (

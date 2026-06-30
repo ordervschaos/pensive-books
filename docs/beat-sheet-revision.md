@@ -17,7 +17,7 @@ changed → its prose is stale."
 
 ```
 The Beat Sheet (whole-book view, inside the Beats step)
-   movements → pages: { title · objective · beat }   inline-edit + drag-reorder
+   acts → pages: { title · objective · beat }   inline-edit + drag-reorder
    [ Revise with AI ]  → instruction + a knowledge-base LENS (Save the Cat / Fichtean / …)
         │ revise-beats  (edge fn — mirrors revise-outline, beat-aware, plan_only)
         ▼
@@ -81,7 +81,7 @@ out of whether the turn returns a plan.
 `reviseBeats` (the one-shot fn `revise-beats` + bridge route) stays as the underlying capability but the
 UI now routes through the agent.
 
-**The hand-edit sheet (`BeatSheet.tsx` → `Sheet`/`PageRow`)** paginates **one chapter (movement) at a
+**The hand-edit sheet (`BeatSheet.tsx` → `Sheet`/`PageRow`)** paginates **one chapter (act) at a
 time** with prev/next so it never sprawls. Each `PageRow` can **regenerate its beat** — the same durable
 single-beat run as the cold-start flow (`useAIRun` kind `beat_candidates`, keyed by page, `enabled`
 only while regenerating so non-active rows don't subscribe). A fresh result seats into the field

@@ -241,14 +241,14 @@ function PageMap({ model, collapsed, onSelectPage, onToggle }: {
   onSelectPage: (pageId: number) => void;
   onToggle: (key: string) => void;
 }) {
-  if (model.movements.length === 0) return null;
+  if (model.acts.length === 0) return null;
   return (
     <div>
       <div className="mb-3 flex items-center justify-between px-0.5">
         <span className="pv-mono text-[10px] uppercase tracking-[0.18em] text-[hsl(var(--pv-text-muted))]">The book · map</span>
         <span className="pv-serif text-[11px] italic text-[hsl(var(--pv-text-faint))]">{model.sync.pct}% · {model.sync.gaps} gaps</span>
       </div>
-      {model.movements.map((m) => {
+      {model.acts.map((m) => {
         const isCollapsed = !!collapsed[m.key];
         return (
           <div key={m.key} className="mb-0.5">

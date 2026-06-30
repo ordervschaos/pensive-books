@@ -15,7 +15,7 @@ Idea (seed → premise)
   ↓
 Foundations (pillar + cast, world, tent-poles, games, relationships)
   ↓
-Structure (acts/movements → beats — the causal spine)
+Structure (acts/acts → beats — the causal spine)
   ↓
 Scenes (one per beat — the dramatized moment)
   ↓
@@ -102,7 +102,7 @@ Every node — seed, premise, character, beat, scene — uses the same card. 4 z
 - `seed` → `generate premise`
 - `premise` → `generate pillar`
 - `pillar` → `generate cast`, `generate relationships`, `generate world`, `generate tent-poles`, `generate acts`
-- `movement` → `generate beats`
+- `act` → `generate beats`
 - `beat` → `generate scenes`
 - `scene` → `write prose` (or `illustrate` in picture-book mode)
 

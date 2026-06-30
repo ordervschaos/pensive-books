@@ -55,7 +55,7 @@ const RICH_RECIPE: RecipeStep[] = [
   { stepKey: "world", stage: "foundations", target: "world", label: "generate world", childKind: "world_fact", per: "pillar" },
   { stepKey: "set-pieces", stage: "foundations", target: "set-pieces", label: "generate set-pieces", childKind: "tentpole", per: "pillar" },
   { stepKey: "relationships", stage: "foundations", target: "relationships", label: "generate relationships", childKind: "relationship", per: "pillar", needsKind: "character" },
-  { stepKey: "movements", stage: "structure", target: "movements", label: "generate acts", childKind: "movement", per: "pillar" },
+  { stepKey: "acts", stage: "structure", target: "acts", label: "generate acts", childKind: "act", per: "pillar" },
   { stepKey: "threads", stage: "structure", target: "threads", label: "generate threads", childKind: "thread", per: "pillar" },
   { stepKey: "games", stage: "structure", target: "games", label: "generate games", childKind: "game", per: "pillar" },
   { stepKey: "beatsheet", stage: "structure", target: "beatsheet", label: "generate beat sheet", childKind: "beat", per: "pillar" },
@@ -117,7 +117,7 @@ export function nextAutopilotAction(nodes: DnaNode[], attempted: Set<string>, fa
     if (step.per === "pillar") {
       if (!pillar || !accepted(pillar) || attempted.has(step.stepKey)) continue;
       if (step.needsKind && of(step.needsKind).length === 0) continue;
-      if (step.target === "beatsheet" && of("movement").length === 0) continue; // sheet needs the acts
+      if (step.target === "beatsheet" && of("act").length === 0) continue; // sheet needs the acts
       if (of(step.childKind).length === 0) return mk(step, pillar, step.label, true);
       continue;
     }

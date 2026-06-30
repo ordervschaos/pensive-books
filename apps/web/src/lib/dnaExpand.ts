@@ -19,11 +19,11 @@ function chapterTitleFromBeat(beat: DnaNode): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-interface BeatSheetEntry { movement: number; content: BeatContent }
+interface BeatSheetEntry { act: number; content: BeatContent }
 interface PreparedProse { system: string; userContent: string; model: string; max_tokens: number }
 interface ExpandResult {
   childKind?: NodeKind; childLevel?: number; children?: NodeContent[]; prose?: string; caption?: string; logline?: string;
-  beatsheet?: boolean; beats?: BeatSheetEntry[]; movementIds?: string[]; prepared?: PreparedProse;
+  beatsheet?: boolean; beats?: BeatSheetEntry[]; actIds?: string[]; prepared?: PreparedProse;
 }
 
 // Browser-owned orchestration of the per-call retry. The dominant prod failure is a HUNG edge call:
@@ -229,10 +229,10 @@ export async function expandNode(
   const children = res.children ?? [];
   if (!children.length) throw new Error("No children were generated.");
   // INVARIANT (schema §4): any kind whose schema parent is the (singleton) pillar — every entity AND the
-  // movement rung — ALWAYS hangs off the real pillar, never whatever node triggered the expand. Drive this
+  // act rung — ALWAYS hangs off the real pillar, never whatever node triggered the expand. Drive this
   // off PARENT_KIND (the single source of truth for attachment) so a stray caller (wrong focused node) can't
-  // orphan tentpoles / voice / cast / movements onto premise — where dna-expand's pillar-scoped filters
-  // silently can't see them. Beats/scenes keep their focused parent (which movement/beat is contextual).
+  // orphan tentpoles / voice / cast / acts onto premise — where dna-expand's pillar-scoped filters
+  // silently can't see them. Beats/scenes keep their focused parent (which act/beat is contextual).
   const wantsPillar = res.childKind && PARENT_KIND[res.childKind] === "pillar";
   const parentNode = wantsPillar && node.kind !== "pillar"
     ? (pillarOf(await loadTree(bookId)) ?? node)
@@ -314,26 +314,26 @@ export async function renderSceneIllustration(bookId: number, nodeId: string, c:
 }
 
 /**
- * Persist the GLOBAL beat sheet (root fix): a flat, movement-indexed beat list (thread refs already resolved
- * to ids and the setup→payoff schedule already enforced server-side). Beats are grouped under their movement;
- * existing UNLOCKED beats under those movements are replaced (cascade drops their scenes). See §7 of the flow.
+ * Persist the GLOBAL beat sheet (root fix): a flat, act-indexed beat list (thread refs already resolved
+ * to ids and the setup→payoff schedule already enforced server-side). Beats are grouped under their act;
+ * existing UNLOCKED beats under those acts are replaced (cascade drops their scenes). See §7 of the flow.
  */
 async function persistBeatSheet(bookId: number, res: ExpandResult): Promise<{ added: number }> {
-  const movementIds = res.movementIds ?? [];
+  const actIds = res.actIds ?? [];
   const entries = res.beats ?? [];
-  if (!movementIds.length || !entries.length) throw new Error("Empty beat sheet.");
+  if (!actIds.length || !entries.length) throw new Error("Empty beat sheet.");
   const tree = await loadTree(bookId);
-  const movements = movementIds.map((id) => tree.find((n) => n.id === id)).filter(Boolean) as DnaNode[];
-  const oldBeats = tree.filter((n) => n.kind === "beat" && movementIds.includes(n.parent_id ?? "") && !n.authoring.locked);
+  const acts = actIds.map((id) => tree.find((n) => n.id === id)).filter(Boolean) as DnaNode[];
+  const oldBeats = tree.filter((n) => n.kind === "beat" && actIds.includes(n.parent_id ?? "") && !n.authoring.locked);
 
-  const posByMovement: Record<string, number> = {};
+  const posByAct: Record<string, number> = {};
   const made: DnaNode[] = entries.map((e) => {
-    const parent_id = movementIds[e.movement] ?? movementIds[0];
-    const position = (posByMovement[parent_id] = (posByMovement[parent_id] ?? 0) + 1) - 1;
+    const parent_id = actIds[e.act] ?? actIds[0];
+    const position = (posByAct[parent_id] = (posByAct[parent_id] ?? 0) + 1) - 1;
     return { id: newId(), book_id: bookId, parent_id, level: res.childLevel ?? 4, kind: "beat" as NodeKind, position, content: e.content as NodeContent, authoring: { source: "ai" as const, locked: false, status: "accepted" as const } };
   });
-  // Stamp against each beat's movement parent so they don't read stale on arrival.
-  const index = byId([...movements, ...made]);
+  // Stamp against each beat's act parent so they don't read stale on arrival.
+  const index = byId([...acts, ...made]);
   await saveNodes(made.map((n) => stampInput(n, index)));
   for (const b of oldBeats) await deleteNode(b.id); // replace last — cascade removes their scenes
   return { added: made.length };
@@ -346,7 +346,7 @@ async function persistBeatSheet(bookId: number, res: ExpandResult): Promise<{ ad
 // in the rail) exactly like the chat agent's propose_node_ops. Engine quality + proposal review.
 const GEN_LABEL: Partial<Record<NodeKind, string>> = {
   character: "cast", world_fact: "world", relationship: "relationships", tentpole: "set-pieces",
-  game: "games", thread: "threads", voice_profile: "voice", movement: "acts", scene: "scenes", location: "locations",
+  game: "games", thread: "threads", voice_profile: "voice", act: "acts", scene: "scenes", location: "locations",
 };
 
 /** Generate via the dna-expand engine and return the result as reviewable ops (no writes). One network call
@@ -365,17 +365,17 @@ export async function generateExpansionOps(bookId: number, node: DnaNode, target
     return { ops: [{ op: "edit", id: node.id, content: { prose: { text, words: wordCount(text) } } }], summary: `Write prose (${wordCount(text)}w)` };
   }
   if (res.beatsheet) {
-    const movementIds = res.movementIds ?? [];
+    const actIds = res.actIds ?? [];
     const entries = res.beats ?? [];
-    if (!movementIds.length || !entries.length) throw new Error("Empty beat sheet.");
-    // One replace_children per movement — mirrors persistBeatSheet's replace semantics, so the review shows a
+    if (!actIds.length || !entries.length) throw new Error("Empty beat sheet.");
+    // One replace_children per act — mirrors persistBeatSheet's replace semantics, so the review shows a
     // real before→after (the unlocked beats it removes + the new set) and a regenerate never duplicates beats.
-    const byMovement = new Map<string, NewSubtree[]>();
+    const byAct = new Map<string, NewSubtree[]>();
     for (const e of entries) {
-      const pid = movementIds[e.movement] ?? movementIds[0];
-      (byMovement.get(pid) ?? byMovement.set(pid, []).get(pid)!).push({ content: e.content as NodeContent });
+      const pid = actIds[e.act] ?? actIds[0];
+      (byAct.get(pid) ?? byAct.set(pid, []).get(pid)!).push({ content: e.content as NodeContent });
     }
-    const ops: NodeOp[] = [...byMovement].map(([parentId, children]) => ({ op: "replace_children", parentId, childKind: "beat", children }));
+    const ops: NodeOp[] = [...byAct].map(([parentId, children]) => ({ op: "replace_children", parentId, childKind: "beat", children }));
     return { ops, summary: `Generate beat sheet (${entries.length} beats)` };
   }
 
@@ -384,7 +384,7 @@ export async function generateExpansionOps(bookId: number, node: DnaNode, target
   const childKind = (res.childKind ?? "scene") as NodeKind;
   // Scenes inherit their beat's plan before being proposed (parity with the commit path).
   if (childKind === "scene" && node.kind === "beat") realizeScenesFromBeat(node, children as SceneContent[], 0);
-  // parentId = the triggering node; applyNodeOps re-homes pillar-parented kinds (entities + movements) onto
+  // parentId = the triggering node; applyNodeOps re-homes pillar-parented kinds (entities + acts) onto
   // the pillar at apply, so the named parent only matters for the contextual rungs (scene→beat).
   const ops: NodeOp[] = children.map((content) => ({ op: "add", kind: childKind, parentId: node.id, content }));
   return { ops, summary: `Generate ${GEN_LABEL[childKind] ?? childKind} (${children.length})` };

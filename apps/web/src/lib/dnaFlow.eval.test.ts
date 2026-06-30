@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { describe, it, expect } from "vitest";
 import {
   byId, scenesInOrder, chapters, validate, pacing, topography,
-  type DnaNode, type SceneContent, type MovementContent, type ThreadContent,
+  type DnaNode, type SceneContent, type ActContent, type ThreadContent,
 } from "@/lib/novelDna";
 
 const FIXTURE = join(process.cwd(), "../../scripts/.dna-flow-tree.json");
@@ -27,7 +27,7 @@ const load = (): { bookId: number; nodes: DnaNode[] } => JSON.parse(readFileSync
   it("prints a full structural report", () => {
     const scenes = scenesInOrder(nodes);
     const threads = nodes.filter((n) => n.kind === "thread");
-    const movements = nodes.filter((n) => n.kind === "movement").sort((a, b) => a.position - b.position);
+    const acts = nodes.filter((n) => n.kind === "act").sort((a, b) => a.position - b.position);
     const issues = validate(nodes);
     const report: string[] = [];
     report.push(`\n══════════ DNA FLOW REPORT — book ${bookId} ══════════`);
@@ -37,7 +37,7 @@ const load = (): { bookId: number; nodes: DnaNode[] } => JSON.parse(readFileSync
     report.push(`\n── PACING (when) — turning point vs target_pct ──`);
     for (const p of pacing(nodes)) {
       const flag = typeof p.targetPct === "number" && Math.abs(p.driftPct) > 0.1 ? "  ⚠ DRIFT" : "";
-      report.push(`  ${(p.title ?? p.movementId).padEnd(28)} target ${p.targetPct != null ? Math.round(p.targetPct * 100) + "%" : "—"}  actual ${Math.round(p.actualPct * 100)}%${flag}`);
+      report.push(`  ${(p.title ?? p.actId).padEnd(28)} target ${p.targetPct != null ? Math.round(p.targetPct * 100) + "%" : "—"}  actual ${Math.round(p.actualPct * 100)}%${flag}`);
     }
 
     report.push(`\n── PROMISES (what) — the thread registry ──`);
@@ -61,21 +61,21 @@ const load = (): { bookId: number; nodes: DnaNode[] } => JSON.parse(readFileSync
 
     // Sanity: the flow actually produced a structural book.
     expect(scenes.length).toBeGreaterThan(0);
-    expect(movements.length).toBeGreaterThan(0);
+    expect(acts.length).toBeGreaterThan(0);
   });
 
   it("the new generate-half fields are populated (threads, target_pct, polarity)", () => {
-    const movements = nodes.filter((n) => n.kind === "movement");
+    const acts = nodes.filter((n) => n.kind === "act");
     const scenes = scenesInOrder(nodes);
-    const withTarget = movements.filter((m) => typeof (m.content as MovementContent).target_pct === "number");
+    const withTarget = acts.filter((m) => typeof (m.content as ActContent).target_pct === "number");
     const withPolarity = scenes.filter((s) => (s.content as SceneContent).value_shift?.polarity);
     const sceneThreadRefs = scenes.flatMap((s) => (s.content as SceneContent).threads ?? []);
 
      
-    console.log(`generate-half coverage: target_pct ${withTarget.length}/${movements.length} movements · polarity ${withPolarity.length}/${scenes.length} scenes · scene→thread anchors ${sceneThreadRefs.length} · threads ${kinds.thread ?? 0}`);
+    console.log(`generate-half coverage: target_pct ${withTarget.length}/${acts.length} acts · polarity ${withPolarity.length}/${scenes.length} scenes · scene→thread anchors ${sceneThreadRefs.length} · threads ${kinds.thread ?? 0}`);
 
     expect(kinds.thread ?? 0).toBeGreaterThan(0);              // threads were generated
-    expect(withTarget.length).toBeGreaterThan(0);              // movements carry pacing intent
+    expect(withTarget.length).toBeGreaterThan(0);              // acts carry pacing intent
     // every scene→thread anchor resolves to a real thread node
     for (const ref of sceneThreadRefs) expect(index.get(ref.ref)?.kind).toBe("thread");
   });

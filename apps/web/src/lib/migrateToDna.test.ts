@@ -31,7 +31,7 @@ describe("buildDnaFromStack", () => {
     expect(kinds).toContain("pillar");
     expect(kinds.filter((k) => k === "character")).toHaveLength(1);
     expect(kinds.filter((k) => k === "tentpole")).toHaveLength(1);
-    expect(kinds.filter((k) => k === "movement")).toHaveLength(1);
+    expect(kinds.filter((k) => k === "act")).toHaveLength(1);
     expect(kinds.filter((k) => k === "beat")).toHaveLength(2);   // one per chapter
     expect(kinds.filter((k) => k === "scene")).toHaveLength(2);
   });

@@ -12,8 +12,8 @@ if (!BOOK) { console.error("usage: node scripts/dna-add-scenes.mjs <bookId>"); p
 const RETRIES = 2;
 
 let nodes = await loadNodes(BOOK);
-const movements = nodes.filter((n) => n.kind === "movement").sort((a, b) => a.position - b.position);
-const mPos = new Map(movements.map((m, i) => [m.id, i]));
+const acts = nodes.filter((n) => n.kind === "act").sort((a, b) => a.position - b.position);
+const mPos = new Map(acts.map((m, i) => [m.id, i]));
 const beats = nodes.filter((n) => n.kind === "beat").sort((a, b) => (mPos.get(a.parent_id) - mPos.get(b.parent_id)) || (a.position - b.position));
 
 const hasScenes = (beatId, all) => all.some((n) => n.kind === "scene" && n.parent_id === beatId);
@@ -42,7 +42,7 @@ else console.log(`[scenes] every beat has scenes ✓`);
 if (process.env.DNA_WITH_PROSE) {
   const hasProse = (n) => !!(n.content?.prose?.text);
   // prose in reading order so the (eventual) context window reads naturally
-  const movPos = new Map(movements.map((m, i) => [m.id, i]));
+  const movPos = new Map(acts.map((m, i) => [m.id, i]));
   const beatPos = new Map(nodes.filter((n) => n.kind === "beat").map((b) => [b.id, b.position]));
   const beatMov = new Map(nodes.filter((n) => n.kind === "beat").map((b) => [b.id, b.parent_id]));
   const scenes = nodes.filter((n) => n.kind === "scene").sort((a, b) =>

@@ -21,7 +21,7 @@ import { byId, childrenOf, isProseStale, isStale, validate, type BookSettings, t
 const KIND_STAGE: Record<NodeKind, StageKey> = {
   seed: "premise", premise: "premise",
   pillar: "foundations", character: "foundations", relationship: "foundations", tentpole: "foundations", world_fact: "foundations", location: "foundations", voice_profile: "foundations", game: "foundations",
-  movement: "structure", beat: "structure", thread: "structure",
+  act: "structure", beat: "structure", thread: "structure",
   scene: "scenes",
 };
 
@@ -68,7 +68,7 @@ export function DnaOverview({ bookId, nodes, settings, stages, nowKey, onOpen, o
   const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
 
   const [seed, premise, pillar] = [first("seed"), first("premise"), first("pillar")];
-  const movements = of("movement");
+  const acts = of("act");
   const picture = settings.mode === "picture";
   const beats = of("beat"), scenes = of("scene"), threads = of("thread");
   const drafted = scenes.filter((s) => str(picture ? (s.content as SceneContent).image_url : (s.content as SceneContent).prose?.text)).length;
@@ -139,7 +139,7 @@ export function DnaOverview({ bookId, nodes, settings, stages, nowKey, onOpen, o
 
       {/* STORY MAP — the detailed spine: the emotional contour over every beat (∴/↯ connectors, ↗/↘ turns)
           and its scenes; click any row to drill straight to that node. */}
-      {movements.length > 0 && (
+      {acts.length > 0 && (
         <Panel variant="soft" className="px-4 py-3.5">
           <div className="mb-2.5 flex items-center gap-2">
             <Activity className={`h-3.5 w-3.5 ${FAINT}`} />
@@ -151,7 +151,7 @@ export function DnaOverview({ bookId, nodes, settings, stages, nowKey, onOpen, o
 
       {/* AT A GLANCE — the census. */}
       <Panel variant="soft" className="flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3">
-        {stat("acts", movements.length)}
+        {stat("acts", acts.length)}
         {stat("beats", beats.length)}
         {stat("scenes", scenes.length)}
         {scenes.length > 0 && stat(picture ? "illustrated" : "drafted", drafted, scenes.length)}
@@ -163,7 +163,7 @@ export function DnaOverview({ bookId, nodes, settings, stages, nowKey, onOpen, o
       {/* STORY ANALYSIS — the analytic axes (pacing/promises/topography/causality), consolidated here so the
           stages stay actionable. Each row jumps to the node it's about; lints are hidden because the issues
           panel below already lists them with stage links. */}
-      {movements.length > 0 && <DnaAnalysis nodes={nodes} settings={settings} onOpen={onOpen} hideLints defaultOpen={false} />}
+      {acts.length > 0 && <DnaAnalysis nodes={nodes} settings={settings} onOpen={onOpen} hideLints defaultOpen={false} />}
 
       {/* THREADS — the promise registry (setup → payoff). A cross-cutting whole-book concern, so it's edited
           here on the dashboard rather than nested in the sequential spine. Uses the studio's own node card. */}
@@ -235,7 +235,7 @@ export function DnaOverview({ bookId, nodes, settings, stages, nowKey, onOpen, o
           )}
 
           {/* the spine: each act with its nested beat/scene tally */}
-          {movements.map((m, i) => {
+          {acts.map((m, i) => {
             const b = childrenOf(nodes, m.id).filter((c) => c.kind === "beat").length;
             const sc = sceneCountOf(m);
             return (

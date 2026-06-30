@@ -26,14 +26,14 @@ interface ChatMessage { role: "user" | "assistant"; text: string; ts: string; pl
 const STAGE_KINDS: Record<Stage, string[]> = {
   premise: ["seed", "premise"],
   foundations: ["pillar", "character", "relationship", "tentpole", "world_fact", "location", "voice_profile"],
-  structure: ["movement", "beat", "thread"],
+  structure: ["act", "beat", "thread"],
   scenes: ["scene"],
   draft: ["scene"],
 };
 const STAGE_GUIDE: Record<Stage, string> = {
   premise: "the PREMISE — the dramatic question and the 5-part shape. Sharpen the question and the turns; keep it one true idea. (genre/tone live on the brief, not here.)",
   foundations: "the FOUNDATIONS — the controlling idea, the ending, and the CAST (each character's want/need/wound/lie/truth/idiolect), world rules, LOCATIONS (places with a persistent sensory palette scenes draw on), tentpole set-pieces, and relationships. The wound + lie are the human core. Pressure-test them; deepen, don't generic-ify.",
-  structure: "the STRUCTURE — the acts (movements) and their causal beats. Hunt sagging middles, weak turning points, 'and-then' beats; every beat should connect with therefore/but.",
+  structure: "the STRUCTURE — the acts (acts) and their causal beats. Hunt sagging middles, weak turning points, 'and-then' beats; every beat should connect with therefore/but.",
   scenes: "the SCENES — each scene's pov/goal/conflict/outcome and its VALUE SHIFT. Every scene must turn a value; fix flat scenes; check order and escalation.",
   draft: "the DRAFT — the prose of each scene. Voice, heat (per the mandate), pacing, line-level craft. Edit a scene's prose under content.prose.text.",
 };
@@ -84,12 +84,12 @@ Reply to the author in plain MARKDOWN prose — discuss, pressure-test, answer. 
 { "summary": "<one line: what changes>",
   "ops": [
     { "op": "edit", "id": "<existing node id>", "content": { <fields to merge> } },
-    { "op": "add", "kind": "<character|world_fact|location|relationship|tentpole|thread|movement|beat|scene>", "parentId": "<existing node id>", "content": { … } },
+    { "op": "add", "kind": "<character|world_fact|location|relationship|tentpole|thread|act|beat|scene>", "parentId": "<existing node id>", "content": { … } },
     { "op": "delete", "id": "<existing node id>" },
-    { "op": "replace_children", "parentId": "<parent id, e.g. the pillar>", "childKind": "movement", "children": [ { "content": { …movement… }, "children": [ { "content": { …beat… } } ] } ] }
+    { "op": "replace_children", "parentId": "<parent id, e.g. the pillar>", "childKind": "act", "children": [ { "content": { …act… }, "children": [ { "content": { …beat… } } ] } ] }
   ] }
 Only reference ids that exist. Honor LOCKED nodes (never edit/delete them). Don't propose unless the author asked for a change or agreed to one — talk first.
-To REBUILD a whole level (replace all acts, or all beats under an act), use ONE replace_children op — it deletes the existing non-locked children of childKind first, so the rebuild replaces instead of duplicating. Children nest down the ladder (movement→beat→scene). Use "add" only to APPEND a single node.
+To REBUILD a whole level (replace all acts, or all beats under an act), use ONE replace_children op — it deletes the existing non-locked children of childKind first, so the rebuild replaces instead of duplicating. Children nest down the ladder (act→beat→scene). Use "add" only to APPEND a single node.
 
 ${dnaSchema.promptGuide}`;
 

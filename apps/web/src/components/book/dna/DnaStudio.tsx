@@ -28,7 +28,7 @@ import { expandNode, composeSceneIllustration, renderSceneIllustration, type Com
 import { ImagePromptPreview } from "@/components/book/dna/ImagePromptPreview";
 import {
   byId, childrenOf, editContent, emptyNode, isIllusStale, isProseStale, isStale, lock as lockNode, renderBlockers, scenesInOrder,
-  setStatus, type BeatContent, type CharacterContent, type DnaNode, type GameContent, type MovementContent,
+  setStatus, type BeatContent, type CharacterContent, type DnaNode, type GameContent, type ActContent,
   type NodeKind, type RelationshipContent, type SceneContent, type ThreadContent, type WorldFactContent,
 } from "@/lib/novelDna";
 
@@ -47,15 +47,15 @@ const EXPAND_TARGETS: Partial<Record<NodeKind, ExpandTarget[]>> = {
     { target: "relationships", label: "generate relationships", childKind: "relationship", needs: "character" },
     { target: "world", label: "generate world", childKind: "world_fact" },
     { target: "set-pieces", label: "generate tent-poles", childKind: "tentpole" },
-    { target: "movements", label: "generate acts", childKind: "movement" },
+    { target: "acts", label: "generate acts", childKind: "act" },
   ],
-  movement: [{ target: "beats", label: "generate beats", childKind: "beat" }],
+  act: [{ target: "beats", label: "generate beats", childKind: "beat" }],
   beat: [{ target: "scenes", label: "generate scenes", childKind: "scene" }],
   scene: [{ target: "prose", label: "write prose", childKind: "scene" }],
 };
 const SINGLE = new Set(["premise", "pillar"]); // targets that produce exactly one child
 // Human-readable display name for kinds that have internal/technical names.
-const KIND_DISPLAY: Partial<Record<NodeKind, string>> = { movement: "act", world_fact: "world rule" };
+const KIND_DISPLAY: Partial<Record<NodeKind, string>> = { act: "act", world_fact: "world rule" };
 
 // The meaningful fields the UI exposes per kind (★/U slots; dotted keys reach into nested content).
 const FIELDS: Partial<Record<NodeKind, { key: string; label: string }[]>> = {
@@ -101,7 +101,7 @@ const FIELDS: Partial<Record<NodeKind, { key: string; label: string }[]>> = {
     { key: "lose_condition", label: "conditions to lose ★" },
     { key: "stake", label: "stake" },
   ],
-  movement: [
+  act: [
     { key: "title", label: "title" },
     { key: "goal", label: "goal" },
     { key: "turning_point", label: "turning point ★" },
@@ -196,7 +196,7 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
   const addChild = (parent: DnaNode, kind: NodeKind, level: number) =>
     run("add", () => saveNode(emptyNode(bookId, kind, level, parent.id, childrenOf(nodes, parent.id).length)));
   // Stage-level generation (a whole-arc op, not a per-node verb): threads (the promise registry) and the
-  // GLOBAL beat sheet both read every movement, so they live as structure-stage actions on the pillar.
+  // GLOBAL beat sheet both read every act, so they live as structure-stage actions on the pillar.
   const generateFromPillar = (target: string, label: string) =>
     run(target, async () => { if (!pillar) return; const { added } = await expandNode(bookId, pillar, target, {}); toast({ title: label, description: `${added} node(s) generated.` }); });
 
@@ -218,7 +218,7 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
     return s;
   })();
   // A node is also OPEN by default while it's the generative frontier — accepted but still has a child-kind
-  // it can generate that doesn't exist yet (e.g. a pillar before "generate cast", a movement before beats).
+  // it can generate that doesn't exist yet (e.g. a pillar before "generate cast", a act before beats).
   // So approving a rung reveals its next move instead of folding it away. (Prose isn't a child node — a
   // scene's done-ness is handled by needsAttn via prose staleness.)
   const hasOpenTarget = (n: DnaNode) => {
@@ -233,8 +233,8 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
   const setAll = (open: boolean) => setExpanded(Object.fromEntries(nodes.map((n) => [n.id, open])));
   // The collapsed-row subtitle for a spine parent: how many children, and how many still need work.
   const collapsedMeta = (n: DnaNode): string | undefined => {
-    if (n.kind !== "movement" && n.kind !== "beat") return undefined;
-    const childKind: NodeKind = n.kind === "movement" ? "beat" : "scene";
+    if (n.kind !== "act" && n.kind !== "beat") return undefined;
+    const childKind: NodeKind = n.kind === "act" ? "beat" : "scene";
     const kids = childrenOf(nodes, n.id).filter((c) => c.kind === childKind);
     if (!kids.length) return undefined;
     const need = kids.filter((k) => attn.has(k.id)).length;
@@ -336,7 +336,7 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
           </div>
 
           {/* Pillar tab — the controlling idea + ending; generate actions for children are in each child tab */}
-          {tab === "pillar" && pillar && card(pillar, true, ["character", "relationship", "world_fact", "tentpole", "movement"])}
+          {tab === "pillar" && pillar && card(pillar, true, ["character", "relationship", "world_fact", "tentpole", "act"])}
 
           {/* Entity tabs — each has its own generate action at the top + card list */}
           {tab !== "pillar" && pillar && (() => {
@@ -361,15 +361,15 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
       );
     }
     if (key === "structure") {
-      const movements = of("movement");
+      const acts = of("act");
       const threads = of("thread");
       const games = of("game");
       // Acts still missing their beats — the targets of the bulk "generate beats for all acts" pass. Mirrors
       // the per-act "generate beats" verb (same expandNode call), just looped so the whole spine fills in one
       // click. Skips acts that already have beats (non-destructive); regenerate one at a time on its own card.
-      const movementsNeedingBeats = movements.filter((m) => !childrenOf(nodes, m.id).some((c) => c.kind === "beat"));
+      const actsNeedingBeats = acts.filter((m) => !childrenOf(nodes, m.id).some((c) => c.kind === "beat"));
       const generateAllBeats = () => run("allbeats", async () => {
-        const targets = movementsNeedingBeats;
+        const targets = actsNeedingBeats;
         let added = 0; const failed: string[] = [];
         for (const m of targets) {
           try { added += (await expandNode(bookId, m, "beats", {})).added; }
@@ -380,11 +380,11 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
       // Wipe the whole spine: deleting every act cascades (ON DELETE CASCADE) to its beats and scenes, so this
       // clears Structure → Scenes in one move. Foundations stay; regenerate acts to rebuild from scratch.
       const discardAllActs = () => {
-        if (movements.length === 0) return;
-        if (!window.confirm(`Discard all ${movements.length} act${movements.length === 1 ? "" : "s"}? This also removes their beats and scenes. Foundations stay. This can't be undone.`)) return;
+        if (acts.length === 0) return;
+        if (!window.confirm(`Discard all ${acts.length} act${acts.length === 1 ? "" : "s"}? This also removes their beats and scenes. Foundations stay. This can't be undone.`)) return;
         void run("discard acts", async () => {
-          await Promise.all(movements.map((m) => deleteNode(m.id)));
-          toast({ title: "Acts discarded", description: `${movements.length} act${movements.length === 1 ? "" : "s"} removed. Generate acts to rebuild.` });
+          await Promise.all(acts.map((m) => deleteNode(m.id)));
+          toast({ title: "Acts discarded", description: `${acts.length} act${acts.length === 1 ? "" : "s"} removed. Generate acts to rebuild.` });
         });
       };
       // Structure is the pure sequential spine: Acts (coarse) · Beats (the causal units, grouped under their
@@ -392,7 +392,7 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
       // beats), Threads in the Overview (a whole-book promise registry). `threads`/`games` are still read here
       // to gate beat-sheet generation (which weaves the existing registries through the spine).
       const STR_TABS = [
-        { key: "acts" as const, label: "Acts", count: movements.length },
+        { key: "acts" as const, label: "Acts", count: acts.length },
         { key: "beats" as const, label: "Beats", count: of("beat").length },
       ] as const;
       const stab = structureTab;
@@ -416,14 +416,14 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
           {stab === "acts" && (
             <div className="space-y-2">
               {pillar && (
-                <ActionLink busy={busy === "movements"} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={() => generateFromPillar("movements", "Acts generated")}>
-                  {movements.length ? "regenerate acts" : "generate acts"}
+                <ActionLink busy={busy === "acts"} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={() => generateFromPillar("acts", "Acts generated")}>
+                  {acts.length ? "regenerate acts" : "generate acts"}
                 </ActionLink>
               )}
-              {movements.map((m) => card(m, true))}
+              {acts.map((m) => card(m, true))}
               <div className="flex items-center gap-4">
-                {pillar && <ActionLink busy={busy === "add"} onClick={() => addChild(pillar, "movement", 3)} tone="faint">+ add act</ActionLink>}
-                {movements.length > 0 && <ActionLink busy={busy === "discard acts"} onClick={discardAllActs} tone="faint">discard all acts →</ActionLink>}
+                {pillar && <ActionLink busy={busy === "add"} onClick={() => addChild(pillar, "act", 3)} tone="faint">+ add act</ActionLink>}
+                {acts.length > 0 && <ActionLink busy={busy === "discard acts"} onClick={discardAllActs} tone="faint">discard all acts →</ActionLink>}
               </div>
             </div>
           )}
@@ -431,11 +431,11 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
           {/* BEATS — the causal units, grouped under each act header; reorder within an act. */}
           {stab === "beats" && (
             <div className="space-y-4">
-              {pillar && (movementsNeedingBeats.length > 0 || threads.length > 0 || games.length > 0) && (
+              {pillar && (actsNeedingBeats.length > 0 || threads.length > 0 || games.length > 0) && (
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                  {movementsNeedingBeats.length > 0 && (
+                  {actsNeedingBeats.length > 0 && (
                     <ActionLink busy={busy === "allbeats"} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={generateAllBeats}>
-                      generate beats for all {movementsNeedingBeats.length} act{movementsNeedingBeats.length > 1 ? "s" : ""}
+                      generate beats for all {actsNeedingBeats.length} act{actsNeedingBeats.length > 1 ? "s" : ""}
                     </ActionLink>
                   )}
                   {(threads.length > 0 || games.length > 0) && (
@@ -445,11 +445,11 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
                   )}
                 </div>
               )}
-              {movements.length === 0 && (
+              {acts.length === 0 && (
                 <p className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))]">Generate acts first — beats hang off them.</p>
               )}
-              {movements.map((m, mi) => {
-                const mc = m.content as MovementContent;
+              {acts.map((m, mi) => {
+                const mc = m.content as ActContent;
                 return (
                   <div key={m.id} className="space-y-2">
                     <div className="flex items-baseline gap-2 border-b border-[hsl(var(--pv-border-soft))]/60 pb-1">
@@ -473,7 +473,7 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
     }
     if (key === "draft") {
       // Prose reading view: Act → Beat → prose text. Non-editable; headers link back to Structure.
-      const movements = of("movement");
+      const acts = of("act");
       // Reading order (spine DFS), not node-storage order — so the batch drafts the opening scenes first
       // and continuity context flows forward, instead of leaving the first pages empty.
       const scenesAll = scenesInOrder(nodes);
@@ -533,8 +533,8 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
             <ActionLink busy={busy === "render"} onClick={render} tone="faint">render only</ActionLink>
           </div>
           {/* Act → Beat → prose reading view */}
-          {movements.map((m, mi) => {
-            const mvContent = m.content as MovementContent;
+          {acts.map((m, mi) => {
+            const mvContent = m.content as ActContent;
             const mvBeats = childrenOf(nodes, m.id).filter((b) => b.kind === "beat");
             const actTitle = mvContent.title || mvContent.goal;
             return (
@@ -607,7 +607,7 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
     }
     // scenes: scenes grouped under their beat. Each beat is a collapsible group header —
     // fold a beat to hide its scenes, so this stage reads as an outline of beats to drill into one at a time.
-    const beatsAll = of("movement").flatMap((m) => childrenOf(nodes, m.id).filter((b) => b.kind === "beat"));
+    const beatsAll = of("act").flatMap((m) => childrenOf(nodes, m.id).filter((b) => b.kind === "beat"));
     const beatsNeedingScenes = beatsAll.filter((b) => !childrenOf(nodes, b.id).some((c) => c.kind === "scene"));
     const generateAllScenes = () => run("allscenes", async () => {
       let added = 0; const failed: string[] = [];
@@ -839,7 +839,7 @@ function StatusPill({ status }: { status: DnaNode["authoring"]["status"] }) {
   return <span className={`pv-mono text-[9px] uppercase tracking-[0.12em] ${tone}`}>{label}</span>;
 }
 
-// ── Beat reordering (drag-and-drop within a movement) ────────────────────────
+// ── Beat reordering (drag-and-drop within a act) ────────────────────────
 // SortableBeatList owns local position state so drops feel instant; saves on drop via saveNodes.
 function SortableBeatList({ beats, bookId, renderCard, onSaved }: {
   beats: DnaNode[];
@@ -977,7 +977,7 @@ function cardTitle(node: DnaNode): string | undefined {
   const c = node.content as Record<string, unknown>;
   const s = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
   switch (node.kind) {
-    case "movement": return s((c as MovementContent).title) ?? s((c as MovementContent).goal);
+    case "act": return s((c as ActContent).title) ?? s((c as ActContent).goal);
     case "beat": return s((c as BeatContent).summary);
     case "scene": return s((c as SceneContent).chapter_start?.title) ?? s((c as SceneContent).goal);
     case "tentpole": return s((c as { summary?: string }).summary);

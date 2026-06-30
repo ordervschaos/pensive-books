@@ -30,7 +30,7 @@ const KIND_COLOR: Record<string, string> = {
   tentpole: "#e0f2fe",
   game: "#93c5fd",
   thread: "#f9a8d4",     // pink — cross-cutting promises
-  movement: "#fb923c",   // orange — acts
+  act: "#fb923c",   // orange — acts
   beat: "#fbbf24",       // amber — causal units
   scene: "#4ade80",      // green — the leaf scenes
 };
@@ -39,7 +39,7 @@ const KIND_BG: Record<string, string> = {
   seed: "#1e1a2e", premise: "#1a1a2e", pillar: "#16163a",
   character: "#0c1e2e", relationship: "#0c1e2e", world_fact: "#0c1e2e", location: "#031e1a", tentpole: "#0c1e2e", game: "#0c1e2e",
   thread: "#2a1020",
-  movement: "#1e1200", beat: "#1e1600", scene: "#001a10",
+  act: "#1e1200", beat: "#1e1600", scene: "#001a10",
 };
 
 // ── Title extraction per kind (first meaningful field) ───────────────────────
@@ -57,7 +57,7 @@ function nodeTitle(n: DnaNode): string {
     case "tentpole": return s(c.summary);
     case "game": return s(c.name);
     case "thread": return s(c.name) || s(c.promise);
-    case "movement": return s(c.title) || s(c.goal);
+    case "act": return s(c.title) || s(c.goal);
     case "beat": return s((c as BeatContent).summary);
     case "scene": return s((c as SceneContent).chapter_start?.title) || s((c as SceneContent).goal);
     case "voice_profile": return s(c.style) || "voice profile";
@@ -505,8 +505,8 @@ function AddRow({ label, depth, onAdd }: { label: string; depth: number; onAdd: 
 
 // Post-pillar levels that the dna-expand engine can generate, mapped to their expand `target`. The cast &
 // world groups, the story acts, the beat sheet, scenes, and prose — every place that previously only had a
-// blank AddRow. (location has no engine target; movement→beats comes from the pillar-level "beatsheet", not
-// per-movement — so neither gets a GenerateRow.)
+// blank AddRow. (location has no engine target; act→beats comes from the pillar-level "beatsheet", not
+// per-act — so neither gets a GenerateRow.)
 const ENTITY_TARGET: Partial<Record<DnaNode["kind"], string>> = {
   character: "cast", world_fact: "world", relationship: "relationships",
   tentpole: "set-pieces", game: "games", thread: "threads", voice_profile: "voice_profile",
@@ -540,27 +540,27 @@ function GenerateRow({ label, depth, bookId, node, target, openRail }: {
   );
 }
 
-// Scenes in book order: pillar → movements → beats → scenes, each level sorted by position.
+// Scenes in book order: pillar → acts → beats → scenes, each level sorted by position.
 function scenesInOrder(nodes: DnaNode[]): DnaNode[] {
   const kids = (pid: string, kind: string) =>
     nodes.filter((n) => n.parent_id === pid && n.kind === kind).sort((a, b) => a.position - b.position);
   const pillar = nodes.find((n) => n.kind === "pillar");
   if (!pillar) return [];
   const out: DnaNode[] = [];
-  for (const mov of kids(pillar.id, "movement"))
+  for (const mov of kids(pillar.id, "act"))
     for (const beat of kids(mov.id, "beat"))
       out.push(...kids(beat.id, "scene"));
   return out;
 }
 
-// Beats in book order: pillar → movements → beats, each level sorted by position.
+// Beats in book order: pillar → acts → beats, each level sorted by position.
 function beatsInOrder(nodes: DnaNode[]): DnaNode[] {
   const kids = (pid: string, kind: string) =>
     nodes.filter((n) => n.parent_id === pid && n.kind === kind).sort((a, b) => a.position - b.position);
   const pillar = nodes.find((n) => n.kind === "pillar");
   if (!pillar) return [];
   const out: DnaNode[] = [];
-  for (const mov of kids(pillar.id, "movement"))
+  for (const mov of kids(pillar.id, "act"))
     out.push(...kids(mov.id, "beat"));
   return out;
 }
@@ -717,17 +717,17 @@ function NodeGroup({ groupId, label, hint, count, depth, collapsedSet, onToggle,
 // ── Discard story modal ───────────────────────────────────────────────────────
 type DiscardLevel = "prose" | "scenes" | "beats" | "story";
 const DISCARD_OPTIONS: { level: DiscardLevel; label: string; detail: string }[] = [
-  { level: "prose",  label: "prose only",         detail: "clear written prose — keep scene plans, beats, movements" },
-  { level: "scenes", label: "scenes + prose",      detail: "delete all scene nodes — keep beats and movements" },
-  { level: "beats",  label: "beats + scenes",      detail: "delete all beat nodes and their scenes — keep movements" },
-  { level: "story",  label: "full story",          detail: "delete movements, beats, scenes and all prose — keep foundations" },
+  { level: "prose",  label: "prose only",         detail: "clear written prose — keep scene plans, beats, acts" },
+  { level: "scenes", label: "scenes + prose",      detail: "delete all scene nodes — keep beats and acts" },
+  { level: "beats",  label: "beats + scenes",      detail: "delete all beat nodes and their scenes — keep acts" },
+  { level: "story",  label: "full story",          detail: "delete acts, beats, scenes and all prose — keep foundations" },
 ];
 function DiscardStoryModal({ nodes, onClose }: { nodes: DnaNode[]; onClose: () => void }) {
   const [level, setLevel] = useState<DiscardLevel>("prose");
   const [busy, setBusy] = useState(false);
   const mono = "ui-monospace, monospace";
 
-  const movements = nodes.filter((n) => n.kind === "movement");
+  const acts = nodes.filter((n) => n.kind === "act");
   const beats     = nodes.filter((n) => n.kind === "beat");
   const scenes    = nodes.filter((n) => n.kind === "scene");
 
@@ -744,7 +744,7 @@ function DiscardStoryModal({ nodes, onClose }: { nodes: DnaNode[]; onClose: () =
     prose:  `${picked.size} of ${proseScenes.length} scenes selected`,
     scenes: `${scenes.length} scenes`,
     beats:  `${beats.length} beats · ${scenes.length} scenes`,
-    story:  `${movements.length} movements · ${beats.length} beats · ${scenes.length} scenes`,
+    story:  `${acts.length} acts · ${beats.length} beats · ${scenes.length} scenes`,
   };
 
   const run = async () => {
@@ -761,7 +761,7 @@ function DiscardStoryModal({ nodes, onClose }: { nodes: DnaNode[]; onClose: () =
       } else if (level === "beats") {
         await Promise.all(beats.map((b) => deleteNode(b.id)));
       } else {
-        await Promise.all(movements.map((m) => deleteNode(m.id)));
+        await Promise.all(acts.map((m) => deleteNode(m.id)));
       }
       onClose();
     } catch (e) {
@@ -1139,14 +1139,14 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
   ) : null;
   // The hanging "generate the next rung →" slot for the spine singletons (seed→premise→pillar) — shown once
   // THIS node has real content and its single child rung is still empty. Adds an empty child placeholder
-  // (its own options lab then fills it). Deeper rungs (pillar→movements, movement→beats) already have AddRows.
+  // (its own options lab then fills it). Deeper rungs (pillar→acts, act→beats) already have AddRows.
   const spineChildKind = SPINE_CHILD[node.kind];
   const nodeEmpty = Object.keys((node.content ?? {}) as Record<string, unknown>).length === 0;
   const spineChildRow = open && spineChildKind && !nodeEmpty && !kids.some((k) => k.kind === spineChildKind)
     ? <AddRow label={`generate ${spineChildKind} →`} depth={depth + 1} onAdd={() => h.onAdd(node.id, spineChildKind)} />
     : null;
 
-  // The pillar splits into STORY (the spine) + CAST & WORLD (the registry, sub-grouped by kind); a movement
+  // The pillar splits into STORY (the spine) + CAST & WORLD (the registry, sub-grouped by kind); a act
   // can add beats, a beat can add scenes; every other node just renders its editable fields.
   let body: React.ReactNode = null;
   if (open) {
@@ -1180,17 +1180,17 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
           <NodeGroup groupId={`${node.id}::story`} label="story" hint="the spine — acts in order"
             count={ladder.length} depth={depth + 1} collapsedSet={collapsedSet} onToggle={h.onToggle} alwaysShow
             footer={<>
-              {phantoms(node.id, "movement", depth + 2)}
-              <GenerateRow label="generate acts" depth={depth + 2} bookId={h.bookId} node={node} target="movements" openRail={h.openRail} />
-              {/* The beat sheet is generated globally off the pillar (across all acts), not per-movement — show it only once acts exist. */}
-              {ladder.some((c) => c.kind === "movement") && <GenerateRow label="generate beat sheet" depth={depth + 2} bookId={h.bookId} node={node} target="beatsheet" openRail={h.openRail} />}
+              {phantoms(node.id, "act", depth + 2)}
+              <GenerateRow label="generate acts" depth={depth + 2} bookId={h.bookId} node={node} target="acts" openRail={h.openRail} />
+              {/* The beat sheet is generated globally off the pillar (across all acts), not per-act — show it only once acts exist. */}
+              {ladder.some((c) => c.kind === "act") && <GenerateRow label="generate beat sheet" depth={depth + 2} bookId={h.bookId} node={node} target="beatsheet" openRail={h.openRail} />}
               <GenerateAllScenesButton bookId={h.bookId} nodes={nodes} depth={depth + 2} />
               <WriteAllProseButton bookId={h.bookId} nodes={nodes} depth={depth + 2} />
-              <AddRow label="movement" depth={depth + 2} onAdd={() => h.onAdd(node.id, "movement")} />
+              <AddRow label="act" depth={depth + 2} onAdd={() => h.onAdd(node.id, "act")} />
             </>}
             action={ladder.length > 0 ? (
               <span onClick={() => h.onDiscardStory()}
-                title="Delete all movements, beats, scenes and prose"
+                title="Delete all acts, beats, scenes and prose"
                 style={{ fontFamily: "ui-monospace, monospace", fontSize: 8, letterSpacing: "0.1em", textTransform: "uppercase", color: "#7a3030", cursor: "pointer" }}>
                 discard ✕
               </span>
@@ -1222,7 +1222,7 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
         </>
       );
     } else {
-      const childAdd = node.kind === "movement" ? "beat" : node.kind === "beat" ? "scene" : null;
+      const childAdd = node.kind === "act" ? "beat" : node.kind === "beat" ? "scene" : null;
       body = (
         <>
           {sharpenRow}
@@ -1238,7 +1238,7 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
           {sub(kids, depth + 1)}
           {spineChildRow}
           {childAdd && phantoms(node.id, childAdd, depth + 1)}
-          {/* Beat → generate scenes (engine, proposed). Movement → beats has no per-movement target (pillar-level beat sheet), so only the blank AddRow there. */}
+          {/* Beat → generate scenes (engine, proposed). Act → beats has no per-act target (pillar-level beat sheet), so only the blank AddRow there. */}
           {node.kind === "beat" && <GenerateRow label="generate scenes" depth={depth + 1} bookId={h.bookId} node={node} target="scenes" openRail={h.openRail} />}
           {childAdd && <AddRow label={childAdd} depth={depth + 1} onAdd={() => h.onAdd(node.id, childAdd as DnaNode["kind"])} />}
         </>
@@ -1247,10 +1247,10 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
   }
 
   // Delete is allowed on addable kinds (not the seed/premise/pillar singletons) when unlocked.
-  const deletable = !node.authoring.locked && (isEntityKind(node.kind) || ["movement", "beat", "scene"].includes(node.kind));
-  // #5 — drag-to-reorder among same-kind siblings (entities by kind under the pillar; movement/beat/scene by
+  const deletable = !node.authoring.locked && (isEntityKind(node.kind) || ["act", "beat", "scene"].includes(node.kind));
+  // #5 — drag-to-reorder among same-kind siblings (entities by kind under the pillar; act/beat/scene by
   // parent). A row is a drop target only while a SIBLING (same parent + kind) is being dragged.
-  const reorderable = isEntityKind(node.kind) || ["movement", "beat", "scene"].includes(node.kind);
+  const reorderable = isEntityKind(node.kind) || ["act", "beat", "scene"].includes(node.kind);
   const dragged = h.dragId ? index.get(h.dragId) : null;
   const canDrop = !!dragged && dragged.id !== node.id && dragged.parent_id === node.parent_id && dragged.kind === node.kind;
   // #1 proposal mark for THIS node. #2 focus highlight (only when rail open → focusKinds set).
@@ -1677,9 +1677,24 @@ function GenAction({ label, title, onRun, size = "sm" }: { label: string; title?
   );
 }
 
+// A view-toggle chip for the fixed quick bar — lit in its accent when active.
+function QuickToggle({ active, accent, label, icon, onClick }: { active: boolean; accent: string; label: string; icon: string; onClick: () => void }) {
+  return (
+    <button onClick={onClick} title={label} style={{
+      display: "flex", alignItems: "center", gap: 5, cursor: "pointer",
+      background: active ? `${accent}22` : "transparent", border: `1px solid ${active ? `${accent}66` : "transparent"}`,
+      borderRadius: 6, padding: "3px 9px", fontFamily: "ui-monospace, monospace", fontSize: 10,
+      letterSpacing: "0.08em", textTransform: "uppercase", color: active ? accent : "#888",
+    }}>
+      <span style={{ fontSize: 11, lineHeight: 1 }}>{icon}</span>
+      <span>{label}</span>
+    </button>
+  );
+}
+
 // ── Spine timeline — the SERIAL structure (reading order) ─────────────────────
 // The tree shows HIERARCHY (grouped, collapsible); this shows the SPINE as it's actually experienced —
-// movements left→right, beats ordered within each, scenes ordered within each. A filmstrip of the story's
+// acts left→right, beats ordered within each, scenes ordered within each. A filmstrip of the story's
 // flow + completion: each scene cell is colored by whether its prose is written / stale / still just planned,
 // so "where the draft actually stands" reads in one glance. Clicking any unit jumps to it in the tree.
 function SpineTimeline({ nodes, mode, rightInset, bookId, onJump, onClose }: {
@@ -1689,7 +1704,7 @@ function SpineTimeline({ nodes, mode, rightInset, bookId, onJump, onClose }: {
   const mono = "ui-monospace, monospace";
   const kids = (pid: string, kind: NodeKind) => nodes.filter((n) => n.parent_id === pid && n.kind === kind).sort((a, b) => a.position - b.position);
   const pillar = nodes.find((n) => n.kind === "pillar");
-  const movs = pillar ? kids(pillar.id, "movement") : [];
+  const movs = pillar ? kids(pillar.id, "act") : [];
   // Acts are EXPANDED by default (working detail visible). We track the COLLAPSED ones, so empty = all open
   // and a newly generated act also starts expanded. Collapse one to get the at-a-glance pip overview.
   const [collapsedActs, setCollapsedActs] = useState<Set<string>>(new Set());
@@ -1700,7 +1715,7 @@ function SpineTimeline({ nodes, mode, rightInset, bookId, onJump, onClose }: {
   // Generate verbs, mirroring the tree's expand targets (pillar→acts, act→beats, beat→scenes, scene→prose).
   // Direct commit (like the tree's bulk buttons); Realtime refreshes the strip. Prose loops the beat's
   // unwritten scenes in order.
-  const genActs = () => expandNode(bookId, pillar!, "movements").then(() => undefined);
+  const genActs = () => expandNode(bookId, pillar!, "acts").then(() => undefined);
   const genBeats = (mov: DnaNode) => expandNode(bookId, mov, "beats").then(() => undefined);
   const genScenes = (beat: DnaNode) => expandNode(bookId, beat, "scenes").then(() => undefined);
   const writeBeatProse = async (beat: DnaNode) => {
@@ -1734,7 +1749,7 @@ function SpineTimeline({ nodes, mode, rightInset, bookId, onJump, onClose }: {
         <span style={{ fontFamily: mono, fontSize: 11, letterSpacing: "0.16em", textTransform: "uppercase", color: "#cfcfcf" }}>Spine · reading order</span>
         {/* nesting key — what contains what */}
         <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: mono, fontSize: 10 }}>
-          <span style={{ color: KIND_COLOR.movement, letterSpacing: "0.08em", textTransform: "uppercase" }}>act</span>
+          <span style={{ color: KIND_COLOR.act, letterSpacing: "0.08em", textTransform: "uppercase" }}>act</span>
           <span style={{ color: "#444" }}>▸</span>
           <span style={{ color: KIND_COLOR.beat, letterSpacing: "0.08em", textTransform: "uppercase" }}>beat</span>
           <span style={{ color: "#444" }}>▸</span>
@@ -1776,10 +1791,10 @@ function SpineTimeline({ nodes, mode, rightInset, bookId, onJump, onClose }: {
           const written = allScenes.filter(sceneWritten).length;
           const expanded = !collapsedActs.has(mov.id);
           return (
-            <div key={mov.id} style={{ display: "flex", flexDirection: "column", gap: 7, border: `1px solid ${KIND_COLOR.movement}33`, borderRadius: 8, padding: "8px 10px", background: "#0e0e14", flexShrink: 0 }}>
+            <div key={mov.id} style={{ display: "flex", flexDirection: "column", gap: 7, border: `1px solid ${KIND_COLOR.act}33`, borderRadius: 8, padding: "8px 10px", background: "#0e0e14", flexShrink: 0 }}>
               {/* ACT header — the Act pill jumps to it in the tree; expand/collapse is the chevron bottom-right */}
               <div style={{ display: "flex", alignItems: "center", gap: 7, maxWidth: expanded ? 360 : 320, minWidth: 190 }}>
-                <span onClick={() => onJump(mov.id)} title={`open act in tree`} style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.14em", textTransform: "uppercase", color: "#0a0a0a", background: KIND_COLOR.movement, padding: "1px 6px", borderRadius: 4, flexShrink: 0, cursor: "pointer" }}>Act {roman(mi)}</span>
+                <span onClick={() => onJump(mov.id)} title={`open act in tree`} style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.14em", textTransform: "uppercase", color: "#0a0a0a", background: KIND_COLOR.act, padding: "1px 6px", borderRadius: 4, flexShrink: 0, cursor: "pointer" }}>Act {roman(mi)}</span>
                 <span style={{ fontFamily: mono, fontSize: 11, color: "#dcdcdc", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nodeTitle(mov) || ""}</span>
                 <span style={{ fontFamily: mono, fontSize: 9, color: "#666", flexShrink: 0, marginLeft: "auto", paddingLeft: 6 }}>{written}/{allScenes.length}</span>
               </div>
@@ -1863,9 +1878,9 @@ function SpineTimeline({ nodes, mode, rightInset, bookId, onJump, onClose }: {
               {/* Expand/collapse — bottom-right chevron: ▾ points down to "more", ▴ folds it back up */}
               {beats.length > 0 && (
                 <div onClick={() => toggleAct(mov.id)} title={expanded ? "collapse act" : "expand act — beats & scenes"}
-                  onMouseEnter={(e) => { e.currentTarget.style.color = KIND_COLOR.movement; e.currentTarget.style.background = `${KIND_COLOR.movement}14`; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.color = `${KIND_COLOR.movement}aa`; e.currentTarget.style.background = "transparent"; }}
-                  style={{ alignSelf: "flex-end", display: "flex", alignItems: "center", gap: 4, cursor: "pointer", color: `${KIND_COLOR.movement}aa`, borderRadius: 5, padding: "1px 7px", marginTop: 1 }}>
+                  onMouseEnter={(e) => { e.currentTarget.style.color = KIND_COLOR.act; e.currentTarget.style.background = `${KIND_COLOR.act}14`; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.color = `${KIND_COLOR.act}aa`; e.currentTarget.style.background = "transparent"; }}
+                  style={{ alignSelf: "flex-end", display: "flex", alignItems: "center", gap: 4, cursor: "pointer", color: `${KIND_COLOR.act}aa`, borderRadius: 5, padding: "1px 7px", marginTop: 1 }}>
                   <span style={{ fontFamily: mono, fontSize: 8, letterSpacing: "0.12em", textTransform: "uppercase" }}>{expanded ? "less" : `${beats.length} beats`}</span>
                   <span style={{ fontSize: 11, lineHeight: 1 }}>{expanded ? "▴" : "▾"}</span>
                 </div>
@@ -2234,6 +2249,19 @@ export default function DnaTreePage() {
 
   return (
     <div style={{ ...base, marginRight: railOpen ? 420 : 0 }}>
+      {/* Fixed quick-toggle bar — always-on access to the main view modes (clears the rail when it's open) */}
+      <div style={{
+        position: "fixed", top: 8, right: railOpen ? 432 : 14, zIndex: 25, display: "flex", gap: 3,
+        background: "#0d0d12e6", border: "1px solid #20202c", borderRadius: 9, padding: "4px 5px",
+        boxShadow: "0 4px 18px #00000088", backdropFilter: "blur(6px)",
+      }}>
+        {tab === "tree" && <QuickToggle active={timelineOpen} accent="#fb923c" icon="▦" label="Timeline" onClick={() => setTimelineOpen((v) => !v)} />}
+        <QuickToggle active={railOpen} accent="#8a8aff" icon="✦" label="Editor" onClick={() => setRailOpen((v) => !v)} />
+        {tab === "tree" && (health.errors + health.warns) > 0 && (
+          <QuickToggle active={healthLens} accent="#d0a060" icon="◐" label="Lens"
+            onClick={() => { const on = !healthLens; setHealthLens(on); if (on) revealNodes(health.issues.map((i) => i.nodeId).filter((x): x is string => !!x)); }} />
+        )}
+      </div>
       {discardOpen && <DiscardStoryModal nodes={nodes} onClose={() => setDiscardOpen(false)} />}
       {/* The tool-using editor's agent (durable revise-agent thread), promoted into the tree rail. The
           studio components read theme CSS vars; we override them here with the tree's dark monospace
@@ -2265,7 +2293,7 @@ export default function DnaTreePage() {
         <FocusPanel node={ctxNode} index={index} consumes={ctxConsumes} consumedBy={ctxConsumedBy}
           onJump={jumpTo} onClear={() => setContextId(null)} bottomInset={timelineOpen ? 212 : 16} />
       )}
-      {/* The serial spine — reading-order filmstrip across the bottom (movements → beats → scenes) */}
+      {/* The serial spine — reading-order filmstrip across the bottom (acts → beats → scenes) */}
       {tab === "tree" && timelineOpen && (
         <SpineTimeline nodes={nodes} mode={settings.mode ?? "prose"} rightInset={railOpen ? 420 : 0} bookId={bookId}
           onJump={jumpTo} onClose={() => setTimelineOpen(false)} />
@@ -2331,20 +2359,7 @@ export default function DnaTreePage() {
             style={{ background: "none", border: "none", color: forking ? "#444" : "#555", fontSize: 10, cursor: forking ? "default" : "pointer", letterSpacing: "0.1em", textTransform: "uppercase" }}>
             {forking ? "forking…" : "fork →"}
           </button>
-          {/* Spine timeline — the serial reading-order filmstrip (bottom drawer) */}
-          {tab === "tree" && (
-            <button onClick={() => setTimelineOpen((v) => !v)} style={{
-              background: timelineOpen ? "#fb923c22" : "none", border: `1px solid ${timelineOpen ? "#fb923c66" : "#2a2a2a"}`, borderRadius: 5,
-              color: timelineOpen ? "#fb923c" : "#555", fontSize: 10, cursor: "pointer", letterSpacing: "0.1em", textTransform: "uppercase",
-              padding: "3px 10px", fontFamily: "ui-monospace, monospace",
-            }}>▦ timeline</button>
-          )}
-          {/* AI reviser — prominent pill so the rail is discoverable (was a buried text button) */}
-          <button onClick={() => setRailOpen((v) => !v)} style={{
-            background: railOpen ? "#8a8aff22" : "#8a8aff14", border: "1px solid #8a8aff66", borderRadius: 5,
-            color: "#a8a8ff", fontSize: 10, cursor: "pointer", letterSpacing: "0.1em", textTransform: "uppercase",
-            padding: "3px 10px", fontFamily: "ui-monospace, monospace",
-          }}>✦ {railOpen ? "close reviser" : "ai reviser"}</button>
+          {/* Timeline + Editor toggles moved to the fixed quick bar (top-right) */}
         </div>
       </div>
 

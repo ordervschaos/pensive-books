@@ -58,7 +58,7 @@ export function DnaAnalysis({ nodes, settings, onOpen, hideLints, defaultOpen = 
               {pace.map((p) => {
                 const drift = typeof p.targetPct === "number" && Math.abs(p.driftPct) > 0.1;
                 return (
-                  <Row key={p.movementId} stage="structure" id={p.movementId} className="flex items-center gap-2 text-[12px]">
+                  <Row key={p.actId} stage="structure" id={p.actId} className="flex items-center gap-2 text-[12px]">
                     <span className="pv-serif w-40 shrink-0 truncate text-[hsl(var(--pv-text-muted))]">{p.title ?? "act"}</span>
                     <div className="relative h-1.5 flex-1 rounded-full bg-[hsl(var(--pv-surface-2))]">
                       {typeof p.targetPct === "number" && <span className="absolute top-1/2 h-2.5 w-0.5 -translate-y-1/2 bg-[hsl(var(--pv-text-faint))]" style={{ left: `${p.targetPct * 100}%` }} title={`target ${Math.round(p.targetPct * 100)}%`} />}

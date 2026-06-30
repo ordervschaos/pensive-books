@@ -97,17 +97,17 @@ Note: NOT having `couples` is never a fault — a single central game is the com
 ## 6. Generation order (where it slots in)
 
 ```
-  … → movements → threads → GAMES (players/win/stake/couples, read the arc + cast + rules)
+  … → acts → threads → GAMES (players/win/stake/couples, read the arc + cast + rules)
       → global BEAT SHEET (now also assigns plays/resolves per beat) → scenes (inherit) → prose
 ```
 
-Games generate after movements + threads (they see the whole arc and the promises), and read the cast +
+Games generate after acts + threads (they see the whole arc and the promises), and read the cast +
 the world rules (so `governing_rules` binds the win to a mechanism — the grounding work). The beat sheet
 gains `plays`/`resolves`; scenes inherit; the stakes graph + lints surface in DnaStudio + the chat context.
 
 ## 7. What this deliberately does NOT model (yet)
 
 - **Want-evolution** (a player's win-condition changing as they learn the game) — adjacent, folded in later
-  as a game's `win_condition` updated across movements. Not v1.
+  as a game's `win_condition` updated across acts. Not v1.
 - **Win-substitution** (player loses the game they named, wins the one they needed) — expressible as a
   `couples … enable` from the declared game to the need-game, but not forced in v1.

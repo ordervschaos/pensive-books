@@ -17,7 +17,7 @@
 Everything we build is an experiment on this single claim. Not "can AI write prose" (it can, badly,
 everywhere). The bet is narrower and harder:
 
-- **Structure first.** A story is a self-similar tree (seed → premise → pillar → movement → beat →
+- **Structure first.** A story is a self-similar tree (seed → premise → pillar → act → beat →
   scene → prose). The tree is the source of truth; pages are a *render* of it. (`novel-dna-spec.md`.)
 - **AI hydrates the structure**, it does not free-write the book. Each rung is generated *from the
   rungs above it* plus locked author intent. The structure is the leash.
@@ -32,7 +32,7 @@ we are committed to running the test honestly.
 ```
         THE HYPOTHESIS, AS A MACHINE
 
-   seed ──hydrate──▶ premise ──hydrate──▶ pillar ──▶ movement ──▶ beat ──▶ scene ──▶ PROSE
+   seed ──hydrate──▶ premise ──hydrate──▶ pillar ──▶ act ──▶ beat ──▶ scene ──▶ PROSE
     ▲                                                                                  │
     │                                                                                  ▼
   author intent (locks)  ◀──────────── steer / revise ──────────────────────  a book you READ
@@ -201,7 +201,7 @@ admission. O5 is the upside the structure uniquely unlocks (paste-workflows can'
 
 ## 9. How to use this doc
 
-- **Prioritizing?** Rank by movement on §2 (read-through depth, generation ease, intuitiveness).
+- **Prioritizing?** Rank by act on §2 (read-through depth, generation ease, intuitiveness).
   Nothing else outranks the hypothesis.
 - **Designing a screen?** Check §4 (which pillar?) and §6 (the seven rules).
 - **Scoping a feature?** If it doesn't serve an objective in §5 or it lands in §8, cut it.

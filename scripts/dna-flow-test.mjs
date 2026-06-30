@@ -113,18 +113,18 @@ async function expand(bookId, node, target, startPosition = 0) {
   return children;
 }
 
-// Persist the global beat sheet: flat movement-indexed list → beats grouped under each movement.
+// Persist the global beat sheet: flat act-indexed list → beats grouped under each act.
 async function persistBeatSheet(bookId, res) {
-  const movementIds = res.movementIds || [];
+  const actIds = res.actIds || [];
   const entries = res.beats || [];
-  const posByMovement = {};
+  const posByAct = {};
   const beats = entries.map((e) => {
-    const parent_id = movementIds[e.movement] ?? movementIds[0];
-    const position = (posByMovement[parent_id] = (posByMovement[parent_id] ?? 0) + 1) - 1;
+    const parent_id = actIds[e.act] ?? actIds[0];
+    const position = (posByAct[parent_id] = (posByAct[parent_id] ?? 0) + 1) - 1;
     return { id: newId(), book_id: bookId, parent_id, level: res.childLevel ?? 4, kind: "beat", position, content: e.content, authoring: { source: "ai", locked: false, status: "accepted" } };
   });
   await insertNodes(beats);
-  log(`    ✓ beat sheet: ${beats.length} beats across ${movementIds.length} movements`);
+  log(`    ✓ beat sheet: ${beats.length} beats across ${actIds.length} acts`);
   return beats;
 }
 
@@ -151,15 +151,15 @@ async function main() {
   await expand(bookId, pillar, "cast");
   await expand(bookId, pillar, "world");
   await expand(bookId, pillar, "relationships");
-  // (4) pillar → movements  (BEFORE threads, so threads see the whole arc)
-  const movements = await expand(bookId, pillar, "movements");
-  // (5) pillar → threads  (reads the movements just made)
+  // (4) pillar → acts  (BEFORE threads, so threads see the whole arc)
+  const acts = await expand(bookId, pillar, "acts");
+  // (5) pillar → threads  (reads the acts just made)
   await expand(bookId, pillar, "threads");
   // (6) GLOBAL beat sheet — one pass over the whole arc (root fix): schedules setup→payoff in order + plans
-  //     polarity to oscillate. Reload pillar with fresh content (it parents movements + threads).
+  //     polarity to oscillate. Reload pillar with fresh content (it parents acts + threads).
   const allBeats = await expand(bookId, pillar, "beatsheet");
-  // order beats by movement position then beat position for scene generation
-  const mPos = new Map(movements.map((m, i) => [m.id, i]));
+  // order beats by act position then beat position for scene generation
+  const mPos = new Map(acts.map((m, i) => [m.id, i]));
   allBeats.sort((a, b) => (mPos.get(a.parent_id) - mPos.get(b.parent_id)) || (a.position - b.position));
   // (7) each beat → scenes (scenes inherit the beat's polarity + thread schedule)
   const allScenes = [];

@@ -17,10 +17,10 @@ interface NavigatorProps {
   generatingPages?: Set<number>;
   onSelectStep: (k: StepKey) => void;
   onSelectPage: (pageId: number) => void;
-  onToggleMovement: (key: string) => void;
+  onToggleAct: (key: string) => void;
 }
 
-export function StudioNavigator({ model, selection, collapsed, runningStep, generatingPages, onSelectStep, onSelectPage, onToggleMovement }: NavigatorProps) {
+export function StudioNavigator({ model, selection, collapsed, runningStep, generatingPages, onSelectStep, onSelectPage, onToggleAct }: NavigatorProps) {
   // "step N" points at the live focus: the active/awaiting step, else (everything done) the topmost
   // step that's drifted out of sync with an upstream change.
   const activeIdx = model.buildSteps.findIndex((k) => model.statusOf(k) === "active" || model.statusOf(k) === "awaiting");
@@ -43,13 +43,13 @@ export function StudioNavigator({ model, selection, collapsed, runningStep, gene
 
       <section className="relative mt-5">
         <Head left="The book · map" right={`${model.sync.pct}% · ${model.sync.gaps} gaps`} />
-        {model.movements.map((m) => {
+        {model.acts.map((m) => {
           const isCollapsed = !!collapsed[m.key];
           return (
             <div key={m.key} className="mb-0.5">
               <button
                 type="button"
-                onClick={() => onToggleMovement(m.key)}
+                onClick={() => onToggleAct(m.key)}
                 className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left hover:bg-[hsl(var(--pv-surface-2))]"
               >
                 <ChevronDown className={`h-3.5 w-3.5 text-[hsl(var(--pv-text-faint))] transition-transform ${isCollapsed ? "-rotate-90" : ""}`} />

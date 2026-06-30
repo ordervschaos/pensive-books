@@ -21,7 +21,7 @@ describe("dna journey", () => {
       mk("premise", { dramatic_question: "Will she choose?" }),
       mk("pillar", { controlling_idea: "Freedom is chosen.", ending: "She burns it." }),
       mk("character", { name: "Mara", role: "protagonist" }),
-      // no movements yet → Structure is the next move
+      // no acts yet → Structure is the next move
     ];
     const done = stageComplete(nodes);
     expect(done.premise).toBe(true);
@@ -33,9 +33,9 @@ describe("dna journey", () => {
   });
 
   it("Draft is complete only when every scene has prose", () => {
-    const base = [mk("movement"), mk("beat"), mk("scene", { goal: "g" })];
+    const base = [mk("act"), mk("beat"), mk("scene", { goal: "g" })];
     expect(stageComplete(base).draft).toBe(false);
-    const withProse = [mk("movement"), mk("beat"), mk("scene", { goal: "g", prose: { text: "Words." } })];
+    const withProse = [mk("act"), mk("beat"), mk("scene", { goal: "g", prose: { text: "Words." } })];
     expect(stageComplete(withProse).draft).toBe(true);
   });
 });

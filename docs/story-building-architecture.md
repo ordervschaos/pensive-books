@@ -86,11 +86,11 @@ The author picks a route or edits freehand. The spine becomes the "throughline c
 
 ## Step 4 — Outline
 
-The chapter/page scaffold: sections (movements) and text pages, each with an **objective** (one sentence). No prose, no beats yet.
+The chapter/page scaffold: sections (acts) and text pages, each with an **objective** (one sentence). No prose, no beats yet.
 
 Generated from: brief + foundations + spine. The `settledContext()` renderer assembles all pinned/selected foundations into a structured constraint block that every outline prompt reads.
 
-The author can manually add, reorder, or edit pages. Section headers group pages into **movements** (labeled I, II, III…).
+The author can manually add, reorder, or edit pages. Section headers group pages into **acts** (labeled I, II, III…).
 
 ---
 

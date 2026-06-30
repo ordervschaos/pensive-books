@@ -12,7 +12,7 @@ export interface DnaChatMessage { role: "user" | "assistant"; text: string; ts: 
 export interface DnaSession { messages: DnaChatMessage[]; pending_proposal: DnaProposal | null; ended_at: string }
 
 // A node to create, with its own descendants — the unit of a rebuild (replace_children). Nesting follows
-// the ladder (movement→beat→scene), so children's kinds are implied by their parent's.
+// the ladder (act→beat→scene), so children's kinds are implied by their parent's.
 export interface NewSubtree { content: NodeContent; children?: NewSubtree[] }
 export type NodeOp =
   | { op: "edit"; id: string; content: NodeContent }
@@ -141,10 +141,10 @@ export function validateOps(ops: NodeOp[], nodes: DnaNode[]): OpValidation {
   const pillar = pillarOf(nodes);
   const ok: NodeOp[] = [], rejected: OpRejection[] = [];
   // INVARIANT (schema §4): a node attaches per PARENT_KIND (the single source of truth) — never to whatever
-  // node the model named. Pillar-parented kinds (every entity AND the movement rung) re-home to THE pillar at
-  // apply, so here we only require a pillar to exist. Contextual rungs (beat→movement, scene→beat) must name a
-  // parent that resolves to the required kind. This is what stops the "movement/entity orphaned onto premise"
-  // class from landing — the bug that made movements invisible to the pillar-scoped STORY group + generation.
+  // node the model named. Pillar-parented kinds (every entity AND the act rung) re-home to THE pillar at
+  // apply, so here we only require a pillar to exist. Contextual rungs (beat→act, scene→beat) must name a
+  // parent that resolves to the required kind. This is what stops the "act/entity orphaned onto premise"
+  // class from landing — the bug that made acts invisible to the pillar-scoped STORY group + generation.
   const parentageReason = (childKind: NodeKind, parentId: string): string | null => {
     const want = PARENT_KIND[childKind];
     if (want === null) return null;                                              // a root kind — no parent
@@ -196,9 +196,9 @@ export async function applyNodeOps(bookId: number, ops: NodeOp[]): Promise<OpVal
   const validation = validateOps(ops, nodes);
   const index = byId(nodes);
   const childCount = (parentId: string) => nodes.filter((n) => n.parent_id === parentId).length;
-  // Resolve the REAL attachment per PARENT_KIND: a pillar-parented kind (every entity AND the movement rung)
+  // Resolve the REAL attachment per PARENT_KIND: a pillar-parented kind (every entity AND the act rung)
   // re-homes onto the pillar, never the parentId the model named (the premise-orphaning class). Contextual
-  // rungs (beat→movement, scene→beat) keep their named parent. validateOps already guaranteed the pillar /
+  // rungs (beat→act, scene→beat) keep their named parent. validateOps already guaranteed the pillar /
   // correct-kind parent exists for anything that reached `ok`, so a `?? parentId` fall-through is only a
   // belt-and-braces no-op here.
   const effectiveParent = (kind: NodeKind, parentId: string): string =>
@@ -231,7 +231,7 @@ export async function applyNodeOps(bookId: number, ops: NodeOp[]): Promise<OpVal
     } else if (op.op === "replace_children") {
       // Wipe the (re-homed) parent's existing non-locked children of this kind (FK cascade takes their
       // subtrees), keeping any locked ones, then build the new set after them. Resolving the parent through
-      // PARENT_KIND means a movement rebuild deletes + rebuilds under the PILLAR, never the named premise.
+      // PARENT_KIND means a act rebuild deletes + rebuilds under the PILLAR, never the named premise.
       const parentId = effectiveParent(op.childKind, op.parentId);
       const existing = nodes.filter((n) => n.parent_id === parentId && n.kind === op.childKind);
       for (const child of existing) if (!child.authoring.locked) await deleteNode(child.id);

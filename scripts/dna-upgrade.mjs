@@ -1,5 +1,5 @@
-// dna-upgrade — run the NEW architecture's structural layers (movements → threads → global beat sheet →
-// scenes) on an EXISTING book's foundations, replacing the pre-architecture movements/beats/scenes. Tests
+// dna-upgrade — run the NEW architecture's structural layers (acts → threads → global beat sheet →
+// scenes) on an EXISTING book's foundations, replacing the pre-architecture acts/beats/scenes. Tests
 // that the system upgrades a real (migrated) book, not just a synthetic fresh one. Keeps seed/premise/pillar
 // + the entity registry (the human core); regenerates everything from the acts down.
 //
@@ -15,21 +15,21 @@ async function main() {
   let nodes = await loadNodes(bookId);
   const pillar = nodes.find((n) => n.kind === "pillar");
   if (!pillar) throw new Error("no pillar — book has no DNA foundations");
-  const oldMovements = nodes.filter((n) => n.kind === "movement");
+  const oldActs = nodes.filter((n) => n.kind === "act");
   log(`foundations kept: ${["seed","premise","pillar","character","relationship","tentpole","world_fact"].map((k)=>`${k}:${nodes.filter(n=>n.kind===k).length}`).join(" ")}`);
 
-  // (4) regenerate movements WITH target_pct (exactly 4 on structural gravity), then drop the old acts
+  // (4) regenerate acts WITH target_pct (exactly 4 on structural gravity), then drop the old acts
   // (cascade removes their beats + scenes — the pre-architecture structure).
-  const movements = await expand(bookId, pillar, "movements");
-  for (const m of oldMovements) await delRow(m.id);
-  log(`movements: replaced ${oldMovements.length} → ${movements.length} (with target_pct)`);
+  const acts = await expand(bookId, pillar, "acts");
+  for (const m of oldActs) await delRow(m.id);
+  log(`acts: replaced ${oldActs.length} → ${acts.length} (with target_pct)`);
 
-  // (5) threads — the promise registry (reads the new movements)
+  // (5) threads — the promise registry (reads the new acts)
   await expand(bookId, pillar, "threads");
 
   // (6) GLOBAL beat sheet — schedules setup→payoff in order, plans polarity to oscillate
   const allBeats = await expand(bookId, pillar, "beatsheet");
-  const mPos = new Map(movements.map((m, i) => [m.id, i]));
+  const mPos = new Map(acts.map((m, i) => [m.id, i]));
   allBeats.sort((a, b) => (mPos.get(a.parent_id) - mPos.get(b.parent_id)) || (a.position - b.position));
 
   // (7) scenes — realize each beat (inherit polarity + thread schedule)

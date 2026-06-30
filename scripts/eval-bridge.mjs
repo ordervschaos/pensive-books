@@ -3465,7 +3465,7 @@ async function fetchNodeTypeConfig(target) {
 // Placeholder to keep line numbers stable for the DNA_SPEC entries that were here.
 const _DNA_SPEC_MOVED_TO_DB = true;
 // ── begin DNA_SPEC stubs (now in DB) ──
-// relationships, set-pieces, threads, games, movements, beats, scenes, voice_profile — all in DB now.
+// relationships, set-pieces, threads, games, acts, beats, scenes, voice_profile — all in DB now.
 // ── end DNA_SPEC stubs ──
 const DNA_ENTITY_KINDS = new Set(["character", "relationship", "tentpole", "world_fact", "location", "thread", "game", "meter", "voice_profile"]);
 function scenesInOrderBridge(allNodes) {
@@ -3525,10 +3525,10 @@ async function runDnaExpand({ bookId, nodeId, target, proseWindow = "default", p
     ? "THREADS — the promise registry (reference BY NAME):\n" +
       threads.map((t) => `- ${tName(t)}: ${t.content?.promise ?? ""} → ${t.content?.payoff ?? ""}`).join("\n")
     : "";
-  const movements = pillar ? nodes.filter((n) => n.parent_id === pillar.id && n.kind === "movement").sort((a, b) => (a.position ?? 0) - (b.position ?? 0)) : [];
-  const movementBlock = movements.length
-    ? "THE ARC (movements in order — place promises across these):\n" +
-      movements.map((m) => `- [${m.content?.title ?? ""}] turn: ${m.content?.turning_point ?? ""}`).join("\n")
+  const acts = pillar ? nodes.filter((n) => n.parent_id === pillar.id && n.kind === "act").sort((a, b) => (a.position ?? 0) - (b.position ?? 0)) : [];
+  const actBlock = acts.length
+    ? "THE ARC (acts in order — place promises across these):\n" +
+      acts.map((m) => `- [${m.content?.title ?? ""}] turn: ${m.content?.turning_point ?? ""}`).join("\n")
     : "";
   const tentpoles = pillar ? nodes.filter((n) => n.parent_id === pillar.id && n.kind === "tentpole" && (n.authoring?.locked || n.authoring?.status === "accepted")) : [];
   const tpName = (e) => String(e.content?.summary ?? "").trim();
@@ -3598,16 +3598,16 @@ async function runDnaExpand({ bookId, nodeId, target, proseWindow = "default", p
       : target === "caption"
         ? buildPrevProseBlockBridge(nodes, nodeId, "default")
         : "";
-  // Beat neighbourhood — sibling beats of the scene's parent beat, in movement order.
+  // Beat neighbourhood — sibling beats of the scene's parent beat, in act order.
   // Mirrors the same block in supabase/functions/dna-expand/index.ts.
   const beatNeighbourhoodBlock = (() => {
     if (node.kind !== "scene") return "";
     const parentBeat = node.parent_id ? map.get(node.parent_id) : undefined;
     if (!parentBeat || parentBeat.kind !== "beat") return "";
-    const movementId = parentBeat.parent_id;
-    if (!movementId) return "";
+    const actId = parentBeat.parent_id;
+    if (!actId) return "";
     const siblingBeats = nodes
-      .filter((n) => n.parent_id === movementId && n.kind === "beat")
+      .filter((n) => n.parent_id === actId && n.kind === "beat")
       .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
     if (siblingBeats.length <= 1) return "";
     const lines = siblingBeats.map((b) => {
@@ -3631,7 +3631,7 @@ async function runDnaExpand({ bookId, nodeId, target, proseWindow = "default", p
     worldRulesBlock,
     gamesBlock,
     precondBlock, // [EXP:preconditions]
-    movementBlock,
+    actBlock,
     beatNeighbourhoodBlock, // sibling beats — keeps prose from contradicting plan-layer facts
     settingBlock, // this scene's resolved location palette (prose grounding)
     registerBlock, // this scene's voice modulation (anti-monotony) — bends the signature for this scene only
@@ -3689,15 +3689,15 @@ ${ctx}\n\nWrite this page's caption.`;
   if (target === "beatsheet") {
     // GLOBAL beat-sheet pass (root fix) — mirrors supabase/functions/dna-expand. One call, whole arc in view:
     // schedule setup→payoff in order, plan polarity to oscillate. enforcePromiseSchedule (inline) drops orphan
-    // payoffs so setup→payoff is an INVARIANT. Returns a flat movement-indexed list; the caller persists it.
-    if (!movements.length) return { error: "generate the movements before the beat sheet" };
+    // payoffs so setup→payoff is an INVARIANT. Returns a flat act-indexed list; the caller persists it.
+    if (!acts.length) return { error: "generate the acts before the beat sheet" };
     if (!threads.length) return { error: "generate the threads before the beat sheet" };
     const prompt = `You are a story architect writing the ENTIRE BOOK'S BEAT SHEET in ONE pass — every beat of every act at once, so you can see the whole sequence. Honor every LOCKED ancestor and the MANDATE verbatim. Rules:
-- 2 to 4 beats per movement; each beat links to the prior with "therefore" or "but" (escalating causality).
-- Set each beat's PLANNED polarity (up = ends better, down = ends worse). The movement's value shift is the MACRO trend; you MUST still OSCILLATE within it — never more than ~3 beats of the same polarity in a row. Place deliberate relief/hope-spots inside down-acts and setbacks inside up-acts.
+- 2 to 4 beats per act; each beat links to the prior with "therefore" or "but" (escalating causality).
+- Set each beat's PLANNED polarity (up = ends better, down = ends worse). The act's value shift is the MACRO trend; you MUST still OSCILLATE within it — never more than ~3 beats of the same polarity in a row. Place deliberate relief/hope-spots inside down-acts and setbacks inside up-acts.
 - Schedule the THREADS across the whole book: every promise must be SET UP (role:setup) in an EARLIER beat before it is PAID OFF (role:payoff) in a LATER beat; use "advance" for beats in between. Reference threads BY NAME.
 - CAUSE every turn: give each beat "needs" (state keys it DEPENDS ON, each one EARNED by an EARLIER beat — never an ambient world/premise given) and "establishes" (state keys it PRODUCES). Keys are short snake_case handles (e.g. "ledger_settled", "rival_humiliated", "peculium_revealed"). Every "therefore" beat MUST "need" at least one state an earlier beat "establishes" — that upstream dependency is what makes the turn CAUSED, not "and then". A "but" beat must either reverse the polarity or block/consume an established state.${tentpoles.length ? `\n- PLACE every TENTPOLE: assign each set-piece to the ONE beat that delivers it, in "realizes" (by its summary). Every tentpole listed must appear on exactly one beat.` : ""}${worldFacts.length ? `\n- GROUND the turns in the WORLD RULES: when a beat's turning point's outcome OPERATES ON a rule's mechanism, list that rule in "grounds_in" (by name). The CLIMAX / final resolution beat MUST ground its win in an established rule — the victory has to be MECHANICALLY EARNED by a rule the reader already knows, never deus ex machina. Plant the rule's setup in an earlier beat too.` : ""}${games.length ? `\n- PLAY the GAMES: each beat that advances a contest lists it in "plays" (by name). Each game MUST be RESOLVED — exactly one beat lists it in "resolves" with its outcome (won|lost), and the CENTRAL game resolves at the CLIMAX. A game's resolving beat should also ground_in the rule its win/lose fires.` : ""}${statePreconds.length ? `\n- ESTABLISH every STATE PRECONDITION: each game's win SPENDS resources/states (listed above). For each, an EARLIER beat must establish it (list its key in that beat's "establishes") BEFORE the beat that resolves the game — you cannot spend a resource the story never acquired (no "she had enough all along"). Make the establishing a real turn.` : ""}
-Output JSON ONLY: { "beats": [ { "movement": <1..${movements.length}>, "summary": "...", "connector": "therefore"|"but", "polarity": "up"|"down", "threads": [ { "ref": "<thread name>", "role": "setup"|"advance"|"payoff" } ]${tentpoles.length ? `, "realizes": [ "<tentpole summary>" ]` : ""}${worldFacts.length ? `, "grounds_in": [ "<world rule name>" ]` : ""}${games.length ? `, "plays": [ "<game name>" ], "resolves": [ { "ref": "<game name>", "outcome": "won|lost" } ]` : ""}, "needs": [ "<state key earned upstream>" ], "establishes": [ "<state key this beat produces>" ] } ] }\n\n${ctx}\n\nWrite the whole beat sheet. JSON only.`;
+Output JSON ONLY: { "beats": [ { "act": <1..${acts.length}>, "summary": "...", "connector": "therefore"|"but", "polarity": "up"|"down", "threads": [ { "ref": "<thread name>", "role": "setup"|"advance"|"payoff" } ]${tentpoles.length ? `, "realizes": [ "<tentpole summary>" ]` : ""}${worldFacts.length ? `, "grounds_in": [ "<world rule name>" ]` : ""}${games.length ? `, "plays": [ "<game name>" ], "resolves": [ { "ref": "<game name>", "outcome": "won|lost" } ]` : ""}, "needs": [ "<state key earned upstream>" ], "establishes": [ "<state key this beat produces>" ] } ] }\n\n${ctx}\n\nWrite the whole beat sheet. JSON only.`;
     const out = await runClaude(prompt, true, { fn: "dna-expand", bookId }, { noTools: true, model: MODEL_PLANNING });
     if (out.error) return out;
     let raw = out.text.trim();
@@ -3717,7 +3717,7 @@ Output JSON ONLY: { "beats": [ { "movement": <1..${movements.length}>, "summary"
     const claimedTp = new Set();
     const resolvedG = new Set();
     const beats = rawBeats.map((b) => {
-      const mi = Math.min(Math.max(parseInt(String(b.movement ?? 1), 10) || 1, 1), movements.length) - 1;
+      const mi = Math.min(Math.max(parseInt(String(b.act ?? 1), 10) || 1, 1), acts.length) - 1;
       const refs = (Array.isArray(b.threads) ? b.threads : [])
         .map((t) => ({ ref: tNameToId.get(String(t.ref ?? "").trim().toLowerCase()), role: t.role }))
         .filter((t) => t.ref && roles.has(String(t.role)));
@@ -3745,9 +3745,9 @@ Output JSON ONLY: { "beats": [ { "movement": <1..${movements.length}>, "summary"
       if (resolves.length) content.resolves = resolves;
       if (establishes.length) content.establishes = establishes;
       if (needs.length) content.needs = needs;
-      return { movement: mi, content };
+      return { act: mi, content };
     });
-    return { beatsheet: true, childKind: "beat", childLevel: 4, movementIds: movements.map((m) => m.id), beats };
+    return { beatsheet: true, childKind: "beat", childLevel: 4, actIds: acts.map((m) => m.id), beats };
   }
 
   // Generic DNA target: load config from node_type_configs (mirrors edge fn), rebuild ctx with slot-filtered blocks.
@@ -3767,7 +3767,7 @@ Output JSON ONLY: { "beats": [ { "movement": <1..${movements.length}>, "summary"
     slots.worldRules ? worldRulesBlock : "",
     slots.games ? gamesBlock : "",
     slots.preconditions ? precondBlock : "", // [EXP:preconditions]
-    slots.arc ? movementBlock : "",
+    slots.arc ? actBlock : "",
     `THIS NODE [${node.kind}]: ${JSON.stringify(node.content)}`,
   ].filter(Boolean).join("\n\n");
   const prompt = `You are a story architect expanding a ${node.kind} into ${config.role}. Generate ${config.count} ${config.child_kind}s as ONE authoritative structure — NOT alternatives. Honor every LOCKED ancestor and the MANDATE verbatim. Output JSON ONLY: { "children": [ ${config.schema_json} ] }\n\n${slottedCtx}\n\nGenerate the ${config.child_kind}s. JSON only.`;
@@ -3825,7 +3825,7 @@ Output JSON ONLY: { "beats": [ { "movement": <1..${movements.length}>, "summary"
 // ── /dna-chat (mirrors supabase/functions/dna-chat) ───────────────────────────
 const DNA_STAGE_KINDS = {
   premise: ["seed", "premise"], foundations: ["pillar", "character", "relationship", "tentpole", "world_fact", "location", "voice_profile"],
-  structure: ["movement", "beat", "thread"], scenes: ["scene"], draft: ["scene"],
+  structure: ["act", "beat", "thread"], scenes: ["scene"], draft: ["scene"],
 };
 // The content schema the reviser must conform to — GENERATED from the web app's NODE_SCHEMA (the single
 // source of truth) into this checked artifact, kept in sync by apps/web/.../dnaSchema.artifact.test.ts.
@@ -3834,7 +3834,7 @@ const DNA_SCHEMA = JSON.parse(readFileSync(join(repoRoot, "supabase/functions/_s
 const DNA_STAGE_GUIDE = {
   premise: "the PREMISE — the dramatic question and the 5-part shape. Sharpen the question and the turns. (genre/tone live on the brief, not here.)",
   foundations: "the FOUNDATIONS — the controlling idea, the ending, and the CAST (want/need/wound/lie/truth/idiolect), world rules, tentpoles, relationships. The wound + lie are the human core; deepen, don't generic-ify.",
-  structure: "the STRUCTURE — acts (movements) and their causal beats. Hunt sagging middles, weak turning points, 'and-then' beats.",
+  structure: "the STRUCTURE — acts (acts) and their causal beats. Hunt sagging middles, weak turning points, 'and-then' beats.",
   scenes: "the SCENES — each scene's pov/goal/conflict/outcome and its VALUE SHIFT. Every scene must turn a value.",
   draft: "the DRAFT — the prose of each scene. Voice, heat (per the mandate), pacing. Edit a scene's prose under content.prose.text.",
 };
@@ -3862,7 +3862,7 @@ async function runDnaChat({ bookId, stage, message, analysis }) {
     return `[${n.id}${n.authoring?.locked ? " · LOCKED" : ""}] L${n.level} ${n.kind}: ${JSON.stringify(content)}`;
   };
   const tree = [...nodes].sort((a, b) => (a.level ?? 0) - (b.level ?? 0)).map(serialize).join("\n");
-  const system = `You are a sharp, warm developmental STORY EDITOR in conversation with an author. Your current FOCUS is ${DNA_STAGE_GUIDE[stage]}\n\nYou hold the book's ENTIRE DNA tree — premise → foundations → structure → scenes${withProse ? " → prose" : ""} — and you may edit, add, or delete ANY non-locked node at ANY level, not just your focus stage.${withProse ? " Scene PROSE is included (content.prose.text); you may rewrite it." : ""}\n\nReply in plain MARKDOWN prose. If — and ONLY if — this message DELIVERS a concrete change to apply, append at the VERY END a single fenced \`\`\`json block (nothing after it) with node ops over the REAL ids given:\n{ "summary": "<one line>", "ops": [ { "op": "edit", "id": "<id>", "content": { … } }, { "op": "add", "kind": "<kind>", "parentId": "<id>", "content": { … } }, { "op": "delete", "id": "<id>" }, { "op": "replace_children", "parentId": "<parent id>", "childKind": "movement", "children": [ { "content": { … }, "children": [ { "content": { … } } ] } ] } ] }\nOnly reference ids that exist; never edit/delete a LOCKED node; talk first, propose only when asked or agreed. To REBUILD a whole level (replace all acts/beats), use ONE replace_children op — it deletes the existing non-locked children of childKind first, so the rebuild never duplicates; children nest down the ladder (movement→beat→scene). Use "add" only to APPEND a single node.\n\n${DNA_SCHEMA.promptGuide}`;
+  const system = `You are a sharp, warm developmental STORY EDITOR in conversation with an author. Your current FOCUS is ${DNA_STAGE_GUIDE[stage]}\n\nYou hold the book's ENTIRE DNA tree — premise → foundations → structure → scenes${withProse ? " → prose" : ""} — and you may edit, add, or delete ANY non-locked node at ANY level, not just your focus stage.${withProse ? " Scene PROSE is included (content.prose.text); you may rewrite it." : ""}\n\nReply in plain MARKDOWN prose. If — and ONLY if — this message DELIVERS a concrete change to apply, append at the VERY END a single fenced \`\`\`json block (nothing after it) with node ops over the REAL ids given:\n{ "summary": "<one line>", "ops": [ { "op": "edit", "id": "<id>", "content": { … } }, { "op": "add", "kind": "<kind>", "parentId": "<id>", "content": { … } }, { "op": "delete", "id": "<id>" }, { "op": "replace_children", "parentId": "<parent id>", "childKind": "act", "children": [ { "content": { … }, "children": [ { "content": { … } } ] } ] } ] }\nOnly reference ids that exist; never edit/delete a LOCKED node; talk first, propose only when asked or agreed. To REBUILD a whole level (replace all acts/beats), use ONE replace_children op — it deletes the existing non-locked children of childKind first, so the rebuild never duplicates; children nest down the ladder (act→beat→scene). Use "add" only to APPEND a single node.\n\n${DNA_SCHEMA.promptGuide}`;
   const ctx = [
     `BOOK: ${book.name ?? ""}`,
     `BRIEF (binding): ${briefContext(book.brief)}`,

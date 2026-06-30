@@ -22,6 +22,6 @@ for (const b of beats) {
   if (c.needs?.length) withNeeds++;
   if (c.establishes?.length) withEst++;
   if (c.connector === "therefore") therefores++;
-  console.log(`  m${b.movement} [${(c.connector ?? "—").padEnd(9)}] ${c.polarity ?? "?"}  needs:[${(c.needs ?? []).join(", ")}]  → est:[${(c.establishes ?? []).join(", ")}]`);
+  console.log(`  m${b.act} [${(c.connector ?? "—").padEnd(9)}] ${c.polarity ?? "?"}  needs:[${(c.needs ?? []).join(", ")}]  → est:[${(c.establishes ?? []).join(", ")}]`);
 }
 console.log(`\n[probe] coverage: ${withNeeds}/${beats.length} beats declare needs, ${withEst}/${beats.length} establish, ${therefores} therefores`);

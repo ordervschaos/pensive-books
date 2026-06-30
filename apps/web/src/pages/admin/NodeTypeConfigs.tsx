@@ -41,7 +41,7 @@ const SLOT_LABELS: Record<keyof SlotConfig, string> = {
   worldRules: "World rules",
   games: "Games",
   preconditions: "State preconditions",
-  arc: "Arc (movements)",
+  arc: "Arc (acts)",
 };
 
 function SlotToggle({

@@ -30,7 +30,7 @@ step has something settled to revise. Every other step keeps the two-column full
 │   7 Read            │   │                         │   (ProseEditor =     │
 │   8 Publish         │   │  ← Phase 2: pending     │    revise-agent)     │
 │  The book · map     │   │    diff lands HERE,     │                      │
-│   I · Movement      │   │    accept/reject here   │  conversation +      │
+│   I · Act      │   │    accept/reject here   │  conversation +      │
 │     • page  ◷◷◷     │   └ Gate ("Approve…")      │  (Phase 1) diff/plan │
 └─────────────────────┴─────────────────────────────┴──────────────────────┘
 ```
@@ -38,7 +38,7 @@ step has something settled to revise. Every other step keeps the two-column full
 (The standalone **Revise** step was retired — see below. The ladder is 8 steps: Brief → Draft, Read, Publish.)
 
 - **Navigator** (`StudioNavigator.tsx`) = the **sequence** (the step ladder) + the **whole-book map**
-  (movements → pages, with obj·beat·prose pips). Click a step → Stage shows that step's tool. Click a
+  (acts → pages, with obj·beat·prose pips). Click a step → Stage shows that step's tool. Click a
   page → Stage shows that page's resolution ladder.
 - **Stage** (`StudioStage.tsx`) = the **depth** / the **content**. Routes on the current selection. Each
   step is dressed in the same editorial chrome (StageHead + Gate) so the eight steps read as one
@@ -161,7 +161,7 @@ Page-level drift (objective→beat→prose) is *not* this — that stays per-pag
 
 ### Other derived bits
 
-- `movements` — pages grouped under section headers (Roman-numeral'd); text pages before any section
+- `acts` — pages grouped under section headers (Roman-numeral'd); text pages before any section
   go in an implicit "Pages" lead group.
 - `counts` {objective, written, beats}, `beatsRemaining`, `proseRemaining`, `hasScaffold`, `hasWritten`.
 - `sync` {pct, gaps} — `pct` from map fill; `gaps` = **error-severity lints** on the new flow,

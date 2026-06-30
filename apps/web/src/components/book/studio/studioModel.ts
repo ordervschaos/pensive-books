@@ -86,8 +86,8 @@ export interface StudioPageRow {
   metadata?: PageMeta | null;
 }
 
-// A movement = a section header and the text pages that follow it (the book map's accordion unit).
-export interface Movement {
+// A act = a section header and the text pages that follow it (the book map's accordion unit).
+export interface Act {
   /** Stable key for React + collapse state. */
   key: string;
   /** Roman numeral position (I, II, …); blank for an implicit lead group with no section header. */
@@ -108,7 +108,7 @@ export interface StudioModel {
   map: MapModel;
   /** All non-section pages, in reading order. */
   textPages: MapPage[];
-  movements: Movement[];
+  acts: Act[];
   /** The durable plan layer (docs/structure-as-render.md), or null on a legacy page-native book. */
   outline: Outline | null;
   /** The rendered page for an outline node (by node_id), for completeness chips / "open page". */
@@ -190,21 +190,21 @@ export function buildStudioModel(input: BuildStudioModelInput): StudioModel {
 
   const textPages = map.pages.filter((p) => p.pageType === "text");
 
-  // Group into movements: a section row opens a new movement; text pages before any section sit in an
+  // Group into acts: a section row opens a new act; text pages before any section sit in an
   // implicit lead group (blank numeral).
-  const movements: Movement[] = [];
-  let lead: Movement | null = null;
+  const acts: Act[] = [];
+  let lead: Act | null = null;
   let n = 0;
   for (const p of map.pages) {
     if (p.pageType === "section") {
       n += 1;
-      movements.push({ key: `mv-${p.id}`, num: roman(n), title: p.title || "(untitled section)", pages: [] });
+      acts.push({ key: `mv-${p.id}`, num: roman(n), title: p.title || "(untitled section)", pages: [] });
     } else {
-      if (movements.length === 0) {
-        if (!lead) { lead = { key: "mv-lead", num: "", title: "Pages", pages: [] }; movements.push(lead); }
+      if (acts.length === 0) {
+        if (!lead) { lead = { key: "mv-lead", num: "", title: "Pages", pages: [] }; acts.push(lead); }
         lead.pages.push(p);
       } else {
-        movements[movements.length - 1].pages.push(p);
+        acts[acts.length - 1].pages.push(p);
       }
     }
   }
@@ -310,7 +310,7 @@ export function buildStudioModel(input: BuildStudioModelInput): StudioModel {
 
   return {
     buildSteps, newFlow, lints, tentpolePageIds,
-    map, textPages, movements,
+    map, textPages, acts,
     outline,
     pageByNodeId: (nid) => { const pid = pageIdByNode.get(nid); return pid != null ? byId.get(pid) : undefined; },
     outlineAhead,

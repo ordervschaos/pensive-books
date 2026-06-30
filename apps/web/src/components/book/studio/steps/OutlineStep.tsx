@@ -15,7 +15,7 @@ import { AutoTextarea } from "@/components/ui/auto-textarea";
 import { useToast } from "@/hooks/use-toast";
 import { saveObjective } from "@/lib/ladder";
 import { ActionLink, Eyebrow, GenerateInChat, Panel } from "@/components/book/shared/studioUi";
-import type { Movement, StudioModel } from "../studioModel";
+import type { Act, StudioModel } from "../studioModel";
 import type { MapPage } from "@/lib/planGraph";
 import type { BookLint } from "@/lib/lints";
 import {
@@ -52,12 +52,12 @@ export function OutlineStep({
     <div className="space-y-3">
       <LintsBanner lints={model.lints} onSelectPage={onSelectPage} />
 
-      {/* Movements (chapters and their pages) */}
-      {model.movements.map((m) => (
-        <MovementBlock
+      {/* Acts (chapters and their pages) */}
+      {model.acts.map((m) => (
+        <ActBlock
           key={m.key}
           bookId={bookId}
-          movement={m}
+          act={m}
           tentpolePageIds={model.tentpolePageIds}
           onSelectPage={onSelectPage}
           onChanged={onChanged}
@@ -145,17 +145,17 @@ function AddAffordances({ bookId, onChanged }: { bookId: number; onChanged: () =
   );
 }
 
-// ── Movement block (a chapter and its pages) ──────────────────────────────────
+// ── Act block (a chapter and its pages) ──────────────────────────────────
 
-function MovementBlock({
+function ActBlock({
   bookId,
-  movement,
+  act,
   tentpolePageIds,
   onSelectPage,
   onChanged,
 }: {
   bookId: number;
-  movement: Movement;
+  act: Act;
   tentpolePageIds: Set<number>;
   onSelectPage: (id: number) => void;
   onChanged: () => void;
@@ -164,11 +164,11 @@ function MovementBlock({
 
   // Section pages have key = "mv-{pageId}"; the lead implicit group has key = "mv-lead".
   const sectionPageId: number | null =
-    movement.key !== "mv-lead" ? parseInt(movement.key.replace("mv-", ""), 10) : null;
+    act.key !== "mv-lead" ? parseInt(act.key.replace("mv-", ""), 10) : null;
   const isSection = sectionPageId !== null;
 
   const [titleDraft, setTitleDraft] = useState<string | null>(null);
-  const displayTitle = titleDraft ?? movement.title;
+  const displayTitle = titleDraft ?? act.title;
 
   const saveTitle = async (value: string) => {
     if (!isSection) return;
@@ -187,12 +187,12 @@ function MovementBlock({
 
   const deleteChapter = async () => {
     if (!isSection) return;
-    if (!window.confirm(`Delete the chapter "${movement.title}" and all its pages?`)) return;
+    if (!window.confirm(`Delete the chapter "${act.title}" and all its pages?`)) return;
     try {
       // Archive the section page itself
       await supabase.from("pages").update({ archived: true }).eq("id", sectionPageId!);
-      // Archive all pages in this movement
-      for (const p of movement.pages) {
+      // Archive all pages in this act
+      for (const p of act.pages) {
         await supabase.from("pages").update({ archived: true }).eq("id", p.id);
       }
       onChanged();
@@ -212,15 +212,15 @@ function MovementBlock({
         {isSection ? (
           <div className="group flex min-w-0 flex-1 items-center gap-2">
             <Eyebrow tone="accent" className="shrink-0">
-              {movement.num ? `${movement.num} ·` : ""}
+              {act.num ? `${act.num} ·` : ""}
             </Eyebrow>
             <input
               value={displayTitle}
               onChange={(e) => setTitleDraft(e.target.value)}
               onBlur={() => {
-                const val = titleDraft ?? movement.title;
+                const val = titleDraft ?? act.title;
                 setTitleDraft(null);
-                if (val !== movement.title) void saveTitle(val);
+                if (val !== act.title) void saveTitle(val);
               }}
               className="pv-serif min-w-0 flex-1 border-b border-transparent bg-transparent text-[13px] font-medium uppercase tracking-[0.1em] text-[hsl(var(--pv-accent))] outline-none transition-colors hover:border-[hsl(var(--pv-border-soft))] focus:border-[hsl(var(--pv-accent))]/40"
             />
@@ -241,9 +241,9 @@ function MovementBlock({
         )}
       </div>
 
-      {/* Pages inside the movement */}
+      {/* Pages inside the act */}
       <div className="space-y-2">
-        {movement.pages.map((p) => (
+        {act.pages.map((p) => (
           <PageRow
             key={p.id}
             bookId={bookId}
@@ -253,7 +253,7 @@ function MovementBlock({
             onChanged={onChanged}
           />
         ))}
-        {movement.pages.length === 0 && (
+        {act.pages.length === 0 && (
           <p className="pv-serif px-1 text-[13px] italic text-[hsl(var(--pv-text-faint))]">
             No pages yet — add one below.
           </p>
@@ -445,7 +445,7 @@ function LintsBanner({ lints, onSelectPage }: { lints: BookLint[]; onSelectPage:
 const ROMAN: [number, string][] = [[10, "X"], [9, "IX"], [5, "V"], [4, "IV"], [1, "I"]];
 function roman(n: number): string { let o = ""; let v = n; for (const [d, s] of ROMAN) while (v >= d) { o += s; v -= d; } return o; }
 
-interface OutlineMovementVM { sectionId: string | null; num: string; title: string; scenes: OutlineNode[] }
+interface OutlineActVM { sectionId: string | null; num: string; title: string; scenes: OutlineNode[] }
 type Apply = (label: string, fn: (o: Outline) => Outline) => Promise<void>;
 
 function OutlineNative({ bookId, model, onChanged, onSelectPage }: {
@@ -455,14 +455,14 @@ function OutlineNative({ bookId, model, onChanged, onSelectPage }: {
   const outline = model.outline!;
   const nodes = outline.nodes;
 
-  // Group nodes into movements: a section opens a chapter; scenes before any section sit in a lead group.
-  const movements: OutlineMovementVM[] = [];
+  // Group nodes into acts: a section opens a chapter; scenes before any section sit in a lead group.
+  const acts: OutlineActVM[] = [];
   let n = 0;
   for (const node of nodes) {
-    if (node.type === "section") { n += 1; movements.push({ sectionId: node.id, num: roman(n), title: node.title, scenes: [] }); }
+    if (node.type === "section") { n += 1; acts.push({ sectionId: node.id, num: roman(n), title: node.title, scenes: [] }); }
     else {
-      if (!movements.length) movements.push({ sectionId: null, num: "", title: "Pages", scenes: [] });
-      movements[movements.length - 1].scenes.push(node);
+      if (!acts.length) acts.push({ sectionId: null, num: "", title: "Pages", scenes: [] });
+      acts[acts.length - 1].scenes.push(node);
     }
   }
 
@@ -487,8 +487,8 @@ function OutlineNative({ bookId, model, onChanged, onSelectPage }: {
           <GenerateInChat bookId={bookId} layer="outline" label="Draft the outline" />
         </div>
       ) : (
-        movements.map((m) => (
-          <OutlineMovementBlock key={m.sectionId ?? "lead"} movement={m} model={model} onSelectPage={onSelectPage} apply={apply} />
+        acts.map((m) => (
+          <OutlineActBlock key={m.sectionId ?? "lead"} act={m} model={model} onSelectPage={onSelectPage} apply={apply} />
         ))
       )}
 
@@ -526,22 +526,22 @@ function RenderBanner({ bookId, onChanged }: { bookId: number; onChanged: () => 
   );
 }
 
-function OutlineMovementBlock({ movement, model, onSelectPage, apply }: {
-  movement: OutlineMovementVM; model: StudioModel; onSelectPage: (id: number) => void; apply: Apply;
+function OutlineActBlock({ act, model, onSelectPage, apply }: {
+  act: OutlineActVM; model: StudioModel; onSelectPage: (id: number) => void; apply: Apply;
 }) {
-  const isSection = movement.sectionId !== null;
+  const isSection = act.sectionId !== null;
   const [titleDraft, setTitleDraft] = useState<string | null>(null);
-  const display = titleDraft ?? movement.title;
+  const display = titleDraft ?? act.title;
 
   const saveTitle = (val: string) => {
     const t = val.trim();
-    if (!isSection || t === movement.title.trim()) return;
-    void apply("Couldn't rename chapter", (o) => withNodePatch(o, movement.sectionId!, { title: t || "Untitled chapter" }));
+    if (!isSection || t === act.title.trim()) return;
+    void apply("Couldn't rename chapter", (o) => withNodePatch(o, act.sectionId!, { title: t || "Untitled chapter" }));
   };
   const deleteChapter = () => {
     if (!isSection) return;
-    if (!window.confirm(`Delete the chapter “${movement.title}” and its ${movement.scenes.length} pages?`)) return;
-    void apply("Couldn't delete chapter", (o) => withNodesRemoved(o, [movement.sectionId!, ...movement.scenes.map((s) => s.id)]));
+    if (!window.confirm(`Delete the chapter “${act.title}” and its ${act.scenes.length} pages?`)) return;
+    void apply("Couldn't delete chapter", (o) => withNodesRemoved(o, [act.sectionId!, ...act.scenes.map((s) => s.id)]));
   };
 
   return (
@@ -549,11 +549,11 @@ function OutlineMovementBlock({ movement, model, onSelectPage, apply }: {
       <div className="mb-3 flex items-center justify-between gap-2">
         {isSection ? (
           <div className="group flex min-w-0 flex-1 items-center gap-2">
-            <Eyebrow tone="accent" className="shrink-0">{movement.num ? `${movement.num} ·` : ""}</Eyebrow>
+            <Eyebrow tone="accent" className="shrink-0">{act.num ? `${act.num} ·` : ""}</Eyebrow>
             <input
               value={display}
               onChange={(e) => setTitleDraft(e.target.value)}
-              onBlur={() => { const v = titleDraft ?? movement.title; setTitleDraft(null); saveTitle(v); }}
+              onBlur={() => { const v = titleDraft ?? act.title; setTitleDraft(null); saveTitle(v); }}
               className="pv-serif min-w-0 flex-1 border-b border-transparent bg-transparent text-[13px] font-medium uppercase tracking-[0.1em] text-[hsl(var(--pv-accent))] outline-none transition-colors hover:border-[hsl(var(--pv-border-soft))] focus:border-[hsl(var(--pv-accent))]/40"
             />
           </div>
@@ -573,10 +573,10 @@ function OutlineMovementBlock({ movement, model, onSelectPage, apply }: {
         )}
       </div>
       <div className="space-y-2">
-        {movement.scenes.map((node) => (
+        {act.scenes.map((node) => (
           <OutlineNodeRow key={node.id} node={node} page={model.pageByNodeId(node.id)} onSelectPage={onSelectPage} apply={apply} />
         ))}
-        {movement.scenes.length === 0 && (
+        {act.scenes.length === 0 && (
           <p className="pv-serif px-1 text-[13px] italic text-[hsl(var(--pv-text-faint))]">No pages yet — add one below.</p>
         )}
       </div>

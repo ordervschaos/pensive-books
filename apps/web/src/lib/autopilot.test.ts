@@ -45,11 +45,11 @@ describe("nextAutopilotAction — the recipe walker", () => {
     expect(next(nodes, ["voice_profile", "world"])?.target).toBe("set-pieces");
   });
 
-  it("structure runs movements → threads → games → beat sheet (sheet waits for the acts)", () => {
+  it("structure runs acts → threads → games → beat sheet (sheet waits for the acts)", () => {
     const base = [mk("seed"), mk("premise"), mk("pillar", { id: "p" }), mk("character", { parent_id: "p" })];
     const attempted = ["voice_profile", "world", "set-pieces", "relationships"]; // optional foundations skipped
-    expect(next(base, attempted)?.target).toBe("movements");
-    base.push(mk("movement", { id: "m", parent_id: "p" }));
+    expect(next(base, attempted)?.target).toBe("acts");
+    base.push(mk("act", { id: "m", parent_id: "p" }));
     expect(next(base, attempted)?.target).toBe("threads");
     base.push(mk("thread", { parent_id: "p" }));
     expect(next(base, attempted)?.target).toBe("games");
@@ -60,7 +60,7 @@ describe("nextAutopilotAction — the recipe walker", () => {
   it("scenes are generated per-beat, then prose per-scene", () => {
     const nodes = [
       mk("pillar", { id: "p" }), mk("character", { parent_id: "p" }),
-      mk("movement", { id: "m", parent_id: "p" }),
+      mk("act", { id: "m", parent_id: "p" }),
       mk("beat", { id: "b1", parent_id: "m" }), mk("beat", { id: "b2", parent_id: "m" }),
     ];
     const attempted = ["voice_profile", "world", "set-pieces", "relationships", "threads", "games"];
@@ -84,7 +84,7 @@ describe("nextAutopilotAction — the recipe walker", () => {
   it("a failed beat is skipped so the loop doesn't stall on it", () => {
     const nodes = [
       mk("pillar", { id: "p" }), mk("character", { parent_id: "p" }),
-      mk("movement", { id: "m", parent_id: "p" }),
+      mk("act", { id: "m", parent_id: "p" }),
       mk("beat", { id: "b1", parent_id: "m" }), mk("beat", { id: "b2", parent_id: "m" }),
     ];
     const attempted = ["voice_profile", "world", "set-pieces", "relationships", "threads", "games"];
@@ -94,7 +94,7 @@ describe("nextAutopilotAction — the recipe walker", () => {
   it("returns null when every scene is drafted", () => {
     const nodes = [
       mk("pillar", { id: "p" }), mk("character", { parent_id: "p" }),
-      mk("movement", { id: "m", parent_id: "p" }), mk("beat", { id: "b", parent_id: "m" }),
+      mk("act", { id: "m", parent_id: "p" }), mk("beat", { id: "b", parent_id: "m" }),
       mk("scene", { id: "sc", parent_id: "b", content: { prose: { text: "Once upon a time." } } }),
     ];
     const attempted = ["voice_profile", "world", "set-pieces", "relationships", "threads", "games"];
@@ -104,7 +104,7 @@ describe("nextAutopilotAction — the recipe walker", () => {
   it("picture mode illustrates each scene (target 'illustrate', done = caption)", () => {
     const nodes = [
       mk("pillar", { id: "p" }), mk("character", { parent_id: "p" }),
-      mk("movement", { id: "m", parent_id: "p" }), mk("beat", { id: "b", parent_id: "m" }),
+      mk("act", { id: "m", parent_id: "p" }), mk("beat", { id: "b", parent_id: "m" }),
       mk("scene", { id: "sc", parent_id: "b" }),
     ];
     const attempted = ["voice_profile", "world", "set-pieces", "relationships", "threads", "games"];
@@ -117,7 +117,7 @@ describe("nextAutopilotAction — the recipe walker", () => {
   it("picture mode treats a captioned scene as drafted (image renders in background, not re-kicked)", () => {
     const nodes = [
       mk("pillar", { id: "p" }), mk("character", { parent_id: "p" }),
-      mk("movement", { id: "m", parent_id: "p" }), mk("beat", { id: "b", parent_id: "m" }),
+      mk("act", { id: "m", parent_id: "p" }), mk("beat", { id: "b", parent_id: "m" }),
       // caption present, but image_url NOT yet pinned — must still count as done so the loop moves on.
       mk("scene", { id: "sc", parent_id: "b", content: { caption: { text: "A wolf at the door." } } }),
     ];
@@ -128,7 +128,7 @@ describe("nextAutopilotAction — the recipe walker", () => {
   it("prose-mode prose does NOT satisfy picture mode (a prose book toggled to picture still needs captions)", () => {
     const nodes = [
       mk("pillar", { id: "p" }), mk("character", { parent_id: "p" }),
-      mk("movement", { id: "m", parent_id: "p" }), mk("beat", { id: "b", parent_id: "m" }),
+      mk("act", { id: "m", parent_id: "p" }), mk("beat", { id: "b", parent_id: "m" }),
       mk("scene", { id: "sc", parent_id: "b", content: { prose: { text: "Once upon a time." } } }),
     ];
     const attempted = ["voice_profile", "world", "set-pieces", "relationships", "threads", "games"];

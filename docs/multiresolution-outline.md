@@ -12,7 +12,7 @@ Grounded in `knowledgebase/creation/` — Snowflake ("iterate the cheap layers f
 A page is a **stack of representations** at increasing resolution; the book is the same idea one level up. Each level is a cheap draft of the one below.
 
 ```
-BOOK     premise (books.brief) ──▶ movement objectives (section pages)
+BOOK     premise (books.brief) ──▶ act objectives (section pages)
               │                              │
 PAGE          └──────────────▶ objective (1 sentence)        L0  cheap · plan
                                      │  generate ▼   ▲ reverse-outline
@@ -25,7 +25,7 @@ PAGE          └──────────────▶ objective (1 sent
 
 What already exists in the schema (do **not** rebuild):
 - `books.brief` — premise. `books.bible` — established facts.
-- `pages.metadata.objective` — one column covers both section (movement) and text (page) objectives.
+- `pages.metadata.objective` — one column covers both section (act) and text (page) objectives.
 - Paragraph-level objectives — already stored as node attributes **inside `pages.content`**, stripped at serialization.
 - `pages.metadata.summary` — already a *downstream* "story so far" auto-summary (prose → summary, continuity for later pages). **Taken; not an authoring layer.**
 - `book_threads` — cross-cutting setup→payoff promises spanning pages.
@@ -118,7 +118,7 @@ Phase 1 alone makes "change the outline" return a plan-only diff with zero force
 - Stale graph extends: objective→beat→prose (two dirty edges).
 
 ### Phase 3 — Full ladder + reverse flow
-- Book premise → movement (section) → page cascade with `brief_hash` staleness.
+- Book premise → act (section) → page cascade with `brief_hash` staleness.
 - Reverse-outline op: prose → objective/beat to re-sync after hand-edits.
 - Threads woven into the dirty-graph (a retarget/delete that orphans a setup→payoff flags the thread).
 

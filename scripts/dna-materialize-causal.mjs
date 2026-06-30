@@ -42,10 +42,10 @@ const clonedEntities = remap(cloneSrc.map((n) => ({
   content: n.content, authoring: n.authoring,
 })));
 
-// 4. probe beats → beat nodes under the cloned movements (movement field is an INDEX into movementIds)
+// 4. probe beats → beat nodes under the cloned acts (act field is an INDEX into actIds)
 const posByMov = {};
 const beatRows = probe.beats.map((b) => {
-  const oldMovId = probe.movementIds[b.movement] ?? probe.movementIds[0];
+  const oldMovId = probe.actIds[b.act] ?? probe.actIds[0];
   const parent_id = idMap[oldMovId];
   const position = (posByMov[parent_id] = (posByMov[parent_id] ?? 0) + 1) - 1;
   return { id: b.__newId, book_id: bookId, parent_id, level: 4, kind: "beat", position, content: b.content, authoring: { source: "ai", locked: false, status: "accepted" } };

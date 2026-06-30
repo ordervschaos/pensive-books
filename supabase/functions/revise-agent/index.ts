@@ -92,7 +92,7 @@ const ASPECT_KINDS: Record<Aspect, string[]> = {
   seed: ["seed"],
   premise: ["premise"],
   cast_world: ["pillar", "character", "relationship", "tentpole", "world_fact", "location", "thread", "game", "voice_profile"],
-  story: ["movement", "beat", "scene"],
+  story: ["act", "beat", "scene"],
   prose: ["scene"],
 };
 // The set of node kinds in scope (null/[] = every kind). Used to filter context AND fence which nodes
@@ -103,7 +103,7 @@ function scopedKinds(scope: Aspect[] | null): Set<string> | null {
   for (const a of scope) for (const k of ASPECT_KINDS[a]) s.add(k);
   return s;
 }
-const ALL_NODE_KINDS = ["seed", "premise", "pillar", "movement", "beat", "scene", "character", "relationship", "tentpole", "world_fact", "location", "thread", "game", "voice_profile"];
+const ALL_NODE_KINDS = ["seed", "premise", "pillar", "act", "beat", "scene", "character", "relationship", "tentpole", "world_fact", "location", "thread", "game", "voice_profile"];
 
 // The evaluation shape (book_evaluations.result), as produced by evaluate-book.
 interface EvalIssue {
@@ -945,11 +945,11 @@ const THREAD_DNA_TOOLS = [
             properties: {
               op: { type: "string", enum: ["edit", "add", "delete", "replace_children"] },
               id: { type: "string", description: "edit/delete: the existing node id." },
-              kind: { type: "string", description: "add: the new node's kind (character|relationship|tentpole|world_fact|thread|game|movement|beat|scene|voice_profile)." },
-              parentId: { type: "string", description: "add / replace_children: the existing parent node's id (e.g. the pillar, whose movement children are the acts)." },
-              childKind: { type: "string", description: "replace_children: which child kind to rebuild (e.g. 'movement' to replace all acts, 'beat' to replace an act's beats)." },
+              kind: { type: "string", description: "add: the new node's kind (character|relationship|tentpole|world_fact|thread|game|act|beat|scene|voice_profile)." },
+              parentId: { type: "string", description: "add / replace_children: the existing parent node's id (e.g. the pillar, whose act children are the acts)." },
+              childKind: { type: "string", description: "replace_children: which child kind to rebuild (e.g. 'act' to replace all acts, 'beat' to replace an act's beats)." },
               content: { type: "object", description: "edit: the fields to merge. add: the new node's content. Use the exact field names from the schema given.", additionalProperties: true },
-              children: { type: "array", description: "replace_children: the NEW children as a nested tree — each { content, children? }; nesting follows the ladder (movement→beat→scene). Every existing non-locked child of childKind is deleted first, so the rebuild never duplicates.", items: { type: "object", additionalProperties: true } },
+              children: { type: "array", description: "replace_children: the NEW children as a nested tree — each { content, children? }; nesting follows the ladder (act→beat→scene). Every existing non-locked child of childKind is deleted first, so the rebuild never duplicates.", items: { type: "object", additionalProperties: true } },
             },
             required: ["op"],
           },
@@ -987,14 +987,14 @@ const CONTENT_SCHEMAS = dnaSchema.promptGuide;
 
 const SYSTEM_THREAD = `You are a sharp, warm developmental STORY EDITOR — the author's single AI collaborator for the whole book, in conversation in the studio's right-hand rail.
 
-You hold the book's DNA TREE: premise → foundations (pillar, cast, world, tentpoles, voice) → structure (movements, beats, threads) → scenes → prose. The tree below is FILTERED to the aspects in scope for this conversation, and prose is stripped to stay lean — use read_node to read a scene's full prose before judging or rewriting it.
+You hold the book's DNA TREE: premise → foundations (pillar, cast, world, tentpoles, voice) → structure (acts, beats, threads) → scenes → prose. The tree below is FILTERED to the aspects in scope for this conversation, and prose is stripped to stay lean — use read_node to read a scene's full prose before judging or rewriting it.
 
 You can do four things:
 1. DISCUSS — answer, summarize, pressure-test. Reply in plain MARKDOWN prose and just end your turn (no tool needed). Be concrete, grounded in the real tree, referencing nodes by their [id]. When a node has PENDING OPTIONS and the author asks which is strongest, just RECOMMEND one in prose (name its option number + a one-line reason tied to the brief) — committing the pick is theirs, in the tree.
 2. CHANGE THE TREE — when the author asks for a change (or agrees to one), call propose_node_ops with edit/add/delete ops over the real ids. The author reviews the diff and applies it; descendants of an edited node go stale and are regenerated later. ONLY touch nodes whose kind is in scope; NEVER touch a LOCKED node. Don't propose unless asked — talk first. SHARPEN (the eval pass): when asked to improve a node FROM what it produced, read its direct children (one layer — they're in the tree above, or read_node them), judge how well the node serves them and the brief, then propose ONE sharpened revision as a propose_node_ops EDIT. Accepting it re-stales those children for regeneration — that closes the loop.
 3. OFFER OPTIONS — when the author asks for alternatives/options, or to break a node out of its one obvious version, call propose_options with the node's [id] and 2–4 COMPLETE content objects, meaningfully different FROM EACH OTHER but each one HONORING the node's ancestors as fixed: a child elaborates the logline/premise above, it never rewrites it. Vary only what the parent leaves open (premise options keep the logline's protagonist/inciting/goal/obstacle/stakes and vary the dramatic question + shape); never reshape an ancestor into a different story, never near-duplicates. The author picks one in the tree. Use this only for choose-among-N; a single revision is propose_node_ops.
 4. DRAFT & CHECK PROSE — call render_scene_prose with a scene's [id] to draft (or redraft) its prose from its plan, in the book's voice (it saves to the scene and returns the text). Call check_against_contract with a scene's [id] to judge its existing prose against the brief mandate (genre, heat, voice, success criteria) and get a per-axis verdict you relay to the author. A common request — "write the first scene and see if it meets the brief" — is render_scene_prose then check_against_contract on the same scene. render OVERWRITES existing prose, so if a scene already has prose, confirm before redrafting.
-   • REBUILDS: to replace a whole level — "rebuild the acts", "4 movements with all-new beats" — use ONE replace_children op (parentId = the level's parent, e.g. the pillar for acts; childKind = movement; children = the new movements, each nesting its beats). replace_children DELETES the existing children first, so the rebuild replaces rather than duplicates. Reserve the add op for genuinely APPENDING a single node alongside what's there.
+   • REBUILDS: to replace a whole level — "rebuild the acts", "4 acts with all-new beats" — use ONE replace_children op (parentId = the level's parent, e.g. the pillar for acts; childKind = act; children = the new acts, each nesting its beats). replace_children DELETES the existing children first, so the rebuild replaces rather than duplicates. Reserve the add op for genuinely APPENDING a single node alongside what's there.
 
 ${CONTENT_SCHEMAS}
 
@@ -1121,7 +1121,7 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
   // Autonomous mode: the author is AWAY. The agent must carry every request to a committed change with no
   // human gate — it makes the option choices itself and never waits. (The client auto-applies what it stages.)
   const autoLine = auto
-    ? "\n\nAUTONOMOUS MODE — the author has stepped away and CANNOT review, pick, or answer. Carry every request all the way to a finished result yourself, then conclude:\n• Make ONE change per turn with propose_node_ops. It is APPLIED LIVE immediately — there is no review step, and your NEXT turn shows the updated tree. Don't say \"I propose\" or wait for approval; just make the change, then continue.\n• DON'T OVER-READ. The full DNA tree (all structure — movements, beats, scene plans) is ALREADY in your context above. Only use read_node for a scene's PROSE; never read_node a movement/beat/scene just to see its plan — you can already see it. Act, don't explore.\n• NEVER call ask_author. At a creative fork, decide with your best judgment and proceed.\n• Prefer to commit directly: when you'd weigh options, just pick the strongest and write it with propose_node_ops. (Avoid propose_options in autonomous mode — there's no one to pick.)\n• ALWAYS CONCLUDE: once the request is fully handled, call finish with a one-line summary of what you changed. Don't stop mid-thought after a change — keep going until you finish."
+    ? "\n\nAUTONOMOUS MODE — the author has stepped away and CANNOT review, pick, or answer. Carry every request all the way to a finished result yourself, then conclude:\n• Make ONE change per turn with propose_node_ops. It is APPLIED LIVE immediately — there is no review step, and your NEXT turn shows the updated tree. Don't say \"I propose\" or wait for approval; just make the change, then continue.\n• DON'T OVER-READ. The full DNA tree (all structure — acts, beats, scene plans) is ALREADY in your context above. Only use read_node for a scene's PROSE; never read_node a act/beat/scene just to see its plan — you can already see it. Act, don't explore.\n• NEVER call ask_author. At a creative fork, decide with your best judgment and proceed.\n• Prefer to commit directly: when you'd weigh options, just pick the strongest and write it with propose_node_ops. (Avoid propose_options in autonomous mode — there's no one to pick.)\n• ALWAYS CONCLUDE: once the request is fully handled, call finish with a one-line summary of what you changed. Don't stop mid-thought after a change — keep going until you finish."
     : "";
   return `${SYSTEM_THREAD}${scopeLine}${effortLine}${autoLine}\n\n${blocks.join("\n\n")}`;
 }

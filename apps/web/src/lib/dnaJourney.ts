@@ -34,7 +34,7 @@ export function stageComplete(nodes: DnaNode[], mode: "prose" | "picture" = "pro
   return {
     premise: !!premise && accepted(premise) && hasText((seed?.content as { logline?: string })?.logline),
     foundations: !!pillar && accepted(pillar) && of("character").length >= 1,
-    structure: of("movement").length >= 1 && of("beat").length >= 1,
+    structure: of("act").length >= 1 && of("beat").length >= 1,
     scenes: scenes.length >= 1,
     draft: scenes.length >= 1 && scenes.every((s) => sceneDrafted(s, mode)),
   };
@@ -113,7 +113,7 @@ export function stageSubsteps(key: StageKey, nodes: DnaNode[], mode: "prose" | "
     ]);
   }
   if (key === "structure") {
-    const foundationsDone = accepted(pillar) && n("character") >= 1, acts = n("movement");
+    const foundationsDone = accepted(pillar) && n("character") >= 1, acts = n("act");
     return resolveSeq([
       { key: "acts", label: "Acts", done: acts >= 1, ready: foundationsDone, count: acts },
       { key: "beats", label: "Beats", done: n("beat") >= 1, ready: acts >= 1, count: n("beat") },
@@ -144,7 +144,7 @@ export function stageProgress(nodes: DnaNode[], mode: "prose" | "picture" = "pro
   const hasChild = (pid: string, kind: NodeKind) => nodes.some((n) => n.parent_id === pid && n.kind === kind);
   const seed = of("seed")[0], premise = of("premise")[0], pillar = of("pillar")[0];
   const cast = of("character").length;
-  const acts = of("movement"), beats = of("beat"), scenes = of("scene");
+  const acts = of("act"), beats = of("beat"), scenes = of("scene");
   const seedDone = !!seed && hasText((seed.content as { logline?: string }).logline) && accepted(seed);
   const actsWithBeats = acts.filter((a) => hasChild(a.id, "beat")).length;
   const beatsWithScenes = beats.filter((b) => hasChild(b.id, "scene")).length;
@@ -170,7 +170,7 @@ export function stageProgress(nodes: DnaNode[], mode: "prose" | "picture" = "pro
 export const STAGE_KINDS: Record<StageKey, NodeKind[]> = {
   premise: ["seed", "premise"],
   foundations: ["pillar", "character", "relationship", "tentpole", "world_fact", "game"],
-  structure: ["movement", "beat"],
+  structure: ["act", "beat"],
   scenes: ["scene"],
   draft: ["scene"],
 };

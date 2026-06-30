@@ -8,7 +8,7 @@ import { Eyebrow } from "@/components/book/shared/studioUi";
 import type { StageKey } from "@/lib/dnaJourney";
 import {
   beatsInOrder, causality, childrenOf, scenesInOrder,
-  type BeatContent, type CausalityRow, type DnaNode, type MovementContent, type SceneContent,
+  type BeatContent, type CausalityRow, type DnaNode, type ActContent, type SceneContent,
 } from "@/lib/novelDna";
 
 const ACCENT = "text-[hsl(var(--pv-accent))]";
@@ -103,8 +103,8 @@ function BeatRow({ beat, scenes, causal, picture, onOpen }: {
 export function DnaStoryMap({ nodes, picture, onOpen }: {
   nodes: DnaNode[]; picture: boolean; onOpen: (stage: StageKey, focusId?: string) => void;
 }) {
-  const movements = nodes.filter((n) => n.kind === "movement").sort((a, b) => a.position - b.position);
-  if (!movements.length) return null;
+  const acts = nodes.filter((n) => n.kind === "act").sort((a, b) => a.position - b.position);
+  if (!acts.length) return null;
 
   const scenes = scenesInOrder(nodes);
   const beats = beatsInOrder(nodes);
@@ -113,7 +113,7 @@ export function DnaStoryMap({ nodes, picture, onOpen }: {
 
   // units per act for the contour's dividers
   const beatsOf = (m: DnaNode) => childrenOf(nodes, m.id).filter((b) => b.kind === "beat");
-  const unitsByAct = movements.map((m) =>
+  const unitsByAct = acts.map((m) =>
     scenes.length ? beatsOf(m).reduce((a, b) => a + childrenOf(nodes, b.id).filter((s) => s.kind === "scene").length, 0) : beatsOf(m).length);
 
   const open = (id: string, stage: StageKey) => onOpen(stage, id);
@@ -136,8 +136,8 @@ export function DnaStoryMap({ nodes, picture, onOpen }: {
 
       {/* the beat-by-beat spine, grouped by act */}
       <div className="space-y-3">
-        {movements.map((m, i) => {
-          const mc = m.content as MovementContent;
+        {acts.map((m, i) => {
+          const mc = m.content as ActContent;
           const actBeats = beatsOf(m);
           const v = mc.value;
           return (

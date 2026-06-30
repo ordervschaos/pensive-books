@@ -88,7 +88,7 @@ export const NODE_SCHEMA: Partial<Record<NodeKind, EditSpec[]>> = {
     { key: "tense", label: "tense", type: "select", options: ["past", "present"], taste: true }, { key: "style", label: "style", multiline: true, required: true, taste: true },
     { key: "constraints", label: "constraints", type: "list", taste: true }, { key: "sample", label: "sample", multiline: true, taste: true },
   ],
-  movement: [
+  act: [
     { key: "title", label: "title" }, { key: "goal", label: "goal", multiline: true, required: true }, { key: "turning_point", label: "turning point", multiline: true },
     { key: "target_pct", label: "target %", type: "percent" },
     { key: "value", label: "value", type: "object", fields: [{ key: "name", label: "name" }, { key: "from", label: "from" }, { key: "to", label: "to" }] },
@@ -125,10 +125,10 @@ export const tasteSpecs = (kind: NodeKind): EditSpec[] => (NODE_SCHEMA[kind] ?? 
 
 // ── Structural constants (single copy; were duplicated across DnaTreePage + dnaChat) ─────────────────────
 export const KIND_LEVEL: Record<NodeKind, number> = {
-  seed: 0, premise: 1, pillar: 2, character: 2, relationship: 2, tentpole: 2, world_fact: 2, location: 2, voice_profile: 2, thread: 2, game: 2, meter: 2, movement: 3, beat: 4, scene: 5,
+  seed: 0, premise: 1, pillar: 2, character: 2, relationship: 2, tentpole: 2, world_fact: 2, location: 2, voice_profile: 2, thread: 2, game: 2, meter: 2, act: 3, beat: 4, scene: 5,
 };
 // The ladder's next kind down — drives the nested adds of a replace_children subtree.
-export const LADDER_NEXT: Partial<Record<NodeKind, NodeKind>> = { movement: "beat", beat: "scene" };
+export const LADDER_NEXT: Partial<Record<NodeKind, NodeKind>> = { act: "beat", beat: "scene" };
 
 // ── Content validation (the runtime shape check) ─────────────────────────────────────────────────────────
 const isEmpty = (v: unknown): boolean => v == null || v === "" || (Array.isArray(v) && v.length === 0);

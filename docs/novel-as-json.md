@@ -14,7 +14,7 @@ Every level of the ladder is the same node shape. Learn four verbs once — expa
 {
   "id": "n_a3f",
   "level": 2,                     // 0..6
-  "kind": "pillar",              // seed | premise | pillar | movement | beat | scene | prose
+  "kind": "pillar",              // seed | premise | pillar | act | beat | scene | prose
   "parent": "n_root",
   "children": [],                // next rung; empty until expanded
 
@@ -48,7 +48,7 @@ The discipline: keep each rung's *ask* small, and prefer "choose among proposals
 | L0 | seed | `{ logline }` | give the idea, or pick a proposal |
 | L1 | premise | `{ genre[], tone[], dramatic_question, shape: {setup, turn1, turn2, turn3, resolution} }` | steer the turns + ending |
 | L2 | pillar | `{ protagonist:{want,need,wound,lie,truth}, opposition, world_rules[], controlling_idea }` | **supply wound + lie** (human core) |
-| L3 | movement | `{ goal, turning_point, value }` ×3–5 | place the turning points |
+| L3 | act | `{ goal, turning_point, value }` ×3–5 | place the turning points |
 | L4 | beat | `{ summary, connector:"therefore"\|"but" }` + declare `threads[{promise, kind}]` | which promises matter |
 | L5 | scene | `{ pov, loc, present[], goal, conflict, outcome, value_shift, advances[] }` | tweak value shifts / order |
 | L6 | prose | `{ text }` | voice corrections only |
@@ -106,7 +106,7 @@ This is spreadsheet recalculation: `content` = value, derivation = formula, `loc
 - A node may be `expanded` only if its parent `status == "accepted"`. (Enforces ladder order → progressive disclosure.)
 - Every `thread.promise` (declared at L4) resolves to a `payoff` scene at L5 with a later index than its setup.
 - Every L5 scene has a non-empty `value_shift`. (No flat "and-then" scenes.)
-- Every L4 beat after the first in its movement has a `connector` of `therefore` or `but`.
+- Every L4 beat after the first in its act has a `connector` of `therefore` or `but`.
 - A regenerate sweep never mutates a node where `locked == true`.
 - After any edit, the user is shown the count of newly-`stale` nodes before regeneration runs (the visible blast radius).
 

@@ -100,16 +100,16 @@ The vertical narrative chain. `content` shapes, field by field.
 | controlling_idea | string | ★/A | the argument the whole book proves |
 | ending | string | ★ | the pinned target the structure must reach |
 
-### L3 `movement` (×3–5; acts)
+### L3 `act` (×3–5; acts)
 | field | type | fill | |
 |---|---|---|---|
 | title | string | A | optional label |
-| goal | string | A/U | what this movement drives at |
+| goal | string | A/U | what this act drives at |
 | turning_point | string | ★ | place the turn — the act's hinge |
-| target_pct | float 0–1 | ★/A | where this act's `turning_point` should land in the book — the **pacing intent**, checked against structural gravity (≈.25 / .50 / .75; §6 pacing). Author states it on movements only; beats/scenes inherit by derivation |
-| value | `{ name, from, to }` | A/U | the value-charge shift across the movement |
+| target_pct | float 0–1 | ★/A | where this act's `turning_point` should land in the book — the **pacing intent**, checked against structural gravity (≈.25 / .50 / .75; §6 pacing). Author states it on acts only; beats/scenes inherit by derivation |
+| value | `{ name, from, to }` | A/U | the value-charge shift across the act |
 
-### L4 `beat` (×~3 per movement; the causal skeleton — always its own row)
+### L4 `beat` (×~3 per act; the causal skeleton — always its own row)
 | field | type | fill | |
 |---|---|---|---|
 | summary | string | A/U | one line |
@@ -185,7 +185,7 @@ with no placement is an open obligation (a lint, §7).
 The open loops the book opens and must close: a foreshadow, a mystery, a planted gun, a relationship arc.
 A thread is one **promise node** that both ends point at — a `setup` scene and a `payoff` scene reference
 the *same* thread, so a payoff at a distance is a **reference edge reaching forward in reading order**
-(§5), never a reordered beat. Generated at step 5 (after movements, so it can see the whole arc) — see
+(§5), never a reordered beat. Generated at step 5 (after acts, so it can see the whole arc) — see
 `novel-dna-flow.md`.
 
 | field | type | fill | |
@@ -227,7 +227,7 @@ Pure functions of the tree. Recomputed on read; `reconcile` materializes the pag
 
 | projection | definition |
 |---|---|
-| reading order | depth-first leaf order: movements (by position) → beats → scenes |
+| reading order | depth-first leaf order: acts (by position) → beats → scenes |
 | chapters | partition of the scene order by `chapter_start` boundaries → `[{ index, title, pov?, epigraph?, scene_ids[], word_count, est_pages }]` |
 | word_count | Σ `scene.prose.words` over a chapter / the book |
 | est_pages | `word_count / wpp(layout)` |
@@ -241,7 +241,7 @@ questions structural theory asks of a draft. All three are **projections** (no s
 
 | axis | derivation | the question it answers | the failure it catches |
 |---|---|---|---|
-| **pacing** (*when*) | cumulative `prose.words` (or scene count pre-prose) gives each scene an **actual %**; a movement's `turning_point` actual % vs its `target_pct` | does the midpoint land at the midpoint? | turning points drifting off structural gravity (≈.25/.50/.75) — the "sagging" or "rushed" act |
+| **pacing** (*when*) | cumulative `prose.words` (or scene count pre-prose) gives each scene an **actual %**; a act's `turning_point` actual % vs its `target_pct` | does the midpoint land at the midpoint? | turning points drifting off structural gravity (≈.25/.50/.75) — the "sagging" or "rushed" act |
 | **promises** (*what*) | walk scenes in order tracking each `thread`'s open/closed state from `threads[].role` | is every promise paid, and in order? | dangling promise · unearned payoff · payoff-before-setup (§4.5) |
 | **emotional topography** (*charge*) | the sequence of `value_shift.polarity` (up/down) across scenes | does the emotional valence oscillate, or flatline? | a run of same-polarity scenes = the sagging middle (Story Grid / *Bestseller Code*) |
 
@@ -257,7 +257,7 @@ completeness** is the predicate for "the book exists."
 
 **Render predicate — the book renders iff ALL hold:**
 - `title`, `author`, `mandate.word_target` set (§1 **R**).
-- ≥1 `movement` → ≥1 `beat` → ≥1 `scene` exists.
+- ≥1 `act` → ≥1 `beat` → ≥1 `scene` exists.
 - **every** scene has `prose.text` non-empty with `status==accepted` (**R**).
 - every scene has a non-empty `value_shift`.
 - the scene order is partitioned by chapters: the first scene in reading order is a `chapter_start` (else
@@ -274,7 +274,7 @@ connector, unplaced tentpole):
 | dangling promise | warn | a `thread` set up but never paid | promises |
 | unearned payoff | warn | a scene pays a thread that was never set up | promises |
 | misordered payoff | error | a `payoff` scene precedes its `setup` scene in reading order | promises |
-| pacing drift | warn | a movement's `turning_point` actual % is far from its `target_pct` (off structural gravity) | pacing |
+| pacing drift | warn | a act's `turning_point` actual % is far from its `target_pct` (off structural gravity) | pacing |
 | sagging middle | warn | a run of ≥N consecutive scenes with the same `value_shift.polarity` | emotional topography |
 | ungrounded climax | warn | the resolution scene's win isn't grounded in any world rule (`grounds_in` empty) — risk of deus ex machina | grounding |
 
@@ -293,7 +293,7 @@ pull the ★ slots from the author and let `expand` fill the rest. Ordered by le
 | 1 | logline / dramatic_question | seed/premise | the idea itself |
 | 2 | **wound + lie** of the protagonist | character | the emotional core; AI guesses generically |
 | 3 | controlling_idea + **ending** | pillar | what the book proves, and where it lands |
-| 4 | the **turning points** (shape turns + movement hinges) **and where they land** (`target_pct`) | premise/movement | the spine's load-bearing reversals + their pacing intent |
+| 4 | the **turning points** (shape turns + act hinges) **and where they land** (`target_pct`) | premise/act | the spine's load-bearing reversals + their pacing intent |
 | 5 | **mandate**: heat (content_type), word_target, success_criteria | settings | the binding contract — laundered away if not pinned |
 | 6 | voice_exemplar | settings | the single strongest prose anchor |
 | 7 | which **threads** (promises) matter; tentpoles to pin/kill | thread/tentpole | author taste over AI's over-seeding |

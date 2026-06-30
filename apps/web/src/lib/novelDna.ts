@@ -5,7 +5,7 @@
 import { metaHash } from "@/lib/planProvenance";
 
 // ── Kinds ─────────────────────────────────────────────────────────────────────
-export const LADDER_KINDS = ["seed", "premise", "pillar", "movement", "beat", "scene"] as const;
+export const LADDER_KINDS = ["seed", "premise", "pillar", "act", "beat", "scene"] as const;
 export const ENTITY_KINDS = ["character", "relationship", "tentpole", "world_fact", "location", "thread", "game", "meter", "voice_profile"] as const;
 export type LadderKind = (typeof LADDER_KINDS)[number];
 export type EntityKind = (typeof ENTITY_KINDS)[number];
@@ -16,7 +16,7 @@ export const isEntityKind = (k: NodeKind): k is EntityKind => (ENTITY_KINDS as r
 // entities-on-the-pillar). `null` = a root. The single source of truth for "where does this attach": the
 // structural linter checks against it, and generation asserts onto it (no silent fail-open re-parenting).
 export const PARENT_KIND: Record<NodeKind, NodeKind | null> = {
-  seed: null, premise: "seed", pillar: "premise", movement: "pillar", beat: "movement", scene: "beat",
+  seed: null, premise: "seed", pillar: "premise", act: "pillar", beat: "act", scene: "beat",
   character: "pillar", relationship: "pillar", tentpole: "pillar", world_fact: "pillar", location: "pillar", thread: "pillar", game: "pillar", meter: "pillar", voice_profile: "pillar",
 };
 // Kinds that must be unique per book (the ladder spine + the single voice). A 2nd is a duplicate.
@@ -41,7 +41,7 @@ export interface SeedContent { logline?: string }
 export interface PremiseContent { genre?: string[]; tone?: string[]; dramatic_question?: string; shape?: { setup?: string; turn1?: string; turn2?: string; turn3?: string; resolution?: string } }
 export interface PillarContent { controlling_idea?: string; ending?: string }
 // target_pct: where this act's turning_point should land in the book (0–1) — the pacing intent (§6).
-export interface MovementContent { title?: string; goal?: string; turning_point?: string; target_pct?: number; value?: ValueShift }
+export interface ActContent { title?: string; goal?: string; turning_point?: string; target_pct?: number; value?: ValueShift }
 // A reference to a thread node + the role this beat/scene plays for that promise (§4.5/§5).
 export type ThreadRole = "setup" | "payoff" | "advance";
 export interface ThreadRef { ref: string; role: ThreadRole }
@@ -177,7 +177,7 @@ export const pillarOf = (nodes: DnaNode[]): DnaNode | undefined => nodes.find((n
 export const childrenOf = (nodes: DnaNode[], parentId: string | null): DnaNode[] =>
   nodes.filter((n) => n.parent_id === parentId).sort((a, b) => a.position - b.position);
 
-/** Scenes in reading order: DFS of the narrative spine (movements→beats→scenes, each by position). */
+/** Scenes in reading order: DFS of the narrative spine (acts→beats→scenes, each by position). */
 export function scenesInOrder(nodes: DnaNode[]): DnaNode[] {
   const out: DnaNode[] = [];
   const walk = (n: DnaNode) => {
@@ -185,8 +185,8 @@ export function scenesInOrder(nodes: DnaNode[]): DnaNode[] {
     for (const c of childrenOf(nodes, n.id)) if (!isEntityKind(c.kind)) walk(c);
   };
   for (const root of nodes.filter((n) => n.parent_id === null)) walk(root);
-  // Also handle trees whose roots are movements directly (no single root) — entities excluded above.
-  if (!out.length) for (const m of nodes.filter((n) => n.kind === "movement")) walk(m);
+  // Also handle trees whose roots are acts directly (no single root) — entities excluded above.
+  if (!out.length) for (const m of nodes.filter((n) => n.kind === "act")) walk(m);
   return out;
 }
 
@@ -211,11 +211,11 @@ export function presentCharacters(scene: DnaNode, nodes: DnaNode[]): DnaNode[] {
   return nodes.filter((n) => n.kind === "character" && namedIn(cName(n)));
 }
 
-/** Beats in reading order: movements by position, then each movement's beats by position. The causal
+/** Beats in reading order: acts by position, then each act's beats by position. The causal
  *  spine operates on beats (the plan), not scenes (the render) — so the producer/consumer walk is here. */
 export function beatsInOrder(nodes: DnaNode[]): DnaNode[] {
   const out: DnaNode[] = [];
-  for (const m of nodes.filter((n) => n.kind === "movement").sort((a, b) => a.position - b.position)) {
+  for (const m of nodes.filter((n) => n.kind === "act").sort((a, b) => a.position - b.position)) {
     for (const b of childrenOf(nodes, m.id)) if (b.kind === "beat") out.push(b);
   }
   return out;
@@ -486,7 +486,7 @@ export function enforcePromiseSchedule<T extends ThreadCarrier>(itemsInOrder: T[
 // ── The three analytic axes (schema §6) ───────────────────────────────────────
 // All derive over scenes-in-reading-order; none store anything. Each also feeds a lint in validate().
 
-const PACING_DRIFT_TOL = 0.1;   // a movement turn >10 percentage-points off its target_pct = drift
+const PACING_DRIFT_TOL = 0.1;   // a act turn >10 percentage-points off its target_pct = drift
 const SAGGING_RUN = 4;          // ≥4 consecutive same-polarity scenes = a sagging middle
 const METER_FLAT_RUN = 4;       // ≥4 consecutive ~equal readings on a meter = a dead stretch on that axis
 const METER_MIN_OSC = 2;        // a meter that changes direction fewer times over its life reads monotone
@@ -494,27 +494,27 @@ const METER_POLE_BAND = 0.15;   // a game_score must come within 15% of its losi
 const METER_TARGET_DRIFT_BAND = 0.2; // the PLAN's readings may sit within 20% of scale of the INTENDED target curve
 const METER_READ_GAP_BAND = 0.2;     // the prose-OBSERVED reading may sit within 20% of scale of the PLANNED reading
 
-/** PACING (when): each movement's turning point gets an actual % (cumulative words, or scene count
+/** PACING (when): each act's turning point gets an actual % (cumulative words, or scene count
  *  pre-prose) and the drift from its authored target_pct. */
-export interface PacingPoint { movementId: string; title?: string; targetPct?: number; actualPct: number; driftPct: number }
+export interface PacingPoint { actId: string; title?: string; targetPct?: number; actualPct: number; driftPct: number }
 export function pacing(nodes: DnaNode[]): PacingPoint[] {
   const index = byId(nodes);
   const scenes = scenesInOrder(nodes);
   const hasProse = scenes.some((s) => proseWords(s) > 0);
   const w = (s: DnaNode) => (hasProse ? proseWords(s) : 1); // pre-prose: weight every scene equally
   const total = scenes.reduce((a, s) => a + w(s), 0) || 1;
-  const movementOf = (s: DnaNode): string | null => {
+  const actOf = (s: DnaNode): string | null => {
     const beat = s.parent_id ? index.get(s.parent_id) : null;
     const mv = beat?.parent_id ? index.get(beat.parent_id) : null;
-    return mv?.kind === "movement" ? mv.id : null;
+    return mv?.kind === "act" ? mv.id : null;
   };
   let cum = 0;
-  const endFrac = new Map<string, number>(); // cumulative fraction at a movement's LAST scene = where its turn lands
-  for (const s of scenes) { cum += w(s); const m = movementOf(s); if (m) endFrac.set(m, cum / total); }
-  return nodes.filter((n) => n.kind === "movement").sort((a, b) => a.position - b.position).map((m) => {
-    const c = m.content as MovementContent;
+  const endFrac = new Map<string, number>(); // cumulative fraction at a act's LAST scene = where its turn lands
+  for (const s of scenes) { cum += w(s); const m = actOf(s); if (m) endFrac.set(m, cum / total); }
+  return nodes.filter((n) => n.kind === "act").sort((a, b) => a.position - b.position).map((m) => {
+    const c = m.content as ActContent;
     const actualPct = endFrac.get(m.id) ?? 0;
-    return { movementId: m.id, title: c.title, targetPct: c.target_pct, actualPct, driftPct: typeof c.target_pct === "number" ? actualPct - c.target_pct : 0 };
+    return { actId: m.id, title: c.title, targetPct: c.target_pct, actualPct, driftPct: typeof c.target_pct === "number" ? actualPct - c.target_pct : 0 };
   });
 }
 
@@ -825,7 +825,7 @@ export function analysisText(nodes: DnaNode[], settings: BookSettings): string {
   const pace = pacing(nodes);
   if (pace.length) {
     lines.push("PACING (turning point position vs target):");
-    for (const p of pace) lines.push(`  ${p.title ?? p.movementId}: actual ${Math.round(p.actualPct * 100)}%${typeof p.targetPct === "number" ? ` / target ${Math.round(p.targetPct * 100)}%${Math.abs(p.driftPct) > 0.1 ? " ⚠ DRIFT" : ""}` : ""}`);
+    for (const p of pace) lines.push(`  ${p.title ?? p.actId}: actual ${Math.round(p.actualPct * 100)}%${typeof p.targetPct === "number" ? ` / target ${Math.round(p.targetPct * 100)}%${Math.abs(p.driftPct) > 0.1 ? " ⚠ DRIFT" : ""}` : ""}`);
   }
   const ledger = promiseLedger(nodes);
   if (ledger.length) {
@@ -935,8 +935,8 @@ export function validate(nodes: DnaNode[]): DnaIssue[] {
     }
   }
 
-  // Beat causality: every non-first beat in a movement needs a therefore/but connector.
-  for (const m of nodes.filter((n) => n.kind === "movement")) {
+  // Beat causality: every non-first beat in a act needs a therefore/but connector.
+  for (const m of nodes.filter((n) => n.kind === "act")) {
     const beats = childrenOf(nodes, m.id).filter((b) => b.kind === "beat");
     beats.forEach((b, i) => {
       if (i === 0) return;
@@ -974,10 +974,10 @@ export function validate(nodes: DnaNode[]): DnaIssue[] {
     }
   }
 
-  // Pacing axis (§6): a movement's turning point drifting off its authored target_pct.
+  // Pacing axis (§6): a act's turning point drifting off its authored target_pct.
   for (const p of pacing(nodes)) {
     if (typeof p.targetPct === "number" && Math.abs(p.driftPct) > PACING_DRIFT_TOL) {
-      issues.push({ rule: "pacing_drift", severity: "warn", message: `act turn lands at ${Math.round(p.actualPct * 100)}% (target ${Math.round(p.targetPct * 100)}%)`, nodeId: p.movementId });
+      issues.push({ rule: "pacing_drift", severity: "warn", message: `act turn lands at ${Math.round(p.actualPct * 100)}% (target ${Math.round(p.targetPct * 100)}%)`, nodeId: p.actId });
     }
   }
 

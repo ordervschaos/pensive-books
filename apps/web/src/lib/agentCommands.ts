@@ -27,9 +27,9 @@ export interface AgentCommand {
 export const AGENT_COMMANDS: AgentCommand[] = [
   {
     id: "generate-beats", trigger: "generate beats", label: "Generate beats",
-    hint: "Propose beats for movements that have none",
+    hint: "Propose beats for acts that have none",
     kind: "generate", aspect: "story", scope: ["seed", "premise", "cast_world", "story"],
-    prompt: "For each movement that has no beats yet, propose the beats that realize it — each connecting to the last with therefore/but, turning a value. Propose them for review.",
+    prompt: "For each act that has no beats yet, propose the beats that realize it — each connecting to the last with therefore/but, turning a value. Propose them for review.",
   },
   {
     id: "revise-structure", trigger: "revise structure", label: "Revise structure",

@@ -21,7 +21,7 @@ export interface AgentStep {
 
 // The context filter aspects mirror the DNA tree's visual layers (not the journey stages).
 // "cast_world" = pillar + all entity kinds (the tree's "cast & world" group);
-// "story" = movements + beats + scenes (the tree's "story" spine).
+// "story" = acts + beats + scenes (the tree's "story" spine).
 export type Aspect = "seed" | "premise" | "cast_world" | "story" | "prose";
 export const ALL_ASPECTS: Aspect[] = ["seed", "premise", "cast_world", "story", "prose"];
 export const ASPECT_LABELS: Record<Aspect, string> = {
@@ -31,7 +31,7 @@ export const ASPECT_KINDS: Record<Aspect, NodeKind[]> = {
   seed: ["seed"],
   premise: ["premise"],
   cast_world: ["pillar", "character", "relationship", "tentpole", "world_fact", "location", "thread", "game", "voice_profile"],
-  story: ["movement", "beat", "scene"],
+  story: ["act", "beat", "scene"],
   prose: ["scene"],
 };
 

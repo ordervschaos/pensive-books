@@ -29,7 +29,7 @@ export function PageReview({ bookId, model, pageId, onChanged, onSelectPage }: P
   const navigate = useNavigate();
   const page = model.pageById(pageId);
   const idx = model.textIndexOf(pageId);
-  const movement = model.movements.find((m) => m.pages.some((p) => p.id === pageId));
+  const act = model.acts.find((m) => m.pages.some((p) => p.id === pageId));
 
   // Live node text, loaded for this page (the model carries presence; we need the editable strings).
   const [objective, setObjective] = useState("");
@@ -80,7 +80,7 @@ export function PageReview({ bookId, model, pageId, onChanged, onSelectPage }: P
     <div>
       <div className="flex items-center gap-2.5 pv-serif text-[13px] text-[hsl(var(--pv-text-muted))]">
         <span className="pv-mono text-[9.5px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-faint))]">
-          {movement?.num ? `${movement.num} · ` : ""}{movement?.title ?? "Pages"}
+          {act?.num ? `${act.num} · ` : ""}{act?.title ?? "Pages"}
         </span>
         <span className="text-[hsl(var(--pv-text-faint))]">▸</span>
         <span className="italic">page {idx + 1}</span>

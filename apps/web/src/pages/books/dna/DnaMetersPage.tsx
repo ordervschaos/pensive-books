@@ -22,7 +22,7 @@ const LINT_COLOR: Record<string, string> = { error: "#f87171", warn: "#fbbf24" }
 
 // ── The serial graph: one normalized line per serial meter over the beat spine ──────────────────────────
 // x = beat index (the PLAN layer meterSeries walks). Each meter maps its own [min,max] → [0,1] so unlike-scaled
-// meters share the canvas; the legend carries the real values. Faint act dividers mark movement boundaries.
+// meters share the canvas; the legend carries the real values. Faint act dividers mark act boundaries.
 // The PLAN line (solid) is the beat readings; when a meter declares a target curve, its INTENT (dashed, same
 // color) is overlaid so the plan-vs-intent gap is visible (the target_drift lint reads the same diff).
 function SerialGraph({ nodes, meters, colorOf }: { nodes: DnaNode[]; meters: DnaNode[]; colorOf: (id: string) => string }) {
@@ -34,11 +34,11 @@ function SerialGraph({ nodes, meters, colorOf }: { nodes: DnaNode[]; meters: Dna
   // y maps a normalized 0..1 to canvas (1 at top).
   const y = (norm: number) => PAD_Y + (1 - norm) * (H - 2 * PAD_Y);
 
-  // act boundaries: count beats per movement in order → cumulative x positions
+  // act boundaries: count beats per act in order → cumulative x positions
   const index = byId(nodes);
-  const movements = nodes.filter((nn) => nn.kind === "movement").sort((a, b) => a.position - b.position);
+  const acts = nodes.filter((nn) => nn.kind === "act").sort((a, b) => a.position - b.position);
   const bounds: number[] = []; let acc = 0;
-  for (const m of movements) {
+  for (const m of acts) {
     const c = childrenOf(nodes, m.id).filter((b) => b.kind === "beat").length;
     acc += c; if (acc > 0 && acc < n) bounds.push(acc);
   }

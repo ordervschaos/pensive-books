@@ -18,6 +18,13 @@ export const DEFAULT_LOW_MODEL = "claude-haiku-4-5-20251001";
 // claude-local.) `provider/model` ids route through OPENROUTER_API_KEY in claude.ts.
 export const IMAGE_PROMPT_MODEL = "qwen/qwen3-235b-a22b";
 
+// Continuity-DIGEST model (dna-expand's per-page fold). Deliberately NOT the cheap `low` model: the digest
+// is read-comprehension that downstream prose treats as authoritative, so a weak model's misreadings
+// (e.g. taking the protagonist's auction-lot designation "Lot Seven" as a separate character) poison every
+// later page. Pinned to qwen-plus (a reasoning model) regardless of the active tier — correctness here is
+// worth more than the few cents saved. `provider/model` routes through OPENROUTER_API_KEY in claude.ts.
+export const DIGEST_MODEL = "qwen/qwen3.7-plus";
+
 // high = selected generation model; low = cheap passes (summaries, scans).
 const TIER_MODELS: Record<ModelTier, { high: string; low: string }> = {
   opus:        { high: "claude-opus-4-8",           low: DEFAULT_LOW_MODEL },

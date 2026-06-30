@@ -16,7 +16,7 @@ metrics over reading order."*
 
 A story is already a set of quantities that move: how free the hero is, how close a game is to being lost,
 how hot a pairing runs, how funny the page is. The DNA encodes these **qualitatively** today —
-`movement.value {from,to}`, `scene.value_shift {polarity}`, `beat.polarity (up|down)`, a `game`'s two poles.
+`act.value {from,to}`, `scene.value_shift {polarity}`, `beat.polarity (up|down)`, a `game`'s two poles.
 A **meter** is the same thing made **numeric, named, and bounded**, so the trajectory is *computable and
 plottable* instead of a feeling.
 
@@ -76,7 +76,7 @@ Same node envelope as the other entities (character/game/thread). Defined **once
 | target | `[{ at:number, value:number }]` | A | OPTIONAL the **planned curve**: meter value at given word-% checkpoints. The shape generation aims at (§5). Sparse — a few anchors, not every beat |
 
 **The controlling value is the one required meter.** Every story has exactly one global `value` meter (the
-McKee controlling value — freedom, justice, trust). It is `movement.value` promoted to numeric and book-wide.
+McKee controlling value — freedom, justice, trust). It is `act.value` promoted to numeric and book-wide.
 Everything else (games, affect, heat, comedy) is optional richness.
 
 ## 3. The `readings` field (on beats/scenes — the points)
@@ -135,7 +135,7 @@ computed off the DNA continuously") becomes real, multi-dimensional, and **enfor
 
 Causality went from a post-hoc check to a generation *constraint* (`needs`/`establishes` state keys the
 beat generator must satisfy). Meters do the same: `meter.target` is a **target curve** the beat planner aims
-at. "Take `freedom` 30→70 across movement 3 with at least one dip below 20" is an instruction, not a wish.
+at. "Take `freedom` 30→70 across act 3 with at least one dip below 20" is an instruction, not a wish.
 The beat sheet assigns `readings` to hit the anchors — the same global pass that schedules threads, polarity,
 and games.
 
@@ -151,7 +151,7 @@ The eval loop is this cascade run on every meter:
   seed / logline   does the premise/logline even ALLOW a 90-comedy story?     enables? 0..1
   premise.shape    does the dramatic question / 5-part shape make room?       enables? 0..1
   pillar           is comedy in the controlling idea's register at all?       enables? 0..1
-  movements/beats  do the beats SET IT UP — comic runs, reversals, payoffs?   sets up? 0..1
+  acts/beats  do the beats SET IT UP — comic runs, reversals, payoffs?   sets up? 0..1
   scenes           is each funny scene's goal/conflict/outcome actually comic? delivers? 0..1
   prose (render)   do the jokes LAND on the page?                             delivers? 0..1
 ```
@@ -208,7 +208,7 @@ all targets." Drift shows as the cell where a column drops.
 
 The meters layer is mostly **generalizing two fields that already exist**, not green-field:
 
-- `movement.value {name,from,to}` → the global `value` **meter** (numeric, book-wide, with `target` anchors).
+- `act.value {name,from,to}` → the global `value` **meter** (numeric, book-wide, with `target` anchors).
 - `scene.value_shift {value,from,to,polarity}` → `readings: [{ref,value}]` (numeric, multiple, levels).
 - `beat.polarity (up|down)` → **derived** `polarityOf(beat)` = `sign(Δ value)`. Authored polarity retained as
   a convenience/override but no longer the source of truth.

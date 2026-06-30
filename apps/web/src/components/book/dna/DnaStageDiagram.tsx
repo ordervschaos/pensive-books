@@ -9,7 +9,7 @@
 // conceptual otherwise. Pure presentation; Paper-DS tokens via currentColor.
 import type { ReactNode } from "react";
 import type { StageKey } from "@/lib/dnaJourney";
-import { beatsInOrder, childrenOf, scenesInOrder, topography, type BeatContent, type DnaNode, type GameContent, type MovementContent, type SceneContent, type ThreadContent } from "@/lib/novelDna";
+import { beatsInOrder, childrenOf, scenesInOrder, topography, type BeatContent, type DnaNode, type GameContent, type ActContent, type SceneContent, type ThreadContent } from "@/lib/novelDna";
 
 const ACCENT = "text-[hsl(var(--pv-accent))]";
 const FAINT = "text-[hsl(var(--pv-text-faint))]";
@@ -65,14 +65,14 @@ function FoundationsDiagram() {
 
 // ── Structure: serial, budgeted acts with nested beats; threads/games span across ─
 function StructureDiagram({ nodes }: { nodes: DnaNode[] }) {
-  const movements = nodes.filter((n) => n.kind === "movement");
+  const acts = nodes.filter((n) => n.kind === "act");
   const beatsOf = (m: DnaNode) => nodes.filter((n) => n.kind === "beat" && n.parent_id === m.id).length;
   const games = nodes.filter((n) => n.kind === "game").length;
   const threads = nodes.filter((n) => n.kind === "thread").length;
 
   // Act widths from target_pct (the budget); fall back to equal blocks for an empty/conceptual tree.
-  const acts = movements.length ? movements : null;
-  const raw = acts ? acts.map((m) => (m.content as MovementContent).target_pct ?? 0) : [0.3, 0.45, 0.25];
+  const acts = acts.length ? acts : null;
+  const raw = acts ? acts.map((m) => (m.content as ActContent).target_pct ?? 0) : [0.3, 0.45, 0.25];
   const sum = raw.reduce((a, b) => a + b, 0);
   const widths = sum > 0 ? raw.map((p) => p / sum) : raw.map(() => 1 / raw.length);
   const beats = acts ? acts.map(beatsOf) : [3, 5, 3];
@@ -318,14 +318,14 @@ function Band({ label, last, onOpen, children }: { label: string; last?: boolean
 export function DnaFullDiagram({ nodes, onOpen }: { nodes: DnaNode[]; onOpen?: (stage: StageKey) => void }) {
   const of = (k: DnaNode["kind"]) => nodes.filter((n) => n.kind === k);
   const premise = of("premise")[0], seed = of("seed")[0], pillar = of("pillar")[0];
-  const movements = of("movement");
+  const acts = of("act");
   const beatsOf = (m: DnaNode) => nodes.filter((n) => n.kind === "beat" && n.parent_id === m.id).length;
   const scenes = of("scene");
   const drafted = scenes.filter((s) => str((s.content as { prose?: { text?: string } }).prose?.text)).length;
   const topo = topography(nodes);
 
   // act budget → widths + beat ticks (live; equal fallback if no target_pct set)
-  const raw = movements.map((m) => (m.content as MovementContent).target_pct ?? 0);
+  const raw = acts.map((m) => (m.content as ActContent).target_pct ?? 0);
   const sum = raw.reduce((a, b) => a + b, 0);
   const widths = sum > 0 ? raw.map((p) => p / sum) : raw.map(() => 1 / Math.max(raw.length, 1));
 
@@ -354,7 +354,7 @@ export function DnaFullDiagram({ nodes, onOpen }: { nodes: DnaNode[]; onOpen?: (
 
       {/* STRUCTURE — the serial, budgeted act track with nested beats; threads above, games below */}
       <Band label="structure · the spine" onOpen={onOpen && (() => onOpen("structure"))}>
-        {movements.length === 0 ? (
+        {acts.length === 0 ? (
           <p className={`pv-serif text-[12px] italic ${FAINT}`}>no acts yet</p>
         ) : (
           <div className="space-y-1.5">
@@ -362,12 +362,12 @@ export function DnaFullDiagram({ nodes, onOpen }: { nodes: DnaNode[]; onOpen?: (
             <div className="flex items-stretch gap-1">
               {widths.map((w, i) => (
                 <div key={i} className={`flex flex-col justify-between rounded border ${MUTED} border-current/40 bg-current/[0.04] px-1.5 py-1`} style={{ flex: `${w} 1 0%` }}>
-                  <span className={`pv-mono text-[8px] uppercase tracking-[0.07em] ${MUTED}`}>act {i + 1}{beatsOf(movements[i]) ? ` · ${beatsOf(movements[i])}` : ""}</span>
+                  <span className={`pv-mono text-[8px] uppercase tracking-[0.07em] ${MUTED}`}>act {i + 1}{beatsOf(acts[i]) ? ` · ${beatsOf(acts[i])}` : ""}</span>
                   <div className="mt-1 flex items-center gap-[3px]">
-                    {Array.from({ length: Math.max(1, Math.min(beatsOf(movements[i]) || 1, 6)) }).map((_, b) => (
+                    {Array.from({ length: Math.max(1, Math.min(beatsOf(acts[i]) || 1, 6)) }).map((_, b) => (
                       <span key={b} className={`h-1 w-1 rounded-full bg-current ${ACCENT}`} />
                     ))}
-                    {beatsOf(movements[i]) > 6 && <span className={`pv-mono text-[7px] leading-none ${MUTED}`}>+{beatsOf(movements[i]) - 6}</span>}
+                    {beatsOf(acts[i]) > 6 && <span className={`pv-mono text-[7px] leading-none ${MUTED}`}>+{beatsOf(acts[i]) - 6}</span>}
                   </div>
                 </div>
               ))}
