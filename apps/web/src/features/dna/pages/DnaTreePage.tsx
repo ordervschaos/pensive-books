@@ -143,9 +143,10 @@ function displayValue(node: DnaNode, spec: EditSpec, index: Map<string, DnaNode>
 // ── An editable content field: typed editor by spec.type ──────────────────────
 // Self-contained — writes straight through saveNode(editContent(...)) so the nested patch deep-merges and
 // Realtime reflects it back. Locked nodes are read-only. `parentKey` nests the patch for object sub-fields.
-function EditableField({ node, spec, depth, index, parentKey, onJump }: {
+function EditableField({ node, spec, depth, index, parentKey, onJump, searchPattern }: {
   node: DnaNode; spec: EditSpec; depth: number; index: Map<string, DnaNode>; parentKey?: string;
   onJump?: (id: string) => void; // #1 — click a ref to jump to its node
+  searchPattern?: RegExp | null; // #8 — highlight this field's displayed value when the search panel has a live match pattern
 }) {
   const locked = node.authoring.locked;
   const value = displayValue(node, spec, index, parentKey);
@@ -169,7 +170,7 @@ function EditableField({ node, spec, depth, index, parentKey, onJump }: {
     return (
       <>
         <div style={detailRowStyle(depth)}>{fieldRowStart(depth)}<span style={{ ...labelStyle, color: "#6e6e6e" }}>{spec.label}</span></div>
-        {spec.fields!.map((sub) => <EditableField key={sub.key} node={node} spec={sub} depth={depth + 1} index={index} parentKey={spec.key} onJump={onJump} />)}
+        {spec.fields!.map((sub) => <EditableField key={sub.key} node={node} spec={sub} depth={depth + 1} index={index} parentKey={spec.key} onJump={onJump} searchPattern={searchPattern} />)}
       </>
     );
   }
@@ -191,7 +192,7 @@ function EditableField({ node, spec, depth, index, parentKey, onJump }: {
         <span style={{ display: "flex", flexWrap: "wrap", gap: 4, flex: 1, alignItems: "center" }}>
           {ids.map((id) => (
             <span key={id} style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, color: "#cfcfcf", background: "#1c1c26", border: "1px solid #2a2a3a", borderRadius: 3, padding: "1px 5px", display: "inline-flex", gap: 4, alignItems: "center" }}>
-              <span onClick={() => onJump?.(id)} title={onJump ? "jump to node" : undefined} style={{ cursor: onJump ? "pointer" : "default", borderBottom: onJump ? "1px dotted #4a5a6a" : undefined }}>{refName(id, index)}</span>
+              <span onClick={() => onJump?.(id)} title={onJump ? "jump to node" : undefined} style={{ cursor: onJump ? "pointer" : "default", borderBottom: onJump ? "1px dotted #4a5a6a" : undefined }}><Highlighted text={refName(id, index)} pattern={searchPattern ?? null} /></span>
               {!locked && <span onClick={() => !busy && void write(ids.filter((x) => x !== id))} style={{ cursor: "pointer", color: "#666" }}>✕</span>}
             </span>
           ))}
@@ -217,8 +218,8 @@ function EditableField({ node, spec, depth, index, parentKey, onJump }: {
         <div style={detailRowStyle(depth)}>{fieldRowStart(depth)}<span style={labelStyle}>{spec.label}</span>
           <span style={{ flex: 1, display: "flex", alignItems: "baseline", gap: 6, minWidth: 0 }}>
             {jumpId
-              ? <span onClick={() => onJump!(jumpId)} title="jump to node" style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: busy ? "#666" : "#9bd3e6", cursor: "pointer", borderBottom: "1px dotted #4a5a6a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value}</span>
-              : <span onClick={() => !locked && setEditing(true)} style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: busy ? "#666" : "#cfcfcf", cursor: locked ? "default" : "pointer", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value}</span>}
+              ? <span onClick={() => onJump!(jumpId)} title="jump to node" style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: busy ? "#666" : "#9bd3e6", cursor: "pointer", borderBottom: "1px dotted #4a5a6a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><Highlighted text={value} pattern={searchPattern ?? null} /></span>
+              : <span onClick={() => !locked && setEditing(true)} style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: busy ? "#666" : "#cfcfcf", cursor: locked ? "default" : "pointer", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><Highlighted text={value} pattern={searchPattern ?? null} /></span>}
             {!locked && jumpId && <span onClick={() => setEditing(true)} title="change" style={{ fontSize: 10, color: "#4a4a4a", cursor: "pointer", flexShrink: 0 }}>▾</span>}
           </span>
           {!locked && <span onClick={() => !busy && void write("")} title="clear field" style={{ fontSize: 11, color: "#4a4a4a", cursor: "pointer", flexShrink: 0, alignSelf: "center", padding: "0 2px" }}>✕</span>}
@@ -244,7 +245,7 @@ function EditableField({ node, spec, depth, index, parentKey, onJump }: {
   if (!editing) {
     return (
       <div style={detailRowStyle(depth)}>{fieldRowStart(depth)}<span style={labelStyle}>{spec.label}</span>
-        <span onClick={() => !locked && (setDraft(rawAsDraft(raw, spec)), setEditing(true))} style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: busy ? "#666" : "#cfcfcf", whiteSpace: "pre-wrap", wordBreak: "break-word", flex: 1, lineHeight: 1.5, cursor: locked ? "default" : "text" }}>{value}</span>
+        <span onClick={() => !locked && (setDraft(rawAsDraft(raw, spec)), setEditing(true))} style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: busy ? "#666" : "#cfcfcf", whiteSpace: "pre-wrap", wordBreak: "break-word", flex: 1, lineHeight: 1.5, cursor: locked ? "default" : "text" }}><Highlighted text={value} pattern={searchPattern ?? null} /></span>
         {!locked && <span onClick={() => !busy && void write(spec.type === "list" ? [] : "")} title="clear field" style={{ fontSize: 11, color: "#4a4a4a", cursor: "pointer", flexShrink: 0, alignSelf: "center", padding: "0 2px" }}>✕</span>}
       </div>
     );
@@ -411,8 +412,8 @@ function NodeKebab({ onDelete, items = [] }: { onDelete?: () => void; items?: Ke
 }
 
 // ── Single tree row ──────────────────────────────────────────────────────────
-function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete, kebabItems, draggable, dragging, canDrop, onDragStartRow, onDragEndRow, onDropRow, mark, focus, flash, issues, dimmed, ctx, onContextFocus, prose, headerActions, staleActions, writingProse }: {
-  node: DnaNode; index: Map<string, DnaNode>; depth: number;
+function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete, kebabItems, draggable, dragging, canDrop, onDragStartRow, onDragEndRow, onDropRow, mark, focus, flash, issues, dimmed, ctx, onContextFocus, prose, headerActions, staleActions, writingProse, seq, searchPattern }: {
+  node: DnaNode; index: Map<string, DnaNode>; depth: number; seq?: number; // seq = global reading-order # (beat/scene)
   expandable: boolean; open: boolean; onToggle: () => void; onDelete?: () => void;
   kebabItems?: KebabItem[]; // regen actions, AI options, etc (all go in the ⋮ menu)
   prose?: ProseRollup | null; // act/beat: rolled-up prose-completion of descendant scenes
@@ -426,6 +427,7 @@ function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete, keb
   mark?: "edit" | "delete"; focus?: boolean; flash?: boolean; // mark = proposed change (#1); focus = rail focus (#2); flash = jump target (#1)
   issues?: DnaIssue[]; dimmed?: boolean; // health-lens (#6): this node's lints + dim-when-clean
   ctx?: "focus" | "consumes" | "consumedBy"; onContextFocus?: () => void; // #7 context-highlight role + the badge trigger
+  searchPattern?: RegExp | null; // #8 — highlight this row's title when the search panel has a live match pattern
 }) {
   const [dropEdge, setDropEdge] = useState<"top" | "bottom" | null>(null);
   const [staleCardPos, setStaleCardPos] = useState<{ top: number; right: number } | null>(null);
@@ -503,7 +505,7 @@ function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete, keb
             padding: "1px 5px", borderRadius: 3, border: `1px solid ${ctx === "focus" ? color : `${color}30`}`,
             whiteSpace: "nowrap", flexShrink: 0, cursor: onContextFocus ? "pointer" : "default",
           }}>
-          {node.kind}
+          {node.kind}{seq != null && <span style={{ opacity: 0.65, marginLeft: 4 }}>{seq}</span>}
         </span>
 
         {/* Title / content preview */}
@@ -514,7 +516,7 @@ function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete, keb
             textDecoration: mark === "delete" ? "line-through" : undefined,
           }}>
             {glyph && <span style={{ color: "#fbbf24", marginRight: 2 }}>{glyph}</span>}
-            {title}
+            <Highlighted text={title} pattern={searchPattern ?? null} />
           </span>
         )}
 
@@ -1311,6 +1313,8 @@ interface TreeView {
   ctxConsumes: Set<string>;             // #7 — ids the focused node REFERENCES (built from)
   ctxConsumedBy: Set<string>;           // #7 — ids that reference the focused node (built on it)
   onContextFocus: (id: string) => void; // #7 — toggle context focus from a kind badge
+  seq: Map<string, number>;             // beat/scene → its global reading-order number (shown in the kind badge)
+  searchPattern: RegExp | null;         // #8 — the active search panel's pattern (null = panel closed/empty); highlights titles + field values
   proseGeneratable: Set<string>;        // scene ids whose prose can be written now (predecessors finished)
   proseOpenSet: Set<string>;            // scene ids whose prose block is expanded
   onToggleProse: (id: string) => void;
@@ -1335,7 +1339,7 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
   const expandable = hasKids || specs.length > 0;
   const open = expandable && (hasKids ? !collapsedSet.has(node.id) : openSet.has(node.id));
   const toggle = () => (hasKids ? h.onToggle(node.id) : h.onToggleDetail(node.id));
-  const fields = specs.map((spec) => <EditableField key={spec.key} node={node} spec={spec} depth={depth + 1} index={index} onJump={h.onJump} />);
+  const fields = specs.map((spec) => <EditableField key={spec.key} node={node} spec={spec} depth={depth + 1} index={index} onJump={h.onJump} searchPattern={h.searchPattern} />);
   const backlinks = <BacklinksRow node={node} backlinks={h.backlinks} depth={depth + 1} onJump={h.onJump} />;
   const sub = (items: DnaNode[], d: number) => items.map((child) => (
     <Subtree key={child.id} node={child} index={index} nodes={nodes} depth={d}
@@ -1556,6 +1560,7 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
   return (
     <div>
       <TreeRow node={node} index={index} depth={depth} expandable={expandable} open={open} onToggle={toggle}
+        seq={h.seq.get(node.id)} searchPattern={h.searchPattern}
         onDelete={deletable ? () => h.onDelete(node) : undefined}
         kebabItems={kebabItems.length ? kebabItems : undefined}
         draggable={reorderable} dragging={h.dragId === node.id} canDrop={canDrop}
@@ -1989,6 +1994,193 @@ function GenAction({ label, title, onRun, size = "sm" }: { label: string; title?
 }
 
 // A view-toggle chip for the fixed quick bar — lit in its accent when active.
+// ── Search (⌕) — a persistent left-docked panel, VS Code's Search sidebar rather than its Quick Open: stays
+// open across jumps (so several hits can be clicked through without re-typing), case/whole-word/regex
+// toggles, an include-kind filter (kind is DNA's "which file" — the natural grouping unit here), results
+// grouped by kind with collapsible headers, and the match highlighted in place. Closed only by Esc, the ✕,
+// or the toolbar toggle — same open/close contract as the timeline/editor rail panels.
+interface SearchOpts { caseSensitive: boolean; wholeWord: boolean; useRegex: boolean }
+function escapeRegExp(s: string): string { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+function buildSearchPattern(query: string, opts: SearchOpts): RegExp | null {
+  const q = query.trim();
+  if (!q) return null;
+  let source = opts.useRegex ? q : escapeRegExp(q);
+  if (opts.wholeWord) source = `\\b(?:${source})\\b`;
+  try { return new RegExp(source, opts.caseSensitive ? "g" : "gi"); } catch { return null; }
+}
+interface SearchHit { node: DnaNode; titleHit: boolean; snippet: string }
+// Title hits first (an exec() per string, `lastIndex` reset each call since the pattern carries the "g" flag
+// and is reused across nodes). A content hit's snippet windows ±40 chars around the actual match length —
+// not the query length, since regex/whole-word matches don't have to be the same size as the typed query.
+function searchDna(nodes: DnaNode[], pattern: RegExp | null, includeKinds: Set<string>): SearchHit[] {
+  if (!pattern) return [];
+  const hits: SearchHit[] = [];
+  for (const n of nodes) {
+    if (includeKinds.size && !includeKinds.has(n.kind)) continue;
+    const title = nodeTitle(n);
+    pattern.lastIndex = 0;
+    if (pattern.test(title)) { hits.push({ node: n, titleHit: true, snippet: title }); continue; }
+    const text = JSON.stringify(n.content ?? {});
+    pattern.lastIndex = 0;
+    const m = pattern.exec(text);
+    if (!m) continue;
+    const len = m[0].length || 1;
+    const start = Math.max(0, m.index - 40);
+    const end = Math.min(text.length, m.index + len + 40);
+    const snippet = (start > 0 ? "…" : "") + text.slice(start, end) + (end < text.length ? "…" : "");
+    hits.push({ node: n, titleHit: false, snippet });
+  }
+  return hits.sort((a, b) => Number(b.titleHit) - Number(a.titleHit));
+}
+// Split text into hit/non-hit runs against `pattern`, for inline highlighting. Forces the "g" flag (a fresh
+// RegExp, not the shared one — sharing would leave lastIndex in a state the caller doesn't expect) and
+// guards zero-length matches (a bare regex like "a*") so it can't spin forever advancing lastIndex by hand.
+function highlightRuns(text: string, pattern: RegExp): { text: string; hit: boolean }[] {
+  const re = new RegExp(pattern.source, pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`);
+  const runs: { text: string; hit: boolean }[] = [];
+  let last = 0, m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    if (m.index > last) runs.push({ text: text.slice(last, m.index), hit: false });
+    const len = m[0].length || 1;
+    runs.push({ text: text.slice(m.index, m.index + len), hit: true });
+    last = m.index + len;
+    re.lastIndex = last;
+  }
+  if (last < text.length) runs.push({ text: text.slice(last), hit: false });
+  return runs;
+}
+function Highlighted({ text, pattern }: { text: string; pattern: RegExp | null }) {
+  if (!pattern || !text) return <>{text}</>;
+  return <>{highlightRuns(text, pattern).map((r, i) => r.hit
+    ? <mark key={i} style={{ background: "#f5c84233", color: "#f5c842", borderRadius: 2, padding: "0 1px" }}>{r.text}</mark>
+    : <span key={i}>{r.text}</span>)}</>;
+}
+function SearchToggleBtn({ active, label, title, onClick }: { active: boolean; label: string; title: string; onClick: () => void }) {
+  return (
+    <button onClick={onClick} title={title} style={{
+      fontFamily: "ui-monospace, monospace", fontSize: 10, padding: "2px 5px", borderRadius: 3, cursor: "pointer",
+      background: active ? "#9bd3e633" : "transparent", border: `1px solid ${active ? "#9bd3e688" : "#2a2a3a"}`,
+      color: active ? "#9bd3e6" : "#666",
+    }}>{label}</button>
+  );
+}
+
+// caseSensitive/wholeWord/useRegex/includeKinds are lifted to the page (owned alongside `query`) rather than
+// local state, because the page ALSO needs them: it highlights the same pattern in the tree itself and
+// auto-reveals matched nodes, so the panel and the tree must compute against the identical options — one
+// source of truth, not two toggle sets that could drift apart.
+function SearchPanel({
+  nodes, query, onQueryChange,
+  caseSensitive, onCaseSensitiveChange, wholeWord, onWholeWordChange, useRegex, onUseRegexChange,
+  includeKinds, onIncludeKindsChange, onJump, onClose,
+}: {
+  nodes: DnaNode[]; query: string; onQueryChange: (q: string) => void;
+  caseSensitive: boolean; onCaseSensitiveChange: (v: boolean) => void;
+  wholeWord: boolean; onWholeWordChange: (v: boolean) => void;
+  useRegex: boolean; onUseRegexChange: (v: boolean) => void;
+  includeKinds: Set<string>; onIncludeKindsChange: (s: Set<string>) => void;
+  onJump: (id: string) => void; onClose: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => { inputRef.current?.focus(); }, []);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [activeIdx, setActiveIdx] = useState(0);
+
+  // Kinds actually present in this book's tree, in schema-hierarchy order (KIND_COLOR's key order), with any
+  // kind KIND_COLOR doesn't know about (e.g. voice_profile) appended rather than silently dropped.
+  const kindsPresent = useMemo(() => {
+    const present = new Set(nodes.map((n) => n.kind));
+    const ordered = Object.keys(KIND_COLOR).filter((k) => present.has(k));
+    return [...ordered, ...[...present].filter((k) => !ordered.includes(k))];
+  }, [nodes]);
+
+  const pattern = useMemo(() => buildSearchPattern(query, { caseSensitive, wholeWord, useRegex }), [query, caseSensitive, wholeWord, useRegex]);
+  const invalidRegex = useRegex && query.trim() !== "" && pattern === null;
+  const hits = useMemo(() => searchDna(nodes, pattern, includeKinds), [nodes, pattern, includeKinds]);
+  const groups = useMemo(() => {
+    const byKind = new Map<string, SearchHit[]>();
+    for (const h of hits) { const arr = byKind.get(h.node.kind); if (arr) arr.push(h); else byKind.set(h.node.kind, [h]); }
+    return kindsPresent.filter((k) => byKind.has(k)).map((k) => [k, byKind.get(k)!] as const);
+  }, [hits, kindsPresent]);
+  const flatVisible = useMemo(() => groups.filter(([k]) => !collapsedGroups.has(k)).flatMap(([, hs]) => hs), [groups, collapsedGroups]);
+  useEffect(() => { setActiveIdx(0); }, [query, caseSensitive, wholeWord, useRegex, includeKinds]);
+  const activeHit = flatVisible[Math.min(activeIdx, flatVisible.length - 1)];
+
+  const toggleKind = (k: string) => { const next = new Set(includeKinds); if (next.has(k)) next.delete(k); else next.add(k); onIncludeKindsChange(next); };
+  const toggleGroup = (k: string) => setCollapsedGroups((prev) => { const next = new Set(prev); if (next.has(k)) next.delete(k); else next.add(k); return next; });
+
+  return (
+    <div style={{
+      position: "fixed", top: 0, left: 0, bottom: 0, width: 320, zIndex: 22,
+      background: "#0b0b0fee", borderRight: "1px solid #1c1c26", display: "flex", flexDirection: "column",
+      fontFamily: "ui-monospace, monospace", backdropFilter: "blur(6px)",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px 6px" }}>
+        <span style={{ fontSize: 9, letterSpacing: "0.14em", textTransform: "uppercase", color: "#666" }}>search</span>
+        <span onClick={onClose} title="close (esc)" style={{ color: "#666", cursor: "pointer", fontSize: 13, lineHeight: 1 }}>✕</span>
+      </div>
+      <div style={{ padding: "0 12px 8px", display: "flex", flexDirection: "column", gap: 6, borderBottom: "1px solid #1a1a22" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <input ref={inputRef} value={query} placeholder="search nodes…"
+            onChange={(e) => onQueryChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") { e.preventDefault(); onClose(); }
+              else if (e.key === "ArrowDown") { e.preventDefault(); setActiveIdx((i) => Math.min(i + 1, flatVisible.length - 1)); }
+              else if (e.key === "ArrowUp") { e.preventDefault(); setActiveIdx((i) => Math.max(i - 1, 0)); }
+              else if (e.key === "Enter" && activeHit) { e.preventDefault(); onJump(activeHit.node.id); }
+            }}
+            style={{ flex: 1, minWidth: 0, background: "#16161c", border: "1px solid #2a2a3a", borderRadius: 4, color: "#e6e6e6", fontSize: 12, padding: "6px 8px", outline: "none", fontFamily: "inherit" }} />
+          <SearchToggleBtn active={caseSensitive} label="Aa" title="match case" onClick={() => onCaseSensitiveChange(!caseSensitive)} />
+          <SearchToggleBtn active={wholeWord} label="ab" title="match whole word" onClick={() => onWholeWordChange(!wholeWord)} />
+          <SearchToggleBtn active={useRegex} label=".*" title="use regular expression" onClick={() => onUseRegexChange(!useRegex)} />
+        </div>
+        {invalidRegex && <span style={{ fontSize: 10, color: "#f87171" }}>invalid regular expression</span>}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }}>
+          {kindsPresent.map((k) => (
+            <span key={k} onClick={() => toggleKind(k)} title={`limit to ${k}`}
+              style={{
+                fontSize: 9, letterSpacing: "0.06em", textTransform: "uppercase", cursor: "pointer", padding: "1px 6px", borderRadius: 3,
+                color: includeKinds.has(k) ? "#0a0a0a" : (KIND_COLOR[k] ?? "#888"),
+                background: includeKinds.has(k) ? (KIND_COLOR[k] ?? "#888") : "transparent",
+                border: `1px solid ${(KIND_COLOR[k] ?? "#888")}55`,
+              }}>{k}</span>
+          ))}
+          {includeKinds.size > 0 && <span onClick={() => onIncludeKindsChange(new Set())} style={{ fontSize: 9, color: "#666", cursor: "pointer", textDecoration: "underline" }}>clear</span>}
+        </div>
+        <span style={{ fontSize: 10, color: "#555" }}>
+          {query.trim() ? `${hits.length} result${hits.length === 1 ? "" : "s"} in ${groups.length} kind${groups.length === 1 ? "" : "s"}` : "type to search titles + content"}
+        </span>
+      </div>
+      <div style={{ flex: 1, overflowY: "auto", padding: "4px 0 12px" }}>
+        {query.trim() && hits.length === 0 && !invalidRegex && (
+          <div style={{ padding: "10px 12px", fontSize: 11, color: "#555" }}>no matches</div>
+        )}
+        {groups.map(([kind, kindHits]) => {
+          const collapsed = collapsedGroups.has(kind);
+          return (
+            <div key={kind}>
+              <div onClick={() => toggleGroup(kind)}
+                style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 12px", cursor: "pointer", position: "sticky", top: 0, background: "#0b0b0fee", zIndex: 1 }}>
+                <span style={{ fontSize: 9, color: "#555", width: 10 }}>{collapsed ? "▶" : "▼"}</span>
+                <span style={{ fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: KIND_COLOR[kind] ?? "#888" }}>{kind}</span>
+                <span style={{ fontSize: 9, color: "#444" }}>{kindHits.length}</span>
+              </div>
+              {!collapsed && kindHits.map((hit) => (
+                <div key={hit.node.id} onClick={() => onJump(hit.node.id)} onMouseEnter={() => setActiveIdx(flatVisible.indexOf(hit))}
+                  style={{ padding: "5px 12px 5px 26px", cursor: "pointer", background: hit === activeHit ? "#8a8aff14" : "transparent" }}>
+                  <div style={{ fontSize: 11, color: hit.titleHit ? "#cfcfcf" : "#8a8a8a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", lineHeight: 1.5 }}>
+                    <Highlighted text={hit.snippet || "(untitled)"} pattern={pattern} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function QuickToggle({ active, accent, label, icon, onClick }: { active: boolean; accent: string; label: string; icon: string; onClick: () => void }) {
   return (
     <button onClick={onClick} title={label} style={{
@@ -2043,9 +2235,12 @@ function SpineTimeline({ nodes, mode, rightInset, bookId, onJump, onClose }: {
   const sceneState = (s: DnaNode): "planned" | "written" | "stale" =>
     !sceneWritten(s) ? "planned" : (mode !== "picture" && isProseStale(s)) ? "stale" : "written";
 
-  // global scene numbering (1-based, reading order) — one pass so chips show book-wide position
+  // global 1-based reading-order numbering — one pass each so chips show book-wide position (matching the
+  // tree badge's `seq` and the agent digest). Beats were per-act ("B1" reset each act); now book-wide too.
   const globalSceneNums = new Map<string, number>();
   { let n = 0; for (const m of movs) for (const b of kids(m.id, "beat")) for (const s of kids(b.id, "scene")) globalSceneNums.set(s.id, ++n); }
+  const globalBeatNums = new Map<string, number>();
+  { let n = 0; for (const m of movs) for (const b of kids(m.id, "beat")) globalBeatNums.set(b.id, ++n); }
 
   const roman = (n: number) => ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"][n] ?? String(n + 1);
   const beatGlyphOf = (b: DnaNode) => {
@@ -2148,12 +2343,13 @@ function SpineTimeline({ nodes, mode, rightInset, bookId, onJump, onClose }: {
                 )}
                 {beats.map((beat, bi) => {
                   const scenes = kids(beat.id, "scene");
+                  const bn = globalBeatNums.get(beat.id) ?? bi + 1; // book-wide beat number (matches the tree badge)
                   return (
                     <div key={beat.id} style={{ display: "flex", flexDirection: "column", gap: 6, border: `1px solid ${KIND_COLOR.beat}33`, borderRadius: 6, padding: "6px 7px", background: "#13130c", width: 122 }}>
                       {/* BEAT header */}
-                      <div onClick={() => onJump(beat.id)} title={`beat ${bi + 1} — ${nodeTitle(beat)}`} style={{ display: "flex", flexDirection: "column", gap: 3, cursor: "pointer" }}>
+                      <div onClick={() => onJump(beat.id)} title={`beat ${bn} — ${nodeTitle(beat)}`} style={{ display: "flex", flexDirection: "column", gap: 3, cursor: "pointer" }}>
                         <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                          <span style={{ fontFamily: mono, fontSize: 8, letterSpacing: "0.1em", textTransform: "uppercase", color: KIND_COLOR.beat, border: `1px solid ${KIND_COLOR.beat}55`, borderRadius: 3, padding: "0px 4px" }}>B{bi + 1}</span>
+                          <span style={{ fontFamily: mono, fontSize: 8, letterSpacing: "0.1em", textTransform: "uppercase", color: KIND_COLOR.beat, border: `1px solid ${KIND_COLOR.beat}55`, borderRadius: 3, padding: "0px 4px" }}>B{bn}</span>
                           {beatGlyphOf(beat) && <span style={{ color: KIND_COLOR.beat, fontSize: 10 }}>{beatGlyphOf(beat)}</span>}
                           <span style={{ fontFamily: mono, fontSize: 8, color: "#4a4a4a", marginLeft: "auto" }}>{scenes.length || ""}</span>
                         </span>
@@ -2318,6 +2514,21 @@ export default function DnaTreePage() {
   useEffect(() => { localStorage.setItem(timelineKey, timelineOpen ? "1" : "0"); }, [timelineKey, timelineOpen]);
   const [healthLens, setHealthLens] = useState(false); // #6 — dim clean nodes; surface only the broken ones
   const [contextId, setContextId] = useState<string | null>(null); // #7 — the node whose ref-neighborhood is lit
+  // #8 — the search panel: left-docked, persists open/closed per book like the rail/timeline do.
+  const searchKey = `dna-search-open:${bookId}`;
+  const [searchOpen, setSearchOpen] = useState<boolean>(() => localStorage.getItem(searchKey) === "1");
+  useEffect(() => { localStorage.setItem(searchKey, searchOpen ? "1" : "0"); }, [searchKey, searchOpen]);
+  const [searchQuery, setSearchQuery] = useState("");
+  // Lifted alongside searchQuery (not local to SearchPanel) because the tree ALSO consumes this pattern —
+  // TreeRow/EditableField highlight against it directly, so panel + tree must share one computed pattern.
+  const [searchCaseSensitive, setSearchCaseSensitive] = useState(false);
+  const [searchWholeWord, setSearchWholeWord] = useState(false);
+  const [searchUseRegex, setSearchUseRegex] = useState(false);
+  const [searchIncludeKinds, setSearchIncludeKinds] = useState<Set<string>>(new Set());
+  const searchPattern = useMemo(
+    () => (searchOpen ? buildSearchPattern(searchQuery, { caseSensitive: searchCaseSensitive, wholeWord: searchWholeWord, useRegex: searchUseRegex }) : null),
+    [searchOpen, searchQuery, searchCaseSensitive, searchWholeWord, searchUseRegex],
+  );
   const [flashId, setFlashId] = useState<string | null>(null); // #1 — the node a jump just revealed
   const [dragId, setDragId] = useState<string | null>(null); // #5 — the node being dragged
   const [brief, setBrief] = useState<Brief | null>(null);
@@ -2569,6 +2780,15 @@ export default function DnaTreePage() {
     setCollapsedSet((prev) => { const next = new Set(prev); for (const r of reveal) next.delete(r); return next; });
   }, [nodes]);
 
+  // #8 — while search is active, un-collapse every match's ancestors as you type — otherwise a hit buried in
+  // a collapsed act/beat would never actually become visible (or highlighted) in the tree. Mirrors the health
+  // lens's reveal-on-toggle; here it re-runs on every pattern/filter change instead of a single toggle click.
+  useEffect(() => {
+    if (!nodes || !searchPattern) return;
+    const matches = searchDna(nodes, searchPattern, searchIncludeKinds);
+    if (matches.length) revealNodes(matches.map((m) => m.node.id));
+  }, [nodes, searchPattern, searchIncludeKinds, revealNodes]);
+
   // #1 — once a jump has set flashId (and the reveal has rendered), scroll the node into view; clear the
   // flash after a beat. Re-runs if a new jump fires before the timer elapses.
   useEffect(() => {
@@ -2615,6 +2835,25 @@ export default function DnaTreePage() {
     return () => window.removeEventListener("keydown", onKey);
   }, [contextId]);
 
+  // #8 — "/" opens search from anywhere except while typing in an editable field (fields are click-to-edit
+  // inputs/textareas scattered through the tree, so this can't be a plain global listener).
+  useEffect(() => {
+    if (searchOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "/") return;
+      const el = e.target as HTMLElement;
+      if (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable) return;
+      e.preventDefault();
+      setSearchOpen(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [searchOpen]);
+
+  // A search hit (or any future off-tab jump) needs to land on the tree tab first — jumpTo only manipulates
+  // tree-local reveal state, it doesn't switch tabs itself.
+  const goToNode = useCallback((id: string) => { if (tab !== "tree") navigate(treePath); jumpTo(id); }, [tab, navigate, treePath, jumpTo]);
+
   const base: React.CSSProperties = {
     margin: 0, minHeight: "100vh",
     fontFamily: "ui-monospace, 'Cascadia Code', 'Source Code Pro', monospace",
@@ -2627,6 +2866,14 @@ export default function DnaTreePage() {
 
   const index = byId(nodes);
   const roots = nodes.filter((n) => n.parent_id === null).sort((a, b) => a.position - b.position);
+
+  // Global reading-order numbers for beats and scenes — ONE numbering shared by the tree badge (below), the
+  // timeline strip, and (mirrored) the agent's digest, so "beat 3" / "scene 14" denote the same node in all
+  // three. Derived from the same act→beat→scene walk the render uses; a node is only ever one kind, so a
+  // single map is unambiguous.
+  const seq = new Map<string, number>();
+  beatsInOrder(nodes).forEach((b, i) => seq.set(b.id, i + 1));
+  scenesInOrder(nodes).forEach((s, i) => seq.set(s.id, i + 1));
 
   // Kind distribution for the stats bar
   const counts = nodes.reduce<Record<string, number>>((acc, n) => { acc[n.kind] = (acc[n.kind] ?? 0) + 1; return acc; }, {});
@@ -2650,13 +2897,14 @@ export default function DnaTreePage() {
   };
 
   return (
-    <div style={{ ...base, marginRight: railOpen ? 420 : 0 }}>
+    <div style={{ ...base, marginRight: railOpen ? 420 : 0, marginLeft: searchOpen ? 320 : 0 }}>
       {/* Fixed quick-toggle bar — always-on access to the main view modes (clears the rail when it's open) */}
       <div style={{
         position: "fixed", top: 8, right: railOpen ? 432 : 14, zIndex: 25, display: "flex", gap: 3,
         background: "#0d0d12e6", border: "1px solid #20202c", borderRadius: 9, padding: "4px 5px",
         boxShadow: "0 4px 18px #00000088", backdropFilter: "blur(6px)",
       }}>
+        <QuickToggle active={searchOpen} accent="#9bd3e6" icon="⌕" label="Search" onClick={() => setSearchOpen((v) => !v)} />
         {tab === "tree" && <QuickToggle active={timelineOpen} accent="#fb923c" icon="▦" label="Timeline" onClick={() => setTimelineOpen((v) => !v)} />}
         <QuickToggle active={railOpen} accent="#8a8aff" icon="✦" label="Editor" onClick={() => setRailOpen((v) => !v)} />
         {tab === "tree" && (health.errors + health.warns) > 0 && (
@@ -2664,6 +2912,14 @@ export default function DnaTreePage() {
             onClick={() => { const on = !healthLens; setHealthLens(on); if (on) revealNodes(health.issues.map((i) => i.nodeId).filter((x): x is string => !!x)); }} />
         )}
       </div>
+      {searchOpen && (
+        <SearchPanel nodes={nodes} query={searchQuery} onQueryChange={setSearchQuery}
+          caseSensitive={searchCaseSensitive} onCaseSensitiveChange={setSearchCaseSensitive}
+          wholeWord={searchWholeWord} onWholeWordChange={setSearchWholeWord}
+          useRegex={searchUseRegex} onUseRegexChange={setSearchUseRegex}
+          includeKinds={searchIncludeKinds} onIncludeKindsChange={setSearchIncludeKinds}
+          onJump={goToNode} onClose={() => setSearchOpen(false)} />
+      )}
       {discardOpen && <DiscardStoryModal nodes={nodes} onClose={() => setDiscardOpen(false)} />}
       {/* The tool-using editor's agent (durable book-agent thread), promoted into the tree rail. The
           studio components read theme CSS vars; we override them here with the tree's dark monospace
@@ -2847,7 +3103,7 @@ export default function DnaTreePage() {
         {roots.map((root) => (
           <Subtree key={root.id} node={root} index={index} nodes={nodes} depth={0}
             collapsedSet={collapsedSet} openSet={openSet}
-            h={{ onToggle: toggleNode, onToggleDetail: toggleDetail, onAdd: addNode, onDelete: removeNode, onJump: jumpTo, dragId, onDragStart: setDragId, onDragEnd: () => setDragId(null), onDrop: onDropReorder, backlinks, flashId, proposal: proposalView, focusKinds: null, issuesByNode, healthLens, contextId, ctxConsumes, ctxConsumedBy, onContextFocus: focusContext, proseGeneratable, proseOpenSet, onToggleProse: toggleProse, writingProseIds, onProseWriting, onDiscardStory: discardStory, brief, onSaveBrief: saveBrief, bookId, openRail: () => setRailOpen(true), onAttachNode: attachNode, onOpenProseReader: setProseReaderSceneId }} />
+            h={{ onToggle: toggleNode, onToggleDetail: toggleDetail, onAdd: addNode, onDelete: removeNode, onJump: jumpTo, dragId, onDragStart: setDragId, onDragEnd: () => setDragId(null), onDrop: onDropReorder, backlinks, flashId, proposal: proposalView, focusKinds: null, issuesByNode, healthLens, contextId, ctxConsumes, ctxConsumedBy, onContextFocus: focusContext, seq, searchPattern, proseGeneratable, proseOpenSet, onToggleProse: toggleProse, writingProseIds, onProseWriting, onDiscardStory: discardStory, brief, onSaveBrief: saveBrief, bookId, openRail: () => setRailOpen(true), onAttachNode: attachNode, onOpenProseReader: setProseReaderSceneId }} />
         ))}
       </div>
       </>)}
