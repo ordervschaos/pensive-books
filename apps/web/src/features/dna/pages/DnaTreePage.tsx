@@ -15,6 +15,7 @@ import { sendAgentMessage, type AgentProposal } from "@/features/dna/lib/agentTh
 import { chooseNodeProposal, discardNodeProposals } from "@/features/dna/lib/dnaProposals";
 import { expandNode, proposeGeneration } from "@/features/dna/lib/dnaExpand";
 import { DNA_STAGES, dnaHealth, buildJourney, stageProgress, STAGE_KINDS, type StageKey } from "@/features/dna/lib/dnaJourney";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 
 const getNumericId = (p: string | undefined) => { const m = p?.match(/^(\d+)/); return m ? parseInt(m[1]) : 0; };
 
@@ -2205,9 +2206,11 @@ function SpineTimeline({ nodes, mode, rightInset, bookId, onJump, onClose }: {
 
 // ── Prose reader ─────────────────────────────────────────────────────────────
 // A focused reading view for a scene's written prose, with prev/next navigation
-// through all scenes that have prose (in reading order).
-function ProseReaderModal({ sceneId, nodes, bookId: _bookId, onClose }: {
-  sceneId: string; nodes: DnaNode[]; bookId: number; onClose: () => void;
+// through all scenes that have prose (in reading order). Built on the shadcn
+// Dialog (Radix) so body-scroll lock, Escape-to-close, and outside-click come
+// for free instead of being hand-rolled on a fixed-position div.
+function ProseReaderModal({ sceneId, nodes, bookId: _bookId, onClose, onAttachNode }: {
+  sceneId: string; nodes: DnaNode[]; bookId: number; onClose: () => void; onAttachNode: (id: string) => void;
 }) {
   const mono = "ui-monospace, monospace";
   const [currentId, setCurrentId] = useState(sceneId);
@@ -2222,28 +2225,17 @@ function ProseReaderModal({ sceneId, nodes, bookId: _bookId, onClose }: {
   const prev = idx > 0 ? written[idx - 1] : null;
   const next = idx >= 0 && idx < written.length - 1 ? written[idx + 1] : null;
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 60, display: "flex", alignItems: "stretch", justifyContent: "center", padding: "32px 24px" }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ position: "absolute", inset: 0, background: "#000000c8" }} />
-      <div style={{ position: "relative", background: "#0e0e12", border: "1px solid #2a2a38", borderRadius: 8, width: "min(720px, 100%)", display: "flex", flexDirection: "column", maxHeight: "100%", overflow: "hidden" }}>
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="flex max-h-[85vh] w-[min(720px,92vw)] max-w-[720px] flex-col gap-0 overflow-hidden border-[#2a2a38] bg-[#0e0e12] p-0 text-[#8a9ab0] sm:rounded-lg">
         {/* Header */}
-        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, padding: "16px 28px", borderBottom: "1px solid #1c1c26", flexShrink: 0 }}>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", color: "#5a6a80" }}>
-              prose reader{idx >= 0 ? ` · ${idx + 1} / ${written.length}` : ""}
-            </div>
-            <div style={{ fontFamily: mono, fontSize: 13, color: "#cfcfcf", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {scene ? (nodeTitle(scene) || "untitled scene") : "scene not found"}
-            </div>
+        <div style={{ minWidth: 0, padding: "16px 40px 16px 28px", borderBottom: "1px solid #1c1c26", flexShrink: 0 }}>
+          <div style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", color: "#5a6a80" }}>
+            prose reader{idx >= 0 ? ` · ${idx + 1} / ${written.length}` : ""}
           </div>
-          <button onClick={onClose} style={{ background: "none", border: "none", fontFamily: mono, fontSize: 16, color: "#666", cursor: "pointer", lineHeight: 1, flexShrink: 0 }}>✕</button>
+          <DialogTitle className="truncate font-normal tracking-normal" style={{ fontFamily: mono, fontSize: 13, color: "#cfcfcf", marginTop: 3 }}>
+            {scene ? (nodeTitle(scene) || "untitled scene") : "scene not found"}
+          </DialogTitle>
         </div>
         {/* Body */}
         <div style={{ overflowY: "auto", padding: "32px 28px 40px", flex: 1 }}>
@@ -2261,12 +2253,20 @@ function ProseReaderModal({ sceneId, nodes, bookId: _bookId, onClose }: {
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 28px", borderTop: "1px solid #1c1c26", flexShrink: 0 }}>
           <button onClick={() => prev && setCurrentId(prev.id)} disabled={!prev}
             style={{ background: "none", border: "none", fontFamily: mono, fontSize: 11, color: prev ? "#8a9ab0" : "#333", cursor: prev ? "pointer" : "default", letterSpacing: "0.06em" }}>← prev</button>
-          <span style={{ fontFamily: mono, fontSize: 10, color: "#555" }}>{prose?.words ? `${prose.words}w` : ""}</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            {scene && (
+              <button onClick={() => onAttachNode(scene.id)}
+                style={{ background: "none", border: "none", fontFamily: mono, fontSize: 10, color: "#a8a8ff", cursor: "pointer", letterSpacing: "0.04em" }}>
+                ＋ add to agent context
+              </button>
+            )}
+            <span style={{ fontFamily: mono, fontSize: 10, color: "#555" }}>{prose?.words ? `${prose.words}w` : ""}</span>
+          </div>
           <button onClick={() => next && setCurrentId(next.id)} disabled={!next}
             style={{ background: "none", border: "none", fontFamily: mono, fontSize: 11, color: next ? "#8a9ab0" : "#333", cursor: next ? "pointer" : "default", letterSpacing: "0.06em" }}>next →</button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -2864,6 +2864,7 @@ export default function DnaTreePage() {
           nodes={nodes}
           bookId={bookId}
           onClose={() => setProseReaderSceneId(null)}
+          onAttachNode={attachNode}
         />
       )}
     </div>
