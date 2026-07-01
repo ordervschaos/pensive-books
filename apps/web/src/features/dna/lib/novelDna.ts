@@ -37,6 +37,11 @@ export interface Authoring {
 // ── Content shapes (the schema contract, §3/§4) ───────────────────────────────
 // polarity: does the value end better (up) or worse (down) — feeds the emotional-topography axis (§6).
 export interface ValueShift { value: string; from: string; to: string; polarity?: "up" | "down" }
+// The agent's CURATED render brief — attached to a prose-render proposal and injected verbatim into the v2
+// prose context (augmenting the deterministic digest, not replacing it). `focus` = what this page is really
+// about in the agent's read; `mustHonor` = specific continuity facts it retrieved (grep/read); `avoid` =
+// things not to repeat/contradict beyond the mechanical blocklist. See docs/agent-capabilities.md.
+export interface RenderBrief { focus: string; mustHonor?: string[]; avoid?: string[] }
 export interface SeedContent { logline?: string }
 export interface PremiseContent { genre?: string[]; tone?: string[]; dramatic_question?: string; shape?: { setup?: string; turn1?: string; turn2?: string; turn3?: string; resolution?: string } }
 export interface PillarContent { controlling_idea?: string; ending?: string }

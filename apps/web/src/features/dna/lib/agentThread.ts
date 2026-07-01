@@ -8,7 +8,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { TaskRow } from "@/hooks/useLatestTaskRow";
 import { applyNodeOps, type NodeOp, type OpValidation } from "@/features/dna/lib/dnaChat";
-import type { DnaNode, NodeKind } from "@/features/dna/lib/novelDna";
+import type { DnaNode, NodeKind, RenderBrief } from "@/features/dna/lib/novelDna";
 
 export interface AgentStep {
   // user = the author's message · note = the agent's reply/narration · read = a node it read ·
@@ -16,7 +16,9 @@ export interface AgentStep {
   // applied/discarded = a resolved proposal kept in the feed as a collapsed card (carries its ops).
   t: "user" | "note" | "read" | "ask" | "answer" | "plan" | "done" | "applied" | "discarded";
   label: string;
-  ops?: NodeOp[]; // present on applied/discarded steps — the change, for the collapsed card's detail
+  ops?: NodeOp[]; // present on applied/discarded 'dna' steps — the change, for the collapsed card's detail
+  sceneIds?: string[]; // present on applied/discarded 'prose-render' steps (ops is always []) — which scene(s)
+  brief?: RenderBrief; // ditto — the curated brief that rode into that render, if any
 }
 
 // The context filter aspects mirror the DNA tree's visual layers (not the journey stages).
@@ -39,7 +41,7 @@ export const ASPECT_KINDS: Record<Aspect, NodeKind[]> = {
 // (applyNodeOps). layer 'prose-render' = a request to (re)generate scene prose: ops is empty, sceneIds names
 // the scenes, and Apply runs the v2 prose pipeline client-side (docs/agent-context-model.md) — the agent
 // never generates prose itself (it's a long browser-streamed render). See docs/agent-rail.md.
-export interface AgentProposal { id: string; layer: "dna" | "prose-render"; summary: string; ops: NodeOp[]; sceneIds?: string[] }
+export interface AgentProposal { id: string; layer: "dna" | "prose-render"; summary: string; ops: NodeOp[]; sceneIds?: string[]; brief?: RenderBrief }
 
 // An archived conversation (the "+ New chat" snapshot), kept on the row for the history viewer.
 export interface AgentSession { steps: AgentStep[]; transcript: unknown[]; proposals: AgentProposal[]; ended_at: string }
@@ -136,7 +138,7 @@ export async function applyAgentProposal(bookId: number, threadId: number, propo
     const index = new Map(nodes.map((n) => [n.id, n]));
     for (const id of proposal.sceneIds ?? []) {
       const scene = index.get(id);
-      if (scene) await expandNode(bookId, scene, "prose");
+      if (scene) await expandNode(bookId, scene, "prose", { brief: proposal.brief });
     }
     await resolveProposal(threadId, proposal, "applied", all);
     return { ok: [], rejected: [] };
@@ -158,7 +160,10 @@ export async function discardAgentProposal(threadId: number, proposalId: string,
 async function resolveProposal(threadId: number, proposal: AgentProposal, verb: "applied" | "discarded", all: AgentProposal[]): Promise<void> {
   const { data } = await supabase.from("book_agent_runs").select("steps").eq("id", threadId).maybeSingle();
   const steps = Array.isArray(data?.steps) ? (data!.steps as AgentStep[]) : [];
-  const step: AgentStep = { t: verb, label: proposal.summary, ops: proposal.ops };
+  const step: AgentStep = {
+    t: verb, label: proposal.summary, ops: proposal.ops,
+    ...(proposal.layer === "prose-render" ? { sceneIds: proposal.sceneIds, brief: proposal.brief } : {}),
+  };
   const next = all.filter((p) => p.id !== proposal.id);
   const { error } = await supabase.from("book_agent_runs").update({ steps: [...steps, step], proposals: next }).eq("id", threadId);
   if (error) throw error;

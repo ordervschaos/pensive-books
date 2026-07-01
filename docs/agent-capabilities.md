@@ -47,7 +47,7 @@ From `threadToolsFor()` in `book-agent/index.ts`:
 |---|---|
 | `propose_node_ops` | Concrete tree changes: `edit` / `add` / `delete` / `replace_children` by real node id. The core write. `replace_children` rebuilds a whole level (all acts, or all beats under an act) without duplicating. |
 | `propose_options` | 2–4 **alternative** versions of ONE node to choose among (the options picker). |
-| `propose_prose_render` | A **request** to (re)generate full prose for scene(s). The agent does NOT write the prose. |
+| `propose_prose_render` | A **request** to (re)generate full prose for scene(s), carrying an optional **curated `brief`** (`focus` / `mustHonor` / `avoid`) the agent assembled by reading/grepping. The agent does NOT write the prose; the brief is injected *verbatim* into the v2 render context, **augmenting** (never replacing) the deterministic digest. |
 
 ### Control
 | Tool | What it does |
@@ -63,7 +63,8 @@ From `threadToolsFor()` in `book-agent/index.ts`:
   have none (via `replace_children` / `add`).
 - **Revise existing structure** — edit any non-locked node's content; restructure a level.
 - **Offer alternatives** — stage 2–4 options on a node for the author to pick.
-- **Request prose** — stage a render request; the prose then streams client-side.
+- **Request prose, with a curated brief** — stage a render request carrying a verbatim `focus`/`mustHonor`/`avoid`
+  brief it built by reading/grepping; the prose then streams client-side with that brief augmenting the digest.
 - **Judge its own output** — `check_against_contract` verifies a scene's prose against the brief.
 - **Ask creative questions** — park on `ask_author` when a fork is the author's to decide.
 - **Run autonomously** — with the `auto` ∞ toggle, it commits its own option picks, never parks, and
@@ -100,7 +101,12 @@ The agent doesn't just react; it **leads the author through the DNA one rung at 
 1. **Cannot generate prose itself.** Full prose is a long, browser-streamed render that can't run
    inside the ~150s worker. The agent only *requests* it (`propose_prose_render`); the prose streams
    **client-side** via the v2 pipeline (`expandNode` → `/api/stream-prose`). It *can* make small
-   wording fixes by editing `content.prose.text` directly via `propose_node_ops`.
+   wording fixes by editing `content.prose.text` directly via `propose_node_ops`. What it *can* do is
+   make that request **smarter**: it curates a verbatim `brief` (from `read_node`/`search_nodes`) that
+   rides into the render context on top of the digest, and — because the durable thread shares context
+   across turns — it can **audit the tail first** (`check_against_contract` → a gated `propose_node_ops`
+   fix of the prior page) before rendering the next. It curates and repairs; the stream still writes.
+   See the prose recipe in `lib/dnaJourney.ts` (the read-repair loop).
 2. **Cannot write the tree directly.** Every `propose_*` ends the turn and stages a reviewable
    proposal. The author (or `auto`) applies it. There is no path from the agent straight to `book_nodes`.
 3. **Cannot touch a LOCKED node.** Locks are author intent; rejected at both gates.

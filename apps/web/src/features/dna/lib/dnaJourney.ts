@@ -2,7 +2,7 @@
 // author advances through, finishing one before the next unlocks. This is the mental model the old build
 // studio got right (Brief→Foundations→Spine→…); here it's the DNA rungs grouped into stages. Pure: derives
 // each stage's status from the tree so the Navigator only renders. See docs/novel-dna-spec.md.
-import { renderBlockers, validate, type BookSettings, type DnaIssue, type DnaNode, type NodeKind, type SceneContent } from "@/features/dna/lib/novelDna";
+import { byId, childrenOf, renderBlockers, scenesInOrder, validate, type BookSettings, type DnaIssue, type DnaNode, type NodeKind, type SceneContent } from "@/features/dna/lib/novelDna";
 import { contentCompleteness, requiredKeys } from "@/features/dna/lib/dnaSchema";
 
 export type StageKey = "premise" | "foundations" | "structure" | "scenes" | "draft";
@@ -149,9 +149,28 @@ const STEP_RECIPE: Record<string, string> = {
   beats: "Generate the beats under each act (replace_children, childKind = beat) — a causal chain where each beat's connector is 'therefore' or 'but' and is earned by what came before. Revise with the author.",
   threads: "Optional: name the open loops with thread nodes (a promise set up early, paid off later) and anchor each to its beats.",
   scenes: "Break each beat into scenes (replace_children, childKind = scene) — each scene must turn a value (goal → outcome), never a flat 'and-then'.",
-  prose: "Render prose ONE scene at a time with propose_prose_render (you don't write prose yourself — the author applies it and it streams in their browser). Once a scene has prose, check_against_contract to judge it against the brief, then offer a revision. Walk scene by scene in reading order.",
-  illustrate: "Generate the scene illustration for each scene, one at a time, walking in reading order.",
+  prose: "Render prose ONE scene at a time, in reading order — the TARGET NODE named in the objective above IS that scene; pass exactly its id, don't pick a different one from the tree. BEFORE each render: read the scene's beat and the previous prosed page, and search_nodes for the specific threads/objects/facts this page must honor — then call propose_prose_render with a curated `brief` (focus + mustHonor + avoid) so the render gets what it can't compute. You don't write prose yourself; the author applies it and it streams in their browser. AFTER a scene has prose: check_against_contract to judge it against the brief — and if that read shows the PREVIOUS page drifted (a dropped thread, a contradiction), propose_node_ops to fix that page first, then continue. Investigate → fix the tail if needed → render next with a brief.",
+  illustrate: "Generate the scene illustration for the TARGET NODE named in the objective above — the next scene in reading order. Don't pick a different one from the tree.",
 };
+
+/** The next undrafted scene, in reading order, plus its act/beat/scene coordinate — the concrete pointer
+ *  the draft-stage objective names (see `currentObjective`). Undefined once every scene is drafted. Exists
+ *  because the stage's aggregate tally ("14/80 written") doesn't say WHICH scene is next; without a named
+ *  target the agent has to infer "next" from the tree digest, which once picked a later beat's scene
+ *  instead of the actual next one in reading order. */
+function nextDraftTarget(nodes: DnaNode[], mode: "prose" | "picture"): { scene: DnaNode; orderIndex: number; total: number; actIndex?: number; beatIndex?: number; sceneIndex?: number } | undefined {
+  const ordered = scenesInOrder(nodes);
+  const orderIndex = ordered.findIndex((s) => !sceneDrafted(s, mode));
+  if (orderIndex === -1) return undefined;
+  const scene = ordered[orderIndex];
+  const index = byId(nodes);
+  const beat = index.get(scene.parent_id ?? "");
+  const act = beat ? index.get(beat.parent_id ?? "") : undefined;
+  const actIndex = act ? childrenOf(nodes, act.parent_id ?? null).filter((n) => n.kind === "act").findIndex((n) => n.id === act.id) + 1 : undefined;
+  const beatIndex = act && beat ? childrenOf(nodes, act.id).filter((n) => n.kind === "beat").findIndex((n) => n.id === beat.id) + 1 : undefined;
+  const sceneIndex = beat ? childrenOf(nodes, beat.id).filter((n) => n.kind === "scene").findIndex((n) => n.id === scene.id) + 1 : undefined;
+  return { scene, orderIndex: orderIndex + 1, total: ordered.length, actIndex, beatIndex, sceneIndex };
+}
 
 /** The agent's CURRENT objective — the one rung to drive the author through next, derived live from the
  *  tree. See STEP_RECIPE above. `bookSlug` (when known) puts the reader URL into the final hand-off. */
@@ -168,11 +187,19 @@ export function currentObjective(nodes: DnaNode[], opts: { mode?: "prose" | "pic
   const stage = stages[nowIndex];
   const now = stageSubsteps(stage.key, nodes, mode).find((s) => s.status === "now");
   const recipe = STEP_RECIPE[now?.key ?? stage.key] ?? "";
-  const tally = now?.total != null ? ` (${now.count ?? 0}/${now.total})` : now?.count != null ? ` (${now.count} so far)` : "";
   const next = stages[nowIndex + 1];
+  // The draft stage names its specific next scene (see nextDraftTarget); every other stage keeps the plain
+  // done/total tally since there's no single "next node" to point at (e.g. "generate the acts").
+  const target = now?.key === "prose" || now?.key === "illustrate" ? nextDraftTarget(nodes, mode) : undefined;
+  const where = target?.actIndex != null ? ` (Act ${target.actIndex} · Beat ${target.beatIndex} · Scene ${target.sceneIndex})` : "";
+  const tally = target
+    ? ` — Scene ${target.orderIndex} of ${target.total}${where}`
+    : now?.total != null ? ` (${now.count ?? 0}/${now.total})` : now?.count != null ? ` (${now.count} so far)` : "";
+  const goal = target ? (target.scene.content as SceneContent).goal?.trim() : undefined;
   return [
     "CURRENT OBJECTIVE — drive the author through ONE step at a time; don't work ahead unless they ask.",
     `▸ Step ${stage.num}/${stages.length} · ${stage.label}${now ? ` — ${now.label}` : ""}${tally}`,
+    target ? `TARGET NODE: [${target.scene.id}]${goal ? ` — "${goal.slice(0, 90)}"` : ""}` : "",
     recipe ? `HOW TO RUN THIS STEP: ${recipe}` : "",
     `Once that's in the tree and accepted, the objective advances on its own${next ? ` (next: ${next.label})` : ""} — so move on rather than over-polishing.`,
   ].filter(Boolean).join("\n");

@@ -272,7 +272,7 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [],
       {/* Past chats — archived conversations, read-only until resumed. */}
       {historyOpen && sessions.length > 0 && (
         <div className="mt-2 shrink-0 max-h-[40%] overflow-y-auto rounded-xl border border-[hsl(var(--pv-border-soft))]/60 bg-[hsl(var(--pv-surface-2))]/30 px-3 py-2">
-          <SessionHistory sessions={sessions} onResume={resume} busy={busy || active} />
+          <SessionHistory sessions={sessions} onResume={resume} busy={busy || active} nodes={nodes} />
         </div>
       )}
 
@@ -284,7 +284,7 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [],
               Talk to the editor's agent about the whole book — ask a question, get a summary, pressure-test the story. It reads the actual pages before it answers.
             </p>
           )}
-          {steps.map((s, i) => <StepBubble key={i} step={s} />)}
+          {steps.map((s, i) => <StepBubble key={i} step={s} nodes={nodes} />)}
           {proposals.map((p) => (
             <ProposalCard key={p.id} proposal={p} nodes={nodes}
               applying={applyingId === p.id} onApply={() => void apply(p)} onDiscard={() => void discard(p)} />
@@ -421,7 +421,7 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [],
 
 // Past archived conversations (book_agent_runs.sessions), newest first — each expands to review its
 // step feed; "Continue this chat" restores it as the live thread (symmetric with new chat).
-function SessionHistory({ sessions, onResume, busy }: { sessions: AgentSession[]; onResume: (index: number) => void; busy: boolean }) {
+function SessionHistory({ sessions, onResume, busy, nodes }: { sessions: AgentSession[]; onResume: (index: number) => void; busy: boolean; nodes: DnaNode[] }) {
   const [openIdx, setOpenIdx] = useState<number | null>(null);
   const when = (iso: string) => { try { return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }); } catch { return iso; } };
   return (
@@ -437,7 +437,7 @@ function SessionHistory({ sessions, onResume, busy }: { sessions: AgentSession[]
             </button>
             {openIdx === i && (
               <div className="space-y-2 border-l border-[hsl(var(--pv-border-soft))]/60 pl-3 pb-2">
-                {s.steps.map((st, j) => <StepBubble key={j} step={st} />)}
+                {s.steps.map((st, j) => <StepBubble key={j} step={st} nodes={nodes} />)}
                 <div className="flex justify-end pt-1">
                   <button type="button" onClick={() => onResume(i)} disabled={busy}
                     className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 pv-serif text-[11.5px] text-[hsl(var(--pv-text-faint))] transition-colors hover:text-[hsl(var(--pv-accent))] disabled:opacity-40">
@@ -455,7 +455,7 @@ function SessionHistory({ sessions, onResume, busy }: { sessions: AgentSession[]
 
 // One step rendered as a chat element: author messages/answers → right bubble; the agent's reply and
 // questions → prose; a page-read → a muted activity line.
-function StepBubble({ step }: { step: AgentStep }) {
+function StepBubble({ step, nodes }: { step: AgentStep; nodes: DnaNode[] }) {
   if (step.t === "user" || step.t === "answer") {
     return (
       <div className="flex justify-end">
@@ -472,7 +472,7 @@ function StepBubble({ step }: { step: AgentStep }) {
       </p>
     );
   }
-  if (step.t === "applied" || step.t === "discarded") return <ResolvedCard step={step} />;
+  if (step.t === "applied" || step.t === "discarded") return <ResolvedCard step={step} nodes={nodes} />;
   // note / ask / done — the agent speaking
   return (
     <div className="max-w-[92%] pv-serif text-[14.5px] leading-[1.62] text-[hsl(var(--pv-text-muted))] prose prose-sm max-w-none dark:prose-invert prose-p:my-2 prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0 prose-headings:text-foreground prose-strong:text-foreground prose-strong:font-semibold">
@@ -500,10 +500,16 @@ function opLine(op: NodeOp): string {
 
 // A resolved proposal kept in the chat for context: a collapsed one-line summary (✓ applied / ✕ discarded)
 // that expands to the list of changes. Mirrors ProposalCard's look but read-only — the change already landed.
-function ResolvedCard({ step }: { step: AgentStep }) {
+function ResolvedCard({ step, nodes }: { step: AgentStep; nodes: DnaNode[] }) {
   const [open, setOpen] = useState(false);
   const applied = step.t === "applied";
   const ops = step.ops ?? [];
+  // A prose-render step never carries ops (the change is a browser-streamed render, not a node op) — its
+  // detail is which scene(s) + the brief that rode into that render, so the card has something to show.
+  const isProseRender = !!step.sceneIds?.length;
+  const index = byId(nodes);
+  const scenes = isProseRender ? step.sceneIds!.map((id) => index.get(id)).filter((n): n is DnaNode => !!n) : [];
+  const hasDetail = isProseRender ? scenes.length > 0 || !!step.brief : ops.length > 0;
   return (
     <div className={`rounded-xl border px-3 py-2 ${applied ? "border-emerald-600/30 bg-emerald-600/[0.04]" : "border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/30"}`}>
       <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center gap-2 text-left">
@@ -512,9 +518,33 @@ function ResolvedCard({ step }: { step: AgentStep }) {
           : <X className="h-3.5 w-3.5 shrink-0 text-[hsl(var(--pv-text-faint))]" />}
         <span className="pv-mono text-[9.5px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-faint))]">{applied ? "applied" : "discarded"}</span>
         <span className="flex-1 truncate pv-serif text-[12.5px] text-[hsl(var(--pv-text-muted))]">{step.label}</span>
-        {ops.length > 0 && <ChevronDown className={`h-3 w-3 shrink-0 text-[hsl(var(--pv-text-faint))] transition-transform ${open ? "rotate-180" : ""}`} />}
+        {hasDetail && <ChevronDown className={`h-3 w-3 shrink-0 text-[hsl(var(--pv-text-faint))] transition-transform ${open ? "rotate-180" : ""}`} />}
       </button>
-      {open && ops.length > 0 && (
+      {open && isProseRender && (
+        <div className="mt-2 space-y-1.5 border-t border-[hsl(var(--pv-border-soft))]/50 pt-2">
+          {scenes.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {scenes.map((n) => (
+                <span key={n.id} className="inline-flex items-center gap-1.5 rounded-full border border-[hsl(var(--pv-border-soft))] bg-background px-2 py-0.5 pv-serif text-[11.5px] text-foreground">
+                  <span className="pv-mono text-[9px] uppercase tracking-[0.08em] text-[hsl(var(--pv-accent))]">scene</span>
+                  <span className="max-w-[170px] truncate">{nodeLabel(n)}</span>
+                </span>
+              ))}
+            </div>
+          )}
+          {step.brief?.focus && <p className="pv-serif text-[11.5px] leading-[1.45] text-[hsl(var(--pv-text-muted))]">{step.brief.focus}</p>}
+          {step.brief?.mustHonor?.map((x, i) => (
+            <p key={`h${i}`} className="pv-serif text-[11px] leading-[1.45] text-[hsl(var(--pv-text-faint))]">↳ {x}</p>
+          ))}
+          {step.brief?.avoid?.map((x, i) => (
+            <p key={`a${i}`} className="pv-serif text-[11px] leading-[1.45] text-[hsl(var(--pv-text-faint))]">✕ {x}</p>
+          ))}
+          {!step.brief && scenes.length === 0 && (
+            <p className="pv-serif text-[11px] italic leading-[1.45] text-[hsl(var(--pv-text-faint))]">No brief was attached to this render.</p>
+          )}
+        </div>
+      )}
+      {open && !isProseRender && ops.length > 0 && (
         <ul className="mt-2 space-y-1 border-t border-[hsl(var(--pv-border-soft))]/50 pt-2">
           {ops.map((op, i) => (
             <li key={i} className="pv-mono text-[10.5px] leading-snug text-[hsl(var(--pv-text-faint))]">· {opLine(op)}</li>
@@ -546,6 +576,18 @@ function ProposalCard({ proposal, nodes, applying, onApply, onDiscard }: {
           <p className="pv-serif text-[12px] italic leading-[1.5] text-[hsl(var(--pv-text-faint))]">
             Applying streams fresh prose for {scenes.length} scene{scenes.length === 1 ? "" : "s"} in your browser — in the book's voice, with full continuity. This can take a minute per scene.
           </p>
+          {proposal.brief && (proposal.brief.focus || proposal.brief.mustHonor?.length || proposal.brief.avoid?.length) && (
+            <div className="rounded-md border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/30 px-2.5 py-2 space-y-1">
+              <p className="pv-mono text-[9px] uppercase tracking-[0.08em] text-[hsl(var(--pv-accent))]">agent's brief</p>
+              {proposal.brief.focus && <p className="pv-serif text-[12px] leading-[1.5] text-[hsl(var(--pv-text-muted))]">{proposal.brief.focus}</p>}
+              {proposal.brief.mustHonor?.map((x, i) => (
+                <p key={`h${i}`} className="pv-serif text-[12px] leading-[1.5] text-[hsl(var(--pv-text-faint))]">↳ {x}</p>
+              ))}
+              {proposal.brief.avoid?.map((x, i) => (
+                <p key={`a${i}`} className="pv-serif text-[12px] leading-[1.5] text-[hsl(var(--pv-text-faint))]">✕ {x}</p>
+              ))}
+            </div>
+          )}
           <div className="flex flex-wrap gap-1.5">
             {scenes.map((n) => (
               <span key={n.id} className="inline-flex items-center gap-1.5 rounded-full border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/40 px-2 py-0.5 pv-serif text-[12px] text-foreground">

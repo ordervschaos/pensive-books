@@ -247,7 +247,7 @@ Deno.serve(async (req: Request) => {
     // model request instead of calling the model. The browser then streams the long prose generation through
     // the same-origin /api/stream-prose proxy, so the 80–140s call never rides this worker's ~150s wall-clock
     // (the timeout/546 failures). See TO-DO/dna-streaming-proxy.md. Digest + assembly stay here (fast, DB-bound).
-    const { bookId, nodeId, target, light, prepare } = (await req.json().catch(() => ({}))) as { bookId?: number; nodeId?: string; target?: string; light?: boolean; prepare?: boolean };
+    const { bookId, nodeId, target, light, prepare, brief: renderBrief } = (await req.json().catch(() => ({}))) as { bookId?: number; nodeId?: string; target?: string; light?: boolean; prepare?: boolean; brief?: { focus?: string; mustHonor?: string[]; avoid?: string[] } };
     if (!bookId || !nodeId) return json({ error: "bookId and nodeId are required" }, 400);
     const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!apiKey) return json({ error: "ANTHROPIC_API_KEY not configured" }, 500);
@@ -487,6 +487,17 @@ Deno.serve(async (req: Request) => {
         : "";
       return [cast, threadsBlk, rulesBlk].filter(Boolean).join("\n\n");
     })();
+    // The agent's CURATED render brief (docs/agent-capabilities.md) — verbatim, AUGMENTING the deterministic
+    // digest/blocklist below, never replacing them. Only a prose render carries one; it's what the agent
+    // retrieved (grep/read) and decided this page must land, so it's higher-signal than the computed context.
+    const b = renderBrief && (target === "prose" || (!target && node.kind === "scene")) ? renderBrief : null;
+    const briefBlock = b ? [
+      "THE EDITOR'S BRIEF FOR THIS PAGE (curated by the agent — treat as the highest-priority guidance; it does NOT override the MANDATE or LOCKED facts):",
+      b.focus ? `- FOCUS: ${b.focus}` : "",
+      Array.isArray(b.mustHonor) && b.mustHonor.length ? `- MUST HONOR (continuity that has to land):\n${b.mustHonor.map((x) => `  · ${x}`).join("\n")}` : "",
+      Array.isArray(b.avoid) && b.avoid.length ? `- AVOID (do not repeat or contradict):\n${b.avoid.map((x) => `  · ${x}`).join("\n")}` : "",
+    ].filter(Boolean).join("\n") : "";
+
     const ctx = [
       `BOOK: ${book?.name ?? ""}`,
       `BRIEF (binding):\n${briefContext(brief, { scope: "full", success: true, none: "(no brief)", empty: "(empty)" })}`,
@@ -501,6 +512,7 @@ Deno.serve(async (req: Request) => {
       beatNeighbourhoodBlock, // sibling beats — keeps prose from contradicting plan-layer facts
       settingBlock, // this scene's resolved location palette (prose grounding)
       registerBlock, // this scene's voice modulation (anti-monotony) — bends the signature for this scene only
+      briefBlock, // the agent's curated, verbatim guidance for THIS page (empty for non-render / no-brief calls)
       prevProseBlock,
       `THIS NODE [${node.kind}]: ${JSON.stringify(node.content)}`,
     ].filter(Boolean).join("\n\n");

@@ -65,7 +65,8 @@ type NodeOp =
 // layer 'dna' = node ops the author applies to book_nodes. layer 'prose-render' = a request to (re)generate
 // scene prose; ops is empty and sceneIds names the scenes — the AUTHOR applies it and the prose streams in
 // their browser via the v2 pipeline (docs/agent-context-model.md). The agent never generates prose itself.
-interface AgentProposal { id: string; layer: "dna" | "prose-render"; summary: string; ops: NodeOp[]; sceneIds?: string[] }
+interface RenderBrief { focus: string; mustHonor?: string[]; avoid?: string[] }
+interface AgentProposal { id: string; layer: "dna" | "prose-render"; summary: string; ops: NodeOp[]; sceneIds?: string[]; brief?: RenderBrief }
 
 interface RunRow {
   id: number;
@@ -998,7 +999,7 @@ STYLE: before each tool call, narrate what you're doing and why in one or two pl
 // The agent holds the book's DNA tree (book_nodes), discusses it, and proposes node ops the author
 // reviews and applies. No context fence: it sees + may write the whole book (scope is forced null,
 // docs/agent-context-model.md); the scope plumbing below is inert until/unless a fence returns.
-interface DnaNodeRow { id: string; parent_id: string | null; kind: string; level: number; content: Record<string, unknown>; authoring: { locked?: boolean; status?: string } | null; proposals?: { id: string; content: Record<string, unknown>; note?: string }[] | null }
+interface DnaNodeRow { id: string; parent_id: string | null; kind: string; level: number; position: number; content: Record<string, unknown>; authoring: { locked?: boolean; status?: string } | null; proposals?: { id: string; content: Record<string, unknown>; note?: string }[] | null }
 
 // A short human handle for a node (mirror of lib/dnaChat nodeLabel) for read summaries + step labels.
 function nodeHandle(content: Record<string, unknown> | null | undefined): string {
@@ -1068,12 +1069,21 @@ function digestNode(kind: string, content: Record<string, unknown> | null | unde
 const THREAD_DNA_TOOLS = [
   {
     name: "propose_prose_render",
-    description: "Request that the book's prose pipeline (re)generate the FULL prose for one or more scenes — use this whenever the author asks you to write or rewrite a scene's prose from scratch. You do NOT generate the prose yourself: full prose generation is a long, browser-streamed render the author runs (it can't run inside this turn), so this stages a reviewable 'render prose' request the author applies — it then streams in their browser, in the book's voice, with full continuity. Pass the scene node id(s) (reading order) and a one-line summary. For SMALL wording fixes to EXISTING prose, use propose_node_ops to edit content.prose.text directly instead — only use this for full (re)generation. This records the request and ENDS your turn.",
+    description: "Request that the book's prose pipeline (re)generate the FULL prose for one or more scenes — use this whenever the author asks you to write or rewrite a scene's prose from scratch. You do NOT generate the prose yourself: full prose generation is a long, browser-streamed render the author runs (it can't run inside this turn), so this stages a reviewable 'render prose' request the author applies — it then streams in their browser, in the book's voice, with full continuity. The pipeline already has the voice, the mandate, and a continuity digest of every prior page; your job is to ADD what it can't compute — so before you call this, investigate: read the scene's beat and the previous page(s), grep (search_nodes) for the specific threads/objects/facts THIS page must honor, and pass them in `brief`. Pass the scene node id(s) (reading order), a one-line summary, and the curated `brief`. For SMALL wording fixes to EXISTING prose, use propose_node_ops to edit content.prose.text directly instead — only use this for full (re)generation. This records the request and ENDS your turn.",
     input_schema: {
       type: "object",
       properties: {
         summary: { type: "string", description: "One line: which scene(s) and why you're (re)generating their prose." },
         sceneIds: { type: "array", items: { type: "string" }, description: "The scene node id(s) to (re)generate prose for, in reading order." },
+        brief: {
+          type: "object",
+          description: "OPTIONAL but strongly preferred: your curated, verbatim guidance for this page — injected on top of the pipeline's own context. Only include what you actually retrieved by reading/grepping; do not invent. Omit entirely if you have nothing beyond the plan to add.",
+          properties: {
+            focus: { type: "string", description: "One line: what this page is really ABOUT — the beat's turn in your read." },
+            mustHonor: { type: "array", items: { type: "string" }, description: "Specific continuity that has to land, in your words: named objects, prior promises, a character's state or idiolect you pulled via read_node/search_nodes. e.g. 'Mara still carries the brass keyring she pocketed in ch.1'." },
+            avoid: { type: "array", items: { type: "string" }, description: "Things NOT to repeat or contradict, beyond generic anti-repetition: e.g. 'the rain stopped last page — do not re-describe it'." },
+          },
+        },
       },
       required: ["summary", "sceneIds"],
     },
@@ -1237,10 +1247,25 @@ async function proposeNodeOps(
 // Validate a prose-render request: every id must be a real, non-locked SCENE in this book. Builds the
 // reviewable proposal (layer 'prose-render', no ops). The author applies it and the prose streams in their
 // browser via the v2 pipeline — the agent never renders prose in-worker (docs/agent-context-model.md).
+// Shape the agent's free-form brief into the stored RenderBrief: verbatim strings (we keep the agent's own
+// words, per the design), just trimmed + bounded so a runaway tool call can't bloat the proposal. Returns
+// undefined when there's nothing usable, so a no-brief render behaves exactly as before.
+function sanitizeBrief(raw: unknown): RenderBrief | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const r = raw as { focus?: unknown; mustHonor?: unknown; avoid?: unknown };
+  const line = (x: unknown) => (typeof x === "string" ? x.trim() : "");
+  const list = (x: unknown) => (Array.isArray(x) ? x.map(line).filter(Boolean).slice(0, 12) : []);
+  const focus = line(r.focus).slice(0, 400);
+  const mustHonor = list(r.mustHonor);
+  const avoid = list(r.avoid);
+  if (!focus && !mustHonor.length && !avoid.length) return undefined;
+  return { focus, ...(mustHonor.length ? { mustHonor } : {}), ...(avoid.length ? { avoid } : {}) };
+}
+
 async function proposeProseRender(
   service: SupabaseClient,
   bookId: number,
-  input: { summary?: string; sceneIds?: unknown },
+  input: { summary?: string; sceneIds?: unknown; brief?: unknown },
 ): Promise<{ ok: true; proposal: AgentProposal } | { ok: false; error: string }> {
   const { data: rows } = await service.from("book_nodes").select("id, kind, authoring").eq("book_id", bookId);
   const byId = new Map(((rows ?? []) as { id: string; kind: string; authoring: { locked?: boolean } | null }[]).map((n) => [n.id, n]));
@@ -1251,7 +1276,7 @@ async function proposeProseRender(
     if (n && n.kind === "scene" && !n.authoring?.locked && !sceneIds.includes(id)) sceneIds.push(id);
   }
   if (sceneIds.length === 0) return { ok: false, error: "No valid scene ids — propose_prose_render targets real, non-locked SCENE nodes by their [id]." };
-  return { ok: true, proposal: { id: crypto.randomUUID(), layer: "prose-render", summary: String(input.summary ?? "Render prose").trim() || "Render prose", ops: [], sceneIds } };
+  return { ok: true, proposal: { id: crypto.randomUUID(), layer: "prose-render", summary: String(input.summary ?? "Render prose").trim() || "Render prose", ops: [], sceneIds, brief: sanitizeBrief(input.brief) } };
 }
 
 // Stage 2–4 alternative content objects ON a node as pickable options (the options/picker channel). The
@@ -1287,7 +1312,7 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
   const { data: book } = await service.from("books").select("name, brief").eq("id", bookId).maybeSingle();
   const b = book as { name?: string; brief?: Brief } | null;
   const { data: rows } = await service
-    .from("book_nodes").select("id, parent_id, kind, level, content, authoring, proposals").eq("book_id", bookId);
+    .from("book_nodes").select("id, parent_id, kind, level, position, content, authoring, proposals").eq("book_id", bookId);
   const nodes = (rows ?? []) as DnaNodeRow[];
   const kinds = scopedKinds(scope); // null = all
 
@@ -1302,9 +1327,31 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
     return line;
   };
 
-  // Always show the full structural shape — out-of-scope nodes appear as <hidden> so the agent
-  // always has every node's id (needed for parentId in add ops) without seeing irrelevant content.
-  const sorted = [...nodes].sort((a, b) => a.level - b.level);
+  // Depth-first, by position — mirrors the client's reading order (novelDna.ts childrenOf/scenesInOrder), so
+  // a beat's scenes list right after it and in draft order. A flat sort by `level` alone (the old behavior)
+  // interleaves every act's beats and every beat's scenes into one global by-level list with no parent
+  // linkage shown, so the agent had no way to tell which beat a scene belonged to — it once rendered a
+  // later beat's scene believing it was next. Out-of-scope nodes still appear (as <hidden>) so ids for
+  // parentId stay available.
+  const byParent = new Map<string | null, DnaNodeRow[]>();
+  for (const n of nodes) {
+    const list = byParent.get(n.parent_id) ?? [];
+    list.push(n);
+    byParent.set(n.parent_id, list);
+  }
+  for (const list of byParent.values()) list.sort((a, b) => a.position - b.position);
+  const visited = new Set<string>();
+  const sorted: DnaNodeRow[] = [];
+  const walk = (n: DnaNodeRow) => {
+    if (visited.has(n.id)) return;
+    visited.add(n.id);
+    sorted.push(n);
+    for (const c of byParent.get(n.id) ?? []) walk(c);
+  };
+  for (const root of byParent.get(null) ?? []) walk(root);
+  // A node whose parent_id doesn't resolve within this book (orphaned/inconsistent data) would otherwise
+  // vanish from the walk above — append any leftovers so the agent never silently loses a node's id.
+  for (const n of nodes) walk(n);
   const tree = sorted.map((n) => serialize(n, !kinds || kinds.has(n.kind))).join("\n");
 
   const blocks = [

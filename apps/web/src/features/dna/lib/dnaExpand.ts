@@ -6,7 +6,7 @@ import { BRIDGE, bridgeFetch } from "@/lib/bridge";
 import { deleteNode, loadTree, saveNode, saveNodes } from "@/features/dna/lib/bookNodes";
 import { composeSceneImage, renderNodeSceneImage, type ComposedSceneImage } from "@/features/dna/lib/nodeSceneImages";
 import { ensurePortraitFor } from "@/features/dna/lib/characterPortraits";
-import { byId, deepMergeContent, newId, PARENT_KIND, pillarOf, presentCharacters, stampIllus, stampInput, stampProse, type BeatContent, type DnaNode, type GameContent, type NodeContent, type NodeKind, type SceneContent, type ThreadRef } from "@/features/dna/lib/novelDna";
+import { byId, deepMergeContent, newId, PARENT_KIND, pillarOf, presentCharacters, stampIllus, stampInput, stampProse, type BeatContent, type DnaNode, type GameContent, type NodeContent, type NodeKind, type RenderBrief, type SceneContent, type ThreadRef } from "@/features/dna/lib/novelDna";
 import { stageGeneratedProposal, type AgentProposal } from "@/features/dna/lib/agentThread";
 import type { NewSubtree, NodeOp } from "@/features/dna/lib/dnaChat";
 
@@ -143,17 +143,17 @@ async function streamProse(prepared: PreparedProse, signal?: AbortSignal): Promi
   throw lastErr;
 }
 
-async function callExpand(bookId: number, nodeId: string, target: string, signal?: AbortSignal): Promise<ExpandResult> {
+async function callExpand(bookId: number, nodeId: string, target: string, signal?: AbortSignal, brief?: RenderBrief): Promise<ExpandResult> {
   if (BRIDGE) {
-    const r = await bridgeFetch(`/dna-expand`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ bookId, nodeId, target }), signal });
+    const r = await bridgeFetch(`/dna-expand`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ bookId, nodeId, target, brief }), signal });
     const d = await r.json();
     if (d.error) throw new Error(d.error);
     return d as ExpandResult;
   }
-  // Prose: two hops — a fast `prepare` invoke (context + v2 digest, under the worker ceiling) then an
-  // off-worker stream of the long generation. Everything else: one invoke with retry.
+  // Prose: two hops — a fast `prepare` invoke (context + v2 digest + the agent's curated brief, under the
+  // worker ceiling) then an off-worker stream of the long generation. Everything else: one invoke with retry.
   if (target === "prose") {
-    const { prepared } = await invokeWithRetry({ bookId, nodeId, target, prepare: true }, signal);
+    const { prepared } = await invokeWithRetry({ bookId, nodeId, target, prepare: true, brief }, signal);
     if (!prepared) throw new Error("dna-expand prepare returned no payload");
     const prose = await streamProse(prepared, signal);
     return { prose };
@@ -195,10 +195,10 @@ export function realizeScenesFromBeat(beatNode: DnaNode, scenes: SceneContent[],
 }
 
 export async function expandNode(
-  bookId: number, node: DnaNode, target: string, opts: { startPosition?: number; replaceIds?: string[]; signal?: AbortSignal } = {},
+  bookId: number, node: DnaNode, target: string, opts: { startPosition?: number; replaceIds?: string[]; signal?: AbortSignal; brief?: RenderBrief } = {},
 ): Promise<{ added: number }> {
-  const { startPosition = 0, replaceIds = [], signal } = opts;
-  const res = await callExpand(bookId, node.id, target, signal);
+  const { startPosition = 0, replaceIds = [], signal, brief } = opts;
+  const res = await callExpand(bookId, node.id, target, signal, brief);
 
   if (target === "logline") {
     // Seed → logline: write the seed's OWN logline (a polished refinement of brief.idea), not a child node.
