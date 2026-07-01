@@ -203,11 +203,18 @@ async function resolveProposal(threadId: number, proposal: AgentProposal, verb: 
 // ── Chat history ── archive the current conversation and start fresh / restore a past one. Client-side
 // (RLS allows editor updates) and only safe while the thread is idle — the rail gates on `busy`/active.
 
-const SESSIONS_COLS = "steps, transcript, proposals, sessions";
+const SESSIONS_COLS = "status, steps, transcript, proposals, sessions";
+
+/** True while the row is mid-turn — the edge fn owns transcript/steps/proposals then, so a client write
+ *  (archiving/restoring a session) would race it. Same guard `logAgentTurn`/`stageGeneratedProposal` use. */
+function isBusy(status: unknown): boolean {
+  return status === "running" || status === "awaiting_input";
+}
 
 /** Archive the live conversation into sessions[] and start a fresh, empty thread. */
 export async function startNewAgentSession(threadId: number): Promise<void> {
   const { data } = await supabase.from("book_agent_runs").select(SESSIONS_COLS).eq("id", threadId).maybeSingle();
+  if (isBusy(data?.status)) throw new Error("The agent is mid-turn — wait for it to finish, then start a new chat.");
   const steps = Array.isArray(data?.steps) ? (data!.steps as AgentStep[]) : [];
   if (steps.length === 0) return; // nothing to archive
   const sessions = Array.isArray(data?.sessions) ? (data!.sessions as AgentSession[]) : [];
@@ -226,6 +233,7 @@ export async function startNewAgentSession(threadId: number): Promise<void> {
 /** Restore a past session as the live thread, archiving the current one first (symmetric with new chat). */
 export async function resumeAgentSession(threadId: number, index: number): Promise<void> {
   const { data } = await supabase.from("book_agent_runs").select(SESSIONS_COLS).eq("id", threadId).maybeSingle();
+  if (isBusy(data?.status)) throw new Error("The agent is mid-turn — wait for it to finish, then continue that chat.");
   const sessions = Array.isArray(data?.sessions) ? (data!.sessions as AgentSession[]) : [];
   const target = sessions[index];
   if (!target) return;

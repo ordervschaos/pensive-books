@@ -2043,6 +2043,10 @@ function SpineTimeline({ nodes, mode, rightInset, bookId, onJump, onClose }: {
   const sceneState = (s: DnaNode): "planned" | "written" | "stale" =>
     !sceneWritten(s) ? "planned" : (mode !== "picture" && isProseStale(s)) ? "stale" : "written";
 
+  // global scene numbering (1-based, reading order) — one pass so chips show book-wide position
+  const globalSceneNums = new Map<string, number>();
+  { let n = 0; for (const m of movs) for (const b of kids(m.id, "beat")) for (const s of kids(b.id, "scene")) globalSceneNums.set(s.id, ++n); }
+
   const roman = (n: number) => ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"][n] ?? String(n + 1);
   const beatGlyphOf = (b: DnaNode) => {
     const c = (b.content as BeatContent).connector;
@@ -2164,10 +2168,11 @@ function SpineTimeline({ nodes, mode, rightInset, bookId, onJump, onClose }: {
                             // amber = stale. Number ink flips to dark on a filled cell for contrast.
                             const edge = state === "stale" ? "#f59e0b" : KIND_COLOR.scene;
                             const filled = state !== "planned";
+                            const gn = globalSceneNums.get(sc.id) ?? si + 1;
                             return (
-                              <span key={sc.id} onClick={() => onJump(sc.id)} title={`scene ${si + 1} — ${nodeTitle(sc) || "untitled"} · ${state}`}
+                              <span key={sc.id} onClick={() => onJump(sc.id)} title={`scene ${gn} — ${nodeTitle(sc) || "untitled"} · ${state}`}
                                 style={{ width: 20, height: 22, borderRadius: 4, background: filled ? edge : "transparent", border: `1.5px solid ${edge}`, color: filled ? "#0a1a0e" : KIND_COLOR.scene, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: mono, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
-                                {si + 1}
+                                {gn}
                               </span>
                             );
                           })}
@@ -2831,18 +2836,6 @@ export default function DnaTreePage() {
               {i.nodeId && <span style={{ color: "#555", flexShrink: 0 }}>{issueTitle(i)} →</span>}
             </div>
           ))}
-        </div>
-      )}
-
-      {/* #1 — proposal banner: the agent's pending changes are previewed in the tree; review + apply in the rail */}
-      {agentProposals.length > 0 && (
-        <div onClick={() => setRailOpen(true)} title="open the agent to review + apply"
-          style={{ padding: "8px 16px", borderBottom: "1px solid #2a2a44", background: "#13131a", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", cursor: "pointer" }}>
-          {(() => { const count = agentProposals.reduce((n, p) => n + (p.layer === "prose-render" ? (p.sceneIds?.length ?? 1) : p.ops.length), 0); return (
-            <span style={{ fontSize: 9, color: "#8a8aff", letterSpacing: "0.14em", textTransform: "uppercase" }}>✦ {count} proposed change{count === 1 ? "" : "s"}</span>
-          ); })()}
-          <span style={{ fontFamily: "ui-serif, Georgia, serif", fontSize: 12.5, color: "#c8c8d0", flex: 1, minWidth: 200 }}>{agentProposals.map((p) => p.summary).filter(Boolean).join(" · ")}</span>
-          <span style={{ fontSize: 11, color: "#8a8aff", letterSpacing: "0.08em", textTransform: "uppercase" }}>review in agent →</span>
         </div>
       )}
 

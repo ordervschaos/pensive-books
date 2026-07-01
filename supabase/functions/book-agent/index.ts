@@ -151,7 +151,10 @@ Deno.serve(async (req: Request) => {
       // Re-write `steps` (unchanged) alongside `status` — same unchanged-TOAST gotcha as the `turns` tick
       // below: a partial update can still arrive over Realtime with steps=null, blanking the feed, even with
       // REPLICA IDENTITY FULL. This fires on every auto-accept apply→continue cycle, so it's worth hardening.
-      await service.from("book_agent_runs").update({ status: "running", steps: row.steps }).eq("id", row.id);
+      // cancel_requested reset here too: a Stop click that arrived after the prior turn already went
+      // terminal leaves the flag stuck true, which would otherwise cancel THIS resumed turn on its first
+      // advance() (the top-of-function check reads it unconditionally).
+      await service.from("book_agent_runs").update({ status: "running", steps: row.steps, cancel_requested: false }).eq("id", row.id);
       if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("book-agent", { runId: row.id }));
       return json({ status: "running", runId: row.id }, 202);
     }
@@ -175,8 +178,10 @@ Deno.serve(async (req: Request) => {
         ],
       }];
       const steps = [...row.steps, { t: "answer", label: answer } as AgentStep];
+      // cancel_requested: false — same stale-flag hazard as autoContinue above: a Stop click that missed
+      // the parked turn must not cancel the turn this answer just resumed.
       const { error } = await service.from("book_agent_runs")
-        .update({ transcript, steps, pending: null, status: "running" })
+        .update({ transcript, steps, pending: null, status: "running", cancel_requested: false })
         .eq("id", row.id);
       if (error) throw new Error(error.message);
       if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("book-agent", { runId: row.id }));
