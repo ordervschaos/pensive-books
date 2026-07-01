@@ -49,17 +49,16 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [],
   const objectiveHeadline = useMemo(() => objective.split("\n").find((l) => l.startsWith("▸"))?.replace(/^▸\s*/, "") ?? "", [objective]);
 
   // The attached nodes resolved against the live tree (ids referencing since-deleted nodes drop out). These
-  // anchor the agent — on send their ids/kinds/titles ride in the message as a "Focus" prefix; the agent
-  // still sees the whole book and read_nodes for detail (docs/agent-context-model.md).
+  // anchor the agent — their ids ride OUT-OF-BAND on the message (not glued to the text), and the edge fn
+  // rebuilds a live, hydrated <focus> block from them every turn, so the tray can never go stale in the
+  // transcript. The agent still sees the whole book (docs/agent-context-model.md).
   const attached = useMemo(() => {
     const index = byId(nodes);
     return attachedIds.map((id) => index.get(id)).filter((n): n is DnaNode => !!n);
   }, [attachedIds, nodes]);
-  const focusPrefix = useMemo(() => (
-    attached.length
-      ? `Focus — the author attached these DNA nodes to work on (you still see the whole book; read_node for detail):\n${attached.map((n) => `- [${n.id}] ${n.kind}: ${nodeLabel(n)}`).join("\n")}\n\n`
-      : ""
-  ), [attached]);
+  // Only the ids that still resolve to live nodes travel to the server (a since-deleted id would just drop
+  // out there too, but pruning here keeps the wire payload honest).
+  const attachedLiveIds = useMemo(() => attached.map((n) => n.id), [attached]);
 
   // Which aspects EXIST (have nodes of their kinds). The agent always sees the whole book — there is no
   // context fence (docs/agent-context-model.md); this only gates slash-command relevance (generate vs
@@ -154,12 +153,12 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [],
     if (!t || busy || active) return;
     setBusy(true);
     setDraft("");
-    // Anchors ride in the message as a "Focus" prefix (persists via transcript replay across the tool loop).
-    // optimistic = the full sent message so the echo matches the stored 'user' step and clears cleanly.
-    const full = focusPrefix + t;
-    setOptimistic(full);
+    // The message is just the author's text now — the attached anchors ride out-of-band (attachedLiveIds)
+    // and the edge fn hydrates them into a live <focus> block each turn. optimistic = the sent text so the
+    // echo matches the stored 'user' step and clears cleanly.
+    setOptimistic(t);
     try {
-      await sendAgentMessage(bookId, full, analysis, effort, auto, objective);
+      await sendAgentMessage(bookId, t, analysis, effort, auto, objective, attachedLiveIds);
       refetch();
     } catch (e) {
       setOptimistic(null);

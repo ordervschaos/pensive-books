@@ -79,8 +79,8 @@ async function invoke(body: Record<string, unknown>): Promise<void> {
  *  runs autonomously (commits its own option picks, never parks on ask_author) and the client watcher
  *  auto-applies whatever it stages. `objective` is the client-computed current journey rung
  *  (lib/dnaJourney.currentObjective) — injected into the agent prompt as a guided-flow anchor. */
-export async function sendAgentMessage(bookId: number, message: string, analysis?: string, effort?: "low" | "high", auto?: boolean, objective?: string): Promise<void> {
-  await invoke({ bookId, message, ...(analysis?.trim() ? { analysis } : {}), ...(effort ? { effort } : {}), ...(auto ? { auto: true } : {}), ...(objective?.trim() ? { objective } : {}) });
+export async function sendAgentMessage(bookId: number, message: string, analysis?: string, effort?: "low" | "high", auto?: boolean, objective?: string, attachedIds?: string[]): Promise<void> {
+  await invoke({ bookId, message, ...(analysis?.trim() ? { analysis } : {}), ...(effort ? { effort } : {}), ...(auto ? { auto: true } : {}), ...(objective?.trim() ? { objective } : {}), ...(attachedIds?.length ? { attachedIds } : {}) });
 }
 
 /** Answer the agent's pending ask_author question, resuming the parked turn. */

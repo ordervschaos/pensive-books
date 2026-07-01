@@ -76,12 +76,13 @@ interface RunRow {
   context_scope: Aspect[] | null; // thread scope (docs/agent-rail.md): null = whole book
   context_analysis: string | null; // latest client-computed story analysis (backstop)
   context_objective: string | null; // latest client-computed current journey objective (guided-flow anchor)
+  context_attached_ids: string[] | null; // the context tray: node ids the author attached as anchors
   context_effort: "low" | "high" | null; // null = high (default)
   context_auto: boolean | null; // auto-accept mode: run autonomously, never park on ask_author
   turns: number;
   cancel_requested: boolean;
 }
-const ROW_COLS = "id, book_id, created_by, kind, status, transcript, steps, pending, proposals, context_scope, context_analysis, context_objective, context_effort, context_auto, turns, cancel_requested";
+const ROW_COLS = "id, book_id, created_by, kind, status, transcript, steps, pending, proposals, context_scope, context_analysis, context_objective, context_attached_ids, context_effort, context_auto, turns, cancel_requested";
 
 // Context filter aspects mirror the DNA tree's visual layers. null/[] scope = all.
 type Aspect = "seed" | "premise" | "cast_world" | "story" | "prose";
@@ -115,7 +116,7 @@ Deno.serve(async (req: Request) => {
   try {
     const body = (await req.json().catch(() => ({}))) as {
       bookId?: number; runId?: number; answer?: string; chain?: boolean; autoContinue?: boolean;
-      message?: string; scope?: string[]; analysis?: string; effort?: "low" | "high"; auto?: boolean; objective?: string;
+      message?: string; scope?: string[]; analysis?: string; effort?: "low" | "high"; auto?: boolean; objective?: string; attachedIds?: string[];
     };
 
     // ── Continue call (self/watchdog): advance one model turn ──
@@ -202,6 +203,11 @@ Deno.serve(async (req: Request) => {
       const analysis: string | null = typeof body.analysis === "string" && body.analysis.trim() ? body.analysis.trim() : null;
       // The client-computed CURRENT OBJECTIVE (the now journey rung + recipe) — the guided-flow anchor.
       const objective: string | null = typeof body.objective === "string" && body.objective.trim() ? body.objective.trim() : null;
+      // The context tray: node ids the author attached as anchors. Stashed on the thread and hydrated into a
+      // live <focus> block each turn (never glued to the message, so it can't go stale in the transcript).
+      const attachedIds: string[] | null = Array.isArray(body.attachedIds)
+        ? body.attachedIds.filter((id): id is string => typeof id === "string" && !!id).slice(0, 40)
+        : null;
       // Effort: "low" = propose inline on first response without exploring; "high" (default) = full tool loop.
       const effort: "low" | "high" = body.effort === "low" ? "low" : "high";
       // Auto-accept: run autonomously — the agent commits its own picks and never parks on ask_author; the
@@ -227,6 +233,7 @@ Deno.serve(async (req: Request) => {
             context_scope: scope,
             context_analysis: analysis,
             context_objective: objective,
+            context_attached_ids: attachedIds,
             context_effort: effort,
             context_auto: auto,
             transcript: [{ role: "user", content: [{ type: "text", text: message }] }],
@@ -245,7 +252,7 @@ Deno.serve(async (req: Request) => {
       const transcript = [...thread.transcript, { role: "user", content: [{ type: "text", text: message }] }];
       const steps = [...thread.steps, { t: "user", label: message } as AgentStep];
       const { error } = await service.from("book_agent_runs")
-        .update({ transcript, steps, status: "running", turns: 0, pending: null, error: null, cancel_requested: false, context_scope: scope, context_analysis: analysis, context_objective: objective, context_effort: effort, context_auto: auto })
+        .update({ transcript, steps, status: "running", turns: 0, pending: null, error: null, cancel_requested: false, context_scope: scope, context_analysis: analysis, context_objective: objective, context_attached_ids: attachedIds, context_effort: effort, context_auto: auto })
         .eq("id", thread.id);
       if (error) throw new Error(error.message);
       if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("book-agent", { runId: thread.id }));
@@ -296,7 +303,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
     const scope: Aspect[] | null = null;
     const effort = row.context_effort ?? "high";
     // `auto` (autonomous mode: never park, commit own picks) computed above for the turn ceiling.
-    const system = await threadSystem(service, row.book_id, scope, row.context_analysis, effort, auto, row.context_objective);
+    const system = await threadSystem(service, row.book_id, scope, row.context_analysis, effort, auto, row.context_objective, row.context_attached_ids);
     const tools = threadToolsFor(scope);
     // Count the turn BEFORE the call: a hard worker death mid-call still consumes budget, so a
     // crash-looping run hits MAX_TURNS instead of being revived forever by the watchdog.
@@ -1071,7 +1078,7 @@ async function proposeOptions(
 // every call so ids stay fresh as the author edits (the transcript holds only the conversation). Each node
 // is a DIGEST — handle/gist + causal spine, full content via read_node (see digestNode). A one-line
 // premise/pillar frame is always included so the agent is grounded even when 'premise' isn't in scope.
-async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspect[] | null, analysis: string | null, effort: "low" | "high" = "high", auto = false, objective: string | null = null): Promise<string> {
+async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspect[] | null, analysis: string | null, effort: "low" | "high" = "high", auto = false, objective: string | null = null, attachedIds: string[] | null = null): Promise<string> {
   const { data: book } = await service.from("books").select("name, brief").eq("id", bookId).maybeSingle();
   const b = book as { name?: string; brief?: Brief } | null;
   const { data: rows } = await service
@@ -1117,6 +1124,20 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
   for (const n of nodes) walk(n);
   const tree = sorted.map((n) => serialize(n, !kinds || kinds.has(n.kind))).join("\n");
 
+  // The context tray, HYDRATED: the author attached these nodes to work on, so we inline their FULL content
+  // right here (not a bare pointer) — the agent doesn't need a read_node round-trip for the nodes it was
+  // explicitly told matter. Ids that no longer resolve (a since-deleted node) drop out silently. Prose is
+  // only carried for scene nodes — no other kind holds prose, and it's the bulk of the tokens, so we strip a
+  // stray `prose` key from anything else. This block is rebuilt every turn from the live tree, so it can
+  // never go stale the way the old glued-to-the-message "Focus —" prefix did.
+  const byIdRow = new Map(nodes.map((n) => [n.id, n]));
+  const focusNodes = (attachedIds ?? []).map((id) => byIdRow.get(id)).filter((n): n is DnaNodeRow => !!n);
+  const focus = focusNodes.map((n) => {
+    const content: Record<string, unknown> = { ...(n.content ?? {}) };
+    if (n.kind !== "scene") delete content.prose; // prose only rides for scenes (docs/agent-context-model.md)
+    return `[${n.id}${n.authoring?.locked ? " · LOCKED" : ""}] ${n.kind} “${nodeHandle(n.content)}”:\n${JSON.stringify(content)}`;
+  }).join("\n\n");
+
   // Each distinct kind of context gets its own XML tag so the model can unambiguously tell where one
   // section ends and the next begins (Anthropic's prompt-engineering guidance: XML tags reduce
   // misinterpretation when a prompt mixes instructions, context, and a large structured document).
@@ -1130,6 +1151,10 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
     objective?.trim() ? `<current_objective>\n${objective.trim()}\n</current_objective>` : "",
     // The structural backstop (pacing / dangling-promise / sagging-run lints) — act on any ⚠ flags.
     analysis?.trim() ? `<story_analysis note="the structural backstop — address any ⚠ flags">\n${analysis.trim()}\n</story_analysis>` : "",
+    // The context tray (docs/agent-context-model.md): the nodes the author attached to work on, hydrated in
+    // full so you have their real content without a read_node. Lead with these unless the author steers
+    // elsewhere — an anchor, not a fence: the whole tree is still below.
+    focus ? `<focus note="the author attached these nodes to work on — their FULL content is inlined here; lead with them">\n${focus}\n</focus>` : "",
     `<dna_tree${kinds ? ` scope="${[...kinds].join(", ")}"` : ""}>\nEdit/add/delete nodes by their real ids below. LOCKED nodes are immutable.${kinds ? " Out-of-scope nodes show as <hidden>." : ""}\n\n${tree || "(no nodes yet)"}\n</dna_tree>`,
   ].filter(Boolean);
 
