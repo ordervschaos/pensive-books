@@ -1090,10 +1090,17 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
     .from("book_nodes").select("id, parent_id, kind, level, position, content, authoring, proposals").eq("book_id", bookId);
   const nodes = (rows ?? []) as DnaNodeRow[];
   const kinds = scopedKinds(scope); // null = all
+  const totalScenes = nodes.filter((n) => n.kind === "scene").length;
+  const totalBeats = nodes.filter((n) => n.kind === "beat").length;
 
-  const serialize = (n: DnaNodeRow, inScope: boolean): string => {
+  const serialize = (n: DnaNodeRow, inScope: boolean, seqIdx?: number): string => {
     if (!inScope) return `[${n.id}] L${n.level} ${n.kind}: <hidden>`;
-    let line = `[${n.id}${n.authoring?.locked ? " · LOCKED" : ""}] L${n.level} ${n.kind}: ${digestNode(n.kind, n.content)}`;
+    // Beats and scenes carry their 1-based reading-order number (matching the UI's tree badge + timeline
+    // strip), so the agent names a node by the SAME number the author sees — not one it invents from the
+    // objective's single "Scene N of 80" target pointer (the bug where it called scene 14 "scene 17").
+    const total = n.kind === "scene" ? totalScenes : totalBeats;
+    const num = seqIdx && (n.kind === "scene" || n.kind === "beat") ? ` ${seqIdx}/${total}` : "";
+    let line = `[${n.id}${n.authoring?.locked ? " · LOCKED" : ""}] L${n.level} ${n.kind}${num}: ${digestNode(n.kind, n.content)}`;
     // Pending options (the picker channel) — surfaced so you can RECOMMEND which the author should pick.
     if (Array.isArray(n.proposals) && n.proposals.length) {
       line += `\n  PENDING OPTIONS (${n.proposals.length} — the author picks one; you may recommend which by its number): ` +
@@ -1127,7 +1134,17 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
   // A node whose parent_id doesn't resolve within this book (orphaned/inconsistent data) would otherwise
   // vanish from the walk above — append any leftovers so the agent never silently loses a node's id.
   for (const n of nodes) walk(n);
-  const tree = sorted.map((n) => serialize(n, !kinds || kinds.has(n.kind))).join("\n");
+  // Reading-order numbers for beats and scenes, assigned over the SAME DFS-by-position walk the client's
+  // beatsInOrder/scenesInOrder / the render / the timeline strip use — so "beat 3"/"scene 14" denote the same
+  // node in the digest, the UI, and the book.
+  const beatNo = new Map<string, number>();
+  const sceneNo = new Map<string, number>();
+  for (const n of sorted) {
+    if (n.kind === "beat") beatNo.set(n.id, beatNo.size + 1);
+    else if (n.kind === "scene") sceneNo.set(n.id, sceneNo.size + 1);
+  }
+  const seqOf = (n: DnaNodeRow) => n.kind === "beat" ? beatNo.get(n.id) : n.kind === "scene" ? sceneNo.get(n.id) : undefined;
+  const tree = sorted.map((n) => serialize(n, !kinds || kinds.has(n.kind), seqOf(n))).join("\n");
 
   // The context tray, HYDRATED: the author attached these nodes to work on, so we inline their FULL content
   // right here (not a bare pointer) — the agent doesn't need a read_node round-trip for the nodes it was
@@ -1160,7 +1177,7 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
     // full so you have their real content without a read_node. Lead with these unless the author steers
     // elsewhere — an anchor, not a fence: the whole tree is still below.
     focus ? `<focus note="the author attached these nodes to work on — their FULL content is inlined here; lead with them">\n${focus}\n</focus>` : "",
-    `<dna_tree${kinds ? ` scope="${[...kinds].join(", ")}"` : ""}>\nEdit/add/delete nodes by their real ids below. LOCKED nodes are immutable.${kinds ? " Out-of-scope nodes show as <hidden>." : ""}\n\n${tree || "(no nodes yet)"}\n</dna_tree>`,
+    `<dna_tree${kinds ? ` scope="${[...kinds].join(", ")}"` : ""}>\nEdit/add/delete nodes by their real ids below. LOCKED nodes are immutable.${kinds ? " Out-of-scope nodes show as <hidden>." : ""} Beat and scene lines show their reading-order number (e.g. \`beat 3/41\`, \`scene 14/80\`); when you refer to a beat or scene by number, use THAT number — never guess it or reuse the objective's target number for a different node.\n\n${tree || "(no nodes yet)"}\n</dna_tree>`,
   ].filter(Boolean);
 
   const scopeLine = scope && scope.length

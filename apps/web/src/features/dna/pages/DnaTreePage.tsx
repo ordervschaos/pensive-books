@@ -412,9 +412,10 @@ function NodeKebab({ onDelete, items = [] }: { onDelete?: () => void; items?: Ke
 }
 
 // ── Single tree row ──────────────────────────────────────────────────────────
-function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete, kebabItems, draggable, dragging, canDrop, onDragStartRow, onDragEndRow, onDropRow, mark, focus, flash, issues, dimmed, ctx, onContextFocus, prose, headerActions, staleActions, writingProse, seq, searchPattern }: {
+function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete, onAttach, kebabItems, draggable, dragging, canDrop, onDragStartRow, onDragEndRow, onDropRow, mark, focus, flash, issues, dimmed, ctx, onContextFocus, prose, headerActions, staleActions, writingProse, seq, searchPattern }: {
   node: DnaNode; index: Map<string, DnaNode>; depth: number; seq?: number; // seq = global reading-order # (beat/scene)
   expandable: boolean; open: boolean; onToggle: () => void; onDelete?: () => void;
+  onAttach?: () => void; // attach this node to the agent's context tray (always-visible row action, not buried in the kebab)
   kebabItems?: KebabItem[]; // regen actions, AI options, etc (all go in the ⋮ menu)
   prose?: ProseRollup | null; // act/beat: rolled-up prose-completion of descendant scenes
   headerActions?: React.ReactNode; // compact action buttons pinned to the header row
@@ -602,6 +603,12 @@ function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete, keb
               onDragStart={(e) => { e.stopPropagation(); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", node.id); onDragStartRow?.(); }}
               onDragEnd={(e) => { e.stopPropagation(); onDragEndRow?.(); }}
               title="drag to reorder" style={{ fontSize: 11, color: "#4a4a5a", cursor: "grab", padding: "0 2px", flexShrink: 0, lineHeight: 1 }}>⠿</span>
+          )}
+          {onAttach && (
+            <span onClick={(e) => { e.stopPropagation(); onAttach(); }} title="add to agent context"
+              style={{ fontFamily: "ui-monospace, monospace", fontSize: 13, color: "#a8a8ff", cursor: "pointer", padding: "0 2px", lineHeight: 1, userSelect: "none", flexShrink: 0 }}>
+              ＋
+            </span>
           )}
           <NodeKebab onDelete={onDelete} items={kebabItems} />
         </span>
@@ -1371,11 +1378,9 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
     : node.kind === "beat" && !hasChildScenes ? <HeaderGenerateButton label="✦ scenes" bookId={h.bookId} node={node} target="scenes" openRail={h.openRail} />
     : null;
 
-  // Kebab items — regenerate actions, manual adds, AI options.
+  // Kebab items — regenerate actions, manual adds, AI options. (Attach-to-agent-context lives on the row
+  // itself as the "@" icon — every node, always visible — not in here.)
   const kebabItems: KebabItem[] = [];
-  // Attach this node to the agent's context tray (slice 2) — on every node; the agent always sees the
-  // whole book, this just anchors where it looks (the @-mention model). Detach from the chip in the rail.
-  kebabItems.push({ label: "＋ add to agent context", color: "#a8a8ff", onClick: () => h.onAttachNode(node.id) });
   // Act: add a beat manually
   if (node.kind === "act") {
     kebabItems.push({ label: "+ add beat", color: "#4a7a5a", onClick: () => h.onAdd(node.id, "beat") });
@@ -1562,6 +1567,7 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
       <TreeRow node={node} index={index} depth={depth} expandable={expandable} open={open} onToggle={toggle}
         seq={h.seq.get(node.id)} searchPattern={h.searchPattern}
         onDelete={deletable ? () => h.onDelete(node) : undefined}
+        onAttach={() => h.onAttachNode(node.id)}
         kebabItems={kebabItems.length ? kebabItems : undefined}
         draggable={reorderable} dragging={h.dragId === node.id} canDrop={canDrop}
         onDragStartRow={() => h.onDragStart(node.id)} onDragEndRow={h.onDragEnd}
@@ -1974,25 +1980,6 @@ function FocusPanel({ node, index, consumes, consumedBy, onJump, onClear, bottom
   );
 }
 
-// A small accent action used inside the timeline — runs an async generate and shows a busy state.
-function GenAction({ label, title, onRun, size = "sm" }: { label: string; title?: string; onRun: () => Promise<void>; size?: "sm" | "xs" }) {
-  const [busy, setBusy] = useState(false);
-  const run = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (busy) return;
-    setBusy(true);
-    try { await onRun(); } catch (err) { alert(`Generate failed: ${(err as Error).message}`); }
-    finally { setBusy(false); }
-  };
-  return (
-    <span onClick={run} title={title} style={{
-      fontFamily: "ui-monospace, monospace", fontSize: size === "xs" ? 8 : 9, letterSpacing: "0.06em",
-      color: busy ? "#6a6a9a" : "#a8a8ff", cursor: busy ? "default" : "pointer", whiteSpace: "nowrap",
-      border: `1px solid ${busy ? "#8a8aff22" : "#8a8aff44"}`, borderRadius: 4, padding: size === "xs" ? "0px 5px" : "1px 7px", background: "#8a8aff10",
-    }}>{busy ? "…" : `✦ ${label}`}</span>
-  );
-}
-
 // A view-toggle chip for the fixed quick bar — lit in its accent when active.
 // ── Search (⌕) — a persistent left-docked panel, VS Code's Search sidebar rather than its Quick Open: stays
 // open across jumps (so several hits can be clicked through without re-typing), case/whole-word/regex
@@ -2215,17 +2202,8 @@ function SpineTimeline({ nodes, mode, rightInset, bookId, onJump, onClose }: {
   const allExpanded = collapsedActs.size === 0;
   const toggleAll = () => setCollapsedActs(allExpanded ? new Set(movs.map((m) => m.id)) : new Set());
 
-  // Generate verbs, mirroring the tree's expand targets (pillar→acts, act→beats, beat→scenes, scene→prose).
-  // Direct commit (like the tree's bulk buttons); Realtime refreshes the strip. Prose loops the beat's
-  // unwritten scenes in order.
-  const genActs = () => expandNode(bookId, pillar!, "acts").then(() => undefined);
-  const genBeats = (mov: DnaNode) => expandNode(bookId, mov, "beats").then(() => undefined);
-  const genScenes = (beat: DnaNode) => expandNode(bookId, beat, "scenes").then(() => undefined);
-  const writeBeatProse = async (beat: DnaNode) => {
-    const pending = kids(beat.id, "scene").filter((s) => sceneState(s) === "planned");
-    for (const s of pending) await expandNode(bookId, s, "prose");
-  };
-
+  // The timeline is a read/navigate surface — structure and prose are generated from the tree/reader,
+  // not from here. Cells only reflect state and jump to the node on click.
   const sceneWritten = (s: DnaNode) => {
     const c = s.content as SceneContent;
     return mode === "picture" ? !!c.image_url?.trim() : !!c.prose?.text?.trim();
@@ -2292,7 +2270,6 @@ function SpineTimeline({ nodes, mode, rightInset, bookId, onJump, onClose }: {
         {!movs.length && (
           <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
             <span style={{ fontFamily: mono, fontSize: 12, color: "#444" }}>no acts yet</span>
-            {pillar && <GenAction label="generate acts" title="generate the act structure from the pillar" onRun={genActs} />}
           </span>
         )}
         {movs.map((mov, mi) => {
@@ -2312,9 +2289,7 @@ function SpineTimeline({ nodes, mode, rightInset, bookId, onJump, onClose }: {
               {/* COLLAPSED — at-a-glance: scene pips grouped by beat (gaps mark beat boundaries) */}
               {!expanded && (
                 <div style={{ display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap", maxWidth: 340, minHeight: 14 }}>
-                  {!beats.length && (pillar
-                    ? <GenAction size="xs" label="generate beats" title="generate this act's beats" onRun={() => genBeats(mov)} />
-                    : <span style={{ fontFamily: mono, fontSize: 9, color: "#3a3a3a", fontStyle: "italic" }}>no beats</span>)}
+                  {!beats.length && <span style={{ fontFamily: mono, fontSize: 9, color: "#3a3a3a", fontStyle: "italic" }}>no beats</span>}
                   {beats.map((beat, bi) => {
                     const sc = kids(beat.id, "scene");
                     return (
@@ -2338,7 +2313,6 @@ function SpineTimeline({ nodes, mode, rightInset, bookId, onJump, onClose }: {
                 {!beats.length && (
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 10px", border: "1px dashed #24242e", borderRadius: 6 }}>
                     <span style={{ fontFamily: mono, fontSize: 10, color: "#3a3a3a", fontStyle: "italic" }}>no beats</span>
-                    <GenAction label="generate beats" title="generate this act's beats" onRun={() => genBeats(mov)} />
                   </span>
                 )}
                 {beats.map((beat, bi) => {
@@ -2373,13 +2347,7 @@ function SpineTimeline({ nodes, mode, rightInset, bookId, onJump, onClose }: {
                             );
                           })}
                         </div>
-                        {/* beat-scoped action: no scenes → generate; planned scenes → write their prose */}
-                        {(() => {
-                          if (!scenes.length) return <GenAction size="xs" label="scenes" title="generate this beat's scenes" onRun={() => genScenes(beat)} />;
-                          const planned = scenes.filter((s) => sceneState(s) === "planned").length;
-                          if (planned > 0) return <GenAction size="xs" label={`write prose (${planned})`} title="write prose for this beat's planned scenes" onRun={() => writeBeatProse(beat)} />;
-                          return null;
-                        })()}
+                        {!scenes.length && <span style={{ fontFamily: mono, fontSize: 8, color: "#3a3a3a", fontStyle: "italic" }}>no scenes</span>}
                       </div>
                     </div>
                   );
@@ -2496,7 +2464,7 @@ export default function DnaTreePage() {
   useEffect(() => { localStorage.setItem(railKey, railOpen ? "1" : "0"); }, [railKey, railOpen]);
   // Slice 2 (docs/agent-context-model.md): the agent's context tray — DNA node ids the author attached as
   // anchors (Cursor's @-file model). Persisted per book; the agent always sees the whole book, these just
-  // bias where it looks. Attach from a node's kebab; detach from the chip in the rail. Opening the rail on
+  // bias where it looks. Attach from the node row's "@" icon; detach from the chip in the rail. Opening the rail on
   // attach makes the new context visible immediately.
   const attachKey = `agent-attached:${bookId}`;
   const [attachedIds, setAttachedIds] = useState<string[]>(() => {
