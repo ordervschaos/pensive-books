@@ -134,8 +134,8 @@ There are **two** continuation loops. Keep them separate in your head.
 
 Described above: read → append `tool_result` → `reinvoke` → next Claude call. This is the agent
 "thinking" and using tools. The turn ends when the model calls a **terminal tool** (`finish`,
-`propose_node_ops`, `propose_prose_render`, `propose_options`, `propose_revision_plan`) or replies
-with plain text. Terminal → set `idle`/`awaiting_input`/`done`, stop chaining.
+`propose_node_ops`, `propose_prose_render`, `propose_options`) or replies with plain text.
+Terminal → set `idle`/`awaiting_input`, stop chaining.
 
 ### 2b. Across turns — how a new task starts
 

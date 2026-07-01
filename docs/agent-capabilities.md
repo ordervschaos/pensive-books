@@ -53,6 +53,7 @@ From `threadToolsFor()` in `book-agent/index.ts`:
 | Tool | What it does |
 |---|---|
 | `ask_author` | Park the run and ask a creative question; resumes when the author answers. |
+| `finish` | End the turn without a change — discussion alone answered it, or (autonomous mode) every requested change is done. |
 
 ---
 
@@ -119,6 +120,12 @@ The agent doesn't just react; it **leads the author through the DNA one rung at 
    into `pages`.
 7. **Cannot reach the editor/reader internals.** It owns `book_nodes` and nothing else; the rest of
    the app only reads `pages` across the render seam.
+8. **Cannot generate scene illustrations (picture mode).** There is no illustration tool — that
+   render (`composeSceneIllustration`/`renderSceneIllustration`) only runs through Autopilot's own
+   client-side loop, a separate path from this agent's tool belt. When a picture-mode book's guided
+   flow reaches the "Illustrate" step, `STEP_RECIPE.illustrate` (`lib/dnaJourney.ts`) tells the agent
+   to hand off — name the next scene and point the author at the manual action — rather than attempt
+   the impossible (or worse, fabricate an `image_url` via `propose_node_ops`).
 
 ---
 

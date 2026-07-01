@@ -230,13 +230,7 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [],
       <div className="flex shrink-0 items-center gap-2">
         <Wand2 className="h-4 w-4 text-[hsl(var(--pv-accent))]" />
         <Eyebrow tone="accent">Agent</Eyebrow>
-        {active && (
-          <button type="button" onClick={() => void stop()} disabled={row?.cancel_requested}
-            className="ml-auto inline-flex items-center gap-1 rounded-full border border-[hsl(var(--pv-border-soft))] px-2 py-0.5 text-[11px] text-[hsl(var(--pv-text-faint))] transition-colors hover:border-destructive/50 hover:text-destructive disabled:opacity-50">
-            <Square className="h-2.5 w-2.5" /> {row?.cancel_requested ? "stopping…" : "stop"}
-          </button>
-        )}
-        <div className={`flex items-center gap-1 ${active ? "" : "ml-auto"}`}>
+        <div className="ml-auto flex items-center gap-1">
           <button type="button" onClick={toggleAuto} disabled={active}
             title={auto ? "Auto-accept ON — the agent runs autonomously: it makes its own choices and applies them, no review. Click to turn off." : "Auto-accept OFF — you review and apply each change. Click to let the agent run autonomously."}
             className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 pv-mono text-[10px] transition-colors disabled:opacity-50 ${
@@ -353,6 +347,13 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [],
       <div className="mt-3 shrink-0">
         {awaiting && row?.pending ? (
           <div className="space-y-2.5 rounded-xl border border-[hsl(var(--pv-accent))]/30 bg-[hsl(var(--pv-accent))]/[0.07] p-3.5">
+            <div className="flex justify-end">
+              <button type="button" onClick={() => void stop()} disabled={row?.cancel_requested}
+                title="Cancel this question and stop the agent"
+                className="inline-flex items-center gap-1 rounded-full border border-[hsl(var(--pv-border-soft))] px-2 py-0.5 text-[11px] text-[hsl(var(--pv-text-faint))] transition-colors hover:border-destructive/50 hover:text-destructive disabled:opacity-50">
+                <X className="h-2.5 w-2.5" /> {row?.cancel_requested ? "stopping…" : "cancel"}
+              </button>
+            </div>
             {(row.pending.options ?? []).length > 0 && (
               <div className="flex flex-col items-start gap-1.5">
                 {row.pending.options!.map((opt, i) => (
@@ -402,9 +403,13 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [],
                 }}
                 rows={1} placeholder={running ? "the agent is working…" : "Ask the agent, or / for commands…"} disabled={busy || active}
                 className="pv-serif min-h-[42px] resize-none text-[14px] leading-[1.55]" />
-              <button type="button" onClick={() => void send(draft)} disabled={busy || active || !draft.trim()}
+              <button type="button" onClick={() => (running ? void stop() : void send(draft))}
+                disabled={running ? row?.cancel_requested : busy || active || !draft.trim()}
+                title={running ? (row?.cancel_requested ? "stopping…" : "Stop") : undefined}
                 className="inline-flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-40">
-                {busy || running ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
+                {running
+                  ? (row?.cancel_requested ? <Loader2 className="h-4 w-4 animate-spin" /> : <Square className="h-3.5 w-3.5" />)
+                  : busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
               </button>
             </div>
             {draft === "" && !active && (

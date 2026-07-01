@@ -1,21 +1,19 @@
-// book-agent — the editor's AGENT: a durable, tool-using loop that addresses the editor's
-// evaluation the way a careful human would — read the actual pages the notes point at, ask the
-// author the creative questions that matter (with suggested options), then propose a surgical
-// revision plan.
+// book-agent — the book's ONE tool-using story-editor AGENT: a durable loop over the Novel DNA tree
+// (docs/agent-rail.md, agent-capabilities.md). It holds the whole book_nodes tree as a digest, discusses
+// it, and proposes reviewable changes (node ops, prose-render requests, alternatives) the author applies.
 //
-// Where the one-shot architect (revise-outline) plans blind from the notes, this loop INVESTIGATES
-// first. It is still read-only on the book: its only "write" is inserting a book_revisions row in
-// awaiting_review — the author reviews that plan in the existing dialog, and build-revision applies
-// it. So the trusted mutation path (version snapshot → structure → prose → drafts) is unchanged.
+// It is read-only on book_nodes itself: every propose_* tool ends the turn and stages a reviewable
+// proposal in book_agent_runs.proposals — the author (or auto-accept) applies it through the existing
+// write path (applyNodeOps / the v2 prose pipeline). There is no path from the agent straight to book_nodes.
 //
-// Durability follows build-revision: the run lives in a book_agent_runs row; each self-chain link
+// Durability: the run lives in a book_agent_runs row (kind='thread', one per book); each self-chain link
 // makes ONE Claude call (well under the ~150s worker cap), executes its tool calls, persists the
 // transcript, and chains. An ask_author call parks the run in `awaiting_input` (no chain) until the
-// author answers; the pg_cron watchdog only revives stalled 'running' rows.
+// author answers; the pg_cron watchdog only revives stalled 'running' rows. See docs/agent-runtime-architecture.md.
 //
-//   client → POST { bookId, evaluation }            → insert row → chain          (authenticated)
-//   client → POST { runId, answer }                 → append tool_result → chain  (authenticated)
-//   self   → POST { runId, chain: true }            → one model call → …          (x-chain secret)
+//   client → POST { bookId, message }                → get-or-create thread → chain (authenticated)
+//   client → POST { runId, answer }                  → append tool_result → chain  (authenticated)
+//   self   → POST { runId, chain: true }              → one model call → …          (x-chain secret)
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { type Brief, briefContext } from "../_shared/brief.ts";
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
@@ -25,11 +23,9 @@ import { getActiveModels } from "../_shared/model-config.ts";
 // The content schema the agent must conform to — GENERATED from the web app's NODE_SCHEMA (single source of
 // truth), kept in sync by apps/web/.../dnaSchema.artifact.test.ts. Never hand-edit; edit NODE_SCHEMA + regen.
 import dnaSchema from "../_shared/dna-schema.json" with { type: "json" };
-import { tiptapToText } from "../_shared/words.ts";
 import { serviceClient } from "../_shared/task.ts";
 import { reinvoke, isChainCall } from "../_shared/self-chain.ts";
 import { captureException, isBillingError } from "../_shared/sentry.ts";
-import { sanitizePlan, type RevisionPlan } from "../_shared/revision-plan.ts";
 import { judgeProse } from "../_shared/mandate-gate.ts";
 
 const MAX_TURNS = 20;          // model calls per run — the runaway guard
@@ -39,7 +35,6 @@ const AUTO_MAX_TURNS = 50;     // autonomous threads iterate change-by-change, s
 // real defense is keeping turns short (effort: medium below), not this timer.
 const CALL_TIMEOUT_MS = 140_000;
 const ACK_TIMEOUT_MS = 15_000; // fast chat acknowledgement; the real tool turn follows
-const MAX_PAGE_CHARS = 12_000; // read_page output cap
 
 // ── Row shapes ──
 interface AgentStep { t: "user" | "note" | "read" | "ask" | "answer" | "plan" | "done"; label: string }
@@ -47,8 +42,8 @@ interface Pending {
   tool_use_id: string;
   question: string;
   options?: string[];
-  // tool_results for read_page calls issued in the SAME assistant turn as the ask — the answer
-  // message must carry results for every tool_use of that turn, so these ride along.
+  // tool_results for read tool calls (read_node/search_nodes/…) issued in the SAME assistant turn as the
+  // ask — the answer message must carry results for every tool_use of that turn, so these ride along.
   preResults?: unknown[];
 }
 // A node op over book_nodes — the DNA substrate's edit/add/delete/replace_children (mirrors lib/dnaChat.ts).
@@ -72,9 +67,8 @@ interface RunRow {
   id: number;
   book_id: number;
   created_by: string | null;
-  kind: string; // 'eval' (per-run) | 'thread' (the persistent omni-rail conversation)
+  kind: string; // 'thread' (the persistent omni-rail conversation) — the only kind created today
   status: string;
-  evaluation: EvalResult | null;
   transcript: unknown[];
   steps: AgentStep[];
   pending: Pending | null;
@@ -87,7 +81,7 @@ interface RunRow {
   turns: number;
   cancel_requested: boolean;
 }
-const ROW_COLS = "id, book_id, created_by, kind, status, evaluation, transcript, steps, pending, proposals, context_scope, context_analysis, context_objective, context_effort, context_auto, turns, cancel_requested";
+const ROW_COLS = "id, book_id, created_by, kind, status, transcript, steps, pending, proposals, context_scope, context_analysis, context_objective, context_effort, context_auto, turns, cancel_requested";
 
 // Context filter aspects mirror the DNA tree's visual layers. null/[] scope = all.
 type Aspect = "seed" | "premise" | "cast_world" | "story" | "prose";
@@ -97,7 +91,7 @@ const ASPECTS: Aspect[] = ["seed", "premise", "cast_world", "story", "prose"];
 const ASPECT_KINDS: Record<Aspect, string[]> = {
   seed: ["seed"],
   premise: ["premise"],
-  cast_world: ["pillar", "character", "relationship", "tentpole", "world_fact", "location", "thread", "game", "voice_profile"],
+  cast_world: ["pillar", "character", "relationship", "tentpole", "world_fact", "location", "thread", "game", "meter", "voice_profile"],
   story: ["act", "beat", "scene"],
   prose: ["scene"],
 };
@@ -109,26 +103,7 @@ function scopedKinds(scope: Aspect[] | null): Set<string> | null {
   for (const a of scope) for (const k of ASPECT_KINDS[a]) s.add(k);
   return s;
 }
-const ALL_NODE_KINDS = ["seed", "premise", "pillar", "act", "beat", "scene", "character", "relationship", "tentpole", "world_fact", "location", "thread", "game", "voice_profile"];
-
-// The evaluation shape (book_evaluations.result), as produced by evaluate-book.
-interface EvalIssue {
-  severity?: string; note: string; evidence?: string; suggestion?: string;
-  page_ref?: { id: number | null; title?: string; index?: number | null } | null;
-}
-interface EvalSection { id: string; title: string; stance?: string; assessment?: string; issues?: EvalIssue[] }
-interface EvalResult {
-  verdict: { genre_contract?: string; stance?: string; letter?: string; priorities?: string[] };
-  sections: EvalSection[];
-}
-
-interface PageRow {
-  id: number;
-  page_index: number;
-  page_type: string | null;
-  title: string | null;
-  metadata: { objective?: string; summary?: string } | null;
-}
+const ALL_NODE_KINDS = ["seed", "premise", "pillar", "act", "beat", "scene", "character", "relationship", "tentpole", "world_fact", "location", "thread", "game", "meter", "voice_profile"];
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -139,7 +114,7 @@ Deno.serve(async (req: Request) => {
 
   try {
     const body = (await req.json().catch(() => ({}))) as {
-      bookId?: number; evaluation?: EvalResult; instruction?: string; targetPageId?: number; runId?: number; answer?: string; chain?: boolean; autoContinue?: boolean;
+      bookId?: number; runId?: number; answer?: string; chain?: boolean; autoContinue?: boolean;
       message?: string; scope?: string[]; analysis?: string; effort?: "low" | "high"; auto?: boolean; objective?: string;
     };
 
@@ -208,10 +183,10 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── Thread message (the persistent omni-rail conversation — docs/agent-rail.md) ──
-    // A free-text message (no evaluation/instruction) to the book's ONE agent thread. Get-or-create
-    // the thread row (kind='thread'), append the message, reset the per-turn budget, and drive it.
-    // A turn ends in 'idle' (not 'done'), so the next message resumes with full transcript context.
-    if (typeof body.message === "string" && !body.evaluation && !body.instruction) {
+    // A free-text message to the book's ONE agent thread. Get-or-create the thread row (kind='thread'),
+    // append the message, reset the per-turn budget, and drive it. A turn ends in 'idle' (not 'done'),
+    // so the next message resumes with full transcript context.
+    if (typeof body.message === "string") {
       const tBookId = body.bookId;
       const message = body.message.trim();
       if (!tBookId) return json({ error: "bookId is required" }, 400);
@@ -277,65 +252,7 @@ Deno.serve(async (req: Request) => {
       return json({ status: "running", runId: thread.id }, 202);
     }
 
-    // Start a run: snapshot the book context + EITHER the editor's read OR the author's free-text
-    // instruction (the prose editor in the Draft rail uses the instruction path).
-    const { bookId, evaluation, instruction, targetPageId } = body;
-    if (!bookId) return json({ error: "bookId is required" }, 400);
-    const hasEval = !!evaluation?.verdict && Array.isArray(evaluation.sections);
-    const instr = (instruction ?? "").trim();
-    if (!hasEval && !instr) {
-      return json({ error: "Either a valid evaluation or an instruction is required" }, 400);
-    }
-
-    const { data: book, error: bookError } = await userClient
-      .from("books").select("id, name, brief, owner_id").eq("id", bookId).single();
-    if (bookError || !book) return json({ error: "Book not found" }, 404);
-    const { data: canEdit } = await userClient.rpc("user_can_edit_book", { _book_id: bookId });
-    if (canEdit === false) return json({ error: "Access denied" }, 403);
-
-    const { data: pages, error: pagesError } = await userClient
-      .from("pages")
-      .select("id, page_index, page_type, title, metadata")
-      .eq("book_id", bookId).eq("archived", false)
-      .order("page_index", { ascending: true });
-    if (pagesError) throw new Error(`fetch pages: ${pagesError.message}`);
-    if (!pages?.length) return json({ error: "Book has no pages" }, 400);
-
-    const { data: threads } = await userClient
-      .from("book_threads")
-      .select("name, status, setup_page_id, payoff_page_id")
-      .eq("book_id", bookId).neq("status", "closed");
-
-    // Page-scoped run (the PageReview prose chat): focus the agent on one page only.
-    const focusPage = targetPageId != null ? (pages as PageRow[]).find((p) => p.id === targetPageId) ?? null : null;
-
-    const context = buildContext(
-      book.name,
-      book.brief as Brief | null,
-      pages as PageRow[],
-      (threads as ThreadLite[] | null) ?? [],
-      hasEval ? evaluation! : null,
-      instr || null,
-      focusPage,
-    );
-
-    const { data: run, error: insErr } = await service
-      .from("book_agent_runs")
-      .insert({
-        book_id: bookId,
-        created_by: user.id,
-        status: "running",
-        target_page_id: focusPage ? targetPageId : null,
-        evaluation: hasEval ? evaluation : null,
-        transcript: [{ role: "user", content: [{ type: "text", text: context }] }],
-        steps: [{ t: "note", label: focusPage ? `Reading "${focusPage.title || "this page"}" and its context.` : hasEval ? "Reading the editor's notes and the outline." : "Reading the author's request and the outline." }],
-      })
-      .select("id, created_at")
-      .single();
-    if (insErr) throw new Error(insErr.message);
-
-    if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("book-agent", { runId: (run as { id: number }).id }));
-    return json({ status: "running", run }, 202);
+    return json({ error: "Unrecognized request — expected { message } for the agent thread, { runId, answer }, or { runId, chain }." }, 400);
   } catch (e) {
     console.error("book-agent error:", e);
     return json({ error: String((e as Error)?.message ?? e).slice(0, 500) }, 500);
@@ -353,8 +270,8 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
     return;
   }
   // Autonomous threads iterate one change per turn (plus a read or two), so they need a higher ceiling than
-  // a single eval pass — but still bounded so a runaway can't loop forever.
-  const auto = row.kind === "thread" && !!row.context_auto;
+  // a guided conversation — but still bounded so a runaway can't loop forever.
+  const auto = !!row.context_auto;
   const maxTurns = auto ? AUTO_MAX_TURNS : MAX_TURNS;
   if (row.turns >= maxTurns) {
     await service.from("book_agent_runs")
@@ -367,11 +284,9 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
     // Any tier works here: _shared/llm.ts converts tools/tool_use/tool_result both ways for
     // the OpenAI-compatible paths (DeepSeek, MuleRouter/Qwen), so the loop runs on cheap models too.
     const { high: model, low: ackModel } = await getActiveModels();
-    // Thread runs are the persistent omni-rail conversation: a conversational system prompt grounded
-    // in the CURRENT book state (rebuilt per call so ids stay fresh), and the thread tool belt. Eval
-    // runs keep the static plan-first system + tools.
-    const isThread = row.kind === "thread";
-    if (isThread && row.turns === 0) {
+    // A conversational system prompt grounded in the CURRENT book state (rebuilt per call so ids stay
+    // fresh), and the thread tool belt.
+    if (row.turns === 0) {
       await maybeEagerAck(service, apiKey, row, ackModel);
     }
     const turns = row.turns + 1;
@@ -381,8 +296,8 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
     const scope: Aspect[] | null = null;
     const effort = row.context_effort ?? "high";
     // `auto` (autonomous mode: never park, commit own picks) computed above for the turn ceiling.
-    const system = isThread ? await threadSystem(service, row.book_id, scope, row.context_analysis, effort, auto, row.context_objective) : SYSTEM;
-    const tools = isThread ? threadToolsFor(scope) : TOOLS;
+    const system = await threadSystem(service, row.book_id, scope, row.context_analysis, effort, auto, row.context_objective);
+    const tools = threadToolsFor(scope);
     // Count the turn BEFORE the call: a hard worker death mid-call still consumes budget, so a
     // crash-looping run hits MAX_TURNS instead of being revived forever by the watchdog.
     // Re-write `steps` (unchanged) alongside `turns` so this mid-"thinking" Realtime event carries the
@@ -446,12 +361,10 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
     const transcript = [...row.transcript, { role: "assistant", content }];
     const steps = [...row.steps];
 
-    // The model's visible narration becomes the progress feed. On a thread it IS the agent's chat
-    // reply, so keep it whole; on an eval run it's a one-line activity note, so cap it.
+    // The model's visible narration IS the agent's chat reply, so keep it whole.
     for (const b of content) {
       if (b.type === "text" && String(b.text ?? "").trim()) {
-        const txt = String(b.text).trim();
-        steps.push({ t: "note", label: isThread ? txt : txt.slice(0, 300) });
+        steps.push({ t: "note", label: String(b.text).trim() });
       }
     }
 
@@ -465,32 +378,6 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
     // ONLY when the run ends without a live toolResults() append (i.e. the terminal success paths).
     // deno-lint-ignore no-explicit-any
     const ackResults = (toolIds: string[]) => toolIds.map((id) => ({ type: "tool_result", tool_use_id: id, content: "ok" }));
-
-    // ── Terminal tools first: a valid plan or a finish ends the run ──
-    const planCall = toolUses.find((t) => t.name === "propose_revision_plan");
-    if (planCall) {
-      const outcome = await proposePlan(service, row, planCall.input as Partial<RevisionPlan>);
-      if (outcome.ok) {
-        steps.push({ t: "plan", label: outcome.summary });
-        transcript.push({ role: "user", content: ackResults(toolUses.map((t) => t.id)) });
-        await service.from("book_agent_runs").update({
-          status: "done",
-          transcript,
-          steps,
-          revision_id: outcome.revisionId,
-          report: outcome.summary,
-        }).eq("id", runId);
-        return;
-      }
-      // Invalid plan: hand the validation error back (with results for any sibling reads) and retry.
-      const results = await toolResults(service, row.book_id, toolUses, steps, {
-        [planCall.id]: `The plan was rejected: ${outcome.error} Fix it and call propose_revision_plan again.`,
-      }, auto);
-      transcript.push({ role: "user", content: results });
-      await service.from("book_agent_runs").update({ transcript, steps }).eq("id", runId);
-      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("book-agent", { runId }));
-      return;
-    }
 
     // ── propose_node_ops (thread): record a reviewable DNA change and end the turn ──
     // A thread proposal lands in proposals[]; the author applies it from the rail via applyNodeOps
@@ -583,10 +470,10 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
     if (finishCall) {
       const report = String((finishCall.input as { report?: string })?.report ?? "").trim() || "The agent finished without proposing changes.";
       steps.push({ t: "done", label: report.slice(0, 300) });
-      // A thread turn ends QUIESCENT ('idle') so the conversation can continue; an eval run is terminal.
+      // The turn ends QUIESCENT ('idle'), not terminal, so the conversation can continue.
       transcript.push({ role: "user", content: ackResults(toolUses.map((t) => t.id)) });
       await service.from("book_agent_runs")
-        .update({ status: isThread ? "idle" : "done", transcript, steps, report }).eq("id", runId);
+        .update({ status: "idle", transcript, steps, report }).eq("id", runId);
       return;
     }
 
@@ -630,24 +517,9 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
     }
 
     // ── No tool call at all ──
-    // On a THREAD this is a normal conversational reply (the agent answered without needing a tool):
-    // the assistant's text is already captured as a 'note' step, so the turn is complete → go idle.
-    if (isThread) {
-      await service.from("book_agent_runs").update({ status: "idle", transcript, steps }).eq("id", runId);
-      return;
-    }
-    // On an EVAL run, ending a turn with bare text is always wrong — finish/propose_revision_plan are
-    // the only exits — and silently treating narration as a report masked the deepseek-tier bug for a
-    // whole run. Nudge once and continue (bounded by the turn budget).
-    transcript.push({
-      role: "user",
-      content: [{
-        type: "text",
-        text: "You ended your turn without calling a tool. Continue using your tools: read_page to investigate, ask_author for a creative fork, and end the run ONLY via propose_revision_plan (or finish if no changes are needed).",
-      }],
-    });
-    await service.from("book_agent_runs").update({ transcript, steps }).eq("id", runId);
-    if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("book-agent", { runId }));
+    // A normal conversational reply (the agent answered without needing a tool): the assistant's text
+    // is already captured as a 'note' step, so the turn is complete → go idle.
+    await service.from("book_agent_runs").update({ status: "idle", transcript, steps }).eq("id", runId);
   } catch (e) {
     const billing = isBillingError(e);
     await captureException(e, { function: "book-agent", book_id: String(row.book_id), billing: String(billing) });
@@ -716,8 +588,9 @@ async function maybeEagerAck(service: SupabaseClient, apiKey: string, row: RunRo
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-// Execute a turn's non-terminal tool calls (read_page; unknown tools get an error result) and
-// return the tool_result blocks. `overrides` injects a prebuilt result for a given tool_use id.
+// Execute a turn's non-terminal tool calls (read_node/get_schema/search_nodes/check_against_contract;
+// unknown tools get an error result) and return the tool_result blocks. `overrides` injects a prebuilt
+// result for a given tool_use id.
 // deno-lint-ignore no-explicit-any
 async function toolResults(
   service: SupabaseClient,
@@ -734,22 +607,7 @@ async function toolResults(
       results.push({ type: "tool_result", tool_use_id: t.id, content: overrides[t.id], is_error: true });
       continue;
     }
-    if (t.name === "read_page") {
-      const pageId = Number((t.input as { page_id?: number })?.page_id);
-      const { data: page } = await service
-        .from("pages").select("id, title, content, page_type, archived, book_id").eq("id", pageId).maybeSingle();
-      if (!page || page.book_id !== bookId || page.archived) {
-        results.push({ type: "tool_result", tool_use_id: t.id, content: `No page with id ${pageId} in this book.`, is_error: true });
-        continue;
-      }
-      const text = tiptapToText(page.content).trim();
-      steps.push({ t: "read", label: `Read “${page.title || "(untitled)"}” in full.` });
-      results.push({
-        type: "tool_result",
-        tool_use_id: t.id,
-        content: text ? text.slice(0, MAX_PAGE_CHARS) : "(this page has no prose yet)",
-      });
-    } else if (t.name === "read_node") {
+    if (t.name === "read_node") {
       const id = String((t.input as { id?: string })?.id ?? "");
       const { data: node } = await service
         .from("book_nodes").select("id, kind, content, authoring, book_id").eq("id", id).maybeSingle();
@@ -846,46 +704,6 @@ async function toolResults(
   return results;
 }
 
-// Validate the proposed plan against the CURRENT pages (fresh fetch — the author may have edited
-// since the run started) and insert the book_revisions row the existing review/build flow owns.
-async function proposePlan(
-  service: SupabaseClient,
-  row: RunRow,
-  input: Partial<RevisionPlan>,
-): Promise<{ ok: true; revisionId: number; summary: string } | { ok: false; error: string }> {
-  const { data: pages, error } = await service
-    .from("pages")
-    .select("id, page_type, title, metadata")
-    .eq("book_id", row.book_id).eq("archived", false);
-  if (error) return { ok: false, error: `Could not load pages: ${error.message}.` };
-
-  let plan: RevisionPlan;
-  try {
-    plan = sanitizePlan(input, (pages ?? []) as { id: number; page_type: string | null; title: string | null; metadata: { objective?: string } | null }[]);
-  } catch (e) {
-    return { ok: false, error: String((e as Error)?.message ?? e) };
-  }
-  const changes = plan.pages.filter((p) => p.op !== "keep").length + plan.deletes.length;
-  if (changes === 0) return { ok: false, error: "The plan contains no changes — every page is 'keep' and nothing is deleted. Either propose real changes or call finish." };
-
-  const { data: rev, error: insErr } = await service
-    .from("book_revisions")
-    .insert({
-      book_id: row.book_id,
-      created_by: row.created_by,
-      status: "awaiting_review",
-      source: row.evaluation ? "evaluation" : "instruction",
-      instruction: null,
-      evaluation: row.evaluation,
-      plan,
-      plan_only: false,
-    })
-    .select("id")
-    .single();
-  if (insErr) return { ok: false, error: `Could not save the plan: ${insErr.message}.` };
-  return { ok: true, revisionId: (rev as { id: number }).id, summary: plan.summary || "Revision plan proposed." };
-}
-
 // Request-time cache breakpoints (never stored in the row, so they don't accumulate past the API's
 // limit of 4): one on the big first user message, one on the last block of the latest message —
 // each link re-reads the whole prefix from cache and only pays for the newest turn.
@@ -906,17 +724,8 @@ function withCacheBreakpoints(transcript: unknown[]): unknown[] {
   return msgs;
 }
 
-// ── Tools ────────────────────────────────────────────────────────────────────
-const TOOLS = [
-  {
-    name: "read_page",
-    description: "Read a page's full prose. Use the real page [id]s from the outline. Always read a page before proposing to revise, retarget, or build on it.",
-    input_schema: {
-      type: "object",
-      properties: { page_id: { type: "number", description: "The page's [id] from the outline." } },
-      required: ["page_id"],
-    },
-  },
+// ── Tools shared across every thread (ask_author/finish are control-flow, not DNA-specific) ──────
+const SHARED_TOOLS = [
   {
     name: "ask_author",
     description: "Ask the author ONE creative decision question. Offer 2–4 concrete options when you can (put your recommendation first, marked '(recommended)'). The run pauses until they answer — so batch your thinking and ask only what genuinely changes the plan. At most 3 questions per run; never ask for permission to proceed.",
@@ -930,70 +739,15 @@ const TOOLS = [
     },
   },
   {
-    name: "propose_revision_plan",
-    description: "Your final output: the revision plan the author will review before anything is built. The book's NEW page list in final reading order plus pages to delete. This ends the run.",
-    input_schema: {
-      type: "object",
-      properties: {
-        summary: { type: "string", description: "2-3 sentences: what this revision changes and why, tied to the editor's notes and the author's answers." },
-        pages: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              ref: { type: ["number", "null"], description: "Existing page id, or null for an added page." },
-              op: { type: "string", enum: ["keep", "revise", "retarget", "add"] },
-              pageType: { type: "string", enum: ["section", "text"] },
-              title: { type: "string" },
-              objective: { type: "string" },
-              rebuild: { type: "string", enum: ["rewrite", "revise"], description: "retarget only: rewrite fresh prose, or revise (adapt) the existing prose." },
-              why: { type: "string", description: "One line tied to the evaluation or the author's answer." },
-            },
-            required: ["ref", "op", "pageType", "title", "objective"],
-          },
-        },
-        deletes: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: { ref: { type: "number" }, why: { type: "string" } },
-            required: ["ref"],
-          },
-        },
-      },
-      required: ["summary", "pages", "deletes"],
-    },
-  },
-  {
     name: "finish",
-    description: "End the run WITHOUT proposing a plan — only when the notes genuinely need no changes, or the author's answers say to stop.",
+    description: "End your turn without proposing a change — when the author's ask is answered by discussion alone, or (in autonomous mode) once every requested change has been made.",
     input_schema: {
       type: "object",
-      properties: { report: { type: "string", description: "A short honest summary of what you found and why no plan was proposed." } },
+      properties: { report: { type: "string", description: "A short honest summary of what you found/did." } },
       required: ["report"],
     },
   },
 ];
-
-// ── System prompt ────────────────────────────────────────────────────────────
-const SYSTEM = `You are the prose editor's agent for a book-writing studio. Your job is to ADDRESS the author's request — which is EITHER a developmental editor's evaluation OR a specific change the author described — like a trusted human collaborator would: investigate first, involve the author in the creative forks, then propose a surgical revision plan.
-
-You are given the brief, the CURRENT outline (each page with its real [id], type, title, objective, and summary), tracked threads, and EITHER the editor's full evaluation OR the author's requested change.
-
-METHOD — work in this order:
-1. TRIAGE the request. Group the work by root cause: several notes (or one broad ask like "make chapter 3 darker") often share one fix (e.g. "the heroine is passive in the climax" + "her core wound is never confronted" may be one new scene). When an evaluation is given, the verdict's priorities ("fix these first") are the highest-leverage changes.
-2. INVESTIGATE. read_page the pages the high-leverage notes anchor to — never plan changes to prose you have not read. Read what you need, not the whole book.
-3. CONSULT. If a genuinely creative fork decides the plan's shape (where a new scene goes, which of two approaches fits the author's intent, whether to cut a subplot), ask_author — with concrete options and your recommendation. Do not ask about trivia, mechanics, or permission. Many runs need zero questions.
-4. PROPOSE. Call propose_revision_plan with a surgical plan. The author reviews it before anything is built, and prose generation happens downstream — you plan in OBJECTIVES (what each page must achieve), never in prose.
-
-PLAN RULES (the plan is rejected if violated):
-- Use ONLY the real [id]s given. Every existing page MUST appear either in "pages" (with its ref) or in "deletes" — never drop a page silently.
-- Ops: "keep" (unchanged) · "revise" (same objective, prose needs fixing per the notes) · "retarget" (NEW objective; set rebuild: "rewrite" for a material change or "revise" for a minor shift) · "add" (a NEW page, ref null, with pageType, title, objective). Reorder by placing entries in the desired final order.
-- "section" pages are chapter/part dividers; "text" pages carry prose. Keep an objective on every text page.
-- Be surgical: mark "keep" for what works; change only what the notes (and the author's answers) demand.
-- TRACKED THREADS are promises the book must keep. Never orphan a setup or its payoff — relocate the beat if you delete its page.
-
-STYLE: before each tool call, narrate what you're doing and why in one or two plain sentences — the author sees this as a live progress feed. Be concrete ("Reading the tavern scene the passivity notes point at"), never generic ("Analyzing…").`;
 
 // ── Thread mode = the DNA omni-rail (docs/agent-rail.md) ──────────────────────
 // The agent holds the book's DNA tree (book_nodes), discusses it, and proposes node ops the author
@@ -1020,13 +774,13 @@ const DIGEST_FIELDS: Record<string, string[]> = {
   pillar: ["controlling_idea"],
   character: ["name", "role", "tag"],
   relationship: ["a", "b", "bond"],
-  world_fact: ["name", "category"],
+  world_fact: ["name", "rule", "mechanism"],
   location: ["name", "mood"],
   thread: ["name", "kind", "promise"],
-  game: ["name"],
-  tentpole: ["title"],
+  game: ["name", "win_condition", "lose_condition"],
+  tentpole: ["summary"],
   meter: ["name", "kind"],
-  voice_profile: ["pov", "tense"],
+  voice_profile: ["pov", "tense", "style"],
   act: ["title", "goal", "target_pct", "turning_point"],
   beat: ["connector", "polarity", "needs", "establishes", "threads", "grounds_in", "realizes", "plays", "resolves", "readings"],
   scene: ["goal", "value_shift", "pov", "loc", "needs", "establishes", "grounds_in", "readings"],
@@ -1154,10 +908,10 @@ const THREAD_DNA_TOOLS = [
   },
 ];
 
-// The thread tool belt: ask_author always; read_node + propose_node_ops whenever ANY aspect is in
-// scope (the per-op kind fence does the fine-grained gating). null/[] scope = all.
+// The thread tool belt: ask_author + finish always; the DNA tools (the per-op kind fence does the
+// fine-grained gating when a scope is set). null/[] scope = all.
 function threadToolsFor(_scope: Aspect[] | null): unknown[] {
-  return [TOOLS.find((t) => t.name === "ask_author")!, ...THREAD_DNA_TOOLS];
+  return [...SHARED_TOOLS, ...THREAD_DNA_TOOLS];
 }
 
 const CONTENT_SCHEMAS = dnaSchema.promptGuide;
@@ -1374,86 +1128,7 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
   // Autonomous mode: the author is AWAY. The agent must carry every request to a committed change with no
   // human gate — it makes the option choices itself and never waits. (The client auto-applies what it stages.)
   const autoLine = auto
-    ? "\n\nAUTONOMOUS MODE — the author has stepped away and CANNOT review, pick, or answer. Carry every request all the way to a finished result yourself, then conclude:\n• Make ONE change per turn with propose_node_ops. It is APPLIED LIVE immediately — there is no review step, and your NEXT turn shows the updated tree. Don't say \"I propose\" or wait for approval; just make the change, then continue.\n• READ THEN ACT — don't over-read. The tree above is a DIGEST (handle/gist + causal spine). When the change needs a node's full detail (a beat's whole summary, a character's profile, a scene's prose), read_node it FIRST — but only the node(s) you're about to change. Don't sweep the tree; the digest is enough to decide what to touch.\n• NEVER call ask_author. At a creative fork, decide with your best judgment and proceed.\n• Prefer to commit directly: when you'd weigh options, just pick the strongest and write it with propose_node_ops. (Avoid propose_options in autonomous mode — there's no one to pick.)\n• ALWAYS CONCLUDE: once the request is fully handled, call finish with a one-line summary of what you changed. Don't stop mid-thought after a change — keep going until you finish."
+    ? "\n\nAUTONOMOUS MODE — the author has stepped away and CANNOT review, pick, or answer. Carry every request all the way to a finished result yourself, then conclude:\n• Make ONE change per turn with propose_node_ops, OR render ONE scene per turn with propose_prose_render. Both are APPLIED LIVE immediately — there is no review step, and your NEXT turn shows the updated tree/scene. Don't say \"I propose\" or wait for approval; just make the change (or request the render), then continue.\n• READ THEN ACT — don't over-read. The tree above is a DIGEST (handle/gist + causal spine). When the change needs a node's full detail (a beat's whole summary, a character's profile, a scene's prose), read_node it FIRST — but only the node(s) you're about to change. Don't sweep the tree; the digest is enough to decide what to touch.\n• NEVER call ask_author. At a creative fork, decide with your best judgment and proceed.\n• Prefer to commit directly: when you'd weigh options, just pick the strongest and write it with propose_node_ops. (Avoid propose_options in autonomous mode — there's no one to pick.)\n• ALWAYS CONCLUDE: once the request is fully handled, call finish with a one-line summary of what you changed. Don't stop mid-thought after a change — keep going until you finish."
     : "";
   return `${SYSTEM_THREAD}${scopeLine}${effortLine}${autoLine}\n\n${blocks.join("\n\n")}`;
-}
-
-// ── Context builders (mirror revise-outline) ─────────────────────────────────
-interface ThreadLite { name: string; status: string; setup_page_id: number | null; payoff_page_id: number | null }
-
-function buildContext(
-  bookName: string,
-  brief: Brief | null,
-  pages: PageRow[],
-  threads: ThreadLite[],
-  evaluation: EvalResult | null,
-  instruction: string | null,
-  focusPage: PageRow | null = null,
-): string {
-  const directive = evaluation
-    ? `\n\nEDITOR'S EVALUATION (the notes to address):\n${evalContext(evaluation)}` +
-      `\n\nAddress the editor's notes. Investigate first, consult the author on real creative forks, then propose the revision plan.`
-    : `\n\nTHE AUTHOR'S REQUESTED CHANGE:\n${instruction}` +
-      (focusPage
-        ? `\n\nFOCUS — this is a SINGLE-PAGE prose chat about page [id=${focusPage.id}] "${focusPage.title || "(untitled)"}". Read THAT page first; keep the change to this one page (op "revise"/"rewrite" on it) unless the author explicitly asks otherwise. Use the surrounding pages only as context. Consult the author on real creative forks, then propose the revision plan.`
-        : `\n\nMake this change to the book. Investigate the affected pages first, consult the author on real creative forks, then propose the revision plan.`);
-  return (
-    `BOOK: ${bookName}\n\nBRIEF (the voice contract):\n${briefContext(brief, { scope: "full", success: true, none: "(no brief set — infer a sensible neutral voice)", empty: "(brief is empty — infer a sensible neutral voice)" })}` +
-    `\n\nCURRENT OUTLINE (real ids; read_page for full prose):\n${outlineContext(pages)}` +
-    (threads.length ? `\n\nTRACKED THREADS (keep their setups & payoffs intact):\n${threadsContext(threads)}` : "") +
-    directive
-  );
-}
-
-
-// Outline with objectives + summaries for every text page (the agent reads full prose by tool).
-function outlineContext(pages: PageRow[]): string {
-  return pages
-    .map((p) => {
-      const obj = p.metadata?.objective?.trim();
-      let line = p.page_type === "section"
-        ? `[id=${p.id}] # ${p.title || "(untitled section)"}${obj ? ` -- ${obj}` : ""}`
-        : `[id=${p.id}] - "${p.title || "(untitled)"}"${obj ? ` -- ${obj}` : ""}`;
-      const sum = p.metadata?.summary?.trim();
-      if (sum && p.page_type !== "section") line += `\n  [summary: ${sum}]`;
-      return line;
-    })
-    .join("\n");
-}
-
-function threadsContext(threads: ThreadLite[]): string {
-  return threads
-    .map((t) => {
-      const setup = t.setup_page_id != null ? ` setup@page ${t.setup_page_id}` : "";
-      const payoff = t.payoff_page_id != null ? ` payoff@page ${t.payoff_page_id}` : "";
-      return `- "${t.name}" (${t.status})${setup}${payoff}`;
-    })
-    .join("\n");
-}
-
-function evalContext(ev: EvalResult): string {
-  const v = ev.verdict ?? {};
-  const head = [
-    v.genre_contract ? `Genre contract: ${v.genre_contract}` : "",
-    v.stance ? `Stance: ${v.stance}` : "",
-    v.letter ? `Editorial letter: ${v.letter}` : "",
-    v.priorities?.length ? `Fix these first:\n${v.priorities.map((p, i) => `  ${i + 1}. ${p}`).join("\n")}` : "",
-  ].filter(Boolean).join("\n");
-
-  const sections = (ev.sections ?? [])
-    .map((s) => {
-      const issues = (s.issues ?? [])
-        .map((is) => {
-          const sev = is.severity ? `[${is.severity}] ` : "";
-          const page = is.page_ref?.id != null ? ` (page id ${is.page_ref.id})` : "";
-          const sug = is.suggestion ? `  → ${is.suggestion}` : "";
-          return `  - ${sev}${is.note}${page}${sug}`;
-        })
-        .join("\n");
-      return `## ${s.title}${s.stance ? ` — ${s.stance}` : ""}${s.assessment ? `\n${s.assessment}` : ""}${issues ? `\n${issues}` : ""}`;
-    })
-    .join("\n\n");
-
-  return `${head}\n\n${sections}`.trim();
 }
