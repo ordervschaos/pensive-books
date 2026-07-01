@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { validateOps, type NodeOp } from "@/features/dna/lib/dnaChat";
-import type { DnaNode, NodeKind } from "@/features/dna/lib/novelDna";
+import { humanizeNodeRefs, validateOps, type NodeOp } from "@/features/dna/lib/dnaChat";
+import { byId, type DnaNode, type NodeKind } from "@/features/dna/lib/novelDna";
 
 const mk = (kind: NodeKind, over: Partial<DnaNode> = {}): DnaNode => ({
   id: over.id ?? "n", book_id: 1, parent_id: over.parent_id ?? null, level: 0, kind, position: 0,
@@ -77,5 +77,36 @@ describe("validateOps — the fail-closed boundary", () => {
   it("rejects a contextual rung attached to the wrong kind (beat must hang off a act, not the pillar)", () => {
     const op: NodeOp = { op: "add", kind: "beat", parentId: "pil", content: { summary: "s" } };
     expect(validateOps([op], spine()).rejected[0].reasons.join(" ")).toMatch(/must hang off act/);
+  });
+});
+
+describe("humanizeNodeRefs — rehydrate bare node-ids into human labels", () => {
+  const index = byId([
+    mk("scene", { id: "n_abc123", content: { title: "Bram's door" } }),
+    mk("character", { id: "n_finn01", content: { name: "Finn" } }),
+  ]);
+
+  it("replaces a bare id with the node's label", () => {
+    expect(humanizeNodeRefs("Rendered [n_abc123].", index)).toBe("Rendered Bram's door.");
+  });
+
+  it("drops a trailing parenthetical that just repeats the label", () => {
+    expect(humanizeNodeRefs("Rendered Scene [n_abc123] (Bram's door).", index)).toBe("Rendered Scene Bram's door.");
+  });
+
+  it("keeps a genuine side-note parenthetical", () => {
+    expect(humanizeNodeRefs("Edited [n_finn01] (added a wound).", index)).toBe("Edited Finn (added a wound).");
+  });
+
+  it("falls back to the parenthetical for an unknown/deleted id", () => {
+    expect(humanizeNodeRefs("Removed [n_gone99] (old scene).", index)).toBe("Removed old scene.");
+  });
+
+  it("leaves an unknown id with no parenthetical untouched", () => {
+    expect(humanizeNodeRefs("Removed [n_gone99].", index)).toBe("Removed [n_gone99].");
+  });
+
+  it("resolves multiple refs in one string", () => {
+    expect(humanizeNodeRefs("[n_finn01] enters [n_abc123].", index)).toBe("Finn enters Bram's door.");
   });
 });

@@ -55,6 +55,24 @@ export function nodeLabel(node: DnaNode | undefined, fallbackKind?: string): str
   return `${kind}${node ? ` ${node.id.slice(0, 6)}` : ""}`;
 }
 
+/** Replace bare node-id references (`[n_ab12cd]`) in the agent's prose with the node's human label, so the
+ *  chat reads "Bram's door", not "[n_4qhr8say4]". The agent is told to point at nodes by id (TARGET NODE:
+ *  [id]) and echoes those ids back; this rehydrates them for the reader. Absorbs an immediately-following
+ *  parenthetical when it merely repeats the label (the agent often writes "[id] (Bram's door)"). An unknown
+ *  id (a since-deleted node) falls back to that parenthetical, else is left untouched. Pure. */
+export function humanizeNodeRefs(text: string, index: Map<string, DnaNode>): string {
+  return text.replace(/\[(n_[a-z0-9]+)\](?:([ \t]*)(\(([^)]*)\)))?/gi, (whole, id: string, gap: string | undefined, paren: string | undefined, inner: string | undefined) => {
+    const node = index.get(id);
+    if (!node) return inner?.trim() ? inner.trim() : whole;
+    const label = nodeLabel(node);
+    if (inner?.trim()) {
+      const p = inner.trim().toLowerCase(), l = label.toLowerCase();
+      if (l.includes(p) || p.includes(l)) return label; // drop the redundant "(label)" the agent added
+    }
+    return label + (gap ?? "") + (paren ?? "");
+  });
+}
+
 // Nested values (array items, sub-objects) render inline so they read as one phrase, not a JSON blob.
 function renderInline(v: unknown): string {
   if (v == null) return "—";

@@ -158,7 +158,7 @@ const STEP_RECIPE: Record<string, string> = {
  *  because the stage's aggregate tally ("14/80 written") doesn't say WHICH scene is next; without a named
  *  target the agent has to infer "next" from the tree digest, which once picked a later beat's scene
  *  instead of the actual next one in reading order. */
-function nextDraftTarget(nodes: DnaNode[], mode: "prose" | "picture"): { scene: DnaNode; orderIndex: number; total: number; actIndex?: number; beatIndex?: number; sceneIndex?: number } | undefined {
+export function nextDraftTarget(nodes: DnaNode[], mode: "prose" | "picture"): { scene: DnaNode; orderIndex: number; total: number; actIndex?: number; beatIndex?: number; sceneIndex?: number } | undefined {
   const ordered = scenesInOrder(nodes);
   const orderIndex = ordered.findIndex((s) => !sceneDrafted(s, mode));
   if (orderIndex === -1) return undefined;

@@ -18,9 +18,9 @@ import {
   type AgentProposal, type AgentSession, type Aspect, type AgentStep, type AgentThreadRow,
 } from "@/features/dna/lib/agentThread";
 import { availableCommands, matchCommands, type AgentCommand } from "@/features/dna/lib/agentCommands";
-import { describeOps, nodeLabel, type NodeOp } from "@/features/dna/lib/dnaChat";
+import { describeOps, humanizeNodeRefs, nodeLabel, type NodeOp } from "@/features/dna/lib/dnaChat";
 import { analysisText, byId, type BookSettings, type DnaNode, type NodeKind } from "@/features/dna/lib/novelDna";
-import { currentObjective } from "@/features/dna/lib/dnaJourney";
+import { currentObjective, nextDraftTarget } from "@/features/dna/lib/dnaJourney";
 import { useChatScroll } from "@/components/book/shared/useChatScroll";
 import { useAutoAccept } from "@/features/dna/hooks/useAutoAccept";
 import { ActionLink, Eyebrow, Panel, RunError } from "@/components/book/shared/studioUi";
@@ -41,12 +41,21 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [],
   // The guided-flow anchor (docs/agent-capabilities.md): the ONE journey rung to drive the author through
   // next, derived live from the tree. Sent with each message so the agent leads with it; also surfaced as
   // the idle "Next" nudge below. mode follows the book's draft mode (prose vs picture-book illustration).
+  const mode = settings.mode === "picture" ? "picture" : "prose";
   const objective = useMemo(
-    () => currentObjective(nodes, { mode: settings.mode === "picture" ? "picture" : "prose", bookSlug }),
-    [nodes, settings.mode, bookSlug],
+    () => currentObjective(nodes, { mode, bookSlug }),
+    [nodes, mode, bookSlug],
   );
   // The one-line headline of the objective (the "▸ Step n/5 · …" line), for the idle nudge chip.
   const objectiveHeadline = useMemo(() => objective.split("\n").find((l) => l.startsWith("▸"))?.replace(/^▸\s*/, "") ?? "", [objective]);
+  // When the objective is the draft step, the concrete scene it targets — so the "next step" nudge can NAME
+  // which scene ("Write 'Bram's door'") instead of a bare ordinal, and can't diverge from what the agent
+  // does: we only surface it when the live objective actually points at this scene's id (same source of
+  // truth the agent receives), so the card ↔ action stay in lockstep.
+  const draftTarget = useMemo(() => {
+    const t = nextDraftTarget(nodes, mode);
+    return t && objective.includes(`[${t.scene.id}]`) ? t : undefined;
+  }, [nodes, mode, objective]);
 
   // The attached nodes resolved against the live tree (ids referencing since-deleted nodes drop out). These
   // anchor the agent — their ids ride OUT-OF-BAND on the message (not glued to the text), and the edge fn
@@ -293,7 +302,18 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [],
               <Wand2 className="h-4 w-4 shrink-0 text-[hsl(var(--pv-accent))]" />
               <span className="min-w-0 flex-1">
                 <span className="block pv-mono text-[9px] uppercase tracking-[0.12em] text-[hsl(var(--pv-accent))]">next step</span>
-                <span className="block pv-serif text-[13px] leading-snug text-foreground">{objectiveHeadline}</span>
+                {draftTarget ? (
+                  <>
+                    <span className="block truncate pv-serif text-[13px] leading-snug text-foreground">
+                      {mode === "picture" ? "Illustrate" : "Write"} “{nodeLabel(draftTarget.scene)}”
+                    </span>
+                    <span className="block pv-mono text-[9.5px] uppercase tracking-[0.1em] text-[hsl(var(--pv-text-faint))]">
+                      Scene {draftTarget.orderIndex} of {draftTarget.total}
+                    </span>
+                  </>
+                ) : (
+                  <span className="block pv-serif text-[13px] leading-snug text-foreground">{objectiveHeadline}</span>
+                )}
               </span>
               <ArrowUp className="h-3.5 w-3.5 shrink-0 rotate-90 text-[hsl(var(--pv-text-faint))]" />
             </button>
@@ -460,6 +480,7 @@ function SessionHistory({ sessions, onResume, busy, nodes }: { sessions: AgentSe
 // One step rendered as a chat element: author messages/answers → right bubble; the agent's reply and
 // questions → prose; a page-read → a muted activity line.
 function StepBubble({ step, nodes }: { step: AgentStep; nodes: DnaNode[] }) {
+  const index = useMemo(() => byId(nodes), [nodes]);
   if (step.t === "user" || step.t === "answer") {
     return (
       <div className="flex justify-end">
@@ -477,10 +498,10 @@ function StepBubble({ step, nodes }: { step: AgentStep; nodes: DnaNode[] }) {
     );
   }
   if (step.t === "applied" || step.t === "discarded") return <ResolvedCard step={step} nodes={nodes} />;
-  // note / ask / done — the agent speaking
+  // note / ask / done — the agent speaking. Rehydrate any bare node-id references into human labels first.
   return (
     <div className="max-w-[92%] pv-serif text-[14.5px] leading-[1.62] text-[hsl(var(--pv-text-muted))] prose prose-sm max-w-none dark:prose-invert prose-p:my-2 prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0 prose-headings:text-foreground prose-strong:text-foreground prose-strong:font-semibold">
-      <ReactMarkdown>{step.label}</ReactMarkdown>
+      <ReactMarkdown>{humanizeNodeRefs(step.label, index)}</ReactMarkdown>
     </div>
   );
 }
@@ -521,7 +542,7 @@ function ResolvedCard({ step, nodes }: { step: AgentStep; nodes: DnaNode[] }) {
           ? <Check className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
           : <X className="h-3.5 w-3.5 shrink-0 text-[hsl(var(--pv-text-faint))]" />}
         <span className="pv-mono text-[9.5px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-faint))]">{applied ? "applied" : "discarded"}</span>
-        <span className="flex-1 truncate pv-serif text-[12.5px] text-[hsl(var(--pv-text-muted))]">{step.label}</span>
+        <span className="flex-1 truncate pv-serif text-[12.5px] text-[hsl(var(--pv-text-muted))]">{humanizeNodeRefs(step.label, index)}</span>
         {hasDetail && <ChevronDown className={`h-3 w-3 shrink-0 text-[hsl(var(--pv-text-faint))] transition-transform ${open ? "rotate-180" : ""}`} />}
       </button>
       {open && isProseRender && (
@@ -580,7 +601,7 @@ function ProposalCard({ proposal, nodes, applying, onApply, onDiscard }: {
         <Eyebrow tone="accent">{isProseRender ? "Render prose" : "Proposed change"}</Eyebrow>
         <button type="button" onClick={onDiscard} title="Discard" className="shrink-0 text-[hsl(var(--pv-text-faint))] hover:text-foreground"><X className="h-4 w-4" /></button>
       </div>
-      {proposal.summary && <p className="pv-serif mt-1.5 text-[13.5px] leading-[1.55] text-[hsl(var(--pv-text-muted))]">{proposal.summary}</p>}
+      {proposal.summary && <p className="pv-serif mt-1.5 text-[13.5px] leading-[1.55] text-[hsl(var(--pv-text-muted))]">{humanizeNodeRefs(proposal.summary, index)}</p>}
       {isProseRender ? (
         <div className="mt-3 space-y-2">
           <p className="pv-serif text-[12px] italic leading-[1.5] text-[hsl(var(--pv-text-faint))]">
