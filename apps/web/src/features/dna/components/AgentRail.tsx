@@ -514,7 +514,7 @@ function ResolvedCard({ step, nodes }: { step: AgentStep; nodes: DnaNode[] }) {
   const isProseRender = !!step.sceneIds?.length;
   const index = byId(nodes);
   const scenes = isProseRender ? step.sceneIds!.map((id) => index.get(id)).filter((n): n is DnaNode => !!n) : [];
-  const hasDetail = isProseRender ? scenes.length > 0 || !!step.brief : ops.length > 0;
+  const hasDetail = isProseRender ? scenes.length > 0 || !!step.brief || !!step.renderedProse : ops.length > 0;
   return (
     <div className={`rounded-xl border px-3 py-2 ${applied ? "border-emerald-600/30 bg-emerald-600/[0.04]" : "border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/30"}`}>
       <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center gap-2 text-left">
@@ -537,6 +537,12 @@ function ResolvedCard({ step, nodes }: { step: AgentStep; nodes: DnaNode[] }) {
               ))}
             </div>
           )}
+          {step.renderedProse && Object.entries(step.renderedProse).map(([id, text]) => (
+            <div key={id} className="rounded-md border border-emerald-600/25 bg-emerald-600/[0.04] px-2.5 py-2">
+              <p className="pv-mono text-[9px] uppercase tracking-[0.08em] text-emerald-600">what got written{scenes.length > 1 && index.get(id) ? ` — ${nodeLabel(index.get(id)!)}` : ""}</p>
+              <p className="pv-serif mt-1 text-[12.5px] leading-[1.55] text-foreground whitespace-pre-wrap">{text}</p>
+            </div>
+          ))}
           {step.brief?.focus && <p className="pv-serif text-[11.5px] leading-[1.45] text-[hsl(var(--pv-text-muted))]">{step.brief.focus}</p>}
           {step.brief?.mustHonor?.map((x, i) => (
             <p key={`h${i}`} className="pv-serif text-[11px] leading-[1.45] text-[hsl(var(--pv-text-faint))]">↳ {x}</p>
@@ -544,7 +550,7 @@ function ResolvedCard({ step, nodes }: { step: AgentStep; nodes: DnaNode[] }) {
           {step.brief?.avoid?.map((x, i) => (
             <p key={`a${i}`} className="pv-serif text-[11px] leading-[1.45] text-[hsl(var(--pv-text-faint))]">✕ {x}</p>
           ))}
-          {!step.brief && scenes.length === 0 && (
+          {!step.brief && scenes.length === 0 && !step.renderedProse && (
             <p className="pv-serif text-[11px] italic leading-[1.45] text-[hsl(var(--pv-text-faint))]">No brief was attached to this render.</p>
           )}
         </div>

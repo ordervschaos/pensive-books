@@ -196,7 +196,7 @@ export function realizeScenesFromBeat(beatNode: DnaNode, scenes: SceneContent[],
 
 export async function expandNode(
   bookId: number, node: DnaNode, target: string, opts: { startPosition?: number; replaceIds?: string[]; signal?: AbortSignal; brief?: RenderBrief } = {},
-): Promise<{ added: number }> {
+): Promise<{ added: number; text?: string }> {
   const { startPosition = 0, replaceIds = [], signal, brief } = opts;
   const res = await callExpand(bookId, node.id, target, signal, brief);
 
@@ -210,7 +210,7 @@ export async function expandNode(
       authoring: { ...node.authoring, source: node.authoring.source === "user" ? "ai_then_user" : "ai", status: "accepted" },
     };
     await saveNode(updated);
-    return { added: 0 };
+    return { added: 0, text };
   }
 
   if (target === "prose") {
@@ -222,7 +222,7 @@ export async function expandNode(
       authoring: { ...node.authoring, source: node.authoring.source === "user" ? "ai_then_user" : "ai", status: "accepted" },
     };
     await saveNode(stampProse(updated));
-    return { added: 0 };
+    return { added: 0, text };
   }
 
   if (res.beatsheet) return persistBeatSheet(bookId, res);

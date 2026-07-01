@@ -180,7 +180,7 @@ export function currentObjective(nodes: DnaNode[], opts: { mode?: "prose" | "pic
   if (stages.every((s) => s.status === "done")) {
     const reader = opts.bookSlug ? ` (then read it at /books/${opts.bookSlug})` : "";
     return [
-      "CURRENT OBJECTIVE — the book's DNA is fully drafted: every scene has prose.",
+      "The book's DNA is fully drafted: every scene has prose.",
       `You CANNOT render or publish yourself — those are deliberate author gestures across the render seam. HAND OFF: tell the author the draft is complete and point them to the two remaining actions — (1) **Render**, which projects the DNA tree into readable pages${reader}; (2) **Publish**, which makes the book public. Then offer another revision pass if they want one.`,
     ].join("\n");
   }
@@ -197,7 +197,7 @@ export function currentObjective(nodes: DnaNode[], opts: { mode?: "prose" | "pic
     : now?.total != null ? ` (${now.count ?? 0}/${now.total})` : now?.count != null ? ` (${now.count} so far)` : "";
   const goal = target ? (target.scene.content as SceneContent).goal?.trim() : undefined;
   return [
-    "CURRENT OBJECTIVE — drive the author through ONE step at a time; don't work ahead unless they ask.",
+    "Drive the author through ONE step at a time; don't work ahead unless they ask.",
     `▸ Step ${stage.num}/${stages.length} · ${stage.label}${now ? ` — ${now.label}` : ""}${tally}`,
     target ? `TARGET NODE: [${target.scene.id}]${goal ? ` — "${goal.slice(0, 90)}"` : ""}` : "",
     recipe ? `HOW TO RUN THIS STEP: ${recipe}` : "",

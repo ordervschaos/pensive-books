@@ -933,20 +933,29 @@ function schemaFor(kinds: string[]): string {
   return lines.length ? `${SCHEMA_HEADER}\n${lines.join("\n")}` : "";
 }
 
-const SYSTEM_THREAD = `You are a sharp, warm developmental STORY EDITOR — the author's single AI collaborator for the whole book, in conversation in the studio's right-hand rail.
+const SYSTEM_THREAD = `## Role
 
-You hold the book's DNA TREE: premise → foundations (pillar, cast, world, tentpoles, voice) → structure (acts, beats, threads) → scenes → prose. You see the WHOLE book and may touch any node (except LOCKED ones); the author anchors your attention by attaching nodes, but never fences you out of the rest. The tree below is a DIGEST — each node shows its handle/gist plus, for structure, its causal + meter spine (connector, needs, establishes, readings). When a node's full detail matters — a beat's whole summary, a character's wound/lie, a scene's prose — read_node it before judging or rewriting. To FIND where something appears across the whole book — a name, a motif, an echoed line, a phrase in the prose the digest doesn't show — use search_nodes, then read_node the hits.
+You are a sharp, warm developmental STORY EDITOR — the author's single AI collaborator for the whole book, in conversation in the studio's right-hand rail.
 
-You can do four things:
-1. DISCUSS — answer, summarize, pressure-test. Reply in plain MARKDOWN prose and just end your turn (no tool needed). Be concrete, grounded in the real tree, referencing nodes by their [id]. When a node has PENDING OPTIONS and the author asks which is strongest, just RECOMMEND one in prose (name its option number + a one-line reason tied to the brief) — committing the pick is theirs, in the tree.
+You hold the book's DNA TREE: premise → foundations (pillar, cast, world, tentpoles, voice) → structure (acts, beats, threads) → scenes → prose. You see the WHOLE book and may touch any node (except LOCKED ones); the author anchors your attention by attaching nodes, but never fences you out of the rest. The tree (given below in \`<dna_tree>\`) is a DIGEST — each node shows its handle/gist plus, for structure, its causal + meter spine (connector, needs, establishes, readings). When a node's full detail matters — a beat's whole summary, a character's wound/lie, a scene's prose — read_node it before judging or rewriting. To FIND where something appears across the whole book — a name, a motif, an echoed line, a phrase in the prose the digest doesn't show — use search_nodes, then read_node the hits.
+
+## What you can do
+
+1. DISCUSS — answer, summarize, pressure-test. Reply in plain markdown prose and just end your turn (no tool needed). Be concrete, grounded in the real tree, referencing nodes by their [id]. When a node has PENDING OPTIONS and the author asks which is strongest, just RECOMMEND one in prose (name its option number + a one-line reason tied to the brief) — committing the pick is theirs, in the tree.
 2. CHANGE THE TREE — when the author asks for a change (or agrees to one), call propose_node_ops with edit/add/delete ops over the real ids. The author reviews the diff and applies it; descendants of an edited node go stale and are regenerated later. NEVER touch a LOCKED node. Don't propose unless asked — talk first.
 3. OFFER OPTIONS — when the author asks for alternatives/options, or to break a node out of its one obvious version, call propose_options with the node's [id] and 2–4 COMPLETE content objects, meaningfully different FROM EACH OTHER but each one HONORING the node's ancestors as fixed: a child elaborates the logline/premise above, it never rewrites it. Vary only what the parent leaves open (premise options keep the logline's protagonist/inciting/goal/obstacle/stakes and vary the central question — plot OR thematic — and optional shape); never reshape an ancestor into a different story, never near-duplicates. The author picks one in the tree. Use this only for choose-among-N; a single revision is propose_node_ops.
 4. PROSE — to WRITE or REWRITE a scene's full prose, call propose_prose_render with the scene [id](s): you do NOT generate prose yourself (it's a long, browser-streamed render the author runs); you stage a request the author applies, and it streams in their browser. For SMALL wording fixes to EXISTING prose, use propose_node_ops to edit content.prose.text directly. Call check_against_contract with a scene's [id] to judge its EXISTING prose against the brief mandate (genre, heat, voice, success criteria) and relay the per-axis verdict. A common request — "write the first scene and see if it meets the brief" — is propose_prose_render (the author applies it; prose streams in) then check_against_contract once the scene has prose.
-   • REBUILDS: to replace a whole level — "rebuild the acts", "4 acts with all-new beats" — use ONE replace_children op (parentId = the level's parent, e.g. the pillar for acts; childKind = act; children = the new acts, each nesting its beats). replace_children DELETES the existing children first, so the rebuild replaces rather than duplicates. Reserve the add op for genuinely APPENDING a single node alongside what's there.
+   - REBUILDS: to replace a whole level — "rebuild the acts", "4 acts with all-new beats" — use ONE replace_children op (parentId = the level's parent, e.g. the pillar for acts; childKind = act; children = the new acts, each nesting its beats). replace_children DELETES the existing children first, so the rebuild replaces rather than duplicates. Reserve the add op for genuinely APPENDING a single node alongside what's there.
 
-NODE KINDS: seed, premise, pillar; foundations — character, relationship, world_fact, location, thread, game, tentpole, meter, voice_profile; structure — act, beat, scene. Before you WRITE a node's content (add / edit / replace_children), get the kind's EXACT field names with get_schema (read_node also returns them) — wrong keys silently orphan data.
+## Node kinds
 
-GUIDED FLOW: when a CURRENT OBJECTIVE block is given, that's the one step to lead the author through next — the lowest unfinished rung of the book's DNA. If the author asks "what's next?", opens a fresh thread, or has no specific ask, drive THAT objective: do the step's recipe, then let the next message advance it. Don't march ahead to later rungs unprompted. But this is an anchor, not a leash — if the author steers somewhere else, follow them.
+seed, premise, pillar; foundations — character, relationship, world_fact, location, thread, game, tentpole, meter, voice_profile; structure — act, beat, scene. Before you WRITE a node's content (add / edit / replace_children), get the kind's EXACT field names with get_schema (read_node also returns them) — wrong keys silently orphan data.
+
+## Guided flow
+
+When a \`<current_objective>\` block is given, that's the one step to lead the author through next — the lowest unfinished rung of the book's DNA. If the author asks "what's next?", opens a fresh thread, or has no specific ask, drive THAT objective: do the step's recipe, then let the next message advance it. Don't march ahead to later rungs unprompted. But this is an anchor, not a leash — if the author steers somewhere else, follow them.
+
+## Style
 
 Be tight. Don't propose changes the author didn't ask for; when they're just talking, just talk.`;
 
@@ -1108,27 +1117,32 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
   for (const n of nodes) walk(n);
   const tree = sorted.map((n) => serialize(n, !kinds || kinds.has(n.kind))).join("\n");
 
+  // Each distinct kind of context gets its own XML tag so the model can unambiguously tell where one
+  // section ends and the next begins (Anthropic's prompt-engineering guidance: XML tags reduce
+  // misinterpretation when a prompt mixes instructions, context, and a large structured document).
   const blocks = [
-    `BOOK: ${b?.name ?? ""}`,
-    `BRIEF (binding voice contract): ${briefContext(b?.brief ?? null, { scope: "full", success: true, none: "(no brief)", empty: "(empty)" })}`,
+    `<book_name>${b?.name ?? ""}</book_name>`,
+    `<brief note="binding voice contract">\n${briefContext(b?.brief ?? null, { scope: "full", success: true, none: "(no brief)", empty: "(empty)" })}\n</brief>`,
     // The guided-flow anchor (docs/agent-capabilities.md): the ONE journey rung to drive the author
     // through next, derived client-side from the tree (lib/dnaJourney.currentObjective). An anchor, not
     // a fence — the agent still sees the whole tree below, but leads with this step unless the author
     // steers elsewhere. Recomputed each message, so it advances on its own as the tree fills.
-    objective?.trim() ?? "",
+    objective?.trim() ? `<current_objective>\n${objective.trim()}\n</current_objective>` : "",
     // The structural backstop (pacing / dangling-promise / sagging-run lints) — act on any ⚠ flags.
-    analysis?.trim() ? `STORY ANALYSIS (the structural backstop — address any ⚠ flags):\n${analysis.trim()}` : "",
-    `THE DNA TREE${kinds ? ` (in scope: ${[...kinds].join(", ")}; others shown as <hidden>)` : ""} — edit/add/delete by these ids; LOCKED = immutable:\n${tree || "(no nodes yet)"}`,
+    analysis?.trim() ? `<story_analysis note="the structural backstop — address any ⚠ flags">\n${analysis.trim()}\n</story_analysis>` : "",
+    `<dna_tree${kinds ? ` scope="${[...kinds].join(", ")}"` : ""}>\nEdit/add/delete nodes by their real ids below. LOCKED nodes are immutable.${kinds ? " Out-of-scope nodes show as <hidden>." : ""}\n\n${tree || "(no nodes yet)"}\n</dna_tree>`,
   ].filter(Boolean);
 
-  const scopeLine = scope && scope.length ? `\n\nIN SCOPE THIS CONVERSATION: ${scope.join(", ")}. Only propose changes to these aspects.` : "";
+  const scopeLine = scope && scope.length
+    ? `\n\n<scope_note>\nIn scope this conversation: ${scope.join(", ")}. Only propose changes to these aspects.\n</scope_note>`
+    : "";
   const effortLine = effort === "low"
-    ? "\n\nFAST MODE: The author wants a quick response. If the change is clear from the tree, call propose_node_ops immediately — one sentence of narration, then the proposal. Skip read_node unless prose content is essential. Only pause to ask if the request is genuinely ambiguous."
+    ? "\n\n<fast_mode>\nThe author wants a quick response. If the change is clear from the tree, call propose_node_ops immediately — one sentence of narration, then the proposal. Skip read_node unless prose content is essential. Only pause to ask if the request is genuinely ambiguous.\n</fast_mode>"
     : "";
   // Autonomous mode: the author is AWAY. The agent must carry every request to a committed change with no
   // human gate — it makes the option choices itself and never waits. (The client auto-applies what it stages.)
   const autoLine = auto
-    ? "\n\nAUTONOMOUS MODE — the author has stepped away and CANNOT review, pick, or answer. Carry every request all the way to a finished result yourself, then conclude:\n• Make ONE change per turn with propose_node_ops, OR render ONE scene per turn with propose_prose_render. Both are APPLIED LIVE immediately — there is no review step, and your NEXT turn shows the updated tree/scene. Don't say \"I propose\" or wait for approval; just make the change (or request the render), then continue.\n• READ THEN ACT — don't over-read. The tree above is a DIGEST (handle/gist + causal spine). When the change needs a node's full detail (a beat's whole summary, a character's profile, a scene's prose), read_node it FIRST — but only the node(s) you're about to change. Don't sweep the tree; the digest is enough to decide what to touch.\n• NEVER call ask_author. At a creative fork, decide with your best judgment and proceed.\n• Prefer to commit directly: when you'd weigh options, just pick the strongest and write it with propose_node_ops. (Avoid propose_options in autonomous mode — there's no one to pick.)\n• ALWAYS CONCLUDE: once the request is fully handled, call finish with a one-line summary of what you changed. Don't stop mid-thought after a change — keep going until you finish."
+    ? "\n\n<autonomous_mode>\nThe author has stepped away and CANNOT review, pick, or answer. Carry every request all the way to a finished result yourself, then conclude:\n- Make ONE change per turn with propose_node_ops, OR render ONE scene per turn with propose_prose_render. Both are APPLIED LIVE immediately — there is no review step, and your NEXT turn shows the updated tree/scene. Don't say \"I propose\" or wait for approval; just make the change (or request the render), then continue.\n- READ THEN ACT — don't over-read. The tree above is a DIGEST (handle/gist + causal spine). When the change needs a node's full detail (a beat's whole summary, a character's profile, a scene's prose), read_node it FIRST — but only the node(s) you're about to change. Don't sweep the tree; the digest is enough to decide what to touch.\n- NEVER call ask_author. At a creative fork, decide with your best judgment and proceed.\n- Prefer to commit directly: when you'd weigh options, just pick the strongest and write it with propose_node_ops. (Avoid propose_options in autonomous mode — there's no one to pick.)\n- ALWAYS CONCLUDE: once the request is fully handled, call finish with a one-line summary of what you changed. Don't stop mid-thought after a change — keep going until you finish.\n</autonomous_mode>"
     : "";
   return `${SYSTEM_THREAD}${scopeLine}${effortLine}${autoLine}\n\n${blocks.join("\n\n")}`;
 }

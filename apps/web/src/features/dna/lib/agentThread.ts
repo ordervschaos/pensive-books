@@ -19,6 +19,8 @@ export interface AgentStep {
   ops?: NodeOp[]; // present on applied/discarded 'dna' steps — the change, for the collapsed card's detail
   sceneIds?: string[]; // present on applied/discarded 'prose-render' steps (ops is always []) — which scene(s)
   brief?: RenderBrief; // ditto — the curated brief that rode into that render, if any
+  renderedProse?: Record<string, string>; // sceneId → a snippet of what actually got written, so the card shows
+  // the real outcome, not just the brief that was fed in. Present only on applied 'prose-render' steps.
 }
 
 // The context filter aspects mirror the DNA tree's visual layers (not the journey stages).
@@ -127,20 +129,44 @@ export async function stageGeneratedProposal(bookId: number, proposal: AgentProp
   if (error) throw new Error(error.message);
 }
 
+// A short preview of the actual generated text, cut at a word boundary — enough to see what landed
+// without bloating the row (the full text lives on the scene node itself, one click away in the tree).
+function proseSnippet(text: string, max = 500): string {
+  const t = text.trim();
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max);
+  const lastSpace = cut.lastIndexOf(" ");
+  return (lastSpace > max * 0.6 ? cut.slice(0, lastSpace) : cut) + "…";
+}
+
+/** True while `proposalId` is still staged on the thread — a fresh read (not the caller's possibly-stale
+ *  copy), used to guard against applying/discarding the SAME proposal twice from two concurrent callers
+ *  (two open tabs, or a remounted auto-accept watcher racing a still-in-flight render). */
+async function isStillPending(threadId: number, proposalId: string): Promise<boolean> {
+  const { data } = await supabase.from("book_agent_runs").select("proposals").eq("id", threadId).maybeSingle();
+  const proposals = Array.isArray(data?.proposals) ? (data!.proposals as AgentProposal[]) : [];
+  return proposals.some((p) => p.id === proposalId);
+}
+
 /** Apply a reviewed proposal: run its node ops against book_nodes, then resolve it on the thread — drop it
  *  from proposals[] and leave an `applied` step (a collapsed card) so the chat keeps the context of what
- *  changed. Returns the validation so the rail can warn when the schema boundary rejected some ops. */
+ *  changed. Returns the validation so the rail can warn when the schema boundary rejected some ops. A
+ *  no-op (empty validation) if the proposal was already resolved by a concurrent caller. */
 export async function applyAgentProposal(bookId: number, threadId: number, proposal: AgentProposal, all: AgentProposal[], nodes: DnaNode[] = []): Promise<OpValidation> {
+  if (!(await isStillPending(threadId, proposal.id))) return { ok: [], rejected: [] };
   if (proposal.layer === "prose-render") {
     // Delegate to the v2 prose pipeline — expandNode streams off-worker (/api/stream-prose) + saves. The
     // dynamic import breaks the agentThread ↔ dnaExpand cycle (dnaExpand → stageGeneratedProposal → here).
     const { expandNode } = await import("@/features/dna/lib/dnaExpand");
     const index = new Map(nodes.map((n) => [n.id, n]));
+    const renderedProse: Record<string, string> = {};
     for (const id of proposal.sceneIds ?? []) {
       const scene = index.get(id);
-      if (scene) await expandNode(bookId, scene, "prose", { brief: proposal.brief });
+      if (!scene) continue;
+      const { text } = await expandNode(bookId, scene, "prose", { brief: proposal.brief });
+      if (text) renderedProse[id] = proseSnippet(text);
     }
-    await resolveProposal(threadId, proposal, "applied", all);
+    await resolveProposal(threadId, proposal, "applied", all, renderedProse);
     return { ok: [], rejected: [] };
   }
   const validation = await applyNodeOps(bookId, proposal.ops);
@@ -150,21 +176,26 @@ export async function applyAgentProposal(bookId: number, threadId: number, propo
 
 /** Discard a proposal without applying it — leaves a `discarded` step (a collapsed card) for context. */
 export async function discardAgentProposal(threadId: number, proposalId: string, all: AgentProposal[]): Promise<void> {
+  if (!(await isStillPending(threadId, proposalId))) return;
   const proposal = all.find((p) => p.id === proposalId);
   if (proposal) await resolveProposal(threadId, proposal, "discarded", all);
 }
 
 // Resolve a proposal: drop it from proposals[] AND append an applied/discarded step that carries its ops, so
-// the resolution stays visible in the feed as a collapsed card. One row write (steps re-read fresh to avoid
-// clobbering anything the edge fn wrote). Safe because resolution only happens while the thread is idle.
-async function resolveProposal(threadId: number, proposal: AgentProposal, verb: "applied" | "discarded", all: AgentProposal[]): Promise<void> {
-  const { data } = await supabase.from("book_agent_runs").select("steps").eq("id", threadId).maybeSingle();
+// the resolution stays visible in the feed as a collapsed card. One row write (steps AND proposals re-read
+// fresh — not the caller's possibly-stale `all` — so a concurrent resolver that already landed is detected
+// and this call becomes a no-op instead of writing a second, byte-identical step).
+async function resolveProposal(threadId: number, proposal: AgentProposal, verb: "applied" | "discarded", all: AgentProposal[], renderedProse?: Record<string, string>): Promise<void> {
+  const { data } = await supabase.from("book_agent_runs").select("steps, proposals").eq("id", threadId).maybeSingle();
   const steps = Array.isArray(data?.steps) ? (data!.steps as AgentStep[]) : [];
+  const currentProposals = Array.isArray(data?.proposals) ? (data!.proposals as AgentProposal[]) : all;
+  if (!currentProposals.some((p) => p.id === proposal.id)) return; // already resolved by a concurrent caller
   const step: AgentStep = {
     t: verb, label: proposal.summary, ops: proposal.ops,
     ...(proposal.layer === "prose-render" ? { sceneIds: proposal.sceneIds, brief: proposal.brief } : {}),
+    ...(renderedProse && Object.keys(renderedProse).length ? { renderedProse } : {}),
   };
-  const next = all.filter((p) => p.id !== proposal.id);
+  const next = currentProposals.filter((p) => p.id !== proposal.id);
   const { error } = await supabase.from("book_agent_runs").update({ steps: [...steps, step], proposals: next }).eq("id", threadId);
   if (error) throw error;
 }

@@ -1,7 +1,9 @@
 # Agent prompt audit — inefficiencies & inaccuracies in the DNA thread agent
 
 > **Status:** findings 1, 2, 3, 4, and 6 are fixed (this pass). 5 was left as-is (flagged low
-> priority, not urgent). A 7th issue turned up while fixing #6 — see below.
+> priority, not urgent). A 7th issue turned up while fixing #6 — see below. The §3 sync test
+> (`bookAgentDigestFields.test.ts`) has since been added — nothing is "still open" from this audit
+> except the real illustration tool (§2, option a), a deliberately bigger follow-up.
 
 > Follow-up to the scene-ordering bug fixed in commit `dfdac61` (the tree digest was sorted by
 > `level` alone, so the agent couldn't tell which beat a scene belonged to and rendered the wrong
@@ -124,8 +126,18 @@ already guards against for the *other* hand-maintained copy; `DIGEST_FIELDS` sho
 guard rather than a fourth silent mirror.
 
 **Done:** the four required-field entries fixed (`world_fact`, `voice_profile`, `game`, `tentpole`).
-The sync test is **not yet added** — still worth doing so this can't silently drift again. The
-judgment-call entries (`thread.payoff`, `location`'s sensory fields, `pillar.ending`, character's
+The sync test is now added too — `apps/web/src/features/dna/lib/bookAgentDigestFields.test.ts` reads
+`book-agent/index.ts`'s `DIGEST_FIELDS` block as text (mirroring `dnaSchema.artifact.test.ts`'s
+cross-boundary pattern, since the edge fn can't be imported into Vitest) and validates every entry
+against `NODE_SCHEMA` directly (not the editSpecs-derived artifact `kinds[].fields`, which drops
+`genOnly` causality fields DIGEST_FIELDS deliberately surfaces): every kind exists, every field is
+real, and every REQUIRED field is shown. Two documented, narrow exceptions: `beat.summary` is
+covered by `gistLine()` (a separate mechanism, not `DIGEST_FIELDS.beat`), and `scene`'s inherited
+causality fields (`needs`/`establishes`/`grounds_in`) are read-only data `NODE_SCHEMA` doesn't
+declare (that's the WRITE contract; these are mechanically copied from the parent beat, never
+independently authored). Verified the test has teeth: reverted the `world_fact` fix locally, the
+test failed as expected, then restored it. The judgment-call entries (`thread.payoff`,
+`location`'s sensory fields, `pillar.ending`, character's
 want/need/wound/lie) were left alone; they're optional fields and a legitimate token-budget call,
 not fixed here.
 
@@ -254,12 +266,11 @@ told the agent to do.
 |---|---|---|---|---|
 | 1 | `meter` missing from `ALL_NODE_KINDS`/`cast_world` — agent can never add one | Confirmed | High | ✅ Fixed |
 | 2 | "Illustrate" objective has no corresponding tool | Confirmed | High | ✅ Fixed (hand-off text; real tool is a bigger follow-up) |
-| 3 | `DIGEST_FIELDS` misses required fields (`world_fact.rule`, `voice_profile.style`, `game.win/lose_condition`) + wrong field (`tentpole.title`) | Confirmed | High | ✅ Fixed (sync test still open) |
+| 3 | `DIGEST_FIELDS` misses required fields (`world_fact.rule`, `voice_profile.style`, `game.win/lose_condition`) + wrong field (`tentpole.title`) | Confirmed | High | ✅ Fixed + sync test added |
 | 4 | Autonomous-mode text doesn't mention `propose_prose_render`'s auto-apply behavior | Confirmed mechanism | Medium | ✅ Fixed |
 | 5 | `nodeHandle`/`nodeLabel` duplicated, already drifted (60 vs 80 chars) | Confirmed | Low | Left as-is (not urgent) |
 | 6 | ~500 lines of dead eval-run agent code (SYSTEM/TOOLS/buildContext) | Confirmed (repo-wide grep + live DB check) | Medium (housekeeping) | ✅ Deleted |
 | 7 | `finish` tool never declared for the thread, though the prompt instructs calling it | Confirmed | High | ✅ Fixed (found while doing #6) |
 
-**Still open:** the `DIGEST_FIELDS` ↔ schema sync test (§3) and the real illustration tool (§2,
-option a) — both legitimate follow-ups, deliberately not done in this pass. Everything else
-confirmed-and-high-value is fixed.
+**Still open:** the real illustration tool (§2, option a) — a deliberately bigger follow-up, not
+done in this pass. Everything else confirmed-and-high-value is fixed, including the §3 sync test.
