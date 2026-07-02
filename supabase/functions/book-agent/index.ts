@@ -19,7 +19,7 @@ import { type Brief, briefContext } from "../_shared/brief.ts";
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { callLLM } from "../_shared/llm.ts";
-import { getActiveModels } from "../_shared/model-config.ts";
+import { getRoleModels } from "../_shared/model-config.ts";
 // The content schema the agent must conform to — GENERATED from the web app's NODE_SCHEMA (single source of
 // truth), kept in sync by apps/web/.../dnaSchema.artifact.test.ts. Never hand-edit; edit NODE_SCHEMA + regen.
 import dnaSchema from "../_shared/dna-schema.json" with { type: "json" };
@@ -295,7 +295,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
   try {
     // Any tier works here: _shared/llm.ts converts tools/tool_use/tool_result both ways for
     // the OpenAI-compatible paths (DeepSeek, MuleRouter/Qwen), so the loop runs on cheap models too.
-    const { high: model, low: ackModel } = await getActiveModels();
+    const { agent: model, low: ackModel } = await getRoleModels();
     // A conversational system prompt grounded in the CURRENT book state (rebuilt per call so ids stay
     // fresh), and the thread tool belt.
     if (row.turns === 0) {
@@ -674,8 +674,8 @@ async function toolResults(
         ? { type: "tool_result", tool_use_id: t.id, content: schema }
         : { type: "tool_result", tool_use_id: t.id, content: `No schema for ${JSON.stringify(kinds)}. Valid kinds: ${Object.keys(SCHEMA_BY_KIND).join(", ")}.`, is_error: true });
     } else if (t.name === "search_nodes") {
-      // The agent's grep: full-text substring over EVERY node's content (incl. scene prose, which the digest
-      // drops). ~200 nodes/book — fetch all and match in JS; only id/kind/handle/snippet go back to the model.
+      // The agent's grep: per-FIELD substring match over EVERY node's content (incl. scene prose, which the
+      // digest drops). ~200 nodes/book — fetch all and match in JS; only id/kind/handle/field/snippet go back.
       const q = String((t.input as { query?: string })?.query ?? "").trim();
       if (!q) {
         results.push({ type: "tool_result", tool_use_id: t.id, content: "Provide a non-empty query string.", is_error: true });
@@ -686,15 +686,23 @@ async function toolResults(
       const needle = q.toLowerCase();
       const hits: string[] = [];
       let more = 0;
+      // prose.text is unwrapped one level so its snippet stays plain text; other nested values fall back to a
+      // stringified sub-value (no deep recursion).
       for (const r of (rows ?? []) as { id: string; kind: string; content: Record<string, unknown> | null }[]) {
-        const text = JSON.stringify(r.content ?? {});
-        const idx = text.toLowerCase().indexOf(needle);
-        if (idx === -1) continue;
-        if (hits.length >= 30) { more++; continue; }
-        const start = Math.max(0, idx - 60);
-        const end = Math.min(text.length, idx + needle.length + 60);
-        const snippet = (start > 0 ? "…" : "") + text.slice(start, end).replace(/\s+/g, " ") + (end < text.length ? "…" : "");
-        hits.push(`[${r.id}] ${r.kind} “${nodeHandle(r.content)}” — ${snippet}`);
+        for (const [field, value] of Object.entries(r.content ?? {})) {
+          let text: string;
+          if (typeof value === "string") text = value;
+          else if (field === "prose" && value && typeof value === "object" && typeof (value as { text?: unknown }).text === "string") text = (value as { text: string }).text;
+          else if (value && typeof value === "object") text = JSON.stringify(value);
+          else continue;
+          const idx = text.toLowerCase().indexOf(needle);
+          if (idx === -1) continue;
+          if (hits.length >= 30) { more++; continue; }
+          const start = Math.max(0, idx - 60);
+          const end = Math.min(text.length, idx + needle.length + 60);
+          const snippet = (start > 0 ? "…" : "") + text.slice(start, end).replace(/\s+/g, " ") + (end < text.length ? "…" : "");
+          hits.push(`[${r.id}] ${r.kind} “${nodeHandle(r.content)}” — ${field}: “${snippet}”`);
+        }
       }
       steps.push({ t: "read", label: `Searched for “${q}” (${hits.length + more} hit${hits.length + more === 1 ? "" : "s"}).` });
       results.push({
@@ -728,7 +736,7 @@ async function toolResults(
       }
       const { data: book } = await service.from("books").select("brief").eq("id", bookId).maybeSingle();
       const brief = ((book as { brief?: Brief } | null)?.brief ?? {}) as Brief;
-      const { high: model } = await getActiveModels();
+      const { agent: model } = await getRoleModels();
       try {
         const axes = await judgeProse(apiKey, model, brief, proseText, { fn: "book-agent-contract", bookId, taskTable: "book_agent_runs", taskId: null, userId: null });
         const summary = axes.map((a) => `${a.axis}: ${a.verdict.toUpperCase()} — ${a.detail}${a.evidence ? ` (e.g. "${a.evidence}")` : ""}`).join("\n");
@@ -851,13 +859,21 @@ function gistLine(content: Record<string, unknown> | null | undefined): string {
   return first;
 }
 
+// Scene drafted marker — the one question a "draft the book" run asks every turn (is this scene next?),
+// unanswerable from goal/value_shift/pov alone. content.prose is nested so DIGEST_FIELDS/pickFields skip it.
+function draftedMarker(content: Record<string, unknown> | null | undefined): string {
+  const words = (content?.prose as { words?: unknown } | undefined)?.words;
+  return typeof words === "number" && words > 0 ? `prose: "${words.toLocaleString()}w"` : "undrafted";
+}
+
 // One-line digest of a node: handle/gist + compact spine (prose + verbose fields dropped; read_node for full).
 function digestNode(kind: string, content: Record<string, unknown> | null | undefined): string {
   const fields = DIGEST_FIELDS[kind];
   const spine = fields ? pickFields(content, fields) : (content ?? {});
   const gist = kind === "beat" ? gistLine(content) : "";
   const json = Object.keys(spine).length ? JSON.stringify(spine) : "";
-  return [gist, json].filter(Boolean).join(" · ") || nodeHandle(content);
+  const drafted = kind === "scene" ? draftedMarker(content) : "";
+  return [gist, json, drafted].filter(Boolean).join(" · ") || nodeHandle(content);
 }
 
 const THREAD_DNA_TOOLS = [

@@ -59,3 +59,14 @@ export async function getActiveModels(): Promise<{ high: string; low: string }> 
     return TIER_MODELS.sonnet;
   }
 }
+
+// Per-role seam (docs/agent-improvement-plan.md P0.1): today every role collapses to `high` — this is a
+// behavior-preserving plumbing change, not a model swap. It mirrors DIGEST_MODEL's already-pinned-separately
+// precedent and sets up the split the model-prose benchmark (project_model_prose_comparison) implies —
+// best-prose ≠ best-structure ≠ best-agent-reasoning — without committing to assignments yet.
+export type ModelRole = "agent" | "structure" | "prose";
+
+export async function getRoleModels(): Promise<{ agent: string; structure: string; prose: string; low: string }> {
+  const { high, low } = await getActiveModels();
+  return { agent: high, structure: high, prose: high, low };
+}

@@ -1,0 +1,136 @@
+# Agent improvement — implementation plan
+
+> Derived from [`agent-improvement-analysis.md`](./agent-improvement-analysis.md), 2026-07-02.
+> This plan sequences the findings, tags **ownership** (🧠 = needs judgment / architectural, kept
+> in the main thread; 🤖 = mechanical / behavior-scoped, delegated to a background Sonnet agent),
+> and states a success criterion per item. Ordering follows the analysis's own "Recommended order":
+> the §1 root-cause port is the enabler for §1b/c, §2a/b/c.
+
+> **Status (2026-07-02):** Phase 0 (P0.1/P0.2/P0.3) shipped to the working tree, reviewed, `deno check`
+> clean (only the pre-existing `EdgeRuntime` baseline). P1.1 shipped: `_shared/novel-dna.ts` edge twin
+> (Deno-clean) locked by `novelDna.parity.test.ts` (27 passing). Next: P1.2 — wire `threadSystem` onto the
+> twin. Note: §4c left `dna-expand:418` on `getActiveModels().high` (one shared `model` variable feeds prose
+> *and* the beatsheet in that scope; the clean split waits for P4's role-tuning pass).
+
+## Dependency map
+
+```
+§1 root cause: ship engine to edge  ──┬──► §1b/c live re-derivation (threadSystem)
+  (novelDna.validate + dnaJourney)    ├──► §2c lint-then-repair beatsheet
+                                      └──► §2b plan-conformance verify
+§4c per-role model config ── independent
+§1a scene drafted marker  ── independent
+§2d field-aware search    ── independent
+§3a/§3b/§3c/§3d data-structure ── ride alongside; §3b independent, rest interact with §1
+```
+
+---
+
+## Phase 0 — delegated now (🤖 background Sonnet, independent of everything)
+
+These need no new infrastructure and are behavior-scoped. Delegated as one serial batch to avoid
+same-file (`book-agent/index.ts`) write conflicts.
+
+### P0.1 — §4c per-role model config (plumbing, behavior-preserving)
+- **Change:** in `supabase/functions/_shared/model-config.ts`, add a per-role resolver so callers can
+  ask for `agentModel` / `structureModel` / `proseModel` instead of a single `high`. Every role
+  **defaults to today's `high` string** — this commit changes no runtime behavior; it only creates
+  the seams. Establishes the `DIGEST_MODEL`-style per-role pattern the doc calls for.
+- **Consumers to re-point (keep behavior identical):** `book-agent/index.ts:298,731` (→ `agentModel`),
+  `dna-expand/index.ts:418` (prose render → `proseModel`; beatsheet/structure call at `:580` →
+  `structureModel`).
+- **Success:** diff is pure plumbing; `getActiveModels()` still returns `{high, low}` for existing
+  callers; new `modelForRole(role)` (or extended return) resolves to the same strings today.
+- **Left for main thread (🧠):** the actual per-role *assignments* (which model wins prose vs JSON per
+  tier) — that's a benchmark/quality judgment, tuned after the seams exist.
+
+### P0.2 — §1a scene digest drafted marker (one line)
+- **Change:** in `digestNode` (`book-agent/index.ts:855`), for `kind === "scene"` append a drafted
+  marker to the digest line: `prose: "1,842w"` when `content.prose.words > 0`, else `undrafted`.
+  Word count already lives at `content.prose.words` (written by `dnaExpand.ts:221`).
+- **Success:** every scene digest line now answers "is this drafted?" at a glance; drafted scenes show
+  the word count, undrafted show `undrafted`. No other digest fields change.
+
+### P0.3 — §2d field-aware `search_nodes`
+- **Change:** rewrite the `search_nodes` handler (`book-agent/index.ts:676`) to iterate each node's
+  content **fields** (string values), match the needle per-field, and return `field: "…snippet…"`
+  labels instead of a substring over `JSON.stringify(content)` (which leaks field names/JSON escapes).
+- **Success:** a search for a motif returns `[id] scene · prose: "…the brass keyring…"` — the matching
+  field is named, snippet is clean text (no `\"`/`{}` noise). Keep the 30-hit cap + `more` counter.
+
+> Verification note: edge functions don't `deno check` cleanly locally (missing `EdgeRuntime` /
+> remote-import types). The agent mirrors existing patterns, keeps diffs minimal, and the main thread
+> reviews. No web-side (`novelDna`/`dnaExpand`) files are touched in Phase 0.
+
+---
+
+## Phase 1 — the enabler (🧠 main thread)
+
+### P1.1 — §1 root cause: ship the pure engine to the edge
+- `novelDna.ts` (`validate`, meters) + `dnaJourney.ts` (objective/step derivation) are pure,
+  dependency-light TS. Port them to a Deno-importable `_shared` module (or the `dna-schema.json`
+  artifact + golden-test pattern already used for `NODE_SCHEMA`), so `threadSystem()` can recompute
+  live from the tree.
+- **New files only** (`_shared/…`) — deliberately does **not** edit `book-agent/index.ts` yet, so it
+  can land in parallel with Phase 0.
+- **Success:** a golden test proves the edge port and the browser engine return identical
+  `validate()` output for a fixture book; module imports under Deno.
+
+### P1.2 — §1b/c live re-derivation in `threadSystem`
+- With P1.1 landed: `threadSystem()` (`book-agent/index.ts:1157`) recomputes objective + drafted map +
+  lints from the **live tree every chain link**, instead of reading the frozen `context_objective` /
+  `context_analysis` snapshots. `autoContinue` stops carrying stale `TARGET NODE: scene 14`.
+- **Success:** in an auto run, after scene 14 renders, the next turn's system prompt names scene 15 as
+  target and shows refreshed lints — verified by log/trace, not by transcript memory.
+
+---
+
+## Phase 2 — the first eval-loop teeth (🧠 main thread, after Phase 1)
+
+### P2.1 — §2c lint-then-repair on the beatsheet
+- After the sanitizer (`dna-expand/index.ts:590-612`) drops orphans/dupes, run the (now edge-available)
+  lints over the candidate sheet; on errors, **one bounded repair call** listing the violations.
+- **Success:** a sheet that previously shipped a silent `dangling_promise` now either repairs it or
+  surfaces it — no silent degradation.
+
+### P2.2 — §2b plan-conformance verify mode
+- `check_against_contract` gains a mode that loads the scene's **own plan slice** (`value_shift`,
+  `establishes`, `threads`, `register`) and verdicts prose per field — using the scene's DNA edges as
+  the verification context.
+
+### P2.3 — §2a enforced read-repair chain
+- In auto mode, the server chain runs the contract check after an applied prose render **structurally**
+  (render→verify→fix), not as a recipe the cheap model may skip.
+
+---
+
+## Phase 3 — data-structure health/cost (🧠, can interleave)
+
+- **§3b** continuity-digest delta storage (independent; `dna-expand`): store per-page delta, fold on
+  read — O(n) not O(n²). Preserves hash-chain invalidation.
+- **§3a** transcript per-message rows / compaction (schema + Realtime; higher risk).
+- **§3c** state-key registry / canonicalization at the write gate.
+- **§3d** distribute beat plan across sibling scenes in the scenes-generation call.
+
+## Phase 4 — remaining prompting (🧠)
+
+- **§4a** auto mode batches independent edits into one call (fewer cache-miss cycles).
+- **§4b** beatsheet truncation-aware continue/repair (or per-act generation).
+- **§4c (tuning)** assign the real per-role models on the P0.1 seams.
+
+---
+
+## Ownership summary
+
+| Item | Owner | Depends on |
+|------|-------|-----------|
+| P0.1 §4c plumbing | 🤖 Sonnet | — |
+| P0.2 §1a marker | 🤖 Sonnet | — |
+| P0.3 §2d search | 🤖 Sonnet | — |
+| P1.1 engine→edge | 🧠 main | — |
+| P1.2 re-derivation | 🧠 main | P1.1 |
+| P2.1 beatsheet repair | 🧠 main | P1.1 |
+| P2.2 plan-conformance | 🧠 main | P1.1 |
+| P2.3 read-repair chain | 🧠 main | P1.1, P2.2 |
+| P3.* data structure | 🧠 main | §3b none; rest P1.1 |
+| P4.* prompting | 🧠 main | P0.1 for §4c tuning |
