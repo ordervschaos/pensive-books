@@ -23,8 +23,16 @@
 >   the repair only if it doesn't raise the lint count) and best-effort (any failure keeps the original sheet).
 >   Rule selection locked by `dnaBeatLints.test.ts`.
 >
-> Next: P2.2 plan-conformance verify, P2.3 enforced read-repair chain. Note: §4c left `dna-expand:418` on
-> `getActiveModels().high` (one shared `model` var feeds prose *and* the beatsheet; clean split → P4).
+> - **P2.2** — plan-conformance verify: new `_shared/plan-gate.ts` (`judgeAgainstPlan`) judges a scene's prose
+>   against its OWN DNA plan slice (value_shift, goal/outcome, establishes/needs, resolved-thread work) —
+>   the causal edges ARE the verification context. `check_against_contract` gains a `check` param
+>   (`plan`|`mandate`|`both`, default `both`); it builds the plan slice from the scene, resolves thread
+>   ids→names, and reports both perspectives. Verified by `deno check` + inspection (the judge needs a live
+>   model; `plan-gate` can't be vitest-imported — pulls `llm`/`task`, same as `mandate-gate`).
+>
+> Next: P2.3 enforced read-repair chain (auto mode runs the contract check structurally after an applied prose
+> render). Note: §4c left `dna-expand:418` on `getActiveModels().high` (one shared `model` var feeds prose
+> *and* the beatsheet; clean split → P4).
 
 ## Dependency map
 

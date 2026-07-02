@@ -24,7 +24,7 @@ import { getRoleModels } from "../_shared/model-config.ts";
 // by novelDna.parity.test.ts). threadSystem re-runs these on the LIVE tree each chain link so the objective +
 // structural lints SENSE the current state instead of dead-reckoning from the author's message-time snapshot
 // (docs/agent-improvement-plan.md P1.2).
-import { analysisText, type AuthoringStatus, type DnaNode, type NodeContent, type NodeKind } from "../_shared/novel-dna.ts";
+import { analysisText, type AuthoringStatus, type DnaNode, type NodeContent, type NodeKind, type SceneContent } from "../_shared/novel-dna.ts";
 import { currentObjective } from "../_shared/dna-journey.ts";
 // The content schema the agent must conform to — GENERATED from the web app's NODE_SCHEMA (single source of
 // truth), kept in sync by apps/web/.../dnaSchema.artifact.test.ts. Never hand-edit; edit NODE_SCHEMA + regen.
@@ -33,6 +33,7 @@ import { serviceClient } from "../_shared/task.ts";
 import { reinvoke, isChainCall } from "../_shared/self-chain.ts";
 import { captureException, isBillingError } from "../_shared/sentry.ts";
 import { judgeProse } from "../_shared/mandate-gate.ts";
+import { judgeAgainstPlan, planHasContent, type ScenePlan } from "../_shared/plan-gate.ts";
 
 const MAX_TURNS = 20;          // model calls per run — the runaway guard
 const AUTO_MAX_TURNS = 50;     // autonomous threads iterate change-by-change, so they get a higher ceiling
@@ -725,7 +726,7 @@ async function toolResults(
         results.push({ type: "tool_result", tool_use_id: t.id, content: `No node with id ${id} in this book.`, is_error: true });
         continue;
       }
-      const n = node as { id: string; kind: string; content: { prose?: { text?: string }; goal?: string } };
+      const n = node as { id: string; kind: string; content: SceneContent };
       const proseText = (n.content?.prose?.text ?? "").trim();
       if (n.kind !== "scene") {
         results.push({ type: "tool_result", tool_use_id: t.id, content: `Node ${id} is a ${n.kind}, not a scene — only scene prose can be checked against the contract.`, is_error: true });
@@ -740,14 +741,46 @@ async function toolResults(
         results.push({ type: "tool_result", tool_use_id: t.id, content: "Contract check unavailable: ANTHROPIC_API_KEY not configured.", is_error: true });
         continue;
       }
-      const { data: book } = await service.from("books").select("brief").eq("id", bookId).maybeSingle();
-      const brief = ((book as { brief?: Brief } | null)?.brief ?? {}) as Brief;
+      const check = ((t.input as { check?: string })?.check ?? "both");
+      const doPlan = check !== "mandate", doMandate = check !== "plan";
       const { agent: model } = await getRoleModels();
+      const meta = { fn: "book-agent-contract", bookId, taskTable: "book_agent_runs", taskId: null, userId: null };
+      const sections: string[] = [];
       try {
-        const axes = await judgeProse(apiKey, model, brief, proseText, { fn: "book-agent-contract", bookId, taskTable: "book_agent_runs", taskId: null, userId: null });
-        const summary = axes.map((a) => `${a.axis}: ${a.verdict.toUpperCase()} — ${a.detail}${a.evidence ? ` (e.g. "${a.evidence}")` : ""}`).join("\n");
-        steps.push({ t: "read", label: `Checked scene “${nodeHandle(n.content)}” against the brief contract.` });
-        results.push({ type: "tool_result", tool_use_id: t.id, content: summary || "The judge returned no axes — inspect by hand." });
+        if (doPlan) {
+          // Build the scene's PLAN SLICE from its DNA edges (P2.2). Thread refs are node ids — resolve to
+          // names/promises so the judge reads the promise, not a hash. establishes/needs are the causal-DAG
+          // currency: does the prose actually make these state keys true / honor them?
+          const c = n.content ?? {};
+          const threadRefs = Array.isArray(c.threads) ? c.threads : [];
+          const threadIds = threadRefs.map((r) => r?.ref).filter((r): r is string => !!r);
+          const { data: threadNodes } = threadIds.length
+            ? await service.from("book_nodes").select("id, content").in("id", threadIds)
+            : { data: [] as { id: string; content: Record<string, unknown> }[] };
+          const tById = new Map((threadNodes ?? []).map((tn) => [tn.id, tn.content as { name?: string; promise?: string }]));
+          const plan: ScenePlan = {
+            goal: c.goal, outcome: c.outcome,
+            valueShift: c.value_shift ? { value: c.value_shift.value, from: c.value_shift.from, to: c.value_shift.to, polarity: c.value_shift.polarity } : undefined,
+            establishes: c.establishes, needs: c.needs,
+            threads: threadRefs.map((r) => ({ name: tById.get(r?.ref ?? "")?.name ?? "(unnamed thread)", promise: tById.get(r?.ref ?? "")?.promise, role: r?.role ?? "advance" })),
+          };
+          if (planHasContent(plan)) {
+            const axes = await judgeAgainstPlan(apiKey, model, plan, proseText, meta);
+            const body = axes.map((a) => `  ${a.field}: ${a.verdict.toUpperCase()} — ${a.detail}${a.evidence ? ` (e.g. "${a.evidence}")` : ""}`).join("\n");
+            sections.push(`PLAN CONFORMANCE (does the prose deliver the scene's own plan?):\n${body || "  (judge returned no axes — inspect by hand)"}`);
+          } else {
+            sections.push("PLAN CONFORMANCE: this scene has no structural plan (no value_shift / establishes / threads) to check against.");
+          }
+        }
+        if (doMandate) {
+          const { data: book } = await service.from("books").select("brief").eq("id", bookId).maybeSingle();
+          const brief = ((book as { brief?: Brief } | null)?.brief ?? {}) as Brief;
+          const axes = await judgeProse(apiKey, model, brief, proseText, meta);
+          const body = axes.map((a) => `  ${a.axis}: ${a.verdict.toUpperCase()} — ${a.detail}${a.evidence ? ` (e.g. "${a.evidence}")` : ""}`).join("\n");
+          sections.push(`MANDATE CONFORMANCE (does the prose honor the brief?):\n${body || "  (judge returned no axes — inspect by hand)"}`);
+        }
+        steps.push({ t: "read", label: `Checked scene “${nodeHandle(n.content as Record<string, unknown>)}” against ${check === "both" ? "its plan + the brief" : check === "plan" ? "its plan" : "the brief"}.` });
+        results.push({ type: "tool_result", tool_use_id: t.id, content: sections.join("\n\n") || "No checks ran — inspect by hand." });
       } catch (e) {
         results.push({ type: "tool_result", tool_use_id: t.id, content: `Contract check failed: ${String((e as Error)?.message ?? e)}`, is_error: true });
       }
@@ -906,8 +939,8 @@ const THREAD_DNA_TOOLS = [
   },
   {
     name: "check_against_contract",
-    description: "Judge a scene's PROSE against the book's brief mandate (genre, heat, success criteria). Pass the scene node's id; the scene must already have prose (content.prose.text) — if it's empty, propose_prose_render first. Returns a per-axis verdict (pass / partial / fail) with evidence, so you can tell the author whether the draft delivers what the brief promised. Read the scene first if you haven't.",
-    input_schema: { type: "object", properties: { id: { type: "string", description: "The scene node's id." } }, required: ["id"] },
+    description: "Judge a scene's PROSE against its contract — TWO complementary checks: (1) PLAN conformance — does the prose deliver the scene's OWN plan (its planned value_shift, the state keys its causal edges say it must `establishes`/`needs`, its thread work)? This is the scene doing its structural job so later scenes can rely on it. (2) MANDATE conformance — does it honor the book's brief (genre, heat, success criteria)? Pass the scene node's id; the scene must already have prose (content.prose.text) — if empty, propose_prose_render first. `check` selects which: 'plan' (default 'both'), 'mandate', or 'both'. Returns per-axis verdicts (pass / partial / fail) with evidence. Read the scene first if you haven't.",
+    input_schema: { type: "object", properties: { id: { type: "string", description: "The scene node's id." }, check: { type: "string", enum: ["plan", "mandate", "both"], description: "Which contract to check: 'plan' (the scene's own DNA plan), 'mandate' (the brief), or 'both' (default)." } }, required: ["id"] },
   },
   {
     name: "read_node",
