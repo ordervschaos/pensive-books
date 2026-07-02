@@ -16,7 +16,14 @@
 >   + picture modes, both fixtures. `pnpm typecheck` clean except one **pre-existing** `DnaTreePage.tsx:1708`
 >   error (untouched file). tsconfig aliases the edge twins' `jsr:` type import to the installed npm package.
 >
-> Next: P2.1 beatsheet lint-then-repair, P2.2 plan-conformance verify. Note: §4c left `dna-expand:418` on
+> - **P2.1** — beatsheet lint-then-repair in `dna-expand`: after the sanitizer, `validate()` the candidate
+>   sheet (existing tree + candidate beats, beats-only), filter to beat-native rules (`uncaused_therefore`,
+>   `empty_but`, `beat_connector`, `illegal_resolution`, `unresolved_game` — scene/tentpole-placement lints
+>   excluded as beat-stage false positives), and on hits run ONE bounded repair call. Non-regressing (accept
+>   the repair only if it doesn't raise the lint count) and best-effort (any failure keeps the original sheet).
+>   Rule selection locked by `dnaBeatLints.test.ts`.
+>
+> Next: P2.2 plan-conformance verify, P2.3 enforced read-repair chain. Note: §4c left `dna-expand:418` on
 > `getActiveModels().high` (one shared `model` var feeds prose *and* the beatsheet; clean split → P4).
 
 ## Dependency map

@@ -12,6 +12,9 @@ import { corsHeaders, json } from "../_shared/cors.ts";
 import { callLLM, textFromLLM, type CallMeta } from "../_shared/llm.ts";
 import { getActiveModels, DIGEST_MODEL } from "../_shared/model-config.ts";
 import { extractJsonBlock } from "../_shared/json.ts";
+// The shared engine's beat-native lints, run over the just-generated beat sheet so a silently-degraded sheet
+// gets one bounded repair turn instead of shipping the damage (docs/agent-improvement-plan.md P2.1).
+import { validate, type AuthoringStatus, type DnaNode, type NodeContent, type NodeKind } from "../_shared/novel-dna.ts";
 import { type Brief, briefContext, mandateContext } from "../_shared/brief.ts";
 import { isChainCall } from "../_shared/self-chain.ts";
 import { serviceClient } from "../_shared/task.ts";
@@ -587,11 +590,13 @@ Output JSON ONLY: { "beats": [ { "act": <1..${acts.length}>, "summary": "...", "
       const gNameToId = new Map(games.map((g) => [gName(g).toLowerCase(), g.id]));
       const normKey = (s: unknown) => String(s ?? "").trim().toLowerCase().replace(/\s+/g, "_");
       const roles = new Set(["setup", "payoff", "advance"]);
-      // Resolve refs, clamp act index, then ENFORCE setup→payoff order (drop orphan payoffs).
+      // Resolve refs, clamp act index, then ENFORCE setup→payoff order (drop orphan payoffs). Wrapped as a fn
+      // so P2.1's repair path (below) can re-run it on a repaired sheet — fresh dedup sets per call.
+      const sanitize = (raw: Record<string, unknown>[]) => {
       const setUp = new Set<string>();
       const claimedTp = new Set<string>(); // a tentpole is realized by at most ONE beat (first claim wins)
       const resolvedG = new Set<string>(); // a game is resolved by at most ONE beat (first claim wins)
-      const beats = rawBeats.map((b: Record<string, unknown>) => {
+      return raw.map((b: Record<string, unknown>) => {
         const mi = Math.min(Math.max(parseInt(String(b.act ?? 1), 10) || 1, 1), acts.length) - 1;
         const refs = (Array.isArray(b.threads) ? b.threads as { ref?: string; role?: string }[] : [])
           .map((t) => ({ ref: tNameToId.get(String(t.ref ?? "").trim().toLowerCase()), role: t.role }))
@@ -623,6 +628,52 @@ Output JSON ONLY: { "beats": [ { "act": <1..${acts.length}>, "summary": "...", "
         if (needs.length) content.needs = needs;
         return { act: mi, content };
       });
+      };
+      let beats = sanitize(rawBeats);
+
+      // ── Lint-then-repair (docs/agent-improvement-plan.md P2.1) ──────────────────────────────────────────
+      // The sanitizer silently DROPS orphan payoffs / dup tentpole claims etc., each of which can leave a
+      // hollow causal link the model was never told about — the opposite of validateOps' fail-closed write
+      // gate. Run the shared engine's BEAT-NATIVE lints over the just-sanitized sheet; if any fire, give the
+      // model ONE bounded repair turn. Only beat-stage rules: the tree has no scenes yet, so scene/meter/
+      // tentpole-placement lints would false-positive or stay silent — causality + game structure is what's
+      // actually decidable at this rung. Best-effort: on any failure we keep the original sheet (never worse).
+      const BEAT_LINT_RULES = new Set(["uncaused_therefore", "empty_but", "beat_connector", "illegal_resolution", "unresolved_game"]);
+      // Existing accepted tree, minus any prior beats/scenes (the sheet REPLACES all beats; scenes don't exist
+      // yet) — the causal/game context the beat lints validate against.
+      const otherNodes: DnaNode[] = nodes.filter((n) => n.kind !== "beat" && n.kind !== "scene").map((n) => ({
+        id: n.id, book_id: bookId, parent_id: n.parent_id, level: 0, kind: n.kind as NodeKind, position: n.position ?? 0,
+        content: (n.content ?? {}) as NodeContent,
+        authoring: { source: "user", locked: n.authoring?.locked ?? false, status: (n.authoring?.status as AuthoringStatus) ?? "accepted" }, chosen: null,
+      }));
+      // Lint a candidate sheet: materialise it as beat nodes under their acts, validate the whole tree, keep
+      // the beat-stage rules. Returns the issues + a human pointer per flagged beat so the repair prompt can
+      // NAME what to fix. sanitize is a 1:1 order-preserving map, so candidate index i aligns with rawBeats[i].
+      const lintBeats = (bs: { act: number; content: Record<string, unknown> }[]) => {
+        const perAct = new Map<number, number>();
+        const ptr = new Map<string, string>();
+        const candBeats: DnaNode[] = bs.map((bt, i) => {
+          const pos = perAct.get(bt.act) ?? 0; perAct.set(bt.act, pos + 1);
+          ptr.set(`cand_${i}`, `Act ${bt.act + 1}, beat ${pos + 1} ("${String(bt.content.summary ?? "").slice(0, 60)}")`);
+          return { id: `cand_${i}`, book_id: bookId, parent_id: acts[bt.act]?.id ?? null, level: 4, kind: "beat" as NodeKind,
+            position: pos, content: bt.content as NodeContent, authoring: { source: "user", locked: false, status: "accepted" as AuthoringStatus }, chosen: null };
+        });
+        return { issues: validate([...otherNodes, ...candBeats]).filter((iss) => BEAT_LINT_RULES.has(iss.rule)), ptr };
+      };
+
+      const { issues, ptr } = lintBeats(beats);
+      if (issues.length) {
+        const violations = issues.map((iss) => `- ${ptr.get(iss.nodeId ?? "") ?? iss.nodeId}: [${iss.rule}] ${iss.message}`).join("\n");
+        try {
+          const repairUser = `${ctx}\n\nYou produced this beat sheet:\n${JSON.stringify({ beats: rawBeats })}\n\nThe story engine flagged these STRUCTURAL problems in it:\n${violations}\n\nFix ONLY these problems — adjust the offending beats' connector / needs / establishes / resolves so each flagged link is earned (a "therefore" beat must "need" a state key an EARLIER beat "establishes"; a played game must be "resolved"). Keep every other beat unchanged; do not add or remove beats. Re-output the COMPLETE beat sheet as JSON in the SAME schema. JSON only.`;
+          const rdata = await callLLM(apiKey, { model, max_tokens: 8000, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+            messages: [{ role: "user", content: repairUser }] }, meta);
+          const p = JSON.parse(extractJsonBlock(textFromLLM(rdata)));
+          const rRaw = Array.isArray(p.beats) ? p.beats : [];
+          // Accept the repair only if it doesn't INCREASE the beat-lint count — never ship a worse sheet.
+          if (rRaw.length) { const repaired = sanitize(rRaw); if (lintBeats(repaired).issues.length <= issues.length) beats = repaired; }
+        } catch { /* keep the original sanitized sheet — repair is best-effort */ }
+      }
       return json({ beatsheet: true, childKind: "beat", childLevel: 4, actIds: acts.map((m) => m.id), beats });
     }
 
