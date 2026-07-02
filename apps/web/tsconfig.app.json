@@ -23,7 +23,13 @@
 
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      // novelDna.parity.test.ts imports the Deno EDGE twins (supabase/functions/_shared/*.ts) to prove they
+      // stay behaviourally identical to the web engine. Those transitively import metaHash from the edge
+      // plan-provenance.ts, whose lone `import type { SupabaseClient } from "jsr:…"` tsc can't resolve (Deno
+      // registry). jsr is just Deno's registry for the SAME library, so we point the specifier at the npm
+      // package already installed here — the type is identical and the test stays fully typechecked.
+      "jsr:@supabase/supabase-js@2": ["./node_modules/@supabase/supabase-js"]
     }
   },
   "include": ["src"]

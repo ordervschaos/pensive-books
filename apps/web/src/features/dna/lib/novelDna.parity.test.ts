@@ -6,6 +6,8 @@ import { describe, expect, it } from "vitest";
 // jsr: import is type-only, so esbuild erases it and vitest can load the module.
 import * as web from "@/features/dna/lib/novelDna";
 import * as edge from "../../../../../../supabase/functions/_shared/novel-dna.ts";
+import * as webJ from "@/features/dna/lib/dnaJourney";
+import * as edgeJ from "../../../../../../supabase/functions/_shared/dna-journey.ts";
 import type { DnaNode, NodeKind, BookSettings } from "@/features/dna/lib/novelDna";
 
 let seq = 0;
@@ -31,6 +33,7 @@ function goodBook(): DnaNode[] {
   const premise = mk("premise", { id: "prem", parent_id: "seed", content: { genre: ["fantasy"], tone: ["eerie"], dramatic_question: "Can she anchor a place that refuses to stay?" } });
   const pillar = mk("pillar", { id: "pil", parent_id: "prem", content: { controlling_idea: "Belonging is built, not found.", ending: "She draws the first map that holds." } });
   const voice = mk("voice_profile", { id: "vp", parent_id: "pil", content: { pov: "third_limited", tense: "past", style: "lyrical" } });
+  const hero = mk("character", { id: "ch1", parent_id: "pil", content: { name: "Mara", role: "protagonist", want: "to belong", need: "to stop running", wound: "abandoned as a child", lie: "places can't be trusted" } });
   const thread = mk("thread", { id: "th1", parent_id: "pil", content: { name: "the brass compass", kind: "setup_payoff", promise: "the compass points at what she fears" } });
   const game = mk("game", { id: "gm1", parent_id: "pil", content: { name: "the survey wager", win_condition: "map ratified", lose_condition: "guild seizes the survey" } });
   const tent = mk("tentpole", { id: "tp1", parent_id: "pil", content: { summary: "the night the plaza folds inward" } });
@@ -43,7 +46,7 @@ function goodBook(): DnaNode[] {
   const s = (id: string, parent: string, pos: number, drafted: boolean, polarity: "up" | "down") =>
     mk("scene", { id, parent_id: parent, position: pos, content: { goal: "orient", value_shift: vs(polarity), pov: "Mara", ...(drafted ? { prose: { text: "The plaza breathed.", words: 3 } } : {}) } });
   return [
-    seed, premise, pillar, voice, thread, game, tent, meter, a1, a2, b1, b2, b3,
+    seed, premise, pillar, voice, hero, thread, game, tent, meter, a1, a2, b1, b2, b3,
     s("s1", "b1", 0, true, "down"), s("s2", "b2", 0, true, "down"), s("s3", "b3", 0, false, "up"),
   ];
 }
@@ -93,5 +96,31 @@ describe("novel-dna edge twin ↔ web engine parity", () => {
 
   it("the broken fixture actually produces lints (guards against a no-op test)", () => {
     expect(web.validate(brokenBook()).length).toBeGreaterThan(0);
+  });
+});
+
+// The guided-flow objective (dna-journey twin) is what threadSystem re-derives live each chain link (P1.2);
+// lock it to the web dnaJourney over prose + picture mode.
+describe("dna-journey edge twin ↔ web dnaJourney parity", () => {
+  const fixtures: [string, DnaNode[]][] = [["goodBook", goodBook()], ["brokenBook", brokenBook()]];
+  for (const [fxName, nodes] of fixtures) {
+    for (const mode of ["prose", "picture"] as const) {
+      it(`currentObjective agrees on ${fxName} (${mode})`, () => {
+        const opts = { mode, bookSlug: "42" };
+        expect(edgeJ.currentObjective(nodes, opts)).toBe(webJ.currentObjective(nodes, opts));
+      });
+      it(`buildJourney agrees on ${fxName} (${mode})`, () => {
+        expect(j(edgeJ.buildJourney(nodes, mode))).toBe(j(webJ.buildJourney(nodes, mode)));
+      });
+      it(`nextDraftTarget agrees on ${fxName} (${mode})`, () => {
+        expect(j(edgeJ.nextDraftTarget(nodes, mode))).toBe(j(webJ.nextDraftTarget(nodes, mode)));
+      });
+    }
+  }
+
+  it("goodBook's objective reaches the draft stage and names a target scene", () => {
+    // goodBook has scenes with an undrafted one, so the live objective should point at a TARGET NODE — the
+    // exact behaviour P1.2 keeps fresh mid-run.
+    expect(webJ.currentObjective(goodBook(), { mode: "prose" })).toContain("TARGET NODE:");
   });
 });

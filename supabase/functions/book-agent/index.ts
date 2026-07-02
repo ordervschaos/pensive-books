@@ -20,6 +20,12 @@ import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { callLLM } from "../_shared/llm.ts";
 import { getRoleModels } from "../_shared/model-config.ts";
+// The pure engine + guided-journey derivation, edge twins of the web app's novelDna/dnaJourney (parity-locked
+// by novelDna.parity.test.ts). threadSystem re-runs these on the LIVE tree each chain link so the objective +
+// structural lints SENSE the current state instead of dead-reckoning from the author's message-time snapshot
+// (docs/agent-improvement-plan.md P1.2).
+import { analysisText, type AuthoringStatus, type DnaNode, type NodeContent, type NodeKind } from "../_shared/novel-dna.ts";
+import { currentObjective } from "../_shared/dna-journey.ts";
 // The content schema the agent must conform to — GENERATED from the web app's NODE_SCHEMA (single source of
 // truth), kept in sync by apps/web/.../dnaSchema.artifact.test.ts. Never hand-edit; edit NODE_SCHEMA + regen.
 import dnaSchema from "../_shared/dna-schema.json" with { type: "json" };
@@ -1171,8 +1177,8 @@ async function proposeOptions(
 // is a DIGEST — handle/gist + causal spine, full content via read_node (see digestNode). A one-line
 // premise/pillar frame is always included so the agent is grounded even when 'premise' isn't in scope.
 async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspect[] | null, analysis: string | null, effort: "low" | "high" = "high", auto = false, objective: string | null = null, attachedIds: string[] | null = null): Promise<string> {
-  const { data: book } = await service.from("books").select("name, brief").eq("id", bookId).maybeSingle();
-  const b = book as { name?: string; brief?: Brief } | null;
+  const { data: book } = await service.from("books").select("name, brief, mode").eq("id", bookId).maybeSingle();
+  const b = book as { name?: string; brief?: Brief; mode?: "prose" | "picture" } | null;
   const { data: rows } = await service
     .from("book_nodes").select("id, parent_id, kind, level, position, content, authoring, proposals").eq("book_id", bookId);
   const nodes = (rows ?? []) as DnaNodeRow[];
@@ -1247,6 +1253,26 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
     return `[${n.id}${n.authoring?.locked ? " · LOCKED" : ""}] ${n.kind} “${nodeHandle(n.content)}”:\n${JSON.stringify(content)}`;
   }).join("\n\n");
 
+  // LIVE re-derivation (docs/agent-improvement-plan.md P1.2): recompute the guided-flow objective and the
+  // structural backstop from the CURRENT tree, so an auto run's resume — a pure status flip that never
+  // refreshes the message-time snapshot — no longer keeps pointing at "TARGET NODE: scene 14" after scene 14
+  // renders. Same functions the web client runs (currentObjective / analysisText), so the anchor advances on
+  // its own each chain link. The client-computed `analysis`/`objective` params are kept only as a fallback for
+  // the (transient) case where the live tree hasn't loaded. Map DB rows → the engine's DnaNode shape;
+  // authoring.source isn't read by these derivations, so a constant is safe (see novelDna editContent).
+  const liveNodes: DnaNode[] = nodes.map((n) => ({
+    id: n.id, book_id: bookId, parent_id: n.parent_id, level: n.level, kind: n.kind as NodeKind, position: n.position,
+    content: (n.content ?? {}) as NodeContent,
+    authoring: { source: "user", locked: n.authoring?.locked ?? false, status: (n.authoring?.status as AuthoringStatus) ?? "empty" },
+    proposals: n.proposals ?? undefined, chosen: null,
+  }));
+  const mode = b?.mode === "picture" ? "picture" : "prose";
+  const liveObjective = currentObjective(liveNodes, { mode, bookSlug: String(bookId) }) || objective;
+  // Only meaningful once structure exists — mirrors the client's gate (AgentRail), which sends undefined
+  // otherwise. analysisText ignores its settings arg, so we pass {}.
+  const hasStructure = liveNodes.some((n) => n.kind === "beat" || n.kind === "scene");
+  const liveAnalysis = hasStructure ? analysisText(liveNodes, {}) : (analysis ?? "");
+
   // Each distinct kind of context gets its own XML tag so the model can unambiguously tell where one
   // section ends and the next begins (Anthropic's prompt-engineering guidance: XML tags reduce
   // misinterpretation when a prompt mixes instructions, context, and a large structured document).
@@ -1257,9 +1283,9 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
     // through next, derived client-side from the tree (lib/dnaJourney.currentObjective). An anchor, not
     // a fence — the agent still sees the whole tree below, but leads with this step unless the author
     // steers elsewhere. Recomputed each message, so it advances on its own as the tree fills.
-    objective?.trim() ? `<current_objective>\n${objective.trim()}\n</current_objective>` : "",
+    liveObjective?.trim() ? `<current_objective>\n${liveObjective.trim()}\n</current_objective>` : "",
     // The structural backstop (pacing / dangling-promise / sagging-run lints) — act on any ⚠ flags.
-    analysis?.trim() ? `<story_analysis note="the structural backstop — address any ⚠ flags">\n${analysis.trim()}\n</story_analysis>` : "",
+    liveAnalysis?.trim() ? `<story_analysis note="the structural backstop — address any ⚠ flags">\n${liveAnalysis.trim()}\n</story_analysis>` : "",
     // The context tray (docs/agent-context-model.md): the nodes the author attached to work on, hydrated in
     // full so you have their real content without a read_node. Lead with these unless the author steers
     // elsewhere — an anchor, not a fence: the whole tree is still below.

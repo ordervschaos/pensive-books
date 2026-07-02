@@ -6,11 +6,18 @@
 > and states a success criterion per item. Ordering follows the analysis's own "Recommended order":
 > the §1 root-cause port is the enabler for §1b/c, §2a/b/c.
 
-> **Status (2026-07-02):** Phase 0 (P0.1/P0.2/P0.3) shipped to the working tree, reviewed, `deno check`
-> clean (only the pre-existing `EdgeRuntime` baseline). P1.1 shipped: `_shared/novel-dna.ts` edge twin
-> (Deno-clean) locked by `novelDna.parity.test.ts` (27 passing). Next: P1.2 — wire `threadSystem` onto the
-> twin. Note: §4c left `dna-expand:418` on `getActiveModels().high` (one shared `model` variable feeds prose
-> *and* the beatsheet in that scope; the clean split waits for P4's role-tuning pass).
+> **Status (2026-07-02):** Phase 0 + P1.1 + P1.2 shipped to the working tree, reviewed.
+> - **Phase 0** (§1a/§2d/§4c) — `deno check` clean (only the pre-existing `EdgeRuntime` baseline).
+> - **P1.1** — `_shared/novel-dna.ts` edge twin (Deno-clean).
+> - **P1.2** — `_shared/dna-journey.ts` (objective-derivation twin; `dnaHealth` omitted) + `threadSystem`
+>   now recomputes `currentObjective` + `analysisText` from the LIVE tree each chain link (client
+>   `analysis`/`objective` kept only as fallback). Sources `books.mode`; `bookSlug = String(bookId)`.
+> - **Parity lock**: `novelDna.parity.test.ts` — 40 assertions across `validate`/lints/objective over prose
+>   + picture modes, both fixtures. `pnpm typecheck` clean except one **pre-existing** `DnaTreePage.tsx:1708`
+>   error (untouched file). tsconfig aliases the edge twins' `jsr:` type import to the installed npm package.
+>
+> Next: P2.1 beatsheet lint-then-repair, P2.2 plan-conformance verify. Note: §4c left `dna-expand:418` on
+> `getActiveModels().high` (one shared `model` var feeds prose *and* the beatsheet; clean split → P4).
 
 ## Dependency map
 
