@@ -16,7 +16,9 @@ export interface DnaSession { messages: DnaChatMessage[]; pending_proposal: DnaP
 export interface NewSubtree { content: NodeContent; children?: NewSubtree[] }
 export type NodeOp =
   | { op: "edit"; id: string; content: NodeContent }
-  | { op: "add"; kind: NodeKind; parentId: string; content: NodeContent }
+  // `id` (optional) presets the new node's id instead of minting one — so a batch can create a node AND have
+  // a sibling reference it (e.g. auto-minted threads the same-batch beat sheet points at). System-set only.
+  | { op: "add"; kind: NodeKind; parentId: string; content: NodeContent; id?: string }
   | { op: "delete"; id: string }
   // Rebuild a whole level: delete the parent's existing (non-locked) children of `childKind` — cascading
   // their subtrees — then create `children` fresh. The replace semantics `add` lacks, so a "rebuild" never
@@ -244,7 +246,7 @@ export async function applyNodeOps(bookId: number, ops: NodeOp[]): Promise<OpVal
     } else if (op.op === "add") {
       const parentId = effectiveParent(op.kind, op.parentId);
       const fresh = emptyNode(bookId, op.kind, KIND_LEVEL[op.kind] ?? 5, parentId, childCount(parentId) + added++);
-      const node: DnaNode = { ...fresh, content: sanitizeContent(op.kind, op.content as Record<string, unknown>), authoring: { source: "ai", locked: false, status: "accepted" } };
+      const node: DnaNode = { ...fresh, ...(op.id ? { id: op.id } : {}), content: sanitizeContent(op.kind, op.content as Record<string, unknown>), authoring: { source: "ai", locked: false, status: "accepted" } };
       await saveNode(stampInput(node, byId([...nodes, node])));
     } else if (op.op === "replace_children") {
       // Wipe the (re-homed) parent's existing non-locked children of this kind (FK cascade takes their

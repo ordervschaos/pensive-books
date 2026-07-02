@@ -2,7 +2,7 @@
 // author advances through, finishing one before the next unlocks. This is the mental model the old build
 // studio got right (Brief→Foundations→Spine→…); here it's the DNA rungs grouped into stages. Pure: derives
 // each stage's status from the tree so the Navigator only renders. See docs/novel-dna-spec.md.
-import { byId, childrenOf, renderBlockers, scenesInOrder, validate, type BookSettings, type DnaIssue, type DnaNode, type NodeKind, type SceneContent } from "@/features/dna/lib/novelDna";
+import { byId, childrenOf, isAuthored, renderBlockers, scenesInOrder, validate, type BookSettings, type DnaIssue, type DnaNode, type NodeKind, type SceneContent } from "@/features/dna/lib/novelDna";
 import { contentCompleteness, requiredKeys } from "@/features/dna/lib/dnaSchema";
 
 export type StageKey = "premise" | "foundations" | "structure" | "scenes" | "draft";
@@ -117,9 +117,10 @@ export function stageSubsteps(key: StageKey, nodes: DnaNode[], mode: "prose" | "
     return resolveSeq([
       { key: "acts", label: "Acts", done: acts >= 1, ready: foundationsDone, count: acts },
       { key: "beats", label: "Beats", done: n("beat") >= 1, ready: acts >= 1, count: n("beat") },
-      // Threads stay here: a thread's identity IS its beat anchors (setup→payoff), so it crystallizes during
-      // structure work. Games moved up to Foundations (they're definable without beats).
-      { key: "threads", label: "Threads", done: n("thread") >= 1, ready: acts >= 1, count: n("thread"), optional: true },
+      // Threads are DERIVED, not authored (AUTHORSHIP.thread === "derived") — the beat sheet MINTS the registry
+      // when none exists and schedules its setup→payoff. So this is always a BRANCH, never a blocking "now"
+      // step: `optional` follows the authorship plane, and pre-declaring is the enrichment path, not a gate.
+      { key: "threads", label: "Threads", done: n("thread") >= 1, ready: acts >= 1, count: n("thread"), optional: !isAuthored("thread") },
     ]);
   }
   if (key === "scenes") {
@@ -147,7 +148,7 @@ const STEP_RECIPE: Record<string, string> = {
   cast: "Add the core cast with propose_node_ops (add character nodes under the pillar) — at minimum the protagonist and antagonist, each with want / need / wound / lie. Ask the author about anyone central you're unsure of. Relationships, world, games, and tentpoles are optional enrichment — offer them, don't block on them.",
   acts: "Generate the acts with ONE propose_node_ops replace_children op (parentId = the pillar, childKind = act) — each act with a goal and turning point. Revise with the author before moving to beats.",
   beats: "Generate the beats with the ENGINE, not by hand: call propose_expansion(nodeId = the pillar, target = 'beatsheet') — it builds the GLOBAL beat sheet across all acts in one causal pass (each beat's connector 'therefore'/'but' earned by what came before, setup→payoff scheduled book-wide). Revise with the author after it lands.",
-  threads: "Optional: name the open loops with thread nodes (a promise set up early, paid off later) and anchor each to its beats — do this BEFORE the beat sheet so the engine can schedule their setup→payoff.",
+  threads: "Optional — threads are DERIVED, not authored: the beat sheet MINTS the thread registry itself (a promise set up early, paid off later) and schedules each setup→payoff when you generate beats. You only need to touch this to SEED specific open loops up front (name them with thread nodes before the beat sheet) or to revise the minted set after; otherwise leave it to the engine.",
   scenes: "Break the beat into scenes with the ENGINE, not by hand: call propose_expansion(nodeId = THIS beat, target = 'scenes') — the engine makes each scene inherit the beat's causal/thread/tentpole plan and turn a value (goal → outcome), never a flat 'and-then'. Do the next beat that still needs scenes; one call per beat.",
   prose: "Render prose ONE scene at a time, in reading order — the TARGET NODE named in the objective above IS that scene; pass exactly its id, don't pick a different one from the tree. BEFORE each render: read the scene's beat and the previous prosed page, and search_nodes for the specific threads/objects/facts this page must honor — then call propose_prose_render with a curated `brief` (focus + mustHonor + avoid) so the render gets what it can't compute. You don't write prose yourself; the author applies it and it streams in their browser. AFTER a scene has prose: check_against_contract to judge it against the brief — and if that read shows the PREVIOUS page drifted (a dropped thread, a contradiction), propose_node_ops to fix that page first, then continue. Investigate → fix the tail if needed → render next with a brief.",
   illustrate: "You have NO tool to generate scene illustrations — that's a manual, client-side action the author runs themselves from the tree (outside this chat), not something propose_node_ops or propose_prose_render can do. Tell the author which scene is next (the TARGET NODE above) and that illustrating it is their action to take; do NOT invent an image_url via propose_node_ops — a fabricated image reference is worse than an empty one.",

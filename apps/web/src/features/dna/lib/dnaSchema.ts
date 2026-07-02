@@ -66,7 +66,9 @@ export const NODE_SCHEMA: Partial<Record<NodeKind, EditSpec[]>> = {
     { key: "smell", label: "smell", multiline: true }, { key: "texture", label: "texture", multiline: true },
     { key: "mood", label: "mood", multiline: true },
   ],
-  thread: [{ key: "name", label: "name", required: true }, { key: "kind", label: "kind", type: "select", options: ["mystery", "foreshadow", "setup_payoff", "arc"] }, { key: "promise", label: "promise", multiline: true, required: true }, { key: "payoff", label: "payoff", multiline: true }],
+  thread: [{ key: "name", label: "name", required: true }, { key: "kind", label: "kind", type: "select", options: ["mystery", "foreshadow", "setup_payoff", "arc"] }, { key: "promise", label: "promise", multiline: true, required: true }, { key: "payoff", label: "payoff", multiline: true },
+    // owner: set only on an auto-minted game-resolution twin (→ game id); the reconciler's idempotency key.
+    { key: "owner", label: "owner", genOnly: true, note: "[game id] — set on the auto-minted game-resolution thread" }],
   game: [
     { key: "name", label: "name", required: true }, { key: "players", label: "players", type: "refs", refKind: "character" },
     { key: "win_condition", label: "win", multiline: true, required: true }, { key: "lose_condition", label: "lose", multiline: true, required: true }, { key: "stake", label: "stake", multiline: true },

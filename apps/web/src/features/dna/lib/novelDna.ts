@@ -22,6 +22,25 @@ export const PARENT_KIND: Record<NodeKind, NodeKind | null> = {
 // Kinds that must be unique per book (the ladder spine + the single voice). A 2nd is a duplicate.
 export const SINGLETON_KINDS: NodeKind[] = ["seed", "premise", "pillar", "voice_profile"];
 
+// ── Authorship plane (docs/dna-structure-analysis.md Finding 3) ────────────────
+// The KIND-level twin of dnaSchema's field-level taste/genOnly tags. Classifies every kind by WHO naturally
+// produces it, so the journey, agent recipes, and tree editor stop each hand-asserting their own "what the
+// author does vs. what the AI does" (the drift that gave threads three contradictory contracts). SSOT:
+//   • authored  — becomes knowable at planning; the author (with AI options) owns it. Journey "now" steps
+//                 and recipes only ever point here.
+//   • derived   — a materialized index over lower rungs, MINTED by an engine pass (threads by the beat sheet,
+//                 beats/scenes by the expand engine). Never a blocking "now" step; pre-declaring is optional.
+//   • instrument — measurement, not story (meters): axes are pluggable, readings are always output. Never blocks.
+export type Authorship = "authored" | "derived" | "instrument";
+export const AUTHORSHIP: Record<NodeKind, Authorship> = {
+  seed: "authored", premise: "authored", pillar: "authored", act: "authored",
+  character: "authored", relationship: "authored", world_fact: "authored", location: "authored",
+  game: "authored", tentpole: "authored", voice_profile: "authored",
+  thread: "derived", beat: "derived", scene: "derived",
+  meter: "instrument",
+};
+export const isAuthored = (k: NodeKind): boolean => AUTHORSHIP[k] === "authored";
+
 export type AuthoringSource = "user" | "ai" | "ai_then_user";
 export type AuthoringStatus = "empty" | "proposed" | "draft" | "accepted";
 
@@ -122,7 +141,9 @@ export interface WorldFactContent { name?: string; rule?: string; mechanism?: st
 // every scene set there — prose-gen reads the SAME harbor smell each time instead of re-inventing it (§ aim 1).
 export interface LocationContent { name?: string; summary?: string; sight?: string; sound?: string; smell?: string; texture?: string; mood?: string }
 // thread (← foundations.threads): the promise registry — one node both ends point at (§4.5).
-export interface ThreadContent { name?: string; promise?: string; payoff?: string; kind?: "mystery" | "foreshadow" | "setup_payoff" | "arc" }
+// `owner` (optional) ties a DERIVED thread to the game whose resolution it promises — the auto-minted twin
+// (docs/dna-structure-analysis.md Finding 2). Its presence is the idempotency key for game-twin reconciliation.
+export interface ThreadContent { name?: string; promise?: string; payoff?: string; kind?: "mystery" | "foreshadow" | "setup_payoff" | "arc"; owner?: string }
 // game (← the game pillar, docs/novel-dna-games.md): a contest with a win-condition + a stake. `couples` is
 // the coupling edge — when THIS game resolves `when`, it has `effect` on the target game (the stakes engine).
 export type CouplingEffect = "void" | "raise" | "lower" | "enable";
@@ -1125,4 +1146,26 @@ export const isRenderable = (nodes: DnaNode[], settings: BookSettings): boolean 
 /** A fresh node slot in the requested status (the "hungry" empty slot the UI fills). */
 export function emptyNode(book_id: number, kind: NodeKind, level: number, parent_id: string | null, position = 0): DnaNode {
   return { id: newId(), book_id, parent_id, level, kind, position, content: {}, authoring: { source: "user", locked: false, status: "empty" } };
+}
+
+// ── Game twins (docs/dna-structure-analysis.md Finding 2) ──────────────────────
+// One dramatic tension is triple-encoded — the game (the contest), its game_score METER (the plottable
+// trajectory), and the THREAD that promises its resolution. Rather than ask the author/agent to create and
+// align all three by hand, we DERIVE the two views from the game: a code-enforced invariant, denormalization
+// done honestly. Both twins carry `owner = game.id` so reconciliation is idempotent (mint only when missing).
+// Pure — content only; the caller mints ids / positions / persists (see reconcileGameTwins).
+export function gameTwins(game: DnaNode): { meter: MeterContent; thread: ThreadContent } {
+  const g = game.content as GameContent;
+  const name = (g.name ?? "").trim() || "the contest";
+  return {
+    meter: {
+      name: `${name} — score`, kind: "game_score", owner: game.id,
+      poles: { low: g.lose_condition, high: g.win_condition },
+    },
+    thread: {
+      name: `${name} — resolution`, kind: "setup_payoff", owner: game.id,
+      promise: g.stake ? `${name} is joined; ${g.stake} is on the line.` : `${name} is joined and must be decided.`,
+      payoff: g.win_condition ? `${name} resolves: ${g.win_condition} — or it is lost.` : `${name} resolves, won or lost.`,
+    },
+  };
 }

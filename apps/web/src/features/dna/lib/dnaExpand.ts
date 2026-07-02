@@ -6,7 +6,7 @@ import { BRIDGE, bridgeFetch } from "@/lib/bridge";
 import { deleteNode, loadTree, saveNode, saveNodes } from "@/features/dna/lib/bookNodes";
 import { composeSceneImage, renderNodeSceneImage, type ComposedSceneImage } from "@/features/dna/lib/nodeSceneImages";
 import { ensurePortraitFor } from "@/features/dna/lib/characterPortraits";
-import { byId, deepMergeContent, newId, PARENT_KIND, pillarOf, presentCharacters, stampIllus, stampInput, stampProse, type BeatContent, type DnaNode, type GameContent, type NodeContent, type NodeKind, type RenderBrief, type SceneContent, type ThreadRef } from "@/features/dna/lib/novelDna";
+import { byId, deepMergeContent, gameTwins, newId, PARENT_KIND, pillarOf, presentCharacters, stampIllus, stampInput, stampProse, type BeatContent, type DnaNode, type GameContent, type MeterContent, type NodeContent, type NodeKind, type RenderBrief, type SceneContent, type ThreadContent, type ThreadRef } from "@/features/dna/lib/novelDna";
 import { stageGeneratedProposal, type AgentProposal } from "@/features/dna/lib/agentThread";
 import type { NewSubtree, NodeOp } from "@/features/dna/lib/dnaChat";
 
@@ -21,9 +21,12 @@ function chapterTitleFromBeat(beat: DnaNode): string {
 
 interface BeatSheetEntry { act: number; content: BeatContent }
 interface PreparedProse { system: string; userContent: string; model: string; max_tokens: number }
+// A thread the beat sheet MINTED because none was pre-declared (docs/dna-structure-analysis.md Finding 1) —
+// id assigned server-side so the beats reference it; the client persists it under the pillar.
+interface MintedThread { id: string; content: NodeContent }
 interface ExpandResult {
   childKind?: NodeKind; childLevel?: number; children?: NodeContent[]; prose?: string; caption?: string; logline?: string;
-  beatsheet?: boolean; beats?: BeatSheetEntry[]; actIds?: string[]; prepared?: PreparedProse;
+  beatsheet?: boolean; beats?: BeatSheetEntry[]; actIds?: string[]; threads?: MintedThread[]; prepared?: PreparedProse;
 }
 
 // Browser-owned orchestration of the per-call retry. The dominant prod failure is a HUNG edge call:
@@ -270,11 +273,44 @@ export async function expandNode(
   const index = byId([parentNode, ...made]);
   await saveNodes(made.map((n) => stampInput(n, index)));
   for (const id of replaceIds) await deleteNode(id); // regenerate: drop the unlocked predecessors last
+  // Game-twin invariant (Finding 2): a freshly generated game gets its score meter + resolution thread.
+  if (res.childKind === "game") await reconcileGameTwins(bookId);
   return { added: made.length };
 }
 
 // Re-export so callers don't need a second lib import.
 export type { ComposedSceneImage };
+
+/**
+ * Game-twin invariant (docs/dna-structure-analysis.md Finding 2): every game carries a `game_score` meter
+ * (its plottable trajectory) and a resolution thread (the promise it pays off). Rather than ask the
+ * author/agent to create and align all three by hand, DERIVE the two twins from the game. Idempotent — both
+ * twins carry `owner = game.id`, so we mint only the ones missing; safe to call after any game-creating apply.
+ * Returns how many twin nodes were minted (0 when everything's already in place). See gameTwins (pure).
+ */
+export async function reconcileGameTwins(bookId: number): Promise<number> {
+  const tree = await loadTree(bookId);
+  const games = tree.filter((n) => n.kind === "game");
+  if (!games.length) return 0;
+  const pillar = pillarOf(tree);
+  if (!pillar) return 0;
+  const meters = tree.filter((n) => n.kind === "meter");
+  const threads = tree.filter((n) => n.kind === "thread");
+  const hasMeter = (gid: string) => meters.some((m) => (m.content as MeterContent).owner === gid && (m.content as MeterContent).kind === "game_score");
+  const hasThread = (gid: string) => threads.some((t) => (t.content as ThreadContent).owner === gid);
+  let mPos = meters.filter((m) => m.parent_id === pillar.id).length;
+  let tPos = threads.filter((t) => t.parent_id === pillar.id).length;
+  const made: DnaNode[] = [];
+  for (const game of games) {
+    const twins = gameTwins(game);
+    if (!hasMeter(game.id)) made.push({ id: newId(), book_id: bookId, parent_id: pillar.id, level: 2, kind: "meter", position: mPos++, content: twins.meter as NodeContent, authoring: { source: "ai", locked: false, status: "accepted" } });
+    if (!hasThread(game.id)) made.push({ id: newId(), book_id: bookId, parent_id: pillar.id, level: 2, kind: "thread", position: tPos++, content: twins.thread as NodeContent, authoring: { source: "ai", locked: false, status: "accepted" } });
+  }
+  if (!made.length) return 0;
+  const index = byId([...tree, ...made]);
+  await saveNodes(made.map((n) => stampInput(n, index)));
+  return made.length;
+}
 
 /**
  * Phase 1 of the two-phase illustrate flow: write the page CAPTION synchronously, stamp illus_src_hash
@@ -332,6 +368,22 @@ async function persistBeatSheet(bookId: number, res: ExpandResult): Promise<{ ad
   const acts = actIds.map((id) => tree.find((n) => n.id === id)).filter(Boolean) as DnaNode[];
   const oldBeats = tree.filter((n) => n.kind === "beat" && actIds.includes(n.parent_id ?? "") && !n.authoring.locked);
 
+  // Threads the beat sheet MINTED (Finding 1) land under the pillar FIRST, keeping their server ids so the
+  // beats' thread refs resolve. Nothing to reconcile when the author pre-declared them (res.threads absent).
+  const minted = res.threads ?? [];
+  if (minted.length) {
+    const pillar = pillarOf(tree);
+    if (pillar) {
+      const base = tree.filter((n) => n.kind === "thread" && n.parent_id === pillar.id).length;
+      const threadNodes: DnaNode[] = minted.map((t, i) => ({
+        id: t.id, book_id: bookId, parent_id: pillar.id, level: 2, kind: "thread" as NodeKind, position: base + i,
+        content: t.content, authoring: { source: "ai", locked: false, status: "accepted" },
+      }));
+      const tIndex = byId([pillar, ...threadNodes]);
+      await saveNodes(threadNodes.map((n) => stampInput(n, tIndex)));
+    }
+  }
+
   const posByAct: Record<string, number> = {};
   const made: DnaNode[] = entries.map((e) => {
     const parent_id = actIds[e.act] ?? actIds[0];
@@ -374,6 +426,10 @@ export async function generateExpansionOps(bookId: number, node: DnaNode, target
     const actIds = res.actIds ?? [];
     const entries = res.beats ?? [];
     if (!actIds.length || !entries.length) throw new Error("Empty beat sheet.");
+    // Threads the beat sheet MINTED (Finding 1) become `add` ops carrying their server id (op.id), so the
+    // same-batch beats' thread refs resolve at apply. Parent = the pillar node (this expand's target);
+    // applyNodeOps re-homes thread → pillar anyway, so any pillar-side id is fine.
+    const threadOps: NodeOp[] = (res.threads ?? []).map((t) => ({ op: "add", kind: "thread", parentId: node.id, content: t.content, id: t.id }));
     // One replace_children per act — mirrors persistBeatSheet's replace semantics, so the review shows a
     // real before→after (the unlocked beats it removes + the new set) and a regenerate never duplicates beats.
     const byAct = new Map<string, NewSubtree[]>();
@@ -381,8 +437,9 @@ export async function generateExpansionOps(bookId: number, node: DnaNode, target
       const pid = actIds[e.act] ?? actIds[0];
       (byAct.get(pid) ?? byAct.set(pid, []).get(pid)!).push({ content: e.content as NodeContent });
     }
-    const ops: NodeOp[] = [...byAct].map(([parentId, children]) => ({ op: "replace_children", parentId, childKind: "beat", children }));
-    return { ops, summary: `Generate beat sheet (${entries.length} beats)` };
+    const beatOps: NodeOp[] = [...byAct].map(([parentId, children]) => ({ op: "replace_children", parentId, childKind: "beat", children }));
+    const threadNote = threadOps.length ? ` + ${threadOps.length} threads` : "";
+    return { ops: [...threadOps, ...beatOps], summary: `Generate beat sheet (${entries.length} beats${threadNote})` };
   }
 
   const children = res.children ?? [];

@@ -185,6 +185,13 @@ export async function applyAgentProposal(bookId: number, threadId: number, propo
     return { ok: [], rejected: [] };
   }
   const validation = await applyNodeOps(bookId, proposal.ops);
+  // Game-twin invariant (docs/dna-structure-analysis.md Finding 2): if this proposal created a game, mint its
+  // score meter + resolution thread. Dynamic import breaks the agentThread ↔ dnaExpand cycle; guarded so a
+  // game-free edit never pays a tree reload.
+  if (proposal.ops.some((o) => (o.op === "add" && o.kind === "game") || (o.op === "replace_children" && o.childKind === "game"))) {
+    const { reconcileGameTwins } = await import("@/features/dna/lib/dnaExpand");
+    await reconcileGameTwins(bookId).catch(() => {});
+  }
   await resolveProposal(threadId, proposal, "applied", all);
   return validation;
 }

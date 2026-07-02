@@ -453,7 +453,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
         steps.push({ t: "plan", label: outcome.proposal.summary });
         const proposals = [...(row.proposals ?? []), outcome.proposal];
         const ack = auto
-          ? `✓ Render requested and applied (autonomous mode — the scene prose was (re)generated in the author's browser). Your next turn will show the updated scene; continue if more is needed, or call finish.`
+          ? `✓ Render STAGED (autonomous mode). The author's browser will apply it — (re)generating the scene prose — and the result shows on your NEXT turn (do not assume it's already written this turn). Continue if more is needed, or call finish.`
           : null;
         transcript.push({ role: "user", content: ack
           ? toolUses.map((t) => ({ type: "tool_result", tool_use_id: t.id, content: t.id === renderCall.id ? ack : "ok" }))
@@ -481,7 +481,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
         steps.push({ t: "plan", label: outcome.proposal.summary });
         const proposals = [...(row.proposals ?? []), outcome.proposal];
         const ack = auto
-          ? `✓ Expansion requested and applied (autonomous mode — the engine generated it in the author's browser). Your next turn will show the new nodes; continue, or call finish.`
+          ? `✓ Expansion STAGED (autonomous mode). The author's browser will run the engine and apply the result; the new nodes show on your NEXT turn (do not assume they exist yet this turn). Continue, or call finish.`
           : null;
         transcript.push({ role: "user", content: ack
           ? toolUses.map((t) => ({ type: "tool_result", tool_use_id: t.id, content: t.id === expandCall.id ? ack : "ok" }))
