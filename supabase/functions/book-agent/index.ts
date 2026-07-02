@@ -33,7 +33,7 @@ import { serviceClient } from "../_shared/task.ts";
 import { reinvoke, isChainCall } from "../_shared/self-chain.ts";
 import { captureException, isBillingError } from "../_shared/sentry.ts";
 import { judgeProse } from "../_shared/mandate-gate.ts";
-import { judgeAgainstPlan, planHasContent, type ScenePlan } from "../_shared/plan-gate.ts";
+import { judgeAgainstPlan, planHasContent, type PlanAxisVerdict, type ScenePlan } from "../_shared/plan-gate.ts";
 
 const MAX_TURNS = 20;          // model calls per run — the runaway guard
 const AUTO_MAX_TURNS = 50;     // autonomous threads iterate change-by-change, so they get a higher ceiling
@@ -303,6 +303,12 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
     // Any tier works here: _shared/llm.ts converts tools/tool_use/tool_result both ways for
     // the OpenAI-compatible paths (DeepSeek, MuleRouter/Qwen), so the loop runs on cheap models too.
     const { agent: model, low: ackModel } = await getRoleModels();
+    // P2.3 — enforced render→verify (auto only): if the prior turn was an applied prose render, inject a
+    // plan-conformance verdict into the transcript before this turn's model call. Best-effort; returns the
+    // originals if nothing to verify or on any error, so the loop is never blocked.
+    const { transcript: baseTranscript, steps: baseSteps } = auto
+      ? await maybeInjectRenderVerify(service, apiKey, model, row)
+      : { transcript: row.transcript as unknown[], steps: row.steps };
     // A conversational system prompt grounded in the CURRENT book state (rebuilt per call so ids stay
     // fresh), and the thread tool belt.
     if (row.turns === 0) {
@@ -322,7 +328,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
     // Re-write `steps` (unchanged) alongside `turns` so this mid-"thinking" Realtime event carries the
     // steps column — otherwise Postgres omits the unchanged TOASTed jsonb from the WAL new-tuple and the
     // client's row arrives with steps=null, blanking the feed. (REPLICA IDENTITY FULL is the broader fix.)
-    await service.from("book_agent_runs").update({ turns, steps: row.steps }).eq("id", runId);
+    await service.from("book_agent_runs").update({ turns, steps: baseSteps }).eq("id", runId);
 
     // Poll for cancel_requested every 5s during the call so a user stop aborts the in-flight
     // Claude request rather than waiting up to CALL_TIMEOUT_MS for it to finish naturally.
@@ -345,7 +351,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
         output_config: { effort: "medium" },
         system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
         tools,
-        messages: withCacheBreakpoints(row.transcript),
+        messages: withCacheBreakpoints(baseTranscript),
       }, {
         fn: "book-agent",
         bookId: row.book_id,
@@ -377,8 +383,8 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
 
     // deno-lint-ignore no-explicit-any
     const content = (resp?.content ?? []) as any[];
-    const transcript = [...row.transcript, { role: "assistant", content }];
-    const steps = [...row.steps];
+    const transcript = [...baseTranscript, { role: "assistant", content }];
+    const steps = [...baseSteps];
 
     // The model's visible narration IS the agent's chat reply, so keep it whole.
     for (const b of content) {
@@ -748,29 +754,8 @@ async function toolResults(
       const sections: string[] = [];
       try {
         if (doPlan) {
-          // Build the scene's PLAN SLICE from its DNA edges (P2.2). Thread refs are node ids — resolve to
-          // names/promises so the judge reads the promise, not a hash. establishes/needs are the causal-DAG
-          // currency: does the prose actually make these state keys true / honor them?
-          const c = n.content ?? {};
-          const threadRefs = Array.isArray(c.threads) ? c.threads : [];
-          const threadIds = threadRefs.map((r) => r?.ref).filter((r): r is string => !!r);
-          const { data: threadNodes } = threadIds.length
-            ? await service.from("book_nodes").select("id, content").in("id", threadIds)
-            : { data: [] as { id: string; content: Record<string, unknown> }[] };
-          const tById = new Map((threadNodes ?? []).map((tn) => [tn.id, tn.content as { name?: string; promise?: string }]));
-          const plan: ScenePlan = {
-            goal: c.goal, outcome: c.outcome,
-            valueShift: c.value_shift ? { value: c.value_shift.value, from: c.value_shift.from, to: c.value_shift.to, polarity: c.value_shift.polarity } : undefined,
-            establishes: c.establishes, needs: c.needs,
-            threads: threadRefs.map((r) => ({ name: tById.get(r?.ref ?? "")?.name ?? "(unnamed thread)", promise: tById.get(r?.ref ?? "")?.promise, role: r?.role ?? "advance" })),
-          };
-          if (planHasContent(plan)) {
-            const axes = await judgeAgainstPlan(apiKey, model, plan, proseText, meta);
-            const body = axes.map((a) => `  ${a.field}: ${a.verdict.toUpperCase()} — ${a.detail}${a.evidence ? ` (e.g. "${a.evidence}")` : ""}`).join("\n");
-            sections.push(`PLAN CONFORMANCE (does the prose deliver the scene's own plan?):\n${body || "  (judge returned no axes — inspect by hand)"}`);
-          } else {
-            sections.push("PLAN CONFORMANCE: this scene has no structural plan (no value_shift / establishes / threads) to check against.");
-          }
+          const res = await planConformanceSummary(service, apiKey, model, n.content, "book-agent-contract", bookId);
+          sections.push(`PLAN CONFORMANCE (does the prose deliver the scene's own plan?):\n${res?.summary ?? "  (no prose to check)"}`);
         }
         if (doMandate) {
           const { data: book } = await service.from("books").select("brief").eq("id", bookId).maybeSingle();
@@ -789,6 +774,81 @@ async function toolResults(
     }
   }
   return results;
+}
+
+// Build a scene's PLAN SLICE from its DNA edges (resolving thread ids → names/promises so the judge reads the
+// promise, not a hash) and judge its prose against it (P2.2). Shared by the check_against_contract tool and the
+// P2.3 auto-verify. Returns null when the scene has no prose; `{axes:[], summary}` when it has no structural
+// plan; else the judged axes + an indented summary. `fn` labels the caller in ai_calls.
+async function planConformanceSummary(
+  service: SupabaseClient, apiKey: string, model: string, content: SceneContent | null | undefined, fn: string, bookId: number,
+): Promise<{ axes: PlanAxisVerdict[]; summary: string } | null> {
+  const c = (content ?? {}) as SceneContent;
+  const proseText = (c.prose?.text ?? "").trim();
+  if (!proseText) return null;
+  const threadRefs = Array.isArray(c.threads) ? c.threads : [];
+  const threadIds = threadRefs.map((r) => r?.ref).filter((r): r is string => !!r);
+  const { data: threadNodes } = threadIds.length
+    ? await service.from("book_nodes").select("id, content").in("id", threadIds)
+    : { data: [] as { id: string; content: Record<string, unknown> }[] };
+  const tById = new Map((threadNodes ?? []).map((tn) => [tn.id, tn.content as { name?: string; promise?: string }]));
+  const plan: ScenePlan = {
+    goal: c.goal, outcome: c.outcome,
+    valueShift: c.value_shift ? { value: c.value_shift.value, from: c.value_shift.from, to: c.value_shift.to, polarity: c.value_shift.polarity } : undefined,
+    establishes: c.establishes, needs: c.needs,
+    threads: threadRefs.map((r) => ({ name: tById.get(r?.ref ?? "")?.name ?? "(unnamed thread)", promise: tById.get(r?.ref ?? "")?.promise, role: r?.role ?? "advance" })),
+  };
+  if (!planHasContent(plan)) return { axes: [], summary: "  this scene has no structural plan (no value_shift / establishes / threads) to check against." };
+  const axes = await judgeAgainstPlan(apiKey, model, plan, proseText, { fn, bookId, taskTable: "book_agent_runs", taskId: null, userId: null });
+  const summary = axes.map((a) => `  ${a.field}: ${a.verdict.toUpperCase()} — ${a.detail}${a.evidence ? ` (e.g. "${a.evidence}")` : ""}`).join("\n");
+  return { axes, summary };
+}
+
+// Marks the injected auto-verify block so a transient re-chain of the same turn doesn't append it twice.
+const VERIFY_SENTINEL = "🔎 AUTO-VERIFY";
+
+// P2.3 — enforced render→verify. In AUTO mode, right after an APPLIED prose render (the render was the prior
+// assistant turn; the client has since written the prose and resumed us), judge the rendered scene(s) against
+// their OWN plan and INJECT the verdict into the transcript before this turn's model call — so verify is a
+// STRUCTURAL step the cheap model can't skip (it was only a line in the objective recipe before) and the model
+// is told to FIX any fail before moving on. Returns the augmented { transcript, steps } (persisted) or the
+// originals. Best-effort: any failure returns the originals unchanged so the auto loop never breaks.
+async function maybeInjectRenderVerify(
+  service: SupabaseClient, apiKey: string, model: string, row: RunRow,
+): Promise<{ transcript: unknown[]; steps: AgentStep[] }> {
+  const fallback = { transcript: row.transcript, steps: row.steps };
+  try {
+    // deno-lint-ignore no-explicit-any
+    const transcript = row.transcript as { role: string; content: any[] }[];
+    const lastAssistant = [...transcript].reverse().find((m) => m.role === "assistant");
+    const renderUse = lastAssistant?.content?.find?.((b) => b.type === "tool_use" && b.name === "propose_prose_render");
+    if (!renderUse) return fallback;
+    const sceneIds = (Array.isArray(renderUse.input?.sceneIds) ? renderUse.input.sceneIds : [])
+      .filter((s: unknown): s is string => typeof s === "string").slice(0, 3); // bound cost: at most 3 scenes/turn
+    if (!sceneIds.length) return fallback;
+    const lastMsg = transcript[transcript.length - 1];
+    if (!lastMsg || lastMsg.role !== "user" || !Array.isArray(lastMsg.content)) return fallback;
+    // Idempotency: skip if we already appended a verdict to this turn's ack (a transient call retry re-runs advance).
+    if (lastMsg.content.some((b) => b.type === "text" && String(b.text ?? "").startsWith(VERIFY_SENTINEL))) return fallback;
+
+    const blocks: string[] = [];
+    for (const id of sceneIds) {
+      const { data: sc } = await service.from("book_nodes").select("content").eq("id", id).maybeSingle();
+      const content = (sc as { content?: SceneContent } | null)?.content;
+      const res = await planConformanceSummary(service, apiKey, model, content, "book-agent-autoverify", row.book_id);
+      if (!res || !res.axes.length) continue; // no prose written yet, or no structural plan → nothing to enforce
+      blocks.push(`Scene [${id}] “${nodeHandle(content as Record<string, unknown>)}”:\n${res.summary}`);
+    }
+    if (!blocks.length) return fallback;
+    const text = `${VERIFY_SENTINEL} (plan conformance — the server checked the scene(s) you just rendered against their own plan):\n\n${blocks.join("\n\n")}\n\nIf any axis FAILED, fix that scene FIRST — propose_prose_render again with a corrective brief, or propose_node_ops for a small wording fix — before rendering the next scene. If all PASSED, continue.`;
+    const augmented = transcript.map((m, i) => i === transcript.length - 1 ? { ...m, content: [...m.content, { type: "text", text }] } : m);
+    const steps = [...row.steps, { t: "read", label: "Auto-verified the rendered scene against its plan." } as AgentStep];
+    await service.from("book_agent_runs").update({ transcript: augmented, steps }).eq("id", row.id);
+    return { transcript: augmented, steps };
+  } catch (e) {
+    console.error(`book-agent auto-verify skipped (run ${row.id}):`, e);
+    return fallback;
+  }
 }
 
 // Request-time cache breakpoints (never stored in the row, so they don't accumulate past the API's

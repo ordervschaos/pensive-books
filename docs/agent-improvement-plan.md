@@ -30,9 +30,18 @@
 >   ids→names, and reports both perspectives. Verified by `deno check` + inspection (the judge needs a live
 >   model; `plan-gate` can't be vitest-imported — pulls `llm`/`task`, same as `mandate-gate`).
 >
-> Next: P2.3 enforced read-repair chain (auto mode runs the contract check structurally after an applied prose
-> render). Note: §4c left `dna-expand:418` on `getActiveModels().high` (one shared `model` var feeds prose
-> *and* the beatsheet; clean split → P4).
+> - **P2.3** — enforced render→verify: `maybeInjectRenderVerify` at the top of `advance()` (auto mode only).
+>   After an applied prose render (the render is the prior assistant turn; the client has written the prose and
+>   resumed us), it runs the P2.2 plan-conformance judge on the rendered scene(s) and INJECTS the verdict into
+>   the transcript before this turn's model call — verify is now a structural step the cheap model can't skip,
+>   with an instruction to fix any FAIL first. Plan-only (mandate is book-level). Guarded (auto + last-assistant
+>   -is-render + not-already-verified via `VERIFY_SENTINEL` + scene has prose+plan), best-effort (any error →
+>   original transcript, loop never breaks), bounded (≤3 scenes/turn). Shared `planConformanceSummary` helper
+>   used by both the tool and the auto-verify. Verified by `deno check` + inspection (needs a live model/run).
+>
+> **Phase 2 complete.** Next: P3 data-structure (§3b continuity-digest delta is independent + clean) and P4
+> prompting (§4a batch edits; §4c model tuning on the seams). Note: §4c left `dna-expand:418` on
+> `getActiveModels().high` (one shared `model` var feeds prose *and* the beatsheet; clean split → P4).
 
 ## Dependency map
 
