@@ -60,13 +60,41 @@ export async function getActiveModels(): Promise<{ high: string; low: string }> 
   }
 }
 
-// Per-role seam (docs/agent-improvement-plan.md P0.1): today every role collapses to `high` — this is a
-// behavior-preserving plumbing change, not a model swap. It mirrors DIGEST_MODEL's already-pinned-separately
-// precedent and sets up the split the model-prose benchmark (project_model_prose_comparison) implies —
-// best-prose ≠ best-structure ≠ best-agent-reasoning — without committing to assignments yet.
+// Per-role models (docs/agent-improvement-plan.md §4c): the agent's reasoning loop, structural JSON, and
+// prose have DIFFERENT best models (the model-prose benchmark; and model-config warns hermes writes great
+// prose but breaks structural JSON). Each role reads its OWN admin_settings tier override, falling back to
+// the base `ai_model_tier` — so with no overrides set every role is the base `high` (identical to before).
+// This lets an admin run prose on a prose-specialist tier while keeping structure/agent on a JSON-reliable
+// one, WITHOUT this code guessing the assignment (that's a taste/benchmark call made from /admin/settings).
 export type ModelRole = "agent" | "structure" | "prose";
+export const ROLE_TIER_KEYS: Record<ModelRole, string> = {
+  agent: "ai_model_tier_agent",
+  structure: "ai_model_tier_structure",
+  prose: "ai_model_tier_prose",
+};
+
+// Pure: resolve the four role models from a (settings key → tier) map. An absent/unknown per-role override
+// falls back to the base tier's `high`, so an empty map yields every role = base high (behaviour-preserving).
+export function resolveRoleModels(tiers: Partial<Record<string, ModelTier>>): { agent: string; structure: string; prose: string; low: string } {
+  const base = TIER_MODELS[(tiers.ai_model_tier as ModelTier) ?? "sonnet"] ?? TIER_MODELS.sonnet;
+  const highOf = (t?: ModelTier) => (t && TIER_MODELS[t]?.high) || base.high;
+  return {
+    agent: highOf(tiers[ROLE_TIER_KEYS.agent]),
+    structure: highOf(tiers[ROLE_TIER_KEYS.structure]),
+    prose: highOf(tiers[ROLE_TIER_KEYS.prose]),
+    low: base.low,
+  };
+}
 
 export async function getRoleModels(): Promise<{ agent: string; structure: string; prose: string; low: string }> {
-  const { high, low } = await getActiveModels();
-  return { agent: high, structure: high, prose: high, low };
+  try {
+    const { data } = await serviceClient()
+      .from("admin_settings")
+      .select("key, value")
+      .in("key", ["ai_model_tier", ...Object.values(ROLE_TIER_KEYS)]);
+    const tiers = Object.fromEntries((data ?? []).map((r) => [r.key as string, r.value as ModelTier]));
+    return resolveRoleModels(tiers);
+  } catch {
+    return resolveRoleModels({});
+  }
 }

@@ -10,7 +10,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { callLLM, textFromLLM, type CallMeta } from "../_shared/llm.ts";
-import { getActiveModels, DIGEST_MODEL } from "../_shared/model-config.ts";
+import { getRoleModels, DIGEST_MODEL } from "../_shared/model-config.ts";
 import { extractJsonBlock } from "../_shared/json.ts";
 // The shared engine's beat-native lints, run over the just-generated beat sheet so a silently-degraded sheet
 // gets one bounded repair turn instead of shipping the damage (docs/agent-improvement-plan.md P2.1).
@@ -431,7 +431,12 @@ Deno.serve(async (req: Request) => {
       ].join("\n");
     })();
 
-    const { high: model } = await getActiveModels();
+    // §4c: prose/caption RENDER on the prose model; every structural pass (logline, beat sheet, child JSON)
+    // on the structure model. Both fall back to the base tier unless an admin set a per-role override, so with
+    // none set this is identical to the old single-tier `high`. (The continuity digest keeps its own DIGEST_MODEL.)
+    const roleModels = await getRoleModels();
+    const isProseRender = target === "prose" || target === "caption" || (!target && node.kind === "scene");
+    const model = isProseRender ? roleModels.prose : roleModels.structure;
     const meta: CallMeta = { fn: "dna-expand", bookId, userId };
     // Prose → digest v2 (all-page continuity + anti-echo). The per-page fold runs on DIGEST_MODEL (qwen-plus,
     // a reasoning model) — NOT the cheap `low` model: the digest is read-comprehension that downstream prose

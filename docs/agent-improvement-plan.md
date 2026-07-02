@@ -161,7 +161,12 @@ same-file (`book-agent/index.ts`) write conflicts.
 
 - **§4a** auto mode batches independent edits into one call (fewer cache-miss cycles).
 - **§4b** beatsheet truncation-aware continue/repair (or per-act generation).
-- **§4c (tuning)** assign the real per-role models on the P0.1 seams.
+- **§4c** ✅ SHIPPED — real per-role models on the P0.1 seams. `getRoleModels` now resolves each role from its
+  OWN admin_settings tier override (`ai_model_tier_{prose,structure,agent}`), falling back to the base
+  `ai_model_tier` — so with no overrides set every role is the base high (behavior-preserving). Pure
+  `resolveRoleModels` (Deno-tested). `dna-expand` uses `prose` for renders / `structure` for structural passes;
+  book-agent already uses `agent`. Admin UI adds per-role selectors (upsert). The actual model assignment is a
+  taste/benchmark call left to /admin/settings — the code no longer hardcodes one tier for heterogeneous work.
 
 ---
 
