@@ -10,6 +10,7 @@
 // must present a valid Supabase JWT (same gate the bridge uses) so a random site can't spend the key.
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 
 // Heartbeat byte emitted during a reasoning model's thinking phase (see the reasoning branch below). NUL
 // never occurs in valid prose, so the client strips it before persisting. Exported so the client uses the
@@ -94,6 +95,69 @@ export async function* streamProse(body: PrepareReq, authToken: string): AsyncGe
     if (!authToken) throw new ProxyError(401, "missing Authorization token");
     if (!body?.system || !body?.userContent || !body?.model) throw new ProxyError(400, "system, userContent and model are required");
     userId = await verifyJwt(authToken);
+
+    // Provider routing mirrors _shared/llm.ts: a bare model id (no "/", not deepseek) is an Anthropic model
+    // and must go to Anthropic — NOT OpenRouter, which only knows prefixed ids (anthropic/…) and 400s on
+    // "claude-opus-4-8". This lets prose render on Opus while slash/deepseek ids keep streaming from
+    // OpenRouter. Anthropic SSE is a different shape (typed frames, no [DONE]), parsed in its own branch.
+    const model = body.model;
+    if (!model.startsWith("deepseek") && !model.includes("/")) {
+      const anthropicKey = process.env.ANTHROPIC_API_KEY;
+      if (!anthropicKey) throw new ProxyError(500, "ANTHROPIC_API_KEY not configured");
+      const res = await fetch(ANTHROPIC_URL, {
+        method: "POST",
+        headers: { "x-api-key": anthropicKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+        // No thinking config: prose wants text only, and Opus streams it directly with no thinking phase.
+        body: JSON.stringify({
+          model,
+          max_tokens: body.max_tokens ?? 8000,
+          stream: true,
+          system: body.system,
+          messages: [{ role: "user", content: body.userContent }],
+        }),
+      });
+      if (!res.ok || !res.body) {
+        const t = await res.text().catch(() => "");
+        throw new ProxyError(502, `Anthropic ${res.status}: ${t.slice(0, 300)}`);
+      }
+
+      // Anthropic SSE frames carry a `type`: content_block_delta{delta:text_delta} is prose; message_stop
+      // (or error) ends it; ping keeps the connection alive during pre-text latency (mirror the qwen
+      // heartbeat so the client's idle timer resets). Same newline-buffered `data:` framing as OpenRouter.
+      const reader = (res.body as ReadableStream<Uint8Array>).getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let nl: number;
+        while ((nl = buf.indexOf("\n")) >= 0) {
+          const line = buf.slice(0, nl).trim();
+          buf = buf.slice(nl + 1);
+          if (!line.startsWith("data:")) continue;
+          const data = line.slice(5).trim();
+          try {
+            const j = JSON.parse(data);
+            if (j?.type === "content_block_delta") {
+              const d = j.delta;
+              if (d?.type === "text_delta" && typeof d.text === "string" && d.text) {
+                chars += d.text.length;
+                output += d.text;
+                yield d.text;
+              } else if (d?.type === "thinking_delta") {
+                yield STREAM_HEARTBEAT;
+              }
+            } else if (j?.type === "ping") {
+              yield STREAM_HEARTBEAT;
+            } else if (j?.type === "message_stop" || j?.type === "error") {
+              return;
+            }
+          } catch { /* partial/keep-alive frame — ignore */ }
+        }
+      }
+      return;
+    }
 
     const key = process.env.OPENROUTER_API_KEY;
     if (!key) throw new ProxyError(500, "OPENROUTER_API_KEY not configured");
