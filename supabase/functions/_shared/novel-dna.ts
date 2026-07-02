@@ -1064,6 +1064,44 @@ export function validate(nodes: DnaNode[]): DnaIssue[] {
   return issues;
 }
 
+// ── State-key canonicalization (§3c) ─────────────────────────────────────────
+// `needs`/`establishes` are an OPEN snake_case vocabulary, so a typo or a plural silently SPLITS the causal
+// DAG — `redemption_fund` and `redemption_funds` read as two separate facts, and a beat that needs one while
+// an earlier beat establishes the other looks "uncaused" (the redemption_fund incident). Snap a key to a
+// near-duplicate already in use so the two collapse into one.
+function editDistance(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  if (!m) return n; if (!n) return m;
+  let prev = Array.from({ length: n + 1 }, (_, j) => j);
+  let cur = new Array<number>(n + 1).fill(0);
+  for (let i = 1; i <= m; i++) {
+    cur[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+    }
+    [prev, cur] = [cur, prev];
+  }
+  return prev[n];
+}
+
+/** Snap an open-vocabulary state key to a near-duplicate already in `known` (a plural/typo split of the same
+ *  concept), so the causal DAG doesn't fork on two spellings. Exact match, or nothing close → returns the key
+ *  unchanged. Conservative (edit-distance ≤ 2 AND min length ≥ 6) so genuinely distinct keys — which differ by
+ *  whole words, i.e. a large distance — are never merged. First-seen spelling wins as canonical. */
+export function canonicalizeKey(key: string, known: Iterable<string>): string {
+  const k = key.trim();
+  if (!k) return k;
+  let best = k, bestD = Infinity;
+  for (const cand of known) {
+    if (cand === k) return k;
+    if (Math.abs(cand.length - k.length) > 2 || Math.min(cand.length, k.length) < 6) continue;
+    const d = editDistance(k, cand);
+    if (d <= 2 && d < bestD) { best = cand; bestD = d; }
+  }
+  return best;
+}
+
 // ── Render completeness (§7) ──────────────────────────────────────────────────
 export interface BookSettings { title?: string; author?: string; word_target?: number; mode?: "prose" | "picture" }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validate, type DnaNode, type NodeKind } from "@/features/dna/lib/novelDna";
+import { canonicalizeKey, validate, type DnaNode, type NodeKind } from "@/features/dna/lib/novelDna";
 
 // Locks the rule-selection behind dna-expand's P2.1 beat lint-then-repair (BEAT_LINT_RULES). The beatsheet is
 // linted on a BEATS-ONLY tree (no scenes exist yet), so this asserts which validate() rules are decidable
@@ -49,5 +49,32 @@ describe("beat-stage lints (dna-expand P2.1 allowlist)", () => {
     // Sanity: the allowlist names real rules — at least the two we deliberately provoked are present.
     const provoked = [...rules].filter((r) => BEAT_LINT_RULES.has(r));
     expect(provoked).toEqual(expect.arrayContaining(["uncaused_therefore", "unresolved_game"]));
+  });
+});
+
+describe("canonicalizeKey — state-key DAG-split fix (§3c)", () => {
+  it("snaps a plural/typo split onto the established spelling", () => {
+    const known = ["redemption_fund", "rival_humiliated"];
+    expect(canonicalizeKey("redemption_funds", known)).toBe("redemption_fund"); // plural (distance 1)
+    expect(canonicalizeKey("redemtion_fund", known)).toBe("redemption_fund");   // typo (distance 1)
+  });
+
+  it("leaves an exact match and a genuinely distinct key untouched", () => {
+    const known = ["redemption_fund", "door_open"];
+    expect(canonicalizeKey("redemption_fund", known)).toBe("redemption_fund"); // exact
+    expect(canonicalizeKey("ledger_settled", known)).toBe("ledger_settled");   // far from anything → unchanged
+  });
+
+  it("never merges short keys or whole-word-different keys (conservative thresholds)", () => {
+    expect(canonicalizeKey("won", ["win"])).toBe("won");                         // min length < 6 → no merge
+    expect(canonicalizeKey("guard_bribed", ["guard_tricked"])).toBe("guard_bribed"); // distance > 2 → no merge
+  });
+
+  it("first-seen spelling wins when folding a set (mirrors the beatsheet pass)", () => {
+    const canon = new Set<string>();
+    const fold = (k: string) => { const c = canonicalizeKey(k, canon); canon.add(c); return c; };
+    expect(["redemption_fund", "redemption_funds", "redemption_fund"].map(fold))
+      .toEqual(["redemption_fund", "redemption_fund", "redemption_fund"]);
+    expect([...canon]).toEqual(["redemption_fund"]); // both spellings collapsed to one canonical key
   });
 });

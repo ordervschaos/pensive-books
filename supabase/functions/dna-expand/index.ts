@@ -14,7 +14,7 @@ import { getActiveModels, DIGEST_MODEL } from "../_shared/model-config.ts";
 import { extractJsonBlock } from "../_shared/json.ts";
 // The shared engine's beat-native lints, run over the just-generated beat sheet so a silently-degraded sheet
 // gets one bounded repair turn instead of shipping the damage (docs/agent-improvement-plan.md P2.1).
-import { validate, type AuthoringStatus, type DnaNode, type NodeContent, type NodeKind } from "../_shared/novel-dna.ts";
+import { canonicalizeKey, validate, type AuthoringStatus, type DnaNode, type NodeContent, type NodeKind } from "../_shared/novel-dna.ts";
 import { type Brief, briefContext, mandateContext } from "../_shared/brief.ts";
 import { isChainCall } from "../_shared/self-chain.ts";
 import { serviceClient } from "../_shared/task.ts";
@@ -643,6 +643,25 @@ Output JSON ONLY: { "beats": [ { "act": <1..${acts.length}>, "summary": "...", "
       });
       };
       let beats = sanitize(rawBeats);
+
+      // ── Canonicalize the causal-state vocabulary (docs/agent-improvement-plan.md P3/§3c) ────────────────
+      // `needs`/`establishes` are open snake_case keys, so a typo/plural (`redemption_fund` vs
+      // `redemption_funds`) would split the DAG into two facts and make a real "therefore" look uncaused.
+      // Pass 1: fold each beat's `establishes` into a canonical set (first-seen spelling wins). Pass 2: snap
+      // every beat's `needs` onto that canonical set. Deterministic — the fix doesn't depend on the P2.1
+      // repair model noticing. Scenes inherit these canonicalized keys via realizeScenesFromBeat.
+      {
+        const canon = new Set<string>();
+        for (const b of beats) {
+          const es = Array.isArray(b.content.establishes) ? b.content.establishes as string[] : [];
+          const mapped = [...new Set(es.map((k) => { const c = canonicalizeKey(k, canon); canon.add(c); return c; }))];
+          if (mapped.length) b.content.establishes = mapped; else delete b.content.establishes;
+        }
+        for (const b of beats) {
+          const ns = Array.isArray(b.content.needs) ? b.content.needs as string[] : [];
+          if (ns.length) b.content.needs = [...new Set(ns.map((k) => canonicalizeKey(k, canon)))];
+        }
+      }
 
       // ── Lint-then-repair (docs/agent-improvement-plan.md P2.1) ──────────────────────────────────────────
       // The sanitizer silently DROPS orphan payoffs / dup tentpole claims etc., each of which can leave a

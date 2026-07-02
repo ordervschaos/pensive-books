@@ -82,6 +82,8 @@ const cases: [string, (m: typeof web, n: DnaNode[]) => unknown][] = [
   ["scenesInOrder", (m, n) => m.scenesInOrder(n).map((x) => x.id)],
   ["beatsInOrder", (m, n) => m.beatsInOrder(n).map((x) => x.id)],
   ["chapters", (m, n) => m.chapters(n)],
+  // §3c canonicalization is pure string work (ignores the nodes arg) — lock the twin to the web engine.
+  ["canonicalizeKey", (m) => ["redemption_funds", "redemtion_fund", "door_open", "won"].map((k) => m.canonicalizeKey(k, ["redemption_fund", "door_open", "win"]))],
 ];
 
 describe("novel-dna edge twin ↔ web engine parity", () => {

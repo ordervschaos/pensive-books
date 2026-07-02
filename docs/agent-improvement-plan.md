@@ -144,7 +144,12 @@ same-file (`book-agent/index.ts`) write conflicts.
   full-accumulator entries. Verified by a standalone simulation (reconstruction == naive oracle; fresh read = 0
   re-folds; O(1)/node storage).
 - **§3a** transcript per-message rows / compaction (schema + Realtime; higher risk).
-- **§3c** state-key registry / canonicalization at the write gate.
+- **§3c** ✅ SHIPPED — state-key canonicalization. New pure `canonicalizeKey(key, known)` in the engine (+twin,
+  parity-locked): snaps an open-vocabulary key to a near-duplicate already in use (edit-distance ≤ 2, min
+  length ≥ 6) so `redemption_fund`/`redemption_funds` don't split the causal DAG. Wired into the `dna-expand`
+  beatsheet as a deterministic two-pass (fold establishes into a canonical set → snap needs onto it) BEFORE
+  the P2.1 lint, so the fix doesn't depend on the repair model. Scenes inherit the canonical keys via §3d.
+  Tested (`dnaBeatLints.test.ts` + parity).
 - **§3d** ✅ SHIPPED — `realizeScenesFromBeat` (web `dnaExpand.ts`) now distributes the beat's causal state by
   role: `needs` (consumed at entry) → FIRST scene, `establishes` (produced when the turn lands) → LAST scene
   (co-located with `grounds_in`/`resolves`), instead of piling both on scene 0. Single-scene beats keep both
