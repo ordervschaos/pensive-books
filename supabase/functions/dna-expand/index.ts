@@ -19,9 +19,12 @@ import { type Brief, briefContext, mandateContext } from "../_shared/brief.ts";
 import { isChainCall } from "../_shared/self-chain.ts";
 import { serviceClient } from "../_shared/task.ts";
 
-// The rolling continuity digest cached per scene node (authoring.prose_digest). `value` = the accumulator
-// covering all prosed pages UP TO AND INCLUDING this one; src_hash = this page's prose; prev_hash chains to
-// the accumulator it was folded onto (so editing any earlier page invalidates the whole suffix).
+// The rolling continuity digest cached per scene node (authoring.prose_digest). Stores this page's DELTA, not
+// the whole accumulator (P3/§3b): `line` = THIS page's one-line recap; `ledger`/`impressions` = the cumulative
+// (bounded) state AS OF this page (the LLM fold merges these, so they can't be reconstructed from deltas).
+// src_hash = this page's prose; prev_hash chains to the accumulator it was folded onto (so editing any earlier
+// page invalidates the whole suffix). buildProseDigest folds the `line` deltas back into the full pages[] on
+// READ — so storage is O(n) across the book instead of the old O(n²) full-accumulator-per-node.
 interface DigestLedger { characters?: string[]; objects?: string[]; locations?: string[]; timeline?: string; open_threads?: string[] }
 // A reader's takeaway from the story so far: what actually LANDED, with a memory weight (1–5). Models the
 // experiential read — not every fact, but the things a reader would carry forward and feel. Recurring or
@@ -31,7 +34,9 @@ interface DigestImpression { note: string; weight: number }
 interface DigestAccum { pages: string[]; ledger: DigestLedger; impressions?: DigestImpression[] }
 // `v` bumps when the accumulator shape or the digest model/prompt changes — an older `v` invalidates the
 // whole cached chain (we re-fold rather than trust a digest built by a weaker model or an older schema).
-const DIGEST_VERSION = 2;
+// v3: per-page DELTA storage (`line` replaces the full `value` accumulator) — old v2 entries carry no `line`,
+// so they MUST be re-folded, not mis-read as an empty delta.
+const DIGEST_VERSION = 3;
 // The fold runs synchronously on the worker (~150s wall-clock ceiling). A cold backfill of an existing
 // many-page book would do N sequential folds and blow it. Cap the time spent folding per call: when the
 // budget is hit we stop and return the partial digest (the prefix folded/cached so far). Because each fold
@@ -39,7 +44,7 @@ const DIGEST_VERSION = 2;
 // two instead of the worker dying every time. New books built page-by-page only ever fold ONE page, so
 // they never approach this. ~100s leaves headroom for the rest of `prepare` under the ceiling.
 const FOLD_BUDGET_MS = 100_000;
-interface DigestLink { v?: number; value: DigestAccum; src_hash: string; prev_hash: string }
+interface DigestLink { v?: number; line: string; ledger: DigestLedger; impressions?: DigestImpression[]; src_hash: string; prev_hash: string }
 interface Node { id: string; parent_id: string | null; kind: string; position?: number; content: Record<string, unknown>; authoring: { locked?: boolean; status?: string; prose_digest?: DigestLink } }
 interface NodeTypeConfig { target: string; child_kind: string; child_level: number; parent_kind: string; role: string; count: string; schema_json: string; slots: SlotConfig }
 interface SlotConfig { voice?: boolean; entities?: boolean; threads?: boolean; tentpoles?: boolean; worldRules?: boolean; games?: boolean; preconditions?: boolean; arc?: boolean; priorScenes?: boolean }
@@ -198,17 +203,25 @@ async function buildProseDigest(apiKey: string, model: string, allNodes: Node[],
     const srcHash = fnv1a(txt);
     const prevHash = fnv1a(JSON.stringify(accum));
     const cached = page.authoring?.prose_digest;
-    if (cached && cached.v === DIGEST_VERSION && cached.src_hash === srcHash && cached.prev_hash === prevHash) { accum = cached.value; continue; }
+    // Cache HIT: fold this page onto the running accumulator with NO model call — append its stored delta `line`
+    // and adopt its cumulative ledger/impressions snapshot. (Delta storage keeps per-node cost O(1); the full
+    // pages[] is reconstructed here in memory for the final digest.)
+    if (cached && cached.v === DIGEST_VERSION && cached.src_hash === srcHash && cached.prev_hash === prevHash) {
+      accum = { pages: [...accum.pages, cached.line].filter(Boolean), ledger: cached.ledger, impressions: cached.impressions };
+      continue;
+    }
     // Out of fold budget → stop and return the partial digest (covers the prefix folded/cached so far). The
     // fold is sequential (each depends on the prior accumulator) so we can't skip ahead — earliest-uncached
     // first. Each completed fold below is already persisted, so the next generation resumes from here.
     if (Date.now() - startFold > FOLD_BUDGET_MS) { truncated = true; break; }
     try {
-      accum = await foldDigest(apiKey, model, accum, txt, meta);
-      page.authoring = { ...page.authoring, prose_digest: { v: DIGEST_VERSION, value: accum, src_hash: srcHash, prev_hash: prevHash } };
+      const next = await foldDigest(apiKey, model, accum, txt, meta);
+      const line = next.pages[next.pages.length - 1] ?? ""; // this page's delta = the line the fold just appended
+      page.authoring = { ...page.authoring, prose_digest: { v: DIGEST_VERSION, line, ledger: next.ledger, impressions: next.impressions, src_hash: srcHash, prev_hash: prevHash } };
       // Persist THIS fold immediately — a worker death at the ~150s ceiling must not lose progress (the
       // old persist-at-end lost everything on death, so the cache never warmed and prose never recalculated).
       await sb.from("book_nodes").update({ authoring: page.authoring }).eq("id", page.id).eq("book_id", bookId);
+      accum = next;
     } catch { /* degrade gracefully: skip this page's fold; blocklist + previous page still carry continuity */ }
   }
   if (truncated) console.warn(`dna-expand digest: fold budget hit for book ${bookId} — partial digest (${accum.pages.length}/${earlier.length} pages); cache warms on next generation`);

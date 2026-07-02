@@ -137,8 +137,12 @@ same-file (`book-agent/index.ts`) write conflicts.
 
 ## Phase 3 — data-structure health/cost (🧠, can interleave)
 
-- **§3b** continuity-digest delta storage (independent; `dna-expand`): store per-page delta, fold on
-  read — O(n) not O(n²). Preserves hash-chain invalidation.
+- **§3b** ✅ SHIPPED — continuity-digest delta storage (`dna-expand`): `prose_digest` now stores this page's
+  DELTA (`line` + bounded ledger/impressions snapshot) instead of the full `value` accumulator; `buildProseDigest`
+  reconstructs `pages[]` from the deltas on read. O(n) storage, not O(n²). Hash basis unchanged (still hashes the
+  in-memory `accum`), so cache-chain invalidation is byte-identical to before; `DIGEST_VERSION` 2→3 retires old
+  full-accumulator entries. Verified by a standalone simulation (reconstruction == naive oracle; fresh read = 0
+  re-folds; O(1)/node storage).
 - **§3a** transcript per-message rows / compaction (schema + Realtime; higher risk).
 - **§3c** state-key registry / canonicalization at the write gate.
 - **§3d** distribute beat plan across sibling scenes in the scenes-generation call.
