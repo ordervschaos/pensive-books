@@ -61,7 +61,7 @@ type NodeOp =
 // scene prose; ops is empty and sceneIds names the scenes — the AUTHOR applies it and the prose streams in
 // their browser via the v2 pipeline (docs/agent-context-model.md). The agent never generates prose itself.
 interface RenderBrief { focus: string; mustHonor?: string[]; avoid?: string[] }
-interface AgentProposal { id: string; layer: "dna" | "prose-render"; summary: string; ops: NodeOp[]; sceneIds?: string[]; brief?: RenderBrief }
+interface AgentProposal { id: string; layer: "dna" | "prose-render" | "expansion"; summary: string; ops: NodeOp[]; sceneIds?: string[]; brief?: RenderBrief; nodeId?: string; target?: string }
 
 interface RunRow {
   id: number;
@@ -450,6 +450,34 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
       }
       const results = await toolResults(service, row.book_id, toolUses, steps, {
         [renderCall.id]: `The render request was rejected: ${outcome.error} Fix it and call propose_prose_render again, or just reply.`,
+      }, auto);
+      transcript.push({ role: "user", content: results });
+      await service.from("book_agent_runs").update({ transcript, steps }).eq("id", runId);
+      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("book-agent", { runId }));
+      return;
+    }
+
+    // ── propose_expansion: delegate a heavy structural pass (beat sheet / scenes) to the dna-expand engine ──
+    // Like propose_prose_render, the engine run happens CLIENT-side (browser owns retry/streaming + reuses the
+    // exact generate+persist path); the agent only DECIDES to invoke it. Stage an 'expansion' request in
+    // proposals[]; Apply runs generateExpansionOps → applyNodeOps there. Same review channel as the rest.
+    const expandCall = toolUses.find((t) => t.name === "propose_expansion");
+    if (expandCall) {
+      const outcome = await proposeExpansion(service, row.book_id, expandCall.input as { summary?: string; nodeId?: string; target?: string });
+      if (outcome.ok) {
+        steps.push({ t: "plan", label: outcome.proposal.summary });
+        const proposals = [...(row.proposals ?? []), outcome.proposal];
+        const ack = auto
+          ? `✓ Expansion requested and applied (autonomous mode — the engine generated it in the author's browser). Your next turn will show the new nodes; continue, or call finish.`
+          : null;
+        transcript.push({ role: "user", content: ack
+          ? toolUses.map((t) => ({ type: "tool_result", tool_use_id: t.id, content: t.id === expandCall.id ? ack : "ok" }))
+          : ackResults(toolUses.map((t) => t.id)) });
+        await service.from("book_agent_runs").update({ status: "idle", transcript, steps, proposals }).eq("id", runId);
+        return; // the proposal waits for the author to apply (the engine runs client-side)
+      }
+      const results = await toolResults(service, row.book_id, toolUses, steps, {
+        [expandCall.id]: `The expansion request was rejected: ${outcome.error} Fix it and call propose_expansion again, or just reply.`,
       }, auto);
       transcript.push({ role: "user", content: results });
       await service.from("book_agent_runs").update({ transcript, steps }).eq("id", runId);
@@ -902,6 +930,19 @@ const THREAD_DNA_TOOLS = [
     },
   },
   {
+    name: "propose_expansion",
+    description: "Delegate a HEAVY STRUCTURAL pass to the book's specialized generation engine instead of authoring it yourself: the GLOBAL beat sheet (target 'beatsheet') or a beat's SCENES (target 'scenes'). Use this — NOT propose_node_ops — for these two passes, because the engine schedules setup→payoff across the whole book, plays the games, and makes each scene inherit its beat's causal/thread/tentpole plan deterministically (craft you can't reliably reproduce by hand). 'beatsheet' generates ALL beats across every act in one causal pass — pass the PILLAR node's id. 'scenes' breaks ONE beat into scenes — pass that BEAT node's id (call it once per beat that still needs scenes, in reading order). This stages a reviewable 'expand' request the author applies; the engine then runs and its result lands in the tree. Authoring the spine (logline, premise, pillar, cast, acts) and small edits is still yours via propose_node_ops / propose_options — only the beat sheet and scenes go through here. ENDS your turn.",
+    input_schema: {
+      type: "object",
+      properties: {
+        summary: { type: "string", description: "One line: what you're expanding and why (e.g. 'generate the global beat sheet', 'break beat 3 into scenes')." },
+        nodeId: { type: "string", description: "For 'beatsheet': the PILLAR node's id. For 'scenes': the BEAT node's id to break into scenes." },
+        target: { type: "string", enum: ["beatsheet", "scenes"], description: "'beatsheet' = all beats across all acts (nodeId = pillar); 'scenes' = one beat's scenes (nodeId = beat)." },
+      },
+      required: ["nodeId", "target"],
+    },
+  },
+  {
     name: "propose_options",
     description: "Offer the author 2–4 ALTERNATIVE versions of ONE node's content to choose among (the options picker). Use this when the author asks for options/alternatives, or to break a node out of its one obvious 'modal' version. Each option is a COMPLETE content object for that node's kind (the exact field names from the schema, like an edit's content). The options must be meaningfully different FROM EACH OTHER — but every option MUST HONOR the node's ancestors as FIXED: a child elaborates what's above it (the logline, then the premise), it never rewrites it. Vary ONLY what the parent leaves open (e.g. premise options keep the logline's protagonist / inciting incident / goal / obstacle / stakes fixed and vary only the central question — plot OR thematic — and the optional 5-part shape). NEVER reshape an ancestor's story into a different book, and never offer near-duplicates. This stages the options ON the node (the author picks one in the tree) and ENDS your turn. For a SINGLE revision, use propose_node_ops (edit) instead. Only target a non-locked node.",
     input_schema: {
@@ -957,7 +998,8 @@ You hold the book's DNA TREE: premise → foundations (pillar, cast, world, tent
 2. CHANGE THE TREE — when the author asks for a change (or agrees to one), call propose_node_ops with edit/add/delete ops over the real ids. The author reviews the diff and applies it; descendants of an edited node go stale and are regenerated later. NEVER touch a LOCKED node. Don't propose unless asked — talk first.
 3. OFFER OPTIONS — when the author asks for alternatives/options, or to break a node out of its one obvious version, call propose_options with the node's [id] and 2–4 COMPLETE content objects, meaningfully different FROM EACH OTHER but each one HONORING the node's ancestors as fixed: a child elaborates the logline/premise above, it never rewrites it. Vary only what the parent leaves open (premise options keep the logline's protagonist/inciting/goal/obstacle/stakes and vary the central question — plot OR thematic — and optional shape); never reshape an ancestor into a different story, never near-duplicates. The author picks one in the tree. Use this only for choose-among-N; a single revision is propose_node_ops.
 4. PROSE — to WRITE or REWRITE a scene's full prose, call propose_prose_render with the scene [id](s): you do NOT generate prose yourself (it's a long, browser-streamed render the author runs); you stage a request the author applies, and it streams in their browser. For SMALL wording fixes to EXISTING prose, use propose_node_ops to edit content.prose.text directly. Call check_against_contract with a scene's [id] to judge its EXISTING prose against the brief mandate (genre, heat, voice, success criteria) and relay the per-axis verdict. A common request — "write the first scene and see if it meets the brief" — is propose_prose_render (the author applies it; prose streams in) then check_against_contract once the scene has prose.
-   - REBUILDS: to replace a whole level — "rebuild the acts", "4 acts with all-new beats" — use ONE replace_children op (parentId = the level's parent, e.g. the pillar for acts; childKind = act; children = the new acts, each nesting its beats). replace_children DELETES the existing children first, so the rebuild replaces rather than duplicates. Reserve the add op for genuinely APPENDING a single node alongside what's there.
+   - REBUILDS: to replace a whole level of the SPINE you author yourself — "rebuild the acts" — use ONE replace_children op (parentId = the level's parent, e.g. the pillar for acts; childKind = act). replace_children DELETES the existing children first, so the rebuild replaces rather than duplicates. Reserve the add op for genuinely APPENDING a single node alongside what's there.
+5. BEAT SHEET & SCENES — do NOT author these by hand. The GLOBAL beat sheet and a beat's scenes are HEAVY structural passes with craft you can't reliably reproduce (setup→payoff scheduling across the whole book; each scene inheriting its beat's causal/thread/tentpole plan). Delegate them to the engine: call propose_expansion(nodeId = the PILLAR, target = 'beatsheet') to generate all beats across all acts once acts exist; call propose_expansion(nodeId = a BEAT, target = 'scenes') to break that beat into scenes (once per beat that still needs them). You still author the logline, premise, pillar, cast, and acts yourself (propose_node_ops / propose_options); only the beat sheet and scenes go through propose_expansion. Prose is propose_prose_render (item 4).
 
 ## Node kinds
 
@@ -1052,6 +1094,35 @@ async function proposeProseRender(
   }
   if (sceneIds.length === 0) return { ok: false, error: "No valid scene ids — propose_prose_render targets real, non-locked SCENE nodes by their [id]." };
   return { ok: true, proposal: { id: crypto.randomUUID(), layer: "prose-render", summary: String(input.summary ?? "Render prose").trim() || "Render prose", ops: [], sceneIds, brief: sanitizeBrief(input.brief) } };
+}
+
+// Stage an 'expansion' request: the dna-expand engine (client-side, on Apply) generates the beat sheet or a
+// beat's scenes. We only VALIDATE the target here (node exists, not locked, right kind for the target); the
+// engine does the real work + persistence in the browser (generateExpansionOps → applyNodeOps). 'beatsheet'
+// needs the pillar (and acts to hang beats under); 'scenes' needs a beat.
+async function proposeExpansion(
+  service: SupabaseClient,
+  bookId: number,
+  input: { summary?: string; nodeId?: string; target?: string },
+): Promise<{ ok: true; proposal: AgentProposal } | { ok: false; error: string }> {
+  const target = String(input.target ?? "").trim();
+  if (target !== "beatsheet" && target !== "scenes") {
+    return { ok: false, error: `Unknown target "${target}" — propose_expansion only handles 'beatsheet' (nodeId = pillar) or 'scenes' (nodeId = beat).` };
+  }
+  const { data: rows } = await service.from("book_nodes").select("id, kind, authoring").eq("book_id", bookId);
+  const nodes = (rows ?? []) as { id: string; kind: string; authoring: { locked?: boolean } | null }[];
+  const node = nodes.find((n) => n.id === input.nodeId);
+  if (!node) return { ok: false, error: `No node with id ${input.nodeId}.` };
+  if (node.authoring?.locked) return { ok: false, error: `Node ${input.nodeId} is LOCKED — unlock it before expanding.` };
+  if (target === "beatsheet") {
+    if (node.kind !== "pillar") return { ok: false, error: `'beatsheet' expands the PILLAR (all acts at once) — pass the pillar node's id, not a ${node.kind}.` };
+    if (!nodes.some((n) => n.kind === "act")) return { ok: false, error: "There are no acts yet — author the acts first (propose_node_ops), then generate the beat sheet." };
+  }
+  if (target === "scenes" && node.kind !== "beat") {
+    return { ok: false, error: `'scenes' breaks ONE beat into scenes — pass a beat node's id, not a ${node.kind}.` };
+  }
+  const label = target === "beatsheet" ? "Generate the global beat sheet" : "Break the beat into scenes";
+  return { ok: true, proposal: { id: crypto.randomUUID(), layer: "expansion", summary: String(input.summary ?? label).trim() || label, ops: [], nodeId: node.id, target } };
 }
 
 // Stage 2–4 alternative content objects ON a node as pickable options (the options/picker channel). The

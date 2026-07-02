@@ -6,14 +6,13 @@ import ReactMarkdown from "react-markdown";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { deleteNode, patchNodeContent, saveNode, saveNodes } from "@/features/dna/lib/bookNodes";
-import { backlinkIndex, byId, childrenOf, emptyNode, isEntityKind, isProseStale, isStale, newId, pillarOf, refsOf, stampInput, stampProse, type BookSettings, type DnaIssue, type DnaNode, type BeatContent, type NodeContent, type NodeKind, type SceneContent } from "@/features/dna/lib/novelDna";
+import { backlinkIndex, beatsInOrder, byId, childrenOf, emptyNode, isEntityKind, isProseStale, isStale, newId, pillarOf, refsOf, stampInput, stampProse, type BookSettings, type DnaIssue, type DnaNode, type BeatContent, type NodeContent, type NodeKind, type SceneContent } from "@/features/dna/lib/novelDna";
 import { editSpecs, KIND_LEVEL, tasteSpecs, type EditSpec } from "@/features/dna/lib/dnaSchema";
 import { CONTENT_TYPES, SCOPE_BANDS, briefIdea, type Brief } from "@/lib/brief";
 import { describeOps, type NodeOp } from "@/features/dna/lib/dnaChat";
 import { AgentRail } from "@/features/dna/components/AgentRail";
-import { sendAgentMessage, type AgentProposal } from "@/features/dna/lib/agentThread";
+import { type AgentProposal } from "@/features/dna/lib/agentThread";
 import { chooseNodeProposal, discardNodeProposals } from "@/features/dna/lib/dnaProposals";
-import { expandNode, proposeGeneration } from "@/features/dna/lib/dnaExpand";
 import { DNA_STAGES, dnaHealth, buildJourney, stageProgress, STAGE_KINDS, type StageKey } from "@/features/dna/lib/dnaJourney";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 
@@ -683,60 +682,8 @@ function AddRow({ label, depth, onAdd }: { label: string; depth: number; onAdd: 
   );
 }
 
-// Post-pillar levels that the dna-expand engine can generate, mapped to their expand `target`. The cast &
-// world groups, the story acts, the beat sheet, scenes, and prose — every place that previously only had a
-// blank AddRow. (location has no engine target; act→beats comes from the pillar-level "beatsheet", not
-// per-act — so neither gets a GenerateRow.)
-const ENTITY_TARGET: Partial<Record<DnaNode["kind"], string>> = {
-  character: "cast", world_fact: "world", relationship: "relationships",
-  tentpole: "set-pieces", game: "games", thread: "threads", voice_profile: "voice_profile",
-};
-
-// A clickable "✦ generate <label>" affordance — runs the dna-expand engine and STAGES the result as a
-// reviewable proposal on the agent thread (phantoms appear in the tree; apply/discard in the rail). The
-// engine-quality sibling of AddRow (which inserts ONE blank node). Mirrors SpineLab's discipline: every AI
-// action surfaces as a proposal first, never an auto-commit.
-function GenerateRow({ label, depth, bookId, node, target, openRail }: {
-  label: string; depth: number; bookId: number; node: DnaNode; target: string; openRail: () => void;
-}) {
-  const [busy, setBusy] = useState(false);
-  const run = async () => {
-    if (busy) return;
-    setBusy(true);
-    try { await proposeGeneration(bookId, node, target); openRail(); }
-    catch (e) { alert(`Generate failed: ${(e as Error).message}`); }
-    finally { setBusy(false); }
-  };
-  return (
-    <div style={detailRowStyle(depth)}>
-      <ConnectorTick depth={depth} />
-      <span style={{ width: 12, flexShrink: 0 }} />
-      <span onClick={() => void run()} style={{
-        fontFamily: "ui-monospace, monospace", fontSize: 11, letterSpacing: "0.04em",
-        color: busy ? "#6a6a9a" : "#a8a8ff", cursor: busy ? "default" : "pointer",
-        border: `1px solid ${busy ? "#8a8aff22" : "#8a8aff44"}`, borderRadius: 4, padding: "1px 8px", background: "#8a8aff10",
-      }}>{busy ? "generating…" : `✦ ${label}`}</span>
-    </div>
-  );
-}
-
-// Compact inline "✦" (AI generate) and "＋" (manual add) for NodeGroup headers.
-// Same affordance as GenerateRow/AddRow but rendered as tiny header chips, not full-width footer rows.
-function GroupGenButton({ bookId, node, target, openRail, title }: { bookId: number; node: DnaNode; target: string; openRail: () => void; title?: string }) {
-  const [busy, setBusy] = useState(false);
-  return (
-    <span onClick={async (e) => {
-      e.stopPropagation();
-      if (busy) return;
-      setBusy(true);
-      try { await proposeGeneration(bookId, node, target); openRail(); }
-      catch (err) { alert(`Generate failed: ${(err as Error).message}`); }
-      finally { setBusy(false); }
-    }} title={title ?? "generate with AI"} style={{ fontFamily: "ui-monospace, monospace", fontSize: 10, letterSpacing: "0.04em", color: busy ? "#555" : "#a8a8ff", cursor: busy ? "default" : "pointer", border: `1px solid ${busy ? "#33333a" : "#8a8aff44"}`, borderRadius: 4, padding: "0px 6px", background: "#8a8aff08", flexShrink: 0 }}>
-      {busy ? "…" : "✦"}
-    </span>
-  );
-}
+// Compact inline "＋" (manual add) for NodeGroup headers. AI generation for these groups now lives on the
+// agent (the rail), not as per-group buttons.
 function GroupAddButton({ onAdd, title }: { onAdd: () => void | Promise<void>; title?: string }) {
   const [busy, setBusy] = useState(false);
   return (
@@ -775,138 +722,6 @@ function generatableProseIds(nodes: DnaNode[]): Set<string> {
     if (proseStateOf(s) !== "done") break; // first not-done scene is the last writable one; stop here
   }
   return out;
-}
-
-// Beats in book order: pillar → acts → beats, each level sorted by position.
-function beatsInOrder(nodes: DnaNode[]): DnaNode[] {
-  const kids = (pid: string, kind: string) =>
-    nodes.filter((n) => n.parent_id === pid && n.kind === kind).sort((a, b) => a.position - b.position);
-  const pillar = nodes.find((n) => n.kind === "pillar");
-  if (!pillar) return [];
-  const out: DnaNode[] = [];
-  for (const mov of kids(pillar.id, "act"))
-    out.push(...kids(mov.id, "beat"));
-  return out;
-}
-
-// Direct-commit prose write for a single scene — no proposal step.
-function WriteProseButton({ bookId, node, depth, hasProse }: { bookId: number; node: DnaNode; depth: number; hasProse?: boolean }) {
-  const [busy, setBusy] = useState(false);
-  const run = async () => {
-    if (busy) return;
-    setBusy(true);
-    try { await expandNode(bookId, node, "prose"); }
-    catch (e) { alert(`Write prose failed: ${(e as Error).message}`); }
-    finally { setBusy(false); }
-  };
-  return (
-    <div style={detailRowStyle(depth)}>
-      <ConnectorTick depth={depth} />
-      <span style={{ width: 12, flexShrink: 0 }} />
-      <span onClick={() => void run()} style={{
-        fontFamily: "ui-monospace, monospace", fontSize: 11, letterSpacing: "0.04em",
-        color: busy ? "#6a6a9a" : "#a8a8ff", cursor: busy ? "default" : "pointer",
-        border: `1px solid ${busy ? "#8a8aff22" : "#8a8aff44"}`, borderRadius: 4, padding: "1px 8px", background: "#8a8aff10",
-      }}>{busy ? "writing…" : hasProse ? "↻ re-write prose" : "✦ write prose"}</span>
-    </div>
-  );
-}
-
-// Sequential prose writer for all prose-less scenes in book order.
-function WriteAllProseButton({ bookId, nodes, depth }: { bookId: number; nodes: DnaNode[]; depth: number }) {
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
-  const cancelRef = useRef(false);  // set true to stop the loop at the next boundary
-  const abortRef = useRef<AbortController | null>(null); // aborts the in-flight call immediately on stop
-  const pending = scenesInOrder(nodes).filter((s) => !(s.content as SceneContent).prose?.text?.trim());
-  if (!pending.length && !progress) return null;
-  const run = async () => {
-    if (progress) { cancelRef.current = true; abortRef.current?.abort(); return; } // a click while running stops now
-    const list = scenesInOrder(nodes).filter((s) => !(s.content as SceneContent).prose?.text?.trim());
-    if (!list.length) return;
-    cancelRef.current = false;
-    setProgress({ done: 0, total: list.length });
-    // A scene that exhausts callExpand's retries SKIPS rather than aborting the whole batch — one unlucky
-    // scene must not strand the other 80. Failures are collected and reported once at the end so the run can
-    // be re-clicked to mop them up (it re-derives `pending`, so only the still-prose-less scenes re-run).
-    const failures: { scene: number; message: string }[] = [];
-    for (let i = 0; i < list.length; i++) {
-      if (cancelRef.current) break; // stop at the boundary — the in-flight call (if any) already returned
-      abortRef.current = new AbortController();
-      try {
-        await expandNode(bookId, list[i], "prose", { signal: abortRef.current.signal });
-      } catch (e) {
-        if (cancelRef.current) break; // intentional stop aborted the in-flight call — exit cleanly
-        failures.push({ scene: i + 1, message: (e as Error).message });
-      }
-      setProgress({ done: i + 1, total: list.length });
-    }
-    abortRef.current = null;
-    setProgress(null);
-    if (failures.length && !cancelRef.current) {
-      alert(`Wrote ${list.length - failures.length}/${list.length} scenes. ${failures.length} failed (re-click to retry them):\n` +
-        failures.slice(0, 8).map((f) => `  scene ${f.scene}: ${f.message}`).join("\n") +
-        (failures.length > 8 ? `\n  …and ${failures.length - 8} more` : ""));
-    }
-  };
-  const label = progress
-    ? `writing ${progress.done}/${progress.total}… ✕ stop`
-    : `✦ write all prose (${pending.length})`;
-  return (
-    <div style={detailRowStyle(depth)}>
-      <ConnectorTick depth={depth} />
-      <span style={{ width: 12, flexShrink: 0 }} />
-      <span onClick={() => void run()} style={{
-        fontFamily: "ui-monospace, monospace", fontSize: 11, letterSpacing: "0.04em",
-        color: progress ? "#6a6a9a" : "#a8a8ff", cursor: "pointer",
-        border: `1px solid ${progress ? "#8a8aff22" : "#8a8aff44"}`, borderRadius: 4, padding: "1px 8px", background: "#8a8aff10",
-      }}>{label}</span>
-    </div>
-  );
-}
-
-// Sequential scene generator: for all beats without scenes, in book order.
-function GenerateAllScenesButton({ bookId, nodes, depth }: { bookId: number; nodes: DnaNode[]; depth: number }) {
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
-  const cancelRef = useRef(false);  // set true to stop the loop at the next boundary
-  const abortRef = useRef<AbortController | null>(null); // aborts the in-flight call immediately on stop
-  const pending = beatsInOrder(nodes).filter((b) => !nodes.some((n) => n.parent_id === b.id && n.kind === "scene"));
-  if (!pending.length && !progress) return null;
-  const run = async () => {
-    if (progress) { cancelRef.current = true; abortRef.current?.abort(); return; } // a click while running stops now
-    const list = beatsInOrder(nodes).filter((b) => !nodes.some((n) => n.parent_id === b.id && n.kind === "scene"));
-    if (!list.length) return;
-    cancelRef.current = false;
-    setProgress({ done: 0, total: list.length });
-    for (let i = 0; i < list.length; i++) {
-      if (cancelRef.current) break; // stop at the boundary — the in-flight call (if any) already returned
-      abortRef.current = new AbortController();
-      try {
-        await expandNode(bookId, list[i], "scenes", { signal: abortRef.current.signal });
-        setProgress({ done: i + 1, total: list.length });
-      } catch (e) {
-        if (cancelRef.current) break; // intentional stop aborted the in-flight call — exit cleanly
-        alert(`Generate scenes failed at beat ${i + 1}: ${(e as Error).message}`);
-        setProgress(null);
-        return;
-      }
-    }
-    abortRef.current = null;
-    setProgress(null);
-  };
-  const label = progress
-    ? `generating scenes ${progress.done}/${progress.total}… ✕ stop`
-    : `✦ generate all scenes (${pending.length})`;
-  return (
-    <div style={detailRowStyle(depth)}>
-      <ConnectorTick depth={depth} />
-      <span style={{ width: 12, flexShrink: 0 }} />
-      <span onClick={() => void run()} style={{
-        fontFamily: "ui-monospace, monospace", fontSize: 11, letterSpacing: "0.04em",
-        color: progress ? "#6a6a9a" : "#a8a8ff", cursor: "pointer",
-        border: `1px solid ${progress ? "#8a8aff22" : "#8a8aff44"}`, borderRadius: 4, padding: "1px 8px", background: "#8a8aff10",
-      }}>{label}</span>
-    </div>
-  );
 }
 
 // A collapsible labeled section — pure layout, not a real node. `children` is whatever renders inside.
@@ -1092,89 +907,14 @@ function ProseBlock({ node, depth, open, onToggle }: {
 }
 
 // ── Options / picker (the candidate+judge channel) ───────────────────────────
-// The spine rungs (logline/premise/pillar) are where one-shot error compounds hardest (analysis §6.1), so
-// the manual generator omits the variety they need. These are the author's selection-pressure surface:
-//  • SpineLab — two affordances that drive the ONE agent (every AI call is a chat turn): generate options
-//    and ask-the-AI-to-pick. They send a templated message and open the rail; the agent does the work as a
-//    visible turn.
+// The agent (the rail) generates options via propose_options; here we only PICK among them:
 //  • ProposalPicker — the agent's propose_options stages 2–4 candidates onto node.proposals; this renders
 //    them as before→after cards. Picking commits (chooseProposal) + re-stales descendants; both pick and
 //    discard log a turn back to the agent thread (dnaProposals.ts).
 const SPINE_KINDS = new Set<string>(["seed", "premise", "pillar"]);
 const SPINE_LABEL: Record<string, string> = { seed: "logline", premise: "premise", pillar: "pillar" };
-// The next rung down each spine singleton — generation flows DOWN one step at a time, so each node leaves a
-// hanging "generate {child}" slot (the spine singletons have no AddRow otherwise; deeper rungs do).
+// The next rung down each spine singleton — the author can add the placeholder manually; the agent fills it.
 const SPINE_CHILD: Record<string, NodeKind> = { seed: "premise", premise: "pillar" };
-
-function LabButton({ label, busy, onClick }: { label: string; busy: boolean; onClick: () => void }) {
-  return (
-    <span onClick={() => !busy && onClick()} style={{
-      fontFamily: "ui-monospace, monospace", fontSize: 10, letterSpacing: "0.06em",
-      color: busy ? "#555" : "#a8a8ff", cursor: busy ? "default" : "pointer",
-      border: "1px solid #8a8aff44", borderRadius: 4, padding: "2px 8px", background: "#8a8aff10",
-    }}>{busy ? "…" : label}</span>
-  );
-}
-
-// The AI lab: generate/options · ask the AI to pick. Every button is a turn on the book's ONE agent thread —
-// the chat is the agent's surface, so no AI action happens off it. Verbs name the artifact they act on
-// (logline / premise / pillar) and adapt to state: an unforged logline (still the raw brief idea) gets a
-// single "draft logline"; once a real logline / node exists, you get options.
-function SpineLab({ node, depth, bookId, brief, hasChildren, openRail }: {
-  node: DnaNode; depth: number; bookId: number; brief: Brief | null; hasChildren: boolean; openRail: () => void;
-}) {
-  const [busy, setBusy] = useState<string | null>(null);
-  const label = SPINE_LABEL[node.kind] ?? node.kind;       // "logline" | "premise" | "pillar"
-  const hasProposals = !!node.proposals?.length;
-  const locked = node.authoring.locked;
-  // The seed's logline is "unforged" while it's empty or still just the raw brief idea (the provisional copy
-  // the seed gets on creation). Until it's forged, the meaningful verb is "draft", not "alternatives".
-  const logline = node.kind === "seed" ? String((node.content as Record<string, unknown>).logline ?? "").trim() : "";
-  const rawIdea = (briefIdea(brief) ?? "").trim();
-  const unforged = node.kind === "seed" && (!logline || logline === rawIdea);
-  // Empty (just-added placeholder) vs existing content → generate vs regenerate (the author's pick: a fresh
-  // placeholder fills via options; an existing value re-stages a new best-of-N).
-  const emptyContent = Object.keys((node.content ?? {}) as Record<string, unknown>).length === 0;
-  const forgeable = node.kind === "seed" ? unforged : emptyContent; // not yet a real value to vary/sharpen
-
-  const send = async (key: string, message: string) => {
-    setBusy(key);
-    try { await sendAgentMessage(bookId, message); openRail(); }
-    catch (e) { alert(`Couldn't reach the agent: ${(e as Error).message}`); }
-    finally { setBusy(null); }
-  };
-  const draftLoglineMsg = `Forge the LOGLINE for node [${node.id}] from the brief idea: one or two sentences naming the protagonist, the inciting incident, the primary goal, the main obstacle, and the stakes — sharpen the raw idea into a real logline (don't restate it). Propose it as a propose_node_ops edit to the logline field. Don't ask first — just propose it.`;
-  // Bounded divergence: options must HONOR the parent (the ladder's one law — a child elaborates what's above
-  // it, it never rewrites it). Name what's FIXED per rung so the agent varies only the open axis, instead of
-  // reshaping the seed into different books.
-  const constraint =
-    node.kind === "seed"
-      ? `Every option must be a faithful, SHARPER read of the SAME brief idea above — same story, not a different one; vary the framing, emphasis, and which angle leads.`
-      : node.kind === "premise"
-        ? `HARD CONSTRAINT — treat the logline above as LOCKED: every option must serve that SAME logline, keeping its protagonist, inciting incident, central goal, main obstacle, and stakes FIXED. Vary ONLY the dramatic question and the 5-part shape (how it's structured/interpreted). Do NOT alter any story element the logline already established — never reshape it into a different book.`
-        : `HARD CONSTRAINT — treat the logline + premise above as LOCKED: every option must serve them. Vary ONLY the controlling idea and the ending; do NOT alter the established premise or story.`;
-  const optionsMsg = `Draft 3 alternative ${label}s for node [${node.id}] and stage them with propose_options. ${constraint} Make them meaningfully different from EACH OTHER along the allowed axis, never near-duplicates. Honor the brief MANDATE (genre, heat, tone) verbatim. Don't ask first — just propose the options.`;
-  const pickMsg = `Of the pending options on node [${node.id}], which is strongest for the brief and the book? Recommend ONE by its option number with a one-line reason — I'll commit the pick in the tree.`;
-  return (
-    <div style={{ ...detailRowStyle(depth), paddingTop: 4, paddingBottom: 4 }} onClick={(e) => e.stopPropagation()}>
-      <ConnectorTick depth={depth} />
-      <span style={{ width: 12, flexShrink: 0 }} />
-      <span style={{ ...labelStyle, color: "#6a6a9a" }}>ai lab</span>
-      <span style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-        {locked ? <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 10, color: "#444" }}>🔒 unlock to generate</span> : (
-          <>
-            {node.kind === "seed" && unforged
-              ? <LabButton label="✦ derive logline from brief" busy={busy === "draft"} onClick={() => void send("draft", draftLoglineMsg)} />
-              : <LabButton
-                  label={node.kind === "seed" ? "↻ logline options" : emptyContent ? `✦ generate ${label} options` : `↻ regenerate ${label} options`}
-                  busy={busy === "options"} onClick={() => void send("options", optionsMsg)} />}
-            {hasProposals && <LabButton label="⚖ ask AI to pick" busy={busy === "pick"} onClick={() => void send("pick", pickMsg)} />}
-          </>
-        )}
-      </span>
-    </div>
-  );
-}
 
 // The picker: render each staged option as a before→after card (reusing describeOps, like the proposal
 // overlay). "use this" commits it; "discard all" clears. Both register a turn on the agent thread.
@@ -1236,66 +976,19 @@ function ProposalPicker({ node, nodes, depth }: { node: DnaNode; nodes: DnaNode[
 }
 
 // ── Recursive tree subtree ───────────────────────────────────────────────────
-// ── Compact header action buttons — inline versions for the node header row ──
-// These replace the full-width body versions; the same action, just smaller and at the top.
-
-function HeaderWriteProseButton({ bookId, node, generatable, onOpenReader, onBusyChange }: {
-  bookId: number; node: DnaNode; generatable: boolean; onOpenReader?: () => void;
-  onBusyChange?: (busy: boolean) => void;
-}) {
-  const [busy, setBusy] = useState(false);
+// Read-only header affordance for a scene that already has prose — opens the reader. Writing prose is the
+// agent's job now (the rail), so there is no inline write/generate button on the row.
+function ReadProseButton({ node, onOpenReader }: { node: DnaNode; onOpenReader?: () => void }) {
   const hasProse = !!(node.content as SceneContent).prose?.text?.trim();
-  // Reading existing prose is always fine. Writing/re-writing is not: each page is generated FROM the
-  // previous page's prose, so a scene whose earlier scenes aren't finished can't be written yet.
-  const canRead = hasProse && !!onOpenReader;
-  const blocked = !canRead && !generatable;
-  const run = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (canRead) { onOpenReader!(); return; }
-    if (busy || blocked) return;
-    setBusy(true);
-    onBusyChange?.(true);
-    try { await expandNode(bookId, node, "prose"); }
-    catch (err) { alert(`Write prose failed: ${(err as Error).message}`); }
-    finally { setBusy(false); onBusyChange?.(false); }
-  };
+  if (!hasProse || !onOpenReader) return null;
   return (
-    <span onClick={(e) => void run(e)}
-      title={blocked ? "finish the earlier scenes first — each page is written from the previous page's prose" : hasProse ? "read prose" : "write prose"}
+    <span onClick={(e) => { e.stopPropagation(); onOpenReader(); }} title="read prose"
       style={{
         fontFamily: "ui-monospace, monospace", fontSize: 10, letterSpacing: "0.04em",
-        color: blocked ? "#3a3a44" : busy ? "#555" : "#a8a8ff",
-        cursor: blocked ? "not-allowed" : busy ? "default" : "pointer",
-        border: `1px solid ${blocked ? "#26262e" : busy ? "#33333a" : "#8a8aff44"}`,
-        borderRadius: 4, padding: "0px 7px", background: blocked ? "#8a8aff04" : "#8a8aff08",
-        flexShrink: 0, opacity: blocked ? 0.5 : 1,
+        color: "#a8a8ff", cursor: "pointer",
+        border: "1px solid #8a8aff44", borderRadius: 4, padding: "0px 7px", background: "#8a8aff08", flexShrink: 0,
       }}>
-      {busy ? "…" : hasProse ? "read" : "✦ prose"}
-    </span>
-  );
-}
-
-function HeaderGenerateButton({ label, bookId, node, target, openRail }: {
-  label: string; bookId: number; node: DnaNode; target: string; openRail: () => void;
-}) {
-  const [busy, setBusy] = useState(false);
-  const run = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (busy) return;
-    setBusy(true);
-    try { await proposeGeneration(bookId, node, target); openRail(); }
-    catch (err) { alert(`Generate failed: ${(err as Error).message}`); }
-    finally { setBusy(false); }
-  };
-  return (
-    <span onClick={(e) => void run(e)} title={label}
-      style={{
-        fontFamily: "ui-monospace, monospace", fontSize: 10, letterSpacing: "0.04em",
-        color: busy ? "#555" : "#a8a8ff", cursor: busy ? "default" : "pointer",
-        border: `1px solid ${busy ? "#33333a" : "#8a8aff44"}`,
-        borderRadius: 4, padding: "0px 7px", background: "#8a8aff08", flexShrink: 0,
-      }}>
-      {busy ? "…" : label}
+      read
     </span>
   );
 }
@@ -1355,71 +1048,31 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
   // #1 — phantom add rows the proposal would create under (parentId, kind), rendered before the ＋ add row.
   const phantoms = (parentId: string, kind: string, d: number) =>
     (h.proposal?.addsByParent.get(addKey(parentId, kind)) ?? []).map((add, i) => <PhantomRow key={`ph-${i}`} add={add} depth={d} />);
-  // The AI lab (spine nodes only — where one-shot error compounds) + the options picker (any node with staged
-  // candidates). Both render after this node's own fields, before its children. The picker shows even when the
-  // lab doesn't (e.g. proposals on a non-spine node), and vice-versa.
-  // SpineLab AI actions moved to the kebab (↻ regenerate X options). ProposalPicker stays in body (it's content).
+  // The options picker (any node with staged candidates) renders after this node's own fields, before its
+  // children. Generating the candidates is the agent's job (propose_options in the rail); this just picks.
   const lab = open && node.proposals?.length
     ? <ProposalPicker node={node} nodes={nodes} depth={depth + 1} />
     : null;
-  // The hanging "generate the next rung →" slot for the spine singletons (seed→premise→pillar) — shown once
-  // THIS node has real content and its single child rung is still empty. Adds an empty child placeholder
-  // (its own options lab then fills it). Deeper rungs (pillar→acts, act→beats) already have AddRows.
+  // The hanging "+ next rung" slot for the spine singletons (seed→premise→pillar) — a MANUAL placeholder add,
+  // shown once THIS node has real content and its single child rung is still empty. The agent fills it (or
+  // creates the rung itself). Deeper rungs (pillar→acts, act→beats) already have AddRows.
   const spineChildKind = SPINE_CHILD[node.kind];
   const nodeEmpty = Object.keys((node.content ?? {}) as Record<string, unknown>).length === 0;
   const spineChildRow = open && spineChildKind && !nodeEmpty && !kids.some((k) => k.kind === spineChildKind)
-    ? <AddRow label={`generate ${spineChildKind} →`} depth={depth + 1} onAdd={() => h.onAdd(node.id, spineChildKind)} />
+    ? <AddRow label={`+ ${spineChildKind}`} depth={depth + 1} onAdd={() => h.onAdd(node.id, spineChildKind)} />
     : null;
 
-  // Header actions — primary / first-time generate only. Manual adds and regenerate go to the kebab.
-  const hasChildScenes = node.kind === "beat" && kids.some((k) => k.kind === "scene");
+  // Header actions — a scene with prose gets a read affordance; everything else is agent-driven (the rail).
   const headerActions: React.ReactNode =
-    node.kind === "scene" ? <HeaderWriteProseButton bookId={h.bookId} node={node} generatable={h.proseGeneratable.has(node.id)} onOpenReader={() => h.onOpenProseReader(node.id)} onBusyChange={(busy) => h.onProseWriting(node.id, busy)} />
-    : node.kind === "beat" && !hasChildScenes ? <HeaderGenerateButton label="✦ scenes" bookId={h.bookId} node={node} target="scenes" openRail={h.openRail} />
+    node.kind === "scene" ? <ReadProseButton node={node} onOpenReader={() => h.onOpenProseReader(node.id)} />
     : null;
 
-  // Kebab items — regenerate actions, manual adds, AI options. (Attach-to-agent-context lives on the row
-  // itself as the "@" icon — every node, always visible — not in here.)
+  // Kebab items — MANUAL adds only. AI generation (options, beats, scenes, prose, regenerate) is the agent's
+  // job now, in the rail. (Attach-to-agent-context lives on the row itself as the "@" icon.)
   const kebabItems: KebabItem[] = [];
   // Act: add a beat manually
   if (node.kind === "act") {
     kebabItems.push({ label: "+ add beat", color: "#4a7a5a", onClick: () => h.onAdd(node.id, "beat") });
-  }
-  // Scene with prose → offer to regenerate it
-  if (node.kind === "scene") {
-    const hasProse = !!(node.content as SceneContent).prose?.text?.trim();
-    if (hasProse) {
-      kebabItems.push({ label: "↻ regenerate prose", color: "#8a8aaa", onClick: () => { void expandNode(h.bookId, node, "prose"); } });
-    }
-  }
-  // Beat with scenes → regenerate scenes (first-time is the header button; this is the redo)
-  if (node.kind === "beat" && hasChildScenes) {
-    kebabItems.push({ label: "↻ regenerate scenes", color: "#8a8aaa", onClick: async () => { await proposeGeneration(h.bookId, node, "scenes"); h.openRail(); } });
-  }
-  // Spine nodes → AI lab actions (derive / options / pick) — SpineLab is no longer shown inline
-  if (SPINE_KINDS.has(node.kind) && !node.authoring.locked) {
-    const spineLabel = SPINE_LABEL[node.kind] ?? node.kind;
-    const logline = node.kind === "seed" ? String((node.content as Record<string, unknown>).logline ?? "").trim() : "";
-    const rawIdea = (briefIdea(h.brief) ?? "").trim();
-    const unforged = node.kind === "seed" && (!logline || logline === rawIdea);
-    const emptyContent = Object.keys((node.content ?? {}) as Record<string, unknown>).length === 0;
-    const constraint =
-      node.kind === "seed"
-        ? `Every option must be a faithful, SHARPER read of the SAME brief idea above — same story, not a different one; vary the framing, emphasis, and which angle leads.`
-        : node.kind === "premise"
-          ? `HARD CONSTRAINT — treat the logline above as LOCKED: every option must serve that SAME logline, keeping its protagonist, inciting incident, central goal, main obstacle, and stakes FIXED. Vary ONLY the dramatic question and the 5-part shape. Do NOT alter any story element the logline already established.`
-          : `HARD CONSTRAINT — treat the logline + premise above as LOCKED: every option must serve them. Vary ONLY the controlling idea and the ending; do NOT alter the established premise or story.`;
-    const draftLoglineMsg = `Forge the LOGLINE for node [${node.id}] from the brief idea: one or two sentences naming the protagonist, the inciting incident, the primary goal, the main obstacle, and the stakes — sharpen the raw idea into a real logline (don't restate it). Propose it as a propose_node_ops edit to the logline field. Don't ask first — just propose it.`;
-    const optionsMsg = `Draft 3 alternative ${spineLabel}s for node [${node.id}] and stage them with propose_options. ${constraint} Make them meaningfully different from EACH OTHER along the allowed axis, never near-duplicates. Honor the brief MANDATE (genre, heat, tone) verbatim. Don't ask first — just propose the options.`;
-    const pickMsg = `Of the pending options on node [${node.id}], which is strongest for the brief and the book? Recommend ONE by its option number with a one-line reason — I'll commit the pick in the tree.`;
-    if (node.kind === "seed" && unforged) {
-      kebabItems.push({ label: "✦ derive logline from brief", color: "#a8a8ff", onClick: async () => { await sendAgentMessage(h.bookId, draftLoglineMsg); h.openRail(); } });
-    } else {
-      kebabItems.push({ label: emptyContent ? `✦ generate ${spineLabel} options` : `↻ regenerate ${spineLabel} options`, color: "#a8a8ff", onClick: async () => { await sendAgentMessage(h.bookId, optionsMsg); h.openRail(); } });
-    }
-    if (node.proposals?.length) {
-      kebabItems.push({ label: "⚖ ask AI to pick", color: "#a8a8ff", onClick: async () => { await sendAgentMessage(h.bookId, pickMsg); h.openRail(); } });
-    }
   }
 
   // The pillar splits into STORY (the spine) + CAST & WORLD (the registry, sub-grouped by kind); a act
@@ -1439,16 +1092,10 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
             count={entities.length} depth={depth + 1} collapsedSet={collapsedSet} onToggle={h.onToggle} alwaysShow>
             {ENTITY_GROUPS.map(({ kind, label }) => {
               const items = entities.filter((e) => e.kind === kind);
-              const target = ENTITY_TARGET[kind];
               return (
                 <NodeGroup key={kind} groupId={`${node.id}::world::${kind}`} label={label}
                   count={items.length} depth={depth + 2} collapsedSet={collapsedSet} onToggle={h.onToggle} alwaysShow
-                  action={
-                    <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                      {target && <GroupGenButton bookId={h.bookId} node={node} target={target} openRail={h.openRail} title={`generate ${label}`} />}
-                      <GroupAddButton onAdd={() => h.onAdd(node.id, kind)} title={`add ${kind}`} />
-                    </span>
-                  }
+                  action={<GroupAddButton onAdd={() => h.onAdd(node.id, kind)} title={`add ${kind}`} />}
                   footer={phantoms(node.id, kind, depth + 3)}>
                   {sub(items, depth + 3)}
                 </NodeGroup>
@@ -1459,11 +1106,6 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
             count={ladder.length} depth={depth + 1} collapsedSet={collapsedSet} onToggle={h.onToggle} alwaysShow
             footer={<>
               {phantoms(node.id, "act", depth + 2)}
-              <GenerateRow label="generate acts" depth={depth + 2} bookId={h.bookId} node={node} target="acts" openRail={h.openRail} />
-              {/* The beat sheet is generated globally off the pillar (across all acts), not per-act — show it only once acts exist. */}
-              {ladder.some((c) => c.kind === "act") && <GenerateRow label="generate beat sheet" depth={depth + 2} bookId={h.bookId} node={node} target="beatsheet" openRail={h.openRail} />}
-              <GenerateAllScenesButton bookId={h.bookId} nodes={nodes} depth={depth + 2} />
-              <WriteAllProseButton bookId={h.bookId} nodes={nodes} depth={depth + 2} />
               <AddRow label="act" depth={depth + 2} onAdd={() => h.onAdd(node.id, "act")} />
             </>}
             action={ladder.length > 0 ? (
@@ -1549,9 +1191,7 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
       if (proseStale) n = stampProse(n);
       await saveNode(n);
     },
-    onRegen: node.kind === "scene" && (proseStale || nodeStale)
-      ? async () => { await expandNode(h.bookId, node, "prose"); }
-      : undefined,
+    // Regeneration is the agent's job now (ask it in the rail); the stale badge only offers accept/discard.
     onDiscard: async () => {
       if (proseStale && !nodeStale) {
         const sc = node.content as SceneContent;
@@ -1700,33 +1340,21 @@ function BriefSection({ brief, onSave, depth }: { brief: Brief | null; onSave: (
 // The brief is the ORIGIN — book-level input on books.brief, NOT a tree node. The seed (= the logline) is
 // step 1, DERIVED from it (docs/dna-studio-analysis.md §1). So the brief renders here, ABOVE the tree, with a
 // "↓ derives" cue — not nested inside the seed (which wrongly read as the brief being a detail OF the logline).
-// Empty tree → the seed button lives here too (seeding derives the first node from this origin).
-function BriefOrigin({ brief, onSave, seeded, onSeed, seeding }: {
-  brief: Brief | null; onSave: (patch: Partial<Brief>) => Promise<void>; seeded: boolean; onSeed: () => void; seeding: boolean;
+// The brief is the ORIGIN; the seed (logline) is auto-derived from it on first open (see the bootstrap in the
+// load effect), so the tree is never empty and the agent always has a root to build from.
+function BriefOrigin({ brief, onSave }: {
+  brief: Brief | null; onSave: (patch: Partial<Brief>) => Promise<void>;
 }) {
   const mono = "ui-monospace, monospace";
   return (
     <div style={{ borderBottom: "1px solid #1a1a1a", background: "#0b0b0f", paddingBottom: 8 }}>
       <BriefSection brief={brief} onSave={onSave} depth={1} />
-      {seeded ? (
-        <div style={{ padding: "8px 16px 2px 20px", display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ color: "#a78bfa", fontSize: 13, lineHeight: 1 }}>↓</span>
-          <span style={{ fontFamily: mono, fontSize: 10, color: "#6a6a8a", fontStyle: "italic" }}>
-            derives the SEED below — a polished logline (protagonist · inciting · goal · obstacle · stakes), generated from this brief
-          </span>
-        </div>
-      ) : (
-        <div style={{ padding: "12px 16px 4px" }}>
-          <div style={{ padding: "0 0 10px", color: "#555", fontSize: 12, fontStyle: "italic", letterSpacing: "0.02em" }}>
-            No DNA tree yet — this brief is the origin. Edit it, then seed to derive the logline (the first node) from it.
-          </div>
-          <button onClick={onSeed} disabled={seeding} style={{
-            background: "#8a8aff14", border: "1px solid #8a8aff66", borderRadius: 5,
-            color: "#a8a8ff", fontSize: 10, cursor: seeding ? "default" : "pointer", letterSpacing: "0.1em",
-            textTransform: "uppercase", padding: "5px 12px", fontFamily: mono,
-          }}>{seeding ? "seeding…" : "✦ seed the tree — derive the logline from this brief"}</button>
-        </div>
-      )}
+      <div style={{ padding: "8px 16px 2px 20px", display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ color: "#a78bfa", fontSize: 13, lineHeight: 1 }}>↓</span>
+        <span style={{ fontFamily: mono, fontSize: 10, color: "#6a6a8a", fontStyle: "italic" }}>
+          derives the SEED below — a polished logline (protagonist · inciting · goal · obstacle · stakes), generated from this brief
+        </span>
+      </div>
     </div>
   );
 }
@@ -2533,22 +2161,14 @@ export default function DnaTreePage() {
 
   // Seed an empty tree: create the root `seed` node, prefilling its logline from the brief's idea.
   // Everything else (premise/pillar/cast/spine) grows from here via the reviser or the studio.
-  const [seeding, setSeeding] = useState(false);
-  const seedTree = useCallback(async () => {
-    if (seeding) return;
-    setSeeding(true);
-    try {
-      const seed = emptyNode(bookId, "seed", 0, null);
-      const idea = briefIdea(brief)?.trim();
-      if (idea) seed.content = { logline: idea };
-      await saveNode(seed);
-      setOpenSet((p) => new Set(p).add(seed.id)); // open it so the brief shows immediately
-    } catch (e) { alert(`Couldn't seed the tree: ${(e as Error).message}`); }
-    finally { setSeeding(false); }
-  }, [bookId, brief, seeding]);
+  // The load+bootstrap effect runs once per book (also dedupes React strict-mode's double-invoke, so an
+  // empty tree can't be auto-seeded into two duplicate roots).
+  const bootstrappedFor = useRef<number | null>(null);
 
   useEffect(() => {
     if (!bookId) { setError("no book id"); return; }
+    if (bootstrappedFor.current === bookId) return;
+    bootstrappedFor.current = bookId;
     void (async () => {
       const [{ data: nodeRows, error: nodesErr }, { data: book, error: bookErr }] = await Promise.all([
         supabase.from("book_nodes").select("*").eq("book_id", bookId).order("position"),
@@ -2561,6 +2181,16 @@ export default function DnaTreePage() {
       setSettings({ title: book?.name ?? undefined, author: (book?.author as string | null) ?? undefined,
         word_target: loadedBrief?.scope?.word_target, mode: (book as { mode?: string } | null)?.mode === "picture" ? "picture" : "prose" });
       const loaded = (nodeRows ?? []) as DnaNode[];
+      // Bootstrap the ROOT: the agent can't create a parent-less seed node, so an empty tree gets one
+      // automatically (the seed = the logline origin, derived from the brief idea). The agent builds
+      // everything below it — this replaces the old manual "seed the tree" button.
+      if (loaded.length === 0) {
+        const seed = emptyNode(bookId, "seed", 0, null);
+        const idea = briefIdea(loadedBrief)?.trim();
+        if (idea) seed.content = { logline: idea };
+        try { await saveNode(seed); setNodes([seed]); setOpenSet((p) => new Set(p).add(seed.id)); return; }
+        catch { /* leave the tree empty; the live subscription still reflects reality */ }
+      }
       setNodes(loaded);
     })();
   }, [bookId]);
@@ -2926,9 +2556,6 @@ export default function DnaTreePage() {
             if (ctxProseStale) n = stampProse(n);
             await saveNode(n);
           },
-          onRegen: ctxNode.kind === "scene" && (ctxProseStale || ctxNodeStale)
-            ? async () => { await expandNode(bookId, ctxNode, "prose"); }
-            : undefined,
           onDiscard: async () => {
             if (ctxProseStale && !ctxNodeStale) {
               const sc = ctxNode.content as SceneContent;
@@ -3064,7 +2691,7 @@ export default function DnaTreePage() {
       )}
 
       {/* The BRIEF — the ORIGIN (step 0), above the tree. The seed (logline) below is derived from it. */}
-      <BriefOrigin brief={brief} onSave={saveBrief} seeded={roots.length > 0} onSeed={() => void seedTree()} seeding={seeding} />
+      <BriefOrigin brief={brief} onSave={saveBrief} />
 
       {/* Tree */}
       <div style={{ paddingTop: 8, paddingBottom: timelineOpen ? 220 : 48 }}>

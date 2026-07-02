@@ -43,7 +43,7 @@ private), the editor never needs to know DNA exists.
 | `pages/` | 5 route components: `DnaStudioPage` (`/books/:slug/dna`), `DnaTreePage` (`/dna/tree/*`), `DnaMetersPage`, `DnaLedgerPage`, `DnaJsonPage` |
 | `components/` | 12 UI components: `DnaStudio`, `AgentRail` (the agent thread rail), `DnaOverview`, `DnaStoryMap`, `DnaVisuals`, `DnaLookPanel`, `DnaCharacterLook`, `DnaAnalysis`, `DnaStageDiagram`, `ImagePromptPreview`, `SceneIllustrationDialog` |
 | `hooks/` | `useAutoAccept` (auto-applies agent proposals) |
-| `lib/` | engine + clients (DNA-only): `novelDna` (pure tree engine), `novelDnaRender` (tree→pages), `bookNodes` (DB load/save), `dnaSchema` (SSOT content schema + lints), `dnaChat`, `dnaExpand`, `dnaJourney`, `dnaProposals`, `agentThread`, `autopilot`, `migrateToDna`, `meterRead`, `factLedger`, `characterPortraits`, `nodeSceneImages`, `agentCommands` (+ their `.test.ts`) |
+| `lib/` | engine + clients (DNA-only): `novelDna` (pure tree engine), `novelDnaRender` (tree→pages), `bookNodes` (DB load/save), `dnaSchema` (SSOT content schema + lints), `dnaChat`, `dnaExpand` (the generation engine; the agent drives it via `propose_expansion`), `dnaJourney`, `dnaProposals`, `agentThread`, `migrateToDna`, `meterRead`, `factLedger`, `characterPortraits`, `nodeSceneImages`, `agentCommands` (+ their `.test.ts`) |
 
 Routes are registered in `apps/web/src/App.tsx`.
 

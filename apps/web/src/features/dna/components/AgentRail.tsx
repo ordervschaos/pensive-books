@@ -14,7 +14,7 @@ import { useLatestTaskRow } from "@/hooks/useLatestTaskRow";
 import { stopRun } from "@/lib/stopRun";
 import {
   AGENT_THREAD_SELECT, answerAgent, applyAgentProposal, ASPECT_KINDS, discardAgentProposal,
-  resumeAgentSession, sendAgentMessage, startNewAgentSession,
+  fetchAgentSessionCount, fetchAgentSessions, resumeAgentSession, sendAgentMessage, startNewAgentSession,
   type AgentProposal, type AgentSession, type Aspect, type AgentStep, type AgentThreadRow,
 } from "@/features/dna/lib/agentThread";
 import { availableCommands, matchCommands, type AgentCommand } from "@/features/dna/lib/agentCommands";
@@ -113,7 +113,6 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [],
 
   const steps = useMemo(() => (Array.isArray(row?.steps) ? row!.steps! : []) as AgentStep[], [row]);
   const proposals = useMemo(() => (Array.isArray(row?.proposals) ? row!.proposals! : []) as AgentProposal[], [row]);
-  const sessions = useMemo(() => (Array.isArray(row?.sessions) ? row!.sessions! : []) as AgentSession[], [row]);
   const running = row?.status === "running";
   const awaiting = row?.status === "awaiting_input";
   const active = running || awaiting;
@@ -126,6 +125,22 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [],
   const [busy, setBusy] = useState(false);
   const [applyingId, setApplyingId] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  // Past chats live in book_agent_sessions, not on the row (20260701150000) — a thread can carry a lot
+  // of archived history, so we only load a cheap count for the badge and fetch the full list (with each
+  // session's step feed) the moment the author actually opens "Past chats".
+  const [sessionCount, setSessionCount] = useState(0);
+  const [sessions, setSessions] = useState<AgentSession[]>([]);
+  const [sessionsStale, setSessionsStale] = useState(true);
+  const threadId = row?.id;
+  useEffect(() => {
+    if (!threadId) { setSessionCount(0); setSessions([]); setSessionsStale(true); return; }
+    setSessionsStale(true);
+    void fetchAgentSessionCount(threadId).then(setSessionCount);
+  }, [threadId]);
+  useEffect(() => {
+    if (!historyOpen || !threadId || !sessionsStale) return;
+    void fetchAgentSessions(threadId).then((rows) => { setSessions(rows); setSessionsStale(false); });
+  }, [historyOpen, threadId, sessionsStale]);
   // Optimistic echo of the just-sent message until the row reflects it over Realtime.
   const [optimistic, setOptimistic] = useState<string | null>(null);
   const { scrollRef, atBottom, scrollToBottom } = useChatScroll([steps.length, proposals.length, running, awaiting, !!optimistic] as const);
@@ -198,15 +213,18 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [],
     catch (e) { toast({ title: "Couldn't stop", description: String((e as Error)?.message ?? e), variant: "destructive" }); }
   };
 
+  // After archiving/restoring a chat, the count badge and (if reopened) the full list need a fresh read.
+  const invalidateSessions = () => { setSessionsStale(true); if (threadId) void fetchAgentSessionCount(threadId).then(setSessionCount); };
+
   const newChat = async () => {
     if (!row || busy || active) return;
-    try { await startNewAgentSession(row.id); setHistoryOpen(false); refetch(); }
+    try { await startNewAgentSession(row.id); setHistoryOpen(false); invalidateSessions(); refetch(); }
     catch (e) { toast({ title: "Couldn't start a new chat", description: String((e as Error)?.message ?? e), variant: "destructive" }); }
   };
 
-  const resume = async (index: number) => {
+  const resume = async (sessionId: number) => {
     if (!row || busy || active) return;
-    try { await resumeAgentSession(row.id, index); setHistoryOpen(false); refetch(); }
+    try { await resumeAgentSession(row.id, sessionId); setHistoryOpen(false); invalidateSessions(); refetch(); }
     catch (e) { toast({ title: "Couldn't continue that chat", description: String((e as Error)?.message ?? e), variant: "destructive" }); }
   };
 
@@ -257,10 +275,10 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [],
             }`}>
             <Zap className="h-2.5 w-2.5" /> {effort === "low" ? "fast" : "deep"}
           </button>
-          {sessions.length > 0 && (
+          {sessionCount > 0 && (
             <button type="button" onClick={() => setHistoryOpen((v) => !v)} title="Past chats"
               className={`inline-flex items-center gap-1 rounded-full px-2 py-1 pv-mono text-[10px] uppercase tracking-[0.1em] transition-colors ${historyOpen ? "text-[hsl(var(--pv-accent))]" : "text-[hsl(var(--pv-text-faint))] hover:text-foreground"}`}>
-              <Clock className="h-3 w-3" /> {sessions.length}
+              <Clock className="h-3 w-3" /> {sessionCount}
               <ChevronDown className={`h-3 w-3 transition-transform ${historyOpen ? "rotate-180" : ""}`} />
             </button>
           )}
@@ -443,27 +461,27 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [],
   );
 }
 
-// Past archived conversations (book_agent_runs.sessions), newest first — each expands to review its
-// step feed; "Continue this chat" restores it as the live thread (symmetric with new chat).
-function SessionHistory({ sessions, onResume, busy, nodes }: { sessions: AgentSession[]; onResume: (index: number) => void; busy: boolean; nodes: DnaNode[] }) {
-  const [openIdx, setOpenIdx] = useState<number | null>(null);
+// Past archived conversations (book_agent_sessions, one row per chat), newest first — each expands to
+// review its step feed; "Continue this chat" restores it as the live thread (symmetric with new chat).
+function SessionHistory({ sessions, onResume, busy, nodes }: { sessions: AgentSession[]; onResume: (sessionId: number) => void; busy: boolean; nodes: DnaNode[] }) {
+  const [openId, setOpenId] = useState<number | null>(null);
   const when = (iso: string) => { try { return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }); } catch { return iso; } };
   return (
     <div className="space-y-1">
-      {sessions.map((s, i) => {
+      {sessions.map((s) => {
         const msgs = s.steps.filter((st) => st.t === "user").length;
         return (
-          <div key={i}>
-            <button type="button" onClick={() => setOpenIdx(openIdx === i ? null : i)}
+          <div key={s.id}>
+            <button type="button" onClick={() => setOpenId(openId === s.id ? null : s.id)}
               className="flex w-full items-center gap-2 py-1 text-left pv-serif text-[12px] text-[hsl(var(--pv-text-muted))] hover:text-foreground">
-              <ChevronDown className={`h-3 w-3 shrink-0 transition-transform ${openIdx === i ? "rotate-180" : ""}`} />
+              <ChevronDown className={`h-3 w-3 shrink-0 transition-transform ${openId === s.id ? "rotate-180" : ""}`} />
               <span className="flex-1 truncate italic">{when(s.ended_at)} · {msgs} message{msgs === 1 ? "" : "s"}</span>
             </button>
-            {openIdx === i && (
+            {openId === s.id && (
               <div className="space-y-2 border-l border-[hsl(var(--pv-border-soft))]/60 pl-3 pb-2">
                 {s.steps.map((st, j) => <StepBubble key={j} step={st} nodes={nodes} />)}
                 <div className="flex justify-end pt-1">
-                  <button type="button" onClick={() => onResume(i)} disabled={busy}
+                  <button type="button" onClick={() => onResume(s.id)} disabled={busy}
                     className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 pv-serif text-[11.5px] text-[hsl(var(--pv-text-faint))] transition-colors hover:text-[hsl(var(--pv-accent))] disabled:opacity-40">
                     <CornerDownLeft className="h-3 w-3" /> Continue this chat
                   </button>

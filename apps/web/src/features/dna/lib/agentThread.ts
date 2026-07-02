@@ -42,18 +42,21 @@ export const ASPECT_KINDS: Record<Aspect, NodeKind[]> = {
 // A reviewable change the agent proposes. layer 'dna' = node ops applied through the book_nodes write path
 // (applyNodeOps). layer 'prose-render' = a request to (re)generate scene prose: ops is empty, sceneIds names
 // the scenes, and Apply runs the v2 prose pipeline client-side (docs/agent-context-model.md) — the agent
-// never generates prose itself (it's a long browser-streamed render). See docs/agent-rail.md.
-export interface AgentProposal { id: string; layer: "dna" | "prose-render"; summary: string; ops: NodeOp[]; sceneIds?: string[]; brief?: RenderBrief }
+// never generates prose itself (it's a long browser-streamed render). layer 'expansion' = a request to run
+// the dna-expand ENGINE for a heavy structural pass (target 'beatsheet' or 'scenes' on nodeId): ops is empty
+// and Apply runs generateExpansionOps → applyNodeOps client-side, so the agent delegates the craft (beat-sheet
+// scheduling, scene→beat realization) it can't reproduce by hand. See docs/agent-rail.md. */
+export interface AgentProposal { id: string; layer: "dna" | "prose-render" | "expansion"; summary: string; ops: NodeOp[]; sceneIds?: string[]; brief?: RenderBrief; nodeId?: string; target?: string }
 
-// An archived conversation (the "+ New chat" snapshot), kept on the row for the history viewer.
-export interface AgentSession { steps: AgentStep[]; transcript: unknown[]; proposals: AgentProposal[]; ended_at: string }
+// An archived conversation (the "+ New chat" snapshot) — its own row in book_agent_sessions, not
+// embedded on the thread (see 20260701150000_book_agent_sessions_table.sql for why).
+export interface AgentSession { id: number; steps: AgentStep[]; transcript: unknown[]; proposals: AgentProposal[]; ended_at: string }
 
 export interface AgentThreadRow extends TaskRow {
   kind: string;
   steps: AgentStep[] | null;
   pending: { question: string; options?: string[] } | null;
   proposals: AgentProposal[] | null;
-  sessions: AgentSession[] | null;
   report: string | null;
   cancel_requested: boolean;
   error: string | null;
@@ -61,7 +64,7 @@ export interface AgentThreadRow extends TaskRow {
 }
 
 export const AGENT_THREAD_SELECT =
-  "id, book_id, kind, status, created_at, updated_at, steps, pending, proposals, sessions, report, cancel_requested, error, context_auto";
+  "id, book_id, kind, status, created_at, updated_at, steps, pending, proposals, report, cancel_requested, error, context_auto";
 
 // book-agent is invoked directly (it is NOT mirrored in the dev bridge — the tool loop runs against
 // the deployed edge fn + the active model stack in dev and prod alike).
@@ -154,6 +157,18 @@ async function isStillPending(threadId: number, proposalId: string): Promise<boo
  *  no-op (empty validation) if the proposal was already resolved by a concurrent caller. */
 export async function applyAgentProposal(bookId: number, threadId: number, proposal: AgentProposal, all: AgentProposal[], nodes: DnaNode[] = []): Promise<OpValidation> {
   if (!(await isStillPending(threadId, proposal.id))) return { ok: [], rejected: [] };
+  if (proposal.layer === "expansion") {
+    // Delegate to the dna-expand ENGINE: generateExpansionOps runs the same generate+enrich the buttons used
+    // (beat-sheet scheduling, scene→beat realization) and returns reviewable ops; we apply them here. The
+    // dynamic import breaks the agentThread ↔ dnaExpand cycle. A stale/invalid target throws → caller discards.
+    const { generateExpansionOps } = await import("@/features/dna/lib/dnaExpand");
+    const node = nodes.find((n) => n.id === proposal.nodeId);
+    if (!node) throw new Error(`Expansion target ${proposal.nodeId} is no longer in the tree.`);
+    const { ops } = await generateExpansionOps(bookId, node, proposal.target ?? "");
+    const validation = await applyNodeOps(bookId, ops);
+    await resolveProposal(threadId, proposal, "applied", all);
+    return validation;
+  }
   if (proposal.layer === "prose-render") {
     // Delegate to the v2 prose pipeline — expandNode streams off-worker (/api/stream-prose) + saves. The
     // dynamic import breaks the agentThread ↔ dnaExpand cycle (dnaExpand → stageGeneratedProposal → here).
@@ -202,8 +217,11 @@ async function resolveProposal(threadId: number, proposal: AgentProposal, verb: 
 
 // ── Chat history ── archive the current conversation and start fresh / restore a past one. Client-side
 // (RLS allows editor updates) and only safe while the thread is idle — the rail gates on `busy`/active.
+// Archived sessions live in book_agent_sessions (one row per chat, see 20260701150000) — NOT embedded on
+// the thread row — so archiving is a single INSERT instead of a read-modify-write of the whole history,
+// and the (REPLICA IDENTITY FULL) thread row never carries past chats over Realtime.
 
-const SESSIONS_COLS = "status, steps, transcript, proposals, sessions";
+const LIVE_COLS = "status, book_id, steps, transcript, proposals";
 
 /** True while the row is mid-turn — the edge fn owns transcript/steps/proposals then, so a client write
  *  (archiving/restoring a session) would race it. Same guard `logAgentTurn`/`stageGeneratedProposal` use. */
@@ -211,44 +229,58 @@ function isBusy(status: unknown): boolean {
   return status === "running" || status === "awaiting_input";
 }
 
-/** Archive the live conversation into sessions[] and start a fresh, empty thread. */
+/** How many archived chats this thread has — cheap enough to load whenever the thread does (the "Past
+ *  chats" badge), unlike the full sessions themselves. */
+export async function fetchAgentSessionCount(threadId: number): Promise<number> {
+  const { count } = await supabase.from("book_agent_sessions").select("id", { count: "exact", head: true }).eq("thread_id", threadId);
+  return count ?? 0;
+}
+
+/** The full archived history, newest first — only fetched when the author opens "Past chats". */
+export async function fetchAgentSessions(threadId: number): Promise<AgentSession[]> {
+  const { data, error } = await supabase.from("book_agent_sessions")
+    .select("id, steps, transcript, proposals, ended_at").eq("thread_id", threadId).order("ended_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as unknown as AgentSession[];
+}
+
+/** Archive the live conversation as a new book_agent_sessions row and start a fresh, empty thread. */
 export async function startNewAgentSession(threadId: number): Promise<void> {
-  const { data } = await supabase.from("book_agent_runs").select(SESSIONS_COLS).eq("id", threadId).maybeSingle();
+  const { data } = await supabase.from("book_agent_runs").select(LIVE_COLS).eq("id", threadId).maybeSingle();
   if (isBusy(data?.status)) throw new Error("The agent is mid-turn — wait for it to finish, then start a new chat.");
   const steps = Array.isArray(data?.steps) ? (data!.steps as AgentStep[]) : [];
   if (steps.length === 0) return; // nothing to archive
-  const sessions = Array.isArray(data?.sessions) ? (data!.sessions as AgentSession[]) : [];
-  const archived: AgentSession = {
-    steps,
-    transcript: Array.isArray(data?.transcript) ? (data!.transcript as unknown[]) : [],
-    proposals: Array.isArray(data?.proposals) ? (data!.proposals as AgentProposal[]) : [],
+  const { error: insertError } = await supabase.from("book_agent_sessions").insert({
+    thread_id: threadId, book_id: data!.book_id,
+    steps, transcript: data?.transcript ?? [], proposals: data?.proposals ?? [],
     ended_at: new Date().toISOString(),
-  };
+  });
+  if (insertError) throw insertError;
   const { error } = await supabase.from("book_agent_runs")
-    .update({ steps: [], transcript: [], proposals: [], pending: null, status: "idle", sessions: [archived, ...sessions] })
+    .update({ steps: [], transcript: [], proposals: [], pending: null, status: "idle" })
     .eq("id", threadId);
   if (error) throw error;
 }
 
 /** Restore a past session as the live thread, archiving the current one first (symmetric with new chat). */
-export async function resumeAgentSession(threadId: number, index: number): Promise<void> {
-  const { data } = await supabase.from("book_agent_runs").select(SESSIONS_COLS).eq("id", threadId).maybeSingle();
+export async function resumeAgentSession(threadId: number, sessionId: number): Promise<void> {
+  const { data } = await supabase.from("book_agent_runs").select(LIVE_COLS).eq("id", threadId).maybeSingle();
   if (isBusy(data?.status)) throw new Error("The agent is mid-turn — wait for it to finish, then continue that chat.");
-  const sessions = Array.isArray(data?.sessions) ? (data!.sessions as AgentSession[]) : [];
-  const target = sessions[index];
+  const { data: target } = await supabase.from("book_agent_sessions").select("steps, transcript, proposals").eq("id", sessionId).maybeSingle();
   if (!target) return;
-  const steps = Array.isArray(data?.steps) ? (data!.steps as AgentStep[]) : [];
-  const remaining = sessions.filter((_, i) => i !== index);
-  const nextSessions: AgentSession[] = steps.length > 0
-    ? [{
-        steps,
-        transcript: Array.isArray(data?.transcript) ? (data!.transcript as unknown[]) : [],
-        proposals: Array.isArray(data?.proposals) ? (data!.proposals as AgentProposal[]) : [],
-        ended_at: new Date().toISOString(),
-      }, ...remaining]
-    : remaining;
+  const liveSteps = Array.isArray(data?.steps) ? (data!.steps as AgentStep[]) : [];
+  if (liveSteps.length > 0) {
+    const { error: insertError } = await supabase.from("book_agent_sessions").insert({
+      thread_id: threadId, book_id: data!.book_id,
+      steps: liveSteps, transcript: data?.transcript ?? [], proposals: data?.proposals ?? [],
+      ended_at: new Date().toISOString(),
+    });
+    if (insertError) throw insertError;
+  }
+  const { error: deleteError } = await supabase.from("book_agent_sessions").delete().eq("id", sessionId);
+  if (deleteError) throw deleteError;
   const { error } = await supabase.from("book_agent_runs")
-    .update({ steps: target.steps, transcript: target.transcript, proposals: target.proposals, pending: null, status: "idle", sessions: nextSessions })
+    .update({ steps: target.steps, transcript: target.transcript, proposals: target.proposals, pending: null, status: "idle" })
     .eq("id", threadId);
   if (error) throw error;
 }
