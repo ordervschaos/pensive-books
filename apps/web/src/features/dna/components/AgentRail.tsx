@@ -24,6 +24,7 @@ import { currentObjective, nextDraftTarget } from "@/features/dna/lib/dnaJourney
 import { useChatScroll } from "@/components/book/shared/useChatScroll";
 import { useAutoAccept } from "@/features/dna/hooks/useAutoAccept";
 import { ActionLink, Eyebrow, Panel, RunError } from "@/components/book/shared/studioUi";
+import { snapshotTree } from "@/features/dna/lib/treeVersions";
 
 export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [], onDetach }: {
   bookId: number; nodes: DnaNode[]; settings: BookSettings; bookSlug?: string; // bookSlug feeds the reader URL into the final render/publish hand-off
@@ -100,6 +101,9 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [],
   const toggleAuto = () => setAuto((v) => {
     const next = !v;
     try { localStorage.setItem(autoKey, next ? "1" : "0"); } catch { /* ignore */ }
+    // Checkpoint the tree the moment autonomous mode arms — this is where per-op review stops, so it's
+    // the one place the author most needs a "before" state to diff against or fall back to.
+    if (next) void snapshotTree(bookId).catch(() => {});
     return next;
   });
   const { row, refetch, stale } = useLatestTaskRow<AgentThreadRow>({

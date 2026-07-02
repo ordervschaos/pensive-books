@@ -15,6 +15,11 @@ import { type AgentProposal } from "@/features/dna/lib/agentThread";
 import { chooseNodeProposal, discardNodeProposals } from "@/features/dna/lib/dnaProposals";
 import { DNA_STAGES, dnaHealth, buildJourney, stageProgress, STAGE_KINDS, type StageKey } from "@/features/dna/lib/dnaJourney";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { useToast } from "@/hooks/use-toast";
+import {
+  listVersions, loadVersion, snapshotTree, restoreVersion, diffAgainstVersion,
+  type TreeVersion, type TreeDiff,
+} from "@/features/dna/lib/treeVersions";
 
 const getNumericId = (p: string | undefined) => { const m = p?.match(/^(\d+)/); return m ? parseInt(m[1]) : 0; };
 
@@ -2067,6 +2072,137 @@ function ProseReaderModal({ sceneId, nodes, bookId: _bookId, onClose, onAttachNo
   );
 }
 
+// ── Version history ───────────────────────────────────────────────────────────
+// A simple, linear "save points" history for the tree (book_tree_versions) — Notion/Docs-style, not
+// git: no branches, no per-hunk staging (the agent's proposal cards already cover pre-commit review at
+// op-granularity while a run is live). This is the fallback net for auto-accept mode, where the agent
+// commits its own picks with no per-op review: snapshotTree() checkpoints right before auto arms
+// (AgentRail.toggleAuto), and this modal shows what's changed since the last checkpoint and can restore
+// an old one. Restore is forward-moving — it appends a new version, never rewrites history.
+function HistoryModal({ bookId, nodes, onClose }: { bookId: number; nodes: DnaNode[]; onClose: () => void }) {
+  const mono = "ui-monospace, monospace";
+  const { toast } = useToast();
+  const [versions, setVersions] = useState<Omit<TreeVersion, "nodes">[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [label, setLabel] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [sinceLastDiff, setSinceLastDiff] = useState<TreeDiff | null>(null);
+  const [openDiffs, setOpenDiffs] = useState<Record<number, TreeDiff | "loading">>({});
+  const [confirmRestoreId, setConfirmRestoreId] = useState<number | null>(null);
+  const [restoringId, setRestoringId] = useState<number | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const list = await listVersions(bookId);
+      setVersions(list);
+      setSinceLastDiff(list.length > 0 ? diffAgainstVersion(nodes, await loadVersion(list[0].id)) : null);
+    } catch (e) {
+      toast({ title: "Couldn't load version history", description: String((e as Error)?.message ?? e), variant: "destructive" });
+    } finally { setLoading(false); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookId, toast]);
+  useEffect(() => { void load(); }, [load]);
+
+  const save = async () => {
+    setSaving(true);
+    try { await snapshotTree(bookId, label.trim() || undefined); setLabel(""); await load(); }
+    catch (e) { toast({ title: "Couldn't save version", description: String((e as Error)?.message ?? e), variant: "destructive" }); }
+    finally { setSaving(false); }
+  };
+
+  const toggleDiff = async (id: number) => {
+    if (openDiffs[id]) { setOpenDiffs((p) => { const n = { ...p }; delete n[id]; return n; }); return; }
+    setOpenDiffs((p) => ({ ...p, [id]: "loading" }));
+    try {
+      const versionNodes = await loadVersion(id);
+      setOpenDiffs((p) => ({ ...p, [id]: diffAgainstVersion(nodes, versionNodes) }));
+    }
+    catch (e) {
+      toast({ title: "Couldn't load that version", description: String((e as Error)?.message ?? e), variant: "destructive" });
+      setOpenDiffs((p) => { const n = { ...p }; delete n[id]; return n; });
+    }
+  };
+
+  const restore = async (id: number) => {
+    if (confirmRestoreId !== id) { setConfirmRestoreId(id); return; }
+    setConfirmRestoreId(null);
+    setRestoringId(id);
+    try {
+      await restoreVersion(bookId, id, nodes);
+      await load();
+      toast({ title: "Restored", description: "The tree now matches that version." });
+    } catch (e) { toast({ title: "Couldn't restore", description: String((e as Error)?.message ?? e), variant: "destructive" }); }
+    finally { setRestoringId(null); }
+  };
+
+  const when = (iso: string) => { try { return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }); } catch { return iso; } };
+  const diffLabel = (d: TreeDiff) => {
+    const parts: string[] = [];
+    if (d.added) parts.push(`+${d.added}`);
+    if (d.removed) parts.push(`−${d.removed}`);
+    if (d.changed) parts.push(`~${d.changed}`);
+    return parts.length ? parts.join(" ") : "no changes";
+  };
+
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="flex max-h-[85vh] w-[min(560px,92vw)] max-w-[560px] flex-col gap-0 overflow-hidden border-[#2a2a38] bg-[#0e0e12] p-0 text-[#8a9ab0] sm:rounded-lg">
+        <div style={{ padding: "16px 24px 14px", borderBottom: "1px solid #1c1c26", flexShrink: 0 }}>
+          <div style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", color: "#5a6a80" }}>history</div>
+          <DialogTitle className="font-normal tracking-normal" style={{ fontFamily: mono, fontSize: 13, color: "#cfcfcf", marginTop: 3 }}>
+            Tree versions
+          </DialogTitle>
+          {sinceLastDiff && (
+            <div style={{ marginTop: 8, fontFamily: mono, fontSize: 11, color: sinceLastDiff.added + sinceLastDiff.removed + sinceLastDiff.changed > 0 ? "#d0a060" : "#555" }}>
+              since last version: {diffLabel(sinceLastDiff)}
+            </div>
+          )}
+          <div style={{ marginTop: 10, display: "flex", gap: 6 }}>
+            <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="name this version (optional)…"
+              onKeyDown={(e) => { if (e.key === "Enter") void save(); }}
+              style={{ flex: 1, minWidth: 0, background: "#16161c", border: "1px solid #2a2a3a", borderRadius: 4, color: "#e6e6e6", fontSize: 12, padding: "6px 8px", outline: "none", fontFamily: "inherit" }} />
+            <button onClick={() => void save()} disabled={saving}
+              style={{ fontFamily: mono, fontSize: 11, letterSpacing: "0.04em", color: "#a8a8ff", background: "#8a8aff14", border: "1px solid #8a8aff44", borderRadius: 4, padding: "0 12px", cursor: saving ? "default" : "pointer", opacity: saving ? 0.6 : 1 }}>
+              {saving ? "saving…" : "save version"}
+            </button>
+          </div>
+        </div>
+        <div style={{ overflowY: "auto", padding: "6px 0 14px", flex: 1 }}>
+          {loading && <div style={{ padding: "16px 24px", fontFamily: mono, fontSize: 11, color: "#555" }}>loading…</div>}
+          {!loading && versions.length === 0 && (
+            <div style={{ padding: "16px 24px", fontFamily: mono, fontSize: 11, color: "#555" }}>
+              No saved versions yet. Versions checkpoint automatically when auto-accept arms, or save one above.
+            </div>
+          )}
+          {versions.map((v) => {
+            const d = openDiffs[v.id];
+            return (
+              <div key={v.id} style={{ padding: "8px 24px", borderBottom: "1px solid #1a1a22" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontFamily: mono, fontSize: 12, color: v.label ? "#cfcfcf" : "#8a8a8a", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {v.label ?? "auto checkpoint"}
+                  </span>
+                  <span style={{ fontFamily: mono, fontSize: 10, color: "#555" }}>{when(v.created_at)}</span>
+                </div>
+                <div style={{ marginTop: 4, display: "flex", alignItems: "center", gap: 12 }}>
+                  <button onClick={() => void toggleDiff(v.id)} style={{ background: "none", border: "none", fontFamily: mono, fontSize: 10, color: "#666", cursor: "pointer", padding: 0 }}>
+                    {d ? (d === "loading" ? "loading…" : diffLabel(d)) : "diff vs. live"}
+                  </button>
+                  <button onClick={() => void restore(v.id)} disabled={restoringId === v.id}
+                    style={{ background: "none", border: "none", fontFamily: mono, fontSize: 10, color: confirmRestoreId === v.id ? "#f87171" : "#8a9ab0", cursor: "pointer", padding: 0 }}>
+                    {restoringId === v.id ? "restoring…" : confirmRestoreId === v.id ? "confirm restore?" : "restore"}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default function DnaTreePage() {
   const { bookSlug } = useParams();
@@ -2140,6 +2276,7 @@ export default function DnaTreePage() {
 
   const [discardOpen, setDiscardOpen] = useState(false);
   const discardStory = useCallback(() => setDiscardOpen(true), []);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const saveBrief = useCallback(async (patch: Partial<Brief>) => {
     const next = { ...brief, ...patch, updated_at: new Date().toISOString() } as Brief;
@@ -2505,6 +2642,7 @@ export default function DnaTreePage() {
         <QuickToggle active={searchOpen} accent="#9bd3e6" icon="⌕" label="Search" onClick={() => setSearchOpen((v) => !v)} />
         {tab === "tree" && <QuickToggle active={timelineOpen} accent="#fb923c" icon="▦" label="Timeline" onClick={() => setTimelineOpen((v) => !v)} />}
         <QuickToggle active={railOpen} accent="#8a8aff" icon="✦" label="Editor" onClick={() => setRailOpen((v) => !v)} />
+        {tab === "tree" && <QuickToggle active={historyOpen} accent="#a0a0a0" icon="⟲" label="History" onClick={() => setHistoryOpen((v) => !v)} />}
         {tab === "tree" && (health.errors + health.warns) > 0 && (
           <QuickToggle active={healthLens} accent="#d0a060" icon="◐" label="Lens"
             onClick={() => { const on = !healthLens; setHealthLens(on); if (on) revealNodes(health.issues.map((i) => i.nodeId).filter((x): x is string => !!x)); }} />
@@ -2519,6 +2657,7 @@ export default function DnaTreePage() {
           onJump={goToNode} onClose={() => setSearchOpen(false)} />
       )}
       {discardOpen && <DiscardStoryModal nodes={nodes} onClose={() => setDiscardOpen(false)} />}
+      {historyOpen && nodes && <HistoryModal bookId={bookId} nodes={nodes} onClose={() => setHistoryOpen(false)} />}
       {/* The tool-using editor's agent (durable book-agent thread), promoted into the tree rail. The
           studio components read theme CSS vars; we override them here with the tree's dark monospace
           palette (#8a8aff accent) so the rail matches the page instead of the app's light studio skin. */}
