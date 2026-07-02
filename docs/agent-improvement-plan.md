@@ -145,7 +145,12 @@ same-file (`book-agent/index.ts`) write conflicts.
   re-folds; O(1)/node storage).
 - **§3a** transcript per-message rows / compaction (schema + Realtime; higher risk).
 - **§3c** state-key registry / canonicalization at the write gate.
-- **§3d** distribute beat plan across sibling scenes in the scenes-generation call.
+- **§3d** ✅ SHIPPED — `realizeScenesFromBeat` (web `dnaExpand.ts`) now distributes the beat's causal state by
+  role: `needs` (consumed at entry) → FIRST scene, `establishes` (produced when the turn lands) → LAST scene
+  (co-located with `grounds_in`/`resolves`), instead of piling both on scene 0. Single-scene beats keep both
+  (first === last). Makes the P2.2 plan-conformance check accurate per scene. Covered by `dnaExpand.test.ts`.
+  (Full *per-key* semantic distribution across middle scenes would need the scenes-generation LLM + a DB
+  schema-config change — deferred; the middle "develop" scene's plan is its value_shift.)
 
 ## Phase 4 — remaining prompting (🧠)
 

@@ -187,9 +187,14 @@ export function realizeScenesFromBeat(beatNode: DnaNode, scenes: SceneContent[],
   // Game moves: `plays` advances the contest (first scene); `resolves` decides it (last scene).
   if (beat.plays?.length && scenes[0]) scenes[0].plays = beat.plays;
   if (beat.resolves?.length && scenes.length) scenes[scenes.length - 1].resolves = beat.resolves;
-  // CAUSALITY: the beat's produced/depended state lands on its first scene (the move that earns/spends it).
-  if (beat.establishes?.length && scenes[0]) scenes[0].establishes = beat.establishes;
+  // CAUSALITY (novel-dna-flow.md §7): the beat's turn CONSUMES state at entry and PRODUCES state when it
+  // lands — so `needs` (depended-on state) belongs on the FIRST scene (where the beat begins) and
+  // `establishes` (produced state) on the LAST scene (where the turn RESOLVES — co-located with grounds_in /
+  // resolves). Piling both on scene 0 (the old behaviour) told the opening scene to "produce everything" and
+  // left the resolving scene's plan-conformance check (P2.2) expecting nothing it actually delivers. For a
+  // single-scene beat first === last, so it keeps both (P3/§3d).
   if (beat.needs?.length && scenes[0]) scenes[0].needs = beat.needs;
+  if (beat.establishes?.length && scenes.length) scenes[scenes.length - 1].establishes = beat.establishes;
   // Chaptering: a beat opens a chapter (the legible default; author can merge/rename later).
   if (startPosition === 0 && scenes[0] && !scenes[0].chapter_start) scenes[0].chapter_start = { title: chapterTitleFromBeat(beatNode) };
 }
