@@ -5,7 +5,7 @@
 // produced on demand via reconcileDna (Render). expand = ONE authoritative value (not proposals).
 import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { Lock, Unlock, Sparkles, BookOpen, Loader2, Check, X, ChevronRight, ChevronDown, LayoutDashboard, GripVertical, Image } from "lucide-react";
+import { Lock, Unlock, BookOpen, Loader2, Check, X, ChevronRight, ChevronDown, LayoutDashboard, GripVertical, Image } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent,
@@ -15,7 +15,7 @@ import {
 } from "@dnd-kit/sortable";
 import { AutoTextarea } from "@/components/ui/auto-textarea";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
-import { ActionLink, Eyebrow, Panel, RunningInline, StageHead, StepDot } from "@/components/book/shared/studioUi";
+import { ActionLink, Eyebrow, Panel, StageHead, StepDot } from "@/components/book/shared/studioUi";
 import { buildJourney, stageSubsteps, STAGE_KINDS, type StageKey } from "@/features/dna/lib/dnaJourney";
 import { AgentRail } from "@/features/dna/components/AgentRail";
 import { DnaVisuals } from "@/features/dna/components/DnaVisuals";
@@ -24,36 +24,12 @@ import { DnaOverview } from "@/features/dna/components/DnaOverview";
 import { saveNode, saveNodes, deleteNode } from "@/features/dna/lib/bookNodes";
 import { migrateBookToDna } from "@/features/dna/lib/migrateToDna";
 import { reconcileDna } from "@/features/dna/lib/novelDnaRender";
-import { expandNode, composeSceneIllustration, renderSceneIllustration, type ComposedSceneImage } from "@/features/dna/lib/dnaExpand";
-import { ImagePromptPreview } from "@/features/dna/components/ImagePromptPreview";
 import {
   byId, childrenOf, editContent, emptyNode, isIllusStale, isProseStale, isStale, lock as lockNode, renderBlockers, scenesInOrder,
   setStatus, type BeatContent, type CharacterContent, type DnaNode, type GameContent, type ActContent,
   type NodeKind, type RelationshipContent, type SceneContent, type ThreadContent, type WorldFactContent,
 } from "@/features/dna/lib/novelDna";
 
-// The expand verb(s) per kind. A node can have several (a pillar generates cast, world, AND acts). Each
-// names the TARGET the engine generates and the child kind it produces. SINGLE targets make exactly one
-// child, so the UI hides them once that child exists.
-interface ExpandTarget { target: string; label: string; childKind: NodeKind; needs?: NodeKind }
-const EXPAND_TARGETS: Partial<Record<NodeKind, ExpandTarget[]>> = {
-  seed: [
-    { target: "logline", label: "draft logline", childKind: "seed" }, // forge brief.idea → a real logline (own content, not a child)
-    { target: "premise", label: "generate premise", childKind: "premise" },
-  ],
-  premise: [{ target: "pillar", label: "generate pillar", childKind: "pillar" }],
-  pillar: [
-    { target: "cast", label: "generate cast", childKind: "character" },
-    { target: "relationships", label: "generate relationships", childKind: "relationship", needs: "character" },
-    { target: "world", label: "generate world", childKind: "world_fact" },
-    { target: "set-pieces", label: "generate tent-poles", childKind: "tentpole" },
-    { target: "acts", label: "generate acts", childKind: "act" },
-  ],
-  act: [{ target: "beats", label: "generate beats", childKind: "beat" }],
-  beat: [{ target: "scenes", label: "generate scenes", childKind: "scene" }],
-  scene: [{ target: "prose", label: "write prose", childKind: "scene" }],
-};
-const SINGLE = new Set(["premise", "pillar"]); // targets that produce exactly one child
 // Human-readable display name for kinds that have internal/technical names.
 const KIND_DISPLAY: Partial<Record<NodeKind, string>> = { act: "act", world_fact: "world rule" };
 
@@ -195,10 +171,6 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
   const renderAndRead = () => run("read", async () => { await reconcileDna(bookId); window.location.href = `/books/${bookSlug}`; });
   const addChild = (parent: DnaNode, kind: NodeKind, level: number) =>
     run("add", () => saveNode(emptyNode(bookId, kind, level, parent.id, childrenOf(nodes, parent.id).length)));
-  // Stage-level generation (a whole-arc op, not a per-node verb): threads (the promise registry) and the
-  // GLOBAL beat sheet both read every act, so they live as structure-stage actions on the pillar.
-  const generateFromPillar = (target: string, label: string) =>
-    run(target, async () => { if (!pillar) return; const { added } = await expandNode(bookId, pillar, target, {}); toast({ title: label, description: `${added} node(s) generated.` }); });
 
   // ── Collapse state — keep the long stages an OUTLINE, not a wall. A node defaults OPEN only while it (or
   // anything beneath it) still needs work; once a whole branch is accepted + in-sync it folds to a one-line
@@ -217,17 +189,7 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
     for (const root of nodes.filter((n) => n.parent_id === null)) visit(root);
     return s;
   })();
-  // A node is also OPEN by default while it's the generative frontier — accepted but still has a child-kind
-  // it can generate that doesn't exist yet (e.g. a pillar before "generate cast", a act before beats).
-  // So approving a rung reveals its next move instead of folding it away. (Prose isn't a child node — a
-  // scene's done-ness is handled by needsAttn via prose staleness.)
-  const hasOpenTarget = (n: DnaNode) => {
-    const kids = childrenOf(nodes, n.id);
-    return (EXPAND_TARGETS[n.kind] ?? []).some((t) =>
-      t.target !== "prose" && t.target !== "logline" // own-content targets, not children — don't keep the node "open" forever
-      && !kids.some((c) => c.kind === t.childKind) && !(t.needs && !kids.some((c) => c.kind === t.needs)));
-  };
-  const openDefault = (n: DnaNode) => attn.has(n.id) || hasOpenTarget(n);
+  const openDefault = (n: DnaNode) => attn.has(n.id);
   const isOpen = (n: DnaNode) => expanded[n.id] ?? openDefault(n);
   const toggle = (n: DnaNode) => setExpanded((e) => ({ ...e, [n.id]: !(e[n.id] ?? openDefault(n)) }));
   const setAll = (open: boolean) => setExpanded(Object.fromEntries(nodes.map((n) => [n.id, open])));
@@ -241,9 +203,9 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
     return `${kids.length} ${childKind}${kids.length > 1 ? "s" : ""}${need ? ` · ${need} need work` : ""}`;
   };
 
-  const card = (n: DnaNode, accent?: boolean, hideTargetKinds?: NodeKind[]) => (
+  const card = (n: DnaNode, accent?: boolean) => (
     <NodeCard key={n.id} node={n} index={index} bookId={bookId} kids={childrenOf(nodes, n.id)} onChanged={onChanged}
-      accent={accent} expanded={isOpen(n)} onToggle={() => toggle(n)} meta={collapsedMeta(n)} picture={picture} flash={flashId === n.id} hideTargetKinds={hideTargetKinds} />
+      accent={accent} expanded={isOpen(n)} onToggle={() => toggle(n)} meta={collapsedMeta(n)} picture={picture} flash={flashId === n.id} />
   );
   const [seed, premise, pillar] = [of("seed")[0], of("premise")[0], of("pillar")[0]];
   const entityKinds: NodeKind[] = ["character", "relationship", "tentpole", "world_fact"];
@@ -306,15 +268,6 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
         { key: "tentpole" as const, label: "Tent-poles" },
         { key: "relationship" as const, label: "Relationships" },
       ] as const;
-      type FoundTab = typeof FOUND_TABS[number]["key"];
-      // generate-target for each entity tab (target string → what expandNode calls on the pillar)
-      const genTarget: Partial<Record<FoundTab, { target: string; busy: string; label: string }>> = {
-        character: { target: "cast", busy: "cast", label: "cast" },
-        world_fact: { target: "world", busy: "world", label: "world" },
-        game: { target: "games", busy: "games", label: "games" },
-        tentpole: { target: "set-pieces", busy: "set-pieces", label: "tent-poles" },
-        relationship: { target: "relationships", busy: "relationships", label: "relationships" },
-      };
       const tab = foundationsTab;
       return (
         <>
@@ -335,22 +288,15 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
             })}
           </div>
 
-          {/* Pillar tab — the controlling idea + ending; generate actions for children are in each child tab */}
-          {tab === "pillar" && pillar && card(pillar, true, ["character", "relationship", "world_fact", "tentpole", "act"])}
+          {/* Pillar tab — the controlling idea + ending */}
+          {tab === "pillar" && pillar && card(pillar, true)}
 
-          {/* Entity tabs — each has its own generate action at the top + card list */}
+          {/* Entity tabs — add + card list */}
           {tab !== "pillar" && pillar && (() => {
             const items = of(tab as NodeKind);
-            const gen = genTarget[tab];
             return (
               <div className="space-y-3">
                 <div className="flex items-center gap-3">
-                  {gen && (
-                    <ActionLink busy={busy === gen.busy} icon={<Sparkles className="h-3.5 w-3.5" />}
-                      onClick={() => generateFromPillar(gen.target, `${gen.label} generated`)}>
-                      {items.length ? `regenerate ${gen.label}` : `generate ${gen.label}`}
-                    </ActionLink>
-                  )}
                   <ActionLink busy={busy === "add"} onClick={() => addChild(pillar, tab as NodeKind, 2)} tone="faint" className="ml-auto">+ add</ActionLink>
                 </div>
                 {items.map((n) => card(n))}
@@ -362,35 +308,19 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
     }
     if (key === "structure") {
       const acts = of("act");
-      const threads = of("thread");
-      const games = of("game");
-      // Acts still missing their beats — the targets of the bulk "generate beats for all acts" pass. Mirrors
-      // the per-act "generate beats" verb (same expandNode call), just looped so the whole spine fills in one
-      // click. Skips acts that already have beats (non-destructive); regenerate one at a time on its own card.
-      const actsNeedingBeats = acts.filter((m) => !childrenOf(nodes, m.id).some((c) => c.kind === "beat"));
-      const generateAllBeats = () => run("allbeats", async () => {
-        const targets = actsNeedingBeats;
-        let added = 0; const failed: string[] = [];
-        for (const m of targets) {
-          try { added += (await expandNode(bookId, m, "beats", {})).added; }
-          catch (e) { failed.push(String((e as Error)?.message ?? e)); }
-        }
-        toast({ title: "Beats generated", description: `${added} beat(s) across ${targets.length - failed.length}/${targets.length} act(s)${failed.length ? ` · ${failed.length} failed` : ""}.` });
-      });
       // Wipe the whole spine: deleting every act cascades (ON DELETE CASCADE) to its beats and scenes, so this
-      // clears Structure → Scenes in one move. Foundations stay; regenerate acts to rebuild from scratch.
+      // clears Structure → Scenes in one move. Foundations stay.
       const discardAllActs = () => {
         if (acts.length === 0) return;
         if (!window.confirm(`Discard all ${acts.length} act${acts.length === 1 ? "" : "s"}? This also removes their beats and scenes. Foundations stay. This can't be undone.`)) return;
         void run("discard acts", async () => {
           await Promise.all(acts.map((m) => deleteNode(m.id)));
-          toast({ title: "Acts discarded", description: `${acts.length} act${acts.length === 1 ? "" : "s"} removed. Generate acts to rebuild.` });
+          toast({ title: "Acts discarded", description: `${acts.length} act${acts.length === 1 ? "" : "s"} removed.` });
         });
       };
       // Structure is the pure sequential spine: Acts (coarse) · Beats (the causal units, grouped under their
       // act). Cross-cutting registries live elsewhere — Games in Foundations (a contest is definable without
-      // beats), Threads in the Overview (a whole-book promise registry). `threads`/`games` are still read here
-      // to gate beat-sheet generation (which weaves the existing registries through the spine).
+      // beats), Threads in the Overview (a whole-book promise registry).
       const STR_TABS = [
         { key: "acts" as const, label: "Acts", count: acts.length },
         { key: "beats" as const, label: "Beats", count: of("beat").length },
@@ -415,11 +345,6 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
           {/* ACTS — the coarse spine: act-level plan (goal, turning point, value), one card each. */}
           {stab === "acts" && (
             <div className="space-y-2">
-              {pillar && (
-                <ActionLink busy={busy === "acts"} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={() => generateFromPillar("acts", "Acts generated")}>
-                  {acts.length ? "regenerate acts" : "generate acts"}
-                </ActionLink>
-              )}
               {acts.map((m) => card(m, true))}
               <div className="flex items-center gap-4">
                 {pillar && <ActionLink busy={busy === "add"} onClick={() => addChild(pillar, "act", 3)} tone="faint">+ add act</ActionLink>}
@@ -431,22 +356,8 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
           {/* BEATS — the causal units, grouped under each act header; reorder within an act. */}
           {stab === "beats" && (
             <div className="space-y-4">
-              {pillar && (actsNeedingBeats.length > 0 || threads.length > 0 || games.length > 0) && (
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                  {actsNeedingBeats.length > 0 && (
-                    <ActionLink busy={busy === "allbeats"} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={generateAllBeats}>
-                      generate beats for all {actsNeedingBeats.length} act{actsNeedingBeats.length > 1 ? "s" : ""}
-                    </ActionLink>
-                  )}
-                  {(threads.length > 0 || games.length > 0) && (
-                    <ActionLink busy={busy === "beatsheet"} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={() => generateFromPillar("beatsheet", "Beat sheet generated")}>
-                      generate beat sheet
-                    </ActionLink>
-                  )}
-                </div>
-              )}
               {acts.length === 0 && (
-                <p className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))]">Generate acts first — beats hang off them.</p>
+                <p className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))]">Add acts first — beats hang off them.</p>
               )}
               {acts.map((m, mi) => {
                 const mc = m.content as ActContent;
@@ -484,30 +395,22 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
       ).length;
       const ready = scenesAll.length > 0 && done === scenesAll.length;
       const noun = picture ? "illustrated" : "drafted";
-      const scenesNeedingProse = !picture ? scenesAll.filter((s) => !(s.content as SceneContent).prose?.text?.trim() || isProseStale(s)) : [];
       const scenesWithProse = !picture ? scenesAll.filter((s) => !!(s.content as SceneContent).prose?.text?.trim()) : [];
-      const generateAllProse = () => run("allprose", async () => {
-        let ok = 0; const failed: string[] = [];
-        for (const s of scenesNeedingProse) {
-          try { await expandNode(bookId, s, "prose", {}); ok++; } catch (e) { failed.push(String((e as Error)?.message ?? e)); }
-        }
-        toast({ title: "Prose generated", description: `${ok}/${scenesNeedingProse.length} scene(s) written${failed.length ? ` · ${failed.length} failed` : ""}.` });
-      });
       const discardAllProse = () => {
         if (scenesWithProse.length === 0) return;
-        if (!window.confirm(`Discard the prose on ${scenesWithProse.length} scene${scenesWithProse.length === 1 ? "" : "s"}? The scenes stay — you'll re-draft from them. This can't be undone.`)) return;
+        if (!window.confirm(`Discard the prose on ${scenesWithProse.length} scene${scenesWithProse.length === 1 ? "" : "s"}? The scenes stay. This can't be undone.`)) return;
         void run("discard prose", async () => {
           await Promise.all(scenesWithProse.map((s) => saveNode({
             ...s,
             content: { ...(s.content as SceneContent), prose: {} },
             authoring: { ...s.authoring, prose_src_hash: undefined },
           })));
-          toast({ title: "Prose discarded", description: `${scenesWithProse.length} scene${scenesWithProse.length === 1 ? "" : "s"} cleared. Write prose to re-draft.` });
+          toast({ title: "Prose discarded", description: `${scenesWithProse.length} scene${scenesWithProse.length === 1 ? "" : "s"} cleared.` });
         });
       };
       return (
         <>
-          {/* Top action bar — first fold: read + progress + generate */}
+          {/* Top action bar — first fold: read + progress */}
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
             <button
               type="button"
@@ -521,11 +424,6 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
             </button>
             {scenesAll.length > 0 && (
               <span className="pv-mono text-[10px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-faint))]">{done}/{scenesAll.length} scenes {noun}</span>
-            )}
-            {!picture && scenesNeedingProse.length > 0 && (
-              <ActionLink busy={busy === "allprose"} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={generateAllProse}>
-                write prose for all {scenesNeedingProse.length} missing/stale scene{scenesNeedingProse.length !== 1 ? "s" : ""}
-              </ActionLink>
             )}
             {!picture && scenesWithProse.length > 0 && (
               <ActionLink tone="faint" busy={busy === "discard prose"} onClick={discardAllProse}>discard all prose →</ActionLink>
@@ -548,7 +446,6 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
                 {mvBeats.map((b) => {
                   const beatContent = b.content as BeatContent;
                   const bScenes = childrenOf(nodes, b.id).filter((s) => s.kind === "scene");
-                  const beatNeedingProse = !picture ? bScenes.filter((s) => !(s.content as SceneContent).prose?.text?.trim() || isProseStale(s)) : [];
                   return (
                     <div key={b.id} className="ml-4 space-y-2 border-l border-[hsl(var(--pv-border-soft))] pl-4">
                       {/* Beat header — click to drill into Structure */}
@@ -576,26 +473,11 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
                             ) : (
                               <div className="flex items-center gap-2 rounded-lg border border-dashed border-[hsl(var(--pv-border-soft))]/70 px-3 py-2">
                                 <span className="pv-serif text-[12px] italic text-[hsl(var(--pv-text-faint))]">no prose yet</span>
-                                <ActionLink busy={busy === `prose:${s.id}`} icon={<Sparkles className="h-3.5 w-3.5" />}
-                                  onClick={() => run(`prose:${s.id}`, async () => { await expandNode(bookId, s, "prose", {}); toast({ title: "Prose written", description: "Scene drafted." }); })}
-                                  className="ml-auto">
-                                  write
-                                </ActionLink>
                               </div>
                             )}
                           </div>
                         );
                       })}
-                      {!picture && beatNeedingProse.length > 1 && (
-                        <ActionLink busy={busy === `beatprose:${b.id}`} icon={<Sparkles className="h-3.5 w-3.5" />}
-                          onClick={() => run(`beatprose:${b.id}`, async () => {
-                            let ok = 0;
-                            for (const s of beatNeedingProse) { try { await expandNode(bookId, s, "prose", {}); ok++; } catch { /**/ } }
-                            toast({ title: "Prose generated", description: `${ok} scene(s) written.` });
-                          })}>
-                          write prose for all {beatNeedingProse.length} in this beat
-                        </ActionLink>
-                      )}
                     </div>
                   );
                 })}
@@ -608,45 +490,28 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
     // scenes: scenes grouped under their beat. Each beat is a collapsible group header —
     // fold a beat to hide its scenes, so this stage reads as an outline of beats to drill into one at a time.
     const beatsAll = of("act").flatMap((m) => childrenOf(nodes, m.id).filter((b) => b.kind === "beat"));
-    const beatsNeedingScenes = beatsAll.filter((b) => !childrenOf(nodes, b.id).some((c) => c.kind === "scene"));
-    const generateAllScenes = () => run("allscenes", async () => {
-      let added = 0; const failed: string[] = [];
-      for (const b of beatsNeedingScenes) {
-        try { added += (await expandNode(bookId, b, "scenes", {})).added; }
-        catch (e) { failed.push(String((e as Error)?.message ?? e)); }
-      }
-      toast({ title: "Scenes generated", description: `${added} scene(s) across ${beatsNeedingScenes.length - failed.length}/${beatsNeedingScenes.length} beat(s)${failed.length ? ` · ${failed.length} failed` : ""}.` });
-    });
     const scenesAll = of("scene");
-    // Clear the scene layer without touching the spine: deleting scenes leaves acts/beats intact, so you
-    // re-derive scenes (and their prose) from beats. Acts stay — use "discard all acts" to wipe the spine.
+    // Clear the scene layer without touching the spine: deleting scenes leaves acts/beats intact.
+    // Acts stay — use "discard all acts" to wipe the spine.
     const discardAllScenes = () => {
       if (scenesAll.length === 0) return;
       if (!window.confirm(`Discard all ${scenesAll.length} scene${scenesAll.length === 1 ? "" : "s"}? This also removes their prose. Acts and beats stay. This can't be undone.`)) return;
       void run("discard scenes", async () => {
         await Promise.all(scenesAll.map((s) => deleteNode(s.id)));
-        toast({ title: "Scenes discarded", description: `${scenesAll.length} scene${scenesAll.length === 1 ? "" : "s"} removed. Generate scenes to rebuild.` });
+        toast({ title: "Scenes discarded", description: `${scenesAll.length} scene${scenesAll.length === 1 ? "" : "s"} removed.` });
       });
     };
     return (
       <>
-        {(beatsNeedingScenes.length > 0 || scenesAll.length > 0) && (
+        {scenesAll.length > 0 && (
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            {beatsNeedingScenes.length > 0 && (
-              <ActionLink busy={busy === "allscenes"} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={generateAllScenes}>
-                generate scenes for {beatsNeedingScenes.length} empty beat{beatsNeedingScenes.length > 1 ? "s" : ""}
-              </ActionLink>
-            )}
-            {scenesAll.length > 0 && (
-              <ActionLink busy={busy === "discard scenes"} onClick={discardAllScenes} tone="faint">discard all scenes →</ActionLink>
-            )}
+            <ActionLink busy={busy === "discard scenes"} onClick={discardAllScenes} tone="faint">discard all scenes →</ActionLink>
           </div>
         )}
         {beatsAll.map((b) => {
           const scenes = childrenOf(nodes, b.id).filter((s) => s.kind === "scene");
           const open = isOpen(b);
           const need = scenes.filter((s) => attn.has(s.id)).length;
-          const beatBusy = `scene:${b.id}`;
           return (
             <div key={b.id} className="space-y-2">
               <button type="button" onClick={() => toggle(b)} className="flex w-full items-center gap-2 border-b border-[hsl(var(--pv-border-soft))]/60 pb-1 text-left">
@@ -658,12 +523,6 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
               </button>
               {open && (
                 <>
-                  {scenes.length === 0 && (
-                    <ActionLink busy={busy === beatBusy} icon={<Sparkles className="h-3.5 w-3.5" />}
-                      onClick={() => run(beatBusy, async () => { const { added } = await expandNode(bookId, b, "scenes", {}); toast({ title: "Scenes generated", description: `${added} scene(s).` }); })}>
-                      generate scenes
-                    </ActionLink>
-                  )}
                   {scenes.map((s) => card(s))}
                   <ActionLink busy={busy === "add"} onClick={() => addChild(b, "scene", 5)}>add scene</ActionLink>
                 </>
@@ -776,7 +635,7 @@ export function DnaStudio({ bookId, bookSlug, settings, nodes, onChanged }: {
         ) : onOverview ? (
           // The home dashboard — shape, next move, and issues; every action drills into the owning stage.
           <DnaOverview bookId={bookId} nodes={nodes} settings={settings} stages={stages} nowKey={nowKey} onOpen={openStage} onChanged={onChanged}
-            renderCard={card} onGenerateThreads={() => generateFromPillar("threads", "Threads generated")} threadsBusy={busy === "threads"} />
+            renderCard={card} />
         ) : onVisuals ? (
           // The standalone Visuals control room — look, cast references, illustrations (renders its own StageHead).
           <DnaVisuals bookId={bookId} nodes={nodes} settings={settings} onChanged={onChanged} />
@@ -986,28 +845,23 @@ function cardTitle(node: DnaNode): string | undefined {
   }
 }
 
-// The uniform node card — the same verbs (generate / edit / lock) at every depth, now in four stable zones:
+// The uniform node card — the same verbs (edit / lock) at every depth, now in four stable zones:
 // IDENTITY (kind · title · status) → SUMMARY (derived engine data) → FIELDS (editable slots) → ACTIONS (a
-// persistent bar: approve gate, generate, lock, delete). The action bar always occupies its row, so the
+// persistent bar: approve gate, lock, delete). The action bar always occupies its row, so the
 // card never reflows as state changes (low layout shift). A beat's connector glyph (∴/↯) prefixes its title.
-function NodeCard({ node, index, bookId, kids, onChanged, accent, expanded, onToggle, meta, picture, flash, hideTargetKinds }: {
+function NodeCard({ node, index, bookId, kids, onChanged, accent, expanded, onToggle, meta, picture, flash }: {
   node: DnaNode; index: Map<string, DnaNode>; bookId: number; kids: DnaNode[]; onChanged: () => void; accent?: boolean;
-  expanded: boolean; onToggle: () => void; meta?: string; picture?: boolean; flash?: boolean; hideTargetKinds?: NodeKind[];
+  expanded: boolean; onToggle: () => void; meta?: string; picture?: boolean; flash?: boolean;
 }) {
   const { toast } = useToast();
   const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const [generating, setGenerating] = useState<string | null>(null);
-  // Two-phase illustrate: compose → show preview → author edits → render. preview holds the composed
-  // scene image data (prompt + refImages + model) while the panel is visible.
-  const [preview, setPreview] = useState<ComposedSceneImage | null>(null);
-  useEffect(() => { setDrafts({}); setPreview(null); }, [node.id]);
+  useEffect(() => { setDrafts({}); }, [node.id]);
   const isPictureScene = picture && node.kind === "scene";
   // Picture-mode scene cards edit the CAPTION (not prose) + show the illustration; everything else is shared.
   const fields = isPictureScene
     ? [
         ...(FIELDS.scene ?? []).map((f) => f.key === "prose.text" ? { key: "caption.text", label: "caption" } : f),
         // Per-scene art direction — folded into THIS scene's image prompt on top of the book house look.
-        // Editing it flips the scene stale (it's in the illus hash) → re-illustrate to apply.
         { key: "art_note", label: "art direction (this scene's look)" },
       ]
     : FIELDS[node.kind] ?? [];
@@ -1024,17 +878,6 @@ function NodeCard({ node, index, bookId, kids, onChanged, accent, expanded, onTo
   const displayFields = (expanded && title && node.kind === "beat")
     ? fields.filter((f) => f.key !== "summary")
     : fields;
-  // Available generate verbs: hide a SINGLE-child target once made, and a target whose prerequisite kind
-  // (e.g. relationships need a cast) doesn't exist yet. hideTargetKinds suppresses targets that produce a
-  // given child kind (used by the foundations tabs to move those actions out of the Pillar card).
-  // Picture-mode scenes ILLUSTRATE instead of "write prose".
-  const baseTargets = isPictureScene
-    ? [{ target: "illustrate", label: "illustrate", childKind: "scene" as NodeKind }]
-    : (EXPAND_TARGETS[node.kind] ?? []);
-  const targets = baseTargets.filter((t) =>
-    !(SINGLE.has(t.target) && kids.some((c) => c.kind === t.childKind))
-    && !(t.needs && !kids.some((c) => c.kind === t.needs))
-    && !(hideTargetKinds?.includes(t.childKind)));
 
   const guard = async (label: string, fn: () => Promise<void>) => {
     try { await fn(); onChanged(); } catch (e) { toast({ title: label, description: String((e as Error)?.message ?? e), variant: "destructive" }); }
@@ -1044,37 +887,6 @@ function NodeCard({ node, index, bookId, kids, onChanged, accent, expanded, onTo
   const accept = () => guard("Couldn't accept", () => saveNode(setStatus(node, "accepted")));
   const toggleLock = () => guard("Couldn't lock", () => saveNode(lockNode(node, !locked)));
   const remove = () => { if (window.confirm(`Delete this ${node.kind} and everything under it?`)) void guard("Couldn't delete", () => deleteNode(node.id)); };
-  const generate = async (t: ExpandTarget) => {
-    // Picture mode: two-phase ILLUSTRATE — compose → show editable preview → render. The preview IS the
-    // confirm, so we drop the window.confirm for re-illustrate. Phase 1 (compose) writes the caption
-    // + stamps the hash, ensures portraits, and returns the prompt. Phase 2 (render) is triggered from
-    // the ImagePromptPreview panel after the author reviews/edits.
-    if (t.target === "illustrate") {
-      setGenerating("illustrate");
-      try {
-        const composed = await composeSceneIllustration(bookId, node);
-        setPreview(composed);
-        onChanged(); // caption + stamp already written
-      } catch (e) {
-        toast({ title: "Couldn't compose illustration", description: String((e as Error)?.message ?? e), variant: "destructive" });
-      } finally {
-        setGenerating(null);
-      }
-      return;
-    }
-    // Regenerate REPLACES the unlocked children of this kind (locked ones are kept); first run just appends.
-    const existing = kids.filter((c) => c.kind === t.childKind);
-    const unlocked = existing.filter((c) => !c.authoring.locked);
-    if (t.target === "logline" && (node.content as { logline?: string }).logline?.trim() && !window.confirm("Redraft the logline from the idea?")) return;
-    if (t.target === "prose" && (node.content as SceneContent).prose?.text?.trim() && !window.confirm("Rewrite this scene's prose?")) return;
-    if (unlocked.length && !window.confirm(`Regenerate? Replaces ${unlocked.length} ${t.childKind}(s)${existing.length - unlocked.length ? `, keeps ${existing.length - unlocked.length} locked` : ""}.`)) return;
-    setGenerating(t.target);
-    try {
-      await expandNode(bookId, node, t.target, { startPosition: existing.length - unlocked.length, replaceIds: unlocked.map((c) => c.id) });
-      onChanged();
-    } catch (e) { toast({ title: "Couldn't generate", description: String((e as Error)?.message ?? e), variant: "destructive" }); }
-    finally { setGenerating(null); }
-  };
 
   return (
     <Panel id={`dna-node-${node.id}`} variant={accent ? "chosen" : "soft"}
@@ -1109,31 +921,6 @@ function NodeCard({ node, index, bookId, kids, onChanged, accent, expanded, onTo
       {isPictureScene && sceneImage && (
         <img src={sceneImage} alt="scene illustration"
           className="mt-2.5 w-full rounded-md border border-[hsl(var(--pv-border-soft))] object-cover" />
-      )}
-
-      {/* PICTURE MODE — editable prompt preview after compose, before render. The author reviews (and
-          optionally edits) the prompt + ref thumbnails + model, then clicks Generate to kick the durable
-          render. Clearing preview after render or cancel. */}
-      {isPictureScene && preview && (
-        <ImagePromptPreview
-          prompt={preview.prompt}
-          refImages={preview.refImages}
-          model={preview.model}
-          busy={generating === "rendering"}
-          onGenerate={async (finalPrompt) => {
-            setGenerating("rendering");
-            try {
-              await renderSceneIllustration(bookId, node.id, { ...preview, prompt: finalPrompt });
-              setPreview(null);
-              onChanged();
-            } catch (e) {
-              toast({ title: "Couldn't generate image", description: String((e as Error)?.message ?? e), variant: "destructive" });
-            } finally {
-              setGenerating(null);
-            }
-          }}
-          onCancel={() => setPreview(null)}
-        />
       )}
 
       {/* FIELDS — the editable slots; ★ marks a load-bearing one */}
@@ -1175,28 +962,17 @@ function NodeCard({ node, index, bookId, kids, onChanged, accent, expanded, onTo
         </div>
       )}
 
-      {/* (Reference portraits live in the standalone Visuals section now, not on the card.) */}
-
-      {/* ACTIONS — a persistent bar (never reflows): generate verbs left, edit controls right */}
+      {/* ACTIONS — a persistent bar (never reflows): approve left, edit controls right */}
       <div className="mt-3 flex min-h-[24px] items-center gap-3 border-t border-[hsl(var(--pv-border-soft))]/60 pt-2.5">
-        {generating ? (
-          <RunningInline label={generating === "prose" ? "writing prose…" : generating === "illustrate" ? "composing prompt…" : generating === "rendering" ? "rendering…" : "generating…"} />
-        ) : (
-          <>
-            {!ready && (
-              <ActionLink onClick={accept} icon={<Check className="h-3.5 w-3.5" />} title="approve this rung to unlock generating below it">approve</ActionLink>
-            )}
-            {ready && targets.map((t) => (
-              <ActionLink key={t.target} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={() => generate(t)} title={t.label}>{t.label}</ActionLink>
-            ))}
-            <div className="ml-auto flex items-center gap-3 text-[hsl(var(--pv-text-faint))]">
-              <button onClick={toggleLock} title={locked ? "unlock — let regeneration revise this again" : "lock — pin this so regeneration can't touch it"} className={`transition-colors ${locked ? "text-[hsl(var(--pv-accent))]" : "hover:text-foreground"}`}>
-                {locked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
-              </button>
-              <button onClick={remove} title="delete this node and everything under it" className="transition-colors hover:text-destructive/70"><X className="h-3.5 w-3.5" /></button>
-            </div>
-          </>
+        {!ready && (
+          <ActionLink onClick={accept} icon={<Check className="h-3.5 w-3.5" />} title="approve this rung to unlock editing below it">approve</ActionLink>
         )}
+        <div className="ml-auto flex items-center gap-3 text-[hsl(var(--pv-text-faint))]">
+          <button onClick={toggleLock} title={locked ? "unlock" : "lock — pin this so it can't be touched"} className={`transition-colors ${locked ? "text-[hsl(var(--pv-accent))]" : "hover:text-foreground"}`}>
+            {locked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
+          </button>
+          <button onClick={remove} title="delete this node and everything under it" className="transition-colors hover:text-destructive/70"><X className="h-3.5 w-3.5" /></button>
+        </div>
       </div>
       </>)}
     </Panel>

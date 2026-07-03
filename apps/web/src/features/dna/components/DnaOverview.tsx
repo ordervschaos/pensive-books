@@ -55,11 +55,11 @@ function TreeRow({ node, index, label, title, meta, depth, onOpen }: {
   );
 }
 
-export function DnaOverview({ bookId, nodes, settings, stages, nowKey, onOpen, onChanged, renderCard, onGenerateThreads, threadsBusy }: {
+export function DnaOverview({ bookId, nodes, settings, stages, nowKey, onOpen, onChanged, renderCard }: {
   bookId: number; nodes: DnaNode[]; settings: BookSettings; stages: JourneyStage[]; nowKey: StageKey; onOpen: (k: StageKey, focusId?: string) => void; onChanged: () => void;
   // Threads are edited in place on the dashboard (a cross-cutting whole-book registry); the studio passes its
-  // own card renderer + generate handler down so we reuse the exact node-card UI without lifting it out.
-  renderCard: (n: DnaNode, accent?: boolean) => ReactNode; onGenerateThreads: () => void; threadsBusy: boolean;
+  // own card renderer down so we reuse the exact node-card UI without lifting it out.
+  renderCard: (n: DnaNode, accent?: boolean) => ReactNode;
 }) {
   const threadsRef = useRef<HTMLDivElement>(null);
   const index = byId(nodes);
@@ -171,12 +171,8 @@ export function DnaOverview({ bookId, nodes, settings, stages, nowKey, onOpen, o
             <Waypoints className={`h-3.5 w-3.5 ${FAINT}`} />
             <Eyebrow tone="muted">Threads — the promises this book makes, set up → paid off</Eyebrow>
           </div>
-          {pillar && (
-            <ActionLink busy={threadsBusy} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={onGenerateThreads}>
-              {threads.length ? "regenerate threads" : "generate threads"}
-            </ActionLink>
-          )}
           {threads.length > 0 && <div className="mt-3 space-y-2">{threads.map((t) => renderCard(t))}</div>}
+          {threads.length === 0 && <p className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))]">No threads yet.</p>}
         </Panel>
       </div>
 

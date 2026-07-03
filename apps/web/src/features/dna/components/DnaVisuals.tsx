@@ -2,15 +2,12 @@
 // Collects every picture-generation concern (house look, cast reference portraits, scene illustrations)
 // out of Foundations and Draft into one non-gating rail section. Only the LOOK/References/Illustrations
 // panels render in picture mode; prose mode shows the output toggle + a "switch to picture book" hint.
-import { useState, useRef, useEffect } from "react";
-import { Sparkles } from "lucide-react";
+import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { ActionLink, Eyebrow, Panel, RunningInline, StageHead } from "@/components/book/shared/studioUi";
+import { ActionLink, Eyebrow, Panel, StageHead } from "@/components/book/shared/studioUi";
 import { DnaLookPanel } from "@/features/dna/components/DnaLookPanel";
 import { DnaCharacterLook } from "@/features/dna/components/DnaCharacterLook";
-import { ImagePromptPreview } from "@/features/dna/components/ImagePromptPreview";
 import { SceneIllustrationDialog } from "@/features/dna/components/SceneIllustrationDialog";
-import { composeSceneIllustration, renderSceneIllustration, type ComposedSceneImage } from "@/features/dna/lib/dnaExpand";
 import { isIllusStale, type CharacterContent, type DnaNode, type SceneContent } from "@/features/dna/lib/novelDna";
 import { supabase } from "@/integrations/supabase/client";
 import type { DnaSettings } from "@/features/dna/components/DnaStudio";
@@ -42,89 +39,15 @@ export function DnaVisuals({ bookId, nodes, settings, onChanged }: {
   const characters = nodes.filter((n) => n.kind === "character");
   const scenes = nodes.filter((n) => n.kind === "scene");
 
-  // Per-scene operable UI: clicking a tile opens the scene's dialog (view full screen / revise prompt /
-  // delete). Held by id so it re-resolves to the FRESH node after onChanged refetches.
+  // Per-scene operable UI: clicking a tile opens the scene's dialog (view full screen / delete). Held by id
+  // so it re-resolves to the FRESH node after onChanged refetches.
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selectedScene = selectedId ? scenes.find((s) => s.id === selectedId) ?? null : null;
-
-  // Hoisted preview surface for the bulk "illustrate all" STEPPER only (per-scene revise lives in the
-  // dialog above). nodeId identifies the scene being stepped; data is the composed prompt from Phase 1.
-  const [preview, setPreview] = useState<{ nodeId: string; data: ComposedSceneImage } | null>(null);
-
-  // Bulk stepper state: a queue of scenes to step through, with the current index.
-  const [queue, setQueue] = useState<{ scenes: DnaNode[]; i: number } | null>(null);
-
-  // The preview opens at the top of the grid, away from the tile that was clicked — pull it into view so
-  // the editable prompt is never missed (the whole point of the gate). Re-runs whenever the scene changes.
-  const previewRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (preview) previewRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [preview?.nodeId]);
-
-  // Bulk "illustrate all" stepper: compute todo, start the queue, compose scene 0.
-  const startIllustrateAll = async () => {
-    const todo = scenes.filter((s) =>
-      !(s.content as SceneContent).image_url ||
-      (s.content as SceneContent).caption?.text == null ||
-      isIllusStale(s)
-    );
-    if (!todo.length) { toast({ title: "All scenes already illustrated" }); return; }
-    setBusy("allillus");
-    try {
-      const composed = await composeSceneIllustration(bookId, todo[0]);
-      setQueue({ scenes: todo, i: 0 });
-      setPreview({ nodeId: todo[0].id, data: composed });
-      onChanged();
-    } catch (e) {
-      toast({ title: "Couldn't compose first illustration", description: String((e as Error)?.message ?? e), variant: "destructive" });
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  // Advance the stepper: render the current (possibly edited) prompt (durable — don't await the image),
-  // then compose the next scene in the queue. On Generate/Skip, i increments.
-  const stepIllustrate = async (finalPrompt: string | null) => {
-    if (!queue || !preview) return;
-    const { scenes: q, i } = queue;
-    // Render (unless Skip — finalPrompt null means skip).
-    if (finalPrompt !== null) {
-      try {
-        await renderSceneIllustration(bookId, preview.nodeId, { ...preview.data, prompt: finalPrompt });
-      } catch (e) {
-        toast({ title: "Couldn't kick render", description: String((e as Error)?.message ?? e), variant: "destructive" });
-      }
-    }
-    // Advance to next scene.
-    const nextI = i + 1;
-    if (nextI >= q.length) {
-      // Done — close queue + preview.
-      setQueue(null);
-      setPreview(null);
-      toast({ title: "Illustrate all", description: `${q.length} scene(s) queued for rendering.` });
-      return;
-    }
-    // Compose next scene's prompt.
-    setBusy("allillus");
-    try {
-      const composed = await composeSceneIllustration(bookId, q[nextI]);
-      setQueue({ scenes: q, i: nextI });
-      setPreview({ nodeId: q[nextI].id, data: composed });
-      onChanged();
-    } catch (e) {
-      toast({ title: "Couldn't compose next illustration", description: String((e as Error)?.message ?? e), variant: "destructive" });
-      setQueue(null);
-      setPreview(null);
-    } finally {
-      setBusy(null);
-    }
-  };
 
   // How many scenes have a non-stale pinned image.
   const illustratedCount = scenes.filter((s) =>
     (s.content as SceneContent).image_url && !isIllusStale(s)
   ).length;
-  const allIllustrated = scenes.length > 0 && illustratedCount === scenes.length;
 
   return (
     <div className="space-y-6">
@@ -177,7 +100,7 @@ export function DnaVisuals({ bookId, nodes, settings, onChanged }: {
             <Eyebrow tone="muted">references · cast</Eyebrow>
             {characters.length === 0 ? (
               <p className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))]">
-                No cast yet — generate characters in Foundations first.
+                No cast yet — add characters in Foundations first.
               </p>
             ) : (
               characters.map((ch) => (
@@ -191,7 +114,7 @@ export function DnaVisuals({ bookId, nodes, settings, onChanged }: {
             )}
           </div>
 
-          {/* ── Illustrations — thumbnail grid + illustrate-all stepper ───────── */}
+          {/* ── Illustrations — thumbnail grid (view/delete only; generation removed) ───────── */}
           <div className="space-y-3">
             <div className="flex items-center gap-3">
               <Eyebrow tone="muted">illustrations</Eyebrow>
@@ -200,41 +123,11 @@ export function DnaVisuals({ bookId, nodes, settings, onChanged }: {
                   {illustratedCount}/{scenes.length} illustrated
                 </span>
               )}
-              {/* Bulk stepper: composing label while stepping, or the trigger link. */}
-              {scenes.length > 0 && !allIllustrated && (
-                busy === "allillus"
-                  ? <RunningInline label={queue ? `composing scene ${(queue.i + 1)} of ${queue.scenes.length}…` : "composing…"} />
-                  : !queue && (
-                      <ActionLink icon={<Sparkles className="h-3.5 w-3.5" />} onClick={() => void startIllustrateAll()}>
-                        illustrate all scenes
-                      </ActionLink>
-                    )
-              )}
             </div>
-
-            {/* Bulk stepper preview — one scene at a time; Generate renders + advances, Cancel skips.
-                (Per-scene revise has its own dialog.) Scrolled into view so the edit box is never missed. */}
-            {preview && queue && (
-              <div ref={previewRef} className="space-y-1">
-                <p className="pv-mono text-[9px] uppercase tracking-[0.1em] text-[hsl(var(--pv-text-faint))]">
-                  scene {queue.i + 1} of {queue.scenes.length}
-                </p>
-                <ImagePromptPreview
-                  prompt={preview.data.prompt}
-                  refImages={preview.data.refImages}
-                  model={preview.data.model}
-                  context={preview.data.context}
-                  busy={busy === "allillus"}
-                  generateLabel={`generate · ${queue.i + 1}/${queue.scenes.length}`}
-                  onGenerate={(finalPrompt) => void stepIllustrate(finalPrompt)}
-                  onCancel={() => void stepIllustrate(null)}
-                />
-              </div>
-            )}
 
             {scenes.length === 0 ? (
               <p className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))]">
-                No scenes yet — generate scenes in Scenes first.
+                No scenes yet.
               </p>
             ) : (
               <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-3 lg:grid-cols-4">
@@ -242,16 +135,14 @@ export function DnaVisuals({ bookId, nodes, settings, onChanged }: {
                   const sc = s.content as SceneContent;
                   const img = sc.image_url;
                   const stale = isIllusStale(s);
-                  const isStepping = preview?.nodeId === s.id;
                   return (
-                    <div key={s.id} className={`group relative ${isStepping ? "ring-2 ring-[hsl(var(--pv-accent))]/40 rounded-md" : ""}`}>
+                    <div key={s.id} className="group relative">
                       {img ? (
-                        // Illustrated: click the tile to open the scene's operable dialog (view / revise /
-                        // delete); a hover hint makes the affordance obvious.
+                        // Click the tile to open the scene's operable dialog (view full screen / delete).
                         <button
                           type="button"
                           onClick={() => setSelectedId(s.id)}
-                          title="open · view, revise prompt, or delete"
+                          title="open · view or delete"
                           className="relative block w-full"
                         >
                           <img
@@ -266,18 +157,14 @@ export function DnaVisuals({ bookId, nodes, settings, onChanged }: {
                           </span>
                         </button>
                       ) : (
-                        // Unillustrated: the whole tile is an always-visible trigger — opens the operable
-                        // dialog where the prompt is composed + edited before generating.
-                        <button
-                          onClick={() => setSelectedId(s.id)}
-                          title="illustrate this scene — compose & edit the prompt"
-                          className="flex aspect-square w-full flex-col items-center justify-center gap-1.5 rounded-md border border-dashed border-[hsl(var(--pv-border-soft))]/60 bg-[hsl(var(--pv-surface-2))]/30 transition-colors hover:border-[hsl(var(--pv-accent))]/50 hover:bg-[hsl(var(--pv-accent))]/[0.04]"
+                        <div
+                          title="no image"
+                          className="flex aspect-square w-full flex-col items-center justify-center gap-1.5 rounded-md border border-dashed border-[hsl(var(--pv-border-soft))]/60 bg-[hsl(var(--pv-surface-2))]/30"
                         >
-                          <Sparkles className="h-4 w-4 text-[hsl(var(--pv-text-faint))]" />
                           <span className="pv-mono text-[8px] uppercase tracking-[0.1em] text-[hsl(var(--pv-text-faint))]">
-                            illustrate
+                            no image
                           </span>
-                        </button>
+                        </div>
                       )}
                       {/* stale badge */}
                       {img && stale && (
@@ -298,10 +185,9 @@ export function DnaVisuals({ bookId, nodes, settings, onChanged }: {
             )}
           </div>
 
-          {/* Per-scene operable dialog — view full screen, revise the prompt, or delete the image. */}
+          {/* Per-scene operable dialog — view full screen or delete the image. */}
           <SceneIllustrationDialog
             node={selectedScene}
-            bookId={bookId}
             open={!!selectedScene}
             onOpenChange={(o) => { if (!o) setSelectedId(null); }}
             onChanged={onChanged}
