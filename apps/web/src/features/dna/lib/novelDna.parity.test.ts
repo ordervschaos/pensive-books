@@ -124,14 +124,15 @@ function ledgerAtBook(): DnaNode[] {
 
 // Vertical-fit fixture (doc_1783103754000_timeline_layer.md): every rung contradicts the rung above it — a
 // 4-movement shape over 1 act (shape_unmapped), an "up" ending promise whose last scene lands down
-// (ending_feel_mismatch), an "up" beat whose last scene lands down (beat_polarity_undelivered), and a scene
-// reading 5 where its beat planned 1 on a 0–5 scale (scene_reading_departs).
+// (ending_feel_mismatch), a "down" act value whose last beat lands up (act_value_undelivered), an "up" beat
+// whose last scene lands down (beat_polarity_undelivered), and a scene reading 5 where its beat planned 1 on
+// a 0–5 scale (scene_reading_departs).
 function verticalBook(): DnaNode[] {
   const seed = mk("seed", { id: "vf_seed", content: { logline: "A keeper must hold the last lighthouse through the worst winter." } });
   const premise = mk("premise", { id: "vf_prem", parent_id: "vf_seed", content: { dramatic_question: "Can she keep the light lit?", shape: { name: "man in a hole", movements: ["comfort", "fall", "struggle", "rise"], ending_feel: "up" } } });
   const pillar = mk("pillar", { id: "vf_pil", parent_id: "vf_prem", content: { controlling_idea: "Keeping a light costs the keeper." } });
   const meter = mk("meter", { id: "vf_m1", parent_id: "vf_pil", content: { name: "dread", kind: "tension", scale: { min: 0, max: 5 } } });
-  const a1 = mk("act", { id: "vf_a1", parent_id: "vf_pil", position: 0, content: { title: "Only act", goal: "endure" } });
+  const a1 = mk("act", { id: "vf_a1", parent_id: "vf_pil", position: 0, content: { title: "Only act", goal: "endure", value: { name: "resolve", from: "steady", to: "guttering", polarity: "down" } } });
   const b1 = mk("beat", { id: "vf_b1", parent_id: "vf_a1", position: 0, content: { summary: "The storm rises and she rises with it.", polarity: "up", readings: [{ ref: "vf_m1", value: 1 }] } });
   const s1 = mk("scene", { id: "vf_s1", parent_id: "vf_b1", position: 0, content: { goal: "hold the light", value_shift: vs("down"), readings: [{ ref: "vf_m1", value: 5 }] } });
   return [seed, premise, pillar, meter, a1, b1, s1];
@@ -182,7 +183,7 @@ describe("novel-dna edge twin ↔ web engine parity", () => {
 
 // Vertical fit (the timeline layer): each finer rung must refine, not contradict, the rung above it.
 describe("vertical-fit lints", () => {
-  const RULES = ["shape_unmapped", "ending_feel_mismatch", "beat_polarity_undelivered", "scene_reading_departs"];
+  const RULES = ["shape_unmapped", "ending_feel_mismatch", "act_value_undelivered", "beat_polarity_undelivered", "scene_reading_departs"];
 
   it("flags every rung of the deliberately contradictory book", () => {
     const rules = web.validate(verticalBook()).map((i) => i.rule);
@@ -193,6 +194,7 @@ describe("vertical-fit lints", () => {
     const issues = web.validate(verticalBook());
     expect(issues.find((i) => i.rule === "shape_unmapped")?.nodeId).toBe("vf_prem");
     expect(issues.find((i) => i.rule === "ending_feel_mismatch")?.nodeId).toBe("vf_s1");
+    expect(issues.find((i) => i.rule === "act_value_undelivered")?.nodeId).toBe("vf_b1");
     expect(issues.find((i) => i.rule === "beat_polarity_undelivered")?.nodeId).toBe("vf_s1");
     expect(issues.find((i) => i.rule === "scene_reading_departs")?.nodeId).toBe("vf_s1");
   });

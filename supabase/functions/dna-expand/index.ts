@@ -337,7 +337,15 @@ Deno.serve(async (req: Request) => {
     const acts = pillar ? nodes.filter((n) => n.parent_id === pillar.id && n.kind === "act").sort((a, b) => (a.position ?? 0) - (b.position ?? 0)) : [];
     const actBlock = acts.length
       ? "THE ARC (acts in order — place promises across these):\n" +
-        acts.map((m) => `- [${(m.content as { title?: string }).title ?? ""}] turn: ${(m.content as { turning_point?: string }).turning_point ?? ""}`).join("\n")
+        // The value line grounds the "act's value shift is the MACRO trend" rule below — the model can't
+        // oscillate within (or land) a trend it never sees.
+        acts.map((m) => {
+          const c = m.content as { title?: string; turning_point?: string; value?: { name?: string; from?: string; to?: string; polarity?: string } };
+          const v = c.value && (c.value.name || c.value.from || c.value.to)
+            ? ` | value ${c.value.name ?? ""}: ${c.value.from ?? "?"} → ${c.value.to ?? "?"}${c.value.polarity ? ` (lands ${c.value.polarity})` : ""}`
+            : "";
+          return `- [${c.title ?? ""}] turn: ${c.turning_point ?? ""}${v}`;
+        }).join("\n")
       : "";
     // The tentpole registry — set-pieces the beat sheet must place (each pinned tentpole → a beat).
     const tentpoles = pillar ? nodes.filter((n) => n.parent_id === pillar.id && n.kind === "tentpole" && (n.authoring?.locked || n.authoring?.status === "accepted")) : [];

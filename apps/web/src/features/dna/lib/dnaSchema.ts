@@ -103,7 +103,12 @@ export const NODE_SCHEMA: Partial<Record<NodeKind, EditSpec[]>> = {
   act: [
     { key: "title", label: "title" }, { key: "goal", label: "goal", multiline: true, required: true }, { key: "turning_point", label: "turning point", multiline: true },
     { key: "target_pct", label: "target %", type: "percent" },
-    { key: "value", label: "value", type: "object", fields: [{ key: "name", label: "name" }, { key: "from", label: "from" }, { key: "to", label: "to" }] },
+    // polarity = the act's MACRO trend (where the value ENDS across the act) — the machine-readable
+    // contract the act_value_undelivered lint checks against the act's last beat; from/to stay free text.
+    { key: "value", label: "value", type: "object", fields: [
+      { key: "name", label: "name" }, { key: "from", label: "from" }, { key: "to", label: "to" },
+      { key: "polarity", label: "polarity", type: "select", options: POLARITY },
+    ] },
   ],
   beat: [
     { key: "summary", label: "summary", multiline: true, required: true }, { key: "connector", label: "connector", type: "select", options: ["therefore", "but"] },

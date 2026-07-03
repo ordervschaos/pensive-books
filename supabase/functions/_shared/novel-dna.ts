@@ -51,7 +51,9 @@ export interface SeedContent { logline?: string }
 export interface PremiseContent { genre?: string[]; tone?: string[]; dramatic_question?: string; shape?: { name?: string; movements?: string[]; ending_feel?: "up" | "down" | "bittersweet" | "ambivalent" } }
 export interface PillarContent { controlling_idea?: string; ending?: string }
 // target_pct: where this act's turning_point should land in the book (0–1) — the pacing intent (§6).
-export interface ActContent { title?: string; goal?: string; turning_point?: string; target_pct?: number; value?: ValueShift }
+// value = the act's MACRO shift; schema keys it `name` (scene ValueShift keys it `value`). polarity = the
+// machine-readable trend (where the value ENDS across the act) — what act_value_undelivered checks.
+export interface ActContent { title?: string; goal?: string; turning_point?: string; target_pct?: number; value?: { name?: string; from?: string; to?: string; polarity?: "up" | "down" } }
 // A reference to a thread node + the role this beat/scene plays for that promise (§4.5/§5).
 export type ThreadRole = "setup" | "payoff" | "advance";
 export interface ThreadRef { ref: string; role: ThreadRole }
@@ -779,6 +781,20 @@ function verticalLints(nodes: DnaNode[]): DnaIssue[] {
     if (terminal && terminal.pol !== feel) {
       issues.push({ rule: "ending_feel_mismatch", severity: "warn", nodeId: terminal.id,
         message: `the premise's shape promises the ending feels "${feel}" but the spine's last turn lands ${terminal.pol}` });
+    }
+  }
+
+  // act.value.polarity ↔ its beats' landing: the act's value polarity is where the macro value ENDS across
+  // the act, so its LAST beat must land the same way. Beats oscillate within the act by design (hope spots
+  // in down-acts) — only the landing is checked, and only when both sides are authored.
+  for (const a of acts) {
+    const av = (a.content as ActContent).value;
+    const actBeats = childrenOf(nodes, a.id).filter((b) => b.kind === "beat");
+    const last = actBeats[actBeats.length - 1];
+    const bp = last ? (last.content as BeatContent).polarity : undefined;
+    if (av?.polarity && bp && bp !== av.polarity) {
+      issues.push({ rule: "act_value_undelivered", severity: "warn", nodeId: last.id,
+        message: `act plans ${av.name ? `"${av.name}"` : "its value"} to land ${av.polarity} but its last beat lands ${bp} — the beats don't deliver the act's macro shift` });
     }
   }
 
