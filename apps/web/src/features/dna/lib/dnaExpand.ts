@@ -4,8 +4,8 @@
 import { supabase } from "@/integrations/supabase/client";
 import { BRIDGE, bridgeFetch } from "@/lib/bridge";
 import { deleteNode, loadTree, saveNode, saveNodes } from "@/features/dna/lib/bookNodes";
-import { byId, deepMergeContent, gameTwins, newId, PARENT_KIND, pillarOf, stampInput, stampProse, type BeatContent, type DnaNode, type GameContent, type MeterContent, type NodeContent, type NodeKind, type RenderBrief, type SceneContent, type ThreadContent, type ThreadRef } from "@/features/dna/lib/novelDna";
-import { stageGeneratedProposal, type AgentProposal } from "@/features/dna/lib/agentThread";
+import { byId, deepMergeContent, emptyNode, gameTwins, newId, PARENT_KIND, pillarOf, stampInput, stampProse, type BeatContent, type DnaNode, type GameContent, type MeterContent, type NodeContent, type NodeKind, type RenderBrief, type SceneContent, type ThreadContent, type ThreadRef } from "@/features/dna/lib/novelDna";
+import { logAgentTurn, stageGeneratedProposal, type AgentProposal } from "@/features/dna/lib/agentThread";
 import type { NewSubtree, NodeOp } from "@/features/dna/lib/dnaChat";
 
 /** A short, legible chapter title from a beat's summary (the working title; the author renames). */
@@ -198,6 +198,51 @@ export function realizeScenesFromBeat(beatNode: DnaNode, scenes: SceneContent[],
   if (beat.establishes?.length && scenes.length) scenes[scenes.length - 1].establishes = beat.establishes;
   // Chaptering: a beat opens a chapter (the legible default; author can merge/rename later).
   if (startPosition === 0 && scenes[0] && !scenes[0].chapter_start) scenes[0].chapter_start = { title: chapterTitleFromBeat(beatNode) };
+}
+
+/** Ensure the book's root `seed` node exists — the agent can't create a parent-less root, so this is the
+ *  ONE place that mints it (first tree load, or right after the brief's idea is submitted, whichever comes
+ *  first). Idempotent: returns the existing seed if there is one. A brand-new seed is prefilled with `idea`
+ *  as a provisional logline placeholder — never overwrites a seed that already exists. Two callers can race
+ *  this (e.g. the brief save and the tree's own bootstrap firing close together); `book_nodes_one_root_per_book`
+ *  makes the loser's insert fail, and we re-read and hand back the winner's seed instead of erroring. */
+export async function ensureSeed(bookId: number, idea?: string | null): Promise<DnaNode> {
+  const nodes = await loadTree(bookId);
+  const existing = nodes.find((n) => n.kind === "seed");
+  if (existing) return existing;
+  const seed = emptyNode(bookId, "seed", 0, null);
+  const trimmed = idea?.trim();
+  if (trimmed) seed.content = { logline: trimmed };
+  try {
+    await saveNode(seed);
+    return seed;
+  } catch (e) {
+    if ((e as { code?: string })?.code === "23505") {
+      const winner = (await loadTree(bookId)).find((n) => n.kind === "seed");
+      if (winner) return winner;
+    }
+    throw e;
+  }
+}
+
+/** Fired right after the brief's `idea` is saved, from either save surface (Book Details or the DNA tree's
+ *  own brief panel): ensures the seed exists, drafts a real logline from the idea via dna-expand, and
+ *  announces it in the book's agent chat so the choice is waiting the moment the author opens the DNA view.
+ *  Fire-and-forget — never blocks the brief save. A no-op once the seed's logline has moved past the raw
+ *  idea placeholder (drafted OR author-refined) — editing the idea again never clobbers it. */
+export async function bootstrapLoglineFromBrief(bookId: number, idea: string | null | undefined): Promise<void> {
+  const trimmed = idea?.trim();
+  if (!trimmed) return;
+  const seed = await ensureSeed(bookId, trimmed);
+  const current = (seed.content as { logline?: string } | undefined)?.logline?.trim();
+  if (current && current !== trimmed) return;
+  const { text } = await expandNode(bookId, seed, "logline");
+  if (!text) return;
+  await logAgentTurn(
+    bookId,
+    `I've drafted a **logline** for your book — the one-sentence promise of who wants what, what's in their way, and what's at stake:\n\n> ${text}\n\nWant a different angle — punchier, higher stakes, a different point of view? Just say so. Otherwise, we can move on to the next step.`,
+    "note",
+  );
 }
 
 export async function expandNode(

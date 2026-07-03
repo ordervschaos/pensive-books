@@ -98,14 +98,21 @@ export async function continueAgent(threadId: number): Promise<void> {
   await invoke({ runId: threadId, autoContinue: true });
 }
 
-/** Log a HUMAN decision into the book's agent thread as a visible step WITHOUT a model call — the chat is
- *  the agent's surface, so author actions like choosing/discarding an option register there too. Best-effort:
- *  no-op if the thread doesn't exist yet (nothing to log into) or is mid-turn (don't race the edge fn's
- *  writes — same idle-only safety as resolveProposal). Surfaces over Realtime in the rail; refresh = no-op. */
+/** Log a step into the book's agent thread WITHOUT a model call — either a human decision (choosing/
+ *  discarding an option) or a system-authored note (e.g. the logline bootstrap announcing what it drafted).
+ *  Creates the thread row (idle) if none exists yet, same as stageGeneratedProposal — a brand-new book has
+ *  no thread until something writes to it, and this is often the FIRST thing that does. No-op if the thread
+ *  is mid-turn (don't race the edge fn's writes — same idle-only safety as resolveProposal). Surfaces over
+ *  Realtime in the rail; refresh = no-op. */
 export async function logAgentTurn(bookId: number, label: string, t: AgentStep["t"] = "answer"): Promise<void> {
   const { data } = await supabase.from("book_agent_runs")
     .select("id, status, steps").eq("book_id", bookId).eq("kind", "thread").maybeSingle();
-  if (!data) return;
+  if (!data) {
+    const { error } = await supabase.from("book_agent_runs")
+      .insert({ book_id: bookId, kind: "thread", status: "idle", steps: [{ t, label }] });
+    if (error) throw new Error(error.message);
+    return;
+  }
   const busy = data.status === "running" || data.status === "awaiting_input";
   if (busy) return; // don't write steps while the edge fn owns the row
   const steps = [...(Array.isArray(data.steps) ? (data.steps as AgentStep[]) : []), { t, label }];
