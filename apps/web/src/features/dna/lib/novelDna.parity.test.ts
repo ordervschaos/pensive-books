@@ -141,6 +141,8 @@ const cases: [string, (m: typeof web, n: DnaNode[]) => unknown][] = [
   ["facetEchoes", (m, n) => m.facetEchoes(n)],
   ["facetExposureBefore", (m, n) => m.facetExposureBefore(n, "ex_s3")],
   ["ledgerAt", (m, n) => m.ledgerAt(n, "la_s4")],
+  ["ledgerText", (m, n) => m.ledgerText(n, "la_s3")],
+  ["traceDiff", (m, n) => m.traceDiff(n)],
   ["scenesInOrder", (m, n) => m.scenesInOrder(n).map((x) => x.id)],
   ["beatsInOrder", (m, n) => m.beatsInOrder(n).map((x) => x.id)],
   ["chapters", (m, n) => m.chapters(n)],
@@ -209,6 +211,21 @@ describe("ledgerAt (Phase 3)", () => {
   it("represents a held-open thread mid-book (open + scenesSinceTouch > 0)", () => {
     const L = web.ledgerAt(ledgerAtBook(), "la_s3"); // prior = s1, s2 — set up but not yet paid
     expect(L.threads.find((t) => t.ref === "la_t1")).toMatchObject({ state: "open", openedAt: 0, scenesSinceTouch: 2 });
+  });
+
+  it("ledgerText renders the held-open promise + positions as shared prompt text", () => {
+    const t = web.ledgerText(ledgerAtBook(), "la_s3");
+    expect(t).toContain('"the compass" (held 2 scenes');
+    expect(t).toContain("Mara — last at The Harbor");
+  });
+
+  it("traceDiff joins planned advances/payoffs against observed facts by entity id", () => {
+    const gaps = web.traceDiff(ledgerAtBook());
+    // s1 plans to advance the Mara↔Okonkwo relationship, but its observed fact is tagged to Mara, not the rel.
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0]).toMatchObject({ axis: "relationship", ref: "la_r1", index: 0 });
+    // s3's planned payoff is NOT flagged — s3 carries no observed_establishes (not read yet).
+    expect(gaps.find((g) => g.axis === "thread")).toBeUndefined();
   });
 });
 

@@ -24,8 +24,8 @@ import { getRoleModels } from "../_shared/model-config.ts";
 // by novelDna.parity.test.ts). threadSystem re-runs these on the LIVE tree each chain link so the objective +
 // structural lints SENSE the current state instead of dead-reckoning from the author's message-time snapshot
 // (docs/agent-improvement-plan.md P1.2).
-import { analysisText, type AuthoringStatus, type DnaNode, type NodeContent, type NodeKind, type SceneContent } from "../_shared/novel-dna.ts";
-import { currentObjective } from "../_shared/dna-journey.ts";
+import { analysisText, ledgerText, type AuthoringStatus, type DnaNode, type NodeContent, type NodeKind, type SceneContent } from "../_shared/novel-dna.ts";
+import { currentObjective, nextDraftTarget } from "../_shared/dna-journey.ts";
 // The content schema the agent must conform to — GENERATED from the web app's NODE_SCHEMA (single source of
 // truth), kept in sync by apps/web/.../dnaSchema.artifact.test.ts. Never hand-edit; edit NODE_SCHEMA + regen.
 import dnaSchema from "../_shared/dna-schema.json" with { type: "json" };
@@ -1403,6 +1403,12 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
   // otherwise. analysisText ignores its settings arg, so we pass {}.
   const hasStructure = liveNodes.some((n) => n.kind === "beat" || n.kind === "scene");
   const liveAnalysis = hasStructure ? analysisText(liveNodes, {}) : (analysis ?? "");
+  // The unified between-scenes view (docs/scene-ledger.md §3.2 consumer 2): the state ENTERING the next scene to
+  // draft — open promises + character positions — rendered by the SAME ledgerText the prose generator reads, so
+  // the agent curates its render brief against the same snapshot the writer will see. Empty until there's a
+  // draftable scene with something to carry; an anchor, not a fence.
+  const draftTarget = hasStructure ? nextDraftTarget(liveNodes, mode) : undefined;
+  const betweenScenes = draftTarget ? ledgerText(liveNodes, draftTarget.scene.id) : "";
 
   // Each distinct kind of context gets its own XML tag so the model can unambiguously tell where one
   // section ends and the next begins (Anthropic's prompt-engineering guidance: XML tags reduce
@@ -1417,6 +1423,9 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
     liveObjective?.trim() ? `<current_objective>\n${liveObjective.trim()}\n</current_objective>` : "",
     // The structural backstop (pacing / dangling-promise / sagging-run lints) — act on any ⚠ flags.
     liveAnalysis?.trim() ? `<story_analysis note="the structural backstop — address any ⚠ flags">\n${liveAnalysis.trim()}\n</story_analysis>` : "",
+    // The same between-scenes snapshot the prose generator sees entering the next scene to draft (scene-ledger
+    // §3.2) — so a render brief you curate honors the open promises + where characters stand. Anchor, not fence.
+    betweenScenes.trim() ? `<between_scenes note="state ENTERING the next scene to draft${draftTarget ? ` (scene ${draftTarget.orderIndex}/${draftTarget.total})` : ""} — the SAME snapshot the prose generator reads; honor open promises and where characters are when you plan or render">\n${betweenScenes.trim()}\n</between_scenes>` : "",
     // The context tray (docs/agent-context-model.md): the nodes the author attached to work on, hydrated in
     // full so you have their real content without a read_node. Lead with these unless the author steers
     // elsewhere — an anchor, not a fence: the whole tree is still below.

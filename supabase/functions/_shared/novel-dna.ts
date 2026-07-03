@@ -1035,6 +1035,52 @@ export function ledgerAt(nodes: DnaNode[], sceneId: string): SceneLedger {
   };
 }
 
+/** A compact, name-resolved rendering of the between-scenes state ENTERING a scene (a `ledgerAt` fold): open
+ *  promises with held-pressure + where each character was last seen. The SHARED text the generator's prose
+ *  context and the agent's tree digest both read, so generator and editor see the same snapshot. Empty when
+ *  there's nothing to say (no known scene / no open loops / no positions) — callers drop the block entirely. */
+export function ledgerText(nodes: DnaNode[], sceneId: string): string {
+  const L = ledgerAt(nodes, sceneId);
+  const index = byId(nodes);
+  const nm = (id: string): string => String((index.get(id)?.content as { name?: string } | undefined)?.name ?? id);
+  const open = L.threads.filter((t) => t.state === "open").map((t) => {
+    const held = (t.scenesSinceTouch ?? 0) > 1 ? ` (held ${t.scenesSinceTouch} scenes — don't let it drop)` : "";
+    return `"${nm(t.ref)}"${held}`;
+  });
+  const positions = L.positions.filter((p) => p.loc).map((p) => `${nm(p.ref)} — last at ${nm(p.loc!)}`);
+  return [
+    open.length ? `- Open promises (set up, not yet paid — keep them alive): ${open.join("; ")}` : "",
+    positions.length ? `- Positions (where each was last seen — account for any travel): ${positions.join("; ")}` : "",
+  ].filter(Boolean).join("\n");
+}
+
+// ── traceDiff (the planned-vs-observed STATE trace — docs/true-agent.md; unlocked by Phase-1 grounding) ──────
+// Phase 1 gave observed facts a node-id `entity`, so the plan and the read finally share a keyspace. Per scene
+// that has BEEN READ (carries observed_establishes), join the plan against the read by that id: a relationship
+// the scene PLANS to move (`advances[].ref`) or a promise it PLANS to pay (a `payoff` ThreadRef) with NO
+// observed fact tagged to that entity = a plan the prose didn't deliver. Fires only on read scenes, so it never
+// flags an un-read draft. Meters (readings vs observed_readings) are the existing observedGap — the other axis.
+export interface TraceGap { sceneId: string; index: number; axis: "relationship" | "thread"; ref: string; note: string }
+export function traceDiff(nodes: DnaNode[]): TraceGap[] {
+  const index = byId(nodes);
+  const nm = (id: string): string => String((index.get(id)?.content as { name?: string } | undefined)?.name ?? id);
+  const out: TraceGap[] = [];
+  scenesInOrder(nodes).forEach((s, i) => {
+    const c = s.content as SceneContent;
+    if (!c.observed_establishes?.length) return; // not read yet — never flag an unmeasured scene
+    const seen = new Set(c.observed_establishes.map((f) => f.entity).filter((e): e is string => !!e));
+    for (const a of (c.advances ?? [])) {
+      if (a.ref && !seen.has(a.ref)) out.push({ sceneId: s.id, index: i, axis: "relationship", ref: a.ref,
+        note: `scene ${i + 1} plans to advance "${nm(a.ref)}"${a.how ? ` (${a.how})` : ""} but the read surfaced no fact about it — the move may not have landed in the prose` });
+    }
+    for (const t of (c.threads ?? [])) {
+      if (t.role === "payoff" && t.ref && !seen.has(t.ref)) out.push({ sceneId: s.id, index: i, axis: "thread", ref: t.ref,
+        note: `scene ${i + 1} plans to PAY OFF "${nm(t.ref)}" but the read surfaced no fact tagged to it — the payoff may be unearned in the prose` });
+    }
+  });
+  return out;
+}
+
 /** A compact plain-text STORY ANALYSIS — the three axes + lints — handed to the dna-chat reviser as context
  *  so it can act on pacing drift / dangling promises / sagging runs. The UI renders the same data visually. */
 export function analysisText(nodes: DnaNode[], settings: BookSettings): string {

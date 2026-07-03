@@ -14,7 +14,7 @@ import { getRoleModels, DIGEST_MODEL } from "../_shared/model-config.ts";
 import { extractJsonBlock } from "../_shared/json.ts";
 // The shared engine's beat-native lints, run over the just-generated beat sheet so a silently-degraded sheet
 // gets one bounded repair turn instead of shipping the damage (docs/agent-improvement-plan.md P2.1).
-import { canonicalizeKey, entityRegistryBlock, ledgerAt, validate, type AuthoringStatus, type DnaNode, type NodeContent, type NodeKind, type SceneLedger } from "../_shared/novel-dna.ts";
+import { canonicalizeKey, entityRegistryBlock, ledgerAt, ledgerText, validate, type AuthoringStatus, type DnaNode, type NodeContent, type NodeKind, type SceneLedger } from "../_shared/novel-dna.ts";
 import { type Brief, briefContext, mandateContext } from "../_shared/brief.ts";
 import { isChainCall } from "../_shared/self-chain.ts";
 import { serviceClient } from "../_shared/task.ts";
@@ -388,22 +388,13 @@ Deno.serve(async (req: Request) => {
     const sceneLedger: SceneLedger | null = node.kind === "scene" ? ledgerAt(nodes as unknown as DnaNode[], nodeId) : null;
     const nameOf = (id: string) => String((byId.get(id)?.content as { name?: string })?.name ?? id);
     // ENTRY STATE — the plan-side state entering this scene the prose writer otherwise can't see: promises still
-    // OPEN (reader pressure — held-open = open + touched a while ago) and where each character was LAST seen (so
-    // the scene doesn't teleport someone or forget an open loop). Anchors, not fences.
-    const entryStateBlock = (() => {
-      if (!sceneLedger) return "";
-      const open = sceneLedger.threads.filter((t) => t.state === "open").map((t) => {
-        const held = (t.scenesSinceTouch ?? 0) > 1 ? ` (held ${t.scenesSinceTouch} scenes — don't let it drop)` : "";
-        return `"${nameOf(t.ref)}"${held}`;
-      });
-      const positions = sceneLedger.positions.filter((p) => p.loc).map((p) => `${nameOf(p.ref)} — last at ${nameOf(p.loc!)}`);
-      const lines = [
-        open.length ? `- Open promises (set up, not yet paid — keep them alive): ${open.join("; ")}` : "",
-        positions.length ? `- Positions (where each was last seen — account for any travel): ${positions.join("; ")}` : "",
-      ].filter(Boolean);
-      if (!lines.length) return "";
-      return "ENTRY STATE (the deterministic story state ENTERING this scene — honor it; don't contradict where people are or forget an open promise):\n" + lines.join("\n");
-    })();
+    // OPEN (reader pressure) + where each character was LAST seen (so the scene doesn't teleport someone or
+    // forget an open loop). Rendered by the shared `ledgerText`, so the generator sees the SAME snapshot the
+    // agent's tree digest does (docs/scene-ledger.md §3.2). Empty text → block dropped (degradation unchanged).
+    const entryText = node.kind === "scene" ? ledgerText(nodes as unknown as DnaNode[], nodeId) : "";
+    const entryStateBlock = entryText
+      ? "ENTRY STATE (the deterministic story state ENTERING this scene — honor it; don't contradict where people are or forget an open promise):\n" + entryText
+      : "";
     // The DISCLOSURE BUDGET (docs/scene-ledger.md §2.4), now read off the same ledgerAt fold: for the entities in
     // THIS scene (its location + POV + present cast), what has ALREADY been rendered — so the writer reveals
     // fresh facets, varies known ones in NEW words, and drops saturated ones, instead of blindly restating the

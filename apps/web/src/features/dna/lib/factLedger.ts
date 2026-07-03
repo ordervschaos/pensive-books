@@ -9,7 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { BRIDGE, bridgeFetch } from "@/lib/bridge";
 import { sendAgentMessage } from "@/features/dna/lib/agentThread";
 import {
-  analysisText, byId, entityRegistryBlock, scenesInOrder, validate,
+  analysisText, byId, entityRegistryBlock, scenesInOrder, traceDiff, validate,
   type BeatContent, type BookSettings, type ContinuityFlag, type DnaNode, type LedgerFact, type SceneContent,
 } from "@/features/dna/lib/novelDna";
 
@@ -80,9 +80,24 @@ export function ledgerFindingsMessage(nodes: DnaNode[]): string | null {
   ].join("\n");
 }
 
-/** Hand the continuity breaks to the editor agent (the manual taste gate). Returns false when there are none. */
+/** The planned-vs-observed TRACE gaps (traceDiff) as an editor instruction — the state-axis half of the verify
+ *  loop, unlocked by Phase-1 grounding (docs/scene-ledger.md §3.2 consumer 3). A relationship a scene planned to
+ *  move, or a promise it planned to pay, that the prose read surfaced no fact for. Null when plan and prose
+ *  agree on every read scene. */
+export function traceFindingsMessage(nodes: DnaNode[]): string | null {
+  const gaps = traceDiff(nodes);
+  if (!gaps.length) return null;
+  return [
+    "The planned-vs-observed trace found these plans the prose read didn't deliver:",
+    ...gaps.map((g) => `- ${g.note}`),
+    "Either revise the prose to deliver the planned move/payoff, or adjust the plan if the scene legitimately changed.",
+  ].join("\n");
+}
+
+/** Hand the verify-loop findings — continuity breaks AND planned-vs-observed trace gaps — to the editor agent
+ *  (the manual taste gate). Returns false when there's nothing to send. */
 export async function sendBreaksToEditor(bookId: number, nodes: DnaNode[], settings: BookSettings): Promise<boolean> {
-  const message = ledgerFindingsMessage(nodes);
+  const message = [ledgerFindingsMessage(nodes), traceFindingsMessage(nodes)].filter(Boolean).join("\n\n");
   if (!message) return false;
   await sendAgentMessage(bookId, message, analysisText(nodes, settings));
   return true;
