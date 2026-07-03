@@ -1308,8 +1308,8 @@ async function proposeOptions(
 // is a DIGEST — handle/gist + causal spine, full content via read_node (see digestNode). A one-line
 // premise/pillar frame is always included so the agent is grounded even when 'premise' isn't in scope.
 async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspect[] | null, analysis: string | null, effort: "low" | "high" = "high", auto = false, objective: string | null = null, attachedIds: string[] | null = null): Promise<string> {
-  const { data: book } = await service.from("books").select("name, brief, mode").eq("id", bookId).maybeSingle();
-  const b = book as { name?: string; brief?: Brief; mode?: "prose" | "picture" } | null;
+  const { data: book } = await service.from("books").select("name, brief").eq("id", bookId).maybeSingle();
+  const b = book as { name?: string; brief?: Brief } | null;
   const { data: rows } = await service
     .from("book_nodes").select("id, parent_id, kind, level, position, content, authoring, proposals").eq("book_id", bookId);
   const nodes = (rows ?? []) as DnaNodeRow[];
@@ -1397,8 +1397,7 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
     authoring: { source: "user", locked: n.authoring?.locked ?? false, status: (n.authoring?.status as AuthoringStatus) ?? "empty" },
     proposals: n.proposals ?? undefined, chosen: null,
   }));
-  const mode = b?.mode === "picture" ? "picture" : "prose";
-  const liveObjective = currentObjective(liveNodes, { mode, bookSlug: String(bookId) }) || objective;
+  const liveObjective = currentObjective(liveNodes, { bookSlug: String(bookId) }) || objective;
   // Only meaningful once structure exists — mirrors the client's gate (AgentRail), which sends undefined
   // otherwise. analysisText ignores its settings arg, so we pass {}.
   const hasStructure = liveNodes.some((n) => n.kind === "beat" || n.kind === "scene");
@@ -1407,7 +1406,7 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
   // draft — open promises + character positions — rendered by the SAME ledgerText the prose generator reads, so
   // the agent curates its render brief against the same snapshot the writer will see. Empty until there's a
   // draftable scene with something to carry; an anchor, not a fence.
-  const draftTarget = hasStructure ? nextDraftTarget(liveNodes, mode) : undefined;
+  const draftTarget = hasStructure ? nextDraftTarget(liveNodes) : undefined;
   const betweenScenes = draftTarget ? ledgerText(liveNodes, draftTarget.scene.id) : "";
 
   // Each distinct kind of context gets its own XML tag so the model can unambiguously tell where one

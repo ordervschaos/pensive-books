@@ -3587,16 +3587,13 @@ async function runDnaExpand({ bookId, nodeId, target, proseWindow = "default", p
   // Prose context, mirroring supabase/functions/dna-expand: production prose → digest v2 (all-page
   // continuity + anti-echo). The experiment passes prevProseOverride (its own digest) or a verbatim
   // proseWindow (last1/all for arms A/B); production callers pass neither, so they get the v2 digest.
-  // Caption keeps the short last-3-verbatim window.
   const prevProseBlock = prevProseOverride != null
     ? prevProseOverride
     : (target === "prose" || (!target && node.kind === "scene"))
       ? (proseWindow === "last1" || proseWindow === "all"
           ? buildPrevProseBlockBridge(nodes, nodeId, proseWindow)
           : await buildProductionDigest(bookId, nodes, nodeId))
-      : target === "caption"
-        ? buildPrevProseBlockBridge(nodes, nodeId, "default")
-        : "";
+      : "";
   // Beat neighbourhood — sibling beats of the scene's parent beat, in act order.
   // Mirrors the same block in supabase/functions/dna-expand/index.ts.
   const beatNeighbourhoodBlock = (() => {
@@ -3669,21 +3666,6 @@ ${ctx}\n\nWrite this scene's prose.`;
     const out = await runClaude(prompt, true, { fn: "dna-expand", bookId }, { noTools: true, model: MODEL_PLANNING });
     if (out.error) return out;
     return captureContext ? { prose: out.text.trim(), prompt, ctx, prevProseBlock } : { prose: out.text.trim() };
-  }
-  if (target === "caption") {
-    // Picture mode (docs/picture-book-mode.md) — mirrors supabase/functions/dna-expand. The page TEXT under
-    // a scene's illustration: a short caption (1–3 sentences), NOT full prose. The image carries the moment.
-    const prompt = `You are writing the CAPTION for ONE illustrated page of a picture book, from the scene's plan. The picture carries the moment — your job is the few words beneath it that carry the book's VOICE and move the story one beat. Honor the MANDATE (tone/reading age). Output the caption text ONLY: no preamble, no headings, no quotes, no JSON.
-
-RULES:
-- 1 to 3 sentences. Tight, rhythmic, read-aloud-able. Often one is enough.
-- Tell what the picture cannot: the turn, the feeling, the line of dialogue — never just label what's already visible ("A boy stands in a hall").
-- Write ONLY from inside the story: NEVER address or mention "the reader"/"you", and NEVER refer to "the book", "the story", "the scene", "the page", "the picture/image", the author, or the writing itself. The plan's notes are directions TO YOU, not lines to reproduce.
-
-${ctx}\n\nWrite this page's caption.`;
-    const out = await runClaude(prompt, true, { fn: "dna-expand", bookId }, { noTools: true, model: MODEL_PLANNING });
-    if (out.error) return out;
-    return { caption: out.text.trim() };
   }
   if (target === "beatsheet") {
     // GLOBAL beat-sheet pass (root fix) — mirrors supabase/functions/dna-expand. One call, whole arc in view:

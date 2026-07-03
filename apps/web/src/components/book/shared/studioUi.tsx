@@ -164,26 +164,6 @@ export function GenRow({ label, descLabel, chips = [], onFire, busy, className }
   );
 }
 
-// Full-screen image viewer. Shared by every studio surface that shows generated art. Click-outside or
-// Esc closes; the image itself swallows clicks so it stays open.
-export function ImageLightbox({ src, onClose }: { src: string | null; onClose: () => void }) {
-  useEffect(() => {
-    if (!src) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [src, onClose]);
-  if (!src) return null;
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/85 p-6 backdrop-blur-sm" onClick={onClose} role="dialog" aria-modal="true">
-      <img src={src} alt="" className="max-h-full max-w-full rounded-lg object-contain shadow-2xl" onClick={(e) => e.stopPropagation()} />
-      <button type="button" onClick={onClose} className="absolute right-5 top-5 rounded-full bg-white/10 p-2 text-white transition-colors hover:bg-white/20" aria-label="Close">
-        <X className="h-5 w-5" />
-      </button>
-    </div>
-  );
-}
-
 // ── House primitives ─────────────────────────────────────────────────────────
 // The three text/box/action atoms every step composes. Centralising them keeps the studio's eyebrow
 // sizing, card shell, and accent-action affordances identical everywhere (and busy/disabled states

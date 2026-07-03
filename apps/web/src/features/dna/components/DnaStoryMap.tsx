@@ -58,10 +58,10 @@ function Contour({ units, unitsByAct }: { units: DnaNode[]; unitsByAct: number[]
 }
 
 // One scene chip under a beat: polarity glyph + short label; click drills to the exact scene. Filled dot
-// = drafted/illustrated.
-function SceneChip({ scene, picture, onOpen }: { scene: DnaNode; picture: boolean; onOpen: () => void }) {
+// = drafted.
+function SceneChip({ scene, onOpen }: { scene: DnaNode; onOpen: () => void }) {
   const c = scene.content as SceneContent;
-  const done = !!str(picture ? c.image_url : c.prose?.text);
+  const done = !!str(c.prose?.text);
   const label = str(c.chapter_start?.title) ?? str(c.goal) ?? str(c.outcome) ?? "scene";
   return (
     <button type="button" onClick={onOpen} title={label}
@@ -75,8 +75,8 @@ function SceneChip({ scene, picture, onOpen }: { scene: DnaNode; picture: boolea
 
 // One beat row: connector glyph (∴/↯) + summary + polarity, amber when the causal link is hollow; its
 // scenes nested below. Whole row drills to the beat.
-function BeatRow({ beat, scenes, causal, picture, onOpen }: {
-  beat: DnaNode; scenes: DnaNode[]; causal?: CausalityRow; picture: boolean; onOpen: (id: string, stage: StageKey) => void;
+function BeatRow({ beat, scenes, causal, onOpen }: {
+  beat: DnaNode; scenes: DnaNode[]; causal?: CausalityRow; onOpen: (id: string, stage: StageKey) => void;
 }) {
   const c = beat.content as BeatContent;
   const glyph = c.connector === "therefore" ? "∴" : c.connector === "but" ? "↯" : "·";
@@ -93,15 +93,15 @@ function BeatRow({ beat, scenes, causal, picture, onOpen }: {
       </button>
       {scenes.length > 0 && (
         <div className="flex flex-wrap gap-1 pl-5">
-          {scenes.map((s) => <SceneChip key={s.id} scene={s} picture={picture} onOpen={() => onOpen(s.id, "scenes")} />)}
+          {scenes.map((s) => <SceneChip key={s.id} scene={s} onOpen={() => onOpen(s.id, "scenes")} />)}
         </div>
       )}
     </div>
   );
 }
 
-export function DnaStoryMap({ nodes, picture, onOpen }: {
-  nodes: DnaNode[]; picture: boolean; onOpen: (stage: StageKey, focusId?: string) => void;
+export function DnaStoryMap({ nodes, onOpen }: {
+  nodes: DnaNode[]; onOpen: (stage: StageKey, focusId?: string) => void;
 }) {
   const acts = nodes.filter((n) => n.kind === "act").sort((a, b) => a.position - b.position);
   if (!acts.length) return null;
@@ -155,7 +155,7 @@ export function DnaStoryMap({ nodes, picture, onOpen }: {
                 ? <p className={`pv-serif pl-5 text-[11.5px] italic ${FAINT}`}>no beats yet</p>
                 : actBeats.map((b) => (
                   <BeatRow key={b.id} beat={b} scenes={childrenOf(nodes, b.id).filter((s) => s.kind === "scene")}
-                    causal={causalBy.get(b.id)} picture={picture} onOpen={open} />
+                    causal={causalBy.get(b.id)} onOpen={open} />
                 ))}
             </section>
           );

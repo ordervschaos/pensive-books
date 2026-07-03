@@ -1,5 +1,5 @@
 
-import { BrowserRouter as Router, Routes, Route, useLocation, Outlet } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, useLocation, useParams, Navigate, Outlet } from "react-router-dom";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { PageDisplaySettingsProvider } from "@/contexts/PageDisplaySettingsContext";
 import { Toaster } from "@/components/ui/toaster";
@@ -32,7 +32,6 @@ const ProfileEdit = lazy(() => import("@/pages/user/profile/ProfileEdit"));
 const MyBooks = lazy(() => import("@/pages/books/index/MyBooks"));
 const NewBook = lazy(() => import("@/pages/books/new/NewBook"));
 const BookDetails = lazy(() => import("@/pages/books/show/BookDetails"));
-const DnaStudioPage = lazy(() => import("@/features/dna/pages/DnaStudioPage"));
 const DnaJsonPage = lazy(() => import("@/features/dna/pages/DnaJsonPage"));
 const DnaTreePage = lazy(() => import("@/features/dna/pages/DnaTreePage"));
 const DnaMetersPage = lazy(() => import("@/features/dna/pages/DnaMetersPage"));
@@ -105,6 +104,13 @@ function ProtectedLayout() {
   );
 }
 
+// The vanilla DNA studio was deprecated in favor of the tree (docs/plan-one-studio-consolidation.md) —
+// /dna keeps working as the studio entry point from the book editor, it just lands on the tree's Overview.
+function DnaStudioRedirect() {
+  const { bookSlug } = useParams();
+  return <Navigate to={`/books/${bookSlug}/dna/tree/overview`} replace />;
+}
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -165,7 +171,7 @@ export default function App() {
                         <Route path="/books/:bookSlug/versions" element={<VersionHistoryPage />} />
                         <Route path="/books/:bookSlug/draft" element={<DraftChanges />} />
                         <Route path="/books/:bookSlug" element={<BookDetails />} />
-                        <Route path="/books/:bookSlug/dna" element={<DnaStudioPage />} />
+                        <Route path="/books/:bookSlug/dna" element={<DnaStudioRedirect />} />
                         <Route path="/books/:bookSlug/dna.json" element={<DnaJsonPage />} />
                         <Route path="/books/:bookSlug/dna/meters" element={<DnaMetersPage />} />
                         <Route path="/books/:bookSlug/dna/ledger" element={<DnaLedgerPage />} />

@@ -74,17 +74,6 @@ function scenesInOrder(allNodes: Node[]): Node[] {
   return out;
 }
 
-function buildPrevProseBlock(allNodes: Node[], currentId: string): string {
-  const ordered = scenesInOrder(allNodes);
-  const idx = ordered.findIndex((s) => s.id === currentId);
-  if (idx <= 0) return "";
-  const prev = ordered.slice(Math.max(0, idx - 3), idx)
-    .filter((s) => String((s.content as { prose?: { text?: string } }).prose?.text ?? "").trim());
-  if (!prev.length) return "";
-  return "PRECEDING PAGES (maintain continuity of voice, cadence, and character — do NOT repeat phrases, images, or sentence patterns used here):\n" +
-    prev.map((s, i) => `--- Page ${idx - prev.length + i + 1} ---\n${(s.content as { prose?: { text?: string } }).prose!.text}`).join("\n\n");
-}
-
 // ── Prose context = digest v2 (validated in scripts/prose-context-experiment.mjs) ───────────────
 // Instead of pasting the last N pages verbatim, prose generation gets a COMPACT digest of ALL prior
 // pages — a rolling per-page recap + a continuity ledger + an anti-repeat blocklist — plus the single
@@ -513,26 +502,23 @@ Deno.serve(async (req: Request) => {
       ].join("\n");
     })();
 
-    // §4c: prose/caption RENDER on the prose model; every structural pass (logline, beat sheet, child JSON)
+    // §4c: prose RENDER on the prose model; every structural pass (logline, beat sheet, child JSON)
     // on the structure model. Both fall back to the base tier unless an admin set a per-role override, so with
     // none set this is identical to the old single-tier `high`. (The continuity digest keeps its own DIGEST_MODEL.)
     const roleModels = await getRoleModels();
-    const isProseRender = target === "prose" || target === "caption" || (!target && node.kind === "scene");
+    const isProseRender = target === "prose" || (!target && node.kind === "scene");
     const model = isProseRender ? roleModels.prose : roleModels.structure;
     const meta: CallMeta = { fn: "dna-expand", bookId, userId };
     // Prose → digest v2 (all-page continuity + anti-echo). The per-page fold runs on DIGEST_MODEL (qwen-plus,
     // a reasoning model) — NOT the cheap `low` model: the digest is read-comprehension that downstream prose
-    // trusts as authoritative, so a weak model's misreadings poison every later page. Caption (picture mode)
-    // keeps the short last-3-verbatim window; everything else needs no prose context.
+    // trusts as authoritative, so a weak model's misreadings poison every later page.
     // `light` skips the all-page continuity digest (a separate, slow Claude call) — used by the editor
     // agent's render_scene_prose so a single render fits inside one worker's wall-clock. Trades cross-scene
     // anti-repetition polish for speed; fine for a draft-to-check, not for the canonical book build.
     const prevProseBlock = light ? ""
       : (target === "prose" || (!target && node.kind === "scene"))
       ? await buildProseDigest(apiKey, DIGEST_MODEL, nodes, nodeId, bookId, meta)
-      : target === "caption"
-        ? buildPrevProseBlock(nodes, nodeId)
-        : "";
+      : "";
     // Beat neighbourhood — the sibling beats of the scene's parent beat, in act order.
     // Prose generation only sees its direct ancestor chain (parent beat + act + …), so it never
     // knows what specific facts (names, numbers, objects) are established in adjacent beats. That gap
@@ -556,13 +542,13 @@ Deno.serve(async (req: Request) => {
       });
       return `BEAT PLAN — all beats in this act, in order (honour any specific facts, names, numbers, or objects established here):\n${lines.join("\n")}`;
     })();
-    // Render targets (prose/caption) get a SCOPED bible, not the whole book. A scene RENDERS one moment;
+    // Render targets (prose) get a SCOPED bible, not the whole book. A scene RENDERS one moment;
     // it doesn't schedule threads or place tentpoles across the arc — that breadth is the planning targets'
     // job. So instead of broadcasting every character/location/thread/rule (which both costs tokens AND
     // dilutes the signal with cast that isn't in the room), anchor on what THIS scene's plan + its parent
     // beat actually reference — the plan declares its own anchors ("anchors, not fences"). Floor: the leads
     // are always in, as insurance against the single-shot call's inability to re-fetch what the plan under-named.
-    const renderTarget = target === "prose" || target === "caption" || (!target && node.kind === "scene");
+    const renderTarget = target === "prose" || (!target && node.kind === "scene");
     const proseScope = (() => {
       if (!renderTarget) return "";
       const parentBeatNode = node.parent_id ? byId.get(node.parent_id) : undefined;
@@ -654,20 +640,6 @@ ANTI-REPETITION (critical): Never repeat any physical gesture, character reactio
       const data = await callLLM(apiKey, { model, max_tokens: 8000, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
         messages: [{ role: "user", content: userContent }] }, meta);
       return json({ prose: textFromLLM(data).trim() });
-    }
-
-    if (target === "caption") {
-      // Picture mode (docs/picture-book-mode.md): the page TEXT that sits under the scene's illustration —
-      // a short caption, NOT full prose. The image carries the moment; the caption carries the voice.
-      const system = `You are writing the CAPTION for ONE illustrated page of a picture book, from the scene's plan. The picture carries the moment — your job is the few words beneath it that carry the book's VOICE and move the story one beat. Honor the MANDATE (tone/reading age). Output the caption text ONLY: no preamble, no headings, no quotes, no JSON.
-
-RULES:
-- 1 to 3 sentences. Tight, rhythmic, read-aloud-able. Often one is enough.
-- Tell what the picture cannot: the turn, the feeling, the line of dialogue — never just label what's already visible ("A boy stands in a hall").
-- Write ONLY from inside the story: NEVER address or mention "the reader"/"you", and NEVER refer to "the book", "the story", "the scene", "the page", "the picture/image", the author, or the writing itself. The plan's notes are directions TO YOU, not lines to reproduce.`;
-      const data = await callLLM(apiKey, { model, max_tokens: 400, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
-        messages: [{ role: "user", content: `${ctx}\n\nWrite this page's caption.` }] }, meta);
-      return json({ caption: textFromLLM(data).trim() });
     }
 
     if (target === "beatsheet") {

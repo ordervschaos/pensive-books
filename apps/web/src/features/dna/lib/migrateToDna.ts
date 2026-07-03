@@ -63,11 +63,8 @@ export function buildDnaFromStack(bookId: number, input: MigrationInput): DnaNod
     const node = mk("character", 2, pillar.id, {
       name: c.name, role: roleMap[c.role ?? "minor"] ?? "minor",
       want: c.want, wound: c.wound, lie: c.lie, idiolect: c.idiolect,
-      // The visual descriptor + already-approved "design the look" portraits carry over so a migrated book
-      // keeps its character art in picture mode (docs/picture-book-mode.md) — tag falls back to the longer
-      // appearance when empty; portraits feed scene renders for likeness.
+      // tag falls back to the longer appearance descriptor when empty.
       tag: c.tag || c.appearance,
-      ...(c.portraits?.length ? { portraits: c.portraits } : {}),
     }, accepted((c.pinned_fields?.length ?? 0) > 0), i);
     charByOldId.set(c.id, node.id);
     if (c.name) charByName.set(c.name.trim().toLowerCase(), node.id);

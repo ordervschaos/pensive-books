@@ -69,14 +69,13 @@ export function DnaOverview({ bookId, nodes, settings, stages, nowKey, onOpen, o
 
   const [seed, premise, pillar] = [first("seed"), first("premise"), first("pillar")];
   const acts = of("act");
-  const picture = settings.mode === "picture";
   const beats = of("beat"), scenes = of("scene"), threads = of("thread");
-  const drafted = scenes.filter((s) => str(picture ? (s.content as SceneContent).image_url : (s.content as SceneContent).prose?.text)).length;
+  const drafted = scenes.filter((s) => str((s.content as SceneContent).prose?.text)).length;
 
   // ── Next move: the live now-stage + its first open sub-step, plus the optional branches also available now.
   const nowStage = stages.find((s) => s.key === nowKey)!;
   const allDone = stages.every((s) => s.status === "done");
-  const subs = stageSubsteps(nowKey, nodes, picture ? "picture" : "prose");
+  const subs = stageSubsteps(nowKey, nodes);
   const nowSub = subs.find((s) => s.status === "now");
   const alsoAvailable = subs.filter((s) => s.status === "available");
 
@@ -108,7 +107,7 @@ export function DnaOverview({ bookId, nodes, settings, stages, nowKey, onOpen, o
 
       {/* NEXT MOVE — the obvious thing to do, loud. */}
       {allDone ? (
-        <Hero icon={<BookOpen className="h-5 w-5" />} title={picture ? "Picture book complete" : "Draft complete"} sub={picture ? "Every scene is illustrated — open the reader." : "Every scene is drafted — open the reader."} onClick={() => onOpen("draft")} />
+        <Hero icon={<BookOpen className="h-5 w-5" />} title="Draft complete" sub="Every scene is drafted — open the reader." onClick={() => onOpen("draft")} />
       ) : (
         <Hero icon={<Sparkles className="h-5 w-5" />}
           title={`${nowStage.label}${nowSub ? ` · ${nowSub.label}` : ""}`}
@@ -143,7 +142,7 @@ export function DnaOverview({ bookId, nodes, settings, stages, nowKey, onOpen, o
             <Activity className={`h-3.5 w-3.5 ${FAINT}`} />
             <Eyebrow tone="muted">Story map — the shape of the telling, beat by beat</Eyebrow>
           </div>
-          <DnaStoryMap nodes={nodes} picture={picture} onOpen={onOpen} />
+          <DnaStoryMap nodes={nodes} onOpen={onOpen} />
         </Panel>
       )}
 
@@ -152,7 +151,7 @@ export function DnaOverview({ bookId, nodes, settings, stages, nowKey, onOpen, o
         {stat("acts", acts.length)}
         {stat("beats", beats.length)}
         {stat("scenes", scenes.length)}
-        {scenes.length > 0 && stat(picture ? "illustrated" : "drafted", drafted, scenes.length)}
+        {scenes.length > 0 && stat("drafted", drafted, scenes.length)}
         {of("character").length > 0 && stat("cast", of("character").length)}
         {of("thread").length > 0 && stat("threads", of("thread").length)}
         {of("game").length > 0 && stat("games", of("game").length)}

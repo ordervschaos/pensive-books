@@ -5,7 +5,7 @@
 // non-destructive (archive, never hard-delete), idempotent (keyed on pages.metadata.node_id = "ch:…").
 // Generalizes lib/outline.ts's reconcile one level up (chapter, not scene, is the page unit). Spec §8.
 import { supabase } from "@/integrations/supabase/client";
-import { buildDoc, buildImageDoc } from "@/lib/inlineMarkdown";
+import { buildDoc } from "@/lib/inlineMarkdown";
 import { loadTree } from "@/features/dna/lib/bookNodes";
 import { renderPages, type RenderedPage } from "@/features/dna/lib/novelDna";
 
@@ -27,9 +27,7 @@ const sig = (title: string, type: string, idx: number, content: unknown): string
 /** Render a book's DNA tree to its pages. The DNA owns the whole page list for a DNA-native book. */
 export async function reconcileDna(bookId: number): Promise<DnaRenderResult> {
   const nodes = await loadTree(bookId);
-  const { data: book } = await supabase.from("books").select("mode").eq("id", bookId).maybeSingle();
-  const mode = (book as { mode?: "prose" | "picture" } | null)?.mode === "picture" ? "picture" : "prose";
-  const desired: RenderedPage[] = renderPages(nodes, mode);
+  const desired: RenderedPage[] = renderPages(nodes);
 
   const { data: pageData } = await supabase
     .from("pages").select("id, page_index, page_type, title, content, archived, metadata").eq("book_id", bookId);
@@ -62,10 +60,8 @@ export async function reconcileDna(bookId: number): Promise<DnaRenderResult> {
   const targets: Target[] = [];
   for (let i = 0; i < desired.length; i++) {
     const d = desired[i];
-    // section: heading only · text: heading + prose · image (picture mode): heading + illustration + caption.
-    // Image pages persist as page_type "text" (their doc just happens to lead with an image) — no new page
-    // type, so the reader/marketing render and word-count filters are untouched.
-    const content = d.kind === "image" ? buildImageDoc(d.imageUrl, d.proseText || d.caption || "") : buildDoc(d.title, d.proseText);
+    // section: heading only · text: heading + prose.
+    const content = buildDoc(d.title, d.proseText);
     const pageType = d.kind === "section" ? "section" : "text";
     let page = byNode.get(d.nodeId);
     if (!page) {

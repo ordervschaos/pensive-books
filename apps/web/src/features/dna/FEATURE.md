@@ -19,15 +19,15 @@ The coupling to the book editor is a **narrow data contract**, not function call
  ENTRY                         DNA (owns book_nodes)                 EXIT
  books row  ───────────────▶  generate / revise / meter  ────────▶  pages table
  (name, brief, foundations,    private model: book_nodes            (novelDnaRender
-  canon, craft_notes, mode)                                          reconcile → pages)
+  canon, craft_notes)                                                reconcile → pages)
         ▲                                                                  │
    editor writes brief                                            reader/editor reads pages
 ```
 
 - **Entry** = the `books` row. The editor writes `brief` (and `foundations`,
-  `canon`, `craft_notes`, `mode`); DNA reads them.
-- **Private model** = `book_nodes` (+ `book_agent_runs`, `dna_chats`,
-  `node_scene_images`). Nothing outside DNA touches these.
+  `canon`, `craft_notes`); DNA reads them.
+- **Private model** = `book_nodes` (+ `book_agent_runs`, `dna_chats`).
+  Nothing outside DNA touches these.
 - **Exit** = `lib/novelDnaRender.ts` reconciles `book_nodes` → `pages`. The
   editor/reader only ever read `pages`.
 
@@ -40,10 +40,10 @@ private), the editor never needs to know DNA exists.
 
 | Dir | What |
 |---|---|
-| `pages/` | 5 route components: `DnaStudioPage` (`/books/:slug/dna`), `DnaTreePage` (`/dna/tree/*`), `DnaMetersPage`, `DnaLedgerPage`, `DnaJsonPage` |
-| `components/` | 12 UI components: `DnaStudio`, `AgentRail` (the agent thread rail), `DnaOverview`, `DnaStoryMap`, `DnaVisuals`, `DnaLookPanel`, `DnaCharacterLook`, `DnaAnalysis`, `DnaStageDiagram`, `ImagePromptPreview`, `SceneIllustrationDialog` |
+| `pages/` | 4 route components: `DnaTreePage` (`/dna/tree/*` — the ONE studio surface, three tabs: `overview` / `tree` / `taste`; `/books/:slug/dna` redirects to `/dna/tree/overview`), `DnaMetersPage`, `DnaLedgerPage`, `DnaJsonPage` |
+| `components/` | 6 UI components: `AgentRail` (the agent thread rail), `TreeOverviewTab` (wraps `DnaOverview` in the tree's dark chrome for the `overview` tab), `DnaOverview`, `DnaStoryMap`, `DnaAnalysis`, `DnaStageDiagram` (now just `DnaFullDiagram`, Overview's shape panel) |
 | `hooks/` | `useAutoAccept` (auto-applies agent proposals) |
-| `lib/` | engine + clients (DNA-only): `novelDna` (pure tree engine), `novelDnaRender` (tree→pages), `bookNodes` (DB load/save), `dnaSchema` (SSOT content schema + lints), `dnaChat`, `dnaExpand` (the generation engine; the agent drives it via `propose_expansion`), `dnaJourney`, `dnaProposals`, `agentThread`, `migrateToDna`, `meterRead`, `factLedger`, `characterPortraits`, `nodeSceneImages`, `agentCommands` (+ their `.test.ts`) |
+| `lib/` | engine + clients (DNA-only): `novelDna` (pure tree engine), `novelDnaRender` (tree→pages), `bookNodes` (DB load/save), `dnaSchema` (SSOT content schema + lints), `dnaChat`, `dnaExpand` (the generation engine; the agent drives it via `propose_expansion`), `dnaJourney`, `dnaProposals`, `agentThread`, `migrateToDna`, `meterRead`, `factLedger`, `agentCommands` (+ their `.test.ts`) |
 
 Routes are registered in `apps/web/src/App.tsx`.
 
@@ -51,7 +51,6 @@ Routes are registered in `apps/web/src/App.tsx`.
 
 Invoked by the web layer above:
 `dna-expand` · `dna-chat` · `book-agent` · `read-meters` · `read-facts`
-· `generate-dna-character-portrait` · `generate-dna-scene-image`
 (siblings `beats-agent`, `revise-node` also belong to the feature.)
 
 The committed schema artifact `supabase/functions/_shared/dna-schema.json` is the
@@ -70,8 +69,7 @@ deployed fn). **Every edge change must also land here** or features break only i
 **Web** (via `@/` alias, depth-independent): `@/integrations/supabase/client`,
 `@/lib/bridge`, `@/lib/brief`, `@/lib/foundations`, `@/lib/stopRun` (universal
 stop chokepoint), `@/hooks/useLatestTaskRow`, `@/hooks/use-toast`,
-`@/hooks/useBookLook`, `@/components/book/shared/*` (studioUi, BookLookControls,
-useChatScroll), `@/components/ui/*`.
+`@/components/book/shared/*` (studioUi, useChatScroll), `@/components/ui/*`.
 
 **Edge** (`_shared/`): `llm.ts` (single AI-call chokepoint → `ai_calls` log,
 used by ~19 fns), `task.ts` (durable tasks, ~13), `access.ts` (auth, ~14),

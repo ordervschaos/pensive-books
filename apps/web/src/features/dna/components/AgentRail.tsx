@@ -41,11 +41,10 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [],
 
   // The guided-flow anchor (docs/agent-capabilities.md): the ONE journey rung to drive the author through
   // next, derived live from the tree. Sent with each message so the agent leads with it; also surfaced as
-  // the idle "Next" nudge below. mode follows the book's draft mode (prose vs picture-book illustration).
-  const mode = settings.mode === "picture" ? "picture" : "prose";
+  // the idle "Next" nudge below.
   const objective = useMemo(
-    () => currentObjective(nodes, { mode, bookSlug }),
-    [nodes, mode, bookSlug],
+    () => currentObjective(nodes, { bookSlug }),
+    [nodes, bookSlug],
   );
   // The one-line headline of the objective (the "▸ Step n/5 · …" line), for the idle nudge chip.
   const objectiveHeadline = useMemo(() => objective.split("\n").find((l) => l.startsWith("▸"))?.replace(/^▸\s*/, "") ?? "", [objective]);
@@ -54,9 +53,9 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [],
   // does: we only surface it when the live objective actually points at this scene's id (same source of
   // truth the agent receives), so the card ↔ action stay in lockstep.
   const draftTarget = useMemo(() => {
-    const t = nextDraftTarget(nodes, mode);
+    const t = nextDraftTarget(nodes);
     return t && objective.includes(`[${t.scene.id}]`) ? t : undefined;
-  }, [nodes, mode, objective]);
+  }, [nodes, objective]);
 
   // The attached nodes resolved against the live tree (ids referencing since-deleted nodes drop out). These
   // anchor the agent — their ids ride OUT-OF-BAND on the message (not glued to the text), and the edge fn
@@ -327,7 +326,7 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [],
                 {draftTarget ? (
                   <>
                     <span className="block truncate pv-serif text-[13px] leading-snug text-foreground">
-                      {mode === "picture" ? "Illustrate" : "Write"} “{nodeLabel(draftTarget.scene)}”
+                      Write “{nodeLabel(draftTarget.scene)}”
                     </span>
                     <span className="block pv-mono text-[9.5px] uppercase tracking-[0.1em] text-[hsl(var(--pv-text-faint))]">
                       Scene {draftTarget.orderIndex} of {draftTarget.total}

@@ -37,7 +37,6 @@ export interface Authoring {
   status: AuthoringStatus;
   src_hash?: string; // hash of this node's INPUT SET when last generated/accepted
   prose_src_hash?: string; // scenes — hash of the scene plan the prose was written from
-  illus_src_hash?: string; // scenes (picture mode) — hash of the scene plan the image+caption were made from
 }
 
 // ── Content shapes (the schema contract, §3/§4) ───────────────────────────────
@@ -106,21 +105,9 @@ export interface SceneContent {
   continuity_flags?: ContinuityFlag[]; // CONTINUITY: breaks the read found here vs prior canon (output, not plan input)
   chapter_start?: ChapterStart | null;
   prose?: { text?: string; words?: number };
-  // Picture mode (docs/picture-book-mode.md): the scene's illustrated page. caption = the 1–3 sentence
-  // page text (the DNA tree owns the words); image_url = the CHOSEN illustration that renders on the page.
-  // The per-scene gallery of CANDIDATES (the "images map") lives node-keyed in node_scene_images — anchored
-  // to this scene's stable id, NOT to a page row (pages are reconciled away). Both staleness-tracked via illus_src_hash.
-  caption?: { text?: string; words?: number };
-  image_url?: string | null;
-  // Picture mode: optional per-scene art direction folded into THIS scene's image prompt (on top of the
-  // book-wide house look) — e.g. "low angle, storm light, her face hidden". An INPUT, so it sits inside the
-  // illus hash: change it and the scene reads stale (isIllusStale) → re-illustrate. Excluded from the prose hash.
-  art_note?: string;
 }
-// tag = the physical/visual tag (the appearance descriptor an image render reads). portraits (picture mode,
-// docs/picture-book-mode.md) = the character's "design the look" reference images, pinned on the NODE (the
-// tree is self-contained — DNA-native books have no foundations.cast) and fed to scene renders for likeness.
-export interface CharacterContent { name?: string; role?: "protagonist" | "antagonist" | "ally" | "love_interest" | "minor"; want?: string; need?: string; wound?: string; lie?: string; truth?: string; idiolect?: string; tag?: string; portraits?: string[] }
+// tag = the physical/visual tag (a character-appearance descriptor).
+export interface CharacterContent { name?: string; role?: "protagonist" | "antagonist" | "ally" | "love_interest" | "minor"; want?: string; need?: string; wound?: string; lie?: string; truth?: string; idiolect?: string; tag?: string }
 export interface RelationshipContent { a?: string; b?: string; bond?: string; charge?: string }
 export interface TentpoleContent { summary?: string }
 // name = a short handle (so beats/scenes can reference the rule); mechanism = the OPERABLE rule — what it
@@ -203,27 +190,6 @@ export function scenesInOrder(nodes: DnaNode[]): DnaNode[] {
   return out;
 }
 
-/** The character nodes a scene depicts (picture mode, docs/picture-book-mode.md). Prefers the scene's
- *  explicit `present[]` ids; when empty (AI-generated scenes don't populate it) falls back to name-matching
- *  the cast against the scene plan (goal/conflict/outcome/pov name). MUST mirror generate-dna-scene-image's
- *  resolution so the portraits the client ensures are exactly the refs the render passes. */
-export function presentCharacters(scene: DnaNode, nodes: DnaNode[]): DnaNode[] {
-  const index = byId(nodes);
-  const c = scene.content as SceneContent;
-  const cName = (n: DnaNode) => String((n.content as CharacterContent).name ?? "").trim();
-  const explicit = (c.present ?? [])
-    .map((id) => index.get(id))
-    .filter((n): n is DnaNode => !!n && n.kind === "character");
-  if (explicit.length) return explicit;
-  const povName = c.pov ? cName(index.get(c.pov) ?? ({} as DnaNode)) : "";
-  const planText = [c.goal, c.conflict, c.outcome, povName].filter(Boolean).join(" \n ");
-  const namedIn = (name: string) => {
-    const n = name.trim();
-    return !!n && new RegExp(`\\b${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(planText);
-  };
-  return nodes.filter((n) => n.kind === "character" && namedIn(cName(n)));
-}
-
 /** Beats in reading order: acts by position, then each act's beats by position. The causal
  *  spine operates on beats (the plan), not scenes (the render) — so the producer/consumer walk is here. */
 export function beatsInOrder(nodes: DnaNode[]): DnaNode[] {
@@ -262,27 +228,15 @@ export function chapters(nodes: DnaNode[]): Chapter[] {
 }
 
 // ── Render projection (Phase 2): the pages a chapter materializes ─────────────
-// PROSE mode: a chapter → a SECTION page (title) + a TEXT page (its scenes' prose, concatenated).
-// PICTURE mode (docs/picture-book-mode.md): a chapter → a SECTION page + one IMAGE page PER scene
-// (the chosen illustration + its caption). Pure: the DB reconcile (novelDnaRender.reconcileDna) applies
-// this list to `pages`. nodeId is the stable page key; `kind` picks the doc builder (image pages render
-// as page_type "text" whose doc is an image node + caption — no new page type, the reader is untouched).
-export interface RenderedPage { nodeId: string; kind: "section" | "text" | "image"; title: string; proseText: string; imageUrl?: string | null; caption?: string }
-export function renderPages(nodes: DnaNode[], mode: "prose" | "picture" = "prose"): RenderedPage[] {
+// A chapter → a SECTION page (title) + a TEXT page (its scenes' prose, concatenated). Pure: the DB reconcile
+// (novelDnaRender.reconcileDna) applies this list to `pages`. nodeId is the stable page key.
+export interface RenderedPage { nodeId: string; kind: "section" | "text"; title: string; proseText: string }
+export function renderPages(nodes: DnaNode[]): RenderedPage[] {
   const index = byId(nodes);
   const out: RenderedPage[] = [];
   for (const ch of chapters(nodes)) {
     const key = ch.sceneIds[0] ?? `i${ch.index}`; // first scene id is the chapter's stable boundary key
     out.push({ nodeId: `ch:${key}`, kind: "section", title: ch.title, proseText: "" });
-    if (mode === "picture") {
-      // One illustrated page per scene — the picture-book unit. The section page carries the chapter title;
-      // each image page renders just the illustration + caption (its title is the chapter, for nav/grouping).
-      for (const id of ch.sceneIds) {
-        const c = index.get(id)?.content as SceneContent | undefined;
-        out.push({ nodeId: `sc:${id}`, kind: "image", title: ch.title, proseText: "", imageUrl: c?.image_url ?? null, caption: c?.caption?.text?.trim() ?? "" });
-      }
-      continue;
-    }
     const prose = ch.sceneIds
       .map((id) => (index.get(id)?.content as SceneContent | undefined)?.prose?.text?.trim())
       .filter((t): t is string => !!t)
@@ -351,8 +305,8 @@ export function backlinkIndex(nodes: DnaNode[]): Map<string, DnaNode[]> {
 
 // Fields that are OUTPUTS of generation/the read, never plan INPUTS — stripped before any input-set hash so
 // writing them (e.g. a meter read onto a beat, a fact ledger onto a scene) never spuriously stales the nodes
-// that hash this content. Mirrors how the prose/illus hashes already exclude prose/caption/image_url.
-const OUTPUT_FIELDS = ["prose", "caption", "image_url", "observed_readings", "observed_establishes", "continuity_flags"] as const;
+// that hash this content. Mirrors how the prose hash already excludes prose.
+const OUTPUT_FIELDS = ["prose", "observed_readings", "observed_establishes", "continuity_flags"] as const;
 function planOf(content: NodeContent | null | undefined): NodeContent | null {
   if (!content) return null;
   const out: Record<string, unknown> = { ...(content as Record<string, unknown>) };
@@ -379,19 +333,9 @@ export function isStale(node: DnaNode, index: Map<string, DnaNode>): boolean {
 export function isProseStale(scene: DnaNode): boolean {
   const c = scene.content as SceneContent;
   if (!c.prose?.text?.trim() || !scene.authoring.prose_src_hash) return false;
-  // art_note is a picture-only input; observed_establishes/continuity_flags are OUTPUTS of the read, not inputs.
-  const { prose: _p, art_note: _a, observed_establishes: _oe, continuity_flags: _cf, ...plan } = c;
+  // observed_establishes/continuity_flags are OUTPUTS of the read, not inputs.
+  const { prose: _p, observed_establishes: _oe, continuity_flags: _cf, ...plan } = c;
   return scene.authoring.prose_src_hash !== metaHash(stableStringify(plan));
-}
-
-/** Picture mode: a scene's illustrated page (image + caption) is stale iff the scene plan changed since it
- *  was generated. The image_url + caption are excluded from the hash (they're the OUTPUT, like prose). */
-export function isIllusStale(scene: DnaNode): boolean {
-  const c = scene.content as SceneContent;
-  const made = !!(c.image_url?.trim() || c.caption?.text?.trim());
-  if (!made || !scene.authoring.illus_src_hash) return false;
-  const { image_url: _i, caption: _c, prose: _p, observed_establishes: _oe, continuity_flags: _cf, ...plan } = c;
-  return scene.authoring.illus_src_hash !== metaHash(stableStringify(plan));
 }
 
 /** Stamp a node's input hash (call when it's generated/accepted from its current inputs). */
@@ -400,13 +344,8 @@ export function stampInput(node: DnaNode, index: Map<string, DnaNode>): DnaNode 
 }
 /** Stamp a scene's prose hash (call after prose is written from the current plan). */
 export function stampProse(scene: DnaNode): DnaNode {
-  const { prose: _p, art_note: _a, observed_establishes: _oe, continuity_flags: _cf, ...plan } = scene.content as SceneContent;
+  const { prose: _p, observed_establishes: _oe, continuity_flags: _cf, ...plan } = scene.content as SceneContent;
   return { ...scene, authoring: { ...scene.authoring, prose_src_hash: metaHash(stableStringify(plan)) } };
-}
-/** Stamp a scene's illustration hash (call after the image + caption are made from the current plan). */
-export function stampIllus(scene: DnaNode): DnaNode {
-  const { image_url: _i, caption: _c, prose: _p, observed_establishes: _oe, continuity_flags: _cf, ...plan } = scene.content as SceneContent;
-  return { ...scene, authoring: { ...scene.authoring, illus_src_hash: metaHash(stableStringify(plan)) } };
 }
 
 // ── Pure edits ────────────────────────────────────────────────────────────────
@@ -1356,26 +1295,23 @@ export function canonicalizeKey(key: string, known: Iterable<string>): string {
 }
 
 // ── Render completeness (§7) ──────────────────────────────────────────────────
-export interface BookSettings { title?: string; author?: string; word_target?: number; mode?: "prose" | "picture" }
+export interface BookSettings { title?: string; author?: string; word_target?: number }
 
-/** Can the book render at gold completeness? Returns the blocking reasons (empty = renderable). In picture
- *  mode (docs/picture-book-mode.md) the per-scene requirement is an image, not prose; word_target doesn't apply. */
+/** Can the book render at gold completeness? Returns the blocking reasons (empty = renderable). */
 export function renderBlockers(nodes: DnaNode[], settings: BookSettings): string[] {
-  const picture = settings.mode === "picture";
   const blockers: string[] = [];
   if (!settings.title?.trim()) blockers.push("no book title");
   if (!settings.author?.trim()) blockers.push("no author");
-  if (!picture && !settings.word_target) blockers.push("no word_target in the mandate");
+  if (!settings.word_target) blockers.push("no word_target in the mandate");
 
   const scenes = scenesInOrder(nodes);
   if (!scenes.length) { blockers.push("no scenes yet"); return blockers; }
 
   const unwritten = scenes.filter((s) => {
     const c = s.content as SceneContent;
-    const done = picture ? !!c.image_url?.trim() : !!c.prose?.text?.trim();
-    return !(done && s.authoring.status === "accepted");
+    return !(c.prose?.text?.trim() && s.authoring.status === "accepted");
   });
-  if (unwritten.length) blockers.push(`${unwritten.length} scene(s) ${picture ? "without an illustration" : "without accepted prose"}`);
+  if (unwritten.length) blockers.push(`${unwritten.length} scene(s) without accepted prose`);
   return blockers;
 }
 

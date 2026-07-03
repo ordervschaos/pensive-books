@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   analysisText, backlinkIndex, blastRadius, byId, cascade, causality, chapters, chooseProposal, editContent, emptyNode,
-  enforcePromiseSchedule, inputHash, isIllusStale, isProseStale, isRenderable, isStale, lock, pacing, promiseLedger,
-  presentCharacters, refsOf, renderBlockers, renderPages, scenesInOrder, stakesOf, stampIllus, stampInput, stampProse, topography,
+  enforcePromiseSchedule, inputHash, isProseStale, isRenderable, isStale, lock, pacing, promiseLedger,
+  refsOf, renderBlockers, renderPages, scenesInOrder, stakesOf, stampInput, stampProse, topography,
   validate, meterSeries, meterShape, isSerialMeter, meterTarget, targetGap, observedSeries, observedGap,
   ledgerBefore, ledgerFull,
   type DnaNode, type NodeKind, type ThreadRef,
@@ -65,19 +65,6 @@ describe("render projection (chapter → section + text page)", () => {
       { nodeId: "ch:s3:body", kind: "text", title: "Two", proseText: "Again." },
     ]);
   });
-
-  it("picture mode emits a section page + one image page per scene (illustration + caption)", () => {
-    const m = mk("act", { id: "m" });
-    const b = mk("beat", { id: "b", parent_id: "m" });
-    const s1 = mk("scene", { id: "s1", parent_id: "b", position: 0, content: { chapter_start: { title: "One" }, image_url: "u1", caption: { text: "She walked in." } } });
-    const s2 = mk("scene", { id: "s2", parent_id: "b", position: 1, content: { image_url: "u2", caption: { text: "And out." } } });
-    const out = renderPages([m, b, s1, s2], "picture");
-    expect(out).toEqual([
-      { nodeId: "ch:s1", kind: "section", title: "One", proseText: "" },
-      { nodeId: "sc:s1", kind: "image", title: "One", proseText: "", imageUrl: "u1", caption: "She walked in." },
-      { nodeId: "sc:s2", kind: "image", title: "One", proseText: "", imageUrl: "u2", caption: "And out." },
-    ]);
-  });
 });
 
 describe("staleness (derived from the input-set hash)", () => {
@@ -113,24 +100,6 @@ describe("staleness (derived from the input-set hash)", () => {
     expect(isProseStale(scene2)).toBe(true);
   });
 
-  it("an illustration goes stale when the scene plan changes (image_url + caption excluded from the hash)", () => {
-    let scene = mk("scene", { id: "s", content: { goal: "win", loc: "the hall", image_url: "u", caption: { text: "She walked in." } } });
-    scene = stampIllus(scene);
-    expect(isIllusStale(scene)).toBe(false);
-    // editing the OUTPUT (caption/image) does NOT make it stale — only the plan does
-    expect(isIllusStale(editContent(scene, { caption: { text: "edited" } }))).toBe(false);
-    expect(isIllusStale(editContent(scene, { loc: "the bridge" }))).toBe(true);
-  });
-
-  it("per-scene art_note is an illustration input (in the illus hash) but not a prose input", () => {
-    let scene = mk("scene", { id: "s", content: { goal: "win", loc: "the hall", image_url: "u", caption: { text: "c" }, prose: { text: "She walked in." } } });
-    scene = stampProse(stampIllus(scene));
-    expect(isIllusStale(scene)).toBe(false);
-    expect(isProseStale(scene)).toBe(false);
-    const edited = editContent(scene, { art_note: "low angle, storm light" });
-    expect(isIllusStale(edited)).toBe(true);   // changing the look re-illustrates
-    expect(isProseStale(edited)).toBe(false);  // …but never touches the prose
-  });
 });
 
 describe("backlinkIndex (the inverse of refsOf — inbound cross-references)", () => {
@@ -143,28 +112,6 @@ describe("backlinkIndex (the inverse of refsOf — inbound cross-references)", (
     expect(onHero).toEqual(["r1", "s1"]); // both the relationship and the scene point at the hero
     expect(back.get("c_foe")?.map((n) => n.id)).toEqual(["r1"]);
     expect(back.has("s1")).toBe(false); // nothing references the scene
-  });
-});
-
-describe("present cast resolution (the scene's likeness anchors)", () => {
-  const mara = mk("character", { id: "mara", content: { name: "Mara" } });
-  const cassian = mk("character", { id: "cassian", content: { name: "Cassian" } });
-  const wenna = mk("character", { id: "wenna", content: { name: "Wenna" } });
-  const cast = [mara, cassian, wenna];
-
-  it("prefers explicit present[] ids", () => {
-    const scene = mk("scene", { content: { present: ["cassian"], goal: "Mara eats" } });
-    expect(presentCharacters(scene, [...cast, scene]).map((n) => n.id)).toEqual(["cassian"]);
-  });
-
-  it("falls back to name-matching the plan when present[] is empty", () => {
-    const scene = mk("scene", { content: { goal: "Mara wants one meal at the table", conflict: "Cassian blocks her" } });
-    expect(presentCharacters(scene, [...cast, scene]).map((n) => n.id).sort()).toEqual(["cassian", "mara"]);
-  });
-
-  it("name-match is word-bounded (no partial hits) and includes the pov character", () => {
-    const scene = mk("scene", { content: { pov: "wenna", goal: "the marauders close in" } }); // 'mara' must NOT match 'marauders'
-    expect(presentCharacters(scene, [...cast, scene]).map((n) => n.id)).toEqual(["wenna"]);
   });
 });
 

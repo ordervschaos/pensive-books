@@ -11,15 +11,18 @@ import { editSpecs, KIND_LEVEL, tasteSpecs, type EditSpec } from "@/features/dna
 import { CONTENT_TYPES, SCOPE_BANDS, briefIdea, type Brief } from "@/lib/brief";
 import { describeOps, type NodeOp } from "@/features/dna/lib/dnaChat";
 import { AgentRail } from "@/features/dna/components/AgentRail";
+import { TreeOverviewTab } from "@/features/dna/components/TreeOverviewTab";
 import { type AgentProposal } from "@/features/dna/lib/agentThread";
 import { chooseNodeProposal, discardNodeProposals } from "@/features/dna/lib/dnaProposals";
 import { DNA_STAGES, dnaHealth, buildJourney, stageProgress, STAGE_KINDS, type StageKey } from "@/features/dna/lib/dnaJourney";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { useBookPermissions } from "@/hooks/use-book-permissions";
 import {
   listVersions, loadVersion, snapshotTree, restoreVersion, diffAgainstVersion,
   type TreeVersion, type TreeDiff,
 } from "@/features/dna/lib/treeVersions";
+import { reconcileDna } from "@/features/dna/lib/novelDnaRender";
 
 const getNumericId = (p: string | undefined) => { const m = p?.match(/^(\d+)/); return m ? parseInt(m[1]) : 0; };
 
@@ -911,6 +914,7 @@ function ProseBlock({ node, depth, open, onToggle }: {
   );
 }
 
+
 // ── Options / picker (the candidate+judge channel) ───────────────────────────
 // The agent (the rail) generates options via propose_options; here we only PICK among them:
 //  • ProposalPicker — the agent's propose_options stages 2–4 candidates onto node.proposals; this renders
@@ -1423,12 +1427,12 @@ function VoiceFeelPanel({ nodes, index, onJump, asPage }: { nodes: DnaNode[]; in
 // stages (Idea→Foundations→Structure→Scenes→Prose); buildJourney derives each stage's done|now|locked from
 // the tree, and stageSubsteps names the single next action inside the "now" stage. Clicking a stage reveals
 // + scrolls to its layer (STAGE_KINDS). Pure-derived — no stored progress.
-function JourneyStrip({ nodes, mode, onGoStage }: {
-  nodes: DnaNode[]; mode: "prose" | "picture"; onGoStage: (key: StageKey) => void;
+function JourneyStrip({ nodes, onGoStage }: {
+  nodes: DnaNode[]; onGoStage: (key: StageKey) => void;
 }) {
   const mono = "ui-monospace, monospace";
-  const { stages } = buildJourney(nodes, mode);
-  const prog = stageProgress(nodes, mode);
+  const { stages } = buildJourney(nodes);
+  const prog = stageProgress(nodes);
   // The open gaps, in spine order — the literal "what's left" ("18 beats need scenes · 29 scenes need prose").
   const gaps = DNA_STAGES.map((s) => prog[s.key].gapLabel).filter((g): g is string => !!g);
   // A stage's hue: done = green, partial = amber (started-not-finished), now = accent, locked = faint.
@@ -1820,8 +1824,8 @@ function QuickToggle({ active, accent, label, icon, onClick }: { active: boolean
 // acts left→right, beats ordered within each, scenes ordered within each. A filmstrip of the story's
 // flow + completion: each scene cell is colored by whether its prose is written / stale / still just planned,
 // so "where the draft actually stands" reads in one glance. Clicking any unit jumps to it in the tree.
-function SpineTimeline({ nodes, mode, rightInset, bookId, onJump, onClose }: {
-  nodes: DnaNode[]; mode: "prose" | "picture"; rightInset: number; bookId: number;
+function SpineTimeline({ nodes, rightInset, bookId, onJump, onClose }: {
+  nodes: DnaNode[]; rightInset: number; bookId: number;
   onJump: (id: string) => void; onClose: () => void;
 }) {
   const mono = "ui-monospace, monospace";
@@ -1837,14 +1841,11 @@ function SpineTimeline({ nodes, mode, rightInset, bookId, onJump, onClose }: {
 
   // The timeline is a read/navigate surface — structure and prose are generated from the tree/reader,
   // not from here. Cells only reflect state and jump to the node on click.
-  const sceneWritten = (s: DnaNode) => {
-    const c = s.content as SceneContent;
-    return mode === "picture" ? !!c.image_url?.trim() : !!c.prose?.text?.trim();
-  };
+  const sceneWritten = (s: DnaNode) => !!(s.content as SceneContent).prose?.text?.trim();
   // Scene cell is always SCENE-green-outlined (it IS a scene); the FILL is the completion signal: hollow =
   // planned, solid green = prose written. Stale (written-but-out-of-date) is the amber exception.
   const sceneState = (s: DnaNode): "planned" | "written" | "stale" =>
-    !sceneWritten(s) ? "planned" : (mode !== "picture" && isProseStale(s)) ? "stale" : "written";
+    !sceneWritten(s) ? "planned" : isProseStale(s) ? "stale" : "written";
 
   // global 1-based reading-order numbering — one pass each so chips show book-wide position (matching the
   // tree badge's `seq` and the agent digest). Beats were per-act ("B1" reset each act); now book-wide too.
@@ -2212,8 +2213,18 @@ export default function DnaTreePage() {
   // interleaving with the tree structure.
   const location = useLocation();
   const navigate = useNavigate();
-  const tab: "tree" | "taste" = location.pathname.endsWith("/taste") ? "taste" : "tree";
+  const { toast } = useToast();
+  const tab: "tree" | "taste" | "overview" = location.pathname.endsWith("/overview") ? "overview" : location.pathname.endsWith("/taste") ? "taste" : "tree";
   const treePath = `/books/${bookSlug}/dna/tree`;
+  const overviewPath = `${treePath}/overview`;
+
+  // Permission gate — DnaStudioPage used to enforce this (bounce non-editors); the tree had none. RLS
+  // protects the data either way, but the page itself should bounce like the old studio did.
+  const { canEdit, hasAccess, loading: permLoading } = useBookPermissions(bookSlug);
+  useEffect(() => {
+    if (permLoading) return;
+    if (!hasAccess || !canEdit) navigate(`/books/${bookSlug}`, { replace: true });
+  }, [permLoading, hasAccess, canEdit, bookSlug, navigate]);
 
   const [bookName, setBookName] = useState<string>("");
   const [settings, setSettings] = useState<BookSettings>({});
@@ -2273,7 +2284,6 @@ export default function DnaTreePage() {
   const toggleProse = useCallback((id: string) => {
     setProseOpenSet((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   }, []);
-
   const [discardOpen, setDiscardOpen] = useState(false);
   const discardStory = useCallback(() => setDiscardOpen(true), []);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -2309,14 +2319,14 @@ export default function DnaTreePage() {
     void (async () => {
       const [{ data: nodeRows, error: nodesErr }, { data: book, error: bookErr }] = await Promise.all([
         supabase.from("book_nodes").select("*").eq("book_id", bookId).order("position"),
-        supabase.from("books").select("name, author, brief, mode").eq("id", bookId).maybeSingle(),
+        supabase.from("books").select("name, author, brief").eq("id", bookId).maybeSingle(),
       ]);
       if (nodesErr || bookErr) { setError((nodesErr ?? bookErr)?.message ?? "error"); return; }
       setBookName(book?.name ?? "");
       const loadedBrief = (book?.brief as Brief | null) ?? null;
       setBrief(loadedBrief);
       setSettings({ title: book?.name ?? undefined, author: (book?.author as string | null) ?? undefined,
-        word_target: loadedBrief?.scope?.word_target, mode: (book as { mode?: string } | null)?.mode === "picture" ? "picture" : "prose" });
+        word_target: loadedBrief?.scope?.word_target });
       const loaded = (nodeRows ?? []) as DnaNode[];
       // Bootstrap the ROOT: the agent can't create a parent-less seed node, so an empty tree gets one
       // automatically (the seed = the logline origin, derived from the brief idea). The agent builds
@@ -2359,6 +2369,26 @@ export default function DnaTreePage() {
     return () => { if (t) clearTimeout(t); void supabase.removeChannel(ch); };
   }, [bookId]);
 
+  // Live subscription on the `books` row — name/author/brief can change from elsewhere (e.g. a second tab
+  // on Book Edit), so the tree needs its own live projection of it too (refresh = no-op).
+  useEffect(() => {
+    if (!bookId) return;
+    let t: ReturnType<typeof setTimeout> | null = null;
+    const reload = () => void supabase.from("books").select("name, author, brief").eq("id", bookId).maybeSingle().then(({ data: book }) => {
+      if (!book) return;
+      setBookName(book.name ?? "");
+      const loadedBrief = (book.brief as Brief | null) ?? null;
+      setBrief(loadedBrief);
+      setSettings((prev) => ({ ...prev, title: book.name ?? undefined, author: (book.author as string | null) ?? undefined,
+        word_target: loadedBrief?.scope?.word_target }));
+    });
+    const soon = () => { if (t) clearTimeout(t); t = setTimeout(reload, 400); };
+    const ch = supabase.channel(`treebook_${bookId}_${Math.random().toString(36).slice(2)}`)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "books", filter: `id=eq.${bookId}` }, soon)
+      .subscribe();
+    return () => { if (t) clearTimeout(t); void supabase.removeChannel(ch); };
+  }, [bookId]);
+
   const collapseAll = useCallback(() => {
     if (!nodes) return;
     setCollapsedSet(new Set(nodes.filter((n) => childrenOf(nodes, n.id).length > 0).map((n) => n.id)));
@@ -2382,6 +2412,27 @@ export default function DnaTreePage() {
       return next;
     });
   }, []);
+
+  // ── Render / read — project the tree onto pages (ported from DnaStudio's top bar, Phase 3) ────────────
+  const [rendering, setRendering] = useState<"render" | "read" | null>(null);
+  const renderPages = useCallback(async () => {
+    if (!bookId || rendering) return;
+    setRendering("render");
+    try {
+      const r = await reconcileDna(bookId);
+      toast({ title: "Rendered", description: `${r.pages} pages · ${r.created} added · ${r.updated} updated · ${r.archived} archived.` });
+    } catch (e) {
+      toast({ title: "Couldn't render", description: String((e as Error)?.message ?? e), variant: "destructive" });
+    } finally { setRendering(null); }
+  }, [bookId, rendering, toast]);
+  // Render-then-read: project the tree onto pages FIRST (idempotent), then open the reader — so the prose
+  // you read is always current, never the stale "I forgot to render" page.
+  const renderAndRead = useCallback(async () => {
+    if (!bookId || rendering) return;
+    setRendering("read");
+    try { await reconcileDna(bookId); window.location.href = `/books/${bookSlug}`; }
+    catch (e) { toast({ title: "Couldn't render", description: String((e as Error)?.message ?? e), variant: "destructive" }); setRendering(null); }
+  }, [bookId, bookSlug, rendering, toast]);
 
   // ── Fork ──────────────────────────────────────────────────────────────────────
   const [forking, setForking] = useState(false);
@@ -2589,6 +2640,13 @@ export default function DnaTreePage() {
   // tree-local reveal state, it doesn't switch tabs itself.
   const goToNode = useCallback((id: string) => { if (tab !== "tree") navigate(treePath); jumpTo(id); }, [tab, navigate, treePath, jumpTo]);
 
+  // The Overview tab's "onOpen" — same off-tab landing as goToNode, then either jump straight to a specific
+  // node (a drill-in from the shape map / issues list) or fall back to goStage's first-of-kind jump.
+  const openStage = useCallback((key: StageKey, focusId?: string) => {
+    if (tab !== "tree") navigate(treePath);
+    if (focusId) jumpTo(focusId); else goStage(key);
+  }, [tab, navigate, treePath, jumpTo, goStage]);
+
   const base: React.CSSProperties = {
     margin: 0, minHeight: "100vh",
     fontFamily: "ui-monospace, 'Cascadia Code', 'Source Code Pro', monospace",
@@ -2596,6 +2654,7 @@ export default function DnaTreePage() {
     userSelect: "text",
   };
 
+  if (permLoading || !hasAccess || !canEdit) return null;
   if (error) return <div style={{ ...base, padding: 24, color: "#f87171" }}>error: {error}</div>;
   if (!nodes) return <div style={{ ...base, padding: 24 }}>loading…</div>;
 
@@ -2615,8 +2674,12 @@ export default function DnaTreePage() {
   const accepted = nodes.filter((n) => n.authoring.status === "accepted").length;
   const staleCount = nodes.filter((n) => isStale(n, index) || (n.kind === "scene" && isProseStale(n))).length;
 
+  // The journey, for the Overview tab (same computation DnaStudio used to drive its own Overview mount).
+  const { stages: journeyStages, nowIndex: journeyNowIndex } = buildJourney(nodes);
+  const nowKey = journeyStages[journeyNowIndex]?.key ?? "premise";
+
   // #4 — DNA health: completeness + strength + the lints behind them (structural faults included).
-  const health = dnaHealth(nodes, settings, settings.mode);
+  const health = dnaHealth(nodes, settings);
   // #6 — group the lints by the node they attach to, for the per-row health glyph + the lens.
   const issuesByNode = new Map<string, DnaIssue[]>();
   for (const i of health.issues) { if (!i.nodeId) continue; const a = issuesByNode.get(i.nodeId); if (a) a.push(i); else issuesByNode.set(i.nodeId, [i]); }
@@ -2712,7 +2775,7 @@ export default function DnaTreePage() {
       })()}
       {/* The serial spine — reading-order filmstrip across the bottom (acts → beats → scenes) */}
       {tab === "tree" && timelineOpen && (
-        <SpineTimeline nodes={nodes} mode={settings.mode ?? "prose"} rightInset={railOpen ? 420 : 0} bookId={bookId}
+        <SpineTimeline nodes={nodes} rightInset={railOpen ? 420 : 0} bookId={bookId}
           onJump={jumpTo} onClose={() => setTimelineOpen(false)} />
       )}
       {/* Header bar */}
@@ -2720,9 +2783,10 @@ export default function DnaTreePage() {
         <span style={{ color: "#666", fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase" }}>
           {bookName || bookSlug} · dna
         </span>
-        {/* Tab strip — tree (structure) vs voice & feel (taste). Same component, splat route, no remount. */}
+        {/* Tab strip — overview (the dashboard) / tree (structure) / voice & feel (taste). Same component,
+            splat route, no remount. */}
         <div style={{ display: "flex", gap: 4 }}>
-          {([["tree", "tree", treePath], ["taste", "voice & feel", `${treePath}/taste`]] as const).map(([key, label, to]) => (
+          {([["overview", "overview", overviewPath], ["tree", "tree", treePath], ["taste", "voice & feel", `${treePath}/taste`]] as const).map(([key, label, to]) => (
             <button key={key} onClick={() => navigate(to)} style={{
               background: tab === key ? "#9bd3e618" : "none", border: `1px solid ${tab === key ? "#9bd3e655" : "transparent"}`,
               borderRadius: 5, color: tab === key ? "#9bd3e6" : "#555", fontSize: 10, cursor: "pointer",
@@ -2771,7 +2835,16 @@ export default function DnaTreePage() {
           {tab === "tree" && <button onClick={expandAll} style={{ background: "none", border: "none", color: "#555", fontSize: 10, cursor: "pointer", letterSpacing: "0.1em", textTransform: "uppercase" }}>expand all</button>}
           {tab === "tree" && <button onClick={collapseAll} style={{ background: "none", border: "none", color: "#555", fontSize: 10, cursor: "pointer", letterSpacing: "0.1em", textTransform: "uppercase" }}>collapse all</button>}
           <a href={`/books/${bookSlug}/dna.json`} style={{ color: "#555", fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", textDecoration: "none" }}>json →</a>
-          <a href={`/books/${bookSlug}/dna`} style={{ color: "#555", fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", textDecoration: "none" }}>studio →</a>
+          {/* Ported from the vanilla studio's sidebar (docs/plan-one-studio-consolidation.md Phase 3) — the
+              studio's only two verbs that weren't already native to the tree. */}
+          <button onClick={() => void renderPages()} disabled={!!rendering} title="Project the DNA tree onto the reader's pages"
+            style={{ background: "none", border: "none", color: rendering ? "#444" : "#555", fontSize: 10, cursor: rendering ? "default" : "pointer", letterSpacing: "0.1em", textTransform: "uppercase" }}>
+            {rendering === "render" ? "rendering…" : "render pages →"}
+          </button>
+          <button onClick={() => void renderAndRead()} disabled={!!rendering} title="Render the latest pages and open the reader"
+            style={{ background: "none", border: "none", color: rendering ? "#444" : "#555", fontSize: 10, cursor: rendering ? "default" : "pointer", letterSpacing: "0.1em", textTransform: "uppercase" }}>
+            {rendering === "read" ? "rendering…" : "read →"}
+          </button>
           <button onClick={() => void forkDna()} disabled={forking} title="Copy this DNA tree into a new book to experiment freely"
             style={{ background: "none", border: "none", color: forking ? "#444" : "#555", fontSize: 10, cursor: forking ? "default" : "pointer", letterSpacing: "0.1em", textTransform: "uppercase" }}>
             {forking ? "forking…" : "fork →"}
@@ -2779,6 +2852,12 @@ export default function DnaTreePage() {
           {/* Timeline + Editor toggles moved to the fixed quick bar (top-right) */}
         </div>
       </div>
+
+      {/* ── overview tab: the studio's dashboard — shape, next move, issues ── */}
+      {tab === "overview" && (
+        <TreeOverviewTab bookId={bookId} nodes={nodes} settings={settings} stages={journeyStages} nowKey={nowKey}
+          onOpen={openStage} onChanged={() => {}} />
+      )}
 
       {/* ── voice & feel tab: the taste surface on its own, off the structural tree ── */}
       {tab === "taste" && (
@@ -2788,7 +2867,7 @@ export default function DnaTreePage() {
       {/* ── tree tab: journey → legend → lints → proposals → brief → the structural tree ── */}
       {tab === "tree" && (<>
       {/* Journey strip — where am I / what's left (studio's strength, brought onto the tree) */}
-      {roots.length > 0 && <JourneyStrip nodes={nodes} mode={settings.mode ?? "prose"} onGoStage={goStage} />}
+      {roots.length > 0 && <JourneyStrip nodes={nodes} onGoStage={goStage} />}
       {/* Legend */}
       <div style={{ padding: "8px 16px", borderBottom: "1px solid #111", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
         <span style={{ fontSize: 9, color: "#333", letterSpacing: "0.1em", textTransform: "uppercase" }}>status</span>

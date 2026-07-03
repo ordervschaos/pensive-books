@@ -122,7 +122,7 @@ function ledgerAtBook(): DnaNode[] {
   return [pillar, ch1, ch2, loc1, loc2, thread, rel, meter, a1, b1, s1, s2, s3, s4];
 }
 
-const settings: BookSettings = { title: "The Folding City", author: "A. Nzal", word_target: 60000, mode: "prose" };
+const settings: BookSettings = { title: "The Folding City", author: "A. Nzal", word_target: 60000 };
 const j = (v: unknown) => JSON.stringify(v);
 
 // Every pure derivation threadSystem will re-run at the edge. Compared web-vs-edge over each fixture.
@@ -230,27 +230,25 @@ describe("ledgerAt (Phase 3)", () => {
 });
 
 // The guided-flow objective (dna-journey twin) is what threadSystem re-derives live each chain link (P1.2);
-// lock it to the web dnaJourney over prose + picture mode.
+// lock it to the web dnaJourney.
 describe("dna-journey edge twin ↔ web dnaJourney parity", () => {
   const fixtures: [string, DnaNode[]][] = [["goodBook", goodBook()], ["brokenBook", brokenBook()], ["registryBook", registryBook()], ["exposureBook", exposureBook()], ["ledgerAtBook", ledgerAtBook()]];
   for (const [fxName, nodes] of fixtures) {
-    for (const mode of ["prose", "picture"] as const) {
-      it(`currentObjective agrees on ${fxName} (${mode})`, () => {
-        const opts = { mode, bookSlug: "42" };
-        expect(edgeJ.currentObjective(nodes, opts)).toBe(webJ.currentObjective(nodes, opts));
-      });
-      it(`buildJourney agrees on ${fxName} (${mode})`, () => {
-        expect(j(edgeJ.buildJourney(nodes, mode))).toBe(j(webJ.buildJourney(nodes, mode)));
-      });
-      it(`nextDraftTarget agrees on ${fxName} (${mode})`, () => {
-        expect(j(edgeJ.nextDraftTarget(nodes, mode))).toBe(j(webJ.nextDraftTarget(nodes, mode)));
-      });
-    }
+    it(`currentObjective agrees on ${fxName}`, () => {
+      const opts = { bookSlug: "42" };
+      expect(edgeJ.currentObjective(nodes, opts)).toBe(webJ.currentObjective(nodes, opts));
+    });
+    it(`buildJourney agrees on ${fxName}`, () => {
+      expect(j(edgeJ.buildJourney(nodes))).toBe(j(webJ.buildJourney(nodes)));
+    });
+    it(`nextDraftTarget agrees on ${fxName}`, () => {
+      expect(j(edgeJ.nextDraftTarget(nodes))).toBe(j(webJ.nextDraftTarget(nodes)));
+    });
   }
 
   it("goodBook's objective reaches the draft stage and names a target scene", () => {
     // goodBook has scenes with an undrafted one, so the live objective should point at a TARGET NODE — the
     // exact behaviour P1.2 keeps fresh mid-run.
-    expect(webJ.currentObjective(goodBook(), { mode: "prose" })).toContain("TARGET NODE:");
+    expect(webJ.currentObjective(goodBook())).toContain("TARGET NODE:");
   });
 });

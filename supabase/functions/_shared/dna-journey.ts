@@ -25,12 +25,11 @@ export type StageStatus = "done" | "now" | "locked" | "available";
 
 const accepted = (n?: DnaNode) => n?.authoring.status === "accepted";
 const hasText = (s?: string | null) => !!(s && s.trim());
-// A scene's Draft-rung "done": prose written (prose mode) or an illustration pinned (picture mode).
-const sceneDrafted = (s: DnaNode, mode: "prose" | "picture") =>
-  mode === "picture" ? hasText((s.content as SceneContent).image_url) : hasText((s.content as SceneContent).prose?.text);
+// A scene's Draft-rung "done": prose written.
+const sceneDrafted = (s: DnaNode) => hasText((s.content as SceneContent).prose?.text);
 
 /** Is each stage's load-bearing content present + accepted? (The gate for advancing.) */
-export function stageComplete(nodes: DnaNode[], mode: "prose" | "picture" = "prose"): Record<StageKey, boolean> {
+export function stageComplete(nodes: DnaNode[]): Record<StageKey, boolean> {
   const of = (k: NodeKind) => nodes.filter((n) => n.kind === k);
   const seed = of("seed")[0], premise = of("premise")[0], pillar = of("pillar")[0];
   const scenes = of("scene");
@@ -39,7 +38,7 @@ export function stageComplete(nodes: DnaNode[], mode: "prose" | "picture" = "pro
     foundations: !!pillar && accepted(pillar) && of("character").length >= 1,
     structure: of("act").length >= 1 && of("beat").length >= 1,
     scenes: scenes.length >= 1,
-    draft: scenes.length >= 1 && scenes.every((s) => sceneDrafted(s, mode)),
+    draft: scenes.length >= 1 && scenes.every((s) => sceneDrafted(s)),
   };
 }
 
@@ -47,8 +46,8 @@ export interface JourneyStage extends DnaStage { num: number; status: StageStatu
 
 /** The journey: each stage's status, plus the index of the current ("now") stage. Sequential — a stage is
  *  locked until everything before it is complete, so the author walks the resolution ladder in order. */
-export function buildJourney(nodes: DnaNode[], mode: "prose" | "picture" = "prose"): { stages: JourneyStage[]; nowIndex: number } {
-  const done = stageComplete(nodes, mode);
+export function buildJourney(nodes: DnaNode[]): { stages: JourneyStage[]; nowIndex: number } {
+  const done = stageComplete(nodes);
   let firstIncomplete = DNA_STAGES.findIndex((s) => !done[s.key]);
   if (firstIncomplete === -1) firstIncomplete = DNA_STAGES.length; // all complete
   const stages = DNA_STAGES.map((s, i): JourneyStage => ({
@@ -89,7 +88,7 @@ function resolveSeq(specs: SubSpec[]): SubStep[] {
 }
 
 /** The serial sub-steps inside one stage, each with its derived status + tally. */
-export function stageSubsteps(key: StageKey, nodes: DnaNode[], mode: "prose" | "picture" = "prose"): SubStep[] {
+export function stageSubsteps(key: StageKey, nodes: DnaNode[]): SubStep[] {
   const of = (k: NodeKind) => nodes.filter((n) => n.kind === k);
   const seed = of("seed")[0], premise = of("premise")[0], pillar = of("pillar")[0];
   const n = (k: NodeKind) => of(k).length;
@@ -129,10 +128,10 @@ export function stageSubsteps(key: StageKey, nodes: DnaNode[], mode: "prose" | "
     const scenes = n("scene");
     return resolveSeq([{ key: "scenes", label: "Scenes", done: scenes >= 1, ready: n("beat") >= 1, count: scenes }]);
   }
-  // draft — prose written (prose mode) or scenes illustrated (picture mode)
+  // draft — prose written
   const scenes = of("scene");
-  const drafted = scenes.filter((s) => sceneDrafted(s, mode)).length;
-  return resolveSeq([{ key: mode === "picture" ? "illustrate" : "prose", label: mode === "picture" ? "Illustrate" : "Scenes", done: scenes.length > 0 && drafted === scenes.length, ready: scenes.length > 0, count: drafted, total: scenes.length }]);
+  const drafted = scenes.filter((s) => sceneDrafted(s)).length;
+  return resolveSeq([{ key: "prose", label: "Scenes", done: scenes.length > 0 && drafted === scenes.length, ready: scenes.length > 0, count: drafted, total: scenes.length }]);
 }
 
 // ── The agent's current objective (the guided-flow anchor) ───────────────────────
@@ -153,7 +152,6 @@ const STEP_RECIPE: Record<string, string> = {
   threads: "Optional: name the open loops with thread nodes (a promise set up early, paid off later) and anchor each to its beats — do this BEFORE the beat sheet so the engine can schedule their setup→payoff.",
   scenes: "Break the beat into scenes with the ENGINE, not by hand: call propose_expansion(nodeId = THIS beat, target = 'scenes') — the engine makes each scene inherit the beat's causal/thread/tentpole plan and turn a value (goal → outcome), never a flat 'and-then'. Do the next beat that still needs scenes; one call per beat.",
   prose: "Render prose ONE scene at a time, in reading order — the TARGET NODE named in the objective above IS that scene; pass exactly its id, don't pick a different one from the tree. BEFORE each render: read the scene's beat and the previous prosed page, and search_nodes for the specific threads/objects/facts this page must honor — then call propose_prose_render with a curated `brief` (focus + mustHonor + avoid) so the render gets what it can't compute. You don't write prose yourself; the author applies it and it streams in their browser. AFTER a scene has prose: check_against_contract to judge it against the brief — and if that read shows the PREVIOUS page drifted (a dropped thread, a contradiction), propose_node_ops to fix that page first, then continue. Investigate → fix the tail if needed → render next with a brief.",
-  illustrate: "You have NO tool to generate scene illustrations — that's a manual, client-side action the author runs themselves from the tree (outside this chat), not something propose_node_ops or propose_prose_render can do. Tell the author which scene is next (the TARGET NODE above) and that illustrating it is their action to take; do NOT invent an image_url via propose_node_ops — a fabricated image reference is worse than an empty one.",
 };
 
 /** The next undrafted scene, in reading order, plus its act/beat/scene coordinate — the concrete pointer
@@ -161,9 +159,9 @@ const STEP_RECIPE: Record<string, string> = {
  *  because the stage's aggregate tally ("14/80 written") doesn't say WHICH scene is next; without a named
  *  target the agent has to infer "next" from the tree digest, which once picked a later beat's scene
  *  instead of the actual next one in reading order. */
-export function nextDraftTarget(nodes: DnaNode[], mode: "prose" | "picture"): { scene: DnaNode; orderIndex: number; total: number; actIndex?: number; beatIndex?: number; sceneIndex?: number } | undefined {
+export function nextDraftTarget(nodes: DnaNode[]): { scene: DnaNode; orderIndex: number; total: number; actIndex?: number; beatIndex?: number; sceneIndex?: number } | undefined {
   const ordered = scenesInOrder(nodes);
-  const orderIndex = ordered.findIndex((s) => !sceneDrafted(s, mode));
+  const orderIndex = ordered.findIndex((s) => !sceneDrafted(s));
   if (orderIndex === -1) return undefined;
   const scene = ordered[orderIndex];
   const index = byId(nodes);
@@ -177,9 +175,8 @@ export function nextDraftTarget(nodes: DnaNode[], mode: "prose" | "picture"): { 
 
 /** The agent's CURRENT objective — the one rung to drive the author through next, derived live from the
  *  tree. See STEP_RECIPE above. `bookSlug` (when known) puts the reader URL into the final hand-off. */
-export function currentObjective(nodes: DnaNode[], opts: { mode?: "prose" | "picture"; bookSlug?: string } = {}): string {
-  const mode = opts.mode ?? "prose";
-  const { stages, nowIndex } = buildJourney(nodes, mode);
+export function currentObjective(nodes: DnaNode[], opts: { bookSlug?: string } = {}): string {
+  const { stages, nowIndex } = buildJourney(nodes);
   if (stages.every((s) => s.status === "done")) {
     const reader = opts.bookSlug ? ` (then read it at /books/${opts.bookSlug})` : "";
     return [
@@ -188,12 +185,12 @@ export function currentObjective(nodes: DnaNode[], opts: { mode?: "prose" | "pic
     ].join("\n");
   }
   const stage = stages[nowIndex];
-  const now = stageSubsteps(stage.key, nodes, mode).find((s) => s.status === "now");
+  const now = stageSubsteps(stage.key, nodes).find((s) => s.status === "now");
   const recipe = STEP_RECIPE[now?.key ?? stage.key] ?? "";
   const next = stages[nowIndex + 1];
   // The draft stage names its specific next scene (see nextDraftTarget); every other stage keeps the plain
   // done/total tally since there's no single "next node" to point at (e.g. "generate the acts").
-  const target = now?.key === "prose" || now?.key === "illustrate" ? nextDraftTarget(nodes, mode) : undefined;
+  const target = now?.key === "prose" ? nextDraftTarget(nodes) : undefined;
   const where = target?.actIndex != null ? ` (Act ${target.actIndex} · Beat ${target.beatIndex} · Scene ${target.sceneIndex})` : "";
   const tally = target
     ? ` — Scene ${target.orderIndex} of ${target.total}${where}`
@@ -215,7 +212,7 @@ export function currentObjective(nodes: DnaNode[], opts: { mode?: "prose" | "pic
 // written"). `gapLabel` is the plain-English remainder for the what's-left line. Pure, derived live.
 export interface StageProgress { done: number; total: number; ratio: number; label: string; partial: boolean; gapLabel?: string }
 
-export function stageProgress(nodes: DnaNode[], mode: "prose" | "picture" = "prose"): Record<StageKey, StageProgress> {
+export function stageProgress(nodes: DnaNode[]): Record<StageKey, StageProgress> {
   const of = (k: NodeKind) => nodes.filter((n) => n.kind === k);
   const hasChild = (pid: string, kind: NodeKind) => nodes.some((n) => n.parent_id === pid && n.kind === kind);
   const seed = of("seed")[0], premise = of("premise")[0], pillar = of("pillar")[0];
@@ -224,8 +221,7 @@ export function stageProgress(nodes: DnaNode[], mode: "prose" | "picture" = "pro
   const seedDone = !!seed && hasText((seed.content as { logline?: string }).logline) && accepted(seed);
   const actsWithBeats = acts.filter((a) => hasChild(a.id, "beat")).length;
   const beatsWithScenes = beats.filter((b) => hasChild(b.id, "scene")).length;
-  const drafted = scenes.filter((s) => sceneDrafted(s, mode)).length;
-  const word = mode === "picture" ? "illustrated" : "written";
+  const drafted = scenes.filter((s) => sceneDrafted(s)).length;
   const mk = (done: number, total: number, label: string, gapLabel?: string): StageProgress => ({
     done, total, ratio: total ? done / total : 0, label, partial: done > 0 && done < total,
     gapLabel: done < total ? gapLabel : undefined,
@@ -237,7 +233,7 @@ export function stageProgress(nodes: DnaNode[], mode: "prose" | "picture" = "pro
       acts.length ? `${acts.length - actsWithBeats} acts need beats` : "generate acts"),
     scenes: mk(beatsWithScenes, beats.length, beats.length ? `${beatsWithScenes}/${beats.length} beats → scenes` : "no beats",
       beats.length ? `${beats.length - beatsWithScenes} beats need scenes` : "generate beats"),
-    draft: mk(drafted, scenes.length, scenes.length ? `${drafted}/${scenes.length} ${word}` : "no scenes",
+    draft: mk(drafted, scenes.length, scenes.length ? `${drafted}/${scenes.length} written` : "no scenes",
       scenes.length ? `${scenes.length - drafted} scenes need prose` : "generate scenes"),
   };
 }

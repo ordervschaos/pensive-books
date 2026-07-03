@@ -1,7 +1,5 @@
 // characterPortraitPrompts — the shared craft for composing a character REFERENCE PORTRAIT prompt. Used by
-// both the foundations-cast flow (generate-character-portrait) and the node-keyed picture-book flow
-// (generate-dna-character-portrait). The craft (the labelled-line portrait contract + the no-AI fallback)
-// is identical; only WHERE the character record comes from differs (foundations.cast vs a book_nodes node).
+// the foundations-cast flow (generate-character-portrait).
 
 export const PORTRAIT_SYSTEM = `You compose ONE structured image prompt for a character REFERENCE PORTRAIT for a novel. The author will edit it, then it is sent VERBATIM to an image model — so it must be complete and self-contained.
 
