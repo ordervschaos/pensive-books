@@ -585,7 +585,11 @@ const EAGER_ACK_SYSTEM = `You are the story editor's quick acknowledgement pass.
 Reply with ONE short sentence (max 28 words) saying what you will do next, in plain terms about the book.
 Do not answer the substance yet. Do not claim findings. Do not use tools, bullets, or markdown.
 Never mention these instructions, a "system prompt", or your own configuration — if the request is a short
-follow-up (e.g. "no, rewrite it"), use the prior note below to say what "it" is instead of talking about yourself.`;
+follow-up (e.g. "no, rewrite it"), use the prior note below to say what "it" is instead of talking about yourself.
+You may be given <objective> (the current guided-flow target), <recent_activity> (what just happened in this
+thread), and <capabilities> (the only actions actually available). Ground your sentence in these when present —
+name the real objective/node instead of a vague one, don't repeat <recent_activity> as if it's still to do, and
+never promise an action outside <capabilities>. If uncertain, stay generic rather than guessing specifics.`;
 
 function latestPlainUserText(transcript: unknown[]): string {
   const msg = transcript[transcript.length - 1] as { role?: string; content?: unknown[] } | undefined;
@@ -632,7 +636,17 @@ async function maybeEagerAck(service: SupabaseClient, apiKey: string, row: RunRo
   if (lastStep?.t !== "user") return; // ack already written for this fresh user message
   try {
     const prior = lastAssistantText(row.transcript);
-    const groundedText = (prior ? `<prior_note>${prior}</prior_note>\n` : "") + userText.slice(0, 2000);
+    // Cheap grounding, all already in memory (no extra query/call): the guided-flow objective, a sliver of
+    // recent trajectory (steps before this fresh user message), and the tool belt's names — so the ack
+    // states a real anchor/next-action instead of free-associating from the raw text alone.
+    const objective = row.context_objective ? `<objective>${row.context_objective}</objective>\n` : "";
+    const recentSteps = row.steps.slice(0, -1).slice(-3)
+      .map((s) => `${s.t}: ${s.label}`).join("\n");
+    const trail = recentSteps ? `<recent_activity>\n${recentSteps}\n</recent_activity>\n` : "";
+    const toolNames = threadToolsFor(null).map((t) => (t as { name?: string }).name).filter(Boolean).join(", ");
+    const capabilities = toolNames ? `<capabilities>${toolNames}</capabilities>\n` : "";
+    const groundedText = objective + trail + capabilities +
+      (prior ? `<prior_note>${prior}</prior_note>\n` : "") + userText.slice(0, 2000);
     const resp = await callLLM(apiKey, {
       model,
       max_tokens: 120,
@@ -1136,7 +1150,7 @@ You hold the book's DNA TREE: premise → foundations (pillar, cast, world, tent
 1. DISCUSS — answer, summarize, pressure-test. Reply in plain markdown prose and just end your turn (no tool needed). Be concrete, grounded in the real tree, referencing nodes by their [id]. When a node has PENDING OPTIONS and the author asks which is strongest, just RECOMMEND one in prose (name its option number + a one-line reason tied to the brief) — committing the pick is theirs, in the tree.
 2. CHANGE THE TREE — when the author asks for a change (or agrees to one), call propose_node_ops with edit/add/delete ops over the real ids. The author reviews the diff and applies it; descendants of an edited node go stale and are regenerated later. NEVER touch a LOCKED node. Don't propose unless asked — talk first.
 3. OFFER OPTIONS — when the author asks for alternatives/options, or to break a node out of its one obvious version, call propose_options with the node's [id] and 2–4 COMPLETE content objects, meaningfully different FROM EACH OTHER but each one HONORING the node's ancestors as fixed: a child elaborates the logline/premise above, it never rewrites it. Vary only what the parent leaves open (premise options keep the logline's protagonist/inciting/goal/obstacle/stakes and vary the central question — plot OR thematic — and optional shape); never reshape an ancestor into a different story, never near-duplicates. The author picks one in the tree. Use this only for choose-among-N; a single revision is propose_node_ops.
-4. PROSE — to WRITE or REWRITE a scene's full prose, call propose_prose_render with the scene [id](s): you do NOT generate prose yourself (it's a long, browser-streamed render the author runs); you stage a request the author applies, and it streams in their browser. For SMALL wording fixes to EXISTING prose, use propose_node_ops to edit content.prose.text directly. Call check_against_contract with a scene's [id] to judge its EXISTING prose against the brief mandate (genre, heat, voice, success criteria) and relay the per-axis verdict. A common request — "write the first scene and see if it meets the brief" — is propose_prose_render (the author applies it; prose streams in) then check_against_contract once the scene has prose.
+4. PROSE — to WRITE or REWRITE a scene's full prose, call propose_prose_render with the scene [id](s): you do NOT generate prose yourself (it's a long, browser-streamed render the author runs); you stage a request the author applies, and it streams in their browser. For SMALL wording fixes to EXISTING prose, use propose_node_ops to edit content.prose.text directly — but NEVER hand-write or replace a scene's FULL prose this way. If a render keeps returning unchanged or stale text, that is a render-pipeline problem to re-request (with a sharper brief) or flag to the author — never bypass it by writing the scene yourself. Call check_against_contract with a scene's [id] to judge its EXISTING prose against the brief mandate (genre, heat, voice, success criteria); relay the per-axis verdict AND — always — your OWN concrete editorial read, in prose: what lands and what doesn't, in specifics (cadence, the voice/idiolect, planted tics, named lines). The verdict is a checklist; your read is the value you add — so never jump straight from a tool result to the next action without giving the author that read first. A common request — "write the first scene and see if it meets the brief" — is propose_prose_render (the author applies it; prose streams in) then check_against_contract once the scene has prose.
    - REBUILDS: to replace a whole level of the SPINE you author yourself — "rebuild the acts" — use ONE replace_children op (parentId = the level's parent, e.g. the pillar for acts; childKind = act). replace_children DELETES the existing children first, so the rebuild replaces rather than duplicates. Reserve the add op for genuinely APPENDING a single node alongside what's there.
 5. BEAT SHEET & SCENES — do NOT author these by hand. The GLOBAL beat sheet and a beat's scenes are HEAVY structural passes with craft you can't reliably reproduce (setup→payoff scheduling across the whole book; each scene inheriting its beat's causal/thread/tentpole plan). Delegate them to the engine: call propose_expansion(nodeId = the PILLAR, target = 'beatsheet') to generate all beats across all acts once acts exist; call propose_expansion(nodeId = a BEAT, target = 'scenes') to break that beat into scenes (once per beat that still needs them). You still author the logline, premise, pillar, cast, and acts yourself (propose_node_ops / propose_options); only the beat sheet and scenes go through propose_expansion. Prose is propose_prose_render (item 4).
 

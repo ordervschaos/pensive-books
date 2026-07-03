@@ -9,23 +9,24 @@ import { supabase } from "@/integrations/supabase/client";
 import { BRIDGE, bridgeFetch } from "@/lib/bridge";
 import { sendAgentMessage } from "@/features/dna/lib/agentThread";
 import {
-  analysisText, byId, scenesInOrder, validate,
+  analysisText, byId, entityRegistryBlock, scenesInOrder, validate,
   type BeatContent, type BookSettings, type ContinuityFlag, type DnaNode, type LedgerFact, type SceneContent,
 } from "@/features/dna/lib/novelDna";
 
 export interface FactReadResult { facts: LedgerFact[]; contradictions: ContinuityFlag[] }
 
-/** Run the read for ONE scene against the canon folded so far. Bridge in dev, edge fn in prod. */
-export async function invokeReadFacts(bookId: number, ledgerIn: LedgerFact[], scene: { id: string; summary?: string; prose: string }): Promise<FactReadResult> {
+/** Run the read for ONE scene against the canon folded so far. `entities` is the entityRegistryBlock the read
+ *  grounds facts against (Phase-1). Bridge in dev, edge fn in prod. */
+export async function invokeReadFacts(bookId: number, ledgerIn: LedgerFact[], scene: { id: string; summary?: string; prose: string }, entities?: string): Promise<FactReadResult> {
   if (BRIDGE) {
     const r = await bridgeFetch("/read-facts", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bookId, ledgerIn, scene }),
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bookId, ledgerIn, scene, entities }),
     });
     if (!r.ok) throw new Error(`read-facts bridge ${r.status}: ${await r.text()}`);
     const d = await r.json();
     return { facts: d?.facts ?? [], contradictions: d?.contradictions ?? [] };
   }
-  const { data, error } = await supabase.functions.invoke("read-facts", { body: { bookId, ledgerIn, scene } });
+  const { data, error } = await supabase.functions.invoke("read-facts", { body: { bookId, ledgerIn, scene, entities } });
   if (error) throw error;
   return { facts: data?.facts ?? [], contradictions: data?.contradictions ?? [] };
 }
@@ -51,13 +52,14 @@ export async function runLedgerScan(bookId: number, nodes: DnaNode[], onProgress
     return String((beat?.content as BeatContent | undefined)?.summary ?? (scene.content as SceneContent).goal ?? "");
   };
   const scenes = scenesInOrder(nodes).filter((s) => (s.content as SceneContent).prose?.text?.trim());
+  const registry = entityRegistryBlock(nodes); // the shared keyspace, computed once for the whole scan
   const canon = new Map<string, LedgerFact>();
   let totalFacts = 0, totalContra = 0;
   for (let i = 0; i < scenes.length; i++) {
     const s = scenes[i];
     const { facts, contradictions } = await invokeReadFacts(bookId, [...canon.values()], {
       id: s.id, summary: beatSummary(s), prose: (s.content as SceneContent).prose!.text!.trim(),
-    });
+    }, registry);
     for (const f of facts) if (f.key) canon.set(f.key, f); // fold forward, last-write-wins
     await writeSceneLedger(s, facts, contradictions);
     totalFacts += facts.length; totalContra += contradictions.length;

@@ -14,7 +14,7 @@ import { getRoleModels, DIGEST_MODEL } from "../_shared/model-config.ts";
 import { extractJsonBlock } from "../_shared/json.ts";
 // The shared engine's beat-native lints, run over the just-generated beat sheet so a silently-degraded sheet
 // gets one bounded repair turn instead of shipping the damage (docs/agent-improvement-plan.md P2.1).
-import { canonicalizeKey, validate, type AuthoringStatus, type DnaNode, type NodeContent, type NodeKind } from "../_shared/novel-dna.ts";
+import { canonicalizeKey, entityRegistryBlock, ledgerAt, validate, type AuthoringStatus, type DnaNode, type NodeContent, type NodeKind, type SceneLedger } from "../_shared/novel-dna.ts";
 import { type Brief, briefContext, mandateContext } from "../_shared/brief.ts";
 import { isChainCall } from "../_shared/self-chain.ts";
 import { serviceClient } from "../_shared/task.ts";
@@ -25,7 +25,12 @@ import { serviceClient } from "../_shared/task.ts";
 // src_hash = this page's prose; prev_hash chains to the accumulator it was folded onto (so editing any earlier
 // page invalidates the whole suffix). buildProseDigest folds the `line` deltas back into the full pages[] on
 // READ — so storage is O(n) across the book instead of the old O(n²) full-accumulator-per-node.
-interface DigestLedger { characters?: string[]; objects?: string[]; locations?: string[]; timeline?: string; open_threads?: string[] }
+// A ledger entry is now GROUNDED (docs/scene-ledger.md §1.4): `ref` = the DNA node id it concerns (a
+// character/location/thread id from the entity registry, when the fold could resolve one), `name` + `note` =
+// the free-text state as before. objects usually have no ref (fine). `ref` gives observed state a key that
+// joins the plan side; `formatLedger` still renders `name — note`, so downstream prompt text is unchanged.
+interface LedgerEntry { ref?: string; name: string; note?: string }
+interface DigestLedger { characters?: LedgerEntry[]; objects?: LedgerEntry[]; locations?: LedgerEntry[]; timeline?: string; open_threads?: LedgerEntry[] }
 // A reader's takeaway from the story so far: what actually LANDED, with a memory weight (1–5). Models the
 // experiential read — not every fact, but the things a reader would carry forward and feel. Recurring or
 // emotionally charged notes accumulate weight; the next page's writer sees the highest-weight ones so the
@@ -36,7 +41,10 @@ interface DigestAccum { pages: string[]; ledger: DigestLedger; impressions?: Dig
 // whole cached chain (we re-fold rather than trust a digest built by a weaker model or an older schema).
 // v3: per-page DELTA storage (`line` replaces the full `value` accumulator) — old v2 entries carry no `line`,
 // so they MUST be re-folded, not mis-read as an empty delta.
-const DIGEST_VERSION = 3;
+// v4: GROUNDED ledger (docs/scene-ledger.md §1.4) — ledger entries went from bare strings to { ref, name, note }
+// so observed state carries the node id it's about. The whole cached chain invalidates by design; the cold
+// re-fold is budget-bounded (FOLD_BUDGET_MS) and self-heals across generations (the v2→v3 path).
+const DIGEST_VERSION = 4;
 // The fold runs synchronously on the worker (~150s wall-clock ceiling). A cold backfill of an existing
 // many-page book would do N sequential folds and blow it. Cap the time spent folding per call: when the
 // budget is hit we stop and return the partial digest (the prefix folded/cached so far). Because each fold
@@ -119,13 +127,15 @@ function fnv1a(s: string): string {
   for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); }
   return (h >>> 0).toString(16);
 }
+// Render a grounded entry as `name — note` (the `ref` is metadata for the join, never shown to the writer).
+const fmtEntry = (e: LedgerEntry): string => `${e.name}${e.note ? ` — ${e.note}` : ""}`;
 function formatLedger(L: DigestLedger): string {
   return [
-    L.characters?.length ? `Characters:\n${L.characters.map((c) => `  • ${c}`).join("\n")}` : "",
-    L.objects?.length ? `Objects in play: ${L.objects.join("; ")}` : "",
-    L.locations?.length ? `Locations: ${L.locations.join("; ")}` : "",
+    L.characters?.length ? `Characters:\n${L.characters.map((c) => `  • ${fmtEntry(c)}`).join("\n")}` : "",
+    L.objects?.length ? `Objects in play: ${L.objects.map(fmtEntry).join("; ")}` : "",
+    L.locations?.length ? `Locations: ${L.locations.map(fmtEntry).join("; ")}` : "",
     L.timeline ? `Timeline: ${L.timeline}` : "",
-    L.open_threads?.length ? `Open threads:\n${L.open_threads.map((t) => `  • ${t}`).join("\n")}` : "",
+    L.open_threads?.length ? `Open threads:\n${L.open_threads.map((t) => `  • ${fmtEntry(t)}`).join("\n")}` : "",
   ].filter(Boolean).join("\n");
 }
 // Render the carried impressions as the reader's running memory — highest weight first, so the model (and
@@ -139,25 +149,50 @@ function formatImpressions(imps: DigestImpression[] | undefined): string {
 // (carry forward, update statuses, close paid-off threads, advance the timeline), and maintains the
 // reader's running IMPRESSIONS (what landed, with a memory weight). O(1)-per-page; replaces re-summarizing
 // every prior page on every generation.
-async function foldDigest(apiKey: string, model: string, prior: DigestAccum, pageText: string, meta: CallMeta): Promise<DigestAccum> {
+// Coerce the model's ledger channel into grounded { ref, name, note } entries. A `ref` is kept only when it
+// resolves to a node id actually in the registry (unknown/garbled → dropped, entry kept — grounding degrades to
+// today's behaviour, never below it). Tolerant of the model emitting a bare string (legacy shape → { name }).
+function sanitizeEntries(raw: unknown, ids: Set<string>): LedgerEntry[] {
+  if (!Array.isArray(raw)) return [];
+  const out: LedgerEntry[] = [];
+  for (const e of raw) {
+    if (typeof e === "string") { if (e.trim()) out.push({ name: e.trim() }); continue; }
+    if (!e || typeof e !== "object") continue;
+    const o = e as { ref?: unknown; name?: unknown; note?: unknown };
+    const name = typeof o.name === "string" ? o.name.trim() : "";
+    if (!name) continue;
+    out.push({
+      name,
+      ...(typeof o.note === "string" && o.note.trim() ? { note: o.note.trim() } : {}),
+      ...(typeof o.ref === "string" && ids.has(o.ref) ? { ref: o.ref } : {}),
+    });
+  }
+  return out;
+}
+
+async function foldDigest(apiKey: string, model: string, prior: DigestAccum, pageText: string, registry: string, meta: CallMeta): Promise<DigestAccum> {
   const first = !prior.pages.length;
   const ledgerSoFar = first ? "(this is the first page — no prior state)" : (formatLedger(prior.ledger) || "(no ledger yet)");
   const impressionsSoFar = first ? "(none yet)" : (formatImpressions(prior.impressions) || "(none yet)");
+  const registryIds = new Set((registry.match(/n_[a-z0-9]+/gi) ?? []));
+  const registryBlock = registry.trim()
+    ? `\nENTITY REGISTRY — the canonical cast/places/rules/threads, with ids. When a ledger entry is ABOUT one of these, set its "ref" to that id; resolve names, titles, epithets, and pronouns to a registry entry rather than minting a parallel one. For an open_thread that realizes a planned thread, set "ref" to that thread's id:\n${registry.trim()}\n`
+    : "";
   const dprompt = `You are maintaining a running CONTINUITY DIGEST of a novel-in-progress, one page at a time. You are given the STORY STATE so far (a cumulative continuity ledger + the reader's running impressions) and the NEXT page's prose. Read the page CLOSELY, then update the state to INCLUDE it. Output STRICT JSON only:
 {
   "page": "<one tight line for THIS page: POV + location/time, the value-shift, the key facts ESTABLISHED, and the closing image>",
   "ledger": {
-    "characters": ["<name — current status, where they are, what they want now>"],
-    "objects": ["<object/clue in play — its state>"],
-    "locations": ["<place — what's there>"],
+    "characters": [{ "ref": "<registry id if this is a known character, else omit>", "name": "<character name>", "note": "current status, where they are, what they want now" }],
+    "objects": [{ "name": "<object/clue in play>", "note": "its state" }],
+    "locations": [{ "ref": "<registry id if a known location, else omit>", "name": "<place>", "note": "what's there" }],
     "timeline": "<elapsed time / current point in the story>",
-    "open_threads": ["<promise opened but not yet paid — its state>"]
+    "open_threads": [{ "ref": "<the planned thread's id if this realizes one, else omit>", "name": "<the promise>", "note": "its state — opened but not yet paid" }]
   },
   "impressions": [{ "note": "<a thing a reader actually TAKES AWAY and remembers from the story so far — an image, a feeling, a turn, a line that lands, a dawning realization>", "weight": <integer 1-5> }]
 }
-
+${registryBlock}
 READING DISCIPLINE — get this right; downstream prose trusts this digest as authoritative:
-- Record only what the page actually establishes. Resolve every reference — a name, label, title, number, role, epithet, or pronoun — to the entity it denotes, which is usually one already in play (often the POV character). A new way of REFERRING to someone or something is not a new someone or something.
+- Record only what the page actually establishes. Resolve every reference — a name, label, title, number, role, epithet, or pronoun — to the entity it denotes, which is usually one already in play (often the POV character). A new way of REFERRING to someone or something is not a new someone or something. When it denotes a REGISTRY entity, use that entity's id as the entry's "ref".
 - Do NOT mint a new character, object, location, or open thread out of a mere designation or form of address. Add an entity only when the prose genuinely introduces it; open a thread only when the prose genuinely opens a promise.
 - Merge, never duplicate: if two references point to the same entity, they are one entry.
 
@@ -173,11 +208,20 @@ ${impressionsSoFar}
 THIS PAGE:
 ${pageText}`;
   const data = await callLLM(apiKey, { model, max_tokens: 2500, messages: [{ role: "user", content: dprompt }] }, { ...meta, fn: "dna-expand-digest" });
-  const p = JSON.parse(extractJsonBlock(textFromLLM(data))) as { page?: string; ledger?: DigestLedger; impressions?: DigestImpression[] };
+  const p = JSON.parse(extractJsonBlock(textFromLLM(data))) as { page?: string; ledger?: Record<string, unknown>; impressions?: DigestImpression[] };
   const impressions = Array.isArray(p.impressions)
     ? p.impressions.filter((i) => i && typeof i.note === "string" && i.note.trim()).map((i) => ({ note: i.note.trim(), weight: Math.max(1, Math.min(5, Math.round(Number(i.weight) || 1))) }))
     : prior.impressions;
-  return { pages: [...prior.pages, (p.page ?? "").trim()].filter(Boolean), ledger: p.ledger ?? prior.ledger, impressions };
+  const ledger: DigestLedger = p.ledger
+    ? {
+        characters: sanitizeEntries(p.ledger.characters, registryIds),
+        objects: sanitizeEntries(p.ledger.objects, registryIds),
+        locations: sanitizeEntries(p.ledger.locations, registryIds),
+        timeline: typeof p.ledger.timeline === "string" ? p.ledger.timeline : prior.ledger.timeline,
+        open_threads: sanitizeEntries(p.ledger.open_threads, registryIds),
+      }
+    : prior.ledger;
+  return { pages: [...prior.pages, (p.page ?? "").trim()].filter(Boolean), ledger, impressions };
 }
 async function buildProseDigest(apiKey: string, model: string, allNodes: Node[], currentId: string, bookId: number, meta: CallMeta): Promise<string> {
   const ordered = scenesInOrder(allNodes);
@@ -196,6 +240,8 @@ async function buildProseDigest(apiKey: string, model: string, allNodes: Node[],
   // page-by-page never hit it, since each page only ever folds its single newest predecessor.)
   let accum: DigestAccum = { pages: [], ledger: {} };
   const sb = serviceClient();
+  // The entity registry the fold grounds ledger entries against (Phase-1). Computed once for the whole book.
+  const registry = entityRegistryBlock(allNodes as unknown as DnaNode[]);
   const startFold = Date.now();
   let truncated = false;
   for (const page of earlier) {
@@ -215,7 +261,7 @@ async function buildProseDigest(apiKey: string, model: string, allNodes: Node[],
     // first. Each completed fold below is already persisted, so the next generation resumes from here.
     if (Date.now() - startFold > FOLD_BUDGET_MS) { truncated = true; break; }
     try {
-      const next = await foldDigest(apiKey, model, accum, txt, meta);
+      const next = await foldDigest(apiKey, model, accum, txt, registry, meta);
       const line = next.pages[next.pages.length - 1] ?? ""; // this page's delta = the line the fold just appended
       page.authoring = { ...page.authoring, prose_digest: { v: DIGEST_VERSION, line, ledger: next.ledger, impressions: next.impressions, src_hash: srcHash, prev_hash: prevHash } };
       // Persist THIS fold immediately — a worker death at the ~150s ceiling must not lose progress (the
@@ -335,6 +381,51 @@ Deno.serve(async (req: Request) => {
     const settingBlock = locNode && locNode.kind === "location"
       ? `SETTING (this scene happens here — honor its established palette, don't re-invent it):\n${locName(locNode)} — ${palette(locNode.content as Record<string, string>) || "(no palette yet)"}`
       : "";
+    // The unified between-scenes view (docs/scene-ledger.md §3.2 consumer 1): ONE ledgerAt fold is the read
+    // path for BOTH the entry-state block and the disclosure budget below — the generator now sees the same
+    // deterministic snapshot the agent/verify loop do, instead of each surface assembling it ad hoc. Pure; the
+    // `nodeId` not being a scene ⇒ null ⇒ both blocks empty (degradation: today's behaviour unchanged).
+    const sceneLedger: SceneLedger | null = node.kind === "scene" ? ledgerAt(nodes as unknown as DnaNode[], nodeId) : null;
+    const nameOf = (id: string) => String((byId.get(id)?.content as { name?: string })?.name ?? id);
+    // ENTRY STATE — the plan-side state entering this scene the prose writer otherwise can't see: promises still
+    // OPEN (reader pressure — held-open = open + touched a while ago) and where each character was LAST seen (so
+    // the scene doesn't teleport someone or forget an open loop). Anchors, not fences.
+    const entryStateBlock = (() => {
+      if (!sceneLedger) return "";
+      const open = sceneLedger.threads.filter((t) => t.state === "open").map((t) => {
+        const held = (t.scenesSinceTouch ?? 0) > 1 ? ` (held ${t.scenesSinceTouch} scenes — don't let it drop)` : "";
+        return `"${nameOf(t.ref)}"${held}`;
+      });
+      const positions = sceneLedger.positions.filter((p) => p.loc).map((p) => `${nameOf(p.ref)} — last at ${nameOf(p.loc!)}`);
+      const lines = [
+        open.length ? `- Open promises (set up, not yet paid — keep them alive): ${open.join("; ")}` : "",
+        positions.length ? `- Positions (where each was last seen — account for any travel): ${positions.join("; ")}` : "",
+      ].filter(Boolean);
+      if (!lines.length) return "";
+      return "ENTRY STATE (the deterministic story state ENTERING this scene — honor it; don't contradict where people are or forget an open promise):\n" + lines.join("\n");
+    })();
+    // The DISCLOSURE BUDGET (docs/scene-ledger.md §2.4), now read off the same ledgerAt fold: for the entities in
+    // THIS scene (its location + POV + present cast), what has ALREADY been rendered — so the writer reveals
+    // fresh facets, varies known ones in NEW words, and drops saturated ones, instead of blindly restating the
+    // whole palette. Degradation rule: no exposure data → empty block → today's behaviour unchanged.
+    const disclosureBlock = (() => {
+      if (!sceneLedger?.exposure.length) return "";
+      const sc = node.content as { loc?: string; pov?: string; present?: string[] };
+      const refs = new Set([sc.loc, sc.pov, ...(sc.present ?? [])].filter((x): x is string => !!x && x.startsWith("n_")));
+      const scoped = sceneLedger.exposure.filter((e) => refs.has(e.ref));
+      if (!scoped.length) return "";
+      const grouped = new Map<string, typeof scoped>();
+      for (const e of scoped) (grouped.get(e.ref) ?? grouped.set(e.ref, []).get(e.ref)!).push(e);
+      const lines = [...grouped].map(([ref, facets]) =>
+        `  ${nameOf(ref)}:\n` + facets.map((f) => {
+          const status = f.saturated
+            ? `saturated (×${f.uses})${f.lastPhrasing ? ` — last "${f.lastPhrasing}"` : ""}: do NOT restate; an oblique echo at most, and only if the scene turns on it.`
+            : `established ×${f.uses}${f.lastPhrasing ? ` ("${f.lastPhrasing}")` : ""}: fine to touch again, but in NEW words.`;
+          return `    ${f.facet} — ${status}`;
+        }).join("\n")
+      );
+      return "DISCLOSURE BUDGET (what's ALREADY been rendered for the entities in this scene — reveal what's fresh, vary what's known in NEW words, drop what's saturated; any facet NOT listed here is unrendered, so this is your chance to establish it):\n" + lines.join("\n");
+    })();
     // The scene's REGISTER — how the book's ONE voice bends for THIS scene only. Keeps the signature constant
     // (still the voice profile above) but varies pace/distance/intensity so the read doesn't go monotone.
     const sceneRegister = node.kind === "scene" ? String((node.content as { register?: string }).register ?? "").trim() : "";
@@ -531,7 +622,9 @@ Deno.serve(async (req: Request) => {
         ? [proseScope]
         : [entityBlock, locationBlock, threadBlock, tentpoleBlock, worldRulesBlock, gamesBlock, precondBlock /* [EXP:preconditions] */, actBlock]),
       beatNeighbourhoodBlock, // sibling beats — keeps prose from contradicting plan-layer facts
+      entryStateBlock, // ledgerAt §3.2: open promises + character positions entering this scene (empty = unchanged)
       settingBlock, // this scene's resolved location palette (prose grounding)
+      disclosureBlock, // progressive disclosure: which facets to reveal/vary/drop (Phase 2 — empty = today's behaviour)
       registerBlock, // this scene's voice modulation (anti-monotony) — bends the signature for this scene only
       briefBlock, // the agent's curated, verbatim guidance for THIS page (empty for non-render / no-brief calls)
       prevProseBlock,

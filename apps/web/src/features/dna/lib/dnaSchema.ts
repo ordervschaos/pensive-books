@@ -122,6 +122,9 @@ export const NODE_SCHEMA: Partial<Record<NodeKind, EditSpec[]>> = {
     // stays constant; this knob breaks per-scene monotony. Adjacent scenes should differ so the read never goes flat.
     { key: "register", label: "register", multiline: true, taste: true, note: "how the voice bends here — pace, distance, intensity (e.g. \"clipped, breathless\" / \"slow, elegiac, interior\"). Adjacent scenes should differ." },
     { key: "readings", label: "readings", genOnly: true, note: "[{ ref: meter id, value: number }] this scene's level on each meter (inherited/refined from its beat)" },
+    // observed_establishes / continuity_flags are OUTPUTS of the continuity read (factLedger), not authored plan
+    // input — so they're not editor fields here. Phase-1 grounding (docs/scene-ledger.md §1.3): each fact may
+    // carry an optional `entity` = the registry node id it's about (n_…), the join key to the plan side.
   ],
 };
 // The editor renders only the hand-editable fields — structural genOnly fields are prompt/contract-only.

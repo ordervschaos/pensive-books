@@ -71,7 +71,10 @@ export interface Reading { ref: string; value: number }
 // CONTINUITY LEDGER (docs/true-agent.md Step 3): a fact a scene's PROSE asserted — key→value canon the rest of
 // the book must stay consistent with ("mara" → "lot 7"). Folded left-to-right over scenes (last-write-wins =
 // supersede) into the running "story so far". Observed OUTPUT of the read — the state-axis twin of observed_readings.
-export interface LedgerFact { key: string; value: string; note?: string }
+// entity (Phase-1 grounding, docs/scene-ledger.md §1): the DNA node id this fact is ABOUT (`n_…`), set when the
+// fact concerns a known registry entity — the join key that lets observed state meet the plan side (advances[].ref,
+// ThreadRef, scene.loc) key-by-key. ADDITIVE: a fact never loses its free `key`; a non-entity fact just omits `entity`.
+export interface LedgerFact { key: string; value: string; note?: string; entity?: string }
 // A continuity break the read found in a scene's prose vs the canon established before it (was → now).
 export interface ContinuityFlag { key: string; was: string; now: string; note?: string }
 export interface BeatContent {
@@ -809,7 +812,7 @@ function foldFacts(scenes: DnaNode[]): Map<string, StampedFact> {
   for (const s of scenes) {
     for (const f of ((s.content as SceneContent).observed_establishes ?? [])) {
       if (!f?.key) continue;
-      canon.set(f.key, { key: f.key, value: f.value, note: f.note, sceneId: s.id });
+      canon.set(f.key, { key: f.key, value: f.value, note: f.note, entity: f.entity, sceneId: s.id });
     }
   }
   return canon;
@@ -826,6 +829,210 @@ export function ledgerBefore(nodes: DnaNode[], sceneId: string): LedgerFact[] {
  *  ledger view + the input the macro re-read audits. */
 export function ledgerFull(nodes: DnaNode[]): StampedFact[] {
   return [...foldFacts(scenesInOrder(nodes)).values()];
+}
+
+// ── ENTITY REGISTRY (the shared keyspace — docs/scene-ledger.md §1.2) ──────────────────────────────────────
+// The kinds prose actually NAMES, in the order they appear in the block. Games/meters/tentpoles are excluded:
+// they're plan constructs the prose never says out loud, so grounding an observed fact against them is noise.
+const REGISTRY_KINDS: NodeKind[] = ["character", "location", "world_fact", "thread", "relationship"];
+const REGISTRY_CAP = 120; // guard the fold/read prompt size on huge casts (same spirit as read-facts' MAX_LEDGER)
+
+/** The entity registry as an LLM-consumable block: one line per entity node,
+ *  `id — kind — name (+ one-line identifying detail)`. Deterministic order (kind, then position). This is the
+ *  shared keyspace both the digest fold and the fact read resolve names/epithets/pronouns AGAINST, so observed
+ *  state can be tagged with the node id it concerns and join the plan side (advances/threads/loc) by that id. A
+ *  relationship line names BOTH ends by their character name (`n_rel_x — relationship — Mara ↔ Okonkwo`). */
+export function entityRegistryBlock(nodes: DnaNode[]): string {
+  const index = byId(nodes);
+  const nm = (id?: string): string => String((index.get(id ?? "")?.content as { name?: string } | undefined)?.name ?? "").trim();
+  const name = (n: DnaNode): string => {
+    if (n.kind === "relationship") {
+      const c = n.content as RelationshipContent;
+      return `${nm(c.a) || c.a || "?"} ↔ ${nm(c.b) || c.b || "?"}`;
+    }
+    return String((n.content as { name?: string }).name ?? "").trim() || n.id;
+  };
+  const detail = (n: DnaNode): string => {
+    const c = n.content as Record<string, unknown>;
+    const s = n.kind === "character" ? [c.role, c.want && `wants ${c.want}`].filter(Boolean).join(", ")
+      : n.kind === "location" ? String(c.summary ?? c.mood ?? "")
+      : n.kind === "world_fact" ? String(c.rule ?? c.mechanism ?? "")
+      : n.kind === "thread" ? String(c.promise ?? "")
+      : n.kind === "relationship" ? String(c.bond ?? "")
+      : "";
+    return s.replace(/\s+/g, " ").trim().slice(0, 80);
+  };
+  const lines: string[] = [];
+  for (const kind of REGISTRY_KINDS) {
+    for (const n of nodes.filter((x) => x.kind === kind).sort((a, b) => a.position - b.position)) {
+      const d = detail(n);
+      lines.push(`${n.id} — ${kind} — ${name(n)}${d ? ` (${d})` : ""}`);
+    }
+  }
+  return lines.slice(0, REGISTRY_CAP).join("\n");
+}
+
+// ── FACET EXPOSURE (progressive disclosure — docs/scene-ledger.md §2) ──────────────────────────────────────
+// A FACET is (entityRef, field): one descriptive content field of a registry entity that the prose can "spend".
+// The catalog of which fields count is derived from the schema — deterministic, no LLM, no authoring burden.
+const FACET_FIELDS: Partial<Record<NodeKind, string[]>> = {
+  location: ["sight", "sound", "smell", "texture", "mood"],
+  character: ["tag", "wound", "lie", "idiolect"],
+  world_fact: ["rule", "mechanism"],
+  relationship: ["bond"],
+};
+// uses ≥ this ⇒ a facet is SATURATED (restatement forbidden). One knob, lives next to METER_FLAT_RUN in spirit.
+export const FACET_SATURATION = 3;
+
+const FACET_STOP = new Set("the a an and or but of to in on at for with as is was were be been are it its his her their they he she you your we our i me my that this these those there then than so if when while into from over under up down out off not no yes".split(" "));
+const facetWords = (t: string): string[] => (t || "").toLowerCase().replace(/[^a-z0-9'\s]/g, " ").split(/\s+/).filter(Boolean);
+/** Distinctive 5→4→3-word shingles of a facet's authored text (dropping all-stopword grams). Longest first so
+ *  the recorded echo is the most specific match. Empty when the text is too short (<3 content words) to match
+ *  distinctively — that facet simply can't be detected by the verbatim floor (paraphrase escapes it too). */
+function facetShingles(text: string): string[] {
+  const w = facetWords(text);
+  const out: string[] = [];
+  for (const n of [5, 4, 3]) {
+    for (let i = 0; i + n <= w.length; i++) {
+      const gram = w.slice(i, i + n);
+      if (gram.every((g) => FACET_STOP.has(g))) continue;
+      out.push(gram.join(" "));
+    }
+  }
+  return out;
+}
+
+export interface FacetUse { ref: string; facet: string; sceneId: string; echo?: string }
+/** Scan prosed scenes in reading order; a facet is "used" in a scene when a distinctive n-gram of its authored
+ *  text appears (near-verbatim, token-boundary match) in that scene's prose — the exact harm Phase 2 kills.
+ *  Deterministic, no model. Known limitation (by design): a PARAPHRASE of the palette escapes this floor. */
+export function facetEchoes(nodes: DnaNode[]): FacetUse[] {
+  const facets: { ref: string; facet: string; shingles: string[] }[] = [];
+  for (const n of nodes) {
+    const fields = FACET_FIELDS[n.kind];
+    if (!fields) continue;
+    const c = n.content as Record<string, unknown>;
+    for (const f of fields) {
+      const sh = facetShingles(String(c[f] ?? ""));
+      if (sh.length) facets.push({ ref: n.id, facet: f, shingles: sh });
+    }
+  }
+  const out: FacetUse[] = [];
+  for (const s of scenesInOrder(nodes)) {
+    const prose = String((s.content as SceneContent).prose?.text ?? "");
+    if (!prose.trim()) continue;
+    const hay = ` ${facetWords(prose).join(" ")} `; // pad so a shingle only matches on whole-token boundaries
+    for (const fc of facets) {
+      const echo = fc.shingles.find((g) => hay.includes(` ${g} `));
+      if (echo) out.push({ ref: fc.ref, facet: fc.facet, sceneId: s.id, echo });
+    }
+  }
+  return out;
+}
+
+export interface FacetExposure { ref: string; facet: string; uses: number; lastPhrasing?: string; saturated: boolean }
+/** Fold facetEchoes into the per-facet DISCLOSURE BUDGET ENTERING a scene: how many times each facet was echoed
+ *  by scenes strictly BEFORE it in reading order, the last phrasing used, and whether it's saturated. What the
+ *  prose prompt reads to decide reveal-fresh / vary-known / drop-saturated. `sceneId` not found ⇒ whole book. */
+export function facetExposureBefore(nodes: DnaNode[], sceneId: string): FacetExposure[] {
+  const order = scenesInOrder(nodes).map((s) => s.id);
+  const cut = order.indexOf(sceneId);
+  const prior = new Set(cut < 0 ? order : order.slice(0, cut));
+  const agg = new Map<string, FacetExposure>();
+  for (const u of facetEchoes(nodes)) {
+    if (!prior.has(u.sceneId)) continue;
+    const key = `${u.ref} ${u.facet}`;
+    const e = agg.get(key) ?? { ref: u.ref, facet: u.facet, uses: 0, saturated: false };
+    e.uses++;
+    if (u.echo) e.lastPhrasing = u.echo;
+    e.saturated = e.uses >= FACET_SATURATION;
+    agg.set(key, e);
+  }
+  return [...agg.values()];
+}
+
+// ── ledgerAt (the unified between-scenes view — docs/scene-ledger.md §3) ────────────────────────────────────
+// ONE pure answer to "what is true ENTERING scene N?" — a fold of the plan fields + the already-persisted
+// observed outputs, over the scenes strictly BEFORE N in reading order. No LLM, no I/O, callable everywhere
+// both twins are. It CONSOLIDATES the reads the prose context / agent digest / verify-loop each assembled ad
+// hoc; the field folds delegate to the existing derivations (facetExposureBefore, ledgerBefore) so the logic
+// lives once. "Held open" = state:"open" with scenesSinceTouch>0 — derived, never authored.
+export interface SceneLedger {
+  sceneId: string; index: number;                  // position in scenesInOrder (-1 if the id isn't a scene)
+  causality: { established: string[] };            // state keys produced upstream (fold of `establishes`)
+  threads: { ref: string; state: "unopened" | "open" | "paid"; openedAt?: number; lastTouch?: number; scenesSinceTouch?: number }[];
+  relations: { ref: string; moves: number; lastHow?: string; lastAt?: number }[];   // fold of `advances`
+  meters: { ref: string; value: number }[];        // carry-forward level entering this scene (last reading wins)
+  positions: { ref: string; loc?: string; lastSeenAt: number }[];  // char → last loc they appeared in
+  exposure: FacetExposure[];                        // Phase 2 disclosure budget entering this scene
+  facts: LedgerFact[];                              // observed canon folded from observed_establishes (Phase 1 keys)
+}
+export function ledgerAt(nodes: DnaNode[], sceneId: string): SceneLedger {
+  const scenes = scenesInOrder(nodes);
+  const index = scenes.findIndex((s) => s.id === sceneId);
+  const idx = index < 0 ? scenes.length : index;   // not a known scene ⇒ fold the whole book
+  const prior = scenes.slice(0, idx);
+
+  // CAUSALITY — the state keys produced by scenes strictly upstream (last-first, dedup, reading order).
+  const established: string[] = [];
+  const seenKey = new Set<string>();
+  for (const s of prior) for (const k of ((s.content as SceneContent).establishes ?? [])) if (k && !seenKey.has(k)) { seenKey.add(k); established.push(k); }
+
+  // THREADS — a per-thread FSM over prior scenes' ThreadRefs: setup opens, payoff pays; lastTouch drives the
+  // reader-pressure signals. scenesSinceTouch is measured from the ENTRY point (idx), so a thread touched in
+  // the immediately preceding scene reads as 1.
+  const threads = nodes.filter((n) => n.kind === "thread").map((t) => {
+    let state: "unopened" | "open" | "paid" = "unopened";
+    let openedAt: number | undefined, lastTouch: number | undefined;
+    prior.forEach((s, i) => {
+      for (const ref of ((s.content as SceneContent).threads ?? [])) {
+        if (ref.ref !== t.id) continue;
+        lastTouch = i;
+        if (ref.role === "setup" && state === "unopened") { state = "open"; openedAt = i; }
+        if (ref.role === "payoff") state = "paid";
+      }
+    });
+    return {
+      ref: t.id, state,
+      ...(openedAt != null ? { openedAt } : {}),
+      ...(lastTouch != null ? { lastTouch, scenesSinceTouch: idx - lastTouch } : {}),
+    };
+  });
+
+  // RELATIONS — fold of `advances` (move count + last move) per relationship node.
+  const relations = nodes.filter((n) => n.kind === "relationship").map((r) => {
+    let moves = 0, lastHow: string | undefined, lastAt: number | undefined;
+    prior.forEach((s, i) => {
+      for (const a of ((s.content as SceneContent).advances ?? [])) {
+        if (a.ref !== r.id) continue;
+        moves++; lastAt = i; if (a.how) lastHow = a.how;
+      }
+    });
+    return { ref: r.id, moves, ...(lastHow ? { lastHow } : {}), ...(lastAt != null ? { lastAt } : {}) };
+  });
+
+  // METERS — carry-forward: the last authored reading on each meter across prior scenes (a gap holds the level).
+  const meterMap = new Map<string, number>();
+  for (const s of prior) for (const r of ((s.content as SceneContent).readings ?? [])) if (typeof r.value === "number") meterMap.set(r.ref, r.value);
+  const meters = [...meterMap].map(([ref, value]) => ({ ref, value }));
+
+  // POSITIONS — each character's last-seen location (pov + present resolve to who's "in the room").
+  const posMap = new Map<string, { loc?: string; lastSeenAt: number }>();
+  prior.forEach((s, i) => {
+    const c = s.content as SceneContent;
+    for (const ch of new Set([c.pov, ...(c.present ?? [])].filter((x): x is string => !!x))) {
+      posMap.set(ch, { loc: c.loc, lastSeenAt: i });
+    }
+  });
+  const positions = [...posMap].map(([ref, v]) => ({ ref, ...(v.loc ? { loc: v.loc } : {}), lastSeenAt: v.lastSeenAt }));
+
+  return {
+    sceneId, index,
+    causality: { established },
+    threads, relations, meters, positions,
+    exposure: facetExposureBefore(nodes, sceneId),
+    facts: ledgerBefore(nodes, sceneId),
+  };
 }
 
 /** A compact plain-text STORY ANALYSIS — the three axes + lints — handed to the dna-chat reviser as context
