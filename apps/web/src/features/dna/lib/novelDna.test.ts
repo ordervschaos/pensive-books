@@ -127,9 +127,9 @@ describe("pure edits", () => {
   });
 
   it("editContent deep-merges nested fields — a throughline edit can't clobber sibling shape fields", () => {
-    const premise = mk("premise", { content: { shape: { setup: "old setup", turn1: "t1", turn2: "t2", resolution: "res" } } });
-    const edited = editContent(premise, { shape: { setup: "NEW setup" } }); // patch only one nested key
-    expect(edited.content.shape).toEqual({ setup: "NEW setup", turn1: "t1", turn2: "t2", resolution: "res" });
+    const premise = mk("premise", { content: { shape: { name: "man in a hole", movements: ["m1", "m2"], ending_feel: "up" } } });
+    const edited = editContent(premise, { shape: { name: "kishōtenketsu" } }); // patch only one nested key
+    expect(edited.content.shape).toEqual({ name: "kishōtenketsu", movements: ["m1", "m2"], ending_feel: "up" });
   });
 
   it("deep-merge replaces arrays wholesale (DNA arrays are whole values, not appended)", () => {

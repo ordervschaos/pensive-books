@@ -61,7 +61,7 @@ export interface ValueShift { value: string; from: string; to: string; polarity?
 // things not to repeat/contradict beyond the mechanical blocklist. See docs/agent-capabilities.md.
 export interface RenderBrief { focus: string; mustHonor?: string[]; avoid?: string[] }
 export interface SeedContent { logline?: string }
-export interface PremiseContent { genre?: string[]; tone?: string[]; dramatic_question?: string; shape?: { setup?: string; turn1?: string; turn2?: string; turn3?: string; resolution?: string } }
+export interface PremiseContent { genre?: string[]; tone?: string[]; dramatic_question?: string; shape?: { name?: string; movements?: string[]; ending_feel?: "up" | "down" | "bittersweet" | "ambivalent" } }
 export interface PillarContent { controlling_idea?: string; ending?: string }
 // target_pct: where this act's turning_point should land in the book (0–1) — the pacing intent (§6).
 export interface ActContent { title?: string; goal?: string; turning_point?: string; target_pct?: number; value?: ValueShift }
@@ -365,8 +365,8 @@ export function stampProse(scene: DnaNode): DnaNode {
 
 // ── Pure edits ────────────────────────────────────────────────────────────────
 /** The canonical DNA content merge: nested PLAIN OBJECTS merge recursively; arrays and scalars from the
- *  patch REPLACE (DNA arrays — threads/players/shape… — are whole values, never appended). Used by EVERY
- *  edit path so a nested patch (e.g. { shape: { setup } }) can't clobber its sibling fields (turn1…resolution). */
+ *  patch REPLACE (DNA arrays — threads/players/movements… — are whole values, never appended). Used by EVERY
+ *  edit path so a nested patch (e.g. { shape: { name } }) can't clobber its sibling fields (movements/ending_feel). */
 export function deepMergeContent(base: NodeContent, patch: NodeContent): NodeContent {
   const out: Record<string, unknown> = { ...(base as Record<string, unknown>) };
   const p = patch as Record<string, unknown>;

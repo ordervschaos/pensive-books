@@ -36,15 +36,21 @@ export const NODE_SCHEMA: Partial<Record<NodeKind, EditSpec[]>> = {
   premise: [
     // genre + tone live on the BRIEF (the book-level contract / MANDATE), not here — they were duplicated
     // onto premise but nothing downstream read them (drift risk only). The premise rung holds only what it
-    // genuinely refines: the dramatic question + the 5-part shape.
+    // genuinely refines: the dramatic question + a flexible shape.
     // The premise's load-bearing minimum: the CENTRAL QUESTION the whole book lives inside. Framed wide
     // on purpose — it can be a PLOT question ("will she escape?") OR a thematic one ("can a single day hold
-    // a whole life?"), so the rung stays universal across genre and literary work. The 5-part shape below
-    // is an OPTIONAL sketch (not required), demoted because acts/beats own structure one rung down.
+    // a whole life?"), so the rung stays universal across genre and literary work.
     { key: "dramatic_question", label: "central question", multiline: true, required: true },
+    // shape is an OPTIONAL sketch, one rung ABOVE acts (a CONTRACT, same relationship as every rung pair on
+    // the ladder — not competing structure). `name` is free text, not an enum, on purpose: a hardcoded
+    // 5-part Freytag arc silently biased every beat sheet toward Western three-act shape, with no room for
+    // kishōtenketsu, a frame story, or a braided narrative. `movements` is however many beats the CHOSEN
+    // shape actually needs (n:1 onto acts one rung down); `ending_feel` is the ending's VALENCE only — the
+    // concrete ending itself stays on the pillar (single source of truth; avoid duplicating it here).
     { key: "shape", label: "shape", type: "object", fields: [
-      { key: "setup", label: "setup", multiline: true }, { key: "turn1", label: "turn 1", multiline: true }, { key: "turn2", label: "turn 2", multiline: true },
-      { key: "turn3", label: "turn 3", multiline: true }, { key: "resolution", label: "resolution", multiline: true },
+      { key: "name", label: "shape name" },
+      { key: "movements", label: "movements", type: "list" },
+      { key: "ending_feel", label: "ending feel", type: "select", options: ["up", "down", "bittersweet", "ambivalent"] },
     ] },
   ],
   pillar: [{ key: "controlling_idea", label: "idea", multiline: true, required: true, taste: true }, { key: "ending", label: "ending", multiline: true, taste: true }],

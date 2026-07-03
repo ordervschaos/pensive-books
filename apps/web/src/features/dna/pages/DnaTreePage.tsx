@@ -6,7 +6,8 @@ import ReactMarkdown from "react-markdown";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { deleteNode, patchNodeContent, saveNode, saveNodes } from "@/features/dna/lib/bookNodes";
-import { backlinkIndex, beatsInOrder, byId, childrenOf, emptyNode, isEntityKind, isProseStale, isStale, newId, pillarOf, refsOf, stampInput, stampProse, type BookSettings, type DnaIssue, type DnaNode, type BeatContent, type NodeContent, type NodeKind, type SceneContent } from "@/features/dna/lib/novelDna";
+import { backlinkIndex, beatsInOrder, byId, childrenOf, isEntityKind, isProseStale, isStale, newId, pillarOf, refsOf, stampInput, stampProse, type BookSettings, type DnaIssue, type DnaNode, type BeatContent, type NodeContent, type NodeKind, type SceneContent } from "@/features/dna/lib/novelDna";
+import { bootstrapLoglineFromBrief, ensureSeed } from "@/features/dna/lib/dnaExpand";
 import { editSpecs, KIND_LEVEL, tasteSpecs, type EditSpec } from "@/features/dna/lib/dnaSchema";
 import { CONTENT_TYPES, SCOPE_BANDS, briefIdea, type Brief } from "@/lib/brief";
 import { describeOps, type NodeOp } from "@/features/dna/lib/dnaChat";
@@ -56,7 +57,7 @@ function nodeTitle(n: DnaNode): string {
   const s = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : "");
   switch (n.kind) {
     case "seed": return s(c.logline);
-    case "premise": return s(c.dramatic_question) || s((c.shape as Record<string, unknown>)?.setup);
+    case "premise": return s(c.dramatic_question) || s((c.shape as Record<string, unknown>)?.name);
     case "pillar": return s(c.controlling_idea);
     case "character": return s(c.name);
     case "relationship": return s(c.bond);
@@ -2294,17 +2295,11 @@ export default function DnaTreePage() {
     const { error: err } = await supabase.from("books").update({ brief: next }).eq("id", bookId);
     if (err) throw new Error(err.message);
     setSettings((prev) => ({ ...prev, word_target: next.scope?.word_target }));
-    // idea ≠ logline (docs/dna-studio-analysis.md §0/§1): the raw idea is NOT the logline. We only seed the
-    // logline from the idea when it's still EMPTY (a provisional starting point), and never overwrite a
-    // logline that already exists — once the author drafts/refines one (the "draft logline" verb generates a
-    // real protagonist/inciting/goal/obstacle/stakes logline via dna-expand), editing the idea won't clobber
-    // it. Journey gating / studio / overview read seed.content.logline, so the empty-seed case still fills.
-    if ("idea" in patch && nodes) {
-      const seed = nodes.find((n) => n.kind === "seed");
-      const existing = (seed?.content as { logline?: string } | undefined)?.logline?.trim();
-      if (seed && !existing) await patchNodeContent(seed, { logline: (patch.idea ?? "").trim() } as NodeContent);
-    }
-  }, [brief, bookId, nodes]);
+    // The moment idea is submitted, ensure the seed exists and kick off a real logline draft in the
+    // background — bootstrapLoglineFromBrief is idempotent (a no-op once the logline has moved past the
+    // raw idea placeholder), so this is safe to fire on every idea save.
+    if ("idea" in patch) void bootstrapLoglineFromBrief(bookId, next.idea);
+  }, [brief, bookId]);
 
   // Seed an empty tree: create the root `seed` node, prefilling its logline from the brief's idea.
   // Everything else (premise/pillar/cast/spine) grows from here via the reviser or the studio.
@@ -2332,11 +2327,16 @@ export default function DnaTreePage() {
       // automatically (the seed = the logline origin, derived from the brief idea). The agent builds
       // everything below it — this replaces the old manual "seed the tree" button.
       if (loaded.length === 0) {
-        const seed = emptyNode(bookId, "seed", 0, null);
         const idea = briefIdea(loadedBrief)?.trim();
-        if (idea) seed.content = { logline: idea };
-        try { await saveNode(seed); setNodes([seed]); setOpenSet((p) => new Set(p).add(seed.id)); return; }
-        catch { /* leave the tree empty; the live subscription still reflects reality */ }
+        try {
+          const seed = await ensureSeed(bookId, idea);
+          setNodes([seed]); setOpenSet((p) => new Set(p).add(seed.id));
+          // Safety net for a seed that already exists with an idea but no draft yet (e.g. the brief was
+          // saved from a surface that predates this, or the fire-and-forget call from that save never
+          // landed) — bootstrapLoglineFromBrief is idempotent, so this is a no-op once it's already drafted.
+          if (idea) void bootstrapLoglineFromBrief(bookId, idea);
+          return;
+        } catch { /* leave the tree empty; the live subscription still reflects reality */ }
       }
       setNodes(loaded);
     })();
