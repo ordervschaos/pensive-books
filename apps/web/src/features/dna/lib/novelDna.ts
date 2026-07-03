@@ -755,6 +755,82 @@ function meterLints(nodes: DnaNode[]): DnaIssue[] {
   return issues;
 }
 
+// ── VERTICAL FIT (the timeline layer — doc_1783103754000_timeline_layer.md) ──────────────────────────────
+// The ladder states the same trajectory at several zooms (premise shape → acts → beats → scenes). The lints
+// above check consistency WITHIN a level (horizontal); these check that each finer level faithfully REFINES
+// the one above it. Existing members of the family live elsewhere: pacing_drift (act intent ↔ scene reality),
+// target_drift (meter intent ↔ beat plan), read_gap (beat plan ↔ prose observed). All fire conservatively —
+// a missing level, polarity, or scale is "early", not "wrong". `movements` free text is never interpreted;
+// only counts and enums cross levels (a movement's valence isn't machine-readable, so no shape-curve lint).
+const SCENE_REFINE_BAND = 0.2; // a scene's explicit reading may sit within 20% of scale of its beat's explicit reading
+
+function verticalLints(nodes: DnaNode[]): DnaIssue[] {
+  const issues: DnaIssue[] = [];
+  const index = byId(nodes);
+  const premise = nodes.find((n) => n.kind === "premise");
+  const shape = (premise?.content as PremiseContent | undefined)?.shape;
+
+  // premise.shape.movements ↔ acts: acts map n:1 onto movements (several acts may serve one movement, never
+  // the reverse), so fewer acts than movements means some movement has no act to carry it.
+  const movements = (shape?.movements ?? []).filter((m) => typeof m === "string" && m.trim());
+  const acts = nodes.filter((n) => n.kind === "act");
+  if (premise && movements.length && acts.length && acts.length < movements.length) {
+    issues.push({ rule: "shape_unmapped", severity: "warn", nodeId: premise.id,
+      message: `the shape promises ${movements.length} movements but the book has ${acts.length} act(s) — acts map onto movements n:1, so some movement has no act to carry it` });
+  }
+
+  // premise.shape.ending_feel ↔ the spine's terminus: "up"/"down" are deterministic promises (bittersweet/
+  // ambivalent aren't — skipped). Only the ACTUAL last element is read (last scene, else last beat); if it
+  // carries no polarity yet the ending isn't authored — early, not wrong.
+  const feel = shape?.ending_feel;
+  if (premise && (feel === "up" || feel === "down")) {
+    const scenes = scenesInOrder(nodes);
+    const beats = beatsInOrder(nodes);
+    const lastScene = scenes[scenes.length - 1];
+    const lastBeat = beats[beats.length - 1];
+    const scenePol = lastScene ? (lastScene.content as SceneContent).value_shift?.polarity : undefined;
+    const beatPol = lastBeat ? (lastBeat.content as BeatContent).polarity : undefined;
+    const terminal = scenePol && lastScene ? { id: lastScene.id, pol: scenePol } : beatPol && lastBeat ? { id: lastBeat.id, pol: beatPol } : null;
+    if (terminal && terminal.pol !== feel) {
+      issues.push({ rule: "ending_feel_mismatch", severity: "warn", nodeId: terminal.id,
+        message: `the premise's shape promises the ending feels "${feel}" but the spine's last turn lands ${terminal.pol}` });
+    }
+  }
+
+  for (const b of nodes.filter((n) => n.kind === "beat")) {
+    const bc = b.content as BeatContent;
+    const kids = childrenOf(nodes, b.id).filter((s) => s.kind === "scene");
+    const last = kids[kids.length - 1];
+
+    // beat.polarity ↔ its scenes' value shifts: a beat's polarity is where the value ENDS across its turn, so
+    // its LAST scene must land the same way. Scenes may detour (down-down-up under an "up" beat) — only the
+    // landing is checked, and only when the last scene has authored its shift.
+    const sp = last ? (last.content as SceneContent).value_shift?.polarity : undefined;
+    if (bc.polarity && sp && sp !== bc.polarity) {
+      issues.push({ rule: "beat_polarity_undelivered", severity: "warn", nodeId: last.id,
+        message: `beat plans a "${bc.polarity}" turn but its last scene lands ${sp} — the scenes don't deliver the beat's charge` });
+    }
+
+    // scene.readings ↔ the beat's readings: a scene's explicit level on a meter must refine, not contradict,
+    // its beat's explicit level on the same meter. Explicit-vs-explicit only (no carry-forward guessing), and
+    // only against an explicit scale — anything less is early.
+    for (const s of kids) {
+      for (const r of ((s.content as SceneContent).readings ?? [])) {
+        const br = (bc.readings ?? []).find((x) => x.ref === r.ref);
+        if (!br || typeof r.value !== "number" || typeof br.value !== "number") continue;
+        const meter = index.get(r.ref);
+        const mc = meter?.kind === "meter" ? (meter.content as MeterContent) : undefined;
+        const span = typeof mc?.scale?.min === "number" && typeof mc?.scale?.max === "number" ? mc.scale.max - mc.scale.min : 0;
+        if (span > 0 && Math.abs(r.value - br.value) > SCENE_REFINE_BAND * span) {
+          issues.push({ rule: "scene_reading_departs", severity: "warn", nodeId: s.id,
+            message: `scene reads "${mc?.name ?? r.ref}" at ${r.value} but its beat planned ${br.value} — the scene contradicts the level it refines` });
+        }
+      }
+    }
+  }
+  return issues;
+}
+
 // ── CONTINUITY LEDGER (the prefix-sum "story so far" — docs/true-agent.md Step 3) ──────────────────────────
 // A scan over scenes in reading order: each scene's observed_establishes (the key→value facts its prose
 // asserted) fold left-to-right, LAST-WRITE-WINS per key (re-asserting a key supersedes the old value — the
@@ -1178,6 +1254,9 @@ export function validate(nodes: DnaNode[]): DnaIssue[] {
 
   // Meters axis (docs/novel-dna-meters.md): flat / monotone / no-jeopardy on a tracked axis.
   issues.push(...meterLints(nodes));
+
+  // Vertical fit (the timeline layer): each finer rung must refine, not contradict, the rung above it.
+  issues.push(...verticalLints(nodes));
 
   // Grounding: the resolution must fire an established world rule (no deus ex machina — Lester Dent's law).
   // When the world has rules, the last scene in reading order should ground its win in at least one.
