@@ -61,7 +61,17 @@ export interface ValueShift { value: string; from: string; to: string; polarity?
 // things not to repeat/contradict beyond the mechanical blocklist. See docs/agent-capabilities.md.
 export interface RenderBrief { focus: string; mustHonor?: string[]; avoid?: string[] }
 export interface SeedContent { logline?: string }
-export interface PremiseContent { genre?: string[]; tone?: string[]; dramatic_question?: string; shape?: { name?: string; movements?: string[]; ending_feel?: "up" | "down" | "bittersweet" | "ambivalent" } }
+export interface PremiseContent {
+  genre?: string[]; tone?: string[]; dramatic_question?: string;
+  shape?: { name?: string; movements?: string[]; ending_feel?: "up" | "down" | "bittersweet" | "ambivalent" };
+  // THE SHAPE READ (doc_1783113903000_shape_read_spec.md): a paid semantic verdict — do the acts DELIVER each
+  // movement the premise promised? Written by read-shape onto the level that made the promise (the premise),
+  // parallel to how the meter read writes observed_readings onto beats. Output data, never authored (kept out of
+  // dnaSchema FIELDS + stripped from input hashing via OUTPUT_FIELDS). The acts→movements mapping is INFERRED by
+  // the read (acts carry no movement ref) and returned as data (actIds). observed_shape_hash is the staleness seal.
+  observed_shape_fit?: { movement: number; actIds: string[]; fit: number; worst?: string; note?: string }[];
+  observed_shape_hash?: string;
+}
 export interface PillarContent { controlling_idea?: string; ending?: string }
 // target_pct: where this act's turning_point should land in the book (0–1) — the pacing intent (§6).
 // value = the act's MACRO shift; schema keys it `name` (scene ValueShift keys it `value`). polarity = the
@@ -323,7 +333,7 @@ export function backlinkIndex(nodes: DnaNode[]): Map<string, DnaNode[]> {
 // Fields that are OUTPUTS of generation/the read, never plan INPUTS — stripped before any input-set hash so
 // writing them (e.g. a meter read onto a beat, a fact ledger onto a scene) never spuriously stales the nodes
 // that hash this content. Mirrors how the prose hash already excludes prose.
-const OUTPUT_FIELDS = ["prose", "observed_readings", "observed_establishes", "continuity_flags"] as const;
+const OUTPUT_FIELDS = ["prose", "observed_readings", "observed_establishes", "continuity_flags", "observed_shape_fit", "observed_shape_hash"] as const;
 function planOf(content: NodeContent | null | undefined): NodeContent | null {
   if (!content) return null;
   const out: Record<string, unknown> = { ...(content as Record<string, unknown>) };
@@ -766,6 +776,39 @@ function meterLints(nodes: DnaNode[]): DnaIssue[] {
 // only counts and enums cross levels (a movement's valence isn't machine-readable, so no shape-curve lint).
 const SCENE_REFINE_BAND = 0.2; // a scene's explicit reading may sit within 20% of scale of its beat's explicit reading
 
+// ── THE SHAPE READ input + seal (doc_1783113903000_shape_read_spec.md) ───────────────────────────────────
+// The paid, semantic half of vertical fit. read-shape (edge fn) is LLM-as-SENSOR — it reads the plan text and
+// writes a per-movement verdict onto premise.observed_shape_fit; the movement_unfit lint below is the pure JUDGE
+// (thresholds live here, not the prompt). buildShapeReadInput assembles the read's input from the live tree;
+// shapeReadHash seals it. Both are shared by the client (which sends the input + stamps the seal) AND the lint
+// (which recomputes the seal off the tree to tell a FRESH verdict from a STALE one — the dirty-graph idea, § seal).
+export interface ShapeReadAct { actId: string; title?: string; goal?: string; turningPoint?: string; beats: { beatId: string; summary: string }[] }
+export interface ShapeReadInput { movements: string[]; endingFeel?: string; acts: ShapeReadAct[] }
+export const MOVEMENT_FIT_FLOOR = 3; // fit ≤ 2 ⇒ the movement is not delivered by the acts that carry it
+
+/** Assemble the shape read's input from the live tree — PLAN plane only (no prose): movements verbatim, plus
+ *  each act's fields and its beats' summaries in reading order. Skip-empty (early, not wrong): no premise, no
+ *  movements, or no act carrying a beat ⇒ null (no call). */
+export function buildShapeReadInput(nodes: DnaNode[]): ShapeReadInput | null {
+  const premise = nodes.find((n) => n.kind === "premise");
+  const shape = (premise?.content as PremiseContent | undefined)?.shape;
+  const movements = (shape?.movements ?? []).filter((m): m is string => typeof m === "string" && !!m.trim());
+  const acts: ShapeReadAct[] = nodes.filter((n) => n.kind === "act").sort((a, b) => a.position - b.position).map((a) => {
+    const c = a.content as ActContent;
+    const beats = childrenOf(nodes, a.id).filter((b) => b.kind === "beat")
+      .map((b) => ({ beatId: b.id, summary: String((b.content as BeatContent).summary ?? "") }));
+    return { actId: a.id, title: c.title, goal: c.goal, turningPoint: c.turning_point, beats };
+  });
+  if (!premise || !movements.length || !acts.some((a) => a.beats.length)) return null;
+  return { movements, endingFeel: shape?.ending_feel, acts };
+}
+
+/** The staleness seal: a stable hash of the exact input sent. A verdict is FRESH iff this still matches the
+ *  premise's stored observed_shape_hash; any plan edit that changes the input flips it, silencing the lint. */
+export function shapeReadHash(input: ShapeReadInput): string {
+  return metaHash(stableStringify(input));
+}
+
 function verticalLints(nodes: DnaNode[]): DnaIssue[] {
   const issues: DnaIssue[] = [];
   const index = byId(nodes);
@@ -779,6 +822,28 @@ function verticalLints(nodes: DnaNode[]): DnaIssue[] {
   if (premise && movements.length && acts.length && acts.length < movements.length) {
     issues.push({ rule: "shape_unmapped", severity: "warn", nodeId: premise.id,
       message: `the shape promises ${movements.length} movements but the book has ${acts.length} act(s) — acts map onto movements n:1, so some movement has no act to carry it` });
+  }
+
+  // movement_unfit — the SEMANTIC complement of shape_unmapped (a movement no act DELIVERS, even when counts
+  // look fine). Reads the paid shape read's verdict (premise.observed_shape_fit); the threshold lives here, not
+  // in the prompt (LLM-as-sensor, pure-fn-as-judge). Fires only when the seal is FRESH — a stale verdict is
+  // silent (early-not-wrong; the read is paid, so the author re-triggers it rather than us nagging).
+  const fitVerdict = (premise?.content as PremiseContent | undefined)?.observed_shape_fit;
+  if (premise && Array.isArray(fitVerdict) && fitVerdict.length) {
+    const input = buildShapeReadInput(nodes);
+    const fresh = !!input && (premise.content as PremiseContent).observed_shape_hash === shapeReadHash(input);
+    if (fresh) {
+      for (const row of fitVerdict) {
+        if (typeof row.movement !== "number") continue;
+        const carried = Array.isArray(row.actIds) && row.actIds.length > 0;
+        const score = carried ? row.fit : 0; // an empty inferred mapping = uncarried = fit 0 (the semantic case)
+        if (typeof score !== "number" || score >= MOVEMENT_FIT_FLOOR) continue;
+        const text = movements[row.movement] ?? `#${row.movement + 1}`;
+        const worst = row.worst && index.has(row.worst) ? row.worst : premise.id; // anchor to the node that can fix it
+        issues.push({ rule: "movement_unfit", severity: "warn", nodeId: worst,
+          message: `movement ${row.movement + 1} "${text}" scores ${score}/5 in the acts that carry it${row.note ? ` — ${row.note}` : ""}` });
+      }
+    }
   }
 
   // premise.shape.ending_feel ↔ the spine's terminus: "up"/"down" are deterministic promises (bittersweet/

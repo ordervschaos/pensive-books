@@ -7,10 +7,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import {
-  beatsInOrder, byId, childrenOf, isSerialMeter, meterSeries, meterShape, meterTarget, observedSeries, validate,
-  type DnaNode, type MeterContent, type DnaIssue, type MeterPoint,
+  beatsInOrder, buildShapeReadInput, byId, childrenOf, isSerialMeter, meterSeries, meterShape, meterTarget, observedSeries, shapeReadHash, validate,
+  type DnaNode, type MeterContent, type DnaIssue, type MeterPoint, type PremiseContent,
 } from "@/features/dna/lib/novelDna";
 import { buildMeterReadInput, invokeMeterRead, observedFindingsMessage, sendFindingsToEditor, writeObserved } from "@/features/dna/lib/meterRead";
+import { invokeShapeRead, sendShapeFindingsToEditor, shapeFindingsMessage, writeShapeFit } from "@/features/dna/lib/shapeRead";
 
 const getNumericId = (p: string | undefined) => { const m = p?.match(/^(\d+)/); return m ? parseInt(m[1]) : 0; };
 
@@ -161,6 +162,35 @@ export default function DnaMetersPage() {
     } finally { setReading(false); }
   };
 
+  // The shape read (doc_1783113903000): the paid SEMANTIC pass — do the acts deliver each movement the premise
+  // promised? Writes the per-movement verdict onto the premise, sealed by the input hash; the movement_unfit lint
+  // reads it. Plan-plane only (no prose), so it's cheap and independent of whether anything is drafted.
+  const runShapeRead = async () => {
+    if (!nodes || !bookId) return;
+    const input = buildShapeReadInput(nodes);
+    if (!input) { setNote("Add a premise shape (movements) and acts with beats first — nothing to read yet."); return; }
+    setReading(true); setNote("Reading the acts against the promised shape…");
+    try {
+      const fits = await invokeShapeRead(bookId, input);
+      await writeShapeFit(nodes, input, fits);
+      setNote(`Read ${fits.length} movement(s). Rows below show how faithfully the acts deliver each.`);
+    } catch (e) {
+      setNote(`Shape read failed: ${String((e as Error)?.message ?? e)}`);
+    } finally { setReading(false); }
+  };
+
+  const sendShapeToEditor = async () => {
+    if (!nodes || !bookId) return;
+    setReading(true);
+    try {
+      const sent = await sendShapeFindingsToEditor(bookId, nodes, {});
+      if (sent) navigate(`/books/${bookSlug}/dna/tree`);
+      else setNote("Every movement is delivered — no shape gaps to send.");
+    } catch (e) {
+      setNote(`Couldn't send to the editor: ${String((e as Error)?.message ?? e)}`);
+    } finally { setReading(false); }
+  };
+
   // Hand the read's gaps to the editor agent (the manual taste gate), then jump to the tree's agent rail.
   const sendToEditor = async () => {
     if (!nodes || !bookId) return;
@@ -202,6 +232,21 @@ export default function DnaMetersPage() {
     return { meters, serialMeters, colorOf, issues };
   }, [nodes]);
 
+  // Shape-read state (doc_1783113903000): the promised movements, the stored verdict, and whether the seal is
+  // still FRESH (its input hash still matches the live tree). A stale verdict is silent in the lint — the panel
+  // shows a "stale" chip instead of nagging (the read is paid; the author re-triggers it).
+  const shape = useMemo(() => {
+    const ns = nodes ?? [];
+    const premise = ns.find((n) => n.kind === "premise");
+    const pc = premise?.content as PremiseContent | undefined;
+    const movements = (pc?.shape?.movements ?? []).filter((m): m is string => typeof m === "string" && !!m.trim());
+    const verdict = pc?.observed_shape_fit ?? null;
+    const input = buildShapeReadInput(ns);
+    const fresh = !!verdict && !!input && pc?.observed_shape_hash === shapeReadHash(input);
+    const findings = shapeFindingsMessage(ns); // null unless a FRESH verdict has a sub-floor movement
+    return { movements, verdict, fresh, findings, readable: !!input };
+  }, [nodes]);
+
   if (error) return <div style={{ padding: 24, color: "#f87171", fontFamily: "monospace" }}>error: {error}</div>;
   if (!nodes) return <div style={{ padding: 24, color: "#888", fontFamily: "monospace" }}>loading…</div>;
 
@@ -215,6 +260,40 @@ export default function DnaMetersPage() {
         <p style={{ fontSize: 12, color: "#777", marginTop: 0, marginBottom: 12 }}>
           The story's tracked axes (docs/novel-dna-meters.md). Serial meters — those with readings across ≥2 beats — plot below, each normalized to its own scale.
         </p>
+
+        {/* THE SHAPE READ (doc_1783113903000): the paid semantic ceiling of vertical fit — do the acts deliver each
+            movement the premise promised? Plan-plane only; the verdict + stale seal live on the premise node. */}
+        {shape.movements.length > 0 && (
+          <div style={{ border: "1px solid #1c1c1c", borderRadius: 8, padding: "12px 14px", marginBottom: 18, background: "#0e0e0e" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: shape.verdict ? 10 : 0 }}>
+              <span style={{ fontSize: 13, fontWeight: 700 }}>Shape</span>
+              <button type="button" onClick={() => void runShapeRead()} disabled={reading || !shape.readable}
+                style={{ fontSize: 12, color: "#0a0a0a", background: "#c4b5fd", border: "none", borderRadius: 6, padding: "5px 11px", fontWeight: 600, cursor: reading || !shape.readable ? "default" : "pointer", opacity: reading || !shape.readable ? 0.5 : 1 }}>
+                {reading ? "Reading…" : "Read the shape"}
+              </button>
+              <button type="button" onClick={() => void sendShapeToEditor()} disabled={reading || !shape.findings}
+                style={{ fontSize: 12, color: "#ddd", background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "5px 11px", cursor: reading || !shape.findings ? "default" : "pointer", opacity: reading || !shape.findings ? 0.4 : 1 }}>
+                Send shape gaps to editor →
+              </button>
+              {shape.verdict && !shape.fresh && (
+                <span style={{ fontSize: 11, color: "#fbbf24", border: "1px solid #3a3320", borderRadius: 5, padding: "2px 7px" }}>read is stale — plan changed since</span>
+              )}
+            </div>
+            {shape.verdict && shape.movements.map((text, i) => {
+              const row = shape.verdict!.find((v) => v.movement === i);
+              const score = row ? (row.actIds.length ? row.fit : 0) : null; // empty mapping = uncarried = 0
+              const color = score == null ? "#555" : score <= 2 ? "#f87171" : score >= 4 ? "#4ade80" : "#fbbf24";
+              return (
+                <div key={i} style={{ display: "flex", alignItems: "baseline", gap: 8, fontSize: 12, padding: "2px 0", opacity: shape.fresh ? 1 : 0.5 }}>
+                  <span style={{ color, fontWeight: 700, minWidth: 26 }}>{score == null ? "—" : `${score}/5`}</span>
+                  <span style={{ color: "#ccc" }}>{i + 1}. {text}</span>
+                  {row?.note && <span style={{ color: "#777" }}>— {row.note}</span>}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         {meters.length > 0 && (
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18, flexWrap: "wrap" }}>
             <button type="button" onClick={() => void runRead()} disabled={reading}

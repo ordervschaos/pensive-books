@@ -138,6 +138,33 @@ function verticalBook(): DnaNode[] {
   return [seed, premise, pillar, meter, a1, b1, s1];
 }
 
+// Shape-read fixtures (doc_1783113903000_shape_read_spec.md): a premise promising 3 movements over 2 acts, with a
+// PAID verdict written onto the premise. movement 0 scores 1/5 (fires, anchored to its worst beat), movement 1
+// scores 4/5 (clears the floor), movement 2 has an EMPTY inferred mapping (uncarried → fit 0 → fires on the
+// premise). The seal is what gates the lint: a fresh hash makes it fire; a wrong hash makes it stay silent.
+function shapeBase(): DnaNode[] {
+  const seed = mk("seed", { id: "sf_seed", content: { logline: "A courier must cross a country that forgets her at every border." } });
+  const premise = mk("premise", { id: "sf_prem", parent_id: "sf_seed", content: { dramatic_question: "Can she be remembered?", shape: { name: "quest", movements: ["the leaving", "the trials", "the return"], ending_feel: "bittersweet" } } });
+  const pillar = mk("pillar", { id: "sf_pil", parent_id: "sf_prem", content: { controlling_idea: "To be known you must be seen leaving." } });
+  const a1 = mk("act", { id: "sf_a1", parent_id: "sf_pil", position: 0, content: { title: "Departure", goal: "get out the gate", turning_point: "the first border wipes her name" } });
+  const a2 = mk("act", { id: "sf_a2", parent_id: "sf_pil", position: 1, content: { title: "The Road", goal: "reach the capital" } });
+  const b1 = mk("beat", { id: "sf_b1", parent_id: "sf_a1", position: 0, content: { summary: "She slips the gate at dusk." } });
+  const b2 = mk("beat", { id: "sf_b2", parent_id: "sf_a2", position: 0, content: { summary: "A checkpoint eats her papers." } });
+  return [seed, premise, pillar, a1, a2, b1, b2];
+}
+function stampShapeFit(fresh: boolean): DnaNode[] {
+  const nodes = shapeBase();
+  const premise = nodes.find((n) => n.id === "sf_prem")!;
+  const input = web.buildShapeReadInput(nodes)!;
+  const observed_shape_fit = [
+    { movement: 0, actIds: ["sf_a1"], fit: 1, worst: "sf_b1", note: "the leaving is stated, not dramatized" },
+    { movement: 1, actIds: ["sf_a2"], fit: 4 },
+    { movement: 2, actIds: [], fit: 0 }, // uncarried → the semantic complement of shape_unmapped
+  ];
+  premise.content = { ...premise.content, observed_shape_fit, observed_shape_hash: fresh ? web.shapeReadHash(input) : "stale-hash" };
+  return nodes;
+}
+
 const settings: BookSettings = { title: "The Folding City", author: "A. Nzal", word_target: 60000 };
 const j = (v: unknown) => JSON.stringify(v);
 
@@ -167,7 +194,7 @@ const cases: [string, (m: typeof web, n: DnaNode[]) => unknown][] = [
 ];
 
 describe("novel-dna edge twin ↔ web engine parity", () => {
-  const fixtures: [string, DnaNode[]][] = [["goodBook", goodBook()], ["brokenBook", brokenBook()], ["registryBook", registryBook()], ["exposureBook", exposureBook()], ["ledgerAtBook", ledgerAtBook()], ["verticalBook", verticalBook()]];
+  const fixtures: [string, DnaNode[]][] = [["goodBook", goodBook()], ["brokenBook", brokenBook()], ["registryBook", registryBook()], ["exposureBook", exposureBook()], ["ledgerAtBook", ledgerAtBook()], ["verticalBook", verticalBook()], ["shapeFitFresh", stampShapeFit(true)], ["shapeFitStale", stampShapeFit(false)]];
   for (const [fxName, nodes] of fixtures) {
     for (const [fnName, fn] of cases) {
       it(`${fnName} agrees on ${fxName}`, () => {
@@ -202,6 +229,22 @@ describe("vertical-fit lints", () => {
   it("stays silent on the coherent book (missing levels are early, not wrong)", () => {
     const rules = web.validate(goodBook()).map((i) => i.rule);
     for (const r of RULES) expect(rules).not.toContain(r);
+  });
+});
+
+// The shape read (doc_1783113903000_shape_read_spec.md): the paid semantic verdict, gated by the staleness seal.
+describe("the shape read (movement_unfit)", () => {
+  it("fires on a FRESH low-fit verdict, anchored to the worst node (empty mapping counts as fit 0)", () => {
+    const issues = web.validate(stampShapeFit(true)).filter((i) => i.rule === "movement_unfit");
+    // movement 0 (fit 1, worst = its beat) + movement 2 (uncarried → 0, anchored to the premise) fire; movement 1 (fit 4) clears the floor.
+    expect(issues.map((i) => i.nodeId).sort()).toEqual(["sf_b1", "sf_prem"]);
+    expect(issues.find((i) => i.nodeId === "sf_b1")?.message).toContain('movement 1 "the leaving" scores 1/5');
+    expect(issues.find((i) => i.nodeId === "sf_prem")?.message).toContain('movement 3 "the return" scores 0/5');
+  });
+
+  it("stays SILENT on a STALE verdict (the seal no longer matches the tree)", () => {
+    const rules = web.validate(stampShapeFit(false)).map((i) => i.rule);
+    expect(rules).not.toContain("movement_unfit");
   });
 });
 
