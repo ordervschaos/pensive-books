@@ -58,6 +58,7 @@ export const NODE_SCHEMA: Partial<Record<NodeKind, EditSpec[]>> = {
     { key: "name", label: "name", required: true }, { key: "role", label: "role", type: "select", options: ROLES }, { key: "want", label: "want", multiline: true },
     { key: "need", label: "need", multiline: true }, { key: "wound", label: "wound", multiline: true }, { key: "lie", label: "lie", multiline: true },
     { key: "truth", label: "truth", multiline: true }, { key: "idiolect", label: "idiolect", multiline: true, taste: true }, { key: "tag", label: "tag" },
+    { key: "waived", label: "waived", genOnly: true, note: "true = deliberately cut, the reader will never meet them (settles the entity-intro promise in the obligation ledger); only with the author's consent" },
   ],
   relationship: [
     { key: "a", label: "a", type: "ref", refKind: "character", required: true }, { key: "b", label: "b", type: "ref", refKind: "character", required: true },
@@ -71,6 +72,7 @@ export const NODE_SCHEMA: Partial<Record<NodeKind, EditSpec[]>> = {
     { key: "sight", label: "sight", multiline: true }, { key: "sound", label: "sound", multiline: true },
     { key: "smell", label: "smell", multiline: true }, { key: "texture", label: "texture", multiline: true },
     { key: "mood", label: "mood", multiline: true },
+    { key: "waived", label: "waived", genOnly: true, note: "true = deliberately cut, the reader will never visit it (settles the entity-intro promise in the obligation ledger); only with the author's consent" },
   ],
   thread: [{ key: "name", label: "name", required: true }, { key: "kind", label: "kind", type: "select", options: ["mystery", "foreshadow", "setup_payoff", "arc"] }, { key: "promise", label: "promise", multiline: true, required: true }, { key: "payoff", label: "payoff", multiline: true },
     // owner: the node this thread is ABOUT — a game id on the auto-minted game-resolution twin (the

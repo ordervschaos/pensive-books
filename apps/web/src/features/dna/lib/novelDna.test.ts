@@ -1009,6 +1009,32 @@ describe("obligation ledger (the debt view) + the completion predicate", () => {
     expect(row(rows, "entity_intro:lc_seen")).toMatchObject({ state: "closed", touches: 1 });
   });
 
+  it("entity intro falls back to a prose/free-text match when pov/present/loc refs are absent — the real-book\n" +
+     "regression: the scene generator never sets structured pov/present, so a ref-only check reads every\n" +
+     "accepted character as 'unopened' forever, even one who is clearly the book's protagonist", () => {
+    const { pillar, act, b1 } = spine();
+    const mara = mk("character", { id: "ch_mara", parent_id: "p", content: { name: "Mara Vael" } });
+    const ghost = mk("character", { id: "ch_ghost", parent_id: "p", content: { name: "Ghost" } });
+    const harbor = mk("location", { id: "lc_harbor", parent_id: "p", content: { name: "The Harbor" } });
+    const nodes = [pillar, act, b1, mara, ghost, harbor,
+      // no pov/present/loc REFS anywhere — only free text, exactly like the real 1192 book's scenes.
+      scene("s0", "b1", 0, { loc: "The Harbor", prose: { text: "Mara Vael walked the tar-slick planks alone." } }),
+      scene("s1", "b1", 1, { prose: { text: "She did not look back at the water." } })];
+    const rows = obligationLedger(nodes);
+    expect(row(rows, "entity_intro:ch_mara")).toMatchObject({ state: "closed", closedAt: 0, touches: 1 });
+    expect(row(rows, "entity_intro:ch_ghost")?.state).toBe("unopened"); // never mentioned — genuinely unmet
+    expect(row(rows, "entity_intro:lc_harbor")).toMatchObject({ state: "closed", closedAt: 0, touches: 1 });
+  });
+
+  it("a structured pov/present/loc ref always wins over the prose fallback (primary signal first)", () => {
+    const { pillar, act, b1 } = spine();
+    const mara = mk("character", { id: "ch_mara", parent_id: "p", content: { name: "Mara Vael" } });
+    const nodes = [pillar, act, b1, mara,
+      // the prose never says her name, but the structured ref does the job.
+      scene("s0", "b1", 0, { pov: "ch_mara", prose: { text: "The plaza breathed under a colorless sky." } })];
+    expect(row(obligationLedger(nodes), "entity_intro:ch_mara")).toMatchObject({ state: "closed", touches: 1 });
+  });
+
   it("quiet = turns since the debt's last touch (reader pressure, per-spine)", () => {
     const rows = obligationLedger(book());
     expect(row(rows, "thread:th_open")?.quiet).toBe(1);    // last advance at s1; the book ends at s2

@@ -700,15 +700,31 @@ export function obligationLedger(nodes: DnaNode[]): Obligation[] {
       openedAt: null, closedAt: at, touches: at !== null ? 1 : 0, quiet: null });
   }
 
-  // ENTITY INTROS — the new axis: accepting a character/location promises the reader will MEET it. Paid on
-  // first scene appearance (character: pov/present; location: scene.loc — id refs only, free-text povs don't
-  // count). touches counts appearances — the hook for a later "described well enough" saturation bar.
+  // ENTITY INTROS — the new axis: accepting a character/location promises the reader will MEET it. PRIMARY
+  // signal: structured refs (character: pov/present; location: scene.loc as a node id). FALLBACK, checked only
+  // when the ref is absent: the generator doesn't actually populate pov/present today (confirmed against a
+  // live 80-scene book — every character read "unopened" despite Mara being on nearly every page), so a
+  // structured-ref-only check would hold EVERY real book's debt gate open forever. A character counts as met
+  // if their first name appears in the scene's drafted PROSE (the same token-match name_soup already uses);
+  // a location counts as visited if its free-text `loc` name matches (the same tolerance dangling_ref gives
+  // legacy string locs). Both fallbacks only fire on scenes that already have prose/loc text — an undrafted,
+  // unlocated scene can't accidentally satisfy this by absence.
   for (const e of nodes.filter((n) => (n.kind === "character" || n.kind === "location") && pinnedOrAccepted(n))) {
     const name = String((e.content as { name?: unknown }).name ?? e.id);
+    const firstNameToken = e.kind === "character" ? name.trim().split(/\s+/)[0]?.toLowerCase() : undefined;
     let first: number | null = null, touches = 0;
     scenes.forEach((s, i) => {
       const c = s.content as SceneContent;
-      const hit = e.kind === "character" ? (c.pov === e.id || (c.present ?? []).includes(e.id)) : c.loc === e.id;
+      let hit: boolean;
+      if (e.kind === "character") {
+        hit = c.pov === e.id || (c.present ?? []).includes(e.id);
+        if (!hit && firstNameToken) {
+          const prose = c.prose?.text;
+          if (prose) hit = facetWords(prose).some((t) => t.replace(/'.*$/, "") === firstNameToken);
+        }
+      } else {
+        hit = c.loc === e.id || (!!c.loc && c.loc.trim().toLowerCase() === name.trim().toLowerCase());
+      }
       if (!hit) return;
       touches++;
       if (first === null) first = i;
