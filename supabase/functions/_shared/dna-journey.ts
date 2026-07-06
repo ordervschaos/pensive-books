@@ -215,7 +215,9 @@ export function currentObjective(nodes: DnaNode[], opts: { bookSlug?: string } =
   // The ENDGAME objective is derived from the ledger (debt-based completion): name each open promise so the
   // agent settles them deliberately instead of inferring "what's left" from the tree digest.
   const debts = now?.key === "promises" ? openObligations(nodes) : [];
-  const debtLines = debts.slice(0, 12).map((o) => `  • [${o.kind}] "${o.name}"${o.promise ? ` — ${o.promise.slice(0, 90)}` : ""} (${o.state})`);
+  // Pressure-ordered (openObligations): stalest on-page debt first; `quiet` is how many turns the reader has
+  // been holding the promise untouched — the agent works top-down, so the most-owed promise settles first.
+  const debtLines = debts.slice(0, 12).map((o) => `  • [${o.kind}] "${o.name}"${o.promise ? ` — ${o.promise.slice(0, 90)}` : ""} (${o.state}${o.quiet ? ` · quiet ${o.quiet} turns` : ""})`);
   if (debts.length > 12) debtLines.push(`  … +${debts.length - 12} more`);
   return [
     "Drive the author through ONE step at a time; don't work ahead unless they ask.",

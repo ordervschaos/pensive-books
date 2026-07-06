@@ -279,7 +279,7 @@ const cases: [string, (m: typeof web, n: DnaNode[]) => unknown][] = [
 ];
 
 describe("novel-dna edge twin ↔ web engine parity", () => {
-  const fixtures: [string, DnaNode[]][] = [["goodBook", goodBook()], ["brokenBook", brokenBook()], ["registryBook", registryBook()], ["exposureBook", exposureBook()], ["ledgerAtBook", ledgerAtBook()], ["verticalBook", verticalBook()], ["shapeFitFresh", stampShapeFit(true)], ["shapeFitStale", stampShapeFit(false)], ["craftFresh", stampCraft(true)], ["craftStale", stampCraft(false)], ["proseBook", proseBook()], ["sketchBook", sketchBook()]];
+  const fixtures: [string, DnaNode[]][] = [["goodBook", goodBook()], ["brokenBook", brokenBook()], ["registryBook", registryBook()], ["exposureBook", exposureBook()], ["ledgerAtBook", ledgerAtBook()], ["verticalBook", verticalBook()], ["shapeFitFresh", stampShapeFit(true)], ["shapeFitStale", stampShapeFit(false)], ["craftFresh", stampCraft(true)], ["craftStale", stampCraft(false)], ["proseBook", proseBook()], ["sketchBook", sketchBook()], ["endgameBook", endgameBook()]];
   for (const [fxName, nodes] of fixtures) {
     for (const [fnName, fn] of cases) {
       it(`${fnName} agrees on ${fxName}`, () => {
@@ -446,7 +446,7 @@ describe("ledgerAt (Phase 3)", () => {
 // The guided-flow objective (dna-journey twin) is what threadSystem re-derives live each chain link (P1.2);
 // lock it to the web dnaJourney.
 describe("dna-journey edge twin ↔ web dnaJourney parity", () => {
-  const fixtures: [string, DnaNode[]][] = [["goodBook", goodBook()], ["brokenBook", brokenBook()], ["registryBook", registryBook()], ["exposureBook", exposureBook()], ["ledgerAtBook", ledgerAtBook()]];
+  const fixtures: [string, DnaNode[]][] = [["goodBook", goodBook()], ["brokenBook", brokenBook()], ["registryBook", registryBook()], ["exposureBook", exposureBook()], ["ledgerAtBook", ledgerAtBook()], ["endgameBook", endgameBook()]];
   for (const [fxName, nodes] of fixtures) {
     it(`currentObjective agrees on ${fxName}`, () => {
       const opts = { bookSlug: "42" };
@@ -464,5 +464,14 @@ describe("dna-journey edge twin ↔ web dnaJourney parity", () => {
     // goodBook has scenes with an undrafted one, so the live objective should point at a TARGET NODE — the
     // exact behaviour P1.2 keeps fresh mid-run.
     expect(webJ.currentObjective(goodBook())).toContain("TARGET NODE:");
+  });
+
+  it("endgameBook's objective reaches the promises endgame and names the open debt", () => {
+    // Fully drafted but one thread unpaid: the DEBT gate (not the scene count) holds the book open, and the
+    // objective lists the promise so the agent settles it deliberately.
+    const obj = webJ.currentObjective(endgameBook());
+    expect(obj).toContain("OPEN PROMISES");
+    expect(obj).toContain("the sealed hatch");
+    expect(obj).not.toContain("fully drafted");
   });
 });

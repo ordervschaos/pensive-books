@@ -189,4 +189,12 @@ describe("the promises endgame (debt-based completion)", () => {
     expect(obj).toContain("WAIVE it");
     expect(obj).not.toContain("fully drafted"); // the hand-off must wait for the ledger
   });
+
+  it("annotates reader pressure: a promise left untouched shows how long it has been quiet", () => {
+    const { nodes } = drafted();
+    // A second prosed scene after the setup: the thread now sits quiet for 1 turn, and the line says so.
+    nodes.push(mk("scene", { goal: "g2", prose: { text: "More words." } }));
+    const obj = currentObjective(nodes);
+    expect(obj).toContain("(open · quiet 1 turns)");
+  });
 });

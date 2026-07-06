@@ -608,6 +608,9 @@ export interface Obligation {
   openedAt: number | null;     // spine index where the debt went live (null = opened by the registry itself)
   closedAt: number | null;     // spine index where it was paid
   touches: number;             // service events (advances / plays / appearances) — the "progress" P
+  // READER PRESSURE: turns since the debt was last serviced, to the end of ITS spine (scenes for threads,
+  // beats for games/state keys) — the debt "accruing interest". Only meaningful while open; null otherwise.
+  quiet: number | null;
 }
 
 const pinnedOrAccepted = (n: DnaNode): boolean => n.authoring.locked || n.authoring.status === "accepted";
@@ -621,29 +624,31 @@ export function obligationLedger(nodes: DnaNode[]): Obligation[] {
   // it (a payoff with no prior setup settles nothing — unearned_payoff flags that anomaly). `advance` = progress.
   for (const t of nodes.filter((n) => n.kind === "thread" && pinnedOrAccepted(n))) {
     const c = t.content as ThreadContent;
-    let openedAt: number | null = null, closedAt: number | null = null, touches = 0;
+    let openedAt: number | null = null, closedAt: number | null = null, touches = 0, last: number | null = null;
     scenes.forEach((s, i) => {
       for (const r of ((s.content as SceneContent).threads ?? [])) {
         if (r.ref !== t.id) continue;
+        last = i;
         if (r.role === "setup" && openedAt === null) openedAt = i;
         if (r.role === "advance") touches++;
         if (r.role === "payoff" && openedAt !== null && closedAt === null) closedAt = i;
       }
     });
+    const state: ObligationState = isWaived(t) ? "waived" : closedAt !== null ? "closed" : openedAt !== null ? "open" : "unopened";
     out.push({ id: `thread:${t.id}`, ref: t.id, kind: "thread", name: c.name ?? t.id, promise: c.promise ?? "",
-      state: isWaived(t) ? "waived" : closedAt !== null ? "closed" : openedAt !== null ? "open" : "unopened",
-      openedAt, closedAt, touches });
+      state, openedAt, closedAt, touches,
+      quiet: state === "open" && last !== null ? scenes.length - 1 - last : null });
   }
 
   // GAMES — accepting a contest promises the reader a DECISION: `plays` opens it, `resolves` pays it.
   // State scans beats AND scenes (like the unresolved_game lint); indices are beat-spine best-effort
   // (scenes inherit their beat's plays/resolves). touches counts every turn that plays it, both planes.
   const beats = beatsInOrder(nodes);
-  const playedAt = new Map<string, number>(), resolvedAt = new Map<string, number>();
+  const playedAt = new Map<string, number>(), resolvedAt = new Map<string, number>(), lastPlayAt = new Map<string, number>();
   beats.forEach((b, i) => {
     const c = b.content as BeatContent;
-    for (const p of (c.plays ?? [])) if (p && !playedAt.has(p)) playedAt.set(p, i);
-    for (const r of (c.resolves ?? [])) if (r.ref && !resolvedAt.has(r.ref)) resolvedAt.set(r.ref, i);
+    for (const p of (c.plays ?? [])) if (p) { if (!playedAt.has(p)) playedAt.set(p, i); lastPlayAt.set(p, i); }
+    for (const r of (c.resolves ?? [])) if (r.ref) { if (!resolvedAt.has(r.ref)) resolvedAt.set(r.ref, i); lastPlayAt.set(r.ref, i); }
   });
   const played = new Set<string>(), resolved = new Set<string>(), playCount = new Map<string, number>();
   for (const n of nodes) {
@@ -654,11 +659,13 @@ export function obligationLedger(nodes: DnaNode[]): Obligation[] {
   }
   for (const g of nodes.filter((n) => n.kind === "game" && pinnedOrAccepted(n))) {
     const c = g.content as GameContent;
+    const state: ObligationState = isWaived(g) ? "waived" : resolved.has(g.id) ? "closed" : played.has(g.id) ? "open" : "unopened";
+    const last = lastPlayAt.get(g.id);
     out.push({ id: `game:${g.id}`, ref: g.id, kind: "game", name: c.name ?? g.id,
       promise: c.stake ?? c.win_condition ?? "",
-      state: isWaived(g) ? "waived" : resolved.has(g.id) ? "closed" : played.has(g.id) ? "open" : "unopened",
-      openedAt: playedAt.get(g.id) ?? null, closedAt: resolvedAt.get(g.id) ?? null,
-      touches: playCount.get(g.id) ?? 0 });
+      state, openedAt: playedAt.get(g.id) ?? null, closedAt: resolvedAt.get(g.id) ?? null,
+      touches: playCount.get(g.id) ?? 0,
+      quiet: state === "open" && last !== undefined ? beats.length - 1 - last : null });
   }
 
   // STATE KEYS — the causality axis as debt, with the direction INVERTED: a `needs` is a withdrawal that an
@@ -666,17 +673,19 @@ export function obligationLedger(nodes: DnaNode[]): Obligation[] {
   // opens (first spend). One row per key ever needed; open while any need is unmet upstream.
   const rows = causality(nodes);
   const neededAt = new Map<string, number>(), producedAtIdx = new Map<string, number>(), needCount = new Map<string, number>();
-  const unmetKeys = new Set<string>();
+  const lastMention = new Map<string, number>(), unmetKeys = new Set<string>();
   for (const r of rows) {
-    for (const k of r.needs) { if (!neededAt.has(k)) neededAt.set(k, r.idx); needCount.set(k, (needCount.get(k) ?? 0) + 1); }
+    for (const k of r.needs) { if (!neededAt.has(k)) neededAt.set(k, r.idx); needCount.set(k, (needCount.get(k) ?? 0) + 1); lastMention.set(k, r.idx); }
     for (const k of r.unmet) unmetKeys.add(k);
-    for (const k of r.produces) if (!producedAtIdx.has(k)) producedAtIdx.set(k, r.idx);
+    for (const k of r.produces) { if (!producedAtIdx.has(k)) producedAtIdx.set(k, r.idx); lastMention.set(k, r.idx); }
   }
   for (const [key, at] of neededAt) {
+    const state: ObligationState = unmetKeys.has(key) ? "open" : "closed";
+    const last = lastMention.get(key);
     out.push({ id: `state_key:${key}`, ref: key, kind: "state_key", name: key,
       promise: `"${key}" is earned before it is spent`,
-      state: unmetKeys.has(key) ? "open" : "closed",
-      openedAt: at, closedAt: producedAtIdx.get(key) ?? null, touches: needCount.get(key) ?? 0 });
+      state, openedAt: at, closedAt: producedAtIdx.get(key) ?? null, touches: needCount.get(key) ?? 0,
+      quiet: state === "open" && last !== undefined ? rows.length - 1 - last : null });
   }
 
   // TENTPOLES — a pinned set-piece is a registry promise, paid when a scene realizes it (tentpole_unplaced
@@ -688,7 +697,7 @@ export function obligationLedger(nodes: DnaNode[]): Obligation[] {
     const at = placedAt.get(t.id) ?? null;
     out.push({ id: `tentpole:${t.id}`, ref: t.id, kind: "tentpole", name: c.summary ?? t.id, promise: c.summary ?? "",
       state: isWaived(t) ? "waived" : at !== null ? "closed" : "unopened",
-      openedAt: null, closedAt: at, touches: at !== null ? 1 : 0 });
+      openedAt: null, closedAt: at, touches: at !== null ? 1 : 0, quiet: null });
   }
 
   // ENTITY INTROS — the new axis: accepting a character/location promises the reader will MEET it. Paid on
@@ -707,16 +716,20 @@ export function obligationLedger(nodes: DnaNode[]): Obligation[] {
     out.push({ id: `entity_intro:${e.id}`, ref: e.id, kind: "entity_intro", name,
       promise: e.kind === "character" ? `the reader meets ${name}` : `the reader visits ${name}`,
       state: isWaived(e) ? "waived" : first !== null ? "closed" : "unopened",
-      openedAt: null, closedAt: first, touches });
+      openedAt: null, closedAt: first, touches, quiet: null });
   }
 
   return out;
 }
 
 /** The outstanding debt: obligations not yet settled. `unopened` counts — a registry promise that never
- *  reaches the page is still owed (plant it, waive it, or delete the node). */
+ *  reaches the page is still owed (plant it, waive it, or delete the node). PRESSURE-ORDERED: on-page (open)
+ *  debts first, stalest first (`quiet` desc — the promise the reader has held longest without a touch);
+ *  registry-only (unopened) debts follow in ledger order. Sort is stable, so ties keep the ledger's grouping. */
 export function openObligations(nodes: DnaNode[]): Obligation[] {
-  return obligationLedger(nodes).filter((o) => o.state === "unopened" || o.state === "open");
+  return obligationLedger(nodes)
+    .filter((o) => o.state === "unopened" || o.state === "open")
+    .sort((a, b) => (a.state === "open" ? 0 : 1) - (b.state === "open" ? 0 : 1) || (b.quiet ?? -1) - (a.quiet ?? -1));
 }
 
 /** THE COMPLETION PREDICATE (debt-based done): the book is finished when every promise is paid or waived —

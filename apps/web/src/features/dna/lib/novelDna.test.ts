@@ -991,6 +991,28 @@ describe("obligation ledger (the debt view) + the completion predicate", () => {
     expect(row(rows, "entity_intro:lc_seen")).toMatchObject({ state: "closed", touches: 1 });
   });
 
+  it("quiet = turns since the debt's last touch (reader pressure, per-spine)", () => {
+    const rows = obligationLedger(book());
+    expect(row(rows, "thread:th_open")?.quiet).toBe(1);    // last advance at s1; the book ends at s2
+    expect(row(rows, "game:gm_open")?.quiet).toBe(1);      // played at beat 1 of 2
+    expect(row(rows, "thread:th_paid")?.quiet).toBeNull(); // settled debts accrue nothing
+    expect(row(rows, "thread:th_reg")?.quiet).toBeNull();  // never on the page — no reader pressure yet
+  });
+
+  it("openObligations is pressure-ordered: on-page debts stalest-first, registry debts after", () => {
+    const { pillar, act, b1 } = spine();
+    // th_stale is set up at s0 and never touched again (quiet 2); th_fresh is advanced at s2 (quiet 0);
+    // th_registry never reaches the page. The stalest promise must head the list.
+    const nodes = [pillar, act, b1,
+      mk("thread", { id: "th_stale", parent_id: "p", content: { name: "stale" } }),
+      mk("thread", { id: "th_fresh", parent_id: "p", content: { name: "fresh" } }),
+      mk("thread", { id: "th_registry", parent_id: "p", content: { name: "registry" } }),
+      scene("s0", "b1", 0, { threads: [{ ref: "th_stale", role: "setup" }, { ref: "th_fresh", role: "setup" }] }),
+      scene("s1", "b1", 1, {}),
+      scene("s2", "b1", 2, { threads: [{ ref: "th_fresh", role: "advance" }] })];
+    expect(openObligations(nodes).map((o) => o.ref)).toEqual(["th_stale", "th_fresh", "th_registry"]);
+  });
+
   it("openObligations lists exactly the outstanding debt; debtSettled is the quiescence gate", () => {
     const nodes = book();
     const open = openObligations(nodes).map((o) => o.id).sort();
