@@ -1714,7 +1714,7 @@ function SearchPanel({
   // Kinds actually present in this book's tree, in schema-hierarchy order (KIND_COLOR's key order), with any
   // kind KIND_COLOR doesn't know about (e.g. voice_profile) appended rather than silently dropped.
   const kindsPresent = useMemo(() => {
-    const present = new Set(nodes.map((n) => n.kind));
+    const present = new Set<string>(nodes.map((n) => n.kind));
     const ordered = Object.keys(KIND_COLOR).filter((k) => present.has(k));
     return [...ordered, ...[...present].filter((k) => !ordered.includes(k))];
   }, [nodes]);
@@ -2236,7 +2236,9 @@ export default function DnaTreePage() {
   // The reviser rail's open/closed state persists across tab switches (no remount) AND reloads (localStorage,
   // per book) — the chat thread itself lives server-side in book_agent_runs, this just remembers the rail.
   const railKey = `dna-rail-open:${bookId}`;
-  const [railOpen, setRailOpen] = useState<boolean>(() => localStorage.getItem(railKey) === "1");
+  // Default-open: the editor rail is the primary way to work the tree, so show it unless the author explicitly
+  // closed it ("0"). Unset (new book / first visit) lands with the rail open.
+  const [railOpen, setRailOpen] = useState<boolean>(() => localStorage.getItem(railKey) !== "0");
   useEffect(() => { localStorage.setItem(railKey, railOpen ? "1" : "0"); }, [railKey, railOpen]);
   // Slice 2 (docs/agent-context-model.md): the agent's context tray — DNA node ids the author attached as
   // anchors (Cursor's @-file model). Persisted per book; the agent always sees the whole book, these just

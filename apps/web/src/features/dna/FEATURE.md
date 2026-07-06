@@ -40,7 +40,7 @@ private), the editor never needs to know DNA exists.
 
 | Dir | What |
 |---|---|
-| `pages/` | 4 route components: `DnaTreePage` (`/dna/tree/*` — the ONE studio surface, three tabs: `overview` / `tree` / `taste`; `/books/:slug/dna` redirects to `/dna/tree/overview`), `DnaMetersPage`, `DnaLedgerPage`, `DnaJsonPage` |
+| `pages/` | 4 route components: `DnaTreePage` (`/dna/tree/*` — the ONE studio surface, three tabs: `overview` / `tree` / `taste`; `/books/:slug/dna` redirects to `/dna/tree`), `DnaMetersPage`, `DnaLedgerPage`, `DnaJsonPage` |
 | `components/` | 6 UI components: `AgentRail` (the agent thread rail), `TreeOverviewTab` (wraps `DnaOverview` in the tree's dark chrome for the `overview` tab), `DnaOverview`, `DnaStoryMap`, `DnaAnalysis`, `DnaStageDiagram` (now just `DnaFullDiagram`, Overview's shape panel) |
 | `hooks/` | `useAutoAccept` (auto-applies agent proposals) |
 | `lib/` | engine + clients (DNA-only): `novelDna` (pure tree engine), `novelDnaRender` (tree→pages), `bookNodes` (DB load/save), `dnaSchema` (SSOT content schema + lints), `dnaChat`, `dnaExpand` (the generation engine; the agent drives it via `propose_expansion`), `dnaJourney`, `dnaProposals`, `agentThread`, `migrateToDna`, `meterRead`, `shapeRead`, `synopsisRead` (the plan-plane "editor's read" → `craft_flag`), `factLedger`, `confusionRead` (the cold-reader pass → `reader_confusion`), `agentCommands` (+ their `.test.ts`) |

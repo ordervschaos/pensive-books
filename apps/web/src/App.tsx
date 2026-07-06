@@ -107,10 +107,11 @@ function ProtectedLayout() {
 }
 
 // The vanilla DNA studio was deprecated in favor of the tree (docs/plan-one-studio-consolidation.md) —
-// /dna keeps working as the studio entry point from the book editor, it just lands on the tree's Overview.
+// /dna keeps working as the studio entry point from the book editor. It lands on the tree tab (not Overview):
+// the tree + editor rail is more grounding to start from than the read-only Overview summary.
 function DnaStudioRedirect() {
   const { bookSlug } = useParams();
-  return <Navigate to={`/books/${bookSlug}/dna/tree/overview`} replace />;
+  return <Navigate to={`/books/${bookSlug}/dna/tree`} replace />;
 }
 
 export default function App() {
