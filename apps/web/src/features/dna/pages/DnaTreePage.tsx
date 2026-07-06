@@ -420,9 +420,9 @@ function NodeKebab({ onDelete, items = [] }: { onDelete?: () => void; items?: Ke
 }
 
 // ── Single tree row ──────────────────────────────────────────────────────────
-function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete, onAttach, kebabItems, draggable, dragging, canDrop, onDragStartRow, onDragEndRow, onDropRow, mark, focus, flash, issues, dimmed, ctx, onContextFocus, prose, headerActions, staleActions, writingProse, seq, searchPattern }: {
+function TreeRow({ node, index, depth, expandable, open, lockedOpen, onToggle, onDelete, onAttach, kebabItems, draggable, dragging, canDrop, onDragStartRow, onDragEndRow, onDropRow, mark, focus, flash, issues, dimmed, ctx, onContextFocus, prose, headerActions, staleActions, writingProse, seq, searchPattern }: {
   node: DnaNode; index: Map<string, DnaNode>; depth: number; seq?: number; // seq = global reading-order # (beat/scene)
-  expandable: boolean; open: boolean; onToggle: () => void; onDelete?: () => void;
+  expandable: boolean; open: boolean; lockedOpen?: boolean; onToggle: () => void; onDelete?: () => void;
   onAttach?: () => void; // attach this node to the agent's context tray (always-visible row action, not buried in the kebab)
   kebabItems?: KebabItem[]; // regen actions, AI options, etc (all go in the ⋮ menu)
   prose?: ProseRollup | null; // act/beat: rolled-up prose-completion of descendant scenes
@@ -487,20 +487,21 @@ function TreeRow({ node, index, depth, expandable, open, onToggle, onDelete, onA
 
       {/* The node row */}
       <div
-        onClick={expandable ? onToggle : undefined}
+        onClick={expandable && !lockedOpen ? onToggle : undefined}
+        title={lockedOpen ? "Pick or discard the staged options below to collapse this" : undefined}
         style={{
           display: "flex", alignItems: "baseline", gap: 8,
           paddingLeft: depth * 20 + (depth > 0 ? 20 : 4),
           paddingRight: 12, paddingTop: 3, paddingBottom: 3,
-          cursor: expandable ? "pointer" : "default",
+          cursor: expandable && !lockedOpen ? "pointer" : "default",
           position: "relative",
           // Precedence (spec collision budget): proposal mark > context hue (#7) > rail focus (#2).
           boxShadow: markColor ? `inset 3px 0 0 ${markColor}` : ctxColor ? `inset 3px 0 0 ${ctxColor}` : focus ? "inset 2px 0 0 #8a8aff66" : undefined,
           background: markColor ? `${markColor}12` : ctxColor ? `${ctxColor}1a` : focus ? "#8a8aff08" : undefined,
         }}
       >
-        {/* Expand/collapse chevron */}
-        <span style={{ width: 12, flexShrink: 0, color: expandable ? `${color}80` : "transparent", fontSize: 9, lineHeight: 1 }}>
+        {/* Expand/collapse chevron — locked open (dimmed further) while options are staged */}
+        <span style={{ width: 12, flexShrink: 0, color: expandable ? `${color}${lockedOpen ? "40" : "80"}` : "transparent", fontSize: 9, lineHeight: 1 }}>
           {expandable ? (open ? "▼" : "▶") : "·"}
         </span>
 
@@ -1047,7 +1048,10 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
   const specs = editSpecs(node.kind);
   // A node is expandable if it has children OR editable fields (entities/scenes have fields but no kids).
   const expandable = hasKids || specs.length > 0;
-  const open = expandable && (hasKids ? !collapsedSet.has(node.id) : openSet.has(node.id));
+  // Staged options force the row open regardless of collapse state — a picker the author never sees is
+  // useless, and there's no separate "you have options" affordance elsewhere in the tree.
+  const hasOptions = Boolean(node.proposals?.length);
+  const open = hasOptions || (expandable && (hasKids ? !collapsedSet.has(node.id) : openSet.has(node.id)));
   const toggle = () => (hasKids ? h.onToggle(node.id) : h.onToggleDetail(node.id));
   const fields = specs.map((spec) => <EditableField key={spec.key} node={node} spec={spec} depth={depth + 1} index={index} onJump={h.onJump} searchPattern={h.searchPattern} />);
   const backlinks = <BacklinksRow node={node} backlinks={h.backlinks} depth={depth + 1} onJump={h.onJump} />;
@@ -1214,7 +1218,7 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
 
   return (
     <div>
-      <TreeRow node={node} index={index} depth={depth} expandable={expandable} open={open} onToggle={toggle}
+      <TreeRow node={node} index={index} depth={depth} expandable={expandable} open={open} lockedOpen={hasOptions} onToggle={toggle}
         seq={h.seq.get(node.id)} searchPattern={h.searchPattern}
         onDelete={deletable ? () => h.onDelete(node) : undefined}
         onAttach={() => h.onAttachNode(node.id)}
