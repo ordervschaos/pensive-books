@@ -634,14 +634,25 @@ Deno.serve(async (req: Request) => {
       // Seed → logline: forge the author's RAW idea (brief.idea) into a polished LOGLINE. A logline is NOT
       // the raw idea — it names protagonist · inciting incident · primary goal · main obstacle · stakes in
       // one or two sentences. This is the system's first refinement (docs/dna-studio-analysis.md §0/§1).
-      const system = `You are a story editor. Turn the author's raw idea into ONE polished LOGLINE for the book — one or two sentences that make the story instantly legible and compelling.
+      const system = `You are a story editor. Turn the author's raw idea into ONE polished LOGLINE for the book — one or two sentences that make the story instantly legible and compelling. A logline sells the ENGINE of the story, not its meaning.
 
-A logline names FIVE things, concretely and specifically (no generic placeholders):
-- the PROTAGONIST (who they are, with the defining trait that matters),
-- the INCITING INCIDENT (the event that upends their world),
-- their PRIMARY GOAL (what they must now do),
-- the MAIN OBSTACLE / antagonist (what stands in the way),
-- the STAKES (what is lost if they fail).
+ANATOMY — name FIVE things, concretely and specifically (no generic placeholders):
+- the PROTAGONIST — defined by the trait or role that matters, NOT a name ("a disgraced surgeon", not "Sarah"),
+- the INCITING INCIDENT — the event that upends their world,
+- their PRIMARY GOAL — what they must now actively do,
+- the MAIN OBSTACLE / antagonist — what stands in the way,
+- the STAKES — what is lost if they fail (life-or-death, or emotional/social — but felt and concrete).
+The working shape is: "When [inciting incident], a [flawed/specific protagonist] must [pursue goal] or else [stakes] — but [obstacle]." (e.g. Jaws: "When a great white terrorizes a beach town, a water-phobic sheriff must hunt it down before it kills again — against a mayor who wants the beaches open.")
+
+WHAT MAKES IT STRONG:
+- IRONY baked in — the protagonist's trait should rub against the task (a water-phobic sheriff hunting a shark). If person and problem create no friction, it reads flat.
+- SPECIFICITY over vagueness — a world, a wound, a mission; never "a woman deals with loss".
+- An ACTIVE protagonist — "must", "fights to", "races to". The character DOES; things don't merely happen to them.
+- ONE story, not three — pick the spine; cut the romance/mystery/family subplots that dilute it.
+- Under ~35 WORDS — if it doesn't fit in one breath, it's carrying backstory or subplot.
+
+AVOID: naming characters, describing THEME instead of plot ("a story about redemption"), withholding the hook to be mysterious, stuffing in backstory, and passive framing ("a man discovers his life is a lie").
+TEST before you answer: could a stranger imagine the poster, the genre, and the general shape of the ending? If they'd ask "okay, but what happens?", you've written a situation, not a story — rewrite.
 
 Honor the MANDATE (genre/tone) and any LOCKED ancestors. Do NOT invent a title. Do NOT restate the raw idea verbatim — SHARPEN it into a real logline. Output the LOGLINE ONLY: one or two sentences, no preamble, no label, no quotes, no JSON.`;
       const data = await callLLM(apiKey, { model, max_tokens: 400, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],

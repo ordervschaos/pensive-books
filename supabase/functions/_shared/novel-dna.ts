@@ -1077,9 +1077,38 @@ export function synopsisReadHash(input: SynopsisReadInput): string {
   return metaHash(stableStringify(input));
 }
 
+// ── LOGLINE ANATOMY (the seed) ────────────────────────────────────────────────────────────────────────────
+// The seed's logline is the story's ENGINE in one or two sentences (protagonist · inciting incident · goal ·
+// obstacle · stakes) — not the raw idea, and not a situation. Two deterministic checks below, both warn.
+export const LOGLINE_MAX_WORDS = 35; // the practical bar — past this a logline is smuggling in subplot/backstory
+// Decisive-action verbs that mark an ACTIVE protagonist. Deliberately EXCLUDES the passive-signal verbs the
+// anatomy names (discover / find / learn / realize / deal with) — "a man discovers his life is a lie" is the
+// anti-pattern the lint should CATCH, not accept.
+const LOGLINE_ACTIVE_VERB = /\b(must|fights?|races?|racing|hunts?|struggles?|seeks?|vows?|battles?|escapes?|chases?|infiltrates?|defends?|protects?|saves?|steals?|outruns?|wages?|rushes?|risks?|sets? out|sets? off|breaks? into|takes? down|tracks? down)\b/i;
+
 function verticalLints(nodes: DnaNode[], cfg: LintConfig): DnaIssue[] {
   const issues: DnaIssue[] = [];
   const index = byId(nodes);
+
+  // seed.logline ↔ the logline anatomy (doc_1783348800000_logline_anatomy.md): the seed is the story's engine
+  // in one or two sentences, not a raw idea and not a situation. Two deterministic checks, both warn:
+  //   logline_overlong — over LOGLINE_MAX_WORDS words: it's carrying subplot/backstory ("one story, not three").
+  //   logline_static  — no active-drive verb, so the protagonist has things happen TO them ("a man discovers his
+  //     life is a lie") — a passive logline usually signals a passive story.
+  const seed = nodes.find((n) => n.kind === "seed");
+  const logline = ((seed?.content as SeedContent | undefined)?.logline ?? "").trim();
+  if (seed && logline) {
+    const wordCount = logline.split(/\s+/).filter(Boolean).length;
+    if (wordCount > LOGLINE_MAX_WORDS) {
+      issues.push({ rule: "logline_overlong", severity: "warn", nodeId: seed.id,
+        message: `the logline runs ${wordCount} words (aim for ≤ ${LOGLINE_MAX_WORDS}) — cut subplot and backstory down to the one story's engine` });
+    }
+    if (!LOGLINE_ACTIVE_VERB.test(logline)) {
+      issues.push({ rule: "logline_static", severity: "warn", nodeId: seed.id,
+        message: `the logline reads passive — the protagonist should DRIVE the story (must, fights to, races to…), not have things happen to them` });
+    }
+  }
+
   const premise = nodes.find((n) => n.kind === "premise");
   const shape = (premise?.content as PremiseContent | undefined)?.shape;
 

@@ -257,6 +257,24 @@ describe("dead-field + chronology + cold-reader lints", () => {
     expect(validate([...base, sc("s1", 0, "l1"), sc("s2", 1, "l1")]).map((i) => i.rule)).not.toContain("unmarked_travel"); // same place
   });
 
+  it("logline lints: a taut active logline is clean; overlong or passive ones warn on the seed", () => {
+    const seedWith = (logline: string) => mk("seed", { id: "sd", content: { logline } });
+    const rules = (logline: string) => validate([seedWith(logline)]).map((i) => i.rule);
+    // the anatomy done right: specific protagonist, active drive, one story, under 35 words → silent
+    expect(rules("A water-phobic sheriff must hunt a great white before it kills again, against a mayor who wants the beaches open."))
+      .not.toContain("logline_overlong");
+    expect(rules("A water-phobic sheriff must hunt a great white before it kills again, against a mayor who wants the beaches open."))
+      .not.toContain("logline_static");
+    // a situation, not a story — no active verb → logline_static, anchored to the seed
+    const passive = validate([seedWith("A man slowly comes to realize his whole life has been a lie.")]);
+    expect(passive.find((i) => i.rule === "logline_static")?.nodeId).toBe("sd");
+    // a 40-word logline carrying subplot → logline_overlong
+    expect(rules("When her estranged father dies, a burned-out chef must return to the failing family diner she swore she would never set foot in again and save it from the bank while also somehow rekindling a romance with the sous-chef."))
+      .toContain("logline_overlong");
+    // no logline yet → early, not wrong
+    expect(validate([mk("seed", { id: "sd" })]).map((i) => i.rule)).not.toContain("logline_static");
+  });
+
   it("reader_confusion surfaces stored cold-reader flags as warns on the scene", () => {
     const s = mk("scene", { id: "s", content: { goal: "g", value_shift: { value: "v", from: "-", to: "+" }, confusion_flags: [{ kind: "who", note: "three unnamed speakers" }] } });
     const hit = validate([s]).find((i) => i.rule === "reader_confusion");
