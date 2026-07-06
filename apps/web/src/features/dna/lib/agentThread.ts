@@ -165,7 +165,7 @@ async function isStillPending(threadId: number, proposalId: string): Promise<boo
  *  from proposals[] and leave an `applied` step (a collapsed card) so the chat keeps the context of what
  *  changed. Returns the validation so the rail can warn when the schema boundary rejected some ops. A
  *  no-op (empty validation) if the proposal was already resolved by a concurrent caller. */
-export async function applyAgentProposal(bookId: number, threadId: number, proposal: AgentProposal, all: AgentProposal[], nodes: DnaNode[] = []): Promise<OpValidation> {
+export async function applyAgentProposal(bookId: number, threadId: number, proposal: AgentProposal, all: AgentProposal[], nodes: DnaNode[] = [], signal?: AbortSignal): Promise<OpValidation> {
   if (!(await isStillPending(threadId, proposal.id))) return { ok: [], rejected: [] };
   if (proposal.layer === "expansion") {
     const node = nodes.find((n) => n.id === proposal.nodeId);
@@ -175,7 +175,7 @@ export async function applyAgentProposal(bookId: number, threadId: number, propo
       // so the staleness chain (spec → sketch → prose) actually gets sealed. Write it directly via expandNode
       // rather than the generic ops layer below, which has no stamping hook for a plain `edit` op.
       const { expandNode } = await import("@/features/dna/lib/dnaExpand");
-      await expandNode(bookId, node, "sketch", { brief: proposal.brief });
+      await expandNode(bookId, node, "sketch", { brief: proposal.brief, signal });
       await resolveProposal(threadId, proposal, "applied", all);
       return { ok: [], rejected: [] };
     }
@@ -183,7 +183,7 @@ export async function applyAgentProposal(bookId: number, threadId: number, propo
     // (beat-sheet scheduling, scene→beat realization) and returns reviewable ops; we apply them here. The
     // dynamic import breaks the agentThread ↔ dnaExpand cycle. A stale/invalid target throws → caller discards.
     const { generateExpansionOps } = await import("@/features/dna/lib/dnaExpand");
-    const { ops } = await generateExpansionOps(bookId, node, proposal.target ?? "", proposal.brief);
+    const { ops } = await generateExpansionOps(bookId, node, proposal.target ?? "", proposal.brief, signal);
     const validation = await applyNodeOps(bookId, ops);
     await resolveProposal(threadId, proposal, "applied", all);
     return validation;
@@ -197,7 +197,7 @@ export async function applyAgentProposal(bookId: number, threadId: number, propo
     for (const id of proposal.sceneIds ?? []) {
       const scene = index.get(id);
       if (!scene) continue;
-      const { text } = await expandNode(bookId, scene, "prose", { brief: proposal.brief });
+      const { text } = await expandNode(bookId, scene, "prose", { brief: proposal.brief, signal });
       if (text) renderedProse[id] = proseSnippet(text);
     }
     await resolveProposal(threadId, proposal, "applied", all, renderedProse);

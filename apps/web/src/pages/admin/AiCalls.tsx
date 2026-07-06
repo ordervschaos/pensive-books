@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
-import { Sparkles, Loader2, Shield } from "lucide-react";
+import { Sparkles, Loader2, Shield, Square } from "lucide-react";
 
 // These tables aren't in the generated Database types yet; supabase.from() accepts a string-typed
 // name via its permissive overload (same as useLatestTaskRow), so we pass string vars and cast rows.
@@ -218,6 +218,24 @@ export default function AiCalls() {
     }
   };
 
+  // Mark a stuck "running" row terminal. Most fns (e.g. dna-expand) log with no task_table/task_id —
+  // there's no durable task row to drive via stopRun, so a call whose edge function died before
+  // logEnd() ran (worker killed mid-flight) would otherwise read as running forever. This is a log
+  // correction, not a live cancel: if the call is genuinely still in flight, the edge function now
+  // honors the ORIGINATING request's abort (dna-expand threads req.signal into every LLM call), but
+  // this admin action has no handle into that request — it only clears the stuck badge here.
+  const abortCall = async (call: AiCall) => {
+    const { error: updateErr } = await supabase.from(AI_CALLS)
+      .update({ status: "error", error: "Aborted from admin — marked stopped; no live process was reachable to signal." })
+      .eq("id", call.id);
+    if (updateErr) {
+      toast({ title: "Couldn't abort", description: updateErr.message, variant: "destructive" });
+      return;
+    }
+    await load();
+    toast({ title: "Marked aborted", description: `Call #${call.id} no longer reads as running.` });
+  };
+
   if (loading) return <div className="flex items-center justify-center min-h-[50vh] text-muted-foreground">Loading…</div>;
   if (error) return <div className="flex items-center justify-center min-h-[50vh] text-destructive">{error}</div>;
 
@@ -280,7 +298,7 @@ export default function AiCalls() {
                   <TableCell><Badge variant={c.source === "bridge" ? "outline" : "secondary"} className="text-xs">{c.source}</Badge></TableCell>
                   <TableCell className="text-muted-foreground text-xs">{c.model}</TableCell>
                   <TableCell className="text-right tabular-nums text-xs text-muted-foreground">
-                    {c.input_tokens != null ? `${c.input_tokens}/${c.output_tokens}` : "—"}
+                    {c.input_tokens != null || c.output_tokens != null ? `${c.input_tokens ?? "?"}/${c.output_tokens ?? "?"}` : "—"}
                   </TableCell>
                   <TableCell className="text-right tabular-nums text-xs text-muted-foreground">
                     {c.status === "running" ? <Loader2 className="h-3.5 w-3.5 animate-spin inline" /> : c.latency_ms != null ? `${(c.latency_ms / 1000).toFixed(1)}s` : "—"}
@@ -311,10 +329,18 @@ export default function AiCalls() {
                     ) : <span className="text-xs text-muted-foreground">—</span>}
                   </TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>
-                    <Button size="sm" variant="ghost" onClick={() => judge(c)} disabled={judging.has(c.id)}>
-                      {judging.has(c.id) ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-                      <span className="ml-1 text-xs">{ev ? "re-judge" : "judge"}</span>
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      {c.status === "running" && (
+                        <Button size="sm" variant="ghost" onClick={() => abortCall(c)} title="Mark this stuck row as aborted — does not stop server-side work already in flight">
+                          <Square className="h-3.5 w-3.5" />
+                          <span className="ml-1 text-xs">abort</span>
+                        </Button>
+                      )}
+                      <Button size="sm" variant="ghost" onClick={() => judge(c)} disabled={judging.has(c.id)}>
+                        {judging.has(c.id) ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                        <span className="ml-1 text-xs">{ev ? "re-judge" : "judge"}</span>
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               );
@@ -331,6 +357,7 @@ export default function AiCalls() {
         evals={selected ? (evalsByCall.get(selected.id) ?? []) : []}
         onClose={() => setSelected(null)}
         onJudge={selected ? () => judge(selected) : undefined}
+        onAbort={selected && selected.status === "running" ? () => abortCall(selected) : undefined}
         judging={selected ? judging.has(selected.id) : false}
         profile={selected?.user_id ? profileMap.get(selected.user_id) : null}
       />
@@ -358,11 +385,12 @@ function OutputBlock({ text }: { text: string }) {
   return <ProseBlock text={trimmed} />;
 }
 
-function CallDialog({ call, evals, onClose, onJudge, judging, profile }: {
+function CallDialog({ call, evals, onClose, onJudge, onAbort, judging, profile }: {
   call: AiCall | null;
   evals: AiCallEval[];
   onClose: () => void;
   onJudge?: () => void;
+  onAbort?: () => void;
   judging: boolean;
   profile?: UserProfile | null;
 }) {
@@ -376,6 +404,12 @@ function CallDialog({ call, evals, onClose, onJudge, judging, profile }: {
             <span>#{call.id} · {call.fn}</span>
             <Badge variant={call.source === "bridge" ? "outline" : "secondary"} className="text-xs">{call.source}</Badge>
             <span className="text-xs font-normal text-muted-foreground">{call.model}</span>
+            {onAbort && (
+              <Button size="sm" variant="outline" onClick={onAbort} title="Mark this stuck row as aborted — does not stop server-side work already in flight">
+                <Square className="h-3.5 w-3.5" />
+                <span className="ml-1 text-xs">abort</span>
+              </Button>
+            )}
           </DialogTitle>
         </DialogHeader>
         <ScrollArea className="max-h-[78vh] pr-4">
@@ -390,7 +424,7 @@ function CallDialog({ call, evals, onClose, onJudge, judging, profile }: {
               ) : null}
               <span>book {call.book_id ?? "—"}</span>
               {call.task_table && <span>→ {call.task_table}#{call.task_id}</span>}
-              {call.input_tokens != null && <span>tokens {call.input_tokens}/{call.output_tokens}</span>}
+              {(call.input_tokens != null || call.output_tokens != null) && <span>tokens {call.input_tokens ?? "?"}/{call.output_tokens ?? "?"}</span>}
               {call.latency_ms != null && <span>{(call.latency_ms / 1000).toFixed(1)}s</span>}
               {call.stop_reason && <span>stop: {call.stop_reason}</span>}
               <span>{new Date(call.created_at).toLocaleString()}</span>

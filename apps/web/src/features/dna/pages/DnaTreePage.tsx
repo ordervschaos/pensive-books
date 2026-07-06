@@ -2228,6 +2228,134 @@ function HistoryModal({ bookId, nodes, onClose }: { bookId: number; nodes: DnaNo
   );
 }
 
+// ── Story pane ────────────────────────────────────────────────────────────────
+// The assembled manuscript: every scene's prose, in reading order, as one continuous read (what the
+// ProseReaderModal shows one scene at a time — here it's the whole book). Read-only projection of the
+// tree; each scene divider deep-links back to the scene for editing. The two OUTPUT verbs (render pages /
+// open the reader) live here — this is the "story output" scope.
+function StoryPane({ nodes, onJump, onRender, onRead, rendering }: {
+  nodes: DnaNode[]; onJump: (id: string) => void;
+  onRender: () => void; onRead: () => void; rendering: "render" | "read" | null;
+}) {
+  const mono = "ui-monospace, monospace";
+  const written = scenesInOrder(nodes).filter((s) => (s.content as SceneContent).prose?.text?.trim());
+  const totalWords = written.reduce((sum, s) => sum + ((s.content as SceneContent).prose?.words ?? 0), 0);
+  const btn: React.CSSProperties = { background: "none", border: "1px solid #2a2a2a", borderRadius: 5, fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", padding: "4px 10px", fontFamily: mono, cursor: rendering ? "default" : "pointer", color: rendering ? "#444" : "#8a9ab0" };
+  return (
+    <div style={{ padding: "24px 16px 96px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, maxWidth: 680, margin: "0 auto 32px" }}>
+        <span style={{ fontFamily: mono, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "#5a6a80" }}>
+          {written.length} {written.length === 1 ? "scene" : "scenes"} · {totalWords.toLocaleString()} words
+        </span>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+          <button onClick={onRender} disabled={!!rendering} style={btn}>{rendering === "render" ? "rendering…" : "render pages →"}</button>
+          <button onClick={onRead} disabled={!!rendering} style={btn}>{rendering === "read" ? "rendering…" : "read in reader →"}</button>
+        </div>
+      </div>
+      {written.length === 0 ? (
+        <div style={{ fontFamily: mono, fontSize: 12, color: "#555", textAlign: "center", marginTop: 64 }}>
+          No prose yet — write scenes in the tree, then they'll flow together here.
+        </div>
+      ) : (
+        <div style={{ maxWidth: 680, margin: "0 auto", display: "flex", flexDirection: "column", gap: "2.6em" }}>
+          {written.map((s) => {
+            const prose = (s.content as SceneContent).prose;
+            const paragraphs = (prose?.text ?? "").split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+            return (
+              <section key={s.id}>
+                <div onClick={() => onJump(s.id)} title="edit this scene in the tree"
+                  style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", color: "#4a5a6a", cursor: "pointer", marginBottom: "1.2em", borderBottom: "1px solid #16161c", paddingBottom: 6 }}>
+                  {nodeTitle(s) || "untitled scene"} →
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "1.1em" }}>
+                  {paragraphs.map((p, i) => (
+                    <p key={i} style={{ margin: 0, fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 17, lineHeight: 1.7, color: "#d8d8dc" }}>{p}</p>
+                  ))}
+                </div>
+              </section>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Characters pane ───────────────────────────────────────────────────────────
+// The cast dossier: a read view of the character + relationship entity nodes (schema §4). Read-only —
+// the tree stays the edit surface; each card deep-links to its node. Same pattern as Analytics: a curated
+// projection, not a second editor.
+function CharactersPane({ nodes, index, onJump }: {
+  nodes: DnaNode[]; index: Map<string, DnaNode>; onJump: (id: string) => void;
+}) {
+  const mono = "ui-monospace, monospace";
+  const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : "");
+  const cast = nodes.filter((n) => n.kind === "character");
+  const rels = nodes.filter((n) => n.kind === "relationship");
+  const accent = KIND_COLOR["character"] ?? "#c084fc";
+  const Field = ({ label, val }: { label: string; val: string }) => val ? (
+    <div style={{ display: "flex", gap: 8, fontSize: 12, lineHeight: 1.5 }}>
+      <span style={{ fontFamily: mono, fontSize: 8.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "#556", width: 46, flexShrink: 0, paddingTop: 3 }}>{label}</span>
+      <span style={{ color: "#b8b8c2" }}>{val}</span>
+    </div>
+  ) : null;
+
+  if (cast.length === 0 && rels.length === 0) {
+    return <div style={{ fontFamily: mono, fontSize: 12, color: "#555", textAlign: "center", marginTop: 64 }}>No cast yet — add characters in the tree.</div>;
+  }
+  return (
+    <div style={{ padding: "24px 16px 96px", maxWidth: 940, margin: "0 auto" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(290px, 1fr))", gap: 14 }}>
+        {cast.map((ch) => {
+          const c = ch.content as Record<string, unknown>;
+          return (
+            <div key={ch.id} onClick={() => onJump(ch.id)} title="edit in the tree"
+              style={{ border: "1px solid #1c1c24", borderRadius: 8, padding: "14px 16px", cursor: "pointer", display: "flex", flexDirection: "column", gap: 7, background: "#0d0d12" }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = `${accent}55`; }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#1c1c24"; }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 2 }}>
+                <span style={{ fontFamily: "Georgia, serif", fontSize: 16, color: "#e4e4ea" }}>{str(c.name) || "unnamed"}</span>
+                {str(c.role) && <span style={{ fontFamily: mono, fontSize: 8.5, letterSpacing: "0.14em", textTransform: "uppercase", color: accent }}>{str(c.role)}</span>}
+                {str(c.tag) && <span style={{ marginLeft: "auto", fontFamily: mono, fontSize: 9, color: "#556" }}>{str(c.tag)}</span>}
+              </div>
+              <Field label="want" val={str(c.want)} />
+              <Field label="need" val={str(c.need)} />
+              <Field label="wound" val={str(c.wound)} />
+              <Field label="lie" val={str(c.lie)} />
+              <Field label="truth" val={str(c.truth)} />
+              <Field label="voice" val={str(c.idiolect)} />
+            </div>
+          );
+        })}
+      </div>
+      {rels.length > 0 && (
+        <div style={{ marginTop: 28 }}>
+          <div style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", color: "#4a5a6a", marginBottom: 12 }}>relationships</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {rels.map((r) => {
+              const c = r.content as Record<string, unknown>;
+              const a = typeof c.a === "string" ? index.get(c.a) : undefined;
+              const b = typeof c.b === "string" ? index.get(c.b) : undefined;
+              return (
+                <div key={r.id} onClick={() => onJump(r.id)} title="edit in the tree"
+                  style={{ border: "1px solid #1c1c24", borderRadius: 6, padding: "10px 14px", cursor: "pointer", fontSize: 12, lineHeight: 1.5, color: "#b8b8c2" }}
+                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = `${accent}44`; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#1c1c24"; }}>
+                  <span style={{ color: "#e4e4ea" }}>{a ? nodeTitle(a) || "?" : "?"}</span>
+                  <span style={{ color: accent, margin: "0 8px" }}>↔</span>
+                  <span style={{ color: "#e4e4ea" }}>{b ? nodeTitle(b) || "?" : "?"}</span>
+                  {str(c.bond) && <span style={{ color: "#8a8a96" }}> — {str(c.bond)}</span>}
+                  {str(c.charge) && <span style={{ color: "#556", marginLeft: 8, fontFamily: mono, fontSize: 10 }}>({str(c.charge)})</span>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default function DnaTreePage() {
   const { bookSlug } = useParams();
@@ -2238,10 +2366,18 @@ export default function DnaTreePage() {
   const location = useLocation();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const tab: "tree" | "taste" | "overview" | "analytics" = location.pathname.endsWith("/overview") ? "overview" : location.pathname.endsWith("/taste") ? "taste" : location.pathname.endsWith("/analytics") ? "analytics" : "tree";
+  const tab: "tree" | "taste" | "overview" | "analytics" | "characters" | "story" =
+    location.pathname.endsWith("/overview") ? "overview"
+    : location.pathname.endsWith("/taste") ? "taste"
+    : location.pathname.endsWith("/analytics") ? "analytics"
+    : location.pathname.endsWith("/characters") ? "characters"
+    : location.pathname.endsWith("/story") ? "story"
+    : "tree";
   const treePath = `/books/${bookSlug}/dna/tree`;
   const overviewPath = `${treePath}/overview`;
   const analyticsPath = `${treePath}/analytics`;
+  const charactersPath = `${treePath}/characters`;
+  const storyPath = `${treePath}/story`;
 
   // Permission gate — DnaStudioPage used to enforce this (bounce non-editors); the tree had none. RLS
   // protects the data either way, but the page itself should bounce like the old studio did.
@@ -2721,21 +2857,6 @@ export default function DnaTreePage() {
 
   return (
     <div style={{ ...base, marginRight: railOpen ? 420 : 0, marginLeft: searchOpen ? 320 : 0 }}>
-      {/* Fixed quick-toggle bar — always-on access to the main view modes (clears the rail when it's open) */}
-      <div style={{
-        position: "fixed", top: 8, right: railOpen ? 432 : 14, zIndex: 25, display: "flex", gap: 3,
-        background: "#0d0d12e6", border: "1px solid #20202c", borderRadius: 9, padding: "4px 5px",
-        boxShadow: "0 4px 18px #00000088", backdropFilter: "blur(6px)",
-      }}>
-        <QuickToggle active={searchOpen} accent="#9bd3e6" icon="⌕" label="Search" onClick={() => setSearchOpen((v) => !v)} />
-        {tab === "tree" && <QuickToggle active={timelineOpen} accent="#fb923c" icon="▦" label="Timeline" onClick={() => setTimelineOpen((v) => !v)} />}
-        <QuickToggle active={railOpen} accent="#8a8aff" icon="✦" label="Editor" onClick={() => setRailOpen((v) => !v)} />
-        {tab === "tree" && <QuickToggle active={historyOpen} accent="#a0a0a0" icon="⟲" label="History" onClick={() => setHistoryOpen((v) => !v)} />}
-        {tab === "tree" && (health.errors + health.warns) > 0 && (
-          <QuickToggle active={healthLens} accent="#d0a060" icon="◐" label="Lens"
-            onClick={() => { const on = !healthLens; setHealthLens(on); if (on) revealNodes(health.issues.map((i) => i.nodeId).filter((x): x is string => !!x)); }} />
-        )}
-      </div>
       {searchOpen && (
         <SearchPanel nodes={nodes} query={searchQuery} onQueryChange={setSearchQuery}
           caseSensitive={searchCaseSensitive} onCaseSensitiveChange={setSearchCaseSensitive}
@@ -2803,22 +2924,39 @@ export default function DnaTreePage() {
         <SpineTimeline nodes={nodes} rightInset={railOpen ? 420 : 0} bookId={bookId}
           onJump={jumpTo} onClose={() => setTimelineOpen(false)} />
       )}
-      {/* Header bar */}
-      <div style={{ padding: "12px 16px", borderBottom: "1px solid #1a1a1a", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+      {/* Top menu — identity + the two surfaces that are global, not tab-scoped (search, editor). In
+          normal flow (not position:fixed) so it can never overlap the tab strip below it, and so it
+          shifts with the rail/search panels automatically via the outer container's margin. */}
+      <div style={{ padding: "10px 16px", borderBottom: "1px solid #16161a", display: "flex", alignItems: "center", gap: 16 }}>
         <span style={{ color: "#666", fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase" }}>
           {bookName || bookSlug} · dna
         </span>
-        {/* Tab strip — overview (the dashboard) / tree (structure) / voice & feel (taste). Same component,
-            splat route, no remount. */}
-        <div style={{ display: "flex", gap: 4 }}>
-          {([["overview", "overview", overviewPath], ["tree", "tree", treePath], ["taste", "voice", `${treePath}/taste`], ["analytics", "analytics", analyticsPath]] as const).map(([key, label, to]) => (
-            <button key={key} onClick={() => navigate(to)} style={{
-              background: tab === key ? "#9bd3e618" : "none", border: `1px solid ${tab === key ? "#9bd3e655" : "transparent"}`,
-              borderRadius: 5, color: tab === key ? "#9bd3e6" : "#555", fontSize: 10, cursor: "pointer",
-              letterSpacing: "0.1em", textTransform: "uppercase", padding: "3px 10px", fontFamily: "ui-monospace, monospace",
-            }}>{label}</button>
-          ))}
+        <div style={{ marginLeft: "auto", display: "flex", gap: 3 }}>
+          <QuickToggle active={searchOpen} accent="#9bd3e6" icon="⌕" label="Search" onClick={() => setSearchOpen((v) => !v)} />
+          <QuickToggle active={railOpen} accent="#8a8aff" icon="✦" label="Editor" onClick={() => setRailOpen((v) => !v)} />
         </div>
+      </div>
+
+      {/* Tab strip — Chrome-style: the active tab's bottom border is erased and its background matches
+          the content below, so it visually fuses with whatever pane is open; inactive tabs sit recessed
+          on a shared baseline. overview (dashboard) / tree (structure) / voice & feel (taste) / analytics /
+          characters / story — same route, splat path, no remount. */}
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 2, padding: "8px 16px 0", borderBottom: "1px solid #1a1a1a" }}>
+        {([["overview", "overview", overviewPath], ["tree", "tree", treePath], ["taste", "voice", `${treePath}/taste`], ["analytics", "analytics", analyticsPath], ["characters", "characters", charactersPath], ["story", "story", storyPath]] as const).map(([key, label, to]) => (
+          <button key={key} onClick={() => navigate(to)} style={{
+            background: tab === key ? "#0a0a0a" : "transparent",
+            border: `1px solid ${tab === key ? "#26262e" : "transparent"}`,
+            borderBottom: `1px solid ${tab === key ? "#0a0a0a" : "transparent"}`,
+            marginBottom: -1, borderRadius: "7px 7px 0 0",
+            color: tab === key ? "#9bd3e6" : "#555", fontSize: 10, cursor: "pointer",
+            letterSpacing: "0.1em", textTransform: "uppercase", padding: "6px 14px", fontFamily: "ui-monospace, monospace",
+          }}>{label}</button>
+        ))}
+      </div>
+
+      {/* Below-tabs action bar — health/counts/legend (apply everywhere) plus whatever's specific to the
+          open tab (timeline/history/lens + expand/collapse only mean anything on the tree tab). */}
+      <div style={{ padding: "8px 16px", borderBottom: "1px solid #1a1a1a", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
         <span style={{ color: "#333", fontSize: 11 }}>
           {nodes.length} nodes · {accepted} accepted{staleCount > 0 ? ` · ${staleCount} stale` : ""}
         </span>
@@ -2849,26 +2987,26 @@ export default function DnaTreePage() {
             </span>
           ))}
         </div>
+        {/* Tab-specific toggles — tree only */}
+        {tab === "tree" && (
+          <div style={{ display: "flex", gap: 3 }}>
+            <QuickToggle active={timelineOpen} accent="#fb923c" icon="▦" label="Timeline" onClick={() => setTimelineOpen((v) => !v)} />
+            <QuickToggle active={historyOpen} accent="#a0a0a0" icon="⟲" label="History" onClick={() => setHistoryOpen((v) => !v)} />
+            {(health.errors + health.warns) > 0 && (
+              <QuickToggle active={healthLens} accent="#d0a060" icon="◐" label="Lens"
+                onClick={() => { const on = !healthLens; setHealthLens(on); if (on) revealNodes(health.issues.map((i) => i.nodeId).filter((x): x is string => !!x)); }} />
+            )}
+          </div>
+        )}
         {/* Controls */}
         <div style={{ marginLeft: "auto", display: "flex", gap: 12 }}>
           {tab === "tree" && <button onClick={expandAll} style={{ background: "none", border: "none", color: "#555", fontSize: 10, cursor: "pointer", letterSpacing: "0.1em", textTransform: "uppercase" }}>expand all</button>}
           {tab === "tree" && <button onClick={collapseAll} style={{ background: "none", border: "none", color: "#555", fontSize: 10, cursor: "pointer", letterSpacing: "0.1em", textTransform: "uppercase" }}>collapse all</button>}
           <a href={`/books/${bookSlug}/dna.json`} style={{ color: "#555", fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", textDecoration: "none" }}>json →</a>
-          {/* Ported from the vanilla studio's sidebar (docs/plan-one-studio-consolidation.md Phase 3) — the
-              studio's only two verbs that weren't already native to the tree. */}
-          <button onClick={() => void renderPages()} disabled={!!rendering} title="Project the DNA tree onto the reader's pages"
-            style={{ background: "none", border: "none", color: rendering ? "#444" : "#555", fontSize: 10, cursor: rendering ? "default" : "pointer", letterSpacing: "0.1em", textTransform: "uppercase" }}>
-            {rendering === "render" ? "rendering…" : "render pages →"}
-          </button>
-          <button onClick={() => void renderAndRead()} disabled={!!rendering} title="Render the latest pages and open the reader"
-            style={{ background: "none", border: "none", color: rendering ? "#444" : "#555", fontSize: 10, cursor: rendering ? "default" : "pointer", letterSpacing: "0.1em", textTransform: "uppercase" }}>
-            {rendering === "read" ? "rendering…" : "read →"}
-          </button>
           <button onClick={() => void forkDna()} disabled={forking} title="Copy this DNA tree into a new book to experiment freely"
             style={{ background: "none", border: "none", color: forking ? "#444" : "#555", fontSize: 10, cursor: forking ? "default" : "pointer", letterSpacing: "0.1em", textTransform: "uppercase" }}>
             {forking ? "forking…" : "fork →"}
           </button>
-          {/* Timeline + Editor toggles moved to the fixed quick bar (top-right) */}
         </div>
       </div>
 
@@ -2925,6 +3063,17 @@ export default function DnaTreePage() {
           {/* pacing · promises · topography (lints hidden here — shown in the list above) */}
           <DnaAnalysis nodes={nodes} settings={settings} onOpen={openStage} hideLints />
         </div>
+      )}
+
+      {/* ── characters tab: the cast dossier — read view of character/relationship nodes ── */}
+      {tab === "characters" && (
+        <CharactersPane nodes={nodes} index={index} onJump={goToNode} />
+      )}
+
+      {/* ── story tab: the assembled manuscript — every scene's prose in reading order ── */}
+      {tab === "story" && (
+        <StoryPane nodes={nodes} onJump={goToNode}
+          onRender={() => void renderPages()} onRead={() => void renderAndRead()} rendering={rendering} />
       )}
 
       {/* ── tree tab: journey → legend → proposals → brief → the structural tree ── */}

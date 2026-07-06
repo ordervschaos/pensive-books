@@ -146,6 +146,9 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [],
   const [answer, setAnswer] = useState("");
   const [busy, setBusy] = useState(false);
   const [applyingId, setApplyingId] = useState<string | null>(null);
+  // Only the slow engine layers (expansion/prose-render) get a real Stop — applyingAbortRef holds the
+  // in-flight controller so ProposalCard's Stop button can cancel the browser-side generation mid-call.
+  const applyingAbortRef = useRef<AbortController | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   // Past chats live in book_agent_sessions, not on the row (20260701150000) — a thread can carry a lot
   // of archived history, so we only load a cheap count for the badge and fetch the full list (with each
@@ -253,8 +256,11 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [],
   const apply = async (p: AgentProposal) => {
     if (!row || applyingId) return;
     setApplyingId(p.id);
+    const isAbortable = p.layer === "expansion" || p.layer === "prose-render";
+    const controller = isAbortable ? new AbortController() : null;
+    applyingAbortRef.current = controller;
     try {
-      const { rejected } = await applyAgentProposal(bookId, row.id, p, proposals, nodes);
+      const { rejected } = await applyAgentProposal(bookId, row.id, p, proposals, nodes, controller?.signal);
       refetch();
       if (rejected.length) {
         const reasons = rejected.map((r) => r.reasons[0]).filter(Boolean).slice(0, 3).join("; ");
@@ -263,9 +269,15 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [],
         toast({ title: p.layer === "prose-render" ? "Prose rendered" : "Applied", description: p.summary || "Change applied to the DNA tree." });
       }
     } catch (e) {
-      toast({ title: "Couldn't apply", description: String((e as Error)?.message ?? e), variant: "destructive" });
-    } finally { setApplyingId(null); }
+      if ((e as Error)?.name === "AbortError") {
+        toast({ title: "Stopped", description: "The proposal is still staged — run it again whenever you're ready." });
+      } else {
+        toast({ title: "Couldn't apply", description: String((e as Error)?.message ?? e), variant: "destructive" });
+      }
+    } finally { applyingAbortRef.current = null; setApplyingId(null); }
   };
+
+  const stopApply = () => { applyingAbortRef.current?.abort(); };
 
   const discard = async (p: AgentProposal) => {
     if (!row) return;
@@ -329,7 +341,7 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [],
           {steps.map((s, i) => <StepBubble key={i} step={s} nodes={nodes} />)}
           {proposals.map((p) => (
             <ProposalCard key={p.id} proposal={p} nodes={nodes}
-              applying={applyingId === p.id} onApply={() => void apply(p)} onDiscard={() => void discard(p)} />
+              applying={applyingId === p.id} onApply={() => void apply(p)} onDiscard={() => void discard(p)} onStop={stopApply} />
           ))}
           {/* Guided-flow nudge (lib/dnaJourney.currentObjective) — appears in the feed as the LAST item
               only when the agent's work is settled: idle, nothing running/awaiting, no proposal to review,
@@ -650,11 +662,14 @@ function ResolvedCard({ step, nodes }: { step: AgentStep; nodes: DnaNode[] }) {
 
 // A reviewable proposal the agent made — the verify step. Renders the DNA node-op diff (describeOps,
 // shared with the per-stage chat) and Apply/Discard; Apply runs the ops against book_nodes.
-function ProposalCard({ proposal, nodes, applying, onApply, onDiscard }: {
-  proposal: AgentProposal; nodes: DnaNode[]; applying: boolean; onApply: () => void; onDiscard: () => void;
+function ProposalCard({ proposal, nodes, applying, onApply, onDiscard, onStop }: {
+  proposal: AgentProposal; nodes: DnaNode[]; applying: boolean; onApply: () => void; onDiscard: () => void; onStop: () => void;
 }) {
   const isProseRender = proposal.layer === "prose-render";
   const isExpansion = proposal.layer === "expansion";
+  // Only these two layers run a real, abortable browser-side generation — Stop actually cancels it (the
+  // proposal stays staged, unresolved). Plain 'dna' ops apply instantly, so there's nothing to stop.
+  const isAbortable = isProseRender || isExpansion;
   const index = byId(nodes);
   const scenes = isProseRender ? (proposal.sceneIds ?? []).map((id) => index.get(id)).filter((n): n is DnaNode => !!n) : [];
   const rows = isProseRender || isExpansion ? [] : describeOps(proposal.ops, nodes);
@@ -675,7 +690,8 @@ function ProposalCard({ proposal, nodes, applying, onApply, onDiscard }: {
     <Panel className="border-[hsl(var(--pv-accent))]/45 px-4 py-3.5">
       <div className="flex items-start justify-between gap-3">
         <Eyebrow tone="accent">{isProseRender ? "Render prose" : isExpansion ? "Run the engine" : "Proposed change"}</Eyebrow>
-        <button type="button" onClick={onDiscard} title="Discard" className="shrink-0 text-[hsl(var(--pv-text-faint))] hover:text-foreground"><X className="h-4 w-4" /></button>
+        <button type="button" onClick={onDiscard} disabled={applying} title={applying ? "Stop the run to discard" : "Discard"}
+          className="shrink-0 text-[hsl(var(--pv-text-faint))] hover:text-foreground disabled:opacity-30 disabled:hover:text-[hsl(var(--pv-text-faint))]"><X className="h-4 w-4" /></button>
       </div>
       {proposal.summary && <p className="pv-serif mt-1.5 text-[13.5px] leading-[1.55] text-[hsl(var(--pv-text-muted))]">{humanizeNodeRefs(proposal.summary, index)}</p>}
       {isProseRender ? (
@@ -722,11 +738,16 @@ function ProposalCard({ proposal, nodes, applying, onApply, onDiscard }: {
         </ul>
       )}
       <div className="mt-3.5 flex items-center gap-4">
-        <button type="button" onClick={onApply} disabled={applying}
+        <button type="button" onClick={applying && isAbortable ? onStop : onApply} disabled={applying && !isAbortable}
           className="pv-serif inline-flex items-center gap-1.5 rounded-full bg-primary px-4 py-2 text-[13.5px] text-primary-foreground disabled:opacity-50">
-          {applying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} {isProseRender ? (applying ? "Rendering…" : "Render") : isExpansion ? (applying ? "Running…" : "Run") : "Apply"}
+          {applying
+            ? (isAbortable ? <Square className="h-3.5 w-3.5" /> : <Loader2 className="h-3.5 w-3.5 animate-spin" />)
+            : <Check className="h-3.5 w-3.5" />}
+          {applying ? (isAbortable ? "Stop" : "Apply") : (isProseRender ? "Render" : isExpansion ? "Run" : "Apply")}
         </button>
-        <ActionLink tone="faint" onClick={onDiscard}>discard</ActionLink>
+        {/* discard only makes sense on a staged-but-not-running proposal — while a run is in flight, Stop
+            (above) is the one way out; discarding mid-generation would race resolveProposal's write. */}
+        {!applying && <ActionLink tone="faint" onClick={onDiscard}>discard</ActionLink>}
       </div>
     </Panel>
   );

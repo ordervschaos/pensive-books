@@ -48,17 +48,63 @@ async function verifyJwt(authToken: string): Promise<string> {
   return u?.id ?? "";
 }
 
-// Best-effort: record the streamed generation in ai_calls so it stays visible in /admin alongside every
-// other model call (preserves the project_ai_call_logging invariant; the stream bypasses _shared/llm.ts).
-// Fire-and-forget — never blocks or breaks the stream.
-async function logStreamCall(row: {
-  model: string; userId: string; latencyMs: number; chars: number; errMsg: string | null;
+// Two-phase logging (mirrors _shared/llm.ts's logStart/logEnd): insert a 'running' row BEFORE the upstream
+// fetch so a multi-minute stream is visible in /admin WHILE in flight, not only after it finishes — the
+// single-terminal-insert version left /admin showing nothing for the entire generation. Best-effort; a
+// failed start insert just means logStreamEnd falls back to one terminal insert, same as the edge chokepoint.
+async function logStreamStart(body: PrepareReq, userId: string): Promise<number | null> {
+  try {
+    const url = supabaseUrl();
+    const service = process.env.SERVICE_ROLE_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!url || !service) return null;
+    const res = await fetch(`${url}/rest/v1/ai_calls`, {
+      method: "POST",
+      headers: { apikey: service, Authorization: `Bearer ${service}`, "content-type": "application/json", Prefer: "return=representation" },
+      body: JSON.stringify({
+        fn: "dna-expand-stream",
+        source: "stream-proxy",
+        model: body.model,
+        user_id: userId || null,
+        system: body.system,
+        // Store as messages array so contextText() in AiCalls.tsx can render it the same way edge calls do.
+        input: [{ role: "user", content: body.userContent }],
+        status: "running",
+      }),
+    });
+    if (!res.ok) return null;
+    const rows = (await res.json().catch(() => null)) as { id?: number }[] | null;
+    return rows?.[0]?.id ?? null;
+  } catch { return null; }
+}
+
+// Close out the call: UPDATE the running row (or INSERT a complete one if the start insert failed — e.g.
+// the request never got far enough to have a userId/body worth starting a row for). Fire-and-forget — never
+// blocks or breaks the stream. `inputChars`/`outputChars` are rough token estimates (chars/4): a streamed SSE
+// response has no discrete `usage` object to read exactly, the same precision already accepted before this split.
+async function logStreamEnd(logId: number | null, row: {
+  model: string; userId: string; latencyMs: number; inputChars: number; outputChars: number; errMsg: string | null;
   system?: string; userContent?: string; output?: string;
 }): Promise<void> {
+  const terminal = {
+    output: row.output ?? null,
+    input_tokens: Math.round(row.inputChars / 4),
+    output_tokens: Math.round(row.outputChars / 4),
+    latency_ms: row.latencyMs,
+    status: row.errMsg ? "error" : "done",
+    error: row.errMsg,
+  };
   try {
     const url = supabaseUrl();
     const service = process.env.SERVICE_ROLE_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || "";
     if (!url || !service) return;
+    if (logId != null) {
+      await fetch(`${url}/rest/v1/ai_calls?id=eq.${logId}`, {
+        method: "PATCH",
+        headers: { apikey: service, Authorization: `Bearer ${service}`, "content-type": "application/json", Prefer: "return=minimal" },
+        body: JSON.stringify(terminal),
+      });
+      return;
+    }
     await fetch(`${url}/rest/v1/ai_calls`, {
       method: "POST",
       headers: { apikey: service, Authorization: `Bearer ${service}`, "content-type": "application/json", Prefer: "return=minimal" },
@@ -67,16 +113,9 @@ async function logStreamCall(row: {
         source: "stream-proxy",
         model: row.model,
         user_id: row.userId || null,
-        latency_ms: row.latencyMs,
-        status: row.errMsg ? "error" : "done",
-        error: row.errMsg,
-        output_tokens: Math.round(row.chars / 4), // rough token estimate; the stream gives us only char counts
         system: row.system ?? null,
-        // Store as messages array so contextText() in AiCalls.tsx can render it the same way edge calls do.
-        input: row.userContent != null
-          ? [{ role: "user", content: row.userContent }]
-          : null,
-        output: row.output ?? null,
+        input: row.userContent != null ? [{ role: "user", content: row.userContent }] : null,
+        ...terminal,
       }),
     });
   } catch { /* observability is best-effort; the prose is what matters */ }
@@ -88,6 +127,8 @@ async function logStreamCall(row: {
 export async function* streamProse(body: PrepareReq, authToken: string): AsyncGenerator<string> {
   const started = Date.now();
   let userId = "";
+  let logId: number | null = null;
+  let inputChars = 0;
   let chars = 0;
   let output = "";
   let errMsg: string | null = null;
@@ -95,6 +136,8 @@ export async function* streamProse(body: PrepareReq, authToken: string): AsyncGe
     if (!authToken) throw new ProxyError(401, "missing Authorization token");
     if (!body?.system || !body?.userContent || !body?.model) throw new ProxyError(400, "system, userContent and model are required");
     userId = await verifyJwt(authToken);
+    inputChars = body.system.length + body.userContent.length;
+    logId = await logStreamStart(body, userId);
 
     // Provider routing mirrors _shared/llm.ts: a bare model id (no "/", not deepseek) is an Anthropic model
     // and must go to Anthropic — NOT OpenRouter, which only knows prefixed ids (anthropic/…) and 400s on
@@ -219,6 +262,6 @@ export async function* streamProse(body: PrepareReq, authToken: string): AsyncGe
     errMsg = e instanceof Error ? e.message : String(e);
     throw e;
   } finally {
-    void logStreamCall({ model: body?.model ?? "", userId, latencyMs: Date.now() - started, chars, errMsg, system: body?.system, userContent: body?.userContent, output: output || undefined });
+    void logStreamEnd(logId, { model: body?.model ?? "", userId, latencyMs: Date.now() - started, inputChars, outputChars: chars, errMsg, system: body?.system, userContent: body?.userContent, output: output || undefined });
   }
 }
