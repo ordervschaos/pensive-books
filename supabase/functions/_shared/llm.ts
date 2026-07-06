@@ -53,8 +53,11 @@ export async function callLLM(
   const logId = await logStart(body, meta);
   if (logId != null) meta.loggedCallId = logId; // hand the row id back so callers can link to it
   const model = body.model as string ?? "";
-  const isDeepSeek = model.startsWith("deepseek");
+  // A slash is the OpenRouter namespace marker and must win: DeepSeek's DIRECT API only accepts bare ids
+  // (deepseek-chat), and rejects an OpenRouter id like "deepseek/deepseek-v4-pro". So route slashed ids to
+  // OpenRouter even when they start with "deepseek"; only bare deepseek-* ids go to the direct DeepSeek API.
   const isOpenRouter = model.includes("/");
+  const isDeepSeek = !isOpenRouter && model.startsWith("deepseek");
 
   let raw = "";
   // deno-lint-ignore no-explicit-any

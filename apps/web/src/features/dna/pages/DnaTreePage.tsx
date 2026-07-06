@@ -6,13 +6,14 @@ import ReactMarkdown from "react-markdown";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { deleteNode, patchNodeContent, saveNode, saveNodes } from "@/features/dna/lib/bookNodes";
-import { backlinkIndex, beatsInOrder, byId, childrenOf, isEntityKind, isProseStale, isStale, newId, pillarOf, refsOf, stampInput, stampProse, type BookSettings, type DnaIssue, type DnaNode, type BeatContent, type NodeContent, type NodeKind, type SceneContent } from "@/features/dna/lib/novelDna";
+import { backlinkIndex, beatsInOrder, byId, childrenOf, isEntityKind, isProseStale, isStale, newId, pillarOf, refsOf, stampInput, stampProse, SINGLETON_KINDS, type BookSettings, type DnaIssue, type DnaNode, type BeatContent, type NodeContent, type NodeKind, type SceneContent } from "@/features/dna/lib/novelDna";
 import { bootstrapLoglineFromBrief, ensureSeed } from "@/features/dna/lib/dnaExpand";
 import { editSpecs, KIND_LEVEL, tasteSpecs, type EditSpec } from "@/features/dna/lib/dnaSchema";
 import { CONTENT_TYPES, SCOPE_BANDS, briefIdea, type Brief } from "@/lib/brief";
 import { describeOps, renderValue, type NodeOp } from "@/features/dna/lib/dnaChat";
 import { AgentRail } from "@/features/dna/components/AgentRail";
 import { TreeOverviewTab } from "@/features/dna/components/TreeOverviewTab";
+import { DnaAnalysis } from "@/features/dna/components/DnaAnalysis";
 import { type AgentProposal } from "@/features/dna/lib/agentThread";
 import { chooseNodeProposal, discardNodeProposals } from "@/features/dna/lib/dnaProposals";
 import { DNA_STAGES, dnaHealth, buildJourney, stageProgress, STAGE_KINDS, type StageKey } from "@/features/dna/lib/dnaJourney";
@@ -1187,8 +1188,12 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
     }
   }
 
-  // Delete is allowed on addable kinds (not the seed/premise/pillar singletons) when unlocked.
-  const deletable = !node.authoring.locked && (isEntityKind(node.kind) || ["act", "beat", "scene"].includes(node.kind));
+  // Delete is allowed on addable kinds when unlocked. For the seed/premise/pillar singletons we allow delete
+  // ONLY when a duplicate of that kind exists — so you can clean up stray/duplicated anchors (e.g. a second
+  // STALE seed) without ever orphaning the tree by removing its sole anchor.
+  const isSingleton = SINGLETON_KINDS.includes(node.kind);
+  const isDuplicatedSingleton = isSingleton && nodes.filter((n) => n.kind === node.kind).length > 1;
+  const deletable = !node.authoring.locked && (isEntityKind(node.kind) || ["act", "beat", "scene"].includes(node.kind) || isDuplicatedSingleton);
   // #5 — drag-to-reorder among same-kind siblings (entities by kind under the pillar; act/beat/scene by
   // parent). A row is a drop target only while a SIBLING (same parent + kind) is being dragged.
   const reorderable = isEntityKind(node.kind) || ["act", "beat", "scene"].includes(node.kind);
@@ -2233,9 +2238,10 @@ export default function DnaTreePage() {
   const location = useLocation();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const tab: "tree" | "taste" | "overview" = location.pathname.endsWith("/overview") ? "overview" : location.pathname.endsWith("/taste") ? "taste" : "tree";
+  const tab: "tree" | "taste" | "overview" | "analytics" = location.pathname.endsWith("/overview") ? "overview" : location.pathname.endsWith("/taste") ? "taste" : location.pathname.endsWith("/analytics") ? "analytics" : "tree";
   const treePath = `/books/${bookSlug}/dna/tree`;
   const overviewPath = `${treePath}/overview`;
+  const analyticsPath = `${treePath}/analytics`;
 
   // Permission gate — DnaStudioPage used to enforce this (bounce non-editors); the tree had none. RLS
   // protects the data either way, but the page itself should bounce like the old studio did.
@@ -2271,7 +2277,6 @@ export default function DnaTreePage() {
   const detachNode = useCallback((id: string) => setAttachedIds((ids) => ids.filter((x) => x !== id)), []);
   // #1 — pending proposals from the agent thread (book_agent_runs), mirrored so the tree can overlay them.
   const [agentProposals, setAgentProposals] = useState<AgentProposal[]>([]);
-  const [showIssues, setShowIssues] = useState(false); // drill into the lints behind the score
   // The serial spine filmstrip (bottom) — persists across reloads, per book (mirrors railOpen above).
   const timelineKey = `dna-timeline-open:${bookId}`;
   const [timelineOpen, setTimelineOpen] = useState<boolean>(() => localStorage.getItem(timelineKey) === "1");
@@ -2806,7 +2811,7 @@ export default function DnaTreePage() {
         {/* Tab strip — overview (the dashboard) / tree (structure) / voice & feel (taste). Same component,
             splat route, no remount. */}
         <div style={{ display: "flex", gap: 4 }}>
-          {([["overview", "overview", overviewPath], ["tree", "tree", treePath], ["taste", "voice & feel", `${treePath}/taste`]] as const).map(([key, label, to]) => (
+          {([["overview", "overview", overviewPath], ["tree", "tree", treePath], ["taste", "voice", `${treePath}/taste`], ["analytics", "analytics", analyticsPath]] as const).map(([key, label, to]) => (
             <button key={key} onClick={() => navigate(to)} style={{
               background: tab === key ? "#9bd3e618" : "none", border: `1px solid ${tab === key ? "#9bd3e655" : "transparent"}`,
               borderRadius: 5, color: tab === key ? "#9bd3e6" : "#555", fontSize: 10, cursor: "pointer",
@@ -2817,10 +2822,12 @@ export default function DnaTreePage() {
         <span style={{ color: "#333", fontSize: 11 }}>
           {nodes.length} nodes · {accepted} accepted{staleCount > 0 ? ` · ${staleCount} stale` : ""}
         </span>
-        {/* #4 — DNA health: two derived bars + a lint tally that drills down */}
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        {/* #4 — DNA health: a glanceable status pip that deep-links into the Analytics tab (the detail
+            lives there now — summary-in-chrome, detail-in-pane). */}
+        <button onClick={() => navigate(analyticsPath)} title="open Analytics — the lints, pacing, promises & topography behind these bars"
+          style={{ display: "flex", alignItems: "center", gap: 12, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
           {([["complete", health.completeness], ["strong", health.strength]] as const).map(([label, val]) => (
-            <span key={label} style={{ display: "flex", alignItems: "center", gap: 5 }} title={label === "complete" ? `${health.stagesDone}/${DNA_STAGES.length} stages · ${pct(health.contentFill)} fields filled` : `${health.errors} errors · ${health.warns} warnings`}>
+            <span key={label} style={{ display: "flex", alignItems: "center", gap: 5 }}>
               <span style={{ fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "#555" }}>{label}</span>
               <span style={{ width: 44, height: 4, background: "#1c1c1c", borderRadius: 2, overflow: "hidden" }}>
                 <span style={{ display: "block", height: "100%", width: pct(val), background: barColor(val) }} />
@@ -2829,19 +2836,11 @@ export default function DnaTreePage() {
             </span>
           ))}
           {(health.errors + health.warns) > 0 && (
-            <button onClick={() => setShowIssues((v) => !v)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase", color: health.errors ? "#f87171" : "#d0a060", fontFamily: "ui-monospace, monospace" }}>
-              {health.errors ? `${health.errors}✕ ` : ""}{health.warns ? `${health.warns}⚠` : ""} {showIssues ? "▲" : "▼"}
-            </button>
+            <span style={{ fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase", color: health.errors ? "#f87171" : "#d0a060", fontFamily: "ui-monospace, monospace" }}>
+              {health.errors ? `${health.errors}✕ ` : ""}{health.warns ? `${health.warns}⚠` : ""} →
+            </span>
           )}
-          {/* #6 — health lens: dim every clean node so only the broken ones (+ their groups) stay lit */}
-          {(health.errors + health.warns) > 0 && (
-            <button onClick={() => { const on = !healthLens; setHealthLens(on); if (on) revealNodes(health.issues.map((i) => i.nodeId).filter((x): x is string => !!x)); }}
-              title="dim healthy nodes — surface only the broken ones"
-              style={{ background: healthLens ? "#d0a06022" : "none", border: `1px solid ${healthLens ? "#d0a06066" : "#2a2a2a"}`, borderRadius: 4, cursor: "pointer", fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase", color: healthLens ? "#d0a060" : "#555", fontFamily: "ui-monospace, monospace", padding: "2px 7px" }}>
-              ◐ lens
-            </button>
-          )}
-        </div>
+        </button>
         {/* Kind legend */}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {Object.entries(counts).map(([kind, n]) => (
@@ -2879,12 +2878,56 @@ export default function DnaTreePage() {
           onOpen={openStage} onChanged={() => {}} />
       )}
 
-      {/* ── voice & feel tab: the taste surface on its own, off the structural tree ── */}
+      {/* ── voice tab: the taste surface on its own, off the structural tree ── */}
       {tab === "taste" && (
         <VoiceFeelPanel nodes={nodes} index={index} asPage onJump={(id) => { navigate(treePath); jumpTo(id); }} />
       )}
 
-      {/* ── tree tab: journey → legend → lints → proposals → brief → the structural tree ── */}
+      {/* ── analytics tab: the review report — lints + pacing/promises/topography. Read-only projection of
+          the tree; every row deep-links back into the structural tree via goToNode / openStage. ── */}
+      {tab === "analytics" && (
+        <div style={{ padding: "16px" }}>
+          {/* full health readout (the detail behind the header pip) */}
+          <div style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap", marginBottom: 16 }}>
+            {([["complete", health.completeness], ["strong", health.strength]] as const).map(([label, val]) => (
+              <span key={label} style={{ display: "flex", alignItems: "center", gap: 6 }} title={label === "complete" ? `${health.stagesDone}/${DNA_STAGES.length} stages · ${pct(health.contentFill)} fields filled` : `${health.errors} errors · ${health.warns} warnings`}>
+                <span style={{ fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "#666" }}>{label}</span>
+                <span style={{ width: 90, height: 5, background: "#1c1c1c", borderRadius: 2, overflow: "hidden" }}>
+                  <span style={{ display: "block", height: "100%", width: pct(val), background: barColor(val) }} />
+                </span>
+                <span style={{ fontSize: 10, color: barColor(val), fontVariantNumeric: "tabular-nums" }}>{pct(val)}</span>
+              </span>
+            ))}
+            <span style={{ fontSize: 10, color: "#555", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+              {health.errors}✕ · {health.warns}⚠
+            </span>
+          </div>
+
+          {/* #4 — the lints behind the score: structural faults (misparented / orphan / duplicate) + craft warns */}
+          {(health.errors + health.warns) > 0 ? (
+            <div style={{ border: "1px solid #1a1a1a", borderRadius: 6, padding: "8px 12px", display: "flex", flexDirection: "column", gap: 3, marginBottom: 16 }}>
+              {health.issues.map((i, idx) => (
+                <div key={idx} onClick={i.nodeId ? () => goToNode(i.nodeId!) : undefined}
+                  style={{ display: "flex", alignItems: "baseline", gap: 8, fontFamily: "ui-monospace, monospace", fontSize: 11, cursor: i.nodeId ? "pointer" : "default", borderRadius: 3, padding: "1px 4px", marginLeft: -4 }}
+                  onMouseEnter={i.nodeId ? (e) => { e.currentTarget.style.background = "#ffffff08"; } : undefined}
+                  onMouseLeave={i.nodeId ? (e) => { e.currentTarget.style.background = "transparent"; } : undefined}>
+                  <span style={{ color: i.severity === "error" ? "#f87171" : "#d0a060", flexShrink: 0 }}>{i.severity === "error" ? "✕" : "⚠"}</span>
+                  <span style={{ color: "#666", letterSpacing: "0.04em", flexShrink: 0, width: 140 }}>{i.rule}</span>
+                  <span style={{ color: "#999", flex: 1 }}>{i.message}</span>
+                  {i.nodeId && <span style={{ color: "#555", flexShrink: 0 }}>{issueTitle(i)} →</span>}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ fontSize: 11, color: "#4ade80", fontFamily: "ui-monospace, monospace", marginBottom: 16 }}>✓ no lints — the tree is conformant</div>
+          )}
+
+          {/* pacing · promises · topography (lints hidden here — shown in the list above) */}
+          <DnaAnalysis nodes={nodes} settings={settings} onOpen={openStage} hideLints />
+        </div>
+      )}
+
+      {/* ── tree tab: journey → legend → proposals → brief → the structural tree ── */}
       {tab === "tree" && (<>
       {/* Journey strip — where am I / what's left (studio's strength, brought onto the tree) */}
       {roots.length > 0 && <JourneyStrip nodes={nodes} onGoStage={goStage} />}
@@ -2910,23 +2953,6 @@ export default function DnaTreePage() {
           </span>
         )}
       </div>
-
-      {/* #4 — the lints behind the score: structural faults (misparented / orphan / duplicate) + craft warns */}
-      {showIssues && (health.errors + health.warns) > 0 && (
-        <div style={{ padding: "8px 16px", borderBottom: "1px solid #1a1a1a", display: "flex", flexDirection: "column", gap: 3, maxHeight: 200, overflowY: "auto" }}>
-          {health.issues.map((i, idx) => (
-            <div key={idx} onClick={i.nodeId ? () => jumpTo(i.nodeId!) : undefined}
-              style={{ display: "flex", alignItems: "baseline", gap: 8, fontFamily: "ui-monospace, monospace", fontSize: 11, cursor: i.nodeId ? "pointer" : "default", borderRadius: 3, padding: "1px 4px", marginLeft: -4 }}
-              onMouseEnter={i.nodeId ? (e) => { e.currentTarget.style.background = "#ffffff08"; } : undefined}
-              onMouseLeave={i.nodeId ? (e) => { e.currentTarget.style.background = "transparent"; } : undefined}>
-              <span style={{ color: i.severity === "error" ? "#f87171" : "#d0a060", flexShrink: 0 }}>{i.severity === "error" ? "✕" : "⚠"}</span>
-              <span style={{ color: "#666", letterSpacing: "0.04em", flexShrink: 0, width: 140 }}>{i.rule}</span>
-              <span style={{ color: "#999", flex: 1 }}>{i.message}</span>
-              {i.nodeId && <span style={{ color: "#555", flexShrink: 0 }}>{issueTitle(i)} →</span>}
-            </div>
-          ))}
-        </div>
-      )}
 
       {/* The BRIEF — the ORIGIN (step 0), above the tree. The seed (logline) below is derived from it. */}
       <BriefOrigin brief={brief} onSave={saveBrief} />

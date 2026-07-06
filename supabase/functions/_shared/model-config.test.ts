@@ -30,16 +30,19 @@ Deno.test("the documented split: prose on a prose-specialist, structure/agent on
   assertEquals(r.agent, "claude-sonnet-4-6");     // falls back to base
 });
 
-Deno.test("agent role never resolves to a tool-incapable model (hermes as agent override → fallback)", () => {
+Deno.test("hermes agent override with a tool-capable base → falls back to the base high (stays in-family)", () => {
   // hermes has no OpenRouter tool-use endpoint; the agent loop always sends tools, so it must not run there.
+  // With a sonnet base, the fence keeps the agent on the base's Anthropic model rather than jumping tiers.
   const r = resolveRoleModels({ ai_model_tier: "sonnet", ai_model_tier_agent: "hermes" });
-  assertEquals(r.agent, "claude-sonnet-4-6");                          // fenced to the tool-capable fallback
+  assertEquals(r.agent, "claude-sonnet-4-6");                          // fenced to the tool-capable base high
   assertEquals(r.prose, "claude-sonnet-4-6");                          // prose unaffected (base)
 });
 
-Deno.test("hermes as the BASE tier still yields a tool-capable agent, but hermes prose/structure", () => {
+Deno.test("hermes as the BASE tier → agent on the OpenRouter default, prose/structure stay hermes", () => {
+  // Base high is hermes (tool-incapable) too, so the agent drops to the OpenRouter default (qwen) — NOT
+  // Anthropic sonnet: a hermes user is deliberately off the Anthropic path.
   const r = resolveRoleModels({ ai_model_tier: "hermes" });
-  assertEquals(r.agent, "claude-sonnet-4-6");                          // agent fenced off hermes
+  assertEquals(r.agent, "qwen/qwen3-235b-a22b");                      // fenced to the OpenRouter fallback
   assertEquals(r.structure, "nousresearch/hermes-3-llama-3.1-405b");  // structure still base high
   assertEquals(r.prose, "nousresearch/hermes-3-llama-3.1-405b");      // prose still base high
 });

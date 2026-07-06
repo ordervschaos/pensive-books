@@ -4,7 +4,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { BRIDGE, bridgeFetch } from "@/lib/bridge";
 import { deleteNode, loadTree, saveNode } from "@/features/dna/lib/bookNodes";
-import { blastRadius, byId, editContent, emptyNode, PARENT_KIND, pillarOf, stampInput, type DnaNode, type NodeContent, type NodeKind } from "@/features/dna/lib/novelDna";
+import { blastRadius, byId, editContent, emptyNode, PARENT_KIND, pillarOf, SINGLETON_KINDS, stampInput, type DnaNode, type NodeContent, type NodeKind } from "@/features/dna/lib/novelDna";
 import { KIND_LEVEL, LADDER_NEXT, sanitizeContent, validateContent, VALID_KINDS } from "@/features/dna/lib/dnaSchema";
 import type { StageKey } from "@/features/dna/lib/dnaJourney";
 
@@ -167,13 +167,20 @@ export function validateOps(ops: NodeOp[], nodes: DnaNode[]): OpValidation {
   // class from landing — the bug that made acts invisible to the pillar-scoped STORY group + generation.
   const parentageReason = (childKind: NodeKind, parentId: string): string | null => {
     const want = PARENT_KIND[childKind];
-    if (want === null) return null;                                              // a root kind — no parent
+    // A root kind (seed) can never be ADDED — the tree has exactly one root, created at bootstrap. Letting a
+    // root add through here was the hole that let a SEED get nested under another node (the deviation).
+    if (want === null) return `${childKind} is the tree root — it can't be added under another node`;
     if (want === "pillar") return pillar ? null : `no pillar exists yet for ${childKind} to attach to`;
     const parent = index.get(parentId);
     if (!parent) return "parent node no longer exists";
     if (parent.kind !== want) return `${childKind} must hang off ${want}, not ${parent.kind}`;
     return null;
   };
+  // Singleton spine kinds (seed/premise/pillar/voice_profile) are unique per book — a 2nd is a structural
+  // duplicate (the two-premises half of the deviation). Block an add/replace_children that would mint another.
+  const singletonReason = (kind: NodeKind): string | null =>
+    SINGLETON_KINDS.includes(kind) && nodes.some((n) => n.kind === kind)
+      ? `a ${kind} already exists — only one per book; edit it instead of adding another` : null;
   for (const op of ops) {
     const reasons: string[] = [];
     // Validate the SANITIZED content (enum case coerced, soft issues fixed) and only HARD-reject on errors —
@@ -191,6 +198,8 @@ export function validateOps(ops: NodeOp[], nodes: DnaNode[]): OpValidation {
       else {
         const r = parentageReason(op.kind, op.parentId);
         if (r) reasons.push(r);
+        const s = singletonReason(op.kind);
+        if (s) reasons.push(s);
         msgs(op.kind, op.content);
       }
     } else if (op.op === "replace_children") {
@@ -200,6 +209,8 @@ export function validateOps(ops: NodeOp[], nodes: DnaNode[]): OpValidation {
       else {
         const r = parentageReason(op.childKind, op.parentId);
         if (r) reasons.push(r);
+        const s = singletonReason(op.childKind);
+        if (s) reasons.push(s);
         op.children.forEach((sub, i) => msgs(op.childKind, sub.content, false, `child ${i + 1}: `));
       }
     }

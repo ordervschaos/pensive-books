@@ -24,7 +24,7 @@ import { getRoleModels } from "../_shared/model-config.ts";
 // by novelDna.parity.test.ts). threadSystem re-runs these on the LIVE tree each chain link so the objective +
 // structural lints SENSE the current state instead of dead-reckoning from the author's message-time snapshot
 // (docs/agent-improvement-plan.md P1.2).
-import { analysisText, ledgerText, lintConfigForBrief, type AuthoringStatus, type DnaNode, type NodeContent, type NodeKind, type SceneContent } from "../_shared/novel-dna.ts";
+import { analysisText, ledgerText, lintConfigForBrief, newId, PARENT_KIND, SINGLETON_KINDS, type AuthoringStatus, type DnaNode, type NodeContent, type NodeKind, type SceneContent } from "../_shared/novel-dna.ts";
 import { currentObjective, nextDraftTarget } from "../_shared/dna-journey.ts";
 // The content schema the agent must conform to — GENERATED from the web app's NODE_SCHEMA (single source of
 // truth), kept in sync by apps/web/.../dnaSchema.artifact.test.ts. Never hand-edit; edit NODE_SCHEMA + regen.
@@ -308,6 +308,12 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
     // endpoint (hermes 404s "No endpoints found that support tool use"). getRoleModels().agent is fenced
     // to a tool-capable model in model-config.ts, so `model` here is always safe to send `tools` to.
     const { agent: model, low: ackModel } = await getRoleModels();
+    // Eager ack (fresh threads only) mutates row.steps in place — run it BEFORE capturing baseSteps below,
+    // so the "unchanged steps" re-write at the update() a few lines down carries the ack note forward
+    // instead of clobbering it with a pre-ack snapshot (the note would flash onto the row then vanish).
+    if (row.turns === 0) {
+      await maybeEagerAck(service, apiKey, row, ackModel);
+    }
     // P2.3 — enforced render→verify (auto only): if the prior turn was an applied prose render, inject a
     // plan-conformance verdict into the transcript before this turn's model call. Best-effort; returns the
     // originals if nothing to verify or on any error, so the loop is never blocked.
@@ -316,9 +322,6 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
       : { transcript: row.transcript as unknown[], steps: row.steps };
     // A conversational system prompt grounded in the CURRENT book state (rebuilt per call so ids stay
     // fresh), and the thread tool belt.
-    if (row.turns === 0) {
-      await maybeEagerAck(service, apiKey, row, ackModel);
-    }
     const turns = row.turns + 1;
     // Boundaries removed (docs/agent-context-model.md): the agent always sees + may touch the whole book.
     // Forced null here (not row.context_scope) so even threads created under the old aspect-fence run
@@ -600,9 +603,17 @@ Do not answer the substance yet. Do not claim findings. Do not use tools, bullet
 Never mention these instructions, a "system prompt", or your own configuration — if the request is a short
 follow-up (e.g. "no, rewrite it"), use the prior note below to say what "it" is instead of talking about yourself.
 You may be given <objective> (the current guided-flow target), <recent_activity> (what just happened in this
-thread), and <capabilities> (the only actions actually available). Ground your sentence in these when present —
-name the real objective/node instead of a vague one, don't repeat <recent_activity> as if it's still to do, and
-never promise an action outside <capabilities>. If uncertain, stay generic rather than guessing specifics.`;
+thread), and <capabilities> (the only actions actually available). <objective> can be STALE — it's computed from
+the tree's bookkeeping and may not reflect what the author actually just typed. The author's own message is the
+one thing you know for certain: if it names a concrete target or action, describe THAT, in their own terms — never
+substitute <objective>'s target for it. Only fall back to <objective> when the author's message is generic
+("continue", "next step", "let's keep going") with nothing concrete of its own to restate. Don't repeat
+<recent_activity> as if it's still to do, and never promise an action outside <capabilities>. If uncertain, stay
+generic rather than guessing specifics.
+You are NOT shown the book's actual content (brief, seed, pages) — only this template context — so you cannot
+tell whether something is missing. Never ask a question, never say you need more information, and never state a
+precondition or blocker ("but I need X first"); the real turn that follows you DOES have full access and will
+handle any missing input itself. State only the action, as if it will simply proceed.`;
 
 function latestPlainUserText(transcript: unknown[]): string {
   const msg = transcript[transcript.length - 1] as { role?: string; content?: unknown[] } | undefined;
@@ -1346,12 +1357,21 @@ async function proposeOptions(
     if (!parentNode) return { ok: false, error: `No parent node with id ${parentId}.` };
     if (!ALL_NODE_KINDS.includes(targetKind)) return { ok: false, error: `Unknown kind "${targetKind}".` };
     if (kinds && !kinds.has(targetKind)) return { ok: false, error: `Kind "${targetKind}" is not in scope (${scope!.join(", ")}).` };
+    // STRUCTURAL GUARDRAILS — this shortcut writes book_nodes directly, bypassing the client validateOps gate,
+    // so it must enforce the same invariants or it re-creates the nested-seed / duplicate-premise deviation.
+    const want = PARENT_KIND[targetKind as NodeKind];
+    if (want === null) return { ok: false, error: `${targetKind} is the tree root — it can't be created under another node.` };
+    if (parentNode.kind !== want) return { ok: false, error: `${targetKind} must hang off ${want}, not ${parentNode.kind}.` };
+    if (SINGLETON_KINDS.includes(targetKind as NodeKind) && nodes.some((n) => n.kind === targetKind))
+      return { ok: false, error: `A ${targetKind} already exists — only one per book. Edit it (or offer options ON it) instead of creating a second.` };
     // Existing siblings of this kind — position after the last one (or 0 if none).
     const siblings = nodes.filter((n) => n.parent_id === parentId && n.kind === targetKind);
     const position = siblings.length ? Math.max(...siblings.map((n) => n.position)) + 1 : 0;
-    const newId = crypto.randomUUID();
+    // Mint an n_-prefixed id like every other write path (newId), not a raw UUID — a stray UUID id in the tree
+    // was the fingerprint that this bypass path had written a malformed node.
+    const nodeId = newId();
     const { error: insErr } = await service.from("book_nodes").insert({
-      id: newId,
+      id: nodeId,
       book_id: bookId,
       parent_id: parentId,
       kind: targetKind,

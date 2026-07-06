@@ -1,14 +1,13 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Shield, Loader2, CheckCircle2 } from "lucide-react";
+import { Shield, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
-type ModelTier = "opus" | "sonnet" | "deepseek" | "qwen" | "qwen-plus" | "kimi" | "glm" | "minimax" | "gpt" | "hermes";
+type ModelTier = "opus" | "sonnet" | "deepseek" | "deepseek-v4" | "qwen" | "qwen-plus" | "kimi" | "glm" | "minimax" | "gpt" | "hermes";
 
 const TIERS: { value: ModelTier; label: string; description: string; badge: string; badgeVariant: "default" | "secondary" | "outline" }[] = [
   {
@@ -75,15 +74,34 @@ const TIERS: { value: ModelTier; label: string; description: string; badge: stri
     badgeVariant: "outline",
   },
   {
+    value: "deepseek-v4",
+    label: "DeepSeek V4",
+    description: "Latest DeepSeek (v4-pro / v4-flash) via OpenRouter. 1M-token context, tool-use capable, and very cheap (~$0.44/$0.87 per M for pro, ~$0.14/$0.28 for flash). Requires OPENROUTER_API_KEY secret.",
+    badge: "Budget",
+    badgeVariant: "outline",
+  },
+  {
     value: "deepseek",
-    label: "DeepSeek",
-    description: "Lowest cost. Uses DeepSeek's API (requires DEEPSEEK_API_KEY secret). Quality varies by task.",
+    label: "DeepSeek (legacy)",
+    description: "Original DeepSeek via its own API (deepseek-chat, requires DEEPSEEK_API_KEY secret). Superseded by DeepSeek V4 — kept for comparison. Quality varies by task.",
     badge: "Budget",
     badgeVariant: "outline",
   },
 ];
 
 const ADMIN_SETTINGS = "admin_settings";
+
+// Capability matrix (mirrors _shared/model-config TOOL_INCAPABLE_MODELS). The agent role drives a native
+// tool-use loop, so a tier with no tool-use endpoint (hermes on OpenRouter) is INVALID for it and is
+// omitted from the agent dropdown — you can't pick what can't work. Prose/structure have no hard gate
+// (any model emits JSON; reliability is soft advice), so they list every tier.
+const TOOL_INCAPABLE_TIERS: ModelTier[] = ["hermes"];
+// Where the agent falls back when the BASE tier itself can't do tools — kept in sync with model-config's
+// AGENT_FALLBACK_MODEL (qwen). Shown in the "Same as base" label so the resolution is visible, not silent.
+const AGENT_FALLBACK_TIER: ModelTier = "qwen";
+const isToolCapableTier = (t: ModelTier) => !TOOL_INCAPABLE_TIERS.includes(t);
+// A role can use a tier iff the role has no hard gate, or the tier clears the gate. Only the agent gates.
+const roleAllowsTier = (role: RoleKey, tier: ModelTier) => (role === "agent" ? isToolCapableTier(tier) : true);
 
 // Per-role tier overrides (§4c): prose / structure (outlines, beats, structural JSON) / the agent reasoning
 // loop can each run on a different tier. Empty = "same as the base tier". The keys match _shared/model-config
@@ -92,10 +110,11 @@ const ROLE_KEYS = { prose: "ai_model_tier_prose", structure: "ai_model_tier_stru
 type RoleKey = keyof typeof ROLE_KEYS;
 type RoleTiers = Record<RoleKey, ModelTier | "">;
 const EMPTY_ROLES: RoleTiers = { prose: "", structure: "", agent: "" };
+const GENERAL_HINT = "Outlines, revisions, evaluation, reads — everything except the three below.";
 const ROLE_HINT: Record<RoleKey, string> = {
   prose: "Scene prose — where a prose-specialist (e.g. GPT-5.5, Hermes) pays off.",
   structure: "Outlines, beats, and structural JSON — favor a JSON-reliable model.",
-  agent: "The Studio agent's reasoning + tool loop. Must be tool-use capable — a tool-incapable tier (Hermes) is auto-fenced to Sonnet here.",
+  agent: "The Studio agent's reasoning + tool loop — tool-use only, so non-tool tiers (Hermes) aren't listed here.",
 };
 
 export default function AdminSettings() {
@@ -165,47 +184,29 @@ export default function AdminSettings() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">AI Model Tier</CardTitle>
+          <CardTitle className="text-base">AI models by use case</CardTitle>
           <CardDescription>
-            Controls which model is used for all AI generation calls (prose, outlines, evaluation, voice).
-            Summaries and thread scans always use the cheap fast model regardless of this setting.
+            Pick the model for each use case. Prose / Structure / Agent default to “Same as General” and only
+            differ when you set them. Summaries and thread scans always use the cheap fast model regardless.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <RadioGroup value={tier} onValueChange={(v) => setTier(v as ModelTier)} className="space-y-3">
-            {TIERS.map((t) => (
-              <div
-                key={t.value}
-                className={`flex items-start gap-3 rounded-lg border p-4 cursor-pointer transition-colors ${
-                  tier === t.value ? "border-foreground bg-muted/40" : "border-border hover:border-foreground/40"
-                }`}
-                onClick={() => setTier(t.value)}
-              >
-                <RadioGroupItem value={t.value} id={t.value} className="mt-0.5" />
-                <div className="flex-1 space-y-1">
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor={t.value} className="font-medium cursor-pointer">{t.label}</Label>
-                    <Badge variant={t.badgeVariant} className="text-xs">{t.badge}</Badge>
-                    {saved === t.value && (
-                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <CheckCircle2 className="h-3 w-3" /> active
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-sm text-muted-foreground">{t.description}</p>
-                </div>
+          {/* Use-case pickers: General is the root ("everything else"); the three specialised roles inherit it. */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <Label className="text-sm">General</Label>
+                <p className="text-xs text-muted-foreground truncate">{GENERAL_HINT}</p>
               </div>
-            ))}
-          </RadioGroup>
-
-          <div className="space-y-3 border-t pt-4">
-            <div>
-              <p className="text-sm font-medium">Per-role model (advanced)</p>
-              <p className="text-xs text-muted-foreground">
-                Run prose, structure, and the agent loop on different tiers — the best prose model and the best
-                structural-JSON model differ (e.g. Hermes writes great prose but is unreliable for JSON).
-                "Same as base" uses the tier selected above.
-              </p>
+              <select
+                className="shrink-0 rounded-md border border-border bg-background px-2 py-1 text-sm"
+                value={tier}
+                onChange={(e) => setTier(e.target.value as ModelTier)}
+              >
+                {TIERS.map((t) => (
+                  <option key={t.value} value={t.value}>{t.label}</option>
+                ))}
+              </select>
             </div>
             {(Object.keys(ROLE_KEYS) as RoleKey[]).map((role) => (
               <div key={role} className="flex items-center justify-between gap-3">
@@ -218,11 +219,34 @@ export default function AdminSettings() {
                   value={roles[role]}
                   onChange={(e) => setRoles({ ...roles, [role]: e.target.value as ModelTier | "" })}
                 >
-                  <option value="">Same as base ({tier})</option>
-                  {TIERS.map((t) => (
+                  <option value="">
+                    {role === "agent" && !isToolCapableTier(tier)
+                      ? `Same as General (${tier} → ${AGENT_FALLBACK_TIER})`
+                      : `Same as General (${tier})`}
+                  </option>
+                  {TIERS.filter((t) => roleAllowsTier(role, t.value)).map((t) => (
                     <option key={t.value} value={t.value}>{t.label}</option>
                   ))}
                 </select>
+              </div>
+            ))}
+          </div>
+
+          {/* Model reference — descriptions live once here rather than repeated under every use case. */}
+          <div className="space-y-2 border-t pt-4">
+            <p className="text-sm font-medium">Model reference</p>
+            {TIERS.map((t) => (
+              <div key={t.value} className="flex items-start gap-3 rounded-lg border border-border p-3">
+                <div className="flex-1 space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-medium text-sm">{t.label}</span>
+                    <Badge variant={t.badgeVariant} className="text-xs">{t.badge}</Badge>
+                    {!isToolCapableTier(t.value) && (
+                      <Badge variant="outline" className="text-xs">no tool use — prose/structure only</Badge>
+                    )}
+                  </div>
+                  <p className="text-sm text-muted-foreground">{t.description}</p>
+                </div>
               </div>
             ))}
           </div>

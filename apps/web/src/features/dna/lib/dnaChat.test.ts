@@ -74,6 +74,27 @@ describe("validateOps — the fail-closed boundary", () => {
     expect(validateOps([op], noPillar).rejected[0].reasons.join(" ")).toMatch(/no pillar/);
   });
 
+  // The nested-seed deviation: a SEED is a root, never added under another node.
+  it("rejects adding a SEED under another node (roots can't be nested)", () => {
+    const op: NodeOp = { op: "add", kind: "seed", parentId: "seed", content: { logline: "dupe" } };
+    expect(validateOps([op], spine()).rejected[0].reasons.join(" ")).toMatch(/tree root/);
+  });
+
+  // The duplicate-premise half of the deviation: singleton spine kinds are unique per book.
+  it("rejects adding a second premise/pillar/voice_profile (singletons)", () => {
+    const dupePremise: NodeOp = { op: "add", kind: "premise", parentId: "seed", content: { dramatic_question: "q2?" } };
+    expect(validateOps([dupePremise], spine()).rejected[0].reasons.join(" ")).toMatch(/already exists/);
+    const dupePillar: NodeOp = { op: "add", kind: "pillar", parentId: "prem", content: { controlling_idea: "i2" } };
+    expect(validateOps([dupePillar], spine()).rejected[0].reasons.join(" ")).toMatch(/already exists/);
+  });
+
+  // But the FIRST of a singleton kind still lands (bootstrapping a bare tree).
+  it("accepts the first premise when none exists yet", () => {
+    const seedOnly = [mk("seed", { id: "seed", content: { logline: "x" } })];
+    const op: NodeOp = { op: "add", kind: "premise", parentId: "seed", content: { dramatic_question: "q?" } };
+    expect(validateOps([op], seedOnly).ok).toHaveLength(1);
+  });
+
   it("rejects a contextual rung attached to the wrong kind (beat must hang off a act, not the pillar)", () => {
     const op: NodeOp = { op: "add", kind: "beat", parentId: "pil", content: { summary: "s" } };
     expect(validateOps([op], spine()).rejected[0].reasons.join(" ")).toMatch(/must hang off act/);

@@ -6,7 +6,7 @@
 // All expensive edge functions call getActiveModels() instead of hardcoding MODEL.
 import { serviceClient } from "./task.ts";
 
-export type ModelTier = "opus" | "sonnet" | "deepseek" | "qwen" | "qwen-plus" | "kimi" | "glm" | "minimax" | "gpt" | "hermes";
+export type ModelTier = "opus" | "sonnet" | "deepseek" | "deepseek-v4" | "qwen" | "qwen-plus" | "kimi" | "glm" | "minimax" | "gpt" | "hermes";
 
 // The cheap/fast model for incidental passes (summaries, character-state extraction). Exported so
 // callers that default a `low` model don't re-hardcode the string and drift from this file.
@@ -33,6 +33,9 @@ const TIER_MODELS: Record<ModelTier, { high: string; low: string }> = {
   opus:        { high: "claude-opus-4-8",           low: DEFAULT_LOW_MODEL },
   sonnet:      { high: "claude-sonnet-4-6",         low: DEFAULT_LOW_MODEL },
   deepseek:    { high: "deepseek-chat",             low: "deepseek-chat" },
+  // DeepSeek V4 via OpenRouter (not the direct `deepseek-chat` API): 1M ctx, tool-use capable, and cheap —
+  // pro high (~$0.44/$0.87 per M), flash low (~$0.14/$0.28 per M). Routes through OPENROUTER_API_KEY.
+  "deepseek-v4": { high: "deepseek/deepseek-v4-pro", low: "deepseek/deepseek-v4-flash" },
   qwen:        { high: "qwen/qwen3-235b-a22b",      low: "qwen/qwen3-8b" },
   "qwen-plus": { high: "qwen/qwen3.7-plus",         low: "qwen/qwen3-8b" },
   kimi:        { high: "moonshotai/kimi-k2.7-code", low: "qwen/qwen3-8b" },
@@ -53,8 +56,11 @@ const TIER_MODELS: Record<ModelTier, { high: string; low: string }> = {
 const TOOL_INCAPABLE_MODELS = new Set<string>([
   "nousresearch/hermes-3-llama-3.1-405b", // hermes tier — prose specialist, no tool-use endpoint on OpenRouter
 ]);
-// Tool-capable last resort for the agent role when its resolved model can't do tool use.
-const AGENT_FALLBACK_MODEL = TIER_MODELS.sonnet.high;
+// Tool-capable last resort for the agent role when NEITHER its resolved model NOR the base tier can do
+// tool use. hermes is the only tool-incapable tier and it's always OpenRouter, so the last resort is an
+// OpenRouter model (qwen) — NOT Anthropic sonnet: a hermes user is deliberately off the Anthropic path,
+// and the agent fallback must respect that rather than silently reintroducing the ANTHROPIC_API_KEY dep.
+const AGENT_FALLBACK_MODEL = TIER_MODELS.qwen.high;
 
 export function isToolCapable(model: string): boolean {
   return !TOOL_INCAPABLE_MODELS.has(model);
@@ -93,9 +99,11 @@ export function resolveRoleModels(tiers: Partial<Record<string, ModelTier>>): { 
   const base = TIER_MODELS[(tiers.ai_model_tier as ModelTier) ?? "sonnet"] ?? TIER_MODELS.sonnet;
   const highOf = (t?: ModelTier) => (t && TIER_MODELS[t]?.high) || base.high;
   // The agent role drives a tool-use loop, so it can't run on a tool-incapable model (e.g. hermes). If the
-  // resolved model can't do tools, fall back to a tool-capable one so an admin who sets hermes globally (or
-  // as the agent override) for its prose still gets a working agent instead of an OpenRouter 404.
-  const toolCapableAgent = (m: string) => (isToolCapable(m) ? m : AGENT_FALLBACK_MODEL);
+  // resolved model can't do tools, prefer the base tier's high (keeps an Anthropic base on Anthropic, an
+  // OpenRouter base on OpenRouter); only if THAT is also tool-incapable drop to the OpenRouter default. So
+  // an admin who sets hermes globally for its prose still gets a working, in-family agent — no OpenRouter 404.
+  const toolCapableAgent = (m: string) =>
+    isToolCapable(m) ? m : isToolCapable(base.high) ? base.high : AGENT_FALLBACK_MODEL;
   return {
     agent: toolCapableAgent(highOf(tiers[ROLE_TIER_KEYS.agent])),
     structure: highOf(tiers[ROLE_TIER_KEYS.structure]),
