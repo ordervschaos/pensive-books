@@ -25,6 +25,7 @@ interface MintedThread { id: string; content: NodeContent }
 interface ExpandResult {
   childKind?: NodeKind; childLevel?: number; children?: NodeContent[]; prose?: string; logline?: string;
   beatsheet?: boolean; beats?: BeatSheetEntry[]; actIds?: string[]; threads?: MintedThread[]; prepared?: PreparedProse;
+  needsRepair?: boolean; repairPrepared?: PreparedProse;
   // target 'contract' (W1: compile the brief) — genre tentpoles + seeded meters + register bounds.
   contract?: boolean; tentpoles?: { summary?: string }[]; meters?: MeterContent[]; voice_constraints?: string[];
   sketch?: SceneSketch; // target 'sketch' — the scene treatment (what/how), generated before prose
@@ -86,15 +87,18 @@ async function invokeWithRetry(body: Record<string, unknown>, signal?: AbortSign
   throw lastErr;
 }
 
-// Prose streams from the same-origin /api/stream-prose proxy (Vite middleware in dev, Vercel fn in prod):
-// the long qwen generation runs OFF the Supabase worker, so its 80–140s wall-clock never hits the ~150s
-// ceiling that was killing ~54% of calls (TO-DO/dna-streaming-proxy.md). The proxy holds the OpenRouter key
-// and just pipes deltas; we accumulate them here. IDLE timeout (not total): a healthy stream emits tokens
-// continuously, so "no bytes for STREAM_IDLE_MS" means a stall → abort + retry; a slow-but-flowing 3-minute
-// generation is never wrongly cut. dna-expand assembled the prompt (incl. the v2 digest) in `prepare` mode.
+// Off-worker generation streams from the same-origin /api/stream-prose proxy (Vite middleware in dev, Vercel
+// fn in prod): the long generation call runs OFF the Supabase worker, so its 80–140s wall-clock never hits the
+// ~150s ceiling that was killing ~54% of prose calls (TO-DO/dna-streaming-proxy.md). Generic despite the route
+// name — the proxy's wire shape (system/userContent/model/max_tokens → streamed text) doesn't care what the
+// text IS, so the beat sheet's generation + repair calls reuse it too. The proxy holds the provider key and
+// just pipes deltas; we accumulate them here. IDLE timeout (not total): a healthy stream emits tokens
+// continuously, so "no bytes for STREAM_IDLE_MS" means a stall → abort + retry; a slow-but-flowing multi-minute
+// generation is never wrongly cut. dna-expand assembles the prompt in `prepare` (prose) / `phase: "prepare"`
+// (beatsheet) mode. `kind` only labels error messages (what's actually being streamed).
 const STREAM_IDLE_MS = 45_000;
 
-async function streamProse(prepared: PreparedProse, signal?: AbortSignal): Promise<string> {
+async function streamText(prepared: PreparedProse, signal?: AbortSignal, kind: string = "prose"): Promise<string> {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token ?? "";
   let lastErr: Error = new Error("stream-prose failed");
@@ -130,17 +134,17 @@ async function streamProse(prepared: PreparedProse, signal?: AbortSignal): Promi
       }
       clearTimeout(timer);
       // Strip the proxy's NUL heartbeats (STREAM_HEARTBEAT, emitted during the model's reasoning phase) —
-      // they kept the connection alive but are not prose. Strip BEFORE the empty-check so an all-heartbeat
-      // (content-never-arrived / truncated) stream correctly reads as "no prose" and retries.
+      // they kept the connection alive but are not real output. Strip BEFORE the empty-check so an
+      // all-heartbeat (content-never-arrived / truncated) stream correctly reads as empty and retries.
       // eslint-disable-next-line no-control-regex
-      const prose = text.replace(/\u0000/g, "").trim();
-      if (!prose) throw new Error("stream produced no prose");
-      return prose;
+      const out = text.replace(/\u0000/g, "").trim();
+      if (!out) throw new Error(`stream produced no ${kind}`);
+      return out;
     } catch (e) {
       clearTimeout(timer);
       if (signal?.aborted) throw e; // real user cancel — never retry
       const stalled = (e as Error)?.name === "AbortError";
-      lastErr = new Error(stalled ? `prose stream stalled (>${STREAM_IDLE_MS / 1000}s idle, attempt ${attempt}/${MAX_ATTEMPTS})` : (e as Error).message);
+      lastErr = new Error(stalled ? `${kind} stream stalled (>${STREAM_IDLE_MS / 1000}s idle, attempt ${attempt}/${MAX_ATTEMPTS})` : (e as Error).message);
       if (attempt < MAX_ATTEMPTS) await new Promise((r) => setTimeout(r, 1500));
     }
   }
@@ -159,8 +163,23 @@ async function callExpand(bookId: number, nodeId: string, target: string, signal
   if (target === "prose") {
     const { prepared } = await invokeWithRetry({ bookId, nodeId, target, prepare: true, brief }, signal);
     if (!prepared) throw new Error("dna-expand prepare returned no payload");
-    const prose = await streamProse(prepared, signal);
+    const prose = await streamText(prepared, signal, "prose");
     return { prose };
+  }
+  // Beat sheet: same off-worker shape as prose, extended with a second "finalize" hop — the sanitize/lint/
+  // repair-decision logic stays server-side (cheap, DB-bound, already twin-tested via novelDna.ts), only the
+  // up-to-two 8000-token generations leave the worker. See doc_1783354954000_beatsheet_streaming_proxy.md.
+  if (target === "beatsheet") {
+    const { prepared } = await invokeWithRetry({ bookId, nodeId, target, phase: "prepare", brief }, signal);
+    if (!prepared) throw new Error("dna-expand prepare returned no payload");
+    const rawText = await streamText(prepared, signal, "beat sheet");
+    let res = await invokeWithRetry({ bookId, nodeId, target, phase: "finalize", rawText }, signal);
+    if (res.needsRepair) {
+      if (!res.repairPrepared) throw new Error("dna-expand finalize flagged needsRepair with no repair payload");
+      const repairText = await streamText(res.repairPrepared, signal, "beat sheet repair");
+      res = await invokeWithRetry({ bookId, nodeId, target, phase: "finalize", rawText, repairText }, signal);
+    }
+    return res;
   }
   return invokeWithRetry({ bookId, nodeId, target, brief }, signal);
 }
@@ -495,8 +514,8 @@ const GEN_LABEL: Partial<Record<NodeKind, string>> = {
 
 /** Generate via the dna-expand engine and return the result as reviewable ops (no writes). One network call
  *  plus the SAME local enrichment the commit path applies (scene→beat realization). */
-export async function generateExpansionOps(bookId: number, node: DnaNode, target: string, brief?: RenderBrief): Promise<{ ops: NodeOp[]; summary: string }> {
-  const res = await callExpand(bookId, node.id, target, undefined, brief);
+export async function generateExpansionOps(bookId: number, node: DnaNode, target: string, brief?: RenderBrief, signal?: AbortSignal): Promise<{ ops: NodeOp[]; summary: string }> {
+  const res = await callExpand(bookId, node.id, target, signal, brief);
 
   if (target === "logline") {
     const text = (res.logline ?? "").trim();

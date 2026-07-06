@@ -159,7 +159,7 @@ function sanitizeEntries(raw: unknown, ids: Set<string>): LedgerEntry[] {
   return out;
 }
 
-async function foldDigest(apiKey: string, model: string, prior: DigestAccum, pageText: string, registry: string, meta: CallMeta): Promise<DigestAccum> {
+async function foldDigest(apiKey: string, model: string, prior: DigestAccum, pageText: string, registry: string, meta: CallMeta, signal?: AbortSignal): Promise<DigestAccum> {
   const first = !prior.pages.length;
   const ledgerSoFar = first ? "(this is the first page — no prior state)" : (formatLedger(prior.ledger) || "(no ledger yet)");
   const impressionsSoFar = first ? "(none yet)" : (formatImpressions(prior.impressions) || "(none yet)");
@@ -196,7 +196,7 @@ ${impressionsSoFar}
 
 THIS PAGE:
 ${pageText}`;
-  const data = await callLLM(apiKey, { model, max_tokens: 2500, messages: [{ role: "user", content: dprompt }] }, { ...meta, fn: "dna-expand-digest" });
+  const data = await callLLM(apiKey, { model, max_tokens: 2500, messages: [{ role: "user", content: dprompt }] }, { ...meta, fn: "dna-expand-digest" }, { signal });
   const p = JSON.parse(extractJsonBlock(textFromLLM(data))) as { page?: string; ledger?: Record<string, unknown>; impressions?: DigestImpression[] };
   const impressions = Array.isArray(p.impressions)
     ? p.impressions.filter((i) => i && typeof i.note === "string" && i.note.trim()).map((i) => ({ note: i.note.trim(), weight: Math.max(1, Math.min(5, Math.round(Number(i.weight) || 1))) }))
@@ -212,7 +212,7 @@ ${pageText}`;
     : prior.ledger;
   return { pages: [...prior.pages, (p.page ?? "").trim()].filter(Boolean), ledger, impressions };
 }
-async function buildProseDigest(apiKey: string, model: string, allNodes: Node[], currentId: string, bookId: number, meta: CallMeta): Promise<string> {
+async function buildProseDigest(apiKey: string, model: string, allNodes: Node[], currentId: string, bookId: number, meta: CallMeta, signal?: AbortSignal): Promise<string> {
   const ordered = scenesInOrder(allNodes);
   const idx = ordered.findIndex((s) => s.id === currentId);
   if (idx <= 0) return "";
@@ -250,7 +250,7 @@ async function buildProseDigest(apiKey: string, model: string, allNodes: Node[],
     // first. Each completed fold below is already persisted, so the next generation resumes from here.
     if (Date.now() - startFold > FOLD_BUDGET_MS) { truncated = true; break; }
     try {
-      const next = await foldDigest(apiKey, model, accum, txt, registry, meta);
+      const next = await foldDigest(apiKey, model, accum, txt, registry, meta, signal);
       const line = next.pages[next.pages.length - 1] ?? ""; // this page's delta = the line the fold just appended
       page.authoring = { ...page.authoring, prose_digest: { v: DIGEST_VERSION, line, ledger: next.ledger, impressions: next.impressions, src_hash: srcHash, prev_hash: prevHash } };
       // Persist THIS fold immediately — a worker death at the ~150s ceiling must not lose progress (the
@@ -298,7 +298,10 @@ Deno.serve(async (req: Request) => {
     // model request instead of calling the model. The browser then streams the long prose generation through
     // the same-origin /api/stream-prose proxy, so the 80–140s call never rides this worker's ~150s wall-clock
     // (the timeout/546 failures). See TO-DO/dna-streaming-proxy.md. Digest + assembly stay here (fast, DB-bound).
-    const { bookId, nodeId, target, light, prepare, brief: renderBrief } = (await req.json().catch(() => ({}))) as { bookId?: number; nodeId?: string; target?: string; light?: boolean; prepare?: boolean; brief?: { focus?: string; mustHonor?: string[]; avoid?: string[] } };
+    // `phase`/`rawText`/`repairText` (beatsheet only): the browser-streamed split (see the beatsheet branch
+    // below) — "prepare" returns the assembled request, "finalize" does the parse/sanitize/lint/repair-decision
+    // against the text the browser streamed off-worker. Independent of prose's `prepare` boolean.
+    const { bookId, nodeId, target, light, prepare, phase, rawText, repairText, brief: renderBrief } = (await req.json().catch(() => ({}))) as { bookId?: number; nodeId?: string; target?: string; light?: boolean; prepare?: boolean; phase?: "prepare" | "finalize"; rawText?: string; repairText?: string; brief?: { focus?: string; mustHonor?: string[]; avoid?: string[] } };
     if (!bookId || !nodeId) return json({ error: "bookId and nodeId are required" }, 400);
     const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!apiKey) return json({ error: "ANTHROPIC_API_KEY not configured" }, 500);
@@ -525,7 +528,7 @@ Deno.serve(async (req: Request) => {
     // anti-repetition polish for speed; fine for a draft-to-check, not for the canonical book build.
     const prevProseBlock = light ? ""
       : (target === "prose" || target === "sketch" || (!target && node.kind === "scene"))
-      ? await buildProseDigest(apiKey, DIGEST_MODEL, nodes, nodeId, bookId, meta)
+      ? await buildProseDigest(apiKey, DIGEST_MODEL, nodes, nodeId, bookId, meta, req.signal)
       : "";
     // Beat neighbourhood — the sibling beats of the scene's parent beat, in act order.
     // Prose generation only sees its direct ancestor chain (parent beat + act + …), so it never
@@ -657,7 +660,7 @@ TEST before you answer: could a stranger imagine the poster, the genre, and the 
 
 Honor the MANDATE (genre/tone) and any LOCKED ancestors. Do NOT invent a title. Do NOT restate the raw idea verbatim — SHARPEN it into a real logline. Output the LOGLINE ONLY: one or two sentences, no preamble, no label, no quotes, no JSON.`;
       const data = await callLLM(apiKey, { model, max_tokens: 400, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
-        messages: [{ role: "user", content: `${ctx}\n\nWrite the logline.` }] }, meta);
+        messages: [{ role: "user", content: `${ctx}\n\nWrite the logline.` }] }, meta, { signal: req.signal });
       return json({ logline: textFromLLM(data).trim() });
     }
 
@@ -707,7 +710,7 @@ Revise internally until the verdict would be ACCEPT (>=32/40, no criterion below
 Output JSON ONLY, no prose, no fences:
 { "children": [ { "dramatic_question": "<DRAMATIC_QUESTION sentence>", "shape": { "name": "<2-4 word emotional trajectory>", "movements": ["<movement 1>", "<movement 2>", "<movement 3>", "..."], "ending_feel": "up|down|bittersweet" } } ] }`;
       const data = await callLLM(apiKey, { model, max_tokens: 1800, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
-        messages: [{ role: "user", content: `BRIEF:\n${briefContext(brief, { scope: "full", success: true, none: "(no brief)", empty: "(empty)" })}\n\nLOGLINE:\n${logline}\n\nDerive the premise. JSON only.` }] }, meta);
+        messages: [{ role: "user", content: `BRIEF:\n${briefContext(brief, { scope: "full", success: true, none: "(no brief)", empty: "(empty)" })}\n\nLOGLINE:\n${logline}\n\nDerive the premise. JSON only.` }] }, meta, { signal: req.signal });
       const parsed = JSON.parse(extractJsonBlock(textFromLLM(data)));
       const first = Array.isArray(parsed.children) ? parsed.children[0] : parsed;
       const shape = first?.shape ?? {};
@@ -748,7 +751,7 @@ Rules:
 
 Output JSON ONLY: {"opening":"...","moves":[{"what":"...","thread":"<thread id, optional>","sense":"<e.g. smell:tar, optional>"}],"exit":"...","direction":{"cut":{"in":"...","out":"..."},"distance":"far|mid|close|deep","mode":"dialogue|action|interior|description|summary","time":"real|compressed|stretched","tension":"suspense|mystery|irony"}}`;
       const data = await callLLM(apiKey, { model, max_tokens: 1200, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
-        messages: [{ role: "user", content: `${ctx}\n\nWrite this scene's sketch. JSON only.` }] }, meta);
+        messages: [{ role: "user", content: `${ctx}\n\nWrite this scene's sketch. JSON only.` }] }, meta, { signal: req.signal });
       try {
         const parsed = JSON.parse(extractJsonBlock(textFromLLM(data)));
         return json({ sketch: parsed });
@@ -768,7 +771,7 @@ ANTI-REPETITION (critical): Never repeat any physical gesture, character reactio
       // Browser-streamed path: hand back the assembled request; the client streams it via /api/stream-prose.
       if (prepare) return json({ prepared: { system, userContent, model, max_tokens: 8000 } });
       const data = await callLLM(apiKey, { model, max_tokens: 8000, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
-        messages: [{ role: "user", content: userContent }] }, meta);
+        messages: [{ role: "user", content: userContent }] }, meta, { signal: req.signal });
       return json({ prose: textFromLLM(data).trim() });
     }
 
@@ -776,6 +779,13 @@ ANTI-REPETITION (critical): Never repeat any physical gesture, character reactio
       // GLOBAL beat-sheet pass (root fix): generate EVERY beat in one call with the whole arc + the thread
       // registry in view, so promises schedule setup→payoff in order and polarity is planned to oscillate.
       // Returns a flat, act-indexed list; the client persists it grouped under each act.
+      //
+      // Split into two stateless phases (todo/dna-streaming-proxy.md pattern, extended to a second target):
+      // the LLM generation(s) run OFF this worker via the browser-driven /api/stream-prose proxy, so the beat
+      // sheet's up-to-two sequential 8000-token calls never ride this worker's ~150s wall-clock — the same
+      // failure class that forced prose off-worker. "prepare" returns the assembled request; "finalize" does
+      // the (cheap, deterministic) parse/sanitize/lint/repair-decision, re-deriving context on every call so
+      // any phase can be retried alone without a stall in one dragging the others down with it.
       if (!acts.length) return json({ error: "generate the acts before the beat sheet" }, 400);
       // Threads are DERIVED, not required (docs/dna-structure-analysis.md Finding 1): a thread's identity is its
       // setup→payoff schedule across beats, which only exists once the beat sheet does. When no registry was
@@ -796,13 +806,20 @@ ANTI-REPETITION (critical): Never repeat any physical gesture, character reactio
 - Schedule the THREADS across the whole book: every promise must be SET UP (role:setup) in an EARLIER beat before it is PAID OFF (role:payoff) in a LATER beat; use "advance" for beats that develop it in between. Reference threads BY NAME.
 - CAUSE every turn: give each beat "needs" (state keys it DEPENDS ON, each one EARNED by an EARLIER beat — never an ambient world/premise given) and "establishes" (state keys it PRODUCES). Keys are short snake_case handles (e.g. "ledger_settled", "rival_humiliated", "peculium_revealed"). Every "therefore" beat MUST "need" at least one state an earlier beat "establishes" — that upstream dependency is what makes the turn CAUSED, not "and then". A "but" beat must either reverse the polarity or block/consume an established state.${tentpoles.length ? `\n- PLACE every TENTPOLE: assign each set-piece to the ONE beat that delivers it, in "realizes" (by its summary). Every tentpole listed must appear on exactly one beat.` : ""}${worldFacts.length ? `\n- GROUND the turns in the WORLD RULES: when a beat's turning point's outcome OPERATES ON a rule's mechanism, list that rule in "grounds_in" (by name). The CLIMAX / final resolution beat MUST ground its win in an established rule — the victory has to be MECHANICALLY EARNED by a rule the reader already knows, never deus ex machina. Plant the rule's setup in an earlier beat too.` : ""}${games.length ? `\n- PLAY the GAMES: each beat that advances a contest lists it in "plays" (by name). Each game MUST be RESOLVED — exactly one beat lists it in "resolves" with its outcome (won|lost), and the CENTRAL game resolves at the CLIMAX. A game's resolving beat should also ground_in the rule its win/lose fires.` : ""}${statePreconds.length ? `\n- ESTABLISH every STATE PRECONDITION: each game's win SPENDS resources/states (listed above). For each, an EARLIER beat must establish it (list its key in that beat's "establishes") BEFORE the beat that resolves the game — you cannot spend a resource the story never acquired (no "she had enough all along"). Make the establishing a real turn.` : ""}
 Output JSON ONLY: { ${mintThreads ? `"threads": [ { "name": "...", "promise": "...", "payoff": "...", "kind": "mystery"|"foreshadow"|"setup_payoff"|"arc"${arcCast.length ? `, "character": "<cast name — arc threads only>"` : ""} } ], ` : ""}"beats": [ { "act": <1..${acts.length}>, "summary": "...", "connector": "therefore"|"but", "polarity": "up"|"down", "threads": [ { "ref": "<thread name>", "role": "setup"|"advance"|"payoff" } ]${tentpoles.length ? `, "realizes": [ "<tentpole summary>" ]` : ""}${worldFacts.length ? `, "grounds_in": [ "<world rule name>" ]` : ""}${games.length ? `, "plays": [ "<game name>" ], "resolves": [ { "ref": "<game name>", "outcome": "won|lost" } ]` : ""}, "needs": [ "<state key earned upstream>" ], "establishes": [ "<state key this beat produces>" ] } ] }`;
-      const data = await callLLM(apiKey, { model, max_tokens: 8000, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
-        messages: [{ role: "user", content: `${ctx}\n\nWrite the whole beat sheet. JSON only.` }] }, meta);
-      const parsed = JSON.parse(extractJsonBlock(textFromLLM(data)));
+      // Browser-streamed path: hand back the assembled request; the client streams it via /api/stream-prose,
+      // then calls back with phase "finalize" (mirrors the prose `prepare` split, todo/dna-streaming-proxy.md).
+      if (phase === "prepare") {
+        return json({ prepared: { system, userContent: `${ctx}\n\nWrite the whole beat sheet. JSON only.`, model, max_tokens: 8000 } });
+      }
+      if (phase !== "finalize") return json({ error: "beatsheet requires phase 'prepare' or 'finalize'" }, 400);
+      if (!rawText) return json({ error: "finalize requires rawText" }, 400);
+
+      const parsed = JSON.parse(extractJsonBlock(rawText));
       const rawBeats = Array.isArray(parsed.beats) ? parsed.beats : [];
       // When minting: turn the model's declared registry into real thread nodes (ids assigned HERE so beats can
       // reference them), returned to the client to persist under the pillar. Beats reference threads by NAME,
-      // resolved below against the minted set — same as the pre-declared case.
+      // resolved below against the minted set — same as the pre-declared case. Derived ONLY from the primary
+      // generation (rawText) — a repair pass never re-mints the registry.
       const THREAD_KINDS = new Set(["mystery", "foreshadow", "setup_payoff", "arc"]);
       // Arc threads carry the character they belong to on `owner` (the same about-node slot the game-resolution
       // twin uses) — resolved name→id here so the engine's arc lints can join thread↔character by id.
@@ -885,13 +902,12 @@ Output JSON ONLY: { ${mintThreads ? `"threads": [ { "name": "...", "promise": ".
         }
       }
 
-      // ── Lint-then-repair (docs/agent-improvement-plan.md P2.1) ──────────────────────────────────────────
+      // ── Lint (docs/agent-improvement-plan.md P2.1) ──────────────────────────────────────────────────────
       // The sanitizer silently DROPS orphan payoffs / dup tentpole claims etc., each of which can leave a
       // hollow causal link the model was never told about — the opposite of validateOps' fail-closed write
-      // gate. Run the shared engine's BEAT-NATIVE lints over the just-sanitized sheet; if any fire, give the
-      // model ONE bounded repair turn. Only beat-stage rules: the tree has no scenes yet, so scene/meter/
-      // tentpole-placement lints would false-positive or stay silent — causality + game structure is what's
-      // actually decidable at this rung. Best-effort: on any failure we keep the original sheet (never worse).
+      // gate. Run the shared engine's BEAT-NATIVE lints over the just-sanitized sheet. Only beat-stage rules:
+      // the tree has no scenes yet, so scene/meter/tentpole-placement lints would false-positive or stay
+      // silent — causality + game structure is what's actually decidable at this rung.
       const BEAT_LINT_RULES = new Set(["uncaused_therefore", "empty_but", "beat_connector", "illegal_resolution", "unresolved_game"]);
       // Existing accepted tree, minus any prior beats/scenes (the sheet REPLACES all beats; scenes don't exist
       // yet) — the causal/game context the beat lints validate against.
@@ -915,20 +931,28 @@ Output JSON ONLY: { ${mintThreads ? `"threads": [ { "name": "...", "promise": ".
         return { issues: validate([...otherNodes, ...candBeats]).filter((iss) => BEAT_LINT_RULES.has(iss.rule)), ptr };
       };
 
-      const { issues, ptr } = lintBeats(beats);
-      if (issues.length) {
+      const finish = () => json({ beatsheet: true, childKind: "beat", childLevel: 4, actIds: acts.map((m) => m.id), beats, ...(mintedThreads.length ? { threads: mintedThreads } : {}) });
+
+      // First finalize call (no repairText yet): lint the primary sheet. Clean → done. Issues → hand back the
+      // repair prompt for the client to stream (same one-bounded-repair-turn shape as before, just off-worker).
+      if (repairText == null) {
+        const { issues, ptr } = lintBeats(beats);
+        if (!issues.length) return finish();
         const violations = issues.map((iss) => `- ${ptr.get(iss.nodeId ?? "") ?? iss.nodeId}: [${iss.rule}] ${iss.message}`).join("\n");
-        try {
-          const repairUser = `${ctx}\n\nYou produced this beat sheet:\n${JSON.stringify({ beats: rawBeats })}\n\nThe story engine flagged these STRUCTURAL problems in it:\n${violations}\n\nFix ONLY these problems — adjust the offending beats' connector / needs / establishes / resolves so each flagged link is earned (a "therefore" beat must "need" a state key an EARLIER beat "establishes"; a played game must be "resolved"). Keep every other beat unchanged; do not add or remove beats. Re-output the COMPLETE beat sheet as JSON in the SAME schema. JSON only.`;
-          const rdata = await callLLM(apiKey, { model, max_tokens: 8000, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
-            messages: [{ role: "user", content: repairUser }] }, meta);
-          const p = JSON.parse(extractJsonBlock(textFromLLM(rdata)));
-          const rRaw = Array.isArray(p.beats) ? p.beats : [];
-          // Accept the repair only if it doesn't INCREASE the beat-lint count — never ship a worse sheet.
-          if (rRaw.length) { const repaired = sanitize(rRaw); if (lintBeats(repaired).issues.length <= issues.length) beats = repaired; }
-        } catch { /* keep the original sanitized sheet — repair is best-effort */ }
+        const repairUser = `${ctx}\n\nYou produced this beat sheet:\n${JSON.stringify({ beats: rawBeats })}\n\nThe story engine flagged these STRUCTURAL problems in it:\n${violations}\n\nFix ONLY these problems — adjust the offending beats' connector / needs / establishes / resolves so each flagged link is earned (a "therefore" beat must "need" a state key an EARLIER beat "establishes"; a played game must be "resolved"). Keep every other beat unchanged; do not add or remove beats. Re-output the COMPLETE beat sheet as JSON in the SAME schema. JSON only.`;
+        return json({ needsRepair: true, repairPrepared: { system, userContent: repairUser, model, max_tokens: 8000 } });
       }
-      return json({ beatsheet: true, childKind: "beat", childLevel: 4, actIds: acts.map((m) => m.id), beats, ...(mintedThreads.length ? { threads: mintedThreads } : {}) });
+
+      // Second finalize call: a repair pass was streamed back. Accept it only if it doesn't INCREASE the
+      // beat-lint count vs the original sanitized/canonicalized sheet — never ship a worse sheet. Best-effort:
+      // any parse failure keeps the original (never worse).
+      const originalIssueCount = lintBeats(beats).issues.length;
+      try {
+        const p = JSON.parse(extractJsonBlock(repairText));
+        const rRaw = Array.isArray(p.beats) ? p.beats : [];
+        if (rRaw.length) { const repaired = sanitize(rRaw); if (lintBeats(repaired).issues.length <= originalIssueCount) beats = repaired; }
+      } catch { /* keep the original sanitized sheet — repair is best-effort */ }
+      return finish();
     }
 
     if (target === "contract") {
@@ -954,7 +978,7 @@ Output JSON ONLY: { ${mintThreads ? `"threads": [ { "name": "...", "promise": ".
 3. VOICE_CONSTRAINTS — 2–5 short imperative register bounds for THIS audience: vocabulary ceiling/floor, content phrasing limits, sentence-complexity guidance (e.g. "YA: no graphic gore; keep slang timeless, not dated").
 Output JSON ONLY: { "tentpoles": [ { "summary": "..." } ], "meters": [ { "name": "...", "kind": "comedy"|"heat"|"tension"|"affect"|"value"|"custom", "poles": { "low": "...", "high": "..." }, "scale": { "min": 0, "max": 100 }, "target": [ { "at": 0.0, "value": 10 } ] } ], "voice_constraints": [ "..." ] }`;
       const data = await callLLM(apiKey, { model, max_tokens: 3000, output_config: { effort: "medium" }, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
-        messages: [{ role: "user", content: `${ctx}${existingBlock ? `\n\nEXISTING REGISTRY:\n${existingBlock}` : ""}\n\nCompile the brief's contract. JSON only.` }] }, meta, { signal: AbortSignal.timeout(140_000) });
+        messages: [{ role: "user", content: `${ctx}${existingBlock ? `\n\nEXISTING REGISTRY:\n${existingBlock}` : ""}\n\nCompile the brief's contract. JSON only.` }] }, meta, { signal: AbortSignal.any([req.signal, AbortSignal.timeout(140_000)]) });
       const parsed = JSON.parse(extractJsonBlock(textFromLLM(data)));
       const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
       const METER_KINDS = new Set(["value", "game_score", "affect", "relationship", "heat", "comedy", "tension", "custom"]);
@@ -1014,7 +1038,7 @@ Output JSON ONLY: { "tentpoles": [ { "summary": "..." } ], "meters": [ { "name":
     ].filter(Boolean).join("\n\n");
     const system = `You are a story architect expanding a ${node.kind} into ${config.role}. Generate ${config.count} ${config.child_kind}s as ONE authoritative structure — NOT alternatives to choose among. Honor every LOCKED ancestor and the MANDATE verbatim. Output JSON ONLY: { "children": [ ${config.schema_json} ] }`;
     const data = await callLLM(apiKey, { model, max_tokens: 4000, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
-      messages: [{ role: "user", content: `${slottedCtx}\n\nGenerate the ${config.child_kind}s. JSON only.` }] }, meta);
+      messages: [{ role: "user", content: `${slottedCtx}\n\nGenerate the ${config.child_kind}s. JSON only.` }] }, meta, { signal: req.signal });
     const parsed = JSON.parse(extractJsonBlock(textFromLLM(data)));
     let children = Array.isArray(parsed.children) ? parsed.children : [];
     if (config.child_kind === "relationship") {
