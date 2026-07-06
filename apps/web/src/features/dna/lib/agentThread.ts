@@ -175,7 +175,7 @@ export async function applyAgentProposal(bookId: number, threadId: number, propo
       // so the staleness chain (spec → sketch → prose) actually gets sealed. Write it directly via expandNode
       // rather than the generic ops layer below, which has no stamping hook for a plain `edit` op.
       const { expandNode } = await import("@/features/dna/lib/dnaExpand");
-      await expandNode(bookId, node, "sketch");
+      await expandNode(bookId, node, "sketch", { brief: proposal.brief });
       await resolveProposal(threadId, proposal, "applied", all);
       return { ok: [], rejected: [] };
     }
@@ -183,7 +183,7 @@ export async function applyAgentProposal(bookId: number, threadId: number, propo
     // (beat-sheet scheduling, scene→beat realization) and returns reviewable ops; we apply them here. The
     // dynamic import breaks the agentThread ↔ dnaExpand cycle. A stale/invalid target throws → caller discards.
     const { generateExpansionOps } = await import("@/features/dna/lib/dnaExpand");
-    const { ops } = await generateExpansionOps(bookId, node, proposal.target ?? "");
+    const { ops } = await generateExpansionOps(bookId, node, proposal.target ?? "", proposal.brief);
     const validation = await applyNodeOps(bookId, ops);
     await resolveProposal(threadId, proposal, "applied", all);
     return validation;

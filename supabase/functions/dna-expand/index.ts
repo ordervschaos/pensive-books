@@ -584,10 +584,11 @@ Deno.serve(async (req: Request) => {
         : "";
       return [cast, threadsBlk, rulesBlk].filter(Boolean).join("\n\n");
     })();
-    // The agent's CURATED render brief (docs/agent-capabilities.md) — verbatim, AUGMENTING the deterministic
-    // digest/blocklist below, never replacing them. Only a prose render carries one; it's what the agent
-    // retrieved (grep/read) and decided this page must land, so it's higher-signal than the computed context.
-    const b = renderBrief && (target === "prose" || target === "sketch" || (!target && node.kind === "scene")) ? renderBrief : null;
+    // The agent's CURATED brief (docs/agent-capabilities.md) — verbatim, AUGMENTING the deterministic
+    // context below, never replacing it. It's whatever the agent retrieved/was told (chat instructions,
+    // grep/read results) and decided this pass must honor, so it's higher-signal than the computed context.
+    // Any target may carry one — a beat sheet or scene break can be steered same as a prose render.
+    const b = renderBrief ?? null;
     const briefBlock = b ? [
       "THE EDITOR'S BRIEF FOR THIS PAGE (curated by the agent — treat as the highest-priority guidance; it does NOT override the MANDATE or LOCKED facts):",
       b.focus ? `- FOCUS: ${b.focus}` : "",
@@ -1008,6 +1009,7 @@ Output JSON ONLY: { "tentpoles": [ { "summary": "..." } ], "meters": [ { "name":
       slots.preconditions ? precondBlock : "", // [EXP:preconditions]
       slots.arc ? actBlock : "",
       slots.priorScenes ? priorScenesBlock : "",
+      briefBlock, // the agent's curated, verbatim guidance for this pass (empty when no brief was given)
       `THIS NODE [${node.kind}]: ${JSON.stringify(node.content)}`,
     ].filter(Boolean).join("\n\n");
     const system = `You are a story architect expanding a ${node.kind} into ${config.role}. Generate ${config.count} ${config.child_kind}s as ONE authoritative structure — NOT alternatives to choose among. Honor every LOCKED ancestor and the MANDATE verbatim. Output JSON ONLY: { "children": [ ${config.schema_json} ] }`;

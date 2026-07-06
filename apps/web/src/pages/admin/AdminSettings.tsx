@@ -95,7 +95,7 @@ const EMPTY_ROLES: RoleTiers = { prose: "", structure: "", agent: "" };
 const ROLE_HINT: Record<RoleKey, string> = {
   prose: "Scene prose — where a prose-specialist (e.g. GPT-5.5, Hermes) pays off.",
   structure: "Outlines, beats, and structural JSON — favor a JSON-reliable model.",
-  agent: "The Studio agent's reasoning + tool loop.",
+  agent: "The Studio agent's reasoning + tool loop. Must be tool-use capable — a tool-incapable tier (Hermes) is auto-fenced to Sonnet here.",
 };
 
 export default function AdminSettings() {

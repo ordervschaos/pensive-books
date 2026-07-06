@@ -46,6 +46,20 @@ const TIER_MODELS: Record<ModelTier, { high: string; low: string }> = {
   hermes:      { high: "nousresearch/hermes-3-llama-3.1-405b", low: "qwen/qwen3-8b" },
 };
 
+// Models with NO OpenRouter endpoint that supports tool use. The agent loop (book-agent) ALWAYS sends
+// `tools`, so routing its calls to one of these 404s ("No endpoints found that support tool use"). The
+// prose/structure roles never send tools, so they may still use these — this only fences the agent role.
+// Keep in sync with any tier whose `high` is a non-tool-use model (hermes is a non-reasoning prose model).
+const TOOL_INCAPABLE_MODELS = new Set<string>([
+  "nousresearch/hermes-3-llama-3.1-405b", // hermes tier — prose specialist, no tool-use endpoint on OpenRouter
+]);
+// Tool-capable last resort for the agent role when its resolved model can't do tool use.
+const AGENT_FALLBACK_MODEL = TIER_MODELS.sonnet.high;
+
+export function isToolCapable(model: string): boolean {
+  return !TOOL_INCAPABLE_MODELS.has(model);
+}
+
 export async function getActiveModels(): Promise<{ high: string; low: string }> {
   try {
     const { data } = await serviceClient()
@@ -78,8 +92,12 @@ export const ROLE_TIER_KEYS: Record<ModelRole, string> = {
 export function resolveRoleModels(tiers: Partial<Record<string, ModelTier>>): { agent: string; structure: string; prose: string; low: string } {
   const base = TIER_MODELS[(tiers.ai_model_tier as ModelTier) ?? "sonnet"] ?? TIER_MODELS.sonnet;
   const highOf = (t?: ModelTier) => (t && TIER_MODELS[t]?.high) || base.high;
+  // The agent role drives a tool-use loop, so it can't run on a tool-incapable model (e.g. hermes). If the
+  // resolved model can't do tools, fall back to a tool-capable one so an admin who sets hermes globally (or
+  // as the agent override) for its prose still gets a working agent instead of an OpenRouter 404.
+  const toolCapableAgent = (m: string) => (isToolCapable(m) ? m : AGENT_FALLBACK_MODEL);
   return {
-    agent: highOf(tiers[ROLE_TIER_KEYS.agent]),
+    agent: toolCapableAgent(highOf(tiers[ROLE_TIER_KEYS.agent])),
     structure: highOf(tiers[ROLE_TIER_KEYS.structure]),
     prose: highOf(tiers[ROLE_TIER_KEYS.prose]),
     low: base.low,

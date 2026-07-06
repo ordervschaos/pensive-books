@@ -30,6 +30,20 @@ Deno.test("the documented split: prose on a prose-specialist, structure/agent on
   assertEquals(r.agent, "claude-sonnet-4-6");     // falls back to base
 });
 
+Deno.test("agent role never resolves to a tool-incapable model (hermes as agent override → fallback)", () => {
+  // hermes has no OpenRouter tool-use endpoint; the agent loop always sends tools, so it must not run there.
+  const r = resolveRoleModels({ ai_model_tier: "sonnet", ai_model_tier_agent: "hermes" });
+  assertEquals(r.agent, "claude-sonnet-4-6");                          // fenced to the tool-capable fallback
+  assertEquals(r.prose, "claude-sonnet-4-6");                          // prose unaffected (base)
+});
+
+Deno.test("hermes as the BASE tier still yields a tool-capable agent, but hermes prose/structure", () => {
+  const r = resolveRoleModels({ ai_model_tier: "hermes" });
+  assertEquals(r.agent, "claude-sonnet-4-6");                          // agent fenced off hermes
+  assertEquals(r.structure, "nousresearch/hermes-3-llama-3.1-405b");  // structure still base high
+  assertEquals(r.prose, "nousresearch/hermes-3-llama-3.1-405b");      // prose still base high
+});
+
 Deno.test("an unknown override tier falls back to the base tier's high", () => {
   const r = resolveRoleModels({ ai_model_tier: "opus", ai_model_tier_prose: "not-a-tier" as unknown as never });
   assertEquals(r.prose, "claude-opus-4-8");

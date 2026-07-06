@@ -495,8 +495,8 @@ const GEN_LABEL: Partial<Record<NodeKind, string>> = {
 
 /** Generate via the dna-expand engine and return the result as reviewable ops (no writes). One network call
  *  plus the SAME local enrichment the commit path applies (scene→beat realization). */
-export async function generateExpansionOps(bookId: number, node: DnaNode, target: string): Promise<{ ops: NodeOp[]; summary: string }> {
-  const res = await callExpand(bookId, node.id, target);
+export async function generateExpansionOps(bookId: number, node: DnaNode, target: string, brief?: RenderBrief): Promise<{ ops: NodeOp[]; summary: string }> {
+  const res = await callExpand(bookId, node.id, target, undefined, brief);
 
   if (target === "logline") {
     const text = (res.logline ?? "").trim();

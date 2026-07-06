@@ -303,8 +303,10 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
   }
 
   try {
-    // Any tier works here: _shared/llm.ts converts tools/tool_use/tool_result both ways for
-    // the OpenAI-compatible paths (DeepSeek, MuleRouter/Qwen), so the loop runs on cheap models too.
+    // _shared/llm.ts converts tools/tool_use/tool_result both ways for the OpenAI-compatible paths
+    // (DeepSeek, MuleRouter/Qwen), so the loop runs on cheap models too — EXCEPT ones with no tool-use
+    // endpoint (hermes 404s "No endpoints found that support tool use"). getRoleModels().agent is fenced
+    // to a tool-capable model in model-config.ts, so `model` here is always safe to send `tools` to.
     const { agent: model, low: ackModel } = await getRoleModels();
     // P2.3 — enforced render→verify (auto only): if the prior turn was an applied prose render, inject a
     // plan-conformance verdict into the transcript before this turn's model call. Best-effort; returns the
@@ -479,7 +481,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
     // proposals[]; Apply runs generateExpansionOps → applyNodeOps there. Same review channel as the rest.
     const expandCall = toolUses.find((t) => t.name === "propose_expansion");
     if (expandCall) {
-      const outcome = await proposeExpansion(service, row.book_id, expandCall.input as { summary?: string; nodeId?: string; target?: string });
+      const outcome = await proposeExpansion(service, row.book_id, expandCall.input as { summary?: string; nodeId?: string; target?: string; brief?: unknown });
       if (outcome.ok) {
         steps.push({ t: "plan", label: outcome.proposal.summary });
         const proposals = [...(row.proposals ?? []), outcome.proposal];
@@ -1096,13 +1098,22 @@ const THREAD_DNA_TOOLS = [
   },
   {
     name: "propose_expansion",
-    description: "Delegate a structural pass to the book's specialized generation engine instead of authoring it yourself: the PREMISE from the accepted logline (target 'premise'), the GLOBAL beat sheet (target 'beatsheet'), a beat's SCENES (target 'scenes'), the compiled brief CONTRACT (target 'contract'), or ONE scene's SKETCH (target 'sketch'). Use this — NOT propose_node_ops — for these passes. 'premise' derives a priced dramatic question plus 3-5 internal shape movements from the BRIEF + accepted LOGLINE — pass the SEED node's id. 'beatsheet' generates ALL beats across every act in one causal pass — pass the PILLAR node's id. 'scenes' breaks ONE beat into scenes — pass that BEAT node's id. 'contract' compiles the brief's genre/audience/tone into derived promises — pass the PILLAR node's id. 'sketch' generates ONE scene's TREATMENT — pass that SCENE node's id before rendering prose when it lacks a fresh sketch. This stages a reviewable 'expand' request the author applies; the engine then runs and its result lands in the tree. ENDS your turn.",
+    description: "Delegate a structural pass to the book's specialized generation engine instead of authoring it yourself: the PREMISE from the accepted logline (target 'premise'), the GLOBAL beat sheet (target 'beatsheet'), a beat's SCENES (target 'scenes'), the compiled brief CONTRACT (target 'contract'), or ONE scene's SKETCH (target 'sketch'). Use this — NOT propose_node_ops — for these passes. 'premise' derives a priced dramatic question plus 3-5 internal shape movements from the BRIEF + accepted LOGLINE — pass the SEED node's id. 'beatsheet' generates ALL beats across every act in one causal pass — pass the PILLAR node's id. 'scenes' breaks ONE beat into scenes — pass that BEAT node's id. 'contract' compiles the brief's genre/audience/tone into derived promises — pass the PILLAR node's id. 'sketch' generates ONE scene's TREATMENT — pass that SCENE node's id before rendering prose when it lacks a fresh sketch. If the author gave you specific steering for this pass (an angle, a constraint, something to emphasize or avoid), pass it in `brief` — don't just let it evaporate into the summary line. This stages a reviewable 'expand' request the author applies; the engine then runs and its result lands in the tree. ENDS your turn.",
     input_schema: {
       type: "object",
       properties: {
         summary: { type: "string", description: "One line: what you're expanding and why (e.g. 'generate the global beat sheet', 'break beat 3 into scenes', 'sketch the treatment for scene 2')." },
         nodeId: { type: "string", description: "For 'premise': the SEED node's id. For 'beatsheet' and 'contract': the PILLAR node's id. For 'scenes': the BEAT node's id. For 'sketch': the SCENE node's id." },
         target: { type: "string", enum: ["premise", "beatsheet", "scenes", "contract", "sketch"], description: "'premise' = derive premise from brief + logline (nodeId = seed); 'beatsheet' = all beats across acts (nodeId = pillar); 'scenes' = one beat's scenes (nodeId = beat); 'contract' = compile genre promises (nodeId = pillar); 'sketch' = one scene's treatment (nodeId = scene)." },
+        brief: {
+          type: "object",
+          description: "OPTIONAL: the author's own steering for THIS pass — an angle, emphasis, or constraint they stated, verbatim in your words. Omit if they gave you nothing beyond 'do it'.",
+          properties: {
+            focus: { type: "string", description: "One line: what this pass should particularly emphasize or aim at, per the author." },
+            mustHonor: { type: "array", items: { type: "string" }, description: "Specific things the author said this MUST include or respect." },
+            avoid: { type: "array", items: { type: "string" }, description: "Specific things the author said to avoid." },
+          },
+        },
       },
       required: ["nodeId", "target"],
     },
@@ -1166,7 +1177,7 @@ You hold the book's DNA TREE: premise → foundations (pillar, cast, world, tent
 3. OFFER OPTIONS — when the author asks for alternatives/options, or to break a node out of its one obvious version, call propose_options with the node's [id] and 2–4 COMPLETE content objects, meaningfully different FROM EACH OTHER but each one HONORING the node's ancestors as fixed: a child elaborates the logline/premise above, it never rewrites it. Premise options keep the logline's protagonist/inciting/goal/obstacle/stakes fixed and vary the priced dramatic question plus internal shape movements; every question needs a cost and every shape needs an escalating want-vs-need choice. Never reshape an ancestor into a different story, never near-duplicates. The author picks one in the tree. Use this only for choose-among-N; a single revision is propose_node_ops.
 4. PROSE — BEFORE rendering a scene that has no sketch yet, or whose sketch is stale, call propose_expansion(nodeId = the scene, target = 'sketch') first — it's a cheap plan-level pass (what happens + how it's shown) that steers the render instead of hoping the expensive prose call gets it right; skip it only if the scene already carries a fresh one. To WRITE or REWRITE a scene's full prose, call propose_prose_render with the scene [id](s): you do NOT generate prose yourself (it's a long, browser-streamed render the author runs); you stage a request the author applies, and it streams in their browser. For SMALL wording fixes to EXISTING prose, use propose_node_ops to edit content.prose.text directly — but NEVER hand-write or replace a scene's FULL prose this way. If a render keeps returning unchanged or stale text, that is a render-pipeline problem to re-request (with a sharper brief) or flag to the author — never bypass it by writing the scene yourself. Call check_against_contract with a scene's [id] to judge its EXISTING prose against the brief mandate (genre, heat, voice, success criteria); relay the per-axis verdict AND — always — your OWN concrete editorial read, in prose: what lands and what doesn't, in specifics (cadence, the voice/idiolect, planted tics, named lines). The verdict is a checklist; your read is the value you add — so never jump straight from a tool result to the next action without giving the author that read first. A common request — "write the first scene and see if it meets the brief" — is propose_prose_render (the author applies it; prose streams in) then check_against_contract once the scene has prose.
    - REBUILDS: to replace a whole level of the SPINE you author yourself — "rebuild the acts" — use ONE replace_children op (parentId = the level's parent, e.g. the pillar for acts; childKind = act). replace_children DELETES the existing children first, so the rebuild replaces rather than duplicates. Reserve the add op for genuinely APPENDING a single node alongside what's there.
-5. PREMISE, BEAT SHEET, SCENES & SKETCH — do NOT author these by hand. For the PREMISE: call propose_options with kind='premise' and parentId=<seed-node-id> (no nodeId) to mint the premise node and stage 2–4 candidates directly in the tree — the author picks one, skipping a separate apply step. For the BEAT SHEET: call propose_expansion(nodeId = the PILLAR, target = 'beatsheet') once acts exist. For SCENES: call propose_expansion(nodeId = a BEAT, target = 'scenes'). For a SCENE SKETCH before prose: call propose_expansion(nodeId = a SCENE, target = 'sketch'). The engine also compiles the brief's CONTRACT with propose_expansion(nodeId = the PILLAR, target = 'contract'). You still author the logline, pillar, cast, and acts yourself (propose_node_ops / propose_options). Prose is propose_prose_render (item 4).
+5. PREMISE, BEAT SHEET, SCENES & SKETCH — do NOT author these by hand. For the PREMISE: call propose_options with kind='premise' and parentId=<seed-node-id> (no nodeId) to mint the premise node and stage 2–4 candidates directly in the tree — the author picks one, skipping a separate apply step. For the BEAT SHEET: call propose_expansion(nodeId = the PILLAR, target = 'beatsheet') once acts exist. For SCENES: call propose_expansion(nodeId = a BEAT, target = 'scenes'). For a SCENE SKETCH before prose: call propose_expansion(nodeId = a SCENE, target = 'sketch'). The engine also compiles the brief's CONTRACT with propose_expansion(nodeId = the PILLAR, target = 'contract'). Any of these four passes can carry the author's own steering (an emphasis, a constraint, something to avoid) in propose_expansion's brief param — pass it whenever they gave you more than "generate it", the same way propose_prose_render does for prose. You still author the logline, pillar, cast, and acts yourself (propose_node_ops / propose_options). Prose is propose_prose_render (item 4).
 
 ## Node kinds
 
@@ -1270,7 +1281,7 @@ async function proposeProseRender(
 async function proposeExpansion(
   service: SupabaseClient,
   bookId: number,
-  input: { summary?: string; nodeId?: string; target?: string },
+  input: { summary?: string; nodeId?: string; target?: string; brief?: unknown },
 ): Promise<{ ok: true; proposal: AgentProposal } | { ok: false; error: string }> {
   const target = String(input.target ?? "").trim();
   if (target !== "premise" && target !== "beatsheet" && target !== "scenes" && target !== "contract" && target !== "sketch") {
@@ -1298,7 +1309,7 @@ async function proposeExpansion(
     return { ok: false, error: `'sketch' generates ONE scene's treatment — pass a scene node's id, not a ${node.kind}.` };
   }
   const label = target === "premise" ? "Derive the premise" : target === "beatsheet" ? "Generate the global beat sheet" : target === "contract" ? "Compile the brief's contract" : target === "sketch" ? "Sketch the scene's treatment" : "Break the beat into scenes";
-  return { ok: true, proposal: { id: crypto.randomUUID(), layer: "expansion", summary: String(input.summary ?? label).trim() || label, ops: [], nodeId: node.id, target } };
+  return { ok: true, proposal: { id: crypto.randomUUID(), layer: "expansion", summary: String(input.summary ?? label).trim() || label, ops: [], nodeId: node.id, target, brief: sanitizeBrief(input.brief) } };
 }
 
 // Stage 2–4 alternative content objects ON a node as pickable options (the options/picker channel). The
