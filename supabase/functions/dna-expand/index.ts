@@ -787,6 +787,41 @@ ANTI-REPETITION (critical): Never repeat any physical gesture, character reactio
       // the (cheap, deterministic) parse/sanitize/lint/repair-decision, re-deriving context on every call so
       // any phase can be retried alone without a stall in one dragging the others down with it.
       if (!acts.length) return json({ error: "generate the acts before the beat sheet" }, 400);
+
+      // ── Context scoping for the beat rung (doc_1783355490398) ────────────────────────────────────────
+      // The beat sheet SCHEDULES structure (causality, thread setup→payoff, polarity); it does NOT render
+      // prose or place scenes in rooms. So it gets a PLANNING slice, not the whole bible: the arc + a slim
+      // cast (name/role/want/lie — the only fields beats + arc-thread minting use) + the thread/tentpole/game/
+      // rule registries that exist. Dropped vs the shared render ctx: LOCATIONS (beats carry no `loc` — sensory
+      // palettes are a scene/prose concern) and the full-JSON cast dump (idiolect/wound/voice detail is
+      // prose-rung noise). Same principle as proseScope on the render side: each rung sees the slice it consumes.
+      // realLie also normalizes the "N/A" placeholder to empty, so a lie-less cast member (or a pre-story ghost)
+      // is not fed as though it carried a real inner arc — and does not get a nonsensical arc thread minted below.
+      const realLie = (c: Node) => { const l = String((c.content as { lie?: string }).lie ?? "").trim(); return l && !/^n\s*\/?\s*a$/i.test(l) ? l : ""; };
+      const castDigest = chars.length
+        ? "CAST (reference BY NAME):\n" + chars.map((c) => {
+            const cc = c.content as { role?: string; want?: string };
+            const lie = realLie(c);
+            return `- ${cName(c)} [${cc.role ?? "?"}]${cc.want ? ` · wants: ${cc.want}` : ""}${lie ? ` · lie: ${lie}` : ""}`;
+          }).join("\n")
+        : "";
+      const beatCtx = [
+        `BOOK: ${book?.name ?? ""}`,
+        `BRIEF (binding):\n${briefContext(brief, { scope: "full", success: true, none: "(no brief)", empty: "(empty)" })}`,
+        mandate ? `MANDATE — NON-NEGOTIABLE:\n${mandate}` : "",
+        "STORY SO FAR (the ladder above this node; LOCKED items are immutable):",
+        ...chain.map((a) => `[${a.kind}${a.authoring?.locked ? " · LOCKED" : ""}] ${JSON.stringify(a.content)}`),
+        castDigest,        // slim cast — NOT the full-JSON dump; NO locations
+        threadBlock,       // pre-declared threads (empty when minting)
+        tentpoleBlock,
+        worldRulesBlock,
+        gamesBlock,
+        precondBlock,      // [EXP:preconditions]
+        actBlock,          // THE ARC — the skeleton the beats interpolate
+        briefBlock,        // the agent's curated guidance (empty when none)
+        `THIS NODE [${node.kind}]: ${JSON.stringify(node.content)}`,
+      ].filter(Boolean).join("\n\n");
+
       // Threads are DERIVED, not required (docs/dna-structure-analysis.md Finding 1): a thread's identity is its
       // setup→payoff schedule across beats, which only exists once the beat sheet does. When no registry was
       // pre-declared, the beat sheet MINTS one in the same pass (emit a `threads` array) and schedules it;
@@ -797,7 +832,7 @@ ANTI-REPETITION (critical): Never repeat any physical gesture, character reactio
       // Characters whose declared inner arc (lie → truth) exists as data: each gets an ARC thread minted in
       // the same pass, so the promise machinery (dangling_promise etc.) covers character arcs — a declared
       // lie that no beat ever schedules is otherwise invisible to the plan (the dead-field problem).
-      const arcCast = mintThreads ? chars.filter((c) => String((c.content as { lie?: string }).lie ?? "").trim()) : [];
+      const arcCast = mintThreads ? chars.filter((c) => realLie(c)) : [];
       const system = `You are a story architect writing the ENTIRE BOOK'S BEAT SHEET in ONE pass — every beat of every act at once, so you can see the whole sequence. Honor every LOCKED ancestor and the MANDATE verbatim. Rules:${mintThreads ? `
 - FIRST design the THREAD REGISTRY: 3–6 open loops (a promise set up early, paid off later) this book runs on — mysteries, foreshadowed reveals, setup→payoff arcs. Give each a short NAME, a "promise" (what's opened), and a "payoff" (how it closes). Then schedule them across the beats below. Emit them in a top-level "threads" array.${arcCast.length ? `
 - ALSO mint each of these characters' ARC thread (they carry a declared lie): ${arcCast.map((c) => cName(c)).join(", ")}. One per character — kind "arc", "character" = their name, promise = the LIE as it will be DRAMATIZED early (shown in action, not stated), payoff = the moment the TRUTH is accepted or fatally refused. Schedule each arc across the beats like any other thread (setup early, advance through the middle, pay off at that character's turn).` : ""}` : ""}
@@ -809,7 +844,7 @@ Output JSON ONLY: { ${mintThreads ? `"threads": [ { "name": "...", "promise": ".
       // Browser-streamed path: hand back the assembled request; the client streams it via /api/stream-prose,
       // then calls back with phase "finalize" (mirrors the prose `prepare` split, todo/dna-streaming-proxy.md).
       if (phase === "prepare") {
-        return json({ prepared: { system, userContent: `${ctx}\n\nWrite the whole beat sheet. JSON only.`, model, max_tokens: 8000 } });
+        return json({ prepared: { system, userContent: `${beatCtx}\n\nWrite the whole beat sheet. JSON only.`, model, max_tokens: 8000 } });
       }
       if (phase !== "finalize") return json({ error: "beatsheet requires phase 'prepare' or 'finalize'" }, 400);
       if (!rawText) return json({ error: "finalize requires rawText" }, 400);
@@ -939,7 +974,7 @@ Output JSON ONLY: { ${mintThreads ? `"threads": [ { "name": "...", "promise": ".
         const { issues, ptr } = lintBeats(beats);
         if (!issues.length) return finish();
         const violations = issues.map((iss) => `- ${ptr.get(iss.nodeId ?? "") ?? iss.nodeId}: [${iss.rule}] ${iss.message}`).join("\n");
-        const repairUser = `${ctx}\n\nYou produced this beat sheet:\n${JSON.stringify({ beats: rawBeats })}\n\nThe story engine flagged these STRUCTURAL problems in it:\n${violations}\n\nFix ONLY these problems — adjust the offending beats' connector / needs / establishes / resolves so each flagged link is earned (a "therefore" beat must "need" a state key an EARLIER beat "establishes"; a played game must be "resolved"). Keep every other beat unchanged; do not add or remove beats. Re-output the COMPLETE beat sheet as JSON in the SAME schema. JSON only.`;
+        const repairUser = `${beatCtx}\n\nYou produced this beat sheet:\n${JSON.stringify({ beats: rawBeats })}\n\nThe story engine flagged these STRUCTURAL problems in it:\n${violations}\n\nFix ONLY these problems — adjust the offending beats' connector / needs / establishes / resolves so each flagged link is earned (a "therefore" beat must "need" a state key an EARLIER beat "establishes"; a played game must be "resolved"). Keep every other beat unchanged; do not add or remove beats. Re-output the COMPLETE beat sheet as JSON in the SAME schema. JSON only.`;
         return json({ needsRepair: true, repairPrepared: { system, userContent: repairUser, model, max_tokens: 8000 } });
       }
 
