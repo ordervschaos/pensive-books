@@ -16,6 +16,7 @@ import {
   TONE_SUGGESTIONS,
 } from "@/lib/brief";
 import { ScopeBandPicker } from "@/components/book/ScopeBandPicker";
+import { bootstrapLoglineFromBrief } from "@/features/dna/lib/dnaExpand";
 
 interface BookBriefSectionProps {
   bookId: number;
@@ -138,7 +139,7 @@ export function BookBriefSection({ bookId, brief, onBriefChange, embedded = fals
             <Textarea
               value={draft.idea ?? ""}
               onChange={(e) => setDraft((prev) => ({ ...prev, idea: e.target.value }))}
-              onBlur={() => void doSave(draft)}
+              onBlur={() => { void doSave(draft); void bootstrapLoglineFromBrief(bookId, draft.idea); }}
               placeholder="A translator returns home for a funeral and gets stuck…"
               rows={3}
             />

@@ -8,7 +8,7 @@
 //   (b) workers never write rows, so they structurally cannot overwrite a pinned record.
 import { type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { type Brief, briefContext, mandateContext } from "./brief.ts";
-import { callClaude, textFromClaude, type CallMeta } from "./claude.ts";
+import { callLLM, textFromLLM, type CallMeta } from "./llm.ts";
 import { extractJsonBlock } from "./json.ts";
 import { getActiveModels } from "./model-config.ts";
 import { canonContext, type CanonPacket } from "./canon-core.ts";
@@ -132,7 +132,7 @@ export function settledContext(f: Foundations): string {
 }
 
 // deno-lint-ignore no-explicit-any
-const textOf = (data: any): string => textFromClaude(data).trim();
+const textOf = (data: any): string => textFromLLM(data).trim();
 
 function parseJson<T>(text: string): T {
   return JSON.parse(extractJsonBlock(text)) as T;
@@ -230,7 +230,7 @@ export async function foundationsOptions(
 
   const { high: model } = await getActiveModels();
   const meta: CallMeta = { fn: `foundations-${p.step}`, bookId: p.bookId, userId: p.userId ?? null };
-  const data = await callClaude(apiKey, {
+  const data = await callLLM(apiKey, {
     model,
     max_tokens: 2048,
     temperature: 1,
@@ -353,7 +353,7 @@ export async function reviseTentpole(
 
   const { high: model } = await getActiveModels();
   const meta: CallMeta = { fn: "tentpole-revise", bookId: p.bookId, userId: p.userId ?? null };
-  const data = await callClaude(apiKey, {
+  const data = await callLLM(apiKey, {
     model,
     max_tokens: 512,
     system: [{ type: "text", text: TENTPOLE_REVISE_SYSTEM, cache_control: { type: "ephemeral" } }],
@@ -362,7 +362,7 @@ export async function reviseTentpole(
       content: `BOOK: ${book.name}\n\nSETTLED FOUNDATIONS:\n${settledContext(f)}\n\nCURRENT MOMENT:\n${cur}\n\nAUTHOR'S INSTRUCTION:\n${instr}\n\nReturn the revised moment only.`,
     }],
   }, meta);
-  const text = textFromClaude(data).trim();
+  const text = textFromLLM(data).trim();
   if (!text) throw new Error("Claude returned nothing.");
   return text;
 }

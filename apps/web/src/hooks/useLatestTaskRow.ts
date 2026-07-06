@@ -40,6 +40,8 @@ interface Options {
 }
 
 const DEFAULT_STALE_MS = 10 * 60 * 1000;
+// Coalesce a burst of Realtime events into a single authoritative re-read.
+const REFETCH_DEBOUNCE_MS = 200;
 
 function rowMatches(row: Record<string, unknown>, match?: Record<string, MatchValue>): boolean {
   if (!match) return true;
@@ -76,6 +78,7 @@ export function useLatestTaskRow<T extends TaskRow = TaskRow>(opts: Options): {
   const mounted = useRef(true);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const staleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Serialize match/activeStatuses so the effect re-runs when they change without needing the
   // caller to memoize the objects.
@@ -92,8 +95,20 @@ export function useLatestTaskRow<T extends TaskRow = TaskRow>(opts: Options): {
         if (prev && prev.id !== incoming.id) {
           // A different row arrived — only replace if it's newer (a fresh task supersedes an old one).
           if (new Date(incoming.created_at).getTime() < new Date(prev.created_at).getTime()) return prev;
+          return incoming;
         }
-        return incoming;
+        if (!prev) return incoming;
+        // Realtime can deliver a column as null when an UPDATE didn't touch it but Postgres omitted an
+        // unchanged TOASTed jsonb value from the WAL (the "unchanged TOAST" gotcha — REPLICA IDENTITY FULL
+        // on the source table helps but individual callers can still slip through). No writer in this app
+        // intentionally nulls out a column that previously held real data, so patch any such regression
+        // back in from the held row rather than letting it blank the UI.
+        const merged: Record<string, unknown> = { ...incoming };
+        const prevRec = prev as unknown as Record<string, unknown>;
+        for (const key of Object.keys(prevRec)) {
+          if (merged[key] == null && prevRec[key] != null) merged[key] = prevRec[key];
+        }
+        return merged as T;
       });
     },
     [match] // eslint-disable-line react-hooks/exhaustive-deps
@@ -130,20 +145,31 @@ export function useLatestTaskRow<T extends TaskRow = TaskRow>(opts: Options): {
     setRow(null);
     refetch();
 
+    // A Realtime event is only a SIGNAL — re-read the authoritative row over HTTP (debounced to coalesce a
+    // burst). PostgREST has no payload-size limit, so this catches the cases the payload body can't carry:
+    // an oversized UPDATE that Realtime drops as an empty/413 payload (which would otherwise freeze us on the
+    // last-seen status — e.g. the auto-accept loop stuck at "running"), and unchanged-TOAST null columns.
+    const scheduleRefetch = () => {
+      if (refetchTimer.current) clearTimeout(refetchTimer.current);
+      refetchTimer.current = setTimeout(() => { if (mounted.current) refetch(); }, REFETCH_DEBOUNCE_MS);
+    };
+
     // Watch the whole book's task table; the callback narrows to our `match`. One channel covers
-    // both a brand-new task (INSERT) and an advancing one (UPDATE).
+    // both a brand-new task (INSERT) and an advancing one (UPDATE). `consider` applies the payload
+    // optimistically for instant feedback; `scheduleRefetch` reconciles against the true row right after.
     const channel = supabase
       .channel(`task_${table}_${bookId}_${Math.random().toString(36).slice(2)}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table, filter: `book_id=eq.${bookId}` },
-        (payload) => consider((payload as unknown as { new: T }).new)
+        (payload) => { consider((payload as unknown as { new: T }).new); scheduleRefetch(); }
       )
       .subscribe();
     channelRef.current = channel;
 
     return () => {
       mounted.current = false;
+      if (refetchTimer.current) { clearTimeout(refetchTimer.current); refetchTimer.current = null; }
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;

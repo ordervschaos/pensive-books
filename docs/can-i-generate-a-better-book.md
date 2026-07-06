@@ -5,7 +5,7 @@ A working manual for an **AI agent** evaluating a generated book and improving i
 "well written in the abstract" — delivers *this* brief: its genre, heat, length, tone, success
 criteria. Everything below is the loop for getting there.
 
-Companion: per-book logs (e.g. `book-1150-gold-standard-log.md`) track one book's iterations.
+Companion: per-book logs track one book's iterations.
 
 ---
 

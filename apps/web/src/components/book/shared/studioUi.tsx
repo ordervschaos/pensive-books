@@ -5,7 +5,10 @@ import { AlertTriangle, ArrowRight, Check, ChevronDown, ChevronUp, Loader2, Lock
 import { cn } from "@/lib/utils";
 import type { CellState } from "@/lib/planGraph";
 import { emitGenerate, type RevisionLayer } from "@/lib/revisionChat";
-import type { DotState } from "@/components/book/studio/studioModel";
+
+// The four visual states a step dot can show. Inlined here (was in the deleted studio/studioModel)
+// so this shared primitive carries no dependency on the old Studio surface.
+export type DotState = "done" | "active" | "ready" | "locked";
 
 // The center's empty-state CTA: a button that asks the always-on rail chat to GENERATE this layer.
 // The bulk/generate action lives in the chat (the rail watches revision_chats over Realtime); this is
@@ -157,26 +160,6 @@ export function GenRow({ label, descLabel, chips = [], onFire, busy, className }
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-// Full-screen image viewer. Shared by every studio surface that shows generated art. Click-outside or
-// Esc closes; the image itself swallows clicks so it stays open.
-export function ImageLightbox({ src, onClose }: { src: string | null; onClose: () => void }) {
-  useEffect(() => {
-    if (!src) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [src, onClose]);
-  if (!src) return null;
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/85 p-6 backdrop-blur-sm" onClick={onClose} role="dialog" aria-modal="true">
-      <img src={src} alt="" className="max-h-full max-w-full rounded-lg object-contain shadow-2xl" onClick={(e) => e.stopPropagation()} />
-      <button type="button" onClick={onClose} className="absolute right-5 top-5 rounded-full bg-white/10 p-2 text-white transition-colors hover:bg-white/20" aria-label="Close">
-        <X className="h-5 w-5" />
-      </button>
     </div>
   );
 }

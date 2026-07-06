@@ -10,7 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { BookOpen, FileText, Users, Shield, ExternalLink, Activity, Settings } from "lucide-react";
+import { BookOpen, FileText, Users, Shield, ExternalLink } from "lucide-react";
 import { Link } from "react-router-dom";
 import { AdminTagPanel } from "@/components/book/AdminTagPanel";
 
@@ -109,18 +109,7 @@ export default function AdminDashboard() {
     <div className="max-w-6xl mx-auto px-4 py-8 space-y-8">
       <div className="flex items-center gap-2">
         <Shield className="h-5 w-5 text-amber-600" />
-        <h1 className="text-xl font-semibold">Admin Dashboard</h1>
-        <div className="ml-auto flex items-center gap-4">
-          <Link to="/admin/ai-calls" className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1">
-            <Activity className="h-4 w-4" /> AI Calls
-          </Link>
-          <Link to="/admin/node-types" className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1">
-            <Settings className="h-4 w-4" /> Node types
-          </Link>
-          <Link to="/admin/settings" className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1">
-            <Settings className="h-4 w-4" /> Settings
-          </Link>
-        </div>
+        <h1 className="text-xl font-semibold">Dashboard</h1>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">

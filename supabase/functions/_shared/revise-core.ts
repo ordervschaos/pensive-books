@@ -2,7 +2,7 @@
 // Shared by the sync revise-node endpoint and the durable ai-run dispatcher. No auth, no row writes.
 import { type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { type Brief, briefContext } from "./brief.ts";
-import { callClaude, textFromClaude, type CallMeta } from "./claude.ts";
+import { callLLM, textFromLLM, type CallMeta } from "./llm.ts";
 import { getActiveModels } from "./model-config.ts";
 import { settledContext, type Foundations } from "./foundations-core.ts";
 
@@ -89,7 +89,7 @@ export async function reviseNode(client: SupabaseClient, apiKey: string, p: Revi
 
   const { high: model } = await getActiveModels();
   const meta: CallMeta = { fn: "revise-node", bookId: p.bookId, userId: p.userId ?? null };
-  const data = await callClaude(apiKey, {
+  const data = await callLLM(apiKey, {
     model,
     max_tokens: p.layer === "prose" ? 4096 : 1024,
     system: [{ type: "text", text: systemFor(p.layer), cache_control: { type: "ephemeral" } }],
@@ -103,7 +103,7 @@ export async function reviseNode(client: SupabaseClient, apiKey: string, p: Revi
         `\n\nReturn the revised ${p.layer} only.`,
     }],
   }, meta);
-  const text = textFromClaude(data).trim();
+  const text = textFromLLM(data).trim();
   if (!text) throw new Error("Claude returned nothing.");
   return text;
 }

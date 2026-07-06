@@ -12,7 +12,7 @@ import { type Brief, briefContext } from "../_shared/brief.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { hasEditAccess } from "../_shared/access.ts";
-import { callClaude, textFromClaude, type CallMeta } from "../_shared/claude.ts";
+import { callLLM, textFromLLM, type CallMeta } from "../_shared/llm.ts";
 import { getActiveModels } from "../_shared/model-config.ts";
 import { extractJsonBlock } from "../_shared/json.ts";
 
@@ -59,7 +59,7 @@ function bookContext(bookName: string, brief: Brief | null, spine: string | null
 }
 
 // deno-lint-ignore no-explicit-any
-const textOf = (data: any): string => textFromClaude(data).trim();
+const textOf = (data: any): string => textFromLLM(data).trim();
 
 function parseScaffold(text: string): Scaffold {
   let parsed: Scaffold;
@@ -132,7 +132,7 @@ Deno.serve(async (req: Request) => {
     const meta: CallMeta = { fn: "revise-scaffold", bookId, userId: user.id };
     const { high: model } = await getActiveModels();
 
-    const data = await callClaude(apiKey, {
+    const data = await callLLM(apiKey, {
       model,
       max_tokens: 8000,
       system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],

@@ -2,7 +2,7 @@
 // questions, asks for a summary, asks for an evaluation against the fiction criteria — and sometimes
 // asks for a change. So a turn is sometimes just TALK and sometimes an ACTION.
 //
-// Unlike the autonomous editor's agent (revise-agent), the whole beat sheet fits in one context, so
+// Unlike the autonomous editor's agent (book-agent), the whole beat sheet fits in one context, so
 // no tool-loop is needed: each author message is ONE model call. The model replies with a small JSON
 // envelope { reply, plan }: `reply` is the prose it says to the author; `plan` is a beat RevisionPlan
 // ONLY when the author wants a change (otherwise null). A proposed plan rides in beat_chats.pending_plan
@@ -19,7 +19,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { type Brief, briefContext } from "../_shared/brief.ts";
 import { corsHeaders, json } from "../_shared/cors.ts";
-import { callClaude as callClaudeApi, textFromClaude } from "../_shared/claude.ts";
+import { callLLM as callLLMApi, textFromLLM } from "../_shared/llm.ts";
 import { getActiveModels } from "../_shared/model-config.ts";
 import { extractJsonBlock } from "../_shared/json.ts";
 import { sanitizePlan, type RevisionPlan } from "../_shared/revision-plan.ts";
@@ -170,7 +170,7 @@ async function runTurn(
   // Guarantee the array opens on a user turn (Claude requires it).
   if (modelMsgs[0]?.role !== "user") modelMsgs.unshift({ role: "user", content: [{ type: "text", text: context }] });
 
-  const data = await callClaudeApi(apiKey, {
+  const data = await callLLMApi(apiKey, {
     model,
     max_tokens: 16000,
     thinking: { type: "adaptive" },
@@ -178,7 +178,7 @@ async function runTurn(
     messages: modelMsgs,
   }, { fn: "beats-agent", bookId, userId });
 
-  const text = textFromClaude(data).trim();
+  const text = textFromLLM(data).trim();
   if (!text) throw new Error("The editor returned nothing.");
   return splitReplyAndPlan(text);
 }

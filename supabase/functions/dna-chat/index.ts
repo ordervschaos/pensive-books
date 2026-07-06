@@ -9,7 +9,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
-import { callClaude, textFromClaude, type CallMeta } from "../_shared/claude.ts";
+import { callLLM, textFromLLM, type CallMeta } from "../_shared/llm.ts";
 import { getActiveModels } from "../_shared/model-config.ts";
 import { extractJsonBlock } from "../_shared/json.ts";
 import { type Brief, briefContext, mandateContext } from "../_shared/brief.ts";
@@ -106,13 +106,13 @@ ${dnaSchema.promptGuide}`;
     const { high: model } = await getActiveModels();
     const meta: CallMeta = { fn: "dna-chat", bookId, userId: user.id };
     const history = withUser.slice(-12).map((m) => ({ role: m.role, content: m.text }));
-    const data = await callClaude(apiKey, {
+    const data = await callLLM(apiKey, {
       model, max_tokens: 6000,
       system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
       messages: [{ role: "user", content: `${ctx}\n\n— The conversation so far is below; respond to the latest message.` }, ...history],
     }, meta);
 
-    const full = textFromClaude(data).trim();
+    const full = textFromLLM(data).trim();
     let reply = full, proposal: { summary: string; ops: unknown[] } | null = null;
     const fence = full.match(/```json\s*([\s\S]*?)```\s*$/);
     if (fence) {

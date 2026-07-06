@@ -1,7 +1,5 @@
-// sceneImagePrompts — the shared craft for composing ONE scene illustration prompt. Used by both the
-// page-keyed flow (generate-scene-image) and the node-keyed picture-book flow (generate-dna-scene-image).
-// The craft (focal staging, the labelled-line contract, the worked example) is identical; only the CONTEXT
-// gathering differs (a page's beat text vs a DNA scene node's plan). Keep this the single source of the craft.
+// sceneImagePrompts — the shared craft for composing ONE scene illustration prompt. Used by the
+// page-keyed flow (generate-scene-image). Keep this the single source of the craft.
 
 export const PROMPT_SYSTEM = `You compose ONE structured image prompt for a single scene of a novel. The author will edit it, then it is sent VERBATIM to an image model — so it must be complete and self-contained.
 

@@ -15,7 +15,7 @@ import { corsHeaders, json } from "../_shared/cors.ts";
 import { hasEditAccess } from "../_shared/access.ts";
 import { serviceClient } from "../_shared/task.ts";
 import { generateImages, uploadDataUrl } from "../_shared/image.ts";
-import { callClaude, textFromClaude, type CallMeta } from "../_shared/claude.ts";
+import { callLLM, textFromLLM, type CallMeta } from "../_shared/llm.ts";
 import { IMAGE_PROMPT_MODEL } from "../_shared/model-config.ts";
 import { PORTRAIT_SYSTEM, fallbackPortrait, portraitUserContent } from "../_shared/characterPortraitPrompts.ts";
 
@@ -62,12 +62,12 @@ Deno.serve(async (req: Request) => {
       const model = IMAGE_PROMPT_MODEL;
       const userContent = portraitUserContent(member, houseLook, instruction);
       const meta: CallMeta = { fn: "generate-character-portrait", bookId, userId: user.id };
-      const data = await callClaude(apiKey, {
+      const data = await callLLM(apiKey, {
         model, max_tokens: 400, temperature: 0.8,
         system: [{ type: "text", text: PORTRAIT_SYSTEM, cache_control: { type: "ephemeral" } }],
         messages: [{ role: "user", content: userContent }],
       }, meta);
-      const composed = textFromClaude(data).trim();
+      const composed = textFromLLM(data).trim();
       if (!composed) return json({ error: "Could not compose a portrait prompt." }, 502);
       return json({ prompt: composed });
     }

@@ -94,8 +94,7 @@ render two blocks, both **un-derived** (verbatim from the brief, never re-compre
 **C3 — Add a `heat` axis to the data model.**
 - New field next to `art_theme` (candidate homes: `brief.heat` or `foundations.register`).
   Small enum + free-text note, e.g. `{ level: "closed" | "warm" | "explicit", note?: string }`.
-- Surface a dial in the Brief modal UI (`apps/web` — see
-  `docs/learning_studio_tab_brief_modal.md`).
+- Surface a dial in the Brief modal UI (`apps/web`).
 - Carried verbatim in the MANDATE block (C1) at every stage.
 - Fixes: L2 durably (gives the specifics a typed slot that compression can't drop).
 

@@ -15,7 +15,7 @@ import { type Brief, briefContext } from "../_shared/brief.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { hasEditAccess } from "../_shared/access.ts";
-import { callClaude, textFromClaude } from "../_shared/claude.ts";
+import { callLLM, textFromLLM } from "../_shared/llm.ts";
 import { getActiveModels } from "../_shared/model-config.ts";
 
 
@@ -64,7 +64,7 @@ Deno.serve(async (req: Request) => {
     const title = (page as { title?: string } | null)?.title ?? null;
 
     const { high: model } = await getActiveModels();
-    const data = await callClaude(apiKey, {
+    const data = await callLLM(apiKey, {
       model,
       max_tokens: 1024,
       system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
@@ -78,7 +78,7 @@ Deno.serve(async (req: Request) => {
       }],
     }, { fn: "prose-to-beat", bookId, userId: user.id });
 
-    const beat = textFromClaude(data).trim();
+    const beat = textFromLLM(data).trim();
     if (!beat) return json({ error: "Claude returned no beat." }, 502);
 
     return json({ beat });

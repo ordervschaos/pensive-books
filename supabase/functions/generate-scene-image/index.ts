@@ -18,7 +18,7 @@ import { corsHeaders, json } from "../_shared/cors.ts";
 import { hasEditAccess } from "../_shared/access.ts";
 import { runInBackground, serviceClient } from "../_shared/task.ts";
 import { generateImage, uploadDataUrl } from "../_shared/image.ts";
-import { callClaude, textFromClaude, type CallMeta } from "../_shared/claude.ts";
+import { callLLM, textFromLLM, type CallMeta } from "../_shared/llm.ts";
 import { IMAGE_PROMPT_MODEL } from "../_shared/model-config.ts";
 import { PROMPT_SYSTEM } from "../_shared/sceneImagePrompts.ts";
 
@@ -169,12 +169,12 @@ Deno.serve(async (req: Request) => {
       const userContent = await buildUserContent("Write the image prompt.");
       const apiKey = Deno.env.get("ANTHROPIC_API_KEY") ?? "";
       const meta: CallMeta = { fn: "generate-scene-image", bookId, userId: user.id };
-      const data = await callClaude(apiKey, {
+      const data = await callLLM(apiKey, {
         model: IMAGE_PROMPT_MODEL, max_tokens: 400, temperature: 0.8,
         system: [{ type: "text", text: PROMPT_SYSTEM, cache_control: { type: "ephemeral" } }],
         messages: [{ role: "user", content: userContent }],
       }, meta);
-      return textFromClaude(data).trim();
+      return textFromLLM(data).trim();
     };
 
     // ── mode "spec": compose a STRUCTURED scene spec (the studio rail's field-by-field editor) ──
@@ -182,12 +182,12 @@ Deno.serve(async (req: Request) => {
       const userContent = await buildUserContent("Output the scene spec as JSON.");
       const apiKey = Deno.env.get("ANTHROPIC_API_KEY") ?? "";
       const meta: CallMeta = { fn: "generate-scene-image", bookId, userId: user.id };
-      const data = await callClaude(apiKey, {
+      const data = await callLLM(apiKey, {
         model: IMAGE_PROMPT_MODEL, max_tokens: 700, temperature: 0.7,
         system: [{ type: "text", text: SPEC_SYSTEM, cache_control: { type: "ephemeral" } }],
         messages: [{ role: "user", content: userContent }],
       }, meta);
-      const composed = parseSpec(textFromClaude(data));
+      const composed = parseSpec(textFromLLM(data));
       if (!composed) return json({ error: "Could not compose a scene spec." }, 502);
       return json({ spec: composed });
     }
@@ -209,12 +209,12 @@ Deno.serve(async (req: Request) => {
       );
       const apiKey = Deno.env.get("ANTHROPIC_API_KEY") ?? "";
       const meta: CallMeta = { fn: "generate-scene-image", bookId, userId: user.id };
-      const data = await callClaude(apiKey, {
+      const data = await callLLM(apiKey, {
         model: IMAGE_PROMPT_MODEL, max_tokens: 800, temperature: 0.6,
         system: [{ type: "text", text: REVISE_SPEC_SYSTEM, cache_control: { type: "ephemeral" } }],
         messages: [{ role: "user", content: userContent }],
       }, meta);
-      const obj = parseSpec(textFromClaude(data));
+      const obj = parseSpec(textFromLLM(data));
       if (!obj) return json({ error: "Could not revise the scene spec." }, 502);
       const note = typeof obj.note === "string" ? obj.note.trim() : "";
       delete obj.note;

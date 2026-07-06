@@ -20,7 +20,7 @@ import { type Brief, briefContext, mandateContext } from "../_shared/brief.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { runInBackground, serviceClient } from "../_shared/task.ts";
-import { callClaude as callClaudeApi, textFromClaude, type CallMeta } from "../_shared/claude.ts";
+import { callLLM as callLLMApi, textFromLLM, type CallMeta } from "../_shared/llm.ts";
 import { getActiveModels } from "../_shared/model-config.ts";
 import { extractJsonBlock } from "../_shared/json.ts";
 import { type Foundations, settledContext } from "../_shared/foundations-core.ts";
@@ -174,7 +174,7 @@ interface TentpolePlacement { tentpoleId: string; pageIndex: number }
 interface Scaffold { structure: string; pages: ScaffoldPage[]; threads: ScaffoldThread[]; tentpolePlacements?: TentpolePlacement[] }
 
 // deno-lint-ignore no-explicit-any
-const textOf = (data: any): string => textFromClaude(data).trim();
+const textOf = (data: any): string => textFromLLM(data).trim();
 
 // The brief/spine context block, shared by the draft and revise prompts.
 function bookContext(bookName: string, brief: Brief | null, spine: string | null, foundations: Foundations | null, canon: CanonPacket | null, steer: string): string {
@@ -189,7 +189,7 @@ function bookContext(bookName: string, brief: Brief | null, spine: string | null
 }
 
 async function draftScaffold(apiKey: string, model: string, bookName: string, brief: Brief | null, spine: string | null, foundations: Foundations | null, canon: CanonPacket | null, steer: string, meta: CallMeta): Promise<Scaffold> {
-  const data = await callClaudeApi(apiKey, {
+  const data = await callLLMApi(apiKey, {
     model,
     max_tokens: 8000,
     system: [{ type: "text", text: SYSTEM + (foundations ? FOUNDATIONS_ADDENDUM : ""), cache_control: { type: "ephemeral" } }],
@@ -216,7 +216,7 @@ async function critiqueScaffold(apiKey: string, model: string, bookName: string,
   const threads = draft.threads.length
     ? "\n\nTHREADS:\n" + draft.threads.map((t) => `- ${t.name}: ${t.description} (setup ${t.setupPageIndex} → payoff ${t.payoffPageIndex})`).join("\n")
     : "";
-  const data = await callClaudeApi(apiKey, {
+  const data = await callLLMApi(apiKey, {
     model,
     max_tokens: 2000,
     system: [{ type: "text", text: CRITIQUE_SYSTEM, cache_control: { type: "ephemeral" } }],
@@ -240,7 +240,7 @@ const REVISE_INSTRUCTION = `
 You are REVISING an existing outline to address an editor's critique. Apply EVERY note that improves plot logic, character arc, or genre delivery — change objectives, re-order or add/cut pages, and re-anchor threads as needed. Preserve what already works; this is a revision, not a fresh start. Output the full improved outline as JSON ONLY, in the exact schema above.`;
 
 async function reviseScaffold(apiKey: string, model: string, bookName: string, brief: Brief | null, spine: string | null, foundations: Foundations | null, canon: CanonPacket | null, steer: string, draft: Scaffold, critique: string, meta: CallMeta): Promise<Scaffold> {
-  const data = await callClaudeApi(apiKey, {
+  const data = await callLLMApi(apiKey, {
     model,
     max_tokens: 8000,
     system: [{ type: "text", text: SYSTEM + (foundations ? FOUNDATIONS_ADDENDUM : "") + REVISE_INSTRUCTION, cache_control: { type: "ephemeral" } }],

@@ -93,7 +93,7 @@ const BookDetails = () => {
   const [isPublishingDialogOpen, setIsPublishingDialogOpen] = useState(false);
   const [showArchivedPages, setShowArchivedPages] = useState(false);
   // Manuscript leads the work; the Studio (AI build surface) is its own full-screen route
-  // (/books/:slug/studio), reached via the "Studio" button. The brief is summarized in the header and
+  // (/books/:slug/dna), reached via the "Studio" button. The brief is summarized in the header and
   // edited in a dialog — it no longer has a tab here.
 
   const fetchBookmarkedPage = useCallback(async (session: Session | null) => {
@@ -495,7 +495,7 @@ const BookDetails = () => {
                     />
                   ) : undefined
                 }
-                onOpenStudio={canEdit ? () => navigate(`/books/${bookSlug}/studio`) : undefined}
+                onOpenStudio={canEdit ? () => navigate(`/books/${bookSlug}/dna`) : undefined}
               />
 
             </div>

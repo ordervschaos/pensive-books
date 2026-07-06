@@ -7,7 +7,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Shield, Loader2, ChevronDown, ChevronRight } from "lucide-react";
-import { Link } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 
 interface SlotConfig {
@@ -213,10 +212,7 @@ export default function NodeTypeConfigs() {
     <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
       <div className="flex items-center gap-2">
         <Shield className="h-5 w-5 text-amber-600" />
-        <h1 className="text-xl font-semibold">Node Type Configs</h1>
-        <Link to="/admin/settings" className="ml-auto text-sm text-muted-foreground hover:text-foreground">
-          ← Settings
-        </Link>
+        <h1 className="text-xl font-semibold">Node Types</h1>
       </div>
 
       <Card>

@@ -14,7 +14,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { type Brief, briefContext } from "../_shared/brief.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
-import { callClaude as callClaudeApi, textFromClaude } from "../_shared/claude.ts";
+import { callLLM as callLLMApi, textFromLLM } from "../_shared/llm.ts";
 import { getActiveModels } from "../_shared/model-config.ts";
 import { extractJsonBlock } from "../_shared/json.ts";
 import { tiptapToText } from "../_shared/words.ts";
@@ -149,7 +149,7 @@ Deno.serve(async (req: Request) => {
       ? allThreads.filter(t => threadIdFilter.includes(t.id))
       : allThreads;
 
-    const plan = await callClaude(
+    const plan = await callLLM(
       apiKey,
       book.name,
       book.brief as Brief | null,
@@ -318,7 +318,7 @@ export interface RevisionPlan {
   planOnly?: boolean; // outline-only revision: the apply path changes the plan and writes no prose
 }
 
-async function callClaude(
+async function callLLM(
   apiKey: string,
   bookName: string,
   brief: Brief | null,
@@ -333,7 +333,7 @@ async function callClaude(
   planOnly = false,
 ): Promise<RevisionPlan> {
   const { high: model } = await getActiveModels();
-  const data = await callClaudeApi(apiKey, {
+  const data = await callLLMApi(apiKey, {
     model,
     max_tokens: 16000,
     thinking: { type: "adaptive" },
@@ -352,7 +352,7 @@ async function callClaude(
     ],
   }, { fn: "revise-outline", bookId, userId: userId ?? null });
 
-  const text = textFromClaude(data).trim();
+  const text = textFromLLM(data).trim();
   if (!text) throw new Error("Claude returned no text content.");
   return parsePlan(text, pages, planOnly);
 }

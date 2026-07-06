@@ -2,7 +2,6 @@
 
 > Status: design / north-star for the agent layer. Supersedes nothing; it names the
 > homes for the "agent" ideas across the existing DNA stack. Companion docs:
-> [`sota-story-generation.md`](./sota-story-generation.md) (loops + human gates),
 > [`agent-rail.md`](./agent-rail.md) (one tool-using thread),
 > [`dna-studio-analysis.md`](./dna-studio-analysis.md) (named the missing eval loop),
 > [`novel-dna-meters.md`](./novel-dna-meters.md) (the planned emotional trace),
@@ -150,7 +149,7 @@ Map it to the macro/micro distinction:
   trace diff. Rare, deliberate.
 
 The loop needs a **stop condition** or it thrashes. Build → verify → revise converges to a
-**taste gate** (reuse the human gates from `sota-story-generation.md`), not spin.
+**taste gate** (human approval gates), not spin.
 
 ## Agent modes
 

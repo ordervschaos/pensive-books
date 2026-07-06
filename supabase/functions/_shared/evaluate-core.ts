@@ -10,7 +10,7 @@
 import { type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { EDITOR_STANCE, FICTION_RUBRIC } from "../evaluate-book/rubric.ts";
 import { captureException, isBillingError } from "./sentry.ts";
-import { callClaude as callClaudeApi, textFromClaude, type CallMeta } from "./claude.ts";
+import { callLLM as callLLMApi, textFromLLM, type CallMeta } from "./llm.ts";
 import { extractJsonBlock } from "./json.ts";
 import { tiptapToText } from "./words.ts";
 // evaluate-core renders the brief its own way (a titled block, returns null) so it keeps its local
@@ -320,7 +320,7 @@ async function anthropicCall(
   meta: CallMeta,
   opts: { system: unknown[]; user: string; maxTokens: number; effort: string; timeoutMs: number }
 ): Promise<string> {
-  const data = await callClaudeApi(apiKey, {
+  const data = await callLLMApi(apiKey, {
     model: evalModel,
     max_tokens: opts.maxTokens,
     thinking: { type: "adaptive" },
@@ -329,7 +329,7 @@ async function anthropicCall(
     messages: [{ role: "user", content: opts.user }],
   }, meta, { signal: AbortSignal.timeout(opts.timeoutMs) });
 
-  const text = textFromClaude(data).trim();
+  const text = textFromLLM(data).trim();
   if (!text) throw new Error("Claude returned no text content.");
   return text;
 }

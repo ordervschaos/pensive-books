@@ -49,13 +49,9 @@ interface HeadingNode {
   attrs: { level: number };
   content: InlineNode[];
 }
-interface ImageNode {
-  type: "image";
-  attrs: { src: string };
-}
 interface DocNode {
   type: "doc";
-  content: (HeadingNode | ParagraphNode | ImageNode)[];
+  content: (HeadingNode | ParagraphNode)[];
 }
 
 // Build a page doc from generated/revised prose: a leading h1 title (the Title extension
@@ -68,14 +64,4 @@ export function buildDoc(title: string | null, prose: string): DocNode {
     content: title ? [{ type: "text", text: title }] : [],
   };
   return { type: "doc", content: [heading, ...proseToParagraphs(prose)] };
-}
-
-// Build a picture-book page doc: a leading (empty) h1 the Title extension requires, the scene illustration,
-// then the caption as paragraphs. Used by the DNA reconcile for picture-mode image pages (one per scene).
-export function buildImageDoc(imageUrl: string | null | undefined, caption: string): DocNode {
-  const heading: HeadingNode = { type: "heading", attrs: { level: 1 }, content: [] };
-  const content: (HeadingNode | ParagraphNode | ImageNode)[] = [heading];
-  if (imageUrl) content.push({ type: "image", attrs: { src: imageUrl } });
-  content.push(...proseToParagraphs(caption));
-  return { type: "doc", content };
 }

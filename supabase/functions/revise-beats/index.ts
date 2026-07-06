@@ -14,7 +14,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { type Brief, briefContext } from "../_shared/brief.ts";
 import { corsHeaders, json } from "../_shared/cors.ts";
-import { callClaude as callClaudeApi, textFromClaude } from "../_shared/claude.ts";
+import { callLLM as callLLMApi, textFromLLM } from "../_shared/llm.ts";
 import { getActiveModels } from "../_shared/model-config.ts";
 import { extractJsonBlock } from "../_shared/json.ts";
 import { sanitizePlan, type RevisionPlan } from "../_shared/revision-plan.ts";
@@ -107,7 +107,7 @@ Deno.serve(async (req: Request) => {
     const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!apiKey) return json({ error: "ANTHROPIC_API_KEY not configured" }, 500);
 
-    const plan = await callClaude(
+    const plan = await callLLM(
       apiKey, book.name, book.brief as Brief | null,
       (book.spine as { text?: string } | null)?.text ?? null,
       (book.foundations as Foundations | null) ?? null,
@@ -146,7 +146,7 @@ function threadsContext(threads: ThreadLite[]): string {
     .join("\n");
 }
 
-async function callClaude(
+async function callLLM(
   apiKey: string, bookName: string, brief: Brief | null, spineText: string | null,
   foundations: Foundations | null, pages: PageRow[], threads: ThreadLite[],
   instruction: string | null, lensId: string | null, bookId: number, userId: string,
@@ -154,7 +154,7 @@ async function callClaude(
   const { high: model } = await getActiveModels();
   const settled = foundations ? settledContext(foundations).trim() : "";
   const lens = lensBlock(lensId);
-  const data = await callClaudeApi(apiKey, {
+  const data = await callLLMApi(apiKey, {
     model,
     max_tokens: 16000,
     thinking: { type: "adaptive" },
@@ -175,7 +175,7 @@ async function callClaude(
     ],
   }, { fn: "revise-beats", bookId, userId });
 
-  const text = textFromClaude(data).trim();
+  const text = textFromLLM(data).trim();
   if (!text) throw new Error("Claude returned no text content.");
   let parsed: Partial<RevisionPlan>;
   try {

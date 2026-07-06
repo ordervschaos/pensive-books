@@ -1,5 +1,5 @@
 
-import { BrowserRouter as Router, Routes, Route, useLocation, Outlet } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, useLocation, useParams, Navigate, Outlet } from "react-router-dom";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { PageDisplaySettingsProvider } from "@/contexts/PageDisplaySettingsContext";
 import { Toaster } from "@/components/ui/toaster";
@@ -32,12 +32,11 @@ const ProfileEdit = lazy(() => import("@/pages/user/profile/ProfileEdit"));
 const MyBooks = lazy(() => import("@/pages/books/index/MyBooks"));
 const NewBook = lazy(() => import("@/pages/books/new/NewBook"));
 const BookDetails = lazy(() => import("@/pages/books/show/BookDetails"));
-const StudioPage = lazy(() => import("@/pages/books/studio/StudioPage"));
-const DnaStudioPage = lazy(() => import("@/pages/books/dna/DnaStudioPage"));
-const DnaJsonPage = lazy(() => import("@/pages/books/dna/DnaJsonPage"));
-const DnaTreePage = lazy(() => import("@/pages/books/dna/DnaTreePage"));
-const DnaMetersPage = lazy(() => import("@/pages/books/dna/DnaMetersPage"));
-const DnaLedgerPage = lazy(() => import("@/pages/books/dna/DnaLedgerPage"));
+const DnaJsonPage = lazy(() => import("@/features/dna/pages/DnaJsonPage"));
+const DnaTreePage = lazy(() => import("@/features/dna/pages/DnaTreePage"));
+const DnaMetersPage = lazy(() => import("@/features/dna/pages/DnaMetersPage"));
+const DnaLedgerPage = lazy(() => import("@/features/dna/pages/DnaLedgerPage"));
+const DnaArchitecturePage = lazy(() => import("@/features/dna/pages/DnaArchitecturePage"));
 const DraftChanges = lazy(() => import("@/pages/books/show/DraftChanges"));
 const VersionHistoryPage = lazy(() => import("@/pages/books/show/VersionHistoryPage"));
 const BookEdit = lazy(() => import("@/pages/books/edit/BookEdit"));
@@ -55,6 +54,7 @@ const JoinBook = lazy(() => import("@/pages/invitation/JoinBook"));
 const KindleSettings = lazy(() => import("@/pages/settings/KindleSettings"));
 
 // Admin pages
+const AdminLayout = lazy(() => import("@/pages/admin/AdminLayout"));
 const AdminDashboard = lazy(() => import("@/pages/admin/AdminDashboard"));
 const AdminAiCalls = lazy(() => import("@/pages/admin/AiCalls"));
 const AdminSettings = lazy(() => import("@/pages/admin/AdminSettings"));
@@ -80,9 +80,10 @@ function ConditionalNav() {
   const isTreeRoute = location.pathname.includes('/dna/tree');
   const isMetersRoute = location.pathname.includes('/dna/meters');
   const isLedgerRoute = location.pathname.includes('/dna/ledger');
+  const isArchRoute = location.pathname.includes('/dna/docs');
 
   // Hide nav for page view routes (own fixed settings menu) and dev DNA routes.
-  if (isPageViewRoute || isJsonRoute || isTreeRoute || isMetersRoute || isLedgerRoute) {
+  if (isPageViewRoute || isJsonRoute || isTreeRoute || isMetersRoute || isLedgerRoute || isArchRoute) {
     return null;
   }
 
@@ -103,6 +104,14 @@ function ProtectedLayout() {
       <Outlet />
     </PrivateRoute>
   );
+}
+
+// The vanilla DNA studio was deprecated in favor of the tree (docs/plan-one-studio-consolidation.md) —
+// /dna keeps working as the studio entry point from the book editor. It lands on the tree tab (not Overview):
+// the tree + editor rail is more grounding to start from than the read-only Overview summary.
+function DnaStudioRedirect() {
+  const { bookSlug } = useParams();
+  return <Navigate to={`/books/${bookSlug}/dna/tree`} replace />;
 }
 
 export default function App() {
@@ -142,37 +151,24 @@ export default function App() {
                         element={
                           <PrivateRoute>
                             <AdminRoute>
-                              <AdminDashboard />
+                              <AdminLayout />
                             </AdminRoute>
                           </PrivateRoute>
                         }
-                      />
+                      >
+                        <Route index element={<AdminDashboard />} />
+                        <Route path="ai-calls" element={<AdminAiCalls />} />
+                        <Route path="settings" element={<AdminSettings />} />
+                        <Route path="node-types" element={<AdminNodeTypeConfigs />} />
+                      </Route>
+
+                      {/* DNA architecture atlas — admin only, book-agnostic */}
                       <Route
-                        path="/admin/ai-calls"
+                        path="/dna/docs/architecture"
                         element={
                           <PrivateRoute>
                             <AdminRoute>
-                              <AdminAiCalls />
-                            </AdminRoute>
-                          </PrivateRoute>
-                        }
-                      />
-                      <Route
-                        path="/admin/settings"
-                        element={
-                          <PrivateRoute>
-                            <AdminRoute>
-                              <AdminSettings />
-                            </AdminRoute>
-                          </PrivateRoute>
-                        }
-                      />
-                      <Route
-                        path="/admin/node-types"
-                        element={
-                          <PrivateRoute>
-                            <AdminRoute>
-                              <AdminNodeTypeConfigs />
+                              <DnaArchitecturePage />
                             </AdminRoute>
                           </PrivateRoute>
                         }
@@ -190,14 +186,11 @@ export default function App() {
                         <Route path="/books/:bookSlug/versions" element={<VersionHistoryPage />} />
                         <Route path="/books/:bookSlug/draft" element={<DraftChanges />} />
                         <Route path="/books/:bookSlug" element={<BookDetails />} />
-                        <Route path="/books/:bookSlug/studio" element={<StudioPage />} />
-                        <Route path="/books/:bookSlug/dna" element={<DnaStudioPage />} />
+                        <Route path="/books/:bookSlug/dna" element={<DnaStudioRedirect />} />
                         <Route path="/books/:bookSlug/dna.json" element={<DnaJsonPage />} />
                         <Route path="/books/:bookSlug/dna/meters" element={<DnaMetersPage />} />
                         <Route path="/books/:bookSlug/dna/ledger" element={<DnaLedgerPage />} />
                         <Route path="/books/:bookSlug/dna/tree/*" element={<DnaTreePage />} />
-                        <Route path="/books/:bookSlug/studio/page/:pageId" element={<StudioPage />} />
-                        <Route path="/books/:bookSlug/studio/:step" element={<StudioPage />} />
                         <Route path="/books/:bookSlug/edit" element={<BookEdit />} />
                         <Route path="/books/:bookSlug/pages/:pageSlug" element={<PageView />} />
                       </Route>

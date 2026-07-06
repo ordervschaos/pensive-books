@@ -15,7 +15,7 @@ export const DEFAULT_LOW_MODEL = "claude-haiku-4-5-20251001";
 // Image-PROMPT composition (scene/portrait) is a tiny text task we deliberately keep OFF the Anthropic
 // path so prod doesn't depend on ANTHROPIC_API_KEY for it — it always runs on a cheap OpenRouter
 // (Qwen) model, regardless of the admin tier. (In dev this never runs: the bridge composes on
-// claude-local.) `provider/model` ids route through OPENROUTER_API_KEY in claude.ts.
+// claude-local.) `provider/model` ids route through OPENROUTER_API_KEY in llm.ts.
 export const IMAGE_PROMPT_MODEL = "qwen/qwen3-235b-a22b";
 
 // Continuity-DIGEST model (dna-expand's per-page fold). Deliberately NOT the cheap `low` model (qwen3-8b):
@@ -25,7 +25,7 @@ export const IMAGE_PROMPT_MODEL = "qwen/qwen3-235b-a22b";
 // ~84s/fold — a cold backfill of N pages then blows the ~150s worker ceiling, the fold runs synchronously
 // on the worker). qwen3-235b is the sweet spot: capable enough to read designations correctly (verified on
 // book 1192's "Lot Seven") at ~13s/fold. Pinned regardless of the active tier. `provider/model` routes
-// through OPENROUTER_API_KEY in claude.ts.
+// through OPENROUTER_API_KEY in llm.ts.
 export const DIGEST_MODEL = "qwen/qwen3-235b-a22b";
 
 // high = selected generation model; low = cheap passes (summaries, scans).
@@ -57,5 +57,44 @@ export async function getActiveModels(): Promise<{ high: string; low: string }> 
     return TIER_MODELS[tier] ?? TIER_MODELS.sonnet;
   } catch {
     return TIER_MODELS.sonnet;
+  }
+}
+
+// Per-role models (docs/agent-improvement-plan.md §4c): the agent's reasoning loop, structural JSON, and
+// prose have DIFFERENT best models (the model-prose benchmark; and model-config warns hermes writes great
+// prose but breaks structural JSON). Each role reads its OWN admin_settings tier override, falling back to
+// the base `ai_model_tier` — so with no overrides set every role is the base `high` (identical to before).
+// This lets an admin run prose on a prose-specialist tier while keeping structure/agent on a JSON-reliable
+// one, WITHOUT this code guessing the assignment (that's a taste/benchmark call made from /admin/settings).
+export type ModelRole = "agent" | "structure" | "prose";
+export const ROLE_TIER_KEYS: Record<ModelRole, string> = {
+  agent: "ai_model_tier_agent",
+  structure: "ai_model_tier_structure",
+  prose: "ai_model_tier_prose",
+};
+
+// Pure: resolve the four role models from a (settings key → tier) map. An absent/unknown per-role override
+// falls back to the base tier's `high`, so an empty map yields every role = base high (behaviour-preserving).
+export function resolveRoleModels(tiers: Partial<Record<string, ModelTier>>): { agent: string; structure: string; prose: string; low: string } {
+  const base = TIER_MODELS[(tiers.ai_model_tier as ModelTier) ?? "sonnet"] ?? TIER_MODELS.sonnet;
+  const highOf = (t?: ModelTier) => (t && TIER_MODELS[t]?.high) || base.high;
+  return {
+    agent: highOf(tiers[ROLE_TIER_KEYS.agent]),
+    structure: highOf(tiers[ROLE_TIER_KEYS.structure]),
+    prose: highOf(tiers[ROLE_TIER_KEYS.prose]),
+    low: base.low,
+  };
+}
+
+export async function getRoleModels(): Promise<{ agent: string; structure: string; prose: string; low: string }> {
+  try {
+    const { data } = await serviceClient()
+      .from("admin_settings")
+      .select("key, value")
+      .in("key", ["ai_model_tier", ...Object.values(ROLE_TIER_KEYS)]);
+    const tiers = Object.fromEntries((data ?? []).map((r) => [r.key as string, r.value as ModelTier]));
+    return resolveRoleModels(tiers);
+  } catch {
+    return resolveRoleModels({});
   }
 }

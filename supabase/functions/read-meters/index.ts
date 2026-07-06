@@ -11,7 +11,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
-import { callClaude, textFromClaude, type CallMeta } from "../_shared/claude.ts";
+import { callLLM, textFromLLM, type CallMeta } from "../_shared/llm.ts";
 import { getActiveModels } from "../_shared/model-config.ts";
 import { extractJsonBlock } from "../_shared/json.ts";
 
@@ -55,7 +55,7 @@ Deno.serve(async (req: Request) => {
 
     const { high: model } = await getActiveModels();
     const meta: CallMeta = { fn: "read-meters", bookId, taskTable: "book_nodes", taskId: bookId };
-    const data = await callClaude(apiKey, {
+    const data = await callLLM(apiKey, {
       model,
       max_tokens: 4000,
       thinking: { type: "adaptive" },
@@ -78,7 +78,7 @@ Deno.serve(async (req: Request) => {
       }],
     }, meta, { signal: AbortSignal.timeout(140_000) });
 
-    const text = textFromClaude(data).trim();
+    const text = textFromLLM(data).trim();
     const parsed = JSON.parse(extractJsonBlock(text)) as { readings?: unknown };
     const beatIds = new Set(beats.map((b) => b.beatId));
     const meterIds = new Set(meters.map((m) => m.id));

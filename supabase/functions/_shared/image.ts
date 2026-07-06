@@ -1,5 +1,5 @@
 // image.ts — the single chokepoint for IMAGE generation in edge functions. Text generation goes
-// through claude.ts; images are a different modality (and provider response shape), so they live here.
+// through llm.ts; images are a different modality (and provider response shape), so they live here.
 //
 // We use Gemini 3 Pro Image ("nano-banana-pro") via OpenRouter — the model in our stack that holds
 // CHARACTER CONSISTENCY: pass a character's reference portrait(s) as input images and it renders the

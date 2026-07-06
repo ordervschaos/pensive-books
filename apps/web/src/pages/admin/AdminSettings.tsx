@@ -6,7 +6,6 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Shield, Loader2, CheckCircle2 } from "lucide-react";
-import { Link } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 
 type ModelTier = "opus" | "sonnet" | "deepseek" | "qwen" | "qwen-plus" | "kimi" | "glm" | "minimax" | "gpt" | "hermes";
@@ -86,9 +85,24 @@ const TIERS: { value: ModelTier; label: string; description: string; badge: stri
 
 const ADMIN_SETTINGS = "admin_settings";
 
+// Per-role tier overrides (§4c): prose / structure (outlines, beats, structural JSON) / the agent reasoning
+// loop can each run on a different tier. Empty = "same as the base tier". The keys match _shared/model-config
+// ROLE_TIER_KEYS, whose resolveRoleModels falls back to the base tier for any unset/blank role.
+const ROLE_KEYS = { prose: "ai_model_tier_prose", structure: "ai_model_tier_structure", agent: "ai_model_tier_agent" } as const;
+type RoleKey = keyof typeof ROLE_KEYS;
+type RoleTiers = Record<RoleKey, ModelTier | "">;
+const EMPTY_ROLES: RoleTiers = { prose: "", structure: "", agent: "" };
+const ROLE_HINT: Record<RoleKey, string> = {
+  prose: "Scene prose — where a prose-specialist (e.g. GPT-5.5, Hermes) pays off.",
+  structure: "Outlines, beats, and structural JSON — favor a JSON-reliable model.",
+  agent: "The Studio agent's reasoning + tool loop.",
+};
+
 export default function AdminSettings() {
   const [tier, setTier] = useState<ModelTier>("opus");
   const [saved, setSaved] = useState<ModelTier>("opus");
+  const [roles, setRoles] = useState<RoleTiers>(EMPTY_ROLES);
+  const [savedRoles, setSavedRoles] = useState<RoleTiers>(EMPTY_ROLES);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const { toast } = useToast();
@@ -96,30 +110,40 @@ export default function AdminSettings() {
   useEffect(() => {
     (supabase as any)
       .from(ADMIN_SETTINGS)
-      .select("value")
-      .eq("key", "ai_model_tier")
-      .single()
-      .then(({ data, error }: { data: { value: string } | null; error: unknown }) => {
-        if (!error && data?.value) {
-          const t = data.value as ModelTier;
-          setTier(t);
-          setSaved(t);
+      .select("key, value")
+      .in("key", ["ai_model_tier", ...Object.values(ROLE_KEYS)])
+      .then(({ data, error }: { data: { key: string; value: string }[] | null; error: unknown }) => {
+        if (!error && data) {
+          const map = new Map(data.map((r) => [r.key, r.value]));
+          const t = (map.get("ai_model_tier") as ModelTier) ?? "opus";
+          setTier(t); setSaved(t);
+          const r: RoleTiers = {
+            prose: (map.get(ROLE_KEYS.prose) as ModelTier | "") ?? "",
+            structure: (map.get(ROLE_KEYS.structure) as ModelTier | "") ?? "",
+            agent: (map.get(ROLE_KEYS.agent) as ModelTier | "") ?? "",
+          };
+          setRoles(r); setSavedRoles(r);
         }
         setLoading(false);
       });
   }, []);
 
+  const rolesDirty = (Object.keys(ROLE_KEYS) as RoleKey[]).some((k) => roles[k] !== savedRoles[k]);
+  const dirty = tier !== saved || rolesDirty;
+
   async function save() {
     setSaving(true);
-    const { error } = await (supabase as any)
-      .from(ADMIN_SETTINGS)
-      .update({ value: tier, updated_at: new Date().toISOString() })
-      .eq("key", "ai_model_tier");
+    const now = new Date().toISOString();
+    const rows = [
+      { key: "ai_model_tier", value: tier, updated_at: now },
+      ...(Object.keys(ROLE_KEYS) as RoleKey[]).map((role) => ({ key: ROLE_KEYS[role], value: roles[role], updated_at: now })),
+    ];
+    const { error } = await (supabase as any).from(ADMIN_SETTINGS).upsert(rows, { onConflict: "key" });
     setSaving(false);
     if (error) {
       toast({ title: "Save failed", description: error.message, variant: "destructive" });
     } else {
-      setSaved(tier);
+      setSaved(tier); setSavedRoles(roles);
       toast({ title: "Saved", description: `AI model tier set to ${tier}.` });
     }
   }
@@ -136,15 +160,7 @@ export default function AdminSettings() {
     <div className="max-w-2xl mx-auto px-4 py-8 space-y-6">
       <div className="flex items-center gap-2">
         <Shield className="h-5 w-5 text-amber-600" />
-        <h1 className="text-xl font-semibold">Admin Settings</h1>
-        <div className="ml-auto flex items-center gap-4">
-          <Link to="/admin/node-types" className="text-sm text-muted-foreground hover:text-foreground">
-            Node types
-          </Link>
-          <Link to="/admin" className="text-sm text-muted-foreground hover:text-foreground">
-            ← Dashboard
-          </Link>
-        </div>
+        <h1 className="text-xl font-semibold">Settings</h1>
       </div>
 
       <Card>
@@ -182,9 +198,38 @@ export default function AdminSettings() {
             ))}
           </RadioGroup>
 
-          <Button onClick={save} disabled={saving || tier === saved} className="w-full sm:w-auto">
+          <div className="space-y-3 border-t pt-4">
+            <div>
+              <p className="text-sm font-medium">Per-role model (advanced)</p>
+              <p className="text-xs text-muted-foreground">
+                Run prose, structure, and the agent loop on different tiers — the best prose model and the best
+                structural-JSON model differ (e.g. Hermes writes great prose but is unreliable for JSON).
+                "Same as base" uses the tier selected above.
+              </p>
+            </div>
+            {(Object.keys(ROLE_KEYS) as RoleKey[]).map((role) => (
+              <div key={role} className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <Label className="text-sm capitalize">{role}</Label>
+                  <p className="text-xs text-muted-foreground truncate">{ROLE_HINT[role]}</p>
+                </div>
+                <select
+                  className="shrink-0 rounded-md border border-border bg-background px-2 py-1 text-sm"
+                  value={roles[role]}
+                  onChange={(e) => setRoles({ ...roles, [role]: e.target.value as ModelTier | "" })}
+                >
+                  <option value="">Same as base ({tier})</option>
+                  {TIERS.map((t) => (
+                    <option key={t.value} value={t.value}>{t.label}</option>
+                  ))}
+                </select>
+              </div>
+            ))}
+          </div>
+
+          <Button onClick={save} disabled={saving || !dirty} className="w-full sm:w-auto">
             {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-            {tier === saved ? "Saved" : "Save Changes"}
+            {dirty ? "Save Changes" : "Saved"}
           </Button>
         </CardContent>
       </Card>

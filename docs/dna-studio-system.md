@@ -151,16 +151,16 @@ An always-on conversational agent (`AgentRail`) that has the whole DNA tree in c
 
 | File | Role |
 |---|---|
-| `src/pages/books/dna/DnaStudioPage.tsx` | Page shell, Realtime subscription, data load |
-| `src/components/book/dna/DnaStudio.tsx` | The whole 3-column layout, stage rendering, NodeCard, SortableBeatList |
+| `src/features/dna/pages/DnaStudioPage.tsx` | Page shell, Realtime subscription, data load |
+| `src/features/dna/components/DnaStudio.tsx` | The whole 3-column layout, stage rendering, NodeCard, SortableBeatList |
 | `src/lib/dnaJourney.ts` | Stage status computation, sub-step gating |
 | `src/lib/novelDna.ts` | Node types, pure ops (lock/edit/status), staleness, validate, renderBlockers |
 | `src/lib/dnaExpand.ts` | Client-side `expandNode` → calls edge fn |
-| `src/components/book/dna/DnaOverview.tsx` | Overview dashboard (next move, shape, lints, threads) |
-| `src/components/book/dna/DnaVisuals.tsx` | Visuals control room |
-| `src/components/book/dna/DnaStageDiagram.tsx` | Per-stage shape diagram |
-| `src/components/book/dna/DnaStoryMap.tsx` | Bird's-eye story map on Overview |
-| `src/components/book/dna/DnaAnalysis.tsx` | Pacing / charge / promise analysis |
+| `src/features/dna/components/DnaOverview.tsx` | Overview dashboard (next move, shape, lints, threads) |
+| `src/features/dna/components/DnaVisuals.tsx` | Visuals control room |
+| `src/features/dna/components/DnaStageDiagram.tsx` | Per-stage shape diagram |
+| `src/features/dna/components/DnaStoryMap.tsx` | Bird's-eye story map on Overview |
+| `src/features/dna/components/DnaAnalysis.tsx` | Pacing / charge / promise analysis |
 | `src/components/book/studio/AgentRail.tsx` | Conversational agent rail |
 | `docs/novel-dna-spec.md` | Full data model + phasing |
 | `docs/novel-dna-flow.md` | Generation order graph |

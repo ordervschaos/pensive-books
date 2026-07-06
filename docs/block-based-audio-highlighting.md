@@ -169,6 +169,28 @@ useAudioHighlighting({
 }
 ```
 
+## Click-to-Play
+
+Any rendered block can be clicked to jump audio to that section.
+
+- `use-text-to-speech-blocks.ts` exposes `playBlockByIndex(blockIndex)` — finds the matching block and starts playback there.
+- `use-audio-highlighting.ts` accepts an optional `onBlockClick` callback and attaches click listeners to every `[data-audio-block]` element (cleaned up on unmount). Highlighting and click-handling live in separate `useEffect`s.
+- `use-adaptive-text-to-speech.ts` passes `playBlockByIndex` through (no-op fallback in legacy mode).
+- Integration points: `TextPageContent.tsx`, `PageWithAudio.tsx`.
+- **Layout-shift lesson:** clickable/hover effects use `box-shadow`, never padding/margin, to avoid reflow. (The blue hover CSS is currently disabled in `index.css`.)
+
+## Expressive Narration (SSML)
+
+Narration is marked up with SSML before being sent to ElevenLabs for natural emphasis, pauses, and prosody.
+
+- `blockToSsml()` in `generate-page-audio-blocks/index.ts` (and `generate-page-audio/index.ts`) wraps text in `<speak>` and applies `<emphasis>`, `<break>`, and `<prosody>` by block type:
+  - Headings → `<emphasis level="strong">` + a `<break>` (0.5–0.8s by level).
+  - Paragraphs → sentence/comma `<break>`s for pacing.
+  - Blockquotes → `<prosody pitch="-5%">` + surrounding pauses.
+  - List items → short intro/outro pauses.
+- ElevenLabs voice settings: `stability 0.5`, `similarity_boost 0.8`, `style 0.3`, `use_speaker_boost true`. **Why:** higher `style` (>0.5) or lower `stability` made the model hallucinate inserted words; `similarity_boost 0.8` keeps it faithful to the source.
+- SSML is computed before the API call, so generation time and storage are unchanged.
+
 ## Files Created/Modified
 
 ### New Files

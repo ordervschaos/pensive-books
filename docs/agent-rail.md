@@ -9,7 +9,7 @@
 > only the tools + mount point changed. The §5 "layers" below now read as DNA node kinds, grouped into
 > the §6b aspects (promise / characters / beats / scenes / prose).
 
-> **Relationship to `docs/chat-first-studio.md`.** That plan unified the studio onto a chat-first
+> **Relationship to the prior chat-first plan.** That plan unified the studio onto a chat-first
 > model but kept **one chat per layer** (foundations / spine / beats / outline each own a
 > `revision_chats` thread; DNA owns `dna_chats`; scenes owned an ephemeral in-component chat). This
 > plan goes one step further — option **B**: collapse those six surfaces into **one durable,
