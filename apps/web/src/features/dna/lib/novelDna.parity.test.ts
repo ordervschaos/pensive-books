@@ -165,6 +165,80 @@ function stampShapeFit(fresh: boolean): DnaNode[] {
   return nodes;
 }
 
+// Synopsis-read fixtures (W2): the same plan as shapeBase, with a PAID craft verdict written onto the PILLAR.
+// boredom_risk scores 2 (fires, anchored to its worst beat), stakes_clarity scores 1 with an unknown worst
+// (fires on the pillar), genre_feel scores exactly the floor (3 — silent), predictability scores 4 (silent).
+// The seal gates it exactly like the shape read: a fresh hash fires, a wrong hash stays silent.
+function stampCraft(fresh: boolean): DnaNode[] {
+  const nodes = shapeBase();
+  const pillar = nodes.find((n) => n.id === "sf_pil")!;
+  const input = web.buildSynopsisReadInput(nodes)!;
+  const observed_craft = [
+    { axis: "boredom_risk", score: 2, worst: "sf_b2", note: "the road coasts between checkpoints" },
+    { axis: "predictability", score: 4 },
+    { axis: "genre_feel", score: 3, note: "quest furniture without quest wonder" },
+    { axis: "stakes_clarity", score: 1, worst: "not_a_node" }, // unknown worst → anchors to the pillar
+  ];
+  pillar.content = { ...pillar.content, observed_craft, observed_craft_hash: fresh ? web.synopsisReadHash(input) : "stale-hash" };
+  return nodes;
+}
+
+// W3 prose-lint fixture: planted MECHANICAL faults for the deterministic read layer — an adjacent verbatim
+// echo (pp_s1→pp_s2 share one distinctive 5-gram), a flat-cadence scene (pp_s3: 8 five-word sentences, CV 0),
+// a name-soup scene (pp_s4: 180 words dense with Mara/Okonkwo), and a 3-run of all-dialogue scenes
+// (pp_s5..pp_s7). The narration run at the head also exercises the ≤10% dialogue extreme.
+function proseBook(): DnaNode[] {
+  const pillar = mk("pillar", { id: "pp_pil", content: {} });
+  const c1 = mk("character", { id: "pp_c1", parent_id: "pp_pil", content: { name: "Mara Voss", role: "protagonist" } });
+  const c2 = mk("character", { id: "pp_c2", parent_id: "pp_pil", content: { name: "Okonkwo", role: "ally" } });
+  const a1 = mk("act", { id: "pp_a1", parent_id: "pp_pil", position: 0, content: { title: "One" } });
+  const b1 = mk("beat", { id: "pp_b1", parent_id: "pp_a1", position: 0, content: { summary: "planted faults" } });
+  const flat = "Mara walked to the door. Rain hammered on the glass. She counted every grey step. The lamp guttered in silence. Something moved behind the curtain. Her hands would not settle. The clock ticked past midnight. Nobody answered her second knock.";
+  const soup = Array.from({ length: 12 }, () => "Mara watched Okonkwo pace. Mara told Okonkwo that Mara would carry the lantern north again.").join(" ");
+  const sc = (id: string, pos: number, text: string) =>
+    mk("scene", { id, parent_id: "pp_b1", position: pos, content: { goal: "g", value_shift: vs(pos % 2 ? "up" : "down"), prose: { text } } });
+  return [pillar, c1, c2, a1, b1,
+    sc("pp_s1", 0, "The copper weathervane spun over marshland."),
+    sc("pp_s2", 1, "She remembered the copper weathervane spun over water."),
+    sc("pp_s3", 2, flat),
+    sc("pp_s4", 3, soup),
+    sc("pp_s5", 4, '"Where is it?" she asked.\n"Gone," he said.'),
+    sc("pp_s6", 5, '"You promised me," she said.\n"I lied," he said.'),
+    sc("pp_s7", 6, '"Open the box," she said.\n"No," he said.'),
+  ];
+}
+
+// Sketch/direction fixtures (doc_1783198900000_dna_scene_direction.md): a thread payoff shown in summary/far
+// direction (promise_undramatized fires on sk_s2), and a LATER scene with no promise work of its own (sk_s3)
+// repeating that same direction (direction_monotone fires on sk_s3, against the last SKETCHED scene in
+// reading order — even across the beat boundary). sk_s1/sk_s4 are clean control scenes.
+function sketchBook(): DnaNode[] {
+  const pillar = mk("pillar", { id: "sk_pil", content: {} });
+  const thread = mk("thread", { id: "sk_t1", parent_id: "sk_pil", content: { name: "the debt", promise: "she owes the guild" } });
+  const a1 = mk("act", { id: "sk_a1", parent_id: "sk_pil", position: 0, content: { title: "One" } });
+  const b1 = mk("beat", { id: "sk_b1", parent_id: "sk_a1", position: 0, content: { summary: "Setup.", polarity: "down" } });
+  const b2 = mk("beat", { id: "sk_b2", parent_id: "sk_a1", position: 1, content: { summary: "Payoff.", polarity: "up" } });
+  const s1 = mk("scene", { id: "sk_s1", parent_id: "sk_b1", position: 0, content: { goal: "meet the creditor", value_shift: vs("down"), sketch: { direction: { mode: "dialogue", distance: "close", tension: "suspense" } } } });
+  const s2 = mk("scene", { id: "sk_s2", parent_id: "sk_b1", position: 1, content: { goal: "face the debt", value_shift: vs("down"), threads: [{ ref: "sk_t1", role: "payoff" }], sketch: { direction: { mode: "summary", distance: "far", tension: "mystery" } } } });
+  const s3 = mk("scene", { id: "sk_s3", parent_id: "sk_b2", position: 0, content: { goal: "walk the long road home", value_shift: vs("up"), sketch: { direction: { mode: "summary", distance: "far", tension: "mystery" } } } });
+  const s4 = mk("scene", { id: "sk_s4", parent_id: "sk_b2", position: 1, content: { goal: "settle the ledger", value_shift: vs("up"), sketch: { direction: { mode: "action", distance: "close", tension: "irony" } } } });
+  return [pillar, thread, a1, b1, b2, s1, s2, s3, s4];
+}
+
+// A fully-drafted book whose only outstanding debt is one open thread — the promises ENDGAME (debt-based
+// completion). Exercises obligationLedger/debtSettled and the objective's OPEN PROMISES block in both twins.
+function endgameBook(): DnaNode[] {
+  const seed = mk("seed", { id: "eg_seed", content: { logline: "A diver must raise a drowned bell." } });
+  const premise = mk("premise", { id: "eg_prem", parent_id: "eg_seed", content: { dramatic_question: "Will the bell ring again?" } });
+  const pillar = mk("pillar", { id: "eg_pil", parent_id: "eg_prem", content: { controlling_idea: "Salvage is grief work.", ending: "It rings." } });
+  const hero = mk("character", { id: "eg_ch1", parent_id: "eg_pil", content: { name: "Ndidi", role: "protagonist" } });
+  const thread = mk("thread", { id: "eg_th1", parent_id: "eg_pil", content: { name: "the sealed hatch", promise: "what's behind it surfaces" } });
+  const a1 = mk("act", { id: "eg_a1", parent_id: "eg_pil", position: 0, content: { title: "Down", goal: "reach the wreck" } });
+  const b1 = mk("beat", { id: "eg_b1", parent_id: "eg_a1", position: 0, content: { summary: "She finds the hatch." } });
+  const s1 = mk("scene", { id: "eg_s1", parent_id: "eg_b1", position: 0, content: { goal: "open it", pov: "eg_ch1", value_shift: vs("down"), threads: [{ ref: "eg_th1", role: "setup" }], prose: { text: "The hatch held.", words: 3 } } });
+  return [seed, premise, pillar, hero, thread, a1, b1, s1];
+}
+
 const settings: BookSettings = { title: "The Folding City", author: "A. Nzal", word_target: 60000 };
 const j = (v: unknown) => JSON.stringify(v);
 
@@ -177,6 +251,9 @@ const cases: [string, (m: typeof web, n: DnaNode[]) => unknown][] = [
   ["isRenderable", (m, n) => m.isRenderable(n, settings)],
   ["causality", (m, n) => m.causality(n)],
   ["promiseLedger", (m, n) => m.promiseLedger(n)],
+  // The obligation ledger (debt-based completion): the driver's endgame will read this at the edge too.
+  ["obligationLedger", (m, n) => m.obligationLedger(n)],
+  ["debtSettled", (m, n) => m.debtSettled(n)],
   ["pacing", (m, n) => m.pacing(n)],
   ["topography", (m, n) => m.topography(n)],
   ["ledgerFull", (m, n) => m.ledgerFull(n)],
@@ -191,10 +268,18 @@ const cases: [string, (m: typeof web, n: DnaNode[]) => unknown][] = [
   ["chapters", (m, n) => m.chapters(n)],
   // §3c canonicalization is pure string work (ignores the nodes arg) — lock the twin to the web engine.
   ["canonicalizeKey", (m) => ["redemption_funds", "redemtion_fund", "door_open", "won"].map((k) => m.canonicalizeKey(k, ["redemption_fund", "door_open", "win"]))],
+  // Lint config: the genre presets AND validate under a non-default config must agree twin-to-twin.
+  ["lintConfigForBrief", (m) => [m.lintConfigForBrief(null), m.lintConfigForBrief({ genre: "psychological thriller" }), m.lintConfigForBrief({ genre: ["Literary", "drama"] })]],
+  ["validate+tautConfig", (m, n) => m.validate(n, m.lintConfigForBrief({ genre: "thriller" }))],
+  // The synopsis read's assembler + seal (W2) — the craft_flag lint recomputes both, so they must agree.
+  ["buildSynopsisReadInput", (m, n) => m.buildSynopsisReadInput(n)],
+  ["synopsisReadHash", (m, n) => { const i = m.buildSynopsisReadInput(n); return i ? m.synopsisReadHash(i) : null; }],
+  // W3: the deterministic prose linter — the twins must reach identical mechanical verdicts.
+  ["proseLints", (m, n) => m.proseLints(n, m.DEFAULT_LINT_CONFIG)],
 ];
 
 describe("novel-dna edge twin ↔ web engine parity", () => {
-  const fixtures: [string, DnaNode[]][] = [["goodBook", goodBook()], ["brokenBook", brokenBook()], ["registryBook", registryBook()], ["exposureBook", exposureBook()], ["ledgerAtBook", ledgerAtBook()], ["verticalBook", verticalBook()], ["shapeFitFresh", stampShapeFit(true)], ["shapeFitStale", stampShapeFit(false)]];
+  const fixtures: [string, DnaNode[]][] = [["goodBook", goodBook()], ["brokenBook", brokenBook()], ["registryBook", registryBook()], ["exposureBook", exposureBook()], ["ledgerAtBook", ledgerAtBook()], ["verticalBook", verticalBook()], ["shapeFitFresh", stampShapeFit(true)], ["shapeFitStale", stampShapeFit(false)], ["craftFresh", stampCraft(true)], ["craftStale", stampCraft(false)], ["proseBook", proseBook()], ["sketchBook", sketchBook()]];
   for (const [fxName, nodes] of fixtures) {
     for (const [fnName, fn] of cases) {
       it(`${fnName} agrees on ${fxName}`, () => {
@@ -205,6 +290,11 @@ describe("novel-dna edge twin ↔ web engine parity", () => {
 
   it("the broken fixture actually produces lints (guards against a no-op test)", () => {
     expect(web.validate(brokenBook()).length).toBeGreaterThan(0);
+  });
+
+  it("the prose fixture trips all four prose rules (guards against a no-op fixture)", () => {
+    const rules = web.proseLints(proseBook(), web.DEFAULT_LINT_CONFIG).map((i) => i.rule);
+    for (const r of ["prose_echo", "monotone_rhythm", "name_soup", "dialogue_flatline"]) expect(rules).toContain(r);
   });
 });
 
@@ -232,6 +322,26 @@ describe("vertical-fit lints", () => {
   });
 });
 
+// Sketch/direction lints (doc_1783198900000_dna_scene_direction.md): the scene TREATMENT layer between plan
+// and prose. Fires only once a scene has a sketch.
+describe("sketch/direction lints", () => {
+  it("flags a thread payoff shown in summary/far direction (promise present but not dramatized)", () => {
+    const issues = web.validate(sketchBook()).filter((i) => i.rule === "promise_undramatized");
+    expect(issues.map((i) => i.nodeId)).toEqual(["sk_s2"]);
+  });
+
+  it("flags a later scene repeating the same direction as the prior sketched scene", () => {
+    const issues = web.validate(sketchBook()).filter((i) => i.rule === "direction_monotone");
+    expect(issues.map((i) => i.nodeId)).toEqual(["sk_s3"]);
+  });
+
+  it("stays silent on scenes without a sketch yet (early, not wrong)", () => {
+    const rules = web.validate(goodBook()).map((i) => i.rule);
+    expect(rules).not.toContain("promise_undramatized");
+    expect(rules).not.toContain("direction_monotone");
+  });
+});
+
 // The shape read (doc_1783113903000_shape_read_spec.md): the paid semantic verdict, gated by the staleness seal.
 describe("the shape read (movement_unfit)", () => {
   it("fires on a FRESH low-fit verdict, anchored to the worst node (empty mapping counts as fit 0)", () => {
@@ -245,6 +355,27 @@ describe("the shape read (movement_unfit)", () => {
   it("stays SILENT on a STALE verdict (the seal no longer matches the tree)", () => {
     const rules = web.validate(stampShapeFit(false)).map((i) => i.rule);
     expect(rules).not.toContain("movement_unfit");
+  });
+});
+
+// The synopsis read (W2): the shift-left craft verdict on the PLAN, gated by the same staleness-seal idea.
+describe("the synopsis read (craft_flag)", () => {
+  it("fires per FRESH sub-floor axis, anchored to the worst beat (unknown worst falls back to the pillar)", () => {
+    const issues = web.validate(stampCraft(true)).filter((i) => i.rule === "craft_flag");
+    expect(issues.map((i) => i.nodeId).sort()).toEqual(["sf_b2", "sf_pil"]);
+    expect(issues.find((i) => i.nodeId === "sf_b2")?.message).toBe("the synopsis read scores boredom_risk 2/5 — the road coasts between checkpoints");
+    expect(issues.find((i) => i.nodeId === "sf_pil")?.message).toBe("the synopsis read scores stakes_clarity 1/5");
+  });
+
+  it("does not fire at or above the floor (genre_feel 3 and predictability 4 stay silent)", () => {
+    const messages = web.validate(stampCraft(true)).filter((i) => i.rule === "craft_flag").map((i) => i.message);
+    expect(messages.some((m) => m.includes("genre_feel"))).toBe(false);
+    expect(messages.some((m) => m.includes("predictability"))).toBe(false);
+  });
+
+  it("stays SILENT on a STALE verdict (the seal no longer matches the tree)", () => {
+    const rules = web.validate(stampCraft(false)).map((i) => i.rule);
+    expect(rules).not.toContain("craft_flag");
   });
 });
 

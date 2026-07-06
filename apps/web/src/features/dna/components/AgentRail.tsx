@@ -519,6 +519,26 @@ function StepBubble({ step, nodes }: { step: AgentStep; nodes: DnaNode[] }) {
     );
   }
   if (step.t === "applied" || step.t === "discarded") return <ResolvedCard step={step} nodes={nodes} />;
+  // decision — an auto-mode creative fork the agent journaled via ask_author (question + the options it
+  // weighed; its pick is stated in the question text). Kept in the feed so the author can revisit every
+  // fork after an autonomous run, in order.
+  if (step.t === "decision") {
+    return (
+      <div className="rounded-xl border border-[hsl(var(--pv-accent))]/25 bg-[hsl(var(--pv-accent))]/[0.04] px-3 py-2">
+        <div className="flex items-baseline gap-2">
+          <span className="pv-mono shrink-0 text-[9.5px] uppercase tracking-[0.12em] text-[hsl(var(--pv-accent))]">⑂ fork</span>
+          <span className="pv-serif text-[12.5px] leading-[1.5] text-[hsl(var(--pv-text-muted))]">{humanizeNodeRefs(step.label, index)}</span>
+        </div>
+        {(step.options ?? []).length > 0 && (
+          <div className="mt-1.5 flex flex-col gap-1 pl-1">
+            {step.options!.map((opt, i) => (
+              <p key={i} className="pv-serif text-[11.5px] leading-[1.45] text-[hsl(var(--pv-text-faint))]">· {opt}</p>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
   // note / ask / done — the agent speaking. Rehydrate any bare node-id references into human labels first.
   return (
     <div className="max-w-[92%] pv-serif text-[14.5px] leading-[1.62] text-[hsl(var(--pv-text-muted))] prose prose-sm max-w-none dark:prose-invert prose-p:my-2 prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0 prose-headings:text-foreground prose-strong:text-foreground prose-strong:font-semibold">

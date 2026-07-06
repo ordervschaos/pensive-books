@@ -4,7 +4,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { BRIDGE, bridgeFetch } from "@/lib/bridge";
 import { deleteNode, loadTree, saveNode, saveNodes } from "@/features/dna/lib/bookNodes";
-import { byId, deepMergeContent, emptyNode, gameTwins, newId, PARENT_KIND, pillarOf, stampInput, stampProse, type BeatContent, type DnaNode, type GameContent, type MeterContent, type NodeContent, type NodeKind, type RenderBrief, type SceneContent, type ThreadContent, type ThreadRef } from "@/features/dna/lib/novelDna";
+import { byId, deepMergeContent, emptyNode, gameTwins, newId, PARENT_KIND, pillarOf, stampInput, stampProse, stampSketch, type BeatContent, type DnaNode, type GameContent, type MeterContent, type NodeContent, type NodeKind, type RenderBrief, type SceneContent, type SceneSketch, type TentpoleContent, type ThreadContent, type ThreadRef, type VoiceContent } from "@/features/dna/lib/novelDna";
 import { logAgentTurn, stageGeneratedProposal, type AgentProposal } from "@/features/dna/lib/agentThread";
 import type { NewSubtree, NodeOp } from "@/features/dna/lib/dnaChat";
 
@@ -25,6 +25,9 @@ interface MintedThread { id: string; content: NodeContent }
 interface ExpandResult {
   childKind?: NodeKind; childLevel?: number; children?: NodeContent[]; prose?: string; logline?: string;
   beatsheet?: boolean; beats?: BeatSheetEntry[]; actIds?: string[]; threads?: MintedThread[]; prepared?: PreparedProse;
+  // target 'contract' (W1: compile the brief) — genre tentpoles + seeded meters + register bounds.
+  contract?: boolean; tentpoles?: { summary?: string }[]; meters?: MeterContent[]; voice_constraints?: string[];
+  sketch?: SceneSketch; // target 'sketch' — the scene treatment (what/how), generated before prose
 }
 
 // Browser-owned orchestration of the per-call retry. The dominant prod failure is a HUNG edge call:
@@ -159,7 +162,7 @@ async function callExpand(bookId: number, nodeId: string, target: string, signal
     const prose = await streamProse(prepared, signal);
     return { prose };
   }
-  return invokeWithRetry({ bookId, nodeId, target }, signal);
+  return invokeWithRetry({ bookId, nodeId, target, brief }, signal);
 }
 
 const wordCount = (t: string) => (t.trim() ? t.trim().split(/\s+/).length : 0);
@@ -264,6 +267,22 @@ export async function expandNode(
     return { added: 0, text };
   }
 
+  if (target === "sketch") {
+    // Scene → sketch: write the scene's OWN treatment (what/how this page renders), not a child node — the
+    // same own-content pattern as logline. Stamped so an edit to the scene's spec (or the sketch itself)
+    // correctly badges it stale (isSketchStale); prose_src_hash already covers the sketch for free since it
+    // hashes the whole plan.
+    const sketch = res.sketch;
+    if (!sketch) throw new Error("No sketch was generated.");
+    const updated: DnaNode = {
+      ...node,
+      content: deepMergeContent(node.content, { sketch }),
+      authoring: { ...node.authoring, source: node.authoring.source === "user" ? "ai_then_user" : "ai", status: "accepted" },
+    };
+    await saveNode(stampSketch(updated));
+    return { added: 0 };
+  }
+
   if (target === "prose") {
     const text = (res.prose ?? "").trim();
     if (!text) throw new Error("No prose was generated.");
@@ -277,6 +296,7 @@ export async function expandNode(
   }
 
   if (res.beatsheet) return persistBeatSheet(bookId, res);
+  if (res.contract) return persistContract(bookId, res);
 
   const children = res.children ?? [];
   if (!children.length) throw new Error("No children were generated.");
@@ -394,6 +414,75 @@ async function persistBeatSheet(bookId: number, res: ExpandResult): Promise<{ ad
   return { added: made.length };
 }
 
+// ── The compiled brief CONTRACT (W1) ─────────────────────────────────────────
+// Skip-if-present derivation shared by BOTH contract exits: which of the engine's tentpoles/meters are
+// genuinely NEW against the tree (case-insensitive summary/name match) plus the voice-constraint merge
+// (dedupe, existing entries preserved in order). Pure — the exits decide how to land it.
+export function contractDelta(tree: DnaNode[], res: Pick<ExpandResult, "tentpoles" | "meters" | "voice_constraints">): {
+  tentpoles: string[]; meters: MeterContent[];
+  voice?: { node?: DnaNode; merged: string[] }; // node undefined = no voice_profile exists yet
+} {
+  const norm = (s: unknown) => String(s ?? "").trim().toLowerCase();
+  const haveTp = new Set(tree.filter((n) => n.kind === "tentpole").map((n) => norm((n.content as TentpoleContent).summary)));
+  const haveM = new Set(tree.filter((n) => n.kind === "meter").map((n) => norm((n.content as MeterContent).name)));
+  const tentpoles: string[] = [];
+  for (const t of res.tentpoles ?? []) {
+    const summary = String(t?.summary ?? "").trim();
+    if (summary && !haveTp.has(norm(summary))) { haveTp.add(norm(summary)); tentpoles.push(summary); }
+  }
+  const meters: MeterContent[] = [];
+  for (const m of res.meters ?? []) {
+    const name = String(m?.name ?? "").trim();
+    if (name && !haveM.has(norm(name))) { haveM.add(norm(name)); meters.push({ ...m, name }); }
+  }
+  const incoming = (res.voice_constraints ?? []).map((c) => String(c ?? "").trim()).filter(Boolean);
+  let voice: { node?: DnaNode; merged: string[] } | undefined;
+  if (incoming.length) {
+    const vp = tree.find((n) => n.kind === "voice_profile");
+    const current = Array.isArray((vp?.content as VoiceContent | undefined)?.constraints) ? (vp!.content as VoiceContent).constraints! : [];
+    const have = new Set(current.map(norm));
+    const news = incoming.filter((c) => !have.has(norm(c)) && (have.add(norm(c)), true));
+    if (news.length) voice = { node: vp, merged: [...current, ...news] };
+  }
+  return { tentpoles, meters, voice };
+}
+
+/** Persist the compiled brief contract: tentpole/meter nodes under the pillar + register bounds merged into
+ *  the voice profile. Idempotent — contractDelta skips everything already in the tree, so a re-run lands
+ *  nothing new. When no voice_profile exists, a DRAFT one is created carrying ONLY the constraints: the
+ *  tree-wide validate() emits no missing_field for its empty required `style` (that rule fires only at the
+ *  validateOps add boundary + the completeness score), the prompt-side voiceBlock reads the node regardless
+ *  of status, and `draft` keeps it visibly unfinished until the voice step fills the style. */
+export async function persistContract(bookId: number, res: ExpandResult): Promise<{ added: number }> {
+  const tree = await loadTree(bookId);
+  const pillar = pillarOf(tree);
+  if (!pillar) throw new Error("No pillar yet — accept the pillar before compiling the contract.");
+  const delta = contractDelta(tree, res);
+  let tpPos = tree.filter((n) => n.kind === "tentpole" && n.parent_id === pillar.id).length;
+  let mPos = tree.filter((n) => n.kind === "meter" && n.parent_id === pillar.id).length;
+  const mk = (kind: NodeKind, position: number, content: NodeContent): DnaNode =>
+    ({ id: newId(), book_id: bookId, parent_id: pillar.id, level: 2, kind, position, content, authoring: { source: "ai", locked: false, status: "accepted" } });
+  const made: DnaNode[] = [
+    ...delta.tentpoles.map((summary) => mk("tentpole", tpPos++, { summary })),
+    ...delta.meters.map((content) => mk("meter", mPos++, content as NodeContent)),
+  ];
+  if (made.length) {
+    const index = byId([pillar, ...made]);
+    await saveNodes(made.map((n) => stampInput(n, index)));
+  }
+  if (delta.voice) {
+    if (delta.voice.node) {
+      const vp = delta.voice.node;
+      // Additive merge on a taste field — authoring untouched (the profile stays whose-ever it was).
+      await saveNode({ ...vp, content: { ...vp.content, constraints: delta.voice.merged } });
+    } else {
+      const node: DnaNode = { ...mk("voice_profile", 0, { constraints: delta.voice.merged }), authoring: { source: "ai", locked: false, status: "draft" } };
+      await saveNode(stampInput(node, byId([pillar, node])));
+    }
+  }
+  return { added: made.length + (delta.voice ? 1 : 0) };
+}
+
 // ── The PROPOSE path — generate, but don't commit ────────────────────────────
 // expandNode commits the engine's output as authoritative, accepted nodes. generateExpansionOps runs the
 // SAME engine (callExpand) but converts the result into reviewable node OPS instead of saving — so a
@@ -418,6 +507,26 @@ export async function generateExpansionOps(bookId: number, node: DnaNode, target
     const text = (res.prose ?? "").trim();
     if (!text) throw new Error("No prose was generated.");
     return { ops: [{ op: "edit", id: node.id, content: { prose: { text, words: wordCount(text) } } }], summary: `Write prose (${wordCount(text)}w)` };
+  }
+  if (res.contract) {
+    const tree = await loadTree(bookId);
+    const delta = contractDelta(tree, res);
+    const ops: NodeOp[] = [
+      // parentId = the triggering node (the pillar); applyNodeOps re-homes pillar-parented kinds anyway.
+      ...delta.tentpoles.map((summary): NodeOp => ({ op: "add", kind: "tentpole", parentId: node.id, content: { summary } })),
+      ...delta.meters.map((content): NodeOp => ({ op: "add", kind: "meter", parentId: node.id, content: content as NodeContent })),
+    ];
+    // Register bounds ride an EDIT of the existing voice profile (a patch, so validateOps passes it). With
+    // NO voice_profile in the tree they're dropped on THIS exit: an `add` op can't carry an empty required
+    // `style` past the fail-closed boundary — the commit exit (persistContract) creates the draft carrier.
+    if (delta.voice?.node) ops.push({ op: "edit", id: delta.voice.node.id, content: { constraints: delta.voice.merged } });
+    if (!ops.length) throw new Error("The brief's contract is already compiled — nothing new to derive.");
+    const parts = [
+      delta.tentpoles.length ? `${delta.tentpoles.length} tentpoles` : "",
+      delta.meters.length ? `${delta.meters.length} meters` : "",
+      delta.voice?.node ? "register bounds" : "",
+    ].filter(Boolean);
+    return { ops, summary: `Compile the brief's contract (${parts.join(", ")})` };
   }
   if (res.beatsheet) {
     const actIds = res.actIds ?? [];

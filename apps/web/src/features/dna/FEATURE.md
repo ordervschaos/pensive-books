@@ -43,14 +43,14 @@ private), the editor never needs to know DNA exists.
 | `pages/` | 4 route components: `DnaTreePage` (`/dna/tree/*` — the ONE studio surface, three tabs: `overview` / `tree` / `taste`; `/books/:slug/dna` redirects to `/dna/tree/overview`), `DnaMetersPage`, `DnaLedgerPage`, `DnaJsonPage` |
 | `components/` | 6 UI components: `AgentRail` (the agent thread rail), `TreeOverviewTab` (wraps `DnaOverview` in the tree's dark chrome for the `overview` tab), `DnaOverview`, `DnaStoryMap`, `DnaAnalysis`, `DnaStageDiagram` (now just `DnaFullDiagram`, Overview's shape panel) |
 | `hooks/` | `useAutoAccept` (auto-applies agent proposals) |
-| `lib/` | engine + clients (DNA-only): `novelDna` (pure tree engine), `novelDnaRender` (tree→pages), `bookNodes` (DB load/save), `dnaSchema` (SSOT content schema + lints), `dnaChat`, `dnaExpand` (the generation engine; the agent drives it via `propose_expansion`), `dnaJourney`, `dnaProposals`, `agentThread`, `migrateToDna`, `meterRead`, `factLedger`, `agentCommands` (+ their `.test.ts`) |
+| `lib/` | engine + clients (DNA-only): `novelDna` (pure tree engine), `novelDnaRender` (tree→pages), `bookNodes` (DB load/save), `dnaSchema` (SSOT content schema + lints), `dnaChat`, `dnaExpand` (the generation engine; the agent drives it via `propose_expansion`), `dnaJourney`, `dnaProposals`, `agentThread`, `migrateToDna`, `meterRead`, `shapeRead`, `synopsisRead` (the plan-plane "editor's read" → `craft_flag`), `factLedger`, `confusionRead` (the cold-reader pass → `reader_confusion`), `agentCommands` (+ their `.test.ts`) |
 
 Routes are registered in `apps/web/src/App.tsx`.
 
 ## Edge functions — `supabase/functions/` (cannot move; see below)
 
 Invoked by the web layer above:
-`dna-expand` · `dna-chat` · `book-agent` · `read-meters` · `read-facts`
+`dna-expand` · `dna-chat` · `book-agent` · `read-meters` · `read-facts` · `read-shape` · `read-synopsis` · `read-confusion`
 (siblings `beats-agent`, `revise-node` also belong to the feature.)
 
 The committed schema artifact `supabase/functions/_shared/dna-schema.json` is the

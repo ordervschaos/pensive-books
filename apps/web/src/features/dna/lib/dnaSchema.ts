@@ -73,14 +73,20 @@ export const NODE_SCHEMA: Partial<Record<NodeKind, EditSpec[]>> = {
     { key: "mood", label: "mood", multiline: true },
   ],
   thread: [{ key: "name", label: "name", required: true }, { key: "kind", label: "kind", type: "select", options: ["mystery", "foreshadow", "setup_payoff", "arc"] }, { key: "promise", label: "promise", multiline: true, required: true }, { key: "payoff", label: "payoff", multiline: true },
-    // owner: set only on an auto-minted game-resolution twin (→ game id); the reconciler's idempotency key.
-    { key: "owner", label: "owner", genOnly: true, note: "[game id] — set on the auto-minted game-resolution thread" }],
+    // owner: the node this thread is ABOUT — a game id on the auto-minted game-resolution twin (the
+    // reconciler's idempotency key), a character id on a minted ARC thread (the dead_arc lint's join key).
+    { key: "owner", label: "owner", genOnly: true, note: "[game or character id] — set on the auto-minted game-resolution / character-arc thread" },
+    // waived: the deliberate carry-over gesture (obligation ledger) — this promise is left unpaid ON PURPOSE
+    // (a sequel hook). Settles the debt row without a payoff. Set only with the author's explicit consent.
+    { key: "waived", label: "waived", genOnly: true, note: "true = deliberately left unpaid (sequel hook) — settles this promise in the obligation ledger; only with the author's consent" }],
   game: [
     { key: "name", label: "name", required: true }, { key: "players", label: "players", type: "refs", refKind: "character" },
     { key: "win_condition", label: "win", multiline: true, required: true }, { key: "lose_condition", label: "lose", multiline: true, required: true }, { key: "stake", label: "stake", multiline: true },
     { key: "governing_rules", label: "rules", type: "refs", refKind: "world_fact" },
+    { key: "waived", label: "waived", genOnly: true, note: "true = contest deliberately left undecided (sequel hook) — settles it in the obligation ledger; only with the author's consent" },
   ],
-  tentpole: [{ key: "summary", label: "summary", multiline: true, required: true }],
+  tentpole: [{ key: "summary", label: "summary", multiline: true, required: true },
+    { key: "waived", label: "waived", genOnly: true, note: "true = set-piece deliberately unplaced (cut or deferred) — settles it in the obligation ledger; only with the author's consent" }],
   // meter (docs/novel-dna-meters.md): a named bounded axis (comedy/heat/freedom/game-score) defined once on
   // the pillar. Beats/scenes carry numeric `readings` on it; the engine plots the series + lints its shape.
   meter: [
@@ -133,6 +139,10 @@ export const NODE_SCHEMA: Partial<Record<NodeKind, EditSpec[]>> = {
     // stays constant; this knob breaks per-scene monotony. Adjacent scenes should differ so the read never goes flat.
     { key: "register", label: "register", multiline: true, taste: true, note: "how the voice bends here — pace, distance, intensity (e.g. \"clipped, breathless\" / \"slow, elegiac, interior\"). Adjacent scenes should differ." },
     { key: "readings", label: "readings", genOnly: true, note: "[{ ref: meter id, value: number }] this scene's level on each meter (inherited/refined from its beat)" },
+    // sketch = the TREATMENT: what/how this page renders, generated BEFORE prose (dna-expand target='sketch').
+    // `moves` are WHAT happens (never dialogue lines); `direction` is HOW it's shown. genOnly like the other
+    // structured plan fields (threads/readings) — the tree editor doesn't render a form for it.
+    { key: "sketch", label: "sketch", genOnly: true, note: "{opening, moves:[{what, thread?, sense?}], exit, direction:{cut:{in,out}, distance(far|mid|close|deep), mode(dialogue|action|interior|description|summary), time(real|compressed|stretched), tension(suspense|mystery|irony)}} — the scene treatment" },
     // observed_establishes / continuity_flags are OUTPUTS of the continuity read (factLedger), not authored plan
     // input — so they're not editor fields here. Phase-1 grounding (docs/scene-ledger.md §1.3): each fact may
     // carry an optional `entity` = the registry node id it's about (n_…), the join key to the plan side.

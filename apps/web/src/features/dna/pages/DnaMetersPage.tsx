@@ -7,11 +7,13 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import {
-  beatsInOrder, buildShapeReadInput, byId, childrenOf, isSerialMeter, meterSeries, meterShape, meterTarget, observedSeries, shapeReadHash, validate,
-  type DnaNode, type MeterContent, type DnaIssue, type MeterPoint, type PremiseContent,
+  beatsInOrder, buildShapeReadInput, buildSynopsisReadInput, byId, childrenOf, isSerialMeter, meterSeries, meterShape, meterTarget, observedSeries, shapeReadHash, synopsisReadHash, validate,
+  type DnaNode, type MeterContent, type DnaIssue, type MeterPoint, type PillarContent, type PremiseContent,
 } from "@/features/dna/lib/novelDna";
 import { buildMeterReadInput, invokeMeterRead, observedFindingsMessage, sendFindingsToEditor, writeObserved } from "@/features/dna/lib/meterRead";
 import { invokeShapeRead, sendShapeFindingsToEditor, shapeFindingsMessage, writeShapeFit } from "@/features/dna/lib/shapeRead";
+import { craftFindingsMessage, invokeSynopsisRead, sendCraftFindingsToEditor, writeCraft } from "@/features/dna/lib/synopsisRead";
+import { buildConfusionReadInput, confusionFindingsMessage, invokeConfusionRead, judgedSceneIds, sendConfusionFindingsToEditor, writeConfusionFlags } from "@/features/dna/lib/confusionRead";
 
 const getNumericId = (p: string | undefined) => { const m = p?.match(/^(\d+)/); return m ? parseInt(m[1]) : 0; };
 
@@ -191,6 +193,64 @@ export default function DnaMetersPage() {
     } finally { setReading(false); }
   };
 
+  // The synopsis read (W2): the shift-left editor's read of the PLAN — an acquisitions editor scores the whole
+  // premise+pillar+acts+beats synopsis on fixed craft axes. Writes the verdict onto the pillar, sealed by the
+  // input hash; the craft_flag lint reads it. Plan-plane only (no prose) — the cheapest place to catch a boring book.
+  const runSynopsisRead = async () => {
+    if (!nodes || !bookId) return;
+    const input = buildSynopsisReadInput(nodes);
+    if (!input) { setNote("Add a pillar and acts with beats first — nothing to read yet."); return; }
+    setReading(true); setNote("Running the editor's read of the plan…");
+    try {
+      const rows = await invokeSynopsisRead(bookId, input);
+      await writeCraft(nodes, input, rows);
+      setNote(`Scored ${rows.length} craft axis(es). Rows below are the editor's verdict on the plan.`);
+    } catch (e) {
+      setNote(`Editor's read failed: ${String((e as Error)?.message ?? e)}`);
+    } finally { setReading(false); }
+  };
+
+  const sendCraftToEditor = async () => {
+    if (!nodes || !bookId) return;
+    setReading(true);
+    try {
+      const sent = await sendCraftFindingsToEditor(bookId, nodes, {});
+      if (sent) navigate(`/books/${bookSlug}/dna/tree`);
+      else setNote("Every craft axis clears the floor — no flags to send.");
+    } catch (e) {
+      setNote(`Couldn't send to the editor: ${String((e as Error)?.message ?? e)}`);
+    } finally { setReading(false); }
+  };
+
+  // The cold read (W5): a first-time reader — fed only the recap of prior pages + each chapter's prose, never
+  // the plan — flags what it couldn't follow. Writes confusion_flags onto the judged scenes (clearing fixed
+  // ones); the reader_confusion lint surfaces them below and in the handoff.
+  const runConfusionRead = async () => {
+    if (!nodes || !bookId) return;
+    const input = buildConfusionReadInput(nodes);
+    if (!input.chapters.length) { setNote("No chapters with prose to cold-read yet."); return; }
+    setReading(true); setNote("Cold-reading the prose, chapter by chapter…");
+    try {
+      const res = await invokeConfusionRead(bookId, input);
+      await writeConfusionFlags(nodes, res.flags, judgedSceneIds(input, res.chaptersRead));
+      setNote(`Cold-read ${res.chaptersRead} chapter(s) — ${res.flags.length} confusion flag(s)${res.truncated ? " (long book: only the first chapters fit this pass — re-run to continue)" : ""}.`);
+    } catch (e) {
+      setNote(`Cold read failed: ${String((e as Error)?.message ?? e)}`);
+    } finally { setReading(false); }
+  };
+
+  const sendConfusionToEditor = async () => {
+    if (!nodes || !bookId) return;
+    setReading(true);
+    try {
+      const sent = await sendConfusionFindingsToEditor(bookId, nodes, {});
+      if (sent) navigate(`/books/${bookSlug}/dna/tree`);
+      else setNote("A cold reader can follow everything — no confusion flags to send.");
+    } catch (e) {
+      setNote(`Couldn't send to the editor: ${String((e as Error)?.message ?? e)}`);
+    } finally { setReading(false); }
+  };
+
   // Hand the read's gaps to the editor agent (the manual taste gate), then jump to the tree's agent rail.
   const sendToEditor = async () => {
     if (!nodes || !bookId) return;
@@ -247,6 +307,28 @@ export default function DnaMetersPage() {
     return { movements, verdict, fresh, findings, readable: !!input };
   }, [nodes]);
 
+  // Synopsis-read state (W2): the stored craft verdict on the pillar + whether its seal is still FRESH — the
+  // same fresh/stale discipline as the shape read (a stale verdict dims; the author re-triggers the paid read).
+  const craft = useMemo(() => {
+    const ns = nodes ?? [];
+    const pillar = ns.find((n) => n.kind === "pillar");
+    const plc = pillar?.content as PillarContent | undefined;
+    const verdict = plc?.observed_craft ?? null;
+    const input = buildSynopsisReadInput(ns);
+    const fresh = !!verdict && !!input && plc?.observed_craft_hash === synopsisReadHash(input);
+    const findings = craftFindingsMessage(ns); // null unless a FRESH verdict has a sub-floor axis
+    return { verdict, fresh, findings, readable: !!input };
+  }, [nodes]);
+
+  // Cold-read state (W5): whether there's anything to read (chapters with prose) and the stored flags the
+  // engine's reader_confusion lint surfaces — the rows below the trigger, and the send affordance's gate.
+  const confusion = useMemo(() => {
+    const ns = nodes ?? [];
+    const readable = buildConfusionReadInput(ns).chapters.length > 0;
+    const issues = validate(ns).filter((i) => i.rule === "reader_confusion");
+    return { readable, issues, findings: confusionFindingsMessage(ns) };
+  }, [nodes]);
+
   if (error) return <div style={{ padding: 24, color: "#f87171", fontFamily: "monospace" }}>error: {error}</div>;
   if (!nodes) return <div style={{ padding: 24, color: "#888", fontFamily: "monospace" }}>loading…</div>;
 
@@ -291,6 +373,62 @@ export default function DnaMetersPage() {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* THE SYNOPSIS READ (W2): the shift-left editor's read of the PLAN — fixed craft axes scored 1–5 over
+            premise+pillar+acts+beats, zero prose; the verdict + stale seal live on the pillar node. */}
+        {(craft.readable || craft.verdict) && (
+          <div style={{ border: "1px solid #1c1c1c", borderRadius: 8, padding: "12px 14px", marginBottom: 18, background: "#0e0e0e" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: craft.verdict ? 10 : 0 }}>
+              <span style={{ fontSize: 13, fontWeight: 700 }}>Craft</span>
+              <button type="button" onClick={() => void runSynopsisRead()} disabled={reading || !craft.readable}
+                style={{ fontSize: 12, color: "#0a0a0a", background: "#c4b5fd", border: "none", borderRadius: 6, padding: "5px 11px", fontWeight: 600, cursor: reading || !craft.readable ? "default" : "pointer", opacity: reading || !craft.readable ? 0.5 : 1 }}>
+                {reading ? "Reading…" : "Editor's read (plan)"}
+              </button>
+              <button type="button" onClick={() => void sendCraftToEditor()} disabled={reading || !craft.findings}
+                style={{ fontSize: 12, color: "#ddd", background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "5px 11px", cursor: reading || !craft.findings ? "default" : "pointer", opacity: reading || !craft.findings ? 0.4 : 1 }}>
+                Send craft flags to editor →
+              </button>
+              {craft.verdict && !craft.fresh && (
+                <span style={{ fontSize: 11, color: "#fbbf24", border: "1px solid #3a3320", borderRadius: 5, padding: "2px 7px" }}>read is stale — plan changed since</span>
+              )}
+            </div>
+            {craft.verdict?.map((row, i) => {
+              const color = row.score <= 2 ? "#f87171" : row.score >= 4 ? "#4ade80" : "#fbbf24";
+              return (
+                <div key={i} style={{ display: "flex", alignItems: "baseline", gap: 8, fontSize: 12, padding: "2px 0", opacity: craft.fresh ? 1 : 0.5 }}>
+                  <span style={{ color, fontWeight: 700, minWidth: 26 }}>{row.score}/5</span>
+                  <span style={{ color: "#ccc" }}>{row.axis}</span>
+                  {row.note && <span style={{ color: "#777" }}>— {row.note}</span>}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* THE COLD READ (W5): a first-time reader judges each chapter knowing ONLY the recap of prior pages +
+            the chapter's prose — never the plan. Flags land on scenes as confusion_flags; rows are the
+            reader_confusion lints the engine derives from them. */}
+        {(confusion.readable || confusion.issues.length > 0) && (
+          <div style={{ border: "1px solid #1c1c1c", borderRadius: 8, padding: "12px 14px", marginBottom: 18, background: "#0e0e0e" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: confusion.issues.length ? 10 : 0 }}>
+              <span style={{ fontSize: 13, fontWeight: 700 }}>Cold read</span>
+              <button type="button" onClick={() => void runConfusionRead()} disabled={reading || !confusion.readable}
+                style={{ fontSize: 12, color: "#0a0a0a", background: "#c4b5fd", border: "none", borderRadius: 6, padding: "5px 11px", fontWeight: 600, cursor: reading || !confusion.readable ? "default" : "pointer", opacity: reading || !confusion.readable ? 0.5 : 1 }}>
+                {reading ? "Reading…" : "Cold read (prose)"}
+              </button>
+              <button type="button" onClick={() => void sendConfusionToEditor()} disabled={reading || !confusion.findings}
+                style={{ fontSize: 12, color: "#ddd", background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "5px 11px", cursor: reading || !confusion.findings ? "default" : "pointer", opacity: reading || !confusion.findings ? 0.4 : 1 }}>
+                Send confusion flags to editor →
+              </button>
+            </div>
+            {confusion.issues.map((i, k) => (
+              <div key={k} style={{ display: "flex", alignItems: "baseline", gap: 8, fontSize: 12, padding: "2px 0" }}>
+                <span style={{ color: LINT_COLOR[i.severity] ?? "#fbbf24" }}>●</span>
+                <span style={{ color: "#ccc" }}>{i.message}</span>
+              </div>
+            ))}
           </div>
         )}
 

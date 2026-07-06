@@ -24,7 +24,7 @@ import { getRoleModels } from "../_shared/model-config.ts";
 // by novelDna.parity.test.ts). threadSystem re-runs these on the LIVE tree each chain link so the objective +
 // structural lints SENSE the current state instead of dead-reckoning from the author's message-time snapshot
 // (docs/agent-improvement-plan.md P1.2).
-import { analysisText, ledgerText, type AuthoringStatus, type DnaNode, type NodeContent, type NodeKind, type SceneContent } from "../_shared/novel-dna.ts";
+import { analysisText, ledgerText, lintConfigForBrief, type AuthoringStatus, type DnaNode, type NodeContent, type NodeKind, type SceneContent } from "../_shared/novel-dna.ts";
 import { currentObjective, nextDraftTarget } from "../_shared/dna-journey.ts";
 // The content schema the agent must conform to — GENERATED from the web app's NODE_SCHEMA (single source of
 // truth), kept in sync by apps/web/.../dnaSchema.artifact.test.ts. Never hand-edit; edit NODE_SCHEMA + regen.
@@ -44,7 +44,10 @@ const CALL_TIMEOUT_MS = 140_000;
 const ACK_TIMEOUT_MS = 15_000; // fast chat acknowledgement; the real tool turn follows
 
 // ── Row shapes ──
-interface AgentStep { t: "user" | "note" | "read" | "ask" | "answer" | "plan" | "done"; label: string }
+// 'decision' = an auto-mode creative fork the agent journaled via ask_author (question in `label`,
+// its stated options in `options`, `at` = when) — kept in the feed so the author can revisit forks
+// after an autonomous run (state change, not erasure — NORTH_STAR §6 rule 8).
+interface AgentStep { t: "user" | "note" | "read" | "ask" | "answer" | "plan" | "done" | "decision"; label: string; options?: string[]; at?: string }
 interface Pending {
   tool_use_id: string;
   question: string;
@@ -530,12 +533,20 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
       return;
     }
 
-    // ── ask_author: in auto mode the author is away, so don't park — answer the agent's own question with
-    // "decide yourself and proceed" and chain, so an unattended run can't deadlock on a creative fork. ──
+    // ── ask_author: in auto mode the author is away, so don't park — journal the fork as a 'decision'
+    // step (question + options + when) so it survives the run for the author to review, then answer
+    // instantly and chain, so an unattended run can't deadlock on a creative fork. ──
     const askCall = toolUses.find((t) => t.name === "ask_author");
     if (askCall && auto) {
+      const askInput = askCall.input as { question?: string; options?: string[] };
+      steps.push({
+        t: "decision",
+        label: String(askInput?.question ?? "").trim().slice(0, 300),
+        options: Array.isArray(askInput?.options) ? askInput.options.map(String).slice(0, 4) : undefined,
+        at: new Date().toISOString(),
+      });
       const results = await toolResults(service, row.book_id, toolUses, steps, {
-        [askCall.id]: "You're in AUTONOMOUS mode — the author is away and cannot answer. Make the strongest creative decision yourself and proceed; don't ask again.",
+        [askCall.id]: "AUTONOMOUS mode — the author is away. Your stated choice is accepted and this fork has been journaled for the author to review later. Proceed with the option you chose; don't re-ask.",
       }, auto);
       transcript.push({ role: "user", content: results });
       await service.from("book_agent_runs").update({ transcript, steps }).eq("id", runId);
@@ -835,6 +846,7 @@ async function planConformanceSummary(
     valueShift: c.value_shift ? { value: c.value_shift.value, from: c.value_shift.from, to: c.value_shift.to, polarity: c.value_shift.polarity } : undefined,
     establishes: c.establishes, needs: c.needs,
     threads: threadRefs.map((r) => ({ name: tById.get(r?.ref ?? "")?.name ?? "(unnamed thread)", promise: tById.get(r?.ref ?? "")?.promise, role: r?.role ?? "advance" })),
+    direction: c.sketch?.direction,
   };
   if (!planHasContent(plan)) return { axes: [], summary: "  this scene has no structural plan (no value_shift / establishes / threads) to check against." };
   const axes = await judgeAgainstPlan(apiKey, model, plan, proseText, { fn, bookId, taskTable: "book_agent_runs", taskId: null, userId: null });
@@ -968,7 +980,7 @@ const DIGEST_FIELDS: Record<string, string[]> = {
   voice_profile: ["pov", "tense", "style"],
   act: ["title", "goal", "target_pct", "turning_point"],
   beat: ["connector", "polarity", "needs", "establishes", "threads", "grounds_in", "realizes", "plays", "resolves", "readings"],
-  scene: ["goal", "value_shift", "pov", "loc", "needs", "establishes", "grounds_in", "readings"],
+  scene: ["goal", "value_shift", "pov", "loc", "needs", "establishes", "grounds_in", "readings", "sketch"],
 };
 
 // Pick only the digest fields that carry a value (drop null/empty so an ABSENT spine field — a beat with
@@ -1084,13 +1096,13 @@ const THREAD_DNA_TOOLS = [
   },
   {
     name: "propose_expansion",
-    description: "Delegate a HEAVY STRUCTURAL pass to the book's specialized generation engine instead of authoring it yourself: the GLOBAL beat sheet (target 'beatsheet') or a beat's SCENES (target 'scenes'). Use this — NOT propose_node_ops — for these two passes, because the engine schedules setup→payoff across the whole book, plays the games, and makes each scene inherit its beat's causal/thread/tentpole plan deterministically (craft you can't reliably reproduce by hand). 'beatsheet' generates ALL beats across every act in one causal pass — pass the PILLAR node's id. 'scenes' breaks ONE beat into scenes — pass that BEAT node's id (call it once per beat that still needs scenes, in reading order). This stages a reviewable 'expand' request the author applies; the engine then runs and its result lands in the tree. Authoring the spine (logline, premise, pillar, cast, acts) and small edits is still yours via propose_node_ops / propose_options — only the beat sheet and scenes go through here. ENDS your turn.",
+    description: "Delegate a HEAVY STRUCTURAL pass to the book's specialized generation engine instead of authoring it yourself: the GLOBAL beat sheet (target 'beatsheet'), a beat's SCENES (target 'scenes'), the compiled brief CONTRACT (target 'contract'), or ONE scene's SKETCH (target 'sketch'). Use this — NOT propose_node_ops — for these passes, because the engine schedules setup→payoff across the whole book, plays the games, and makes each scene inherit its beat's causal/thread/tentpole plan deterministically (craft you can't reliably reproduce by hand). 'beatsheet' generates ALL beats across every act in one causal pass — pass the PILLAR node's id. 'scenes' breaks ONE beat into scenes — pass that BEAT node's id (call it once per beat that still needs scenes, in reading order). 'contract' compiles the brief's genre/audience/tone into derived promises (convention tentpoles, seeded meters with target curves, register bounds on the voice profile) — pass the PILLAR node's id; a one-time pass, skip it if already compiled. 'sketch' generates ONE scene's TREATMENT — what happens (a handful of moves) and how it's shown (cut points, psychic distance, mode, time, tension) — from its plan + open threads + tentpole + location palette; pass that SCENE node's id. Do this BEFORE rendering a scene's prose (propose_prose_render) whenever it lacks a fresh sketch — it's cheap, and it's where you get to steer HOW the page reads before paying for the actual render. This stages a reviewable 'expand' request the author applies; the engine then runs and its result lands in the tree. Authoring the spine (logline, premise, pillar, cast, acts) and small edits is still yours via propose_node_ops / propose_options — only these engine passes go through here. ENDS your turn.",
     input_schema: {
       type: "object",
       properties: {
-        summary: { type: "string", description: "One line: what you're expanding and why (e.g. 'generate the global beat sheet', 'break beat 3 into scenes')." },
-        nodeId: { type: "string", description: "For 'beatsheet': the PILLAR node's id. For 'scenes': the BEAT node's id to break into scenes." },
-        target: { type: "string", enum: ["beatsheet", "scenes"], description: "'beatsheet' = all beats across all acts (nodeId = pillar); 'scenes' = one beat's scenes (nodeId = beat)." },
+        summary: { type: "string", description: "One line: what you're expanding and why (e.g. 'generate the global beat sheet', 'break beat 3 into scenes', 'sketch the treatment for scene 2')." },
+        nodeId: { type: "string", description: "For 'beatsheet' and 'contract': the PILLAR node's id. For 'scenes': the BEAT node's id to break into scenes. For 'sketch': the SCENE node's id." },
+        target: { type: "string", enum: ["beatsheet", "scenes", "contract", "sketch"], description: "'beatsheet' = all beats across all acts (nodeId = pillar); 'scenes' = one beat's scenes (nodeId = beat); 'contract' = compile the brief's genre promises (nodeId = pillar); 'sketch' = one scene's treatment (nodeId = scene)." },
       },
       required: ["nodeId", "target"],
     },
@@ -1150,9 +1162,9 @@ You hold the book's DNA TREE: premise → foundations (pillar, cast, world, tent
 1. DISCUSS — answer, summarize, pressure-test. Reply in plain markdown prose and just end your turn (no tool needed). Be concrete, grounded in the real tree, referencing nodes by their [id]. When a node has PENDING OPTIONS and the author asks which is strongest, just RECOMMEND one in prose (name its option number + a one-line reason tied to the brief) — committing the pick is theirs, in the tree.
 2. CHANGE THE TREE — when the author asks for a change (or agrees to one), call propose_node_ops with edit/add/delete ops over the real ids. The author reviews the diff and applies it; descendants of an edited node go stale and are regenerated later. NEVER touch a LOCKED node. Don't propose unless asked — talk first.
 3. OFFER OPTIONS — when the author asks for alternatives/options, or to break a node out of its one obvious version, call propose_options with the node's [id] and 2–4 COMPLETE content objects, meaningfully different FROM EACH OTHER but each one HONORING the node's ancestors as fixed: a child elaborates the logline/premise above, it never rewrites it. Vary only what the parent leaves open (premise options keep the logline's protagonist/inciting/goal/obstacle/stakes and vary the central question — plot OR thematic — and optional shape); never reshape an ancestor into a different story, never near-duplicates. The author picks one in the tree. Use this only for choose-among-N; a single revision is propose_node_ops.
-4. PROSE — to WRITE or REWRITE a scene's full prose, call propose_prose_render with the scene [id](s): you do NOT generate prose yourself (it's a long, browser-streamed render the author runs); you stage a request the author applies, and it streams in their browser. For SMALL wording fixes to EXISTING prose, use propose_node_ops to edit content.prose.text directly — but NEVER hand-write or replace a scene's FULL prose this way. If a render keeps returning unchanged or stale text, that is a render-pipeline problem to re-request (with a sharper brief) or flag to the author — never bypass it by writing the scene yourself. Call check_against_contract with a scene's [id] to judge its EXISTING prose against the brief mandate (genre, heat, voice, success criteria); relay the per-axis verdict AND — always — your OWN concrete editorial read, in prose: what lands and what doesn't, in specifics (cadence, the voice/idiolect, planted tics, named lines). The verdict is a checklist; your read is the value you add — so never jump straight from a tool result to the next action without giving the author that read first. A common request — "write the first scene and see if it meets the brief" — is propose_prose_render (the author applies it; prose streams in) then check_against_contract once the scene has prose.
+4. PROSE — BEFORE rendering a scene that has no sketch yet, or whose sketch is stale, call propose_expansion(nodeId = the scene, target = 'sketch') first — it's a cheap plan-level pass (what happens + how it's shown) that steers the render instead of hoping the expensive prose call gets it right; skip it only if the scene already carries a fresh one. To WRITE or REWRITE a scene's full prose, call propose_prose_render with the scene [id](s): you do NOT generate prose yourself (it's a long, browser-streamed render the author runs); you stage a request the author applies, and it streams in their browser. For SMALL wording fixes to EXISTING prose, use propose_node_ops to edit content.prose.text directly — but NEVER hand-write or replace a scene's FULL prose this way. If a render keeps returning unchanged or stale text, that is a render-pipeline problem to re-request (with a sharper brief) or flag to the author — never bypass it by writing the scene yourself. Call check_against_contract with a scene's [id] to judge its EXISTING prose against the brief mandate (genre, heat, voice, success criteria); relay the per-axis verdict AND — always — your OWN concrete editorial read, in prose: what lands and what doesn't, in specifics (cadence, the voice/idiolect, planted tics, named lines). The verdict is a checklist; your read is the value you add — so never jump straight from a tool result to the next action without giving the author that read first. A common request — "write the first scene and see if it meets the brief" — is propose_prose_render (the author applies it; prose streams in) then check_against_contract once the scene has prose.
    - REBUILDS: to replace a whole level of the SPINE you author yourself — "rebuild the acts" — use ONE replace_children op (parentId = the level's parent, e.g. the pillar for acts; childKind = act). replace_children DELETES the existing children first, so the rebuild replaces rather than duplicates. Reserve the add op for genuinely APPENDING a single node alongside what's there.
-5. BEAT SHEET & SCENES — do NOT author these by hand. The GLOBAL beat sheet and a beat's scenes are HEAVY structural passes with craft you can't reliably reproduce (setup→payoff scheduling across the whole book; each scene inheriting its beat's causal/thread/tentpole plan). Delegate them to the engine: call propose_expansion(nodeId = the PILLAR, target = 'beatsheet') to generate all beats across all acts once acts exist; call propose_expansion(nodeId = a BEAT, target = 'scenes') to break that beat into scenes (once per beat that still needs them). You still author the logline, premise, pillar, cast, and acts yourself (propose_node_ops / propose_options); only the beat sheet and scenes go through propose_expansion. Prose is propose_prose_render (item 4).
+5. BEAT SHEET, SCENES & SKETCH — do NOT author these by hand. The GLOBAL beat sheet and a beat's scenes are HEAVY structural passes with craft you can't reliably reproduce (setup→payoff scheduling across the whole book; each scene inheriting its beat's causal/thread/tentpole plan). Delegate them to the engine: call propose_expansion(nodeId = the PILLAR, target = 'beatsheet') to generate all beats across all acts once acts exist; call propose_expansion(nodeId = a BEAT, target = 'scenes') to break that beat into scenes (once per beat that still needs them); call propose_expansion(nodeId = a SCENE, target = 'sketch') to generate that scene's treatment before rendering its prose (item 4). The engine also compiles the brief's CONTRACT — propose_expansion(nodeId = the PILLAR, target = 'contract') derives the genre's convention tentpoles, seeded meters with target curves, and audience register bounds; a one-time optional pass once the pillar is accepted. You still author the logline, premise, pillar, cast, and acts yourself (propose_node_ops / propose_options); only these engine passes go through propose_expansion. Prose is propose_prose_render (item 4).
 
 ## Node kinds
 
@@ -1259,8 +1271,8 @@ async function proposeExpansion(
   input: { summary?: string; nodeId?: string; target?: string },
 ): Promise<{ ok: true; proposal: AgentProposal } | { ok: false; error: string }> {
   const target = String(input.target ?? "").trim();
-  if (target !== "beatsheet" && target !== "scenes") {
-    return { ok: false, error: `Unknown target "${target}" — propose_expansion only handles 'beatsheet' (nodeId = pillar) or 'scenes' (nodeId = beat).` };
+  if (target !== "beatsheet" && target !== "scenes" && target !== "contract" && target !== "sketch") {
+    return { ok: false, error: `Unknown target "${target}" — propose_expansion only handles 'beatsheet' (nodeId = pillar), 'scenes' (nodeId = beat), 'contract' (nodeId = pillar), or 'sketch' (nodeId = scene).` };
   }
   const { data: rows } = await service.from("book_nodes").select("id, kind, authoring").eq("book_id", bookId);
   const nodes = (rows ?? []) as { id: string; kind: string; authoring: { locked?: boolean } | null }[];
@@ -1274,7 +1286,13 @@ async function proposeExpansion(
   if (target === "scenes" && node.kind !== "beat") {
     return { ok: false, error: `'scenes' breaks ONE beat into scenes — pass a beat node's id, not a ${node.kind}.` };
   }
-  const label = target === "beatsheet" ? "Generate the global beat sheet" : "Break the beat into scenes";
+  if (target === "contract" && node.kind !== "pillar") {
+    return { ok: false, error: `'contract' compiles the brief onto the PILLAR — pass the pillar node's id, not a ${node.kind}.` };
+  }
+  if (target === "sketch" && node.kind !== "scene") {
+    return { ok: false, error: `'sketch' generates ONE scene's treatment — pass a scene node's id, not a ${node.kind}.` };
+  }
+  const label = target === "beatsheet" ? "Generate the global beat sheet" : target === "contract" ? "Compile the brief's contract" : target === "sketch" ? "Sketch the scene's treatment" : "Break the beat into scenes";
   return { ok: true, proposal: { id: crypto.randomUUID(), layer: "expansion", summary: String(input.summary ?? label).trim() || label, ops: [], nodeId: node.id, target } };
 }
 
@@ -1399,9 +1417,10 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
   }));
   const liveObjective = currentObjective(liveNodes, { bookSlug: String(bookId) }) || objective;
   // Only meaningful once structure exists — mirrors the client's gate (AgentRail), which sends undefined
-  // otherwise. analysisText ignores its settings arg, so we pass {}.
+  // otherwise. analysisText ignores its settings arg, so we pass {}. Lint thresholds are genre-tuned
+  // from the brief (lintConfigForBrief) so the agent acts on the same strictness the genre calls for.
   const hasStructure = liveNodes.some((n) => n.kind === "beat" || n.kind === "scene");
-  const liveAnalysis = hasStructure ? analysisText(liveNodes, {}) : (analysis ?? "");
+  const liveAnalysis = hasStructure ? analysisText(liveNodes, {}, lintConfigForBrief(b?.brief ?? null)) : (analysis ?? "");
   // The unified between-scenes view (docs/scene-ledger.md §3.2 consumer 2): the state ENTERING the next scene to
   // draft — open promises + character positions — rendered by the SAME ledgerText the prose generator reads, so
   // the agent curates its render brief against the same snapshot the writer will see. Empty until there's a
@@ -1441,7 +1460,7 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
   // Autonomous mode: the author is AWAY. The agent must carry every request to a committed change with no
   // human gate — it makes the option choices itself and never waits. (The client auto-applies what it stages.)
   const autoLine = auto
-    ? "\n\n<autonomous_mode>\nThe author has stepped away and CANNOT review, pick, or answer. Carry every request all the way to a finished result yourself, then conclude:\n- Make ONE change per turn with propose_node_ops, OR render ONE scene per turn with propose_prose_render. Both are APPLIED LIVE immediately — there is no review step, and your NEXT turn shows the updated tree/scene. Don't say \"I propose\" or wait for approval; just make the change (or request the render), then continue.\n- READ THEN ACT — don't over-read. The tree above is a DIGEST (handle/gist + causal spine). When the change needs a node's full detail (a beat's whole summary, a character's profile, a scene's prose), read_node it FIRST — but only the node(s) you're about to change. Don't sweep the tree; the digest is enough to decide what to touch.\n- NEVER call ask_author. At a creative fork, decide with your best judgment and proceed.\n- Prefer to commit directly: when you'd weigh options, just pick the strongest and write it with propose_node_ops. (Avoid propose_options in autonomous mode — there's no one to pick.)\n- ALWAYS CONCLUDE: once the request is fully handled, call finish with a one-line summary of what you changed. Don't stop mid-thought after a change — keep going until you finish.\n</autonomous_mode>"
+    ? "\n\n<autonomous_mode>\nThe author has stepped away and CANNOT review, pick, or answer. Carry every request all the way to a finished result yourself, then conclude:\n- Make ONE change per turn with propose_node_ops, OR render ONE scene per turn with propose_prose_render. Both are APPLIED LIVE immediately — there is no review step, and your NEXT turn shows the updated tree/scene. Don't say \"I propose\" or wait for approval; just make the change (or request the render), then continue.\n- READ THEN ACT — don't over-read. The tree above is a DIGEST (handle/gist + causal spine). When the change needs a node's full detail (a beat's whole summary, a character's profile, a scene's prose), read_node it FIRST — but only the node(s) you're about to change. Don't sweep the tree; the digest is enough to decide what to touch.\n- At a GENUINE creative fork — a decision that shapes the story (an ending's direction, killing a character, a structural pivot) — call ask_author anyway, stating the question, your options, and which one you're choosing. In autonomous mode it never parks: the system answers instantly telling you to proceed with your stated choice, and the fork is journaled for the author to review later. Small mechanical choices don't warrant it.\n- Prefer to commit directly: when you'd weigh options, just pick the strongest and write it with propose_node_ops. (Avoid propose_options in autonomous mode — there's no one to pick.)\n- ALWAYS CONCLUDE: once the request is fully handled, call finish with a one-line summary of what you changed. Don't stop mid-thought after a change — keep going until you finish.\n</autonomous_mode>"
     : "";
   return `${SYSTEM_THREAD}${scopeLine}${effortLine}${autoLine}\n\n${blocks.join("\n\n")}`;
 }

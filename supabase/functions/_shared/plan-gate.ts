@@ -22,12 +22,16 @@ export interface ScenePlan {
   establishes?: string[];
   needs?: string[];
   threads?: { name: string; promise?: string; role: string }[];
+  // The sketch's PLANNED direction (doc_1783198900000_dna_scene_direction.md) — HOW this page was meant to be
+  // shown. Judged against what the prose actually delivers, so a summarized payoff or a monotone repeat of
+  // the prior page's mode gets caught here, not just at the (pre-render) sketch lints.
+  direction?: { distance?: string; mode?: string; time?: string; tension?: string };
 }
 
 /** True when the plan carries at least one judge-able element (else there's nothing to conform to). */
 export function planHasContent(p: ScenePlan): boolean {
   return !!(p.goal || p.outcome || (p.valueShift && (p.valueShift.from || p.valueShift.to)) ||
-    p.establishes?.length || p.needs?.length || p.threads?.length);
+    p.establishes?.length || p.needs?.length || p.threads?.length || p.direction);
 }
 
 const PLAN_JUDGE_SYSTEM =
@@ -47,7 +51,12 @@ const PLAN_JUDGE_SYSTEM =
   `- "needs:<key>": each key is a fact an EARLIER scene established that this scene depends on — does the prose ` +
   `honor it (not contradict or ignore it)?\n` +
   `- "thread:<name>": a promise this scene must work on — setup = plant it, payoff = pay it off, advance = ` +
-  `develop it. Does the prose do that work?\n\n` +
+  `develop it. Does the prose do that work?\n` +
+  `- "direction": the PLANNED presentation — psychic distance, mode (dialogue/action/interior/description/` +
+  `summary), time treatment, tension engine. Does the prose actually deliver it, especially: if the mode was ` +
+  `NOT "summary", is the scene DRAMATIZED moment-by-moment rather than reported/summarized? FAIL = the prose ` +
+  `reads as a report of what happened (summary) when the plan called for it to be SHOWN; PARTIAL = shown but ` +
+  `thin, or the wrong distance/tension; PASS = the planned presentation lands.\n\n` +
   `Emit ONE axis object per plan element you judged, using the field names above (e.g. "establishes:ledger_settled", ` +
   `"thread:the brass compass"). Return ONLY this JSON, no prose, no fences:\n` +
   `{"axes":[{"field":"value_shift","verdict":"pass|partial|fail","detail":"<one line>","evidence":"<short quote>"}, ...]}`;
@@ -66,6 +75,10 @@ export async function judgeAgainstPlan(apiKey: string, model: string, plan: Scen
   if (plan.establishes?.length) lines.push(`ESTABLISHES (facts this scene must make true — later scenes spend them): ${plan.establishes.join(", ")}`);
   if (plan.needs?.length) lines.push(`NEEDS (facts already true that this scene depends on): ${plan.needs.join(", ")}`);
   if (plan.threads?.length) lines.push(`THREADS: ${plan.threads.map((t) => `${t.role} "${t.name}"${t.promise ? ` — ${t.promise}` : ""}`).join("; ")}`);
+  if (plan.direction) {
+    const d = plan.direction;
+    lines.push(`DIRECTION (planned presentation): ${[d.mode && `mode=${d.mode}`, d.distance && `distance=${d.distance}`, d.time && `time=${d.time}`, d.tension && `tension=${d.tension}`].filter(Boolean).join(", ")}`);
+  }
 
   const user = `SCENE PLAN:\n${lines.join("\n")}\n\nJudge the prose below against THIS plan (only these elements). JSON only.`;
   const data = await callLLM(

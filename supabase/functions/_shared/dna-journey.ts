@@ -6,7 +6,7 @@
 // P1.2). The web file's `dnaHealth` (and its dnaSchema dependency) is intentionally OMITTED — the server
 // never scores health. Everything present here MUST stay behaviourally identical to the web copy; parity is
 // LOCKED by apps/web/src/features/dna/lib/novelDna.parity.test.ts (currentObjective run over both copies).
-import { byId, childrenOf, scenesInOrder, type DnaNode, type NodeKind, type SceneContent } from "./novel-dna.ts";
+import { byId, childrenOf, debtSettled, obligationLedger, openObligations, scenesInOrder, type DnaNode, type NodeKind, type SceneContent } from "./novel-dna.ts";
 
 export type StageKey = "premise" | "foundations" | "structure" | "scenes" | "draft";
 
@@ -38,7 +38,9 @@ export function stageComplete(nodes: DnaNode[]): Record<StageKey, boolean> {
     foundations: !!pillar && accepted(pillar) && of("character").length >= 1,
     structure: of("act").length >= 1 && of("beat").length >= 1,
     scenes: scenes.length >= 1,
-    draft: scenes.length >= 1 && scenes.every((s) => sceneDrafted(s)),
+    // Draft's done-gate is DEBT-BASED, not count-based (obligationLedger): every scene prosed AND every
+    // promise paid or waived — a book with a dangling promise isn't finished, it's abandoned.
+    draft: scenes.length >= 1 && scenes.every((s) => sceneDrafted(s)) && debtSettled(nodes),
   };
 }
 
@@ -102,8 +104,13 @@ export function stageSubsteps(key: StageKey, nodes: DnaNode[]): SubStep[] {
   }
   if (key === "foundations") {
     const pillarDone = accepted(pillar), pillarReady = accepted(premise), cast = n("character");
+    // The compiled brief contract (W1): genre tentpoles + seeded meter target-curves + register bounds,
+    // derived by the engine (propose_expansion target 'contract'). done = a meter carrying a target curve —
+    // the one artifact only the derivation pass seeds. Optional: a branch, NEVER a stage gate.
+    const metersWithTarget = of("meter").filter((m) => (((m.content as { target?: unknown[] }).target)?.length ?? 0) > 0).length;
     return resolveSeq([
       { key: "pillar", label: "Pillar", done: pillarDone, ready: pillarReady },
+      { key: "contract", label: "Contract", done: metersWithTarget >= 1, ready: pillarDone, count: metersWithTarget, optional: true },
       { key: "cast", label: "Cast", done: cast >= 1, ready: pillarDone, count: cast },
       { key: "world", label: "World", done: n("world_fact") >= 1, ready: pillarDone, count: n("world_fact"), optional: true },
       // Games are a species of world rule (a contest grounded in world_facts) — a Foundations entity, not a
@@ -128,10 +135,18 @@ export function stageSubsteps(key: StageKey, nodes: DnaNode[]): SubStep[] {
     const scenes = n("scene");
     return resolveSeq([{ key: "scenes", label: "Scenes", done: scenes >= 1, ready: n("beat") >= 1, count: scenes }]);
   }
-  // draft — prose written
+  // draft — prose written, THEN every promise settled (the debt half of the done-gate).
   const scenes = of("scene");
   const drafted = scenes.filter((s) => sceneDrafted(s)).length;
-  return resolveSeq([{ key: "prose", label: "Scenes", done: scenes.length > 0 && drafted === scenes.length, ready: scenes.length > 0, count: drafted, total: scenes.length }]);
+  const allDrafted = scenes.length > 0 && drafted === scenes.length;
+  // Promises: the obligation ledger's settled/total tally. Gated behind full prose on purpose — debts are
+  // still being opened and paid while the ladder is walked; the settle pass is the ENDGAME, not a nag.
+  const ledger = obligationLedger(nodes);
+  const settled = ledger.filter((o) => o.state === "closed" || o.state === "waived").length;
+  return resolveSeq([
+    { key: "prose", label: "Scenes", done: allDrafted, ready: scenes.length > 0, count: drafted, total: scenes.length },
+    { key: "promises", label: "Promises", done: settled === ledger.length, ready: allDrafted, count: settled, total: ledger.length },
+  ]);
 }
 
 // ── The agent's current objective (the guided-flow anchor) ───────────────────────
@@ -146,11 +161,13 @@ const STEP_RECIPE: Record<string, string> = {
   seed: "Generate 2–4 logline options from the brief with propose_options on the seed node — a logline names the protagonist, their goal, the obstacle, and the stakes in one sentence. Recommend one and ask the author which direction fits and what to change.",
   premise: "If there's no premise node yet, first CREATE it (propose_node_ops add, kind = premise, parentId = the seed node) — then, once it exists, generate 2–4 premise options with propose_options on it, each elaborating the ACCEPTED logline (keep its protagonist/goal/obstacle/stakes fixed). The premise's core is its CENTRAL QUESTION — the question the whole book lives inside. It can be a PLOT question (\"will she escape the colony?\") OR a thematic one (\"can a single day hold a whole life?\"); pick whichever the brief's genre calls for — don't force a \"will the hero win\" frame onto a character/literary book. The shape is an OPTIONAL sketch, not required: if used, NAME the shape (e.g. \"man in a hole\", \"kishōtenketsu\", \"frame story\" — whatever the story actually is, not a forced three-act default), give it however many MOVEMENTS that shape needs, and set the ending's VALENCE (ending_feel) — the concrete ending itself belongs on the pillar.",
   pillar: "If there's no pillar node yet, first CREATE it (propose_node_ops add, kind = pillar, parentId = the premise node). Then set its controlling idea (the book's one-sentence thematic argument) and the ending it implies with propose_node_ops (edit). Talk it through, then propose.",
+  contract: "Compile the brief with the ENGINE, not by hand: call propose_expansion(nodeId = the pillar, target = 'contract') — it derives the genre's promises from the brief in one pass: the convention TENTPOLES (the obligatory scenes the genre owes the reader), seeded METERS with target curves (tension/comedy/heat per genre + content type), and audience REGISTER BOUNDS merged into the voice profile. One-time optional enrichment — offer it once the pillar is accepted; don't block on it and don't re-run it once compiled.",
   cast: "Add the core cast with propose_node_ops (add character nodes under the pillar) — at minimum the protagonist and antagonist, each with want / need / wound / lie. Ask the author about anyone central you're unsure of. Relationships, world, games, and tentpoles are optional enrichment — offer them, don't block on them.",
   acts: "Generate the acts with ONE propose_node_ops replace_children op (parentId = the pillar, childKind = act) — each act with a goal and turning point. Revise with the author before moving to beats.",
   beats: "Generate the beats with the ENGINE, not by hand: call propose_expansion(nodeId = the pillar, target = 'beatsheet') — it builds the GLOBAL beat sheet across all acts in one causal pass (each beat's connector 'therefore'/'but' earned by what came before, setup→payoff scheduled book-wide). Revise with the author after it lands.",
   scenes: "Break the beat into scenes with the ENGINE, not by hand: call propose_expansion(nodeId = THIS beat, target = 'scenes') — the engine makes each scene inherit the beat's causal/thread/tentpole plan and turn a value (goal → outcome), never a flat 'and-then'. Do the next beat that still needs scenes; one call per beat.",
-  prose: "Render prose ONE scene at a time, in reading order — the TARGET NODE named in the objective above IS that scene; pass exactly its id, don't pick a different one from the tree. BEFORE each render: read the scene's beat and the previous prosed page, and search_nodes for the specific threads/objects/facts this page must honor — then call propose_prose_render with a curated `brief` (focus + mustHonor + avoid) so the render gets what it can't compute. You don't write prose yourself; the author applies it and it streams in their browser. AFTER a scene has prose: check_against_contract to judge it against the brief — and if that read shows the PREVIOUS page drifted (a dropped thread, a contradiction), propose_node_ops to fix that page first, then continue. Investigate → fix the tail if needed → render next with a brief.",
+  promises: "Every scene has prose, but promises are still OPEN — the ledger above names each one. Settle them ONE at a time, with the author: PAY it on the page via propose_node_ops (a `threads` payoff ref on the scene that should answer it · a `resolves` entry deciding the game · `realizes_tentpole` for the set-piece · put the never-seen character/location into a scene's pov/present/loc), then re-render that scene's prose so the page actually delivers it. OR, if the author wants it left open on purpose (a sequel hook), WAIVE it: propose_node_ops edit setting `waived: true` on that thread/game/tentpole node. Always ask before waiving — never waive just to zero the count. The book is finished when every promise is paid or waived.",
+  prose: "Render prose ONE scene at a time, in reading order — the TARGET NODE named in the objective above IS that scene; pass exactly its id, don't pick a different one from the tree. BEFORE each render: if the scene has no sketch yet (or it reads stale), call propose_expansion(nodeId = the scene, target = 'sketch') first — a cheap plan-level pass (what happens + how it's shown) that's where you steer the page before paying for the actual render; skip it only if a fresh one already exists. Then read the scene's beat and the previous prosed page, and search_nodes for the specific threads/objects/facts this page must honor — then call propose_prose_render with a curated `brief` (focus + mustHonor + avoid) so the render gets what it can't compute. You don't write prose yourself; the author applies it and it streams in their browser. AFTER a scene has prose: check_against_contract to judge it against the brief — and if that read shows the PREVIOUS page drifted (a dropped thread, a contradiction), propose_node_ops to fix that page first, then continue. Investigate → fix the tail if needed → render next with a brief.",
 };
 
 /** The next undrafted scene, in reading order, plus its act/beat/scene coordinate — the concrete pointer
@@ -195,10 +212,16 @@ export function currentObjective(nodes: DnaNode[], opts: { bookSlug?: string } =
     ? ` — Scene ${target.orderIndex} of ${target.total}${where}`
     : now?.total != null ? ` (${now.count ?? 0}/${now.total})` : now?.count != null ? ` (${now.count} so far)` : "";
   const goal = target ? (target.scene.content as SceneContent).goal?.trim() : undefined;
+  // The ENDGAME objective is derived from the ledger (debt-based completion): name each open promise so the
+  // agent settles them deliberately instead of inferring "what's left" from the tree digest.
+  const debts = now?.key === "promises" ? openObligations(nodes) : [];
+  const debtLines = debts.slice(0, 12).map((o) => `  • [${o.kind}] "${o.name}"${o.promise ? ` — ${o.promise.slice(0, 90)}` : ""} (${o.state})`);
+  if (debts.length > 12) debtLines.push(`  … +${debts.length - 12} more`);
   return [
     "Drive the author through ONE step at a time; don't work ahead unless they ask.",
     `▸ Step ${stage.num}/${stages.length} · ${stage.label}${now ? ` — ${now.label}` : ""}${tally}`,
     target ? `TARGET NODE: [${target.scene.id}]${goal ? ` — "${goal.slice(0, 90)}"` : ""}` : "",
+    debts.length ? `OPEN PROMISES (${debts.length} to settle — pay on the page, or waive with the author's consent):\n${debtLines.join("\n")}` : "",
     recipe ? `HOW TO RUN THIS STEP: ${recipe}` : "",
     `Once that's in the tree and accepted, the objective advances on its own${next ? ` (next: ${next.label})` : ""} — so move on rather than over-polishing.`,
   ].filter(Boolean).join("\n");

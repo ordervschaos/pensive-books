@@ -524,7 +524,7 @@ Deno.serve(async (req: Request) => {
     // agent's render_scene_prose so a single render fits inside one worker's wall-clock. Trades cross-scene
     // anti-repetition polish for speed; fine for a draft-to-check, not for the canonical book build.
     const prevProseBlock = light ? ""
-      : (target === "prose" || (!target && node.kind === "scene"))
+      : (target === "prose" || target === "sketch" || (!target && node.kind === "scene"))
       ? await buildProseDigest(apiKey, DIGEST_MODEL, nodes, nodeId, bookId, meta)
       : "";
     // Beat neighbourhood — the sibling beats of the scene's parent beat, in act order.
@@ -556,7 +556,7 @@ Deno.serve(async (req: Request) => {
     // dilutes the signal with cast that isn't in the room), anchor on what THIS scene's plan + its parent
     // beat actually reference — the plan declares its own anchors ("anchors, not fences"). Floor: the leads
     // are always in, as insurance against the single-shot call's inability to re-fetch what the plan under-named.
-    const renderTarget = target === "prose" || (!target && node.kind === "scene");
+    const renderTarget = target === "prose" || target === "sketch" || (!target && node.kind === "scene");
     const proseScope = (() => {
       if (!renderTarget) return "";
       const parentBeatNode = node.parent_id ? byId.get(node.parent_id) : undefined;
@@ -587,12 +587,25 @@ Deno.serve(async (req: Request) => {
     // The agent's CURATED render brief (docs/agent-capabilities.md) — verbatim, AUGMENTING the deterministic
     // digest/blocklist below, never replacing them. Only a prose render carries one; it's what the agent
     // retrieved (grep/read) and decided this page must land, so it's higher-signal than the computed context.
-    const b = renderBrief && (target === "prose" || (!target && node.kind === "scene")) ? renderBrief : null;
+    const b = renderBrief && (target === "prose" || target === "sketch" || (!target && node.kind === "scene")) ? renderBrief : null;
     const briefBlock = b ? [
       "THE EDITOR'S BRIEF FOR THIS PAGE (curated by the agent — treat as the highest-priority guidance; it does NOT override the MANDATE or LOCKED facts):",
       b.focus ? `- FOCUS: ${b.focus}` : "",
       Array.isArray(b.mustHonor) && b.mustHonor.length ? `- MUST HONOR (continuity that has to land):\n${b.mustHonor.map((x) => `  · ${x}`).join("\n")}` : "",
       Array.isArray(b.avoid) && b.avoid.length ? `- AVOID (do not repeat or contradict):\n${b.avoid.map((x) => `  · ${x}`).join("\n")}` : "",
+    ].filter(Boolean).join("\n") : "";
+    // THE SKETCH (doc_1783196400000_dna_scene_sketch_layer.md): the accepted treatment for THIS page, injected
+    // VERBATIM into the prose render — moves are the page's SPINE, direction is the render's HOW. Only a prose
+    // render reads it (sketch generation itself doesn't — it's producing this, not consuming it).
+    const sk = (target === "prose" || (!target && node.kind === "scene"))
+      ? (node.content as { sketch?: { opening?: string; moves?: { what?: string; sense?: string }[]; exit?: string; direction?: { cut?: { in?: string; out?: string }; distance?: string; mode?: string; time?: string; tension?: string } } }).sketch
+      : undefined;
+    const sketchBlock = sk ? [
+      "THE SCENE'S SKETCH (the accepted treatment for THIS page — follow its moves as the page's spine, in order; honor its direction):",
+      sk.opening ? `- OPEN: ${sk.opening}` : "",
+      Array.isArray(sk.moves) && sk.moves.length ? `- MOVES (in order):\n${sk.moves.map((m, i) => `  ${i + 1}. ${m.what}${m.sense ? ` (${m.sense})` : ""}`).join("\n")}` : "",
+      sk.exit ? `- EXIT: ${sk.exit}` : "",
+      sk.direction ? `- DIRECTION: ${[sk.direction.mode && `mode=${sk.direction.mode}`, sk.direction.distance && `distance=${sk.direction.distance}`, sk.direction.time && `time=${sk.direction.time}`, sk.direction.tension && `tension=${sk.direction.tension}`, sk.direction.cut?.in && `cut in: ${sk.direction.cut.in}`, sk.direction.cut?.out && `cut out: ${sk.direction.cut.out}`].filter(Boolean).join(", ")}` : "",
     ].filter(Boolean).join("\n") : "";
 
     const ctx = [
@@ -611,6 +624,7 @@ Deno.serve(async (req: Request) => {
       settingBlock, // this scene's resolved location palette (prose grounding)
       disclosureBlock, // progressive disclosure: which facets to reveal/vary/drop (Phase 2 — empty = today's behaviour)
       registerBlock, // this scene's voice modulation (anti-monotony) — bends the signature for this scene only
+      sketchBlock, // the accepted treatment (moves + direction) for THIS page (empty for non-render / no-sketch calls)
       briefBlock, // the agent's curated, verbatim guidance for THIS page (empty for non-render / no-brief calls)
       prevProseBlock,
       `THIS NODE [${node.kind}]: ${JSON.stringify(node.content)}`,
@@ -633,6 +647,42 @@ Honor the MANDATE (genre/tone) and any LOCKED ancestors. Do NOT invent a title. 
       const data = await callLLM(apiKey, { model, max_tokens: 400, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
         messages: [{ role: "user", content: `${ctx}\n\nWrite the logline.` }] }, meta);
       return json({ logline: textFromLLM(data).trim() });
+    }
+
+    if (target === "sketch") {
+      // Scene → sketch: the TREATMENT between the scene's plan and its prose (doc_1783196400000_dna_scene_
+      // sketch_layer.md, doc_1783198900000_dna_scene_direction.md) — WHAT happens (a handful of moves) and
+      // HOW it's shown (cut points, psychic distance, mode, time, tension). Cheap structured JSON, on-worker,
+      // so the presentation choice is made BEFORE paying for the long prose stream. Reuses the exact same
+      // scoped context prose gets (proseScope/beatNeighbourhoodBlock/entryStateBlock/settingBlock/
+      // disclosureBlock/registerBlock/prevProseBlock/briefBlock — all already assembled into `ctx` above).
+      if (node.kind !== "scene") return json({ error: "'sketch' only applies to a scene node" }, 400);
+      const system = `You are a story editor writing ONE scene's TREATMENT — the low-resolution plan between its structural spec and its prose. Output JSON ONLY, no prose, no fences.
+
+Two parts:
+1. MOVES (3–7): what happens, in order — beats of ACTION, never dialogue lines or prose. Each move may optionally reference a thread id it works (from THREADS/ENTRY STATE above) and a sensory detail picked from the scene's location palette (SETTING above).
+2. DIRECTION — how this page is SHOWN:
+   - cut.in / cut.out: where the page enters/leaves the event (arrive late, leave early — never start "the moment before" or linger past the turn).
+   - distance: far | mid | close | deep (psychic distance — how close the narration sits to the POV mind).
+   - mode: dialogue | action | interior | description | summary (the dominant texture).
+   - time: real | compressed | stretched (scene-time vs story-time).
+   - tension: suspense | mystery | irony (what the reader knows vs the character).
+
+Rules:
+- "opening" must differ from how the PREVIOUS page ended (different place/time/register — see PREVIOUS PAGE/STORY SO FAR above if present). Never resume literally where the last page left off.
+- If this scene PAYS OFF a thread, REALIZES a tentpole, or LANDS its beat's value turn (see ENTRY STATE / THIS NODE above for its threads/realizes_tentpole/value_shift), that moment must NOT be "summary" mode or "far" distance — a promise that's merely reported, not dramatized, is a promise the reader won't feel delivered.
+- Vary mode/distance/tension from the immediately PRIOR sketched scene if you can see it (BEAT PLAN / entry state above) — adjacent scenes should not read the same way twice in a row.
+- Never write actual dialogue lines or prose sentences — moves describe WHAT turns, not WHAT'S SAID.
+
+Output JSON ONLY: {"opening":"...","moves":[{"what":"...","thread":"<thread id, optional>","sense":"<e.g. smell:tar, optional>"}],"exit":"...","direction":{"cut":{"in":"...","out":"..."},"distance":"far|mid|close|deep","mode":"dialogue|action|interior|description|summary","time":"real|compressed|stretched","tension":"suspense|mystery|irony"}}`;
+      const data = await callLLM(apiKey, { model, max_tokens: 1200, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+        messages: [{ role: "user", content: `${ctx}\n\nWrite this scene's sketch. JSON only.` }] }, meta);
+      try {
+        const parsed = JSON.parse(extractJsonBlock(textFromLLM(data)));
+        return json({ sketch: parsed });
+      } catch {
+        return json({ error: "Sketch generation returned unparsable JSON — try again." }, 502);
+      }
     }
 
     if (target === "prose" || (!target && node.kind === "scene")) {
@@ -662,13 +712,18 @@ ANTI-REPETITION (critical): Never repeat any physical gesture, character reactio
       // beats, and indexes are built, not hand-authored.
       const mintThreads = !threads.length;
       const mintId = () => `n_${Math.random().toString(36).slice(2, 8)}${Date.now().toString(36).slice(-3)}`;
+      // Characters whose declared inner arc (lie → truth) exists as data: each gets an ARC thread minted in
+      // the same pass, so the promise machinery (dangling_promise etc.) covers character arcs — a declared
+      // lie that no beat ever schedules is otherwise invisible to the plan (the dead-field problem).
+      const arcCast = mintThreads ? chars.filter((c) => String((c.content as { lie?: string }).lie ?? "").trim()) : [];
       const system = `You are a story architect writing the ENTIRE BOOK'S BEAT SHEET in ONE pass — every beat of every act at once, so you can see the whole sequence. Honor every LOCKED ancestor and the MANDATE verbatim. Rules:${mintThreads ? `
-- FIRST design the THREAD REGISTRY: 3–6 open loops (a promise set up early, paid off later) this book runs on — mysteries, foreshadowed reveals, setup→payoff arcs. Give each a short NAME, a "promise" (what's opened), and a "payoff" (how it closes). Then schedule them across the beats below. Emit them in a top-level "threads" array.` : ""}
+- FIRST design the THREAD REGISTRY: 3–6 open loops (a promise set up early, paid off later) this book runs on — mysteries, foreshadowed reveals, setup→payoff arcs. Give each a short NAME, a "promise" (what's opened), and a "payoff" (how it closes). Then schedule them across the beats below. Emit them in a top-level "threads" array.${arcCast.length ? `
+- ALSO mint each of these characters' ARC thread (they carry a declared lie): ${arcCast.map((c) => cName(c)).join(", ")}. One per character — kind "arc", "character" = their name, promise = the LIE as it will be DRAMATIZED early (shown in action, not stated), payoff = the moment the TRUTH is accepted or fatally refused. Schedule each arc across the beats like any other thread (setup early, advance through the middle, pay off at that character's turn).` : ""}` : ""}
 - 2 to 4 beats per act; each beat links to the prior with "therefore" or "but" (escalating causality).
 - Set each beat's PLANNED polarity (up = ends better, down = ends worse). The act's value shift is the MACRO trend; you MUST still OSCILLATE within it — never more than ~3 beats of the same polarity in a row. Place deliberate relief/hope-spots inside down-acts and setbacks inside up-acts.
 - Schedule the THREADS across the whole book: every promise must be SET UP (role:setup) in an EARLIER beat before it is PAID OFF (role:payoff) in a LATER beat; use "advance" for beats that develop it in between. Reference threads BY NAME.
 - CAUSE every turn: give each beat "needs" (state keys it DEPENDS ON, each one EARNED by an EARLIER beat — never an ambient world/premise given) and "establishes" (state keys it PRODUCES). Keys are short snake_case handles (e.g. "ledger_settled", "rival_humiliated", "peculium_revealed"). Every "therefore" beat MUST "need" at least one state an earlier beat "establishes" — that upstream dependency is what makes the turn CAUSED, not "and then". A "but" beat must either reverse the polarity or block/consume an established state.${tentpoles.length ? `\n- PLACE every TENTPOLE: assign each set-piece to the ONE beat that delivers it, in "realizes" (by its summary). Every tentpole listed must appear on exactly one beat.` : ""}${worldFacts.length ? `\n- GROUND the turns in the WORLD RULES: when a beat's turning point's outcome OPERATES ON a rule's mechanism, list that rule in "grounds_in" (by name). The CLIMAX / final resolution beat MUST ground its win in an established rule — the victory has to be MECHANICALLY EARNED by a rule the reader already knows, never deus ex machina. Plant the rule's setup in an earlier beat too.` : ""}${games.length ? `\n- PLAY the GAMES: each beat that advances a contest lists it in "plays" (by name). Each game MUST be RESOLVED — exactly one beat lists it in "resolves" with its outcome (won|lost), and the CENTRAL game resolves at the CLIMAX. A game's resolving beat should also ground_in the rule its win/lose fires.` : ""}${statePreconds.length ? `\n- ESTABLISH every STATE PRECONDITION: each game's win SPENDS resources/states (listed above). For each, an EARLIER beat must establish it (list its key in that beat's "establishes") BEFORE the beat that resolves the game — you cannot spend a resource the story never acquired (no "she had enough all along"). Make the establishing a real turn.` : ""}
-Output JSON ONLY: { ${mintThreads ? `"threads": [ { "name": "...", "promise": "...", "payoff": "...", "kind": "mystery"|"foreshadow"|"setup_payoff"|"arc" } ], ` : ""}"beats": [ { "act": <1..${acts.length}>, "summary": "...", "connector": "therefore"|"but", "polarity": "up"|"down", "threads": [ { "ref": "<thread name>", "role": "setup"|"advance"|"payoff" } ]${tentpoles.length ? `, "realizes": [ "<tentpole summary>" ]` : ""}${worldFacts.length ? `, "grounds_in": [ "<world rule name>" ]` : ""}${games.length ? `, "plays": [ "<game name>" ], "resolves": [ { "ref": "<game name>", "outcome": "won|lost" } ]` : ""}, "needs": [ "<state key earned upstream>" ], "establishes": [ "<state key this beat produces>" ] } ] }`;
+Output JSON ONLY: { ${mintThreads ? `"threads": [ { "name": "...", "promise": "...", "payoff": "...", "kind": "mystery"|"foreshadow"|"setup_payoff"|"arc"${arcCast.length ? `, "character": "<cast name — arc threads only>"` : ""} } ], ` : ""}"beats": [ { "act": <1..${acts.length}>, "summary": "...", "connector": "therefore"|"but", "polarity": "up"|"down", "threads": [ { "ref": "<thread name>", "role": "setup"|"advance"|"payoff" } ]${tentpoles.length ? `, "realizes": [ "<tentpole summary>" ]` : ""}${worldFacts.length ? `, "grounds_in": [ "<world rule name>" ]` : ""}${games.length ? `, "plays": [ "<game name>" ], "resolves": [ { "ref": "<game name>", "outcome": "won|lost" } ]` : ""}, "needs": [ "<state key earned upstream>" ], "establishes": [ "<state key this beat produces>" ] } ] }`;
       const data = await callLLM(apiKey, { model, max_tokens: 8000, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
         messages: [{ role: "user", content: `${ctx}\n\nWrite the whole beat sheet. JSON only.` }] }, meta);
       const parsed = JSON.parse(extractJsonBlock(textFromLLM(data)));
@@ -677,11 +732,16 @@ Output JSON ONLY: { ${mintThreads ? `"threads": [ { "name": "...", "promise": ".
       // reference them), returned to the client to persist under the pillar. Beats reference threads by NAME,
       // resolved below against the minted set — same as the pre-declared case.
       const THREAD_KINDS = new Set(["mystery", "foreshadow", "setup_payoff", "arc"]);
+      // Arc threads carry the character they belong to on `owner` (the same about-node slot the game-resolution
+      // twin uses) — resolved name→id here so the engine's arc lints can join thread↔character by id.
+      const charNameToId = new Map(chars.map((c) => [cName(c).toLowerCase(), c.id]));
       const mintedThreads: { id: string; content: Record<string, unknown> }[] = mintThreads
         ? (Array.isArray(parsed.threads) ? parsed.threads as Record<string, unknown>[] : [])
-            .map((t) => ({ name: String(t.name ?? "").trim(), promise: String(t.promise ?? "").trim(), payoff: String(t.payoff ?? "").trim(), kind: t.kind }))
+            .map((t) => ({ name: String(t.name ?? "").trim(), promise: String(t.promise ?? "").trim(), payoff: String(t.payoff ?? "").trim(), kind: t.kind,
+              owner: charNameToId.get(String(t.character ?? "").trim().toLowerCase()) }))
             .filter((t) => t.name && t.promise)
-            .map((t) => ({ id: mintId(), content: { name: t.name, promise: t.promise, ...(t.payoff ? { payoff: t.payoff } : {}), kind: THREAD_KINDS.has(String(t.kind)) ? t.kind : "setup_payoff" } }))
+            .map((t) => ({ id: mintId(), content: { name: t.name, promise: t.promise, ...(t.payoff ? { payoff: t.payoff } : {}),
+              kind: THREAD_KINDS.has(String(t.kind)) ? t.kind : "setup_payoff", ...(t.owner ? { owner: t.owner } : {}) } }))
         : [];
       // The name→id map the beat pass resolves thread refs against — the minted registry when minting, else the
       // pre-declared threads. `tName` reads the `name` field either way.
@@ -797,6 +857,59 @@ Output JSON ONLY: { ${mintThreads ? `"threads": [ { "name": "...", "promise": ".
         } catch { /* keep the original sanitized sheet — repair is best-effort */ }
       }
       return json({ beatsheet: true, childKind: "beat", childLevel: 4, actIds: acts.map((m) => m.id), beats, ...(mintedThreads.length ? { threads: mintedThreads } : {}) });
+    }
+
+    if (target === "contract") {
+      // COMPILE THE BRIEF (W1, docs build plan): a one-time derivation pass that turns the brief's
+      // genre/audience/tone/content_type into machine-usable promises — genre-convention TENTPOLES (so
+      // tentpole_unplaced becomes the genre-promise-broken lint), SEEDED METERS with target curves (so
+      // target_drift/read_gap gain genre teeth), and audience REGISTER BOUNDS for voice_profile.constraints.
+      // The client persists idempotently; existing entities are fed in so the model omits duplicates.
+      if (!pillar) return json({ error: "accept the pillar before compiling the contract" }, 400);
+      // ALL existing tentpoles here (the outer `tentpoles` filters to accepted/locked — a draft one still
+      // covers its genre promise for dedupe purposes), plus meter names + current voice constraints.
+      const allTentpoles = nodes.filter((n) => n.parent_id === pillar.id && n.kind === "tentpole");
+      const meterNodes = nodes.filter((n) => n.parent_id === pillar.id && n.kind === "meter");
+      const mName = (e: Node) => String((e.content as { name?: string }).name ?? "").trim();
+      const existingBlock = [
+        allTentpoles.length ? `Tentpoles already declared (do NOT re-emit a promise these cover):\n${allTentpoles.map((t) => `- ${tpName(t)}`).join("\n")}` : "",
+        meterNodes.length ? `Meters already declared (do NOT re-emit these axes):\n${meterNodes.map((m) => `- ${mName(m)}`).join("\n")}` : "",
+        vp?.constraints?.length ? `Voice constraints already set (do NOT repeat or contradict):\n${vp.constraints.map((c) => `- ${c}`).join("\n")}` : "",
+      ].filter(Boolean).join("\n\n");
+      const system = `You are a story architect COMPILING THE BRIEF into the book's derived contract — the concrete promises its genre, audience, tone, and content type make to the reader. Derive ONLY from the BRIEF and MANDATE (the story-so-far is orientation, not a source of new plot); phrase everything for THIS book. Skip anything the existing registry already covers — empty arrays are fine. Three deliverables:
+1. TENTPOLES — the 3–6 OBLIGATORY scenes/moments this genre owes the reader (e.g. romance: the meet, the dark moment, the grand gesture; thriller: the reveal, the final confrontation). One line each.
+2. METERS — the 1–3 numeric axes the brief demands (a comedy brief → a comedy meter; the content type's heat → a heat meter; most genres → a tension meter). Each has poles (what low/high FEEL like on the page), a 0–100 scale, and a TARGET curve: 3–7 sparse keyframes { at: 0..1 position through the book, value: 0..100 } encoding the genre's expected shape (e.g. thriller tension: a sawtooth rising to ~90 near the climax, then release; romance heat: slow build with a spike at the midpoint turn).
+3. VOICE_CONSTRAINTS — 2–5 short imperative register bounds for THIS audience: vocabulary ceiling/floor, content phrasing limits, sentence-complexity guidance (e.g. "YA: no graphic gore; keep slang timeless, not dated").
+Output JSON ONLY: { "tentpoles": [ { "summary": "..." } ], "meters": [ { "name": "...", "kind": "comedy"|"heat"|"tension"|"affect"|"value"|"custom", "poles": { "low": "...", "high": "..." }, "scale": { "min": 0, "max": 100 }, "target": [ { "at": 0.0, "value": 10 } ] } ], "voice_constraints": [ "..." ] }`;
+      const data = await callLLM(apiKey, { model, max_tokens: 3000, output_config: { effort: "medium" }, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+        messages: [{ role: "user", content: `${ctx}${existingBlock ? `\n\nEXISTING REGISTRY:\n${existingBlock}` : ""}\n\nCompile the brief's contract. JSON only.` }] }, meta, { signal: AbortSignal.timeout(140_000) });
+      const parsed = JSON.parse(extractJsonBlock(textFromLLM(data)));
+      const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
+      const METER_KINDS = new Set(["value", "game_score", "affect", "relationship", "heat", "comedy", "tension", "custom"]);
+      const outTentpoles = (Array.isArray(parsed.tentpoles) ? parsed.tentpoles as Record<string, unknown>[] : [])
+        .map((t) => ({ summary: String(t?.summary ?? "").trim() })).filter((t) => t.summary);
+      const outMeters = (Array.isArray(parsed.meters) ? parsed.meters as Record<string, unknown>[] : [])
+        .map((m) => {
+          const scaleRaw = (m?.scale ?? {}) as { min?: unknown; max?: unknown };
+          const min = Number.isFinite(Number(scaleRaw.min)) ? Number(scaleRaw.min) : 0;
+          const max = Number.isFinite(Number(scaleRaw.max)) && Number(scaleRaw.max) > min ? Number(scaleRaw.max) : 100;
+          const poles = (m?.poles ?? {}) as { low?: unknown; high?: unknown };
+          const target = (Array.isArray(m?.target) ? m.target as { at?: unknown; value?: unknown }[] : [])
+            .map((p) => ({ at: Number(p?.at), value: Number(p?.value) }))
+            .filter((p) => Number.isFinite(p.at) && Number.isFinite(p.value))
+            .map((p) => ({ at: clamp(p.at, 0, 1), value: clamp(p.value, min, max) }))
+            .sort((a, b) => a.at - b.at);
+          return {
+            name: String(m?.name ?? "").trim(),
+            kind: METER_KINDS.has(String(m?.kind)) ? String(m.kind) : "custom",
+            poles: { low: String(poles.low ?? "").trim(), high: String(poles.high ?? "").trim() },
+            scale: { min, max },
+            ...(target.length ? { target } : {}),
+          };
+        }).filter((m) => m.name);
+      const voice_constraints = (Array.isArray(parsed.voice_constraints) ? parsed.voice_constraints as unknown[] : [])
+        .map((c) => String(c ?? "").trim()).filter(Boolean);
+      return json({ contract: true, tentpoles: outTentpoles, meters: outMeters, voice_constraints });
     }
 
     // Generic DNA target: load config from node_type_configs, rebuild ctx with slot-filtered blocks.

@@ -4,8 +4,9 @@ import {
   enforcePromiseSchedule, inputHash, isProseStale, isRenderable, isStale, lock, pacing, promiseLedger,
   refsOf, renderBlockers, renderPages, scenesInOrder, stakesOf, stampInput, stampProse, topography,
   validate, meterSeries, meterShape, isSerialMeter, meterTarget, targetGap, observedSeries, observedGap,
-  ledgerBefore, ledgerFull,
-  type DnaNode, type NodeKind, type ThreadRef,
+  ledgerBefore, ledgerFull, lintConfigForBrief, DEFAULT_LINT_CONFIG, proseLints,
+  obligationLedger, openObligations, debtSettled,
+  type DnaNode, type NodeKind, type ThreadRef, type Obligation,
 } from "@/features/dna/lib/novelDna";
 
 let seq = 0;
@@ -218,6 +219,69 @@ describe("validation", () => {
     const tent = mk("tentpole", { id: "t", authoring: { source: "user", locked: true, status: "accepted" } });
     const s = mk("scene", { id: "s", parent_id: "b1", content: { value_shift: { value: "trust", from: "-", to: "+" }, realizes_tentpole: "t", goal: "g" } });
     expect(validate([m, b1, b2, tent, s]).filter((i) => i.severity === "error")).toHaveLength(0);
+  });
+});
+
+describe("dead-field + chronology + cold-reader lints", () => {
+  const beat = () => mk("beat", { id: "b", content: { summary: "x" } });
+
+  it("dead_arc: a lie-carrying character with no owned arc thread fires — only once beats exist", () => {
+    const liar = mk("character", { id: "c", content: { name: "Mara", lie: "places can't be trusted" } });
+    expect(validate([liar]).map((i) => i.rule)).not.toContain("dead_arc");            // no beats → early
+    expect(validate([liar, beat()]).map((i) => i.rule)).toContain("dead_arc");        // planned, arc absent
+    const arc = mk("thread", { id: "t", content: { name: "her lie", promise: "p", kind: "arc", owner: "c" } });
+    expect(validate([liar, beat(), arc]).map((i) => i.rule)).not.toContain("dead_arc");
+    const noLie = mk("character", { id: "c2", content: { name: "Okonkwo" } });
+    expect(validate([noLie, beat()]).map((i) => i.rule)).not.toContain("dead_arc");   // nothing declared
+  });
+
+  it("static_relationship: a charged edge no scene advances fires — only once scenes exist", () => {
+    const a = mk("character", { id: "ca", content: { name: "A" } }), b = mk("character", { id: "cb", content: { name: "B" } });
+    const rel = mk("relationship", { id: "r", content: { a: "ca", b: "cb", bond: "rivals", charge: "unspoken debt" } });
+    expect(validate([a, b, rel]).map((i) => i.rule)).not.toContain("static_relationship"); // no scenes → early
+    const still = mk("scene", { id: "s", parent_id: "b0", content: { goal: "g", value_shift: { value: "v", from: "-", to: "+" } } });
+    expect(validate([a, b, rel, beat(), still]).map((i) => i.rule)).toContain("static_relationship");
+    const moving = mk("scene", { id: "s2", parent_id: "b0", content: { goal: "g", value_shift: { value: "v", from: "-", to: "+" }, advances: [{ ref: "r", how: "they clash" }] } });
+    expect(validate([a, b, rel, beat(), moving]).map((i) => i.rule)).not.toContain("static_relationship");
+  });
+
+  it("unmarked_travel: same POV, new location, no time marker — a teleport; any marker silences it", () => {
+    const sc = (id: string, pos: number, loc: string, time?: { when?: string; elapsed?: string }) =>
+      mk("scene", { id, parent_id: "b", position: pos, content: { pov: "c1", loc, ...(time ? { time } : {}), goal: "g", value_shift: { value: "v", from: "-", to: "+" } } });
+    const base = [mk("act", { id: "a" }), mk("beat", { id: "b", parent_id: "a", content: { summary: "x" } }),
+      mk("character", { id: "c1", content: { name: "Mara" } }), mk("location", { id: "l1", content: { name: "Harbor" } }), mk("location", { id: "l2", content: { name: "Uplands" } })];
+    const teleport = validate([...base, sc("s1", 0, "l1"), sc("s2", 1, "l2")]);
+    expect(teleport.find((i) => i.rule === "unmarked_travel")?.nodeId).toBe("s2");
+    expect(validate([...base, sc("s1", 0, "l1"), sc("s2", 1, "l2", { elapsed: "two days" })]).map((i) => i.rule)).not.toContain("unmarked_travel");
+    expect(validate([...base, sc("s1", 0, "l1", { when: "dusk" }), sc("s2", 1, "l2", { when: "next morning" })]).map((i) => i.rule)).not.toContain("unmarked_travel");
+    expect(validate([...base, sc("s1", 0, "l1"), sc("s2", 1, "l1")]).map((i) => i.rule)).not.toContain("unmarked_travel"); // same place
+  });
+
+  it("reader_confusion surfaces stored cold-reader flags as warns on the scene", () => {
+    const s = mk("scene", { id: "s", content: { goal: "g", value_shift: { value: "v", from: "-", to: "+" }, confusion_flags: [{ kind: "who", note: "three unnamed speakers" }] } });
+    const hit = validate([s]).find((i) => i.rule === "reader_confusion");
+    expect(hit?.nodeId).toBe("s");
+    expect(hit?.severity).toBe("warn");
+    expect(hit?.message).toContain("who");
+  });
+});
+
+describe("lint config (genre-parameterized thresholds)", () => {
+  it("derives presets from the brief's genre and defaults on unknown/absent genre", () => {
+    expect(lintConfigForBrief(null)).toEqual(DEFAULT_LINT_CONFIG);
+    expect(lintConfigForBrief({ genre: "cozy fantasy" })).toEqual(DEFAULT_LINT_CONFIG);
+    expect(lintConfigForBrief({ genre: "psychological THRILLER" }).saggingRun).toBe(3);
+    expect(lintConfigForBrief({ genre: ["Literary", "drama"] }).meterMinOsc).toBe(1);
+  });
+
+  it("a 3-scene same-polarity run sags for a thriller but not under the defaults", () => {
+    const m = mk("act", { id: "m" });
+    const b = mk("beat", { id: "b", parent_id: "m", content: { summary: "x" } });
+    const sc = (id: string, pos: number) =>
+      mk("scene", { id, parent_id: "b", position: pos, content: { goal: "g", value_shift: { value: "hope", from: "+", to: "-", polarity: "down" } } });
+    const nodes = [m, b, sc("s1", 0), sc("s2", 1), sc("s3", 2)];
+    expect(validate(nodes).map((i) => i.rule)).not.toContain("sagging_middle");
+    expect(validate(nodes, lintConfigForBrief({ genre: "thriller" })).map((i) => i.rule)).toContain("sagging_middle");
   });
 });
 
@@ -748,5 +812,205 @@ describe("continuity ledger (the prefix-sum story-so-far)", () => {
     s = stampInput(s, byId([pillar, mv, b, s]));
     const b2 = { ...b, content: { ...b.content, observed_readings: [{ ref: "cm", value: 5 }] } };
     expect(isStale(s, byId([pillar, mv, b2, s]))).toBe(false); // the beat's OUTPUT field is stripped from the child's input hash
+  });
+});
+
+describe("prose lints (deterministic read layer)", () => {
+  const spine = (...scenes: DnaNode[]): DnaNode[] => {
+    const m = mk("act", { id: "pm" });
+    const b = mk("beat", { id: "pb", parent_id: "pm", content: { summary: "x" } });
+    return [m, b, ...scenes];
+  };
+  const scn = (id: string, pos: number, prose?: string, over: Record<string, unknown> = {}) =>
+    mk("scene", { id, parent_id: "pb", position: pos, content: {
+      value_shift: { value: "hope", from: "-", to: "+", polarity: pos % 2 ? "up" : "down" },
+      ...(prose !== undefined ? { prose: { text: prose } } : {}), ...over } });
+  const rulesOf = (nodes: DnaNode[], cfg = DEFAULT_LINT_CONFIG) => proseLints(nodes, cfg).map((i) => i.rule);
+
+  // Reusable planted faults.
+  const ECHO_A = "The copper weathervane spun over marshland."; // shares exactly ONE distinctive 5-gram…
+  const ECHO_B = "She remembered the copper weathervane spun over water."; // …("the copper weathervane spun over")
+  const FLAT_8 = "Mara walked to the door. Rain hammered on the glass. She counted every grey step. The lamp guttered in silence. Something moved behind the curtain. Her hands would not settle. The clock ticked past midnight. Nobody answered her second knock."; // 8 sentences × 5 words → CV 0
+  const SOUP_PAIR = "Mara watched Okonkwo pace. Mara told Okonkwo that Mara would carry the lantern north again."; // 15 words, 5 name hits
+  const DLG_1 = '"Where is it?" she asked.\n"Gone," he said.';
+  const DLG_2 = '"You promised me," she said.\n"I lied," he said.';
+  const DLG_3 = '"Open the box," she said.\n"No," he said.';
+
+  it("a prose-less book produces no prose lints at all (skip-empty = early, not wrong)", () => {
+    expect(proseLints(spine(scn("u1", 0), scn("u2", 1), scn("u3", 2)), DEFAULT_LINT_CONFIG)).toEqual([]);
+  });
+
+  it("prose_echo: one distinctive 5-gram shared with the PREVIOUS scene flags the later scene", () => {
+    const hits = proseLints(spine(scn("e1", 0, ECHO_A), scn("e2", 1, ECHO_B)), DEFAULT_LINT_CONFIG).filter((i) => i.rule === "prose_echo");
+    expect(hits).toHaveLength(1);
+    expect(hits[0].nodeId).toBe("e2");
+    expect(hits[0].message).toContain('"the copper weathervane spun over"');
+    expect(hits[0].message).toContain("from scene 1");
+  });
+
+  it("prose_echo: the same single echo two scenes apart stays under the distant floor (≥2)", () => {
+    const nodes = spine(scn("e1", 0, ECHO_A), scn("e2", 1, "Nothing here resembles anything elsewhere tonight."), scn("e3", 2, ECHO_B));
+    expect(rulesOf(nodes)).not.toContain("prose_echo");
+  });
+
+  it("prose_echo: a phrase from the scene's own location palette is exempt (facet echo is deliberate craft)", () => {
+    const loc = mk("location", { id: "ploc", content: { name: "The Marsh", sight: "the copper weathervane spun over" } });
+    const nodes = [loc, ...spine(scn("e1", 0, ECHO_A, { loc: "ploc" }), scn("e2", 1, ECHO_B, { loc: "ploc" }))];
+    expect(rulesOf(nodes)).not.toContain("prose_echo");
+  });
+
+  it("monotone_rhythm: 8 equal-length sentences fire, with CV and mean in the message", () => {
+    const hits = proseLints(spine(scn("r1", 0, FLAT_8)), DEFAULT_LINT_CONFIG).filter((i) => i.rule === "monotone_rhythm");
+    expect(hits).toHaveLength(1);
+    expect(hits[0].nodeId).toBe("r1");
+    expect(hits[0].message).toContain("CV 0.00");
+    expect(hits[0].message).toContain("mean 5.0");
+  });
+
+  it("monotone_rhythm: the same flat cadence under rhythmMinSentences stays silent", () => {
+    const seven = FLAT_8.split(". ").slice(0, 7).join(". ") + "."; // 7 sentences < the 8 floor
+    expect(rulesOf(spine(scn("r1", 0, seven)))).not.toContain("monotone_rhythm");
+  });
+
+  it("name_soup: dense first-name mentions over a ≥150-word scene fire and name the worst offender", () => {
+    const c1 = mk("character", { id: "pc1", content: { name: "Mara Voss" } });
+    const c2 = mk("character", { id: "pc2", content: { name: "Okonkwo" } });
+    const soup = Array.from({ length: 12 }, () => SOUP_PAIR).join(" "); // 180 words, 60 name hits → 33.3/100
+    const hits = proseLints([c1, c2, ...spine(scn("n1", 0, soup))], DEFAULT_LINT_CONFIG).filter((i) => i.rule === "name_soup");
+    expect(hits).toHaveLength(1);
+    expect(hits[0].nodeId).toBe("n1");
+    expect(hits[0].message).toContain('"Mara" leads');
+  });
+
+  it("name_soup: the same density under 150 words stays silent (too short to judge)", () => {
+    const c1 = mk("character", { id: "pc1", content: { name: "Mara Voss" } });
+    const c2 = mk("character", { id: "pc2", content: { name: "Okonkwo" } });
+    const short = Array.from({ length: 9 }, () => SOUP_PAIR).join(" "); // 135 words — same density, under the floor
+    expect(rulesOf([c1, c2, ...spine(scn("n1", 0, short))])).not.toContain("name_soup");
+  });
+
+  it("dialogue_flatline: three all-dialogue scenes in a row flag the FIRST scene of the run", () => {
+    const hits = proseLints(spine(scn("d1", 0, DLG_1), scn("d2", 1, DLG_2), scn("d3", 2, DLG_3)), DEFAULT_LINT_CONFIG).filter((i) => i.rule === "dialogue_flatline");
+    expect(hits).toHaveLength(1);
+    expect(hits[0].nodeId).toBe("d1");
+    expect(hits[0].message).toContain("3 scenes in a row");
+    expect(hits[0].message).toContain("≥90% dialogue");
+  });
+
+  it("dialogue_flatline: a narration scene breaks the run (no 3-run of either extreme)", () => {
+    const nodes = spine(scn("d1", 0, DLG_1), scn("d2", 1, "She crossed the yard without a word to anyone there."), scn("d3", 2, DLG_3));
+    expect(rulesOf(nodes)).not.toContain("dialogue_flatline");
+  });
+
+  it("config override flips an outcome: dialogueRunLen 3→5 silences a 3-run", () => {
+    const nodes = spine(scn("d1", 0, DLG_1), scn("d2", 1, DLG_2), scn("d3", 2, DLG_3));
+    expect(rulesOf(nodes)).toContain("dialogue_flatline");
+    expect(rulesOf(nodes, { ...DEFAULT_LINT_CONFIG, dialogueRunLen: 5 })).not.toContain("dialogue_flatline");
+  });
+
+  it("validate() carries the prose lints (wired into the every-read pass)", () => {
+    const rules = validate(spine(scn("e1", 0, ECHO_A), scn("e2", 1, ECHO_B))).map((i) => i.rule);
+    expect(rules).toContain("prose_echo");
+  });
+});
+
+describe("obligation ledger (the debt view) + the completion predicate", () => {
+  // One spine, every debt kind exercised. Scenes s0..s3 in reading order under two beats.
+  const spine = () => {
+    const pillar = mk("pillar", { id: "p" });
+    const act = mk("act", { id: "a", parent_id: "p", position: 0 });
+    const b1 = mk("beat", { id: "b1", parent_id: "a", position: 0, content: { establishes: ["key_earned"], plays: ["gm_open"] } });
+    const b2 = mk("beat", { id: "b2", parent_id: "a", position: 1, content: { needs: ["key_earned", "key_unmet"], plays: ["gm_closed"], resolves: [{ ref: "gm_closed", outcome: "won" }] } });
+    return { pillar, act, b1, b2 };
+  };
+  const scene = (id: string, parent: string, pos: number, content: Record<string, unknown> = {}) =>
+    mk("scene", { id, parent_id: parent, position: pos, content });
+  const row = (rows: Obligation[], id: string) => rows.find((o) => o.id === id);
+
+  const book = (): DnaNode[] => {
+    const { pillar, act, b1, b2 } = spine();
+    return [pillar, act, b1, b2,
+      // threads: paid / held open / never planted / waived-unplanted
+      mk("thread", { id: "th_paid", parent_id: "p", content: { name: "paid", promise: "answered" } }),
+      mk("thread", { id: "th_open", parent_id: "p", content: { name: "held", promise: "still owed" } }),
+      mk("thread", { id: "th_reg", parent_id: "p", content: { name: "registry-only" } }),
+      mk("thread", { id: "th_waived", parent_id: "p", content: { name: "sequel hook", waived: true } }),
+      // a proposed (not accepted) thread must create NO row
+      mk("thread", { id: "th_proposed", parent_id: "p", authoring: { source: "ai", locked: false, status: "proposed" } }),
+      mk("game", { id: "gm_open", parent_id: "p", content: { name: "open contest", stake: "everything" } }),
+      mk("game", { id: "gm_closed", parent_id: "p", content: { name: "decided contest" } }),
+      mk("game", { id: "gm_reg", parent_id: "p", content: { name: "never played" } }),
+      mk("tentpole", { id: "tp_placed", parent_id: "p", content: { summary: "the plaza folds" } }),
+      mk("tentpole", { id: "tp_unplaced", parent_id: "p", content: { summary: "the flood" } }),
+      mk("character", { id: "ch_met", parent_id: "p", content: { name: "Mara" } }),
+      mk("character", { id: "ch_unmet", parent_id: "p", content: { name: "Ghost" } }),
+      mk("location", { id: "lc_seen", parent_id: "p", content: { name: "Harbor" } }),
+      scene("s0", "b1", 0, { threads: [{ ref: "th_paid", role: "setup" }, { ref: "th_open", role: "setup" }], pov: "ch_met", loc: "lc_seen" }),
+      scene("s1", "b1", 1, { threads: [{ ref: "th_paid", role: "advance" }, { ref: "th_open", role: "advance" }], present: ["ch_met"] }),
+      scene("s2", "b2", 0, { threads: [{ ref: "th_paid", role: "payoff" }], realizes_tentpole: "tp_placed" }),
+    ];
+  };
+
+  it("threads: setup opens, payoff closes, advance counts as progress; registry-only stays unopened", () => {
+    const rows = obligationLedger(book());
+    expect(row(rows, "thread:th_paid")).toMatchObject({ state: "closed", openedAt: 0, closedAt: 2, touches: 1 });
+    expect(row(rows, "thread:th_open")).toMatchObject({ state: "open", openedAt: 0, closedAt: null, touches: 1 });
+    expect(row(rows, "thread:th_reg")).toMatchObject({ state: "unopened", openedAt: null });
+    expect(row(rows, "thread:th_waived")?.state).toBe("waived");
+    expect(row(rows, "thread:th_proposed")).toBeUndefined();
+  });
+
+  it("a payoff with no prior setup settles nothing (the unearned payoff stays unopened)", () => {
+    const { pillar, act, b1 } = spine();
+    const nodes = [pillar, act, b1,
+      mk("thread", { id: "th_unearned", parent_id: "p", content: { name: "unearned" } }),
+      scene("s0", "b1", 0, { threads: [{ ref: "th_unearned", role: "payoff" }] })];
+    expect(row(obligationLedger(nodes), "thread:th_unearned")?.state).toBe("unopened");
+  });
+
+  it("games: plays opens, resolves closes; an accepted game never on the spine stays unopened", () => {
+    const rows = obligationLedger(book());
+    expect(row(rows, "game:gm_open")).toMatchObject({ state: "open", openedAt: 0, closedAt: null, touches: 1 });
+    expect(row(rows, "game:gm_closed")).toMatchObject({ state: "closed", openedAt: 1, closedAt: 1 });
+    expect(row(rows, "game:gm_reg")).toMatchObject({ state: "unopened", touches: 0 });
+    expect(row(rows, "game:gm_open")?.promise).toBe("everything");
+  });
+
+  it("state keys: closed when deposited upstream of the spend, open when unmet (deposit precedes spend)", () => {
+    const rows = obligationLedger(book());
+    expect(row(rows, "state_key:key_earned")).toMatchObject({ state: "closed", openedAt: 1, closedAt: 0, touches: 1 });
+    expect(row(rows, "state_key:key_unmet")).toMatchObject({ state: "open", closedAt: null });
+  });
+
+  it("tentpoles + entity intros: paid on first appearance, owed while the page never shows them", () => {
+    const rows = obligationLedger(book());
+    expect(row(rows, "tentpole:tp_placed")).toMatchObject({ state: "closed", closedAt: 2 });
+    expect(row(rows, "tentpole:tp_unplaced")?.state).toBe("unopened");
+    expect(row(rows, "entity_intro:ch_met")).toMatchObject({ state: "closed", closedAt: 0, touches: 2 }); // pov s0 + present s1
+    expect(row(rows, "entity_intro:ch_unmet")?.state).toBe("unopened");
+    expect(row(rows, "entity_intro:lc_seen")).toMatchObject({ state: "closed", touches: 1 });
+  });
+
+  it("openObligations lists exactly the outstanding debt; debtSettled is the quiescence gate", () => {
+    const nodes = book();
+    const open = openObligations(nodes).map((o) => o.id).sort();
+    expect(open).toEqual(["entity_intro:ch_unmet", "game:gm_open", "game:gm_reg", "state_key:key_unmet", "tentpole:tp_unplaced", "thread:th_open", "thread:th_reg"]);
+    expect(debtSettled(nodes)).toBe(false);
+  });
+
+  it("debtSettled flips true once every promise is paid or waived", () => {
+    const { pillar, act, b1 } = spine();
+    const nodes = [pillar, act, b1,
+      mk("thread", { id: "th", parent_id: "p", content: { name: "t" } }),
+      mk("thread", { id: "th_carry", parent_id: "p", content: { name: "hook", waived: true } }),
+      scene("s0", "b1", 0, { threads: [{ ref: "th", role: "setup" }] }),
+      scene("s1", "b1", 1, { threads: [{ ref: "th", role: "payoff" }] })];
+    expect(debtSettled(nodes)).toBe(true);
+    expect(obligationLedger(nodes).map((o) => o.state).sort()).toEqual(["closed", "waived"]);
+  });
+
+  it("an empty tree carries no debt (vacuously settled — nothing was ever promised)", () => {
+    expect(obligationLedger([])).toEqual([]);
+    expect(debtSettled([])).toBe(true);
   });
 });

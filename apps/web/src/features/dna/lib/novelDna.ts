@@ -50,6 +50,7 @@ export interface Authoring {
   status: AuthoringStatus;
   src_hash?: string; // hash of this node's INPUT SET when last generated/accepted
   prose_src_hash?: string; // scenes — hash of the scene plan the prose was written from
+  sketch_src_hash?: string; // scenes — hash of the scene spec the SKETCH was written from
 }
 
 // ── Content shapes (the schema contract, §3/§4) ───────────────────────────────
@@ -72,7 +73,17 @@ export interface PremiseContent {
   observed_shape_fit?: { movement: number; actIds: string[]; fit: number; worst?: string; note?: string }[];
   observed_shape_hash?: string;
 }
-export interface PillarContent { controlling_idea?: string; ending?: string }
+export interface PillarContent {
+  controlling_idea?: string; ending?: string;
+  // THE SYNOPSIS READ (W2, doc_1783192600000_dna_build_plan.md): a paid craft verdict over the PLAN plane
+  // (premise + pillar + acts + beats, zero prose) — the shift-left "editor's read", written by read-synopsis
+  // onto the pillar (the level that owns the whole plan), parallel to observed_shape_fit on the premise.
+  // Output data, never authored (kept out of dnaSchema FIELDS + stripped from input hashing via OUTPUT_FIELDS).
+  // axis ∈ boredom_risk/predictability/genre_feel/stakes_clarity; worst = the beat most responsible for a low
+  // score. observed_craft_hash is the staleness seal.
+  observed_craft?: { axis: string; score: number; note?: string; worst?: string }[];
+  observed_craft_hash?: string;
+}
 // target_pct: where this act's turning_point should land in the book (0–1) — the pacing intent (§6).
 // value = the act's MACRO shift; schema keys it `name` (scene ValueShift keys it `value`). polarity = the
 // machine-readable trend (where the value ENDS across the act) — what act_value_undelivered checks.
@@ -101,6 +112,10 @@ export interface Reading { ref: string; value: number }
 export interface LedgerFact { key: string; value: string; note?: string; entity?: string }
 // A continuity break the read found in a scene's prose vs the canon established before it (was → now).
 export interface ContinuityFlag { key: string; was: string; now: string; note?: string }
+// A confusion the cold-reader read found in a scene's prose — something a reader who knows ONLY what the
+// book has shown so far couldn't follow (who is speaking / where are we / when / why / what's referenced).
+// Output of the read (read-confusion), never authored — the affective twin of ContinuityFlag.
+export interface ConfusionFlag { kind?: "who" | "where" | "when" | "why" | "reference"; note?: string }
 export interface BeatContent {
   summary?: string; connector?: "therefore" | "but"; polarity?: "up" | "down";
   threads?: ThreadRef[]; realizes?: string[]; grounds_in?: string[];
@@ -113,6 +128,16 @@ export interface BeatContent {
                                   // (the verify loop, docs/true-agent.md). Output data — excluded from chat context.
 }
 export interface ChapterStart { title?: string; pov?: string; epigraph?: string }
+// The scene TREATMENT (doc_1783196400000_dna_scene_sketch_layer.md, doc_1783198900000_dna_scene_direction.md):
+// the low-res plan between the scene's contract (goal/conflict/outcome) and its prose. `moves` are WHAT
+// happens (never dialogue lines — direction says HOW, not WHAT's said); `direction` is HOW it's shown.
+export interface SketchMove { what: string; thread?: string; sense?: string }
+export type SketchDistance = "far" | "mid" | "close" | "deep"; // psychic distance (Gardner)
+export type SketchMode = "dialogue" | "action" | "interior" | "description" | "summary";
+export type SketchTime = "real" | "compressed" | "stretched";
+export type SketchTension = "suspense" | "mystery" | "irony";
+export interface SketchDirection { cut?: { in?: string; out?: string }; distance?: SketchDistance; mode?: SketchMode; time?: SketchTime; tension?: SketchTension }
+export interface SceneSketch { opening?: string; moves?: SketchMove[]; exit?: string; direction?: SketchDirection }
 export interface SceneContent {
   pov?: string; loc?: string; time?: { when?: string; elapsed?: string };
   present?: string[]; goal?: string; conflict?: string; outcome?: string;
@@ -126,8 +151,10 @@ export interface SceneContent {
   establishes?: string[];              // CAUSALITY: state keys produced (inherited from its beat)
   needs?: string[];                    // CAUSALITY: state keys depended on (inherited from its beat)
   readings?: Reading[];                // METERS: this scene's level on each meter (inherited/refined from its beat)
+  sketch?: SceneSketch;                // TREATMENT: what/how this page renders — generated before prose (dna-expand target='sketch')
   observed_establishes?: LedgerFact[]; // CONTINUITY: key→value facts this scene's prose asserted (the ledger delta)
   continuity_flags?: ContinuityFlag[]; // CONTINUITY: breaks the read found here vs prior canon (output, not plan input)
+  confusion_flags?: ConfusionFlag[];   // COLD READER: what a reader-so-far couldn't follow here (output, not plan input)
   chapter_start?: ChapterStart | null;
   prose?: { text?: string; words?: number };
 }
@@ -333,7 +360,7 @@ export function backlinkIndex(nodes: DnaNode[]): Map<string, DnaNode[]> {
 // Fields that are OUTPUTS of generation/the read, never plan INPUTS — stripped before any input-set hash so
 // writing them (e.g. a meter read onto a beat, a fact ledger onto a scene) never spuriously stales the nodes
 // that hash this content. Mirrors how the prose hash already excludes prose.
-const OUTPUT_FIELDS = ["prose", "observed_readings", "observed_establishes", "continuity_flags", "observed_shape_fit", "observed_shape_hash"] as const;
+const OUTPUT_FIELDS = ["prose", "observed_readings", "observed_establishes", "continuity_flags", "confusion_flags", "observed_shape_fit", "observed_shape_hash", "observed_craft", "observed_craft_hash"] as const;
 function planOf(content: NodeContent | null | undefined): NodeContent | null {
   if (!content) return null;
   const out: Record<string, unknown> = { ...(content as Record<string, unknown>) };
@@ -373,6 +400,25 @@ export function stampInput(node: DnaNode, index: Map<string, DnaNode>): DnaNode 
 export function stampProse(scene: DnaNode): DnaNode {
   const { prose: _p, observed_establishes: _oe, continuity_flags: _cf, ...plan } = scene.content as SceneContent;
   return { ...scene, authoring: { ...scene.authoring, prose_src_hash: metaHash(stableStringify(plan)) } };
+}
+
+/** The scene's SPEC — its content minus the sketch itself and every OUTPUT field — the input set the sketch
+ *  is generated from. Shared by isSketchStale/stampSketch so the two can never drift on what "spec" means. */
+function sketchInputPlan(c: SceneContent): Record<string, unknown> {
+  const { sketch: _sk, prose: _p, observed_establishes: _oe, continuity_flags: _cf, confusion_flags: _cnf, ...plan } = c;
+  return plan;
+}
+/** Scene sketch is stale iff the scene's spec changed since the sketch was written. Because `prose_src_hash`
+ *  hashes the WHOLE plan (sketch included), editing the sketch — or the spec beneath it — already staleness-
+ *  invalidates the prose for free; this only needs to guard the sketch's OWN input (the spec, minus itself). */
+export function isSketchStale(scene: DnaNode): boolean {
+  const c = scene.content as SceneContent;
+  if (!c.sketch || !scene.authoring.sketch_src_hash) return false;
+  return scene.authoring.sketch_src_hash !== metaHash(stableStringify(sketchInputPlan(c)));
+}
+/** Stamp a scene's sketch hash (call after the sketch is written from the current spec). */
+export function stampSketch(scene: DnaNode): DnaNode {
+  return { ...scene, authoring: { ...scene.authoring, sketch_src_hash: metaHash(stableStringify(sketchInputPlan(scene.content as SceneContent))) } };
 }
 
 // ── Pure edits ────────────────────────────────────────────────────────────────
@@ -465,13 +511,45 @@ export function enforcePromiseSchedule<T extends ThreadCarrier>(itemsInOrder: T[
 // ── The three analytic axes (schema §6) ───────────────────────────────────────
 // All derive over scenes-in-reading-order; none store anything. Each also feeds a lint in validate().
 
-const PACING_DRIFT_TOL = 0.1;   // a act turn >10 percentage-points off its target_pct = drift
-const SAGGING_RUN = 4;          // ≥4 consecutive same-polarity scenes = a sagging middle
-const METER_FLAT_RUN = 4;       // ≥4 consecutive ~equal readings on a meter = a dead stretch on that axis
-const METER_MIN_OSC = 2;        // a meter that changes direction fewer times over its life reads monotone
-const METER_POLE_BAND = 0.15;   // a game_score must come within 15% of its losing pole or there's no jeopardy
-const METER_TARGET_DRIFT_BAND = 0.2; // the PLAN's readings may sit within 20% of scale of the INTENDED target curve
-const METER_READ_GAP_BAND = 0.2;     // the prose-OBSERVED reading may sit within 20% of scale of the PLANNED reading
+// ── Lint configuration (the linter's ".eslintrc") ─────────────────────────────
+// Every craft threshold in one bag so GENRE can parameterize strictness instead of one-size-fits-all —
+// a thriller's sagging middle is shorter than a literary novel's. validate()/analysisText() take an
+// optional config; DEFAULT_LINT_CONFIG preserves the historical values so every existing caller is
+// unchanged. Callers that hold the brief derive a preset via lintConfigForBrief.
+export interface LintConfig {
+  pacingDriftTol: number;       // an act turn this far (fraction) off its target_pct = drift
+  saggingRun: number;           // ≥N consecutive same-polarity scenes = a sagging middle
+  meterFlatRun: number;         // ≥N consecutive ~equal readings on a meter = a dead stretch on that axis
+  meterMinOsc: number;          // a meter that changes direction fewer times over its life reads monotone
+  meterPoleBand: number;        // a game_score must come within this fraction of its losing pole or there's no jeopardy
+  meterTargetDriftBand: number; // the PLAN's readings may sit within this fraction of scale of the INTENDED target curve
+  meterReadGapBand: number;     // the prose-OBSERVED reading may sit within this fraction of scale of the PLANNED reading
+  sceneRefineBand: number;      // a scene's explicit reading may sit within this fraction of scale of its beat's
+  // W3 — the deterministic prose linter (proseLints; only scenes WITH prose are ever judged):
+  proseEchoAdjacent: number;    // ≥N shared distinctive 5-grams with the PREVIOUS scene = an echo
+  proseEchoDistant: number;     // ≥N shared distinctive 5-grams with any NON-adjacent earlier scene = an echo
+  rhythmMinSentences: number;   // a scene needs at least this many real sentences before cadence is judged
+  rhythmCvFloor: number;        // sentence-length coefficient of variation below this = monotone rhythm
+  nameDensityCeiling: number;   // character-name mentions per 100 words above this = name soup
+  dialogueRunLen: number;       // ≥N consecutive prose scenes all ≥90% (or all ≤10%) dialogue = a flatline
+}
+export const DEFAULT_LINT_CONFIG: LintConfig = {
+  pacingDriftTol: 0.1, saggingRun: 4, meterFlatRun: 4, meterMinOsc: 2,
+  meterPoleBand: 0.15, meterTargetDriftBand: 0.2, meterReadGapBand: 0.2, sceneRefineBand: 0.2,
+  proseEchoAdjacent: 1, proseEchoDistant: 2, rhythmMinSentences: 8, rhythmCvFloor: 0.3,
+  nameDensityCeiling: 8, dialogueRunLen: 3,
+};
+// Genre presets, matched by keyword over the brief's free-text genre. Taut genres tolerate shorter flat
+// stretches; interior genres allow longer ones and don't demand oscillation. An unrecognized genre gets
+// the defaults — never stricter by accident.
+const TAUT_GENRES = ["thriller", "mystery", "suspense", "horror", "action", "crime", "heist"];
+const INTERIOR_GENRES = ["literary", "character study", "slice of life", "slice-of-life", "memoir", "quiet"];
+export function lintConfigForBrief(brief?: { genre?: string | string[] | null } | null): LintConfig {
+  const g = (Array.isArray(brief?.genre) ? brief.genre.join(" ") : brief?.genre ?? "").toLowerCase();
+  if (TAUT_GENRES.some((k) => g.includes(k))) return { ...DEFAULT_LINT_CONFIG, saggingRun: 3, meterFlatRun: 3 };
+  if (INTERIOR_GENRES.some((k) => g.includes(k))) return { ...DEFAULT_LINT_CONFIG, saggingRun: 5, meterFlatRun: 5, meterMinOsc: 1 };
+  return DEFAULT_LINT_CONFIG;
+}
 
 /** PACING (when): each act's turning point gets an actual % (cumulative words, or scene count
  *  pre-prose) and the drift from its authored target_pct. */
@@ -517,6 +595,148 @@ export function promiseLedger(nodes: DnaNode[]): PromiseLedgerRow[] {
     return { threadId: t.id, name: c.name ?? t.id, promise: c.promise ?? "", setups, payoffs };
   });
 }
+
+// ── OBLIGATIONS (the debt ledger — promise → progress → payoff, unified) ──────
+// First-principles model (doc_1783287744842_promise_debt_completion.md): a book is a ledger of promises —
+// every axis OPENS debts (a thread set up, a game played, a state key spent, a tentpole pinned, an entity
+// introduced) and the book is DONE when every debt is paid or deliberately waived (a sequel hook). This
+// re-projects the per-axis signals the lints already compute into ONE typed table, so the completion
+// predicate — and later the driver's endgame objective — reads "the remaining debt" in one place.
+//   unopened — promised in the registry, never reaches the page  → outstanding
+//   open     — live on the page, not yet paid                    → outstanding
+//   closed   — paid (payoff / resolved / established / placed / appeared)
+//   waived   — deliberate carry-over: `content.waived === true` (nothing writes it yet; read here so the
+//              state machine is total before the waive gesture ships)
+// Spine note: thread/tentpole/entity_intro indices are scenesInOrder positions (render plane, like
+// promiseLints); state_key indices are beatsInOrder positions (plan plane, like causality). Indices compare
+// within a kind only. NOT rows in v1 (fuzzy closure — need schema refs first): the contract meter (the
+// vertical-fit lints own target-curve delivery) and the dramatic question (needs an explicit answering ref).
+export type ObligationKind = "thread" | "game" | "state_key" | "tentpole" | "entity_intro";
+export type ObligationState = "unopened" | "open" | "closed" | "waived";
+export interface Obligation {
+  id: string;                  // `<kind>:<ref>` — unique row key
+  ref: string;                 // the node id (or bare state key) the debt concerns
+  kind: ObligationKind;
+  name: string;
+  promise: string;             // what the reader was promised, human-readable
+  state: ObligationState;
+  openedAt: number | null;     // spine index where the debt went live (null = opened by the registry itself)
+  closedAt: number | null;     // spine index where it was paid
+  touches: number;             // service events (advances / plays / appearances) — the "progress" P
+}
+
+const pinnedOrAccepted = (n: DnaNode): boolean => n.authoring.locked || n.authoring.status === "accepted";
+const isWaived = (n: DnaNode): boolean => (n.content as { waived?: unknown }).waived === true;
+
+export function obligationLedger(nodes: DnaNode[]): Obligation[] {
+  const out: Obligation[] = [];
+  const scenes = scenesInOrder(nodes);
+
+  // THREADS — the canonical promise: opens at its first scene `setup`, pays at the first `payoff` at/after
+  // it (a payoff with no prior setup settles nothing — unearned_payoff flags that anomaly). `advance` = progress.
+  for (const t of nodes.filter((n) => n.kind === "thread" && pinnedOrAccepted(n))) {
+    const c = t.content as ThreadContent;
+    let openedAt: number | null = null, closedAt: number | null = null, touches = 0;
+    scenes.forEach((s, i) => {
+      for (const r of ((s.content as SceneContent).threads ?? [])) {
+        if (r.ref !== t.id) continue;
+        if (r.role === "setup" && openedAt === null) openedAt = i;
+        if (r.role === "advance") touches++;
+        if (r.role === "payoff" && openedAt !== null && closedAt === null) closedAt = i;
+      }
+    });
+    out.push({ id: `thread:${t.id}`, ref: t.id, kind: "thread", name: c.name ?? t.id, promise: c.promise ?? "",
+      state: isWaived(t) ? "waived" : closedAt !== null ? "closed" : openedAt !== null ? "open" : "unopened",
+      openedAt, closedAt, touches });
+  }
+
+  // GAMES — accepting a contest promises the reader a DECISION: `plays` opens it, `resolves` pays it.
+  // State scans beats AND scenes (like the unresolved_game lint); indices are beat-spine best-effort
+  // (scenes inherit their beat's plays/resolves). touches counts every turn that plays it, both planes.
+  const beats = beatsInOrder(nodes);
+  const playedAt = new Map<string, number>(), resolvedAt = new Map<string, number>();
+  beats.forEach((b, i) => {
+    const c = b.content as BeatContent;
+    for (const p of (c.plays ?? [])) if (p && !playedAt.has(p)) playedAt.set(p, i);
+    for (const r of (c.resolves ?? [])) if (r.ref && !resolvedAt.has(r.ref)) resolvedAt.set(r.ref, i);
+  });
+  const played = new Set<string>(), resolved = new Set<string>(), playCount = new Map<string, number>();
+  for (const n of nodes) {
+    if (n.kind !== "beat" && n.kind !== "scene") continue;
+    const c = n.content as BeatContent & SceneContent;
+    for (const p of (c.plays ?? [])) if (p) { played.add(p); playCount.set(p, (playCount.get(p) ?? 0) + 1); }
+    for (const r of (c.resolves ?? [])) if (r.ref) resolved.add(r.ref);
+  }
+  for (const g of nodes.filter((n) => n.kind === "game" && pinnedOrAccepted(n))) {
+    const c = g.content as GameContent;
+    out.push({ id: `game:${g.id}`, ref: g.id, kind: "game", name: c.name ?? g.id,
+      promise: c.stake ?? c.win_condition ?? "",
+      state: isWaived(g) ? "waived" : resolved.has(g.id) ? "closed" : played.has(g.id) ? "open" : "unopened",
+      openedAt: playedAt.get(g.id) ?? null, closedAt: resolvedAt.get(g.id) ?? null,
+      touches: playCount.get(g.id) ?? 0 });
+  }
+
+  // STATE KEYS — the causality axis as debt, with the direction INVERTED: a `needs` is a withdrawal that an
+  // EARLIER beat's `establishes` must already have deposited, so a healthy key closes (deposit) BEFORE it
+  // opens (first spend). One row per key ever needed; open while any need is unmet upstream.
+  const rows = causality(nodes);
+  const neededAt = new Map<string, number>(), producedAtIdx = new Map<string, number>(), needCount = new Map<string, number>();
+  const unmetKeys = new Set<string>();
+  for (const r of rows) {
+    for (const k of r.needs) { if (!neededAt.has(k)) neededAt.set(k, r.idx); needCount.set(k, (needCount.get(k) ?? 0) + 1); }
+    for (const k of r.unmet) unmetKeys.add(k);
+    for (const k of r.produces) if (!producedAtIdx.has(k)) producedAtIdx.set(k, r.idx);
+  }
+  for (const [key, at] of neededAt) {
+    out.push({ id: `state_key:${key}`, ref: key, kind: "state_key", name: key,
+      promise: `"${key}" is earned before it is spent`,
+      state: unmetKeys.has(key) ? "open" : "closed",
+      openedAt: at, closedAt: producedAtIdx.get(key) ?? null, touches: needCount.get(key) ?? 0 });
+  }
+
+  // TENTPOLES — a pinned set-piece is a registry promise, paid when a scene realizes it (tentpole_unplaced
+  // as a debt row). Single-event: unopened → closed, no open middle.
+  const placedAt = new Map<string, number>();
+  scenes.forEach((s, i) => { const r = (s.content as SceneContent).realizes_tentpole; if (r && !placedAt.has(r)) placedAt.set(r, i); });
+  for (const t of nodes.filter((n) => n.kind === "tentpole" && pinnedOrAccepted(n))) {
+    const c = t.content as TentpoleContent;
+    const at = placedAt.get(t.id) ?? null;
+    out.push({ id: `tentpole:${t.id}`, ref: t.id, kind: "tentpole", name: c.summary ?? t.id, promise: c.summary ?? "",
+      state: isWaived(t) ? "waived" : at !== null ? "closed" : "unopened",
+      openedAt: null, closedAt: at, touches: at !== null ? 1 : 0 });
+  }
+
+  // ENTITY INTROS — the new axis: accepting a character/location promises the reader will MEET it. Paid on
+  // first scene appearance (character: pov/present; location: scene.loc — id refs only, free-text povs don't
+  // count). touches counts appearances — the hook for a later "described well enough" saturation bar.
+  for (const e of nodes.filter((n) => (n.kind === "character" || n.kind === "location") && pinnedOrAccepted(n))) {
+    const name = String((e.content as { name?: unknown }).name ?? e.id);
+    let first: number | null = null, touches = 0;
+    scenes.forEach((s, i) => {
+      const c = s.content as SceneContent;
+      const hit = e.kind === "character" ? (c.pov === e.id || (c.present ?? []).includes(e.id)) : c.loc === e.id;
+      if (!hit) return;
+      touches++;
+      if (first === null) first = i;
+    });
+    out.push({ id: `entity_intro:${e.id}`, ref: e.id, kind: "entity_intro", name,
+      promise: e.kind === "character" ? `the reader meets ${name}` : `the reader visits ${name}`,
+      state: isWaived(e) ? "waived" : first !== null ? "closed" : "unopened",
+      openedAt: null, closedAt: first, touches });
+  }
+
+  return out;
+}
+
+/** The outstanding debt: obligations not yet settled. `unopened` counts — a registry promise that never
+ *  reaches the page is still owed (plant it, waive it, or delete the node). */
+export function openObligations(nodes: DnaNode[]): Obligation[] {
+  return obligationLedger(nodes).filter((o) => o.state === "unopened" || o.state === "open");
+}
+
+/** THE COMPLETION PREDICATE (debt-based done): the book is finished when every promise is paid or waived —
+ *  not when a count fills. What the journey's final gate and the driver's endgame loop will read. */
+export const debtSettled = (nodes: DnaNode[]): boolean => openObligations(nodes).length === 0;
 
 // ── CAUSALITY (why): the causal spine — the 4th axis (when/what/charge/why) ───
 // Every beat claims a `connector` (therefore/but), but that's a self-asserted LABEL until we check it.
@@ -720,22 +940,22 @@ export function observedGap(nodes: DnaNode[], meterId: string): ObservedGap {
 
 /** METER lints: a flat axis (nothing moves), a monotone axis (never reverses), and — for game_score meters —
  *  a possibility space that never nears its losing pole (the measurable "no jeopardy" the games doc wants). */
-function meterLints(nodes: DnaNode[]): DnaIssue[] {
+function meterLints(nodes: DnaNode[], cfg: LintConfig): DnaIssue[] {
   const issues: DnaIssue[] = [];
   for (const m of nodes.filter((n) => n.kind === "meter")) {
     const c = m.content as MeterContent;
     const series = meterSeries(nodes, m.id);
     const s = meterShape(series);
     if (s.last == null) continue; // no readings yet — "early", not "wrong" (mirror the other axes)
-    if (s.flatRun >= METER_FLAT_RUN) {
+    if (s.flatRun >= cfg.meterFlatRun) {
       issues.push({ rule: "flat_meter", severity: "warn", nodeId: m.id, message: `"${c.name ?? m.id}" holds flat for ${s.flatRun} beats — nothing moves on this axis` });
     }
-    if (s.oscillations < METER_MIN_OSC && series.filter((p) => p.value != null).length >= METER_FLAT_RUN) {
+    if (s.oscillations < cfg.meterMinOsc && series.filter((p) => p.value != null).length >= cfg.meterFlatRun) {
       issues.push({ rule: "no_oscillation", severity: "warn", nodeId: m.id, message: `"${c.name ?? m.id}" barely changes direction — monotone charge` });
     }
     if (c.kind === "game_score") {
       const min = c.scale?.min ?? 0, max = c.scale?.max ?? 100;
-      const lowBand = min + (max - min) * METER_POLE_BAND;
+      const lowBand = min + (max - min) * cfg.meterPoleBand;
       const neared = series.some((p) => p.value != null && p.value <= lowBand);
       if (!neared) {
         issues.push({ rule: "no_jeopardy", severity: "warn", nodeId: m.id, message: `game-score "${c.name ?? m.id}" never nears its losing pole — the win was never in doubt (soft climax)` });
@@ -747,7 +967,7 @@ function meterLints(nodes: DnaNode[]): DnaIssue[] {
     // beyond a band of the meter's scale = the beat sheet isn't tracking the shape it declared it wants.
     if ((c.target ?? []).length && span > 0) {
       const gap = targetGap(nodes, m.id);
-      if (gap.maxAbs > METER_TARGET_DRIFT_BAND * span) {
+      if (gap.maxAbs > cfg.meterTargetDriftBand * span) {
         const worst = gap.perBeat.find((r) => r.id === gap.worstBeatId);
         issues.push({ rule: "target_drift", severity: "warn", nodeId: m.id,
           message: `"${c.name ?? m.id}" planned readings drift from the target curve by up to ${Math.round(gap.maxAbs)}${worst ? ` (beat ${worst.idx + 1}: plan ${worst.planned} vs target ${Math.round(worst.target)})` : ""} — the beat sheet isn't aiming at the intended shape` });
@@ -757,7 +977,7 @@ function meterLints(nodes: DnaNode[]): DnaIssue[] {
     // beat whose prose departs from its planned reading by more than the band = the prose underdelivers the plan.
     if (span > 0 && observedSeries(nodes, m.id).some((p) => p.value != null)) {
       const gap = observedGap(nodes, m.id);
-      if (gap.maxAbs > METER_READ_GAP_BAND * span) {
+      if (gap.maxAbs > cfg.meterReadGapBand * span) {
         const worst = gap.perBeat.find((r) => r.id === gap.worstBeatId);
         issues.push({ rule: "read_gap", severity: "warn", nodeId: m.id,
           message: `"${c.name ?? m.id}" reads off-plan by up to ${Math.round(gap.maxAbs)}${worst ? ` (beat ${worst.idx + 1}: prose ${worst.observed} vs planned ${worst.planned})` : ""} — the prose doesn't deliver the planned level` });
@@ -774,7 +994,7 @@ function meterLints(nodes: DnaNode[]): DnaIssue[] {
 // target_drift (meter intent ↔ beat plan), read_gap (beat plan ↔ prose observed). All fire conservatively —
 // a missing level, polarity, or scale is "early", not "wrong". `movements` free text is never interpreted;
 // only counts and enums cross levels (a movement's valence isn't machine-readable, so no shape-curve lint).
-const SCENE_REFINE_BAND = 0.2; // a scene's explicit reading may sit within 20% of scale of its beat's explicit reading
+// (the scene↔beat refine band now lives on LintConfig.sceneRefineBand)
 
 // ── THE SHAPE READ input + seal (doc_1783113903000_shape_read_spec.md) ───────────────────────────────────
 // The paid, semantic half of vertical fit. read-shape (edge fn) is LLM-as-SENSOR — it reads the plan text and
@@ -809,7 +1029,57 @@ export function shapeReadHash(input: ShapeReadInput): string {
   return metaHash(stableStringify(input));
 }
 
-function verticalLints(nodes: DnaNode[]): DnaIssue[] {
+// ── THE SYNOPSIS READ input + seal (W2 — doc_1783192600000_dna_build_plan.md) ────────────────────────────
+// The shift-left quality judge, cloned from the shape read. read-synopsis (edge fn) is LLM-as-SENSOR — an
+// acquisitions editor reads the WHOLE PLAN at synopsis resolution (premise promise + pillar thesis + acts +
+// beats, zero prose) and scores fixed craft axes 1–5 (boredom_risk / predictability / genre_feel /
+// stakes_clarity); the client writes the verdict onto pillar.observed_craft, and the craft_flag lint below is
+// the pure JUDGE (the floor lives here, not the prompt). Same fresh/stale seal discipline as the shape read —
+// this is the cheapest place to catch a boring book, before any prose is paid for.
+export interface SynopsisReadBeat { beatId: string; summary: string; connector?: string; polarity?: string }
+export interface SynopsisReadAct {
+  actId: string; title?: string; goal?: string; turningPoint?: string;
+  value?: { name?: string; from?: string; to?: string; polarity?: "up" | "down" };
+  beats: SynopsisReadBeat[];
+}
+export interface SynopsisReadInput {
+  premise: { dramaticQuestion?: string; shapeName?: string; movements?: string[]; endingFeel?: string };
+  pillar: { controllingIdea?: string; ending?: string };
+  acts: SynopsisReadAct[];
+}
+export const CRAFT_AXIS_FLOOR = 3; // score ≤ 2 ⇒ the axis is flagged (1–5 scale, same convention as MOVEMENT_FIT_FLOOR)
+
+/** Assemble the synopsis read's input from the live tree — PLAN plane only (no prose): the premise's promise,
+ *  the pillar's thesis + ending, and each act's fields plus its beats (summary/connector/polarity) in reading
+ *  order. Skip-empty (early, not wrong): no pillar, or no act carrying a beat ⇒ null (no call). */
+export function buildSynopsisReadInput(nodes: DnaNode[]): SynopsisReadInput | null {
+  const premise = nodes.find((n) => n.kind === "premise");
+  const pillar = nodes.find((n) => n.kind === "pillar");
+  const pc = premise?.content as PremiseContent | undefined;
+  const plc = pillar?.content as PillarContent | undefined;
+  const acts: SynopsisReadAct[] = nodes.filter((n) => n.kind === "act").sort((a, b) => a.position - b.position).map((a) => {
+    const c = a.content as ActContent;
+    const beats: SynopsisReadBeat[] = childrenOf(nodes, a.id).filter((b) => b.kind === "beat").map((b) => {
+      const bc = b.content as BeatContent;
+      return { beatId: b.id, summary: String(bc.summary ?? ""), connector: bc.connector, polarity: bc.polarity };
+    });
+    return { actId: a.id, title: c.title, goal: c.goal, turningPoint: c.turning_point, value: c.value, beats };
+  });
+  if (!pillar || !acts.some((a) => a.beats.length)) return null;
+  return {
+    premise: { dramaticQuestion: pc?.dramatic_question, shapeName: pc?.shape?.name, movements: pc?.shape?.movements, endingFeel: pc?.shape?.ending_feel },
+    pillar: { controllingIdea: plc?.controlling_idea, ending: plc?.ending },
+    acts,
+  };
+}
+
+/** The staleness seal: a stable hash of the exact input sent. A verdict is FRESH iff this still matches the
+ *  pillar's stored observed_craft_hash; any plan edit that changes the input flips it, silencing the lint. */
+export function synopsisReadHash(input: SynopsisReadInput): string {
+  return metaHash(stableStringify(input));
+}
+
+function verticalLints(nodes: DnaNode[], cfg: LintConfig): DnaIssue[] {
   const issues: DnaIssue[] = [];
   const index = byId(nodes);
   const premise = nodes.find((n) => n.kind === "premise");
@@ -842,6 +1112,25 @@ function verticalLints(nodes: DnaNode[]): DnaIssue[] {
         const worst = row.worst && index.has(row.worst) ? row.worst : premise.id; // anchor to the node that can fix it
         issues.push({ rule: "movement_unfit", severity: "warn", nodeId: worst,
           message: `movement ${row.movement + 1} "${text}" scores ${score}/5 in the acts that carry it${row.note ? ` — ${row.note}` : ""}` });
+      }
+    }
+  }
+
+  // craft_flag — the synopsis read's verdict (pillar.observed_craft): the shift-left "editor's read" of the
+  // PLAN, one flag per craft axis under the floor. Same sensor/judge split and freshness gate as movement_unfit:
+  // the floor lives here (CRAFT_AXIS_FLOOR, not LintConfig — a fixed craft convention, not a genre dial), and a
+  // stale seal is silent (early-not-wrong; the read is paid, so the author re-triggers it rather than us nagging).
+  const pillar = nodes.find((n) => n.kind === "pillar");
+  const craftVerdict = (pillar?.content as PillarContent | undefined)?.observed_craft;
+  if (pillar && Array.isArray(craftVerdict) && craftVerdict.length) {
+    const input = buildSynopsisReadInput(nodes);
+    const fresh = !!input && (pillar.content as PillarContent).observed_craft_hash === synopsisReadHash(input);
+    if (fresh) {
+      for (const row of craftVerdict) {
+        if (typeof row.axis !== "string" || typeof row.score !== "number" || row.score >= CRAFT_AXIS_FLOOR) continue;
+        const worst = row.worst && index.has(row.worst) ? row.worst : pillar.id; // anchor to the beat most responsible
+        issues.push({ rule: "craft_flag", severity: "warn", nodeId: worst,
+          message: `the synopsis read scores ${row.axis} ${row.score}/5${row.note ? ` — ${row.note}` : ""}` });
       }
     }
   }
@@ -902,12 +1191,46 @@ function verticalLints(nodes: DnaNode[]): DnaIssue[] {
         const meter = index.get(r.ref);
         const mc = meter?.kind === "meter" ? (meter.content as MeterContent) : undefined;
         const span = typeof mc?.scale?.min === "number" && typeof mc?.scale?.max === "number" ? mc.scale.max - mc.scale.min : 0;
-        if (span > 0 && Math.abs(r.value - br.value) > SCENE_REFINE_BAND * span) {
+        if (span > 0 && Math.abs(r.value - br.value) > cfg.sceneRefineBand * span) {
           issues.push({ rule: "scene_reading_departs", severity: "warn", nodeId: s.id,
             message: `scene reads "${mc?.name ?? r.ref}" at ${r.value} but its beat planned ${br.value} — the scene contradicts the level it refines` });
         }
       }
     }
+  }
+  return issues;
+}
+
+// ── SKETCH LINTS (the scene treatment — doc_1783198900000_dna_scene_direction.md) ─────────────────────────
+// Direction lives INSIDE the sketch, so these only fire once a scene HAS a sketch ("don't badge what we
+// didn't generate" — the same house rule as isStale). Two checks:
+//   promise_undramatized — a scene doing PROMISE WORK (pays off a thread, realizes a tentpole, or is the
+//     scene that lands its beat's turn) whose direction is "summary" mode or "far" distance: the promise is
+//     PRESENT in the plan but not experientially DELIVERED (a payoff summarized reads as a report, not a moment).
+//   direction_monotone — adjacent sketched scenes (in reading order) repeating the same mode/distance/tension:
+//     the register field's existing note ("adjacent scenes should differ") made checkable.
+function sketchLints(nodes: DnaNode[]): DnaIssue[] {
+  const issues: DnaIssue[] = [];
+  let prev: SketchDirection | undefined;
+  for (const s of scenesInOrder(nodes)) {
+    const c = s.content as SceneContent;
+    const dir = c.sketch?.direction;
+    if (!dir) continue; // no sketch yet — early, not wrong; don't reset `prev` so adjacency skips it cleanly
+
+    const paysOffThread = (c.threads ?? []).some((t) => t.role === "payoff");
+    const realizesTentpole = !!c.realizes_tentpole;
+    const lastOfBeat = !!s.parent_id && childrenOf(nodes, s.parent_id).filter((k) => k.kind === "scene").slice(-1)[0]?.id === s.id;
+    const promiseWork = paysOffThread || realizesTentpole || lastOfBeat;
+    if (promiseWork && (dir.mode === "summary" || dir.distance === "far")) {
+      const why = paysOffThread ? "pays off a thread" : realizesTentpole ? "realizes a tentpole" : "lands its beat's turn";
+      issues.push({ rule: "promise_undramatized", severity: "warn", nodeId: s.id,
+        message: `scene ${why} but its direction is ${dir.mode === "summary" ? "summary mode" : `${dir.distance} distance`} — the promise is present but not dramatized` });
+    }
+    if (prev && dir.mode === prev.mode && dir.distance === prev.distance && dir.tension === prev.tension) {
+      issues.push({ rule: "direction_monotone", severity: "warn", nodeId: s.id,
+        message: `scene repeats the same direction (${dir.mode}/${dir.distance}/${dir.tension}) as the previous sketched scene — adjacent scenes should differ` });
+    }
+    prev = dir;
   }
   return issues;
 }
@@ -992,7 +1315,7 @@ const FACET_FIELDS: Partial<Record<NodeKind, string[]>> = {
   world_fact: ["rule", "mechanism"],
   relationship: ["bond"],
 };
-// uses ≥ this ⇒ a facet is SATURATED (restatement forbidden). One knob, lives next to METER_FLAT_RUN in spirit.
+// uses ≥ this ⇒ a facet is SATURATED (restatement forbidden). One knob, LintConfig.meterFlatRun in spirit.
 export const FACET_SATURATION = 3;
 
 const FACET_STOP = new Set("the a an and or but of to in on at for with as is was were be been are it its his her their they he she you your we our i me my that this these those there then than so if when while into from over under up down out off not no yes".split(" "));
@@ -1194,7 +1517,7 @@ export function traceDiff(nodes: DnaNode[]): TraceGap[] {
 
 /** A compact plain-text STORY ANALYSIS — the three axes + lints — handed to the dna-chat reviser as context
  *  so it can act on pacing drift / dangling promises / sagging runs. The UI renders the same data visually. */
-export function analysisText(nodes: DnaNode[], settings: BookSettings): string {
+export function analysisText(nodes: DnaNode[], settings: BookSettings, cfg: LintConfig = DEFAULT_LINT_CONFIG): string {
   const lines: string[] = [];
   const pace = pacing(nodes);
   if (pace.length) {
@@ -1227,7 +1550,7 @@ export function analysisText(nodes: DnaNode[], settings: BookSettings): string {
       lines.push(`  "${c.name ?? m.id}"${c.kind ? ` (${c.kind})` : ""}: ${vals || "(no readings)"}${s.last != null ? ` [range ${s.range}, osc ${s.oscillations}]` : ""}`);
     }
   }
-  const issues = validate(nodes);
+  const issues = validate(nodes, cfg);
   if (issues.length) { lines.push("LINTS:"); for (const i of issues) lines.push(`  [${i.severity}] ${i.rule}: ${i.message}`); }
   return lines.join("\n");
 }
@@ -1259,6 +1582,150 @@ function promiseLints(nodes: DnaNode[]): DnaIssue[] {
   return issues;
 }
 
+// ── PROSE LINTS (the deterministic read layer) ────────────────────────────────
+// The "prettier" for prose: pure, LLM-free lints over scene.content.prose.text that catch repetition and
+// monotony MECHANICALLY — millisecond cost, so validate() runs them on every tree read. All four judge ONLY
+// scenes that already have prose (skip-empty = early, not wrong; an undrafted scene never fires). Reuses
+// facetWords/FACET_STOP so "distinctive" means the same thing here as on the facet-echo floor. Known
+// limitation (by design, same as facetEchoes): a PARAPHRASE escapes all of these — that's the LLM read's job.
+
+// A normalized 5-gram is DISTINCTIVE when it carries ≤2 stopwords — enough content words that its recurrence
+// is authorial repetition, not English being English. Set preserves first-occurrence order (deterministic pick).
+const ECHO_N = 5;
+const ECHO_MAX_STOP = 2;
+function distinctiveGrams(tokens: string[]): Set<string> {
+  const out = new Set<string>();
+  for (let i = 0; i + ECHO_N <= tokens.length; i++) {
+    const gram = tokens.slice(i, i + ECHO_N);
+    if (gram.filter((g) => FACET_STOP.has(g)).length > ECHO_MAX_STOP) continue;
+    out.add(gram.join(" "));
+  }
+  return out;
+}
+
+// Sentence word-lengths: split on ./?/! boundaries; a fragment under 2 words isn't a sentence (an initial,
+// an ellipsis shard) and is dropped rather than allowed to fake variety.
+function sentenceLengths(prose: string): number[] {
+  return prose.split(/[.?!]+/).map((s) => s.trim().split(/\s+/).filter(Boolean).length).filter((n) => n >= 2);
+}
+
+// A line "is dialogue" when it contains a double-quote pair or opens with a quote — deliberately crude but
+// deterministic; curly quotes count so smart-quoted prose isn't misread as narration.
+const QUOTE_CHARS = new Set(['"', "“", "”"]);
+function dialogueShare(prose: string): number {
+  const lines = prose.split("\n").map((l) => l.trim()).filter(Boolean);
+  if (!lines.length) return 0;
+  const dialogue = lines.filter((l) => {
+    let quotes = 0;
+    for (const ch of l) if (QUOTE_CHARS.has(ch)) quotes++;
+    return quotes >= 2 || QUOTE_CHARS.has(l[0]);
+  }).length;
+  return dialogue / lines.length;
+}
+
+const NAME_SOUP_MIN_WORDS = 150;      // below this a scene is too short for density to mean anything
+const DIALOGUE_HIGH = 0.9;            // line share at/above = "all dialogue"
+const DIALOGUE_LOW = 0.1;             // line share at/below = "no dialogue"
+
+/** The four mechanical prose lints. One precompute pass (tokens / 5-grams / sentence lengths / dialogue
+ *  share per prose-bearing scene), then pairwise compare only the n-gram sets. Pure string work — no
+ *  Date, no random — so the verdict is a deterministic function of the tree. */
+export function proseLints(nodes: DnaNode[], cfg: LintConfig): DnaIssue[] {
+  const issues: DnaIssue[] = [];
+  const index = byId(nodes);
+  const scenes = scenesInOrder(nodes);
+
+  // Precompute per scene. A 5-gram that appears in the scene's OWN location palette (scene.loc → location
+  // fields) is excluded — a facet echo is deliberate craft, already covered by facetEchoes. Prose-less
+  // scenes stay null so ADJACENCY below means "next to each other in reading order", not "next drafted".
+  type SceneStat = { id: string; idx: number; tokens: string[]; grams: Set<string>; sentences: number[]; dialogue: number };
+  const stats: (SceneStat | null)[] = scenes.map((s, idx) => {
+    const c = s.content as SceneContent;
+    const prose = c.prose?.text ?? "";
+    if (!prose.trim()) return null;
+    const tokens = facetWords(prose);
+    const grams = distinctiveGrams(tokens);
+    const loc = c.loc ? index.get(c.loc) : undefined;
+    if (loc?.kind === "location") {
+      const lc = loc.content as Record<string, unknown>;
+      for (const f of FACET_FIELDS.location ?? []) for (const g of distinctiveGrams(facetWords(String(lc[f] ?? "")))) grams.delete(g);
+    }
+    return { id: s.id, idx, tokens, grams, sentences: sentenceLengths(prose), dialogue: dialogueShare(prose) };
+  });
+  const prosed = stats.filter((s): s is SceneStat => s !== null);
+
+  // 1) prose_echo — a distinctive 5-gram recurring BETWEEN scenes (the top repetition source is the scene
+  // right before, so adjacent pairs fire at a lower floor). The LATER scene is flagged (it did the
+  // repeating); capped at one issue per scene pair.
+  for (let l = 0; l < prosed.length; l++) {
+    for (let e = 0; e < l; e++) {
+      const later = prosed[l], earlier = prosed[e];
+      const shared: string[] = [];
+      for (const g of later.grams) if (earlier.grams.has(g)) shared.push(g);
+      const floor = later.idx - earlier.idx === 1 ? cfg.proseEchoAdjacent : cfg.proseEchoDistant;
+      if (shared.length < floor) continue;
+      issues.push({ rule: "prose_echo", severity: "warn", nodeId: later.id,
+        message: `prose repeats "${shared[0]}" from scene ${earlier.idx + 1}${shared.length > 1 ? ` (+${shared.length - 1} more shared phrase(s))` : ""}` });
+    }
+  }
+
+  // 2) monotone_rhythm — flat cadence: enough sentences to HAVE a rhythm, and their word-lengths barely
+  // vary (coefficient of variation = stddev/mean under the floor). Population stddev; fragments already dropped.
+  for (const s of prosed) {
+    if (s.sentences.length < cfg.rhythmMinSentences) continue;
+    const mean = s.sentences.reduce((a, b) => a + b, 0) / s.sentences.length;
+    if (!mean) continue;
+    const cv = Math.sqrt(s.sentences.reduce((a, b) => a + (b - mean) ** 2, 0) / s.sentences.length) / mean;
+    if (cv >= cfg.rhythmCvFloor) continue;
+    issues.push({ rule: "monotone_rhythm", severity: "warn", nodeId: s.id,
+      message: `sentence lengths barely vary (CV ${cv.toFixed(2)}, mean ${mean.toFixed(1)} words) — flat cadence` });
+  }
+
+  // 3) name_soup — character-name density. Each character's FIRST name token, matched against the scene's
+  // token list (token equality IS the word boundary; a trailing apostrophe-suffix like "mara's" still counts).
+  for (const s of prosed) {
+    const words = s.tokens.length;
+    if (words < NAME_SOUP_MIN_WORDS) continue;
+    const counts: { name: string; count: number }[] = [];
+    for (const c of nodes) {
+      if (c.kind !== "character") continue;
+      const first = String((c.content as CharacterContent).name ?? "").trim().split(/\s+/)[0];
+      if (!first) continue;
+      const needle = first.toLowerCase();
+      const count = s.tokens.filter((t) => t.replace(/'.*$/, "") === needle).length;
+      if (count) counts.push({ name: first, count });
+    }
+    const total = counts.reduce((a, c) => a + c.count, 0);
+    const per100 = (total / words) * 100;
+    if (per100 <= cfg.nameDensityCeiling) continue;
+    const worst = counts.reduce((a, c) => (c.count > a.count ? c : a));
+    issues.push({ rule: "name_soup", severity: "warn", nodeId: s.id,
+      message: `${total} character-name mentions in ${words} words (${per100.toFixed(1)} per 100 — ceiling ${cfg.nameDensityCeiling}); "${worst.name}" leads with ${worst.count}` });
+  }
+
+  // 4) dialogue_flatline — a run of ≥dialogueRunLen CONSECUTIVE prose-bearing scenes all at the SAME extreme
+  // (≥90% or ≤10% dialogue by line share). A prose-less scene breaks the run (it may change the mix when
+  // drafted); the FIRST scene of the run is flagged — that's where variation has to start.
+  const extremeOf = (d: number): "high" | "low" | null => (d >= DIALOGUE_HIGH ? "high" : d <= DIALOGUE_LOW ? "low" : null);
+  for (let i = 0; i < stats.length; ) {
+    const st = stats[i];
+    const ex = st ? extremeOf(st.dialogue) : null;
+    if (!st || !ex) { i++; continue; }
+    let j = i + 1;
+    for (; j < stats.length; j++) {
+      const nx = stats[j];
+      if (!nx || extremeOf(nx.dialogue) !== ex) break;
+    }
+    if (j - i >= cfg.dialogueRunLen) {
+      issues.push({ rule: "dialogue_flatline", severity: "warn", nodeId: st.id,
+        message: `${j - i} scenes in a row are ${ex === "high" ? "≥90% dialogue" : "≤10% dialogue"} — the mix never varies` });
+    }
+    i = j;
+  }
+
+  return issues;
+}
+
 // ── Validation (§7) ───────────────────────────────────────────────────────────
 export interface DnaIssue { rule: string; severity: "error" | "warn"; message: string; nodeId?: string }
 
@@ -1284,7 +1751,7 @@ export function structuralLints(nodes: DnaNode[]): DnaIssue[] {
   return issues;
 }
 
-export function validate(nodes: DnaNode[]): DnaIssue[] {
+export function validate(nodes: DnaNode[], cfg: LintConfig = DEFAULT_LINT_CONFIG): DnaIssue[] {
   const index = byId(nodes);
   const issues: DnaIssue[] = structuralLints(nodes);
 
@@ -1334,10 +1801,13 @@ export function validate(nodes: DnaNode[]): DnaIssue[] {
   issues.push(...causalityLints(nodes));
 
   // Meters axis (docs/novel-dna-meters.md): flat / monotone / no-jeopardy on a tracked axis.
-  issues.push(...meterLints(nodes));
+  issues.push(...meterLints(nodes, cfg));
 
   // Vertical fit (the timeline layer): each finer rung must refine, not contradict, the rung above it.
-  issues.push(...verticalLints(nodes));
+  issues.push(...verticalLints(nodes, cfg));
+
+  // Sketch/direction axis: promise work shown as summary/far, or adjacent scenes repeating the same direction.
+  issues.push(...sketchLints(nodes));
 
   // Grounding: the resolution must fire an established world rule (no deus ex machina — Lester Dent's law).
   // When the world has rules, the last scene in reading order should ground its win in at least one.
@@ -1353,7 +1823,7 @@ export function validate(nodes: DnaNode[]): DnaIssue[] {
 
   // Pacing axis (§6): a act's turning point drifting off its authored target_pct.
   for (const p of pacing(nodes)) {
-    if (typeof p.targetPct === "number" && Math.abs(p.driftPct) > PACING_DRIFT_TOL) {
+    if (typeof p.targetPct === "number" && Math.abs(p.driftPct) > cfg.pacingDriftTol) {
       issues.push({ rule: "pacing_drift", severity: "warn", message: `act turn lands at ${Math.round(p.actualPct * 100)}% (target ${Math.round(p.targetPct * 100)}%)`, nodeId: p.actId });
     }
   }
@@ -1409,14 +1879,14 @@ export function validate(nodes: DnaNode[]): DnaIssue[] {
     }
   }
 
-  // Emotional-topography axis (§6): a run of ≥SAGGING_RUN same-polarity scenes = a sagging middle.
+  // Emotional-topography axis (§6): a run of ≥ cfg.saggingRun same-polarity scenes = a sagging middle.
   const topo = topography(nodes);
   for (let i = 0; i < topo.length; ) {
     const pol = topo[i].polarity;
     if (pol == null) { i++; continue; }
     let j = i;
     while (j < topo.length && topo[j].polarity === pol) j++;
-    if (j - i >= SAGGING_RUN) issues.push({ rule: "sagging_middle", severity: "warn", message: `${j - i} scenes in a row stay ${pol} — flat emotional charge`, nodeId: topo[i].sceneId });
+    if (j - i >= cfg.saggingRun) issues.push({ rule: "sagging_middle", severity: "warn", message: `${j - i} scenes in a row stay ${pol} — flat emotional charge`, nodeId: topo[i].sceneId });
     i = j;
   }
 
@@ -1426,6 +1896,79 @@ export function validate(nodes: DnaNode[]): DnaIssue[] {
     for (const f of ((s.content as SceneContent).continuity_flags ?? [])) {
       issues.push({ rule: "continuity_break", severity: "error", nodeId: s.id,
         message: `prose contradicts established canon — "${f.key}" was "${f.was}", now "${f.now}"${f.note ? ` (${f.note})` : ""}` });
+    }
+    // Cold-reader confusion (read-confusion writes these): what a reader who knows ONLY the book so far
+    // couldn't follow. warn (an affective judgment), unlike continuity_break's error (a factual one).
+    for (const f of ((s.content as SceneContent).confusion_flags ?? [])) {
+      issues.push({ rule: "reader_confusion", severity: "warn", nodeId: s.id,
+        message: `a cold reader loses the thread here${f.kind ? ` (${f.kind})` : ""}${f.note ? ` — ${f.note}` : ""}` });
+    }
+  }
+
+  // Dead fields (§dead-field lints): schema declares an arc/charge but nothing downstream consumes it.
+  issues.push(...deadFieldLints(nodes));
+
+  // Chronology (the timeline layer, deterministic floor): consecutive-scene travel with no time marker.
+  issues.push(...chronologyLints(nodes));
+
+  // Prose plane (W3): the deterministic read layer — mechanical repetition/monotony over drafted prose.
+  // No-op on a prose-less book (every rule skips empty scenes), so pre-draft behaviour is unchanged.
+  issues.push(...proseLints(nodes, cfg));
+  return issues;
+}
+
+// ── DEAD-FIELD LINTS (the declared-never-consumed backstop) ──────────────────
+// A character's lie/truth and a relationship's charge are ARC VOCABULARY — promises in all but name. When
+// nothing on the plan side ever consumes them they are dead fields: the tool looks like it tracks the arc
+// but doesn't. Both fire only once the plan is far enough along to have consumed them (early, not wrong):
+// dead_arc needs beats (the pass that mints arc threads), static_relationship needs scenes (advances live there).
+function deadFieldLints(nodes: DnaNode[]): DnaIssue[] {
+  const issues: DnaIssue[] = [];
+  // dead_arc: a lie-carrying character with no arc thread ABOUT them. The join is thread.owner → character id
+  // (minted arc threads carry it); an ownerless thread never matches — pre-declared arcs must claim their owner.
+  if (nodes.some((n) => n.kind === "beat")) {
+    const arcOwners = new Set(nodes.filter((n) => n.kind === "thread" && (n.content as ThreadContent).kind === "arc")
+      .map((n) => (n.content as ThreadContent).owner).filter(Boolean));
+    for (const c of nodes.filter((n) => n.kind === "character")) {
+      const cc = c.content as CharacterContent;
+      if (!cc.lie?.trim()) continue;
+      if (!arcOwners.has(c.id)) {
+        issues.push({ rule: "dead_arc", severity: "warn", nodeId: c.id,
+          message: `${cc.name ?? "a character"} carries a declared lie but no arc thread schedules it — the inner arc is invisible to the plan` });
+      }
+    }
+  }
+  // static_relationship: a charged edge no scene's `advances` ever moves — declared electricity that never arcs.
+  const scenes = nodes.filter((n) => n.kind === "scene");
+  if (scenes.length) {
+    const advanced = new Set(scenes.flatMap((s) => ((s.content as SceneContent).advances ?? []).map((a) => a.ref)));
+    for (const r of nodes.filter((n) => n.kind === "relationship")) {
+      const rc = r.content as RelationshipContent;
+      if (!rc.charge?.trim() || advanced.has(r.id)) continue;
+      issues.push({ rule: "static_relationship", severity: "warn", nodeId: r.id,
+        message: `relationship "${rc.bond ?? r.id}" declares a charge but no scene ever advances it — a charged edge that never turns` });
+    }
+  }
+  return issues;
+}
+
+// ── CHRONOLOGY LINTS (the deterministic floor of the timeline projection) ────
+// Free-text time is NEVER interpreted (per the timeline-layer doc) — only the machine-comparable subset
+// fires: same POV character in two different locations across consecutive scenes with no time marker
+// (`time.elapsed` empty and `time.when` absent-or-identical) reads as a teleport. All fields optional ⇒
+// any missing side is "early", not "wrong".
+function chronologyLints(nodes: DnaNode[]): DnaIssue[] {
+  const issues: DnaIssue[] = [];
+  const scenes = scenesInOrder(nodes);
+  for (let i = 1; i < scenes.length; i++) {
+    const a = scenes[i - 1].content as SceneContent, b = scenes[i].content as SceneContent;
+    if (!a.pov || !b.pov || a.pov !== b.pov) continue;
+    if (!a.loc || !b.loc || a.loc === b.loc) continue;
+    const when = (s?: { when?: string }) => String(s?.when ?? "").trim().toLowerCase();
+    const marked = String(b.time?.elapsed ?? "").trim() || (when(b.time) && when(b.time) !== when(a.time));
+    if (!marked) {
+      issues.push({ rule: "unmarked_travel", severity: "warn", nodeId: scenes[i].id,
+        message: `the POV character changes location between consecutive scenes with no time marker (set time.elapsed or a new time.when) — reads as a teleport` });
     }
   }
   return issues;

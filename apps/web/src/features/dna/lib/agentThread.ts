@@ -13,9 +13,12 @@ import type { DnaNode, NodeKind, RenderBrief } from "@/features/dna/lib/novelDna
 export interface AgentStep {
   // user = the author's message · note = the agent's reply/narration · read = a node it read ·
   // ask = a creative question · answer = the author's answer to one · plan = a proposed change ·
-  // applied/discarded = a resolved proposal kept in the feed as a collapsed card (carries its ops).
-  t: "user" | "note" | "read" | "ask" | "answer" | "plan" | "done" | "applied" | "discarded";
+  // applied/discarded = a resolved proposal kept in the feed as a collapsed card (carries its ops) ·
+  // decision = an auto-mode creative fork the agent journaled (question in label, its options + when).
+  t: "user" | "note" | "read" | "ask" | "answer" | "plan" | "done" | "applied" | "discarded" | "decision";
   label: string;
+  options?: string[]; // present on decision steps — the choices the agent weighed (its pick stated in-text)
+  at?: string; // present on decision steps — ISO timestamp of the fork
   ops?: NodeOp[]; // present on applied/discarded 'dna' steps — the change, for the collapsed card's detail
   sceneIds?: string[]; // present on applied/discarded 'prose-render' steps (ops is always []) — which scene(s)
   brief?: RenderBrief; // ditto — the curated brief that rode into that render, if any
@@ -165,12 +168,21 @@ async function isStillPending(threadId: number, proposalId: string): Promise<boo
 export async function applyAgentProposal(bookId: number, threadId: number, proposal: AgentProposal, all: AgentProposal[], nodes: DnaNode[] = []): Promise<OpValidation> {
   if (!(await isStillPending(threadId, proposal.id))) return { ok: [], rejected: [] };
   if (proposal.layer === "expansion") {
+    const node = nodes.find((n) => n.id === proposal.nodeId);
+    if (!node) throw new Error(`Expansion target ${proposal.nodeId} is no longer in the tree.`);
+    if (proposal.target === "sketch") {
+      // Sketch is an OWN-CONTENT refinement (like logline/prose), not a generic ops edit — it needs stampSketch
+      // so the staleness chain (spec → sketch → prose) actually gets sealed. Write it directly via expandNode
+      // rather than the generic ops layer below, which has no stamping hook for a plain `edit` op.
+      const { expandNode } = await import("@/features/dna/lib/dnaExpand");
+      await expandNode(bookId, node, "sketch");
+      await resolveProposal(threadId, proposal, "applied", all);
+      return { ok: [], rejected: [] };
+    }
     // Delegate to the dna-expand ENGINE: generateExpansionOps runs the same generate+enrich the buttons used
     // (beat-sheet scheduling, scene→beat realization) and returns reviewable ops; we apply them here. The
     // dynamic import breaks the agentThread ↔ dnaExpand cycle. A stale/invalid target throws → caller discards.
     const { generateExpansionOps } = await import("@/features/dna/lib/dnaExpand");
-    const node = nodes.find((n) => n.id === proposal.nodeId);
-    if (!node) throw new Error(`Expansion target ${proposal.nodeId} is no longer in the tree.`);
     const { ops } = await generateExpansionOps(bookId, node, proposal.target ?? "");
     const validation = await applyNodeOps(bookId, ops);
     await resolveProposal(threadId, proposal, "applied", all);

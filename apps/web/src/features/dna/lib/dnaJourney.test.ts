@@ -68,6 +68,22 @@ describe("stageSubsteps", () => {
     expect(withCast.relationship.status).toBe("available");
   });
 
+  it("Contract is an optional branch — never the NOW step, never a stage gate", () => {
+    const base = [mk("premise"), mk("pillar")];
+    const subs = byKey(stageSubsteps("foundations", base));
+    expect(subs.contract.optional).toBe(true);
+    expect(subs.contract.status).toBe("available"); // unlocked by the accepted pillar, but never "now"
+    expect(subs.cast.status).toBe("now"); // the serial path is untouched by the contract branch
+    // Foundations completes on pillar + cast alone — no contract artifact required.
+    expect(stageComplete([...base, mk("character", { name: "Mara" })]).foundations).toBe(true);
+    // done-gate: a meter carrying a target curve (the artifact only the derivation pass seeds)…
+    const compiled = byKey(stageSubsteps("foundations", [...base, mk("meter", { name: "tension", target: [{ at: 0.9, value: 90 }] })]));
+    expect(compiled.contract.status).toBe("done");
+    // …while a target-less meter (e.g. a game-score twin) does NOT read as compiled.
+    const bare = byKey(stageSubsteps("foundations", [...base, mk("meter", { name: "score" })]));
+    expect(bare.contract.status).toBe("available");
+  });
+
   it("dnaHealth: empty tree is 0 complete; a misparented entity dents strength and surfaces in issues", () => {
     expect(dnaHealth([]).completeness).toBe(0);
     // seed→premise→pillar, one character correctly on the pillar, one wrongly on the premise (the real bug).
@@ -112,17 +128,65 @@ describe("currentObjective", () => {
   });
 
   it("a fully drafted book yields the render/publish hand-off, never an op", () => {
+    // The cast member appears on the page (pov) — an accepted character the reader never meets is an OPEN
+    // obligation now, and would hold the book in the promises endgame instead of the hand-off.
+    const mara = mk("character", { name: "Mara", role: "protagonist" });
     const obj = currentObjective([
       mk("seed", { logline: "x" }),
       mk("premise", { dramatic_question: "q?" }),
       mk("pillar", { controlling_idea: "idea", ending: "end" }),
-      mk("character", { name: "Mara", role: "protagonist" }),
+      mara,
       mk("act", { goal: "g" }),
       mk("beat", { summary: "b" }),
-      mk("scene", { goal: "g", prose: { text: "Words." } }),
+      mk("scene", { goal: "g", pov: mara.id, prose: { text: "Words." } }),
     ], { bookSlug: "my-book" });
     expect(obj).toContain("fully drafted");
     expect(obj).toContain("CANNOT render or publish");
     expect(obj).toContain("/books/my-book");
+  });
+});
+
+describe("the promises endgame (debt-based completion)", () => {
+  // A book that has walked the whole ladder — every scene prosed — but owes one promise: a thread set up on
+  // the page and never paid. The old count-based gate would call this finished; the debt gate holds it.
+  const drafted = () => {
+    const mara = mk("character", { name: "Mara", role: "protagonist" });
+    const th = mk("thread", { name: "the sealed hatch", promise: "what's behind it surfaces" });
+    const nodes = [
+      mk("seed", { logline: "x" }),
+      mk("premise", { dramatic_question: "q?" }),
+      mk("pillar", { controlling_idea: "idea", ending: "end" }),
+      mara, th,
+      mk("act", { goal: "g" }),
+      mk("beat", { summary: "b" }),
+      mk("scene", { goal: "g", pov: mara.id, threads: [{ ref: th.id, role: "setup" }], prose: { text: "The hatch held." } }),
+    ];
+    return { nodes, th };
+  };
+
+  it("holds the Draft stage open while a promise is owed, and settles when it's waived", () => {
+    const { nodes, th } = drafted();
+    expect(stageComplete(nodes).draft).toBe(false);
+    th.content = { ...th.content, waived: true }; // the author's carry-over gesture (sequel hook)
+    expect(stageComplete(nodes).draft).toBe(true);
+  });
+
+  it("substeps: prose done, Promises becomes the NOW step with a settled/total tally", () => {
+    const { nodes } = drafted();
+    const subs = Object.fromEntries(stageSubsteps("draft", nodes).map((s) => [s.key, s]));
+    expect(subs.prose.status).toBe("done");
+    expect(subs.promises.status).toBe("now");
+    expect(subs.promises.total).toBe(2);  // the thread + the character intro
+    expect(subs.promises.count).toBe(1);  // Mara appeared (pov); the thread is still owed
+  });
+
+  it("the endgame objective names each open promise and teaches pay-or-waive", () => {
+    const { nodes } = drafted();
+    const obj = currentObjective(nodes);
+    expect(obj).toContain("Prose — Promises");
+    expect(obj).toContain("OPEN PROMISES (1 to settle");
+    expect(obj).toContain('[thread] "the sealed hatch" — what\'s behind it surfaces (open)');
+    expect(obj).toContain("WAIVE it");
+    expect(obj).not.toContain("fully drafted"); // the hand-off must wait for the ledger
   });
 });
