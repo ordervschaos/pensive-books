@@ -163,6 +163,26 @@ export const KIND_LEVEL: Record<NodeKind, number> = {
 // The ladder's next kind down — drives the nested adds of a replace_children subtree.
 export const LADDER_NEXT: Partial<Record<NodeKind, NodeKind>> = { act: "beat", beat: "scene" };
 
+// One-line plain-English gloss per kind — what a reader unfamiliar with the DNA vocabulary needs to know.
+// Single source so the tree (badge tooltip + entity-group hint) never drifts into two different explanations.
+export const KIND_EXPLAINER: Record<NodeKind, string> = {
+  seed: "the raw idea, before refinement",
+  premise: "the central dramatic question the book lives inside",
+  pillar: "the theme (controlling idea) the story argues, and how it ends",
+  character: "a person in the cast — want, need, wound",
+  relationship: "the bond and charge between two characters",
+  world_fact: "a rule of the story world scenes must stay consistent with",
+  location: "a place scenes happen in, with its sensory palette",
+  thread: "a promise to the reader (mystery/foreshadow/arc) paid off later",
+  game: "a contest between characters with a win/lose condition",
+  tentpole: "a planned major event or set-piece the story builds toward",
+  meter: "a numeric axis (comedy, heat, tension…) tracked scene by scene",
+  voice_profile: "the narrative voice — pov, tense, style — prose follows",
+  act: "a movement of the story — a phase of beats with its own turn",
+  beat: "a causal turn: an event chained to the next by therefore/but",
+  scene: "a single scene plan — the leaf unit that becomes written prose",
+};
+
 // ── Content validation (the runtime shape check) ─────────────────────────────────────────────────────────
 const isEmpty = (v: unknown): boolean => v == null || v === "" || (Array.isArray(v) && v.length === 0);
 // Walk one node's content against its schema: required fields present, enums valid, list/refs really arrays.

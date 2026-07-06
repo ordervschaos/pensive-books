@@ -8,7 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { deleteNode, patchNodeContent, saveNode, saveNodes } from "@/features/dna/lib/bookNodes";
 import { backlinkIndex, beatsInOrder, byId, childrenOf, isEntityKind, isProseStale, isStale, newId, pillarOf, refsOf, stampInput, stampProse, SINGLETON_KINDS, type BookSettings, type DnaIssue, type DnaNode, type BeatContent, type NodeContent, type NodeKind, type SceneContent } from "@/features/dna/lib/novelDna";
 import { bootstrapLoglineFromBrief, ensureSeed } from "@/features/dna/lib/dnaExpand";
-import { editSpecs, KIND_LEVEL, tasteSpecs, type EditSpec } from "@/features/dna/lib/dnaSchema";
+import { editSpecs, KIND_EXPLAINER, KIND_LEVEL, tasteSpecs, type EditSpec } from "@/features/dna/lib/dnaSchema";
 import { CONTENT_TYPES, SCOPE_BANDS, briefIdea, type Brief } from "@/lib/brief";
 import { describeOps, renderValue, type NodeOp } from "@/features/dna/lib/dnaChat";
 import { AgentRail } from "@/features/dna/components/AgentRail";
@@ -509,7 +509,7 @@ function TreeRow({ node, index, depth, expandable, open, lockedOpen, onToggle, o
         {/* Kind badge — also the #7 context-focus trigger (light this node's ref-neighborhood) */}
         <span
           onClick={onContextFocus ? (e) => { e.stopPropagation(); onContextFocus(); } : undefined}
-          title={onContextFocus ? "focus: light what this is built from / what draws on it" : undefined}
+          title={KIND_EXPLAINER[node.kind] + (onContextFocus ? " — click to focus: light what this is built from / what draws on it" : "")}
           style={{
             fontFamily: "ui-monospace, monospace", fontSize: 9, letterSpacing: "0.1em",
             textTransform: "uppercase", color: ctx === "focus" ? "#0a0a0a" : color, background: ctx === "focus" ? color : bg,
@@ -1120,7 +1120,7 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
             {ENTITY_GROUPS.map(({ kind, label }) => {
               const items = entities.filter((e) => e.kind === kind);
               return (
-                <NodeGroup key={kind} groupId={`${node.id}::world::${kind}`} label={label}
+                <NodeGroup key={kind} groupId={`${node.id}::world::${kind}`} label={label} hint={KIND_EXPLAINER[kind]}
                   count={items.length} depth={depth + 2} collapsedSet={collapsedSet} onToggle={h.onToggle} alwaysShow
                   action={<GroupAddButton onAdd={() => h.onAdd(node.id, kind)} title={`add ${kind}`} />}
                   footer={phantoms(node.id, kind, depth + 3)}>
