@@ -102,6 +102,7 @@ export const NODE_SCHEMA: Partial<Record<NodeKind, EditSpec[]>> = {
     { key: "owner", label: "owner", type: "ref" },
     // target = the PLANNED curve (sparse word-% anchors). genOnly: the planner sets it, complex shape.
     { key: "target", label: "target", genOnly: true, note: "[{ at: 0..1 word%, value: number }] — the planned curve generation aims at" },
+    { key: "waived", label: "waived", genOnly: true, note: "true = the book deliberately isn't chasing this genre convention's curve (settles the CONTRACT promise in the obligation ledger); only with the author's consent" },
   ],
   voice_profile: [
     { key: "pov", label: "pov", type: "select", options: ["first-person", "third-person-limited", "third-person-omniscient", "second-person"], taste: true },

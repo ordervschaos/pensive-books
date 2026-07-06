@@ -1080,3 +1080,61 @@ describe("obligation ledger (the debt view) + the completion predicate", () => {
     expect(debtSettled([])).toBe(true);
   });
 });
+
+describe("the CONTRACT obligation (the genre promise — a meter's compiled target curve)", () => {
+  // Only a meter carrying a `target` mints a row — an author's custom, target-less meter makes no genre
+  // promise and stays out of the ledger entirely (matches STEP_RECIPE.contract: only the compile pass sets it).
+  const book = (targetKept: unknown[], readingsKept: { beat: string; value: number }[], readingsDropped: { beat: string; value: number }[] = [], waived = false) => {
+    const pillar = mk("pillar", { id: "p" });
+    const act = mk("act", { id: "a", parent_id: "p", position: 0 });
+    const kept = mk("meter", { id: "m_kept", parent_id: "p", content: { name: "dread", kind: "tension", scale: { min: 0, max: 10 }, target: targetKept, waived } });
+    const dropped = mk("meter", { id: "m_dropped", parent_id: "p", content: { name: "heat", kind: "heat", scale: { min: 0, max: 10 }, target: [{ at: 0, value: 0 }, { at: 1, value: 10 }] } });
+    const noTarget = mk("meter", { id: "m_custom", parent_id: "p", content: { name: "whim" } }); // no target — not a genre promise
+    const readingOf = (beatId: string) => [...readingsKept.filter((r) => r.beat === beatId).map((r) => ({ ref: "m_kept", value: r.value })),
+      ...readingsDropped.filter((r) => r.beat === beatId).map((r) => ({ ref: "m_dropped", value: r.value }))];
+    const beat = (id: string, pos: number) => mk("beat", { id, parent_id: "a", position: pos, content: { readings: readingOf(id) } });
+    return [pillar, act, kept, dropped, noTarget, beat("b1", 0), beat("b2", 1), beat("b3", 2)];
+  };
+
+  it("mints no row for a target-less meter (a custom axis makes no genre promise)", () => {
+    const rows = obligationLedger(book([{ at: 0, value: 0 }, { at: 1, value: 10 }], []));
+    expect(rows.find((o) => o.ref === "m_custom")).toBeUndefined();
+  });
+
+  it("unopened: a target curve with not a single explicit reading", () => {
+    const rows = obligationLedger(book([{ at: 0, value: 0 }, { at: 1, value: 10 }], []));
+    expect(rows.find((o) => o.id === "contract:m_kept")).toMatchObject({ state: "unopened", openedAt: null, touches: 0 });
+  });
+
+  it("open: touched once early, then abandoned — carry-forward must NOT fake 'reaches the end'", () => {
+    const rows = obligationLedger(book([{ at: 0, value: 0 }, { at: 1, value: 10 }], [{ beat: "b1", value: 0 }]));
+    // touched only at beat 0 (idx 0); beats.length-1 = 2, so a naive carry-forward check would wrongly say
+    // "reaches the last beat" — this is exactly the bug caught before shipping.
+    expect(rows.find((o) => o.id === "contract:m_kept")).toMatchObject({ state: "open", openedAt: 0, closedAt: null, touches: 1, quiet: 2 });
+  });
+
+  it("open: reaches the last beat but drifts outside the band midway", () => {
+    // 0 → 10 → 0 → 10 spans the full range at every touch, but the MIDPOINT reading is nowhere near the
+    // target's interpolated midpoint (5) — reusing target_drift's own band catches this, not just endpoints.
+    const rows = obligationLedger(book([{ at: 0, value: 0 }, { at: 1, value: 10 }],
+      [{ beat: "b1", value: 0 }, { beat: "b2", value: 0 }, { beat: "b3", value: 10 }]));
+    expect(rows.find((o) => o.id === "contract:m_kept")?.state).toBe("open");
+  });
+
+  it("closed: an explicit reading at every beat, tracking the interpolated target curve throughout", () => {
+    const rows = obligationLedger(book([{ at: 0, value: 0 }, { at: 1, value: 10 }],
+      [{ beat: "b1", value: 0 }, { beat: "b2", value: 5 }, { beat: "b3", value: 10 }]));
+    expect(rows.find((o) => o.id === "contract:m_kept")).toMatchObject({ state: "closed", openedAt: 0, closedAt: 2, touches: 3, quiet: null });
+  });
+
+  it("waived: the author's deliberate 'we're not chasing this genre convention' gesture", () => {
+    const rows = obligationLedger(book([{ at: 0, value: 0 }, { at: 1, value: 10 }], [], [], true));
+    expect(rows.find((o) => o.id === "contract:m_kept")?.state).toBe("waived");
+  });
+
+  it("an abandoned genre-compiled meter holds debtSettled false, even with no threads/games/scenes at all", () => {
+    const nodes = book([{ at: 0, value: 0 }, { at: 1, value: 10 }], [{ beat: "b1", value: 0 }]);
+    expect(debtSettled(nodes)).toBe(false);
+    expect(openObligations(nodes).map((o) => o.id)).toContain("contract:m_kept");
+  });
+});

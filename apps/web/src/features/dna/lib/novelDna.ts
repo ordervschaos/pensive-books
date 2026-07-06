@@ -608,10 +608,10 @@ export function promiseLedger(nodes: DnaNode[]): PromiseLedgerRow[] {
 //   waived   — deliberate carry-over: `content.waived === true` (nothing writes it yet; read here so the
 //              state machine is total before the waive gesture ships)
 // Spine note: thread/tentpole/entity_intro indices are scenesInOrder positions (render plane, like
-// promiseLints); state_key indices are beatsInOrder positions (plan plane, like causality). Indices compare
-// within a kind only. NOT rows in v1 (fuzzy closure — need schema refs first): the contract meter (the
-// vertical-fit lints own target-curve delivery) and the dramatic question (needs an explicit answering ref).
-export type ObligationKind = "thread" | "game" | "state_key" | "tentpole" | "entity_intro";
+// promiseLints); state_key/contract indices are beatsInOrder positions (plan plane, like causality). Indices
+// compare within a kind only. NOT a row (needs an explicit answering ref before closure is honest): the
+// dramatic question.
+export type ObligationKind = "thread" | "game" | "state_key" | "tentpole" | "entity_intro" | "contract";
 export type ObligationState = "unopened" | "open" | "closed" | "waived";
 export interface Obligation {
   id: string;                  // `<kind>:<ref>` — unique row key
@@ -631,7 +631,7 @@ export interface Obligation {
 const pinnedOrAccepted = (n: DnaNode): boolean => n.authoring.locked || n.authoring.status === "accepted";
 const isWaived = (n: DnaNode): boolean => (n.content as { waived?: unknown }).waived === true;
 
-export function obligationLedger(nodes: DnaNode[]): Obligation[] {
+export function obligationLedger(nodes: DnaNode[], cfg: LintConfig = DEFAULT_LINT_CONFIG): Obligation[] {
   const out: Obligation[] = [];
   const scenes = scenesInOrder(nodes);
 
@@ -681,6 +681,41 @@ export function obligationLedger(nodes: DnaNode[]): Obligation[] {
       state, openedAt: playedAt.get(g.id) ?? null, closedAt: resolvedAt.get(g.id) ?? null,
       touches: playCount.get(g.id) ?? 0,
       quiet: state === "open" && last !== undefined ? beats.length - 1 - last : null });
+  }
+
+  // CONTRACT — the GENRE promise: a meter carrying a `target` curve is, by construction, a genre-compiled
+  // promise (only the brief-compile pass ever sets `target` — docs/novel-dna-meters.md; STEP_RECIPE.contract
+  // derives it from the brief's genre/tone/content-type). Every other axis is a promise made INSIDE the
+  // story (a thread, a game, a set-piece); this is the promise the COVER makes before a single scene exists
+  // — tension should climb like a thriller, heat should escalate like romance. Debt = the planned trajectory
+  // must MATCH that curve, not just exist. Reuses target_drift's own band, so "closed" here means EXACTLY
+  // what "no target_drift lint" already means for this meter — one definition of "on-genre", not two.
+  //   unopened — not a single beat carries an EXPLICIT planned reading yet.
+  //   open     — some explicit readings exist, but they haven't reached the last beat within band yet.
+  //   closed   — an explicit reading reaches the final beat AND the plan stays within band throughout.
+  // "Explicit" matters: meterSeries carry-forwards a held value through every later beat once first touched,
+  // so checking ITS non-null-ness would make "reaches the last beat" trivially true after a single touch.
+  // firstAt/lastAt below scan beat.content.readings directly instead — the same explicit-event style THREADS/
+  // GAMES already use — so an author who set a reading once and stopped correctly reads as still OPEN.
+  for (const m of nodes.filter((n) => n.kind === "meter" && pinnedOrAccepted(n) && ((n.content as MeterContent).target ?? []).length > 0)) {
+    const c = m.content as MeterContent;
+    let firstAt: number | null = null, lastAt: number | null = null, touches = 0;
+    beats.forEach((b, i) => {
+      const r = ((b.content as BeatContent).readings ?? []).find((x) => x.ref === m.id);
+      if (!r || typeof r.value !== "number") return;
+      touches++;
+      if (firstAt === null) firstAt = i;
+      lastAt = i;
+    });
+    const span = typeof c.scale?.min === "number" && typeof c.scale?.max === "number" ? c.scale.max - c.scale.min : (meterShape(meterSeries(nodes, m.id)).range || 1);
+    const gap = touches ? targetGap(nodes, m.id) : null; // the carry-forward PLAN vs the target curve — same comparison target_drift already makes
+    const withinBand = !!gap && gap.maxAbs <= cfg.meterTargetDriftBand * span;
+    const carriedToEnd = lastAt === beats.length - 1;
+    const state: ObligationState = isWaived(m) ? "waived" : touches === 0 ? "unopened" : (withinBand && carriedToEnd) ? "closed" : "open";
+    out.push({ id: `contract:${m.id}`, ref: m.id, kind: "contract", name: c.name ?? m.id,
+      promise: `the ${c.kind ?? "meter"} arc this genre compiled in — the book must carry ${c.name ?? "it"} to the curve it promised`,
+      state, openedAt: firstAt, closedAt: state === "closed" ? beats.length - 1 : null, touches,
+      quiet: state === "open" && lastAt !== null ? beats.length - 1 - lastAt : null });
   }
 
   // STATE KEYS — the causality axis as debt, with the direction INVERTED: a `needs` is a withdrawal that an
@@ -757,15 +792,15 @@ export function obligationLedger(nodes: DnaNode[]): Obligation[] {
  *  reaches the page is still owed (plant it, waive it, or delete the node). PRESSURE-ORDERED: on-page (open)
  *  debts first, stalest first (`quiet` desc — the promise the reader has held longest without a touch);
  *  registry-only (unopened) debts follow in ledger order. Sort is stable, so ties keep the ledger's grouping. */
-export function openObligations(nodes: DnaNode[]): Obligation[] {
-  return obligationLedger(nodes)
+export function openObligations(nodes: DnaNode[], cfg: LintConfig = DEFAULT_LINT_CONFIG): Obligation[] {
+  return obligationLedger(nodes, cfg)
     .filter((o) => o.state === "unopened" || o.state === "open")
     .sort((a, b) => (a.state === "open" ? 0 : 1) - (b.state === "open" ? 0 : 1) || (b.quiet ?? -1) - (a.quiet ?? -1));
 }
 
 /** THE COMPLETION PREDICATE (debt-based done): the book is finished when every promise is paid or waived —
  *  not when a count fills. What the journey's final gate and the driver's endgame loop will read. */
-export const debtSettled = (nodes: DnaNode[]): boolean => openObligations(nodes).length === 0;
+export const debtSettled = (nodes: DnaNode[], cfg: LintConfig = DEFAULT_LINT_CONFIG): boolean => openObligations(nodes, cfg).length === 0;
 
 // ── CAUSALITY (why): the causal spine — the 4th axis (when/what/charge/why) ───
 // Every beat claims a `connector` (therefore/but), but that's a self-asserted LABEL until we check it.

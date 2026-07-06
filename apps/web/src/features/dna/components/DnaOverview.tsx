@@ -60,12 +60,13 @@ function TreeRow({ node, index, label, title, meta, depth, onOpen }: {
 }
 
 // PROMISES — the obligation ledger, pressure-ordered (novelDna.obligationLedger/openObligations): every debt
-// the book owes the reader, across all five axes (thread/game/state_key/tentpole/entity_intro), stalest-open
-// first. A row with a backing node (everything but state_key — a bare causal key, nothing to point at) gets a
-// Waive action: the author's direct "leave this open on purpose" gesture (a sequel hook), same field
-// (`content.waived`) the agent proposes via propose_node_ops — this is the manual, no-agent-round-trip path.
+// the book owes the reader, across all six axes (thread/game/state_key/tentpole/entity_intro/contract —
+// contract is the GENRE promise, a meter's compiled target curve), stalest-open first. A row with a backing
+// node (everything but state_key — a bare causal key, nothing to point at) gets a Waive action: the author's
+// direct "leave this open on purpose" gesture (a sequel hook, or "we're not chasing this convention"), same
+// field (`content.waived`) the agent proposes via propose_node_ops — the manual, no-agent-round-trip path.
 const KIND_LABEL: Record<Obligation["kind"], string> = {
-  thread: "thread", game: "game", state_key: "state key", tentpole: "tentpole", entity_intro: "meet",
+  thread: "thread", game: "game", state_key: "state key", tentpole: "tentpole", entity_intro: "meet", contract: "genre",
 };
 
 function PromiseRow({ o, node, onOpen, index }: { o: Obligation; node?: DnaNode; onOpen: (k: StageKey, focusId?: string) => void; index: Map<string, DnaNode> }) {

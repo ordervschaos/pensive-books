@@ -239,6 +239,25 @@ function endgameBook(): DnaNode[] {
   return [seed, premise, pillar, hero, thread, a1, b1, s1];
 }
 
+// The GENRE promise (the CONTRACT obligation kind): two meters with a compiled `target` curve — one carried
+// to the last beat within band (closed), one touched only early and left behind (open). No thread/game/
+// tentpole noise, so the fixture isolates this one axis for both the ledger and debtSettled/currentObjective.
+function contractBook(): DnaNode[] {
+  const seed = mk("seed", { id: "ct_seed", content: { logline: "A courier must cross a burning province before the letter dies with her." } });
+  const premise = mk("premise", { id: "ct_prem", parent_id: "ct_seed", content: { dramatic_question: "Does the letter arrive?" } });
+  const pillar = mk("pillar", { id: "ct_pil", parent_id: "ct_prem", content: { controlling_idea: "A promise outruns a war.", ending: "It arrives, unread." } });
+  const hero = mk("character", { id: "ct_ch1", parent_id: "ct_pil", content: { name: "Osa", role: "protagonist" } });
+  // Carried all the way to the last beat, close to the target curve throughout — CLOSED.
+  const kept = mk("meter", { id: "ct_m_kept", parent_id: "ct_pil", content: { name: "dread", kind: "tension", scale: { min: 0, max: 10 }, target: [{ at: 0, value: 0 }, { at: 1, value: 10 }] } });
+  // Touched only at the first beat, then abandoned — never reaches the last beat — OPEN.
+  const dropped = mk("meter", { id: "ct_m_dropped", parent_id: "ct_pil", content: { name: "heat", kind: "heat", scale: { min: 0, max: 10 }, target: [{ at: 0, value: 0 }, { at: 1, value: 10 }] } });
+  const a1 = mk("act", { id: "ct_a1", parent_id: "ct_pil", position: 0, content: { title: "The Road" } });
+  const b1 = mk("beat", { id: "ct_b1", parent_id: "ct_a1", position: 0, content: { summary: "She sets out.", readings: [{ ref: "ct_m_kept", value: 0 }, { ref: "ct_m_dropped", value: 0 }] } });
+  const b2 = mk("beat", { id: "ct_b2", parent_id: "ct_a1", position: 1, content: { summary: "Mid-crossing.", readings: [{ ref: "ct_m_kept", value: 5 }] } });
+  const b3 = mk("beat", { id: "ct_b3", parent_id: "ct_a1", position: 2, content: { summary: "She reaches the gate.", readings: [{ ref: "ct_m_kept", value: 10 }] } });
+  return [seed, premise, pillar, hero, kept, dropped, a1, b1, b2, b3];
+}
+
 const settings: BookSettings = { title: "The Folding City", author: "A. Nzal", word_target: 60000 };
 const j = (v: unknown) => JSON.stringify(v);
 
@@ -279,7 +298,7 @@ const cases: [string, (m: typeof web, n: DnaNode[]) => unknown][] = [
 ];
 
 describe("novel-dna edge twin ↔ web engine parity", () => {
-  const fixtures: [string, DnaNode[]][] = [["goodBook", goodBook()], ["brokenBook", brokenBook()], ["registryBook", registryBook()], ["exposureBook", exposureBook()], ["ledgerAtBook", ledgerAtBook()], ["verticalBook", verticalBook()], ["shapeFitFresh", stampShapeFit(true)], ["shapeFitStale", stampShapeFit(false)], ["craftFresh", stampCraft(true)], ["craftStale", stampCraft(false)], ["proseBook", proseBook()], ["sketchBook", sketchBook()], ["endgameBook", endgameBook()]];
+  const fixtures: [string, DnaNode[]][] = [["goodBook", goodBook()], ["brokenBook", brokenBook()], ["registryBook", registryBook()], ["exposureBook", exposureBook()], ["ledgerAtBook", ledgerAtBook()], ["verticalBook", verticalBook()], ["shapeFitFresh", stampShapeFit(true)], ["shapeFitStale", stampShapeFit(false)], ["craftFresh", stampCraft(true)], ["craftStale", stampCraft(false)], ["proseBook", proseBook()], ["sketchBook", sketchBook()], ["endgameBook", endgameBook()], ["contractBook", contractBook()]];
   for (const [fxName, nodes] of fixtures) {
     for (const [fnName, fn] of cases) {
       it(`${fnName} agrees on ${fxName}`, () => {

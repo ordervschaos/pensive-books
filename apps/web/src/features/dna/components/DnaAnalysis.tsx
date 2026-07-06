@@ -14,7 +14,7 @@ import type { StageKey } from "@/features/dna/lib/dnaJourney";
 // Which stage a debt's node lives on (for the report's jump-link) — mirrors DnaOverview's KIND_STAGE.
 // state_key has no backing node (a bare causal key), so it's the one kind with no stage — no jump-link.
 const OBLIGATION_STAGE: Record<ObligationKind, StageKey | null> = {
-  thread: "structure", game: "foundations", tentpole: "foundations", entity_intro: "foundations", state_key: null,
+  thread: "structure", game: "foundations", tentpole: "foundations", entity_intro: "foundations", contract: "foundations", state_key: null,
 };
 
 // onOpen wires every analytic row to the node it's about (the act/thread/scene/beat) so the read-only
@@ -90,7 +90,7 @@ export function DnaAnalysis({ nodes, settings, onOpen, hideLints, defaultOpen = 
                 const stage = OBLIGATION_STAGE[o.kind];
                 const label = (
                   <>
-                    <span className="pv-mono shrink-0 text-[9px] uppercase tracking-[0.06em] text-[hsl(var(--pv-text-faint))]">{o.kind === "entity_intro" ? "meet" : o.kind === "state_key" ? "state" : o.kind}</span>
+                    <span className="pv-mono shrink-0 text-[9px] uppercase tracking-[0.06em] text-[hsl(var(--pv-text-faint))]">{o.kind === "entity_intro" ? "meet" : o.kind === "state_key" ? "state" : o.kind === "contract" ? "genre" : o.kind}</span>
                     <span className="pv-serif flex-1 truncate text-[hsl(var(--pv-text-muted))]" title={o.promise}>"{o.name}"</span>
                     <span className={`pv-mono shrink-0 text-[10px] ${o.state === "open" ? "text-amber-500" : "text-[hsl(var(--pv-text-faint))]"}`}>{o.state}{o.quiet ? ` · quiet ${o.quiet}` : ""}</span>
                   </>
