@@ -1,14 +1,21 @@
 // DnaAnalysis — surfaces the three analytic axes (schema §6) in the studio: PACING (turning point vs
-// target_pct), PROMISES (the thread registry's setup/payoff ledger), TOPOGRAPHY (the value-polarity strip),
-// and the structural LINTS. Pure projection of the tree (no generation) — the conformance backstop the
-// author reads, the same report the dna-flow eval prints, now in the UI. Collapsible; defaults open once
-// there's structure to analyze.
+// target_pct), PROMISES (the unified obligation ledger — thread/game/state_key/tentpole/entity_intro debt,
+// pressure-ordered), TOPOGRAPHY (the value-polarity strip), and the structural LINTS. Pure projection of the
+// tree (no generation, no mutation — Waive lives on Overview's actionable PromisesPanel) — the conformance
+// backstop the author reads, the same report the dna-flow eval prints, now in the UI. Collapsible; defaults
+// open once there's structure to analyze.
 import { useState, type ReactNode } from "react";
 import { ChevronDown, ChevronRight, TriangleAlert } from "lucide-react";
 import { Eyebrow } from "@/components/book/shared/studioUi";
-import { causality, pacing, promiseLedger, topography, validate, type DnaNode } from "@/features/dna/lib/novelDna";
+import { causality, openObligations, pacing, topography, validate, type DnaNode, type ObligationKind } from "@/features/dna/lib/novelDna";
 import type { BookSettings } from "@/features/dna/lib/novelDna";
 import type { StageKey } from "@/features/dna/lib/dnaJourney";
+
+// Which stage a debt's node lives on (for the report's jump-link) — mirrors DnaOverview's KIND_STAGE.
+// state_key has no backing node (a bare causal key), so it's the one kind with no stage — no jump-link.
+const OBLIGATION_STAGE: Record<ObligationKind, StageKey | null> = {
+  thread: "structure", game: "foundations", tentpole: "foundations", entity_intro: "foundations", state_key: null,
+};
 
 // onOpen wires every analytic row to the node it's about (the act/thread/scene/beat) so the read-only
 // report is also a jump-table into the owning stage. hideLints drops the conformance section for surfaces
@@ -18,12 +25,15 @@ export function DnaAnalysis({ nodes, settings, onOpen, hideLints, defaultOpen = 
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const pace = pacing(nodes);
-  const ledger = promiseLedger(nodes);
+  // PROMISES — the unified obligation ledger (thread/game/state_key/tentpole/entity_intro), pressure-ordered,
+  // OUTSTANDING debt only (a settled book should read empty here, same as "no lints"). Read-only: this report
+  // never mutates the tree — the Waive gesture lives on the Overview's actionable PromisesPanel instead.
+  const debts = openObligations(nodes);
   const topo = topography(nodes);
   const causal = causality(nodes);
   const hasCausal = causal.some((r) => r.connector || r.needs.length);
   const issues = validate(nodes);
-  if (!pace.length && !ledger.length && !topo.length) return null;
+  if (!pace.length && !debts.length && !topo.length) return null;
 
   const errors = issues.filter((i) => i.severity === "error").length;
   const warns = issues.length - errors;
@@ -71,18 +81,23 @@ export function DnaAnalysis({ nodes, settings, onOpen, hideLints, defaultOpen = 
             </section>
           )}
 
-          {/* PROMISES */}
-          {ledger.length > 0 && (
+          {/* PROMISES — the debt ledger: what this book still owes the reader, pressure-ordered (stalest
+              first). A `state_key` row has no backing node (a bare causal key) so it isn't a jump-link. */}
+          {debts.length > 0 && (
             <section className="space-y-1">
-              <p className="pv-mono text-[9px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-faint))]">promises · setups → payoffs</p>
-              {ledger.map((r) => {
-                const dangling = r.setups > 0 && r.payoffs === 0;
-                return (
-                  <Row key={r.threadId} stage="structure" id={r.threadId} className="flex items-center gap-2 text-[12px]">
-                    <span className="pv-serif flex-1 truncate text-[hsl(var(--pv-text-muted))]" title={r.promise}>{r.name}</span>
-                    <span className={`pv-mono shrink-0 text-[10px] ${dangling ? "text-amber-500" : "text-[hsl(var(--pv-text-faint))]"}`}>{r.setups}→{r.payoffs}{dangling ? " ⚠" : ""}</span>
-                  </Row>
+              <p className="pv-mono text-[9px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-faint))]">promises · debt owed to the reader</p>
+              {debts.map((o) => {
+                const stage = OBLIGATION_STAGE[o.kind];
+                const label = (
+                  <>
+                    <span className="pv-mono shrink-0 text-[9px] uppercase tracking-[0.06em] text-[hsl(var(--pv-text-faint))]">{o.kind === "entity_intro" ? "meet" : o.kind === "state_key" ? "state" : o.kind}</span>
+                    <span className="pv-serif flex-1 truncate text-[hsl(var(--pv-text-muted))]" title={o.promise}>"{o.name}"</span>
+                    <span className={`pv-mono shrink-0 text-[10px] ${o.state === "open" ? "text-amber-500" : "text-[hsl(var(--pv-text-faint))]"}`}>{o.state}{o.quiet ? ` · quiet ${o.quiet}` : ""}</span>
+                  </>
                 );
+                return stage
+                  ? <Row key={o.id} stage={stage} id={o.ref} className="flex items-center gap-2 text-[12px]">{label}</Row>
+                  : <div key={o.id} className="flex items-center gap-2 text-[12px]">{label}</div>;
               })}
             </section>
           )}
