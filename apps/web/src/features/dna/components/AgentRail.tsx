@@ -20,11 +20,27 @@ import {
 import { availableCommands, matchCommands, type AgentCommand } from "@/features/dna/lib/agentCommands";
 import { describeOps, humanizeNodeRefs, nodeLabel, type NodeOp } from "@/features/dna/lib/dnaChat";
 import { analysisText, byId, type BookSettings, type DnaNode, type NodeKind } from "@/features/dna/lib/novelDna";
-import { currentObjective, nextDraftTarget } from "@/features/dna/lib/dnaJourney";
+import { currentObjective, currentObjectiveKey, nextDraftTarget } from "@/features/dna/lib/dnaJourney";
 import { useChatScroll } from "@/components/book/shared/useChatScroll";
 import { useAutoAccept } from "@/features/dna/hooks/useAutoAccept";
 import { ActionLink, Eyebrow, Panel, RunError } from "@/components/book/shared/studioUi";
 import { snapshotTree } from "@/features/dna/lib/treeVersions";
+
+// What the "next step" nudge SAYS when clicked, keyed by dnaJourney's STEP_RECIPE substep — so the chat
+// bubble names the actual action instead of a one-size-fits-all "let's work on the next step" that read as
+// disconnected from whatever the button was visibly offering (e.g. "generate the logline").
+const NEXT_STEP_MESSAGE: Record<string, string> = {
+  seed: "Generate logline options for the seed.",
+  premise: "Generate premise options for the central question.",
+  pillar: "Set the pillar's controlling idea and ending.",
+  contract: "Compile the contract from the brief.",
+  cast: "Add the core cast.",
+  acts: "Generate the acts.",
+  beats: "Generate the beat sheet.",
+  scenes: "Break the next beat into scenes.",
+  promises: "Settle the next open promise.",
+  prose: "Write the next scene.",
+};
 
 export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [], onDetach }: {
   bookId: number; nodes: DnaNode[]; settings: BookSettings; bookSlug?: string; // bookSlug feeds the reader URL into the final render/publish hand-off
@@ -48,6 +64,9 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [],
   );
   // The one-line headline of the objective (the "▸ Step n/5 · …" line), for the idle nudge chip.
   const objectiveHeadline = useMemo(() => objective.split("\n").find((l) => l.startsWith("▸"))?.replace(/^▸\s*/, "") ?? "", [objective]);
+  // The substep key behind that headline (e.g. "seed", "beats") — so the nudge's chat message can name the
+  // actual action instead of the generic "let's work on the next step" that used to ride under every headline.
+  const objectiveKey = useMemo(() => currentObjectiveKey(nodes), [nodes]);
   // When the objective is the draft step, the concrete scene it targets — so the "next step" nudge can NAME
   // which scene ("Write 'Bram's door'") instead of a bare ordinal, and can't diverge from what the agent
   // does: we only surface it when the live objective actually points at this scene's id (same source of
@@ -317,7 +336,9 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [],
               no error. So it reads as "here's what's next", not a pinned CTA. One click hands the step to
               the agent (the objective itself already rides every message's context). */}
           {!active && !optimistic && proposals.length === 0 && row?.status !== "error" && objectiveHeadline && (
-            <button type="button" onClick={() => void send("Let's work on the next step.")} disabled={busy}
+            <button type="button" onClick={() => void send(draftTarget
+              ? `Write "${nodeLabel(draftTarget.scene)}".`
+              : (objectiveKey && NEXT_STEP_MESSAGE[objectiveKey]) || objectiveHeadline || "Let's work on the next step.")} disabled={busy}
               title="Let the agent lead you through this step"
               className="flex w-full items-center gap-2.5 rounded-2xl border border-dashed border-[hsl(var(--pv-accent))]/35 bg-[hsl(var(--pv-accent))]/[0.05] px-3.5 py-2.5 text-left transition-colors hover:border-[hsl(var(--pv-accent))]/60 hover:bg-[hsl(var(--pv-accent))]/[0.08] disabled:opacity-50">
               <Wand2 className="h-4 w-4 shrink-0 text-[hsl(var(--pv-accent))]" />

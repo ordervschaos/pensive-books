@@ -157,7 +157,7 @@ export function stageSubsteps(key: StageKey, nodes: DnaNode[]): SubStep[] {
 // across the render seam). One recipe per serial sub-step key (see stageSubsteps).
 const STEP_RECIPE: Record<string, string> = {
   seed: "Generate 2–4 logline options from the brief with propose_options on the seed node — a logline names the protagonist, their goal, the obstacle, and the stakes in one sentence. Recommend one and ask the author which direction fits and what to change.",
-  premise: "If there's no premise node yet, first CREATE it (propose_node_ops add, kind = premise, parentId = the seed node) — then, once it exists, generate 2–4 premise options with propose_options on it, each elaborating the ACCEPTED logline (keep its protagonist/goal/obstacle/stakes fixed). The premise's core is its CENTRAL QUESTION — the question the whole book lives inside. It can be a PLOT question (\"will she escape the colony?\") OR a thematic one (\"can a single day hold a whole life?\"); pick whichever the brief's genre calls for — don't force a \"will the hero win\" frame onto a character/literary book. The shape is an OPTIONAL sketch, not required: if used, NAME the shape (e.g. \"man in a hole\", \"kishōtenketsu\", \"frame story\" — whatever the story actually is, not a forced three-act default), give it however many MOVEMENTS that shape needs, and set the ending's VALENCE (ending_feel) — the concrete ending itself belongs on the pillar.",
+  premise: "If there's no premise node yet, CREATE it with ONE propose_node_ops add (kind = premise, parentId = the seed node) — and put a real first-draft `dramatic_question` (and `shape`, if used) directly in that SAME call. NEVER create it blank and fill it in later: the author reviews this add as its own card, so it must already read as a real proposal, not an empty scaffold. The premise's core is its CENTRAL QUESTION — the question the whole book lives inside. It can be a PLOT question (\"will she escape the colony?\") OR a thematic one (\"can a single day hold a whole life?\"); pick whichever the brief's genre calls for — don't force a \"will the hero win\" frame onto a character/literary book. The shape is an OPTIONAL sketch, not required: if used, NAME the shape (e.g. \"man in a hole\", \"kishōtenketsu\", \"frame story\" — whatever the story actually is, not a forced three-act default), give it however many MOVEMENTS that shape needs, and set the ending's VALENCE (ending_feel) — the concrete ending itself belongs on the pillar. Once it's accepted, if the author wants to see other directions, offer 2–4 ALTERNATE central questions with propose_options on it — each still honoring the ACCEPTED logline (protagonist/goal/obstacle/stakes fixed).",
   pillar: "If there's no pillar node yet, first CREATE it (propose_node_ops add, kind = pillar, parentId = the premise node). Then set its controlling idea (the book's one-sentence thematic argument) and the ending it implies with propose_node_ops (edit). Talk it through, then propose.",
   contract: "Compile the brief with the ENGINE, not by hand: call propose_expansion(nodeId = the pillar, target = 'contract') — it derives the genre's promises from the brief in one pass: the convention TENTPOLES (the obligatory scenes the genre owes the reader), seeded METERS with target curves (tension/comedy/heat per genre + content type), and audience REGISTER BOUNDS merged into the voice profile. One-time optional enrichment — offer it once the pillar is accepted; don't block on it and don't re-run it once compiled.",
   cast: "Add the core cast with propose_node_ops (add character nodes under the pillar) — at minimum the protagonist and antagonist, each with want / need / wound / lie. Ask the author about anyone central you're unsure of. Relationships, world, games, and tentpoles are optional enrichment — offer them, don't block on them.",
@@ -185,6 +185,18 @@ export function nextDraftTarget(nodes: DnaNode[]): { scene: DnaNode; orderIndex:
   const beatIndex = act && beat ? childrenOf(nodes, act.id).filter((n) => n.kind === "beat").findIndex((n) => n.id === beat.id) + 1 : undefined;
   const sceneIndex = beat ? childrenOf(nodes, beat.id).filter((n) => n.kind === "scene").findIndex((n) => n.id === scene.id) + 1 : undefined;
   return { scene, orderIndex: orderIndex + 1, total: ordered.length, actIndex, beatIndex, sceneIndex };
+}
+
+/** The STEP_RECIPE key of the objective `currentObjective` is about to hand the agent — client-only, so the
+ *  "next step" nudge can pick a message that names the actual action instead of a generic one. Deliberately
+ *  NOT folded into `currentObjective` itself: that function's text is parity-locked with the Supabase edge
+ *  twin (supabase/functions/_shared/dna-journey.ts), and this key is never read there. */
+export function currentObjectiveKey(nodes: DnaNode[]): string | undefined {
+  const { stages, nowIndex } = buildJourney(nodes);
+  if (stages.every((s) => s.status === "done")) return undefined;
+  const stage = stages[nowIndex];
+  const now = stageSubsteps(stage.key, nodes).find((s) => s.status === "now");
+  return now?.key ?? stage.key;
 }
 
 /** The agent's CURRENT objective — the one rung to drive the author through next, derived live from the
