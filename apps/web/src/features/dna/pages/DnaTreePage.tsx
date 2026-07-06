@@ -10,7 +10,7 @@ import { backlinkIndex, beatsInOrder, byId, childrenOf, isEntityKind, isProseSta
 import { bootstrapLoglineFromBrief, ensureSeed } from "@/features/dna/lib/dnaExpand";
 import { editSpecs, KIND_LEVEL, tasteSpecs, type EditSpec } from "@/features/dna/lib/dnaSchema";
 import { CONTENT_TYPES, SCOPE_BANDS, briefIdea, type Brief } from "@/lib/brief";
-import { describeOps, type NodeOp } from "@/features/dna/lib/dnaChat";
+import { describeOps, renderValue, type NodeOp } from "@/features/dna/lib/dnaChat";
 import { AgentRail } from "@/features/dna/components/AgentRail";
 import { TreeOverviewTab } from "@/features/dna/components/TreeOverviewTab";
 import { type AgentProposal } from "@/features/dna/lib/agentThread";
@@ -646,17 +646,29 @@ function OpDiffBlock({ node, content, nodes, depth }: { node: DnaNode; content: 
   );
 }
 
-// A phantom node the proposal would ADD — rendered in its target container/group, before the ＋ add row.
+// A phantom node the proposal would ADD — rendered in its target container/group, before the ＋ add row, at
+// full tree width so the author can actually READ it (the rail's card is a narrow sidebar; this is the same
+// data, describeOps'd the same way, just laid out where the node would actually land). Read-only: apply/
+// discard still live in the rail (AgentRail owns that transaction).
 function PhantomRow({ add, depth }: { add: PhantomAdd; depth: number }) {
   const fields = Object.entries(add.content).filter(([, val]) => val != null && val !== "");
   const title = String((add.content as Record<string, unknown>).name ?? (add.content as Record<string, unknown>).title ?? (add.content as Record<string, unknown>).summary ?? (add.content as Record<string, unknown>).goal ?? "");
   return (
-    <div style={{ position: "relative", paddingLeft: depth * 20 + 20, paddingRight: 12, paddingTop: 2, paddingBottom: 2, boxShadow: "inset 3px 0 0 #60a070", background: "#60a07012" }}>
+    <div style={{ position: "relative", paddingLeft: depth * 20 + 20, paddingRight: 12, paddingTop: 4, paddingBottom: 6, boxShadow: "inset 3px 0 0 #60a070", background: "#60a07012" }}>
       <ConnectorTick depth={depth} />
       <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
         <span style={{ width: 12, flexShrink: 0 }} />
         <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "#60a070", border: "1px solid #60a07040", borderRadius: 3, padding: "1px 5px", flexShrink: 0 }}>＋ {add.kind}</span>
-        <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: "#a8c8b0", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</span>
+        {title && <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: "#a8c8b0", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</span>}
+      </div>
+      <div style={{ paddingLeft: 20, paddingTop: 3, display: "flex", flexDirection: "column", gap: 4 }}>
+        {fields.length === 0 && <div style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, color: "#4a5a4e", fontStyle: "italic" }}>(no content yet)</div>}
+        {fields.map(([key, val]) => (
+          <div key={key}>
+            <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase", color: "#5c8a6a" }}>{key}</span>
+            <div style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: "#c8ddce", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{renderValue(val)}</div>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -1151,6 +1163,7 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
           {backlinks}
           {lab}
           {sub(kids, depth + 1)}
+          {spineChildKind && phantoms(node.id, spineChildKind, depth + 1)}
           {spineChildRow}
         </>
       );
@@ -1166,6 +1179,7 @@ function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
             <ProseBlock node={node} depth={depth + 1} open={h.proseOpenSet.has(node.id)} onToggle={() => h.onToggleProse(node.id)} />
           )}
           {sub(kids, depth + 1)}
+          {spineChildKind && phantoms(node.id, spineChildKind, depth + 1)}
           {spineChildRow}
           {childAdd && phantoms(node.id, childAdd, depth + 1)}
         </>

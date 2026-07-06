@@ -660,6 +660,66 @@ Honor the MANDATE (genre/tone) and any LOCKED ancestors. Do NOT invent a title. 
       return json({ logline: textFromLLM(data).trim() });
     }
 
+    if (target === "premise") {
+      const logline = String((node.content as { logline?: unknown })?.logline ?? "").trim();
+      if (node.kind !== "seed") return json({ error: "'premise' expands from the seed/logline node" }, 400);
+      if (!logline) return json({ error: "Generate or accept a logline before deriving the premise." }, 400);
+      const system = `You are a story architect. Given a BRIEF (the constant origin) and a LOGLINE (protagonist · inciting incident · goal · obstacle · stakes), derive a PREMISE consisting of a SHAPE and a DRAMATIC_QUESTION.
+
+Produce:
+
+SHAPE
+- name: a 2-4 word label for the emotional trajectory (not the plot)
+- movements: 3-5 beats tracing the protagonist's INTERNAL trajectory.
+  Rules:
+  * Each movement must change the protagonist's relationship to their want — never merely advance events.
+  * Each movement must escalate or complicate the contradiction set up by the previous one. If two movements could be swapped without loss, merge or rewrite them.
+  * Movement 1 establishes the want in concrete form.
+  * The final movement forces a choice between the stated want and an emerged need — the choice must be genuinely costly either way.
+  * The most original element of the brief must appear explicitly in at least one movement, not just be implied.
+- ending_feel: up / down / bittersweet — choose deliberately, and it must be consistent with the genre and tone in the brief.
+
+DRAMATIC_QUESTION
+One sentence, phrased so that:
+  * it is definitively answered by the final movement,
+  * it contains a price ("Can she X without losing Y?"), never just a goal ("Will she X?"),
+  * a reader could plausibly root for both answers,
+  * it uses the brief's specific nouns, not generic abstractions.
+
+Constraints:
+- Stay inside the genre, tone, and heat level of the brief.
+- Do not introduce characters, settings, or devices absent from the brief or logline.
+
+Silent evaluation lint before you answer:
+You are a ruthless development editor. Score this PSE against its BRIEF and LOGLINE. Do not be polite. A premise that would produce a readable but forgettable book should fail.
+Score each criterion 0-5:
+1. ESCALATION — Does each movement complicate the previous one, or do any merely sequence events? Name any swappable pair (automatic <=2 if one exists).
+2. INTERNAL TRAJECTORY — Do movements track the protagonist's changing relationship to their want, or external plot? Quote the weakest movement.
+3. FORCED CHOICE — Does the final movement present a want-vs-need choice that costs something either way? If one option is obviously correct, score <=2.
+4. QUESTION-SHAPE LOCK — Is the dramatic question answered precisely by the final movement — no more, no less?
+5. PRICE IN THE QUESTION — Does the question contain a cost, and could a reader root for both answers?
+6. ORIGINALITY SURFACED — Does the brief's most distinctive element appear explicitly in the premise? Name that element first, then check.
+7. BRIEF FIDELITY — Genre, tone, heat, and ending_feel all consistent with the brief? Flag any drift.
+8. LOAD-BEARING RISK — Identify the single claim the premise asks the reader to accept that the story must earn on the page. State which movement carries it and whether the shape gives it enough room.
+Revise internally until the verdict would be ACCEPT (>=32/40, no criterion below 3). Do not output the scores.
+
+Output JSON ONLY, no prose, no fences:
+{ "children": [ { "dramatic_question": "<DRAMATIC_QUESTION sentence>", "shape": { "name": "<2-4 word emotional trajectory>", "movements": ["<movement 1>", "<movement 2>", "<movement 3>", "..."], "ending_feel": "up|down|bittersweet" } } ] }`;
+      const data = await callLLM(apiKey, { model, max_tokens: 1800, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+        messages: [{ role: "user", content: `BRIEF:\n${briefContext(brief, { scope: "full", success: true, none: "(no brief)", empty: "(empty)" })}\n\nLOGLINE:\n${logline}\n\nDerive the premise. JSON only.` }] }, meta);
+      const parsed = JSON.parse(extractJsonBlock(textFromLLM(data)));
+      const first = Array.isArray(parsed.children) ? parsed.children[0] : parsed;
+      const shape = first?.shape ?? {};
+      const movements = (Array.isArray(shape.movements) ? shape.movements : []).map((m: unknown) => String(m ?? "").trim()).filter(Boolean).slice(0, 5);
+      const ending = shape.ending_feel === "up" || shape.ending_feel === "down" || shape.ending_feel === "bittersweet" ? shape.ending_feel : "bittersweet";
+      const dramaticQuestion = String(first?.dramatic_question ?? first?.DRAMATIC_QUESTION ?? "").trim();
+      if (!dramaticQuestion || movements.length < 3) return json({ error: "Premise generation returned an incomplete premise — try again." }, 502);
+      return json({ childKind: "premise", childLevel: 1, children: [{
+        dramatic_question: dramaticQuestion,
+        shape: { name: String(shape.name ?? "").trim(), movements, ending_feel: ending },
+      }] });
+    }
+
     if (target === "sketch") {
       // Scene → sketch: the TREATMENT between the scene's plan and its prose (doc_1783196400000_dna_scene_
       // sketch_layer.md, doc_1783198900000_dna_scene_direction.md) — WHAT happens (a handful of moves) and

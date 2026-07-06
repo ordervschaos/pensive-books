@@ -31,7 +31,7 @@ const STAGE_KINDS: Record<Stage, string[]> = {
   draft: ["scene"],
 };
 const STAGE_GUIDE: Record<Stage, string> = {
-  premise: "the PREMISE — the dramatic question and the 5-part shape. Sharpen the question and the turns; keep it one true idea. (genre/tone live on the brief, not here.)",
+  premise: "the PREMISE — the priced dramatic question and the internal shape movements. Sharpen the want-vs-need choice, escalation, originality, and cost; keep it one true idea. (genre/tone live on the brief, not here.)",
   foundations: "the FOUNDATIONS — the controlling idea, the ending, and the CAST (each character's want/need/wound/lie/truth/idiolect), world rules, LOCATIONS (places with a persistent sensory palette scenes draw on), tentpole set-pieces, and relationships. The wound + lie are the human core. Pressure-test them; deepen, don't generic-ify.",
   structure: "the STRUCTURE — the acts (acts) and their causal beats. Hunt sagging middles, weak turning points, 'and-then' beats; every beat should connect with therefore/but.",
   scenes: "the SCENES — each scene's pov/goal/conflict/outcome and its VALUE SHIFT. Every scene must turn a value; fix flat scenes; check order and escalation.",

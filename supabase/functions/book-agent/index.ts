@@ -506,7 +506,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
     // them and chooseProposal commits one. The agent's narration is the reply; the pick waits for the author.
     const optionsCall = toolUses.find((t) => t.name === "propose_options");
     if (optionsCall) {
-      const outcome = await proposeOptions(service, row.book_id, scope, optionsCall.input as { nodeId?: string; note?: string; options?: unknown[] });
+      const outcome = await proposeOptions(service, row.book_id, scope, optionsCall.input as { nodeId?: string; kind?: string; parentId?: string; note?: string; options?: unknown[] });
       if (outcome.ok) {
         steps.push({ t: "plan", label: `Staged ${outcome.count} options for "${outcome.handle}" — pick one in the tree.` });
         transcript.push({ role: "user", content: ackResults(toolUses.map((t) => t.id)) });
@@ -1096,32 +1096,34 @@ const THREAD_DNA_TOOLS = [
   },
   {
     name: "propose_expansion",
-    description: "Delegate a HEAVY STRUCTURAL pass to the book's specialized generation engine instead of authoring it yourself: the GLOBAL beat sheet (target 'beatsheet'), a beat's SCENES (target 'scenes'), the compiled brief CONTRACT (target 'contract'), or ONE scene's SKETCH (target 'sketch'). Use this — NOT propose_node_ops — for these passes, because the engine schedules setup→payoff across the whole book, plays the games, and makes each scene inherit its beat's causal/thread/tentpole plan deterministically (craft you can't reliably reproduce by hand). 'beatsheet' generates ALL beats across every act in one causal pass — pass the PILLAR node's id. 'scenes' breaks ONE beat into scenes — pass that BEAT node's id (call it once per beat that still needs scenes, in reading order). 'contract' compiles the brief's genre/audience/tone into derived promises (convention tentpoles, seeded meters with target curves, register bounds on the voice profile) — pass the PILLAR node's id; a one-time pass, skip it if already compiled. 'sketch' generates ONE scene's TREATMENT — what happens (a handful of moves) and how it's shown (cut points, psychic distance, mode, time, tension) — from its plan + open threads + tentpole + location palette; pass that SCENE node's id. Do this BEFORE rendering a scene's prose (propose_prose_render) whenever it lacks a fresh sketch — it's cheap, and it's where you get to steer HOW the page reads before paying for the actual render. This stages a reviewable 'expand' request the author applies; the engine then runs and its result lands in the tree. Authoring the spine (logline, premise, pillar, cast, acts) and small edits is still yours via propose_node_ops / propose_options — only these engine passes go through here. ENDS your turn.",
+    description: "Delegate a structural pass to the book's specialized generation engine instead of authoring it yourself: the PREMISE from the accepted logline (target 'premise'), the GLOBAL beat sheet (target 'beatsheet'), a beat's SCENES (target 'scenes'), the compiled brief CONTRACT (target 'contract'), or ONE scene's SKETCH (target 'sketch'). Use this — NOT propose_node_ops — for these passes. 'premise' derives a priced dramatic question plus 3-5 internal shape movements from the BRIEF + accepted LOGLINE — pass the SEED node's id. 'beatsheet' generates ALL beats across every act in one causal pass — pass the PILLAR node's id. 'scenes' breaks ONE beat into scenes — pass that BEAT node's id. 'contract' compiles the brief's genre/audience/tone into derived promises — pass the PILLAR node's id. 'sketch' generates ONE scene's TREATMENT — pass that SCENE node's id before rendering prose when it lacks a fresh sketch. This stages a reviewable 'expand' request the author applies; the engine then runs and its result lands in the tree. ENDS your turn.",
     input_schema: {
       type: "object",
       properties: {
         summary: { type: "string", description: "One line: what you're expanding and why (e.g. 'generate the global beat sheet', 'break beat 3 into scenes', 'sketch the treatment for scene 2')." },
-        nodeId: { type: "string", description: "For 'beatsheet' and 'contract': the PILLAR node's id. For 'scenes': the BEAT node's id to break into scenes. For 'sketch': the SCENE node's id." },
-        target: { type: "string", enum: ["beatsheet", "scenes", "contract", "sketch"], description: "'beatsheet' = all beats across all acts (nodeId = pillar); 'scenes' = one beat's scenes (nodeId = beat); 'contract' = compile the brief's genre promises (nodeId = pillar); 'sketch' = one scene's treatment (nodeId = scene)." },
+        nodeId: { type: "string", description: "For 'premise': the SEED node's id. For 'beatsheet' and 'contract': the PILLAR node's id. For 'scenes': the BEAT node's id. For 'sketch': the SCENE node's id." },
+        target: { type: "string", enum: ["premise", "beatsheet", "scenes", "contract", "sketch"], description: "'premise' = derive premise from brief + logline (nodeId = seed); 'beatsheet' = all beats across acts (nodeId = pillar); 'scenes' = one beat's scenes (nodeId = beat); 'contract' = compile genre promises (nodeId = pillar); 'sketch' = one scene's treatment (nodeId = scene)." },
       },
       required: ["nodeId", "target"],
     },
   },
   {
     name: "propose_options",
-    description: "Offer the author 2–4 ALTERNATIVE versions of ONE node's content to choose among (the options picker). Use this when the author asks for options/alternatives, or to break a node out of its one obvious 'modal' version. Each option is a COMPLETE content object for that node's kind (the exact field names from the schema, like an edit's content). The options must be meaningfully different FROM EACH OTHER — but every option MUST HONOR the node's ancestors as FIXED: a child elaborates what's above it (the logline, then the premise), it never rewrites it. Vary ONLY what the parent leaves open (e.g. premise options keep the logline's protagonist / inciting incident / goal / obstacle / stakes fixed and vary only the central question — plot OR thematic — and the optional 5-part shape). NEVER reshape an ancestor's story into a different book, and never offer near-duplicates. This stages the options ON the node (the author picks one in the tree) and ENDS your turn. For a SINGLE revision, use propose_node_ops (edit) instead. Only target a non-locked node.",
+    description: "Offer the author 2–4 ALTERNATIVE versions of ONE node's content to choose among (the options picker). Use this when the author asks for options/alternatives, or to break a node out of its one obvious 'modal' version. Each option is a COMPLETE content object for that node's kind (the exact field names from the schema, like an edit's content). The options must be meaningfully different FROM EACH OTHER — but every option MUST HONOR the node's ancestors as FIXED: a child elaborates what's above it (the logline, then the premise), it never rewrites it. Premise options keep the logline's protagonist / inciting incident / goal / obstacle / stakes fixed and vary only the priced dramatic question plus internal shape movements. NEVER reshape an ancestor's story into a different book, and never offer near-duplicates. This stages the options ON the node (the author picks one in the tree) and ENDS your turn. For a SINGLE revision, use propose_node_ops (edit) instead. Only target a non-locked node.\n\nCREATING A NEW NODE WITH OPTIONS (premise shortcut): When the premise node doesn't exist yet, skip the two-step propose_expansion→apply cycle: pass kind=\"premise\" and parentId=<seed-node-id> WITHOUT nodeId. This mints the premise node and stages your 2–4 candidates on it in one step — the author picks one in the tree.",
     input_schema: {
       type: "object",
       properties: {
-        nodeId: { type: "string", description: "The existing node id to generate alternatives for." },
-        note: { type: "string", description: "One line: the axis the options vary along (e.g. 'three takes on the protagonist's wound')." },
+        nodeId: { type: "string", description: "The existing node id to generate alternatives for. Omit (with kind + parentId) to create a new premise node and stage options on it in one step." },
+        kind: { type: "string", description: "When creating a new node: the kind to create (e.g. 'premise'). Must be a valid node kind. Use with parentId, without nodeId." },
+        parentId: { type: "string", description: "When creating a new node: the parent node's id (e.g. the seed node's id for a new premise). Use with kind, without nodeId." },
+        note: { type: "string", description: "One line: the axis the options vary along (e.g. 'three takes on the dramatic question's price')." },
         options: {
           type: "array",
           description: "2–4 alternative content objects for this node's kind — each a complete value, meaningfully different from the others.",
           items: { type: "object", additionalProperties: true },
         },
       },
-      required: ["nodeId", "options"],
+      required: ["options"],
     },
   },
 ];
@@ -1161,10 +1163,10 @@ You hold the book's DNA TREE: premise → foundations (pillar, cast, world, tent
 
 1. DISCUSS — answer, summarize, pressure-test. Reply in plain markdown prose and just end your turn (no tool needed). Be concrete, grounded in the real tree, referencing nodes by their [id]. When a node has PENDING OPTIONS and the author asks which is strongest, just RECOMMEND one in prose (name its option number + a one-line reason tied to the brief) — committing the pick is theirs, in the tree.
 2. CHANGE THE TREE — when the author asks for a change (or agrees to one), call propose_node_ops with edit/add/delete ops over the real ids. The author reviews the diff and applies it; descendants of an edited node go stale and are regenerated later. NEVER touch a LOCKED node. Don't propose unless asked — talk first.
-3. OFFER OPTIONS — when the author asks for alternatives/options, or to break a node out of its one obvious version, call propose_options with the node's [id] and 2–4 COMPLETE content objects, meaningfully different FROM EACH OTHER but each one HONORING the node's ancestors as fixed: a child elaborates the logline/premise above, it never rewrites it. Vary only what the parent leaves open (premise options keep the logline's protagonist/inciting/goal/obstacle/stakes and vary the central question — plot OR thematic — and optional shape); never reshape an ancestor into a different story, never near-duplicates. The author picks one in the tree. Use this only for choose-among-N; a single revision is propose_node_ops.
+3. OFFER OPTIONS — when the author asks for alternatives/options, or to break a node out of its one obvious version, call propose_options with the node's [id] and 2–4 COMPLETE content objects, meaningfully different FROM EACH OTHER but each one HONORING the node's ancestors as fixed: a child elaborates the logline/premise above, it never rewrites it. Premise options keep the logline's protagonist/inciting/goal/obstacle/stakes fixed and vary the priced dramatic question plus internal shape movements; every question needs a cost and every shape needs an escalating want-vs-need choice. Never reshape an ancestor into a different story, never near-duplicates. The author picks one in the tree. Use this only for choose-among-N; a single revision is propose_node_ops.
 4. PROSE — BEFORE rendering a scene that has no sketch yet, or whose sketch is stale, call propose_expansion(nodeId = the scene, target = 'sketch') first — it's a cheap plan-level pass (what happens + how it's shown) that steers the render instead of hoping the expensive prose call gets it right; skip it only if the scene already carries a fresh one. To WRITE or REWRITE a scene's full prose, call propose_prose_render with the scene [id](s): you do NOT generate prose yourself (it's a long, browser-streamed render the author runs); you stage a request the author applies, and it streams in their browser. For SMALL wording fixes to EXISTING prose, use propose_node_ops to edit content.prose.text directly — but NEVER hand-write or replace a scene's FULL prose this way. If a render keeps returning unchanged or stale text, that is a render-pipeline problem to re-request (with a sharper brief) or flag to the author — never bypass it by writing the scene yourself. Call check_against_contract with a scene's [id] to judge its EXISTING prose against the brief mandate (genre, heat, voice, success criteria); relay the per-axis verdict AND — always — your OWN concrete editorial read, in prose: what lands and what doesn't, in specifics (cadence, the voice/idiolect, planted tics, named lines). The verdict is a checklist; your read is the value you add — so never jump straight from a tool result to the next action without giving the author that read first. A common request — "write the first scene and see if it meets the brief" — is propose_prose_render (the author applies it; prose streams in) then check_against_contract once the scene has prose.
    - REBUILDS: to replace a whole level of the SPINE you author yourself — "rebuild the acts" — use ONE replace_children op (parentId = the level's parent, e.g. the pillar for acts; childKind = act). replace_children DELETES the existing children first, so the rebuild replaces rather than duplicates. Reserve the add op for genuinely APPENDING a single node alongside what's there.
-5. BEAT SHEET, SCENES & SKETCH — do NOT author these by hand. The GLOBAL beat sheet and a beat's scenes are HEAVY structural passes with craft you can't reliably reproduce (setup→payoff scheduling across the whole book; each scene inheriting its beat's causal/thread/tentpole plan). Delegate them to the engine: call propose_expansion(nodeId = the PILLAR, target = 'beatsheet') to generate all beats across all acts once acts exist; call propose_expansion(nodeId = a BEAT, target = 'scenes') to break that beat into scenes (once per beat that still needs them); call propose_expansion(nodeId = a SCENE, target = 'sketch') to generate that scene's treatment before rendering its prose (item 4). The engine also compiles the brief's CONTRACT — propose_expansion(nodeId = the PILLAR, target = 'contract') derives the genre's convention tentpoles, seeded meters with target curves, and audience register bounds; a one-time optional pass once the pillar is accepted. You still author the logline, premise, pillar, cast, and acts yourself (propose_node_ops / propose_options); only these engine passes go through propose_expansion. Prose is propose_prose_render (item 4).
+5. PREMISE, BEAT SHEET, SCENES & SKETCH — do NOT author these by hand. For the PREMISE: call propose_options with kind='premise' and parentId=<seed-node-id> (no nodeId) to mint the premise node and stage 2–4 candidates directly in the tree — the author picks one, skipping a separate apply step. For the BEAT SHEET: call propose_expansion(nodeId = the PILLAR, target = 'beatsheet') once acts exist. For SCENES: call propose_expansion(nodeId = a BEAT, target = 'scenes'). For a SCENE SKETCH before prose: call propose_expansion(nodeId = a SCENE, target = 'sketch'). The engine also compiles the brief's CONTRACT with propose_expansion(nodeId = the PILLAR, target = 'contract'). You still author the logline, pillar, cast, and acts yourself (propose_node_ops / propose_options). Prose is propose_prose_render (item 4).
 
 ## Node kinds
 
@@ -1271,14 +1273,17 @@ async function proposeExpansion(
   input: { summary?: string; nodeId?: string; target?: string },
 ): Promise<{ ok: true; proposal: AgentProposal } | { ok: false; error: string }> {
   const target = String(input.target ?? "").trim();
-  if (target !== "beatsheet" && target !== "scenes" && target !== "contract" && target !== "sketch") {
-    return { ok: false, error: `Unknown target "${target}" — propose_expansion only handles 'beatsheet' (nodeId = pillar), 'scenes' (nodeId = beat), 'contract' (nodeId = pillar), or 'sketch' (nodeId = scene).` };
+  if (target !== "premise" && target !== "beatsheet" && target !== "scenes" && target !== "contract" && target !== "sketch") {
+    return { ok: false, error: `Unknown target "${target}" — propose_expansion only handles 'premise' (nodeId = seed), 'beatsheet' (nodeId = pillar), 'scenes' (nodeId = beat), 'contract' (nodeId = pillar), or 'sketch' (nodeId = scene).` };
   }
   const { data: rows } = await service.from("book_nodes").select("id, kind, authoring").eq("book_id", bookId);
   const nodes = (rows ?? []) as { id: string; kind: string; authoring: { locked?: boolean } | null }[];
   const node = nodes.find((n) => n.id === input.nodeId);
   if (!node) return { ok: false, error: `No node with id ${input.nodeId}.` };
   if (node.authoring?.locked) return { ok: false, error: `Node ${input.nodeId} is LOCKED — unlock it before expanding.` };
+  if (target === "premise") {
+    if (node.kind !== "seed") return { ok: false, error: `'premise' expands the SEED/logline — pass the seed node's id, not a ${node.kind}.` };
+  }
   if (target === "beatsheet") {
     if (node.kind !== "pillar") return { ok: false, error: `'beatsheet' expands the PILLAR (all acts at once) — pass the pillar node's id, not a ${node.kind}.` };
     if (!nodes.some((n) => n.kind === "act")) return { ok: false, error: "There are no acts yet — author the acts first (propose_node_ops), then generate the beat sheet." };
@@ -1292,30 +1297,66 @@ async function proposeExpansion(
   if (target === "sketch" && node.kind !== "scene") {
     return { ok: false, error: `'sketch' generates ONE scene's treatment — pass a scene node's id, not a ${node.kind}.` };
   }
-  const label = target === "beatsheet" ? "Generate the global beat sheet" : target === "contract" ? "Compile the brief's contract" : target === "sketch" ? "Sketch the scene's treatment" : "Break the beat into scenes";
+  const label = target === "premise" ? "Derive the premise" : target === "beatsheet" ? "Generate the global beat sheet" : target === "contract" ? "Compile the brief's contract" : target === "sketch" ? "Sketch the scene's treatment" : "Break the beat into scenes";
   return { ok: true, proposal: { id: crypto.randomUUID(), layer: "expansion", summary: String(input.summary ?? label).trim() || label, ops: [], nodeId: node.id, target } };
 }
 
 // Stage 2–4 alternative content objects ON a node as pickable options (the options/picker channel). The
 // candidates write to book_nodes.proposals; the author commits one in the tree (chooseProposal). Gated by
 // the same live-tree + scope + lock fence as proposeNodeOps — this only stages, it never commits.
+//
+// CREATION SHORTCUT: when `nodeId` is absent/unknown but `kind` and `parentId` are provided, a new node
+// of that kind is created (draft, source=ai) and the options are staged on it immediately — one step.
+// This is used for spine singletons like 'premise' that don't exist yet: the agent skips the separate
+// propose_expansion → author-apply → propose_options cycle and surfaces all alternatives in one turn.
 async function proposeOptions(
   service: SupabaseClient,
   bookId: number,
   scope: Aspect[] | null,
-  input: { nodeId?: string; note?: string; options?: unknown[] },
+  input: { nodeId?: string; kind?: string; parentId?: string; note?: string; options?: unknown[] },
 ): Promise<{ ok: true; handle: string; count: number } | { ok: false; error: string }> {
-  const { data: rows } = await service.from("book_nodes").select("id, kind, content, authoring").eq("book_id", bookId);
-  const nodes = (rows ?? []) as { id: string; kind: string; content: Record<string, unknown> | null; authoring: { locked?: boolean } | null }[];
-  const node = nodes.find((n) => n.id === input.nodeId);
-  if (!node) return { ok: false, error: `No node with id ${input.nodeId}.` };
-  if (node.authoring?.locked) return { ok: false, error: `Node ${input.nodeId} is LOCKED — unlock it before offering options.` };
+  const { data: rows } = await service.from("book_nodes").select("id, parent_id, kind, level, position, content, authoring").eq("book_id", bookId);
+  const nodes = (rows ?? []) as { id: string; parent_id: string | null; kind: string; level: number; position: number; content: Record<string, unknown> | null; authoring: { locked?: boolean } | null }[];
   const kinds = scopedKinds(scope);
-  if (kinds && !kinds.has(node.kind)) return { ok: false, error: `Node ${input.nodeId} is a ${node.kind}, not in scope (${scope!.join(", ")}).` };
   const objects = (Array.isArray(input.options) ? input.options : []).filter((o) => o && typeof o === "object" && !Array.isArray(o)) as Record<string, unknown>[];
   if (objects.length < 2) return { ok: false, error: "Offer at least 2 distinct option objects (2–4)." };
   const note = input.note?.trim();
   const proposals = objects.slice(0, 4).map((content) => ({ id: crypto.randomUUID(), content, ...(note ? { note } : {}), source: "options" }));
+
+  let node = nodes.find((n) => n.id === input.nodeId);
+
+  // ── Creation shortcut: mint a new node for this kind under parentId ──
+  // Used when the premise (or another spine singleton) doesn't exist yet — avoids the two-step
+  // propose_expansion→apply→propose_options cycle by creating + staging options in one server turn.
+  if (!node && input.kind && input.parentId) {
+    const targetKind = input.kind as string;
+    const parentId = input.parentId as string;
+    const parentNode = nodes.find((n) => n.id === parentId);
+    if (!parentNode) return { ok: false, error: `No parent node with id ${parentId}.` };
+    if (!ALL_NODE_KINDS.includes(targetKind)) return { ok: false, error: `Unknown kind "${targetKind}".` };
+    if (kinds && !kinds.has(targetKind)) return { ok: false, error: `Kind "${targetKind}" is not in scope (${scope!.join(", ")}).` };
+    // Existing siblings of this kind — position after the last one (or 0 if none).
+    const siblings = nodes.filter((n) => n.parent_id === parentId && n.kind === targetKind);
+    const position = siblings.length ? Math.max(...siblings.map((n) => n.position)) + 1 : 0;
+    const newId = crypto.randomUUID();
+    const { error: insErr } = await service.from("book_nodes").insert({
+      id: newId,
+      book_id: bookId,
+      parent_id: parentId,
+      kind: targetKind,
+      level: parentNode.level + 1,
+      position,
+      content: {},
+      authoring: { status: "draft", source: "ai" },
+      proposals,
+    });
+    if (insErr) return { ok: false, error: insErr.message };
+    return { ok: true, handle: targetKind, count: proposals.length };
+  }
+
+  if (!node) return { ok: false, error: `No node with id ${input.nodeId}. To create a new node with options, pass kind and parentId instead.` };
+  if (node.authoring?.locked) return { ok: false, error: `Node ${input.nodeId} is LOCKED — unlock it before offering options.` };
+  if (kinds && !kinds.has(node.kind)) return { ok: false, error: `Node ${input.nodeId} is a ${node.kind}, not in scope (${scope!.join(", ")}).` };
   const { error } = await service.from("book_nodes").update({ proposals }).eq("id", node.id);
   if (error) return { ok: false, error: error.message };
   return { ok: true, handle: nodeHandle(node.content), count: proposals.length };

@@ -46,7 +46,7 @@ export const ASPECT_KINDS: Record<Aspect, NodeKind[]> = {
 // (applyNodeOps). layer 'prose-render' = a request to (re)generate scene prose: ops is empty, sceneIds names
 // the scenes, and Apply runs the v2 prose pipeline client-side (docs/agent-context-model.md) — the agent
 // never generates prose itself (it's a long browser-streamed render). layer 'expansion' = a request to run
-// the dna-expand ENGINE for a heavy structural pass (target 'beatsheet' or 'scenes' on nodeId): ops is empty
+// the dna-expand ENGINE for a structural pass (premise / beatsheet / scenes / contract / sketch): ops is empty
 // and Apply runs generateExpansionOps → applyNodeOps client-side, so the agent delegates the craft (beat-sheet
 // scheduling, scene→beat realization) it can't reproduce by hand. See docs/agent-rail.md. */
 export interface AgentProposal { id: string; layer: "dna" | "prose-render" | "expansion"; summary: string; ops: NodeOp[]; sceneIds?: string[]; brief?: RenderBrief; nodeId?: string; target?: string }
