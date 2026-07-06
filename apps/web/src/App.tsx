@@ -36,6 +36,7 @@ const DnaJsonPage = lazy(() => import("@/features/dna/pages/DnaJsonPage"));
 const DnaTreePage = lazy(() => import("@/features/dna/pages/DnaTreePage"));
 const DnaMetersPage = lazy(() => import("@/features/dna/pages/DnaMetersPage"));
 const DnaLedgerPage = lazy(() => import("@/features/dna/pages/DnaLedgerPage"));
+const DnaArchitecturePage = lazy(() => import("@/features/dna/pages/DnaArchitecturePage"));
 const DraftChanges = lazy(() => import("@/pages/books/show/DraftChanges"));
 const VersionHistoryPage = lazy(() => import("@/pages/books/show/VersionHistoryPage"));
 const BookEdit = lazy(() => import("@/pages/books/edit/BookEdit"));
@@ -79,9 +80,10 @@ function ConditionalNav() {
   const isTreeRoute = location.pathname.includes('/dna/tree');
   const isMetersRoute = location.pathname.includes('/dna/meters');
   const isLedgerRoute = location.pathname.includes('/dna/ledger');
+  const isArchRoute = location.pathname.includes('/dna/docs');
 
   // Hide nav for page view routes (own fixed settings menu) and dev DNA routes.
-  if (isPageViewRoute || isJsonRoute || isTreeRoute || isMetersRoute || isLedgerRoute) {
+  if (isPageViewRoute || isJsonRoute || isTreeRoute || isMetersRoute || isLedgerRoute || isArchRoute) {
     return null;
   }
 
@@ -158,6 +160,18 @@ export default function App() {
                         <Route path="settings" element={<AdminSettings />} />
                         <Route path="node-types" element={<AdminNodeTypeConfigs />} />
                       </Route>
+
+                      {/* DNA architecture atlas — admin only, book-agnostic */}
+                      <Route
+                        path="/dna/docs/architecture"
+                        element={
+                          <PrivateRoute>
+                            <AdminRoute>
+                              <DnaArchitecturePage />
+                            </AdminRoute>
+                          </PrivateRoute>
+                        }
+                      />
 
                       {/* Protected routes */}
                       <Route element={<ProtectedLayout />}>
