@@ -55,21 +55,35 @@ describe("stageSubsteps", () => {
   });
 
   it("Foundations: Cast blocks Relationships; world/set-pieces are optional branches", () => {
-    const subs = byKey(stageSubsteps("foundations", [mk("premise"), mk("pillar")]));
+    const subs = byKey(stageSubsteps("foundations", [mk("premise", { dramatic_question: "q?" }), mk("pillar", { controlling_idea: "idea" })]));
     expect(subs.pillar.status).toBe("done");
     expect(subs.cast.status).toBe("now"); // required, prereq met, first incomplete
     expect(subs.relationship.status).toBe("locked"); // needs a cast
     expect(subs.world.optional).toBe(true);
     expect(subs.world.status).toBe("available"); // unlocked branch, not the "now"
     // add a character → cast done, relationships unlock (as an optional branch → available)
-    const withCast = byKey(stageSubsteps("foundations", [mk("premise"), mk("pillar"), mk("character", { name: "Mara" })]));
+    const withCast = byKey(stageSubsteps("foundations", [mk("premise", { dramatic_question: "q?" }), mk("pillar", { controlling_idea: "idea" }), mk("character", { name: "Mara" })]));
     expect(withCast.cast.status).toBe("done");
     expect(withCast.cast.count).toBe(1);
     expect(withCast.relationship.status).toBe("available");
   });
 
+  it("an accepted-but-empty pillar does NOT count as done — Foundations can't be skipped just because the flag was flipped", () => {
+    // The regression this guards: a pillar option can get committed (authoring.status=accepted) while its
+    // controlling_idea is still blank (a malformed generated option, or a placeholder promoted too soon). If
+    // "accepted" alone gated completion, the guided journey would silently advance past an empty pillar
+    // straight into Cast/Acts, orphaning the very thing the author still needs to fill.
+    const nodes = [mk("seed", { logline: "x" }), mk("premise", { dramatic_question: "q?" }), mk("pillar", { controlling_idea: "" }), mk("character", { name: "Mara" })];
+    expect(stageComplete(nodes).foundations).toBe(false);
+    const subs = byKey(stageSubsteps("foundations", nodes));
+    expect(subs.pillar.status).not.toBe("done");
+    const obj = currentObjective(nodes);
+    expect(obj).toContain("Foundations — Pillar");
+    expect(obj).not.toContain("Cast");
+  });
+
   it("Contract is an optional branch — never the NOW step, never a stage gate", () => {
-    const base = [mk("premise"), mk("pillar")];
+    const base = [mk("premise", { dramatic_question: "q?" }), mk("pillar", { controlling_idea: "idea" })];
     const subs = byKey(stageSubsteps("foundations", base));
     expect(subs.contract.optional).toBe(true);
     expect(subs.contract.status).toBe("available"); // unlocked by the accepted pillar, but never "now"

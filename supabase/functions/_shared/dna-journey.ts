@@ -27,6 +27,12 @@ const accepted = (n?: DnaNode) => n?.authoring.status === "accepted";
 const hasText = (s?: string | null) => !!(s && s.trim());
 // A scene's Draft-rung "done": prose written.
 const sceneDrafted = (s: DnaNode) => hasText((s.content as SceneContent).prose?.text);
+// "accepted" alone isn't "done" — an option can be committed with its load-bearing field still blank (a bad
+// generated option, or a manual placeholder promoted early). These gate premise/pillar completeness on their
+// one REQUIRED field (web's dnaSchema.ts NODE_SCHEMA), so the journey can't silently skip a stage that's
+// accepted but empty. MUST mirror the web copy verbatim (parity-locked, see header).
+const premiseFilled = (n?: DnaNode) => hasText((n?.content as { dramatic_question?: string } | undefined)?.dramatic_question);
+const pillarFilled = (n?: DnaNode) => hasText((n?.content as { controlling_idea?: string } | undefined)?.controlling_idea);
 
 /** Is each stage's load-bearing content present + accepted? (The gate for advancing.) */
 export function stageComplete(nodes: DnaNode[]): Record<StageKey, boolean> {
@@ -34,8 +40,8 @@ export function stageComplete(nodes: DnaNode[]): Record<StageKey, boolean> {
   const seed = of("seed")[0], premise = of("premise")[0], pillar = of("pillar")[0];
   const scenes = of("scene");
   return {
-    premise: !!premise && accepted(premise) && hasText((seed?.content as { logline?: string })?.logline),
-    foundations: !!pillar && accepted(pillar) && of("character").length >= 1,
+    premise: !!premise && accepted(premise) && premiseFilled(premise) && hasText((seed?.content as { logline?: string })?.logline),
+    foundations: !!pillar && accepted(pillar) && pillarFilled(pillar) && of("character").length >= 1,
     structure: of("act").length >= 1 && of("beat").length >= 1,
     scenes: scenes.length >= 1,
     // Draft's done-gate is DEBT-BASED, not count-based (obligationLedger): every scene prosed AND every
@@ -99,11 +105,11 @@ export function stageSubsteps(key: StageKey, nodes: DnaNode[]): SubStep[] {
     const seedDone = !!seed && hasText((seed.content as { logline?: string }).logline) && accepted(seed);
     return resolveSeq([
       { key: "seed", label: "Seed", done: seedDone, ready: true, manual: true },
-      { key: "premise", label: "Premise", done: accepted(premise), ready: seedDone },
+      { key: "premise", label: "Premise", done: accepted(premise) && premiseFilled(premise), ready: seedDone },
     ]);
   }
   if (key === "foundations") {
-    const pillarDone = accepted(pillar), pillarReady = accepted(premise), cast = n("character");
+    const pillarDone = accepted(pillar) && pillarFilled(pillar), pillarReady = accepted(premise) && premiseFilled(premise), cast = n("character");
     // The compiled brief contract (W1): genre tentpoles + seeded meter target-curves + register bounds,
     // derived by the engine (propose_expansion target 'contract'). done = a meter carrying a target curve —
     // the one artifact only the derivation pass seeds. Optional: a branch, NEVER a stage gate.
@@ -122,7 +128,7 @@ export function stageSubsteps(key: StageKey, nodes: DnaNode[]): SubStep[] {
     ]);
   }
   if (key === "structure") {
-    const foundationsDone = accepted(pillar) && n("character") >= 1, acts = n("act");
+    const foundationsDone = accepted(pillar) && pillarFilled(pillar) && n("character") >= 1, acts = n("act");
     return resolveSeq([
       { key: "acts", label: "Acts", done: acts >= 1, ready: foundationsDone, count: acts },
       { key: "beats", label: "Beats", done: n("beat") >= 1, ready: acts >= 1, count: n("beat") },
@@ -250,9 +256,10 @@ export function stageProgress(nodes: DnaNode[]): Record<StageKey, StageProgress>
     done, total, ratio: total ? done / total : 0, label, partial: done > 0 && done < total,
     gapLabel: done < total ? gapLabel : undefined,
   });
+  const premiseDone = accepted(premise) && premiseFilled(premise), pillarDone = accepted(pillar) && pillarFilled(pillar);
   return {
-    premise: mk((seedDone ? 1 : 0) + (accepted(premise) ? 1 : 0), 2, accepted(premise) ? "premise set" : seedDone ? "seed set" : "empty"),
-    foundations: mk((accepted(pillar) ? 1 : 0) + (cast >= 1 ? 1 : 0), 2, cast ? `${cast} cast` : "no cast", accepted(pillar) ? "add cast" : "set pillar"),
+    premise: mk((seedDone ? 1 : 0) + (premiseDone ? 1 : 0), 2, premiseDone ? "premise set" : seedDone ? "seed set" : "empty"),
+    foundations: mk((pillarDone ? 1 : 0) + (cast >= 1 ? 1 : 0), 2, cast ? `${cast} cast` : "no cast", pillarDone ? "add cast" : "set pillar"),
     structure: mk(actsWithBeats, acts.length, acts.length ? `${actsWithBeats}/${acts.length} acts → beats` : "no acts",
       acts.length ? `${acts.length - actsWithBeats} acts need beats` : "generate acts"),
     scenes: mk(beatsWithScenes, beats.length, beats.length ? `${beatsWithScenes}/${beats.length} beats → scenes` : "no beats",
