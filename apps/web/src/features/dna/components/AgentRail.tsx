@@ -104,11 +104,11 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [],
   const [effort, setEffort] = useState<"low" | "high">(() => {
     try { return localStorage.getItem(effortKey) === "low" ? "low" : "high"; } catch { return "high"; }
   });
-  const toggleEffort = () => setEffort((e) => {
-    const next = e === "high" ? "low" : "high";
-    try { localStorage.setItem(effortKey, next); } catch { /* ignore */ }
-    return next;
-  });
+  const setEffortMode = (mode: "low" | "high") => {
+    if (mode === effort) return;
+    setEffort(mode);
+    try { localStorage.setItem(effortKey, mode); } catch { /* ignore */ }
+  };
 
   // Auto-accept: arm autonomous mode. The agent commits its own option picks and never parks; the watcher
   // (useAutoAccept, below) auto-applies whatever it stages. Persisted per book.
@@ -300,15 +300,26 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [],
             }`}>
             <InfinityIcon className="h-2.5 w-2.5" /> auto
           </button>
-          <button type="button" onClick={toggleEffort} disabled={active}
-            title={effort === "low" ? "Fast mode — proposes inline on first response. Click for deep." : "Deep mode — full tool loop. Click for fast."}
-            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 pv-mono text-[10px] transition-colors disabled:opacity-50 ${
-              effort === "low"
-                ? "border-[hsl(var(--pv-accent))]/50 bg-[hsl(var(--pv-accent))]/[0.08] text-[hsl(var(--pv-accent))]"
-                : "border-[hsl(var(--pv-border-soft))] text-[hsl(var(--pv-text-faint))] hover:text-foreground"
-            }`}>
-            <Zap className="h-2.5 w-2.5" /> {effort === "low" ? "fast" : "deep"}
-          </button>
+          <div className="inline-flex items-center gap-0.5 rounded-full border border-[hsl(var(--pv-border-soft))] p-0.5">
+            <button type="button" onClick={() => setEffortMode("low")} disabled={active}
+              title="Fast — proposes inline on first response."
+              className={`rounded-full px-2 py-0.5 pv-mono text-[10px] transition-colors disabled:opacity-50 ${
+                effort === "low"
+                  ? "bg-[hsl(var(--pv-accent))] text-background"
+                  : "text-[hsl(var(--pv-text-faint))] hover:text-foreground"
+              }`}>
+              fast
+            </button>
+            <button type="button" onClick={() => setEffortMode("high")} disabled={active}
+              title="Deep — full tool loop."
+              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 pv-mono text-[10px] transition-colors disabled:opacity-50 ${
+                effort === "high"
+                  ? "bg-[hsl(var(--pv-accent))] text-background"
+                  : "text-[hsl(var(--pv-text-faint))] hover:text-foreground"
+              }`}>
+              <Zap className="h-2.5 w-2.5" /> deep
+            </button>
+          </div>
           {sessionCount > 0 && (
             <button type="button" onClick={() => setHistoryOpen((v) => !v)} title="Past chats"
               className={`inline-flex items-center gap-1 rounded-full px-2 py-1 pv-mono text-[10px] uppercase tracking-[0.1em] transition-colors ${historyOpen ? "text-[hsl(var(--pv-accent))]" : "text-[hsl(var(--pv-text-faint))] hover:text-foreground"}`}>
@@ -616,7 +627,7 @@ function ResolvedCard({ step, nodes }: { step: AgentStep; nodes: DnaNode[] }) {
           ? <Check className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
           : <X className="h-3.5 w-3.5 shrink-0 text-[hsl(var(--pv-text-faint))]" />}
         <span className="pv-mono text-[9.5px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-faint))]">{applied ? "applied" : "discarded"}</span>
-        <span className="flex-1 truncate pv-serif text-[12.5px] text-[hsl(var(--pv-text-muted))]">{humanizeNodeRefs(step.label, index)}</span>
+        <span className={`flex-1 pv-serif text-[12.5px] text-[hsl(var(--pv-text-muted))] ${open ? "whitespace-normal break-words" : "truncate"}`}>{humanizeNodeRefs(step.label, index)}</span>
         {hasDetail && <ChevronDown className={`h-3 w-3 shrink-0 text-[hsl(var(--pv-text-faint))] transition-transform ${open ? "rotate-180" : ""}`} />}
       </button>
       {open && isProseRender && (
