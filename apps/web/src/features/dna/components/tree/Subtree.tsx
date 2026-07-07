@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { childrenOf, isEntityKind, isProseStale, isStale, SINGLETON_KINDS, stampInput, stampProse, type DnaIssue, type DnaNode, type NodeKind, type SceneContent } from "@/features/dna/lib/novelDna";
+import { childrenOf, isEntityKind, isProseStale, SINGLETON_KINDS, type DnaIssue, type DnaNode, type NodeKind, type SceneContent } from "@/features/dna/lib/novelDna";
 import { editSpecs, KIND_EXPLAINER } from "@/features/dna/lib/dnaSchema";
-import { saveNode } from "@/features/dna/lib/bookNodes";
 import { ConnectorTick, detailRowStyle, labelStyle } from "./treeChrome";
+import { staleActionsFor } from "./staleActions";
 import { proseRollup } from "./nodeDisplay";
 import { EditableField } from "./EditableField";
 import { BacklinksRow, TreeRow, type KebabItem } from "./TreeRow";
@@ -149,7 +149,6 @@ export interface TreeView {
   backlinks: Map<string, DnaNode[]>;    // #2 — inbound cross-references
   flashId: string | null;               // #1 — the just-jumped-to node
   proposal: ProposalView | null;        // proposed ops to overlay
-  focusKinds: Set<string> | null;       // the rail's stage focus (null = rail closed)
   issuesByNode: Map<string, DnaIssue[]>; // #6 — health lints grouped by the node they attach to
   healthLens: boolean;                  // #6 — dim clean nodes so only the broken ones (+ groups) pop
   contextId: string | null;             // #7 — the focused node (null = no context active)
@@ -311,10 +310,9 @@ export function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }:
   const reorderable = isEntityKind(node.kind) || ["act", "beat", "scene"].includes(node.kind);
   const dragged = h.dragId ? index.get(h.dragId) : null;
   const canDrop = !!dragged && dragged.id !== node.id && dragged.parent_id === node.parent_id && dragged.kind === node.kind;
-  // #1 proposal mark for THIS node. #2 focus highlight (only when rail open → focusKinds set).
+  // #1 proposal mark for THIS node.
   const editPatch = h.proposal?.edits.get(node.id);
   const mark = h.proposal ? (h.proposal.deletes.has(node.id) ? "delete" : editPatch ? "edit" : undefined) : undefined;
-  const focus = h.focusKinds?.has(node.kind) ?? false;
   // #6 health lens: this node's lints. #7 context-highlight: this node's role in the focused neighborhood.
   const issues = h.issuesByNode.get(node.id);
   const ctxActive = h.contextId !== null;
@@ -325,27 +323,9 @@ export function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }:
   // Dim when: health lens on + clean, OR context active + not in the neighborhood.
   const dimmed = (h.healthLens && !issues?.length) || (ctxActive && !ctx);
 
-  // Stale actions — approve/regen/discard for any stale node.
-  const nodeStale = isStale(node, index);
-  const proseStale = node.kind === "scene" && isProseStale(node);
-  const anyStale = nodeStale || proseStale;
-  const staleActions = anyStale ? {
-    onApprove: async () => {
-      let n = node;
-      if (nodeStale) n = stampInput(n, index);
-      if (proseStale) n = stampProse(n);
-      await saveNode(n);
-    },
-    // Regeneration is the agent's job now (ask it in the rail); the stale badge only offers accept/discard.
-    onDiscard: async () => {
-      if (proseStale && !nodeStale) {
-        const sc = node.content as SceneContent;
-        await saveNode({ ...node, content: { ...sc, prose: undefined }, authoring: { ...node.authoring, prose_src_hash: undefined } });
-      } else {
-        await saveNode({ ...node, authoring: { ...node.authoring, src_hash: undefined, prose_src_hash: undefined } });
-      }
-    },
-  } : undefined;
+  // Stale actions — accept/discard for any stale node (staleActions.ts is the one implementation,
+  // shared with the FocusPanel).
+  const staleActions = staleActionsFor(node, index);
 
   return (
     <div>
@@ -357,7 +337,7 @@ export function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }:
         draggable={reorderable} dragging={h.dragId === node.id} canDrop={canDrop}
         onDragStartRow={() => h.onDragStart(node.id)} onDragEndRow={h.onDragEnd}
         onDropRow={(before) => h.onDrop(node, before)}
-        mark={mark} focus={focus} flash={h.flashId === node.id} issues={issues} dimmed={dimmed}
+        mark={mark} flash={h.flashId === node.id} issues={issues} dimmed={dimmed}
         ctx={ctx} onContextFocus={() => h.onContextFocus(node.id)} prose={proseRollup(node, nodes)}
         headerActions={headerActions} staleActions={staleActions} />
       {editPatch && <OpDiffBlock node={node} content={editPatch} nodes={nodes} depth={depth + 1} />}

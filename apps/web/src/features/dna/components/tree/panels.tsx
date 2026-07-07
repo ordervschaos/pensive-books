@@ -7,6 +7,7 @@ import { buildJourney, DNA_STAGES, stageProgress, type StageKey } from "@/featur
 import { KIND_COLOR } from "./treeChrome";
 import { nodeTitle } from "./nodeDisplay";
 import { EditableField } from "./EditableField";
+import { type StaleActions } from "./staleActions";
 
 // ── Voice & Feel panel (#2 — taste lives here) ────────────────────────────────
 // Aim 2: TASTE is user-owned and subjective (premise tone, pillar controlling idea, the whole voice profile,
@@ -138,7 +139,7 @@ export function FocusPanel({ node, index, consumes, consumedBy, onJump, onClear,
   node: DnaNode; index: Map<string, DnaNode>;
   consumes: Set<string>; consumedBy: Set<string>;
   onJump: (id: string) => void; onClear: () => void; bottomInset?: number;
-  staleActions?: { onApprove: () => Promise<void>; onRegen?: () => Promise<void>; onDiscard: () => Promise<void> };
+  staleActions?: StaleActions;
 }) {
   const mono = "ui-monospace, monospace";
   const [panelStaleBusy, setPanelStaleBusy] = useState<string | null>(null);
@@ -262,8 +263,9 @@ export function FocusPanel({ node, index, consumes, consumedBy, onJump, onClear,
 // acts left→right, beats ordered within each, scenes ordered within each. A filmstrip of the story's
 // flow + completion: each scene cell is colored by whether its prose is written / stale / still just planned,
 // so "where the draft actually stands" reads in one glance. Clicking any unit jumps to it in the tree.
-export function SpineTimeline({ nodes, rightInset, bookId, onJump, onClose }: {
-  nodes: DnaNode[]; rightInset: number; bookId: number;
+export function SpineTimeline({ nodes, rightInset, seq, onJump, onClose }: {
+  nodes: DnaNode[]; rightInset: number;
+  seq: Map<string, number>; // book-wide reading-order numbers (beat + scene) — the page's map, same one the tree badge reads
   onJump: (id: string) => void; onClose: () => void;
 }) {
   const mono = "ui-monospace, monospace";
@@ -284,13 +286,6 @@ export function SpineTimeline({ nodes, rightInset, bookId, onJump, onClose }: {
   // planned, solid green = prose written. Stale (written-but-out-of-date) is the amber exception.
   const sceneState = (s: DnaNode): "planned" | "written" | "stale" =>
     !sceneWritten(s) ? "planned" : isProseStale(s) ? "stale" : "written";
-
-  // global 1-based reading-order numbering — one pass each so chips show book-wide position (matching the
-  // tree badge's `seq` and the agent digest). Beats were per-act ("B1" reset each act); now book-wide too.
-  const globalSceneNums = new Map<string, number>();
-  { let n = 0; for (const m of movs) for (const b of kids(m.id, "beat")) for (const s of kids(b.id, "scene")) globalSceneNums.set(s.id, ++n); }
-  const globalBeatNums = new Map<string, number>();
-  { let n = 0; for (const m of movs) for (const b of kids(m.id, "beat")) globalBeatNums.set(b.id, ++n); }
 
   const roman = (n: number) => ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"][n] ?? String(n + 1);
   const beatGlyphOf = (b: DnaNode) => {
@@ -389,7 +384,7 @@ export function SpineTimeline({ nodes, rightInset, bookId, onJump, onClose }: {
                 )}
                 {beats.map((beat, bi) => {
                   const scenes = kids(beat.id, "scene");
-                  const bn = globalBeatNums.get(beat.id) ?? bi + 1; // book-wide beat number (matches the tree badge)
+                  const bn = seq.get(beat.id) ?? bi + 1; // book-wide beat number (shared seq — structurally matches the tree badge)
                   return (
                     <div key={beat.id} style={{ display: "flex", flexDirection: "column", gap: 6, border: `1px solid ${KIND_COLOR.beat}33`, borderRadius: 6, padding: "6px 7px", background: "#13130c", width: 122 }}>
                       {/* BEAT header */}
@@ -410,7 +405,7 @@ export function SpineTimeline({ nodes, rightInset, bookId, onJump, onClose }: {
                             // amber = stale. Number ink flips to dark on a filled cell for contrast.
                             const edge = state === "stale" ? "#f59e0b" : KIND_COLOR.scene;
                             const filled = state !== "planned";
-                            const gn = globalSceneNums.get(sc.id) ?? si + 1;
+                            const gn = seq.get(sc.id) ?? si + 1;
                             return (
                               <span key={sc.id} onClick={() => onJump(sc.id)} title={`scene ${gn} — ${nodeTitle(sc) || "untitled"} · ${state}`}
                                 style={{ width: 20, height: 22, borderRadius: 4, background: filled ? edge : "transparent", border: `1.5px solid ${edge}`, color: filled ? "#0a1a0e" : KIND_COLOR.scene, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: mono, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>

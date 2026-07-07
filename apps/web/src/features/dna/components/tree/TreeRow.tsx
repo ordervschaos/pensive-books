@@ -3,6 +3,7 @@ import { isProseStale, isStale, refsOf, type DnaIssue, type DnaNode } from "@/fe
 import { KIND_EXPLAINER } from "@/features/dna/lib/dnaSchema";
 import { detailRowStyle, fieldRowStart, KIND_BG, KIND_COLOR, labelStyle, spineX } from "./treeChrome";
 import { beatGlyph, nodeTitle, type ProseRollup } from "./nodeDisplay";
+import { type StaleActions } from "./staleActions";
 import { Highlighted } from "./search";
 
 // ── Backlinks (#2): the inbound edges — which nodes cross-reference THIS one ───
@@ -100,20 +101,19 @@ function NodeKebab({ onDelete, items = [] }: { onDelete?: () => void; items?: Ke
 }
 
 // ── Single tree row ──────────────────────────────────────────────────────────
-export function TreeRow({ node, index, depth, expandable, open, lockedOpen, onToggle, onDelete, onAttach, kebabItems, draggable, dragging, canDrop, onDragStartRow, onDragEndRow, onDropRow, mark, focus, flash, issues, dimmed, ctx, onContextFocus, prose, headerActions, staleActions, writingProse, seq, searchPattern }: {
+export function TreeRow({ node, index, depth, expandable, open, lockedOpen, onToggle, onDelete, onAttach, kebabItems, draggable, dragging, canDrop, onDragStartRow, onDragEndRow, onDropRow, mark, flash, issues, dimmed, ctx, onContextFocus, prose, headerActions, staleActions, seq, searchPattern }: {
   node: DnaNode; index: Map<string, DnaNode>; depth: number; seq?: number; // seq = global reading-order # (beat/scene)
   expandable: boolean; open: boolean; lockedOpen?: boolean; onToggle: () => void; onDelete?: () => void;
   onAttach?: () => void; // attach this node to the agent's context tray (always-visible row action, not buried in the kebab)
   kebabItems?: KebabItem[]; // regen actions, AI options, etc (all go in the ⋮ menu)
   prose?: ProseRollup | null; // act/beat: rolled-up prose-completion of descendant scenes
   headerActions?: React.ReactNode; // compact action buttons pinned to the header row
-  staleActions?: { onApprove: () => Promise<void>; onRegen?: () => Promise<void>; onDiscard: () => Promise<void> };
-  writingProse?: boolean; // true while this scene's prose is being streamed
+  staleActions?: StaleActions;
   // #5 — drag-to-reorder among same-kind siblings. draggable = this row has a grip; canDrop = a valid
   // sibling is being dragged over it; dragging = this is the row being dragged.
   draggable?: boolean; dragging?: boolean; canDrop?: boolean;
   onDragStartRow?: () => void; onDragEndRow?: () => void; onDropRow?: (before: boolean) => void;
-  mark?: "edit" | "delete"; focus?: boolean; flash?: boolean; // mark = proposed change (#1); focus = rail focus (#2); flash = jump target (#1)
+  mark?: "edit" | "delete"; flash?: boolean; // mark = proposed change (#1); flash = jump target (#1)
   issues?: DnaIssue[]; dimmed?: boolean; // health-lens (#6): this node's lints + dim-when-clean
   ctx?: "focus" | "consumes" | "consumedBy"; onContextFocus?: () => void; // #7 context-highlight role + the badge trigger
   searchPattern?: RegExp | null; // #8 — highlight this row's title when the search panel has a live match pattern
@@ -175,9 +175,9 @@ export function TreeRow({ node, index, depth, expandable, open, lockedOpen, onTo
           paddingRight: 12, paddingTop: 3, paddingBottom: 3,
           cursor: expandable && !lockedOpen ? "pointer" : "default",
           position: "relative",
-          // Precedence (spec collision budget): proposal mark > context hue (#7) > rail focus (#2).
-          boxShadow: markColor ? `inset 3px 0 0 ${markColor}` : ctxColor ? `inset 3px 0 0 ${ctxColor}` : focus ? "inset 2px 0 0 #8a8aff66" : undefined,
-          background: markColor ? `${markColor}12` : ctxColor ? `${ctxColor}1a` : focus ? "#8a8aff08" : undefined,
+          // Precedence (spec collision budget): proposal mark > context hue (#7).
+          boxShadow: markColor ? `inset 3px 0 0 ${markColor}` : ctxColor ? `inset 3px 0 0 ${ctxColor}` : undefined,
+          background: markColor ? `${markColor}12` : ctxColor ? `${ctxColor}1a` : undefined,
         }}
       >
         {/* Expand/collapse chevron — locked open (dimmed further) while options are staged */}
@@ -274,15 +274,12 @@ export function TreeRow({ node, index, depth, expandable, open, lockedOpen, onTo
             </>
           )}
           {node.authoring.locked && <span style={{ fontSize: 10, color: color }}>🔒</span>}
-          {writingProse
-            ? <span className="dna-writing-label" style={{ fontFamily: "ui-monospace, monospace", fontSize: 9, letterSpacing: "0.08em", color: "#a8a8ff", flexShrink: 0, whiteSpace: "nowrap" }}>writing…</span>
-            : <span style={{
-                width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
-                background: node.authoring.status === "accepted" ? (stale ? "#f59e0b" : "#4ade80")
-                  : node.authoring.status === "draft" ? "#fbbf24"
-                    : "#444",
-              }} title={node.authoring.status ?? "empty"} />
-          }
+          <span style={{
+            width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
+            background: node.authoring.status === "accepted" ? (stale ? "#f59e0b" : "#4ade80")
+              : node.authoring.status === "draft" ? "#fbbf24"
+                : "#444",
+          }} title={node.authoring.status ?? "empty"} />
           <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 9, color: "#444", letterSpacing: "0.05em" }}>
             {node.id}
           </span>

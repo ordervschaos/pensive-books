@@ -130,8 +130,8 @@ export function DiscardStoryModal({ nodes, onClose }: { nodes: DnaNode[]; onClos
 // through all scenes that have prose (in reading order). Built on the shadcn
 // Dialog (Radix) so body-scroll lock, Escape-to-close, and outside-click come
 // for free instead of being hand-rolled on a fixed-position div.
-export function ProseReaderModal({ sceneId, nodes, bookId: _bookId, onClose, onAttachNode }: {
-  sceneId: string; nodes: DnaNode[]; bookId: number; onClose: () => void; onAttachNode: (id: string) => void;
+export function ProseReaderModal({ sceneId, nodes, onClose, onAttachNode }: {
+  sceneId: string; nodes: DnaNode[]; onClose: () => void; onAttachNode: (id: string) => void;
 }) {
   const mono = "ui-monospace, monospace";
   const [currentId, setCurrentId] = useState(sceneId);

@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { deleteNode, saveNode, saveNodes } from "@/features/dna/lib/bookNodes";
-import { backlinkIndex, beatsInOrder, byId, childrenOf, isEntityKind, isProseStale, isStale, newId, pillarOf, refsOf, scenesInOrder, stampInput, stampProse, type BookSettings, type DnaIssue, type DnaNode, type SceneContent } from "@/features/dna/lib/novelDna";
+import { backlinkIndex, beatsInOrder, byId, childrenOf, isEntityKind, isProseStale, isStale, newId, pillarOf, refsOf, scenesInOrder, type BookSettings, type DnaIssue, type DnaNode } from "@/features/dna/lib/novelDna";
 import { bootstrapLoglineFromBrief, ensureSeed } from "@/features/dna/lib/dnaExpand";
 import { KIND_LEVEL } from "@/features/dna/lib/dnaSchema";
 import { briefIdea, type Brief } from "@/lib/brief";
@@ -23,6 +23,7 @@ import { nodeTitle } from "@/features/dna/components/tree/nodeDisplay";
 import { buildSearchPattern, SearchPanel, searchDna } from "@/features/dna/components/tree/search";
 import { indexProposal } from "@/features/dna/components/tree/proposalOverlay";
 import { Subtree } from "@/features/dna/components/tree/Subtree";
+import { staleActionsFor } from "@/features/dna/components/tree/staleActions";
 import { BriefOrigin } from "@/features/dna/components/tree/BriefSection";
 import { FocusPanel, JourneyStrip, SpineTimeline, VoiceFeelPanel } from "@/features/dna/components/tree/panels";
 import { CharactersPane, StoryPane } from "@/features/dna/components/tree/panes";
@@ -562,35 +563,14 @@ export default function DnaTreePage() {
         </div>
       )}
       {/* #7 — the focus readout: "what controls this" for the badge-clicked node (bottom-left, clears of the rail) */}
-      {tab === "tree" && ctxNode && (() => {
-        const ctxNodeStale = isStale(ctxNode, index);
-        const ctxProseStale = ctxNode.kind === "scene" && isProseStale(ctxNode);
-        const ctxAnyStale = ctxNodeStale || ctxProseStale;
-        const ctxStaleActions = ctxAnyStale ? {
-          onApprove: async () => {
-            let n = ctxNode;
-            if (ctxNodeStale) n = stampInput(n, index);
-            if (ctxProseStale) n = stampProse(n);
-            await saveNode(n);
-          },
-          onDiscard: async () => {
-            if (ctxProseStale && !ctxNodeStale) {
-              const sc = ctxNode.content as SceneContent;
-              await saveNode({ ...ctxNode, content: { ...sc, prose: undefined }, authoring: { ...ctxNode.authoring, prose_src_hash: undefined } });
-            } else {
-              await saveNode({ ...ctxNode, authoring: { ...ctxNode.authoring, src_hash: undefined, prose_src_hash: undefined } });
-            }
-          },
-        } : undefined;
-        return (
-          <FocusPanel node={ctxNode} index={index} consumes={ctxConsumes} consumedBy={ctxConsumedBy}
-            onJump={jumpTo} onClear={() => setContextId(null)} bottomInset={timelineOpen ? 212 : 16}
-            staleActions={ctxStaleActions} />
-        );
-      })()}
+      {tab === "tree" && ctxNode && (
+        <FocusPanel node={ctxNode} index={index} consumes={ctxConsumes} consumedBy={ctxConsumedBy}
+          onJump={jumpTo} onClear={() => setContextId(null)} bottomInset={timelineOpen ? 212 : 16}
+          staleActions={staleActionsFor(ctxNode, index)} />
+      )}
       {/* The serial spine — reading-order filmstrip across the bottom (acts → beats → scenes) */}
       {tab === "tree" && timelineOpen && (
-        <SpineTimeline nodes={nodes} rightInset={railOpen ? 420 : 0} bookId={bookId}
+        <SpineTimeline nodes={nodes} rightInset={railOpen ? 420 : 0} seq={seq}
           onJump={jumpTo} onClose={() => setTimelineOpen(false)} />
       )}
       {/* Top menu — identity + the two surfaces that are global, not tab-scoped (search, editor). In
@@ -780,7 +760,7 @@ export default function DnaTreePage() {
         {roots.map((root) => (
           <Subtree key={root.id} node={root} index={index} nodes={nodes} depth={0}
             collapsedSet={collapsedSet} openSet={openSet}
-            h={{ onToggle: toggleNode, onToggleDetail: toggleDetail, onAdd: addNode, onDelete: removeNode, onJump: jumpTo, dragId, onDragStart: setDragId, onDragEnd: () => setDragId(null), onDrop: onDropReorder, backlinks, flashId, proposal: proposalView, focusKinds: null, issuesByNode, healthLens, contextId, ctxConsumes, ctxConsumedBy, onContextFocus: focusContext, seq, searchPattern, proseOpenSet, onToggleProse: toggleProse, onDiscardStory: discardStory, onAttachNode: attachNode, onOpenProseReader: setProseReaderSceneId }} />
+            h={{ onToggle: toggleNode, onToggleDetail: toggleDetail, onAdd: addNode, onDelete: removeNode, onJump: jumpTo, dragId, onDragStart: setDragId, onDragEnd: () => setDragId(null), onDrop: onDropReorder, backlinks, flashId, proposal: proposalView, issuesByNode, healthLens, contextId, ctxConsumes, ctxConsumedBy, onContextFocus: focusContext, seq, searchPattern, proseOpenSet, onToggleProse: toggleProse, onDiscardStory: discardStory, onAttachNode: attachNode, onOpenProseReader: setProseReaderSceneId }} />
         ))}
       </div>
       </>)}
@@ -788,7 +768,6 @@ export default function DnaTreePage() {
         <ProseReaderModal
           sceneId={proseReaderSceneId}
           nodes={nodes}
-          bookId={bookId}
           onClose={() => setProseReaderSceneId(null)}
           onAttachNode={attachNode}
         />
