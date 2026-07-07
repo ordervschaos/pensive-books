@@ -5,7 +5,7 @@ import { ConnectorTick, detailRowStyle, labelStyle } from "./treeChrome";
 import { staleActionsFor } from "./staleActions";
 import { proseRollup } from "./nodeDisplay";
 import { EditableField } from "./EditableField";
-import { BacklinksRow, TreeRow, type KebabItem } from "./TreeRow";
+import { BacklinksRow, HiddenFieldsRow, TreeRow, type KebabItem } from "./TreeRow";
 import { addKey, OpDiffBlock, PhantomRow, ProposalPicker, type ProposalView } from "./proposalOverlay";
 
 // ── A render-only grouping of the pillar's children ──────────────────────────
@@ -179,6 +179,7 @@ export function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }:
   const open = hasOptions || (expandable && (hasKids ? !collapsedSet.has(node.id) : openSet.has(node.id)));
   const toggle = () => (hasKids ? h.onToggle(node.id) : h.onToggleDetail(node.id));
   const fields = specs.map((spec) => <EditableField key={spec.key} node={node} spec={spec} depth={depth + 1} index={index} onJump={h.onJump} searchPattern={h.searchPattern} />);
+  const hidden = <HiddenFieldsRow node={node} index={index} depth={depth + 1} />;
   const backlinks = <BacklinksRow node={node} backlinks={h.backlinks} depth={depth + 1} onJump={h.onJump} />;
   const sub = (items: DnaNode[], d: number) => items.map((child) => (
     <Subtree key={child.id} node={child} index={index} nodes={nodes} depth={d}
@@ -227,6 +228,7 @@ export function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }:
       body = (
         <>
           {fields}
+          {hidden}
           {backlinks}
           {lab}
           {/* Foundations (cast & world) first — the materials — then the spine built from them. */}
@@ -268,6 +270,7 @@ export function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }:
       body = (
         <>
           {fields}
+          {hidden}
           <div style={{ ...detailRowStyle(depth + 1), paddingTop: 0, paddingBottom: 2 }}>
             <ConnectorTick depth={depth + 1} />
             <span style={{ width: 12, flexShrink: 0 }} />
@@ -289,6 +292,7 @@ export function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }:
       body = (
         <>
           {fields}
+          {hidden}
           {backlinks}
           {lab}
           {node.kind === "scene" && (

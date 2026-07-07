@@ -1,7 +1,7 @@
 // Pure display derivations over DnaNode — titles, field display strings, and the
 // prose-completion rollup. No React, no IO; everything here is (nodes) => value.
 import { isProseStale, type BeatContent, type DnaNode, type SceneContent } from "@/features/dna/lib/novelDna";
-import { type EditSpec } from "@/features/dna/lib/dnaSchema";
+import { editSpecs, NODE_SCHEMA, type EditSpec } from "@/features/dna/lib/dnaSchema";
 
 // ── Title extraction per kind (first meaningful field) ───────────────────────
 export function nodeTitle(n: DnaNode): string {
@@ -82,4 +82,47 @@ export function proseRollup(node: DnaNode, nodes: DnaNode[]): ProseRollup | null
     else none++;
   }
   return { done, stale, none, total: scenes.length };
+}
+
+// ── Hidden/structural fields ──────────────────────────────────────────────────
+// Everything in node.content that editSpecs() doesn't render: the genOnly plan fields (threads, needs,
+// establishes, sketch…) AND anything missing from NODE_SCHEMA entirely (chapter_start, observed_* reads,
+// continuity/confusion flags — real fields the AI writes, just never added to the SSOT). Computed off the
+// live content rather than a hand-maintained key list, so it can't drift as new fields get written.
+const humanizeKey = (key: string): string => key.replace(/_/g, " ");
+// `prose` has its own dedicated block (ProseBlock) — don't duplicate it here.
+const RENDERED_ELSEWHERE = new Set(["prose"]);
+
+function renderRawValue(v: unknown, index: Map<string, DnaNode>): string {
+  if (v == null) return "";
+  if (typeof v === "string") {
+    if (!v.trim()) return "";
+    return index.has(v) ? nodeTitle(index.get(v)!) || v : v;
+  }
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  if (Array.isArray(v)) return v.map((item) => renderRawValue(item, index)).filter(Boolean).join(", ");
+  if (typeof v === "object") {
+    const parts = Object.entries(v as Record<string, unknown>)
+      .map(([k, val]) => { const r = renderRawValue(val, index); return r ? `${humanizeKey(k)}: ${r}` : ""; })
+      .filter(Boolean);
+    return parts.join(" · ");
+  }
+  return String(v);
+}
+
+export interface HiddenField { key: string; label: string; note?: string; value: string }
+/** Content keys not covered by editSpecs(kind) — the "▸ structural" disclosure reads straight off this. */
+export function hiddenFields(node: DnaNode, index: Map<string, DnaNode>): HiddenField[] {
+  const known = new Set(editSpecs(node.kind).map((s) => s.key));
+  const specByKey = new Map((NODE_SCHEMA[node.kind] ?? []).map((s) => [s.key, s]));
+  const content = (node.content ?? {}) as Record<string, unknown>;
+  const out: HiddenField[] = [];
+  for (const [key, raw] of Object.entries(content)) {
+    if (known.has(key) || RENDERED_ELSEWHERE.has(key)) continue;
+    const value = renderRawValue(raw, index);
+    if (!value) continue;
+    const spec = specByKey.get(key);
+    out.push({ key, label: spec?.label ?? humanizeKey(key), note: spec?.note, value });
+  }
+  return out;
 }

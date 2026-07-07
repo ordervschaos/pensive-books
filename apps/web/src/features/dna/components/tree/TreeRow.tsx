@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { isProseStale, isStale, refsOf, type DnaIssue, type DnaNode } from "@/features/dna/lib/novelDna";
 import { KIND_EXPLAINER } from "@/features/dna/lib/dnaSchema";
 import { detailRowStyle, fieldRowStart, KIND_BG, KIND_COLOR, labelStyle, spineX } from "./treeChrome";
-import { beatGlyph, nodeTitle, type ProseRollup } from "./nodeDisplay";
+import { beatGlyph, hiddenFields, nodeTitle, type ProseRollup } from "./nodeDisplay";
 import { type StaleActions } from "./staleActions";
 import { Highlighted } from "./search";
 
@@ -28,6 +28,36 @@ export function BacklinksRow({ node, backlinks, depth, onJump }: {
           </span>
         ))}
       </span>
+    </div>
+  );
+}
+
+// ── Structural fields (genOnly plan/output data — threads, causality keys, sketch, chapter markers,
+// continuity/confusion reads): collapsed behind a toggle chip so a node with nothing there stays silent, and
+// a node with a lot of it (a beat/scene mid-book) doesn't dump raw JSON into the row by default. Read-only —
+// this data is AI-authored plan/output, not hand-edited (see EditableField for the editable fields).
+export function HiddenFieldsRow({ node, index, depth }: { node: DnaNode; index: Map<string, DnaNode>; depth: number }) {
+  const [open, setOpen] = useState(false);
+  const fields = hiddenFields(node, index);
+  if (!fields.length) return null;
+  return (
+    <div>
+      <div style={detailRowStyle(depth)}>
+        {fieldRowStart(depth)}
+        <span onClick={() => setOpen((v) => !v)}
+          style={{ fontFamily: "ui-monospace, monospace", fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "#4a5a6a", cursor: "pointer", userSelect: "none" }}>
+          {open ? "▾" : "▸"} structural · {fields.length}
+        </span>
+      </div>
+      {open && fields.map((f) => (
+        <div key={f.key} style={detailRowStyle(depth)} title={f.note}>
+          {fieldRowStart(depth)}
+          <span style={{ ...labelStyle, color: "#465264" }}>{f.label}</span>
+          <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, color: "#8a94a6", whiteSpace: "pre-wrap", wordBreak: "break-word", flex: 1, lineHeight: 1.5 }}>
+            {f.value}
+          </span>
+        </div>
+      ))}
     </div>
   );
 }
