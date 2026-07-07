@@ -1,6 +1,7 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { ChevronDown, Image as ImageIcon } from "lucide-react";
+import { importEpubAsBook } from "@/features/dna/lib/importEpub";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -41,6 +42,8 @@ const NewBook = () => {
   const [intakeBookId, setIntakeBookId] = useState<number | null>(null);
   const [intakeOpen, setIntakeOpen] = useState(false);
   const [choiceOpen, setChoiceOpen] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const epubInputRef = useRef<HTMLInputElement>(null);
 
   const [book, setBook] = useState<BookDraft>({
     name: "",
@@ -110,6 +113,31 @@ const NewBook = () => {
       });
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Draft onboarding: an existing manuscript (.epub) becomes a DNA-native book — prose imported
+  // as locked scenes, plan rungs left for the Studio to infer/author.
+  const handleEpubImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = ""; // allow re-picking the same file after a failure
+    if (!file) return;
+    try {
+      setImporting(true);
+      const result = await importEpubAsBook(file);
+      toast({
+        title: `Imported “${result.title}”`,
+        description: `${result.chapters} chapters · ${result.scenes} scenes · ${result.words.toLocaleString()} words. Your prose is locked — the Studio builds around it.`,
+      });
+      navigate(`/books/${result.bookId}/dna`);
+    } catch (error: unknown) {
+      toast({
+        variant: "destructive",
+        title: "Import failed",
+        description: error instanceof Error ? error.message : "Could not read that epub.",
+      });
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -187,6 +215,24 @@ const NewBook = () => {
         <p className="pv-serif mt-3 max-w-[560px] text-[18px] italic leading-snug text-[hsl(var(--pv-text-muted))] md:text-[19px]">
           Begin with the spine. You can fill in the chapters whenever the writing finds you.
         </p>
+        <p className="pv-serif mt-2 text-[14px] italic text-[hsl(var(--pv-text-muted))]">
+          Already have a draft?{" "}
+          <button
+            type="button"
+            disabled={importing}
+            onClick={() => epubInputRef.current?.click()}
+            className="underline underline-offset-2 transition-colors hover:text-foreground disabled:opacity-60"
+          >
+            {importing ? "Importing your draft…" : "Import an .epub"}
+          </button>
+        </p>
+        <input
+          ref={epubInputRef}
+          type="file"
+          accept=".epub,application/epub+zip"
+          className="hidden"
+          onChange={handleEpubImport}
+        />
       </header>
 
       <form
