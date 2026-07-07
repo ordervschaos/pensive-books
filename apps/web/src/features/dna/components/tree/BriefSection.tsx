@@ -1,0 +1,140 @@
+import { useEffect, useRef, useState } from "react";
+import { CONTENT_TYPES, SCOPE_BANDS, briefIdea, type Brief } from "@/lib/brief";
+import { ConnectorTick, detailRowStyle, inputStyle, labelStyle } from "./treeChrome";
+
+// ── Brief section — rendered inside the seed when expanded ───────────────────
+// The brief lives on books.brief (not in book_nodes), so it has its own save path.
+// Fields: genre, audience, tone, success_criteria, scope.word_target, content_type.level.
+// The seed's logline field (book_nodes.content.logline) is the prose distillation;
+// these are the publishing/mandate fields the whole generation stack derives from.
+function BriefFieldRow({ label, depth, display, onEdit, children }: {
+  label: string; depth: number; display: React.ReactNode; onEdit?: () => void; children?: React.ReactNode;
+}) {
+  return (
+    <div style={detailRowStyle(depth)} onClick={(e) => e.stopPropagation()}>
+      <ConnectorTick depth={depth} />
+      <span style={{ width: 12, flexShrink: 0 }} />
+      <span style={labelStyle}>{label}</span>
+      {children || (
+        <span onClick={onEdit} style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: display ? "#cfcfcf" : "#4a4a4a", whiteSpace: "pre-wrap", wordBreak: "break-word", flex: 1, lineHeight: 1.5, cursor: onEdit ? "text" : "default", fontStyle: display ? "normal" : "italic" }}>
+          {display || `＋ ${label}`}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function BriefSection({ brief, onSave, depth }: { brief: Brief | null; onSave: (patch: Partial<Brief>) => Promise<void>; depth: number }) {
+  const [editingField, setEditingField] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const inputRef = useRef<HTMLTextAreaElement | HTMLInputElement | null>(null);
+  useEffect(() => { if (editingField) inputRef.current?.focus(); }, [editingField]);
+
+  const commit = async (field: string, value: unknown) => {
+    setBusy(true);
+    setEditingField(null);
+    try {
+      if (field === "word_target") await onSave({ scope: { ...brief?.scope, word_target: value as number } });
+      else if (field === "heat") await onSave({ content_type: { ...brief?.content_type, level: value as Brief["content_type"] extends { level?: infer L } | undefined ? L : never } });
+      else await onSave({ [field]: value });
+    } catch (e) { alert(`Save failed: ${(e as Error).message}`); }
+    finally { setBusy(false); }
+  };
+
+  const startEdit = (field: string, current: string) => { setDraft(current); setEditingField(field); };
+  const commonProps = (field: string, multiline?: boolean) => ({
+    ref: inputRef as never, value: draft, disabled: busy,
+    onChange: (e: React.ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => setDraft(e.target.value),
+    onBlur: () => { void commit(field, multiline ? draft.trim() : draft.trim()); },
+    onKeyDown: (e: React.KeyboardEvent) => {
+      if (e.key === "Escape") { e.preventDefault(); setEditingField(null); }
+      else if (e.key === "Enter" && (!multiline || e.metaKey || e.ctrlKey)) { e.preventDefault(); void commit(field, draft.trim()); }
+    },
+    style: { ...inputStyle, flex: 1, resize: "vertical" as const },
+  });
+
+  const toneArr = Array.isArray(brief?.tone) ? brief.tone : [];
+  const heatLabel = CONTENT_TYPES.find((c) => c.value === brief?.content_type?.level)?.label ?? "";
+  const bandLabel = SCOPE_BANDS.find((b) => b.value === brief?.scope?.band)?.label ?? "";
+
+  return (
+    <>
+      <div style={{ ...detailRowStyle(depth - 1), paddingTop: 6 }}>
+        <ConnectorTick depth={depth - 1} />
+        <span style={{ width: 12, flexShrink: 0 }} />
+        <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", color: "#5a5a7a" }}>brief — mandate · the constant origin</span>
+      </div>
+
+      {/* idea — the author's raw "what is the book about?" (brief.idea); the logline is DERIVED from this, not equal to it */}
+      <BriefFieldRow label="idea" depth={depth} display={briefIdea(brief)} onEdit={() => startEdit("idea", briefIdea(brief) ?? "")}>
+        {editingField === "idea" && <textarea rows={Math.min(6, Math.max(2, draft.split("\n").length))} {...commonProps("idea", true)} />}
+      </BriefFieldRow>
+
+      {/* genre */}
+      <BriefFieldRow label="genre" depth={depth} display={brief?.genre} onEdit={() => startEdit("genre", brief?.genre ?? "")}>
+        {editingField === "genre" && <input {...commonProps("genre")} />}
+      </BriefFieldRow>
+
+      {/* audience */}
+      <BriefFieldRow label="audience" depth={depth} display={brief?.audience} onEdit={() => startEdit("audience", brief?.audience ?? "")}>
+        {editingField === "audience" && <input {...commonProps("audience")} />}
+      </BriefFieldRow>
+
+      {/* tone — comma-sep list */}
+      <BriefFieldRow label="tone" depth={depth} display={toneArr.join(", ")} onEdit={() => startEdit("tone", toneArr.join(", "))}>
+        {editingField === "tone" && (
+          <input {...commonProps("tone")} onBlur={() => { void commit("tone", draft.split(",").map((s) => s.trim()).filter(Boolean)); }} style={{ ...inputStyle, flex: 1 }} />
+        )}
+      </BriefFieldRow>
+
+      {/* success_criteria */}
+      <BriefFieldRow label="success criteria" depth={depth} display={brief?.success_criteria} onEdit={() => startEdit("success_criteria", brief?.success_criteria ?? "")}>
+        {editingField === "success_criteria" && <textarea rows={3} {...commonProps("success_criteria", true)} />}
+      </BriefFieldRow>
+
+      {/* scope.word_target */}
+      <BriefFieldRow label="word target" depth={depth} display={brief?.scope?.word_target ? `${brief.scope.word_target.toLocaleString()} words${bandLabel ? ` · ${bandLabel}` : ""}` : bandLabel} onEdit={() => startEdit("word_target", String(brief?.scope?.word_target ?? ""))}>
+        {editingField === "word_target" && (
+          <input type="number" {...commonProps("word_target")} onBlur={() => { const n = parseInt(draft); void commit("word_target", isNaN(n) ? undefined : n); }} style={{ ...inputStyle, flex: 1 }} />
+        )}
+      </BriefFieldRow>
+
+      {/* content_type.level — select */}
+      <div style={detailRowStyle(depth)} onClick={(e) => e.stopPropagation()}>
+        <ConnectorTick depth={depth} />
+        <span style={{ width: 12, flexShrink: 0 }} />
+        <span style={labelStyle}>heat</span>
+        <select value={brief?.content_type?.level ?? ""} disabled={busy}
+          onChange={(e) => { void commit("heat", e.target.value || undefined); }}
+          style={{ ...inputStyle, fontSize: 11, padding: "1px 4px", flex: 1 }}>
+          <option value="">(not set)</option>
+          {CONTENT_TYPES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+        </select>
+      </div>
+    </>
+  );
+}
+
+// ── Brief origin (step 0) ─────────────────────────────────────────────────────
+// The brief is the ORIGIN — book-level input on books.brief, NOT a tree node. The seed (= the logline) is
+// step 1, DERIVED from it (docs/dna-studio-analysis.md §1). So the brief renders here, ABOVE the tree, with a
+// "↓ derives" cue — not nested inside the seed (which wrongly read as the brief being a detail OF the logline).
+// The brief is the ORIGIN; the seed (logline) is auto-derived from it on first open (see the bootstrap in the
+// load effect), so the tree is never empty and the agent always has a root to build from.
+export function BriefOrigin({ brief, onSave }: {
+  brief: Brief | null; onSave: (patch: Partial<Brief>) => Promise<void>;
+}) {
+  const mono = "ui-monospace, monospace";
+  return (
+    <div style={{ borderBottom: "1px solid #1a1a1a", background: "#0b0b0f", paddingBottom: 8 }}>
+      <BriefSection brief={brief} onSave={onSave} depth={1} />
+      <div style={{ padding: "8px 16px 2px 20px", display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ color: "#a78bfa", fontSize: 13, lineHeight: 1 }}>↓</span>
+        <span style={{ fontFamily: mono, fontSize: 10, color: "#6a6a8a", fontStyle: "italic" }}>
+          derives the SEED below — a polished logline (protagonist · inciting · goal · obstacle · stakes), generated from this brief
+        </span>
+      </div>
+    </div>
+  );
+}
