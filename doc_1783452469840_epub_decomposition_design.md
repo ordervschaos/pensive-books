@@ -1,6 +1,6 @@
 # EPUB → DNA tree: the decomposition (decompiler) design
 
-**Status:** target = draft onboarding. **Layer A (P1) shipped 2026-07-08** — `lib/epubImport.ts` (parser) + `features/dna/lib/importEpub.ts` (adapter) + "Import an .epub" on `/books/new`; verified e2e (book 1233). Layers B (semantic ascent) not built.
+**Status:** target = draft onboarding. **Layer A shipped 2026-07-08** — `lib/epubImport.ts` (parser) + `features/dna/lib/importEpub.ts` (adapter) + "Import an .epub" on `/books/new`. **Layer B shipped same day** — `dna-decompose` edge fn (chapter/top/entities steps) + `dnaDecompose.ts` orchestrator + `DecomposeButton` tree trigger; all writes via `applyNodeOps`, provenance-seal finish. Both verified e2e on book 1233 (12→19 nodes, complete 43→74%). Open: scene-level plan enrichment on locked scenes, act re-segmentation.
 
 ## 1. Where this sits
 

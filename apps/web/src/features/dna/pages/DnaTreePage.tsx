@@ -19,6 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useBookPermissions } from "@/hooks/use-book-permissions";
 import { reconcileDna } from "@/features/dna/lib/novelDnaRender";
 import { KIND_COLOR, QuickToggle } from "@/features/dna/components/tree/treeChrome";
+import { DecomposeButton } from "@/features/dna/components/tree/DecomposeButton";
 import { nodeTitle } from "@/features/dna/components/tree/nodeDisplay";
 import { buildSearchPattern, SearchPanel, searchDna } from "@/features/dna/components/tree/search";
 import { indexProposal } from "@/features/dna/components/tree/proposalOverlay";
@@ -653,6 +654,7 @@ export default function DnaTreePage() {
         )}
         {/* Controls */}
         <div style={{ marginLeft: "auto", display: "flex", gap: 12 }}>
+          <DecomposeButton bookId={bookId} nodes={nodes} />
           {tab === "tree" && <button onClick={expandAll} style={{ background: "none", border: "none", color: "#555", fontSize: 10, cursor: "pointer", letterSpacing: "0.1em", textTransform: "uppercase" }}>expand all</button>}
           {tab === "tree" && <button onClick={collapseAll} style={{ background: "none", border: "none", color: "#555", fontSize: 10, cursor: "pointer", letterSpacing: "0.1em", textTransform: "uppercase" }}>collapse all</button>}
           <a href={`/books/${bookSlug}/dna.json`} style={{ color: "#555", fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", textDecoration: "none" }}>json →</a>
