@@ -141,6 +141,10 @@ export const NODE_SCHEMA: Partial<Record<NodeKind, EditSpec[]>> = {
     // register = how the book's ONE voice BENDS for this scene only (pace, distance, intensity). The signature
     // stays constant; this knob breaks per-scene monotony. Adjacent scenes should differ so the read never goes flat.
     { key: "register", label: "register", multiline: true, taste: true, note: "how the voice bends here — pace, distance, intensity (e.g. \"clipped, breathless\" / \"slow, elegiac, interior\"). Adjacent scenes should differ." },
+    // metaphor_domain = the ONE controlling figurative domain governing this scene's imagery (accounting, theatre, law,
+    // machinery, hunting…). A mined axis (docs/structure-miner.md R1); its adjacency is checked by the metaphor_monotone lint,
+    // exactly as register's "adjacent scenes should differ" note is the sibling craft knob. Empty = literal register.
+    { key: "metaphor_domain", label: "metaphor", taste: true, note: "the ONE figurative domain governing this scene's imagery (accounting, theatre, law, machinery…). Adjacent scenes should differ. Leave empty for literal register." },
     { key: "readings", label: "readings", genOnly: true, note: "[{ ref: meter id, value: number }] this scene's level on each meter (inherited/refined from its beat)" },
     // sketch = the TREATMENT: what/how this page renders, generated BEFORE prose (dna-expand target='sketch').
     // `moves` are WHAT happens (never dialogue lines); `direction` is HOW it's shown. genOnly like the other

@@ -103,6 +103,10 @@ export interface ContinuityFlag { key: string; was: string; now: string; note?: 
 // book has shown so far couldn't follow (who is speaking / where are we / when / why / what's referenced).
 // Output of the read (read-confusion), never authored — the affective twin of ContinuityFlag.
 export interface ConfusionFlag { kind?: "who" | "where" | "when" | "why" | "reference"; note?: string }
+// value_carrier (mined — docs/structure-miner.md R2 somatic_value_carrier): read-facts' verdict on whether a
+// scene's PLANNED value_shift is DELIVERED through a concrete involuntary physical tell (embodied), or merely
+// asserted/narrated. Makes value_shift falsifiable against the prose — the "told, not shown" sensor.
+export interface ValueCarrier { embodied: boolean; tell?: string }
 export interface BeatContent {
   summary?: string; connector?: "therefore" | "but"; polarity?: "up" | "down";
   threads?: ThreadRef[]; realizes?: string[]; grounds_in?: string[];
@@ -129,6 +133,7 @@ export interface SceneContent {
   pov?: string; loc?: string; time?: { when?: string; elapsed?: string };
   present?: string[]; goal?: string; conflict?: string; outcome?: string;
   value_shift?: ValueShift;
+  metaphor_domain?: string | null;     // TASTE: the ONE controlling figurative domain governing this scene's imagery (accounting, theatre, law…). Adjacent scenes should differ. null = literal. (mined — docs/structure-miner.md R1)
   threads?: ThreadRef[];               // promise anchors this scene plants/pays → thread registry
   advances?: { ref: string; how?: string }[];  // relationship charge this scene moves → relationship nodes
   realizes_tentpole?: string | null;
@@ -142,6 +147,7 @@ export interface SceneContent {
   observed_establishes?: LedgerFact[]; // CONTINUITY: key→value facts this scene's prose asserted (the ledger delta)
   continuity_flags?: ContinuityFlag[]; // CONTINUITY: breaks the read found here vs prior canon (output, not plan input)
   confusion_flags?: ConfusionFlag[];   // COLD READER: what a reader-so-far couldn't follow here (output, not plan input)
+  observed_value_carrier?: ValueCarrier; // VALUE EMBODIMENT: does the prose land the planned value_shift on a physical tell? (output, not plan input)
   chapter_start?: ChapterStart | null;
   prose?: { text?: string; words?: number };
 }
@@ -345,7 +351,7 @@ export function backlinkIndex(nodes: DnaNode[]): Map<string, DnaNode[]> {
 // Fields that are OUTPUTS of generation/the read, never plan INPUTS — stripped before any input-set hash so
 // writing them (e.g. a meter read onto a beat, a fact ledger onto a scene) never spuriously stales the nodes
 // that hash this content. Mirrors how the prose hash already excludes prose.
-const OUTPUT_FIELDS = ["prose", "observed_readings", "observed_establishes", "continuity_flags", "confusion_flags", "observed_shape_fit", "observed_shape_hash", "observed_craft", "observed_craft_hash"] as const;
+const OUTPUT_FIELDS = ["prose", "observed_readings", "observed_establishes", "continuity_flags", "confusion_flags", "observed_value_carrier", "observed_shape_fit", "observed_shape_hash", "observed_craft", "observed_craft_hash"] as const;
 function planOf(content: NodeContent | null | undefined): NodeContent | null {
   if (!content) return null;
   const out: Record<string, unknown> = { ...(content as Record<string, unknown>) };
@@ -373,7 +379,7 @@ export function isProseStale(scene: DnaNode): boolean {
   const c = scene.content as SceneContent;
   if (!c.prose?.text?.trim() || !scene.authoring.prose_src_hash) return false;
   // observed_establishes/continuity_flags are OUTPUTS of the read, not inputs.
-  const { prose: _p, observed_establishes: _oe, continuity_flags: _cf, ...plan } = c;
+  const { prose: _p, observed_establishes: _oe, continuity_flags: _cf, observed_value_carrier: _ovc, ...plan } = c;
   return scene.authoring.prose_src_hash !== metaHash(stableStringify(plan));
 }
 
@@ -383,14 +389,14 @@ export function stampInput(node: DnaNode, index: Map<string, DnaNode>): DnaNode 
 }
 /** Stamp a scene's prose hash (call after prose is written from the current plan). */
 export function stampProse(scene: DnaNode): DnaNode {
-  const { prose: _p, observed_establishes: _oe, continuity_flags: _cf, ...plan } = scene.content as SceneContent;
+  const { prose: _p, observed_establishes: _oe, continuity_flags: _cf, observed_value_carrier: _ovc, ...plan } = scene.content as SceneContent;
   return { ...scene, authoring: { ...scene.authoring, prose_src_hash: metaHash(stableStringify(plan)) } };
 }
 
 /** The scene's SPEC — its content minus the sketch itself and every OUTPUT field — the input set the sketch
  *  is generated from. Shared by isSketchStale/stampSketch so the two can never drift on what "spec" means. */
 function sketchInputPlan(c: SceneContent): Record<string, unknown> {
-  const { sketch: _sk, prose: _p, observed_establishes: _oe, continuity_flags: _cf, confusion_flags: _cnf, ...plan } = c;
+  const { sketch: _sk, prose: _p, observed_establishes: _oe, continuity_flags: _cf, confusion_flags: _cnf, observed_value_carrier: _ovc, ...plan } = c;
   return plan;
 }
 /** Scene sketch is stale iff the scene's spec changed since the sketch was written. Because `prose_src_hash`
@@ -1313,6 +1319,28 @@ function sketchLints(nodes: DnaNode[]): DnaIssue[] {
   return issues;
 }
 
+// ── METAPHOR LINT (mined structure — docs/structure-miner.md R1 controlling_metaphor) ──────────────────────
+// metaphor_monotone — adjacent scenes (in reading order) governed by the SAME controlling figurative domain.
+// The metaphor_domain field's note ("adjacent scenes should differ") made checkable, exactly as
+// direction_monotone does for the sketch's direction. Scenes with no domain (literal register) are skipped
+// WITHOUT resetting prev — a literal scene between two "accounting" scenes still counts as a repeat. Domains
+// compare case-/space-insensitively so "Accounting" and "accounting" are the same axis.
+function metaphorLints(nodes: DnaNode[]): DnaIssue[] {
+  const issues: DnaIssue[] = [];
+  let prev: string | undefined;
+  for (const s of scenesInOrder(nodes)) {
+    const raw = (s.content as SceneContent).metaphor_domain;
+    const dom = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+    if (!dom) continue; // literal register — early/legitimate, don't reset prev so adjacency skips it cleanly
+    if (prev && dom === prev) {
+      issues.push({ rule: "metaphor_monotone", severity: "warn", nodeId: s.id,
+        message: `scene reuses the same controlling metaphor domain (${dom}) as the previous figurative scene — adjacent scenes should differ` });
+    }
+    prev = dom;
+  }
+  return issues;
+}
+
 // ── CONTINUITY LEDGER (the prefix-sum "story so far" — docs/true-agent.md Step 3) ──────────────────────────
 // A scan over scenes in reading order: each scene's observed_establishes (the key→value facts its prose
 // asserted) fold left-to-right, LAST-WRITE-WINS per key (re-asserting a key supersedes the old value — the
@@ -1887,6 +1915,9 @@ export function validate(nodes: DnaNode[], cfg: LintConfig = DEFAULT_LINT_CONFIG
   // Sketch/direction axis: promise work shown as summary/far, or adjacent scenes repeating the same direction.
   issues.push(...sketchLints(nodes));
 
+  // Controlling-metaphor axis (mined — docs/structure-miner.md R1): adjacent scenes sharing a figurative domain.
+  issues.push(...metaphorLints(nodes));
+
   // Grounding: the resolution must fire an established world rule (no deus ex machina — Lester Dent's law).
   // When the world has rules, the last scene in reading order should ground its win in at least one.
   const worldFacts = nodes.filter((n) => n.kind === "world_fact");
@@ -1980,6 +2011,16 @@ export function validate(nodes: DnaNode[], cfg: LintConfig = DEFAULT_LINT_CONFIG
     for (const f of ((s.content as SceneContent).confusion_flags ?? [])) {
       issues.push({ rule: "reader_confusion", severity: "warn", nodeId: s.id,
         message: `a cold reader loses the thread here${f.kind ? ` (${f.kind})` : ""}${f.note ? ` — ${f.note}` : ""}` });
+    }
+    // Value embodiment (mined — docs/structure-miner.md R2): read-facts judged whether this scene's PLANNED
+    // value_shift is delivered through a concrete involuntary physical tell, or only asserted. A planned shift
+    // the prose doesn't embody is "told, not shown" — warn, and only when the read actually looked (a stored
+    // verdict with embodied === false) on a scene that HAS a planned shift. No freshness gate, like the
+    // ledger's own flags: a prose edit is reconciled by re-running the scan.
+    const sc = s.content as SceneContent;
+    if (sc.observed_value_carrier?.embodied === false && sc.value_shift?.from && sc.value_shift?.to) {
+      issues.push({ rule: "value_asserted", severity: "warn", nodeId: s.id,
+        message: "the scene's value shift is stated but not embodied — the prose asserts the turn without a physical carrier" });
     }
   }
 

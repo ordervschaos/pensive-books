@@ -10,31 +10,36 @@ import { BRIDGE, bridgeFetch } from "@/lib/bridge";
 import { sendAgentMessage } from "@/features/dna/lib/agentThread";
 import {
   analysisText, byId, entityRegistryBlock, scenesInOrder, traceDiff, validate,
-  type BeatContent, type BookSettings, type ContinuityFlag, type DnaNode, type LedgerFact, type SceneContent,
+  type BeatContent, type BookSettings, type ContinuityFlag, type DnaNode, type LedgerFact, type SceneContent, type ValueCarrier, type ValueShift,
 } from "@/features/dna/lib/novelDna";
 
-export interface FactReadResult { facts: LedgerFact[]; contradictions: ContinuityFlag[] }
+export interface FactReadResult { facts: LedgerFact[]; contradictions: ContinuityFlag[]; valueCarrier?: ValueCarrier }
 
 /** Run the read for ONE scene against the canon folded so far. `entities` is the entityRegistryBlock the read
- *  grounds facts against (Phase-1). Bridge in dev, edge fn in prod. */
-export async function invokeReadFacts(bookId: number, ledgerIn: LedgerFact[], scene: { id: string; summary?: string; prose: string }, entities?: string): Promise<FactReadResult> {
+ *  grounds facts against (Phase-1). `scene.value_shift` (when present) also asks the read to judge value
+ *  embodiment (R2). Bridge in dev, edge fn in prod. */
+export async function invokeReadFacts(bookId: number, ledgerIn: LedgerFact[], scene: { id: string; summary?: string; prose: string; value_shift?: ValueShift }, entities?: string): Promise<FactReadResult> {
   if (BRIDGE) {
     const r = await bridgeFetch("/read-facts", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bookId, ledgerIn, scene, entities }),
     });
     if (!r.ok) throw new Error(`read-facts bridge ${r.status}: ${await r.text()}`);
     const d = await r.json();
-    return { facts: d?.facts ?? [], contradictions: d?.contradictions ?? [] };
+    return { facts: d?.facts ?? [], contradictions: d?.contradictions ?? [], valueCarrier: d?.valueCarrier };
   }
   const { data, error } = await supabase.functions.invoke("read-facts", { body: { bookId, ledgerIn, scene, entities } });
   if (error) throw error;
-  return { facts: data?.facts ?? [], contradictions: data?.contradictions ?? [] };
+  return { facts: data?.facts ?? [], contradictions: data?.contradictions ?? [], valueCarrier: data?.valueCarrier };
 }
 
 /** Write a scene's ledger delta + any contradiction flags onto the node (output fields — stripped from the
  *  scene's prose/illus hashes, so this never stales the prose). Empty arrays clear a prior run's results. */
-async function writeSceneLedger(scene: DnaNode, facts: LedgerFact[], flags: ContinuityFlag[]): Promise<void> {
-  const content = { ...scene.content, observed_establishes: facts, continuity_flags: flags };
+async function writeSceneLedger(scene: DnaNode, facts: LedgerFact[], flags: ContinuityFlag[], valueCarrier?: ValueCarrier): Promise<void> {
+  const content: SceneContent = { ...scene.content, observed_establishes: facts, continuity_flags: flags };
+  // R2: write the embodiment verdict when the read returned one; clear a prior run's value when the scene has
+  // a shift but the read didn't (keeps the field honest), and leave it untouched for shift-less scenes.
+  if (valueCarrier) content.observed_value_carrier = valueCarrier;
+  else if ((scene.content as SceneContent).value_shift?.from) delete content.observed_value_carrier;
   const { error } = await supabase.from("book_nodes").update({ content }).eq("id", scene.id);
   if (error) throw error;
 }
@@ -57,11 +62,12 @@ export async function runLedgerScan(bookId: number, nodes: DnaNode[], onProgress
   let totalFacts = 0, totalContra = 0;
   for (let i = 0; i < scenes.length; i++) {
     const s = scenes[i];
-    const { facts, contradictions } = await invokeReadFacts(bookId, [...canon.values()], {
+    const { facts, contradictions, valueCarrier } = await invokeReadFacts(bookId, [...canon.values()], {
       id: s.id, summary: beatSummary(s), prose: (s.content as SceneContent).prose!.text!.trim(),
+      value_shift: (s.content as SceneContent).value_shift,
     }, registry);
     for (const f of facts) if (f.key) canon.set(f.key, f); // fold forward, last-write-wins
-    await writeSceneLedger(s, facts, contradictions);
+    await writeSceneLedger(s, facts, contradictions, valueCarrier);
     totalFacts += facts.length; totalContra += contradictions.length;
     onProgress?.({ done: i + 1, total: scenes.length, contradictions: totalContra });
   }

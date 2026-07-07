@@ -17,7 +17,9 @@ import { extractJsonBlock } from "../_shared/json.ts";
 // entity (Phase-1 grounding, docs/scene-ledger.md §1.3): the registry node id this fact is ABOUT, when it
 // concerns a known entity. Validated server-side against the ids the client actually sent (below).
 interface Fact { key: string; value: string; note?: string; entity?: string }
-interface ReadScene { id: string; summary?: string; prose: string }
+// value_shift is the scene's PLANNED emotional turn (docs/structure-miner.md R2): passed in so the read can
+// judge whether the prose EMBODIES it through a physical carrier, not merely asserts it.
+interface ReadScene { id: string; summary?: string; prose: string; value_shift?: { value?: string; from?: string; to?: string; polarity?: string } }
 const MAX_PROSE_CHARS = 8000;   // one scene's prose; the ledger keeps the rest of the context bounded
 const MAX_LEDGER = 200;         // cap the canon fed in (compaction is a fast-follow; guard the prompt size)
 
@@ -71,21 +73,32 @@ Deno.serve(async (req: Request) => {
           "locations, physical/world facts). Reuse an existing canon key when the scene UPDATES it (that " +
           "supersedes the old value); omit facts already in the canon and unchanged. Skip transient mood. " +
           "(2) FLAG contradictions: any fact in the prose that conflicts with a canon value (was → now). A " +
-          "deliberate, narrated change is NOT a contradiction — only an unintended conflict is.",
+          "deliberate, narrated change is NOT a contradiction — only an unintended conflict is. " +
+          "(3) VALUE EMBODIMENT (only when a PLANNED SHIFT is given): decide whether the prose DELIVERS that " +
+          "emotional turn through a concrete, involuntary physical carrier — a body tell, gesture, or sensory " +
+          "beat the reader can SEE (a blink, a flinch, a held breath, a hand that stops) — versus merely " +
+          "ASSERTING/narrating it ('she felt powerful now'). embodied=true only if such a physical carrier is " +
+          "present; then name it in `tell` (≤6 words). If the shift is stated but has no physical carrier, embodied=false.",
       }],
       messages: [{
         role: "user",
         content:
           registryBlock +
           `CANON (story so far):\n${canon}\n\n` +
+          (scene.value_shift?.from && scene.value_shift?.to
+            ? `PLANNED SHIFT for this scene — ${scene.value_shift.value ? `"${scene.value_shift.value}": ` : ""}from "${scene.value_shift.from}" to "${scene.value_shift.to}"${scene.value_shift.polarity ? ` (${scene.value_shift.polarity})` : ""}.\n\n`
+            : "") +
           `NEW SCENE${scene.summary ? ` ("${scene.summary}")` : ""} — prose:\n${scene.prose.slice(0, MAX_PROSE_CHARS)}\n\n` +
           `Output ONLY this JSON (no prose, no fences):\n` +
           `{ "facts": [ { "key": "<snake_case>", "value": "<short>", "note": "<optional>", "entity": "<a registry id when the fact is about one, else omit>" } ], ` +
-          `"contradictions": [ { "key": "<canon key>", "was": "<canon value>", "now": "<what the prose says>", "note": "<optional>" } ] }`,
+          `"contradictions": [ { "key": "<canon key>", "was": "<canon value>", "now": "<what the prose says>", "note": "<optional>" } ]` +
+          (scene.value_shift?.from && scene.value_shift?.to
+            ? `, "value_carrier": { "embodied": <true|false>, "tell": "<the physical carrier, ≤6 words, when embodied>" }`
+            : "") + ` }`,
       }],
     }, meta, { signal: AbortSignal.timeout(90_000) });
 
-    const parsed = JSON.parse(extractJsonBlock(textFromLLM(data).trim())) as { facts?: unknown; contradictions?: unknown };
+    const parsed = JSON.parse(extractJsonBlock(textFromLLM(data).trim())) as { facts?: unknown; contradictions?: unknown; value_carrier?: unknown };
     const facts = (Array.isArray(parsed.facts) ? parsed.facts : []).filter(
       (f): f is Fact => !!f && typeof (f as Fact).key === "string" && typeof (f as Fact).value === "string"
     ).map((f) => ({
@@ -99,7 +112,14 @@ Deno.serve(async (req: Request) => {
         !!c && typeof (c as { key: unknown }).key === "string" && typeof (c as { was: unknown }).was === "string" && typeof (c as { now: unknown }).now === "string"
     ).map((c) => ({ key: c.key, was: c.was, now: c.now, ...(c.note ? { note: c.note } : {}) }));
 
-    return json({ facts, contradictions });
+    // Value embodiment (R2): only meaningful when a planned shift was sent; keep it only if the model returned
+    // a boolean. `tell` is retained just for an embodied read (the carrier it found), trimmed short.
+    const vcRaw = parsed.value_carrier as { embodied?: unknown; tell?: unknown } | undefined;
+    const valueCarrier = scene.value_shift?.from && scene.value_shift?.to && vcRaw && typeof vcRaw.embodied === "boolean"
+      ? { embodied: vcRaw.embodied, ...(vcRaw.embodied && typeof vcRaw.tell === "string" && vcRaw.tell.trim() ? { tell: vcRaw.tell.trim().slice(0, 60) } : {}) }
+      : undefined;
+
+    return json({ facts, contradictions, ...(valueCarrier ? { valueCarrier } : {}) });
   } catch (e) {
     console.error("read-facts error:", e);
     return json({ error: String((e as Error)?.message ?? e).slice(0, 500) }, 500);
