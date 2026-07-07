@@ -29,6 +29,11 @@ interface ExpandResult {
   // target 'contract' (W1: compile the brief) — genre tentpoles + seeded meters + register bounds.
   contract?: boolean; tentpoles?: { summary?: string }[]; meters?: MeterContent[]; voice_constraints?: string[];
   sketch?: SceneSketch; // target 'sketch' — the scene treatment (what/how), generated before prose
+  // The ai_calls row that produced this result's content — from dna-expand's `meta.loggedCallId` (direct
+  // targets) or the stream-prose proxy's logged row (prose/beatsheet). Stamped onto the committed node(s)
+  // as `last_ai_call_id` for the tree's view-details panel. Absent for phase:"prepare"/needsRepair replies
+  // (no content committed yet) and for the BRIDGE dev path (doesn't log to ai_calls).
+  callId?: number | null;
 }
 
 // Browser-owned orchestration of the per-call retry. The dominant prod failure is a HUNG edge call:
@@ -98,7 +103,7 @@ async function invokeWithRetry(body: Record<string, unknown>, signal?: AbortSign
 // (beatsheet) mode. `kind` only labels error messages (what's actually being streamed).
 const STREAM_IDLE_MS = 45_000;
 
-async function streamText(prepared: PreparedProse, signal?: AbortSignal, kind: string = "prose"): Promise<string> {
+async function streamText(prepared: PreparedProse, signal?: AbortSignal, kind: string = "prose"): Promise<{ text: string; callId: number | null }> {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token ?? "";
   let lastErr: Error = new Error("stream-prose failed");
@@ -122,6 +127,10 @@ async function streamText(prepared: PreparedProse, signal?: AbortSignal, kind: s
         try { msg = (JSON.parse(t) as { error?: string }).error ?? msg; } catch { if (t.trim()) msg = t.slice(0, 300); }
         throw new Error(msg);
       }
+      // The proxy echoes the ai_calls row it logged this generation under (set before any bytes stream) —
+      // the link `expandNode`/`persistBeatSheet` stamp onto the node as `last_ai_call_id`.
+      const callIdHeader = res.headers.get("x-ai-call-id");
+      const callId = callIdHeader != null ? Number(callIdHeader) : null;
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let text = "";
@@ -139,7 +148,7 @@ async function streamText(prepared: PreparedProse, signal?: AbortSignal, kind: s
       // eslint-disable-next-line no-control-regex
       const out = text.replace(/\u0000/g, "").trim();
       if (!out) throw new Error(`stream produced no ${kind}`);
-      return out;
+      return { text: out, callId };
     } catch (e) {
       clearTimeout(timer);
       if (signal?.aborted) throw e; // real user cancel — never retry
@@ -163,8 +172,8 @@ async function callExpand(bookId: number, nodeId: string, target: string, signal
   if (target === "prose") {
     const { prepared } = await invokeWithRetry({ bookId, nodeId, target, prepare: true, brief }, signal);
     if (!prepared) throw new Error("dna-expand prepare returned no payload");
-    const prose = await streamText(prepared, signal, "prose");
-    return { prose };
+    const { text: prose, callId } = await streamText(prepared, signal, "prose");
+    return { prose, callId };
   }
   // Beat sheet: same off-worker shape as prose, extended with a second "finalize" hop — the sanitize/lint/
   // repair-decision logic stays server-side (cheap, DB-bound, already twin-tested via novelDna.ts), only the
@@ -172,14 +181,16 @@ async function callExpand(bookId: number, nodeId: string, target: string, signal
   if (target === "beatsheet") {
     const { prepared } = await invokeWithRetry({ bookId, nodeId, target, phase: "prepare", brief }, signal);
     if (!prepared) throw new Error("dna-expand prepare returned no payload");
-    const rawText = await streamText(prepared, signal, "beat sheet");
+    const { text: rawText, callId: rawCallId } = await streamText(prepared, signal, "beat sheet");
     let res = await invokeWithRetry({ bookId, nodeId, target, phase: "finalize", rawText }, signal);
+    let callId = rawCallId;
     if (res.needsRepair) {
       if (!res.repairPrepared) throw new Error("dna-expand finalize flagged needsRepair with no repair payload");
-      const repairText = await streamText(res.repairPrepared, signal, "beat sheet repair");
+      const { text: repairText, callId: repairCallId } = await streamText(res.repairPrepared, signal, "beat sheet repair");
       res = await invokeWithRetry({ bookId, nodeId, target, phase: "finalize", rawText, repairText }, signal);
+      callId = repairCallId; // the accepted content came from the repair pass — attribute to that call
     }
-    return res;
+    return { ...res, callId };
   }
   return invokeWithRetry({ bookId, nodeId, target, brief }, signal);
 }
@@ -281,6 +292,7 @@ export async function expandNode(
       ...node,
       content: deepMergeContent(node.content, { logline: text }),
       authoring: { ...node.authoring, source: node.authoring.source === "user" ? "ai_then_user" : "ai", status: "accepted" },
+      last_ai_call_id: res.callId ?? null,
     };
     await saveNode(updated);
     return { added: 0, text };
@@ -297,6 +309,7 @@ export async function expandNode(
       ...node,
       content: deepMergeContent(node.content, { sketch }),
       authoring: { ...node.authoring, source: node.authoring.source === "user" ? "ai_then_user" : "ai", status: "accepted" },
+      last_ai_call_id: res.callId ?? null,
     };
     await saveNode(stampSketch(updated));
     return { added: 0 };
@@ -309,6 +322,7 @@ export async function expandNode(
       ...node,
       content: deepMergeContent(node.content, { prose: { text, words: wordCount(text) } }), // canonical DNA merge
       authoring: { ...node.authoring, source: node.authoring.source === "user" ? "ai_then_user" : "ai", status: "accepted" },
+      last_ai_call_id: res.callId ?? null,
     };
     await saveNode(stampProse(updated));
     return { added: 0, text };
@@ -333,6 +347,7 @@ export async function expandNode(
     level: res.childLevel ?? parentNode.level + 1, kind: (res.childKind ?? "scene") as NodeKind,
     position: startPosition + i, content,
     authoring: { source: "ai", locked: false, status: "accepted" },
+    last_ai_call_id: res.callId ?? null,
   }));
   // Games: couples.to references a SIBLING game by NAME (the edge fn couldn't resolve it — ids are minted
   // here). Resolve name→id across the freshly-minted batch; drop couples to a game that didn't resolve.
@@ -413,7 +428,7 @@ async function persistBeatSheet(bookId: number, res: ExpandResult): Promise<{ ad
       const base = tree.filter((n) => n.kind === "thread" && n.parent_id === pillar.id).length;
       const threadNodes: DnaNode[] = minted.map((t, i) => ({
         id: t.id, book_id: bookId, parent_id: pillar.id, level: 2, kind: "thread" as NodeKind, position: base + i,
-        content: t.content, authoring: { source: "ai", locked: false, status: "accepted" },
+        content: t.content, authoring: { source: "ai", locked: false, status: "accepted" }, last_ai_call_id: res.callId ?? null,
       }));
       const tIndex = byId([pillar, ...threadNodes]);
       await saveNodes(threadNodes.map((n) => stampInput(n, tIndex)));
@@ -424,7 +439,7 @@ async function persistBeatSheet(bookId: number, res: ExpandResult): Promise<{ ad
   const made: DnaNode[] = entries.map((e) => {
     const parent_id = actIds[e.act] ?? actIds[0];
     const position = (posByAct[parent_id] = (posByAct[parent_id] ?? 0) + 1) - 1;
-    return { id: newId(), book_id: bookId, parent_id, level: res.childLevel ?? 4, kind: "beat" as NodeKind, position, content: e.content as NodeContent, authoring: { source: "ai" as const, locked: false, status: "accepted" as const } };
+    return { id: newId(), book_id: bookId, parent_id, level: res.childLevel ?? 4, kind: "beat" as NodeKind, position, content: e.content as NodeContent, authoring: { source: "ai" as const, locked: false, status: "accepted" as const }, last_ai_call_id: res.callId ?? null };
   });
   // Stamp against each beat's act parent so they don't read stale on arrival.
   const index = byId([...acts, ...made]);
@@ -480,7 +495,7 @@ export async function persistContract(bookId: number, res: ExpandResult): Promis
   let tpPos = tree.filter((n) => n.kind === "tentpole" && n.parent_id === pillar.id).length;
   let mPos = tree.filter((n) => n.kind === "meter" && n.parent_id === pillar.id).length;
   const mk = (kind: NodeKind, position: number, content: NodeContent): DnaNode =>
-    ({ id: newId(), book_id: bookId, parent_id: pillar.id, level: 2, kind, position, content, authoring: { source: "ai", locked: false, status: "accepted" } });
+    ({ id: newId(), book_id: bookId, parent_id: pillar.id, level: 2, kind, position, content, authoring: { source: "ai", locked: false, status: "accepted" }, last_ai_call_id: res.callId ?? null });
   const made: DnaNode[] = [
     ...delta.tentpoles.map((summary) => mk("tentpole", tpPos++, { summary })),
     ...delta.meters.map((content) => mk("meter", mPos++, content as NodeContent)),
@@ -514,18 +529,19 @@ const GEN_LABEL: Partial<Record<NodeKind, string>> = {
 
 /** Generate via the dna-expand engine and return the result as reviewable ops (no writes). One network call
  *  plus the SAME local enrichment the commit path applies (scene→beat realization). */
-export async function generateExpansionOps(bookId: number, node: DnaNode, target: string, brief?: RenderBrief, signal?: AbortSignal): Promise<{ ops: NodeOp[]; summary: string }> {
+export async function generateExpansionOps(bookId: number, node: DnaNode, target: string, brief?: RenderBrief, signal?: AbortSignal): Promise<{ ops: NodeOp[]; summary: string; callId?: number | null }> {
   const res = await callExpand(bookId, node.id, target, signal, brief);
+  const callId = res.callId ?? null;
 
   if (target === "logline") {
     const text = (res.logline ?? "").trim();
     if (!text) throw new Error("No logline was generated.");
-    return { ops: [{ op: "edit", id: node.id, content: { logline: text } }], summary: "Refine the logline" };
+    return { ops: [{ op: "edit", id: node.id, content: { logline: text } }], summary: "Refine the logline", callId };
   }
   if (target === "prose") {
     const text = (res.prose ?? "").trim();
     if (!text) throw new Error("No prose was generated.");
-    return { ops: [{ op: "edit", id: node.id, content: { prose: { text, words: wordCount(text) } } }], summary: `Write prose (${wordCount(text)}w)` };
+    return { ops: [{ op: "edit", id: node.id, content: { prose: { text, words: wordCount(text) } } }], summary: `Write prose (${wordCount(text)}w)`, callId };
   }
   if (res.contract) {
     const tree = await loadTree(bookId);
@@ -545,7 +561,7 @@ export async function generateExpansionOps(bookId: number, node: DnaNode, target
       delta.meters.length ? `${delta.meters.length} meters` : "",
       delta.voice?.node ? "register bounds" : "",
     ].filter(Boolean);
-    return { ops, summary: `Compile the brief's contract (${parts.join(", ")})` };
+    return { ops, summary: `Compile the brief's contract (${parts.join(", ")})`, callId };
   }
   if (res.beatsheet) {
     const actIds = res.actIds ?? [];
@@ -564,7 +580,7 @@ export async function generateExpansionOps(bookId: number, node: DnaNode, target
     }
     const beatOps: NodeOp[] = [...byAct].map(([parentId, children]) => ({ op: "replace_children", parentId, childKind: "beat", children }));
     const threadNote = threadOps.length ? ` + ${threadOps.length} threads` : "";
-    return { ops: [...threadOps, ...beatOps], summary: `Generate beat sheet (${entries.length} beats${threadNote})` };
+    return { ops: [...threadOps, ...beatOps], summary: `Generate beat sheet (${entries.length} beats${threadNote})`, callId };
   }
 
   const children = res.children ?? [];
@@ -575,7 +591,7 @@ export async function generateExpansionOps(bookId: number, node: DnaNode, target
   // parentId = the triggering node; applyNodeOps re-homes pillar-parented kinds (entities + acts) onto
   // the pillar at apply, so the named parent only matters for the contextual rungs (scene→beat).
   const ops: NodeOp[] = children.map((content) => ({ op: "add", kind: childKind, parentId: node.id, content }));
-  return { ops, summary: `Generate ${GEN_LABEL[childKind] ?? childKind} (${children.length})` };
+  return { ops, summary: `Generate ${GEN_LABEL[childKind] ?? childKind} (${children.length})`, callId };
 }
 
 /** Generate via the engine and STAGE the result as a proposal on the book's agent thread (review in the rail). */

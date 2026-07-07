@@ -16,7 +16,8 @@ export default async function handler(req: Request): Promise<Response> {
 
   // Pull the first chunk eagerly so auth/config/upstream failures surface as a clean status code BEFORE we
   // commit to a 200 streaming response.
-  const gen = streamProse(body, authToken);
+  let logId: number | null = null;
+  const gen = streamProse(body, authToken, (id) => { logId = id; });
   let first: IteratorResult<string>;
   try { first = await gen.next(); }
   catch (e) {
@@ -34,5 +35,7 @@ export default async function handler(req: Request): Promise<Response> {
       controller.close();
     },
   });
-  return new Response(stream, { headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", "x-accel-buffering": "no" } });
+  const headers: Record<string, string> = { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", "x-accel-buffering": "no" };
+  if (logId != null) headers["x-ai-call-id"] = String(logId);
+  return new Response(stream, { headers });
 }

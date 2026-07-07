@@ -183,8 +183,8 @@ export async function applyAgentProposal(bookId: number, threadId: number, propo
     // (beat-sheet scheduling, scene→beat realization) and returns reviewable ops; we apply them here. The
     // dynamic import breaks the agentThread ↔ dnaExpand cycle. A stale/invalid target throws → caller discards.
     const { generateExpansionOps } = await import("@/features/dna/lib/dnaExpand");
-    const { ops } = await generateExpansionOps(bookId, node, proposal.target ?? "", proposal.brief, signal);
-    const validation = await applyNodeOps(bookId, ops);
+    const { ops, callId } = await generateExpansionOps(bookId, node, proposal.target ?? "", proposal.brief, signal);
+    const validation = await applyNodeOps(bookId, ops, callId);
     await resolveProposal(threadId, proposal, "applied", all);
     return validation;
   }

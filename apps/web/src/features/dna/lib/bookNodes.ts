@@ -4,7 +4,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { editContent, type DnaNode, type NodeContent } from "@/features/dna/lib/novelDna";
 
-const COLS = "id, book_id, parent_id, level, kind, position, content, authoring, proposals, chosen";
+const COLS = "id, book_id, parent_id, level, kind, position, content, authoring, proposals, chosen, last_ai_call_id";
 
 /** Load a book's whole tree (one query; ~100 rows + prose). Ordered by position for stable sibling order. */
 export async function loadTree(bookId: number): Promise<DnaNode[]> {
@@ -20,6 +20,7 @@ export async function saveNode(node: DnaNode): Promise<void> {
     id: node.id, book_id: node.book_id, parent_id: node.parent_id, level: node.level, kind: node.kind,
     position: node.position, content: node.content, authoring: node.authoring,
     proposals: node.proposals ?? null, chosen: node.chosen ?? null,
+    last_ai_call_id: node.last_ai_call_id ?? null,
   });
   if (error) throw error;
 }
@@ -42,6 +43,7 @@ export async function saveNodes(nodes: DnaNode[]): Promise<void> {
     id: n.id, book_id: n.book_id, parent_id: n.parent_id, level: n.level, kind: n.kind,
     position: n.position, content: n.content, authoring: n.authoring,
     proposals: n.proposals ?? null, chosen: n.chosen ?? null,
+    last_ai_call_id: n.last_ai_call_id ?? null,
   })));
   if (error) throw error;
 }

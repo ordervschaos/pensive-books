@@ -162,6 +162,7 @@ export interface TreeView {
   onDiscardStory: () => void;
   onAttachNode: (id: string) => void;   // slice 2 — attach this node to the agent's context tray (anchors)
   onOpenProseReader: (sceneId: string) => void; // open the prose reader modal for a scene
+  onOpenDetails: (nodeId: string) => void; // open the "view details" modal (authoring provenance)
 }
 export function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
   node: DnaNode; index: Map<string, DnaNode>; nodes: DnaNode[]; depth: number;
@@ -205,9 +206,12 @@ export function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }:
     node.kind === "scene" ? <ReadProseButton node={node} onOpenReader={() => h.onOpenProseReader(node.id)} />
     : null;
 
-  // Kebab items — MANUAL adds only. AI generation (options, beats, scenes, prose, regenerate) is the agent's
-  // job now, in the rail. (Attach-to-agent-context lives on the row itself as the "@" icon.)
-  const kebabItems: KebabItem[] = [];
+  // Kebab items — MANUAL adds, plus "view details" (always available). AI generation (options, beats,
+  // scenes, prose, regenerate) is the agent's job now, in the rail. (Attach-to-agent-context lives on the
+  // row itself as the "@" icon.)
+  const kebabItems: KebabItem[] = [
+    { label: "ⓘ view details", onClick: () => h.onOpenDetails(node.id) },
+  ];
   // Act: add a beat manually
   if (node.kind === "act") {
     kebabItems.push({ label: "+ add beat", color: "#4a7a5a", onClick: () => h.onAdd(node.id, "beat") });

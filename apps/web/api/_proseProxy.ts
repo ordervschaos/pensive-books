@@ -124,7 +124,10 @@ async function logStreamEnd(logId: number | null, row: {
 // Stream the prose generation from OpenRouter, yielding text deltas as they arrive. Throws ProxyError
 // BEFORE the first yield on auth / config / upstream failure (so the wrapper can send a clean error status);
 // once bytes flow, a mid-stream upstream break simply ends the generator (the browser validates length).
-export async function* streamProse(body: PrepareReq, authToken: string): AsyncGenerator<string> {
+// `onLogId` (optional) fires once the 'running' ai_calls row is inserted (before any upstream fetch, so
+// its result is ready before the HTTP wrapper sends response headers) — lets the caller echo the row id
+// back to the client (X-Ai-Call-Id), so dnaExpand.ts can stamp book_nodes.last_ai_call_id on commit.
+export async function* streamProse(body: PrepareReq, authToken: string, onLogId?: (id: number | null) => void): AsyncGenerator<string> {
   const started = Date.now();
   let userId = "";
   let logId: number | null = null;
@@ -138,6 +141,7 @@ export async function* streamProse(body: PrepareReq, authToken: string): AsyncGe
     userId = await verifyJwt(authToken);
     inputChars = body.system.length + body.userContent.length;
     logId = await logStreamStart(body, userId);
+    onLogId?.(logId);
 
     // Provider routing mirrors _shared/llm.ts: a bare model id (no "/", not deepseek) is an Anthropic model
     // and must go to Anthropic — NOT OpenRouter, which only knows prefixed ids (anthropic/…) and 400s on

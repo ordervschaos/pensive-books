@@ -27,7 +27,7 @@ import { staleActionsFor } from "@/features/dna/components/tree/staleActions";
 import { BriefOrigin } from "@/features/dna/components/tree/BriefSection";
 import { FocusPanel, JourneyStrip, SpineTimeline, VoiceFeelPanel } from "@/features/dna/components/tree/panels";
 import { CharactersPane, StoryPane } from "@/features/dna/components/tree/panes";
-import { DiscardStoryModal, HistoryModal, ProseReaderModal } from "@/features/dna/components/tree/modals";
+import { DiscardStoryModal, HistoryModal, NodeDetailsModal, ProseReaderModal } from "@/features/dna/components/tree/modals";
 
 const getNumericId = (p: string | undefined) => { const m = p?.match(/^(\d+)/); return m ? parseInt(m[1]) : 0; };
 
@@ -120,6 +120,7 @@ export default function DnaTreePage() {
   const [discardOpen, setDiscardOpen] = useState(false);
   const discardStory = useCallback(() => setDiscardOpen(true), []);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [detailsNodeId, setDetailsNodeId] = useState<string | null>(null); // "view details" modal
 
   const saveBrief = useCallback(async (patch: Partial<Brief>) => {
     const next = { ...brief, ...patch, updated_at: new Date().toISOString() } as Brief;
@@ -537,6 +538,9 @@ export default function DnaTreePage() {
       )}
       {discardOpen && <DiscardStoryModal nodes={nodes} onClose={() => setDiscardOpen(false)} />}
       {historyOpen && nodes && <HistoryModal bookId={bookId} nodes={nodes} onClose={() => setHistoryOpen(false)} />}
+      {detailsNodeId && index.get(detailsNodeId) && (
+        <NodeDetailsModal node={index.get(detailsNodeId)!} onClose={() => setDetailsNodeId(null)} />
+      )}
       {/* The tool-using editor's agent (durable book-agent thread), promoted into the tree rail. The
           studio components read theme CSS vars; we override them here with the tree's dark monospace
           palette (#8a8aff accent) so the rail matches the page instead of the app's light studio skin. */}
@@ -760,7 +764,7 @@ export default function DnaTreePage() {
         {roots.map((root) => (
           <Subtree key={root.id} node={root} index={index} nodes={nodes} depth={0}
             collapsedSet={collapsedSet} openSet={openSet}
-            h={{ onToggle: toggleNode, onToggleDetail: toggleDetail, onAdd: addNode, onDelete: removeNode, onJump: jumpTo, dragId, onDragStart: setDragId, onDragEnd: () => setDragId(null), onDrop: onDropReorder, backlinks, flashId, proposal: proposalView, issuesByNode, healthLens, contextId, ctxConsumes, ctxConsumedBy, onContextFocus: focusContext, seq, searchPattern, proseOpenSet, onToggleProse: toggleProse, onDiscardStory: discardStory, onAttachNode: attachNode, onOpenProseReader: setProseReaderSceneId }} />
+            h={{ onToggle: toggleNode, onToggleDetail: toggleDetail, onAdd: addNode, onDelete: removeNode, onJump: jumpTo, dragId, onDragStart: setDragId, onDragEnd: () => setDragId(null), onDrop: onDropReorder, backlinks, flashId, proposal: proposalView, issuesByNode, healthLens, contextId, ctxConsumes, ctxConsumedBy, onContextFocus: focusContext, seq, searchPattern, proseOpenSet, onToggleProse: toggleProse, onDiscardStory: discardStory, onAttachNode: attachNode, onOpenProseReader: setProseReaderSceneId, onOpenDetails: setDetailsNodeId }} />
         ))}
       </div>
       </>)}

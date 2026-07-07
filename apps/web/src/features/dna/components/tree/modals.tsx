@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 import { deleteNode, saveNode } from "@/features/dna/lib/bookNodes";
 import { byId, scenesInOrder, type DnaNode, type NodeContent, type SceneContent } from "@/features/dna/lib/novelDna";
 import { diffAgainstVersion, listVersions, loadVersion, restoreVersion, snapshotTree, type TreeDiff, type TreeVersion } from "@/features/dna/lib/treeVersions";
@@ -316,6 +317,120 @@ export function HistoryModal({ bookId, nodes, onClose }: { bookId: number; nodes
               </div>
             );
           })}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Node details ─────────────────────────────────────────────────────────────
+// "view details" (kebab menu): authoring provenance for one node — who/what wrote its current content,
+// and if the AI did, the exact model + prompt + raw completion behind it (book_nodes.last_ai_call_id →
+// ai_calls, mirroring pages.last_ai_call_id's admin lineage). Only set for content committed through the
+// dna-expand engine (logline/sketch/prose/beatsheet/contract/children) — see 20260707140000 migration;
+// content the book-agent chat authors directly (propose_node_ops/propose_options) has no link yet.
+interface AiCallDetail {
+  id: number; created_at: string; fn: string; source: string; model: string | null;
+  system: string | null; input: unknown; output: string | null;
+  input_tokens: number | null; output_tokens: number | null; latency_ms: number | null;
+}
+
+// The logged `input` is a messages array; flatten it back to readable text (mirrors admin/AiCalls.tsx).
+function flattenInput(input: unknown): string {
+  if (input == null) return "";
+  if (typeof input === "string") return input;
+  if (!Array.isArray(input)) return JSON.stringify(input, null, 2);
+  return (input as Array<{ content?: unknown }>)
+    .map((m) => {
+      const c = m?.content;
+      if (typeof c === "string") return c;
+      if (Array.isArray(c)) return c.map((b) => (typeof b === "string" ? b : (b as { text?: string })?.text ?? "")).join("\n");
+      return "";
+    })
+    .join("\n\n");
+}
+
+function CopyBlock({ label, text }: { label: string; text: string }) {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const mono = "ui-monospace, monospace";
+  if (!text.trim()) return null;
+  return (
+    <div style={{ borderTop: "1px solid #1c1c26", paddingTop: 10, marginTop: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <span onClick={() => setOpen((v) => !v)} style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.16em", textTransform: "uppercase", color: "#5a6a80", cursor: "pointer", userSelect: "none" }}>
+          {open ? "▾" : "▸"} {label} ({text.length.toLocaleString()} chars)
+        </span>
+        <span onClick={() => { void navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1200); }}
+          style={{ fontFamily: mono, fontSize: 9, color: copied ? "#7ac07a" : "#666", cursor: "pointer", letterSpacing: "0.04em" }}>
+          {copied ? "copied" : "copy"}
+        </span>
+      </div>
+      {open && (
+        <pre style={{ marginTop: 8, maxHeight: 260, overflow: "auto", fontFamily: mono, fontSize: 11, lineHeight: 1.5, color: "#b8b8c0", whiteSpace: "pre-wrap", wordBreak: "break-word", background: "#0a0a0e", border: "1px solid #1c1c26", borderRadius: 4, padding: 10 }}>
+          {text}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+export function NodeDetailsModal({ node, onClose }: { node: DnaNode; onClose: () => void }) {
+  const mono = "ui-monospace, monospace";
+  const [call, setCall] = useState<AiCallDetail | null | "loading" | "error">(node.last_ai_call_id ? "loading" : null);
+
+  useEffect(() => {
+    if (!node.last_ai_call_id) { setCall(null); return; }
+    let alive = true;
+    setCall("loading");
+    supabase.from("ai_calls")
+      .select("id, created_at, fn, source, model, system, input, output, input_tokens, output_tokens, latency_ms")
+      .eq("id", node.last_ai_call_id).maybeSingle()
+      .then(({ data, error }) => { if (alive) setCall(error || !data ? "error" : (data as AiCallDetail)); });
+    return () => { alive = false; };
+  }, [node.last_ai_call_id]);
+
+  const when = (iso: string) => { try { return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }); } catch { return iso; } };
+  const a = node.authoring;
+
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="flex max-h-[85vh] w-[min(640px,92vw)] max-w-[640px] flex-col gap-0 overflow-hidden border-[#2a2a38] bg-[#0e0e12] p-0 text-[#8a9ab0] sm:rounded-lg">
+        <div style={{ padding: "16px 24px 14px", borderBottom: "1px solid #1c1c26", flexShrink: 0 }}>
+          <div style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", color: "#5a6a80" }}>view details · {node.kind}</div>
+          <DialogTitle className="truncate font-normal tracking-normal" style={{ fontFamily: mono, fontSize: 13, color: "#cfcfcf", marginTop: 3 }}>
+            {nodeTitle(node) || "untitled"}
+          </DialogTitle>
+        </div>
+        <div style={{ overflowY: "auto", padding: "16px 24px 22px", flex: 1 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 18px", fontFamily: mono, fontSize: 11 }}>
+            <span style={{ color: "#555" }}>source: <span style={{ color: "#9a9aaa" }}>{a.source}</span></span>
+            <span style={{ color: "#555" }}>status: <span style={{ color: "#9a9aaa" }}>{a.status}</span></span>
+            {a.locked && <span style={{ color: "#c0a060" }}>🔒 locked</span>}
+          </div>
+
+          {call === null && (
+            <div style={{ marginTop: 14, fontFamily: mono, fontSize: 11, color: "#666" }}>
+              {a.source === "user" ? "Written by hand — no AI call." : "No AI call linked — either hand-edited, or authored directly by the agent chat (not yet wired to this panel)."}
+            </div>
+          )}
+          {call === "loading" && <div style={{ marginTop: 14, fontFamily: mono, fontSize: 11, color: "#666" }}>loading the generating call…</div>}
+          {call === "error" && <div style={{ marginTop: 14, fontFamily: mono, fontSize: 11, color: "#c07070" }}>couldn't load ai_calls #{node.last_ai_call_id} (deleted, or you lack access).</div>}
+          {call && typeof call === "object" && (
+            <>
+              <div style={{ marginTop: 14, display: "flex", flexWrap: "wrap", gap: "6px 18px", fontFamily: mono, fontSize: 11 }}>
+                <span style={{ color: "#555" }}>model: <span style={{ color: "#a8a8ff" }}>{call.model ?? "?"}</span></span>
+                <span style={{ color: "#555" }}>pass: <span style={{ color: "#9a9aaa" }}>{call.fn}</span></span>
+                <span style={{ color: "#555" }}>when: <span style={{ color: "#9a9aaa" }}>{when(call.created_at)}</span></span>
+                {call.latency_ms != null && <span style={{ color: "#555" }}>latency: <span style={{ color: "#9a9aaa" }}>{(call.latency_ms / 1000).toFixed(1)}s</span></span>}
+                {(call.input_tokens != null || call.output_tokens != null) && (
+                  <span style={{ color: "#555" }}>tokens: <span style={{ color: "#9a9aaa" }}>{call.input_tokens ?? "?"} in / {call.output_tokens ?? "?"} out</span></span>
+                )}
+              </div>
+              <CopyBlock label="prompt" text={[call.system, flattenInput(call.input)].filter(Boolean).join("\n\n---\n\n")} />
+              <CopyBlock label="raw output" text={call.output ?? ""} />
+            </>
+          )}
         </div>
       </DialogContent>
     </Dialog>

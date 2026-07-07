@@ -661,7 +661,7 @@ TEST before you answer: could a stranger imagine the poster, the genre, and the 
 Honor the MANDATE (genre/tone) and any LOCKED ancestors. Do NOT invent a title. Do NOT restate the raw idea verbatim — SHARPEN it into a real logline. Output the LOGLINE ONLY: one or two sentences, no preamble, no label, no quotes, no JSON.`;
       const data = await callLLM(apiKey, { model, max_tokens: 400, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
         messages: [{ role: "user", content: `${ctx}\n\nWrite the logline.` }] }, meta, { signal: req.signal });
-      return json({ logline: textFromLLM(data).trim() });
+      return json({ logline: textFromLLM(data).trim(), callId: meta.loggedCallId ?? null });
     }
 
     if (target === "premise") {
@@ -721,7 +721,7 @@ Output JSON ONLY, no prose, no fences:
       return json({ childKind: "premise", childLevel: 1, children: [{
         dramatic_question: dramaticQuestion,
         shape: { name: String(shape.name ?? "").trim(), movements, ending_feel: ending },
-      }] });
+      }], callId: meta.loggedCallId ?? null });
     }
 
     if (target === "sketch") {
@@ -754,7 +754,7 @@ Output JSON ONLY: {"opening":"...","moves":[{"what":"...","thread":"<thread id, 
         messages: [{ role: "user", content: `${ctx}\n\nWrite this scene's sketch. JSON only.` }] }, meta, { signal: req.signal });
       try {
         const parsed = JSON.parse(extractJsonBlock(textFromLLM(data)));
-        return json({ sketch: parsed });
+        return json({ sketch: parsed, callId: meta.loggedCallId ?? null });
       } catch {
         return json({ error: "Sketch generation returned unparsable JSON — try again." }, 502);
       }
@@ -772,7 +772,7 @@ ANTI-REPETITION (critical): Never repeat any physical gesture, character reactio
       if (prepare) return json({ prepared: { system, userContent, model, max_tokens: 8000 } });
       const data = await callLLM(apiKey, { model, max_tokens: 8000, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
         messages: [{ role: "user", content: userContent }] }, meta, { signal: req.signal });
-      return json({ prose: textFromLLM(data).trim() });
+      return json({ prose: textFromLLM(data).trim(), callId: meta.loggedCallId ?? null });
     }
 
     if (target === "beatsheet") {
@@ -1040,7 +1040,7 @@ Output JSON ONLY: { "tentpoles": [ { "summary": "..." } ], "meters": [ { "name":
         }).filter((m) => m.name);
       const voice_constraints = (Array.isArray(parsed.voice_constraints) ? parsed.voice_constraints as unknown[] : [])
         .map((c) => String(c ?? "").trim()).filter(Boolean);
-      return json({ contract: true, tentpoles: outTentpoles, meters: outMeters, voice_constraints });
+      return json({ contract: true, tentpoles: outTentpoles, meters: outMeters, voice_constraints, callId: meta.loggedCallId ?? null });
     }
 
     // Generic DNA target: load config from node_type_configs, rebuild ctx with slot-filtered blocks.
@@ -1116,7 +1116,7 @@ Output JSON ONLY: { "tentpoles": [ { "summary": "..." } ], "meters": [ { "name":
           .map((r) => ({ type: r.type, what: r.what, ...(r.type === "state" && r.key ? { key: String(r.key).trim().toLowerCase().replace(/\s+/g, "_") } : {}) })) } : {}),
       }));
     }
-    return json({ childKind: config.child_kind, childLevel: config.child_level, children });
+    return json({ childKind: config.child_kind, childLevel: config.child_level, children, callId: meta.loggedCallId ?? null });
   } catch (e) {
     return json({ error: String((e as Error)?.message ?? e).slice(0, 500) }, 500);
   }

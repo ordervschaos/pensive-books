@@ -46,7 +46,8 @@ export function streamProseDevPlugin(): Plugin {
         try { body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as PrepareReq; }
         catch { res.statusCode = 400; res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ error: "invalid JSON body" })); return; }
 
-        const gen = streamProse(body, authToken);
+        let logId: number | null = null;
+        const gen = streamProse(body, authToken, (id) => { logId = id; });
         let first: IteratorResult<string>;
         try { first = await gen.next(); }
         catch (e) {
@@ -58,6 +59,7 @@ export function streamProseDevPlugin(): Plugin {
         res.statusCode = 200;
         res.setHeader("content-type", "text/plain; charset=utf-8");
         res.setHeader("cache-control", "no-store");
+        if (logId != null) res.setHeader("x-ai-call-id", String(logId));
         try {
           if (!first.done && first.value) res.write(first.value);
           for await (const chunk of gen) res.write(chunk);

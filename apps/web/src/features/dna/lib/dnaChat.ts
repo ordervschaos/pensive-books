@@ -221,11 +221,16 @@ export function validateOps(ops: NodeOp[], nodes: DnaNode[]): OpValidation {
 
 /** Run a set of node ops against book_nodes (edit/add/delete), honoring LOCKED nodes and the schema. Only
  *  VALID ops land (validateOps is the fail-closed gate); the returned `rejected` lets callers report why.
- *  The reusable core shared by the per-stage chat (applyDnaProposal) and the omni-rail agent. */
-export async function applyNodeOps(bookId: number, ops: NodeOp[]): Promise<OpValidation> {
+ *  The reusable core shared by the per-stage chat (applyDnaProposal) and the omni-rail agent.
+ *  `callId` (optional) = the ai_calls row that generated `ops` (the dna-expand engine's response) —
+ *  stamped onto every node these ops touch as `last_ai_call_id`, for the tree's view-details panel.
+ *  Omitted (not passed) by callers whose ops aren't attributable to one engine call (e.g. the chat
+ *  agent's own hand-authored propose_node_ops) — those nodes just keep whatever they already had. */
+export async function applyNodeOps(bookId: number, ops: NodeOp[], callId?: number | null): Promise<OpValidation> {
   const nodes = await loadTree(bookId);
   const validation = validateOps(ops, nodes);
   const index = byId(nodes);
+  const callStamp = callId !== undefined ? { last_ai_call_id: callId } : {};
   const childCount = (parentId: string) => nodes.filter((n) => n.parent_id === parentId).length;
   // Resolve the REAL attachment per PARENT_KIND: a pillar-parented kind (every entity AND the act rung)
   // re-homes onto the pillar, never the parentId the model named (the premise-orphaning class). Contextual
@@ -239,7 +244,7 @@ export async function applyNodeOps(bookId: number, ops: NodeOp[]): Promise<OpVal
   // `add` branch's stamping; used by replace_children to build a fresh subtree atomically.
   const addSubtree = async (sub: NewSubtree, kind: NodeKind, parentId: string, position: number): Promise<void> => {
     const fresh = emptyNode(bookId, kind, KIND_LEVEL[kind] ?? 5, parentId, position);
-    const node: DnaNode = { ...fresh, content: sanitizeContent(kind, sub.content as Record<string, unknown>), authoring: { source: "ai", locked: false, status: "accepted" } };
+    const node: DnaNode = { ...fresh, ...callStamp, content: sanitizeContent(kind, sub.content as Record<string, unknown>), authoring: { source: "ai", locked: false, status: "accepted" } };
     await saveNode(stampInput(node, byId([...nodes, node])));
     const childKind = LADDER_NEXT[kind];
     if (childKind && Array.isArray(sub.children)) {
@@ -250,14 +255,14 @@ export async function applyNodeOps(bookId: number, ops: NodeOp[]): Promise<OpVal
   for (const op of validation.ok) {
     if (op.op === "edit") {
       const node = index.get(op.id);
-      if (node && !node.authoring.locked) await saveNode(editContent(node, sanitizeContent(node.kind, op.content as Record<string, unknown>)));
+      if (node && !node.authoring.locked) await saveNode({ ...editContent(node, sanitizeContent(node.kind, op.content as Record<string, unknown>)), ...callStamp });
     } else if (op.op === "delete") {
       const node = index.get(op.id);
       if (node && !node.authoring.locked) await deleteNode(op.id);
     } else if (op.op === "add") {
       const parentId = effectiveParent(op.kind, op.parentId);
       const fresh = emptyNode(bookId, op.kind, KIND_LEVEL[op.kind] ?? 5, parentId, childCount(parentId) + added++);
-      const node: DnaNode = { ...fresh, ...(op.id ? { id: op.id } : {}), content: sanitizeContent(op.kind, op.content as Record<string, unknown>), authoring: { source: "ai", locked: false, status: "accepted" } };
+      const node: DnaNode = { ...fresh, ...(op.id ? { id: op.id } : {}), ...callStamp, content: sanitizeContent(op.kind, op.content as Record<string, unknown>), authoring: { source: "ai", locked: false, status: "accepted" } };
       await saveNode(stampInput(node, byId([...nodes, node])));
     } else if (op.op === "replace_children") {
       // Wipe the (re-homed) parent's existing non-locked children of this kind (FK cascade takes their

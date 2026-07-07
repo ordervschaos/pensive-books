@@ -219,6 +219,9 @@ export interface DnaNode {
   // no migration. chosen = the committed proposal id (set by chooseProposal).
   proposals?: { id: string; content: NodeContent; note?: string; source?: "options" }[];
   chosen?: string | null;
+  // The ai_calls row whose engine generation last wrote this node's content (view-details panel).
+  // Null for hand-written nodes; not yet set for content the book-agent chat authors directly.
+  last_ai_call_id?: number | null;
 }
 
 // ── Ids ───────────────────────────────────────────────────────────────────────
