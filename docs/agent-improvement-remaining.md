@@ -22,24 +22,76 @@
 
 ---
 
-## ⚠️ The load-bearing gap: nothing has run end-to-end
+## ✅ Exercised end-to-end 2026-07-08 (book 1229, auto run over beat 3)
 
-**Every item above is unit-tested, parity-locked, or simulated — none has been exercised on a live
-book + model.** The whole Phase 2 eval loop (render→verify→fix), the beatsheet repair + canonicalization on a
-real generation, and the P1.2 objective re-derivation advancing an auto run all need a running app to observe.
+The gap below is closed: an auto-accept run was driven live (arm auto → "continue building" →
+sketch scene 8 → render → auto-verify → next turn) and observed against ai_calls + the DB. Results:
 
-The judges (`plan-gate`, `mandate-gate`) and every generation call need a real model; the edge modules that
-call them can't be `vitest`-imported (they pull `llm`/`task`/Deno). So the deterministic scaffolding is proven,
-but the *behaviour* is not.
+**Confirmed working:**
+- **P2.3 auto-verify fires structurally** after an applied render (`book-agent-autoverify` call
+  observed) and the agent consumes the verdict in its next turn.
+- **Auto-accept** applies proposals without review and chains turns; **auto-checkpoint on arm**
+  wrote a `book_tree_versions` row.
+- **Phase 0 field-aware search** used unprompted by the agent (`flour`, `copper hairpin` lookups
+  before rendering, for continuity).
+- **Digest fold (P3/§3b)** wrote `prose_digest` v4 deltas per rendered scene; prose persisted to
+  `content.prose.text`; a pending render proposal survived a tab close and applied cleanly later
+  (durable-task behavior as designed).
 
-**This is the highest-leverage next action — do it before building §4a/§4b/§3a on top:**
-1. Open a book's Studio (`/books/:slug/dna`), run an **auto build** (the ∞ auto-accept toggle in AgentRail).
-2. Watch for: the objective advancing past a rendered scene (P1.2); a `🔎 AUTO-VERIFY` block appearing after a
-   render and the agent acting on a FAIL (P2.3); the beatsheet repair firing when a generated sheet has a
-   hollow `therefore` (P2.1); canonical state keys in the tree (P3/§3c).
-3. Confirm `/admin/settings` per-role selectors save and take effect (P4/§4c — the one item with UI and no test).
+**Two behavioral defects found (new backlog, ordered by M1 impact):**
+1. **§v1 verify judge over-scopes threads.** The scene-7 verify FAILed three thread payoffs that
+   belong to scene 8 — the agent correctly dismissed them: *"The verify is asking for the wrong
+   scene's payoff."* The judge receives beat-level thread expectations, not the scene's slice.
+   Every dismissed false positive trains the agent to ignore verify (alarm fatigue) — this
+   partially defeats P2.3. Fix in `plan-gate.ts` context assembly: thread payoffs must be scoped
+   to the scene under judgment.
+2. **§v2 auto mode accepts a no-proposal turn as end-of-run.** ✅ FIXED 2026-07-08. The run went
+   `idle` after a turn that only narrated ("once it applies, I'll render scene 9…") with no tool
+   call — scene 9 was left unrendered while the run looks finished. Mirror of the P2.3 insight:
+   continuation must be structural, not a recipe line. Fix in `book-agent`'s no-tool-call branch:
+   in auto mode the turn gets ONE `[auto-continue]` prod ("act now or call finish") and chains;
+   the sentinel in the previous user message bounds it — a second consecutive bare turn goes
+   idle honestly. Deployed.
 
-Can be driven from here via the Chrome tools, or by the author directly.
+**Cost pattern (§4a) quantified live:** each book-agent turn re-sent 43–46K input tokens for
+144–1,184 output tokens; one scene's render cycle ≈ 90K input tokens. Confirms §4a batching as
+the top cost lever. Also noted: `dna-expand-stream` logs `book_id: null` (stream proxy doesn't
+pass it) — small logging gap that breaks per-book cost attribution.
+
+**Still not exercised** (need a beatsheet-generation run — e.g. expanding a fresh act): P2.1
+beatsheet lint-then-repair, P3/§3c canonicalization firing on real generation. P4/§4c admin
+per-role selectors also unverified in UI. The verify FAIL→*fix* path (agent rewriting prose
+because of a legitimate FAIL) has not been observed — both observed verifies were pass or
+false-positive; §v1 must land before FAIL-handling can be judged fairly.
+
+### Addendum — the "build all" attempt (2026-07-08, later session)
+
+Continuing the run toward a full build surfaced two more defects and one structural limit:
+
+3. **§v3 a hung apply wedges the auto-accept watcher for the life of the page.** ✅ FIXED
+   2026-07-08. Initially misread as "watcher doesn't re-arm after reload" (arming actually
+   persists via localStorage); code reading found the real mechanism: `useAutoAccept` sets
+   `busy = true` before `run()` and only resets it when the promise settles — but a prose-render
+   apply awaits a browser fetch stream with no timeout and no abort signal, so one dead worker
+   mid-stream (see §v4's stuck `running` call 7347) wedges `busy` forever and every later
+   proposal sits unapplied. Fix: the watcher now aborts the apply on a deadline (6 min for
+   prose-render, 3 min otherwise) via the `AbortSignal` plumbing that already existed end-to-end
+   (`applyAgentProposal` → `expandNode` → fetch), so the promise always settles and the existing
+   catch path (discard + continue) recovers the run.
+4. **§v4 render finalize dies under worker pressure and strands state.** `dna-expand` returned
+   546 `WORKER_RESOURCE_LIMIT` intermittently (concurrent dna-decompose load on the same worker
+   pool); scene-9's first render streamed fully but its prose never persisted, and the
+   `ai_calls` rows stayed `running` forever (7347, 7352). A manual re-render succeeded. Fixes:
+   retry/backoff on 546 in the client apply path; watchdog should sweep stuck `running` ai_calls;
+   ideally the stream's node-write should not depend on a second worker call. OPEN.
+
+**Structural limit surfaced by "build all":** the whole-book build is *client-driven* — prose
+streams in the browser, applies are client clicks, chain advances come from the tab. Closing the
+driving tab (which happened twice, naturally) silently freezes the build. A hands-free "build
+all" needs §v2+§v3 fixed at minimum (so the author's own open tab drives itself), and
+longer-term a headless/server driver or resumable build queue. Build state at stop: beats 1–3
+fully prosed (9 scenes, ~9.7K words), beat 4 broken into 3 scenes (sketches pending), beats 5–10
+not yet broken.
 
 ---
 

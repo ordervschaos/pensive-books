@@ -195,11 +195,14 @@ function proseBook(): DnaNode[] {
   const b1 = mk("beat", { id: "pp_b1", parent_id: "pp_a1", position: 0, content: { summary: "planted faults" } });
   const flat = "Mara walked to the door. Rain hammered on the glass. She counted every grey step. The lamp guttered in silence. Something moved behind the curtain. Her hands would not settle. The clock ticked past midnight. Nobody answered her second knock.";
   const soup = Array.from({ length: 12 }, () => "Mara watched Okonkwo pace. Mara told Okonkwo that Mara would carry the lantern north again.").join(" ");
-  const sc = (id: string, pos: number, text: string) =>
-    mk("scene", { id, parent_id: "pp_b1", position: pos, content: { goal: "g", value_shift: vs(pos % 2 ? "up" : "down"), prose: { text } } });
+  // R2: observed_value_carrier rides two scenes — pp_s1 embodied:false (a planned shift the prose only asserts →
+  // value_asserted fires) and pp_s2 embodied:true (a physical carrier present → silent). The rest have no verdict
+  // (the read never looked) → also silent. Locks that the lint keys on embodied === false, not mere presence.
+  const sc = (id: string, pos: number, text: string, carrier?: { embodied: boolean; tell?: string }) =>
+    mk("scene", { id, parent_id: "pp_b1", position: pos, content: { goal: "g", value_shift: vs(pos % 2 ? "up" : "down"), prose: { text }, ...(carrier ? { observed_value_carrier: carrier } : {}) } });
   return [pillar, c1, c2, a1, b1,
-    sc("pp_s1", 0, "The copper weathervane spun over marshland."),
-    sc("pp_s2", 1, "She remembered the copper weathervane spun over water."),
+    sc("pp_s1", 0, "The copper weathervane spun over marshland.", { embodied: false }),
+    sc("pp_s2", 1, "She remembered the copper weathervane spun over water.", { embodied: true, tell: "a held breath" }),
     sc("pp_s3", 2, flat),
     sc("pp_s4", 3, soup),
     sc("pp_s5", 4, '"Where is it?" she asked.\n"Gone," he said.'),
@@ -218,10 +221,13 @@ function sketchBook(): DnaNode[] {
   const a1 = mk("act", { id: "sk_a1", parent_id: "sk_pil", position: 0, content: { title: "One" } });
   const b1 = mk("beat", { id: "sk_b1", parent_id: "sk_a1", position: 0, content: { summary: "Setup.", polarity: "down" } });
   const b2 = mk("beat", { id: "sk_b2", parent_id: "sk_a1", position: 1, content: { summary: "Payoff.", polarity: "up" } });
-  const s1 = mk("scene", { id: "sk_s1", parent_id: "sk_b1", position: 0, content: { goal: "meet the creditor", value_shift: vs("down"), sketch: { direction: { mode: "dialogue", distance: "close", tension: "suspense" } } } });
-  const s2 = mk("scene", { id: "sk_s2", parent_id: "sk_b1", position: 1, content: { goal: "face the debt", value_shift: vs("down"), threads: [{ ref: "sk_t1", role: "payoff" }], sketch: { direction: { mode: "summary", distance: "far", tension: "mystery" } } } });
+  // metaphor_domain also rides this fixture (mined R1): s1/s2 both "accounting" (case-differing) → metaphor_monotone
+  // on s2; s3 has no domain (a literal-register gap that must NOT reset adjacency); s4 "accounting" repeats across
+  // the gap → fires on s4 too. Expected metaphor_monotone = [sk_s2, sk_s4].
+  const s1 = mk("scene", { id: "sk_s1", parent_id: "sk_b1", position: 0, content: { goal: "meet the creditor", value_shift: vs("down"), metaphor_domain: "accounting", sketch: { direction: { mode: "dialogue", distance: "close", tension: "suspense" } } } });
+  const s2 = mk("scene", { id: "sk_s2", parent_id: "sk_b1", position: 1, content: { goal: "face the debt", value_shift: vs("down"), metaphor_domain: "Accounting", threads: [{ ref: "sk_t1", role: "payoff" }], sketch: { direction: { mode: "summary", distance: "far", tension: "mystery" } } } });
   const s3 = mk("scene", { id: "sk_s3", parent_id: "sk_b2", position: 0, content: { goal: "walk the long road home", value_shift: vs("up"), sketch: { direction: { mode: "summary", distance: "far", tension: "mystery" } } } });
-  const s4 = mk("scene", { id: "sk_s4", parent_id: "sk_b2", position: 1, content: { goal: "settle the ledger", value_shift: vs("up"), sketch: { direction: { mode: "action", distance: "close", tension: "irony" } } } });
+  const s4 = mk("scene", { id: "sk_s4", parent_id: "sk_b2", position: 1, content: { goal: "settle the ledger", value_shift: vs("up"), metaphor_domain: "accounting", sketch: { direction: { mode: "action", distance: "close", tension: "irony" } } } });
   return [pillar, thread, a1, b1, b2, s1, s2, s3, s4];
 }
 
@@ -352,6 +358,16 @@ describe("sketch/direction lints", () => {
   it("flags a later scene repeating the same direction as the prior sketched scene", () => {
     const issues = web.validate(sketchBook()).filter((i) => i.rule === "direction_monotone");
     expect(issues.map((i) => i.nodeId)).toEqual(["sk_s3"]);
+  });
+
+  it("flags adjacent scenes sharing a controlling metaphor domain (case-insensitive, skipping literal gaps)", () => {
+    const issues = web.validate(sketchBook()).filter((i) => i.rule === "metaphor_monotone");
+    expect(issues.map((i) => i.nodeId)).toEqual(["sk_s2", "sk_s4"]);
+  });
+
+  it("flags a scene whose planned value shift the prose states but doesn't embody (R2 value_asserted)", () => {
+    const issues = web.validate(proseBook()).filter((i) => i.rule === "value_asserted");
+    expect(issues.map((i) => i.nodeId)).toEqual(["pp_s1"]); // pp_s2 is embodied:true → silent
   });
 
   it("stays silent on scenes without a sketch yet (early, not wrong)", () => {

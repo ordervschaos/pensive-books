@@ -1,7 +1,7 @@
 # ROADMAP — now / next / later
 
 > Ranked by one rule (NORTH_STAR §9): **what most moves read-through depth, generation ease, or
-> intuitiveness.** Snapshot date: **2026-07-08**. Now ≤ 2 items — WIP limit, finish before pulling.
+> intuitiveness.** Snapshot date: **2026-07-09**. Now ≤ 2 items — WIP limit, finish before pulling.
 
 ## 🎯 Next big milestone
 
@@ -17,12 +17,15 @@ Milestones after M1 (directional, not committed):
 
 ## Now (in-flight — finish these)
 
-1. **Exercise the agent loop end-to-end** (`docs/agent-improvement-remaining.md` — the
-   load-bearing gap): P0–P4 are unit-tested/parity-locked but *never run on a live book*. One
-   auto build, watching for objective re-derivation, auto-verify FAIL handling, beatsheet
-   repair, canonical state keys. Validates 9 commits before building §4a/§4b/§3a on top.
-2. **Structure Miner v1** (`docs/structure-miner.md`)
-   — 4th verify leg: mine prose for axes the plan missed; feeds the "locate the break" loop.
+1. **Fix the live-run defects** found by the 2026-07-08 loop exercise + build-all attempt
+   (`docs/agent-improvement-remaining.md` §v1–§v4). ~~§v2 no-proposal stall~~ and ~~§v3 wedged
+   auto-accept watcher~~ FIXED + deployed 2026-07-08. Remaining: **§v1** verify judge
+   over-scopes threads (alarm fatigue — partially defeats P2.3) and **§v4** 546
+   WORKER_RESOURCE_LIMIT strands renders + stuck `running` ai_calls rows. These are why "build
+   the whole book" can't run hands-free — the M1 path.
+
+**Structure Miner v1 shipped** (2026-07-08, via `dna/structure-miner` — merged 2026-07-09):
+R1/R2 graduated, moved to STATE.md. Now slot #2 is free — see Next below.
 
 ## Next (committed, not started — pull order proposed, to be ratified)
 

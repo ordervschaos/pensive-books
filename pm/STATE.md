@@ -1,6 +1,6 @@
 # STATE — what exists, and what status it's in
 
-> Snapshot date: **2026-07-08**. Update when something ships, parks, or dies.
+> Snapshot date: **2026-07-09**. Update when something ships, parks, or dies.
 > Deep detail lives in `docs/` and `apps/web/src/features/dna/FEATURE.md`; this is the map.
 
 ## The product at a glance
@@ -44,7 +44,7 @@ edit-reflex, not boredom). The bar: a full book, no edit-reflex.
 | Agent context model (anchors not fences; @-mention tray) | shipped | Whole book always visible |
 | Agent-curated prose (render brief + read-repair loop) | shipped | Stream still writes prose |
 | Agent sessions table (archived chats off jsonb) | shipped | Fixed slow "New chat" + Realtime amplification |
-| Agent improvement plan (dead-reckoning → sensing) | shipped (code) | Phase 0 → P4 all landed 2026-07-02 incl. threadSystem re-derivation; **⚠️ never exercised end-to-end on a live book** — see `docs/agent-improvement-remaining.md`; then §4a batch edits, §4b truncation repair, §3a transcript rows |
+| Agent improvement plan (dead-reckoning → sensing) | shipped (code) | P0→P4 landed 2026-07-02; exercised live 2026-07-08 (book 1229, build-all attempt): auto-verify/auto-accept/search/digest confirmed; §v2 (no-proposal stall) + §v3 (wedged auto-accept watcher) FIXED+deployed 2026-07-08; §v1 (verify judge over-scope) + §v4 (546 WORKER_RESOURCE_LIMIT strands renders + stuck `ai_calls`) OPEN — `docs/agent-improvement-remaining.md`; then §4a/§4b/§3a |
 
 ### Verify layer (reading the artifact back)
 
@@ -53,7 +53,7 @@ edit-reflex, not boredom). The bar: a full book, no edit-reflex.
 | Verify suite (LintConfig, brief-compile, synopsis read, proseLints, arc threads, cold read, decision journal) | shipped | 2026-07-06 build |
 | Vertical-fit lints (shape_unmapped, ending_feel_mismatch, …) | shipped | 2026-07-04 |
 | Book evaluation (editor's-read rubric, ~$0.33/read) | shipped | The cheap proxy for the human read-through |
-| Structure Miner (mine prose for missed axes, MDL gate) | next | docs/structure-miner.md written; script drafted; book 1229 = dev corpus |
+| Structure Miner (mine prose for missed axes, MDL gate) | shipped (R1–R2) | `controlling_metaphor` + `somatic_value_carrier` graduated → `metaphor_monotone`/`value_asserted` lints, both twins, parity-locked; `docs/structure-miner.md`, `scripts/structure-miner.mjs` |
 | Thread tracking (foreshadowing/open loops) | partial | Backbone shipped; UI remaining |
 
 ### Onboarding & import/export
@@ -61,7 +61,7 @@ edit-reflex, not boredom). The bar: a full book, no edit-reflex.
 | Project | Status | Notes |
 |---|---|---|
 | EPUB import Layer A (epub → DNA tree draft) | shipped | Prose locked as user-truth |
-| EPUB import Layer B (semantic ascent) | shipped | 2026-07-08 (`4330bfc`, dna-decompose); remaining: scene enrichment + act re-segmentation |
+| EPUB import Layer B (semantic ascent) | shipped | 2026-07-08 (`4330bfc` + `84fb407` durable-task promotion: book_decompositions row, self-chain, stopRun); remaining: scene enrichment + act re-segmentation |
 | Publish → marketing revalidation (DB trigger → pg_net) | blocked | REVALIDATE_SECRET env not yet set |
 | Sequel canon (book-2 constrained by book-1 packet) | shipped | O5 groundwork |
 

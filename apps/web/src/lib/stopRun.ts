@@ -34,9 +34,11 @@ const ACTIVE_STATUSES: Record<string, readonly string[]> = {
   book_revisions: ["planning", "building", "awaiting_review"],
   book_agent_runs: ["running", "awaiting_input"],
   revision_chats: ["thinking"],
+  // dna-decompose self-chain: direct cancel works — every link re-reads status before continuing.
+  book_decompositions: ["running"],
 };
 
-export type StoppableTable = "book_generations" | "book_evaluations" | "book_revisions" | "book_agent_runs" | "revision_chats";
+export type StoppableTable = "book_generations" | "book_evaluations" | "book_revisions" | "book_agent_runs" | "revision_chats" | "book_decompositions";
 
 /** True while a row is in a state a Stop button should appear for. */
 export function isStoppable(table: string, status: string | null | undefined): boolean {

@@ -70,6 +70,58 @@ describe("parseEpub — standard multi-file epub", () => {
   });
 });
 
+describe("parseEpub — Gutenberg-style front/back matter", () => {
+  it("drops boilerplate, TOC-as-prose, title pages, and the license; keeps the story", async () => {
+    const zip = new JSZip();
+    zip.file("META-INF/container.xml", CONTAINER);
+    zip.file("OEBPS/content.opf", `<?xml version='1.0' encoding='utf-8'?>
+<package version="3.0" unique-identifier="BookId" xmlns="http://www.idpf.org/2007/opf">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>Cobweb Castle</dc:title><dc:creator>J. S. Fletcher</dc:creator>
+    <dc:identifier id="BookId">urn:uuid:pg-test</dc:identifier>
+  </metadata>
+  <manifest>
+    <item id="pg" href="pg.xhtml" media-type="application/xhtml+xml"/>
+    <item id="tp" href="tp.xhtml" media-type="application/xhtml+xml"/>
+    <item id="c" href="contents.xhtml" media-type="application/xhtml+xml"/>
+    <item id="ch1" href="c1.xhtml" media-type="application/xhtml+xml"/>
+    <item id="lic" href="lic.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine><itemref idref="pg"/><itemref idref="tp"/><itemref idref="c"/><itemref idref="ch1"/><itemref idref="lic"/></spine>
+</package>`);
+    // note single-quoted XML declaration (happy-dom rejects it unless stripped) + curly apostrophe
+    zip.file("OEBPS/pg.xhtml", xhtml(`<p>* A Distributed Proofreaders Canada eBook *</p><p>This eBook is made available at no cost.</p><p>Original Transcriber’s Notes apply.</p>`));
+    zip.file("OEBPS/tp.xhtml", xhtml(`<p>COBWEB CASTLE</p><p>J. S. FLETCHER</p><p>First published by Alfred A. Knopf in 1928.</p>`));
+    zip.file("OEBPS/contents.xhtml", xhtml(`<h2>TABLE OF CONTENTS</h2>`));
+    zip.file("OEBPS/c1.xhtml", xhtml(`<h2>CHAPTER I THE LETTER FROM NICE</h2><p>Contents of the letter aside, the morning was calm and the post was late.</p>`));
+    zip.file("OEBPS/lic.xhtml", xhtml(`<h2>THE FULL PROJECT GUTENBERG™ LICENSE</h2><p>This eBook is for the use of anyone anywhere.</p>`));
+    const draft = await parseEpub(await zip.generateAsync({ type: "arraybuffer" }));
+    expect(draft.chapters.map((c) => c.title)).toEqual(["CHAPTER I THE LETTER FROM NICE"]);
+  });
+
+  it("drops a contents list rendered as prose, keeps real part dividers", async () => {
+    const zip = new JSZip();
+    zip.file("META-INF/container.xml", CONTAINER);
+    zip.file("OEBPS/content.opf", `<?xml version="1.0" encoding="UTF-8"?>
+<package version="3.0" unique-identifier="BookId" xmlns="http://www.idpf.org/2007/opf">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>Whale Book</dc:title><dc:identifier id="BookId">urn:uuid:t</dc:identifier>
+  </metadata>
+  <manifest>
+    <item id="a" href="a.xhtml" media-type="application/xhtml+xml"/>
+    <item id="b" href="b.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine><itemref idref="a"/><itemref idref="b"/></spine>
+</package>`);
+    // no CONTENTS marker — this exercises the list-shape rule (most lines are chapter labels)
+    zip.file("OEBPS/a.xhtml", xhtml(`<h2>By Herman Melville</h2><p>ETYMOLOGY.</p><p>CHAPTER 1. Loomings.</p><p>CHAPTER 2. The Carpet-Bag.</p><p>CHAPTER 3. The Spouter-Inn.</p><p>CHAPTER 4. The Counterpane.</p><p>CHAPTER 5. Breakfast.</p>`));
+    zip.file("OEBPS/b.xhtml", xhtml(`<h2>Part One</h2><h2>CHAPTER 1. Loomings.</h2><p>Call me Ishmael. Some years ago I went to sea.</p>`));
+    const draft = await parseEpub(await zip.generateAsync({ type: "arraybuffer" }));
+    // the contents-as-prose chapter is gone; the retitle-before-prose rule folds "Part One" into ch 1
+    expect(draft.chapters.map((c) => c.title)).toEqual(["CHAPTER 1. Loomings."]);
+  });
+});
+
 describe("parseEpub — round-trip through Pensive's own export", () => {
   it("recovers chapters and scenes from the single-file export shape", async () => {
     type Page = Parameters<typeof generateContentXhtml>[1][number];

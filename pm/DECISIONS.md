@@ -6,6 +6,14 @@
 
 ## Log
 
+### 2026-07-09 — Recovered a day of unmerged work (`dna/structure-miner`)
+Branch diverged from `main` 2026-07-08 same day `pm/` was created, carried out the live
+agent-loop exercise (found + fixed §v2/§v3, found §v1/§v4) and shipped Structure Miner
+R1/R2 — but was never merged, so `main`'s `pm/STATE.md`/`ROADMAP.md` kept describing both
+as not-started. Caught by routine `/pm` drift check. Why it matters: a branch with its own
+`pm/` edits can silently outrun `main`'s — check `git log --all` for stale branches with
+`pm/` commits during drift checks, not just `main`'s log.
+
 ### 2026-07-08 — PM knowledgebase created (this folder)
 Roadmap/state/GTM/decisions live in `pm/` as versioned markdown, separate from `docs/` design
 specs. Three-hats review model (owner/PM/builder). Replaces: state scattered across memories,

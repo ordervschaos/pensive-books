@@ -39,6 +39,7 @@ learning_*.md
 
 # DNA scratch data (book-specific JSON exports, never commit)
 scripts/.dna-*.json
+scripts/.dna-*.md
 
 # Prose-context experiment outputs (book-specific runs, never commit)
 scripts/.prose-ctx-exp/
