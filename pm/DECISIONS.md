@@ -6,6 +6,16 @@
 
 ## Log
 
+### 2026-07-09 — All work routes through the PM via a firehose + curated view
+Added `pm/WORKLOG.md` (append-only, one entry per task, **never read into an agent session** —
+write-only, zero context cost) as the raw catalogue, feeding the curated STATE/ROADMAP/DECISIONS.
+The `/wrap` command is the end-of-task chokepoint (catalogue → promote → stamp); a Stop hook
+(`.claude/hooks/pm-worklog.sh`) enforces it so cataloguing never relies on memory (nudges once per
+dirty, uncatalogued change-set, idempotent via a gitignored sentinel). Why it matters: the old
+rule "after any ship, update STATE" was discipline-only and STATE tracks *projects*, not *tasks* —
+there was no place to catalogue task-level work without bloating the curated files or context.
+This is event-sourcing: cheap appends to the log, a hand-curated projection above it.
+
 ### 2026-07-09 — Recovered a day of unmerged work (`dna/structure-miner`)
 Branch diverged from `main` 2026-07-08 same day `pm/` was created, carried out the live
 agent-loop exercise (found + fixed §v2/§v3, found §v1/§v4) and shipped Structure Miner

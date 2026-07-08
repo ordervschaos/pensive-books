@@ -41,5 +41,8 @@ learning_*.md
 scripts/.dna-*.json
 scripts/.dna-*.md
 
+# PM worklog Stop-hook sentinel (local state, not shared)
+.claude/.pm-wrap-state
+
 # Prose-context experiment outputs (book-specific runs, never commit)
 scripts/.prose-ctx-exp/

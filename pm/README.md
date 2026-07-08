@@ -13,6 +13,24 @@
 | [ROADMAP.md](ROADMAP.md) | What are we doing now / next / later? What's the milestone? | When priorities change (weekly-ish review) |
 | [GTM.md](GTM.md) | How does this reach users and make money? | When strategy thinking advances |
 | [DECISIONS.md](DECISIONS.md) | Why did we choose X? | Append-only, at decision time |
+| [WORKLOG.md](WORKLOG.md) | What work was actually done, task by task? | Append-only, at end of every task (via `/wrap`) |
+
+## Two layers: firehose vs. curated view
+
+The files above split into two layers — the same shape as an event log feeding a materialized view:
+
+- **WORKLOG.md is the firehose** — one entry per *task*, append-only, newest first. It is the
+  raw catalogue of everything done. **It is never read into an agent session — write-only** — so
+  it grows forever at zero context cost. Don't rank it, summarize it, or load it.
+- **STATE / ROADMAP / DECISIONS are the curated view** — one row per *project*, ranked and
+  pruned, read at session start. Only *significant* worklog entries (`ship`/`decision`/`park`)
+  get **promoted** up into them.
+
+**The `/wrap` command is the chokepoint that routes all work through the PM.** Run it at the end
+of a task: it always appends the WORKLOG entry, then promotes ships/decisions/parks to the curated
+files, then stamps the change-set. A **Stop hook** (`.claude/hooks/pm-worklog.sh`) enforces it —
+if a session ends with a dirty tree that hasn't been catalogued, it nudges once (idempotent via a
+gitignored sentinel; no loops). This is why cataloguing doesn't rely on anyone remembering.
 
 Full architectural decision records live in `docs/adr/` — DECISIONS.md is the index + the
 lighter-weight log for product/strategy calls that don't need a full ADR.
