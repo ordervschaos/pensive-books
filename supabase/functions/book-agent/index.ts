@@ -42,6 +42,10 @@ const AUTO_MAX_TURNS = 50;     // autonomous threads iterate change-by-change, s
 // real defense is keeping turns short (effort: medium below), not this timer.
 const CALL_TIMEOUT_MS = 140_000;
 const ACK_TIMEOUT_MS = 15_000; // fast chat acknowledgement; the real tool turn follows
+// Sentinel prefixing the one-shot "act or finish" prod injected when an AUTONOMOUS turn ends with
+// prose and no tool call. Its presence in the previous user message means the model stalled twice
+// in a row — then the run goes idle honestly instead of prodding forever.
+const AUTO_CONTINUE_SENTINEL = "[auto-continue]";
 
 // ── Row shapes ──
 // 'decision' = an auto-mode creative fork the agent journaled via ask_author (question in `label`,
@@ -588,6 +592,25 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
     // ── No tool call at all ──
     // A normal conversational reply (the agent answered without needing a tool): the assistant's text
     // is already captured as a 'note' step, so the turn is complete → go idle.
+    // EXCEPT in autonomous mode, where a bare narration ("once it applies, I'll render scene 9…") is a
+    // stall, not a conclusion — the run would sit idle looking finished while work remains. Prod once:
+    // act or call finish. The sentinel bounds it — a second consecutive bare turn goes idle for real.
+    if (auto) {
+      const prevUser = transcript[transcript.length - 2] as { role?: string; content?: unknown } | undefined;
+      const wasNudged = prevUser?.role === "user" && JSON.stringify(prevUser.content ?? "").includes(AUTO_CONTINUE_SENTINEL);
+      if (!wasNudged) {
+        transcript.push({
+          role: "user",
+          content: [{
+            type: "text",
+            text: `${AUTO_CONTINUE_SENTINEL} You ended your turn with prose and no action — in autonomous mode that stalls the build. If the request is fully handled, call finish with a one-line summary. Otherwise take the next concrete step NOW (propose_node_ops / propose_prose_render / propose_expansion).`,
+          }],
+        });
+        await service.from("book_agent_runs").update({ transcript, steps }).eq("id", runId);
+        if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("book-agent", { runId }));
+        return;
+      }
+    }
     await service.from("book_agent_runs").update({ status: "idle", transcript, steps }).eq("id", runId);
   } catch (e) {
     const billing = isBillingError(e);

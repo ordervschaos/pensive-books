@@ -44,7 +44,7 @@ edit-reflex, not boredom). The bar: a full book, no edit-reflex.
 | Agent context model (anchors not fences; @-mention tray) | shipped | Whole book always visible |
 | Agent-curated prose (render brief + read-repair loop) | shipped | Stream still writes prose |
 | Agent sessions table (archived chats off jsonb) | shipped | Fixed slow "New chat" + Realtime amplification |
-| Agent improvement plan (dead-reckoning → sensing) | shipped (code) | Phase 0 → P4 all landed 2026-07-02 incl. threadSystem re-derivation; **⚠️ never exercised end-to-end on a live book** — see `docs/agent-improvement-remaining.md`; then §4a batch edits, §4b truncation repair, §3a transcript rows |
+| Agent improvement plan (dead-reckoning → sensing) | shipped | P0→P4 landed 2026-07-02; **exercised live 2026-07-08** (book 1229): auto-verify/auto-accept/search/digest confirmed; 2 defects found (§v1 verify over-scope, §v2 no-proposal stall) — `docs/agent-improvement-remaining.md`; then §4a/§4b/§3a |
 
 ### Verify layer (reading the artifact back)
 

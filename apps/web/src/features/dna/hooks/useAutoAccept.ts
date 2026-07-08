@@ -57,9 +57,14 @@ export function useAutoAccept({ enabled, bookId, row, nodes, refetch }: {
       const all = (row.proposals ?? []) as AgentProposal[];
       key = p.id;
       run = async () => {
-        try { await applyAgentProposal(bookId, row.id, p, all, nodes); }
+        // A render/engine apply streams in the browser and can hang indefinitely on a dead worker.
+        // An un-settled apply never releases `busy`, which kills the watcher for the life of the
+        // page — so abort on a deadline; the apply promise must ALWAYS settle.
+        const ctrl = new AbortController();
+        const deadline = window.setTimeout(() => ctrl.abort(), p.layer === "prose-render" ? 6 * 60_000 : 3 * 60_000);
+        try { await applyAgentProposal(bookId, row.id, p, all, nodes, ctrl.signal); }
         catch { await discardAgentProposal(row.id, p.id, all).catch(() => {}); }
-        finally { await continueAgent(row.id).catch(() => {}); }
+        finally { window.clearTimeout(deadline); await continueAgent(row.id).catch(() => {}); }
       };
     } else if (row.status === "idle" && optionNode) {
       // Staged options the author would pick among: commit the first, then resume the run (the edge case
