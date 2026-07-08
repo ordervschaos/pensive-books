@@ -72,9 +72,10 @@ deployed fn). **Every edge change must also land here** or features break only i
 stop chokepoint), `@/hooks/useLatestTaskRow`, `@/hooks/use-toast`,
 `@/components/book/shared/*` (studioUi, useChatScroll), `@/components/ui/*`.
 
-**Edge** (`_shared/`): `llm.ts` (single AI-call chokepoint → `ai_calls` log,
-used by ~19 fns), `task.ts` (durable tasks, ~13), `access.ts` (auth, ~14),
-`brief.ts` (~12), `cors`, `model-config`, `json`, `self-chain`.
+**Edge** (`_shared/`): `llm.ts` (single AI-call chokepoint → `ai_calls` log),
+`task.ts` (durable tasks), `brief.ts`, `cors`, `model-config`, `json`,
+`self-chain`. (Live fns authenticate inline via `createClient` + `getUser()`;
+the old `access.ts` auth helper was retired with the pre-pivot fn cluster.)
 
 These are a deliberate **shared kernel**. DNA's edge fns intentionally route
 through the single AI/task/auth chokepoints — duplicating them into the feature

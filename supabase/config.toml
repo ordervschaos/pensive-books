@@ -337,12 +337,6 @@ verify_jwt = false
 # (pg_net), not a logged-in user, so it can't carry a user JWT. They authenticate the continue path
 # with the x-chain secret (isChainCall) and the kick-off path with the user's JWT via getUser(), so
 # gateway JWT verification is turned off here — same pattern as notify-task-done.
-[functions.generate-book]
-verify_jwt = false
-
-[functions.build-revision]
-verify_jwt = false
-
 [functions.book-agent]
 verify_jwt = false
 
