@@ -106,7 +106,6 @@ export default function DnaTreePage() {
   const timelineKey = `dna-timeline-open:${bookId}`;
   const [timelineOpen, setTimelineOpen] = useState<boolean>(() => localStorage.getItem(timelineKey) === "1");
   useEffect(() => { localStorage.setItem(timelineKey, timelineOpen ? "1" : "0"); }, [timelineKey, timelineOpen]);
-  const [healthLens, setHealthLens] = useState(false); // #6 — dim clean nodes; surface only the broken ones
   const [contextId, setContextId] = useState<string | null>(null); // #7 — the node whose ref-neighborhood is lit
   // #8 — the search panel: left-docked, persists open/closed per book like the rail/timeline do.
   const searchKey = `dna-search-open:${bookId}`;
@@ -613,7 +612,7 @@ export default function DnaTreePage() {
       </div>
 
       {/* Below-tabs action bar — health (apply everywhere) plus whatever's specific to the
-          open tab (timeline/history/lens + expand/collapse only mean anything on the tree tab). */}
+          open tab (timeline/history + expand/collapse only mean anything on the tree tab). */}
       <div style={{ padding: "8px 16px", borderBottom: `1px solid ${T.borderSoft}`, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
         {/* #4 — DNA health: a glanceable status pip that deep-links into the Analytics tab (the detail
             lives there now — summary-in-chrome, detail-in-pane). */}
@@ -630,10 +629,6 @@ export default function DnaTreePage() {
           <div style={{ display: "flex", gap: 3 }}>
             <QuickToggle active={timelineOpen} accent={T.accent} icon="▦" label="Timeline" onClick={() => setTimelineOpen((v) => !v)} />
             <QuickToggle active={historyOpen} accent={T.accent} icon="⟲" label="History" onClick={() => setHistoryOpen((v) => !v)} />
-            {(health.errors + health.warns) > 0 && (
-              <QuickToggle active={healthLens} accent={T.warn} icon="◐" label="Lens"
-                onClick={() => { const on = !healthLens; setHealthLens(on); if (on) revealNodes(health.issues.map((i) => i.nodeId).filter((x): x is string => !!x)); }} />
-            )}
           </div>
         )}
         {/* Controls */}
@@ -758,7 +753,7 @@ export default function DnaTreePage() {
         {roots.map((root) => (
           <Subtree key={root.id} node={root} index={index} nodes={nodes} depth={0}
             collapsedSet={collapsedSet} openSet={openSet}
-            h={{ onToggle: toggleNode, onToggleDetail: toggleDetail, onAdd: addNode, onDelete: removeNode, onJump: jumpTo, dragId, onDragStart: setDragId, onDragEnd: () => setDragId(null), onDrop: onDropReorder, backlinks, flashId, proposal: proposalView, issuesByNode, healthLens, contextId, ctxConsumes, ctxConsumedBy, onContextFocus: focusContext, seq, searchPattern, proseOpenSet, onToggleProse: toggleProse, onDiscardStory: discardStory, onAttachNode: attachNode, onOpenProseReader: setProseReaderSceneId, onOpenDetails: setDetailsNodeId }} />
+            h={{ onToggle: toggleNode, onToggleDetail: toggleDetail, onAdd: addNode, onDelete: removeNode, onJump: jumpTo, dragId, onDragStart: setDragId, onDragEnd: () => setDragId(null), onDrop: onDropReorder, backlinks, flashId, proposal: proposalView, issuesByNode, contextId, ctxConsumes, ctxConsumedBy, onContextFocus: focusContext, seq, searchPattern, proseOpenSet, onToggleProse: toggleProse, onDiscardStory: discardStory, onAttachNode: attachNode, onOpenProseReader: setProseReaderSceneId, onOpenDetails: setDetailsNodeId }} />
         ))}
       </div>
       </>)}

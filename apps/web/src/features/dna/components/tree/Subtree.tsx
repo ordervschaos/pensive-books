@@ -150,7 +150,6 @@ export interface TreeView {
   flashId: string | null;               // #1 — the just-jumped-to node
   proposal: ProposalView | null;        // proposed ops to overlay
   issuesByNode: Map<string, DnaIssue[]>; // #6 — health lints grouped by the node they attach to
-  healthLens: boolean;                  // #6 — dim clean nodes so only the broken ones (+ groups) pop
   contextId: string | null;             // #7 — the focused node (null = no context active)
   ctxConsumes: Set<string>;             // #7 — ids the focused node REFERENCES (built from)
   ctxConsumedBy: Set<string>;           // #7 — ids that reference the focused node (built on it)
@@ -321,15 +320,15 @@ export function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }:
   // #1 proposal mark for THIS node.
   const editPatch = h.proposal?.edits.get(node.id);
   const mark = h.proposal ? (h.proposal.deletes.has(node.id) ? "delete" : editPatch ? "edit" : undefined) : undefined;
-  // #6 health lens: this node's lints. #7 context-highlight: this node's role in the focused neighborhood.
+  // #6 this node's lints (row badge). #7 context-highlight: this node's role in the focused neighborhood.
   const issues = h.issuesByNode.get(node.id);
   const ctxActive = h.contextId !== null;
   const ctx = !ctxActive ? undefined
     : node.id === h.contextId ? "focus"
       : h.ctxConsumes.has(node.id) ? "consumes"
         : h.ctxConsumedBy.has(node.id) ? "consumedBy" : undefined;
-  // Dim when: health lens on + clean, OR context active + not in the neighborhood.
-  const dimmed = (h.healthLens && !issues?.length) || (ctxActive && !ctx);
+  // Dim when: context active + not in the neighborhood.
+  const dimmed = ctxActive && !ctx;
 
   // Stale actions — accept/discard for any stale node (staleActions.ts is the one implementation,
   // shared with the FocusPanel).
