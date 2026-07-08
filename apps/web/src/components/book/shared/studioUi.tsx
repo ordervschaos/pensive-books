@@ -1,48 +1,13 @@
 // studioUi — the small shared primitives the Navigator and Stage both compose: resolution pips, the
 // step dot, and the Stage's head / hero / gate chrome. Pure presentation, Paper-DS tokens only.
 import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from "react";
-import { AlertTriangle, ArrowRight, Check, ChevronDown, ChevronUp, Loader2, Lock, Plus, Sparkles, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, ChevronDown, ChevronUp, Loader2, Lock, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { CellState } from "@/lib/planGraph";
-import { emitGenerate, type RevisionLayer } from "@/lib/revisionChat";
 
 // The four visual states a step dot can show. Inlined here (was in the deleted studio/studioModel)
 // so this shared primitive carries no dependency on the old Studio surface.
 export type DotState = "done" | "active" | "ready" | "locked";
-
-// The center's empty-state CTA: a button that asks the always-on rail chat to GENERATE this layer.
-// The bulk/generate action lives in the chat (the rail watches revision_chats over Realtime); this is
-// just the convenience trigger from an empty center, so the author isn't forced to find the chat. The
-// chat then shows the message → thinking → a reviewable proposal.
-export function GenerateInChat({ bookId, layer, label, hint }: {
-  bookId: number; layer: RevisionLayer; label: string; hint?: string;
-}) {
-  const [sending, setSending] = useState(false);
-  // Ring the rail (the mounted ReviseChat runs its own send → optimistic echo + errors there). The
-  // brief local flag just confirms the click registered before the rail visibly takes over.
-  const fire = () => {
-    if (sending) return;
-    setSending(true);
-    emitGenerate(bookId, layer);
-    setTimeout(() => setSending(false), 1200);
-  };
-  return (
-    <div className="space-y-2.5">
-      <button
-        type="button"
-        onClick={() => void fire()}
-        disabled={sending}
-        className="pv-serif inline-flex items-center gap-2 rounded-full bg-foreground px-5 py-2.5 text-[15px] text-background transition-colors hover:bg-foreground/85 disabled:opacity-60"
-      >
-        {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-        {sending ? "Asking the editor…" : label}
-      </button>
-      <p className="pv-serif text-[13px] italic leading-snug text-[hsl(var(--pv-text-faint))]">
-        {hint ?? "Drafts it in the editor on the right — review it there before anything's applied."}
-      </p>
-    </div>
-  );
-}
 
 // Propose button + optional nudge chips + freetext note, all coupled as one widget (C-Directions
 // pattern). Chips accumulate on the button label ("Propose more · 2 notes"); the "+ note" chip

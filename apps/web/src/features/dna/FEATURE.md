@@ -52,7 +52,6 @@ Routes are registered in `apps/web/src/App.tsx`.
 
 Invoked by the web layer above:
 `dna-expand` · `dna-chat` · `book-agent` · `read-meters` · `read-facts` · `read-shape` · `read-synopsis` · `read-confusion` · `dna-decompose` (imported-draft semantic ascent; NOT bridge-mirrored — dev invokes the deployed fn directly)
-(siblings `beats-agent`, `revise-node` also belong to the feature.)
 
 The committed schema artifact `supabase/functions/_shared/dna-schema.json` is the
 edge/bridge mirror of `lib/dnaSchema.ts`; the lock test
