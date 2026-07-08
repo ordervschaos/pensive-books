@@ -1,7 +1,10 @@
-// dnaDecompose tests — the pure half of the semantic ascent, run over a tree built by the actual
-// import path (Layer A), so the two layers are tested against each other.
+// dnaDecompose tests — the pure half of the semantic ascent (now living in the edge fn's core
+// module, imported directly like novelDna.parity.test.ts imports the engine twin), run over a tree
+// built by the actual import path (Layer A), so the two layers are tested against each other.
 import { describe, it, expect } from "vitest";
-import { chaptersOf, entityOps, systemsOps, topOps, type EntitiesRead, type SystemsRead } from "./dnaDecompose";
+import {
+  chaptersOf, entityOps, gameTwinOps, systemsOps, topOps, type EntitiesRead, type SystemsRead,
+} from "../../../../../../supabase/functions/_shared/dna-decompose-core.ts";
 import { draftToMigrationPages, lockImportedProse } from "./importEpub";
 import { buildDnaFromStack } from "./migrateToDna";
 import type { ImportedDraft } from "@/lib/epubImport";
@@ -138,5 +141,27 @@ describe("systemsOps", () => {
   it("does not link an unresolved game (no outcome) to any beat", () => {
     const { ops: ops2 } = systemsOps(withCast, { games: [{ name: "Open contest", win_condition: "w", lose_condition: "l", resolved_chapter: 1 }] }, beatIds);
     expect(ops2.filter((o) => o.op === "edit")).toHaveLength(0);
+  });
+
+  it("is idempotent: a re-run over a tree that already has the systems adds nothing", () => {
+    const applied = [...withCast];
+    for (const o of ops) {
+      if (o.op === "add") applied.push({ ...withCast[0], id: o.id, kind: o.kind, parent_id: o.parentId, content: o.content, level: 2, position: 0 });
+    }
+    const { ops: again } = systemsOps(applied, read, beatIds);
+    expect(again.filter((o) => o.op === "add")).toHaveLength(0);
+  });
+});
+
+describe("gameTwinOps", () => {
+  it("mints the score meter + resolution thread once per game", () => {
+    const pillar = tree.find((n) => n.kind === "pillar")!;
+    const game = { ...tree[0], id: "n_game01", kind: "game" as const, parent_id: pillar.id, level: 2, position: 0, content: { name: "The wager", win_condition: "win", lose_condition: "lose" } };
+    const withGame = [...tree, game];
+    const twins = gameTwinOps(withGame);
+    expect(twins.map((t) => (t as { kind: string }).kind).sort()).toEqual(["meter", "thread"]);
+    // apply and re-run → nothing new
+    const applied = [...withGame, ...twins.map((t, i) => ({ ...game, id: (t as { id: string }).id, kind: (t as { kind: "meter" | "thread" }).kind, content: t.content, position: i + 1 }))];
+    expect(gameTwinOps(applied)).toHaveLength(0);
   });
 });

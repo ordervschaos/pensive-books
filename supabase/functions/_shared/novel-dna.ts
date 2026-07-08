@@ -215,6 +215,25 @@ export interface DnaNode {
 // ── Ids ───────────────────────────────────────────────────────────────────────
 export const newId = () => `n_${Math.random().toString(36).slice(2, 8)}${Date.now().toString(36).slice(-3)}`;
 
+/** Game-twin derivation (mirror of web novelDna.gameTwins — keep in lockstep): every game carries a
+ *  `game_score` meter (its plottable trajectory) and a resolution thread (the promise it pays off),
+ *  both `owner`-keyed to the game for idempotent reconciliation. */
+export function gameTwins(game: DnaNode): { meter: MeterContent; thread: ThreadContent } {
+  const g = game.content as GameContent;
+  const name = (g.name ?? "").trim() || "the contest";
+  return {
+    meter: {
+      name: `${name} — score`, kind: "game_score", owner: game.id,
+      poles: { low: g.lose_condition, high: g.win_condition },
+    },
+    thread: {
+      name: `${name} — resolution`, kind: "setup_payoff", owner: game.id,
+      promise: g.stake ? `${name} is joined; ${g.stake} is on the line.` : `${name} is joined and must be decided.`,
+      payoff: g.win_condition ? `${name} resolves: ${g.win_condition} — or it is lost.` : `${name} resolves, won or lost.`,
+    },
+  };
+}
+
 // ── Tree helpers ──────────────────────────────────────────────────────────────
 export const byId = (nodes: DnaNode[]): Map<string, DnaNode> => new Map(nodes.map((n) => [n.id, n]));
 /** The single pillar (the hub that parents the whole entity branch, schema §4). */

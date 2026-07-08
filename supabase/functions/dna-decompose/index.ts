@@ -1,242 +1,409 @@
-// dna-decompose — Layer B of the epub import: the SEMANTIC ASCENT. Given an imported manuscript
-// (prose is ground truth, plan rungs empty), infer the plan bottom-up. Three stateless steps, each
-// one prompt→JSON call (read-synopsis shape — the client owns the tree and applies results as node
-// ops through the fail-closed validateOps boundary):
+// dna-decompose — the imported-draft SEMANTIC ASCENT as a DURABLE, self-chaining server run.
+// Given a prose-bearing tree (epub import: locked scenes, empty plan rungs), infer the plan
+// bottom-up. The run is server-owned (book_decompositions row = single source of truth): closing or
+// refreshing the tab loses nothing; DecomposeButton is a Realtime projection of the row; stopRun
+// sets status='cancelled' and the next link exits.
 //
-//   step "chapter"  { chapter: { title, position, total, text }, prev? }
-//                   → { beat: { summary, connector?, polarity? }, digest }
-//   step "top"      { digests: [{ title, digest }] }
-//                   → { seed: { logline }, premise: {...}, pillar: {...} }
-//   step "entities" { digests: [{ title, digest }], sample }
-//                   → { characters, relationships (by NAME — client resolves to ids), locations, voice }
-//   step "systems"  { digests: [{ title, digest }] }
-//                   → { world_facts, threads, games, tentpoles, meters } — story systems, each with
-//                       1-based CHAPTER NUMBERS (setup/payoff/realized/resolved) the client turns into
-//                       beat-level links (threads/realizes/resolves), so the obligation ledger and
-//                       vertical lints work on an imported book
+//   start:  POST { bookId }  (user JWT)  → dedupe/insert row → do the first link → { id }
+//   chain:  POST { id, chain: true }  (x-chain secret, verify_jwt=false) → one link → reinvoke
 //
-// Every inference is ABDUCTION (the plan that best explains the text) — the client writes it as
-// source:"ai" so the author can freely correct it. Field keys come from the committed schema
-// artifact (the same SSOT dna-chat/book-agent prompt from), so keys can't drift from dnaSchema.ts.
+// Links (each one invocation, well under the ~150s worker cap):
+//   chapters — read up to BATCH chapters IN PARALLEL (independent: connector context is the previous
+//              chapter's prose tail, not a digest), write beat rows + digest slots
+//   top      — digests → seed logline / premise / pillar
+//   entities — digests + opening sample → cast, relationships, locations, voice
+//   systems  — digests → world facts, threads, games, tentpoles, meters + beat-level links; game twins
+//   seal     — re-stamp provenance across the tree (plan was derived FROM the prose — declare in sync)
+//
+// Pure logic (chapter assembly, op builders, rails targets) lives in _shared/dna-decompose-core.ts,
+// which the web test suite imports directly — no client/edge mirror to drift.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { callLLM, textFromLLM, type CallMeta } from "../_shared/llm.ts";
 import { getActiveModels } from "../_shared/model-config.ts";
 import { extractJsonBlock } from "../_shared/json.ts";
+import { serviceClient } from "../_shared/task.ts";
+import { isChainCall, reinvoke } from "../_shared/self-chain.ts";
 import dnaSchema from "../_shared/dna-schema.json" with { type: "json" };
+import {
+  byId, deepMergeContent, stampInput, stampProse,
+  type DnaNode, type NodeContent, type NodeKind,
+} from "../_shared/novel-dna.ts";
+import {
+  chaptersOf, entityOps, gameTwinOps, systemsOps, topOps,
+  type ChapterRead, type CoreOp, type EntitiesRead, type SystemsRead, type TopRead,
+} from "../_shared/dna-decompose-core.ts";
 
-interface DigestRow { title?: string; digest?: string }
+const FN = "dna-decompose";
+const BATCH = 6; // parallel chapter reads per link — one batch ≈ one slow call, safely under the cap
 
+interface RunRow {
+  id: number; book_id: number; status: string; phase: string;
+  done: number; total: number; digests: ({ title: string; digest: string } | null)[]; skipped: string[];
+  attempts: Record<string, number>; // retry counts per chapter index / fold phase (bounded at 2)
+}
+
+// ── LLM plumbing (same rails as the original stateless steps) ────────────────────────────────────
 const clamp = (v: unknown, max: number): string | undefined =>
   typeof v === "string" && v.trim() ? v.trim().slice(0, max) : undefined;
 const oneOf = (v: unknown, opts: string[]): string | undefined =>
   typeof v === "string" && opts.includes(v) ? v : undefined;
+const num = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) ? Math.round(v) : undefined);
 const obj = (v: unknown): Record<string, unknown> =>
   v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 const arr = (v: unknown, max: number): Record<string, unknown>[] =>
   (Array.isArray(v) ? v : []).slice(0, max).map(obj);
-
-// Field-key guide for a set of kinds, straight from the schema artifact (SSOT).
 const guideFor = (...kinds: string[]): string =>
   dnaSchema.promptGuide.split("\n").filter((l) => kinds.some((k) => l.startsWith(`- ${k} `))).join("\n");
+const digestMenu = (digests: ({ title?: string; digest?: string } | null)[]): string =>
+  digests.map((d, i) => `Chapter ${i + 1}${d?.title ? ` "${d.title}"` : ""}:\n${d?.digest ?? "(unavailable)"}`).join("\n\n");
 
-const digestMenu = (digests: DigestRow[]): string =>
-  digests.map((d, i) => `Chapter ${i + 1}${d.title ? ` "${d.title}"` : ""}:\n${d.digest ?? ""}`).join("\n\n");
+async function ask(bookId: number, system: string, prompt: string, max_tokens: number, effort: "low" | "medium", timeoutMs = 140_000): Promise<Record<string, unknown>> {
+  const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
+  if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
+  const { high: model } = await getActiveModels();
+  const meta: CallMeta = { fn: FN, bookId, taskTable: "book_decompositions", taskId: bookId };
+  const data = await callLLM(apiKey, {
+    model, max_tokens, thinking: { type: "adaptive" }, output_config: { effort },
+    system: [{ type: "text", text: system }],
+    messages: [{ role: "user", content: prompt }],
+  }, meta, { signal: AbortSignal.timeout(timeoutMs) });
+  return JSON.parse(extractJsonBlock(textFromLLM(data).trim())) as Record<string, unknown>;
+}
 
-const num = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) ? Math.round(v) : undefined);
+// ── The four LLM reads (prompt + rails, unchanged from the stateless version) ────────────────────
+async function chapterRead(bookId: number, bookLine: string, ch: { title: string; text: string }, position: number, total: number, prevTail?: string): Promise<ChapterRead> {
+  const parsed = await ask(bookId,
+    "You are a story analyst decomposing an EXISTING manuscript into its structural plan. The prose is " +
+      "ground truth — describe what IS on the page, never what a better version would do.",
+    `Novel: ${bookLine}. Chapter ${position} of ${total}${ch.title ? ` — "${ch.title}"` : ""}.\n\n` +
+      (prevTail ? `END OF THE PREVIOUS CHAPTER (for judging how this one connects):\n…${prevTail}\n\n` : "") +
+      `CHAPTER PROSE:\n${ch.text.slice(0, 60_000)}\n\n` +
+      `Return ONLY this JSON (no fences):\n{\n` +
+      `  "beat": {\n` +
+      `    "summary": "<1-2 sentences: what happens as a story TURN (who acts, what changes)>",\n` +
+      `    "connector": "<therefore|but — how this chapter follows from the previous one (causal = therefore, reversal = but). OMIT for chapter 1>",\n` +
+      `    "polarity": "<up|down — does the protagonist's situation end better or worse than it began>"\n` +
+      `  },\n` +
+      `  "digest": "<3-5 sentences: events, reveals, relationship shifts, world rules established — enough to reconstruct the plot from digests alone>"\n}`,
+    1_200, "low", 110_000);
+  const beat = obj(parsed.beat);
+  return {
+    beat: {
+      summary: clamp(beat.summary, 600),
+      connector: oneOf(beat.connector, ["therefore", "but"]),
+      polarity: oneOf(beat.polarity, ["up", "down"]),
+    },
+    digest: clamp(parsed.digest, 1_500) ?? "",
+  };
+}
 
+async function topRead(bookId: number, bookLine: string, digests: RunRow["digests"]): Promise<TopRead> {
+  const parsed = await ask(bookId,
+    "You are a story analyst who has read a whole manuscript (as chapter digests). Distill its top-level " +
+      "plan. Describe the book that EXISTS, not an improved one.\n\nCONTENT FIELD SCHEMAS:\n" +
+      guideFor("seed", "premise", "pillar"),
+    `Novel: ${bookLine}.\n\nCHAPTER DIGESTS (reading order):\n${digestMenu(digests)}\n\n` +
+      `Return ONLY this JSON (no fences):\n{\n` +
+      `  "seed": { "logline": "<one sentence: protagonist + inciting incident + goal + obstacle + stakes>" },\n` +
+      `  "premise": { "dramatic_question": "<the central question the book lives inside>", "shape": { "name": "<the story shape, free text>", "movements": ["<3-6 movement labels>"], "ending_feel": "<up|down|bittersweet|ambivalent>" } },\n` +
+      `  "pillar": { "controlling_idea": "<the thesis the ending argues>", "ending": "<what concretely happens at the end>" }\n}`,
+    2_500, "medium");
+  const premise = obj(parsed.premise);
+  const shape = obj(premise.shape);
+  const pillar = obj(parsed.pillar);
+  return {
+    seed: { logline: clamp(obj(parsed.seed).logline, 600) },
+    premise: {
+      dramatic_question: clamp(premise.dramatic_question, 600),
+      shape: {
+        name: clamp(shape.name, 120),
+        movements: (Array.isArray(shape.movements) ? shape.movements : []).map((m) => clamp(m, 200)).filter((x): x is string => !!x).slice(0, 8),
+        ending_feel: oneOf(shape.ending_feel, ["up", "down", "bittersweet", "ambivalent"]),
+      },
+    },
+    pillar: { controlling_idea: clamp(pillar.controlling_idea, 800), ending: clamp(pillar.ending, 800) },
+  };
+}
+
+async function entitiesRead(bookId: number, bookLine: string, digests: RunRow["digests"], sample: string): Promise<EntitiesRead> {
+  const parsed = await ask(bookId,
+    "You are a story analyst extracting the entity registry from a manuscript (chapter digests + an " +
+      "opening prose sample). Extract only what the TEXT establishes — no invention. Relationships " +
+      "reference characters by exact NAME from your own characters list.\n\nCONTENT FIELD SCHEMAS:\n" +
+      guideFor("character", "relationship", "location", "voice_profile"),
+    `Novel: ${bookLine}.\n\nCHAPTER DIGESTS (reading order):\n${digestMenu(digests)}\n\n` +
+      (sample ? `OPENING PROSE SAMPLE (for voice):\n${sample}\n\n` : "") +
+      `Return ONLY this JSON (no fences):\n{\n` +
+      `  "characters": [{ "name", "role", "want", "need", "wound", "tag" }],  // named cast that matters, max 12\n` +
+      `  "relationships": [{ "a": "<character name>", "b": "<character name>", "bond", "charge" }],  // max 10\n` +
+      `  "locations": [{ "name", "summary", "mood", "sight", "sound", "smell" }],  // recurring places only, max 8; sensory fields only where the text gives them\n` +
+      `  "voice": { "pov", "tense", "style", "constraints": [] }  // the prose voice observed in the sample\n}`,
+    6_000, "medium");
+  const voice = obj(parsed.voice);
+  return {
+    characters: arr(parsed.characters, 12).map((c) => ({
+      name: clamp(c.name, 80), role: clamp(c.role, 30), want: clamp(c.want, 400),
+      need: clamp(c.need, 400), wound: clamp(c.wound, 400), tag: clamp(c.tag, 200),
+    })).filter((c) => c.name),
+    relationships: arr(parsed.relationships, 10).map((r) => ({
+      a: clamp(r.a, 80), b: clamp(r.b, 80), bond: clamp(r.bond, 300), charge: clamp(r.charge, 300),
+    })).filter((r) => r.a && r.b && r.bond),
+    locations: arr(parsed.locations, 8).map((l) => ({
+      name: clamp(l.name, 80), summary: clamp(l.summary, 400), mood: clamp(l.mood, 200),
+      sight: clamp(l.sight, 200), sound: clamp(l.sound, 200), smell: clamp(l.smell, 200),
+    })).filter((l) => l.name),
+    voice: {
+      pov: oneOf(voice.pov, ["first-person", "third-person-limited", "third-person-omniscient", "second-person"]),
+      tense: oneOf(voice.tense, ["past", "present"]),
+      style: clamp(voice.style, 600),
+      constraints: (Array.isArray(voice.constraints) ? voice.constraints : []).map((c) => clamp(c, 200)).filter((x): x is string => !!x).slice(0, 8),
+    },
+  };
+}
+
+async function systemsRead(bookId: number, bookLine: string, digests: RunRow["digests"]): Promise<SystemsRead> {
+  const parsed = await ask(bookId,
+    "You are a story analyst extracting the STORY SYSTEMS from a manuscript (chapter digests). Extract " +
+      "only what the TEXT establishes — no invention. Reference chapters by their NUMBER as listed. " +
+      "Games reference players by character NAME and governing rules by world-fact NAME from your own " +
+      "lists. Do NOT create a thread for a game's outcome (games auto-carry a resolution thread) and do " +
+      "NOT create game_score meters (auto-derived).\n\nCONTENT FIELD SCHEMAS:\n" +
+      guideFor("world_fact", "thread", "game", "tentpole", "meter"),
+    `Novel: ${bookLine}.\n\nCHAPTER DIGESTS (reading order):\n${digestMenu(digests)}\n\n` +
+      `Return ONLY this JSON (no fences):\n{\n` +
+      `  "world_facts": [{ "name", "rule", "mechanism", "category" }],  // rules the story world runs on, max 14; [] for mundane settings\n` +
+      `  "threads": [{ "name", "kind", "promise", "payoff", "setup_chapter": <n>, "payoff_chapter": <n or omit if unpaid> }],  // promises to the reader (mystery|foreshadow|setup_payoff|arc), max 10\n` +
+      `  "games": [{ "name", "players": ["<character name>"], "win_condition", "lose_condition", "stake", "governing_rules": ["<world fact name>"], "outcome": "<won|lost, omit if undecided>", "resolved_chapter": <n> }],  // explicit contests with win/lose conditions, max 6; [] if none\n` +
+      `  "tentpoles": [{ "summary", "realized_chapter": <n> }],  // the big set-piece moments the book builds to, max 8\n` +
+      `  "meters": [{ "name", "kind", "poles": { "low", "high" }, "scale": { "min": 0, "max": 10 } }]  // 1-4 numeric axes this book visibly runs on (tension|heat|comedy|affect|relationship|value|custom)\n}`,
+    8_000, "medium");
+  return {
+    world_facts: arr(parsed.world_facts, 14).map((w) => ({
+      name: clamp(w.name, 80), rule: clamp(w.rule, 400), mechanism: clamp(w.mechanism, 400), category: clamp(w.category, 60),
+    })).filter((w) => w.name && w.rule),
+    threads: arr(parsed.threads, 10).map((t) => ({
+      name: clamp(t.name, 80), kind: oneOf(t.kind, ["mystery", "foreshadow", "setup_payoff", "arc"]),
+      promise: clamp(t.promise, 400), payoff: clamp(t.payoff, 400),
+      setup_chapter: num(t.setup_chapter), payoff_chapter: num(t.payoff_chapter),
+    })).filter((t) => t.name && t.promise),
+    games: arr(parsed.games, 6).map((g) => ({
+      name: clamp(g.name, 80),
+      players: (Array.isArray(g.players) ? g.players : []).map((p) => clamp(p, 80)).filter((x): x is string => !!x).slice(0, 6),
+      win_condition: clamp(g.win_condition, 300), lose_condition: clamp(g.lose_condition, 300), stake: clamp(g.stake, 300),
+      governing_rules: (Array.isArray(g.governing_rules) ? g.governing_rules : []).map((r) => clamp(r, 80)).filter((x): x is string => !!x).slice(0, 6),
+      outcome: oneOf(g.outcome, ["won", "lost"]), resolved_chapter: num(g.resolved_chapter),
+    })).filter((g) => g.name && g.win_condition && g.lose_condition),
+    tentpoles: arr(parsed.tentpoles, 8).map((t) => ({
+      summary: clamp(t.summary, 300), realized_chapter: num(t.realized_chapter),
+    })).filter((t) => t.summary),
+    meters: arr(parsed.meters, 4).map((m) => {
+      const poles = obj(m.poles), scale = obj(m.scale);
+      return {
+        name: clamp(m.name, 60),
+        kind: oneOf(m.kind, ["value", "affect", "relationship", "heat", "comedy", "tension", "custom"]),
+        poles: { low: clamp(poles.low, 200), high: clamp(poles.high, 200) },
+        scale: { min: num(scale.min) ?? 0, max: num(scale.max) ?? 10 },
+      };
+    }).filter((m) => m.name),
+  };
+}
+
+// ── Server-side apply (fail-closed on the shapes CoreOp allows) ───────────────────────────────────
+const LEVEL: Record<string, number> = {
+  seed: 0, premise: 1, pillar: 2, character: 2, relationship: 2, tentpole: 2, world_fact: 2,
+  location: 2, thread: 2, game: 2, meter: 2, voice_profile: 2, act: 3, beat: 4, scene: 5,
+};
+
+/** Apply CoreOps in place: locked nodes are never edited; adds get stamped and appended to `tree`.
+ *  One batched upsert. */
+async function applyOps(service: SupabaseClient, bookId: number, tree: DnaNode[], ops: CoreOp[]): Promise<number> {
+  const index = byId(tree);
+  const rows: DnaNode[] = [];
+  const posByParent = new Map<string, number>();
+  const nextPos = (pid: string): number => {
+    const cur = posByParent.get(pid) ?? tree.filter((n) => n.parent_id === pid).reduce((m, n) => Math.max(m, n.position + 1), 0);
+    posByParent.set(pid, cur + 1);
+    return cur;
+  };
+  for (const op of ops) {
+    if (op.op === "edit") {
+      const n = index.get(op.id);
+      if (!n || n.authoring.locked) continue; // fail-closed: the imported prose stays untouchable
+      const merged: DnaNode = {
+        ...n,
+        content: deepMergeContent(n.content, op.content),
+        authoring: { ...n.authoring, source: n.authoring.source === "user" ? "ai_then_user" : n.authoring.source, status: "accepted" },
+      };
+      index.set(n.id, merged);
+      tree[tree.indexOf(n)] = merged;
+      rows.push(merged);
+    } else {
+      const node: DnaNode = {
+        id: op.id, book_id: bookId, parent_id: op.parentId, level: LEVEL[op.kind] ?? 2, kind: op.kind as NodeKind,
+        position: nextPos(op.parentId), content: op.content, authoring: { source: "ai", locked: false, status: "accepted" },
+      };
+      const stamped = stampInput(node, byId([...tree, node]));
+      tree.push(stamped);
+      index.set(stamped.id, stamped);
+      rows.push(stamped);
+    }
+  }
+  for (let i = 0; i < rows.length; i += 200) {
+    const { error } = await service.from("book_nodes").upsert(rows.slice(i, i + 200).map((n) => ({
+      id: n.id, book_id: n.book_id, parent_id: n.parent_id, level: n.level, kind: n.kind,
+      position: n.position, content: n.content, authoring: n.authoring,
+      proposals: n.proposals ?? null, chosen: n.chosen ?? null,
+    })));
+    if (error) throw new Error(`apply: ${error.message}`);
+  }
+  return rows.length;
+}
+
+// ── The chain link ────────────────────────────────────────────────────────────────────────────────
+async function loadRun(service: SupabaseClient, id: number): Promise<RunRow | null> {
+  const { data } = await service.from("book_decompositions").select("*").eq("id", id).maybeSingle();
+  return (data as RunRow | null) ?? null;
+}
+async function patchRun(service: SupabaseClient, id: number, patch: Record<string, unknown>): Promise<void> {
+  const { error } = await service.from("book_decompositions").update(patch).eq("id", id);
+  if (error) throw new Error(`run row: ${error.message}`);
+}
+async function loadTree(service: SupabaseClient, bookId: number): Promise<DnaNode[]> {
+  const { data, error } = await service.from("book_nodes").select("*").eq("book_id", bookId).order("position");
+  if (error) throw new Error(`tree: ${error.message}`);
+  return (data as DnaNode[] | null) ?? [];
+}
+
+/** One unit of work: advance the run by one link, persist, and (unless finished) chain the next. */
+async function processLink(id: number): Promise<void> {
+  const service = serviceClient();
+  const run = await loadRun(service, id);
+  if (!run || run.status !== "running") return; // finished / cancelled / vanished — chain ends here
+
+  try {
+    const { data: book } = await service.from("books").select("name, author").eq("id", run.book_id).maybeSingle();
+    const bookLine = `"${book?.name ?? "Untitled"}"${book?.author ? ` by ${book.author}` : ""}`;
+    const tree = await loadTree(service, run.book_id);
+    const chapters = chaptersOf(tree);
+    const skipped: string[] = [...(run.skipped ?? [])];
+
+    if (run.phase === "chapters") {
+      const digests = [...(run.digests ?? [])];
+      digests.length = chapters.length;
+      const missing = chapters.map((_, i) => i).filter((i) => !digests[i]);
+      const batch = missing.slice(0, BATCH);
+      if (batch.length) {
+        const ops: CoreOp[] = [];
+        await Promise.all(batch.map(async (i) => {
+          const ch = chapters[i];
+          try {
+            const read = await chapterRead(run.book_id, bookLine, ch, i + 1, chapters.length,
+              i > 0 ? chapters[i - 1].text.slice(-1500) : undefined);
+            digests[i] = { title: ch.title, digest: read.digest };
+            const patch = Object.fromEntries(Object.entries(read.beat ?? {}).filter(([, v]) => v != null && v !== "")) as NodeContent;
+            if (Object.keys(patch).length) ops.push({ op: "edit", id: ch.beatId, content: patch });
+          } catch (e) {
+            // One flaky chapter must not kill the run — placeholder keeps chapter numbering aligned.
+            digests[i] = { title: ch.title, digest: "(chapter read failed)" };
+            skipped.push(`chapter ${i + 1} "${ch.title}": ${String((e as Error)?.message ?? e).slice(0, 120)}`);
+          }
+        }));
+        await applyOps(service, run.book_id, tree, ops);
+        const done = digests.filter(Boolean).length;
+        const finished = done >= chapters.length;
+        await patchRun(service, id, { digests, done, total: chapters.length, skipped, ...(finished ? { phase: "top" } : {}) });
+      } else {
+        await patchRun(service, id, { phase: "top", total: chapters.length });
+      }
+    } else if (run.phase === "top") {
+      const top = await topRead(run.book_id, bookLine, run.digests);
+      await applyOps(service, run.book_id, tree, topOps(tree, top));
+      await patchRun(service, id, { phase: "entities" });
+    } else if (run.phase === "entities") {
+      const read = await entitiesRead(run.book_id, bookLine, run.digests, chapters[0]?.text.slice(0, 3000) ?? "");
+      const { ops, skipped: sk } = entityOps(tree, read);
+      await applyOps(service, run.book_id, tree, ops);
+      await patchRun(service, id, { phase: "systems", skipped: [...skipped, ...sk] });
+    } else if (run.phase === "systems") {
+      const read = await systemsRead(run.book_id, bookLine, run.digests);
+      const { ops, skipped: sk } = systemsOps(tree, read, chapters.map((c) => c.beatId));
+      await applyOps(service, run.book_id, tree, ops);
+      await applyOps(service, run.book_id, tree, gameTwinOps(tree)); // twin invariant, same as generated games
+      await patchRun(service, id, { phase: "seal", skipped: [...skipped, ...sk] });
+    } else if (run.phase === "seal") {
+      // The plan was derived FROM the prose — stamp the tree so nothing reads falsely stale.
+      const index = byId(tree);
+      const stamped = tree.map((n) => {
+        let out = stampInput(n, index);
+        if (n.kind === "scene" && (n.content as { prose?: { text?: string } }).prose?.text) out = stampProse(out);
+        return out;
+      });
+      for (let i = 0; i < stamped.length; i += 200) {
+        const { error } = await service.from("book_nodes").upsert(stamped.slice(i, i + 200).map((n) => ({
+          id: n.id, book_id: n.book_id, parent_id: n.parent_id, level: n.level, kind: n.kind,
+          position: n.position, content: n.content, authoring: n.authoring,
+          proposals: n.proposals ?? null, chosen: n.chosen ?? null,
+        })));
+        if (error) throw new Error(`seal: ${error.message}`);
+      }
+      await patchRun(service, id, { status: "done" });
+      return; // terminal — no next link
+    }
+
+    // Re-read status before chaining: stopRun may have cancelled us while this link worked.
+    const cur = await loadRun(service, id);
+    if (cur?.status === "running") await reinvoke(FN, { id });
+  } catch (e) {
+    console.error(`${FN} run ${id} failed:`, e);
+    await patchRun(service, id, { status: "error", error: String((e as Error)?.message ?? e).slice(0, 1000) }).catch(() => {});
+  }
+}
+
+// ── HTTP surface ──────────────────────────────────────────────────────────────────────────────────
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
+    const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+
+    // Continue link — trusted via the chain secret; runs ONE unit in this worker.
+    if (isChainCall(req) && typeof body.id === "number") {
+      await processLink(body.id);
+      return json({ ok: true });
+    }
+
+    // Kick-off — user-authenticated.
     const userClient = createClient(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_ANON_KEY") ?? "",
       { global: { headers: { Authorization: req.headers.get("Authorization")! } } });
     const { data: { user } } = await userClient.auth.getUser();
     if (!user) return json({ error: "Unauthorized" }, 401);
-
-    const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
     const bookId = body.bookId as number | undefined;
-    const step = body.step as string | undefined;
-    if (!bookId || !step) return json({ error: "bookId and step are required" }, 400);
-
-    const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
-    if (!apiKey) return json({ error: "ANTHROPIC_API_KEY not configured" }, 500);
-
-    // Access check via RLS + book identity for prompt context.
-    const { data: book } = await userClient.from("books").select("id, name, author").eq("id", bookId).maybeSingle();
+    if (!bookId) return json({ error: "bookId is required" }, 400);
+    const { data: book } = await userClient.from("books").select("id").eq("id", bookId).maybeSingle();
     if (!book) return json({ error: "Book not found or access denied" }, 403);
-    const bookLine = `"${book.name ?? "Untitled"}"${book.author ? ` by ${book.author}` : ""}`;
 
-    const { high: model } = await getActiveModels();
-    const meta: CallMeta = { fn: "dna-decompose", bookId, taskTable: "book_nodes", taskId: bookId };
-    const ask = async (system: string, prompt: string, max_tokens: number, effort: "low" | "medium") => {
-      const data = await callLLM(apiKey, {
-        model, max_tokens, thinking: { type: "adaptive" }, output_config: { effort },
-        system: [{ type: "text", text: system }],
-        messages: [{ role: "user", content: prompt }],
-      }, meta, { signal: AbortSignal.timeout(140_000) });
-      return JSON.parse(extractJsonBlock(textFromLLM(data).trim())) as Record<string, unknown>;
-    };
+    const service = serviceClient();
+    // Dedupe: one running ascent per book — a second click just re-attaches to the live row.
+    const { data: active } = await service.from("book_decompositions")
+      .select("id").eq("book_id", bookId).eq("status", "running")
+      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    if (active) return json({ id: (active as { id: number }).id, existing: true });
 
-    // ── step: chapter — one chapter's prose → its beat row + a fold digest ────────────────────────
-    if (step === "chapter") {
-      const ch = obj(body.chapter);
-      const text = clamp(ch.text, 60_000);
-      if (!text) return json({ error: "chapter.text is required" }, 400);
-      const prev = clamp(body.prev, 2_000);
-      const parsed = await ask(
-        "You are a story analyst decomposing an EXISTING manuscript into its structural plan. The prose is " +
-          "ground truth — describe what IS on the page, never what a better version would do.",
-        `Novel: ${bookLine}. Chapter ${ch.position ?? "?"} of ${ch.total ?? "?"}${ch.title ? ` — "${ch.title}"` : ""}.\n\n` +
-          (prev ? `PREVIOUS CHAPTER (digest, for judging how this one connects):\n${prev}\n\n` : "") +
-          `CHAPTER PROSE:\n${text}\n\n` +
-          `Return ONLY this JSON (no fences):\n{\n` +
-          `  "beat": {\n` +
-          `    "summary": "<1-2 sentences: what happens as a story TURN (who acts, what changes)>",\n` +
-          `    "connector": "<therefore|but — how this chapter follows from the previous one (causal = therefore, reversal = but). OMIT for chapter 1>",\n` +
-          `    "polarity": "<up|down — does the protagonist's situation end better or worse than it began>"\n` +
-          `  },\n` +
-          `  "digest": "<3-5 sentences: events, reveals, relationship shifts, world rules established — enough to reconstruct the plot from digests alone>"\n}`,
-        1_200, "low",
-      );
-      const beat = obj(parsed.beat);
-      return json({
-        beat: {
-          summary: clamp(beat.summary, 600),
-          connector: oneOf(beat.connector, ["therefore", "but"]),
-          polarity: oneOf(beat.polarity, ["up", "down"]),
-        },
-        digest: clamp(parsed.digest, 1_500) ?? "",
-      });
-    }
+    const tree = await loadTree(service, bookId);
+    const total = chaptersOf(tree).length;
+    if (!total) return json({ error: "No prose-bearing chapters to decompose." }, 400);
 
-    // ── step: top — all chapter digests → seed/premise/pillar content ─────────────────────────────
-    if (step === "top") {
-      const digests = arr(body.digests, 200) as DigestRow[];
-      if (!digests.length) return json({ error: "digests are required" }, 400);
-      const parsed = await ask(
-        "You are a story analyst who has read a whole manuscript (as chapter digests). Distill its top-level " +
-          "plan. Describe the book that EXISTS, not an improved one.\n\nCONTENT FIELD SCHEMAS:\n" +
-          guideFor("seed", "premise", "pillar"),
-        `Novel: ${bookLine}.\n\nCHAPTER DIGESTS (reading order):\n${digestMenu(digests)}\n\n` +
-          `Return ONLY this JSON (no fences):\n{\n` +
-          `  "seed": { "logline": "<one sentence: protagonist + inciting incident + goal + obstacle + stakes>" },\n` +
-          `  "premise": { "dramatic_question": "<the central question the book lives inside>", "shape": { "name": "<the story shape, free text>", "movements": ["<3-6 movement labels>"], "ending_feel": "<up|down|bittersweet|ambivalent>" } },\n` +
-          `  "pillar": { "controlling_idea": "<the thesis the ending argues>", "ending": "<what concretely happens at the end>" }\n}`,
-        2_500, "medium",
-      );
-      const premise = obj(parsed.premise);
-      const shape = obj(premise.shape);
-      const pillar = obj(parsed.pillar);
-      return json({
-        seed: { logline: clamp(obj(parsed.seed).logline, 600) },
-        premise: {
-          dramatic_question: clamp(premise.dramatic_question, 600),
-          shape: {
-            name: clamp(shape.name, 120),
-            movements: (Array.isArray(shape.movements) ? shape.movements : []).map((m) => clamp(m, 200)).filter(Boolean).slice(0, 8),
-            ending_feel: oneOf(shape.ending_feel, ["up", "down", "bittersweet", "ambivalent"]),
-          },
-        },
-        pillar: { controlling_idea: clamp(pillar.controlling_idea, 800), ending: clamp(pillar.ending, 800) },
-      });
-    }
-
-    // ── step: entities — digests + a voice sample → cast, relationships, locations, voice ─────────
-    if (step === "entities") {
-      const digests = arr(body.digests, 200) as DigestRow[];
-      if (!digests.length) return json({ error: "digests are required" }, 400);
-      const sample = clamp(body.sample, 4_000);
-      const parsed = await ask(
-        "You are a story analyst extracting the entity registry from a manuscript (chapter digests + an " +
-          "opening prose sample). Extract only what the TEXT establishes — no invention. Relationships " +
-          "reference characters by exact NAME from your own characters list.\n\nCONTENT FIELD SCHEMAS:\n" +
-          guideFor("character", "relationship", "location", "voice_profile"),
-        `Novel: ${bookLine}.\n\nCHAPTER DIGESTS (reading order):\n${digestMenu(digests)}\n\n` +
-          (sample ? `OPENING PROSE SAMPLE (for voice):\n${sample}\n\n` : "") +
-          `Return ONLY this JSON (no fences):\n{\n` +
-          `  "characters": [{ "name", "role", "want", "need", "wound", "tag" }],  // named cast that matters, max 12\n` +
-          `  "relationships": [{ "a": "<character name>", "b": "<character name>", "bond", "charge" }],  // max 10\n` +
-          `  "locations": [{ "name", "summary", "mood", "sight", "sound", "smell" }],  // recurring places only, max 8; sensory fields only where the text gives them\n` +
-          `  "voice": { "pov", "tense", "style", "constraints": [] }  // the prose voice observed in the sample\n}`,
-        6_000, "medium",
-      );
-      const voice = obj(parsed.voice);
-      return json({
-        characters: arr(parsed.characters, 12).map((c) => ({
-          name: clamp(c.name, 80), role: clamp(c.role, 30), want: clamp(c.want, 400),
-          need: clamp(c.need, 400), wound: clamp(c.wound, 400), tag: clamp(c.tag, 200),
-        })).filter((c) => c.name),
-        relationships: arr(parsed.relationships, 10).map((r) => ({
-          a: clamp(r.a, 80), b: clamp(r.b, 80), bond: clamp(r.bond, 300), charge: clamp(r.charge, 300),
-        })).filter((r) => r.a && r.b && r.bond),
-        locations: arr(parsed.locations, 8).map((l) => ({
-          name: clamp(l.name, 80), summary: clamp(l.summary, 400), mood: clamp(l.mood, 200),
-          sight: clamp(l.sight, 200), sound: clamp(l.sound, 200), smell: clamp(l.smell, 200),
-        })).filter((l) => l.name),
-        voice: {
-          pov: oneOf(voice.pov, ["first-person", "third-person-limited", "third-person-omniscient", "second-person"]),
-          tense: oneOf(voice.tense, ["past", "present"]),
-          style: clamp(voice.style, 600),
-          constraints: (Array.isArray(voice.constraints) ? voice.constraints : []).map((c) => clamp(c, 200)).filter(Boolean).slice(0, 8),
-        },
-      });
-    }
-
-    // ── step: systems — digests → world rules, threads, games, tentpoles, meters + chapter links ──
-    if (step === "systems") {
-      const digests = arr(body.digests, 200) as DigestRow[];
-      if (!digests.length) return json({ error: "digests are required" }, 400);
-      const parsed = await ask(
-        "You are a story analyst extracting the STORY SYSTEMS from a manuscript (chapter digests). Extract " +
-          "only what the TEXT establishes — no invention. Reference chapters by their NUMBER as listed. " +
-          "Games reference players by character NAME and governing rules by world-fact NAME from your own " +
-          "lists. Do NOT create a thread for a game's outcome (games auto-carry a resolution thread) and do " +
-          "NOT create game_score meters (auto-derived).\n\nCONTENT FIELD SCHEMAS:\n" +
-          guideFor("world_fact", "thread", "game", "tentpole", "meter"),
-        `Novel: ${bookLine}.\n\nCHAPTER DIGESTS (reading order):\n${digestMenu(digests)}\n\n` +
-          `Return ONLY this JSON (no fences):\n{\n` +
-          `  "world_facts": [{ "name", "rule", "mechanism", "category" }],  // rules the story world runs on, max 14; [] for mundane settings\n` +
-          `  "threads": [{ "name", "kind", "promise", "payoff", "setup_chapter": <n>, "payoff_chapter": <n or omit if unpaid> }],  // promises to the reader (mystery|foreshadow|setup_payoff|arc), max 10\n` +
-          `  "games": [{ "name", "players": ["<character name>"], "win_condition", "lose_condition", "stake", "governing_rules": ["<world fact name>"], "outcome": "<won|lost, omit if undecided>", "resolved_chapter": <n> }],  // explicit contests with win/lose conditions, max 6; [] if none\n` +
-          `  "tentpoles": [{ "summary", "realized_chapter": <n> }],  // the big set-piece moments the book builds to, max 8\n` +
-          `  "meters": [{ "name", "kind", "poles": { "low", "high" }, "scale": { "min": 0, "max": 10 } }]  // 1-4 numeric axes this book visibly runs on (tension|heat|comedy|affect|relationship|value|custom)\n}`,
-        8_000, "medium",
-      );
-      return json({
-        world_facts: arr(parsed.world_facts, 14).map((w) => ({
-          name: clamp(w.name, 80), rule: clamp(w.rule, 400), mechanism: clamp(w.mechanism, 400), category: clamp(w.category, 60),
-        })).filter((w) => w.name && w.rule),
-        threads: arr(parsed.threads, 10).map((t) => ({
-          name: clamp(t.name, 80), kind: oneOf(t.kind, ["mystery", "foreshadow", "setup_payoff", "arc"]),
-          promise: clamp(t.promise, 400), payoff: clamp(t.payoff, 400),
-          setup_chapter: num(t.setup_chapter), payoff_chapter: num(t.payoff_chapter),
-        })).filter((t) => t.name && t.promise),
-        games: arr(parsed.games, 6).map((g) => ({
-          name: clamp(g.name, 80),
-          players: (Array.isArray(g.players) ? g.players : []).map((p) => clamp(p, 80)).filter(Boolean).slice(0, 6),
-          win_condition: clamp(g.win_condition, 300), lose_condition: clamp(g.lose_condition, 300), stake: clamp(g.stake, 300),
-          governing_rules: (Array.isArray(g.governing_rules) ? g.governing_rules : []).map((r) => clamp(r, 80)).filter(Boolean).slice(0, 6),
-          outcome: oneOf(g.outcome, ["won", "lost"]), resolved_chapter: num(g.resolved_chapter),
-        })).filter((g) => g.name && g.win_condition && g.lose_condition),
-        tentpoles: arr(parsed.tentpoles, 8).map((t) => ({
-          summary: clamp(t.summary, 300), realized_chapter: num(t.realized_chapter),
-        })).filter((t) => t.summary),
-        meters: arr(parsed.meters, 4).map((m) => {
-          const poles = obj(m.poles), scale = obj(m.scale);
-          return {
-            name: clamp(m.name, 60),
-            kind: oneOf(m.kind, ["value", "affect", "relationship", "heat", "comedy", "tension", "custom"]),
-            poles: { low: clamp(poles.low, 200), high: clamp(poles.high, 200) },
-            scale: { min: num(scale.min) ?? 0, max: num(scale.max) ?? 10 },
-          };
-        }).filter((m) => m.name),
-      });
-    }
-
-    return json({ error: `unknown step "${step}"` }, 400);
+    const { data: row, error } = await service.from("book_decompositions")
+      .insert({ book_id: bookId, created_by: user.id, status: "running", phase: "chapters", total })
+      .select("id").single();
+    if (error) throw error;
+    const id = (row as { id: number }).id;
+    // First link runs in this worker's background; every later link is a fresh chained invocation.
+    EdgeRuntime.waitUntil(processLink(id));
+    return json({ id });
   } catch (e) {
-    console.error("dna-decompose error:", e);
+    console.error(`${FN} error:`, e);
     return json({ error: String((e as Error)?.message ?? e).slice(0, 500) }, 500);
   }
 });
