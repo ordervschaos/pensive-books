@@ -42,9 +42,10 @@ const NEXT_STEP_MESSAGE: Record<string, string> = {
   prose: "Write the next scene.",
 };
 
-export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [], onDetach }: {
+export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [], onDetach, onClose }: {
   bookId: number; nodes: DnaNode[]; settings: BookSettings; bookSlug?: string; // bookSlug feeds the reader URL into the final render/publish hand-off
   attachedIds?: string[]; onDetach?: (id: string) => void; // slice 2 — the context tray (anchors); omitted = no tray
+  onClose?: () => void; // folds the rail's own close affordance into its header row instead of a floating sibling
 }) {
   const { toast } = useToast();
 
@@ -286,11 +287,11 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [],
   };
 
   return (
-    <Panel variant="soft" className="flex h-full flex-col px-4 py-3.5">
+    <Panel variant="soft" className="flex h-full flex-col rounded-none px-4 py-3.5">
       <div className="flex shrink-0 items-center gap-2">
         <Wand2 className="h-4 w-4 text-[hsl(var(--pv-accent))]" />
         <Eyebrow tone="accent">Agent</Eyebrow>
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ml-auto flex items-center gap-2">
           <button type="button" onClick={toggleAuto} disabled={active}
             title={auto ? "Auto-accept ON — the agent runs autonomously: it makes its own choices and applies them, no review. Click to turn off." : "Auto-accept OFF — you review and apply each change. Click to let the agent run autonomously."}
             className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 pv-mono text-[10px] transition-colors disabled:opacity-50 ${
@@ -320,17 +321,28 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [],
               <Zap className="h-2.5 w-2.5" /> deep
             </button>
           </div>
-          {sessionCount > 0 && (
-            <button type="button" onClick={() => setHistoryOpen((v) => !v)} title="Past chats"
-              className={`inline-flex items-center gap-1 rounded-full px-2 py-1 pv-mono text-[10px] uppercase tracking-[0.1em] transition-colors ${historyOpen ? "text-[hsl(var(--pv-accent))]" : "text-[hsl(var(--pv-text-faint))] hover:text-foreground"}`}>
-              <Clock className="h-3 w-3" /> {sessionCount}
-              <ChevronDown className={`h-3 w-3 transition-transform ${historyOpen ? "rotate-180" : ""}`} />
+          <div className="flex items-center gap-0.5">
+            {sessionCount > 0 && (
+              <button type="button" onClick={() => setHistoryOpen((v) => !v)} title="Past chats"
+                className={`inline-flex items-center gap-1 rounded-full px-2 py-1 pv-mono text-[10px] uppercase tracking-[0.1em] transition-colors ${historyOpen ? "text-[hsl(var(--pv-accent))]" : "text-[hsl(var(--pv-text-faint))] hover:text-foreground"}`}>
+                <Clock className="h-3 w-3" /> {sessionCount}
+                <ChevronDown className={`h-3 w-3 transition-transform ${historyOpen ? "rotate-180" : ""}`} />
+              </button>
+            )}
+            <button type="button" onClick={() => void newChat()} disabled={busy || active || steps.length === 0} title="New chat — archives the current one"
+              className="inline-flex items-center justify-center rounded-full p-1.5 text-[hsl(var(--pv-text-faint))] transition-colors hover:text-[hsl(var(--pv-accent))] disabled:opacity-40">
+              <SquarePen className="h-3.5 w-3.5" />
             </button>
+          </div>
+          {onClose && (
+            <>
+              <div className="h-4 w-px shrink-0 bg-[hsl(var(--pv-border-soft))]" />
+              <button type="button" onClick={onClose} title="Close"
+                className="inline-flex items-center justify-center rounded-full p-1.5 text-[hsl(var(--pv-text-faint))] transition-colors hover:text-foreground">
+                <X className="h-4 w-4" />
+              </button>
+            </>
           )}
-          <button type="button" onClick={() => void newChat()} disabled={busy || active || steps.length === 0} title="New chat — archives the current one"
-            className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[hsl(var(--pv-text-faint))] transition-colors hover:text-[hsl(var(--pv-accent))] disabled:opacity-40">
-            <SquarePen className="h-3.5 w-3.5" />
-          </button>
         </div>
       </div>
 
