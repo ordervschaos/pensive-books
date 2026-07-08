@@ -118,11 +118,18 @@ function dnaRow(content) {
 }
 
 // ── OpenRouter (direct, cheap tier) ─────────────────────────────────────────────────────────────
+// Per-call AbortController timeout: the global dispatcher disables undici's own timeouts, so without this a
+// single hung connection blocks the whole pMap (which only resolves once EVERY call settles) forever. A
+// timed-out call retries, then fails to an { error } item — the run always completes.
+const CALL_TIMEOUT_MS = 60_000;
 async function orCall(model, prompt, { maxTokens = 900, temperature = 0.3, attempt = 1 } = {}) {
   const body = JSON.stringify({ model, messages: [{ role: "user", content: prompt }], max_tokens: maxTokens, temperature });
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), CALL_TIMEOUT_MS);
   try {
-    const res = await fetch(OR_URL, { method: "POST", headers: { Authorization: `Bearer ${OR_KEY}`, "content-type": "application/json" }, body });
+    const res = await fetch(OR_URL, { method: "POST", headers: { Authorization: `Bearer ${OR_KEY}`, "content-type": "application/json" }, body, signal: ac.signal });
     const raw = await res.text();
+    clearTimeout(timer);
     if (!res.ok) {
       if (res.status >= 500 && attempt < 3) return orCall(model, prompt, { maxTokens, temperature, attempt: attempt + 1 });
       return { error: `HTTP ${res.status}: ${raw.slice(0, 200)}` };
@@ -130,6 +137,7 @@ async function orCall(model, prompt, { maxTokens = 900, temperature = 0.3, attem
     let j; try { j = JSON.parse(raw); } catch { return { error: `bad json: ${raw.slice(0, 200)}` }; }
     return { text: (j.choices?.[0]?.message?.content ?? "").trim(), usage: j.usage };
   } catch (e) {
+    clearTimeout(timer);
     if (attempt < 3) return orCall(model, prompt, { maxTokens, temperature, attempt: attempt + 1 });
     return { error: `fetch failed: ${String(e?.message ?? e)}` };
   }
@@ -144,26 +152,39 @@ function parseResidualList(text) {
   return text.split("\n").map((l) => l.replace(/^[-*\d.)\s]+/, "").trim()).filter((l) => l.length > 8 && l.length < 240);
 }
 
+// The KNOWN-AXIS REGISTRY (docs/structure-miner.md §3): everything the DNA schema already encodes. Injected
+// so the residual read reports only structure BEYOND this set — the non-redundancy gate (§6) enforced at
+// extraction. Critical for near-empty trace rows (e.g. an imported human novel whose scenes carry no DNA):
+// without it the read re-surfaces value_shift / register / meters as if they were new.
+const KNOWN_AXES = `KNOWN AXES — the DNA schema ALREADY encodes all of the following. Do NOT report these, or anything reconstructable from a combination of them:
+- Scene content: loc, goal, needs, outcome, conflict, register (per-scene voice bend), value_shift (emotional turn +/- with polarity), metaphor_domain (controlling figurative domain), threads (setup/payoff), establishes (state produced), chapter_start, sketch treatment.
+- Sketch direction: distance (psychic distance far/mid/close/deep), mode (dialogue/action/interior/description/summary), time (real/compressed/stretched), tension (suspense/mystery/irony).
+- Entities: character, relationship, tentpole, world_fact, location, thread, game, meter, voice_profile (pov/tense/style).
+- Meters/derived series: value, game_score, affect, relationship, heat, comedy, tension curves; emotional topography (polarity), pacing, causality (state-key DAG), promise/obligation ledgers, facet echoes, continuity ledger, somatic value-carrier (is the shift embodied), cold-reader confusion.
+Report ONLY structure a novel can carry that NONE of the above captures.`;
+
 const RESIDUAL_PROMPT = (scene) => `You are a structural analyst reverse-engineering a novel's scene-encoding schema.
 
-Below is a TRACE ROW — the complete structured metadata our system currently records for one scene — followed by the scene's actual PROSE.
+${KNOWN_AXES}
 
-TRACE ROW (everything the schema knows about this scene):
+Below is the TRACE ROW our system currently records for this scene, followed by the scene's actual PROSE.
+
+TRACE ROW:
 ${JSON.stringify(scene.trace, null, 1)}
 
-PROSE:
+PROSE${scene.prose.length > 6000 ? " (opening excerpt — the chapter is longer)" : ""}:
 """
-${scene.prose}
+${scene.prose.slice(0, 6000)}
 """
 
-Task: First, imagine predicting the prose from the TRACE ROW alone. Now read the actual prose. List the concrete, STRUCTURAL things the prose demonstrably DOES that the trace row did NOT predict or capture — patterns another scene could also have, that could be encoded as a small field/number/enum.
+Task: Read the prose and list concrete, STRUCTURAL things it demonstrably DOES that NONE of the known axes above capture — patterns another scene/chapter could also have, encodable as a small field/number/enum. (The trace row is often near-empty for imported prose; judge against the full KNOWN AXES list, not just the row.)
 
 Rules:
-- STRUCTURE, not paraphrase. "opens on a weather image that mirrors the power dynamic" = structure. "Mara strips naked" = plot, skip it.
-- Each item must name a PATTERN that generalizes across scenes, not a one-off content detail.
-- Ignore anything already in the trace row (goal, conflict, outcome, value_shift, loc, register, etc.).
+- STRUCTURE, not paraphrase or plot. "chapter is an expository digression addressed to the reader" = structure. "Ahab loses his leg" = plot, skip it.
+- Each item must name a PATTERN that generalizes across scenes/chapters, not a one-off content detail.
+- Do NOT report anything in the KNOWN AXES list or reconstructable from it (emotional shifts = value_shift, voice bends = register, mode/distance = sketch direction, symbols-across-scenes = threads/facets, etc.).
 - Prefer things expressible as a number, an enum, or a ≤3-word tag.
-- 3 to 7 items. If the trace fully explains the prose, return fewer.
+- 2 to 6 items. If everything the prose does is already a known axis, return [].
 
 Return ONLY a JSON array of short strings (each ≤ 18 words). No prose around it.`;
 
