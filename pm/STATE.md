@@ -28,7 +28,7 @@ edit-reflex, not boredom). The bar: a full book, no edit-reflex.
 | Causality axis (state keys, earned `therefore`) | shipped | Generation constraint, not just lint |
 | Meters (comedy/heat/game-score plottable axes) | shipped (P1) | Vertical fit cascade remaining |
 | Scene ledger (unified between-scenes read) | shipped (P1–P2) | P3 `ledgerAt` composes but consumers not wired |
-| Obligation ledger (debt-based completion) | shipped (core) | Remaining: journey gate + waive gesture, endgame objective |
+| Obligation ledger (debt-based completion) | shipped | Journey gate (`draft` stage gated on `debtSettled`), waive gesture (`DnaOverview.tsx` button + agent tool), endgame objective (`currentObjective`'s `promises` step) all confirmed live + parity-locked, checked 2026-07-09 |
 | Incremental continuity digest (per-page prefix fold) | shipped (edge) | Bridge twin NOT mirrored yet |
 | Prose streaming proxy (escape ~150s worker ceiling) | shipped | Was killing ~54% of prose calls |
 | Timeline layer (temporal projection) | partial | verticalLints shipped; timeline UI + promote-to-thread parked |

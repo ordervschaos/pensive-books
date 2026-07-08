@@ -26,11 +26,17 @@ R1/R2 graduated, moved to STATE.md.
 > **Brief→Mandate propagation fix** — checked 2026-07-09, already shipped (mechanism live in
 > `dna-expand`, C1/C2/C4 done); moved to STATE.md. Dropped from this list.
 
+> **Obligation ledger completion** — checked 2026-07-09, already shipped (journey gate, waive
+> gesture, endgame objective all live + parity-locked, predate `pm/`). Moved to STATE.md.
+
 1. **EPUB Layer B follow-through** — scene enrichment + act re-segmentation (Layer B core
    shipped 2026-07-08; these finish the import → readable-plan story).
-2. **Obligation ledger completion** — journey gate + waive gesture, endgame objective.
-3. **Unblock publish revalidation** — set REVALIDATE_SECRET (small ops task, unblocks the
+2. **Unblock publish revalidation** — set REVALIDATE_SECRET (small ops task, unblocks the
    book → marketing pipe; also unblocks C5b content-type gating).
+
+> **Pattern note:** 3 of 4 Next items checked this session were already shipped before `pm/`
+> existed (Structure Miner, Brief→Mandate, Obligation ledger) — the file was built from a stale
+> mental model, not a code audit. Treat everything below as unverified until checked against git.
 
 ## Later (valuable, deliberately not now)
 
