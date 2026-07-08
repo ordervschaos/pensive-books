@@ -32,11 +32,18 @@ export interface SystemsRead {
   tentpoles?: { summary?: string; realized_chapter?: number }[];
   meters?: { name?: string; kind?: string; poles?: { low?: string; high?: string }; scale?: { min?: number; max?: number } }[];
 }
+export interface ActsRead {
+  acts?: { title?: string; goal?: string; turning_point?: string; start_chapter?: number }[];
+}
 
 // ── Ops (the narrow apply vocabulary) ─────────────────────────────────────────────────────────────
 export type CoreOp =
   | { op: "edit"; id: string; content: NodeContent }
-  | { op: "add"; kind: NodeKind; parentId: string; id: string; content: NodeContent };
+  | { op: "add"; kind: NodeKind; parentId: string; id: string; content: NodeContent }
+  // move/delete exist for act re-segmentation: beats re-home onto the new acts BEFORE the old act is
+  // deleted (FK cascade would otherwise take the whole spine down with it).
+  | { op: "move"; id: string; parentId: string; position: number }
+  | { op: "delete"; id: string };
 export interface CoreOps { ops: CoreOp[]; skipped: string[] }
 
 const drop = (c: Record<string, unknown>): NodeContent =>
@@ -86,6 +93,41 @@ export function topOps(nodes: DnaNode[], top: TopRead): CoreOp[] {
   return ops;
 }
 
+/** Act re-segmentation ops from an "acts" read: mint the new act rung under the pillar, MOVE every
+ *  beat onto its act by chapter range, then DELETE the old acts (safe: their beats have re-homed —
+ *  emitted in that order on purpose). Rails: needs ≥2 valid acts (else the single act stands),
+ *  boundaries clamped into range, first act always starts at chapter 1, non-increasing starts drop. */
+export function actOps(nodes: DnaNode[], read: ActsRead, chapterBeatIds: string[]): CoreOps {
+  const pillar = pillarOf(nodes);
+  if (!pillar) return { ops: [], skipped: ["no pillar to attach acts to"] };
+  const total = chapterBeatIds.length;
+  const starts: { title?: string; goal?: string; turning_point?: string; start: number }[] = [];
+  for (const a of read.acts ?? []) {
+    const start = a.start_chapter;
+    if (typeof start !== "number" || start < 1 || start > total) continue;
+    if (starts.length && start <= starts[starts.length - 1].start) continue; // must strictly increase
+    starts.push({ title: a.title, goal: a.goal, turning_point: a.turning_point, start });
+  }
+  if (starts.length >= 1) starts[0].start = 1; // the first act owns the opening no matter what the model said
+  if (starts.length < 2) return { ops: [], skipped: [`act read returned ${starts.length} usable act(s) — keeping the single act`] };
+
+  const ops: CoreOp[] = [];
+  const oldActs = nodes.filter((n) => n.kind === "act");
+  starts.forEach((a, i) => {
+    const actId = newId();
+    ops.push({
+      op: "add", kind: "act", parentId: pillar.id, id: actId,
+      content: drop({ title: a.title, goal: a.goal, turning_point: a.turning_point }),
+    });
+    const end = i + 1 < starts.length ? starts[i + 1].start - 1 : total;
+    for (let ch = a.start; ch <= end; ch++) {
+      ops.push({ op: "move", id: chapterBeatIds[ch - 1], parentId: actId, position: ch - a.start });
+    }
+  });
+  for (const act of oldActs) ops.push({ op: "delete", id: act.id });
+  return { ops, skipped: [] };
+}
+
 /** Entity ops from an "entities" read. Characters get PRE-MINTED ids so same-batch relationships can
  *  reference them; name→id resolution happens here — a relationship naming an unknown character is
  *  skipped (rail), never guessed. Re-run safe: names already in the tree are not re-added. */
@@ -107,10 +149,21 @@ export function entityOps(nodes: DnaNode[], e: EntitiesRead): CoreOps {
     idByName.set(key, id);
     ops.push({ op: "add", kind: "character", parentId: pillar.id, id, content: drop({ ...c }) });
   }
+  // Relationship identity = the unordered character pair — dedupe against the tree AND the batch
+  // (a re-run must not re-add Mara↔Postman just because the bond text came back worded differently).
+  const relSeen = new Set(
+    nodes.filter((n) => n.kind === "relationship").map((n) => {
+      const c = n.content as { a?: string; b?: string };
+      return [c.a ?? "", c.b ?? ""].sort().join("↔");
+    }),
+  );
   for (const r of e.relationships ?? []) {
     const a = idByName.get((r.a ?? "").trim().toLowerCase());
     const b = idByName.get((r.b ?? "").trim().toLowerCase());
     if (!a || !b || a === b) { skipped.push(`relationship ${r.a ?? "?"} ↔ ${r.b ?? "?"} (unresolved character)`); continue; }
+    const key = [a, b].sort().join("↔");
+    if (relSeen.has(key)) continue;
+    relSeen.add(key);
     ops.push({ op: "add", kind: "relationship", parentId: pillar.id, id: newId(), content: drop({ a, b, bond: r.bond, charge: r.charge }) });
   }
   const locSeen = existingIdentities(nodes, "location");

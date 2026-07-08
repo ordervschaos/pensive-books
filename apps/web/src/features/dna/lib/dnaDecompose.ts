@@ -8,7 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { TaskRow } from "@/hooks/useLatestTaskRow";
 
 export interface DecomposeRow extends TaskRow {
-  phase: "chapters" | "top" | "entities" | "systems" | "seal";
+  phase: "chapters" | "top" | "acts" | "entities" | "systems" | "seal";
   done: number;
   total: number;
   skipped?: string[];
@@ -26,7 +26,8 @@ export async function startDecompose(bookId: number): Promise<number> {
 export function decomposeLabel(row: DecomposeRow): string {
   return row.phase === "chapters" ? `read ${row.done}/${row.total} chapters…`
     : row.phase === "top" ? "distilling premise…"
-      : row.phase === "entities" ? "extracting cast & places…"
-        : row.phase === "systems" ? "mapping threads & games…"
-          : "sealing…";
+      : row.phase === "acts" ? "finding the acts…"
+        : row.phase === "entities" ? "extracting cast & places…"
+          : row.phase === "systems" ? "mapping threads & games…"
+            : "sealing…";
 }

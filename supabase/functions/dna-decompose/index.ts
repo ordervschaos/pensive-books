@@ -11,9 +11,15 @@
 //   chapters — read up to BATCH chapters IN PARALLEL (independent: connector context is the previous
 //              chapter's prose tail, not a digest), write beat rows + digest slots
 //   top      — digests → seed logline / premise / pillar
+//   acts     — digests → act boundaries; re-segment the spine (new acts, beats re-homed by chapter
+//              range, the import's single flat act deleted)
 //   entities — digests + opening sample → cast, relationships, locations, voice
 //   systems  — digests → world facts, threads, games, tentpoles, meters + beat-level links; game twins
 //   seal     — re-stamp provenance across the tree (plan was derived FROM the prose — declare in sync)
+//
+// Resilience: a timed-out chapter slot stays empty and is re-attempted on a later link (placeholder
+// after 2 strikes — keeps chapter numbering aligned); a failed fold phase retries once before the
+// run errors. Bounded via row.attempts so a poison unit can't loop the chain.
 //
 // Pure logic (chapter assembly, op builders, rails targets) lives in _shared/dna-decompose-core.ts,
 // which the web test suite imports directly — no client/edge mirror to drift.
@@ -21,7 +27,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { callLLM, textFromLLM, type CallMeta } from "../_shared/llm.ts";
-import { getActiveModels } from "../_shared/model-config.ts";
+import { DIGEST_MODEL, getActiveModels } from "../_shared/model-config.ts";
 import { extractJsonBlock } from "../_shared/json.ts";
 import { serviceClient } from "../_shared/task.ts";
 import { isChainCall, reinvoke } from "../_shared/self-chain.ts";
@@ -31,12 +37,19 @@ import {
   type DnaNode, type NodeContent, type NodeKind,
 } from "../_shared/novel-dna.ts";
 import {
-  chaptersOf, entityOps, gameTwinOps, systemsOps, topOps,
-  type ChapterRead, type CoreOp, type EntitiesRead, type SystemsRead, type TopRead,
+  actOps, chaptersOf, entityOps, gameTwinOps, systemsOps, topOps,
+  type ActsRead, type ChapterRead, type CoreOp, type EntitiesRead, type SystemsRead, type TopRead,
 } from "../_shared/dna-decompose-core.ts";
 
 const FN = "dna-decompose";
-const BATCH = 6; // parallel chapter reads per link — one batch ≈ one slow call, safely under the cap
+// Parallel chapter reads per link. They share ONE worker's CPU under the ~150s wall, so a fatter
+// batch makes every call slower (more of the latency tail crosses the 140s timeout) and risks
+// WORKER_RESOURCE_LIMIT for the whole link. Links are cheap (self-chain) — prefer more links.
+// 6 → 3 after book 1234: 20/28 chapter reads double-timed-out under a 6-wide batch.
+const BATCH = 3;
+// A chapter that struck out twice gets this placeholder so numbering stays aligned. It is a
+// FAILURE MARKER, not story data — digestMenu masks it so fold phases can't consume it as fact.
+const FAILED_DIGEST = "(chapter read failed)";
 
 interface RunRow {
   id: number; book_id: number; status: string; phase: string;
@@ -57,12 +70,23 @@ const arr = (v: unknown, max: number): Record<string, unknown>[] =>
 const guideFor = (...kinds: string[]): string =>
   dnaSchema.promptGuide.split("\n").filter((l) => kinds.some((k) => l.startsWith(`- ${k} `))).join("\n");
 const digestMenu = (digests: ({ title?: string; digest?: string } | null)[]): string =>
-  digests.map((d, i) => `Chapter ${i + 1}${d?.title ? ` "${d.title}"` : ""}:\n${d?.digest ?? "(unavailable)"}`).join("\n\n");
+  digests.map((d, i) => {
+    // Chapter numbering must stay aligned (systems reads reference chapters by number), so an
+    // unread chapter keeps its line — but as an explicit gap, never as failure text posing as fact.
+    const text = !d?.digest || d.digest === FAILED_DIGEST
+      ? "(unread — no information about this chapter; do not infer anything from it)"
+      : d.digest;
+    return `Chapter ${i + 1}${d?.title ? ` "${d.title}"` : ""}:\n${text}`;
+  }).join("\n\n");
 
-async function ask(bookId: number, system: string, prompt: string, max_tokens: number, effort: "low" | "medium", timeoutMs = 140_000): Promise<Record<string, unknown>> {
+// NOTE: `thinking`/`output_config` are DROPPED by llm.ts on the OpenAI-compatible tiers — effort is
+// a no-op there, so latency control = model choice. Fold reads (whole-book extraction, big outputs)
+// pass DIGEST_MODEL, the workhorse the incremental digest already proves fits the ~150s worker;
+// chapter reads keep the high tier (per-chapter judgment quality, and 1.2k-token outputs fit).
+async function ask(bookId: number, system: string, prompt: string, max_tokens: number, effort: "low" | "medium", timeoutMs = 140_000, modelOverride?: string): Promise<Record<string, unknown>> {
   const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
-  const { high: model } = await getActiveModels();
+  const model = modelOverride ?? (await getActiveModels()).high;
   const meta: CallMeta = { fn: FN, bookId, taskTable: "book_decompositions", taskId: bookId };
   const data = await callLLM(apiKey, {
     model, max_tokens, thinking: { type: "adaptive" }, output_config: { effort },
@@ -87,7 +111,7 @@ async function chapterRead(bookId: number, bookLine: string, ch: { title: string
       `    "polarity": "<up|down — does the protagonist's situation end better or worse than it began>"\n` +
       `  },\n` +
       `  "digest": "<3-5 sentences: events, reveals, relationship shifts, world rules established — enough to reconstruct the plot from digests alone>"\n}`,
-    1_200, "low", 110_000);
+    1_200, "low", 135_000); // the active tier runs ~115s/chapter — 110s was under it and timed out en masse
   const beat = obj(parsed.beat);
   return {
     beat: {
@@ -109,7 +133,7 @@ async function topRead(bookId: number, bookLine: string, digests: RunRow["digest
       `  "seed": { "logline": "<one sentence: protagonist + inciting incident + goal + obstacle + stakes>" },\n` +
       `  "premise": { "dramatic_question": "<the central question the book lives inside>", "shape": { "name": "<the story shape, free text>", "movements": ["<3-6 movement labels>"], "ending_feel": "<up|down|bittersweet|ambivalent>" } },\n` +
       `  "pillar": { "controlling_idea": "<the thesis the ending argues>", "ending": "<what concretely happens at the end>" }\n}`,
-    2_500, "medium");
+    2_500, "low", 140_000, DIGEST_MODEL);
   const premise = obj(parsed.premise);
   const shape = obj(premise.shape);
   const pillar = obj(parsed.pillar);
@@ -128,19 +152,33 @@ async function topRead(bookId: number, bookLine: string, digests: RunRow["digest
 }
 
 async function entitiesRead(bookId: number, bookLine: string, digests: RunRow["digests"], sample: string): Promise<EntitiesRead> {
-  const parsed = await ask(bookId,
-    "You are a story analyst extracting the entity registry from a manuscript (chapter digests + an " +
-      "opening prose sample). Extract only what the TEXT establishes — no invention. Relationships " +
-      "reference characters by exact NAME from your own characters list.\n\nCONTENT FIELD SCHEMAS:\n" +
-      guideFor("character", "relationship", "location", "voice_profile"),
-    `Novel: ${bookLine}.\n\nCHAPTER DIGESTS (reading order):\n${digestMenu(digests)}\n\n` +
-      (sample ? `OPENING PROSE SAMPLE (for voice):\n${sample}\n\n` : "") +
-      `Return ONLY this JSON (no fences):\n{\n` +
-      `  "characters": [{ "name", "role", "want", "need", "wound", "tag" }],  // named cast that matters, max 12\n` +
-      `  "relationships": [{ "a": "<character name>", "b": "<character name>", "bond", "charge" }],  // max 10\n` +
-      `  "locations": [{ "name", "summary", "mood", "sight", "sound", "smell" }],  // recurring places only, max 8; sensory fields only where the text gives them\n` +
-      `  "voice": { "pov", "tense", "style", "constraints": [] }  // the prose voice observed in the sample\n}`,
-    6_000, "medium");
+  // Two SMALLER calls in parallel instead of one whole-registry call: the single 5000-token read was
+  // the fold most likely to cross the 140s ceiling (it killed book 1234's run twice). Parallel keeps
+  // the link's wall time at max(cast, world), and each ask is roughly half the output budget.
+  const menu = digestMenu(digests);
+  const [castParsed, worldParsed] = await Promise.all([
+    ask(bookId,
+      "You are a story analyst extracting the CAST from a manuscript's chapter digests. Extract only " +
+        "what the TEXT establishes — no invention. Relationships reference characters by exact NAME " +
+        "from your own characters list.\n\nCONTENT FIELD SCHEMAS:\n" +
+        guideFor("character", "relationship"),
+      `Novel: ${bookLine}.\n\nCHAPTER DIGESTS (reading order):\n${menu}\n\n` +
+        `Return ONLY this JSON (no fences):\n{\n` +
+        `  "characters": [{ "name", "role", "want", "need", "wound", "tag" }],  // named cast that matters, max 12\n` +
+        `  "relationships": [{ "a": "<character name>", "b": "<character name>", "bond", "charge" }]  // max 10\n}`,
+      3_000, "low", 140_000, DIGEST_MODEL),
+    ask(bookId,
+      "You are a story analyst extracting the PLACES and NARRATIVE VOICE from a manuscript (chapter " +
+        "digests + an opening prose sample). Extract only what the TEXT establishes — no invention.\n\n" +
+        "CONTENT FIELD SCHEMAS:\n" + guideFor("location", "voice_profile"),
+      `Novel: ${bookLine}.\n\nCHAPTER DIGESTS (reading order):\n${menu}\n\n` +
+        (sample ? `OPENING PROSE SAMPLE (for voice):\n${sample}\n\n` : "") +
+        `Return ONLY this JSON (no fences):\n{\n` +
+        `  "locations": [{ "name", "summary", "mood", "sight", "sound", "smell" }],  // recurring places only, max 8; sensory fields only where the text gives them\n` +
+        `  "voice": { "pov", "tense", "style", "constraints": [] }  // the prose voice observed in the sample\n}`,
+      2_500, "low", 140_000, DIGEST_MODEL),
+  ]);
+  const parsed = { ...castParsed, ...worldParsed };
   const voice = obj(parsed.voice);
   return {
     characters: arr(parsed.characters, 12).map((c) => ({
@@ -163,6 +201,31 @@ async function entitiesRead(bookId: number, bookLine: string, digests: RunRow["d
   };
 }
 
+async function actsRead(bookId: number, bookLine: string, digests: RunRow["digests"]): Promise<ActsRead> {
+  const parsed = await ask(bookId,
+    "You are a story analyst finding the ACT STRUCTURE of a manuscript (chapter digests). Acts are the " +
+      "large dramatic movements — a boundary falls where the story's direction fundamentally shifts " +
+      "(a reveal that reframes everything, a goal achieved/destroyed, a point of no return). Use the " +
+      "shape the book actually has (2-5 acts), not a template. Reference chapters by NUMBER as listed.",
+    `Novel: ${bookLine}.\n\nCHAPTER DIGESTS (reading order):\n${digestMenu(digests)}\n\n` +
+      `Return ONLY this JSON (no fences):\n{\n` +
+      `  "acts": [{\n` +
+      `    "title": "<short act name>",\n` +
+      `    "goal": "<what this movement accomplishes in the story>",\n` +
+      `    "turning_point": "<the event that ENDS this act — the shift into the next>",\n` +
+      `    "start_chapter": <n — the chapter this act begins on; act 1 starts at 1>\n` +
+      `  }]\n}`,
+    // Reasoning tokens count against max_tokens on the OpenRouter tier — 2k truncated the JSON
+    // mid-boundary-deliberation ("Unexpected end of JSON input"). Budget generously; output is small.
+    4_500, "low", 140_000, DIGEST_MODEL);
+  return {
+    acts: arr(parsed.acts, 6).map((a) => ({
+      title: clamp(a.title, 80), goal: clamp(a.goal, 400), turning_point: clamp(a.turning_point, 400),
+      start_chapter: num(a.start_chapter),
+    })),
+  };
+}
+
 async function systemsRead(bookId: number, bookLine: string, digests: RunRow["digests"]): Promise<SystemsRead> {
   const parsed = await ask(bookId,
     "You are a story analyst extracting the STORY SYSTEMS from a manuscript (chapter digests). Extract " +
@@ -178,7 +241,7 @@ async function systemsRead(bookId: number, bookLine: string, digests: RunRow["di
       `  "games": [{ "name", "players": ["<character name>"], "win_condition", "lose_condition", "stake", "governing_rules": ["<world fact name>"], "outcome": "<won|lost, omit if undecided>", "resolved_chapter": <n> }],  // explicit contests with win/lose conditions, max 6; [] if none\n` +
       `  "tentpoles": [{ "summary", "realized_chapter": <n> }],  // the big set-piece moments the book builds to, max 8\n` +
       `  "meters": [{ "name", "kind", "poles": { "low", "high" }, "scale": { "min": 0, "max": 10 } }]  // 1-4 numeric axes this book visibly runs on (tension|heat|comedy|affect|relationship|value|custom)\n}`,
-    8_000, "medium");
+    6_000, "low", 140_000, DIGEST_MODEL);
   return {
     world_facts: arr(parsed.world_facts, 14).map((w) => ({
       name: clamp(w.name, 80), rule: clamp(w.rule, 400), mechanism: clamp(w.mechanism, 400), category: clamp(w.category, 60),
@@ -216,11 +279,13 @@ const LEVEL: Record<string, number> = {
   location: 2, thread: 2, game: 2, meter: 2, voice_profile: 2, act: 3, beat: 4, scene: 5,
 };
 
-/** Apply CoreOps in place: locked nodes are never edited; adds get stamped and appended to `tree`.
- *  One batched upsert. */
+/** Apply CoreOps in place: locked nodes are never edited; adds get stamped and appended to `tree`;
+ *  moves re-home a node (act re-segmentation); deletes run AFTER all upserts so re-homed children
+ *  are already off the doomed parent when the FK cascade fires. One batched upsert. */
 async function applyOps(service: SupabaseClient, bookId: number, tree: DnaNode[], ops: CoreOp[]): Promise<number> {
   const index = byId(tree);
   const rows: DnaNode[] = [];
+  const deletes: string[] = [];
   const posByParent = new Map<string, number>();
   const nextPos = (pid: string): number => {
     const cur = posByParent.get(pid) ?? tree.filter((n) => n.parent_id === pid).reduce((m, n) => Math.max(m, n.position + 1), 0);
@@ -239,6 +304,20 @@ async function applyOps(service: SupabaseClient, bookId: number, tree: DnaNode[]
       index.set(n.id, merged);
       tree[tree.indexOf(n)] = merged;
       rows.push(merged);
+    } else if (op.op === "move") {
+      const n = index.get(op.id);
+      if (!n) continue;
+      const moved: DnaNode = { ...n, parent_id: op.parentId, position: op.position };
+      index.set(n.id, moved);
+      tree[tree.indexOf(n)] = moved;
+      rows.push(moved);
+    } else if (op.op === "delete") {
+      const n = index.get(op.id);
+      if (!n || n.authoring.locked) continue;
+      deletes.push(op.id);
+      const at = tree.indexOf(n);
+      if (at >= 0) tree.splice(at, 1);
+      index.delete(op.id);
     } else {
       const node: DnaNode = {
         id: op.id, book_id: bookId, parent_id: op.parentId, level: LEVEL[op.kind] ?? 2, kind: op.kind as NodeKind,
@@ -258,7 +337,11 @@ async function applyOps(service: SupabaseClient, bookId: number, tree: DnaNode[]
     })));
     if (error) throw new Error(`apply: ${error.message}`);
   }
-  return rows.length;
+  if (deletes.length) {
+    const { error } = await service.from("book_nodes").delete().in("id", deletes);
+    if (error) throw new Error(`apply delete: ${error.message}`);
+  }
+  return rows.length + deletes.length;
 }
 
 // ── The chain link ────────────────────────────────────────────────────────────────────────────────
@@ -288,6 +371,19 @@ async function processLink(id: number): Promise<void> {
     const tree = await loadTree(service, run.book_id);
     const chapters = chaptersOf(tree);
     const skipped: string[] = [...(run.skipped ?? [])];
+    const attempts: Record<string, number> = { ...(run.attempts ?? {}) };
+
+    // A fold phase that throws gets ONE retry (fresh link) before the run errors.
+    const foldPhase = async (work: () => Promise<void>): Promise<void> => {
+      try {
+        await work();
+      } catch (e) {
+        const n = (attempts[run.phase] ?? 0) + 1;
+        if (n >= 2) throw e;
+        console.warn(`${FN} run ${id} phase ${run.phase} attempt ${n} failed, retrying:`, e);
+        await patchRun(service, id, { attempts: { ...attempts, [run.phase]: n } });
+      }
+    };
 
     if (run.phase === "chapters") {
       const digests = [...(run.digests ?? [])];
@@ -305,33 +401,73 @@ async function processLink(id: number): Promise<void> {
             const patch = Object.fromEntries(Object.entries(read.beat ?? {}).filter(([, v]) => v != null && v !== "")) as NodeContent;
             if (Object.keys(patch).length) ops.push({ op: "edit", id: ch.beatId, content: patch });
           } catch (e) {
-            // One flaky chapter must not kill the run — placeholder keeps chapter numbering aligned.
-            digests[i] = { title: ch.title, digest: "(chapter read failed)" };
-            skipped.push(`chapter ${i + 1} "${ch.title}": ${String((e as Error)?.message ?? e).slice(0, 120)}`);
+            // Timed-out/flaky chapter: leave the slot EMPTY (a later link re-attempts it); only after
+            // 2 strikes take a placeholder so numbering stays aligned and the chain can't loop forever.
+            const n = (attempts[String(i)] ?? 0) + 1;
+            attempts[String(i)] = n;
+            if (n >= 2) {
+              digests[i] = { title: ch.title, digest: FAILED_DIGEST };
+              skipped.push(`chapter ${i + 1} "${ch.title.slice(0, 60)}": ${String((e as Error)?.message ?? e).slice(0, 120)}`);
+            }
           }
         }));
         await applyOps(service, run.book_id, tree, ops);
-        const done = digests.filter(Boolean).length;
-        const finished = done >= chapters.length;
-        await patchRun(service, id, { digests, done, total: chapters.length, skipped, ...(finished ? { phase: "top" } : {}) });
+        let done = digests.filter(Boolean).length;
+        let finished = done >= chapters.length;
+        // Placeholder rescue: before the fold phases consume the digests, spend ONE more pass on the
+        // chapters that struck out — a burst of timeouts (worker contention) often clears within the
+        // minutes the rest of the phase took. Each rescued slot gets exactly one more strike; the
+        // `rescue` key bounds the whole thing to a single extra round so a poison book can't loop.
+        if (finished && !attempts.rescue) {
+          const failed = digests.flatMap((d, i) => (d?.digest === FAILED_DIGEST ? [i] : []));
+          if (failed.length) {
+            for (const i of failed) { digests[i] = null; attempts[String(i)] = 1; }
+            // Drop the rescued chapters' stale failure notes — a rescue that succeeds must not still
+            // report a timeout; one that fails again re-adds its note in the catch above.
+            for (let s = skipped.length - 1; s >= 0; s--) {
+              if (failed.some((i) => skipped[s].startsWith(`chapter ${i + 1} "`))) skipped.splice(s, 1);
+            }
+            attempts.rescue = 1;
+            done = digests.filter(Boolean).length;
+            finished = false;
+          }
+        }
+        if (finished) {
+          const unread = digests.filter((d) => d?.digest === FAILED_DIGEST).length;
+          if (unread) skipped.unshift(`partial: ${unread} of ${chapters.length} chapters unread — the plan is derived without them`);
+        }
+        await patchRun(service, id, { digests, done, total: chapters.length, skipped, attempts, ...(finished ? { phase: "top" } : {}) });
       } else {
         await patchRun(service, id, { phase: "top", total: chapters.length });
       }
     } else if (run.phase === "top") {
-      const top = await topRead(run.book_id, bookLine, run.digests);
-      await applyOps(service, run.book_id, tree, topOps(tree, top));
-      await patchRun(service, id, { phase: "entities" });
+      await foldPhase(async () => {
+        const top = await topRead(run.book_id, bookLine, run.digests);
+        await applyOps(service, run.book_id, tree, topOps(tree, top));
+        await patchRun(service, id, { phase: "acts" });
+      });
+    } else if (run.phase === "acts") {
+      await foldPhase(async () => {
+        const read = await actsRead(run.book_id, bookLine, run.digests);
+        const { ops, skipped: sk } = actOps(tree, read, chapters.map((c) => c.beatId));
+        await applyOps(service, run.book_id, tree, ops);
+        await patchRun(service, id, { phase: "entities", skipped: [...skipped, ...sk] });
+      });
     } else if (run.phase === "entities") {
-      const read = await entitiesRead(run.book_id, bookLine, run.digests, chapters[0]?.text.slice(0, 3000) ?? "");
-      const { ops, skipped: sk } = entityOps(tree, read);
-      await applyOps(service, run.book_id, tree, ops);
-      await patchRun(service, id, { phase: "systems", skipped: [...skipped, ...sk] });
+      await foldPhase(async () => {
+        const read = await entitiesRead(run.book_id, bookLine, run.digests, chapters[0]?.text.slice(0, 3000) ?? "");
+        const { ops, skipped: sk } = entityOps(tree, read);
+        await applyOps(service, run.book_id, tree, ops);
+        await patchRun(service, id, { phase: "systems", skipped: [...skipped, ...sk] });
+      });
     } else if (run.phase === "systems") {
-      const read = await systemsRead(run.book_id, bookLine, run.digests);
-      const { ops, skipped: sk } = systemsOps(tree, read, chapters.map((c) => c.beatId));
-      await applyOps(service, run.book_id, tree, ops);
-      await applyOps(service, run.book_id, tree, gameTwinOps(tree)); // twin invariant, same as generated games
-      await patchRun(service, id, { phase: "seal", skipped: [...skipped, ...sk] });
+      await foldPhase(async () => {
+        const read = await systemsRead(run.book_id, bookLine, run.digests);
+        const { ops, skipped: sk } = systemsOps(tree, read, chapters.map((c) => c.beatId));
+        await applyOps(service, run.book_id, tree, ops);
+        await applyOps(service, run.book_id, tree, gameTwinOps(tree)); // twin invariant, same as generated games
+        await patchRun(service, id, { phase: "seal", skipped: [...skipped, ...sk] });
+      });
     } else if (run.phase === "seal") {
       // The plan was derived FROM the prose — stamp the tree so nothing reads falsely stale.
       const index = byId(tree);
@@ -389,6 +525,22 @@ Deno.serve(async (req: Request) => {
       .select("id").eq("book_id", bookId).eq("status", "running")
       .order("created_at", { ascending: false }).limit(1).maybeSingle();
     if (active) return json({ id: (active as { id: number }).id, existing: true });
+
+    // Revive: if the latest run ERRORED, resume it from its phase (its digests are paid for) rather
+    // than starting over. Attempts reset — the click is the author's "try again" signal.
+    const { data: latest } = await service.from("book_decompositions")
+      .select("id, status").eq("book_id", bookId)
+      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    if ((latest as { status?: string } | null)?.status === "error") {
+      // ATOMIC claim (update … eq status 'error', returning): two racing revives must not both start
+      // a chain — concurrent chains double-apply fold phases (the book-1234 duplicate-cast bug).
+      const rid = (latest as { id: number }).id;
+      const { data: claimed } = await service.from("book_decompositions")
+        .update({ status: "running", error: null, attempts: {} })
+        .eq("id", rid).eq("status", "error").select("id");
+      if (claimed?.length) EdgeRuntime.waitUntil(processLink(rid));
+      return json({ id: rid, resumed: !!claimed?.length, existing: !claimed?.length });
+    }
 
     const tree = await loadTree(service, bookId);
     const total = chaptersOf(tree).length;

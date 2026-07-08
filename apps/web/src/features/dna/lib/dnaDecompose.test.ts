@@ -3,7 +3,7 @@
 // built by the actual import path (Layer A), so the two layers are tested against each other.
 import { describe, it, expect } from "vitest";
 import {
-  chaptersOf, entityOps, gameTwinOps, systemsOps, topOps, type EntitiesRead, type SystemsRead,
+  actOps, chaptersOf, entityOps, gameTwinOps, systemsOps, topOps, type EntitiesRead, type SystemsRead,
 } from "../../../../../../supabase/functions/_shared/dna-decompose-core.ts";
 import { draftToMigrationPages, lockImportedProse } from "./importEpub";
 import { buildDnaFromStack } from "./migrateToDna";
@@ -153,6 +153,49 @@ describe("systemsOps", () => {
   });
 });
 
+describe("actOps", () => {
+  const beatIds = chaptersOf(tree).map((c) => c.beatId); // 2 chapters
+  const oldAct = tree.find((n) => n.kind === "act")!;
+
+  it("re-segments: adds new acts, moves beats by chapter range, deletes the old act LAST", () => {
+    const { ops } = actOps(tree, {
+      acts: [
+        { title: "The Door", goal: "establish the mystery", turning_point: "the key arrives", start_chapter: 1 },
+        { title: "The Key", goal: "force the choice", start_chapter: 2 },
+      ],
+    }, beatIds);
+    const kinds = ops.map((o) => o.op);
+    expect(kinds.filter((k) => k === "add")).toHaveLength(2);
+    expect(kinds.filter((k) => k === "move")).toHaveLength(2);
+    expect(kinds[kinds.length - 1]).toBe("delete"); // old act deleted only after the moves
+    const [act1, act2] = ops.filter((o) => o.op === "add") as { id: string }[];
+    const moves = ops.filter((o) => o.op === "move") as { id: string; parentId: string; position: number }[];
+    expect(moves[0]).toEqual({ op: "move", id: beatIds[0], parentId: act1.id, position: 0 });
+    expect(moves[1]).toEqual({ op: "move", id: beatIds[1], parentId: act2.id, position: 0 });
+    expect((ops[ops.length - 1] as { id: string }).id).toBe(oldAct.id);
+  });
+
+  it("keeps the single act when the read yields fewer than 2 usable acts", () => {
+    const { ops, skipped } = actOps(tree, { acts: [{ title: "All", start_chapter: 1 }] }, beatIds);
+    expect(ops).toHaveLength(0);
+    expect(skipped[0]).toContain("keeping the single act");
+  });
+
+  it("drops non-increasing boundaries; every beat still gets a home", () => {
+    const { ops } = actOps(tree, {
+      acts: [
+        { title: "A", start_chapter: 1 },
+        { title: "B", start_chapter: 2 },
+        { title: "C", start_chapter: 2 },      // duplicate start — dropped
+        { title: "D", start_chapter: 99 },     // out of range — dropped
+      ],
+    }, beatIds);
+    const moves = ops.filter((o) => o.op === "move") as { id: string }[];
+    expect(ops.filter((o) => o.op === "add")).toHaveLength(2);
+    expect(moves.map((m) => m.id)).toEqual(beatIds); // every beat still has a home
+  });
+});
+
 describe("gameTwinOps", () => {
   it("mints the score meter + resolution thread once per game", () => {
     const pillar = tree.find((n) => n.kind === "pillar")!;
@@ -161,7 +204,10 @@ describe("gameTwinOps", () => {
     const twins = gameTwinOps(withGame);
     expect(twins.map((t) => (t as { kind: string }).kind).sort()).toEqual(["meter", "thread"]);
     // apply and re-run → nothing new
-    const applied = [...withGame, ...twins.map((t, i) => ({ ...game, id: (t as { id: string }).id, kind: (t as { kind: "meter" | "thread" }).kind, content: t.content, position: i + 1 }))];
+    const applied = [...withGame, ...twins.map((t, i) => {
+      const add = t as { id: string; kind: "meter" | "thread"; content: Record<string, unknown> };
+      return { ...game, id: add.id, kind: add.kind, content: add.content, position: i + 1 };
+    })];
     expect(gameTwinOps(applied)).toHaveLength(0);
   });
 });
