@@ -10,6 +10,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { loadTree, saveNodes } from "@/features/dna/lib/bookNodes";
 import { applyNodeOps, type NodeOp, type OpRejection } from "@/features/dna/lib/dnaChat";
+import { reconcileGameTwins } from "@/features/dna/lib/dnaExpand";
 import { byId, newId, pillarOf, stampInput, stampProse, type DnaNode, type NodeContent } from "@/features/dna/lib/novelDna";
 
 export interface DecomposeChapter { beatId: string; title: string; text: string }
@@ -22,11 +23,17 @@ export interface TopRead {
 export interface EntitiesRead {
   characters?: { name?: string; role?: string; want?: string; need?: string; wound?: string; tag?: string }[];
   relationships?: { a?: string; b?: string; bond?: string; charge?: string }[];
-  world_facts?: { name?: string; rule?: string; category?: string }[];
-  threads?: { name?: string; kind?: string; promise?: string; payoff?: string }[];
+  locations?: { name?: string; summary?: string; mood?: string; sight?: string; sound?: string; smell?: string }[];
   voice?: { pov?: string; tense?: string; style?: string; constraints?: string[] };
 }
-export interface DecomposeProgress { phase: "chapters" | "top" | "entities" | "seal"; done: number; total: number }
+export interface SystemsRead {
+  world_facts?: { name?: string; rule?: string; mechanism?: string; category?: string }[];
+  threads?: { name?: string; kind?: string; promise?: string; payoff?: string; setup_chapter?: number; payoff_chapter?: number }[];
+  games?: { name?: string; players?: string[]; win_condition?: string; lose_condition?: string; stake?: string; governing_rules?: string[]; outcome?: string; resolved_chapter?: number }[];
+  tentpoles?: { summary?: string; realized_chapter?: number }[];
+  meters?: { name?: string; kind?: string; poles?: { low?: string; high?: string }; scale?: { min?: number; max?: number } }[];
+}
+export interface DecomposeProgress { phase: "chapters" | "top" | "entities" | "systems" | "seal"; done: number; total: number }
 export interface DecomposeResult { chapters: number; entitiesAdded: number; stopped: boolean; rejected: OpRejection[]; skipped: string[] }
 
 const proseOf = (n: DnaNode): string => ((n.content as { prose?: { text?: string } }).prose?.text ?? "").trim();
@@ -93,13 +100,81 @@ export function entityOps(nodes: DnaNode[], e: EntitiesRead): { ops: NodeOp[]; s
     if (!a || !b || a === b) { skipped.push(`relationship ${r.a ?? "?"} ↔ ${r.b ?? "?"} (unresolved character)`); continue; }
     ops.push({ op: "add", kind: "relationship", parentId: pillar.id, content: drop({ a, b, bond: r.bond, charge: r.charge }) });
   }
-  for (const w of e.world_facts ?? []) ops.push({ op: "add", kind: "world_fact", parentId: pillar.id, content: drop({ ...w }) });
-  for (const t of e.threads ?? []) ops.push({ op: "add", kind: "thread", parentId: pillar.id, content: drop({ ...t }) });
+  for (const l of e.locations ?? []) ops.push({ op: "add", kind: "location", parentId: pillar.id, content: drop({ ...l }) });
   const v = e.voice ?? {};
   if (v.style) {
     const existing = nodes.find((n) => n.kind === "voice_profile");
     const content = drop({ ...v });
     ops.push(existing ? { op: "edit", id: existing.id, content } : { op: "add", kind: "voice_profile", parentId: pillar.id, content });
+  }
+  return { ops, skipped };
+}
+
+/** Story-system ops from a "systems" read: world facts / threads / games / tentpoles / meters onto the
+ *  pillar, PLUS beat-level links assembled from the read's 1-based chapter numbers (threads' setup/payoff,
+ *  tentpoles' realizes, games' resolves) — the joins the obligation ledger and vertical lints run on.
+ *  Games resolve player names against the (post-entities) cast and rule names against this batch's world
+ *  facts. `chapterBeatIds` = beat id per digest index, the same order the digests were built in. Pure. */
+export function systemsOps(nodes: DnaNode[], s: SystemsRead, chapterBeatIds: string[]): { ops: NodeOp[]; skipped: string[] } {
+  const pillar = pillarOf(nodes);
+  if (!pillar) return { ops: [], skipped: ["no pillar to attach systems to"] };
+  const ops: NodeOp[] = [];
+  const skipped: string[] = [];
+  const drop = (c: Record<string, unknown>): NodeContent =>
+    Object.fromEntries(Object.entries(c).filter(([, v]) => v != null && v !== "" && (!Array.isArray(v) || v.length))) as NodeContent;
+  const charIdByName = new Map<string, string>();
+  for (const n of nodes.filter((x) => x.kind === "character")) {
+    const name = ((n.content as { name?: string }).name ?? "").trim().toLowerCase();
+    if (name) charIdByName.set(name, n.id);
+  }
+  const beatAt = (chapter: number | undefined): string | undefined =>
+    chapter != null && chapter >= 1 && chapter <= chapterBeatIds.length ? chapterBeatIds[chapter - 1] : undefined;
+
+  // Beat-link accumulator — several systems can point at the same chapter; merge into one edit per beat.
+  const beatPatch = new Map<string, { threads: { ref: string; role: string }[]; realizes: string[]; resolves: { ref: string; outcome: string }[] }>();
+  const patchFor = (beatId: string) => {
+    let p = beatPatch.get(beatId);
+    if (!p) { p = { threads: [], realizes: [], resolves: [] }; beatPatch.set(beatId, p); }
+    return p;
+  };
+  const link = (chapter: number | undefined, what: string, apply: (beatId: string) => void) => {
+    if (chapter == null) return;
+    const beatId = beatAt(chapter);
+    if (beatId) apply(beatId);
+    else skipped.push(`${what} → chapter ${chapter} (out of range)`);
+  };
+
+  const wfIdByName = new Map<string, string>();
+  for (const w of s.world_facts ?? []) {
+    const id = newId();
+    if (w.name) wfIdByName.set(w.name.trim().toLowerCase(), id);
+    ops.push({ op: "add", kind: "world_fact", parentId: pillar.id, id, content: drop({ ...w }) });
+  }
+  for (const t of s.threads ?? []) {
+    const { setup_chapter, payoff_chapter, ...content } = t;
+    const id = newId();
+    ops.push({ op: "add", kind: "thread", parentId: pillar.id, id, content: drop({ ...content }) });
+    link(setup_chapter, `thread "${t.name}" setup`, (b) => patchFor(b).threads.push({ ref: id, role: "setup" }));
+    link(payoff_chapter, `thread "${t.name}" payoff`, (b) => patchFor(b).threads.push({ ref: id, role: "payoff" }));
+  }
+  for (const g of s.games ?? []) {
+    const { players, governing_rules, outcome, resolved_chapter, ...content } = g;
+    const id = newId();
+    const resolvedPlayers = (players ?? []).map((p) => charIdByName.get(p.trim().toLowerCase())).filter((x): x is string => !!x);
+    const resolvedRules = (governing_rules ?? []).map((r) => wfIdByName.get(r.trim().toLowerCase())).filter((x): x is string => !!x);
+    ops.push({ op: "add", kind: "game", parentId: pillar.id, id, content: drop({ ...content, players: resolvedPlayers, governing_rules: resolvedRules }) });
+    if (outcome) link(resolved_chapter, `game "${g.name}" resolution`, (b) => patchFor(b).resolves.push({ ref: id, outcome }));
+  }
+  for (const t of s.tentpoles ?? []) {
+    const { realized_chapter, ...content } = t;
+    const id = newId();
+    ops.push({ op: "add", kind: "tentpole", parentId: pillar.id, id, content: drop({ ...content }) });
+    link(realized_chapter, `tentpole "${(t.summary ?? "").slice(0, 40)}"`, (b) => patchFor(b).realizes.push(id));
+  }
+  for (const m of s.meters ?? []) ops.push({ op: "add", kind: "meter", parentId: pillar.id, content: drop({ ...m }) });
+
+  for (const [beatId, p] of beatPatch) {
+    ops.push({ op: "edit", id: beatId, content: drop({ threads: p.threads, realizes: p.realizes, resolves: p.resolves }) });
   }
   return { ops, skipped };
 }
@@ -160,6 +235,19 @@ export async function decomposeBook(
       rejected.push(...v2.rejected);
       skippedAll.push(...skipped);
       entitiesAdded = v2.ok.length;
+    } else stopped = true;
+
+    // Story systems need the post-entities tree (games resolve players against the fresh cast).
+    if (!stopped && !shouldStop?.()) {
+      onProgress?.({ phase: "systems", done: 0, total: 1 });
+      const systems = await invokeStep<SystemsRead>(bookId, "systems", { digests });
+      const { ops, skipped } = systemsOps(await loadTree(bookId), systems, chapters.map((c) => c.beatId));
+      const v3 = await applyNodeOps(bookId, ops);
+      rejected.push(...v3.rejected);
+      skippedAll.push(...skipped);
+      entitiesAdded += v3.ok.length;
+      // Game-twin invariant: every extracted game gets its score meter + resolution thread, same as generated ones.
+      if (ops.some((o) => o.op === "add" && o.kind === "game")) await reconcileGameTwins(bookId);
     } else stopped = true;
   }
 

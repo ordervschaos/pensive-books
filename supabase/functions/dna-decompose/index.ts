@@ -8,8 +8,12 @@
 //   step "top"      { digests: [{ title, digest }] }
 //                   → { seed: { logline }, premise: {...}, pillar: {...} }
 //   step "entities" { digests: [{ title, digest }], sample }
-//                   → { characters, relationships (by NAME — client resolves to ids), world_facts,
-//                       threads, voice }
+//                   → { characters, relationships (by NAME — client resolves to ids), locations, voice }
+//   step "systems"  { digests: [{ title, digest }] }
+//                   → { world_facts, threads, games, tentpoles, meters } — story systems, each with
+//                       1-based CHAPTER NUMBERS (setup/payoff/realized/resolved) the client turns into
+//                       beat-level links (threads/realizes/resolves), so the obligation ledger and
+//                       vertical lints work on an imported book
 //
 // Every inference is ABDUCTION (the plan that best explains the text) — the client writes it as
 // source:"ai" so the author can freely correct it. Field keys come from the committed schema
@@ -39,6 +43,8 @@ const guideFor = (...kinds: string[]): string =>
 
 const digestMenu = (digests: DigestRow[]): string =>
   digests.map((d, i) => `Chapter ${i + 1}${d.title ? ` "${d.title}"` : ""}:\n${d.digest ?? ""}`).join("\n\n");
+
+const num = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) ? Math.round(v) : undefined);
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -136,7 +142,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // ── step: entities — digests + a voice sample → the cast/world/threads branch + voice ─────────
+    // ── step: entities — digests + a voice sample → cast, relationships, locations, voice ─────────
     if (step === "entities") {
       const digests = arr(body.digests, 200) as DigestRow[];
       if (!digests.length) return json({ error: "digests are required" }, 400);
@@ -145,14 +151,13 @@ Deno.serve(async (req: Request) => {
         "You are a story analyst extracting the entity registry from a manuscript (chapter digests + an " +
           "opening prose sample). Extract only what the TEXT establishes — no invention. Relationships " +
           "reference characters by exact NAME from your own characters list.\n\nCONTENT FIELD SCHEMAS:\n" +
-          guideFor("character", "relationship", "world_fact", "thread", "voice_profile"),
+          guideFor("character", "relationship", "location", "voice_profile"),
         `Novel: ${bookLine}.\n\nCHAPTER DIGESTS (reading order):\n${digestMenu(digests)}\n\n` +
           (sample ? `OPENING PROSE SAMPLE (for voice):\n${sample}\n\n` : "") +
           `Return ONLY this JSON (no fences):\n{\n` +
           `  "characters": [{ "name", "role", "want", "need", "wound", "tag" }],  // named cast that matters, max 12\n` +
           `  "relationships": [{ "a": "<character name>", "b": "<character name>", "bond", "charge" }],  // max 10\n` +
-          `  "world_facts": [{ "name", "rule", "category" }],  // rules the story world runs on, max 10; [] for mundane settings\n` +
-          `  "threads": [{ "name", "kind", "promise", "payoff" }],  // promises made to the reader (mystery|foreshadow|setup_payoff|arc); payoff only if the text pays it, max 8\n` +
+          `  "locations": [{ "name", "summary", "mood", "sight", "sound", "smell" }],  // recurring places only, max 8; sensory fields only where the text gives them\n` +
           `  "voice": { "pov", "tense", "style", "constraints": [] }  // the prose voice observed in the sample\n}`,
         6_000, "medium",
       );
@@ -165,19 +170,67 @@ Deno.serve(async (req: Request) => {
         relationships: arr(parsed.relationships, 10).map((r) => ({
           a: clamp(r.a, 80), b: clamp(r.b, 80), bond: clamp(r.bond, 300), charge: clamp(r.charge, 300),
         })).filter((r) => r.a && r.b && r.bond),
-        world_facts: arr(parsed.world_facts, 10).map((w) => ({
-          name: clamp(w.name, 80), rule: clamp(w.rule, 400), category: clamp(w.category, 60),
-        })).filter((w) => w.name && w.rule),
-        threads: arr(parsed.threads, 8).map((t) => ({
-          name: clamp(t.name, 80), kind: oneOf(t.kind, ["mystery", "foreshadow", "setup_payoff", "arc"]),
-          promise: clamp(t.promise, 400), payoff: clamp(t.payoff, 400),
-        })).filter((t) => t.name && t.promise),
+        locations: arr(parsed.locations, 8).map((l) => ({
+          name: clamp(l.name, 80), summary: clamp(l.summary, 400), mood: clamp(l.mood, 200),
+          sight: clamp(l.sight, 200), sound: clamp(l.sound, 200), smell: clamp(l.smell, 200),
+        })).filter((l) => l.name),
         voice: {
           pov: oneOf(voice.pov, ["first-person", "third-person-limited", "third-person-omniscient", "second-person"]),
           tense: oneOf(voice.tense, ["past", "present"]),
           style: clamp(voice.style, 600),
           constraints: (Array.isArray(voice.constraints) ? voice.constraints : []).map((c) => clamp(c, 200)).filter(Boolean).slice(0, 8),
         },
+      });
+    }
+
+    // ── step: systems — digests → world rules, threads, games, tentpoles, meters + chapter links ──
+    if (step === "systems") {
+      const digests = arr(body.digests, 200) as DigestRow[];
+      if (!digests.length) return json({ error: "digests are required" }, 400);
+      const parsed = await ask(
+        "You are a story analyst extracting the STORY SYSTEMS from a manuscript (chapter digests). Extract " +
+          "only what the TEXT establishes — no invention. Reference chapters by their NUMBER as listed. " +
+          "Games reference players by character NAME and governing rules by world-fact NAME from your own " +
+          "lists. Do NOT create a thread for a game's outcome (games auto-carry a resolution thread) and do " +
+          "NOT create game_score meters (auto-derived).\n\nCONTENT FIELD SCHEMAS:\n" +
+          guideFor("world_fact", "thread", "game", "tentpole", "meter"),
+        `Novel: ${bookLine}.\n\nCHAPTER DIGESTS (reading order):\n${digestMenu(digests)}\n\n` +
+          `Return ONLY this JSON (no fences):\n{\n` +
+          `  "world_facts": [{ "name", "rule", "mechanism", "category" }],  // rules the story world runs on, max 14; [] for mundane settings\n` +
+          `  "threads": [{ "name", "kind", "promise", "payoff", "setup_chapter": <n>, "payoff_chapter": <n or omit if unpaid> }],  // promises to the reader (mystery|foreshadow|setup_payoff|arc), max 10\n` +
+          `  "games": [{ "name", "players": ["<character name>"], "win_condition", "lose_condition", "stake", "governing_rules": ["<world fact name>"], "outcome": "<won|lost, omit if undecided>", "resolved_chapter": <n> }],  // explicit contests with win/lose conditions, max 6; [] if none\n` +
+          `  "tentpoles": [{ "summary", "realized_chapter": <n> }],  // the big set-piece moments the book builds to, max 8\n` +
+          `  "meters": [{ "name", "kind", "poles": { "low", "high" }, "scale": { "min": 0, "max": 10 } }]  // 1-4 numeric axes this book visibly runs on (tension|heat|comedy|affect|relationship|value|custom)\n}`,
+        8_000, "medium",
+      );
+      return json({
+        world_facts: arr(parsed.world_facts, 14).map((w) => ({
+          name: clamp(w.name, 80), rule: clamp(w.rule, 400), mechanism: clamp(w.mechanism, 400), category: clamp(w.category, 60),
+        })).filter((w) => w.name && w.rule),
+        threads: arr(parsed.threads, 10).map((t) => ({
+          name: clamp(t.name, 80), kind: oneOf(t.kind, ["mystery", "foreshadow", "setup_payoff", "arc"]),
+          promise: clamp(t.promise, 400), payoff: clamp(t.payoff, 400),
+          setup_chapter: num(t.setup_chapter), payoff_chapter: num(t.payoff_chapter),
+        })).filter((t) => t.name && t.promise),
+        games: arr(parsed.games, 6).map((g) => ({
+          name: clamp(g.name, 80),
+          players: (Array.isArray(g.players) ? g.players : []).map((p) => clamp(p, 80)).filter(Boolean).slice(0, 6),
+          win_condition: clamp(g.win_condition, 300), lose_condition: clamp(g.lose_condition, 300), stake: clamp(g.stake, 300),
+          governing_rules: (Array.isArray(g.governing_rules) ? g.governing_rules : []).map((r) => clamp(r, 80)).filter(Boolean).slice(0, 6),
+          outcome: oneOf(g.outcome, ["won", "lost"]), resolved_chapter: num(g.resolved_chapter),
+        })).filter((g) => g.name && g.win_condition && g.lose_condition),
+        tentpoles: arr(parsed.tentpoles, 8).map((t) => ({
+          summary: clamp(t.summary, 300), realized_chapter: num(t.realized_chapter),
+        })).filter((t) => t.summary),
+        meters: arr(parsed.meters, 4).map((m) => {
+          const poles = obj(m.poles), scale = obj(m.scale);
+          return {
+            name: clamp(m.name, 60),
+            kind: oneOf(m.kind, ["value", "affect", "relationship", "heat", "comedy", "tension", "custom"]),
+            poles: { low: clamp(poles.low, 200), high: clamp(poles.high, 200) },
+            scale: { min: num(scale.min) ?? 0, max: num(scale.max) ?? 10 },
+          };
+        }).filter((m) => m.name),
       });
     }
 

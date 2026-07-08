@@ -9,8 +9,9 @@ import type { DnaNode } from "@/features/dna/lib/novelDna";
 const label = (p: DecomposeProgress): string =>
   p.phase === "chapters" ? `reading ch ${p.done + 1}/${p.total}…`
     : p.phase === "top" ? "distilling premise…"
-      : p.phase === "entities" ? "extracting cast & world…"
-        : "sealing…";
+      : p.phase === "entities" ? "extracting cast & places…"
+        : p.phase === "systems" ? "mapping threads & games…"
+          : "sealing…";
 
 export function DecomposeButton({ bookId, nodes }: { bookId: number; nodes: DnaNode[] }) {
   const [running, setRunning] = useState(false);

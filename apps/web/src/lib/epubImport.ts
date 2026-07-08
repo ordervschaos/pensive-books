@@ -11,7 +11,13 @@
 //    cover block + section-page/content-page duplicate headings, and generic title pages)
 //  • a heading AFTER prose starts a new chapter
 //  • <hr> or an asterism paragraph (`* * *`, `⁂`, …) is a scene break
-//  • title-only chapters that echo the book title / "by <author>" are dropped (front matter)
+//
+// Front/back-matter filtering (verified against Gutenberg + Distributed Proofreaders epubs):
+//  • boilerplate chapters (Project Gutenberg header/license, DP blurb, transcriber notes) — by
+//    title or by the opening of their text
+//  • apparatus chapters (table of contents — incl. TOC rendered as prose, copyright, dedication…)
+//  • title pages: very short chapters that just echo the book title / author
+//  • title-only chapters that echo the book title / "by <author>" (real part dividers survive)
 import JSZip from "jszip";
 
 export interface ImportedChapter { title: string; scenes: string[] }
@@ -35,25 +41,32 @@ const isAsterism = (text: string): boolean =>
 // Spine entries that are chrome, not story. Matched against manifest href + properties.
 const CHROME_HREF = /(^|\/)(nav|toc|cover|title[-_]?page|copyright|colophon)[^/]*$/i;
 
+// Publishing apparatus by TITLE (dropped whether or not the chapter carries prose).
+const APPARATUS_TITLE = /^(table of )?contents\b|^copyright|^title ?page$|^dedication$|^acknowledg|^colophon$|^imprint$/i;
+// Digitization boilerplate by content — Project Gutenberg headers/licenses, Distributed
+// Proofreaders blurbs, transcriber notes. `.?` tolerates the curly apostrophe (transcriber’s).
+const BOILERPLATE = /project gutenberg|distributed proofreaders|proofreading team|transcriber.?s note/i;
+
 interface Block { type: "heading" | "para" | "break"; text: string }
 
 const HEADING = new Set(["h1", "h2", "h3", "h4", "h5", "h6"]);
-const LEAF = new Set(["p", "li", "blockquote", "pre", "dd", "dt"]);
+// Blockquote is NOT a leaf: Gutenberg wraps whole structures (the TOC, chapter bodies) in
+// <blockquote><div>…</div></blockquote>, and flattening one to a single para destroys the
+// line structure the TOC-shape rule needs. Containers recurse; bare-text containers emit.
+const LEAF = new Set(["p", "li", "pre", "dd", "dt"]);
 
 /** Flatten a chapter document's body into an ordered block stream. */
 function blocksOf(doc: Document): Block[] {
   const out: Block[] = [];
+  const para = (t: string) => { if (t) out.push(isAsterism(t) ? { type: "break" as const, text: "" } : { type: "para" as const, text: t }); };
   const walk = (el: Element) => {
     const tag = el.localName?.toLowerCase() ?? "";
     if (HEADING.has(tag)) { const t = textOf(el); if (t) out.push({ type: "heading", text: t }); return; }
     if (tag === "hr") { out.push({ type: "break", text: "" }); return; }
-    if (LEAF.has(tag)) {
-      const t = textOf(el);
-      if (!t) return;
-      out.push(isAsterism(t) ? { type: "break", text: "" } : { type: "para", text: t });
-      return;
-    }
-    for (const child of Array.from(el.children)) walk(child);
+    if (LEAF.has(tag)) { para(textOf(el)); return; }
+    const kids = Array.from(el.children);
+    if (!kids.length) { para(textOf(el)); return; } // bare-text container (e.g. <div>prose</div>)
+    for (const child of kids) walk(child);
   };
   const body = doc.body ?? byLocalName(doc, "body")[0];
   if (body) for (const child of Array.from(body.children)) walk(child);
@@ -91,8 +104,10 @@ export async function parseEpub(data: Blob | ArrayBuffer | Uint8Array): Promise<
   const xml = new DOMParser();
   const readText = async (path: string): Promise<string | null> => {
     const f = zip.file(path);
-    // Drop <link> tags: happy-dom's DOMParser (tests) eagerly fetches stylesheets; browsers don't.
-    return f ? (await f.async("text")).replace(/<link\b[^>]*>/gi, "") : null;
+    if (!f) return null;
+    // Drop <link> tags (happy-dom's DOMParser eagerly fetches stylesheets; browsers don't) and the
+    // XML declaration (happy-dom rejects the single-quoted form `<?xml version='1.0'?>` outright).
+    return (await f.async("text")).replace(/^\s*<\?xml[^>]*\?>/i, "").replace(/<link\b[^>]*>/gi, "");
   };
 
   // container.xml → OPF path
@@ -146,11 +161,30 @@ export async function parseEpub(data: Blob | ArrayBuffer | Uint8Array): Promise<
   const flushScene = () => {
     if (cur && cur.paras.length) { cur.scenes.push(cur.paras.join("\n\n")); cur.paras = []; }
   };
-  const isFrontMatterTitle = (t: string) =>
-    !t || t.toLowerCase() === title.toLowerCase() || /^by\s/i.test(t);
+  // Junk detection. A PROSE-bearing chapter is junk when its title or opening text is digitization
+  // boilerplate / apparatus, its first paragraph is a contents marker (a TOC rendered as prose), or
+  // it is a title page (very short + echoes the book title or author). A TITLE-ONLY chapter is junk
+  // unless it reads like a real part divider (kept) — i.e. junk when untitled, apparatus-titled, or
+  // echoing the book title / "by <author>".
+  const isJunkProse = (t: string, scenes: string[]): boolean => {
+    if (APPARATUS_TITLE.test(t) || BOILERPLATE.test(t)) return true;
+    const text = scenes.join("\n\n");
+    if (BOILERPLATE.test(text.slice(0, 600))) return true;
+    if (/^(table of )?contents\.?$/i.test(text.split("\n", 1)[0].trim())) return true;
+    // A TOC rendered as prose without a CONTENTS marker: most lines are chapter labels, not sentences.
+    const lines = text.split(/\n+/).map((l) => l.trim()).filter(Boolean);
+    if (lines.length >= 5 && lines.filter((l) => /^(chapter|part|book|canto|act|section)\b|^[ivxlcdm]+\./i.test(l)).length / lines.length > 0.5) return true;
+    if (text.split(/\s+/).length < 60) {
+      const low = text.toLowerCase();
+      if (low.includes(title.toLowerCase()) || (author && low.includes(author.toLowerCase()))) return true;
+    }
+    return false;
+  };
+  const isJunkTitleOnly = (t: string) =>
+    !t || t.toLowerCase() === title.toLowerCase() || /^by\s/i.test(t) || APPARATUS_TITLE.test(t) || BOILERPLATE.test(t);
   const flushChapter = () => {
     flushScene();
-    if (cur && (cur.scenes.length || !isFrontMatterTitle(cur.title))) {
+    if (cur && (cur.scenes.length ? !isJunkProse(cur.title, cur.scenes) : !isJunkTitleOnly(cur.title))) {
       chapters.push({ title: cur.title || `Chapter ${chapters.length + 1}`, scenes: cur.scenes });
     }
     cur = null;
