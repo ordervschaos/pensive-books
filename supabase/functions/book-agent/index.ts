@@ -24,7 +24,7 @@ import { getRoleModels } from "../_shared/model-config.ts";
 // by novelDna.parity.test.ts). threadSystem re-runs these on the LIVE tree each chain link so the objective +
 // structural lints SENSE the current state instead of dead-reckoning from the author's message-time snapshot
 // (docs/agent-improvement-plan.md P1.2).
-import { analysisText, ledgerText, lintConfigForBrief, newId, PARENT_KIND, SINGLETON_KINDS, type AuthoringStatus, type DnaNode, type NodeContent, type NodeKind, type SceneContent } from "../_shared/novel-dna.ts";
+import { analysisText, ledgerText, lintConfigForBrief, newId, PARENT_KIND, scenesInOrder, SINGLETON_KINDS, type AuthoringStatus, type DnaNode, type NodeContent, type NodeKind, type SceneContent, type ThreadRef } from "../_shared/novel-dna.ts";
 import { currentObjective, nextDraftTarget } from "../_shared/dna-journey.ts";
 // The content schema the agent must conform to — GENERATED from the web app's NODE_SCHEMA (single source of
 // truth), kept in sync by apps/web/.../dnaSchema.artifact.test.ts. Never hand-edit; edit NODE_SCHEMA + regen.
@@ -839,7 +839,7 @@ async function toolResults(
       const sections: string[] = [];
       try {
         if (doPlan) {
-          const res = await planConformanceSummary(service, apiKey, model, n.content, "book-agent-contract", bookId);
+          const res = await planConformanceSummary(service, apiKey, model, n.id, n.content, "book-agent-contract", bookId);
           sections.push(`PLAN CONFORMANCE (does the prose deliver the scene's own plan?):\n${res?.summary ?? "  (no prose to check)"}`);
         }
         if (doMandate) {
@@ -861,18 +861,46 @@ async function toolResults(
   return results;
 }
 
+// §v1 fix (docs/agent-improvement-remaining.md): a beat's threads sometimes get minted verbatim onto EVERY
+// child scene instead of split (confirmed on book 1229 — two sibling scenes carried byte-identical
+// payoff-role refs). A "payoff" is a promise paid ONCE; judging every duplicate-holding sibling against it
+// FAILs the ones that don't actually deliver it, and the agent learns to dismiss verify (alarm fatigue,
+// partially defeating P2.3). Scope payoff judgment to the LAST scene (book reading order) that still carries
+// a given ref — earlier scenes sharing it are a stale copy, not a second obligation, so drop it from their plan.
+async function scopePayoffsToLatestScene(
+  service: SupabaseClient, bookId: number, sceneId: string, threadRefs: ThreadRef[],
+): Promise<ThreadRef[]> {
+  const payoffRefs = new Set(threadRefs.filter((r) => r?.role === "payoff" && r.ref).map((r) => r.ref));
+  if (!payoffRefs.size) return threadRefs;
+  const { data: allNodes } = await service.from("book_nodes")
+    .select("id, book_id, parent_id, level, kind, position, content, authoring")
+    .eq("book_id", bookId);
+  if (!allNodes?.length) return threadRefs;
+  const order = scenesInOrder(allNodes as DnaNode[]);
+  const selfIdx = order.findIndex((n) => n.id === sceneId);
+  if (selfIdx < 0) return threadRefs;
+  const laterHasPayoff = new Set<string>();
+  for (const later of order.slice(selfIdx + 1)) {
+    for (const t of (later.content as SceneContent)?.threads ?? []) {
+      if (t?.role === "payoff" && t.ref && payoffRefs.has(t.ref)) laterHasPayoff.add(t.ref);
+    }
+  }
+  return laterHasPayoff.size ? threadRefs.filter((r) => !(r.role === "payoff" && laterHasPayoff.has(r.ref))) : threadRefs;
+}
+
 // Build a scene's PLAN SLICE from its DNA edges (resolving thread ids → names/promises so the judge reads the
 // promise, not a hash) and judge its prose against it (P2.2). Shared by the check_against_contract tool and the
 // P2.3 auto-verify. Returns null when the scene has no prose; `{axes:[], summary}` when it has no structural
 // plan; else the judged axes + an indented summary. `fn` labels the caller in ai_calls.
 async function planConformanceSummary(
-  service: SupabaseClient, apiKey: string, model: string, content: SceneContent | null | undefined, fn: string, bookId: number,
+  service: SupabaseClient, apiKey: string, model: string, sceneId: string, content: SceneContent | null | undefined, fn: string, bookId: number,
 ): Promise<{ axes: PlanAxisVerdict[]; summary: string } | null> {
   const c = (content ?? {}) as SceneContent;
   const proseText = (c.prose?.text ?? "").trim();
   if (!proseText) return null;
-  const threadRefs = Array.isArray(c.threads) ? c.threads : [];
-  const threadIds = threadRefs.map((r) => r?.ref).filter((r): r is string => !!r);
+  const rawThreadRefs = (Array.isArray(c.threads) ? c.threads : []).filter((r): r is ThreadRef => !!r?.ref);
+  const threadRefs = await scopePayoffsToLatestScene(service, bookId, sceneId, rawThreadRefs);
+  const threadIds = threadRefs.map((r) => r.ref);
   const { data: threadNodes } = threadIds.length
     ? await service.from("book_nodes").select("id, content").in("id", threadIds)
     : { data: [] as { id: string; content: Record<string, unknown> }[] };
@@ -881,7 +909,7 @@ async function planConformanceSummary(
     goal: c.goal, outcome: c.outcome,
     valueShift: c.value_shift ? { value: c.value_shift.value, from: c.value_shift.from, to: c.value_shift.to, polarity: c.value_shift.polarity } : undefined,
     establishes: c.establishes, needs: c.needs,
-    threads: threadRefs.map((r) => ({ name: tById.get(r?.ref ?? "")?.name ?? "(unnamed thread)", promise: tById.get(r?.ref ?? "")?.promise, role: r?.role ?? "advance" })),
+    threads: threadRefs.map((r) => ({ name: tById.get(r.ref)?.name ?? "(unnamed thread)", promise: tById.get(r.ref)?.promise, role: r.role })),
     direction: c.sketch?.direction,
   };
   if (!planHasContent(plan)) return { axes: [], summary: "  this scene has no structural plan (no value_shift / establishes / threads) to check against." };
@@ -921,7 +949,7 @@ async function maybeInjectRenderVerify(
     for (const id of sceneIds) {
       const { data: sc } = await service.from("book_nodes").select("content").eq("id", id).maybeSingle();
       const content = (sc as { content?: SceneContent } | null)?.content;
-      const res = await planConformanceSummary(service, apiKey, model, content, "book-agent-autoverify", row.book_id);
+      const res = await planConformanceSummary(service, apiKey, model, id, content, "book-agent-autoverify", row.book_id);
       if (!res || !res.axes.length) continue; // no prose written yet, or no structural plan → nothing to enforce
       blocks.push(`Scene [${id}] “${nodeHandle(content as Record<string, unknown>)}”:\n${res.summary}`);
     }

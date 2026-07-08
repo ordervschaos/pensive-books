@@ -15,27 +15,22 @@ Milestones after M1 (directional, not committed):
 - **M3 — The series proof.** Book 2 generated under book-1 canon, still readable (O5).
 - **M4 — First paid surface.** Only after M1/M2 — nobody pays to generate slop (NORTH_STAR §7).
 
-## Now (in-flight — finish these)
-
-1. **Fix the live-run defects** found by the 2026-07-08 loop exercise + build-all attempt
-   (`docs/agent-improvement-remaining.md` §v1–§v4). ~~§v2 no-proposal stall~~ and ~~§v3 wedged
-   auto-accept watcher~~ FIXED + deployed 2026-07-08. Remaining: **§v1** verify judge
-   over-scopes threads (alarm fatigue — partially defeats P2.3) and **§v4** 546
-   WORKER_RESOURCE_LIMIT strands renders + stuck `running` ai_calls rows. These are why "build
-   the whole book" can't run hands-free — the M1 path.
+> **Live-run defects §v1–§v4 all fixed** (2026-07-08/09, `docs/agent-improvement-remaining.md`) —
+> moved to STATE.md. §v1/§v4 fixed 2026-07-09 have NOT yet been re-exercised on a live "build all"
+> run — that's the natural next check before calling the hands-free build path solid. Both Now
+> slots are free.
 
 **Structure Miner v1 shipped** (2026-07-08, via `dna/structure-miner` — merged 2026-07-09):
-R1/R2 graduated, moved to STATE.md. Now slot #2 is free — see Next below.
+R1/R2 graduated, moved to STATE.md.
 
-## Next (committed, not started — pull order proposed, to be ratified)
+> **Brief→Mandate propagation fix** — checked 2026-07-09, already shipped (mechanism live in
+> `dna-expand`, C1/C2/C4 done); moved to STATE.md. Dropped from this list.
 
-1. **Brief→Mandate propagation fix** (`docs/brief-mandate-propagation.md`) — known systematic
-   quality bug: heat/length/comedy don't survive the pipeline. Cheap, spec written.
-2. **EPUB Layer B follow-through** — scene enrichment + act re-segmentation (Layer B core
+1. **EPUB Layer B follow-through** — scene enrichment + act re-segmentation (Layer B core
    shipped 2026-07-08; these finish the import → readable-plan story).
-3. **Obligation ledger completion** — journey gate + waive gesture, endgame objective.
-4. **Unblock publish revalidation** — set REVALIDATE_SECRET (small ops task, unblocks the
-   book → marketing pipe).
+2. **Obligation ledger completion** — journey gate + waive gesture, endgame objective.
+3. **Unblock publish revalidation** — set REVALIDATE_SECRET (small ops task, unblocks the
+   book → marketing pipe; also unblocks C5b content-type gating).
 
 ## Later (valuable, deliberately not now)
 

@@ -34,6 +34,7 @@ edit-reflex, not boredom). The bar: a full book, no edit-reflex.
 | Timeline layer (temporal projection) | partial | verticalLints shipped; timeline UI + promote-to-thread parked |
 | DNA tree versions (save points, diff, restore) | shipped | Auto-checkpoint on auto-accept arm |
 | Generation hardening (SSOT schema, fail-closed validateOps) | shipped | Killed 4-mirror drift |
+| Brief→Mandate propagation (VOICE vs MANDATE, foregrounded, per-page length budget) | shipped (mechanism) | `docs/brief-mandate-propagation.md` C1/C2/C4; live in `dna-expand` + mirrored in `eval-bridge.mjs`. Conformance-report UI (`mandate-gate` core+edge fn) built pre-pivot, orphaned when Build Studio was deleted — not reconnected to any client path. C5b (content_type → publish/marketplace gate) pending |
 
 ### Agent (the single AI surface)
 
@@ -44,7 +45,7 @@ edit-reflex, not boredom). The bar: a full book, no edit-reflex.
 | Agent context model (anchors not fences; @-mention tray) | shipped | Whole book always visible |
 | Agent-curated prose (render brief + read-repair loop) | shipped | Stream still writes prose |
 | Agent sessions table (archived chats off jsonb) | shipped | Fixed slow "New chat" + Realtime amplification |
-| Agent improvement plan (dead-reckoning → sensing) | shipped (code) | P0→P4 landed 2026-07-02; exercised live 2026-07-08 (book 1229, build-all attempt): auto-verify/auto-accept/search/digest confirmed; §v2 (no-proposal stall) + §v3 (wedged auto-accept watcher) FIXED+deployed 2026-07-08; §v1 (verify judge over-scope) + §v4 (546 WORKER_RESOURCE_LIMIT strands renders + stuck `ai_calls`) OPEN — `docs/agent-improvement-remaining.md`; then §4a/§4b/§3a |
+| Agent improvement plan (dead-reckoning → sensing) | shipped (code) | P0→P4 landed 2026-07-02; exercised live 2026-07-08 (book 1229, build-all attempt): auto-verify/auto-accept/search/digest confirmed; §v2/§v3 FIXED+deployed 2026-07-08; §v1 (payoff-thread scoping) + §v4 (546 retry/backoff; watchdog already covered it) FIXED+deployed 2026-07-09 — `docs/agent-improvement-remaining.md`. Not yet re-exercised live post-fix. Remaining: §4a/§4b/§3a |
 
 ### Verify layer (reading the artifact back)
 
@@ -77,8 +78,6 @@ edit-reflex, not boredom). The bar: a full book, no edit-reflex.
 
 ### Known quality gaps (bugs against the hypothesis)
 
-- **Brief→Mandate propagation:** books conform on voice but break heat/length/comedy — brief
-  injected as "voice contract" only. Spec: `docs/brief-mandate-propagation.md`. Not started.
 - **Repetition:** verbatim prev-page context was the top repetition source (prose-context
   experiment); digest mitigates, watch for regressions.
 

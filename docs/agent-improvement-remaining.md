@@ -39,12 +39,18 @@ sketch scene 8 → render → auto-verify → next turn) and observed against ai
   (durable-task behavior as designed).
 
 **Two behavioral defects found (new backlog, ordered by M1 impact):**
-1. **§v1 verify judge over-scopes threads.** The scene-7 verify FAILed three thread payoffs that
-   belong to scene 8 — the agent correctly dismissed them: *"The verify is asking for the wrong
-   scene's payoff."* The judge receives beat-level thread expectations, not the scene's slice.
-   Every dismissed false positive trains the agent to ignore verify (alarm fatigue) — this
-   partially defeats P2.3. Fix in `plan-gate.ts` context assembly: thread payoffs must be scoped
-   to the scene under judgment.
+1. **§v1 verify judge over-scopes threads.** ✅ FIXED 2026-07-09. The scene-7 verify FAILed three
+   thread payoffs that belong to scene 8 — the agent correctly dismissed them: *"The verify is
+   asking for the wrong scene's payoff."* Confirmed on book 1229's live data: sibling scenes under
+   the same beat (e.g. positions 0 and 3 under `n_ditab3aqx`) carried byte-identical `threads`
+   arrays, including `role:"payoff"` refs — a beat's thread set minted onto every child scene
+   instead of split. Every dismissed false positive trains the agent to ignore verify (alarm
+   fatigue) — this partially defeats P2.3. Fix in `book-agent/index.ts`'s `planConformanceSummary`
+   (the context assembly plan-gate judges against): a new `scopePayoffsToLatestScene` helper walks
+   the book in reading order (`scenesInOrder`) and drops a `payoff`-role ref from a scene's judged
+   plan if a LATER scene also carries it — the duplicate is a stale copy, not a second obligation,
+   so only the last-in-order holder is judged on it. `setup`/`advance` roles are untouched (they're
+   legitimately allowed to span multiple scenes). Deployed.
 2. **§v2 auto mode accepts a no-proposal turn as end-of-run.** ✅ FIXED 2026-07-08. The run went
    `idle` after a turn that only narrated ("once it applies, I'll render scene 9…") with no tool
    call — scene 9 was left unrendered while the run looks finished. Mirror of the P2.3 insight:
@@ -78,12 +84,24 @@ Continuing the run toward a full build surfaced two more defects and one structu
    prose-render, 3 min otherwise) via the `AbortSignal` plumbing that already existed end-to-end
    (`applyAgentProposal` → `expandNode` → fetch), so the promise always settles and the existing
    catch path (discard + continue) recovers the run.
-4. **§v4 render finalize dies under worker pressure and strands state.** `dna-expand` returned
-   546 `WORKER_RESOURCE_LIMIT` intermittently (concurrent dna-decompose load on the same worker
-   pool); scene-9's first render streamed fully but its prose never persisted, and the
-   `ai_calls` rows stayed `running` forever (7347, 7352). A manual re-render succeeded. Fixes:
-   retry/backoff on 546 in the client apply path; watchdog should sweep stuck `running` ai_calls;
-   ideally the stream's node-write should not depend on a second worker call. OPEN.
+4. **§v4 render finalize dies under worker pressure and strands state.** ✅ PARTIALLY FIXED
+   2026-07-09. `dna-expand` returned 546 `WORKER_RESOURCE_LIMIT` intermittently (concurrent
+   dna-decompose load on the same worker pool); scene-9's first render streamed fully but its
+   prose never persisted, and the `ai_calls` rows stayed `running` forever (7347, 7352). A manual
+   re-render succeeded. Checked both suggested fixes against live data before implementing:
+   - **Watchdog** (`20260609040000_ai_calls_stuck_watchdog.sql`): already table-wide (no `fn`
+     filter), already covers stream-proxy rows. Verified live — 7347/7352 are `done`/`error`
+     today, not stuck. No change needed; this half of the item was already closed.
+   - **Retry/backoff on 546 in the client apply path**: genuinely missing — `invokeWithRetry`
+     (`dnaExpand.ts`) retried every error identically (flat 1.5s × 3 attempts), so a scene whose
+     prose had already streamed for an EARLIER call in the same turn could still get discarded by
+     a LATER 546 on the same short budget. Added `isWorkerResourceLimit()` (detects
+     `.context.status === 546` or a `WORKER_RESOURCE_LIMIT`/`546` message) — on a match,
+     `invokeWithRetry` grants one bonus attempt and backs off `3000 * attempt`ms instead of the
+     flat 1.5s, since contention needs time to clear rather than an immediate re-hit of the same
+     full pool. Unit-tested (`dnaExpand.test.ts`).
+   - **Stretch (not done):** "the stream's node-write should not depend on a second worker call" —
+     bigger architecture change, still OPEN if this keeps recurring after the retry fix.
 
 **Structural limit surfaced by "build all":** the whole-book build is *client-driven* — prose
 streams in the browser, applies are client clicks, chain advances come from the tab. Closing the

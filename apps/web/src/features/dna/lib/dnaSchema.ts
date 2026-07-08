@@ -156,6 +156,9 @@ export const NODE_SCHEMA: Partial<Record<NodeKind, EditSpec[]>> = {
     // observed_establishes / continuity_flags are OUTPUTS of the continuity read (factLedger), not authored plan
     // input — so they're not editor fields here. Phase-1 grounding (docs/scene-ledger.md §1.3): each fact may
     // carry an optional `entity` = the registry node id it's about (n_…), the join key to the plan side.
+    // observed_fingerprint (mined — docs/structure-miner.md, doc_1783541100000.md) is likewise a read-side
+    // OUTPUT, not an editor field: read-facts senses closure/interiority_engine/motif_carrier/climax_cadence
+    // from the prose AFTER the fact, same pattern as observed_value_carrier.
   ],
 };
 // The editor renders only the hand-editable fields — structural genOnly fields are prompt/contract-only.

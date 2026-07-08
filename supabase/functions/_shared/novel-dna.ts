@@ -107,6 +107,15 @@ export interface ConfusionFlag { kind?: "who" | "where" | "when" | "why" | "refe
 // scene's PLANNED value_shift is DELIVERED through a concrete involuntary physical tell (embodied), or merely
 // asserted/narrated. Makes value_shift falsifiable against the prose — the "told, not shown" sensor.
 export interface ValueCarrier { embodied: boolean; tell?: string }
+// fingerprint (mined — docs/structure-miner.md, doc_1783541100000.md): read-side technique axes read-facts
+// senses in the prose AFTER the fact (unlike metaphor_domain, which is plan-side/authored). Every axis is
+// optional — an axis the read didn't look at (or judged "other"/"none") stays absent, never a guessed default.
+export interface SceneFingerprint {
+  closure?: "echo_opening" | "hard_cut" | "image_out" | "line_out" | "interior_out" | "other";
+  interiority_engine?: "tell_decoding" | "memory" | "direct_thought" | "sensation" | "none";
+  motif_carrier?: "prop" | "weather" | "body" | "sound" | "none";
+  climax_cadence?: "staccato" | "sustained" | "none";
+}
 export interface BeatContent {
   summary?: string; connector?: "therefore" | "but"; polarity?: "up" | "down";
   threads?: ThreadRef[]; realizes?: string[]; grounds_in?: string[];
@@ -148,6 +157,7 @@ export interface SceneContent {
   continuity_flags?: ContinuityFlag[]; // CONTINUITY: breaks the read found here vs prior canon (output, not plan input)
   confusion_flags?: ConfusionFlag[];   // COLD READER: what a reader-so-far couldn't follow here (output, not plan input)
   observed_value_carrier?: ValueCarrier; // VALUE EMBODIMENT: does the prose land the planned value_shift on a physical tell? (output, not plan input)
+  observed_fingerprint?: SceneFingerprint; // TECHNIQUE FINGERPRINT: read-sensed closure/interiority/motif/cadence axes (output, not plan input)
   chapter_start?: ChapterStart | null;
   prose?: { text?: string; words?: number };
 }
@@ -370,7 +380,7 @@ export function backlinkIndex(nodes: DnaNode[]): Map<string, DnaNode[]> {
 // Fields that are OUTPUTS of generation/the read, never plan INPUTS — stripped before any input-set hash so
 // writing them (e.g. a meter read onto a beat, a fact ledger onto a scene) never spuriously stales the nodes
 // that hash this content. Mirrors how the prose hash already excludes prose.
-const OUTPUT_FIELDS = ["prose", "observed_readings", "observed_establishes", "continuity_flags", "confusion_flags", "observed_value_carrier", "observed_shape_fit", "observed_shape_hash", "observed_craft", "observed_craft_hash"] as const;
+const OUTPUT_FIELDS = ["prose", "observed_readings", "observed_establishes", "continuity_flags", "confusion_flags", "observed_value_carrier", "observed_fingerprint", "observed_shape_fit", "observed_shape_hash", "observed_craft", "observed_craft_hash"] as const;
 function planOf(content: NodeContent | null | undefined): NodeContent | null {
   if (!content) return null;
   const out: Record<string, unknown> = { ...(content as Record<string, unknown>) };
@@ -398,7 +408,7 @@ export function isProseStale(scene: DnaNode): boolean {
   const c = scene.content as SceneContent;
   if (!c.prose?.text?.trim() || !scene.authoring.prose_src_hash) return false;
   // observed_establishes/continuity_flags are OUTPUTS of the read, not inputs.
-  const { prose: _p, observed_establishes: _oe, continuity_flags: _cf, observed_value_carrier: _ovc, ...plan } = c;
+  const { prose: _p, observed_establishes: _oe, continuity_flags: _cf, observed_value_carrier: _ovc, observed_fingerprint: _ofp, ...plan } = c;
   return scene.authoring.prose_src_hash !== metaHash(stableStringify(plan));
 }
 
@@ -408,14 +418,14 @@ export function stampInput(node: DnaNode, index: Map<string, DnaNode>): DnaNode 
 }
 /** Stamp a scene's prose hash (call after prose is written from the current plan). */
 export function stampProse(scene: DnaNode): DnaNode {
-  const { prose: _p, observed_establishes: _oe, continuity_flags: _cf, observed_value_carrier: _ovc, ...plan } = scene.content as SceneContent;
+  const { prose: _p, observed_establishes: _oe, continuity_flags: _cf, observed_value_carrier: _ovc, observed_fingerprint: _ofp, ...plan } = scene.content as SceneContent;
   return { ...scene, authoring: { ...scene.authoring, prose_src_hash: metaHash(stableStringify(plan)) } };
 }
 
 /** The scene's SPEC — its content minus the sketch itself and every OUTPUT field — the input set the sketch
  *  is generated from. Shared by isSketchStale/stampSketch so the two can never drift on what "spec" means. */
 function sketchInputPlan(c: SceneContent): Record<string, unknown> {
-  const { sketch: _sk, prose: _p, observed_establishes: _oe, continuity_flags: _cf, confusion_flags: _cnf, observed_value_carrier: _ovc, ...plan } = c;
+  const { sketch: _sk, prose: _p, observed_establishes: _oe, continuity_flags: _cf, confusion_flags: _cnf, observed_value_carrier: _ovc, observed_fingerprint: _ofp, ...plan } = c;
   return plan;
 }
 /** Scene sketch is stale iff the scene's spec changed since the sketch was written. Because `prose_src_hash`
@@ -542,12 +552,14 @@ export interface LintConfig {
   rhythmCvFloor: number;        // sentence-length coefficient of variation below this = monotone rhythm
   nameDensityCeiling: number;   // character-name mentions per 100 words above this = name soup
   dialogueRunLen: number;       // ≥N consecutive prose scenes all ≥90% (or all ≤10%) dialogue = a flatline
+  emDashCeiling: number;        // em-dash (—/--) mentions per 100 words above this = an overused dash tic (mined — docs/structure-miner.md)
+  cadenceSpreadFloor: number;   // book-level: cv of per-scene sentence-length CVs below this = uniform cadence across the whole book (provisional; calibrated on one generated book)
 }
 export const DEFAULT_LINT_CONFIG: LintConfig = {
   pacingDriftTol: 0.1, saggingRun: 4, meterFlatRun: 4, meterMinOsc: 2,
   meterPoleBand: 0.15, meterTargetDriftBand: 0.2, meterReadGapBand: 0.2, sceneRefineBand: 0.2,
   proseEchoAdjacent: 1, proseEchoDistant: 2, rhythmMinSentences: 8, rhythmCvFloor: 0.3,
-  nameDensityCeiling: 8, dialogueRunLen: 3,
+  nameDensityCeiling: 8, dialogueRunLen: 3, emDashCeiling: 0.8, cadenceSpreadFloor: 0.12,
 };
 // Genre presets, matched by keyword over the brief's free-text genre. Taut genres tolerate shorter flat
 // stretches; interior genres allow longer ones and don't demand oscillation. An unrecognized genre gets
@@ -1751,6 +1763,7 @@ function dialogueShare(prose: string): number {
 const NAME_SOUP_MIN_WORDS = 150;      // below this a scene is too short for density to mean anything
 const DIALOGUE_HIGH = 0.9;            // line share at/above = "all dialogue"
 const DIALOGUE_LOW = 0.1;             // line share at/below = "no dialogue"
+const CADENCE_UNIFORM_MIN_SCENES = 12; // book-level cadence_uniform needs this many prosed scenes before the spread-of-cv metric means anything
 
 /** The four mechanical prose lints. One precompute pass (tokens / 5-grams / sentence lengths / dialogue
  *  share per prose-bearing scene), then pairwise compare only the n-gram sets. Pure string work — no
@@ -1763,7 +1776,7 @@ export function proseLints(nodes: DnaNode[], cfg: LintConfig): DnaIssue[] {
   // Precompute per scene. A 5-gram that appears in the scene's OWN location palette (scene.loc → location
   // fields) is excluded — a facet echo is deliberate craft, already covered by facetEchoes. Prose-less
   // scenes stay null so ADJACENCY below means "next to each other in reading order", not "next drafted".
-  type SceneStat = { id: string; idx: number; tokens: string[]; grams: Set<string>; sentences: number[]; dialogue: number };
+  type SceneStat = { id: string; idx: number; text: string; tokens: string[]; grams: Set<string>; sentences: number[]; dialogue: number };
   const stats: (SceneStat | null)[] = scenes.map((s, idx) => {
     const c = s.content as SceneContent;
     const prose = c.prose?.text ?? "";
@@ -1775,7 +1788,7 @@ export function proseLints(nodes: DnaNode[], cfg: LintConfig): DnaIssue[] {
       const lc = loc.content as Record<string, unknown>;
       for (const f of FACET_FIELDS.location ?? []) for (const g of distinctiveGrams(facetWords(String(lc[f] ?? "")))) grams.delete(g);
     }
-    return { id: s.id, idx, tokens, grams, sentences: sentenceLengths(prose), dialogue: dialogueShare(prose) };
+    return { id: s.id, idx, text: prose, tokens, grams, sentences: sentenceLengths(prose), dialogue: dialogueShare(prose) };
   });
   const prosed = stats.filter((s): s is SceneStat => s !== null);
 
@@ -1846,6 +1859,40 @@ export function proseLints(nodes: DnaNode[], cfg: LintConfig): DnaIssue[] {
         message: `${j - i} scenes in a row are ${ex === "high" ? "≥90% dialogue" : "≤10% dialogue"} — the mix never varies` });
     }
     i = j;
+  }
+
+  // 5) em_dash_density — em-dash (—) or double-hyphen (--) mentions per 100 words above the ceiling: an
+  // overused stylistic tic (mined — docs/structure-miner.md; confirmed cross-book).
+  for (const s of prosed) {
+    const words = s.tokens.length;
+    if (!words) continue;
+    const dashes = (s.text.match(/—|--/g) ?? []).length;
+    const per100 = (dashes / words) * 100;
+    if (per100 <= cfg.emDashCeiling) continue;
+    issues.push({ rule: "em_dash_density", severity: "warn", nodeId: s.id,
+      message: `${dashes} em-dash(es) in ${words} words (${per100.toFixed(2)} per 100 — ceiling ${cfg.emDashCeiling}) — overused dash tic` });
+  }
+
+  // 6) cadence_uniform — book-level: rule 2 (monotone_rhythm) catches one flat scene; this catches a book
+  // where every scene's OWN rhythm looks alike even if no single scene is individually flat enough to trip
+  // the floor. cv of the per-scene sentence-length CVs (a second-order coefficient of variation); when that
+  // spread is near zero the whole book reads at one cadence. Needs enough prosed scenes to mean anything.
+  // Provisional threshold — calibration gate: needs a human-authored negative control (doc_1783542000000.md).
+  const sceneCvs: number[] = [];
+  for (const s of prosed) {
+    if (s.sentences.length < 2) continue;
+    const mean = s.sentences.reduce((a, b) => a + b, 0) / s.sentences.length;
+    if (!mean) continue;
+    sceneCvs.push(Math.sqrt(s.sentences.reduce((a, b) => a + (b - mean) ** 2, 0) / s.sentences.length) / mean);
+  }
+  if (sceneCvs.length >= CADENCE_UNIFORM_MIN_SCENES) {
+    const cvMean = sceneCvs.reduce((a, b) => a + b, 0) / sceneCvs.length;
+    const cvStd = Math.sqrt(sceneCvs.reduce((a, b) => a + (b - cvMean) ** 2, 0) / sceneCvs.length);
+    const spread = cvMean ? cvStd / cvMean : 0; // every scene's cv identical (incl. all-zero) = maximal uniformity
+    if (spread < cfg.cadenceSpreadFloor) {
+      issues.push({ rule: "cadence_uniform", severity: "warn", nodeId: prosed[0].id,
+        message: `sentence-length rhythm barely varies scene-to-scene across ${sceneCvs.length} prosed scenes (spread ${spread.toFixed(2)}, floor ${cfg.cadenceSpreadFloor}) — the book reads at one cadence` });
+    }
   }
 
   return issues;

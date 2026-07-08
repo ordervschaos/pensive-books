@@ -185,8 +185,9 @@ function stampCraft(fresh: boolean): DnaNode[] {
 
 // W3 prose-lint fixture: planted MECHANICAL faults for the deterministic read layer — an adjacent verbatim
 // echo (pp_s1→pp_s2 share one distinctive 5-gram), a flat-cadence scene (pp_s3: 8 five-word sentences, CV 0),
-// a name-soup scene (pp_s4: 180 words dense with Mara/Okonkwo), and a 3-run of all-dialogue scenes
-// (pp_s5..pp_s7). The narration run at the head also exercises the ≤10% dialogue extreme.
+// a name-soup scene (pp_s4: 180 words dense with Mara/Okonkwo), a 3-run of all-dialogue scenes
+// (pp_s5..pp_s7), and an em-dash-heavy scene (pp_s8: 4 dashes in ~53 words, far above the 0.8/100 ceiling).
+// The narration run at the head also exercises the ≤10% dialogue extreme.
 function proseBook(): DnaNode[] {
   const pillar = mk("pillar", { id: "pp_pil", content: {} });
   const c1 = mk("character", { id: "pp_c1", parent_id: "pp_pil", content: { name: "Mara Voss", role: "protagonist" } });
@@ -208,7 +209,27 @@ function proseBook(): DnaNode[] {
     sc("pp_s5", 4, '"Where is it?" she asked.\n"Gone," he said.'),
     sc("pp_s6", 5, '"You promised me," she said.\n"I lied," he said.'),
     sc("pp_s7", 6, '"Open the box," she said.\n"No," he said.'),
+    sc("pp_s8", 7,
+      "The tide pulled back — slow, indifferent — and left the harbor stones bare. She counted the gulls " +
+      "circling overhead, each cry sharper than the last — a warning she chose to ignore — while the boats " +
+      "knocked softly against the pier. Somewhere behind her a bell rang twice, then stopped, and she did not turn around."),
   ];
+}
+
+// Book-level cadence fixture (doc_1783542000000.md Step 1b): 12 prosed scenes, each the SAME flat 8-sentence
+// shape (per-scene CV 0, so monotone_rhythm also fires on every one of them) — the spread of those per-scene
+// CVs is therefore 0, well under the floor, so cadence_uniform fires once, anchored to the first prosed scene.
+function cadenceBook(): DnaNode[] {
+  const pillar = mk("pillar", { id: "cd_pil", content: {} });
+  const a1 = mk("act", { id: "cd_a1", parent_id: "cd_pil", position: 0, content: { title: "One" } });
+  const b1 = mk("beat", { id: "cd_b1", parent_id: "cd_a1", position: 0, content: { summary: "uniform cadence" } });
+  const flatFor = (n: number) =>
+    `Mara${n} walked to the door. Rain hammered on the glass. She counted every grey step. ` +
+    `The lamp guttered in silence. Something moved behind the curtain. Her hands would not settle. ` +
+    `The clock ticked past midnight. Nobody answered her second knock.`;
+  const scenes = Array.from({ length: 12 }, (_, i) =>
+    mk("scene", { id: `cd_s${i + 1}`, parent_id: "cd_b1", position: i, content: { goal: "g", prose: { text: flatFor(i + 1) } } }));
+  return [pillar, a1, b1, ...scenes];
 }
 
 // Sketch/direction fixtures (doc_1783198900000_dna_scene_direction.md): a thread payoff shown in summary/far
@@ -304,7 +325,7 @@ const cases: [string, (m: typeof web, n: DnaNode[]) => unknown][] = [
 ];
 
 describe("novel-dna edge twin ↔ web engine parity", () => {
-  const fixtures: [string, DnaNode[]][] = [["goodBook", goodBook()], ["brokenBook", brokenBook()], ["registryBook", registryBook()], ["exposureBook", exposureBook()], ["ledgerAtBook", ledgerAtBook()], ["verticalBook", verticalBook()], ["shapeFitFresh", stampShapeFit(true)], ["shapeFitStale", stampShapeFit(false)], ["craftFresh", stampCraft(true)], ["craftStale", stampCraft(false)], ["proseBook", proseBook()], ["sketchBook", sketchBook()], ["endgameBook", endgameBook()], ["contractBook", contractBook()]];
+  const fixtures: [string, DnaNode[]][] = [["goodBook", goodBook()], ["brokenBook", brokenBook()], ["registryBook", registryBook()], ["exposureBook", exposureBook()], ["ledgerAtBook", ledgerAtBook()], ["verticalBook", verticalBook()], ["shapeFitFresh", stampShapeFit(true)], ["shapeFitStale", stampShapeFit(false)], ["craftFresh", stampCraft(true)], ["craftStale", stampCraft(false)], ["proseBook", proseBook()], ["cadenceBook", cadenceBook()], ["sketchBook", sketchBook()], ["endgameBook", endgameBook()], ["contractBook", contractBook()]];
   for (const [fxName, nodes] of fixtures) {
     for (const [fnName, fn] of cases) {
       it(`${fnName} agrees on ${fxName}`, () => {
@@ -317,9 +338,24 @@ describe("novel-dna edge twin ↔ web engine parity", () => {
     expect(web.validate(brokenBook()).length).toBeGreaterThan(0);
   });
 
-  it("the prose fixture trips all four prose rules (guards against a no-op fixture)", () => {
+  it("the prose fixture trips all five prose rules (guards against a no-op fixture)", () => {
     const rules = web.proseLints(proseBook(), web.DEFAULT_LINT_CONFIG).map((i) => i.rule);
-    for (const r of ["prose_echo", "monotone_rhythm", "name_soup", "dialogue_flatline"]) expect(rules).toContain(r);
+    for (const r of ["prose_echo", "monotone_rhythm", "name_soup", "dialogue_flatline", "em_dash_density"]) expect(rules).toContain(r);
+  });
+
+  it("flags the em-dash-heavy scene and only that scene", () => {
+    const issues = web.proseLints(proseBook(), web.DEFAULT_LINT_CONFIG).filter((i) => i.rule === "em_dash_density");
+    expect(issues.map((i) => i.nodeId)).toEqual(["pp_s8"]);
+  });
+
+  it("flags a book whose sentence-length rhythm barely varies scene-to-scene (cadence_uniform)", () => {
+    const issues = web.proseLints(cadenceBook(), web.DEFAULT_LINT_CONFIG).filter((i) => i.rule === "cadence_uniform");
+    expect(issues.map((i) => i.nodeId)).toEqual(["cd_s1"]);
+  });
+
+  it("stays silent on cadence_uniform below the 12-scene gate (proseBook only has 8 prosed scenes)", () => {
+    const rules = web.proseLints(proseBook(), web.DEFAULT_LINT_CONFIG).map((i) => i.rule);
+    expect(rules).not.toContain("cadence_uniform");
   });
 });
 

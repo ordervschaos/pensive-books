@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { contractDelta, persistContract, realizeScenesFromBeat } from "@/features/dna/lib/dnaExpand";
+import { contractDelta, isWorkerResourceLimit, persistContract, realizeScenesFromBeat } from "@/features/dna/lib/dnaExpand";
 import type { BeatContent, DnaNode, MeterContent, NodeContent, SceneContent, VoiceContent } from "@/features/dna/lib/novelDna";
 
 // In-memory book_nodes so persistContract's load→save round-trips run without supabase. The mock carries
@@ -69,6 +69,24 @@ describe("realizeScenesFromBeat — causal plan distribution (§3d)", () => {
     const scenes = [scene()];
     realizeScenesFromBeat(beatNode({ summary: "The arrival — everything shifts." }), scenes, 0);
     expect(scenes[0].chapter_start?.title).toBeTruthy();
+  });
+});
+
+// §v4 (docs/agent-improvement-remaining.md): detecting worker-pool contention distinctly from a real error,
+// so invokeWithRetry can give it a longer backoff + a bonus attempt instead of discarding the turn.
+describe("isWorkerResourceLimit — §v4 546 detection", () => {
+  it("matches supabase-js's FunctionsHttpError shape (status on .context)", () => {
+    expect(isWorkerResourceLimit({ context: { status: 546 } })).toBe(true);
+  });
+  it("matches a message carrying the WORKER_RESOURCE_LIMIT text", () => {
+    expect(isWorkerResourceLimit(new Error("Edge Function returned WORKER_RESOURCE_LIMIT"))).toBe(true);
+  });
+  it("matches a bare '546' in the message as a fallback", () => {
+    expect(isWorkerResourceLimit(new Error("edge call failed: 546"))).toBe(true);
+  });
+  it("does not match an unrelated error", () => {
+    expect(isWorkerResourceLimit(new Error("network request failed"))).toBe(false);
+    expect(isWorkerResourceLimit({ context: { status: 500 } })).toBe(false);
   });
 });
 

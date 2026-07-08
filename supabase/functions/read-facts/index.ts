@@ -23,6 +23,14 @@ interface ReadScene { id: string; summary?: string; prose: string; value_shift?:
 const MAX_PROSE_CHARS = 8000;   // one scene's prose; the ledger keeps the rest of the context bounded
 const MAX_LEDGER = 200;         // cap the canon fed in (compaction is a fast-follow; guard the prompt size)
 
+// TECHNIQUE FINGERPRINT (mined — docs/structure-miner.md, doc_1783541100000.md): read-side axes, unconditional
+// (asked on every scene, unlike value_carrier which needs a planned shift). Server-side allowlist per axis —
+// an unrecognized/hallucinated value is dropped, same pattern as the entity registry check below.
+const CLOSURE_VALUES = new Set(["echo_opening", "hard_cut", "image_out", "line_out", "interior_out", "other"]);
+const INTERIORITY_VALUES = new Set(["tell_decoding", "memory", "direct_thought", "sensation", "none"]);
+const MOTIF_VALUES = new Set(["prop", "weather", "body", "sound", "none"]);
+const CADENCE_VALUES = new Set(["staccato", "sustained", "none"]);
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
@@ -78,7 +86,19 @@ Deno.serve(async (req: Request) => {
           "emotional turn through a concrete, involuntary physical carrier — a body tell, gesture, or sensory " +
           "beat the reader can SEE (a blink, a flinch, a held breath, a hand that stops) — versus merely " +
           "ASSERTING/narrating it ('she felt powerful now'). embodied=true only if such a physical carrier is " +
-          "present; then name it in `tell` (≤6 words). If the shift is stated but has no physical carrier, embodied=false.",
+          "present; then name it in `tell` (≤6 words). If the shift is stated but has no physical carrier, embodied=false. " +
+          "(4) TECHNIQUE FINGERPRINT (always — read HOW the scene is written, not what happens): " +
+          "closure — how it ENDS: echo_opening (returns to its own opening image/line), hard_cut (ends abruptly " +
+          "mid-action/beat), image_out (ends on a standalone image), line_out (ends on a standalone line of " +
+          "dialogue), interior_out (ends inside a character's thought), or other. " +
+          "interiority_engine — how interiority is rendered where it appears: tell_decoding (a character reads " +
+          "another's involuntary tell), memory (a remembered scene intrudes), direct_thought (plain interior " +
+          "narration/free indirect thought), sensation (bodily/sensory awareness carries it), or none. " +
+          "motif_carrier — the recurring concrete image/object carrying meaning here: prop, weather, body, " +
+          "sound, or none. " +
+          "climax_cadence — if the scene has a climactic beat, is its sentence rhythm staccato (short, clipped) " +
+          "or sustained (longer, flowing); none if there's no climactic beat. " +
+          "Omit any fingerprint axis you're not confident about rather than guessing.",
       }],
       messages: [{
         role: "user",
@@ -88,17 +108,27 @@ Deno.serve(async (req: Request) => {
           (scene.value_shift?.from && scene.value_shift?.to
             ? `PLANNED SHIFT for this scene — ${scene.value_shift.value ? `"${scene.value_shift.value}": ` : ""}from "${scene.value_shift.from}" to "${scene.value_shift.to}"${scene.value_shift.polarity ? ` (${scene.value_shift.polarity})` : ""}.\n\n`
             : "") +
-          `NEW SCENE${scene.summary ? ` ("${scene.summary}")` : ""} — prose:\n${scene.prose.slice(0, MAX_PROSE_CHARS)}\n\n` +
-          `Output ONLY this JSON (no prose, no fences):\n` +
+          // Truncation keeps the HEAD+TAIL, not just the head: closure (the technique fingerprint's ending-read
+          // axis) is judged from how the scene ENDS, so a head-only cut would blind that axis on any long scene.
+          `NEW SCENE${scene.summary ? ` ("${scene.summary}")` : ""} — prose:\n${
+            scene.prose.length > MAX_PROSE_CHARS
+              ? `${scene.prose.slice(0, 6000)}\n[…]\n${scene.prose.slice(-2000)}`
+              : scene.prose
+          }\n\n` +
+          `Output ONLY this JSON (no prose, no fences); every "fingerprint" key is optional — omit any axis ` +
+          `you're not confident about instead of guessing:\n` +
           `{ "facts": [ { "key": "<snake_case>", "value": "<short>", "note": "<optional>", "entity": "<a registry id when the fact is about one, else omit>" } ], ` +
           `"contradictions": [ { "key": "<canon key>", "was": "<canon value>", "now": "<what the prose says>", "note": "<optional>" } ]` +
           (scene.value_shift?.from && scene.value_shift?.to
             ? `, "value_carrier": { "embodied": <true|false>, "tell": "<the physical carrier, ≤6 words, when embodied>" }`
-            : "") + ` }`,
+            : "") +
+          `, "fingerprint": { "closure": "<echo_opening|hard_cut|image_out|line_out|interior_out|other>", ` +
+          `"interiority_engine": "<tell_decoding|memory|direct_thought|sensation|none>", ` +
+          `"motif_carrier": "<prop|weather|body|sound|none>", "climax_cadence": "<staccato|sustained|none>" } }`,
       }],
     }, meta, { signal: AbortSignal.timeout(90_000) });
 
-    const parsed = JSON.parse(extractJsonBlock(textFromLLM(data).trim())) as { facts?: unknown; contradictions?: unknown; value_carrier?: unknown };
+    const parsed = JSON.parse(extractJsonBlock(textFromLLM(data).trim())) as { facts?: unknown; contradictions?: unknown; value_carrier?: unknown; fingerprint?: unknown };
     const facts = (Array.isArray(parsed.facts) ? parsed.facts : []).filter(
       (f): f is Fact => !!f && typeof (f as Fact).key === "string" && typeof (f as Fact).value === "string"
     ).map((f) => ({
@@ -119,7 +149,17 @@ Deno.serve(async (req: Request) => {
       ? { embodied: vcRaw.embodied, ...(vcRaw.embodied && typeof vcRaw.tell === "string" && vcRaw.tell.trim() ? { tell: vcRaw.tell.trim().slice(0, 60) } : {}) }
       : undefined;
 
-    return json({ facts, contradictions, ...(valueCarrier ? { valueCarrier } : {}) });
+    // Technique fingerprint (4): server-side allowlist per axis — an unrecognized/hallucinated value is
+    // dropped (axis omitted), never surfaced. An empty result (nothing recognized) omits the field entirely.
+    const fpRaw = parsed.fingerprint as { closure?: unknown; interiority_engine?: unknown; motif_carrier?: unknown; climax_cadence?: unknown } | undefined;
+    const fingerprint = fpRaw && typeof fpRaw === "object" ? {
+      ...(typeof fpRaw.closure === "string" && CLOSURE_VALUES.has(fpRaw.closure) ? { closure: fpRaw.closure } : {}),
+      ...(typeof fpRaw.interiority_engine === "string" && INTERIORITY_VALUES.has(fpRaw.interiority_engine) ? { interiority_engine: fpRaw.interiority_engine } : {}),
+      ...(typeof fpRaw.motif_carrier === "string" && MOTIF_VALUES.has(fpRaw.motif_carrier) ? { motif_carrier: fpRaw.motif_carrier } : {}),
+      ...(typeof fpRaw.climax_cadence === "string" && CADENCE_VALUES.has(fpRaw.climax_cadence) ? { climax_cadence: fpRaw.climax_cadence } : {}),
+    } : {};
+
+    return json({ facts, contradictions, ...(valueCarrier ? { valueCarrier } : {}), ...(Object.keys(fingerprint).length ? { fingerprint } : {}) });
   } catch (e) {
     console.error("read-facts error:", e);
     return json({ error: String((e as Error)?.message ?? e).slice(0, 500) }, 500);

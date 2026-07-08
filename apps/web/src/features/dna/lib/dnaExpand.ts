@@ -65,11 +65,24 @@ async function readInvokeError(error: unknown): Promise<string> {
   return String((error as Error)?.message ?? error);
 }
 
+// §v4 (docs/agent-improvement-remaining.md): under concurrent worker-pool load (dna-decompose running
+// alongside dna-expand), the SAME edge function returns a 546 WORKER_RESOURCE_LIMIT — pool contention, not a
+// broken call. Detected on book 1229 (calls 7347/7352): a scene's prose had already streamed by the time a
+// LATER call in the same turn hit 546, so discarding after the generic retry budget throws away real,
+// paid-for generation. supabase-js's FunctionsHttpError parks the numeric status on `.context.status`; a
+// plain fetch failure only has it in the message.
+export function isWorkerResourceLimit(e: unknown): boolean {
+  const status = (e as { context?: { status?: number } })?.context?.status;
+  if (status === 546) return true;
+  return /\b546\b|WORKER_RESOURCE_LIMIT/i.test(String((e as Error)?.message ?? e));
+}
+
 // dna-expand invoke with per-attempt timeout + retry. Body is whatever the edge fn expects (target,
 // optionally prepare). Used for everything EXCEPT the long prose generation, which streams off-worker.
 async function invokeWithRetry(body: Record<string, unknown>, signal?: AbortSignal): Promise<ExpandResult> {
   let lastErr: Error = new Error("dna-expand failed");
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+  let maxAttempts = MAX_ATTEMPTS;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     // Combine the caller's cancel signal with a per-attempt timeout. If the timeout fires, `signal` is
     // still un-aborted → we know it was a stall (not a user Stop) and retry.
@@ -83,10 +96,15 @@ async function invokeWithRetry(body: Record<string, unknown>, signal?: AbortSign
     } catch (e) {
       if (signal?.aborted) throw e; // real user cancel — propagate, never retry
       const timedOut = (e as Error)?.name === "TimeoutError" || (e as Error)?.name === "AbortError";
+      const overloaded = !timedOut && isWorkerResourceLimit(e);
       lastErr = new Error(timedOut
-        ? `edge call timed out after ${ATTEMPT_TIMEOUT_MS / 1000}s (attempt ${attempt}/${MAX_ATTEMPTS})`
+        ? `edge call timed out after ${ATTEMPT_TIMEOUT_MS / 1000}s (attempt ${attempt}/${maxAttempts})`
         : await readInvokeError(e));
-      if (attempt < MAX_ATTEMPTS) await new Promise((r) => setTimeout(r, 1500)); // brief backoff before retry
+      // Contention needs time to clear, not a fast re-hit of the same full pool — and it's worth one bonus
+      // attempt beyond the generic budget precisely because a prior attempt in this turn may have already
+      // streamed real prose upstream of this call.
+      if (overloaded) maxAttempts = Math.max(maxAttempts, MAX_ATTEMPTS + 1);
+      if (attempt < maxAttempts) await new Promise((r) => setTimeout(r, overloaded ? 3000 * attempt : 1500));
     }
   }
   throw lastErr;
