@@ -1,8 +1,10 @@
 import type { ComponentType } from "react";
 import { StudioMock } from "@/components/landing/mocks/StudioMock";
 import { CraftMock } from "@/components/landing/mocks/CraftMock";
+import { ImportMock } from "@/components/landing/mocks/ImportMock";
 import { EditorMock } from "@/components/landing/mocks/EditorMock";
 import { EvaluationMock } from "@/components/landing/mocks/EvaluationMock";
+import { MetersMock } from "@/components/landing/mocks/MetersMock";
 import { ReviseMock } from "@/components/landing/mocks/ReviseMock";
 import { PublishMock } from "@/components/landing/mocks/PublishMock";
 
@@ -62,6 +64,19 @@ export const LANDING_FEATURES: LandingFeature[] = [
     mock: CraftMock,
   },
   {
+    id: "import",
+    eyebrow: "Already have a draft?",
+    title: "Import a manuscript. Pensive infers the plan.",
+    blurb:
+      "Drop in an EPUB and Pensive reads the prose, then builds the whole plan above it — premise, cast, world, threads, and a beat for every page. Your words are locked as source of truth and never rewritten; you get the living plan you'd have gotten if you'd built it here, so you can revise structurally from day one.",
+    bullets: [
+      "Bring an existing book in as an EPUB",
+      "The AI infers premise, cast, threads, and every beat from your prose",
+      "Your words stay locked, word for word — only the plan is inferred",
+    ],
+    mock: ImportMock,
+  },
+  {
     id: "write",
     eyebrow: "Write & edit",
     title: "A calm editor that gets out of the way.",
@@ -86,6 +101,19 @@ export const LANDING_FEATURES: LandingFeature[] = [
       "One click to apply the notes as a revision",
     ],
     mock: EvaluationMock,
+  },
+  {
+    id: "meters",
+    eyebrow: "The shape of your story",
+    title: "See the emotional shape of your book.",
+    blurb:
+      "Track the axes that matter — tension, heat, comedy, a game-score — as lines over the whole book. The solid line is the plan; run the editor's read and a dotted line shows what the prose actually delivers, so a slack middle or a climax that never lands is something you can see, not just feel.",
+    bullets: [
+      "Plot tension, heat, comedy, or any axis across every beat",
+      "Solid line = the plan; dotted line = what the prose delivers",
+      "Send the gaps straight to the AI editor to close",
+    ],
+    mock: MetersMock,
   },
   {
     id: "revise",
