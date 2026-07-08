@@ -12,9 +12,9 @@ export function JourneySection() {
         From an idea to a published book — the way a novelist works.
       </h2>
       <p className="pv-serif mt-4 max-w-[52ch] text-[17px] leading-relaxed text-[hsl(var(--pv-text-muted))]">
-        The Studio walks you down a build ladder — foundations, spine, beats,
-        then prose — and each step only unlocks once the one above it holds. You
-        stay the author the entire way.
+        The Studio walks you down a build ladder — idea, foundations, structure,
+        scenes, then prose — and each rung only firms up once the one above it
+        holds. You stay the author the entire way.
       </p>
 
       <ol className="mt-12 max-w-[44rem]">

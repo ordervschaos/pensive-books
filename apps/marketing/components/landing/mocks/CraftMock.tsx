@@ -1,13 +1,14 @@
 import { UIFrame } from "../UIFrame";
 
 /**
- * The craft ladder — what Pensive settles before a word of prose:
- * Foundations (argument · ending · cast with want·wound·lie · tentpole moments)
- * → Spine (the one-paragraph throughline) → Beats (the page-by-page plan).
+ * The craft ladder — what Pensive settles before a word of prose, matching the
+ * real rungs (apps/web/src/features/dna/lib/dnaJourney.ts):
+ * Foundations (controlling idea · ending · cast with want·wound·lie · tentpoles)
+ * → Structure (acts and their causal beats) → Scenes (each beat dramatized).
  *
  * Mirrors the foundations artifact in apps/web/src/lib/foundations.ts
- * (FNode / CastMember.{want,wound,lie} / Tentpole) and the spine + beat layers
- * surfaced in the studio's FoundationsStep / SpineStep / BeatsStep.
+ * (FNode / CastMember.{want,wound,lie} / Tentpole) and the act/beat/scene
+ * nodes in the DNA tree.
  *
  * Pure server component — a labelled vertical ladder, no client JS.
  */
@@ -94,7 +95,7 @@ export function CraftMock() {
           </p>
         </Tier>
 
-        <Tier kicker="Spine" title="The one-paragraph throughline">
+        <Tier kicker="Structure" title="The acts and their causal beats">
           <p className="pv-serif text-[12.5px] leading-snug text-[hsl(var(--pv-text-muted))]">
             A lighthouse keeper salvages a journal in her own handwriting and,
             page by page, must decide whether to live the life it predicts — or
@@ -102,7 +103,7 @@ export function CraftMock() {
           </p>
         </Tier>
 
-        <Tier kicker="Beats" title="The page-by-page plan, before any prose">
+        <Tier kicker="Scenes" title="Each beat dramatized, before any prose">
           <div className="space-y-1.5">
             {BEATS.map((b) => (
               <div key={b.page} className="rounded-lg border border-[hsl(var(--pv-border-soft))] px-3 py-2">

@@ -9,11 +9,11 @@ import { LANDING_FEATURES, LANDING_EXTRAS } from "@/lib/landing-content";
 export const metadata: Metadata = {
   title: "Pensive — an AI studio for writing whole books",
   description:
-    "A calm studio for writing whole books with AI. Lay the foundations, spine, and beats, draft the prose, then revise by conversation and publish to the public library in a click.",
+    "A calm studio for writing whole books with AI. Lay the foundations, structure, and scenes, draft the prose, then revise by conversation and publish to the public library in a click.",
   openGraph: {
     title: "Pensive — an AI studio for writing whole books",
     description:
-      "Build a book the way a novelist would — foundations, spine, beats, then prose — with an always-on AI editor. Revise by conversation and publish in a click.",
+      "Build a book the way a novelist would — foundations, structure, scenes, then prose — with an always-on AI agent. Revise by conversation and publish in a click.",
     images: ["/og-image.png"],
   },
 };
@@ -31,14 +31,14 @@ export default async function HomePage() {
     <main className="mx-auto max-w-[1140px] overflow-x-hidden px-6 pb-28 md:px-12">
       {/* Hero */}
       <section className="pt-16 md:pt-24">
-        <div className="pv-eyebrow">Foundations · Beats · Prose</div>
+        <div className="pv-eyebrow">Foundations · Structure · Prose</div>
         <h1 className="pv-display mt-5 max-w-[15ch] text-[clamp(40px,9vw,84px)] font-normal leading-[0.98] tracking-tight text-foreground">
           Write a whole book, <em>start to shelf.</em>
         </h1>
         <p className="pv-serif mt-6 max-w-[54ch] text-[19px] leading-relaxed text-[hsl(var(--pv-text-muted))]">
           Pensive is a calm studio for writing whole books with AI. Build it the
-          way a novelist would — foundations, spine, beats, then prose — with an
-          always-on editor you talk to. Revise by conversation, then publish to
+          way a novelist would — foundations, structure, scenes, then prose — with
+          an always-on agent you talk to. Revise by conversation, then publish to
           the public library in a click.
         </p>
         <div className="mt-9 flex flex-wrap items-center gap-x-7 gap-y-4">
@@ -121,7 +121,7 @@ export default async function HomePage() {
           Your next book starts with a sentence.
         </h2>
         <p className="pv-serif mx-auto mt-5 max-w-[52ch] text-[17px] leading-relaxed text-[hsl(var(--pv-text-muted))]">
-          Lay the foundations, plan the beats, draft the prose — with an AI editor
+          Lay the foundations, plan the beats, draft the prose — with an AI agent
           in the rail the whole way. Then publish when you&apos;re ready. No setup,
           no gatekeepers.
         </p>

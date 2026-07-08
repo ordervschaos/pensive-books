@@ -2,20 +2,20 @@ import { Check, Sparkles } from "lucide-react";
 import { UIFrame } from "../UIFrame";
 
 /**
- * Revise by conversation — the right-rail AI editor (ReviseChat.tsx). You talk
- * to it at any layer; it answers, then surfaces a reviewable proposal with a
- * before→after diff you Apply or Discard. Mirrors the ProposalReview + per-layer
- * diff in apps/web/src/components/book/studio/ReviseChat.tsx.
+ * Revise by conversation — the same always-on Agent rail (AgentRail.tsx). You
+ * talk to it about any node in the tree; it answers, then surfaces a reviewable
+ * proposal with a before→after diff you Apply or Discard. Mirrors the proposal
+ * overlay + diff in apps/web/src/features/dna/components/tree/proposalOverlay.tsx.
  *
  * Pure server component — no client JS.
  */
 export function ReviseMock() {
   return (
-    <UIFrame crumb="Salt & Lamplight · revise">
+    <UIFrame crumb="Salt & Lamplight · DNA">
       <div className="flex items-center gap-1.5 pb-3">
         <Sparkles className="h-3 w-3 text-[hsl(var(--pv-accent))]" />
         <span className="pv-mono text-[9px] uppercase tracking-[0.16em] text-[hsl(var(--pv-text-muted))]">
-          Spine editor
+          Agent · revising the spine
         </span>
       </div>
 
@@ -62,7 +62,7 @@ export function ReviseMock() {
       {/* composer */}
       <div className="mt-3 flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2">
         <span className="pv-serif flex-1 text-[12.5px] italic text-[hsl(var(--pv-text-faint))]">
-          Ask or change the spine…
+          Ask the agent, or / for commands…
         </span>
       </div>
     </UIFrame>

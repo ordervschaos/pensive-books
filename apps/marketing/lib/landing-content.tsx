@@ -40,13 +40,13 @@ export const LANDING_FEATURES: LandingFeature[] = [
   {
     id: "studio",
     eyebrow: "Build with AI",
-    title: "One workbench for the whole book.",
+    title: "One tree for the whole book.",
     blurb:
-      "The Studio is a single, calm surface — a Navigator with the build ladder and a live map of every page, an editor in the middle, and an always-on AI in the rail. You converse to generate and revise; it proposes, you review and apply. Think of it as a code editor, but for a novel.",
+      "The Studio is a single surface: your book as a living tree — idea, foundations, structure, scenes, prose — with a rung ladder tracking what holds and what's left, and one always-on Agent in the rail. You converse to build and revise; it proposes, applies, and auto-verifies each scene against its plan. Think of it as a code editor, but for a novel.",
     bullets: [
-      "Navigator, editor, and an always-on AI — in one view",
-      "The AI proposes; nothing changes until you apply",
-      "A live map of what's planned, drafted, and out of sync",
+      "Your whole book as one tree — every layer in one view",
+      "One Agent builds and revises; it proposes, you approve",
+      "A rung ladder shows what's planned, drafted, and out of sync",
     ],
     mock: StudioMock,
   },
@@ -55,10 +55,10 @@ export const LANDING_FEATURES: LandingFeature[] = [
     eyebrow: "The craft, layered",
     title: "It builds a book the way a novelist would.",
     blurb:
-      "Not one giant prompt. Pensive settles the foundations first — the argument, the ending, a cast with a want, a wound, and a lie, the tentpole moments — then a one-paragraph spine, then a beat for every page. Only once the bones hold does it write the prose, in your book's voice.",
+      "Not one giant prompt. Pensive settles the foundations first — the controlling idea, the ending, a cast with a want, a wound, and a lie, the tentpole moments — then the structure: acts and their causal beats, page by page, then a scene for each. Only once the bones hold does it write the prose, in your book's voice.",
     bullets: [
-      "Foundations: argument, ending, cast, tentpole moments, voice",
-      "A spine and a page-by-page beat sheet — before any prose",
+      "Foundations: controlling idea, ending, cast, tentpole moments, voice",
+      "Structure: acts, causal beats, and a scene for each — before any prose",
       "Pin what matters; the AI has to keep it",
     ],
     mock: CraftMock,
@@ -118,11 +118,11 @@ export const LANDING_FEATURES: LandingFeature[] = [
   {
     id: "revise",
     eyebrow: "Revise by conversation",
-    title: "Talk to your editor. It edits.",
+    title: "Talk to the agent. It edits.",
     blurb:
-      "Every layer — foundations, spine, beats, prose — has the same AI editor in the rail. Tell it what's wrong in plain language and it answers, then surfaces a reviewable proposal with a before-and-after diff. Apply it or discard it; you approve every change before it sticks.",
+      "The same Agent that builds your book also revises it — every node in the tree, from the premise down to a line of prose. Tell it what's wrong in plain language and it answers, then surfaces a reviewable proposal with a before-and-after diff. Apply it or discard it; you approve every change before it sticks.",
     bullets: [
-      "One conversational editor across every layer",
+      "One agent across every layer — no separate tools",
       "Proposals arrive as a clear before → after diff",
       "Nothing is saved until you apply it",
     ],
@@ -151,20 +151,20 @@ export interface JourneyStep {
 }
 
 /**
- * The whole arc, start to shelf — the Studio's build ladder
- * (brief → foundations → spine → outline → beats → draft → read → publish),
- * shown as an at-a-glance staircase before the spotlight deep-dives. Mirrors
- * the steps in apps/web/src/components/book/studio/studioModel.ts.
+ * The whole arc, start to shelf — the DNA tree's build ladder. The five real
+ * rungs (Idea → Foundations → Structure → Scenes → Prose) bracketed by the
+ * brief that feeds them and the read/revise/publish that follows. Mirrors the
+ * rung captions in apps/web/src/features/dna/lib/dnaJourney.ts.
  */
 export const JOURNEY_STEPS: JourneyStep[] = [
   { title: "Create your book", blurb: "Start with a title and a blank shelf. That's all it takes to begin." },
-  { title: "Brief the AI", blurb: "Tell Pensive what you're writing — premise, genre, length. Everything downstream is drawn from this." },
-  { title: "Lay the foundations", blurb: "The bedrock: the argument, the ending, a cast with a want, wound, and lie, the tentpole moments, the voice. What you pin, the AI must keep." },
-  { title: "Write the spine", blurb: "A single paragraph the whole book realizes — the throughline everything else hangs from." },
-  { title: "Outline the chapters", blurb: "The chapters and pages as objectives — review, edit, and create them. Still no prose." },
-  { title: "Plan the beats", blurb: "Walk the book page by page and plan the beat for each, before a single word of prose." },
-  { title: "Draft the prose", blurb: "Render every page from its approved beats, in the book's voice, with live progress — or write any page yourself." },
-  { title: "Read & revise", blurb: "An expert AI editor reads the whole manuscript; revise any layer by conversation. You approve every change." },
+  { title: "Brief the AI", blurb: "Tell Pensive what you're writing — premise, genre, length, tone, heat. Every layer below is drawn from this." },
+  { title: "Idea", blurb: "A polished logline and the dramatic question the book answers, derived from your brief — the lowest-resolution contract." },
+  { title: "Foundations", blurb: "The bedrock: the controlling idea, the ending, a cast with a want, wound, and lie, the world, the tentpole moments. What you pin, the AI must keep." },
+  { title: "Structure", blurb: "The acts and their causal beats — the spine, page by page. Each beat earns the one before it." },
+  { title: "Scenes", blurb: "Every beat broken into dramatized scenes — each one turns a value, no flat 'and-then'." },
+  { title: "Prose", blurb: "Render each approved scene in the book's voice, with live progress — or write any scene yourself." },
+  { title: "Read & revise", blurb: "The agent auto-verifies each scene against its plan; talk to it to revise any node. You approve every change." },
   { title: "Publish", blurb: "Flip one switch and your book is live in the public library — readable anywhere, downloadable as EPUB." },
 ];
 
